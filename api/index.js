@@ -5,6 +5,10 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+app.get("/", (req, res) => {
+  res.json({ ok: true, service: "api", hint: "Try /health" });
+});
+
 app.get("/health", (req, res) => {
   res.json({ ok: true, service: "newchums-api" });
 });
