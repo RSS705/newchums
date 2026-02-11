@@ -15,6 +15,7 @@
     "@mui/material": "^7.3.7",
     "@mui/material-nextjs": "^7.3.7",
     "@neondatabase/serverless": "^0.10.4",
+    "@sentry/nextjs": "^10.38.0",
     "bcryptjs": "^2.4.3",
     "next": "16.1.6",
     "next-auth": "^5.0.0-beta.30",

@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { headers } from "next/headers";
 import { sql } from "@/lib/db";
 import { generateResetToken, hashResetToken } from "@/lib/resetTokens";
 
