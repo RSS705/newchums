@@ -1,5 +1,10 @@
 import { Hono } from "hono";
 import { DATABASE_URL_HINT, type Bindings, getSql } from "./db";
+import {
+  sendPasswordResetEmail,
+  sendRsvpConfirmationEmail,
+  sendVerificationEmail,
+} from "./email/send";
 
 const app = new Hono<{ Bindings: Bindings }>();
 
@@ -291,6 +296,119 @@ app.delete("/dev/users/:id", async (c) => {
     console.error(err);
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ ok: false, error: message }, 500);
+  }
+});
+
+app.post("/email/verification", async (c) => {
+  try {
+    const body = await c.req.json<{
+      to?: string;
+      name?: string;
+      verifyUrl?: string;
+    }>();
+
+    if (!body.to || !body.verifyUrl) {
+      return c.json(
+        { ok: false, error: "to and verifyUrl are required" },
+        400
+      );
+    }
+
+    await sendVerificationEmail(c.env, {
+      to: body.to,
+      name: body.name,
+      verifyUrl: body.verifyUrl,
+    });
+
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return c.json({ ok: false, error: message }, 502);
+  }
+});
+
+app.post("/email/password-reset", async (c) => {
+  try {
+    const body = await c.req.json<{
+      to?: string;
+      name?: string;
+      resetUrl?: string;
+    }>();
+
+    if (!body.to || !body.resetUrl) {
+      return c.json(
+        { ok: false, error: "to and resetUrl are required" },
+        400
+      );
+    }
+
+    await sendPasswordResetEmail(c.env, {
+      to: body.to,
+      name: body.name,
+      resetUrl: body.resetUrl,
+    });
+
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return c.json({ ok: false, error: message }, 502);
+  }
+});
+
+app.post("/email/rsvp-confirmation", async (c) => {
+  try {
+    const body = await c.req.json<{
+      to?: string;
+      name?: string;
+      eventTitle?: string;
+      eventStartsAtISO?: string;
+      eventLocation?: string;
+      eventUrl?: string;
+    }>();
+
+    if (!body.to || !body.eventTitle || !body.eventStartsAtISO || !body.eventUrl) {
+      return c.json(
+        {
+          ok: false,
+          error: "to, eventTitle, eventStartsAtISO, and eventUrl are required",
+        },
+        400
+      );
+    }
+
+    await sendRsvpConfirmationEmail(c.env, {
+      to: body.to,
+      name: body.name,
+      eventTitle: body.eventTitle,
+      eventStartsAtISO: body.eventStartsAtISO,
+      eventLocation: body.eventLocation,
+      eventUrl: body.eventUrl,
+    });
+
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return c.json({ ok: false, error: message }, 502);
+  }
+});
+
+app.post("/email/test", async (c) => {
+  try {
+    const body = await c.req.json<{ to?: string }>();
+    if (!body.to) {
+      return c.json({ ok: false, error: "to is required" }, 400);
+    }
+
+    const resetUrl = `${c.env.WEB_BASE_URL}/reset-password?token=dummy-token`;
+    await sendPasswordResetEmail(c.env, { to: body.to, resetUrl });
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return c.json({ ok: false, error: message }, 502);
   }
 });
 

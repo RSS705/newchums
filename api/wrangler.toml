@@ -5,3 +5,10 @@ compatibility_flags = ["nodejs_compat"]
 
 [observability]
 enabled = true
+
+[vars]
+EMAIL_FROM = "NewChums <no-reply@ourmodule.com>"
+WEB_BASE_URL = "https://newchums.com"
+POSTMARK_TEMPLATE_VERIFY = "43483393"
+POSTMARK_TEMPLATE_RESET  = "43483403"
+POSTMARK_TEMPLATE_RSVP   = "43483423"

@@ -175,6 +175,52 @@ Chunk 10 connects the **Cloudflare Workers API (Hono)** to **Neon Postgres (Post
 
 ---
 
+## Email Setup (Chunk 11)
+
+Chunk 11 adds **transactional email delivery** via Postmark and wires it into the API so the app can reliably send user-facing emails.
+
+### Implementation summary
+
+- **Provider:** Postmark (transactional).
+- **Domain authentication:** DKIM + Return-Path configured in DNS for `ourmodule.com` to improve deliverability and speed Postmark approval.
+- **Templates:** Postmark templates are created for:
+  - Email verification
+  - Password reset
+  - RSVP confirmation
+- **API integration:** The Workers API sends template-based emails via Postmark.
+  - Local testing uses `wrangler dev --local`
+  - Production uses the deployed Worker URL
+
+### Cloudflare Workers configuration
+
+- **Secret (not committed):**
+  - `POSTMARK_SERVER_TOKEN` stored in Cloudflare via `wrangler secret put POSTMARK_SERVER_TOKEN`
+- **Environment variables (safe to keep in `wrangler.toml`):**
+  - `EMAIL_FROM` (example: `NewChums <no-reply@ourmodule.com>`)
+  - `WEB_BASE_URL` (local: `http://localhost:3000`, prod: `https://newchums.com`)
+  - `POSTMARK_TEMPLATE_VERIFY` / `POSTMARK_TEMPLATE_RESET` / `POSTMARK_TEMPLATE_RSVP` (template IDs)
+
+### API endpoints used for verification
+
+During setup, we verified Postmark delivery using simple API routes:
+
+- `POST /email/verification`
+- `POST /email/password-reset`
+- `POST /email/rsvp-confirmation`
+
+Each route triggers a Postmark template send and returns `{ ok: true }` on success.
+
+### Verification checklist (what “done” means)
+
+- Local:
+  - `POST /email/*` routes succeed in Wrangler dev and Postmark Activity shows the message.
+- Production:
+  - API deployed to Workers and test emails sent via the deployed Worker URL.
+  - Email arrives in the destination inbox and is not routed to spam (also checked Postmark Activity).
+- Note:
+  - While Postmark accounts are pending approval, Postmark may restrict recipient domains to match the From domain.
+
+
 ---
 
 ## Design System
@@ -1376,6 +1422,7 @@ In Chunk 8 we added an App Router–compatible Emotion cache integration (in the
 | 1.3 | February 9, 2026 | Updated docs to reflect Next.js scaffold + current local workflow (removed Vite references) |
 | 1.4 | February 10, 2026 | Completed Chunk 8 (MUI theme + Next.js App Router SSR style integration); clarified font strategy (Geist default) |
 | 1.5 | February 10, 2026 | Completed Chunk 9 (Auth.js credentials + Google OAuth + signup/login pages + password reset); added production-mode build verification notes |
+| 1.6 | February 11, 2026 | Completed Chunk 11 (Postmark transactional email: verification, password reset, RSVP confirmation); added Workers email configuration + verification notes |
 
 ---
 

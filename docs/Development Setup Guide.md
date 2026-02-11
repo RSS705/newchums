@@ -715,7 +715,6 @@ Wrangler is the tool that handles the whole Worker lifecycle:
 - [ ] Password reset request + confirm flow works end-to-end.
 - [ ] `npm run build` succeeds, and `npm run start` can serve the app in production mode.
 
-
 ---
 
 ---
@@ -795,7 +794,6 @@ Wrangler is the tool that handles the whole Worker lifecycle:
 
 ## Chunk 11: Email Setup
 
-
 **Goal:** Configure transactional email sending.
 
 - [ ] Configure Postmark in your API
@@ -807,6 +805,69 @@ Wrangler is the tool that handles the whole Worker lifecycle:
 - [ ] Verify emails are delivered (check spam folder too)
 
 **Done when:** Your app can send emails that arrive in your inbox.
+
+### Chunk 11 recap: what we actually did
+
+1. **Created/confirmed Postmark account and server**
+
+- Created a **Live** server in Postmark for NewChums.
+
+2. **Authenticated the sending domain (deliverability)**
+
+- In Postmark, started domain authentication for `ourmodule.com`.
+- Added the required DNS records in Cloudflare DNS:
+  - **DKIM**: TXT record for the provided `*_domainkey` hostname with the long `k=rsa; p=...` value.
+  - **Return-Path**: CNAME record `pm-bounces` → `pm.mtasv.net`.
+- Verified both records in Postmark (status became Active).
+
+Note: For email DNS records, Cloudflare proxying should be **DNS only** (grey cloud), not proxied.
+
+3. **Created Postmark templates**
+
+- Created 3 templates and recorded their IDs:
+  - Email verification
+  - Password reset
+  - RSVP confirmation
+
+4. **Wired Postmark into the Workers API**
+
+- Stored the Postmark server token as a Worker secret:
+  - `npx wrangler secret put POSTMARK_SERVER_TOKEN`
+- Added non-secret email config to `wrangler.toml` under `[vars]`:
+  - `EMAIL_FROM` (example: `NewChums <no-reply@ourmodule.com>`)
+  - `WEB_BASE_URL` (local `http://localhost:3000`, production `https://newchums.com`)
+  - `POSTMARK_TEMPLATE_VERIFY`, `POSTMARK_TEMPLATE_RESET`, `POSTMARK_TEMPLATE_RSVP` (template IDs)
+
+5. **Tested locally**
+
+- Ran `cd api && npm run dev` (Wrangler local).
+- Sent test requests with `curl` to:
+  - `/email/verification`
+  - `/email/password-reset`
+  - `/email/rsvp-confirmation`
+- Confirmed Postmark Activity shows the messages.
+
+6. **Deployed and tested in production**
+
+- Updated `WEB_BASE_URL` for production.
+- Deployed the Worker and confirmed the production Worker URL:
+  - `https://newchums-api.robsmith775.workers.dev`
+- Re-ran the same 3 tests against the production URL.
+- Verified each email arrived in the `@ourmodule.com` inbox and appeared as sent/delivered in Postmark Activity.
+
+### Why this matters (for the app)
+
+- Enables reliable **transactional email** delivery for key user flows.
+- Establishes the base email plumbing needed for:
+  - Account verification
+  - Password reset
+  - RSVP confirmations (and later: reminders, waitlist promotion notices, digests)
+
+### Chunk 11 — Done When (Verification checklist)
+
+- [ ] Local: posting to each `/email/*` endpoint returns `{ ok: true }` and Postmark Activity shows the send.
+- [ ] Production: posting to each `/email/*` endpoint on the Workers URL returns `{ ok: true }`.
+- [ ] Emails arrive in the destination inbox (and you checked spam).
 
 ---
 

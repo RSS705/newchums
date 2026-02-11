@@ -42,6 +42,7 @@ flowchart TB
    - `newchums.pages.dev`
    - `newchums.com` and `www.newchums.com`
 4. The frontend calls the API at `https://newchums-api.robsmith775.workers.dev`.
+6. The Workers API sends transactional emails via Postmark using template IDs (verification / reset / RSVP).
 5. The API is deployed separately via **Wrangler** (manual for now).
 
 
