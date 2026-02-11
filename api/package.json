@@ -2,22 +2,15 @@
   "name": "api",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
   "scripts": {
-    "dev": "nodemon index.js",
-    "start": "node index.js",
-    "dev:wrangler": "wrangler dev --local",
+    "dev": "wrangler dev --local",
     "deploy": "wrangler deploy"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "cors": "^2.8.6",
-    "express": "^5.2.1",
+    "@neondatabase/serverless": "^1.0.2",
     "hono": "^4.11.9"
-  },
-  "devDependencies": {
-    "nodemon": "^3.1.11"
   }
 }

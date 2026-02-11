@@ -2,7 +2,7 @@
 
 ## Overview
 
-**Last Updated:** February 10, 2026
+**Last Updated:** February 11, 2026
 
 This guide walks through setting up your development environment in sequential chunks. Complete each chunk before moving to the next. Each chunk should take 30-60 minutes.
 
@@ -732,9 +732,69 @@ Wrangler is the tool that handles the whole Worker lifecycle:
 
 **Done when:** Your API can read and write to the database.
 
+### Chunk 10 recap: what we actually did
+
+1. **Validated the API local runtime is Wrangler (not Node/Nodemon)**
+   - Confirmed `api/package.json` uses `wrangler dev --local` for `npm run dev`.
+   - Avoided the `index.js` / nodemon entry mismatch by running Workers locally through Wrangler.
+
+2. **Installed and used the Neon serverless Postgres client in the API**
+   - Dependency: `@neondatabase/serverless`.
+   - Added a small DB helper (e.g., `src/db.ts`) that builds a Neon `sql` client from `env.DATABASE_URL`.
+
+3. **Connected `DATABASE_URL` correctly for local development**
+   - Created/used `api/.dev.vars` with:
+     - `DATABASE_URL=postgresql://...`
+   - Confirmed Wrangler loads it (Wrangler prints “Using vars defined in .dev.vars”).
+   - Note: `api/.dev.vars` should not be committed to Git.
+
+4. **Added DB verification routes in the API**
+   - `GET /db/ping`
+     - Runs `SELECT NOW()` and returns `{ ok: true, now: ... }`.
+   - `GET /db/postgis`
+     - Runs a simple PostGIS query (distance between two points) and returns `{ ok: true, meters: ... }`.
+
+5. **Added DEV-only CRUD routes to prove API ↔ DB read/write**
+   - Base path: `/dev/users`
+   - `POST /dev/users` inserts a user row (requires `email`, optional `name`) and returns the inserted row.
+   - `GET /dev/users/:id` reads back the row.
+   - `PATCH /dev/users/:id` updates allowed fields (e.g., `name`) and returns the updated row.
+   - `DELETE /dev/users/:id` deletes the row and returns `{ ok: true }`.
+
+6. **Resolved schema mismatch discovered during CRUD**
+   - The API initially tried to insert a non-existent column (`avatar_preset`).
+   - Updated the dev CRUD SQL to match the actual Neon `users` table columns.
+
+7. **Verified end-to-end with curl + Neon**
+   - Started local API:
+     - `cd api && npm run dev` (Wrangler local on `http://127.0.0.1:8787`)
+   - Verified DB connectivity:
+     - `curl -i http://127.0.0.1:8787/db/ping` → `200`
+     - `curl -i http://127.0.0.1:8787/db/postgis` → `200`
+   - Ran full CRUD:
+     - POST created a user (captured returned `id`)
+     - GET returned the same user
+     - PATCH updated the name
+     - Neon SQL editor confirmed the row update
+     - DELETE removed the row
+     - Neon SQL editor confirmed 0 rows
+
+### Chunk 10 — Done When (Verification checklist)
+
+- [ ] `npm run dev` in `api/` starts Wrangler locally on `127.0.0.1:8787`
+- [ ] `GET /db/ping` returns 200 with a timestamp
+- [ ] `GET /db/postgis` returns 200 with a meters value
+- [ ] `POST /dev/users` creates a row (returns an `id`)
+- [ ] `GET /dev/users/:id` returns the row
+- [ ] `PATCH /dev/users/:id` updates the row
+- [ ] Neon SQL editor confirms the row exists + updates
+- [ ] `DELETE /dev/users/:id` deletes the row
+- [ ] Neon SQL editor confirms the row is removed
+
 ---
 
 ## Chunk 11: Email Setup
+
 
 **Goal:** Configure transactional email sending.
 

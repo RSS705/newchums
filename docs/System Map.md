@@ -1,4 +1,4 @@
-**Last Updated:** February 10, 2026
+**Last Updated:** February 11, 2026
 
 Absolutely — here’s the **full system mapping regenerated** in a **VS Code Mermaid-extension-friendly** format:
 
@@ -151,6 +151,9 @@ Email delivery will be implemented in the Email chunk (Postmark).
 ---
 
 ## 5) Local development architecture (your laptop)
+
+
+**Chunk 10 note:** Local API DB access is via `wrangler dev --local` reading `DATABASE_URL` from `api/.dev.vars`; deployed uses `wrangler secret put DATABASE_URL`. Dev-only CRUD routes live under `/dev/*`.
 
 ```mermaid
 flowchart TB

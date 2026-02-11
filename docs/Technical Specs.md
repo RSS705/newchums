@@ -4,8 +4,8 @@
 
 This document defines the complete technology stack, architecture, design system, development workflow, and feature roadmap for NewChums. It serves as the authoritative reference for all technical decisions.
 
-**Last Updated:** February 10, 2026
-**Version:** 1.5
+**Last Updated:** February 11, 2026
+**Version:** 1.6
 
 ---
 
@@ -144,6 +144,34 @@ Phase 1 authentication is implemented directly in the Next.js App Router using A
 Implementation notes:
 - Pages using `useSearchParams()` are wrapped in `<Suspense>` by splitting them into a server `page.tsx` wrapper and a client component.
 - Reset links are returned only in development mode; production mode returns a generic success response until Postmark is added.
+
+---
+
+## Database Integration (Chunk 10)
+
+Chunk 10 connects the **Cloudflare Workers API (Hono)** to **Neon Postgres (PostGIS)** and adds a small set of **dev-only** endpoints to prove end-to-end CRUD.
+
+### Implementation summary
+
+- **Neon driver:** `@neondatabase/serverless` is used from the Workers runtime.
+- **Env var:** `DATABASE_URL` is read from Workers env (`env.DATABASE_URL`).
+  - **Local dev:** stored in `api/.dev.vars` so `wrangler dev --local` picks it up.
+  - **Deployed:** stored via `wrangler secret put DATABASE_URL` (never committed to git).
+- **Health endpoints (DB):**
+  - `GET /db/ping` returns the DB server timestamp (`SELECT NOW()`).
+  - `GET /db/postgis` runs a simple geo distance query using PostGIS (meters between two points) to verify PostGIS works.
+- **Dev-only CRUD proof (Users):**
+  - `POST /dev/users` (requires `email`, optional `name`) inserts a row and returns it.
+  - `GET /dev/users/:id` reads the row.
+  - `PATCH /dev/users/:id` updates allowed fields (e.g., `name`).
+  - `DELETE /dev/users/:id` deletes the row.
+
+### Verification checklist (what “done” means)
+
+- `curl http://127.0.0.1:8787/db/ping` → `200` with `{ ok: true, now: ... }`
+- `curl http://127.0.0.1:8787/db/postgis` → `200` with `{ ok: true, meters: ... }`
+- Full CRUD via API:
+  - create → read → update → verify in Neon SQL editor → delete → confirm 0 rows
 
 ---
 
@@ -954,21 +982,25 @@ traits table:
 ### Core Tables
 
 ```sql
--- Users
+-- Users (current implementation)
+-- Note: this is the schema currently present in Neon for Chunk 9/10 auth + CRUD verification.
 CREATE TABLE users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  email VARCHAR(255) UNIQUE NOT NULL,
-  password_hash VARCHAR(255), -- null if OAuth only
-  name VARCHAR(255) NOT NULL,
-  avatar_preset VARCHAR(50), -- e.g., "avatar_01", "avatar_02"
-  avatar_url VARCHAR(500), -- custom upload URL
-  travel_distance_km INTEGER DEFAULT 25,
-  email_chat_digest BOOLEAN DEFAULT true,
-  email_new_events BOOLEAN DEFAULT true,
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
+  email TEXT UNIQUE NOT NULL,
+  name TEXT,
+  password_hash TEXT, -- null if OAuth only
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Users (planned Phase 1 expansion)
+-- These columns are expected to be added as profile features are implemented (avatar, preferences, notifications).
+-- Keep them out of the DB until the corresponding UI + API behavior exists.
+-- ALTER TABLE users ADD COLUMN avatar_preset VARCHAR(50);
+-- ALTER TABLE users ADD COLUMN avatar_url VARCHAR(500);
+-- ALTER TABLE users ADD COLUMN travel_distance_km INTEGER DEFAULT 25;
+-- ALTER TABLE users ADD COLUMN email_chat_digest BOOLEAN DEFAULT true;
+-- ALTER TABLE users ADD COLUMN email_new_events BOOLEAN DEFAULT true;
+-- ALTER TABLE users ADD COLUMN updated_at TIMESTAMPTZ DEFAULT NOW();
 -- User locations (PostGIS)
 CREATE TABLE user_locations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
