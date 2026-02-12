@@ -1007,3 +1007,87 @@ After completing all chunks, verify:
 **Total:** ~8-10 hours (can be spread across multiple days)
 
 This covers Week 5 of your Phase 1 plan.
+
+---
+
+## End of Session Checklist (use every chunk)
+
+### 1) Stop local processes
+
+- Stop `web` dev server (Ctrl+C)
+- Stop `api` Wrangler dev server (press `x` in the Wrangler UI)
+
+### 2) Sanity check changes (no secrets)
+
+From repo root:
+
+- `git status`
+- `git diff`
+- Confirm no tokens/connection strings are present in tracked files.
+- If a secret was exposed, rotate it and update env vars/secrets (never commit secrets).
+
+### 3) Local verification
+
+**Web**
+
+- `cd web`
+- `npm run lint`
+- `npm run build`
+- Optional smoke: `npm run start` and test key routes
+
+**API**
+
+- `cd api`
+- `npm run dev`
+- In another terminal:
+  - `curl.exe -i http://127.0.0.1:8787/health`
+  - (Any other endpoints touched this chunk)
+- Stop API dev (`x`) when done
+
+### 4) Deploy to PROD (important mental model)
+
+- Web deploys to PROD automatically on **push to `main`** via Cloudflare Pages.
+- API does **not** deploy on push — it deploys only via Wrangler:
+  - `cd api && npx wrangler deploy`
+
+### 5) PROD verification
+
+**API**
+
+- `curl -i https://<api-worker-url>/health`
+- Verify any endpoints that should be hidden/guarded behave correctly in production
+
+**Web**
+
+- Open `https://newchums.com/` and any routes changed this chunk
+- Confirm any test-only routes/pages are blocked in production
+
+### 6) Commit + push (after deploy + verification)
+
+From repo root:
+
+- `git add .`
+- `git commit -m "Chunk XX: <summary>"`
+- `git push`
+
+### 7) Env parity quick-check (dashboard)
+
+**Cloudflare Pages (Preview + Production)**
+
+- Confirm required vars exist (and were updated if rotated)
+
+**Cloudflare Workers**
+
+- Confirm required vars/secrets exist (and were updated if rotated)
+
+### 8) Docs update (only when everything is green)
+
+- Update `docs/Development Setup Guide.md` (Current State + short chunk summary)
+- Put verbose troubleshooting in `docs/chunks/Chunk Log.md`
+- Update `docs/Technical Specs.md` / `docs/System Map.md` only if decisions/architecture changed
+
+### 9) Session close snapshot
+
+- `git status`
+- `git log -1 --oneline`
+- Add a 3–6 line “Next time” note (what shipped + what’s next + any follow-ups)
