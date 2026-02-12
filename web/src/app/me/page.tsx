@@ -1,6 +1,8 @@
 import { auth } from "@/auth";
 import LogoutButton from "./LogoutButton";
 
+export const runtime = "edge";
+
 export default async function MePage() {
   const session = await auth();
 

@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/cloudflare";
 import { Hono } from "hono";
 import { DATABASE_URL_HINT, type Bindings, getSql } from "./db";
 import {
@@ -7,6 +8,35 @@ import {
 } from "./email/send";
 
 const app = new Hono<{ Bindings: Bindings }>();
+type AxiomEnv = Bindings & {
+  AXIOM_TOKEN?: string;
+  AXIOM_DATASET?: string;
+};
+
+const axiomIngest = async (
+  env: AxiomEnv,
+  events: Array<Record<string, unknown>>,
+) => {
+  if (!env.AXIOM_TOKEN || !env.AXIOM_DATASET || events.length === 0) {
+    return;
+  }
+
+  try {
+    await fetch(
+      `https://api.axiom.co/v1/datasets/${env.AXIOM_DATASET}/ingest`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env.AXIOM_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(events),
+      },
+    );
+  } catch {
+    return;
+  }
+};
 
 const DEV_USER_RETURN_COLUMNS = `
   id,
@@ -15,8 +45,44 @@ const DEV_USER_RETURN_COLUMNS = `
   created_at
 `;
 
+app.use("*", async (c, next) => {
+  const startedAt = Date.now();
+  const requestId = c.req.header("x-request-id") ?? crypto.randomUUID();
+
+  await next();
+
+  const durationMs = Date.now() - startedAt;
+  const cfRay = c.res.headers.get("CF-RAY");
+  await axiomIngest(c.env as AxiomEnv, [
+    {
+      message: "api_request",
+      method: c.req.method,
+      path: c.req.path,
+      status: c.res.status,
+      duration_ms: durationMs,
+      request_id: requestId,
+      cf_ray: cfRay ?? null,
+    },
+  ]);
+});
+
 app.get("/", (c) => c.text("NewChums API is live"));
 app.get("/health", (c) => c.json({ ok: true }));
+app.get("/__sentry-test", () => {
+  throw new Error("API Sentry test error");
+});
+app.get("/__log-test", async (c) => {
+  await axiomIngest(c.env as AxiomEnv, [
+    { message: "axiom test log", level: "info" },
+  ]);
+  return c.json({ ok: true });
+});
+
+app.onError((err, c) => {
+  console.error(err);
+  Sentry.captureException(err);
+  return c.json({ error: "Internal Server Error" }, 500);
+});
 
 app.get("/db/ping", async (c) => {
   try {
@@ -127,7 +193,7 @@ app.post("/events", async (c) => {
         error:
           "title, location_name, lat, lng, starts_at, and seat_limit are required",
       },
-      400
+      400,
     );
   }
 
@@ -218,7 +284,7 @@ app.get("/dev/users/:id", async (c) => {
     const sql = getSql(c.env);
     const rows = await sql.query(
       `select ${DEV_USER_RETURN_COLUMNS} from newchums.users where id = $1`,
-      [id]
+      [id],
     );
 
     if (rows.length === 0) {
@@ -242,7 +308,8 @@ app.patch("/dev/users/:id", async (c) => {
     }>();
 
     const updates: Array<{ column: string; value: unknown }> = [];
-    if (body.name !== undefined) updates.push({ column: "name", value: body.name });
+    if (body.name !== undefined)
+      updates.push({ column: "name", value: body.name });
     if (body.password_hash !== undefined) {
       updates.push({ column: "password_hash", value: body.password_hash });
     }
@@ -252,7 +319,7 @@ app.patch("/dev/users/:id", async (c) => {
     }
 
     const setClauses = updates.map(
-      (update, i) => `${update.column} = $${i + 1}`
+      (update, i) => `${update.column} = $${i + 1}`,
     );
     const params = updates.map((update) => update.value);
     params.push(id);
@@ -284,7 +351,7 @@ app.delete("/dev/users/:id", async (c) => {
     const sql = getSql(c.env);
     const rows = await sql.query(
       "delete from newchums.users where id = $1 returning id",
-      [id]
+      [id],
     );
 
     if (rows.length === 0) {
@@ -308,10 +375,7 @@ app.post("/email/verification", async (c) => {
     }>();
 
     if (!body.to || !body.verifyUrl) {
-      return c.json(
-        { ok: false, error: "to and verifyUrl are required" },
-        400
-      );
+      return c.json({ ok: false, error: "to and verifyUrl are required" }, 400);
     }
 
     await sendVerificationEmail(c.env, {
@@ -337,10 +401,7 @@ app.post("/email/password-reset", async (c) => {
     }>();
 
     if (!body.to || !body.resetUrl) {
-      return c.json(
-        { ok: false, error: "to and resetUrl are required" },
-        400
-      );
+      return c.json({ ok: false, error: "to and resetUrl are required" }, 400);
     }
 
     await sendPasswordResetEmail(c.env, {
@@ -368,13 +429,18 @@ app.post("/email/rsvp-confirmation", async (c) => {
       eventUrl?: string;
     }>();
 
-    if (!body.to || !body.eventTitle || !body.eventStartsAtISO || !body.eventUrl) {
+    if (
+      !body.to ||
+      !body.eventTitle ||
+      !body.eventStartsAtISO ||
+      !body.eventUrl
+    ) {
       return c.json(
         {
           ok: false,
           error: "to, eventTitle, eventStartsAtISO, and eventUrl are required",
         },
-        400
+        400,
       );
     }
 
@@ -412,4 +478,11 @@ app.post("/email/test", async (c) => {
   }
 });
 
-export default app;
+export default Sentry.withSentry(
+  (env) => ({
+    dsn: env.SENTRY_DSN,
+  }),
+  {
+    fetch: app.fetch,
+  },
+);

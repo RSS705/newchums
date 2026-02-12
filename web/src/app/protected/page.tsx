@@ -1,6 +1,8 @@
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 
+export const runtime = "edge";
+
 export default async function ProtectedPage() {
   const session = await auth();
 
