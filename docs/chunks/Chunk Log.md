@@ -143,3 +143,16 @@ This file stores detailed troubleshooting notes, command transcripts, and deep e
   - `*.sh text eol=lf`
   - Windows scripts remain CRLF (`*.bat`, `*.cmd`, `*.ps1`)
 - Result: markdown/shell/docs diffs remain stable across Windows/macOS/Linux.
+
+
+### PowerShell gotchas observed
+
+- PowerShell aliases `curl` to `Invoke-WebRequest`.
+  - Use `curl.exe` for predictable curl behavior:
+    - `curl.exe -i http://127.0.0.1:8787/health`
+
+- If PowerShell refuses to run `npm` due to execution policy (e.g., “running scripts is disabled”), run Node/npm commands from **cmd** (Command Prompt), or adjust execution policy intentionally (only if you understand the security impact).
+
+- If local requests hang, check for port/process conflicts:
+  - `netstat -ano | findstr :8787`
+  - Ensure only one `LISTENING` process owns the port, then restart `wrangler dev --local`.

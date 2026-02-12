@@ -8,6 +8,7 @@
 - Pages Preview deployments are branch/PR builds; they run automatically for non-`main` pushes and use the Preview env-var set (separate from Production).
 - API (`api/`) does not auto-deploy from git; it deploys only when you run `npx wrangler deploy`.
 - Workers secrets/vars are managed separately from Pages vars, and may differ by Worker environment (`production`, `preview`, etc.).
+- `APP_ENV` is used by the API to distinguish production vs non-prod behavior (notably internal test-route access).
 
 **Last Updated:** February 12, 2026
 
@@ -907,30 +908,55 @@ Note: For email DNS records, Cloudflare proxying should be **DNS only** (grey cl
 **Chunk 13: Setup Cleanup Checklist**
 
 - Goal:
-  Lock down test-only surfaces for production, add lightweight health checks, and make env/deploy setup less error-prone.
+  Lock down test-only surfaces for production, add lightweight health checks, reduce env drift (Preview vs Production), and make diffs predictable.
 - Changes made:
-  Gated web `/sentry-test` to return `404` in production.
-  Added shared API internal-access guard for `GET /__sentry-test`, `GET /__log-test`, and `GET /health/db`.
-  Updated `GET /health` to return service + timestamp and avoid DB access.
-  Added `scripts/check-env.mjs` to verify required keys exist in `web/.env.local` and `api/.dev.vars` without printing values.
-  Added explicit LF rule for `*.sh` in `.gitattributes` (repo already normalizes text to LF).
-  Updated web Sentry build config to use `SENTRY_AUTH_TOKEN`/`SENTRY_ORG`/`SENTRY_PROJECT` and skip sourcemap upload gracefully when credentials are absent.
+  - Web `/sentry-test` now returns `404` in production (`notFound()`), while still working locally/non-prod for Sentry validation.
+  - API internal test routes are centralized and guarded via `api/src/internalAccess.ts`:
+    - `GET /__sentry-test`
+    - `GET /__log-test`
+    - `GET /health/db`
+  - Added `GET /health` (no DB) and `GET /health/db` (DB ping + latency).
+  - Added `scripts/check-env.mjs` to validate required env keys exist locally (does not print values).
+  - Normalized line endings via `.gitattributes` for stable diffs across Windows/macOS/Linux.
+  - Updated web Sentry build config to gracefully skip source-map upload when release credentials are absent (still captures errors).
+
+- Security rotations (operational, not committed):
+  - Rotated any exposed secrets (Google OAuth, Neon, Postmark, Sentry/Axiom as applicable).
+  - Updated values in:
+    - Cloudflare Pages env vars/secrets (Preview + Production)
+    - Cloudflare Workers secrets/vars
+    - Local `web/.env.local` and `api/.dev.vars`
+
 - Env vars / secrets added or changed:
-  Worker var: `APP_ENV` (`development|preview|production`).
-  Worker secret: `INTERNAL_TEST_TOKEN` (required to call internal test routes in production).
-  Optional Pages secrets for Sentry release/source-map upload: `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`.
+  - Workers var: `APP_ENV` (`development|preview|production`)
+  - Workers secret: `INTERNAL_TEST_TOKEN` (required to access internal test routes in production via `x-internal-token`)
+  - Optional Pages secrets for Sentry releases/source maps: `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`
+
 - Deploy notes (Pages vs Workers):
-  Web changes deploy automatically via Pages on push; API guard changes require `npx wrangler deploy`.
-  Pages Preview + Production should both define: `DATABASE_URL`, `NEXT_PUBLIC_API_BASE_URL`, `NEXT_PUBLIC_SENTRY_DSN`, `NEXT_PUBLIC_PLAUSIBLE_DOMAIN`.
-  Workers should define: `APP_ENV`, `DATABASE_URL`, `SENTRY_DSN`, `AXIOM_TOKEN`, `AXIOM_DATASET`, Postmark vars, and `INTERNAL_TEST_TOKEN`.
+  - Web deploys automatically via Cloudflare Pages on push to `main`.
+  - API deploys only via `npx wrangler deploy`.
+  - Pages Preview and Production maintain separate env-var sets (verify both).
+
 - Verification steps:
-  `node scripts/check-env.mjs`
-  `curl -i http://127.0.0.1:8787/health`
-  `curl -i http://127.0.0.1:8787/health/db`
-  In production, verify `/health` returns `200`, while `GET /__sentry-test`, `GET /__log-test`, and `GET /health/db` return `404` without `x-internal-token` and succeed with a correct token.
-  Confirm `https://newchums.com/sentry-test` returns `404`.
-  Optional Sentry sourcemap verification: check release artifacts in Sentry and confirm readable frontend stack traces after a Pages build with Sentry release secrets.
-- Troubleshooting notes (only if new/important):
+  1. Local env sanity:
+     - `node scripts/check-env.mjs`
+  2. Local API (Wrangler):
+     - `cd api && npm run dev`
+     - From **PowerShell**, prefer `curl.exe` (PowerShell aliases `curl` to `Invoke-WebRequest`):
+       - `curl.exe -i http://127.0.0.1:8787/health`
+       - `curl.exe -i http://127.0.0.1:8787/health/db`
+       - `curl.exe -i http://127.0.0.1:8787/__log-test`
+       - `curl.exe -i http://127.0.0.1:8787/__sentry-test` (expected `500` because it intentionally throws)
+  3. Production API:
+     - `curl -i https://<your-worker>.workers.dev/health` → `200`
+     - `curl -i https://<your-worker>.workers.dev/__log-test` → `404` (should be hidden in prod)
+     - `curl -i https://<your-worker>.workers.dev/__sentry-test` → `404`
+     - `curl -i https://<your-worker>.workers.dev/health/db` → `404`
+     - Optional (internal access): repeat the above internal routes with header `x-internal-token: <INTERNAL_TEST_TOKEN>` and confirm they succeed.
+  4. Production web:
+     - Visit `https://newchums.com/sentry-test` → `404`
+
+- Troubleshooting notes:
   Detailed command transcripts and edge cases are archived in `docs/chunks/Chunk Log.md` under Chunk 13.
 
 ---

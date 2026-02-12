@@ -261,6 +261,17 @@ Chunk 12 adds **production-grade observability** so you can see what users are e
   - script loads (`plausible.js`)
   - events post (`/api/event`)
 
+
+## Setup Cleanup (Chunk 13)
+
+Chunk 13 focused on production hygiene and reducing accidental exposure.
+
+- Web `/sentry-test` is gated to return `404` in production.
+- API internal routes (`/__sentry-test`, `/__log-test`, `/health/db`) are gated in production using `APP_ENV=production` plus an internal header `x-internal-token` that must match the Worker secret `INTERNAL_TEST_TOKEN`.
+- Added `GET /health` (no DB) and `GET /health/db` (DB ping + latency).
+- Added `scripts/check-env.mjs` to validate required local env keys exist without printing values.
+- `.gitattributes` enforces LF for markdown/docs for stable diffs.
+
 ### Cloudflare Pages compatibility notes (Next.js on Pages)
 
 - Pages builds need **DATABASE_URL** present during build if any server-side code imports the DB client while Next collects data.
