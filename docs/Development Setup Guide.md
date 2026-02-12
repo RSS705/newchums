@@ -2,7 +2,7 @@
 
 ## Overview
 
-**Last Updated:** February 11, 2026
+**Last Updated:** February 12, 2026
 
 This guide walks through setting up your development environment in sequential chunks. Complete each chunk before moving to the next. Each chunk should take 30-60 minutes.
 
@@ -873,16 +873,23 @@ Note: For email DNS records, Cloudflare proxying should be **DNS only** (grey cl
 
 ## Chunk 12: Error Tracking & Logging
 
-**Goal:** Set up monitoring for production issues.
+**Chunk 12: Error Tracking & Logging**
 
-- [ ] Configure Sentry in frontend
-- [ ] Configure Sentry in API
-- [ ] Test error capture (trigger a deliberate error)
-- [ ] Configure Axiom for logging
-- [ ] Verify logs appear in Axiom dashboard
-- [ ] Add Plausible analytics script to frontend
-
-**Done when:** Errors and logs appear in their respective dashboards.
+- Goal:
+  Set up production observability across frontend and API using Sentry, Axiom, and Plausible.
+- Changes made:
+  Added Sentry for web (`/sentry-test`) and API (`/__sentry-test`), added API request logging and `GET /__log-test` for Axiom, and added Plausible script loading in `web/src/app/layout.tsx` (production only).
+- Env vars / secrets added or changed:
+  `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_DSN`, `AXIOM_TOKEN`, `AXIOM_DATASET`, `NEXT_PUBLIC_PLAUSIBLE_DOMAIN`, and Pages env coverage for `NEXT_PUBLIC_API_BASE_URL` and `DATABASE_URL`.
+- Deploy notes (Pages vs Workers):
+  Web changes deploy through Cloudflare Pages after Git push; API changes deploy via Wrangler (`npx wrangler deploy`) and require Workers secrets/vars set in Cloudflare.
+- Verification steps:
+  Trigger `/sentry-test` and `GET /__sentry-test` and confirm Sentry events, call `GET /__log-test` and verify Axiom dataset entries, and verify Plausible script/event on `https://newchums.com`.
+- Troubleshooting notes:
+  Pages build can fail if `DATABASE_URL` is not defined at build time.
+  Pages dynamic/auth routes may require `export const runtime = "edge";`.
+  Plausible site domain must match the actual production domain (`newchums.com`).
+  Detailed troubleshooting notes are archived in docs/chunks/Chunk Log.md (Chunk 12).
 
 ---
 

@@ -4,8 +4,8 @@
 
 This document defines the complete technology stack, architecture, design system, development workflow, and feature roadmap for NewChums. It serves as the authoritative reference for all technical decisions.
 
-**Last Updated:** February 11, 2026
-**Version:** 1.6
+**Last Updated:** February 12, 2026
+**Version:** 1.7
 
 ---
 
@@ -220,6 +220,47 @@ Each route triggers a Postmark template send and returns `{ ok: true }` on succe
 - Note:
   - While Postmark accounts are pending approval, Postmark may restrict recipient domains to match the From domain.
 
+
+
+---
+
+## Error Tracking & Logging (Chunk 12)
+
+Chunk 12 adds **production-grade observability** so you can see what users are experiencing (Sentry), what the API is doing (Axiom logs), and basic traffic analytics (Plausible).
+
+### Sentry (Frontend: Cloudflare Pages + Next.js)
+
+- **Install/config:** Sentry Next.js SDK added via the Sentry wizard in `web/`.
+- **DSN:** `NEXT_PUBLIC_SENTRY_DSN` is stored in Cloudflare Pages **Secrets/Variables** (and can exist locally in `web/.env.local`).
+- **Test page:** `/sentry-test` provides a “Trigger Error” button that throws an error to confirm capture.
+- **Build note:** Source maps/releases require a Sentry auth token for the build step. If not set, Sentry still captures errors, but source map upload/release creation is skipped.
+
+### Sentry (API: Cloudflare Workers + Hono)
+
+- **Worker DSN:** `SENTRY_DSN` is stored as a Worker secret.
+- **Test endpoint:** `GET /__sentry-test` intentionally throws a server error so you can confirm it appears in the Sentry **Issues** dashboard.
+
+### Axiom (API Logging)
+
+- **Dataset:** `newchums-api` dataset created in Axiom.
+- **Token:** An Axiom ingest token is generated and stored as `AXIOM_TOKEN` (secret).
+- **Routing:** The API sends structured logs to Axiom with a request id, path, status, and duration.
+- **Test endpoint:** `GET /__log-test` writes a test log event and returns `{ ok: true }`.
+
+### Plausible (Frontend Analytics)
+
+- **Site:** `newchums.com` site created in Plausible.
+- **Domain env:** `NEXT_PUBLIC_PLAUSIBLE_DOMAIN=newchums.com` is set in Cloudflare Pages variables and used by the layout script loader.
+- **Verification:** Use Plausible “Verify installation” and the browser Network tab to confirm:
+  - script loads (`plausible.js`)
+  - events post (`/api/event`)
+
+### Cloudflare Pages compatibility notes (Next.js on Pages)
+
+- Pages builds need **DATABASE_URL** present during build if any server-side code imports the DB client while Next collects data.
+- Pages requires non-static routes to run on **Edge runtime**. App Router pages and route handlers used by auth/protected pages should export:
+
+`export const runtime = "edge";`
 
 ---
 

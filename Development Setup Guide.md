@@ -1,0 +1,140 @@
+warning: in the working copy of 'docs/Development Setup Guide.md', CRLF will be replaced by LF the next time Git touches it
+[1mdiff --git a/docs/Development Setup Guide.md b/docs/Development Setup Guide.md[m
+[1mindex 7d26b56..0349e0e 100644[m
+[1m--- a/docs/Development Setup Guide.md[m	
+[1m+++ b/docs/Development Setup Guide.md[m	
+[36m@@ -2,7 +2,7 @@[m
+ [m
+ ## Overview[m
+ [m
+[31m-**Last Updated:** February 11, 2026[m
+[32m+[m[32m**Last Updated:** February 12, 2026[m
+ [m
+ This guide walks through setting up your development environment in sequential chunks. Complete each chunk before moving to the next. Each chunk should take 30-60 minutes.[m
+ [m
+[36m@@ -873,16 +873,23 @@[m [mNote: For email DNS records, Cloudflare proxying should be **DNS only** (grey cl[m
+ [m
+ ## Chunk 12: Error Tracking & Logging[m
+ [m
+[31m-**Goal:** Set up monitoring for production issues.[m
+[31m-[m
+[31m-- [ ] Configure Sentry in frontend[m
+[31m-- [ ] Configure Sentry in API[m
+[31m-- [ ] Test error capture (trigger a deliberate error)[m
+[31m-- [ ] Configure Axiom for logging[m
+[31m-- [ ] Verify logs appear in Axiom dashboard[m
+[31m-- [ ] Add Plausible analytics script to frontend[m
+[31m-[m
+[31m-**Done when:** Errors and logs appear in their respective dashboards.[m
+[32m+[m[32m**Chunk 12: Error Tracking & Logging**[m
+[32m+[m
+[32m+[m[32m- Goal:[m
+[32m+[m[32m  Set up production observability across frontend and API using Sentry, Axiom, and Plausible.[m
+[32m+[m[32m- Changes made:[m
+[32m+[m[32m  Added Sentry for web (`/sentry-test`) and API (`/__sentry-test`), added API request logging and `GET /__log-test` for Axiom, and added Plausible script loading in `web/src/app/layout.tsx` (production only).[m
+[32m+[m[32m- Env vars / secrets added or changed:[m
+[32m+[m[32m  `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_DSN`, `AXIOM_TOKEN`, `AXIOM_DATASET`, `NEXT_PUBLIC_PLAUSIBLE_DOMAIN`, and Pages env coverage for `NEXT_PUBLIC_API_BASE_URL` and `DATABASE_URL`.[m
+[32m+[m[32m- Deploy notes (Pages vs Workers):[m
+[32m+[m[32m  Web changes deploy through Cloudflare Pages after Git push; API changes deploy via Wrangler (`npx wrangler deploy`) and require Workers secrets/vars set in Cloudflare.[m
+[32m+[m[32m- Verification steps:[m
+[32m+[m[32m  Trigger `/sentry-test` and `GET /__sentry-test` and confirm Sentry events, call `GET /__log-test` and verify Axiom dataset entries, and verify Plausible script/event on `https://newchums.com`.[m
+[32m+[m[32m- Troubleshooting notes:[m
+[32m+[m[32m  Pages build can fail if `DATABASE_URL` is not defined at build time.[m
+[32m+[m[32m  Pages dynamic/auth routes may require `export const runtime = "edge";`.[m
+[32m+[m[32m  Plausible site domain must match the actual production domain (`newchums.com`).[m
+[32m+[m[32m  Detailed troubleshooting notes are archived in docs/chunks/Chunk Log.md (Chunk 12).[m
+ [m
+ ---[m
+ [m
+[1mdiff --git a/docs/System Map.md b/docs/System Map.md[m
+[1mindex 29ba8eb..fff1d01 100644[m
+[1m--- a/docs/System Map.md[m	
+[1m+++ b/docs/System Map.md[m	
+[36m@@ -1,4 +1,4 @@[m
+[31m-**Last Updated:** February 11, 2026[m
+[32m+[m[32m**Last Updated:** February 12, 2026[m
+ [m
+ Absolutely — here’s the **full system mapping regenerated** in a **VS Code Mermaid-extension-friendly** format:[m
+ [m
+[36m@@ -36,15 +36,22 @@[m [mflowchart TB[m
+ ```[m
+ ### Deployment pipeline[m
+ [m
+[31m-1. Developer commits to **GitHub** (`main`).[m
+[31m-2. **Cloudflare Pages** pulls the repo and runs the Next.js build via `@cloudflare/next-on-pages`.[m
+[31m-3. Pages publishes to:[m
+[31m-   - `newchums.pages.dev`[m
+[31m-   - `newchums.com` and `www.newchums.com`[m
+[31m-4. The frontend calls the API at `https://newchums-api.robsmith775.workers.dev`.[m
+[31m-6. The Workers API sends transactional emails via Postmark using template IDs (verification / reset / RSVP).[m
+[31m-5. The API is deployed separately via **Wrangler** (manual for now).[m
+[31m-[m
+[32m+[m[32m1. Developer commits and pushes to **GitHub** (`main`).[m
+[32m+[m[32m2. **Cloudflare Pages** pulls the repo and runs the Next.js build (Cloudflare adapter).[m
+[32m+[m[32m3. Pages publishes the frontend to:[m
+[32m+[m[32m   - `newchums.pages.dev` (auto)[m
+[32m+[m[32m   - `newchums.com` and `www.newchums.com` (custom domains)[m
+[32m+[m[32m4. The frontend calls the API at `NEXT_PUBLIC_API_BASE_URL` (currently `https://newchums-api.robsmith775.workers.dev`).[m
+[32m+[m[32m5. The Workers API is deployed separately via **Wrangler** (`npx wrangler deploy`) and serves both API routes and background triggers.[m
+[32m+[m[32m6. Observability:[m
+[32m+[m[32m   - Frontend errors → Sentry (web project)[m
+[32m+[m[32m   - API errors → Sentry (api project)[m
+[32m+[m[32m   - API logs → Axiom dataset (`newchums-api`)[m
+[32m+[m[32m   - Pageview analytics → Plausible (`newchums.com`)[m
+[32m+[m
+[32m+[m[32m**Cloudflare Pages note:** because Pages runs server-side Next.js routes on the **Edge runtime**, any non-static route (App Router pages and API route handlers) should export:[m
+[32m+[m
+[32m+[m[32m`export const runtime = "edge";`[m
+ [m
+ ---[m
+ [m
+[1mdiff --git a/docs/Technical Specs.md b/docs/Technical Specs.md[m
+[1mindex 5270211..3e77868 100644[m
+[1m--- a/docs/Technical Specs.md[m	
+[1m+++ b/docs/Technical Specs.md[m	
+[36m@@ -4,8 +4,8 @@[m
+ [m
+ This document defines the complete technology stack, architecture, design system, development workflow, and feature roadmap for NewChums. It serves as the authoritative reference for all technical decisions.[m
+ [m
+[31m-**Last Updated:** February 11, 2026[m
+[31m-**Version:** 1.6[m
+[32m+[m[32m**Last Updated:** February 12, 2026[m
+[32m+[m[32m**Version:** 1.7[m
+ [m
+ ---[m
+ [m
+[36m@@ -221,6 +221,47 @@[m [mEach route triggers a Postmark template send and returns `{ ok: true }` on succe[m
+   - While Postmark accounts are pending approval, Postmark may restrict recipient domains to match the From domain.[m
+ [m
+ [m
+[32m+[m
+[32m+[m[32m---[m
+[32m+[m
+[32m+[m[32m## Error Tracking & Logging (Chunk 12)[m
+[32m+[m
+[32m+[m[32mChunk 12 adds **production-grade observability** so you can see what users are experiencing (Sentry), what the API is doing (Axiom logs), and basic traffic analytics (Plausible).[m
+[32m+[m
+[32m+[m[32m### Sentry (Frontend: Cloudflare Pages + Next.js)[m
+[32m+[m
+[32m+[m[32m- **Install/config:** Sentry Next.js SDK added via the Sentry wizard in `web/`.[m
+[32m+[m[32m- **DSN:** `NEXT_PUBLIC_SENTRY_DSN` is stored in Cloudflare Pages **Secrets/Variables** (and can exist locally in `web/.env.local`).[m
+[32m+[m[32m- **Test page:** `/sentry-test` provides a “Trigger Error” button that throws an error to confirm capture.[m
+[32m+[m[32m- **Build note:** Source maps/releases require a Sentry auth token for the build step. If not set, Sentry still captures errors, but source map upload/release creation is skipped.[m
+[32m+[m
+[32m+[m[32m### Sentry (API: Cloudflare Workers + Hono)[m
+[32m+[m
+[32m+[m[32m- **Worker DSN:** `SENTRY_DSN` is stored as a Worker secret.[m
+[32m+[m[32m- **Test endpoint:** `GET /__sentry-test` intentionally throws a server error so you can confirm it appears in the Sentry **Issues** dashboard.[m
+[32m+[m
+[32m+[m[32m### Axiom (API Logging)[m
+[32m+[m
+[32m+[m[32m- **Dataset:** `newchums-api` dataset created in Axiom.[m
+[32m+[m[32m- **Token:** An Axiom ingest token is generated and stored as `AXIOM_TOKEN` (secret).[m
+[32m+[m[32m- **Routing:** The API sends structured logs to Axiom with a request id, path, status, and duration.[m
+[32m+[m[32m- **Test endpoint:** `GET /__log-test` writes a test log event and returns `{ ok: true }`.[m
+[32m+[m
+[32m+[m[32m### Plausible (Frontend Analytics)[m
+[32m+[m
+[32m+[m[32m- **Site:** `newchums.com` site created in Plausible.[m
+[32m+[m[32m- **Domain env:** `NEXT_PUBLIC_PLAUSIBLE_DOMAIN=newchums.com` is set in Cloudflare Pages variables and used by the layout script loader.[m
+[32m+[m[32m- **Verification:** Use Plausible “

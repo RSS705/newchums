@@ -1,4 +1,4 @@
-**Last Updated:** February 11, 2026
+**Last Updated:** February 12, 2026
 
 Absolutely — here’s the **full system mapping regenerated** in a **VS Code Mermaid-extension-friendly** format:
 
@@ -36,15 +36,22 @@ flowchart TB
 ```
 ### Deployment pipeline
 
-1. Developer commits to **GitHub** (`main`).
-2. **Cloudflare Pages** pulls the repo and runs the Next.js build via `@cloudflare/next-on-pages`.
-3. Pages publishes to:
-   - `newchums.pages.dev`
-   - `newchums.com` and `www.newchums.com`
-4. The frontend calls the API at `https://newchums-api.robsmith775.workers.dev`.
-6. The Workers API sends transactional emails via Postmark using template IDs (verification / reset / RSVP).
-5. The API is deployed separately via **Wrangler** (manual for now).
+1. Developer commits and pushes to **GitHub** (`main`).
+2. **Cloudflare Pages** pulls the repo and runs the Next.js build (Cloudflare adapter).
+3. Pages publishes the frontend to:
+   - `newchums.pages.dev` (auto)
+   - `newchums.com` and `www.newchums.com` (custom domains)
+4. The frontend calls the API at `NEXT_PUBLIC_API_BASE_URL` (currently `https://newchums-api.robsmith775.workers.dev`).
+5. The Workers API is deployed separately via **Wrangler** (`npx wrangler deploy`) and serves both API routes and background triggers.
+6. Observability:
+   - Frontend errors → Sentry (web project)
+   - API errors → Sentry (api project)
+   - API logs → Axiom dataset (`newchums-api`)
+   - Pageview analytics → Plausible (`newchums.com`)
 
+**Cloudflare Pages note:** because Pages runs server-side Next.js routes on the **Edge runtime**, any non-static route (App Router pages and API route handlers) should export:
+
+`export const runtime = "edge";`
 
 ---
 
