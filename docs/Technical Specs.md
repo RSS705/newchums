@@ -232,13 +232,14 @@ Chunk 12 adds **production-grade observability** so you can see what users are e
 
 - **Install/config:** Sentry Next.js SDK added via the Sentry wizard in `web/`.
 - **DSN:** `NEXT_PUBLIC_SENTRY_DSN` is stored in Cloudflare Pages **Secrets/Variables** (and can exist locally in `web/.env.local`).
-- **Test page:** `/sentry-test` provides a “Trigger Error” button that throws an error to confirm capture.
+- **Test page:** `/sentry-test` provides a “Trigger Error” button for local/non-prod validation and returns `404` in production.
 - **Build note:** Source maps/releases require a Sentry auth token for the build step. If not set, Sentry still captures errors, but source map upload/release creation is skipped.
 
 ### Sentry (API: Cloudflare Workers + Hono)
 
 - **Worker DSN:** `SENTRY_DSN` is stored as a Worker secret.
 - **Test endpoint:** `GET /__sentry-test` intentionally throws a server error so you can confirm it appears in the Sentry **Issues** dashboard.
+- **Prod safety:** `GET /__sentry-test` and `GET /__log-test` require `x-internal-token` in production (`APP_ENV=production`), and return `404` when the token is missing/invalid.
 
 ### Axiom (API Logging)
 
@@ -246,6 +247,11 @@ Chunk 12 adds **production-grade observability** so you can see what users are e
 - **Token:** An Axiom ingest token is generated and stored as `AXIOM_TOKEN` (secret).
 - **Routing:** The API sends structured logs to Axiom with a request id, path, status, and duration.
 - **Test endpoint:** `GET /__log-test` writes a test log event and returns `{ ok: true }`.
+
+### Health Endpoints (API)
+
+- `GET /health` returns `{ ok: true, service: "api", ts }` and does not query the database.
+- `GET /health/db` performs a `SELECT 1` check and is guarded in production with the same internal token behavior as test endpoints.
 
 ### Plausible (Frontend Analytics)
 
@@ -1464,6 +1470,7 @@ In Chunk 8 we added an App Router–compatible Emotion cache integration (in the
 | 1.4 | February 10, 2026 | Completed Chunk 8 (MUI theme + Next.js App Router SSR style integration); clarified font strategy (Geist default) |
 | 1.5 | February 10, 2026 | Completed Chunk 9 (Auth.js credentials + Google OAuth + signup/login pages + password reset); added production-mode build verification notes |
 | 1.6 | February 11, 2026 | Completed Chunk 11 (Postmark transactional email: verification, password reset, RSVP confirmation); added Workers email configuration + verification notes |
+| 1.7 | February 12, 2026 | Chunk 13 cleanup: production gating for internal test routes, API health endpoint contract, and env consistency checks |
 
 ---
 

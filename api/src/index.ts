@@ -6,15 +6,12 @@ import {
   sendRsvpConfirmationEmail,
   sendVerificationEmail,
 } from "./email/send";
+import { canAccessInternalTestRoute, notFound } from "./internalAccess";
 
 const app = new Hono<{ Bindings: Bindings }>();
-type AxiomEnv = Bindings & {
-  AXIOM_TOKEN?: string;
-  AXIOM_DATASET?: string;
-};
 
 const axiomIngest = async (
-  env: AxiomEnv,
+  env: Bindings,
   events: Array<Record<string, unknown>>,
 ) => {
   if (!env.AXIOM_TOKEN || !env.AXIOM_DATASET || events.length === 0) {
@@ -53,7 +50,7 @@ app.use("*", async (c, next) => {
 
   const durationMs = Date.now() - startedAt;
   const cfRay = c.res.headers.get("CF-RAY");
-  await axiomIngest(c.env as AxiomEnv, [
+  await axiomIngest(c.env, [
     {
       message: "api_request",
       method: c.req.method,
@@ -67,12 +64,49 @@ app.use("*", async (c, next) => {
 });
 
 app.get("/", (c) => c.text("NewChums API is live"));
-app.get("/health", (c) => c.json({ ok: true }));
-app.get("/__sentry-test", () => {
+app.get("/health", (c) =>
+  c.json({ ok: true, service: "api", ts: new Date().toISOString() }),
+);
+app.get("/health/db", async (c) => {
+  if (!canAccessInternalTestRoute(c)) {
+    return notFound();
+  }
+
+  try {
+    const startedAt = Date.now();
+    const sql = getSql(c.env);
+    await sql`select 1 as ok`;
+    return c.json({
+      ok: true,
+      service: "api",
+      ts: new Date().toISOString(),
+      latency_ms: Date.now() - startedAt,
+    });
+  } catch (err) {
+    console.error(err);
+    return c.json(
+      {
+        ok: false,
+        service: "api",
+        ts: new Date().toISOString(),
+      },
+      500,
+    );
+  }
+});
+app.get("/__sentry-test", (c) => {
+  if (!canAccessInternalTestRoute(c)) {
+    return notFound();
+  }
+
   throw new Error("API Sentry test error");
 });
 app.get("/__log-test", async (c) => {
-  await axiomIngest(c.env as AxiomEnv, [
+  if (!canAccessInternalTestRoute(c)) {
+    return notFound();
+  }
+
+  await axiomIngest(c.env, [
     { message: "axiom test log", level: "info" },
   ]);
   return c.json({ ok: true });

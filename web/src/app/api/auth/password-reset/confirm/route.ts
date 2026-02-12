@@ -15,7 +15,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "INVALID_INPUT" }, { status: 400 });
   }
 
-  const tokenHash = hashResetToken(token);
+  const tokenHash = await hashResetToken(token);
 
   const tokens = (await sql`
     SELECT id, user_id

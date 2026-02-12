@@ -9,6 +9,11 @@ export type Bindings = {
   POSTMARK_TEMPLATE_RESET: string;
   POSTMARK_TEMPLATE_RSVP: string;
   SENTRY_DSN: string;
+  APP_ENV?: string;
+  ENVIRONMENT?: string;
+  INTERNAL_TEST_TOKEN?: string;
+  AXIOM_TOKEN?: string;
+  AXIOM_DATASET?: string;
 };
 
 export const DATABASE_URL_HINT = "Run: npx wrangler secret put DATABASE_URL";

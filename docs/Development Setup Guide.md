@@ -2,6 +2,13 @@
 
 ## Overview
 
+## Current State (Mental Model)
+
+- Web (`web/`) deploys automatically to Cloudflare Pages when changes are pushed to `main`.
+- Pages Preview deployments are branch/PR builds; they run automatically for non-`main` pushes and use the Preview env-var set (separate from Production).
+- API (`api/`) does not auto-deploy from git; it deploys only when you run `npx wrangler deploy`.
+- Workers secrets/vars are managed separately from Pages vars, and may differ by Worker environment (`production`, `preview`, etc.).
+
 **Last Updated:** February 12, 2026
 
 This guide walks through setting up your development environment in sequential chunks. Complete each chunk before moving to the next. Each chunk should take 30-60 minutes.
@@ -31,6 +38,8 @@ NewChums — Chunk Checklist (overview only)
 [ ] Chunk 11: Email Setup — Configure Postmark + templates (verification/reset/RSVP) and confirm emails deliver properly.
 
 [ ] Chunk 12: Error Tracking & Logging — Add Sentry (web + api), Axiom logging, and Plausible analytics; confirm events/errors/logs show up in dashboards.
+
+[ ] Chunk 13: Setup Cleanup Checklist - Gate internal test routes in production, add API health checks, validate env coverage, and normalize line endings.
 
 **Prerequisite:** You have a computer with admin access (Mac, Windows, or Linux).
 
@@ -893,6 +902,39 @@ Note: For email DNS records, Cloudflare proxying should be **DNS only** (grey cl
 
 ---
 
+## Chunk 13: Setup Cleanup Checklist
+
+**Chunk 13: Setup Cleanup Checklist**
+
+- Goal:
+  Lock down test-only surfaces for production, add lightweight health checks, and make env/deploy setup less error-prone.
+- Changes made:
+  Gated web `/sentry-test` to return `404` in production.
+  Added shared API internal-access guard for `GET /__sentry-test`, `GET /__log-test`, and `GET /health/db`.
+  Updated `GET /health` to return service + timestamp and avoid DB access.
+  Added `scripts/check-env.mjs` to verify required keys exist in `web/.env.local` and `api/.dev.vars` without printing values.
+  Added explicit LF rule for `*.sh` in `.gitattributes` (repo already normalizes text to LF).
+  Updated web Sentry build config to use `SENTRY_AUTH_TOKEN`/`SENTRY_ORG`/`SENTRY_PROJECT` and skip sourcemap upload gracefully when credentials are absent.
+- Env vars / secrets added or changed:
+  Worker var: `APP_ENV` (`development|preview|production`).
+  Worker secret: `INTERNAL_TEST_TOKEN` (required to call internal test routes in production).
+  Optional Pages secrets for Sentry release/source-map upload: `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`.
+- Deploy notes (Pages vs Workers):
+  Web changes deploy automatically via Pages on push; API guard changes require `npx wrangler deploy`.
+  Pages Preview + Production should both define: `DATABASE_URL`, `NEXT_PUBLIC_API_BASE_URL`, `NEXT_PUBLIC_SENTRY_DSN`, `NEXT_PUBLIC_PLAUSIBLE_DOMAIN`.
+  Workers should define: `APP_ENV`, `DATABASE_URL`, `SENTRY_DSN`, `AXIOM_TOKEN`, `AXIOM_DATASET`, Postmark vars, and `INTERNAL_TEST_TOKEN`.
+- Verification steps:
+  `node scripts/check-env.mjs`
+  `curl -i http://127.0.0.1:8787/health`
+  `curl -i http://127.0.0.1:8787/health/db`
+  In production, verify `/health` returns `200`, while `GET /__sentry-test`, `GET /__log-test`, and `GET /health/db` return `404` without `x-internal-token` and succeed with a correct token.
+  Confirm `https://newchums.com/sentry-test` returns `404`.
+  Optional Sentry sourcemap verification: check release artifacts in Sentry and confirm readable frontend stack traces after a Pages build with Sentry release secrets.
+- Troubleshooting notes (only if new/important):
+  Detailed command transcripts and edge cases are archived in `docs/chunks/Chunk Log.md` under Chunk 13.
+
+---
+
 ## Verification Checklist
 
 After completing all chunks, verify:
@@ -934,6 +976,7 @@ After completing all chunks, verify:
 | 10. Database Integration     | 45 min         |
 | 11. Email Setup              | 30 min         |
 | 12. Error Tracking & Logging | 30 min         |
+| 13. Setup Cleanup Checklist  | 20-30 min      |
 
 **Total:** ~8-10 hours (can be spread across multiple days)
 

@@ -21,7 +21,7 @@ export async function POST(request: Request) {
 
   if (user && user.password_hash) {
     const rawToken = generateResetToken();
-    const tokenHash = hashResetToken(rawToken);
+    const tokenHash = await hashResetToken(rawToken);
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
 
     await sql`

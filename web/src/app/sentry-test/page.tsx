@@ -1,17 +1,10 @@
-"use client";
+import { notFound } from "next/navigation";
+import SentryTestClient from "./SentryTestClient";
 
 export default function SentryTestPage() {
-  const handleClick = () => {
-    throw new Error("Sentry test error");
-  };
+  if (process.env.NODE_ENV === "production") {
+    notFound();
+  }
 
-  return (
-    <main style={{ padding: "2rem" }}>
-      <h1>Sentry Test</h1>
-      <p>Click the button below to trigger a test error.</p>
-      <button type="button" onClick={handleClick}>
-        Trigger Error
-      </button>
-    </main>
-  );
+  return <SentryTestClient />;
 }

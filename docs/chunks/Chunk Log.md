@@ -75,3 +75,71 @@ This file stores detailed troubleshooting notes, command transcripts, and deep e
   - "A Node.js module is loaded ('crypto' at line 1) which is not supported in the Edge Runtime"
   - Import trace included `src/lib/resetTokens.ts` from edge API route usage.
   - This warning is retained as a known follow-up item for edge compatibility hardening.
+
+## Chunk 13: Setup Cleanup Checklist (Detailed Notes)
+
+### Internal test-route hardening (web + api)
+
+- Web `/sentry-test` was converted to a server-gated page:
+  - In production (`process.env.NODE_ENV === "production"`), it returns `404` via `notFound()`.
+  - In local/non-prod, it still renders the client test button that throws an error for Sentry validation.
+- API internal test endpoints now share a centralized guard in `api/src/internalAccess.ts`:
+  - `GET /__sentry-test`
+  - `GET /__log-test`
+  - `GET /health/db`
+- Guard behavior:
+  - Local requests (`localhost` / `127.0.0.1`) are allowed.
+  - Explicit non-prod envs (`APP_ENV=development|preview|staging`) are allowed.
+  - Production (`APP_ENV=production`) requires `x-internal-token` matching secret `INTERNAL_TEST_TOKEN`.
+  - If unauthorized, endpoints return `404` (not `401`) to reduce discoverability.
+
+### Health endpoint updates
+
+- `GET /health` now returns:
+  - `{ ok: true, service: "api", ts: "<iso timestamp>" }`
+  - This route does not touch Neon.
+- Added `GET /health/db`:
+  - Performs `SELECT 1` using Neon.
+  - Returns `ok + latency_ms + ts` on success.
+  - Uses the same internal-route guard in production.
+
+### Worker env model updates
+
+- Added Worker var in `api/wrangler.toml`:
+  - `APP_ENV = "production"`
+- Added Worker secret requirement (name only):
+  - `INTERNAL_TEST_TOKEN`
+
+### Env consistency validation utility
+
+- Added `scripts/check-env.mjs` to validate local env key presence without printing values.
+- It checks:
+  - `web/.env.local` required keys:
+    - `DATABASE_URL`
+    - `NEXT_PUBLIC_API_BASE_URL`
+    - `NEXT_PUBLIC_SENTRY_DSN`
+    - `NEXT_PUBLIC_PLAUSIBLE_DOMAIN`
+  - `api/.dev.vars` required keys:
+    - `APP_ENV`, `DATABASE_URL`, `SENTRY_DSN`, `AXIOM_TOKEN`, `AXIOM_DATASET`
+    - `POSTMARK_SERVER_TOKEN`, `EMAIL_FROM`, `WEB_BASE_URL`
+    - `POSTMARK_TEMPLATE_VERIFY`, `POSTMARK_TEMPLATE_RESET`, `POSTMARK_TEMPLATE_RSVP`
+  - Optional key warning:
+    - `INTERNAL_TEST_TOKEN`
+- Local command:
+  - `node scripts/check-env.mjs`
+
+### Sentry release/source-map behavior on Pages
+
+- `web/next.config.ts` now reads:
+  - `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`
+- Sourcemap upload/release is set to graceful skip when release credentials are incomplete (`dryRun` true).
+- This keeps builds green when auth token is absent while still enabling release artifact upload when secrets are configured.
+
+### Line endings / diff stability
+
+- Verified repo-root `.gitattributes` includes:
+  - `* text=auto eol=lf`
+  - `*.md text eol=lf`
+  - `*.sh text eol=lf`
+  - Windows scripts remain CRLF (`*.bat`, `*.cmd`, `*.ps1`)
+- Result: markdown/shell/docs diffs remain stable across Windows/macOS/Linux.
