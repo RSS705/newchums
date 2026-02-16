@@ -1,50 +1,32 @@
 import { createTheme } from "@mui/material/styles";
+import { tokens } from "./tokens";
 
 export const theme = createTheme({
-  palette: {
-    primary: {
-      main: "#FF6B35",
-      light: "#FF8F66",
-      dark: "#E55A2B",
-      contrastText: "#FFFFFF",
-    },
-    secondary: {
-      main: "#2EC4B6",
-      light: "#5DD4C8",
-      dark: "#25A99D",
-      contrastText: "#FFFFFF",
-    },
-    error: { main: "#E63946" },
-    warning: { main: "#F4A261" },
-    success: { main: "#2A9D8F" },
-    background: {
-      default: "#FAFAFA",
-      paper: "#FFFFFF",
-    },
-    text: {
-      primary: "#1A1A2E",
-      secondary: "#4A4A68",
-    },
-    divider: "#E8E8E8",
-  },
+  palette: tokens.palette,
 
   typography: {
     fontFamily: '"Roboto","Helvetica","Arial",sans-serif',
     h1: { fontSize: "2.5rem", fontWeight: 700, lineHeight: 1.2 },
     h2: { fontSize: "2rem", fontWeight: 700, lineHeight: 1.25 },
     h3: { fontSize: "1.5rem", fontWeight: 700, lineHeight: 1.3 },
-    button: { textTransform: "none", fontWeight: 700 },
+    h4: { fontSize: "1.75rem", fontWeight: 700, lineHeight: 1.3 },
+    h5: { fontSize: "1.35rem", fontWeight: 700, lineHeight: 1.35 },
+    button: { textTransform: "none", fontWeight: 700, letterSpacing: "0.01em" },
   },
 
   shape: {
-    borderRadius: 14, // friendly, modern
+    borderRadius: tokens.shape.borderRadius,
   },
 
   components: {
     MuiCssBaseline: {
       styleOverrides: {
+        html: {
+          height: "100%",
+        },
         body: {
-          backgroundColor: "#FAFAFA",
+          minHeight: "100%",
+          backgroundColor: tokens.palette.background.default,
         },
       },
     },
@@ -52,12 +34,24 @@ export const theme = createTheme({
     MuiButton: {
       defaultProps: {
         disableElevation: true,
+        size: "medium",
       },
       styleOverrides: {
         root: {
-          borderRadius: 999,
-          paddingLeft: 16,
-          paddingRight: 16,
+          textTransform: "none",
+          borderRadius: tokens.shape.borderRadius,
+          paddingInline: 18,
+          paddingBlock: 10,
+        },
+      },
+    },
+
+    MuiPaper: {
+      styleOverrides: {
+        root: {
+          borderRadius: tokens.shape.panelRadius,
+          boxShadow: tokens.shadows.subtle,
+          backgroundImage: "none",
         },
       },
     },
@@ -65,8 +59,9 @@ export const theme = createTheme({
     MuiCard: {
       styleOverrides: {
         root: {
-          borderRadius: 18,
-          border: "1px solid #E8E8E8",
+          borderRadius: tokens.shape.panelRadius,
+          border: `1px solid ${tokens.palette.divider}`,
+          boxShadow: tokens.shadows.subtle,
         },
       },
     },
@@ -74,14 +69,50 @@ export const theme = createTheme({
     MuiTextField: {
       defaultProps: {
         variant: "outlined",
+        size: "medium",
       },
     },
 
     MuiOutlinedInput: {
       styleOverrides: {
         root: {
-          borderRadius: 14,
-          backgroundColor: "#FFFFFF",
+          borderRadius: tokens.shape.borderRadius,
+          backgroundColor: tokens.palette.background.paper,
+        },
+      },
+    },
+
+    MuiDialog: {
+      styleOverrides: {
+        paper: {
+          borderRadius: tokens.shape.panelRadius,
+          padding: 8,
+        },
+      },
+    },
+
+    MuiDialogContent: {
+      styleOverrides: {
+        root: {
+          paddingTop: 8,
+        },
+      },
+    },
+
+    MuiSnackbar: {
+      defaultProps: {
+        anchorOrigin: { vertical: "bottom", horizontal: "center" },
+      },
+    },
+
+    MuiAlert: {
+      defaultProps: {
+        variant: "filled",
+      },
+      styleOverrides: {
+        root: {
+          borderRadius: tokens.shape.borderRadius,
+          alignItems: "center",
         },
       },
     },

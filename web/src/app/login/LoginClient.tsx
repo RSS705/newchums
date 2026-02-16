@@ -11,7 +11,8 @@ export default function LoginClient() {
   const [password, setPassword] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
 
-  const callbackUrl = searchParams.get("callbackUrl") || "/me";
+  const nextParam = searchParams.get("next");
+  const callbackUrl = nextParam || searchParams.get("callbackUrl") || "/home";
   const emailPrefill = searchParams.get("email");
 
   React.useEffect(() => {
@@ -73,7 +74,7 @@ export default function LoginClient() {
       <p>
         <a href="/forgot-password">Forgot password?</a>
       </p>
-      <button onClick={() => signIn("google", { callbackUrl: "/me" })}>
+      <button onClick={() => signIn("google", { callbackUrl })}>
         Continue with Google
       </button>
     </main>
