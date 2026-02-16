@@ -1,7 +1,8 @@
-import { createTheme } from "@mui/material/styles";
+import { createTheme, type PaletteMode, type ThemeOptions } from "@mui/material/styles";
 
-export const theme = createTheme({
-  palette: {
+const paletteByMode: Record<PaletteMode, ThemeOptions["palette"]> = {
+  light: {
+    mode: "light",
     primary: {
       main: "#FF6B35",
       light: "#FF8F66",
@@ -18,72 +19,182 @@ export const theme = createTheme({
     warning: { main: "#F4A261" },
     success: { main: "#2A9D8F" },
     background: {
-      default: "#FAFAFA",
+      default: "#F5F7FA",
       paper: "#FFFFFF",
     },
     text: {
       primary: "#1A1A2E",
       secondary: "#4A4A68",
     },
-    divider: "#E8E8E8",
+    divider: "#E4E8EF",
   },
-
-  typography: {
-    fontFamily: '"Roboto","Helvetica","Arial",sans-serif',
-    h1: { fontSize: "2.5rem", fontWeight: 700, lineHeight: 1.2 },
-    h2: { fontSize: "2rem", fontWeight: 700, lineHeight: 1.25 },
-    h3: { fontSize: "1.5rem", fontWeight: 700, lineHeight: 1.3 },
-    button: { textTransform: "none", fontWeight: 700 },
+  dark: {
+    mode: "dark",
+    primary: {
+      main: "#FF8F66",
+      light: "#FFB095",
+      dark: "#E8744A",
+      contrastText: "#1A1A2E",
+    },
+    secondary: {
+      main: "#5DD4C8",
+      light: "#82E0D6",
+      dark: "#2DAA9D",
+      contrastText: "#0C1E1B",
+    },
+    error: { main: "#FF6B7A" },
+    warning: { main: "#FFC078" },
+    success: { main: "#52C9BA" },
+    background: {
+      default: "#0F1420",
+      paper: "#161E2D",
+    },
+    text: {
+      primary: "#F4F6FB",
+      secondary: "#AEB8CD",
+    },
+    divider: "#2B3448",
   },
+};
 
-  shape: {
-    borderRadius: 14, // friendly, modern
-  },
-
-  components: {
-    MuiCssBaseline: {
-      styleOverrides: {
-        body: {
-          backgroundColor: "#FAFAFA",
+export function getDesignTokens(mode: PaletteMode): ThemeOptions {
+  return {
+    palette: paletteByMode[mode],
+    spacing: 8,
+    shape: {
+      borderRadius: 14,
+    },
+    typography: {
+      fontFamily: "var(--font-geist-sans), system-ui, -apple-system, sans-serif",
+      h1: { fontWeight: 700, lineHeight: 1.2, letterSpacing: "-0.02em" },
+      h2: { fontWeight: 700, lineHeight: 1.24, letterSpacing: "-0.02em" },
+      h3: { fontWeight: 700, lineHeight: 1.28, letterSpacing: "-0.02em" },
+      h4: { fontWeight: 700, lineHeight: 1.32, letterSpacing: "-0.01em" },
+      h5: { fontWeight: 700, lineHeight: 1.36 },
+      h6: { fontWeight: 700, lineHeight: 1.4 },
+      button: { textTransform: "none", fontWeight: 600 },
+    },
+    components: {
+      MuiButton: {
+        defaultProps: {
+          disableElevation: true,
+          variant: "contained",
+        },
+        styleOverrides: {
+          root: ({ theme }) => ({
+            borderRadius: 999,
+            paddingInline: theme.spacing(2.5),
+            paddingBlock: theme.spacing(1.1),
+            fontWeight: 600,
+          }),
+        },
+      },
+      MuiCard: {
+        defaultProps: {
+          elevation: 0,
+        },
+        styleOverrides: {
+          root: ({ theme }) => ({
+            borderRadius: Number(theme.shape.borderRadius) + 4,
+            border: `1px solid ${theme.palette.divider}`,
+            boxShadow: mode === "light" ? "0 8px 22px rgba(26, 26, 46, 0.06)" : "none",
+          }),
+        },
+      },
+      MuiCardContent: {
+        styleOverrides: {
+          root: ({ theme }) => ({
+            padding: theme.spacing(3),
+            "&:last-child": {
+              paddingBottom: theme.spacing(3),
+            },
+          }),
+        },
+      },
+      MuiTextField: {
+        defaultProps: {
+          variant: "outlined",
+          size: "medium",
+          fullWidth: true,
+        },
+      },
+      MuiOutlinedInput: {
+        styleOverrides: {
+          root: ({ theme }) => ({
+            borderRadius: theme.shape.borderRadius,
+            backgroundColor: theme.palette.background.paper,
+          }),
+          notchedOutline: ({ theme }) => ({
+            borderColor: theme.palette.divider,
+          }),
+        },
+      },
+      MuiInputLabel: {
+        styleOverrides: {
+          root: ({ theme }) => ({
+            color: theme.palette.text.secondary,
+          }),
+        },
+      },
+      MuiAppBar: {
+        defaultProps: {
+          color: "transparent",
+          elevation: 0,
+        },
+        styleOverrides: {
+          root: ({ theme }) => ({
+            borderBottom: `1px solid ${theme.palette.divider}`,
+            backgroundImage: "none",
+            backdropFilter: "blur(10px)",
+          }),
+        },
+      },
+      MuiContainer: {
+        defaultProps: {
+          maxWidth: "lg",
+        },
+      },
+      MuiDialog: {
+        defaultProps: {
+          fullWidth: true,
+          maxWidth: "sm",
+        },
+        styleOverrides: {
+          paper: ({ theme }) => ({
+            borderRadius: Number(theme.shape.borderRadius) + 6,
+          }),
+        },
+      },
+      MuiDialogTitle: {
+        styleOverrides: {
+          root: ({ theme }) => ({
+            padding: theme.spacing(3, 3, 1.5),
+            fontWeight: 700,
+          }),
+        },
+      },
+      MuiDialogContent: {
+        styleOverrides: {
+          root: ({ theme }) => ({
+            padding: theme.spacing(1.5, 3),
+          }),
+        },
+      },
+      MuiDialogActions: {
+        styleOverrides: {
+          root: ({ theme }) => ({
+            padding: theme.spacing(1.5, 3, 3),
+            gap: theme.spacing(1),
+          }),
+        },
+      },
+      MuiSnackbar: {
+        defaultProps: {
+          anchorOrigin: { vertical: "bottom", horizontal: "right" },
         },
       },
     },
+  };
+}
 
-    MuiButton: {
-      defaultProps: {
-        disableElevation: true,
-      },
-      styleOverrides: {
-        root: {
-          borderRadius: 999,
-          paddingLeft: 16,
-          paddingRight: 16,
-        },
-      },
-    },
-
-    MuiCard: {
-      styleOverrides: {
-        root: {
-          borderRadius: 18,
-          border: "1px solid #E8E8E8",
-        },
-      },
-    },
-
-    MuiTextField: {
-      defaultProps: {
-        variant: "outlined",
-      },
-    },
-
-    MuiOutlinedInput: {
-      styleOverrides: {
-        root: {
-          borderRadius: 14,
-          backgroundColor: "#FFFFFF",
-        },
-      },
-    },
-  },
-});
+export const theme = createTheme(getDesignTokens("light"));
