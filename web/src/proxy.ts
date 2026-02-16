@@ -1,15 +1,10 @@
-import NextAuth from "next-auth";
-import { authConfig } from "@/auth.config";
 import { NextResponse } from "next/server";
-
-const { auth } = NextAuth(authConfig);
+import { auth } from "@/auth";
 
 const appRoutePrefixes = ["/home", "/events", "/profile", "/settings"];
 
 function isAppRoute(pathname: string) {
-  return appRoutePrefixes.some(
-    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
-  );
+  return appRoutePrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
 export default auth((request) => {
