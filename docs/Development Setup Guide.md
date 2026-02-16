@@ -9,8 +9,12 @@
 - API (`api/`) does not auto-deploy from git; it deploys only when you run `npx wrangler deploy`.
 - Workers secrets/vars are managed separately from Pages vars, and may differ by Worker environment (`production`, `preview`, etc.).
 - `APP_ENV` is used by the API to distinguish production vs non-prod behavior (notably internal test-route access).
+- Cloudflare Pages Functions/Workers have a bundle size limit; Next.js + OpenNext can exceed the Free plan (3 MiB gzipped), requiring a Workers Paid plan (10 MiB) for production deploys.
+- Next.js dev indicators (the floating “N” overlay) are framework-provided and can be disabled via `next.config.ts` if they overlap app UI.
 
-**Last Updated:** February 12, 2026
+**Last Updated:**
+
+**Last Updated:** February 16, 2026
 
 This guide walks through setting up your development environment in sequential chunks. Complete each chunk before moving to the next. Each chunk should take 30-60 minutes.
 
@@ -952,7 +956,80 @@ Note: For email DNS records, Cloudflare proxying should be **DNS only** (grey cl
      - `curl -i https://<your-worker>.workers.dev/__log-test` → `404` (should be hidden in prod)
      - `curl -i https://<your-worker>.workers.dev/__sentry-test` → `404`
      - `curl -i https://<your-worker>.workers.dev/health/db` → `404`
-     - Optional (internal access): repeat the above internal routes with header `x-internal-token: <INTERNAL_TEST_TOKEN>` and confirm they succeed.
+     - Opt
+
+---
+
+## Chunk 14: App UI Shell + Design System Lock-In
+
+**Goal:** Establish a stable UI foundation (layout + navigation + theme tokens + reusable components) for all upcoming pages.
+
+### What we added/changed (summary)
+
+- Implemented an **App Shell** (single source of truth) with:
+  - Global layout wrapper for authenticated app routes.
+  - Shared navigation config used by both desktop and mobile nav.
+  - A top-level **Logout** control in the shell so you can reliably end sessions during testing.
+
+- Locked in the **MUI theme tokens + component defaults**:
+  - Centralized theme creation (palette/typography/shape/spacing).
+  - App Router–compatible Emotion integration (ThemeRegistry) so hydration is stable.
+  - Consistent component defaults/overrides for buttons, cards, inputs, dialogs, etc.
+
+- Created a small **internal UI component library** (reusable primitives):
+  - Button, Card, TextField, Dialog, Toast/Snackbar provider, and a stub-page wrapper.
+
+- Added **route stubs** for upcoming pages (all reachable via navigation):
+  - Home (`/home`)
+  - Events list (`/events`)
+  - Event detail (`/events/[id]`)
+  - Create event (`/events/create`)
+  - Profile (`/profile`)
+  - Settings (`/settings`)
+  - UI demo (`/ui`) for verifying components/theme quickly
+
+- Implemented a clean split between **public** and **authenticated** routes using route groups:
+  - Public: `/(public)` (login/signup/forgot/reset)
+  - App: `/(app)` (home/events/profile/settings/ui)
+  - Unauthenticated access to app routes redirects to `/login?next=<path>`.
+
+### Important behavior to know
+
+- If you navigate directly to a protected route while logged out (ex: `/settings`), you should land on:
+  - `/login?next=%2Fsettings`
+- After signing in, you should return to the original path (the `next` value), not get forced to `/home`.
+
+### What we verified locally
+
+From `web/`:
+
+```bash
+npm run dev
+```
+
+Then validate in the browser:
+
+- `http://localhost:3000/ui` (requires auth; UI demo shows theme + components)
+- `http://localhost:3000/settings` (requires auth; redirects to login with `next`)
+- `http://localhost:3000/events` and `http://localhost:3000/profile` render stub pages and share the same shell/nav.
+
+Quality gates:
+
+```bash
+npm run lint
+npm run build
+```
+
+### Cloudflare deployment notes (Chunk 14)
+
+- Cloudflare Pages build/run for Next.js on Pages runs server routes on the **Edge runtime**.
+- If you see Cloudflare build failures referencing `/_middleware` or edge runtime, ensure your route/runtime expectations align with the Pages adapter requirements.
+- **Workers plan size limit:** deploying the Pages Function (the Worker that runs your Next app) can exceed the Free plan’s 3 MiB gzip limit.
+  - If you hit `Worker exceeded the size limit of 3 MiB`, upgrading Workers to Paid (10 MiB) resolves it.
+
+**Done when:** You can navigate across all route stubs, theme is consistent everywhere, components are reusable, and Pages deploy succeeds from `main`.
+
+ional (internal access): repeat the above internal routes with header `x-internal-token: <INTERNAL_TEST_TOKEN>` and confirm they succeed.
   4. Production web:
      - Visit `https://newchums.com/sentry-test` → `404`
 

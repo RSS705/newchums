@@ -238,3 +238,14 @@ W -->|"API errors"| SENTRY_BE["Sentry<br/>(Backend)"]
 W -->|"Logs"| AX["Axiom<br/>(Logs)"]
 P -->|"Analytics"| PLAUS["Plausible<br/>(Analytics)"]
 ```
+
+---
+
+## Chunk 14 Addendum: UI Shell + Design System
+
+- Frontend now has a stable **App Shell** and **route-grouped structure**:
+  - `/(public)` for unauthenticated routes
+  - `/(app)` for authenticated routes
+- Navigation is driven by a shared config (`nav.ts`) so desktop + mobile stay in sync.
+- `/ui` is an authenticated UI demo route used to validate theme tokens and internal UI primitives quickly.
+- Cloudflare Pages deploys Next.js routes on the Edge runtime; keep runtime expectations aligned with Pages adapter behavior.

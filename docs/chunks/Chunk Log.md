@@ -156,3 +156,86 @@ This file stores detailed troubleshooting notes, command transcripts, and deep e
 - If local requests hang, check for port/process conflicts:
   - `netstat -ano | findstr :8787`
   - Ensure only one `LISTENING` process owns the port, then restart `wrangler dev --local`.
+
+---
+
+## Chunk 14: App UI Shell + Design System Lock-In (Detailed Notes)
+
+### Symptom: `/theme-test` returned 404
+
+- Root cause: `src/app/theme-test` existed as an empty directory (no `page.tsx`).
+- Resolution: Use the authenticated UI demo route under the app route group:
+  - `src/app/(app)/ui/page.tsx` (with client demo at `UIDemoClient.tsx`)
+- Verification:
+  - Start dev server: `cd web && npm run dev`
+  - Visit `http://localhost:3000/ui` (should redirect to login if logged out).
+
+### Symptom: Logging in from a protected route always landed on `/home`
+
+Example:
+- Go to `http://localhost:3000/settings`
+- Redirects to `/login?next=%2Fsettings`
+- After Google sign-in, returned to `/home` instead of `/settings`
+
+What we learned:
+- The auth guard correctly sets `/login?next=<path>`.
+- The client sign-in call must forward that “next” path to Auth.js in the right field (`redirectTo` in Auth.js v5-style `next-auth/react`).
+
+Resolution:
+- Ensure LoginClient reads `next` from query string and passes it into `signIn(...)`:
+  - `signIn("google", { redirectTo: safeNext })`
+  - `signIn("credentials", { redirectTo: safeNext, ... })`
+- Ensure server-side `callbacks.redirect` enforces **same-origin** redirects and honors internal paths:
+  - relative `/path` → `${baseUrl}/path`
+  - absolute same-origin → allowed
+  - everything else → `${baseUrl}/home` fallback
+
+Verification:
+- While logged out, visit each protected route (ex: `/settings`, `/events`, `/profile`) and confirm:
+  - Redirects to `/login?next=%2F<route>`
+  - After sign-in, returns to the original route (not forced to `/home`).
+
+### Symptom: No logout button during testing
+
+- Root cause: App shell didn’t include a sign-out control.
+- Resolution: Add a Logout button/menu in the AppShell using `signOut({ redirectTo: "/login" })`.
+- Verification:
+  - Login, click Logout, confirm you return to `/login` and protected routes redirect again.
+
+### Symptom: Floating “N” overlay in bottom-left
+
+- Root cause: Next.js dev indicators (framework UI), not app code.
+- Resolution: disable in `next.config.ts` via `devIndicators: false`.
+- Notes:
+  - This is a dev-only overlay; disabling it is safe if it overlaps navigation/content.
+  - `npm run lint` + `npm run build` should remain green.
+
+### Cloudflare Pages build failure: `/_middleware` not configured for Edge runtime
+
+- Error excerpt (Pages build):
+  - “Failed to produce a Cloudflare Pages build… routes were not configured to run with the Edge Runtime: /_middleware”
+- Key point:
+  - Pages executes Next server routes on Edge; adapter/tooling expects edge-friendly routing.
+- Resolution:
+  - Align the project with the Pages adapter’s expectations (and ensure server routes export `export const runtime = "edge";` where required).
+  - Re-run the Pages build after fixes.
+
+### Cloudflare deploy failure: Worker exceeded 3 MiB (Free plan)
+
+- Error excerpt:
+  - “Your Worker exceeded the size limit of 3 MiB… upgrade to deploy Workers up to 10 MiB.”
+- Resolution:
+  - Upgrade Workers plan to Paid, then retry deploy.
+- Verification:
+  - Cloudflare deploy should succeed without the size-limit error.
+
+### Helpful commands (quick checks)
+
+From `web/`:
+- `npm run lint`
+- `npm run build`
+- `npm run dev`
+
+From Cloudflare Pages build logs:
+- Watch for Edge runtime and middleware/proxy warnings.
+- Confirm deploy completes and site loads on the production domain.

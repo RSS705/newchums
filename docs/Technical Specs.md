@@ -4,8 +4,8 @@
 
 This document defines the complete technology stack, architecture, design system, development workflow, and feature roadmap for NewChums. It serves as the authoritative reference for all technical decisions.
 
-**Last Updated:** February 12, 2026
-**Version:** 1.7
+**Last Updated:** February 16, 2026
+**Version:** 1.8
 
 ---
 
@@ -278,6 +278,39 @@ Chunk 13 focused on production hygiene and reducing accidental exposure.
 - Pages requires non-static routes to run on **Edge runtime**. App Router pages and route handlers used by auth/protected pages should export:
 
 `export const runtime = "edge";`
+
+
+
+---
+
+## App UI Shell + Design System Lock-In (Chunk 14)
+
+Chunk 14 establishes the **UI foundation** we’ll build every real feature on top of (events, RSVPs, profiles, settings).
+
+### Implementation summary
+
+- **Route groups:** Split App Router into:
+  - `/(public)` for unauthenticated pages (login/signup/forgot/reset).
+  - `/(app)` for authenticated app pages (home/events/profile/settings/ui).
+- **Auth guard:** App routes redirect unauthenticated users to:
+  - `/login?next=<requested-path>`
+  - After sign-in, the app should return to `next` (safe internal paths only).
+- **App Shell:** Centralized layout wrapper for authenticated routes:
+  - Shared navigation config (desktop + mobile).
+  - Logout control in the shell for predictable session testing.
+- **Theme lock-in:** Centralized MUI theme tokens and component defaults:
+  - Palette/typography/shape/spacing + key component overrides.
+  - App Router–compatible Emotion integration (to prevent hydration/style mismatch).
+- **Internal UI library:** Reusable primitives that other screens will standardize on:
+  - `AppButton`, `AppCard`, `AppTextField`, `AppDialog`, toast/snackbar provider, and a `StubPage` helper.
+- **Route stubs:** Added placeholder pages for upcoming work:
+  - `/home`, `/events`, `/events/[id]`, `/events/create`, `/profile`, `/settings`, and `/ui` (demo).
+
+### Cloudflare Pages + Next.js notes (learned in Chunk 14)
+
+- Pages deploys Next.js server components/handlers via a Worker (Edge runtime expectations).
+- Next builds may emit a warning about the **deprecated `middleware` convention** and a newer `proxy` convention. Treat this as a framework warning unless/until Cloudflare’s adapter requires changes.
+- **Workers size limit:** If the produced Pages Function exceeds **3 MiB** on the Free plan, you must upgrade Workers to deploy up to **10 MiB** (Paid plan).
 
 ---
 
@@ -1482,6 +1515,7 @@ In Chunk 8 we added an App Router–compatible Emotion cache integration (in the
 | 1.5 | February 10, 2026 | Completed Chunk 9 (Auth.js credentials + Google OAuth + signup/login pages + password reset); added production-mode build verification notes |
 | 1.6 | February 11, 2026 | Completed Chunk 11 (Postmark transactional email: verification, password reset, RSVP confirmation); added Workers email configuration + verification notes |
 | 1.7 | February 12, 2026 | Chunk 13 cleanup: production gating for internal test routes, API health endpoint contract, and env consistency checks |
+| 1.8 | February 16, 2026 | Completed Chunk 14 (App UI shell, route groups, theme token lock-in, internal UI component library, stub routes, auth next-redirect fixes, and Pages/Workers deployment notes) |
 
 ---
 
