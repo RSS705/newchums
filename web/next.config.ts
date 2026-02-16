@@ -11,6 +11,13 @@ const hasSentryReleaseConfig = Boolean(
     process.env.SENTRY_PROJECT,
 );
 
+// Disable the Sentry webpack plugin on Cloudflare Pages builds.
+// The plugin injects duplicate identifiers that cause next-on-pages to abort.
+// Sentry runtime (sentry.server.config.ts, sentry.edge.config.ts) is unaffected.
+const isCloudflarePagesBuild = Boolean(
+  process.env.CF_PAGES === "1" || process.env.CF_PAGES_BRANCH,
+);
+
 const sentryNextConfig = withSentryConfig(nextConfig, {
   // For all available options, see:
   // https://www.npmjs.com/package/@sentry/webpack-plugin#options
@@ -34,6 +41,12 @@ const sentryNextConfig = withSentryConfig(nextConfig, {
       removeDebugLogging: true,
     },
   },
+
+  // Disable the webpack plugin on Cloudflare Pages to prevent the
+  // "duplicated identifier" error during next-on-pages bundling.
+  unstable_sentryWebpackPluginOptions: isCloudflarePagesBuild
+    ? { disable: true }
+    : undefined,
 });
 
 export default hasSentryReleaseConfig ? sentryNextConfig : nextConfig;
