@@ -1,12 +1,7 @@
 import { Suspense } from "react";
 import LoginClient from "./LoginClient";
-import { redirectIfAuthenticated } from "@/lib/auth/routeGuards";
 
-export const runtime = "edge";
-
-export default async function LoginPage() {
-  await redirectIfAuthenticated("/home");
-
+export default function LoginPage() {
   return (
     <Suspense fallback={<main style={{ padding: 24 }}>Loading...</main>}>
       <LoginClient />
