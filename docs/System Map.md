@@ -1,4 +1,4 @@
-**Last Updated:** February 12, 2026
+**Last Updated:** February 17, 2026
 
 Absolutely — here’s the **full system mapping regenerated** in a **VS Code Mermaid-extension-friendly** format:
 
@@ -34,47 +34,6 @@ flowchart TB
   W -->|"Logs"| AX["Axiom<br/>(Logs)"]
   P -->|"Analytics"| PLAUS["Plausible<br/>(Analytics)"]
 ```
-
-## Canonical Code Locations (Source of Truth)
-
-These are the approved “entry points” for core services.
-To avoid tech debt, do not create alternate DB clients or alternate auth/session extraction paths without a dedicated chunk.
-
-### Database access
-
-- **Web (Next.js / Cloudflare Pages) DB helper:** `web/src/lib/db.ts`
-  - Uses: `@neondatabase/serverless`
-  - Rule: **All Next.js Route Handlers (`web/src/app/api/**`) and server-side web code must import DB access from this module only.\*\*
-  - Notes:
-    - Reads connection string from `process.env.DATABASE_URL` (must be present in Pages env vars for Preview + Production).
-    - Keep this module Edge-safe (no Node-only drivers).
-
-- **API (Cloudflare Workers / Hono) DB helper:** `api/src/db.ts`
-  - Uses: `@neondatabase/serverless`
-  - Rule: **All Worker endpoints in `api/src/**` must use this module only.\*\*
-  - Notes:
-    - Reads connection string from Workers env (`env.DATABASE_URL`), set via `wrangler secret put DATABASE_URL` and `.dev.vars` for local dev.
-
-### Auth / user identity
-
-- **Canonical Auth.js session helper:** `<FILL AFTER DISCOVERY>`
-  - Rule: **Any authenticated server code must derive user identity from this helper only (no ad-hoc cookie parsing).**
-  - Used by:
-    - Next.js Route Handlers under `web/src/app/api/**`
-    - Any server-only logic that needs `userId`
-
-### API route conventions (web app API)
-
-- **Next.js Route Handlers:** `web/src/app/api/**`
-  - Rule: must be Edge-compatible where required and follow standard JSON response shape:
-    - Success: `{ ok: true, ... }`
-    - Error: `{ ok: false, error: { code, message } }` (or the repo’s existing equivalent)
-
-### App route conventions
-
-- **Authenticated pages:** `web/src/app/(app)/**`
-- **Public pages:** `web/src/app/(public)/**`
-
 ### Deployment pipeline
 
 1. Developer commits and pushes to **GitHub** (`main`).
@@ -201,6 +160,7 @@ Email delivery will be implemented in the Email chunk (Postmark).
 
 ## 5) Local development architecture (your laptop)
 
+
 **Chunk 10 note:** Local API DB access is via `wrangler dev --local` reading `DATABASE_URL` from `api/.dev.vars`; deployed uses `wrangler secret put DATABASE_URL`. Dev-only CRUD routes live under `/dev/*`.
 
 ```mermaid
@@ -289,3 +249,44 @@ P -->|"Analytics"| PLAUS["Plausible<br/>(Analytics)"]
 - Navigation is driven by a shared config (`nav.ts`) so desktop + mobile stay in sync.
 - `/ui` is an authenticated UI demo route used to validate theme tokens and internal UI primitives quickly.
 - Cloudflare Pages deploys Next.js routes on the Edge runtime; keep runtime expectations aligned with Pages adapter behavior.
+
+
+---
+
+## Chunk 15 Addendum: Profile Core (Interests + Location + Email Prefs)
+
+### New data model (Neon / Postgres + PostGIS)
+
+- `newchums.interests` (catalog)
+- `newchums.user_interests` (junction)
+- `newchums.user_profile` (home_city, home_lat, home_lng, home_location geography point, travel_radius_km, email prefs)
+
+### Profile settings flow
+
+```mermaid
+sequenceDiagram
+  participant User as User (Browser)
+  participant Pages as Cloudflare Pages (Next.js)
+  participant DB as Neon (Postgres/PostGIS)
+
+  User->>Pages: Open /profile or /settings
+  Pages->>Pages: GET /api/interests
+  Pages->>DB: SELECT interests ORDER BY category, sort_order, name
+  DB-->>Pages: Interest catalog
+  Pages-->>User: Render profile form
+
+  User->>Pages: Save profile settings
+  Pages->>Pages: PUT /api/profile (city, lat/lng, radius, email prefs, interests)
+  Pages->>DB: UPSERT user_profile + replace user_interests (transaction)
+  DB-->>Pages: OK
+  Pages-->>User: Success + settings persist on refresh
+```
+
+### Production auth/env dependencies (Pages)
+
+Auth.js on Cloudflare Pages requires these env vars set in **Pages → Settings → Variables and Secrets**:
+
+- `AUTH_SECRET` (Secret)
+- `GOOGLE_CLIENT_ID` (Secret)
+- `GOOGLE_CLIENT_SECRET` (Secret)
+

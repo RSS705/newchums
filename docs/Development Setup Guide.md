@@ -956,12 +956,7 @@ Note: For email DNS records, Cloudflare proxying should be **DNS only** (grey cl
      - `curl -i https://<your-worker>.workers.dev/__log-test` → `404` (should be hidden in prod)
      - `curl -i https://<your-worker>.workers.dev/__sentry-test` → `404`
      - `curl -i https://<your-worker>.workers.dev/health/db` → `404`
-     - Optional (internal access): repeat the above internal routes with header `x-internal-token: <INTERNAL_TEST_TOKEN>` and confirm they succeed
-  4. Production web:
-     - Visit `https://newchums.com/sentry-test` → `404`
-
-- Troubleshooting notes:
-  Detailed command transcripts and edge cases are archived in `docs/chunks/Chunk Log.md` under Chunk 13.
+     - Opt
 
 ---
 
@@ -1034,29 +1029,12 @@ npm run build
 
 **Done when:** You can navigate across all route stubs, theme is consistent everywhere, components are reusable, and Pages deploy succeeds from `main`.
 
----
+ional (internal access): repeat the above internal routes with header `x-internal-token: <INTERNAL_TEST_TOKEN>` and confirm they succeed.
+  4. Production web:
+     - Visit `https://newchums.com/sentry-test` → `404`
 
-## Chunk 15: Interests + Location Preferences (Profile Core)
-
-**Goal:** Logged-in users can save interests, travel radius, home location, and email preferences; values persist after refresh.
-
-### What we added
-
-- **DB (Neon):** Run `docs/chunks/db/015_profile_core.sql` then `015_seed_interests.sql`. Creates `interests`, `user_interests`, `user_profile` with PostGIS home_location and email prefs.
-- **API (Next route handlers):**
-  - `GET /api/interests` — returns all interests (no auth)
-  - `GET /api/profile` — returns user profile + interest slugs (auth required)
-  - `PUT /api/profile` — partial upsert (auth required); validates lat/lng, travel_radius_km 1–200, interest slugs.
-- **UI:**
-  - `/profile` — city, lat/lng, travel radius slider (1–200 km), interests by category (chips), Save with toast
-  - `/settings` — Email preferences: toggles for chat digest and new events; persist via PUT /api/profile
-
-### Verification steps
-
-1. Apply DB migrations in Neon SQL Editor (015_profile_core.sql, then 015_seed_interests.sql).
-2. `cd web && npm run dev`; log in; visit `/profile`; save interests + radius + location; refresh and confirm persisted.
-3. Visit `/settings`; toggle email prefs; refresh and confirm persisted.
-4. `npm run lint` and `npm run build` pass.
+- Troubleshooting notes:
+  Detailed command transcripts and edge cases are archived in `docs/chunks/Chunk Log.md` under Chunk 13.
 
 ---
 
@@ -1190,3 +1168,95 @@ From repo root:
 - `git status`
 - `git log -1 --oneline`
 - Add a 3–6 line “Next time” note (what shipped + what’s next + any follow-ups)
+
+
+---
+
+## Chunk 15: Interests + Location Preferences (Profile Core)
+
+### Goal
+Store interests + home location + travel radius so discovery can work.
+
+### Canonical code locations (reference)
+- Web DB helper: `web/src/lib/db.ts`
+- API DB helper: `api/src/db.ts`
+- Web profile routes: `web/src/app/api/profile/route.ts`, `web/src/app/api/interests/route.ts`
+- Profile/settings pages: `web/src/app/(app)/profile/**`, `web/src/app/(app)/settings/**`
+
+### Stage A — Local prep
+
+1) Install deps (only needed when `package-lock.json` changed, on a new machine, or after pulling)
+- `cd web && npm install`
+- `cd ../api && npm install`
+
+**Note:** This repo does not use a root `package.json`, so commands like `npm install` at repo root will fail.
+
+### Stage B — Database (Neon)
+
+**Files**
+- Keep the SQL scripts in: `docs/chunks/db/` (they are part of our migration trail).
+  - Example naming: `chunk-15-profile-core.sql`, `chunk-15-interests-seed.sql`
+
+**Apply**
+- In the Neon SQL editor, it is safe to run the full schema script in one execution.
+- A notice like `Trigger "... does not exist, skipping"` is expected when using `DROP TRIGGER IF EXISTS`.
+
+**Schema**
+Creates:
+- `newchums.interests`
+- `newchums.user_interests`
+- `newchums.user_profile` (with PostGIS geography + updated_at trigger)
+
+### Stage C — Web API + UI
+
+- `GET /api/interests` returns the catalog.
+- `GET /api/profile` returns the user’s current settings.
+- `PUT /api/profile` validates and writes:
+  - `home_city`, `home_lat`, `home_lng`, `travel_radius_km`
+  - `email_chat_digest`, `email_new_events`
+  - `interest_ids[]` (replaces the junction rows)
+
+**Location write rule**
+- `home_location` is derived in SQL:
+  - `ST_SetSRID(ST_MakePoint(lng, lat), 4326)::geography`
+- If coords are blank, store `home_location = NULL`.
+
+### Stage D — Production env vars (Cloudflare Pages)
+
+In **Cloudflare Pages → Settings → Variables and Secrets**, add:
+
+- `AUTH_SECRET` (Type: **Secret**)
+- `GOOGLE_CLIENT_ID` (Type: **Secret**)
+- `GOOGLE_CLIENT_SECRET` (Type: **Secret**)
+
+Google OAuth must include redirect:
+- `https://www.newchums.com/api/auth/callback/google`
+
+### Verification (local)
+
+From repo root (two terminals):
+
+1) Web:
+- `cd web && npm run dev`
+- Visit `http://localhost:3000/profile`
+- Save preferences, refresh, confirm persistence.
+
+2) DB spot checks (Neon SQL editor):
+- Confirm user exists:
+  - `SELECT id, email FROM newchums.users ORDER BY created_at DESC LIMIT 5;`
+- Profile row present:
+  - `SELECT * FROM newchums.user_profile ORDER BY updated_at DESC LIMIT 5;`
+- Interests selected:
+  - `SELECT ui.user_id, COUNT(*) FROM newchums.user_interests ui GROUP BY ui.user_id ORDER BY COUNT(*) DESC;`
+
+### Troubleshooting notes (Chunk 15)
+
+**A) `parse error - invalid geometry` on profile save**
+- Root cause: PostGIS received a string/JSON instead of numeric lng/lat parameters.
+- Fix: Build geography point in SQL with numeric parameters (no nested SQL fragments bound as a single param).
+
+**B) `violates foreign key constraint user_profile_user_id_fkey`**
+- Means the session user id is not present in `newchums.users`.
+- In production this can happen if OAuth env vars are missing/misconfigured and user creation never succeeds.
+- Fix: ensure Pages env vars (`AUTH_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`) are set correctly and Google OAuth redirect URI matches.
+

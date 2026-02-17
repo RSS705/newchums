@@ -2,23 +2,6 @@
 
 This file stores detailed troubleshooting notes, command transcripts, and deep error threads that are archived from the main setup guide.
 
-## Chunk Completion Template (Paste per chunk)
-
-- **DB**
-  - Scripts added:
-  - Applied in Neon:
-  - Verification queries:
-- **API**
-  - Routes added/updated:
-  - Auth checks:
-- **UI**
-  - Pages/components updated:
-- **Verification**
-  - curl checks:
-  - lint/build:
-- **Deploy smoke**
-  - PROD pages verified:
-
 ## Chunk 12: Error Tracking & Logging (Detailed Notes)
 
 ### Sentry (Web) setup notes
@@ -161,6 +144,7 @@ This file stores detailed troubleshooting notes, command transcripts, and deep e
   - Windows scripts remain CRLF (`*.bat`, `*.cmd`, `*.ps1`)
 - Result: markdown/shell/docs diffs remain stable across Windows/macOS/Linux.
 
+
 ### PowerShell gotchas observed
 
 - PowerShell aliases `curl` to `Invoke-WebRequest`.
@@ -189,18 +173,15 @@ This file stores detailed troubleshooting notes, command transcripts, and deep e
 ### Symptom: Logging in from a protected route always landed on `/home`
 
 Example:
-
 - Go to `http://localhost:3000/settings`
 - Redirects to `/login?next=%2Fsettings`
 - After Google sign-in, returned to `/home` instead of `/settings`
 
 What we learned:
-
 - The auth guard correctly sets `/login?next=<path>`.
 - The client sign-in call must forward that “next” path to Auth.js in the right field (`redirectTo` in Auth.js v5-style `next-auth/react`).
 
 Resolution:
-
 - Ensure LoginClient reads `next` from query string and passes it into `signIn(...)`:
   - `signIn("google", { redirectTo: safeNext })`
   - `signIn("credentials", { redirectTo: safeNext, ... })`
@@ -210,7 +191,6 @@ Resolution:
   - everything else → `${baseUrl}/home` fallback
 
 Verification:
-
 - While logged out, visit each protected route (ex: `/settings`, `/events`, `/profile`) and confirm:
   - Redirects to `/login?next=%2F<route>`
   - After sign-in, returns to the original route (not forced to `/home`).
@@ -233,7 +213,7 @@ Verification:
 ### Cloudflare Pages build failure: `/_middleware` not configured for Edge runtime
 
 - Error excerpt (Pages build):
-  - “Failed to produce a Cloudflare Pages build… routes were not configured to run with the Edge Runtime: /\_middleware”
+  - “Failed to produce a Cloudflare Pages build… routes were not configured to run with the Edge Runtime: /_middleware”
 - Key point:
   - Pages executes Next server routes on Edge; adapter/tooling expects edge-friendly routing.
 - Resolution:
@@ -252,12 +232,78 @@ Verification:
 ### Helpful commands (quick checks)
 
 From `web/`:
-
 - `npm run lint`
 - `npm run build`
 - `npm run dev`
 
 From Cloudflare Pages build logs:
-
 - Watch for Edge runtime and middleware/proxy warnings.
 - Confirm deploy completes and site loads on the production domain.
+
+
+---
+
+## Chunk 15: Profile Core (Interests + Location/Radius + Email Prefs Shell) — Detailed Notes
+
+### DB scripts
+
+- Created schema objects:
+  - `newchums.interests`
+  - `newchums.user_interests`
+  - `newchums.user_profile` (includes `home_location GEOGRAPHY(Point,4326)` + updated_at trigger)
+- Neon SQL editor may briefly show:
+  - `Trigger "trg_user_profile_updated_at" ... does not exist, skipping`
+  - This is expected due to `DROP TRIGGER IF EXISTS`.
+
+### Common verification queries (Neon)
+
+- Confirm user exists:
+  - `SELECT id, email FROM newchums.users ORDER BY created_at DESC LIMIT 10;`
+- Confirm profile row:
+  - `SELECT * FROM newchums.user_profile ORDER BY updated_at DESC LIMIT 10;`
+- Confirm interests:
+  - `SELECT ui.user_id, COUNT(*) AS interest_count FROM newchums.user_interests ui GROUP BY ui.user_id;`
+
+### Bug thread A — `parse error - invalid geometry`
+
+**Symptom**
+- Saving profile produced:
+  - `NeonDbError: parse error - invalid geometry`
+  - PostGIS hint pointing at malformed geometry input.
+
+**Cause**
+- A nested SQL fragment or JSON string was being passed as a single bound parameter, so PostGIS tried to parse it as a geometry literal.
+
+**Fix**
+- Coerce `home_lat/home_lng` to numbers.
+- Build geography point directly in SQL with numeric parameters:
+  - `ST_SetSRID(ST_MakePoint(${home_lng}, ${home_lat}), 4326)::geography`
+- Use an alternate upsert path when coords are blank:
+  - `home_location = NULL`
+
+### Bug thread B — `user_profile_user_id_fkey` violation
+
+**Symptom**
+- `insert or update on table "user_profile" violates foreign key constraint ... Key (user_id)=(...) is not present in table "users"`
+
+**Cause**
+- The authenticated session user id did not exist in `newchums.users` in the target environment.
+- In production, Auth.js can fail with `Server error` / `/api/auth/error` when required env vars are missing, preventing successful OAuth user creation.
+
+**Fix**
+- Added required Cloudflare Pages env vars:
+  - `AUTH_SECRET` (Secret)
+  - `GOOGLE_CLIENT_ID` (Secret)
+  - `GOOGLE_CLIENT_SECRET` (Secret)
+- Confirmed Google OAuth redirect URI:
+  - `https://www.newchums.com/api/auth/callback/google`
+
+### Production debugging notes
+
+- Cloudflare Pages → Deployment → Functions tab:
+  - Use “Begin log stream” for real-time logs.
+- Auth error endpoint in production:
+  - `https://www.newchums.com/api/auth/error`
+- Apex vs `www` redirect check:
+  - `curl -i https://newchums.com/api/auth/session` returns `301` to `https://www.newchums.com/api/auth/session` (expected if `www` is canonical).
+

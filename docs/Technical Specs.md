@@ -4,8 +4,8 @@
 
 This document defines the complete technology stack, architecture, design system, development workflow, and feature roadmap for NewChums. It serves as the authoritative reference for all technical decisions.
 
-**Last Updated:** February 16, 2026
-**Version:** 1.8
+**Last Updated:** February 17, 2026
+**Version:** 1.9
 
 ---
 
@@ -21,45 +21,45 @@ Phase 1 validates this through a controlled board-game pilot at a local game sto
 
 ### Core Application
 
-| Layer        | Technology                  | Purpose                                         |
-| ------------ | --------------------------- | ----------------------------------------------- |
-| Frontend     | Next.js                     | React framework hosted on Cloudflare Pages      |
-| API          | Hono                        | Lightweight API framework on Cloudflare Workers |
-| Database     | Neon (PostgreSQL + PostGIS) | Serverless database with geospatial queries     |
-| File Storage | Cloudflare R2               | Profile image storage                           |
+| Layer | Technology | Purpose |
+|-------|------------|---------|
+| Frontend | Next.js | React framework hosted on Cloudflare Pages |
+| API | Hono | Lightweight API framework on Cloudflare Workers |
+| Database | Neon (PostgreSQL + PostGIS) | Serverless database with geospatial queries |
+| File Storage | Cloudflare R2 | Profile image storage |
 
 ### UI & Styling
 
-| Layer             | Technology                                           | Purpose                      |
-| ----------------- | ---------------------------------------------------- | ---------------------------- |
-| Component Library | MUI (Material UI) v7 (current)                       | Pre-built React components   |
-| Styling System    | Emotion (CSS-in-JS)                                  | MUI's default styling engine |
-| Icons             | MUI Icons                                            | Consistent icon set          |
-| Fonts             | Next.js `next/font` (Geist default; Roboto optional) | Typography                   |
+| Layer | Technology | Purpose |
+|-------|------------|---------|
+| Component Library | MUI (Material UI) v7 (current) | Pre-built React components |
+| Styling System | Emotion (CSS-in-JS) | MUI's default styling engine |
+| Icons | MUI Icons | Consistent icon set |
+| Fonts | Next.js `next/font` (Geist default; Roboto optional) | Typography |
 
 ### Services
 
-| Purpose        | Technology         | Notes                                                                               |
-| -------------- | ------------------ | ----------------------------------------------------------------------------------- |
-| Authentication | Auth.js            | Credentials (Neon users table) + Google OAuth; sessions via NextAuth route handlers |
-| Email          | Postmark           | Transactional emails, notifications, chat digests                                   |
-| Maps           | Google Maps API    | Event locations, place autocomplete                                                 |
-| Error Tracking | Sentry             | Production error monitoring                                                         |
-| Logging        | Axiom              | Debugging and pattern analysis                                                      |
-| Analytics      | Plausible          | Privacy-focused usage metrics                                                       |
-| DNS & CDN      | Cloudflare         | SSL, caching, DDoS protection                                                       |
-| Web Hosting    | Cloudflare Pages   | Next.js frontend; auto-deploy from GitHub                                           |
-| API Hosting    | Cloudflare Workers | Hono API; deployed via Wrangler                                                     |
+| Purpose | Technology | Notes |
+|---------|------------|-------|
+| Authentication | Auth.js | Credentials (Neon users table) + Google OAuth; sessions via NextAuth route handlers|
+| Email | Postmark | Transactional emails, notifications, chat digests |
+| Maps | Google Maps API | Event locations, place autocomplete |
+| Error Tracking | Sentry | Production error monitoring |
+| Logging | Axiom | Debugging and pattern analysis |
+| Analytics | Plausible | Privacy-focused usage metrics |
+| DNS & CDN | Cloudflare | SSL, caching, DDoS protection |
+| Web Hosting | Cloudflare Pages | Next.js frontend; auto-deploy from GitHub |
+| API Hosting | Cloudflare Workers | Hono API; deployed via Wrangler |
 
 ### Development Tools
 
-| Purpose           | Technology                     |
-| ----------------- | ------------------------------ |
-| Code Editor       | VS Code + Claude AI extension  |
-| Version Control   | GitHub                         |
-| Local API Testing | Wrangler CLI                   |
-| Local Frontend    | Next.js dev server (Turbopack) |
-| Code Quality      | TypeScript, ESLint, Prettier   |
+| Purpose | Technology |
+|---------|------------|
+| Code Editor | VS Code + Claude AI extension |
+| Version Control | GitHub |
+| Local API Testing | Wrangler CLI |
+| Local Frontend | Next.js dev server (Turbopack) |
+| Code Quality | TypeScript, ESLint, Prettier |
 
 ---
 
@@ -142,32 +142,12 @@ Phase 1 authentication is implemented directly in the Next.js App Router using A
   - `npm run build` + `npm run start` (production build + prerender checks)
 
 Implementation notes:
-
 - Pages using `useSearchParams()` are wrapped in `<Suspense>` by splitting them into a server `page.tsx` wrapper and a client component.
 - Reset links are returned only in development mode; production mode returns a generic success response until Postmark is added.
 
 ---
 
 ## Database Integration (Chunk 10)
-
-## Database Conventions (Source of Truth)
-
-**Neon / Postgres**
-
-- **Primary schema:** `<FILL: public OR newchums>`
-- **search_path:** `<FILL: paste SHOW search_path result>`
-- **PostGIS:** enabled (GEOGRAPHY(Point, 4326) allowed)
-
-**Naming**
-
-- Tables/columns: snake_case
-- Timestamps: created_at, updated_at (timestamptz)
-
-**Location Storage Rule**
-
-- Store home_lat/home_lng as numeric columns.
-- Store home_location as GEOGRAPHY(Point, 4326) for geospatial queries.
-- When lat/lng is updated, home_location must be updated in the same write.
 
 Chunk 10 connects the **Cloudflare Workers API (Hono)** to **Neon Postgres (PostGIS)** and adds a small set of **dev-only** endpoints to prove end-to-end CRUD.
 
@@ -240,6 +220,8 @@ Each route triggers a Postmark template send and returns `{ ok: true }` on succe
 - Note:
   - While Postmark accounts are pending approval, Postmark may restrict recipient domains to match the From domain.
 
+
+
 ---
 
 ## Error Tracking & Logging (Chunk 12)
@@ -279,6 +261,7 @@ Chunk 12 adds **production-grade observability** so you can see what users are e
   - script loads (`plausible.js`)
   - events post (`/api/event`)
 
+
 ## Setup Cleanup (Chunk 13)
 
 Chunk 13 focused on production hygiene and reducing accidental exposure.
@@ -295,6 +278,8 @@ Chunk 13 focused on production hygiene and reducing accidental exposure.
 - Pages requires non-static routes to run on **Edge runtime**. App Router pages and route handlers used by auth/protected pages should export:
 
 `export const runtime = "edge";`
+
+
 
 ---
 
@@ -329,6 +314,77 @@ Chunk 14 establishes the **UI foundation** we’ll build every real feature on t
 
 ---
 
+
+
+## Profile Core: Interests + Location Preferences (Chunk 15)
+
+Chunk 15 adds the **profile-core settings** required for discovery:
+- A seeded **interest taxonomy** (simple categories + interest slugs).
+- Per-user **selected interests** (junction table).
+- Per-user **home location + travel radius** (for location-based discovery).
+- A basic **email preference center shell** (more categories later).
+
+### Database (Neon / Postgres + PostGIS)
+
+**New tables (schema: `newchums`)**
+- `interests` — interest catalog (`name`, `category`, `slug`, `sort_order`)
+- `user_interests` — junction (`user_id`, `interest_id`)
+- `user_profile` — per-user settings:
+  - `home_city`, `home_lat`, `home_lng`
+  - `home_location GEOGRAPHY(Point, 4326)` (derived from lng/lat)
+  - `travel_radius_km` (1–200)
+  - `email_chat_digest`, `email_new_events`
+  - `updated_at` trigger
+
+**Location storage rule (enforced in code)**
+- Store `home_lat/home_lng` as numeric columns.
+- Derive `home_location` with:
+  - `ST_SetSRID(ST_MakePoint(lng, lat), 4326)::geography`
+- If lat/lng are blank, persist `home_location = NULL`.
+
+### Web API (Next.js Route Handlers)
+
+**Routes**
+- `GET /api/interests` — returns the interest catalog (ordered).
+- `GET /api/profile` — returns the current user’s profile settings + selected interests.
+- `PUT /api/profile` — validates and persists:
+  - `home_city`, `home_lat`, `home_lng`, `travel_radius_km`
+  - `email_chat_digest`, `email_new_events`
+  - replaces `user_interests` with the submitted set
+
+**Validation**
+- `home_lat` and `home_lng` accept strings or numbers and are coerced with `Number()`.
+- Coordinates must be both present and finite or both blank/null.
+- Ranges: lat `[-90, 90]`, lng `[-180, 180]`.
+- `travel_radius_km` constrained to `1..200`.
+
+### UI
+
+- `/profile` now allows selecting:
+  - interests (multi-select)
+  - home city + coordinates (manual entry for now)
+  - travel radius (km)
+  - basic email preference toggles
+- `/settings` contains a basic **Email preferences** shell (categories expanded later).
+
+### Production Auth env requirements (Cloudflare Pages)
+
+For Auth.js to work in **Pages production**, these must exist in **Pages → Settings → Variables and Secrets**:
+
+- `AUTH_SECRET` (**Secret**) — required for session/token signing.
+- `GOOGLE_CLIENT_ID` (**Secret**) — Google OAuth client ID.
+- `GOOGLE_CLIENT_SECRET` (**Secret**) — Google OAuth client secret.
+
+Also confirm the Google OAuth client has an authorized redirect URI:
+- `https://www.newchums.com/api/auth/callback/google`
+
+### Canonical Code Locations (Chunk 15)
+
+- **Web DB helper:** `web/src/lib/db.ts`
+- **API DB helper:** `api/src/db.ts`
+- **Web profile routes:** `web/src/app/api/profile/route.ts`, `web/src/app/api/interests/route.ts`
+- **Profile/settings pages:** `web/src/app/(app)/profile/**`, `web/src/app/(app)/settings/**`
+
 ## Design System
 
 ### Overview
@@ -344,40 +400,39 @@ These colors establish a warm, friendly, vibrant feel. They can be adjusted as y
 
 const palette = {
   primary: {
-    main: "#FF6B35", // Warm coral orange - energetic, friendly
-    light: "#FF8F66",
-    dark: "#E55A2B",
-    contrastText: "#FFFFFF",
+    main: '#FF6B35',      // Warm coral orange - energetic, friendly
+    light: '#FF8F66',
+    dark: '#E55A2B',
+    contrastText: '#FFFFFF',
   },
   secondary: {
-    main: "#2EC4B6", // Teal - fresh, modern, trustworthy
-    light: "#5DD4C8",
-    dark: "#25A99D",
-    contrastText: "#FFFFFF",
+    main: '#2EC4B6',      // Teal - fresh, modern, trustworthy
+    light: '#5DD4C8',
+    dark: '#25A99D',
+    contrastText: '#FFFFFF',
   },
   error: {
-    main: "#E63946", // Clear red for errors
+    main: '#E63946',      // Clear red for errors
   },
   warning: {
-    main: "#F4A261", // Warm amber
+    main: '#F4A261',      // Warm amber
   },
   success: {
-    main: "#2A9D8F", // Green-teal for confirmations
+    main: '#2A9D8F',      // Green-teal for confirmations
   },
   background: {
-    default: "#FAFAFA", // Very light warm gray
-    paper: "#FFFFFF",
+    default: '#FAFAFA',   // Very light warm gray
+    paper: '#FFFFFF',
   },
   text: {
-    primary: "#1A1A2E", // Near-black with slight warmth
-    secondary: "#4A4A68", // Muted for secondary text
+    primary: '#1A1A2E',   // Near-black with slight warmth
+    secondary: '#4A4A68', // Muted for secondary text
   },
-  divider: "#E8E8E8",
+  divider: '#E8E8E8',
 };
 ```
 
 **Color Usage Guidelines:**
-
 - **Primary (Coral):** CTAs, primary buttons, key interactive elements, active states
 - **Secondary (Teal):** Secondary actions, links, accents, success states
 - **Background:** Keep clean and light; let content breathe
@@ -390,46 +445,44 @@ MUI typography can either inherit the app font (recommended) or explicitly set R
 
 ```javascript
 const typography = {
-  fontFamily:
-    'var(--font-geist-sans), "Roboto", "Helvetica", "Arial", sans-serif',
-
+  fontFamily: 'var(--font-geist-sans), "Roboto", "Helvetica", "Arial", sans-serif',
+  
   h1: {
-    fontSize: "2.5rem",
+    fontSize: '2.5rem',
     fontWeight: 700,
     lineHeight: 1.2,
   },
   h2: {
-    fontSize: "2rem",
+    fontSize: '2rem',
     fontWeight: 600,
     lineHeight: 1.3,
   },
   h3: {
-    fontSize: "1.5rem",
+    fontSize: '1.5rem',
     fontWeight: 600,
     lineHeight: 1.4,
   },
   h4: {
-    fontSize: "1.25rem",
+    fontSize: '1.25rem',
     fontWeight: 600,
     lineHeight: 1.4,
   },
   body1: {
-    fontSize: "1rem",
+    fontSize: '1rem',
     lineHeight: 1.6,
   },
   body2: {
-    fontSize: "0.875rem",
+    fontSize: '0.875rem',
     lineHeight: 1.5,
   },
   button: {
-    textTransform: "none", // Avoid ALL CAPS buttons
+    textTransform: 'none',  // Avoid ALL CAPS buttons
     fontWeight: 600,
   },
 };
 ```
 
 **Typography Guidelines:**
-
 - Headings: Bold and clear, create hierarchy
 - Body: Comfortable reading size with generous line height
 - Buttons: Sentence case (not ALL CAPS) for friendlier feel
@@ -446,16 +499,16 @@ const components = {
   MuiButton: {
     styleOverrides: {
       root: {
-        borderRadius: 8, // Slightly rounded corners
-        padding: "10px 24px",
-        boxShadow: "none", // Flat by default
-        "&:hover": {
-          boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+        borderRadius: 8,           // Slightly rounded corners
+        padding: '10px 24px',
+        boxShadow: 'none',         // Flat by default
+        '&:hover': {
+          boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
         },
       },
       contained: {
-        "&:hover": {
-          transform: "translateY(-1px)", // Subtle lift on hover
+        '&:hover': {
+          transform: 'translateY(-1px)',  // Subtle lift on hover
         },
       },
     },
@@ -464,17 +517,17 @@ const components = {
     styleOverrides: {
       root: {
         borderRadius: 12,
-        boxShadow: "0 2px 12px rgba(0,0,0,0.08)",
+        boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
       },
     },
   },
   MuiTextField: {
     defaultProps: {
-      variant: "outlined",
+      variant: 'outlined',
     },
     styleOverrides: {
       root: {
-        "& .MuiOutlinedInput-root": {
+        '& .MuiOutlinedInput-root': {
           borderRadius: 8,
         },
       },
@@ -494,50 +547,50 @@ const components = {
 
 MUI uses an 8px grid by default. Stick to this for consistency:
 
-| Spacing | Value | Use Case                                    |
-| ------- | ----- | ------------------------------------------- |
-| 1       | 8px   | Tight spacing (icon to text)                |
-| 2       | 16px  | Default padding, gaps between related items |
-| 3       | 24px  | Section padding                             |
-| 4       | 32px  | Large gaps, card margins                    |
-| 5       | 40px  | Section separators                          |
-| 6       | 48px  | Major layout divisions                      |
+| Spacing | Value | Use Case |
+|---------|-------|----------|
+| 1 | 8px | Tight spacing (icon to text) |
+| 2 | 16px | Default padding, gaps between related items |
+| 3 | 24px | Section padding |
+| 4 | 32px | Large gaps, card margins |
+| 5 | 40px | Section separators |
+| 6 | 48px | Major layout divisions |
 
 ### Core MUI Components Used
 
-| Component          | Use Case                       |
-| ------------------ | ------------------------------ |
-| `Button`           | Primary actions, CTAs          |
-| `TextField`        | All form inputs                |
-| `Card`             | Event cards, profile sections  |
-| `Chip`             | Interest tags, status badges   |
-| `Avatar`           | User profile images            |
-| `Dialog`           | Confirmations, RSVP flow       |
-| `Snackbar`         | Toast notifications            |
-| `AppBar`           | Top navigation                 |
-| `BottomNavigation` | Mobile navigation              |
-| `List`             | Event attendees, chat messages |
-| `Tabs`             | Upcoming/Past events toggle    |
-| `CircularProgress` | Loading states                 |
-| `Skeleton`         | Content loading placeholders   |
+| Component | Use Case |
+|-----------|----------|
+| `Button` | Primary actions, CTAs |
+| `TextField` | All form inputs |
+| `Card` | Event cards, profile sections |
+| `Chip` | Interest tags, status badges |
+| `Avatar` | User profile images |
+| `Dialog` | Confirmations, RSVP flow |
+| `Snackbar` | Toast notifications |
+| `AppBar` | Top navigation |
+| `BottomNavigation` | Mobile navigation |
+| `List` | Event attendees, chat messages |
+| `Tabs` | Upcoming/Past events toggle |
+| `CircularProgress` | Loading states |
+| `Skeleton` | Content loading placeholders |
 
 ### Iconography
 
 Use MUI Icons consistently. Key icons for NewChums:
 
-| Icon            | Use                  |
-| --------------- | -------------------- |
-| `Event`         | Events, calendar     |
-| `People`        | Attendees, community |
-| `Place`         | Location             |
-| `AccessTime`    | Time, duration       |
-| `Chat`          | Event chat           |
-| `Notifications` | Alerts               |
-| `Person`        | Profile              |
-| `Add`           | Create event         |
-| `Check`         | Confirmed, success   |
-| `Star`          | Favorites, ratings   |
-| `Settings`      | User settings        |
+| Icon | Use |
+|------|-----|
+| `Event` | Events, calendar |
+| `People` | Attendees, community |
+| `Place` | Location |
+| `AccessTime` | Time, duration |
+| `Chat` | Event chat |
+| `Notifications` | Alerts |
+| `Person` | Profile |
+| `Add` | Create event |
+| `Check` | Confirmed, success |
+| `Star` | Favorites, ratings |
+| `Settings` | User settings |
 
 ---
 
@@ -974,11 +1027,9 @@ LOG IN:
 ## Phase 1 Feature Tiers (90 Days)
 
 ### Tier 1: Must Have (Weeks 5-6)
-
-_Without these, the pilot cannot happen._
+*Without these, the pilot cannot happen.*
 
 **Authentication & Profile**
-
 - [ ] User signup with email/password
 - [ ] Google OAuth login
 - [ ] User profile page
@@ -986,14 +1037,12 @@ _Without these, the pilot cannot happen._
 - [ ] Set travel distance preference
 
 **Events - Viewing**
-
 - [ ] Home page with upcoming events
 - [ ] Home page with past events
 - [ ] Single event detail page
 - [ ] Filter/browse by location
 
 **Events - Creation**
-
 - [ ] Create public event form
 - [ ] Google Places autocomplete for location
 - [ ] Set date, time, duration
@@ -1002,7 +1051,6 @@ _Without these, the pilot cannot happen._
 - [ ] Specify skill level / beginner friendliness
 
 **Events - Joining**
-
 - [ ] RSVP to reserve seat
 - [ ] Waitlist when seats full
 - [ ] 24-hour confirmation requirement
@@ -1010,7 +1058,6 @@ _Without these, the pilot cannot happen._
 - [ ] Cancel RSVP
 
 **Notifications (Email via Postmark)**
-
 - [ ] Email verification on signup
 - [ ] Password reset
 - [ ] RSVP confirmation
@@ -1018,7 +1065,6 @@ _Without these, the pilot cannot happen._
 - [ ] Seat released / waitlist promotion notice
 
 **Infrastructure**
-
 - [ ] Error tracking (Sentry)
 - [ ] Logging (Axiom)
 - [ ] Analytics (Plausible)
@@ -1026,11 +1072,9 @@ _Without these, the pilot cannot happen._
 ---
 
 ### Tier 2: Should Have (Week 7, before pilot)
-
-_These make the pilot experience significantly better._
+*These make the pilot experience significantly better.*
 
 **Event Chat**
-
 - [ ] Event-specific chat visible to all attendees
 - [ ] Post messages to event chat
 - [ ] View message history
@@ -1038,33 +1082,27 @@ _These make the pilot experience significantly better._
 - [ ] Profile setting to disable chat digest emails
 
 **Discovery**
-
 - [ ] "X people near you share this interest" count on home page
 - [ ] Display counts per interest category
 
 **Notifications**
-
 - [ ] Email notification when new event matches user interests + location
 
 ---
 
 ### Tier 3: Nice to Have (Weeks 9-10, after first pilot)
-
-_Add these only if Tier 1-2 are solid and time permits._
+*Add these only if Tier 1-2 are solid and time permits.*
 
 **Private Events**
-
 - [ ] Create private event (not publicly listed)
 - [ ] Invite specific users by email or username
 - [ ] Invited users receive email notification
 
 **Profile Enhancement**
-
 - [ ] Select avatar from preset list
 - [ ] Upload custom profile image (Cloudflare R2)
 
 **Basic Gamification**
-
 - [ ] "Early Adopter" badge for first 100 users
 - [ ] Display "Events Attended" count on profile
 - [ ] Display "Events Hosted" count on profile
@@ -1072,11 +1110,9 @@ _Add these only if Tier 1-2 are solid and time permits._
 ---
 
 ### Tier 4: Post-Pilot / Phase 2
-
-_Only after Phase 1 is complete and validated._
+*Only after Phase 1 is complete and validated.*
 
 **Feedback System (Phase 2 Priority)**
-
 - [ ] Post-event feedback prompt
 - [ ] Simple satisfaction rating (thumbs up/down on event)
 - [ ] Optional structured feedback (see Feedback System Design below)
@@ -1084,13 +1120,11 @@ _Only after Phase 1 is complete and validated._
 - [ ] Compatibility-based notification filtering
 
 **Advanced Gamification**
-
 - [ ] "Highly Rated Host" badge
 - [ ] "Number of Chums" count
 - [ ] Achievement system
 
 **Additional Features**
-
 - [ ] Calendar integration
 - [ ] Birthday reminders
 - [ ] Friends list
@@ -1106,7 +1140,6 @@ _Only after Phase 1 is complete and validated._
 To ensure early feedback data remains useful when the full system is built, Phase 1 collects structured data from the start.
 
 **Phase 1 Collection (Simple):**
-
 ```
 event_feedback table:
 - id
@@ -1119,7 +1152,6 @@ event_feedback table:
 ```
 
 **Phase 2 Collection (Detailed):**
-
 ```
 attendee_feedback table:
 - id
@@ -1138,7 +1170,6 @@ traits table:
 ```
 
 **Migration Path:**
-
 - Phase 1 text comments are preserved for reference
 - Phase 2 adds structured trait ratings
 - Aggregation logic computes trait scores from `attendee_feedback`
@@ -1146,7 +1177,6 @@ traits table:
 - Text comments remain visible to admins for context and edge cases
 
 **UX Principles for Feedback:**
-
 - Always optional, never required
 - Framed as "help improve your future matches" not "rate this person"
 - No public visibility of individual ratings
@@ -1179,8 +1209,22 @@ CREATE TABLE users (
 -- ALTER TABLE users ADD COLUMN email_chat_digest BOOLEAN DEFAULT true;
 -- ALTER TABLE users ADD COLUMN email_new_events BOOLEAN DEFAULT true;
 -- ALTER TABLE users ADD COLUMN updated_at TIMESTAMPTZ DEFAULT NOW();
--- User locations (PostGIS)
-CREATE TABLE user_locations (
+-- User profile (Chunk 15)
+-- Stores home city/coords + derived geography point + radius + email preferences.
+CREATE TABLE user_profile (
+  user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  home_city TEXT,
+  home_lat DOUBLE PRECISION,
+  home_lng DOUBLE PRECISION,
+  home_location GEOGRAPHY(POINT, 4326),
+  travel_radius_km INT NOT NULL DEFAULT 25 CHECK (travel_radius_km BETWEEN 1 AND 200),
+  email_chat_digest BOOLEAN NOT NULL DEFAULT true,
+  email_new_events BOOLEAN NOT NULL DEFAULT true,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- (Deprecated) user_locations table was an earlier draft concept and is not used.
+-- CREATE TABLE user_locations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES users(id) ON DELETE CASCADE,
   location GEOGRAPHY(POINT, 4326) NOT NULL,
@@ -1299,7 +1343,7 @@ AND e.starts_at > NOW()
 ORDER BY e.starts_at;
 
 -- Count users near me with shared interests
-SELECT COUNT(DISTINCT ui.user_id)
+SELECT COUNT(DISTINCT ui.user_id) 
 FROM user_interests ui
 JOIN user_locations ul ON ui.user_id = ul.user_id
 WHERE ui.interest_id IN (
@@ -1329,20 +1373,17 @@ AND ui.user_id != 'current_user_id';
    - Prettier
 
 3. **Install Wrangler CLI (for Workers / API)**
-
    ```bash
    npm install -g wrangler
    ```
 
 4. **Clone Repository**
-
    ```bash
    git clone https://github.com/[your-username]/newchums.git
    cd newchums
    ```
 
 5. **Install dependencies (monorepo)**
-
    ```bash
    cd web
    npm install
@@ -1353,6 +1394,7 @@ AND ui.user_id != 'current_user_id';
 6. **Configure Environment Variables**
    - Create `web/.env.local` (Next.js)
    - Add API keys for: Neon, Postmark, Google Maps, Sentry, Auth.js secrets
+
 
 ### MUI + Emotion + Next.js App Router SSR
 
@@ -1409,8 +1451,7 @@ In Chunk 8 we added an App Router–compatible Emotion cache integration (in the
 ## Build Schedule (Phase 1)
 
 ### Days 1-30: Definition & Scoping
-
-_(Per your Phase 1 plan - no code yet)_
+*(Per your Phase 1 plan - no code yet)*
 
 - Week 1: Problem & user clarity
 - Week 2: MVP scope lock
@@ -1420,7 +1461,6 @@ _(Per your Phase 1 plan - no code yet)_
 ### Days 31-60: MVP Build
 
 **Week 5: Environment & Foundations**
-
 - [ ] GitHub repo setup
 - [ ] Cloudflare Pages + Workers configuration
 - [ ] Neon database provisioned with PostGIS
@@ -1430,7 +1470,6 @@ _(Per your Phase 1 plan - no code yet)_
 - [ ] Deploy working shell to newchums.com
 
 **Week 6: Tier 1 Features (Core MVP)**
-
 - [ ] User signup/login flow
 - [ ] Profile page with interests and travel distance
 - [ ] Create event form with Google Places
@@ -1442,7 +1481,6 @@ _(Per your Phase 1 plan - no code yet)_
 - [ ] Mobile-responsive design
 
 **Week 7: Tier 2 Features (Before Pilot)**
-
 - [ ] Event chat system
 - [ ] Chat digest email (Cloudflare Cron + Postmark)
 - [ ] "People near you" interest counts
@@ -1452,13 +1490,11 @@ _(Per your Phase 1 plan - no code yet)_
 ### Days 61-90: Pilot & Validation
 
 **Week 8: First Pilot Event**
-
 - Run board game event at store
 - Observe behavior and friction
 - Document issues
 
 **Week 9: Iteration**
-
 - Fix top 2 friction points
 - Improve event copy and flow
 - Begin Tier 3 if time permits:
@@ -1467,19 +1503,16 @@ _(Per your Phase 1 plan - no code yet)_
   - [ ] Profile image upload
 
 **Week 10: Second Pilot**
-
 - Run second event
 - Compare metrics
 - Continue Tier 3 if time permits:
   - [ ] Basic gamification badges
 
 **Week 11: Review**
-
 - Document learnings
 - Identify validated/invalidated assumptions
 
 **Week 12: Phase 2 Planning**
-
 - Write retrospective
 - Plan next 90 days
 - Brief recovery
@@ -1488,17 +1521,17 @@ _(Per your Phase 1 plan - no code yet)_
 
 ## Service Accounts Required
 
-| Service      | URL                      | Free Tier             | Phase 1 Cost Estimate |
-| ------------ | ------------------------ | --------------------- | --------------------- |
-| Cloudflare   | cloudflare.com           | Yes                   | $0                    |
-| Neon         | neon.tech                | Yes (generous)        | $0                    |
-| Auth.js      | authjs.dev               | Open source           | $0                    |
-| Google Cloud | console.cloud.google.com | $200/month credit     | $0                    |
-| Postmark     | postmarkapp.com          | 100 free, then $15/mo | $15/month             |
-| Sentry       | sentry.io                | 5K errors/month       | $0                    |
-| Axiom        | axiom.co                 | 500GB/month           | $0                    |
-| Plausible    | plausible.io             | No free tier          | $9/month              |
-| GitHub       | github.com               | Yes                   | $0                    |
+| Service | URL | Free Tier | Phase 1 Cost Estimate |
+|---------|-----|-----------|----------------------|
+| Cloudflare | cloudflare.com | Yes | $0 |
+| Neon | neon.tech | Yes (generous) | $0 |
+| Auth.js | authjs.dev | Open source | $0 |
+| Google Cloud | console.cloud.google.com | $200/month credit | $0 |
+| Postmark | postmarkapp.com | 100 free, then $15/mo | $15/month |
+| Sentry | sentry.io | 5K errors/month | $0 |
+| Axiom | axiom.co | 500GB/month | $0 |
+| Plausible | plausible.io | No free tier | $9/month |
+| GitHub | github.com | Yes | $0 |
 
 **Estimated Monthly Cost (Phase 1):** $24/month
 
@@ -1506,68 +1539,69 @@ _(Per your Phase 1 plan - no code yet)_
 
 ## Key Technical Decisions
 
-| Decision            | Choice                      | Rationale                                       |
-| ------------------- | --------------------------- | ----------------------------------------------- |
-| Own backend vs BaaS | Own (Hono + Neon)           | Long-term control, no platform lock-in          |
-| Component library   | MUI (Material UI)           | Rich components, vibrant theming, polished feel |
-| Styling approach    | Emotion (CSS-in-JS)         | MUI's native styling system, no conflicts       |
-| Auth approach       | Auth.js                     | Simplest path to email + Google login           |
-| Email provider      | Postmark                    | 15-year track record, reliability               |
-| Geospatial          | PostGIS                     | Keeps queries in database, no extra service     |
-| Hosting             | Cloudflare                  | Edge performance, integrated ecosystem          |
-| Dev environment     | Production only (initially) | No users to affect, simplicity                  |
-| CI/CD               | Skip initially              | Manual deploy acceptable for solo builder       |
-| Mobile              | Deferred                    | Web proves concept first                        |
-| Event chat          | Email digest, not real-time | Avoids notification fatigue                     |
-| Feedback system     | Structured from start       | Data remains useful when full system built      |
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Own backend vs BaaS | Own (Hono + Neon) | Long-term control, no platform lock-in |
+| Component library | MUI (Material UI) | Rich components, vibrant theming, polished feel |
+| Styling approach | Emotion (CSS-in-JS) | MUI's native styling system, no conflicts |
+| Auth approach | Auth.js | Simplest path to email + Google login |
+| Email provider | Postmark | 15-year track record, reliability |
+| Geospatial | PostGIS | Keeps queries in database, no extra service |
+| Hosting | Cloudflare | Edge performance, integrated ecosystem |
+| Dev environment | Production only (initially) | No users to affect, simplicity |
+| CI/CD | Skip initially | Manual deploy acceptable for solo builder |
+| Mobile | Deferred | Web proves concept first |
+| Event chat | Email digest, not real-time | Avoids notification fatigue |
+| Feedback system | Structured from start | Data remains useful when full system built |
 
 ---
 
 ## Risk Mitigations
 
-| Risk                           | Mitigation                                              |
-| ------------------------------ | ------------------------------------------------------- |
-| Neon goes down                 | Data exportable as standard PostgreSQL                  |
-| Postmark pricing changes       | Commodity service, easy to switch to Resend/SendGrid    |
-| Cloudflare issues              | Workers code portable to other runtimes                 |
-| Google Maps cost               | Monitor usage, Mapbox as alternative                    |
-| Auth.js limitations            | Standard OAuth, can migrate to custom                   |
-| Feature creep                  | Tier system enforces priority; cut Tier 3 if behind     |
-| Pilot failure                  | Phase 1 checkpoints catch problems early                |
+| Risk | Mitigation |
+|------|------------|
+| Neon goes down | Data exportable as standard PostgreSQL |
+| Postmark pricing changes | Commodity service, easy to switch to Resend/SendGrid |
+| Cloudflare issues | Workers code portable to other runtimes |
+| Google Maps cost | Monitor usage, Mapbox as alternative |
+| Auth.js limitations | Standard OAuth, can migrate to custom |
+| Feature creep | Tier system enforces priority; cut Tier 3 if behind |
+| Pilot failure | Phase 1 checkpoints catch problems early |
 | MUI "Material" feel too strong | Custom theme reduces this; consider migration if needed |
 
 ---
 
 ## Phase 2 Preview (Not Built in Phase 1)
 
-| Feature                    | Technology                | Trigger                            |
-| -------------------------- | ------------------------- | ---------------------------------- |
-| Behavioral feedback system | Custom (see design above) | After Phase 1 validates core       |
-| Apple login                | Auth.js + Apple Provider  | When users request it              |
-| Automated reminders        | Cloudflare Queues + Cron  | Already in Phase 1 for chat digest |
-| CI/CD pipeline             | GitHub Actions            | When deployment safety matters     |
-| Dev environment            | Neon branching            | When real users exist              |
-| Paid subscriptions         | Stripe                    | When monetization phase begins     |
-| Event images               | Cloudflare R2 expansion   | When organizers request it         |
-| Friends list               | Custom                    | Phase 2+                           |
-| Calendar integration       | Google Calendar API       | Phase 2+                           |
-| Mobile app                 | React Native + Expo       | If/when mobile necessary           |
+| Feature | Technology | Trigger |
+|---------|------------|---------|
+| Behavioral feedback system | Custom (see design above) | After Phase 1 validates core |
+| Apple login | Auth.js + Apple Provider | When users request it |
+| Automated reminders | Cloudflare Queues + Cron | Already in Phase 1 for chat digest |
+| CI/CD pipeline | GitHub Actions | When deployment safety matters |
+| Dev environment | Neon branching | When real users exist |
+| Paid subscriptions | Stripe | When monetization phase begins |
+| Event images | Cloudflare R2 expansion | When organizers request it |
+| Friends list | Custom | Phase 2+ |
+| Calendar integration | Google Calendar API | Phase 2+ |
+| Mobile app | React Native + Expo | If/when mobile necessary |
 
 ---
 
 ## Document History
 
-| Version | Date              | Changes                                                                                                                                                                        |
-| ------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1.0     | February 5, 2026  | Initial specification                                                                                                                                                          |
-| 1.1     | February 5, 2026  | Added feature tiers, event chat, gamification, feedback system design, database schema, build schedule                                                                         |
-| 1.2     | February 5, 2026  | Added Design System (MUI, color palette, typography, components), screen wireframes, replaced Tailwind/shadcn with MUI/Emotion                                                 |
-| 1.3     | February 9, 2026  | Updated docs to reflect Next.js scaffold + current local workflow (removed Vite references)                                                                                    |
-| 1.4     | February 10, 2026 | Completed Chunk 8 (MUI theme + Next.js App Router SSR style integration); clarified font strategy (Geist default)                                                              |
-| 1.5     | February 10, 2026 | Completed Chunk 9 (Auth.js credentials + Google OAuth + signup/login pages + password reset); added production-mode build verification notes                                   |
-| 1.6     | February 11, 2026 | Completed Chunk 11 (Postmark transactional email: verification, password reset, RSVP confirmation); added Workers email configuration + verification notes                     |
-| 1.7     | February 12, 2026 | Chunk 13 cleanup: production gating for internal test routes, API health endpoint contract, and env consistency checks                                                         |
-| 1.8     | February 16, 2026 | Completed Chunk 14 (App UI shell, route groups, theme token lock-in, internal UI component library, stub routes, auth next-redirect fixes, and Pages/Workers deployment notes) |
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0 | February 5, 2026 | Initial specification |
+| 1.1 | February 5, 2026 | Added feature tiers, event chat, gamification, feedback system design, database schema, build schedule |
+| 1.2 | February 5, 2026 | Added Design System (MUI, color palette, typography, components), screen wireframes, replaced Tailwind/shadcn with MUI/Emotion |
+| 1.3 | February 9, 2026 | Updated docs to reflect Next.js scaffold + current local workflow (removed Vite references) |
+| 1.4 | February 10, 2026 | Completed Chunk 8 (MUI theme + Next.js App Router SSR style integration); clarified font strategy (Geist default) |
+| 1.5 | February 10, 2026 | Completed Chunk 9 (Auth.js credentials + Google OAuth + signup/login pages + password reset); added production-mode build verification notes |
+| 1.6 | February 11, 2026 | Completed Chunk 11 (Postmark transactional email: verification, password reset, RSVP confirmation); added Workers email configuration + verification notes |
+| 1.7 | February 12, 2026 | Chunk 13 cleanup: production gating for internal test routes, API health endpoint contract, and env consistency checks |
+| 1.8 | February 16, 2026 | Completed Chunk 14 (App UI shell, route groups, theme token lock-in, internal UI component library, stub routes, auth next-redirect fixes, and Pages/Workers deployment notes) |
+| 1.9 | February 17, 2026 | Completed Chunk 15 (profile core: interests catalog + user interests + location/radius + email prefs shell); added required Pages auth env vars (AUTH_SECRET, GOOGLE_CLIENT_ID/SECRET) and Profile API/UI routes |
 
 ---
 
@@ -1584,4 +1618,4 @@ Per your Phase 1 plan, evaluate progress at these points:
 
 ---
 
-_This document is the authoritative technical reference for NewChums Phase 1._
+*This document is the authoritative technical reference for NewChums Phase 1.*
