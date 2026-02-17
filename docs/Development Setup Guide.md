@@ -956,7 +956,12 @@ Note: For email DNS records, Cloudflare proxying should be **DNS only** (grey cl
      - `curl -i https://<your-worker>.workers.dev/__log-test` → `404` (should be hidden in prod)
      - `curl -i https://<your-worker>.workers.dev/__sentry-test` → `404`
      - `curl -i https://<your-worker>.workers.dev/health/db` → `404`
-     - Opt
+     - Optional (internal access): repeat the above internal routes with header `x-internal-token: <INTERNAL_TEST_TOKEN>` and confirm they succeed
+  4. Production web:
+     - Visit `https://newchums.com/sentry-test` → `404`
+
+- Troubleshooting notes:
+  Detailed command transcripts and edge cases are archived in `docs/chunks/Chunk Log.md` under Chunk 13.
 
 ---
 
@@ -1029,12 +1034,29 @@ npm run build
 
 **Done when:** You can navigate across all route stubs, theme is consistent everywhere, components are reusable, and Pages deploy succeeds from `main`.
 
-ional (internal access): repeat the above internal routes with header `x-internal-token: <INTERNAL_TEST_TOKEN>` and confirm they succeed.
-  4. Production web:
-     - Visit `https://newchums.com/sentry-test` → `404`
+---
 
-- Troubleshooting notes:
-  Detailed command transcripts and edge cases are archived in `docs/chunks/Chunk Log.md` under Chunk 13.
+## Chunk 15: Interests + Location Preferences (Profile Core)
+
+**Goal:** Logged-in users can save interests, travel radius, home location, and email preferences; values persist after refresh.
+
+### What we added
+
+- **DB (Neon):** Run `docs/chunks/db/015_profile_core.sql` then `015_seed_interests.sql`. Creates `interests`, `user_interests`, `user_profile` with PostGIS home_location and email prefs.
+- **API (Next route handlers):**
+  - `GET /api/interests` — returns all interests (no auth)
+  - `GET /api/profile` — returns user profile + interest slugs (auth required)
+  - `PUT /api/profile` — partial upsert (auth required); validates lat/lng, travel_radius_km 1–200, interest slugs.
+- **UI:**
+  - `/profile` — city, lat/lng, travel radius slider (1–200 km), interests by category (chips), Save with toast
+  - `/settings` — Email preferences: toggles for chat digest and new events; persist via PUT /api/profile
+
+### Verification steps
+
+1. Apply DB migrations in Neon SQL Editor (015_profile_core.sql, then 015_seed_interests.sql).
+2. `cd web && npm run dev`; log in; visit `/profile`; save interests + radius + location; refresh and confirm persisted.
+3. Visit `/settings`; toggle email prefs; refresh and confirm persisted.
+4. `npm run lint` and `npm run build` pass.
 
 ---
 
