@@ -2,6 +2,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const REQUIRED_WEB_KEYS = [
+  "AUTH_SECRET",
+  "AUTH_URL",
+  "GOOGLE_CLIENT_ID",
+  "GOOGLE_CLIENT_SECRET",
   "DATABASE_URL",
   "NEXT_PUBLIC_API_BASE_URL",
   "NEXT_PUBLIC_SENTRY_DSN",
@@ -46,10 +50,21 @@ const parseEnvKeys = (filePath) => {
   return keys;
 };
 
-const checkFile = (label, relativePath, requiredKeys, optionalKeys = []) => {
-  const filePath = resolve(process.cwd(), relativePath);
+const EXAMPLE_FILES = {
+  web: "web/.env.example",
+  api: "api/.dev.vars.example",
+};
+
+const TARGET_FILES = {
+  web: "web/.env.local",
+  api: "api/.dev.vars",
+};
+
+const checkFile = (label, targetPath, examplePath, requiredKeys, optionalKeys = []) => {
+  const filePath = resolve(process.cwd(), targetPath);
   if (!existsSync(filePath)) {
-    console.error(`[${label}] Missing file: ${relativePath}`);
+    console.error(`[${label}] Missing file: ${targetPath}`);
+    console.error(`[${label}] Copy ${examplePath} to ${targetPath} and fill in the values.`);
     return false;
   }
 
@@ -61,6 +76,7 @@ const checkFile = (label, relativePath, requiredKeys, optionalKeys = []) => {
     console.log(`[${label}] OK`);
   } else {
     console.error(`[${label}] Missing required keys: ${missingRequired.join(", ")}`);
+    console.error(`[${label}] Copy ${examplePath} to ${targetPath} and fill in the values.`);
   }
 
   if (missingOptional.length > 0) {
@@ -70,10 +86,16 @@ const checkFile = (label, relativePath, requiredKeys, optionalKeys = []) => {
   return missingRequired.length === 0;
 };
 
-const webOk = checkFile("web", "web/.env.local", REQUIRED_WEB_KEYS);
+const webOk = checkFile(
+  "web",
+  TARGET_FILES.web,
+  EXAMPLE_FILES.web,
+  REQUIRED_WEB_KEYS,
+);
 const apiOk = checkFile(
   "api",
-  "api/.dev.vars",
+  TARGET_FILES.api,
+  EXAMPLE_FILES.api,
   REQUIRED_API_KEYS,
   OPTIONAL_API_KEYS,
 );

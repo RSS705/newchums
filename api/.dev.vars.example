@@ -1,0 +1,22 @@
+# NewChums API — copy to .dev.vars and fill values
+# Wrangler loads .dev.vars for local dev (wrangler dev --local)
+APP_ENV=development
+
+# Database
+DATABASE_URL=
+
+# Postmark
+POSTMARK_SERVER_TOKEN=
+EMAIL_FROM=
+WEB_BASE_URL=http://localhost:3000
+POSTMARK_TEMPLATE_VERIFY=
+POSTMARK_TEMPLATE_RESET=
+POSTMARK_TEMPLATE_RSVP=
+
+# Observability
+SENTRY_DSN=
+AXIOM_TOKEN=
+AXIOM_DATASET=
+
+# Optional: for internal test routes in production
+# INTERNAL_TEST_TOKEN=

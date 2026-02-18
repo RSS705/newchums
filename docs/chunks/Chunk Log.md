@@ -68,8 +68,7 @@ This file stores detailed troubleshooting notes, command transcripts, and deep e
     - `/api/auth/password-reset/confirm`
     - `/api/auth/password-reset/request`
     - `/api/auth/signup`
-    - `/me`
-    - `/protected`
+    - `/(app)` route group pages as needed (e.g. `/home`, `/profile`, `/ui`)
 
 - Related warning captured during verification:
   - "A Node.js module is loaded ('crypto' at line 1) which is not supported in the Edge Runtime"
@@ -161,10 +160,10 @@ This file stores detailed troubleshooting notes, command transcripts, and deep e
 
 ## Chunk 14: App UI Shell + Design System Lock-In (Detailed Notes)
 
-### Symptom: `/theme-test` returned 404
+### Symptom: `/theme-test` returned 404 (route no longer exists)
 
 - Root cause: `src/app/theme-test` existed as an empty directory (no `page.tsx`).
-- Resolution: Use the authenticated UI demo route under the app route group:
+- Resolution: Theme verification now lives at `/ui` under the app route group:
   - `src/app/(app)/ui/page.tsx` (with client demo at `UIDemoClient.tsx`)
 - Verification:
   - Start dev server: `cd web && npm run dev`

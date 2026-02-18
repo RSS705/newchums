@@ -1326,7 +1326,8 @@ CREATE TABLE user_badges (
 
 -- PostGIS indexes for geospatial queries
 CREATE INDEX idx_events_location ON events USING GIST (location);
-CREATE INDEX idx_user_locations_location ON user_locations USING GIST (location);
+CREATE INDEX idx_user_profile_home_location ON user_profile USING GIST (home_location);
+-- Note: user_locations table was deprecated; user_profile.home_location replaced it.
 ```
 
 ### Example Geospatial Queries
@@ -1342,15 +1343,15 @@ WHERE ST_DWithin(
 AND e.starts_at > NOW()
 ORDER BY e.starts_at;
 
--- Count users near me with shared interests
+-- Count users near me with shared interests (uses user_profile.home_location; user_locations is deprecated)
 SELECT COUNT(DISTINCT ui.user_id) 
 FROM user_interests ui
-JOIN user_locations ul ON ui.user_id = ul.user_id
+JOIN user_profile up ON ui.user_id = up.user_id AND up.home_location IS NOT NULL
 WHERE ui.interest_id IN (
   SELECT interest_id FROM user_interests WHERE user_id = 'current_user_id'
 )
 AND ST_DWithin(
-  ul.location,
+  up.home_location,
   ST_MakePoint(-79.3832, 43.6532)::geography,
   25000
 )

@@ -627,8 +627,8 @@ Wrangler is the tool that handles the whole Worker lifecycle:
    - Kept the existing `next/font` setup (Geist) and metadata intact.
 
 4. Added a visual verification page:
-   - Created `web/src/app/theme-test/page.tsx`
-   - Rendered representative MUI components (buttons, chips, card, textfield) so theme changes are obvious.
+   - Theme verification lives at `/ui` (`src/app/(app)/ui/` with `UIDemoClient.tsx`)
+   - Renders representative MUI components (buttons, chips, card, textfield) so theme changes are obvious.
 
 5. Addressed the MUI + Emotion + Next.js hydration warning:
    - Initial load showed a “Hydration failed…” warning due to server/client style injection mismatch.
@@ -692,8 +692,7 @@ Wrangler is the tool that handles the whole Worker lifecycle:
    - `src/app/login` — supports:
      - Credentials sign-in via `next-auth/react` `signIn("credentials", ...)`
      - Google sign-in via `signIn("google", ...)`
-   - `src/app/me` — simple authenticated session view used for verification.
-   - `src/app/protected` — demonstrates route protection/redirect.
+   - Route protection is handled by the `/(app)` route group: unauthenticated users redirect to `/login?next=<path>`. Use `/home`, `/profile`, or `/ui` (theme/component demo) to verify authenticated access.
 
 6. **Password reset flow (database-backed)**
    - Added a `password_reset_tokens` table (token hash + expiry + used_at) and helper utilities.
