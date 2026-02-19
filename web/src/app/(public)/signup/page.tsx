@@ -3,6 +3,7 @@
 import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+import AuthLayout from "@/components/layout/AuthLayout";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 import { AppButton, AppCard, AppTextField } from "@/components/ui";
@@ -16,7 +17,8 @@ export default function SignupPage() {
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   return (
-    <Box sx={{ minHeight: "100dvh", display: "grid", placeItems: "center", p: 2 }}>
+    <AuthLayout>
+    <Box sx={{ flex: 1, display: "grid", placeItems: "center", p: 2 }}>
       <AppCard sx={{ width: "100%", maxWidth: 520 }}>
         <Stack spacing={2}>
           <Typography component="h1" variant="h4">
@@ -86,5 +88,6 @@ export default function SignupPage() {
         </Stack>
       </AppCard>
     </Box>
+    </AuthLayout>
   );
 }

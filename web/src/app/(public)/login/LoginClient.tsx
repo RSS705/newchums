@@ -6,12 +6,13 @@ import Divider from "@mui/material/Divider";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
-import GoogleIcon from "@mui/icons-material/Google";
 import { signIn } from "next-auth/react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
-import { AppButton, AppCard, AppTextField } from "@/components/ui";
+import AuthField from "@/components/auth/AuthField";
+import AuthLayout from "@/components/layout/AuthLayout";
+import { AppButton, AppCard } from "@/components/ui";
 import { getSafeRedirectPath } from "@/lib/authRedirect";
 
 export default function LoginClient() {
@@ -35,19 +36,26 @@ export default function LoginClient() {
   const formContent = (
     <Stack spacing={2.5}>
       <Box>
-        <Typography component="h1" variant="h4" fontWeight={600} sx={{ mb: 0.5 }}>
+        <Typography component="h1" variant="h4" fontWeight={700} sx={{ mb: 0.5 }}>
           Welcome to NewChums
         </Typography>
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="subtitle1" color="text.secondary" sx={{ mb: 1 }}>
           Your events dashboard
         </Typography>
       </Box>
 
-      {/* Social login first (template order) */}
       <AppButton
         variant="outlined"
         fullWidth
-        startIcon={<GoogleIcon />}
+        size="large"
+        startIcon={
+          <Box
+            component="img"
+            src="/images/google-icon.svg"
+            alt=""
+            sx={{ width: 20, height: 20 }}
+          />
+        }
         onClick={() => signIn("google", { redirectTo: redirectTarget })}
         sx={{
           borderColor: "divider",
@@ -61,15 +69,17 @@ export default function LoginClient() {
         Sign in with Google
       </AppButton>
 
-      <Divider sx={{ "&::before, &::after": { borderColor: "divider" } }}>
-        <Typography variant="body2" color="text.secondary" component="span">
-          or sign in with
-        </Typography>
-      </Divider>
+      <Box sx={{ mt: 2.5 }}>
+        <Divider sx={{ "&::before, &::after": { borderColor: "divider" } }}>
+          <Typography variant="h6" fontWeight={400} color="text.secondary" component="span" sx={{ px: 2 }}>
+            or sign in with
+          </Typography>
+        </Divider>
+      </Box>
 
       <Stack
         component="form"
-        spacing={1.5}
+        spacing={0}
         onSubmit={async (event) => {
           event.preventDefault();
           setError(null);
@@ -86,24 +96,26 @@ export default function LoginClient() {
           router.replace(redirectTarget);
         }}
       >
-        <AppTextField
-          type="email"
+        <AuthField
+          id="login-email"
           label="Email"
+          type="email"
           value={email}
           onChange={(event) => setEmail(event.target.value)}
           required
         />
-        <AppTextField
-          type="password"
+        <AuthField
+          id="login-password"
           label="Password"
+          type="password"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
           required
-          helperText={error ?? " "}
+          helperText={error ?? undefined}
           error={Boolean(error)}
         />
 
-        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 1 }}>
+        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ my: 2 }}>
           <FormControlLabel
             control={
               <Checkbox
@@ -118,41 +130,47 @@ export default function LoginClient() {
           <Typography
             component={Link}
             href="/forgot-password"
-            variant="body2"
+            variant="subtitle1"
+            fontWeight={500}
             color="primary"
-            sx={{ textDecoration: "underline" }}
+            sx={{ textDecoration: "none" }}
           >
             Forgot Password?
           </Typography>
-        </Box>
+        </Stack>
 
-        <AppButton type="submit" fullWidth>
+        <AppButton type="submit" fullWidth size="large">
           Sign In
         </AppButton>
       </Stack>
 
-      <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center" }}>
-        New to NewChums?{" "}
-        <Box
+      <Stack direction="row" spacing={1} sx={{ mt: 3, justifyContent: "center", flexWrap: "wrap" }}>
+        <Typography variant="subtitle1" fontWeight={500} color="text.secondary">
+          New to NewChums?
+        </Typography>
+        <Typography
           component={Link}
           href="/signup"
-          sx={{ color: "primary.main", textDecoration: "underline", fontWeight: 600 }}
+          variant="subtitle1"
+          fontWeight={500}
+          sx={{ color: "primary.main", textDecoration: "none" }}
         >
           Create an account
-        </Box>
-      </Typography>
+        </Typography>
+      </Stack>
     </Stack>
   );
 
   return (
-    <Box
-      sx={{
-        minHeight: "100dvh",
-        display: "flex",
-        flexDirection: { xs: "column", md: "row" },
-      }}
-    >
-      {/* Left: branding + illustration (hidden on xs/sm, shown md+) — template split pattern */}
+    <AuthLayout>
+      <Box
+        sx={{
+          flex: 1,
+          display: "flex",
+          flexDirection: { xs: "column", md: "row" },
+        }}
+      >
+      {/* Left: branding + illustration (hidden on xs/sm, shown md+) */}
       <Box
         sx={{
           display: { xs: "none", md: "flex" },
@@ -165,17 +183,31 @@ export default function LoginClient() {
             `linear-gradient(135deg, ${t.palette.primary.light} 0%, ${t.palette.primary.main}20 100%)`,
         }}
       >
+        {/* Copy template_reference/Icon Black.png to web/public/icon-black.png */}
+        <Box
+          component="img"
+          src="/icon-black.png"
+          alt=""
+          sx={{
+            width: 64,
+            height: 64,
+            mb: 2,
+            objectFit: "contain",
+          }}
+        />
         <Typography
           component="span"
-          variant="h4"
+          variant="h3"
           fontWeight={700}
-          color="primary.dark"
-          sx={{ mb: 2, textAlign: "center" }}
+          sx={{ color: "#1a1a1a", mb: 1, textAlign: "center" }}
         >
-          NewChums
+          New Chums
         </Typography>
-        <Typography variant="body2" color="primary.dark" sx={{ opacity: 0.85, textAlign: "center", mb: 3 }}>
-          Meet nearby people through shared events.
+        <Typography
+          variant="subtitle1"
+          sx={{ color: "#333", textAlign: "center", mb: 3 }}
+        >
+          Find your people.
         </Typography>
         <Box
           component="img"
@@ -224,5 +256,6 @@ export default function LoginClient() {
         </AppCard>
       </Box>
     </Box>
+    </AuthLayout>
   );
 }

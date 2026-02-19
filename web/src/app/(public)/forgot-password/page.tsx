@@ -4,6 +4,7 @@ import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import * as React from "react";
+import AuthLayout from "@/components/layout/AuthLayout";
 import { AppButton, AppCard, AppTextField } from "@/components/ui";
 
 type RequestResponse = { ok: boolean; resetUrl?: string };
@@ -15,7 +16,8 @@ export default function ForgotPasswordPage() {
   const [error, setError] = React.useState<string | null>(null);
 
   return (
-    <Box sx={{ minHeight: "100dvh", display: "grid", placeItems: "center", p: 2 }}>
+    <AuthLayout>
+    <Box sx={{ flex: 1, display: "grid", placeItems: "center", p: 2 }}>
       <AppCard sx={{ width: "100%", maxWidth: 520 }}>
         <Stack spacing={2}>
           <Typography component="h1" variant="h4">
@@ -74,5 +76,6 @@ export default function ForgotPasswordPage() {
         </Stack>
       </AppCard>
     </Box>
+    </AuthLayout>
   );
 }
