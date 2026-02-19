@@ -1,59 +1,131 @@
 import { createTheme, type PaletteMode, type ThemeOptions } from "@mui/material/styles";
 
+// Shadow scale from template reference (soft, modern elevation)
+const shadows: ThemeOptions["shadows"] = [
+  "none",
+  "0px 2px 3px rgba(0,0,0,0.10)",
+  "0 0 1px 0 rgba(0,0,0,0.31), 0 2px 2px -2px rgba(0,0,0,0.25)",
+  "0 0 1px 0 rgba(0,0,0,0.31), 0 3px 4px -2px rgba(0,0,0,0.25)",
+  "0 0 1px 0 rgba(0,0,0,0.31), 0 3px 4px -2px rgba(0,0,0,0.25)",
+  "0 0 1px 0 rgba(0,0,0,0.31), 0 4px 6px -2px rgba(0,0,0,0.25)",
+  "0 0 1px 0 rgba(0,0,0,0.31), 0 4px 6px -2px rgba(0,0,0,0.25)",
+  "0 0 1px 0 rgba(0,0,0,0.31), 0 4px 8px -2px rgba(0,0,0,0.25)",
+  "0 9px 17.5px rgb(0,0,0,0.05)",
+  "rgb(145 158 171 / 30%) 0px 0px 2px 0px, rgb(145 158 171 / 12%) 0px 12px 24px -4px",
+  "0px 6px 12px rgba(127, 145, 156, 0.12)",
+  "0 0 1px 0 rgba(0,0,0,0.31), 0 6px 16px -4px rgba(0,0,0,0.25)",
+  "0 0 1px 0 rgba(0,0,0,0.31), 0 7px 16px -4px rgba(0,0,0,0.25)",
+  "0 0 1px 0 rgba(0,0,0,0.31), 0 8px 18px -8px rgba(0,0,0,0.25)",
+  "0 0 1px 0 rgba(0,0,0,0.31), 0 9px 18px -8px rgba(0,0,0,0.25)",
+  "0 0 1px 0 rgba(0,0,0,0.31), 0 10px 20px -8px rgba(0,0,0,0.25)",
+  "0 0 1px 0 rgba(0,0,0,0.31), 0 11px 20px -8px rgba(0,0,0,0.25)",
+  "0 0 1px 0 rgba(0,0,0,0.31), 0 12px 22px -8px rgba(0,0,0,0.25)",
+  "0 0 1px 0 rgba(0,0,0,0.31), 0 13px 22px -8px rgba(0,0,0,0.25)",
+  "0 0 1px 0 rgba(0,0,0,0.31), 0 14px 24px -8px rgba(0,0,0,0.25)",
+  "0 0 1px 0 rgba(0,0,0,0.31), 0 16px 28px -8px rgba(0,0,0,0.25)",
+  "0 0 1px 0 rgba(0,0,0,0.31), 0 18px 30px -8px rgba(0,0,0,0.25)",
+  "0 0 1px 0 rgba(0,0,0,0.31), 0 20px 32px -8px rgba(0,0,0,0.25)",
+  "0 0 1px 0 rgba(0,0,0,0.31), 0 22px 34px -8px rgba(0,0,0,0.25)",
+  "0 0 1px 0 rgba(0,0,0,0.31), 0 24px 36px -8px rgba(0,0,0,0.25)",
+];
+
+// Template palette (DefaultColors.tsx)
 const paletteByMode: Record<PaletteMode, ThemeOptions["palette"]> = {
   light: {
     mode: "light",
     primary: {
-      main: "#FF6B35",
-      light: "#FF8F66",
-      dark: "#E55A2B",
-      contrastText: "#FFFFFF",
+      main: "#5D87FF",
+      light: "#ECF2FF",
+      dark: "#4570EA",
+      contrastText: "#ffffff",
     },
     secondary: {
-      main: "#2EC4B6",
-      light: "#5DD4C8",
-      dark: "#25A99D",
-      contrastText: "#FFFFFF",
+      main: "#49BEFF",
+      light: "#E8F7FF",
+      dark: "#23afdb",
+      contrastText: "#ffffff",
     },
-    error: { main: "#E63946" },
-    warning: { main: "#F4A261" },
-    success: { main: "#2A9D8F" },
+    success: {
+      main: "#13DEB9",
+      light: "#E6FFFA",
+      dark: "#02b3a9",
+      contrastText: "#ffffff",
+    },
+    info: {
+      main: "#539BFF",
+      light: "#EBF3FE",
+      dark: "#1682d4",
+      contrastText: "#ffffff",
+    },
+    error: {
+      main: "#FA896B",
+      light: "#FDEDE8",
+      dark: "#f3704d",
+      contrastText: "#ffffff",
+    },
+    warning: {
+      main: "#FFAE1F",
+      light: "#FEF5E5",
+      dark: "#ae8e59",
+      contrastText: "#ffffff",
+    },
     background: {
-      default: "#F5F7FA",
+      default: "#F2F6FA",
       paper: "#FFFFFF",
     },
     text: {
-      primary: "#1A1A2E",
-      secondary: "#4A4A68",
+      primary: "#2A3547",
+      secondary: "#2A3547",
     },
-    divider: "#E4E8EF",
+    divider: "#e5eaef",
   },
   dark: {
     mode: "dark",
     primary: {
-      main: "#FF8F66",
-      light: "#FFB095",
-      dark: "#E8744A",
-      contrastText: "#1A1A2E",
+      main: "#5D87FF",
+      light: "#ECF2FF",
+      dark: "#4570EA",
+      contrastText: "#ffffff",
     },
     secondary: {
-      main: "#5DD4C8",
-      light: "#82E0D6",
-      dark: "#2DAA9D",
-      contrastText: "#0C1E1B",
+      main: "#777e89",
+      light: "#1C455D",
+      dark: "#173f98",
+      contrastText: "#ffffff",
     },
-    error: { main: "#FF6B7A" },
-    warning: { main: "#FFC078" },
-    success: { main: "#52C9BA" },
+    success: {
+      main: "#13DEB9",
+      light: "#1B3C48",
+      dark: "#02b3a9",
+      contrastText: "#ffffff",
+    },
+    info: {
+      main: "#539BFF",
+      light: "#223662",
+      dark: "#1682d4",
+      contrastText: "#ffffff",
+    },
+    error: {
+      main: "#FA896B",
+      light: "#4B313D",
+      dark: "#f3704d",
+      contrastText: "#ffffff",
+    },
+    warning: {
+      main: "#FFAE1F",
+      light: "#4D3A2A",
+      dark: "#ae8e59",
+      contrastText: "#ffffff",
+    },
     background: {
-      default: "#0F1420",
-      paper: "#161E2D",
+      default: "#171c23",
+      paper: "#171c23",
     },
     text: {
-      primary: "#F4F6FB",
-      secondary: "#AEB8CD",
+      primary: "#EAEFF4",
+      secondary: "#7C8FAC",
     },
-    divider: "#2B3448",
+    divider: "#333F55",
   },
 };
 
@@ -61,20 +133,36 @@ export function getDesignTokens(mode: PaletteMode): ThemeOptions {
   return {
     palette: paletteByMode[mode],
     spacing: 8,
+    shadows,
     shape: {
       borderRadius: 14,
     },
     typography: {
-      fontFamily: "var(--font-geist-sans), system-ui, -apple-system, sans-serif",
-      h1: { fontWeight: 700, lineHeight: 1.2, letterSpacing: "-0.02em" },
-      h2: { fontWeight: 700, lineHeight: 1.24, letterSpacing: "-0.02em" },
-      h3: { fontWeight: 700, lineHeight: 1.28, letterSpacing: "-0.02em" },
-      h4: { fontWeight: 700, lineHeight: 1.32, letterSpacing: "-0.01em" },
-      h5: { fontWeight: 700, lineHeight: 1.36 },
-      h6: { fontWeight: 700, lineHeight: 1.4 },
+      fontFamily: "var(--font-plus-jakarta), system-ui, -apple-system, sans-serif",
+      h1: { fontWeight: 600, fontSize: "2.25rem", lineHeight: "2.75rem", letterSpacing: "-0.02em" },
+      h2: { fontWeight: 600, fontSize: "1.875rem", lineHeight: "2.25rem", letterSpacing: "-0.02em" },
+      h3: { fontWeight: 600, fontSize: "1.5rem", lineHeight: "1.75rem", letterSpacing: "-0.02em" },
+      h4: { fontWeight: 600, fontSize: "1.3125rem", lineHeight: "1.6rem", letterSpacing: "-0.01em" },
+      h5: { fontWeight: 600, fontSize: "1.125rem", lineHeight: "1.6rem" },
+      h6: { fontWeight: 600, fontSize: "1rem", lineHeight: "1.2rem" },
+      body1: { fontSize: "0.875rem", fontWeight: 400, lineHeight: "1.334rem" },
+      body2: { fontSize: "0.75rem", fontWeight: 400, lineHeight: "1rem" },
       button: { textTransform: "none", fontWeight: 600 },
     },
     components: {
+      MuiCssBaseline: {
+        styleOverrides: {
+          "*": { boxSizing: "border-box" },
+          html: { height: "100%", width: "100%" },
+          body: { height: "100%", margin: 0, padding: 0 },
+          a: { textDecoration: "none" },
+        },
+      },
+      MuiPaper: {
+        styleOverrides: {
+          root: { backgroundImage: "none" },
+        },
+      },
       MuiButton: {
         defaultProps: {
           disableElevation: true,
@@ -86,6 +174,17 @@ export function getDesignTokens(mode: PaletteMode): ThemeOptions {
             paddingInline: theme.spacing(2.5),
             paddingBlock: theme.spacing(1.1),
             fontWeight: 600,
+            boxShadow: "none",
+          }),
+        },
+      },
+      MuiIconButton: {
+        styleOverrides: {
+          root: ({ theme }) => ({
+            "&:hover": {
+              backgroundColor: theme.palette.primary.light,
+              color: theme.palette.primary.main,
+            },
           }),
         },
       },
@@ -97,6 +196,7 @@ export function getDesignTokens(mode: PaletteMode): ThemeOptions {
           root: ({ theme }) => ({
             borderRadius: Number(theme.shape.borderRadius) + 4,
             border: `1px solid ${theme.palette.divider}`,
+            backgroundImage: "none",
             boxShadow: mode === "light" ? "0 8px 22px rgba(26, 26, 46, 0.06)" : "none",
           }),
         },
@@ -123,10 +223,22 @@ export function getDesignTokens(mode: PaletteMode): ThemeOptions {
           root: ({ theme }) => ({
             borderRadius: theme.shape.borderRadius,
             backgroundColor: theme.palette.background.paper,
+            "& .MuiOutlinedInput-notchedOutline": {
+              borderColor: theme.palette.divider,
+            },
+            "&.Mui-focused .MuiOutlinedInput-notchedOutline, &:hover .MuiOutlinedInput-notchedOutline": {
+              borderColor: theme.palette.primary.main,
+            },
           }),
           notchedOutline: ({ theme }) => ({
             borderColor: theme.palette.divider,
           }),
+          input: {
+            padding: "12px 14px",
+          },
+          inputSizeSmall: {
+            padding: "8px 14px",
+          },
         },
       },
       MuiInputLabel: {
@@ -191,6 +303,21 @@ export function getDesignTokens(mode: PaletteMode): ThemeOptions {
       MuiSnackbar: {
         defaultProps: {
           anchorOrigin: { vertical: "bottom", horizontal: "right" },
+        },
+      },
+      MuiDivider: {
+        styleOverrides: {
+          root: ({ theme }) => ({
+            borderColor: theme.palette.divider,
+          }),
+        },
+      },
+      MuiChip: {
+        styleOverrides: {
+          root: {
+            fontWeight: 600,
+            fontSize: "0.75rem",
+          },
         },
       },
     },

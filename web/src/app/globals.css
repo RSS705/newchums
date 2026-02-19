@@ -1,10 +1,19 @@
+/* Design tokens aligned with MUI theme (template palette) */
 :root {
-  --background: #ffffff;
-  --foreground: #1a1a2e;
+  --background: #f2f6fa;
+  --foreground: #2a3547;
+}
+
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
 }
 
 html,
 body {
+  height: 100%;
+  width: 100%;
   max-width: 100vw;
   overflow-x: hidden;
 }
@@ -12,15 +21,9 @@ body {
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  font-family: var(--font-plus-jakarta), system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-* {
-  box-sizing: border-box;
-  padding: 0;
-  margin: 0;
 }
 
 a {
