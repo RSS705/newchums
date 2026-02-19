@@ -12,11 +12,40 @@ export function getComponents(theme: Theme): Theme["components"] {
         html: { height: "100%", width: "100%" },
         body: { height: "100%", margin: 0, padding: 0 },
         a: { textDecoration: "none" },
+        "#root": { height: "100%" },
+        hr: {
+          height: 1,
+          border: 0,
+          borderTop: `1px solid ${theme.palette.divider}`,
+        },
+      },
+    },
+    MuiAccordion: {
+      styleOverrides: {
+        root: {
+          "&:before": { backgroundColor: theme.palette.grey[100] },
+        },
       },
     },
     MuiPaper: {
       styleOverrides: {
         root: { backgroundImage: "none" },
+      },
+    },
+    MuiStepConnector: {
+      styleOverrides: {
+        line: { borderColor: theme.palette.divider },
+      },
+    },
+    MuiFab: {
+      styleOverrides: {
+        root: { boxShadow: "none" },
+        sizeSmall: { width: 30, height: 30, minHeight: 30 },
+      },
+    },
+    MuiButtonGroup: {
+      styleOverrides: {
+        root: { boxShadow: "none" },
       },
     },
     MuiButton: {
@@ -31,6 +60,63 @@ export function getComponents(theme: Theme): Theme["components"] {
           textTransform: "none",
           fontWeight: 600,
         },
+        text: {
+          padding: "5px 15px",
+          "&:hover": {
+            backgroundColor: theme.palette.primary.light,
+            color: theme.palette.primary.main,
+          },
+        },
+        textPrimary: {
+          backgroundColor: theme.palette.primary.light,
+          "&:hover": {
+            backgroundColor: theme.palette.primary.main,
+            color: "white",
+          },
+        },
+        textSecondary: {
+          backgroundColor: theme.palette.secondary.light,
+          "&:hover": {
+            backgroundColor: theme.palette.secondary.main,
+            color: "white",
+          },
+        },
+        outlinedPrimary: {
+          "&:hover": {
+            backgroundColor: theme.palette.primary.main,
+            color: "white",
+          },
+        },
+        outlinedSecondary: {
+          "&:hover": {
+            backgroundColor: theme.palette.secondary.main,
+            color: "white",
+          },
+        },
+        outlinedError: {
+          "&:hover": {
+            backgroundColor: theme.palette.error.main,
+            color: "white",
+          },
+        },
+        outlinedSuccess: {
+          "&:hover": {
+            backgroundColor: theme.palette.success.main,
+            color: "white",
+          },
+        },
+        outlinedInfo: {
+          "&:hover": {
+            backgroundColor: theme.palette.info.main,
+            color: "white",
+          },
+        },
+        outlinedWarning: {
+          "&:hover": {
+            backgroundColor: theme.palette.warning.main,
+            color: "white",
+          },
+        },
       },
     },
     MuiIconButton: {
@@ -39,6 +125,42 @@ export function getComponents(theme: Theme): Theme["components"] {
           "&:hover": {
             backgroundColor: theme.palette.primary.light,
             color: theme.palette.primary.main,
+          },
+        },
+        colorPrimary: {
+          "&:hover": {
+            backgroundColor: theme.palette.primary.main,
+            color: "white",
+          },
+        },
+        colorSecondary: {
+          "&:hover": {
+            backgroundColor: theme.palette.secondary.main,
+            color: "white",
+          },
+        },
+        colorSuccess: {
+          "&:hover": {
+            backgroundColor: theme.palette.success.main,
+            color: "white",
+          },
+        },
+        colorError: {
+          "&:hover": {
+            backgroundColor: theme.palette.error.main,
+            color: "white",
+          },
+        },
+        colorWarning: {
+          "&:hover": {
+            backgroundColor: theme.palette.warning.main,
+            color: "white",
+          },
+        },
+        colorInfo: {
+          "&:hover": {
+            backgroundColor: theme.palette.info.main,
+            color: "white",
           },
         },
       },
@@ -183,6 +305,90 @@ export function getComponents(theme: Theme): Theme["components"] {
         root: {
           fontWeight: 600,
           fontSize: "0.75rem",
+        },
+      },
+    },
+    MuiAlert: {
+      styleOverrides: {
+        filledSuccess: { color: "white" },
+        filledInfo: { color: "white" },
+        filledError: { color: "white" },
+        filledWarning: { color: "white" },
+        standardSuccess: {
+          backgroundColor: theme.palette.success.light,
+          color: theme.palette.success.main,
+        },
+        standardError: {
+          backgroundColor: theme.palette.error.light,
+          color: theme.palette.error.main,
+        },
+        standardWarning: {
+          backgroundColor: theme.palette.warning.light,
+          color: theme.palette.warning.main,
+        },
+        standardInfo: {
+          backgroundColor: theme.palette.info.light,
+          color: theme.palette.info.main,
+        },
+        outlinedSuccess: {
+          borderColor: theme.palette.success.main,
+          color: theme.palette.success.main,
+        },
+        outlinedWarning: {
+          borderColor: theme.palette.warning.main,
+          color: theme.palette.warning.main,
+        },
+        outlinedError: {
+          borderColor: theme.palette.error.main,
+          color: theme.palette.error.main,
+        },
+        outlinedInfo: {
+          borderColor: theme.palette.info.main,
+          color: theme.palette.info.main,
+        },
+      },
+    },
+    MuiAutocomplete: {
+      styleOverrides: {
+        root: {
+          "& .MuiOutlinedInput-root": { padding: "4px 9px" },
+        },
+      },
+    },
+    MuiTooltip: {
+      styleOverrides: {
+        tooltip: {
+          color: theme.palette.background.paper,
+          background: theme.palette.text.primary,
+        },
+      },
+    },
+    MuiDrawer: {
+      styleOverrides: {
+        paper: {
+          borderColor: theme.palette.divider,
+        },
+      },
+    },
+    MuiTableCell: {
+      styleOverrides: {
+        root: {
+          borderBottom: `1px solid ${theme.palette.divider}`,
+        },
+      },
+    },
+    MuiTableRow: {
+      styleOverrides: {
+        root: {
+          "&:last-child td": { borderBottom: 0 },
+        },
+      },
+    },
+    MuiLinearProgress: {
+      styleOverrides: {
+        root: {
+          backgroundColor: theme.palette.grey[200],
+          borderRadius: "6px",
         },
       },
     },

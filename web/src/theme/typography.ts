@@ -47,6 +47,7 @@ export const typography: ThemeOptions["typography"] = {
   },
   body2: {
     fontSize: "0.75rem",
+    letterSpacing: "0rem",
     fontWeight: 400,
     lineHeight: "1rem",
   },

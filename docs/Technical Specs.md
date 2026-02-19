@@ -410,6 +410,10 @@ The theme follows the template’s modular architecture. Single entry point: `in
 
 **Global CSS:** `app/globals.css` — minimal (:root tokens, html/body, font-smoothing). MuiCssBaseline handles resets.
 
+**Where to edit:** Token and override changes go in `web/src/theme/` — do not add page-specific style hacks for theme-level concerns. `/ui` showcases components for alignment proof.
+
+**Template alignment (gap report):** Our theme is aligned with `template_reference/src/utils/theme/`. Matched: palette (DefaultColors), typography, shadows, shape.borderRadius (7), spacing (8), MuiButton (all variants incl. text/outlined hovers), MuiIconButton (color variants), MuiCard, MuiOutlinedInput, MuiAlert, MuiTooltip, MuiDrawer, MuiTableCell/TableRow, MuiLinearProgress, MuiAccordion, MuiChip, MuiDivider, MuiDialog*, MuiButtonGroup, MuiFab, MuiStepConnector, MuiAutocomplete. Intentionally different: we use `text.secondary` #7C8FAC (template has #2A3547 for light); we add `background.default` #F2F6FA; we keep custom Card shadow (template uses default elevation). Not ported: MuiTimelineConnector (@mui/lab), MuiGridItem, template-specific utility classes (`.btn-xs`, `.hoverCard`, etc.).
+
 ### Color Palette (Placeholder — Refine Before Pilot)
 
 These colors establish a warm, friendly, vibrant feel. They can be adjusted as you build and see them in context.
