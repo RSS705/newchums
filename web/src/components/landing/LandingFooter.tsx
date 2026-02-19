@@ -13,7 +13,7 @@ export default function LandingFooter() {
     <>
       <Stack spacing={2} mb={3}>
         <BrandLogo
-          src="/Logo%20Horizontal%20Black%20No%20Dot%20Com.png"
+          src="/logo-horizontal-black-no-dot-com.png"
           alt="NewChums"
           height={32}
         />

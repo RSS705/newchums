@@ -194,7 +194,7 @@ export default function LoginClient() {
       >
         <Box sx={{ mb: 2 }}>
           <Image
-            src="/Icon%20Black.png"
+            src="/icon-black.png"
             alt="NewChums"
             width={64}
             height={64}

@@ -5,7 +5,7 @@ import Link from "@mui/material/Link";
 import type { SxProps, Theme } from "@mui/material/styles";
 
 export type BrandLogoProps = {
-  /** Image src (e.g. "/Logo Horizontal Black.png") */
+  /** Image src (e.g. "/logo-horizontal-black.png") */
   src: string;
   /** Alt text for accessibility */
   alt: string;

@@ -19,7 +19,7 @@ export default function LandingHeader() {
       }}
     >
       <BrandLogo
-        src="/Logo%20Horizontal%20Black.png"
+        src="/logo-horizontal-black.png"
         alt="NewChums"
         height={32}
       />
