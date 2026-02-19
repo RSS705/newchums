@@ -57,7 +57,7 @@ export function getPalette(mode: PaletteMode): PaletteOptions {
     },
     text: {
       primary: "#2A3547",
-      secondary: "#7C8FAC",
+      secondary: "#4A5568",
     },
     action: {
       disabledBackground: "rgba(73,82,88,0.12)",

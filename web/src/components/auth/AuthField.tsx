@@ -25,7 +25,7 @@ export default function AuthField({
   const hasHelper = helperText !== undefined && helperText !== "";
 
   return (
-    <Box sx={{ mt: 2.25 }}>
+    <Box sx={{ mt: 2 }}>
       <Typography
         component="label"
         htmlFor={fieldId}

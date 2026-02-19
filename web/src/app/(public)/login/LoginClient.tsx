@@ -7,6 +7,7 @@ import FormControlLabel from "@mui/material/FormControlLabel";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { signIn } from "next-auth/react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
@@ -37,10 +38,10 @@ export default function LoginClient() {
     <Stack spacing={2.5}>
       <Box>
         <Typography component="h1" variant="h4" fontWeight={700} sx={{ mb: 0.5 }}>
-          Welcome to NewChums
+          Welcome back friend
         </Typography>
         <Typography variant="subtitle1" color="text.secondary" sx={{ mb: 1 }}>
-          Your events dashboard
+          If you&apos;re new here, click create an account below
         </Typography>
       </Box>
 
@@ -48,6 +49,7 @@ export default function LoginClient() {
         variant="outlined"
         fullWidth
         size="large"
+        color="inherit"
         startIcon={
           <Box
             component="img"
@@ -63,6 +65,7 @@ export default function LoginClient() {
           "&:hover": {
             borderColor: "primary.main",
             backgroundColor: "action.hover",
+            color: "text.primary",
           },
         }}
       >
@@ -124,7 +127,7 @@ export default function LoginClient() {
                 onChange={(e) => setRememberDevice(e.target.checked)}
               />
             }
-            label="Remember this Device"
+            label="Remember this device"
             sx={{ "& .MuiFormControlLabel-label": { fontSize: "0.875rem" } }}
           />
           <Typography
@@ -144,16 +147,22 @@ export default function LoginClient() {
         </AppButton>
       </Stack>
 
-      <Stack direction="row" spacing={1} sx={{ mt: 3, justifyContent: "center", flexWrap: "wrap" }}>
+      <Stack direction="row" spacing={1} sx={{ mt: 3, justifyContent: "center", flexWrap: "wrap", alignItems: "center" }}>
         <Typography variant="subtitle1" fontWeight={500} color="text.secondary">
-          New to NewChums?
+          New to NewChums?{" "}
         </Typography>
         <Typography
           component={Link}
           href="/signup"
           variant="subtitle1"
-          fontWeight={500}
-          sx={{ color: "primary.main", textDecoration: "none" }}
+          fontWeight={600}
+          sx={{
+            color: "primary.main",
+            textDecoration: "underline",
+            textUnderlineOffset: 2,
+            "&:hover": { color: "primary.dark" },
+            "&:focus-visible": { outline: "2px solid", outlineColor: "primary.main", outlineOffset: 2, borderRadius: 1 },
+          }}
         >
           Create an account
         </Typography>
@@ -183,31 +192,28 @@ export default function LoginClient() {
             `linear-gradient(135deg, ${t.palette.primary.light} 0%, ${t.palette.primary.main}20 100%)`,
         }}
       >
-        {/* Copy template_reference/Icon Black.png to web/public/icon-black.png */}
-        <Box
-          component="img"
-          src="/icon-black.png"
-          alt=""
-          sx={{
-            width: 64,
-            height: 64,
-            mb: 2,
-            objectFit: "contain",
-          }}
-        />
+        <Box sx={{ mb: 2 }}>
+          <Image
+            src="/Icon%20Black.png"
+            alt="NewChums"
+            width={64}
+            height={64}
+            style={{ objectFit: "contain" }}
+          />
+        </Box>
         <Typography
           component="span"
           variant="h3"
           fontWeight={700}
           sx={{ color: "#1a1a1a", mb: 1, textAlign: "center" }}
         >
-          New Chums
+          NewChums
         </Typography>
         <Typography
           variant="subtitle1"
           sx={{ color: "#333", textAlign: "center", mb: 3 }}
         >
-          Find your people.
+          Find your people
         </Typography>
         <Box
           component="img"

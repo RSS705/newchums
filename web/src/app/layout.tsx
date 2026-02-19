@@ -14,6 +14,9 @@ const plusJakarta = Plus_Jakarta_Sans({
 export const metadata: Metadata = {
   title: "NewChums",
   description: "NewChums",
+  icons: {
+    icon: "/Icon%20Black.png",
+  },
 };
 
 const plausibleDomain =

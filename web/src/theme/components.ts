@@ -60,6 +60,28 @@ export function getComponents(theme: Theme): Theme["components"] {
           textTransform: "none",
           fontWeight: 600,
         },
+        containedPrimary: {
+          color: theme.palette.common.white,
+          fontWeight: 600,
+          textTransform: "none",
+          "&:hover": {
+            backgroundColor: theme.palette.primary.dark,
+            color: theme.palette.common.white,
+          },
+          "&.Mui-disabled": {
+            color: theme.palette.common.white,
+            opacity: 0.6,
+          },
+        },
+        containedSecondary: {
+          color: theme.palette.common.white,
+          fontWeight: 600,
+          textTransform: "none",
+          "&:hover": {
+            backgroundColor: theme.palette.secondary.dark,
+            color: theme.palette.common.white,
+          },
+        },
         text: {
           padding: "5px 15px",
           "&:hover": {
@@ -82,9 +104,19 @@ export function getComponents(theme: Theme): Theme["components"] {
           },
         },
         outlinedPrimary: {
+          color: theme.palette.primary.main,
+          borderColor: theme.palette.primary.main,
           "&:hover": {
             backgroundColor: theme.palette.primary.main,
-            color: "white",
+            color: theme.palette.common.white,
+            borderColor: theme.palette.primary.main,
+          },
+        },
+        /* Social/ghost outlined buttons: keep text visible on hover (no fill) */
+        outlinedInherit: {
+          "&:hover": {
+            backgroundColor: theme.palette.action.hover,
+            color: theme.palette.text.primary,
           },
         },
         outlinedSecondary: {
