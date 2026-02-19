@@ -2,6 +2,37 @@
 
 This file stores detailed troubleshooting notes, command transcripts, and deep error threads that are archived from the main setup guide.
 
+## Theme Refactor: Template Alignment (February 2026)
+
+### What caused the mismatch
+
+1. **Monolithic theme:** All tokens and overrides lived in a single `theme.ts`, making it hard to align with template structure and leading to drift.
+2. **Competing style layers:** `globals.css` applied `* { padding: 0; margin: 0 }`, overriding MUI’s baseline and component padding.
+3. **Breakpoint choice:** Login used `sm` (600px) for the split layout, so the left panel hid on small desktop windows or DevTools device emulation.
+4. **Right panel background:** The form area did not use a white background; it inherited the grey page background.
+5. **Missing palette tokens:** No `action.hover`, affecting outlined button hovers.
+
+### What was refactored or removed
+
+- **Removed:** `web/src/theme/theme.ts` (monolithic file).
+- **Added:** `web/src/theme/palette.ts`, `typography.ts`, `shadows.ts`, `components.ts`, `index.ts` (composed theme).
+- **Simplified:** `globals.css` — removed `*` reset; `MuiCssBaseline` handles resets.
+- **Login layout:** Breakpoint changed from `sm` (600px) to `md` (900px); right panel uses `bgcolor: "background.paper"`; form `maxWidth` set to 450px.
+- **Components:** `getComponents(theme)` follows template pattern (function receiving theme for palette-aware overrides).
+
+### Where the style source of truth lives
+
+`web/src/theme/` — see Technical Specs > Design System > Theme Architecture.
+
+### Why this scales
+
+- Each concern (palette, typography, shadows, components) lives in its own file.
+- New views inherit the same layout and theme without page-specific hacks.
+- Auth layout (split left/right) can be reused for signup, forgot-password, etc.
+- Components override at theme level instead of in page styles.
+
+---
+
 ## Chunk 12: Error Tracking & Logging (Detailed Notes)
 
 ### Sentry (Web) setup notes

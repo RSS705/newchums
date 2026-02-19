@@ -149,20 +149,20 @@ export default function LoginClient() {
       sx={{
         minHeight: "100dvh",
         display: "flex",
-        flexDirection: { xs: "column", sm: "row" },
+        flexDirection: { xs: "column", md: "row" },
       }}
     >
-      {/* Left: branding + illustration (hidden on xs, shown sm+) */}
+      {/* Left: branding + illustration (hidden on xs/sm, shown md+) — template split pattern */}
       <Box
         sx={{
-          display: { xs: "none", sm: "flex" },
+          display: { xs: "none", md: "flex" },
           flex: "1 1 50%",
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
           p: 4,
-          background: (theme) =>
-            `linear-gradient(135deg, ${theme.palette.primary.light} 0%, ${theme.palette.primary.main}20 100%)`,
+          background: (t) =>
+            `linear-gradient(135deg, ${t.palette.primary.light} 0%, ${t.palette.primary.main}20 100%)`,
         }}
       >
         <Typography
@@ -190,7 +190,7 @@ export default function LoginClient() {
         />
       </Box>
 
-      {/* Right: login form */}
+      {/* Right: login form — white panel, centered form (template auth layout) */}
       <Box
         sx={{
           flex: "1 1 50%",
@@ -199,16 +199,17 @@ export default function LoginClient() {
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          p: { xs: 2, sm: 4 },
+          p: { xs: 2, md: 4 },
+          bgcolor: "background.paper",
         }}
       >
-        {/* Mobile: show compact illustration above form */}
+        {/* Mobile/small: show compact illustration above form */}
         <Box
           component="img"
           src="/auth-illustration.svg"
           alt=""
           sx={{
-            display: { xs: "block", sm: "none" },
+            display: { xs: "block", md: "none" },
             width: "100%",
             maxWidth: 200,
             height: "auto",
@@ -218,7 +219,7 @@ export default function LoginClient() {
           }}
         />
 
-        <AppCard sx={{ width: "100%", maxWidth: 420 }}>
+        <AppCard sx={{ width: "100%", maxWidth: 450 }}>
           {formContent}
         </AppCard>
       </Box>

@@ -1,13 +1,10 @@
-/* Design tokens aligned with MUI theme (template palette) */
+/**
+ * Global base styles. Minimal layer — theme (MuiCssBaseline) handles resets.
+ * Design tokens live in theme/palette.ts.
+ */
 :root {
   --background: #f2f6fa;
   --foreground: #2a3547;
-}
-
-* {
-  box-sizing: border-box;
-  padding: 0;
-  margin: 0;
 }
 
 html,

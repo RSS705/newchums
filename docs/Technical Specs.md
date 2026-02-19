@@ -391,6 +391,25 @@ Also confirm the Google OAuth client has an authorized redirect URI:
 
 NewChums uses MUI (Material UI) as its component library with a custom theme. The visual direction is **minimal, clean, modern, and warm**—an app that feels inviting and alive, not corporate or sterile.
 
+### Theme Architecture (Source of Truth)
+
+**Location:** `web/src/theme/`
+
+The theme follows the template’s modular architecture. Single entry point: `index.ts` (buildTheme).
+
+| File | Responsibility |
+|------|----------------|
+| `index.ts` | Composes palette, typography, shadows, components; exports `theme` and `buildTheme` |
+| `palette.ts` | Light/dark palette tokens (DefaultColors) |
+| `typography.ts` | Type scale, font family (Plus Jakarta Sans via CSS var) |
+| `shadows.ts` | Shadow scale for Cards, Popovers |
+| `components.ts` | MUI component overrides (function receiving theme) |
+| `ThemeRegistry.tsx` | AppRouterCacheProvider + ThemeProvider + CssBaseline |
+
+**Provider wiring:** `app/layout.tsx` → ThemeRegistry → children. Font variable set via `next/font` on `<body>`.
+
+**Global CSS:** `app/globals.css` — minimal (:root tokens, html/body, font-smoothing). MuiCssBaseline handles resets.
+
 ### Color Palette (Placeholder — Refine Before Pilot)
 
 These colors establish a warm, friendly, vibrant feel. They can be adjusted as you build and see them in context.
