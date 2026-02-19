@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 320" fill="none" aria-hidden="true">
+  <!-- Placeholder illustration  easy to replace: swap this file for your brand asset -->
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="currentColor" stop-opacity="0.06" />
+      <stop offset="100%" stop-color="currentColor" stop-opacity="0.02" />
+    </linearGradient>
+  </defs>
+  <rect width="400" height="320" fill="url(#bg)" rx="16" />
+  <circle cx="200" cy="120" r="48" stroke="currentColor" stroke-width="2" stroke-opacity="0.15" fill="none" />
+  <circle cx="120" cy="220" r="36" stroke="currentColor" stroke-width="2" stroke-opacity="0.12" fill="none" />
+  <circle cx="280" cy="220" r="36" stroke="currentColor" stroke-width="2" stroke-opacity="0.12" fill="none" />
+  <line x1="200" y1="168" x2="142" y2="208" stroke="currentColor" stroke-width="1.5" stroke-opacity="0.15" />
+  <line x1="200" y1="168" x2="258" y2="208" stroke="currentColor" stroke-width="1.5" stroke-opacity="0.15" />
+  <circle cx="200" cy="120" r="8" fill="currentColor" fill-opacity="0.2" />
+  <circle cx="120" cy="220" r="8" fill="currentColor" fill-opacity="0.2" />
+  <circle cx="280" cy="220" r="8" fill="currentColor" fill-opacity="0.2" />
+</svg>

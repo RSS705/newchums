@@ -11,6 +11,7 @@
 - `APP_ENV` is used by the API to distinguish production vs non-prod behavior (notably internal test-route access).
 - Cloudflare Pages Functions/Workers have a bundle size limit; Next.js + OpenNext can exceed the Free plan (3 MiB gzipped), requiring a Workers Paid plan (10 MiB) for production deploys.
 - Next.js dev indicators (the floating “N” overlay) are framework-provided and can be disabled via `next.config.ts` if they overlap app UI.
+- **Theme/UI changes not showing:** After editing `web/src/theme/theme.ts` or layout/styles, clear the Next.js cache: stop the dev server, delete `web/.next`, restart `npm run dev`. Do a hard refresh in the browser (Ctrl+Shift+R / Cmd+Shift+R).
 
 **Last Updated:**
 

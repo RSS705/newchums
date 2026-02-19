@@ -73,9 +73,17 @@ const paletteByMode: Record<PaletteMode, ThemeOptions["palette"]> = {
       default: "#F2F6FA",
       paper: "#FFFFFF",
     },
+    grey: {
+      100: "#F2F6FA",
+      200: "#EAEFF4",
+      300: "#DFE5EF",
+      400: "#7C8FAC",
+      500: "#5A6A85",
+      600: "#2A3547",
+    },
     text: {
       primary: "#2A3547",
-      secondary: "#2A3547",
+      secondary: "#7C8FAC",
     },
     divider: "#e5eaef",
   },
@@ -121,6 +129,14 @@ const paletteByMode: Record<PaletteMode, ThemeOptions["palette"]> = {
       default: "#171c23",
       paper: "#171c23",
     },
+    grey: {
+      100: "#333F55",
+      200: "#465670",
+      300: "#7C8FAC",
+      400: "#DFE5EF",
+      500: "#EAEFF4",
+      600: "#F2F6FA",
+    },
     text: {
       primary: "#EAEFF4",
       secondary: "#7C8FAC",
@@ -135,7 +151,7 @@ export function getDesignTokens(mode: PaletteMode): ThemeOptions {
     spacing: 8,
     shadows,
     shape: {
-      borderRadius: 14,
+      borderRadius: 7,
     },
     typography: {
       fontFamily: "var(--font-plus-jakarta), system-ui, -apple-system, sans-serif",
@@ -170,11 +186,10 @@ export function getDesignTokens(mode: PaletteMode): ThemeOptions {
         },
         styleOverrides: {
           root: ({ theme }) => ({
-            borderRadius: 999,
-            paddingInline: theme.spacing(2.5),
-            paddingBlock: theme.spacing(1.1),
-            fontWeight: 600,
+            borderRadius: theme.shape.borderRadius,
             boxShadow: "none",
+            textTransform: "none",
+            fontWeight: 600,
           }),
         },
       },
@@ -194,10 +209,9 @@ export function getDesignTokens(mode: PaletteMode): ThemeOptions {
         },
         styleOverrides: {
           root: ({ theme }) => ({
-            borderRadius: Number(theme.shape.borderRadius) + 4,
-            border: `1px solid ${theme.palette.divider}`,
+            borderRadius: theme.shape.borderRadius,
             backgroundImage: "none",
-            boxShadow: mode === "light" ? "0 8px 22px rgba(26, 26, 46, 0.06)" : "none",
+            boxShadow: "rgb(145 158 171 / 30%) 0px 0px 2px 0px, rgb(145 158 171 / 12%) 0px 12px 24px -4px",
           }),
         },
       },
@@ -221,17 +235,12 @@ export function getDesignTokens(mode: PaletteMode): ThemeOptions {
       MuiOutlinedInput: {
         styleOverrides: {
           root: ({ theme }) => ({
-            borderRadius: theme.shape.borderRadius,
-            backgroundColor: theme.palette.background.paper,
             "& .MuiOutlinedInput-notchedOutline": {
-              borderColor: theme.palette.divider,
+              borderColor: theme.palette.grey[300] ?? theme.palette.divider,
             },
             "&.Mui-focused .MuiOutlinedInput-notchedOutline, &:hover .MuiOutlinedInput-notchedOutline": {
               borderColor: theme.palette.primary.main,
             },
-          }),
-          notchedOutline: ({ theme }) => ({
-            borderColor: theme.palette.divider,
           }),
           input: {
             padding: "12px 14px",
