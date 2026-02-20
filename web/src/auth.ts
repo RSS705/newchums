@@ -65,10 +65,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           return url;
         }
       } catch {
-        return `${baseUrl}/home`;
+        return `${baseUrl}/`;
       }
 
-      return `${baseUrl}/home`;
+      return `${baseUrl}/`;
     },
   },
 });

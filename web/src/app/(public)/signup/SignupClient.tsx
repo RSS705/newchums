@@ -47,7 +47,7 @@ export default function SignupClient() {
               Welcome to NewChums
             </Typography>
             <Typography variant="subtitle1" color="text.secondary" sx={{ mb: 1 }}>
-              Your place to find your people
+              Let&apos;s get you started
             </Typography>
           </Box>
 

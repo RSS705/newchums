@@ -13,7 +13,7 @@ import EmojiPeopleOutlinedIcon from "@mui/icons-material/EmojiPeopleOutlined";
 /**
  * Hero content only — no Container (Layout provides it).
  */
-export default function LandingHero() {
+export default function LandingHero({ isLoggedIn = false }: { isLoggedIn?: boolean }) {
   const mdUp = useMediaQuery((theme: Theme) => theme.breakpoints.up("md"));
 
   return (
@@ -62,12 +62,25 @@ export default function LandingHero() {
               to do; in your area.
             </Typography>
             <Stack direction={{ xs: "column", sm: "row" }} spacing={2} pt={2}>
-              <Button variant="contained" color="primary" href="/login" sx={{ px: 3, py: 1.5 }}>
-                Login
-              </Button>
-              <Button variant="outlined" color="primary" href="/signup" sx={{ px: 3, py: 1.5 }}>
-                Sign up
-              </Button>
+              {isLoggedIn ? (
+                <>
+                  <Button variant="contained" color="primary" href="/events" sx={{ px: 3, py: 1.5 }}>
+                    Browse events
+                  </Button>
+                  <Button variant="outlined" color="primary" href="/profile" sx={{ px: 3, py: 1.5 }}>
+                    My profile
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button variant="contained" color="primary" href="/login" sx={{ px: 3, py: 1.5 }}>
+                    Login
+                  </Button>
+                  <Button variant="outlined" color="primary" href="/signup" sx={{ px: 3, py: 1.5 }}>
+                    Sign up
+                  </Button>
+                </>
+              )}
             </Stack>
           </Stack>
         </Grid>

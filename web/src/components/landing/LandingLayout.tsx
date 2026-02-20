@@ -20,7 +20,13 @@ function LandingContainer({ children }: { children: ReactNode }) {
  * Composes header, main content slot, and footer.
  * LandingContainer is the ONLY gutter source — sections do not add their own.
  */
-export default function LandingLayout({ children }: { children: ReactNode }) {
+export default function LandingLayout({
+  children,
+  isLoggedIn = false,
+}: {
+  children: ReactNode;
+  isLoggedIn?: boolean;
+}) {
   return (
     <Box
       sx={{
@@ -39,7 +45,7 @@ export default function LandingLayout({ children }: { children: ReactNode }) {
         }}
       >
         <LandingContainer>
-          <LandingHeader />
+          <LandingHeader isLoggedIn={isLoggedIn} />
         </LandingContainer>
       </AppBar>
 

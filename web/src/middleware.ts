@@ -4,7 +4,7 @@ export function middleware(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
   const requestPath = `${request.nextUrl.pathname}${request.nextUrl.search}`;
 
-  requestHeaders.set("x-request-path", requestPath || "/home");
+  requestHeaders.set("x-request-path", requestPath || "/");
 
   return NextResponse.next({
     request: {

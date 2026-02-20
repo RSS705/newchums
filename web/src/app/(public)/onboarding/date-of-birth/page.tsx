@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { getSafeRedirectPath } from "@/lib/authRedirect";
 
 export const runtime = "edge";
 
@@ -9,6 +10,6 @@ export default async function OnboardingDateOfBirthPage({
   searchParams: Promise<{ returnTo?: string }>;
 }) {
   const params = await searchParams;
-  const returnTo = params.returnTo ?? "/home";
+  const returnTo = getSafeRedirectPath(params.returnTo);
   redirect(`/onboarding/username?returnTo=${encodeURIComponent(returnTo)}`);
 }

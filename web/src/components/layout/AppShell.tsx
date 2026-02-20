@@ -48,7 +48,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   const currentBottomValue = React.useMemo(() => {
     const matchingItem = appNavItems.find((item) => isNavItemActive(pathname, item.href));
-    return matchingItem?.href ?? "/home";
+    return matchingItem?.href ?? "/";
   }, [pathname]);
 
   return (
@@ -74,7 +74,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           >
             <MenuRoundedIcon />
           </IconButton>
-          <Typography component={Link} href="/home" variant="h6" sx={{ color: "inherit" }}>
+          <Typography component={Link} href="/" variant="h6" sx={{ color: "inherit" }}>
             NewChums
           </Typography>
           <Box sx={{ flexGrow: 1 }} />

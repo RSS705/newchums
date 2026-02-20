@@ -12,7 +12,7 @@ export type NavItem = {
 };
 
 export const appNavItems: NavItem[] = [
-  { label: "Home", href: "/home", icon: HomeRoundedIcon },
+  { label: "Home", href: "/", icon: HomeRoundedIcon },
   { label: "Events", href: "/events", icon: EventRoundedIcon },
   { label: "Create", href: "/events/create", icon: AddCircleRoundedIcon },
   { label: "Profile", href: "/profile", icon: PersonRoundedIcon },

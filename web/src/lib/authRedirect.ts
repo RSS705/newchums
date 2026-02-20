@@ -1,4 +1,7 @@
-const DEFAULT_REDIRECT_PATH = "/home";
+/** Single source of truth for post-auth default landing. */
+export const DEFAULT_POST_AUTH_REDIRECT = "/";
+
+const DEFAULT_REDIRECT_PATH = DEFAULT_POST_AUTH_REDIRECT;
 
 export function getSafeRedirectPath(value: string | null | undefined): string {
   if (!value) {

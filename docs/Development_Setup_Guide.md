@@ -1,6 +1,13 @@
 # Development Setup Guide
 
-**Last Updated:** February 20, 2026
+**Last Updated:** February 18, 2026
+
+## Current State
+
+-   **Default post-auth landing:** `/` (Home)
+-   **Source of truth:** `web/src/lib/authRedirect.ts` (`DEFAULT_POST_AUTH_REDIRECT`, `getSafeRedirectPath`, `getRequestedPathFromHeaders`)
+-   **Onboarding gate:** Root `/` in `(public)/page.tsx`; app routes in `(app)/layout.tsx`
+-   **Deep links:** `?next=` on login/signup; `returnTo` through onboarding; validated as relative internal paths only
 
 ## Identity System (Current)
 
@@ -54,6 +61,11 @@ Or run each file in order (001, 002, 003, 004, 005) for a fresh DB. Down migrati
 
 Helper text: "You unique handle (letters, numbers, underscores)."
 
+## Date Picker (NCDatePicker)
+
+-   `web/src/components/fields/NCDatePicker.tsx`
+-   Used on signup and onboarding. LocalizationProvider in ThemeRegistry.
+
 ## Tests
 
 - Run: `cd web && npm run test` (Vitest)
@@ -63,8 +75,17 @@ Helper text: "You unique handle (letters, numbers, underscores)."
 
 -   **a) Email/password signup – underage:** Use DOB < 18 years ago → expect "NewChums is currently available to people 18 and older." (400)
 -   **b) Email/password signup – 18+:** Use valid DOB 18+ → account created, redirect to login
--   **c) Google signup → DOB prompt → underage:** Sign in with Google → redirected to /onboarding/date-of-birth → enter DOB < 18 → blocked with same message
--   **d) Google signup → DOB prompt → 18+:** Sign in with Google → /onboarding/date-of-birth → valid DOB 18+ → Continue → /onboarding/username if needed → /home
+-   **c) Google signup → underage:** Sign in with Google → /onboarding/username → enter DOB < 18 → blocked with same message
+-   **d) Google signup → 18+:** Sign in with Google → /onboarding/username → valid DOB 18+ + username → Continue → /
+
+## Post-Auth Redirect Verification
+
+1.  **Existing user email/password login** → lands on `/`
+2.  **New user email/password signup** → create account → login → lands on `/`
+3.  **Existing Google user login** → lands on `/`
+4.  **New Google user:** Sign in with Google → OAuth completes → onboarding (username + DOB) → submit → lands on `/`
+5.  **Underage DOB on onboarding:** show "NewChums is currently available to people 18 and older."; stay on onboarding; no redirect
+6.  **Deep-link:** visit protected route (e.g. `/profile`) while logged out → login → if onboarded, return to `/profile`; if not onboarded, complete onboarding → lands on `/` (or returnTo if persisted)
 
 ## Debugging 500 Signup
 

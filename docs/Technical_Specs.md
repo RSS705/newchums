@@ -21,3 +21,9 @@ required.
 (date_of_birth) 500 SERVER_ERROR
 
 [^1]: A-Za-z0-9\_
+
+## Date Picker
+
+-   **Library:** @mui/x-date-pickers + dayjs
+-   **Adapter:** AdapterDayjs (LocalizationProvider in ThemeRegistry)
+-   **Component:** `components/fields/NCDatePicker.tsx` — value/onChange as YYYY-MM-DD
