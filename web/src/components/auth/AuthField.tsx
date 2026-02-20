@@ -13,19 +13,22 @@ type AuthFieldProps = Omit<TextFieldProps, "label"> & {
   label: string;
   /** Used for htmlFor on the label */
   id?: string;
+  /** When true, omit top margin (e.g. first field in a form) */
+  noTopMargin?: boolean;
 };
 
 export default function AuthField({
   id,
   label,
   helperText,
+  noTopMargin,
   ...textFieldProps
 }: AuthFieldProps) {
   const fieldId = id ?? textFieldProps.name ?? `field-${label}`;
   const hasHelper = helperText !== undefined && helperText !== "";
 
   return (
-    <Box sx={{ mt: 2 }}>
+    <Box sx={{ mt: noTopMargin ? 0 : 2 }}>
       <Typography
         component="label"
         htmlFor={fieldId}

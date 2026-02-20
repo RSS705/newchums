@@ -1,7 +1,7 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import Credentials from "next-auth/providers/credentials";
-import { compare } from "bcryptjs";
+import { compareSync } from "bcryptjs";
 import { sql } from "./lib/db";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
@@ -37,7 +37,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const user = rows[0];
         if (!user || !user.password_hash) return null;
 
-        const isValid = await compare(password, user.password_hash);
+        const isValid = compareSync(password, user.password_hash);
         if (!isValid) return null;
 
         return { id: user.id, email: user.email, name: user.name };

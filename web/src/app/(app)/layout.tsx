@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import AppShell from "@/components/layout/AppShell";
 import { getRequestedPathFromHeaders } from "@/lib/authRedirect";
+import { getOrCreateAppUser } from "@/lib/user";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -13,10 +14,31 @@ export default async function AppLayout({
 }>) {
   const session = await auth();
 
+  const requestHeaders = await headers();
+  const requestedPath = getRequestedPathFromHeaders(requestHeaders);
+
   if (!session) {
-    const requestHeaders = await headers();
-    const requestedPath = getRequestedPathFromHeaders(requestHeaders);
     redirect(`/login?next=${encodeURIComponent(requestedPath)}`);
+  }
+
+  const email = (session.user as { email?: string })?.email;
+  if (!email || typeof email !== "string") {
+    return <AppShell>{children}</AppShell>;
+  }
+
+  if (requestedPath === "/onboarding/username") {
+    return <AppShell>{children}</AppShell>;
+  }
+
+  const { username } = await getOrCreateAppUser(
+    email,
+    (session.user as { name?: string | null })?.name
+  );
+
+  if (username == null || username.trim() === "") {
+    redirect(
+      `/onboarding/username?returnTo=${encodeURIComponent(requestedPath)}`
+    );
   }
 
   return <AppShell>{children}</AppShell>;

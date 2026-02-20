@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { hash } from "bcryptjs";
+import { hashSync } from "bcryptjs";
 import { sql } from "@/lib/db";
 import { hashResetToken } from "@/lib/resetTokens";
 
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "INVALID_OR_EXPIRED" }, { status: 400 });
   }
 
-  const passwordHash = await hash(password, 10);
+  const passwordHash = hashSync(password, 10);
 
   await sql`UPDATE users SET password_hash = ${passwordHash} WHERE id = ${record.user_id}`;
   await sql`UPDATE password_reset_tokens SET used_at = NOW() WHERE id = ${record.id}`;

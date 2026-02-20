@@ -17,10 +17,16 @@ import { getSafeRedirectPath } from "@/lib/authRedirect";
 export default function SignupClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [name, setName] = React.useState("");
+  const [username, setUsername] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
+  const [confirmPassword, setConfirmPassword] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
+  const [usernameError, setUsernameError] = React.useState<string | null>(null);
+  const [emailError, setEmailError] = React.useState<string | null>(null);
+  const [confirmPasswordError, setConfirmPasswordError] = React.useState<
+    string | null
+  >(null);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   const nextParam = searchParams.get("next");
@@ -86,13 +92,42 @@ export default function SignupClient() {
             onSubmit={async (event) => {
               event.preventDefault();
               setError(null);
+              setUsernameError(null);
+              setEmailError(null);
+              setConfirmPasswordError(null);
+
+              const trimmed = username.trim();
+              if (!trimmed) {
+                setUsernameError("Username is required.");
+                return;
+              }
+              if (
+                !/^[A-Za-z0-9_]{3,20}$/.test(trimmed) ||
+                trimmed.toLowerCase().startsWith("_") ||
+                trimmed.toLowerCase().endsWith("_")
+              ) {
+                setUsernameError(
+                  "Use 3–20 lowercase letters, numbers, or underscores; no leading/trailing underscore."
+                );
+                return;
+              }
+
+              if (confirmPassword !== password) {
+                setConfirmPasswordError("Passwords do not match.");
+                return;
+              }
+
               setIsSubmitting(true);
 
               try {
                 const response = await fetch("/api/auth/signup", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ name, email, password }),
+                  body: JSON.stringify({
+                    username: trimmed,
+                    email: email.trim().toLowerCase(),
+                    password,
+                  }),
                 });
                 const data = (await response.json()) as {
                   ok: boolean;
@@ -100,12 +135,18 @@ export default function SignupClient() {
                 };
 
                 if (!response.ok || !data.ok) {
-                  if (data.error === "EMAIL_EXISTS") {
-                    setError("Email already exists.");
-                  } else if (data.error === "INVALID_INPUT") {
-                    setError(
-                      "Please provide a valid email and password (8+ chars)."
+                  if (data.error === "USERNAME_TAKEN") {
+                    setUsernameError("Username is already taken.");
+                  } else if (data.error === "INVALID_USERNAME") {
+                    setUsernameError(
+                      "Use 3–20 lowercase letters, numbers, or underscores; no leading/trailing underscore."
                     );
+                  } else if (data.error === "EMAIL_EXISTS") {
+                    setEmailError("An account already exists for this email.");
+                  } else if (data.error === "INVALID_INPUT") {
+                    setError("Please complete all required fields correctly.");
+                  } else if (data.error === "SERVER_ERROR") {
+                    setError("Sign up failed. Please try again.");
                   } else {
                     setError("Sign up failed. Please try again.");
                   }
@@ -125,29 +166,63 @@ export default function SignupClient() {
             }}
           >
             <AuthField
-              id="signup-name"
-              label="Name"
+              id="signup-username"
+              label="Username"
               type="text"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
+              value={username}
+              onChange={(event) => {
+                setUsername(event.target.value.replace(/\s/g, ""));
+                setUsernameError(null);
+              }}
+              onBlur={() => setUsername((prev) => prev.trim())}
+              required
+              helperText={
+                usernameError ??
+                "You unique handle (letters, numbers, underscores)."
+              }
+              error={Boolean(usernameError)}
+              inputProps={{ autoComplete: "username" }}
             />
             <AuthField
               id="signup-email"
               label="Email address"
               type="email"
               value={email}
-              onChange={(event) => setEmail(event.target.value)}
+              onChange={(event) => {
+                setEmail(event.target.value);
+                setEmailError(null);
+              }}
               required
+              helperText={emailError ?? undefined}
+              error={Boolean(emailError)}
             />
             <AuthField
               id="signup-password"
               label="Password"
               type="password"
               value={password}
-              onChange={(event) => setPassword(event.target.value)}
+              onChange={(event) => {
+                setPassword(event.target.value);
+                setConfirmPasswordError(null);
+                setError(null);
+              }}
               required
               helperText={error ?? undefined}
               error={Boolean(error)}
+            />
+            <AuthField
+              id="signup-confirm-password"
+              label="Confirm password"
+              type="password"
+              value={confirmPassword}
+              onChange={(event) => {
+                setConfirmPassword(event.target.value);
+                setConfirmPasswordError(null);
+              }}
+              required
+              helperText={confirmPasswordError ?? undefined}
+              error={Boolean(confirmPasswordError)}
+              inputProps={{ autoComplete: "new-password" }}
             />
             <AppButton
               type="submit"
