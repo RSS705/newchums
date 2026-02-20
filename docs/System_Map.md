@@ -1,10 +1,15 @@
 # System Map
 
-**Last Updated:** February 20, 2026
+**Last Updated:** February 18, 2026
 
 ## Flow
 
-User → Next.js (Pages) → Auth.js → API Route → Neon PostgreSQL
+User → Next.js (App Router) → Auth.js → API Route → Neon PostgreSQL
+
+## Routes
+
+-   **`/`:** Landing page. Logged-out or logged-in onboarded users see `LandingLayout` + `LandingHero`. Logged-in not-onboarded → redirect to onboarding.
+-   **`/home`, `/events`, `/profile`, etc.:** App routes with `AppShell` (dashboard layout).
 
 ## Identity Model
 

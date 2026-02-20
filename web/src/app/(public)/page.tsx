@@ -5,6 +5,9 @@ import { redirect } from "next/navigation";
 import LandingHero from "@/components/landing/LandingHero";
 import LandingLayout from "@/components/landing/LandingLayout";
 
+/** Cloudflare Pages requires runtime='edge' for dynamic routes. */
+export const runtime = "edge";
+
 export const metadata: Metadata = {
   title: "NewChums",
   description: "Find your people. Meet through shared events.",

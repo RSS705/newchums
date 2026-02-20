@@ -8,6 +8,7 @@
 -   **Source of truth:** `web/src/lib/authRedirect.ts` (`DEFAULT_POST_AUTH_REDIRECT`, `getSafeRedirectPath`, `getRequestedPathFromHeaders`)
 -   **Onboarding gate:** Root `/` in `(public)/page.tsx`; app routes in `(app)/layout.tsx`
 -   **Deep links:** `?next=` on login/signup; `returnTo` through onboarding; validated as relative internal paths only
+-   **Root page (`/`):** Logged-out users see `LandingLayout` + `LandingHero`. Logged-in onboarded users see the same landing layout (header with Logout, hero with "Browse events" / "My profile") — not the dashboard/AppShell.
 
 ## Identity System (Current)
 
@@ -27,10 +28,9 @@
 
 ## Onboarding Gate
 
--   Located in `(app)/layout.tsx`
--   Single form at `/onboarding/username`: collects username and date of birth
--   If either is missing → redirect to `/onboarding/username`
--   OAuth users complete both fields (18+ enforced on submit)
+-   **Root `/`:** `(public)/page.tsx` checks `getOrCreateAppUser`; if username or date_of_birth missing → redirect to `/onboarding/username?returnTo=/`
+-   **App routes:** `(app)/layout.tsx` guards `/home`, `/events`, `/profile`, etc.; if onboarding incomplete → redirect to `/onboarding/username?returnTo=<requestedPath>`
+-   **Form:** Single form at `/onboarding/username` collects username and date of birth. OAuth users complete both fields (18+ enforced on submit)
 
 ## Running Migrations (Local)
 
@@ -86,6 +86,14 @@ Helper text: "You unique handle (letters, numbers, underscores)."
 4.  **New Google user:** Sign in with Google → OAuth completes → onboarding (username + DOB) → submit → lands on `/`
 5.  **Underage DOB on onboarding:** show "NewChums is currently available to people 18 and older."; stay on onboarding; no redirect
 6.  **Deep-link:** visit protected route (e.g. `/profile`) while logged out → login → if onboarded, return to `/profile`; if not onboarded, complete onboarding → lands on `/` (or returnTo if persisted)
+
+## Pre-Deploy Checklist (Cloudflare Pages)
+
+Before pushing or deploying:
+
+1.  **Route runtimes:** Any dynamic route must export `runtime = "edge"`. See `docs/Technical_Specs.md` → "Cloudflare Pages + Next.js Runtime Rules".
+2.  **Build locally:** `cd web && npm run build`. If you see "routes were not configured to run with the Edge Runtime" (e.g. `/index`), add `export const runtime = "edge";` to the offending page.
+3.  **Lint:** `npm run lint`.
 
 ## Debugging 500 Signup
 
