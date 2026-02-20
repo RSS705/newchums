@@ -8,7 +8,7 @@ export const metadata: Metadata = {
 
 export default function ResetPasswordPage() {
   return (
-    <Suspense fallback={<main style={{ padding: 24 }}>Loading...</main>}>
+    <Suspense fallback={null}>
       <ResetPasswordClient />
     </Suspense>
   );

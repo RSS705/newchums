@@ -31,7 +31,7 @@ a {
   text-decoration: none;
 }
 
-/* Exclude MuiButton-root: Button with href renders as <a>; color:inherit overrode theme. */
-a:not(.MuiButton-root) {
+/* Exclude MuiButton-root and MuiLink-root: these render as <a>; color:inherit would override theme. */
+a:not(.MuiButton-root):not(.MuiLink-root) {
   color: inherit;
 }

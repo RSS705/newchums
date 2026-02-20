@@ -1,11 +1,12 @@
 "use client";
 
-import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+import Link from "next/link";
 import * as React from "react";
-import AuthLayout from "@/components/layout/AuthLayout";
-import { AppButton, AppCard, AppTextField } from "@/components/ui";
+import AuthField from "@/components/auth/AuthField";
+import AuthSplitLayout from "@/components/layout/AuthSplitLayout";
+import { AppButton, AppCard } from "@/components/ui";
 
 type RequestResponse = { ok: boolean; resetUrl?: string };
 
@@ -16,66 +17,83 @@ export default function ForgotPasswordPage() {
   const [error, setError] = React.useState<string | null>(null);
 
   return (
-    <AuthLayout>
-    <Box sx={{ flex: 1, display: "grid", placeItems: "center", p: 2 }}>
-      <AppCard sx={{ width: "100%", maxWidth: 520 }}>
-        <Stack spacing={2}>
-          <Typography component="h1" variant="h4">
-            Forgot password
-          </Typography>
-          <Stack
-            component="form"
-            spacing={1.5}
-            onSubmit={async (event) => {
-              event.preventDefault();
-              setError(null);
-              setSubmitted(false);
-              setResetUrl(null);
+    <AuthSplitLayout>
+      <AppCard sx={{ width: "100%", maxWidth: 450 }}>
+        <Typography component="h1" variant="h4" fontWeight={700} sx={{ mb: 0.5, textAlign: "center" }}>
+          Forgot your password?
+        </Typography>
+        <Typography variant="subtitle1" color="text.secondary" sx={{ mb: 2, textAlign: "center" }}>
+          Please enter the email address associated with your account and we&apos;ll
+          email you a link to reset your password.
+        </Typography>
+        <Stack
+          component="form"
+          spacing={2}
+          mt={3}
+          onSubmit={async (event) => {
+            event.preventDefault();
+            setError(null);
+            setSubmitted(false);
+            setResetUrl(null);
 
-              try {
-                const response = await fetch("/api/auth/password-reset/request", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ email }),
-                });
-                const data = (await response.json()) as RequestResponse;
-                if (!response.ok || !data.ok) {
-                  setError("Something went wrong. Please try again.");
-                  return;
-                }
-                setSubmitted(true);
-                if (data.resetUrl) {
-                  setResetUrl(data.resetUrl);
-                }
-              } catch {
+            try {
+              const response = await fetch("/api/auth/password-reset/request", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email }),
+              });
+              const data = (await response.json()) as RequestResponse;
+              if (!response.ok || !data.ok) {
                 setError("Something went wrong. Please try again.");
+                return;
               }
-            }}
+              setSubmitted(true);
+              if (data.resetUrl) {
+                setResetUrl(data.resetUrl);
+              }
+            } catch {
+              setError("Something went wrong. Please try again.");
+            }
+          }}
+        >
+          <AuthField
+            id="forgot-email"
+            label="Email address"
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            required
+            helperText={error ?? undefined}
+            error={Boolean(error)}
+          />
+          <AppButton type="submit" fullWidth size="large">
+            Send reset link
+          </AppButton>
+          <AppButton
+            component={Link}
+            href="/login"
+            variant="outlined"
+            fullWidth
+            size="large"
+            color="primary"
           >
-            <AppTextField
-              type="email"
-              label="Email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              required
-              helperText={error ?? " "}
-              error={Boolean(error)}
-            />
-            <AppButton type="submit">Send reset link</AppButton>
-          </Stack>
-          {submitted ? (
-            <Typography color="text.secondary">
-              If an account exists, a reset link has been sent.
-            </Typography>
-          ) : null}
-          {resetUrl ? (
-            <Typography color="text.secondary" sx={{ wordBreak: "break-all" }}>
-              Dev reset link: {resetUrl}
-            </Typography>
-          ) : null}
+            Back to login
+          </AppButton>
         </Stack>
+        {submitted ? (
+          <Typography color="text.secondary" sx={{ mt: 2 }}>
+            If an account exists, a reset link has been sent.
+          </Typography>
+        ) : null}
+        {resetUrl ? (
+          <Typography
+            color="text.secondary"
+            sx={{ mt: 2, wordBreak: "break-all" }}
+          >
+            Dev reset link: {resetUrl}
+          </Typography>
+        ) : null}
       </AppCard>
-    </Box>
-    </AuthLayout>
+    </AuthSplitLayout>
   );
 }
