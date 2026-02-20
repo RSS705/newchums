@@ -1,13 +1,13 @@
 "use client";
 
 import Box from "@mui/material/Box";
-import Divider from "@mui/material/Divider";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { signIn } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 import * as React from "react";
+import AuthDividerForm from "@/components/auth/AuthDividerForm";
 import AuthField from "@/components/auth/AuthField";
 import AuthFooterLink from "@/components/auth/AuthFooterLink";
 import AuthSplitLayout from "@/components/layout/AuthSplitLayout";
@@ -72,23 +72,8 @@ export default function SignupClient() {
             Sign up with Google
           </AppButton>
 
-          <Box sx={{ mt: 2.5 }}>
-            <Divider sx={{ "&::before, &::after": { borderColor: "divider" } }}>
-              <Typography
-                variant="h6"
-                fontWeight={400}
-                color="text.secondary"
-                component="span"
-                sx={{ px: 2 }}
-              >
-                or sign up with
-              </Typography>
-            </Divider>
-          </Box>
-
-          <Stack
-            component="form"
-            spacing={0}
+          <AuthDividerForm
+            dividerText="or sign up with"
             onSubmit={async (event) => {
               event.preventDefault();
               setError(null);
@@ -233,7 +218,7 @@ export default function SignupClient() {
             >
               {isSubmitting ? "Creating..." : "Create account"}
             </AppButton>
-          </Stack>
+          </AuthDividerForm>
 
           <AuthFooterLink
             prompt="Already have an account?"
