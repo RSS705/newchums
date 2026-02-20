@@ -1,41 +1,23 @@
 # Technical Specs
 
-**Last Updated:** February 19, 2026\
-**Version:** 1.10
+**Last Updated:** February 20, 2026 **Version:** 1.11
 
-------------------------------------------------------------------------
+## Username Architecture
 
-## Architecture Overview
+Case-preserving display. Case-insensitive uniqueness.
 
-### Frontend
+Columns: - username - username_norm
 
--   Next.js (App Router)
--   React 18
--   MUI v5
--   Auth.js
--   Cloudflare Pages deployment
+Index: idx_users_username_norm
 
-### Backend
+## Validation
 
--   Cloudflare Workers (Wrangler)
--   Hono
--   Neon PostgreSQL (PostGIS)
+Regex: [^1]{3,20}\$ No leading/trailing underscore. Confirm password
+required.
 
-------------------------------------------------------------------------
+## Error Handling
 
-## Landing Layout Stabilization
+409 EMAIL_EXISTS 409 USERNAME_TAKEN 400 INVALID_USERNAME 500
+SERVER_ERROR
 
--   Single shared MUI Container defined in LandingLayout.
--   Header, Hero, Footer contain no nested Containers.
--   Toolbar uses disableGutters.
--   Alignment verified via DevTools bounding box checks.
-
-------------------------------------------------------------------------
-
-## Deployment
-
-GitHub → Cloudflare Pages\
-Wrangler → Cloudflare Workers\
-Single PROD workflow.
-
-------------------------------------------------------------------------
+[^1]: A-Za-z0-9\_

@@ -1,12 +1,13 @@
 # Chunk Log
 
-**Last Updated:** February 19, 2026
+**Last Updated:** February 20, 2026
 
-## Chunk 15.1 --- Landing Layout Stabilization
+## Chunk 16 --- Username Overhaul
 
--   Consolidated Container ownership into LandingLayout.
--   Removed nested Containers.
--   Enabled Toolbar disableGutters.
--   Verified alignment via DevTools measurements.
-
-Repository checkpoint created after stabilization.
+-   Added username_norm column
+-   Added unique index idx_users_username_norm
+-   Implemented onboarding gate
+-   Added confirm password field
+-   Fixed signup 500 classification
+-   Allowed uppercase username display
+-   Immediate validation refresh on input

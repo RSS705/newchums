@@ -1,12 +1,22 @@
 # System Map
 
-**Last Updated:** February 19, 2026
+**Last Updated:** February 20, 2026
 
-User → Cloudflare Pages → Auth.js → Worker API → Neon DB
+## Flow
 
-Frontend: LandingLayout (owns gutters) ├─ LandingHeader ├─ LandingHero
-└─ LandingFooter
+User → Next.js (Pages) → Auth.js → API Route → Neon PostgreSQL
 
-Backend: Hono API (Workers) Neon PostgreSQL (PostGIS)
+## Identity Model
 
-Layout alignment confirmed and stabilized.
+users table: - id - email - password_hash - username (display) -
+username_norm (unique)
+
+## OAuth Flow
+
+Google login → create user (no username) → onboarding gate → set
+username
+
+## Email Signup Flow
+
+Signup form → `/api/auth/signup` → insert user with username +
+username_norm
