@@ -1,10 +1,12 @@
 "use client";
 
+import dayjs from "dayjs";
+import * as React from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
-import { useRouter, useSearchParams } from "next/navigation";
-import * as React from "react";
 import AuthField from "@/components/auth/AuthField";
+import NCDatePicker from "@/components/fields/NCDatePicker";
 import AuthSplitLayout from "@/components/layout/AuthSplitLayout";
 import { AppButton, AppCard } from "@/components/ui";
 import { getSafeRedirectPath } from "@/lib/authRedirect";
@@ -13,7 +15,9 @@ export default function OnboardingUsernameClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [username, setUsername] = React.useState("");
+  const [dateOfBirth, setDateOfBirth] = React.useState("");
   const [usernameError, setUsernameError] = React.useState<string | null>(null);
+  const [dateOfBirthError, setDateOfBirthError] = React.useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   const returnTo = getSafeRedirectPath(searchParams.get("returnTo"));
@@ -27,15 +31,14 @@ export default function OnboardingUsernameClient() {
           fontWeight={700}
           sx={{ mb: 0.5, textAlign: "center" }}
         >
-          Choose a username
+          Complete your profile
         </Typography>
         <Typography
           variant="subtitle1"
           color="text.secondary"
-          sx={{ mb: 1, textAlign: "center" }}
+          sx={{ mb: 2, textAlign: "center" }}
         >
-          A username is required to continue. It will be visible to other
-          members. You can always change it later.
+          A username and date of birth are required to continue.
         </Typography>
         <Stack
           component="form"
@@ -43,6 +46,7 @@ export default function OnboardingUsernameClient() {
           onSubmit={async (event) => {
             event.preventDefault();
             setUsernameError(null);
+            setDateOfBirthError(null);
 
             const trimmed = username.trim();
             if (!trimmed) {
@@ -60,31 +64,70 @@ export default function OnboardingUsernameClient() {
               return;
             }
 
+            const trimmedDob = dateOfBirth.trim();
+            if (!trimmedDob) {
+              setDateOfBirthError("Date of birth is required.");
+              return;
+            }
+
             setIsSubmitting(true);
 
             try {
-              const response = await fetch("/api/user/username", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ username: trimmed }),
-              });
-              const data = (await response.json()) as {
+              const [dobResponse, usernameResponse] = await Promise.all([
+                fetch("/api/user/date-of-birth", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ date_of_birth: trimmedDob }),
+                }),
+                fetch("/api/user/username", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ username: trimmed }),
+                }),
+              ]);
+
+              const dobData = (await dobResponse.json()) as {
+                ok: boolean;
+                error?: string;
+                code?: string;
+                message?: string;
+              };
+              const usernameData = (await usernameResponse.json()) as {
                 ok: boolean;
                 error?: string;
               };
 
-              if (!response.ok || !data.ok) {
-                if (data.error === "USERNAME_TAKEN") {
+              let hasError = false;
+              if (!dobResponse.ok || !dobData.ok) {
+                hasError = true;
+                if (dobData.error === "REQUIRED") {
+                  setDateOfBirthError("Date of birth is required.");
+                } else if (dobData.error === "INVALID_DATE") {
+                  setDateOfBirthError("Please enter a valid date (YYYY-MM-DD).");
+                } else if (dobData.error === "UNDERAGE") {
+                  setDateOfBirthError(
+                    dobData.message ??
+                      "NewChums is currently available to people 18 and older."
+                  );
+                } else if (dobData.error === "FUTURE_DATE") {
+                  setDateOfBirthError("Date cannot be in the future.");
+                } else {
+                  setDateOfBirthError("Something went wrong. Please try again.");
+                }
+              }
+              if (!usernameResponse.ok || !usernameData.ok) {
+                hasError = true;
+                if (usernameData.error === "USERNAME_TAKEN") {
                   setUsernameError("Username is already taken.");
-                } else if (data.error === "INVALID_USERNAME") {
+                } else if (usernameData.error === "INVALID_USERNAME") {
                   setUsernameError(
                     "Use 3–20 lowercase letters, numbers, or underscores; no leading/trailing underscore."
                   );
                 } else {
                   setUsernameError("Something went wrong. Please try again.");
                 }
-                return;
               }
+              if (hasError) return;
 
               router.replace(returnTo);
             } catch {
@@ -108,10 +151,24 @@ export default function OnboardingUsernameClient() {
             required
             helperText={
               usernameError ??
-              "You unique handle (letters, numbers, underscores)."
+              "Your unique handle (letters, numbers, underscores)."
             }
             error={Boolean(usernameError)}
             inputProps={{ autoComplete: "username" }}
+          />
+          <NCDatePicker
+            id="onboarding-date-of-birth"
+            label="Date of birth"
+            value={dateOfBirth}
+            onChange={(value) => {
+              setDateOfBirth(value);
+              setDateOfBirthError(null);
+            }}
+            maxDate={dayjs()}
+            helperText={
+              dateOfBirthError ?? "You must be 18+ to use NewChums."
+            }
+            error={Boolean(dateOfBirthError)}
           />
           <AppButton
             type="submit"

@@ -26,12 +26,17 @@ export default async function OnboardingUsernamePage({
     redirect(`/login?next=${encodeURIComponent(returnTo)}`);
   }
 
-  const { username } = await getOrCreateAppUser(
+  const { username, date_of_birth } = await getOrCreateAppUser(
     session.user.email,
     (session.user as { name?: string | null })?.name
   );
 
-  if (username != null && username.trim() !== "") {
+  if (
+    date_of_birth &&
+    date_of_birth.trim() !== "" &&
+    username != null &&
+    username.trim() !== ""
+  ) {
     const params = await searchParams;
     const returnTo = getSafeRedirectPath(params.returnTo);
     redirect(returnTo);

@@ -9,7 +9,7 @@ User → Next.js (Pages) → Auth.js → API Route → Neon PostgreSQL
 ## Identity Model
 
 users table: - id - email - password_hash - username (display) -
-username_norm (unique)
+username_norm (unique) - date_of_birth (nullable, YYYY-MM-DD)
 
 ## OAuth Flow
 

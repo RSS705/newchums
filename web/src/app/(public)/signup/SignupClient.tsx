@@ -6,9 +6,11 @@ import Typography from "@mui/material/Typography";
 import { signIn } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
+import dayjs from "dayjs";
 import * as React from "react";
 import AuthDividerForm from "@/components/auth/AuthDividerForm";
 import AuthField from "@/components/auth/AuthField";
+import NCDatePicker from "@/components/fields/NCDatePicker";
 import AuthFooterLink from "@/components/auth/AuthFooterLink";
 import AuthSplitLayout from "@/components/layout/AuthSplitLayout";
 import { AppButton, AppCard } from "@/components/ui";
@@ -19,11 +21,15 @@ export default function SignupClient() {
   const searchParams = useSearchParams();
   const [username, setUsername] = React.useState("");
   const [email, setEmail] = React.useState("");
+  const [dateOfBirth, setDateOfBirth] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [confirmPassword, setConfirmPassword] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [usernameError, setUsernameError] = React.useState<string | null>(null);
   const [emailError, setEmailError] = React.useState<string | null>(null);
+  const [dateOfBirthError, setDateOfBirthError] = React.useState<string | null>(
+    null
+  );
   const [confirmPasswordError, setConfirmPasswordError] = React.useState<
     string | null
   >(null);
@@ -79,6 +85,7 @@ export default function SignupClient() {
               setError(null);
               setUsernameError(null);
               setEmailError(null);
+              setDateOfBirthError(null);
               setConfirmPasswordError(null);
 
               const trimmed = username.trim();
@@ -111,12 +118,15 @@ export default function SignupClient() {
                   body: JSON.stringify({
                     username: trimmed,
                     email: email.trim().toLowerCase(),
+                    date_of_birth: dateOfBirth.trim() || undefined,
                     password,
                   }),
                 });
                 const data = (await response.json()) as {
                   ok: boolean;
                   error?: string;
+                  code?: string;
+                  message?: string;
                 };
 
                 if (!response.ok || !data.ok) {
@@ -128,6 +138,23 @@ export default function SignupClient() {
                     );
                   } else if (data.error === "EMAIL_EXISTS") {
                     setEmailError("An account already exists for this email.");
+                  } else if (
+                    data.error === "REQUIRED" ||
+                    data.error === "INVALID_DATE" ||
+                    data.error === "UNDERAGE" ||
+                    data.error === "FUTURE_DATE"
+                  ) {
+                    if (data.error === "REQUIRED") {
+                      setDateOfBirthError("Date of birth is required.");
+                    } else if (data.error === "INVALID_DATE") {
+                      setDateOfBirthError("Please enter a valid date (YYYY-MM-DD).");
+                    } else if (data.error === "UNDERAGE") {
+                      setDateOfBirthError(
+                        "NewChums is currently available to people 18 and older."
+                      );
+                    } else {
+                      setDateOfBirthError("Date cannot be in the future.");
+                    }
                   } else if (data.error === "INVALID_INPUT") {
                     setError("Please complete all required fields correctly.");
                   } else if (data.error === "SERVER_ERROR") {
@@ -180,6 +207,20 @@ export default function SignupClient() {
               required
               helperText={emailError ?? undefined}
               error={Boolean(emailError)}
+            />
+            <NCDatePicker
+              id="signup-date-of-birth"
+              label="Date of birth"
+              value={dateOfBirth}
+              onChange={(value) => {
+                setDateOfBirth(value);
+                setDateOfBirthError(null);
+              }}
+              maxDate={dayjs()}
+              helperText={
+                dateOfBirthError ?? "You must be 18+ to use NewChums."
+              }
+              error={Boolean(dateOfBirthError)}
             />
             <AuthField
               id="signup-password"

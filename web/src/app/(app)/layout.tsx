@@ -30,12 +30,18 @@ export default async function AppLayout({
     return <AppShell>{children}</AppShell>;
   }
 
-  const { username } = await getOrCreateAppUser(
+  const { username, date_of_birth } = await getOrCreateAppUser(
     email,
     (session.user as { name?: string | null })?.name
   );
 
-  if (username == null || username.trim() === "") {
+  const needsOnboarding =
+    !date_of_birth ||
+    date_of_birth.trim() === "" ||
+    username == null ||
+    username.trim() === "";
+
+  if (needsOnboarding) {
     redirect(
       `/onboarding/username?returnTo=${encodeURIComponent(requestedPath)}`
     );
