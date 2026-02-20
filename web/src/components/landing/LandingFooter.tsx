@@ -12,13 +12,9 @@ export default function LandingFooter() {
   return (
     <>
       <Stack spacing={2} mb={3}>
-        <BrandLogo
-          src="/logo-horizontal-black-no-dot-com.png"
-          alt="NewChums"
-          height={32}
-        />
+        <BrandLogo src="/logo-horizontal-black-no-dot-com.png" alt="NewChums" height={32} />
         <Typography variant="body2" color="text.primary">
-          Find your people. Meet through shared events.
+          Go do something fun!
         </Typography>
       </Stack>
       <Divider sx={{ my: 3 }} />

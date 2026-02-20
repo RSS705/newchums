@@ -205,13 +205,15 @@ export default function LoginClient() {
           component="span"
           variant="h3"
           fontWeight={700}
-          sx={{ color: "#1a1a1a", mb: 1, textAlign: "center" }}
+          color="text.primary"
+          sx={{ mb: 1, textAlign: "center" }}
         >
           NewChums
         </Typography>
         <Typography
           variant="subtitle1"
-          sx={{ color: "#333", textAlign: "center", mb: 3 }}
+          color="text.secondary"
+          sx={{ textAlign: "center", mb: 3 }}
         >
           Find your people
         </Typography>

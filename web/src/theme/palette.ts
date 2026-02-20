@@ -1,23 +1,23 @@
 import type { PaletteMode, PaletteOptions } from "@mui/material/styles";
 
 /**
- * Base palette tokens matching template DefaultColors.
- * Source of truth for colors; used by getPalette(mode).
+ * Base palette tokens for NewChums brand.
+ * Cobalt blue primary, gold secondary accent.
  */
 export function getPalette(mode: PaletteMode): PaletteOptions {
   const light = {
     mode: "light" as const,
     primary: {
-      main: "#5D87FF",
-      light: "#ECF2FF",
-      dark: "#4570EA",
+      main: "#2563EB",
+      light: "#DBEAFE",
+      dark: "#1D4ED8",
       contrastText: "#ffffff",
     },
     secondary: {
-      main: "#49BEFF",
-      light: "#E8F7FF",
-      dark: "#23afdb",
-      contrastText: "#ffffff",
+      main: "#F4B400",
+      light: "#FEF3C7",
+      dark: "#D97706",
+      contrastText: "#111827",
     },
     success: {
       main: "#13DEB9",
@@ -44,42 +44,42 @@ export function getPalette(mode: PaletteMode): PaletteOptions {
       contrastText: "#ffffff",
     },
     background: {
-      default: "#F2F6FA",
+      default: "#F8FAFC",
       paper: "#FFFFFF",
     },
     grey: {
-      100: "#F2F6FA",
-      200: "#EAEFF4",
-      300: "#DFE5EF",
-      400: "#7C8FAC",
-      500: "#5A6A85",
-      600: "#2A3547",
+      100: "#F8FAFC",
+      200: "#E5E7EB",
+      300: "#D1D5DB",
+      400: "#9CA3AF",
+      500: "#6B7280",
+      600: "#4B5563",
     },
     text: {
-      primary: "#2A3547",
-      secondary: "#4A5568",
+      primary: "#111827",
+      secondary: "#4B5563",
     },
     action: {
-      disabledBackground: "rgba(73,82,88,0.12)",
+      disabledBackground: "rgba(17,24,39,0.12)",
       hoverOpacity: 0.02,
-      hover: "#f6f9fc",
+      hover: "#f1f5f9",
     },
-    divider: "#e5eaef",
+    divider: "#E5E7EB",
   };
 
   const dark = {
     mode: "dark" as const,
     primary: {
-      main: "#5D87FF",
-      light: "#ECF2FF",
-      dark: "#4570EA",
+      main: "#2563EB",
+      light: "#1E3A8A",
+      dark: "#1D4ED8",
       contrastText: "#ffffff",
     },
     secondary: {
-      main: "#777e89",
-      light: "#1C455D",
-      dark: "#173f98",
-      contrastText: "#ffffff",
+      main: "#F4B400",
+      light: "#422006",
+      dark: "#D97706",
+      contrastText: "#111827",
     },
     success: {
       main: "#13DEB9",
@@ -126,7 +126,7 @@ export function getPalette(mode: PaletteMode): PaletteOptions {
       hoverOpacity: 0.02,
       hover: "#333F55",
     },
-    divider: "#333F55",
+    divider: "#374151",
   };
 
   return mode === "dark" ? dark : light;

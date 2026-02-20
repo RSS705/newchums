@@ -25,99 +25,80 @@ export default function LandingHero() {
       }}
     >
       <Grid container spacing={3} alignItems="center">
-          {/* Left column: content */}
-          <Grid
-            size={{
-              xs: 12,
-              md: 6,
-            }}
-          >
-            <Stack
-              spacing={2.5}
-              mt={{ xs: 2, md: mdUp ? 0 : 2 }}
-            >
-              <Stack direction="row" alignItems="center" spacing={1}>
-                <EmojiPeopleOutlinedIcon
-                  sx={{ fontSize: 20, color: "primary.main" }}
-                />
-                <Typography variant="h6" color="text.secondary">
-                  Find your people
-                </Typography>
-              </Stack>
-              <Typography
-                variant="h1"
-                fontWeight={900}
-                sx={{
-                  fontSize: { xs: "2.25rem", md: "3rem" },
-                  lineHeight: { md: 1.2 },
-                }}
-              >
-                Meet nearby people with{" "}
-                <Box component="span" sx={{ color: "primary.main" }}>
-                  similar interests
-                </Box>
+        {/* Left column: content */}
+        <Grid
+          size={{
+            xs: 12,
+            md: 6,
+          }}
+        >
+          <Stack spacing={2.5} mt={{ xs: 2, md: mdUp ? 0 : 2 }}>
+            <Stack direction="row" alignItems="center" spacing={1}>
+              <EmojiPeopleOutlinedIcon sx={{ fontSize: 20, color: "primary.main" }} />
+              <Typography variant="h6" color="text.secondary">
+                Find your people
               </Typography>
-              <Typography
-                variant="h6"
-                fontWeight={300}
-                color="text.primary"
-                sx={{ lineHeight: 1.65 }}
-              >
-                Sign up, note your interests, and get notified when people
-                are doing things you like to do.
-              </Typography>
-              <Stack
-                direction={{ xs: "column", sm: "row" }}
-                spacing={2}
-                pt={2}
-              >
-                <Button
-                  variant="contained"
-                  color="primary"
-                  href="/login"
-                  sx={{ px: 3, py: 1.5 }}
-                >
-                  Login
-                </Button>
-                <Button
-                  variant="outlined"
-                  color="primary"
-                  href="/signup"
-                  sx={{ px: 3, py: 1.5 }}
-                >
-                  Sign up
-                </Button>
-              </Stack>
             </Stack>
-          </Grid>
+            <Typography
+              variant="h1"
+              fontWeight={900}
+              sx={{
+                fontSize: { xs: "2.25rem", md: "3rem" },
+                lineHeight: { md: 1.2 },
+              }}
+            >
+              Meet nearby people with{" "}
+              <Box component="span" sx={{ color: "primary.main" }}>
+                similar interests
+              </Box>
+            </Typography>
+            <Typography
+              variant="h6"
+              fontWeight={300}
+              color="text.primary"
+              sx={{ lineHeight: 1.65 }}
+            >
+              Sign up, note your interests, and get notified when people are doing things you like
+              to do; in your area.
+            </Typography>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={2} pt={2}>
+              <Button variant="contained" color="primary" href="/login" sx={{ px: 3, py: 1.5 }}>
+                Login
+              </Button>
+              <Button variant="outlined" color="primary" href="/signup" sx={{ px: 3, py: 1.5 }}>
+                Sign up
+              </Button>
+            </Stack>
+          </Stack>
+        </Grid>
 
-          {/* Right column: placeholder illustration */}
-          <Grid
-            size={{
-              xs: 12,
-              md: 6,
-            }}
-          >
-            {mdUp ? (
-              <Paper
-                elevation={0}
-                sx={{
-                  p: 3.2,
-                  backgroundColor: (theme) => theme.palette.primary.light,
-                  minHeight: { lg: 360 },
-                  maxHeight: 420,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  borderRadius: 2,
-                }}
-              >
-                <Typography variant="body2" color="primary.dark">
-                  Illustration placeholder
-                </Typography>
-              </Paper>
-            ) : null}
-          </Grid>
+        {/* Right column: placeholder illustration */}
+        <Grid
+          size={{
+            xs: 12,
+            md: 6,
+          }}
+        >
+          {mdUp ? (
+            <Paper
+              elevation={0}
+              sx={{
+                p: 3.2,
+                backgroundColor: (theme) => theme.palette.primary.light,
+                minHeight: { lg: 360 },
+                maxHeight: 420,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: 2,
+              }}
+            >
+              <Typography variant="body2" color="primary.dark">
+                Illustration placeholder
+              </Typography>
+            </Paper>
+          ) : null}
+        </Grid>
       </Grid>
     </Box>
   );

@@ -3,8 +3,12 @@
  * Design tokens live in theme/palette.ts.
  */
 :root {
-  --background: #f2f6fa;
-  --foreground: #2a3547;
+  --background: #f8fafc;
+  --foreground: #111827;
+}
+
+::selection {
+  background: rgba(37, 99, 235, 0.2);
 }
 
 html,
