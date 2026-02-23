@@ -27,11 +27,12 @@ The app is deployed to Cloudflare Workers via [OpenNext](https://opennext.js.org
 | Command | Description |
 |---------|-------------|
 | `npm run build:worker` | Build the OpenNext Worker output (`.open-next/`) |
-| `npm run deploy:dev` | Build and deploy to the `dev` environment (`newchums-web-dev`) |
-| `npm run deploy:prod` | Build and deploy to the `prod` environment (`newchums-web`) |
+| `npm run deploy` | Build and deploy to `newchums-web-dev` |
+| `npm run deploy:dev` | Alias for `npm run deploy` |
+| `npm run deploy:prod` | Disabled (no-op; dev-only worker) |
 | `npm run clean` | Remove `.open-next`, `.next`, `.wrangler` |
 | `npm run clean:rebuild` | Clean + build worker |
-| `npm run deploy:dev:clean` | Clean + deploy to dev |
+| `npm run deploy:dev:clean` | Clean + deploy |
 
 Requires [Wrangler](https://developers.cloudflare.com/workers/wrangler/) to be logged in (`wrangler login`) and environment variables (e.g. `DATABASE_URL`, `GOOGLE_CLIENT_ID`, `AUTH_SECRET`) set as [Worker secrets](https://developers.cloudflare.com/workers/configuration/secrets/) or in `wrangler.toml` vars.
 
