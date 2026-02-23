@@ -20,6 +20,18 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Plus Jakarta Sans](https://fonts.google.com/specimen/Plus+Jakarta+Sans).
 
+## Deploy to Cloudflare Workers (OpenNext)
+
+The app is deployed to Cloudflare Workers via [OpenNext](https://opennext.js.org/cloudflare). After `npm install`, use:
+
+| Command | Description |
+|---------|-------------|
+| `npm run build:worker` | Build the OpenNext Worker output (`.open-next/`) |
+| `npm run deploy:dev` | Build and deploy to the `dev` environment (`newchums-web-dev`) |
+| `npm run deploy:prod` | Build and deploy to the `prod` environment (`newchums-web`) |
+
+Requires [Wrangler](https://developers.cloudflare.com/workers/wrangler/) to be logged in (`wrangler login`) and environment variables (e.g. `DATABASE_URL`, `GOOGLE_CLIENT_ID`, `AUTH_SECRET`) set as [Worker secrets](https://developers.cloudflare.com/workers/configuration/secrets/) or in `wrangler.toml` vars.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

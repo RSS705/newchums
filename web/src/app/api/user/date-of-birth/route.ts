@@ -3,8 +3,6 @@ import { auth } from "@/auth";
 import { isAtLeast18, parseDateOnly } from "@/lib/ageValidation";
 import { sql } from "@/lib/db";
 
-export const runtime = "edge";
-
 export async function POST(request: Request) {
   try {
     const session = await auth();

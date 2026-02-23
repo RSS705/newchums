@@ -7,8 +7,6 @@ import {
   validateUsername,
 } from "@/lib/username";
 
-export const runtime = "edge";
-
 export async function POST(request: Request) {
   try {
     const session = await auth();

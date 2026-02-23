@@ -2,8 +2,6 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { sql } from "@/lib/db";
 
-export const runtime = "edge";
-
 type ProfileRow = {
   home_city: string | null;
   home_lat: number | null;

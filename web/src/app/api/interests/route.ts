@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import { sql } from "@/lib/db";
 
-export const runtime = "edge";
-
 type InterestRow = { id: string; name: string; category: string; slug: string; sort_order: number };
 
 export async function GET() {

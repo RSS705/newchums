@@ -2,8 +2,6 @@ import { NextResponse } from "next/server";
 import { sql } from "@/lib/db";
 import { generateResetToken, hashResetToken } from "@/lib/resetTokens";
 
-export const runtime = "edge";
-
 export async function POST(request: Request) {
   const { email } = (await request.json()) as { email?: string };
   const normalizedEmail = email?.trim().toLowerCase();

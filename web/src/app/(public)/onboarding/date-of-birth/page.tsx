@@ -1,8 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSafeRedirectPath } from "@/lib/authRedirect";
 
-export const runtime = "edge";
-
 /** Redirect legacy /onboarding/date-of-birth links to combined onboarding form. */
 export default async function OnboardingDateOfBirthPage({
   searchParams,

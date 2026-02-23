@@ -1,0 +1,35 @@
+# Cloudflare Worker for NewChums Next.js app (OpenNext)
+# https://opennext.js.org/cloudflare
+name = "newchums-web"
+main = ".open-next/worker.js"
+compatibility_date = "2025-02-18"
+compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
+
+[assets]
+directory = ".open-next/assets"
+binding = "ASSETS"
+
+[[services]]
+binding = "WORKER_SELF_REFERENCE"
+service = "newchums-web"
+
+# Dev environment (deploy:dev)
+[env.dev]
+name = "newchums-web-dev"
+
+# Required for NextAuth/Auth.js Google OAuth redirect
+[env.dev.vars]
+AUTH_URL = "https://newchums-web-dev.robsmith775.workers.dev"
+AUTH_TRUST_HOST = "true"
+
+[[env.dev.services]]
+binding = "WORKER_SELF_REFERENCE"
+service = "newchums-web-dev"
+
+# Prod environment (deploy:prod)
+[env.prod]
+name = "newchums-web"
+
+[[env.prod.services]]
+binding = "WORKER_SELF_REFERENCE"
+service = "newchums-web"

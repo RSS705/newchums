@@ -8,8 +8,6 @@ import {
   validateUsername,
 } from "@/lib/username";
 
-export const runtime = "edge";
-
 export async function POST(request: Request) {
   try {
     const { email, password, name, username: rawUsername, date_of_birth } =

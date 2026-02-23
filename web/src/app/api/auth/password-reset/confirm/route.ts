@@ -3,8 +3,6 @@ import { hashSync } from "bcryptjs";
 import { sql } from "@/lib/db";
 import { hashResetToken } from "@/lib/resetTokens";
 
-export const runtime = "edge";
-
 export async function POST(request: Request) {
   const { token, password } = (await request.json()) as {
     token?: string;
