@@ -7,6 +7,7 @@ import Slider from "@mui/material/Slider";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { useCallback, useEffect, useState } from "react";
+import { apiFetch } from "@/lib/apiClient";
 import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
 
 type Interest = { id: string; name: string; category: string; slug: string; sort_order: number };
@@ -51,8 +52,8 @@ export default function ProfileClient() {
     setLoading(true);
     try {
       const [interestsRes, profileRes] = await Promise.all([
-        fetch("/api/interests"),
-        fetch("/api/profile"),
+        apiFetch("/interests"),
+        apiFetch("/profile", { auth: true }),
       ]);
 
       const interestsData = await interestsRes.json();
@@ -120,9 +121,9 @@ export default function ProfileClient() {
 
     setSaving(true);
     try {
-      const res = await fetch("/api/profile", {
+      const res = await apiFetch("/profile", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        auth: true,
         body: JSON.stringify({
           home_city: homeCity.trim() || null,
           home_lat: lat,

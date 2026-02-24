@@ -6,6 +6,7 @@ import Typography from "@mui/material/Typography";
 import AuthLayout from "@/components/layout/AuthLayout";
 import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
+import { apiFetch } from "@/lib/apiClient";
 import { AppButton, AppCard, AppTextField } from "@/components/ui";
 
 type ConfirmResponse = { ok: boolean; error?: string };
@@ -43,9 +44,8 @@ export default function ResetPasswordClient() {
               }
               setIsSubmitting(true);
               try {
-                const response = await fetch("/api/auth/password-reset/confirm", {
+                const response = await apiFetch("/auth/password-reset/confirm", {
                   method: "POST",
-                  headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ token, password }),
                 });
                 const data = (await response.json()) as ConfirmResponse;

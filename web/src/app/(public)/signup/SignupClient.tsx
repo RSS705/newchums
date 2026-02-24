@@ -14,6 +14,7 @@ import NCDatePicker from "@/components/fields/NCDatePicker";
 import AuthFooterLink from "@/components/auth/AuthFooterLink";
 import AuthSplitLayout from "@/components/layout/AuthSplitLayout";
 import { AppButton, AppCard } from "@/components/ui";
+import { apiFetch } from "@/lib/apiClient";
 import { getSafeRedirectPath } from "@/lib/authRedirect";
 
 export default function SignupClient() {
@@ -112,9 +113,8 @@ export default function SignupClient() {
               setIsSubmitting(true);
 
               try {
-                const response = await fetch("/api/auth/signup", {
+                const response = await apiFetch("/auth/signup", {
                   method: "POST",
-                  headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
                     username: trimmed,
                     email: email.trim().toLowerCase(),

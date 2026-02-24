@@ -57,10 +57,30 @@ Attend, be notified of, and create small public events around shared interests.
 - **AUTH_URL / NEXTAUTH_URL:** Set to `https://newchums.com` in wrangler vars.
 - **Deploy safeguards:** Custom domain routes and `workers_dev = false`, `preview_urls = false` are defined in wrangler.toml so deploy does not wipe remote config.
 
+## API Migration (Web → API Worker)
+
+The following business logic now lives in the API worker; the web app calls it via `NEXT_PUBLIC_API_BASE_URL`:
+
+| Endpoint | Purpose |
+|----------|---------|
+| POST /auth/signup | User signup |
+| POST /auth/password-reset/request | Create reset token (email not yet wired) |
+| POST /auth/password-reset/confirm | Confirm reset and set new password |
+| GET /profile, PUT /profile | User profile (auth required) |
+| GET /interests | List interests |
+| POST /user/username, POST /user/date-of-birth | Onboarding (auth required) |
+| GET /health | Health check `{ ok: true }` |
+| GET /health/env | Diagnostic: reports DATABASE_URL, NEXTAUTH_SECRET, WEB_BASE_URL presence (local/dev) |
+
+The web retains only `GET/POST /api/auth/[...nextauth]` for Auth.js. All other former web API routes have been removed.
+
+**Required env:** Web needs `NEXT_PUBLIC_API_BASE_URL`; API needs `DATABASE_URL`, `NEXTAUTH_SECRET` (same value as web AUTH_SECRET).
+
 ## Not Implemented
 
 - No dedicated dev Worker environment yet.
 - R2, Cron, Queues are planned but not in production.
+- Password-reset email: token creation migrated; sending email to be wired separately.
 
 ---
 
@@ -109,6 +129,7 @@ Principles:
 - **Post-auth redirect:** `/` by default. Source: `web/src/lib/authRedirect.ts`.
 - **Onboarding gate:** If username or date_of_birth missing → redirect to `/onboarding/username?returnTo=<path>`. Guards root `/`, `(app)/` layout.
 - **Canonical host requirement:** AUTH_URL and NEXTAUTH_URL must be `https://newchums.com` so OAuth callback matches signin origin.
+- **API worker auth:** For routes that require a logged-in user (profile, user/username, user/date-of-birth), the web client obtains the JWT via `GET /api/auth/api-token` and sends it as `Authorization: Bearer <token>`. The api-token route uses auth() to get session, then mints a 15-min JWT with jose (HS256). The API verifies using `api/src/auth.ts`: jose jwtVerify (API token) or @auth/core decode (Auth.js session JWT). getBearerToken supports Hono `req.header()` and standard `req.headers.get()`.
 
 ---
 
@@ -116,7 +137,7 @@ Principles:
 
 Neon PostgreSQL is active.
 
-Core tables exist in varying completeness:
+Core tables exist in varying completeness. API worker queries use `newchums.users` schema.
 - users
 - events
 - rsvps
@@ -147,8 +168,11 @@ PostGIS is available for geospatial queries.
 - Local config must match remote or deploy would override and remove routes.
 
 **API (api/wrangler.toml):**
+- Root worker `newchums-api` is production (web points here). Deploy with `npm run deploy` (uses `--env=""`). Env production deploys `newchums-api-production` (separate worker).
 - Envs: preview, production (APP_ENV)
-- Vars: EMAIL_FROM, WEB_BASE_URL, Postmark template IDs
+- Vars: EMAIL_FROM, WEB_BASE_URL, Postmark template IDs, AXIOM_DATASET
+- Secrets (via `npx wrangler secret put`): DATABASE_URL, NEXTAUTH_SECRET (must match web AUTH_SECRET)
+- CORS: Explicit allowlist (newchums.com, www.newchums.com, localhost:3000) in api/src/index.ts
 
 ---
 
@@ -183,7 +207,6 @@ These are architectural placeholders, not current production components.
 
 # 13. Technical Debt (Explicitly Acknowledged)
 
-- Some API logic exists inside Web Worker.
 - Worker naming mismatch (-dev suffix on production Web Worker).
 - Schema needs normalization/cleanup before public launch.
 

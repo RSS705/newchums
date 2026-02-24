@@ -4,6 +4,7 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import Link from "next/link";
 import * as React from "react";
+import { apiFetch } from "@/lib/apiClient";
 import AuthField from "@/components/auth/AuthField";
 import AuthSplitLayout from "@/components/layout/AuthSplitLayout";
 import { AppButton, AppCard } from "@/components/ui";
@@ -37,9 +38,8 @@ export default function ForgotPasswordPage() {
             setResetUrl(null);
 
             try {
-              const response = await fetch("/api/auth/password-reset/request", {
+              const response = await apiFetch("/auth/password-reset/request", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ email }),
               });
               const data = (await response.json()) as RequestResponse;

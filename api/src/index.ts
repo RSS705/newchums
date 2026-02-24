@@ -1,5 +1,9 @@
 import * as Sentry from "@sentry/cloudflare";
+import { hashSync } from "bcryptjs";
 import { Hono } from "hono";
+import { inspectRoutes } from "hono/dev";
+import { isAtLeast18, parseDateOnly } from "./ageValidation";
+import { getBearerToken, verifyAuthToken } from "./auth";
 import { DATABASE_URL_HINT, type Bindings, getSql } from "./db";
 import {
   sendPasswordResetEmail,
@@ -7,6 +11,13 @@ import {
   sendVerificationEmail,
 } from "./email/send";
 import { canAccessInternalTestRoute, notFound } from "./internalAccess";
+import { ensureAppUserId } from "./profile";
+import { generateResetToken, hashResetToken } from "./resetTokens";
+import {
+  normalizeUsernameDisplay,
+  normalizeUsernameForUniq,
+  validateUsername,
+} from "./username";
 
 const app = new Hono<{ Bindings: Bindings }>();
 
@@ -42,31 +53,51 @@ const DEV_USER_RETURN_COLUMNS = `
   created_at
 `;
 
+const CORS_ALLOWED_ORIGINS = new Set([
+  "https://newchums.com",
+  "https://www.newchums.com",
+  "http://localhost:3000",
+]);
+
 app.use("*", async (c, next) => {
-  const startedAt = Date.now();
-  const requestId = c.req.header("x-request-id") ?? crypto.randomUUID();
+  const origin = c.req.header("Origin");
+
+  if (origin && CORS_ALLOWED_ORIGINS.has(origin)) {
+    c.header("Access-Control-Allow-Origin", origin);
+    c.header("Vary", "Origin");
+    c.header(
+      "Access-Control-Allow-Methods",
+      "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+    );
+    c.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    c.header("Access-Control-Max-Age", "86400");
+  }
+
+  if (c.req.method === "OPTIONS") {
+    return c.body(null, 204);
+  }
 
   await next();
-
-  const durationMs = Date.now() - startedAt;
-  const cfRay = c.res.headers.get("CF-RAY");
-  await axiomIngest(c.env, [
-    {
-      message: "api_request",
-      method: c.req.method,
-      path: c.req.path,
-      status: c.res.status,
-      duration_ms: durationMs,
-      request_id: requestId,
-      cf_ray: cfRay ?? null,
-    },
-  ]);
 });
 
 app.get("/", (c) => c.text("NewChums API is live"));
 app.get("/health", (c) =>
   c.json({ ok: true, service: "api", ts: new Date().toISOString() }),
 );
+app.get("/health/env", (c) => {
+  if (!canAccessInternalTestRoute(c)) {
+    return notFound();
+  }
+  const env = c.env;
+  return c.json({
+    ok: true,
+    bindings: {
+      DATABASE_URL: !!env.DATABASE_URL,
+      NEXTAUTH_SECRET: !!env.NEXTAUTH_SECRET,
+      WEB_BASE_URL: !!env.WEB_BASE_URL,
+    },
+  });
+});
 app.get("/health/db", async (c) => {
   if (!canAccessInternalTestRoute(c)) {
     return notFound();
@@ -94,6 +125,26 @@ app.get("/health/db", async (c) => {
     );
   }
 });
+app.get("/__routes", (c) => {
+  if (!canAccessInternalTestRoute(c)) {
+    return notFound();
+  }
+  const routeData = inspectRoutes(app);
+  const routes = routeData.map((r) => ({
+    method: r.method,
+    path: r.path,
+    name: r.name,
+    isMiddleware: r.isMiddleware,
+  }));
+  return c.json({
+    ok: true,
+    routes: routes.sort((a, b) =>
+      a.path.localeCompare(b.path) || a.method.localeCompare(b.method),
+    ),
+    app_env: c.env.APP_ENV,
+  });
+});
+
 app.get("/__sentry-test", (c) => {
   if (!canAccessInternalTestRoute(c)) {
     return notFound();
@@ -106,9 +157,7 @@ app.get("/__log-test", async (c) => {
     return notFound();
   }
 
-  await axiomIngest(c.env, [
-    { message: "axiom test log", level: "info" },
-  ]);
+  await axiomIngest(c.env, [{ message: "axiom test log", level: "info" }]);
   return c.json({ ok: true });
 });
 
@@ -195,6 +244,684 @@ app.get("/events", async (c) => {
   `;
   return c.json({ ok: true, events: rows });
 });
+
+// ---- Auth & user routes (migrated from web) ----
+
+app.post("/auth/signup", async (c) => {
+  try {
+    const body = await c.req.json<{
+      email?: string;
+      password?: string;
+      name?: string;
+      username?: string;
+      date_of_birth?: string;
+    }>();
+
+    const normalizedEmail = body.email?.trim().toLowerCase();
+    const normalizedName = body.name?.trim() || null;
+
+    const usernameValidation = validateUsername(body.username ?? "");
+    if (!usernameValidation.valid) {
+      return c.json({ ok: false, error: usernameValidation.error }, 400);
+    }
+
+    const trimmedDob = body.date_of_birth?.trim() ?? "";
+    if (!trimmedDob) {
+      return c.json({ ok: false, error: "REQUIRED", code: "REQUIRED" }, 400);
+    }
+    const parts = parseDateOnly(trimmedDob);
+    if (!parts) {
+      return c.json(
+        { ok: false, error: "INVALID_DATE", code: "INVALID_DATE" },
+        400,
+      );
+    }
+    const today = new Date();
+    const birth = new Date(parts.y, parts.m - 1, parts.d);
+    const todayMidnight = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate(),
+    );
+    if (birth > todayMidnight) {
+      return c.json(
+        { ok: false, error: "FUTURE_DATE", code: "FUTURE_DATE" },
+        400,
+      );
+    }
+    if (!isAtLeast18(trimmedDob)) {
+      return c.json(
+        {
+          ok: false,
+          error: "UNDERAGE",
+          code: "UNDERAGE",
+          message: "NewChums is currently available to people 18 and older.",
+        },
+        400,
+      );
+    }
+    const parsedDob = `${parts.y}-${String(parts.m).padStart(2, "0")}-${String(parts.d).padStart(2, "0")}`;
+
+    const usernameDisplay = normalizeUsernameDisplay(body.username!);
+    const usernameNorm = normalizeUsernameForUniq(body.username!);
+
+    if (!normalizedEmail || !body.password || body.password.length < 8) {
+      return c.json({ ok: false, error: "INVALID_INPUT" }, 400);
+    }
+
+    const sql = getSql(c.env);
+    const existingEmail = (await sql`
+      SELECT id FROM users WHERE email = ${normalizedEmail} LIMIT 1
+    `) as { id: string }[];
+    if (existingEmail.length > 0) {
+      return c.json({ ok: false, error: "EMAIL_EXISTS" }, 409);
+    }
+
+    const existingUsername = (await sql`
+      SELECT id FROM users WHERE username_norm = ${usernameNorm} LIMIT 1
+    `) as { id: string }[];
+    if (existingUsername.length > 0) {
+      return c.json({ ok: false, error: "USERNAME_TAKEN" }, 409);
+    }
+
+    const passwordHash = hashSync(body.password, 10);
+    await sql`
+      INSERT INTO users (email, name, username, username_norm, password_hash, date_of_birth)
+      VALUES (${normalizedEmail}, ${normalizedName}, ${usernameDisplay}, ${usernameNorm}, ${passwordHash}, ${parsedDob})
+    `;
+    return c.json({ ok: true }, 201);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const isMissingColumn =
+      msg.includes('column "date_of_birth"') ||
+      msg.includes('column "username_norm"') ||
+      msg.includes('column "username"');
+    if (isMissingColumn) {
+      console.error(
+        "Signup error: missing column. Apply migrations 003, 004, 005.",
+        err,
+      );
+      return c.json(
+        {
+          ok: false,
+          error: "SERVER_ERROR",
+          ...(c.env.APP_ENV !== "production" ? { debug: msg } : {}),
+        },
+        500,
+      );
+    }
+    const isEmailUniqueViolation =
+      msg.includes("users_email_key") ||
+      (msg.includes("email") &&
+        (msg.includes("duplicate key value") ||
+          msg.includes("unique constraint")));
+    if (isEmailUniqueViolation) {
+      return c.json({ ok: false, error: "EMAIL_EXISTS" }, 409);
+    }
+    const isUsernameUniqueViolation =
+      msg.includes("idx_users_username_norm") ||
+      msg.includes("users_username_norm") ||
+      (msg.includes("username_norm") &&
+        (msg.includes("duplicate key value") ||
+          msg.includes("unique constraint")));
+    if (isUsernameUniqueViolation) {
+      return c.json({ ok: false, error: "USERNAME_TAKEN" }, 409);
+    }
+    console.error("Signup error:", err);
+    return c.json(
+      {
+        ok: false,
+        error: "SERVER_ERROR",
+        ...(c.env.APP_ENV !== "production" ? { debug: msg } : {}),
+      },
+      500,
+    );
+  }
+});
+
+app.post("/auth/password-reset/request", async (c) => {
+  const body = await c.req.json<{ email?: string }>();
+  const normalizedEmail = body.email?.trim().toLowerCase();
+  if (!normalizedEmail) {
+    return c.json({ ok: true });
+  }
+
+  const sql = getSql(c.env);
+  const users = (await sql`
+    SELECT id, password_hash FROM users WHERE email = ${normalizedEmail} LIMIT 1
+  `) as { id: string; password_hash: string | null }[];
+  const user = users[0];
+  let resetUrl: string | undefined;
+
+  if (user && user.password_hash) {
+    const rawToken = generateResetToken();
+    const tokenHash = await hashResetToken(rawToken);
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+    await sql`
+      INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+      VALUES (${user.id}, ${tokenHash}, ${expiresAt})
+    `;
+    const origin = new URL(c.req.url).origin;
+    resetUrl = `${c.env.WEB_BASE_URL}/reset-password?token=${rawToken}`;
+  }
+
+  if (c.env.APP_ENV !== "production") {
+    return c.json({ ok: true, ...(resetUrl ? { resetUrl } : {}) });
+  }
+  return c.json({ ok: true });
+});
+
+app.post("/auth/password-reset/confirm", async (c) => {
+  const body = await c.req.json<{ token?: string; password?: string }>();
+  if (!body.token || !body.password || body.password.length < 8) {
+    return c.json({ ok: false, error: "INVALID_INPUT" }, 400);
+  }
+  const tokenHash = await hashResetToken(body.token);
+  const sql = getSql(c.env);
+  const tokens = (await sql`
+    SELECT id, user_id
+    FROM password_reset_tokens
+    WHERE token_hash = ${tokenHash}
+      AND used_at IS NULL
+      AND expires_at > NOW()
+    LIMIT 1
+  `) as { id: string; user_id: string }[];
+  const record = tokens[0];
+  if (!record) {
+    return c.json({ ok: false, error: "INVALID_OR_EXPIRED" }, 400);
+  }
+  const passwordHash = hashSync(body.password, 10);
+  await sql`UPDATE users SET password_hash = ${passwordHash} WHERE id = ${record.user_id}`;
+  await sql`UPDATE password_reset_tokens SET used_at = NOW() WHERE id = ${record.id}`;
+  return c.json({ ok: true });
+});
+
+app.get("/interests", async (c) => {
+  try {
+    const sql = getSql(c.env);
+    const rows = (await sql`
+      SELECT id, name, category, slug, sort_order
+      FROM interests
+      ORDER BY sort_order ASC, name ASC
+    `) as {
+      id: string;
+      name: string;
+      category: string;
+      slug: string;
+      sort_order: number;
+    }[];
+    return c.json({
+      ok: true,
+      interests: rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        category: r.category,
+        slug: r.slug,
+        sort_order: r.sort_order,
+      })),
+    });
+  } catch (err) {
+    console.error(err);
+    return c.json(
+      {
+        ok: false,
+        error: { code: "SERVER_ERROR", message: "Failed to fetch interests" },
+      },
+      500,
+    );
+  }
+});
+
+async function requireAuth(c: { req: Request; env: Bindings }) {
+  const token = getBearerToken(c.req);
+  if (!token || !c.env.NEXTAUTH_SECRET) {
+    return null;
+  }
+  return verifyAuthToken(token, c.env.NEXTAUTH_SECRET);
+}
+
+app.get("/profile", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json(
+      {
+        ok: false,
+        error: { code: "UNAUTHORIZED", message: "Missing session email" },
+      },
+      401,
+    );
+  }
+  try {
+    const sql = getSql(c.env);
+    const appUserId = await ensureAppUserId(
+      sql,
+      payload.email,
+      (payload as { name?: string | null }).name,
+    );
+    const profileRows = (await sql`
+      SELECT home_city, home_lat, home_lng, travel_radius_km, email_chat_digest, email_new_events
+      FROM user_profile WHERE user_id = ${appUserId} LIMIT 1
+    `) as Array<{
+      home_city: string | null;
+      home_lat: number | null;
+      home_lng: number | null;
+      travel_radius_km: number;
+      email_chat_digest: boolean;
+      email_new_events: boolean;
+    }>;
+    const profile = profileRows[0];
+    const interestRows = (await sql`
+      SELECT i.slug
+      FROM user_interests ui
+      JOIN interests i ON i.id = ui.interest_id
+      WHERE ui.user_id = ${appUserId}
+      ORDER BY i.sort_order, i.name
+    `) as { slug: string }[];
+    if (!profile) {
+      return c.json({
+        ok: true,
+        profile: {
+          home_city: null,
+          home_lat: null,
+          home_lng: null,
+          travel_radius_km: 25,
+          interest_slugs: [] as string[],
+          email_chat_digest: true,
+          email_new_events: true,
+        },
+      });
+    }
+    return c.json({
+      ok: true,
+      profile: {
+        home_city: profile.home_city,
+        home_lat: profile.home_lat,
+        home_lng: profile.home_lng,
+        travel_radius_km: profile.travel_radius_km,
+        interest_slugs: interestRows.map((r) => r.slug),
+        email_chat_digest: profile.email_chat_digest,
+        email_new_events: profile.email_new_events,
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    return c.json(
+      {
+        ok: false,
+        error: { code: "SERVER_ERROR", message: "Failed to fetch profile" },
+      },
+      500,
+    );
+  }
+});
+
+app.put("/profile", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json(
+      {
+        ok: false,
+        error: { code: "UNAUTHORIZED", message: "Missing session email" },
+      },
+      401,
+    );
+  }
+  try {
+    const sql = getSql(c.env);
+    const appUserId = await ensureAppUserId(
+      sql,
+      payload.email,
+      (payload as { name?: string | null }).name,
+    );
+    const body = (await c.req.json()) as {
+      home_city?: string | null;
+      home_lat?: number | string | null;
+      home_lng?: number | string | null;
+      travel_radius_km?: number;
+      interest_slugs?: string[];
+      email_chat_digest?: boolean;
+      email_new_events?: boolean;
+    };
+    const existingRows = (await sql`
+      SELECT home_city, home_lat, home_lng, travel_radius_km, email_chat_digest, email_new_events
+      FROM user_profile WHERE user_id = ${appUserId} LIMIT 1
+    `) as Array<{
+      home_city: string | null;
+      home_lat: number | null;
+      home_lng: number | null;
+      travel_radius_km: number;
+      email_chat_digest: boolean;
+      email_new_events: boolean;
+    }>;
+    const existing = existingRows[0];
+    const travel_radius_km =
+      "travel_radius_km" in body && body.travel_radius_km != null
+        ? Number(body.travel_radius_km)
+        : (existing?.travel_radius_km ?? 25);
+    if (
+      !Number.isFinite(travel_radius_km) ||
+      travel_radius_km < 1 ||
+      travel_radius_km > 200
+    ) {
+      return c.json(
+        {
+          ok: false,
+          error: {
+            code: "INVALID_INPUT",
+            message: "travel_radius_km must be between 1 and 200",
+          },
+        },
+        400,
+      );
+    }
+    const updatingLocation = "home_lat" in body || "home_lng" in body;
+    const latRaw = body.home_lat;
+    const lngRaw = body.home_lng;
+    const latCoerced =
+      latRaw != null && String(latRaw).trim() !== "" ? Number(latRaw) : null;
+    const lngCoerced =
+      lngRaw != null && String(lngRaw).trim() !== "" ? Number(lngRaw) : null;
+    if (updatingLocation) {
+      const bothPresent =
+        latCoerced != null &&
+        lngCoerced != null &&
+        Number.isFinite(latCoerced) &&
+        Number.isFinite(lngCoerced);
+      const bothAbsent =
+        (latCoerced == null || !Number.isFinite(latCoerced)) &&
+        (lngCoerced == null || !Number.isFinite(lngCoerced));
+      if (!bothPresent && !bothAbsent) {
+        return c.json(
+          {
+            ok: false,
+            error: {
+              code: "INVALID_INPUT",
+              message:
+                "home_lat and home_lng must both be present and valid, or both be null/empty",
+            },
+          },
+          400,
+        );
+      }
+      if (bothPresent) {
+        if (latCoerced! < -90 || latCoerced! > 90) {
+          return c.json(
+            {
+              ok: false,
+              error: {
+                code: "INVALID_INPUT",
+                message: "home_lat must be between -90 and 90",
+              },
+            },
+            400,
+          );
+        }
+        if (lngCoerced! < -180 || lngCoerced! > 180) {
+          return c.json(
+            {
+              ok: false,
+              error: {
+                code: "INVALID_INPUT",
+                message: "home_lng must be between -180 and 180",
+              },
+            },
+            400,
+          );
+        }
+      }
+    }
+    const home_lat = updatingLocation
+      ? Number.isFinite(latCoerced)
+        ? latCoerced
+        : null
+      : (existing?.home_lat ?? null);
+    const home_lng = updatingLocation
+      ? Number.isFinite(lngCoerced)
+        ? lngCoerced
+        : null
+      : (existing?.home_lng ?? null);
+    const interest_slugs =
+      "interest_slugs" in body ? (body.interest_slugs ?? []) : null;
+    if (interest_slugs !== null && interest_slugs.length > 0) {
+      const known = (await sql`
+        SELECT slug FROM interests WHERE slug = ANY(${interest_slugs})
+      `) as { slug: string }[];
+      const knownSet = new Set(known.map((r) => r.slug));
+      const unknown = interest_slugs.filter((s) => !knownSet.has(s));
+      if (unknown.length > 0) {
+        return c.json(
+          {
+            ok: false,
+            error: {
+              code: "INVALID_INPUT",
+              message: `Unknown interest slugs: ${unknown.join(", ")}`,
+            },
+          },
+          400,
+        );
+      }
+    }
+    const home_city =
+      "home_city" in body
+        ? (body.home_city ?? null)
+        : (existing?.home_city ?? null);
+    const email_chat_digest =
+      "email_chat_digest" in body
+        ? (body.email_chat_digest ?? true)
+        : (existing?.email_chat_digest ?? true);
+    const email_new_events =
+      "email_new_events" in body
+        ? (body.email_new_events ?? true)
+        : (existing?.email_new_events ?? true);
+    const hasLocation =
+      home_lat != null &&
+      home_lng != null &&
+      Number.isFinite(home_lat) &&
+      Number.isFinite(home_lng);
+    const upsertQuery = hasLocation
+      ? sql`
+          INSERT INTO user_profile (user_id, home_city, home_lat, home_lng, home_location, travel_radius_km, email_chat_digest, email_new_events)
+          VALUES (${appUserId}, ${home_city}, ${home_lat}, ${home_lng}, ST_SetSRID(ST_MakePoint(${home_lng}, ${home_lat}), 4326)::geography, ${travel_radius_km}, ${email_chat_digest}, ${email_new_events})
+          ON CONFLICT (user_id) DO UPDATE SET
+            home_city = EXCLUDED.home_city,
+            home_lat = EXCLUDED.home_lat,
+            home_lng = EXCLUDED.home_lng,
+            home_location = ST_SetSRID(ST_MakePoint(${home_lng}, ${home_lat}), 4326)::geography,
+            travel_radius_km = EXCLUDED.travel_radius_km,
+            email_chat_digest = EXCLUDED.email_chat_digest,
+            email_new_events = EXCLUDED.email_new_events
+        `
+      : sql`
+          INSERT INTO user_profile (user_id, home_city, home_lat, home_lng, home_location, travel_radius_km, email_chat_digest, email_new_events)
+          VALUES (${appUserId}, ${home_city}, ${home_lat}, ${home_lng}, NULL, ${travel_radius_km}, ${email_chat_digest}, ${email_new_events})
+          ON CONFLICT (user_id) DO UPDATE SET
+            home_city = EXCLUDED.home_city,
+            home_lat = EXCLUDED.home_lat,
+            home_lng = EXCLUDED.home_lng,
+            home_location = NULL,
+            travel_radius_km = EXCLUDED.travel_radius_km,
+            email_chat_digest = EXCLUDED.email_chat_digest,
+            email_new_events = EXCLUDED.email_new_events
+        `;
+    const txQueries: unknown[] = [upsertQuery];
+    if (interest_slugs !== null) {
+      txQueries.push(
+        sql`DELETE FROM user_interests WHERE user_id = ${appUserId}`,
+      );
+      txQueries.push(
+        interest_slugs.length > 0
+          ? sql`
+              INSERT INTO user_interests (user_id, interest_id)
+              SELECT ${appUserId}, i.id FROM interests i WHERE i.slug = ANY(${interest_slugs})
+            `
+          : sql`SELECT 1`,
+      );
+    }
+    await sql.transaction(txQueries);
+    const profileRows = (await sql`
+      SELECT home_city, home_lat, home_lng, travel_radius_km, email_chat_digest, email_new_events
+      FROM user_profile WHERE user_id = ${appUserId} LIMIT 1
+    `) as Array<{
+      home_city: string | null;
+      home_lat: number | null;
+      home_lng: number | null;
+      travel_radius_km: number;
+      email_chat_digest: boolean;
+      email_new_events: boolean;
+    }>;
+    const interestRows = (await sql`
+      SELECT i.slug FROM user_interests ui
+      JOIN interests i ON i.id = ui.interest_id
+      WHERE ui.user_id = ${appUserId}
+      ORDER BY i.sort_order, i.name
+    `) as { slug: string }[];
+    const profile = profileRows[0]!;
+    return c.json({
+      ok: true,
+      profile: {
+        home_city: profile.home_city,
+        home_lat: profile.home_lat,
+        home_lng: profile.home_lng,
+        travel_radius_km: profile.travel_radius_km,
+        interest_slugs: interestRows.map((r) => r.slug),
+        email_chat_digest: profile.email_chat_digest,
+        email_new_events: profile.email_new_events,
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    return c.json(
+      {
+        ok: false,
+        error: { code: "SERVER_ERROR", message: "Failed to update profile" },
+      },
+      500,
+    );
+  }
+});
+
+app.post("/user/username", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+  try {
+    const body = await c.req.json<{ username?: string }>();
+    const usernameValidation = validateUsername(body.username ?? "");
+    if (!usernameValidation.valid) {
+      return c.json({ ok: false, error: usernameValidation.error }, 400);
+    }
+    const usernameDisplay = normalizeUsernameDisplay(body.username!);
+    const usernameNorm = normalizeUsernameForUniq(body.username!);
+    const sql = getSql(c.env);
+    const normalizedEmail = payload.email.trim().toLowerCase();
+    const existingUser = (await sql`
+      SELECT id, username FROM newchums.users
+      WHERE email = ${normalizedEmail}
+      LIMIT 1
+    `) as { id: string; username: string | null }[];
+    if (existingUser.length === 0) {
+      return c.json({ ok: false, error: "USER_NOT_FOUND" }, 404);
+    }
+    const existingUsername = (await sql`
+      SELECT id FROM newchums.users
+      WHERE username_norm = ${usernameNorm} AND id != ${existingUser[0].id}
+      LIMIT 1
+    `) as { id: string }[];
+    if (existingUsername.length > 0) {
+      return c.json({ ok: false, error: "USERNAME_TAKEN" }, 409);
+    }
+    await sql`
+      UPDATE newchums.users
+      SET username = ${usernameDisplay}, username_norm = ${usernameNorm}
+      WHERE id = ${existingUser[0].id}
+    `;
+    return c.json({ ok: true });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[POST /user/username]", msg, err);
+    if (msg.includes("username_norm") && msg.includes("does not exist")) {
+      return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+    }
+    if (
+      msg.includes("idx_users_username_norm") ||
+      msg.includes("users_username_norm") ||
+      msg.includes("duplicate key value") ||
+      msg.includes("unique constraint")
+    ) {
+      return c.json({ ok: false, error: "USERNAME_TAKEN" }, 409);
+    }
+    if (msg.includes('relation "users" does not exist') || msg.includes('relation "newchums.users" does not exist')) {
+      return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+    }
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+app.post("/user/date-of-birth", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+  try {
+    const body = await c.req.json<{ date_of_birth?: string }>();
+    const trimmedDob = body.date_of_birth?.trim() ?? "";
+    if (!trimmedDob) {
+      return c.json({ ok: false, error: "REQUIRED", code: "REQUIRED" }, 400);
+    }
+    const parts = parseDateOnly(trimmedDob);
+    if (!parts) {
+      return c.json(
+        { ok: false, error: "INVALID_DATE", code: "INVALID_DATE" },
+        400,
+      );
+    }
+    const today = new Date();
+    const birth = new Date(parts.y, parts.m - 1, parts.d);
+    const todayMidnight = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate(),
+    );
+    if (birth > todayMidnight) {
+      return c.json(
+        { ok: false, error: "FUTURE_DATE", code: "FUTURE_DATE" },
+        400,
+      );
+    }
+    if (!isAtLeast18(trimmedDob)) {
+      return c.json(
+        {
+          ok: false,
+          error: "UNDERAGE",
+          code: "UNDERAGE",
+          message: "NewChums is currently available to people 18 and older.",
+        },
+        400,
+      );
+    }
+    const parsedDob = `${parts.y}-${String(parts.m).padStart(2, "0")}-${String(parts.d).padStart(2, "0")}`;
+    const normalizedEmail = payload.email.trim().toLowerCase();
+    const sql = getSql(c.env);
+    const existingUser = (await sql`
+      SELECT id FROM newchums.users WHERE email = ${normalizedEmail} LIMIT 1
+    `) as { id: string }[];
+    if (existingUser.length === 0) {
+      return c.json({ ok: false, error: "USER_NOT_FOUND" }, 404);
+    }
+    await sql`
+      UPDATE newchums.users SET date_of_birth = ${parsedDob}
+      WHERE id = ${existingUser[0].id}
+    `;
+    return c.json({ ok: true });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[POST /user/date-of-birth]", msg, err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+// ---- End auth & user routes ----
 
 app.post("/events", async (c) => {
   const body = await c.req.json<{

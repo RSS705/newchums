@@ -7,6 +7,7 @@ import Stack from "@mui/material/Stack";
 import Switch from "@mui/material/Switch";
 import Typography from "@mui/material/Typography";
 import { useCallback, useEffect, useState } from "react";
+import { apiFetch } from "@/lib/apiClient";
 import { useToast } from "@/components/ui";
 import AppCard from "@/components/ui/AppCard";
 
@@ -20,7 +21,7 @@ export default function SettingsClient() {
   const fetchProfile = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/profile");
+      const res = await apiFetch("/profile", { auth: true });
       const data = await res.json();
       if (data.ok && data.profile) {
         setEmailChatDigest(data.profile.email_chat_digest ?? true);
@@ -39,9 +40,9 @@ export default function SettingsClient() {
     if (saving) return;
     setSaving(key);
     try {
-      const res = await fetch("/api/profile", {
+      const res = await apiFetch("/profile", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        auth: true,
         body: JSON.stringify({
           email_chat_digest: key === "email_chat_digest" ? value : emailChatDigest,
           email_new_events: key === "email_new_events" ? value : emailNewEvents,

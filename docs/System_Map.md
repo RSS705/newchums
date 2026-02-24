@@ -51,7 +51,27 @@ Middleware: `web/src/middleware.ts` — runs on all paths except static assets; 
 
 ---
 
-# 3) Core User Flows
+# 3) API Migration (Web → API Worker)
+
+The following flows now run entirely in the API worker; the web app calls the API directly via `NEXT_PUBLIC_API_BASE_URL`:
+
+| Flow | API endpoint | Auth |
+|------|--------------|------|
+| Signup | POST /auth/signup | None |
+| Password reset request | POST /auth/password-reset/request | None |
+| Password reset confirm | POST /auth/password-reset/confirm | None |
+| Interests list | GET /interests | None |
+| Profile (get/update) | GET /profile, PUT /profile | Bearer JWT |
+| Set username (onboarding) | POST /user/username | Bearer JWT |
+| Set date of birth (onboarding) | POST /user/date-of-birth | Bearer JWT |
+
+**Auth flow:** For authenticated routes, the client calls `GET /api/auth/api-token` (same-origin, cookies sent). The route uses auth() to get the session, then mints a 15-min JWT with jose. The client passes it as `Authorization: Bearer <token>` to the API. The API verifies using jose (API token) or @auth/core (Auth.js session JWT). NEXTAUTH_SECRET must match web AUTH_SECRET. CORS: explicit allowlist (newchums.com, www, localhost:3000).
+
+**Password-reset email:** Token creation is implemented; sending the email is not yet wired (planned follow-up).
+
+---
+
+# 4) Core User Flows
 
 ## Browse Events
 
@@ -105,6 +125,32 @@ sequenceDiagram
   Web-->>User: UI update
 ```
 
+## Signup / Profile (API Worker)
+
+```mermaid
+sequenceDiagram
+  participant User
+  participant Web
+  participant API
+  participant DB
+
+  Note over User,DB: Signup (no auth)
+  User->>Web: Submit signup form
+  Web->>API: POST /auth/signup
+  API->>DB: INSERT user
+  API-->>Web: 201 OK
+  Web-->>User: Redirect to login
+
+  Note over User,DB: Profile (auth required)
+  User->>Web: Visit /profile (logged in)
+  Web->>Web: GET /api/auth/api-token (cookies)
+  Web->>API: GET /profile + Authorization: Bearer <jwt>
+  API->>API: Verify JWT
+  API->>DB: Query profile
+  API-->>Web: JSON
+  Web-->>User: Render profile
+```
+
 ## Google OAuth (Canonical Host Enforced)
 
 ```mermaid
@@ -128,7 +174,9 @@ sequenceDiagram
 
 ---
 
-# 4) Local Development Model
+# 5) Local Development Model
+
+Local API: `npm run dev` in `api/` → Wrangler dev on port 8787. Diagnostic: `GET http://localhost:8787/health/env` reports DATABASE_URL, NEXTAUTH_SECRET, WEB_BASE_URL presence.
 
 ```mermaid
 flowchart TB
@@ -143,20 +191,20 @@ flowchart TB
 
 ---
 
-# 5) Architectural Commitments
+# 6) Architectural Commitments
 
 - Two-worker model is intentional and long-term.
 - Business logic belongs in API Worker.
-- Web Worker focuses on UI and auth orchestration.
+- Web Worker focuses on UI and auth orchestration (Auth.js, /api/auth/[...nextauth]).
+- Core user flows (signup, profile, interests, password reset, onboarding) now live in API worker.
 - Canonical host is non-www; middleware enforces before Auth.js.
-- Some legacy API logic exists in Web Worker (technical debt).
 - R2 and background jobs (Cron/Queues) are planned but not yet implemented.
 - Single production environment currently active.
 - Wrangler config (routes, workers_dev, vars) is code-managed to prevent deploy drift.
 
 ---
 
-# 6) Deploy Configuration (Production)
+# 7) Deploy Configuration (Production)
 
 | Setting | Value |
 |---------|-------|
@@ -167,11 +215,11 @@ flowchart TB
 | workers_dev | false |
 | preview_urls | false |
 
-Routes and vars in wrangler.toml match remote; deploy no longer wipes custom domains or overrides AUTH_URL.
+Routes and vars in wrangler.toml match remote; deploy no longer wipes custom domains or overrides AUTH_URL. API: deploy root worker with `npm run deploy` in api/.
 
 ---
 
-# 7) Single Consolidated System Model
+# 8) Single Consolidated System Model
 
 ```mermaid
 flowchart TB

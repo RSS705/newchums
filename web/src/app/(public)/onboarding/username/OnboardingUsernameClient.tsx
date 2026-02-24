@@ -9,6 +9,7 @@ import AuthField from "@/components/auth/AuthField";
 import NCDatePicker from "@/components/fields/NCDatePicker";
 import AuthSplitLayout from "@/components/layout/AuthSplitLayout";
 import { AppButton, AppCard } from "@/components/ui";
+import { apiFetch } from "@/lib/apiClient";
 import { getSafeRedirectPath } from "@/lib/authRedirect";
 
 export default function OnboardingUsernameClient() {
@@ -74,14 +75,14 @@ export default function OnboardingUsernameClient() {
 
             try {
               const [dobResponse, usernameResponse] = await Promise.all([
-                fetch("/api/user/date-of-birth", {
+                apiFetch("/user/date-of-birth", {
                   method: "POST",
-                  headers: { "Content-Type": "application/json" },
+                  auth: true,
                   body: JSON.stringify({ date_of_birth: trimmedDob }),
                 }),
-                fetch("/api/user/username", {
+                apiFetch("/user/username", {
                   method: "POST",
-                  headers: { "Content-Type": "application/json" },
+                  auth: true,
                   body: JSON.stringify({ username: trimmed }),
                 }),
               ]);

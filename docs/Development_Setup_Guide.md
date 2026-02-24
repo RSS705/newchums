@@ -6,9 +6,12 @@ Last Updated: February 24, 2026
 
 ## Current State
 
+- **API migration:** Signup, password-reset, profile, interests, user/username, user/date-of-birth now live in API worker. Web calls API via NEXT_PUBLIC_API_BASE_URL; auth via JWT (Bearer) from GET /api/auth/api-token.
+- **api-token:** Uses auth() + jose to mint 15-min JWT (works on Cloudflare Workers/OpenNext). API verifies jose-signed token or Auth.js session JWT.
+- **CORS:** Explicit allowlist: https://newchums.com, https://www.newchums.com, http://localhost:3000.
 - **Production environment:** Single deploy target
 - **Web Worker:** newchums-web-dev (production; suffix acknowledged)
-- **API Worker:** newchums-api
+- **API Worker:** newchums-api (web points to this; deploy root with `npm run deploy` in api/)
 - **Domain:** newchums.com and www.newchums.com live (custom domains in wrangler.toml)
 - **Canonical host:** https://newchums.com; www → non-www redirect enforced via middleware
 - **Google OAuth:** Operational (AUTH_URL / NEXTAUTH_URL = https://newchums.com)
@@ -53,12 +56,14 @@ npm run dev
 - NEXT_PUBLIC_API_BASE_URL (e.g. http://127.0.0.1:8787)
 
 **API (api/.dev.vars):**
-- DATABASE_URL
+- DATABASE_URL (required; non-empty; same Neon URL as web/.env.local)
+- NEXTAUTH_SECRET (must match web AUTH_SECRET; required for profile, user/username, user/date-of-birth)
 - POSTMARK_SERVER_TOKEN, EMAIL_FROM, WEB_BASE_URL
 - Postmark template IDs
 - SENTRY_DSN, AXIOM_TOKEN, AXIOM_DATASET (optional)
 
 ---
+
 
 ## Database Migrations
 
@@ -90,9 +95,12 @@ Builds OpenNext → deploys to newchums-web-dev. Custom domains (newchums.com, w
 
 ```bash
 cd api
-wrangler secret put DATABASE_URL   # if not set
-wrangler deploy
+npx wrangler secret put DATABASE_URL   # if not set
+npx wrangler secret put NEXTAUTH_SECRET   # if not set (must match web AUTH_SECRET)
+npm run deploy
 ```
+
+Deploys to root worker `newchums-api` (the worker the web calls). Use `npm run deploy:production` to deploy the `newchums-api-production` env.
 
 ---
 
@@ -118,6 +126,11 @@ Local config now matches production; deploy no longer triggers config drift warn
 | Routes not configured for Edge | Add `export const runtime = "edge";` to dynamic route |
 | OpenNext middleware fail | Ensure `npm run build` runs patch-functions-config.js |
 | Wrangler warns about config drift | Verify wrangler.toml has routes, workers_dev, preview_urls, vars matching remote |
+| Signup / API returns "DATABASE_URL is not set" | Edit api/.dev.vars; add non-empty DATABASE_URL (same as web). Restart API. Verify with GET http://localhost:8787/health/env — DATABASE_URL should be true |
+| Onboarding (username/DOB) returns 500 | Ensure NEXTAUTH_SECRET in api/.dev.vars matches web AUTH_SECRET; API uses newchums.users schema |
+| api-token returns 401 after Google sign-in | Fixed: api-token now uses auth() + jose (not getToken). Redeploy web. |
+| CORS blocked on API (preflight fails) | API uses explicit origin allowlist. Redeploy API. |
+| /auth/signup, /profile, /interests return 404 in prod | Web points to root worker newchums-api. Deploy with `npm run deploy` (not `--env production`). |
 
 ---
 
@@ -138,4 +151,25 @@ Chunk XX — YYYY-MM-DD
 
 ## Session Log (Chunks)
 
-*(Add Chunk entries here.)*
+### Chunk 1 — Web API routes → API worker migration
+
+- **Goal:** Move business logic from web API routes into API worker; use JWT auth (Option A).
+- **Changes:**
+  - API: New endpoints `/auth/signup`, `/auth/password-reset/request`, `/auth/password-reset/confirm`, `/profile`, `/interests`, `/user/username`, `/user/date-of-birth`
+  - API: JWT verification via @auth/core/jwt; shared modules resetTokens, username, ageValidation
+  - Web: Removed 7 route handlers; added `/api/auth/api-token` (returns JWT for API calls)
+  - Web: `apiFetch()` + `NEXT_PUBLIC_API_BASE_URL`; SignupClient, ResetPasswordClient, forgot-password, SettingsClient, ProfileClient, OnboardingUsernameClient now call API
+- **Env vars added:** API NEXTAUTH_SECRET; Web NEXT_PUBLIC_API_BASE_URL
+- **Password-reset email:** Migrated token logic; email sending left broken (to be fixed separately).
+- **Verification:** Add NEXT_PUBLIC_API_BASE_URL to web/.env.local; NEXTAUTH_SECRET to api/.dev.vars; start API then web; run signup, profile, settings, forgot-password flows.
+
+### Chunk 2 — Production deploy, CORS, api-token (Edge-compatible)
+
+- **Goal:** Fix production onboarding (Google sign-in → api-token 401), CORS, deploy target.
+- **Changes:**
+  - api-token: Switched from getToken (fails on Workers) to auth() + jose (mints 15-min JWT). Web dependency: jose.
+  - API verifyAuthToken: Supports jose-signed API token and Auth.js session JWT.
+  - CORS: Explicit allowlist (newchums.com, www.newchums.com, localhost:3000); Vary: Origin.
+  - API deploy: Root worker newchums-api is production target. `npm run deploy` uses `--env=""`; added deploy:production for newchums-api-production env. APP_ENV in root vars.
+  - __routes: GET /__routes (dev-only) lists registered routes.
+- **Verification:** Google sign-in → onboarding completes; POST /user/username, /user/date-of-birth succeed.
