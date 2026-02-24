@@ -1,81 +1,142 @@
-# NewChums Agent Instructions (AGENTS.md)
+# NewChums Agent Governance
 
-This repo is being built for the long term.
-Prefer maintainable, production-grade approaches over quick hacks.
+Last Updated: February 24, 2026
 
-## Source-of-truth docs
+This document defines how agents (AI or human) should operate within the NewChums repository.
 
-Canonical project docs (these are uploaded at the start of new chats):
+The repository itself is the source of truth.
+Agents are encouraged to inspect the full codebase and make architectural improvements when justified.
 
-- docs/Technical Specs.md
-- docs/System Map.md
-- docs/Development Setup Guide.md
-- (Optional) docs/chunks/Chunk Log.md (archive for deep troubleshooting)
+Architecture clarity > rigidity.
 
-## Doc responsibilities
+---
 
-### docs/Technical Specs.md
+## Core Architectural Commitments
 
-Purpose: decisions, invariants, conventions.
-Update only when a decision changes or a new app-wide requirement is introduced.
-Do not paste step-by-step logs here.
+These are long-term structural decisions:
 
-### docs/System Map.md
+- Two-Worker Model
+  - Web Worker (Next.js via OpenNext)
+  - API Worker (Hono)
+- Business logic belongs in the API Worker.
+- The Web Worker focuses on rendering, auth orchestration, and UI composition.
+- Avoid introducing new business logic inside Next.js route handlers.
+- Structural UI changes should occur at the theme/layout level, not per-page patches.
 
-Purpose: high-level architecture and major flows.
-Update only when components/flows/deployment boundaries change materially.
+Current production reality:
 
-### docs/Development Setup Guide.md
+- `newchums-web-dev` is production (suffix mismatch acknowledged).
+- `newchums-api` is the API worker.
+- Single production environment.
+- R2, Cron, and Queues are planned but not yet implemented.
 
-Purpose:
+---
 
-1. A "Current State" section at the very top (must always be accurate).
-2. Short chunk summaries using the template below.
-   Avoid transcripts. Keep chunk summaries repeatable and concise.
+## Documentation Contract
 
-### docs/chunks/Chunk Log.md
+The following documents serve distinct purposes and must remain structured accordingly:
 
-Purpose: detailed troubleshooting notes and long command transcripts.
-If a chunk has lots of twists, store detail here and reference it from the Setup Guide.
+### `docs/Technical_Specs.md`
 
-## Long-term engineering principles (always apply)
+- Defines architectural invariants, stack decisions, runtime constraints.
+- Documents what exists today.
+- Clearly separates **Implemented** vs **Planned / Not Implemented**.
+- Does NOT track phases, chunks, or roadmap items.
 
-- Minimize tech debt; prefer clean, stable patterns.
-- Avoid brittle build-time behavior (e.g., module-level DB init that breaks builds).
-- Keep environment variable usage explicit and consistent across local/preview/prod.
-- Keep observability safe: do not log secrets, tokens, reset links, or auth headers.
+### `docs/System_Map.md`
 
-## Workflow expectations (critical)
+- Visual architecture and system flows.
+- Maintains:
+  - Big-picture diagram
+  - Core flows
+  - Local dev model
+  - Architectural commitments
+  - Single consolidated mega diagram at the end
+- Reflects real production deployment.
 
-Do not output code patches directly; always provide a Codex prompt for code changes.
-If the user asks for code, respond with a Codex prompt plus verification steps, not inline patches.
+### `docs/Development_Setup_Guide.md`
 
-For any proposed change:
+- Operational instructions.
+- Local setup.
+- Deployment process.
+- Daily session “Chunk” log.
+- Current State must remain short and accurate.
 
-1. Provide a Codex prompt that implements the change (minimal diff, maintainable).
-2. Provide verification steps I can run immediately after each stage:
-   - exact commands (e.g., npm run lint, npm run build, curl calls)
-   - what success looks like
-3. Prefer incremental validation over big leaps (verify as we go).
+If architectural invariants change, update both:
 
-## Chunk closeout template (Development Setup Guide)
+- Technical_Specs.md
+- System_Map.md
 
-**Chunk X: <Name>**
+in the same change set.
 
-- Goal:
-- Changes made:
-- Env vars / secrets added or changed:
-- Deploy notes (web/pages vs api/workers):
-- Verification steps:
-- Troubleshooting notes (only if new/important):
+---
 
-## Deployment model reminders
+## UI Governance Principles
 
-- Web (Cloudflare Pages): deploys automatically after pushing to GitHub.
-- API (Cloudflare Workers): deploys via `wrangler deploy` (unless CI is later added).
+When making UI changes:
 
-## Security reminders
+1. Inspect the template reference (`C:\\NewChums\\template_reference`).
+2. Inspect our current theme structure (`/web/src/theme`).
+3. Diagnose mismatches at architectural level:
+   - Typography scale
+   - Spacing system
+   - Breakpoints
+   - Component overrides
+   - Provider duplication
+   - Global CSS conflicts
+4. Prefer:
+   - Theme overrides
+   - Shared layout components
+   - Global structural fixes
+5. Avoid:
+   - Page-level `sx` patches unless isolated and intentional.
 
-- Never commit secrets.
-- Use Cloudflare Pages "Secrets" for sensitive values; use Workers secrets via wrangler.
-- If any secret appears in chat/logs/screenshots, assume compromised and rotate.
+Agents may refactor theme structure if doing so improves long-term maintainability.
+
+---
+
+## API Boundary Rule
+
+If business logic, database access, or mutation logic appears inside the Web Worker:
+
+- Treat it as migration debt.
+- New logic should be implemented in the API Worker.
+- Refactoring for boundary clarity is encouraged.
+
+---
+
+## Deployment & Runtime Notes
+
+- Web Worker runs on Edge runtime.
+- Dynamic routes must export:
+
+  `export const runtime = "edge";`
+
+- Validate builds before deploy:
+
+  `cd web && npm run build`
+
+- API deploys via Wrangler.
+
+---
+
+## Agent Authority Clause
+
+Agents may:
+
+- Refactor for architectural clarity.
+- Remove conflicting legacy code.
+- Improve theme structure.
+- Improve boundary separation.
+- Update documentation when inaccurate.
+
+Agents should:
+
+- Avoid speculative architecture.
+- Avoid overengineering.
+- Preserve auth integrity and routing behavior.
+- Clearly separate implemented vs planned systems.
+
+---
+
+NewChums prioritizes maintainability, clarity, and architectural integrity over short-term velocity.

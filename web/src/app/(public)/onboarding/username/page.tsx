@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import OnboardingUsernameClient from "./OnboardingUsernameClient";
 import { getSafeRedirectPath } from "@/lib/authRedirect";
 
-/** Cloudflare Pages requires runtime='edge' for dynamic routes. */
+/** Cloudflare Workers (OpenNext) requires runtime='edge' for dynamic routes. */
 export const metadata: Metadata = {
   title: "Choose Username | NewChums",
 };

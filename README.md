@@ -1,19 +1,35 @@
-\# NewChums
+# NewChums
 
-\## Project Docs (Canonical — Start Here)
+NewChums is a full-stack event discovery and meetup platform.
 
-These files are the source of truth for architecture, decisions, and workflows.
+---
 
-If anything conflicts with code comments or older notes, update these docs.
+## Canonical Documentation
 
-\- `docs/Technical_Specs.md` — Decisions, stack, conventions, and app-level requirements.
+| Document                        | Purpose                             |
+| ------------------------------- | ----------------------------------- |
+| docs/Technical_Specs.md         | Architectural decisions, invariants |
+| docs/System_Map.md              | System boundaries and flows         |
+| docs/Development_Setup_Guide.md | Setup, deploy, session log          |
 
-\- `docs/System_Map.md` — High-level architecture and component relationships.
+Production Workers:
 
-\- `docs/Development_Setup_Guide.md` — Step-by-step environment setup and chunk-by-chunk build log.
+- newchums-web-dev (production despite suffix)
+- newchums-api
 
-\## Dev
+Domain binding pending: newchums.com → Web Worker
 
-Frontend: `cd web \&\& npm run dev`
+## Documentation Contract
 
-API: `cd api \&\& npm run dev` (or see docs)
+These docs are the source of truth:
+
+- `docs/Technical_Specs.md` — architectural decisions, invariants, constraints, and what exists today.
+  - Do **not** track phases, chunks, roadmaps, or task lists here.
+  - If something is not implemented, label it explicitly as **Planned / Not Implemented**.
+
+- `docs/System_Map.md` — architecture diagrams + key flows.
+  - Keep the multi-section format (Big Picture, Flows, Local Dev, Commitments).
+  - Always include the **single consolidated mega diagram** at the end.
+
+- `docs/Development_Setup_Guide.md` — setup, dev, deploy, troubleshooting, and **session Chunks**.
+  - This is the only place where daily “Chunk” logs live.
