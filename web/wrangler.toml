@@ -1,19 +1,37 @@
 # Cloudflare Worker for NewChums Next.js app (OpenNext)
 # https://opennext.js.org/cloudflare
-# DEV-ONLY: Single deploy target — newchums-web-dev
+# Single deploy target — newchums-web-dev
 name = "newchums-web-dev"
 main = ".open-next/worker.js"
 compatibility_date = "2025-02-18"
 compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 
+# Match remote: custom domains only, no workers.dev subdomain
+workers_dev = false
+preview_urls = false
+
 [assets]
 directory = ".open-next/assets"
 binding = "ASSETS"
 
+# Custom domains: must match remote Worker config or deploy would remove them
+[[routes]]
+pattern = "newchums.com"
+zone_name = "newchums.com"
+custom_domain = true
+
+[[routes]]
+pattern = "www.newchums.com"
+zone_name = "newchums.com"
+custom_domain = true
+
+# Production canonical host
 [vars]
-AUTH_URL = "https://newchums-web-dev.robsmith775.workers.dev"
+AUTH_URL = "https://newchums.com"
 AUTH_TRUST_HOST = "true"
+NEXTAUTH_URL = "https://newchums.com"
 
 [[services]]
 binding = "WORKER_SELF_REFERENCE"
 service = "newchums-web-dev"
+environment = "production"
