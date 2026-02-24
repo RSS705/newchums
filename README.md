@@ -16,7 +16,10 @@ Active workers:
 Current state:
 
 - Single production environment
-- Domain binding to `newchums.com` pending
+- Domain live: `newchums.com`, `www.newchums.com` (custom domains in wrangler.toml)
+- Canonical host: `https://newchums.com`; www → non-www redirect enforced (middleware)
+- Google OAuth operational (AUTH_URL / NEXTAUTH_URL aligned)
+- Deploy config aligned (routes, vars in code; no drift on deploy)
 - Plausible analytics live
 - R2, Cron, and Queues planned but not yet implemented
 

@@ -30,6 +30,7 @@ custom_domain = true
 AUTH_URL = "https://newchums.com"
 AUTH_TRUST_HOST = "true"
 NEXTAUTH_URL = "https://newchums.com"
+GOOGLE_CLIENT_ID = "408122271431-fdenoqaiec18udki7i3k9fu4mc2tvbpe.apps.googleusercontent.com"
 
 [[services]]
 binding = "WORKER_SELF_REFERENCE"

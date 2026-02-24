@@ -1,7 +1,7 @@
 # Technical Specifications
 
 Last Updated: February 24, 2026
-Version: 4.0
+Version: 5.0
 
 This document defines the authoritative technical architecture of NewChums.
 It describes what exists today and the structural commitments we are making.
@@ -47,15 +47,35 @@ Attend, be notified of, and create small public events around shared interests.
 
 # 3. Deployment Reality
 
-- Single production environment.
-- Web Worker name: newchums-web-dev (production despite suffix).
-- API Worker name: newchums-api.
-- Domain binding to newchums.com pending.
-- No dedicated dev environment yet.
+## Production Environment (Implemented)
+
+- **Single production environment.**
+- **Web Worker:** `newchums-web-dev` (production; suffix mismatch acknowledged).
+- **API Worker:** `newchums-api`.
+- **Domain binding:** `newchums.com` and `www.newchums.com` are live as custom domains (wrangler.toml routes).
+- **Canonical host:** `https://newchums.com`. All traffic to `www.newchums.com` is 301-redirected to non-www before Auth.js runs (prevents PKCE code_verifier mismatch).
+- **AUTH_URL / NEXTAUTH_URL:** Set to `https://newchums.com` in wrangler vars.
+- **Deploy safeguards:** Custom domain routes and `workers_dev = false`, `preview_urls = false` are defined in wrangler.toml so deploy does not wipe remote config.
+
+## Not Implemented
+
+- No dedicated dev Worker environment yet.
+- R2, Cron, Queues are planned but not in production.
 
 ---
 
-# 4. Architectural Invariants
+# 4. Canonical Host and Middleware
+
+**Problem solved:** Google OAuth PKCE stores `code_verifier` in a cookie tied to origin. If signin starts on `www.newchums.com` and callback lands on `newchums.com`, the cookie is not sent → "Invalid code verifier."
+
+**Implementation:** Middleware at `web/src/middleware.ts` runs before Auth.js. Any request to a host starting with `www.` is 301-redirected to the same path and query on the non-www host.
+
+- **Matcher:** Includes `/api/auth/*` so OAuth flows hit canonical host.
+- **Exclusions:** `/_next/static`, `/_next/image`, `favicon.ico`, `robots.txt`, `sitemap.xml`.
+
+---
+
+# 5. Architectural Invariants
 
 1. Two-worker model is long-term strategy.
 2. Business logic belongs in API Worker.
@@ -63,10 +83,11 @@ Attend, be notified of, and create small public events around shared interests.
 4. Avoid introducing new API logic in Next.js routes.
 5. Observability (Sentry/Axiom/Plausible) remains enabled.
 6. Structural UI changes must occur at theme/layout level.
+7. Canonical host is non-www; www redirects before Auth.js.
 
 ---
 
-# 5. UI Architecture
+# 6. UI Architecture
 
 Canonical theme location:
 web/src/theme/
@@ -81,7 +102,17 @@ Principles:
 
 ---
 
-# 6. Database State
+# 7. Auth (Auth.js)
+
+- **Providers:** Google OAuth, Credentials (email/password).
+- **Session:** JWT (no DB adapter).
+- **Post-auth redirect:** `/` by default. Source: `web/src/lib/authRedirect.ts`.
+- **Onboarding gate:** If username or date_of_birth missing → redirect to `/onboarding/username?returnTo=<path>`. Guards root `/`, `(app)/` layout.
+- **Canonical host requirement:** AUTH_URL and NEXTAUTH_URL must be `https://newchums.com` so OAuth callback matches signin origin.
+
+---
+
+# 8. Database State
 
 Neon PostgreSQL is active.
 
@@ -97,42 +128,63 @@ PostGIS is available for geospatial queries.
 
 ---
 
-# 7. Observability
+# 9. Observability
 
-- Sentry: Frontend + API error tracking
-- Axiom: API request logging
-- Plausible: Production analytics
+- **Sentry:** Frontend + API error tracking
+- **Axiom:** API request logging
+- **Plausible:** Production analytics
 
 ---
 
-# 8. Planned Infrastructure (Not Yet Implemented)
+# 10. Wrangler and Deploy Configuration
+
+**Web (web/wrangler.toml):**
+- `workers_dev = false` — no workers.dev subdomain when using custom domains
+- `preview_urls = false`
+- Custom domain routes: `newchums.com`, `www.newchums.com` (zone_name, custom_domain = true)
+- Vars: AUTH_URL, NEXTAUTH_URL, AUTH_TRUST_HOST
+- Service binding: WORKER_SELF_REFERENCE → newchums-web-dev (environment = "production")
+- Local config must match remote or deploy would override and remove routes.
+
+**API (api/wrangler.toml):**
+- Envs: preview, production (APP_ENV)
+- Vars: EMAIL_FROM, WEB_BASE_URL, Postmark template IDs
+
+---
+
+# 11. Runtime Constraints
+
+Dynamic routes must export:
+
+```ts
+export const runtime = "edge";
+```
+
+**Middleware patch:** `web/scripts/patch-functions-config.js` runs after `next build`. Next.js 16 outputs `/_middleware` with runtime `nodejs`, which breaks OpenNext. The patch removes it from functions-config-manifest.json so OpenNext treats middleware as Edge.
+
+Validation command:
+
+```bash
+cd web && npm run build
+```
+
+---
+
+# 12. Planned Infrastructure (Not Yet Implemented)
 
 - Cloudflare R2 (profile images)
 - Cron triggers for automated workflows
 - Queues for async jobs
-- Dedicated dev environment
-- Domain binding finalization
+- Dedicated dev Worker environment
 
 These are architectural placeholders, not current production components.
 
 ---
 
-# 9. Runtime Constraints
-
-Dynamic routes must export:
-
-export const runtime = "edge";
-
-Validation command:
-
-cd web && npm run build
-
----
-
-# 10. Technical Debt (Explicitly Acknowledged)
+# 13. Technical Debt (Explicitly Acknowledged)
 
 - Some API logic exists inside Web Worker.
-- Worker naming mismatch (-dev suffix).
+- Worker naming mismatch (-dev suffix on production Web Worker).
 - Schema needs normalization/cleanup before public launch.
 
 These are known and tracked outside this document.

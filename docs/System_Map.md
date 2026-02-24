@@ -4,11 +4,13 @@ Last Updated: February 24, 2026
 
 This document reflects the current production reality of NewChums.
 
-Production Workers:
-- Web Worker: newchums-web-dev (production despite suffix)
-- API Worker: newchums-api
-- Single production environment
-- Domain binding to newchums.com pending
+## Production Workers
+
+- **Web Worker:** `newchums-web-dev` (production despite suffix)
+- **API Worker:** `newchums-api`
+- **Single production environment**
+- **Canonical domain:** `https://newchums.com` (live; www → non-www redirect enforced)
+- **Custom domains:** newchums.com, www.newchums.com (defined in wrangler.toml)
 
 ---
 
@@ -17,7 +19,8 @@ Production Workers:
 ```mermaid
 flowchart TB
   U["Users<br/>(Web Browser)"] --> CF["Cloudflare Edge<br/>(DNS + CDN + SSL)"]
-  CF --> W["Web Worker<br/>(Next.js via OpenNext)<br/>newchums-web-dev"]
+  CF --> MW["Middleware<br/>(www → newchums.com 301)"]
+  MW --> W["Web Worker<br/>(Next.js via OpenNext)<br/>newchums-web-dev"]
 
   W -->|"HTTPS API calls"| API["API Worker<br/>(Hono)<br/>newchums-api"]
 
@@ -36,7 +39,19 @@ flowchart TB
 
 ---
 
-# 2) Core User Flows
+# 2) Canonical Host Model
+
+All requests to `www.newchums.com` are 301-redirected to `https://newchums.com` (same path + query) **before** Auth.js runs. This ensures:
+
+- OAuth signin and callback share the same origin
+- PKCE `code_verifier` cookie is available on callback
+- AUTH_URL / NEXTAUTH_URL are `https://newchums.com`
+
+Middleware: `web/src/middleware.ts` — runs on all paths except static assets; includes `/api/auth/*`.
+
+---
+
+# 3) Core User Flows
 
 ## Browse Events
 
@@ -90,9 +105,30 @@ sequenceDiagram
   Web-->>User: UI update
 ```
 
+## Google OAuth (Canonical Host Enforced)
+
+```mermaid
+sequenceDiagram
+  participant User
+  participant www
+  participant MW as Middleware
+  participant Web
+  participant Google
+
+  User->>www: Visit www.newchums.com/api/auth/signin/google
+  www->>MW: Request
+  MW->>User: 301 → https://newchums.com/api/auth/signin/google
+  User->>Web: GET newchums.com/.../signin/google
+  Web->>Google: Redirect to Google
+  Google->>User: Auth
+  User->>Web: Callback → newchums.com/api/auth/callback/google
+  Note over Web: Same origin; PKCE verifier matches
+  Web-->>User: Session established
+```
+
 ---
 
-# 3) Local Development Model
+# 4) Local Development Model
 
 ```mermaid
 flowchart TB
@@ -107,25 +143,43 @@ flowchart TB
 
 ---
 
-# 4) Architectural Commitments
+# 5) Architectural Commitments
 
 - Two-worker model is intentional and long-term.
 - Business logic belongs in API Worker.
 - Web Worker focuses on UI and auth orchestration.
+- Canonical host is non-www; middleware enforces before Auth.js.
 - Some legacy API logic exists in Web Worker (technical debt).
 - R2 and background jobs (Cron/Queues) are planned but not yet implemented.
 - Single production environment currently active.
+- Wrangler config (routes, workers_dev, vars) is code-managed to prevent deploy drift.
 
 ---
 
-# 5) Single Consolidated System Model
+# 6) Deploy Configuration (Production)
+
+| Setting | Value |
+|---------|-------|
+| Web Worker name | newchums-web-dev |
+| API Worker name | newchums-api |
+| Custom domains | newchums.com, www.newchums.com |
+| AUTH_URL / NEXTAUTH_URL | https://newchums.com |
+| workers_dev | false |
+| preview_urls | false |
+
+Routes and vars in wrangler.toml match remote; deploy no longer wipes custom domains or overrides AUTH_URL.
+
+---
+
+# 7) Single Consolidated System Model
 
 ```mermaid
 flowchart TB
   U["Users<br/>(Browser)"] --> CF["Cloudflare Edge"]
-  CF --> W["Web Worker<br/>(Next.js via OpenNext)"]
+  CF --> MW["Middleware<br/>(www → newchums.com)"]
+  MW --> W["Web Worker<br/>(Next.js via OpenNext)<br/>newchums-web-dev"]
 
-  W -->|"API calls"| API["API Worker<br/>(Hono)"]
+  W -->|"API calls"| API["API Worker<br/>(Hono)<br/>newchums-api"]
 
   API -->|"SQL"| DB["Neon<br/>(Postgres)"]
 
@@ -140,6 +194,6 @@ flowchart TB
   API --> AX["Axiom Logs"]
   W --> PLAUS["Plausible"]
 
-  CRON["Future Cron/Queues"] --> API
+  CRON["Future Cron/Queues"] -.-> API
   R2["Future R2 Storage"] -.-> API
 ```

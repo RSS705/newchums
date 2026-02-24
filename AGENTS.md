@@ -28,6 +28,7 @@ Current production reality:
 - `newchums-web-dev` is production (suffix mismatch acknowledged).
 - `newchums-api` is the API worker.
 - Single production environment.
+- Domain live: newchums.com, www.newchums.com; canonical host enforced.
 - R2, Cron, and Queues are planned but not yet implemented.
 
 ---
