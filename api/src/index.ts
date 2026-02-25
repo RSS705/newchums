@@ -379,44 +379,66 @@ app.post("/auth/signup", async (c) => {
   }
 });
 
+const RESET_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
+
 app.post("/auth/password-reset/request", async (c) => {
   const body = await c.req.json<{ email?: string }>();
   const normalizedEmail = body.email?.trim().toLowerCase();
   if (!normalizedEmail) {
-    return c.json({ ok: true });
+    return c.json({ ok: false, error: "EMAIL_REQUIRED" }, 400);
   }
 
   const sql = getSql(c.env);
   const users = (await sql`
-    SELECT id, password_hash FROM users WHERE email = ${normalizedEmail} LIMIT 1
-  `) as { id: string; password_hash: string | null }[];
+    SELECT id, password_hash, name FROM users WHERE email = ${normalizedEmail} LIMIT 1
+  `) as { id: string; password_hash: string | null; name: string | null }[];
   const user = users[0];
-  let resetUrl: string | undefined;
 
-  if (user && user.password_hash) {
-    const rawToken = generateResetToken();
-    const tokenHash = await hashResetToken(rawToken);
-    const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
-    await sql`
-      INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
-      VALUES (${user.id}, ${tokenHash}, ${expiresAt})
-    `;
-    const origin = new URL(c.req.url).origin;
-    resetUrl = `${c.env.WEB_BASE_URL}/reset-password?token=${rawToken}`;
+  if (!user) {
+    return c.json({ ok: false, error: "EMAIL_NOT_FOUND" }, 404);
+  }
+  if (!user.password_hash) {
+    return c.json({ ok: false, error: "OAUTH_ACCOUNT", message: "This account uses Google sign-in." }, 409);
   }
 
-  if (c.env.APP_ENV !== "production") {
-    return c.json({ ok: true, ...(resetUrl ? { resetUrl } : {}) });
-  }
+  await sql`
+    UPDATE password_reset_tokens SET used_at = NOW()
+    WHERE user_id = ${user.id} AND used_at IS NULL
+  `;
+
+  const rawToken = generateResetToken();
+  const tokenHash = await hashResetToken(rawToken);
+  const expiresAt = new Date(Date.now() + RESET_EXPIRY_MS);
+  await sql`
+    INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+    VALUES (${user.id}, ${tokenHash}, ${expiresAt})
+  `;
+
+  const resetUrl = `${c.env.WEB_BASE_URL}/reset-password?token=${encodeURIComponent(rawToken)}`;
+  await sendPasswordResetEmail(c.env, {
+    to: normalizedEmail,
+    name: user.name ?? undefined,
+    resetUrl,
+  });
+
   return c.json({ ok: true });
 });
 
 app.post("/auth/password-reset/confirm", async (c) => {
   const body = await c.req.json<{ token?: string; password?: string }>();
-  if (!body.token || !body.password || body.password.length < 8) {
-    return c.json({ ok: false, error: "INVALID_INPUT" }, 400);
+  const tokenRaw = body.token?.trim();
+  const password = body.password?.trim();
+  if (!tokenRaw) {
+    return c.json({ ok: false, error: "INVALID_INPUT", message: "Token is required." }, 400);
   }
-  const tokenHash = await hashResetToken(body.token);
+  if (!password || password.length < 8) {
+    return c.json(
+      { ok: false, error: "INVALID_INPUT", message: "Password must be at least 8 characters." },
+      400
+    );
+  }
+
+  const tokenHash = await hashResetToken(tokenRaw);
   const sql = getSql(c.env);
   const tokens = (await sql`
     SELECT id, user_id
@@ -428,11 +450,19 @@ app.post("/auth/password-reset/confirm", async (c) => {
   `) as { id: string; user_id: string }[];
   const record = tokens[0];
   if (!record) {
-    return c.json({ ok: false, error: "INVALID_OR_EXPIRED" }, 400);
+    return c.json(
+      { ok: false, error: "INVALID_OR_EXPIRED", message: "Reset link is invalid or has expired." },
+      400
+    );
   }
-  const passwordHash = hashSync(body.password, 10);
+
+  const passwordHash = hashSync(password, 10);
   await sql`UPDATE users SET password_hash = ${passwordHash} WHERE id = ${record.user_id}`;
   await sql`UPDATE password_reset_tokens SET used_at = NOW() WHERE id = ${record.id}`;
+  await sql`
+    UPDATE password_reset_tokens SET used_at = NOW()
+    WHERE user_id = ${record.user_id} AND used_at IS NULL AND id != ${record.id}
+  `;
   return c.json({ ok: true });
 });
 

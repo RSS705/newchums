@@ -7,6 +7,8 @@ Last Updated: February 24, 2026
 ## Current State
 
 - **API migration:** Signup, password-reset, profile, interests, user/username, user/date-of-birth now live in API worker. Web calls API via NEXT_PUBLIC_API_BASE_URL; auth via JWT (Bearer) from GET /api/auth/api-token.
+- **Email verification:** Credentials signups require verification before sign-in; Postmark sends link; /auth/verify and /auth/verify/pending handle flow.
+- **Password reset:** Forgot-password → Postmark reset email → reset-password page; 404 if no user, 409 if OAuth-only.
 - **api-token:** Uses auth() + jose to mint 15-min JWT (works on Cloudflare Workers/OpenNext). API verifies jose-signed token or Auth.js session JWT.
 - **CORS:** Explicit allowlist: https://newchums.com, https://www.newchums.com, http://localhost:3000.
 - **Production environment:** Single deploy target
@@ -92,7 +94,7 @@ npm run dev
 - DATABASE_URL (required; non-empty; same Neon URL as web/.env.local)
 - NEXTAUTH_SECRET (must match web AUTH_SECRET; required for profile, user/username, user/date-of-birth)
 - POSTMARK_SERVER_TOKEN, EMAIL_FROM, WEB_BASE_URL
-- Postmark template IDs
+- POSTMARK_TEMPLATE_VERIFY, POSTMARK_TEMPLATE_RESET, POSTMARK_TEMPLATE_RSVP
 - SENTRY_DSN, AXIOM_TOKEN, AXIOM_DATASET (optional)
 
 ---
@@ -109,6 +111,41 @@ Credentials signups require email verification before sign-in. Flow:
 **API env:** `POSTMARK_TEMPLATE_VERIFY`, `POSTMARK_SERVER_TOKEN`, `EMAIL_FROM`, `WEB_BASE_URL` (verification link base).
 
 **Google OAuth:** Users are treated as verified; no flow.
+
+---
+
+## Password Reset (Forgot Password)
+
+End-to-end flow: forgot-password → Postmark reset email → reset-password page → confirm → login.
+
+**API behavior:** Request endpoint returns **404 EMAIL_NOT_FOUND** if no account exists (no generic “if account exists” messaging). Confirm endpoint validates token (single-use, 1h expiry), updates password, consumes token.
+
+**Env:** `POSTMARK_TEMPLATE_RESET`, `WEB_BASE_URL` (reset link base). Template expects `name`, `productName`, `resetUrl`, `year` (year is injected by base template model).
+
+**Verification (local):**
+```bash
+# Request — unknown email → 404
+curl -X POST http://127.0.0.1:8787/auth/password-reset/request \
+  -H "Content-Type: application/json" -d '{"email":"nonexistent@example.com"}'
+# → 404 {"ok":false,"error":"EMAIL_NOT_FOUND"}
+
+# Request — Google OAuth-only email → 409 (use a real Google sign-in user from your DB)
+curl -X POST http://127.0.0.1:8787/auth/password-reset/request \
+  -H "Content-Type: application/json" -d '{"email":"your-google-user@gmail.com"}'
+# → 409 {"ok":false,"error":"OAUTH_ACCOUNT"}
+
+# Request — Credentials user → 200 (use a real email/password signup from your DB)
+curl -X POST http://127.0.0.1:8787/auth/password-reset/request \
+  -H "Content-Type: application/json" -d '{"email":"your-credentials-user@example.com"}'
+# → 200 {"ok":true} (email sent)
+
+# Confirm — use token from email link
+curl -X POST http://127.0.0.1:8787/auth/password-reset/confirm \
+  -H "Content-Type: application/json" -d '{"token":"<token-from-email>","password":"newpassword123"}'
+# → {"ok":true} or 400 INVALID_OR_EXPIRED / INVALID_INPUT
+```
+
+**Production:** Same endpoints at `https://newchums-api.robsmith775.workers.dev`. Replace base URL in curl.
 
 ---
 
@@ -184,6 +221,7 @@ Local config now matches production; deploy no longer triggers config drift warn
 | CORS blocked on API (preflight fails) | API uses explicit origin allowlist. Redeploy API. |
 | /auth/signup, /profile, /interests return 404 in prod | Web points to root worker newchums-api. Deploy with `npm run deploy` (not `--env production`). |
 | Signup / API calls go to localhost in prod | Client bundle was built with dev env. Use `npm run deploy` (not raw `next build`); it sets `NEXT_PUBLIC_API_BASE_URL` to prod. Hard refresh / clear cache. |
+| Password reset link goes to localhost | Ensure `WEB_BASE_URL` in api/.dev.vars (local) or wrangler vars (prod) is correct. Prod must be `https://newchums.com`. |
 
 ---
 

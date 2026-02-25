@@ -67,7 +67,9 @@ The following flows now run entirely in the API worker; the web app calls the AP
 
 **Auth flow:** For authenticated routes, the client calls `GET /api/auth/api-token` (same-origin, cookies sent). The route uses auth() to get the session, then mints a 15-min JWT with jose. The client passes it as `Authorization: Bearer <token>` to the API. The API verifies using jose (API token) or @auth/core (Auth.js session JWT). NEXTAUTH_SECRET must match web AUTH_SECRET. CORS: explicit allowlist (newchums.com, www, localhost:3000).
 
-**Password-reset email:** Token creation is implemented; sending the email is not yet wired (planned follow-up).
+**Email verification (Credentials):** Signup → POST /auth/email-verify/request → Postmark → /auth/verify?email=&token= → confirm. Pending page polls status. Google OAuth users are verified at creation.
+
+**Password reset:** POST /auth/password-reset/request → Postmark reset email → /reset-password?token= → confirm. 404 if no user; 409 if OAuth-only.
 
 ---
 

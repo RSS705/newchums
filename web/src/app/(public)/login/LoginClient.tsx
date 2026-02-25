@@ -27,6 +27,7 @@ export default function LoginClient() {
 
   const emailPrefill = searchParams.get("email");
   const nextParam = searchParams.get("next");
+  const resetSuccess = searchParams.get("reset") === "success";
   const redirectTarget = getSafeRedirectPath(nextParam);
 
   React.useEffect(() => {
@@ -37,6 +38,11 @@ export default function LoginClient() {
 
   const formContent = (
     <Stack spacing={2.5}>
+      {resetSuccess && (
+        <Typography variant="body2" color="success.main" sx={{ textAlign: "center", fontWeight: 500 }}>
+          Your password has been reset. Sign in with your new password.
+        </Typography>
+      )}
       <Box sx={{ textAlign: "center", mx: "auto" }}>
         <Typography component="h1" variant="h4" fontWeight={700} sx={{ mb: 0.5 }}>
           Welcome back friend

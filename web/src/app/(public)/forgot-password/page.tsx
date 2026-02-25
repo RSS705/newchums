@@ -9,12 +9,11 @@ import AuthField from "@/components/auth/AuthField";
 import AuthSplitLayout from "@/components/layout/AuthSplitLayout";
 import { AppButton, AppCard } from "@/components/ui";
 
-type RequestResponse = { ok: boolean; resetUrl?: string };
+type RequestResponse = { ok?: boolean; error?: string };
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = React.useState("");
   const [submitted, setSubmitted] = React.useState(false);
-  const [resetUrl, setResetUrl] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
 
   return (
@@ -35,7 +34,6 @@ export default function ForgotPasswordPage() {
             event.preventDefault();
             setError(null);
             setSubmitted(false);
-            setResetUrl(null);
 
             try {
               const response = await apiFetch("/auth/password-reset/request", {
@@ -43,14 +41,23 @@ export default function ForgotPasswordPage() {
                 body: JSON.stringify({ email }),
               });
               const data = (await response.json()) as RequestResponse;
+              if (response.status === 404 && data.error === "EMAIL_NOT_FOUND") {
+                setError("No account found for that email.");
+                return;
+              }
+              if (response.status === 409 && data.error === "OAUTH_ACCOUNT") {
+                setError("This account uses Google sign-in. Please use Sign in with Google.");
+                return;
+              }
+              if (response.status === 400 && data.error === "EMAIL_REQUIRED") {
+                setError("Please enter your email address.");
+                return;
+              }
               if (!response.ok || !data.ok) {
                 setError("Something went wrong. Please try again.");
                 return;
               }
               setSubmitted(true);
-              if (data.resetUrl) {
-                setResetUrl(data.resetUrl);
-              }
             } catch {
               setError("Something went wrong. Please try again.");
             }
@@ -82,15 +89,7 @@ export default function ForgotPasswordPage() {
         </Stack>
         {submitted ? (
           <Typography color="text.secondary" sx={{ mt: 2 }}>
-            If an account exists, a reset link has been sent.
-          </Typography>
-        ) : null}
-        {resetUrl ? (
-          <Typography
-            color="text.secondary"
-            sx={{ mt: 2, wordBreak: "break-all" }}
-          >
-            Dev reset link: {resetUrl}
+            Reset link sent, please check your email.
           </Typography>
         ) : null}
       </AppCard>
