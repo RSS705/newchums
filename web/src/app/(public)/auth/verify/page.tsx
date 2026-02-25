@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import VerifyClient from "./VerifyClient";
 
 export const metadata: Metadata = {
@@ -6,5 +7,9 @@ export const metadata: Metadata = {
 };
 
 export default function VerifyPage() {
-  return <VerifyClient />;
+  return (
+    <Suspense fallback={null}>
+      <VerifyClient />
+    </Suspense>
+  );
 }

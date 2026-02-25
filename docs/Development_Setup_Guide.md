@@ -82,7 +82,11 @@ npm run dev
 - AUTH_SECRET
 - AUTH_TRUST_HOST=true
 - GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
-- NEXT_PUBLIC_API_BASE_URL (e.g. http://127.0.0.1:8787)
+- NEXT_PUBLIC_API_BASE_URL — optional; defaults from .env.development (http://127.0.0.1:8787). Only needed if overriding.
+
+**Web env by mode:**
+- **Local dev:** `.env.development` → `NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8787`. `.env.local` overrides if present.
+- **Production deploy:** `npm run deploy` sets `NEXT_PUBLIC_API_BASE_URL=https://newchums-api.robsmith775.workers.dev` so the client bundle always calls the public API — never localhost.
 
 **API (api/.dev.vars):**
 - DATABASE_URL (required; non-empty; same Neon URL as web/.env.local)
@@ -135,7 +139,9 @@ cd web
 npm run deploy
 ```
 
-Builds OpenNext → deploys to newchums-web-dev. Custom domains (newchums.com, www.newchums.com) and vars are preserved; wrangler.toml matches remote.
+Builds OpenNext → deploys to newchums-web-dev. The deploy script sets `NEXT_PUBLIC_API_BASE_URL` to the production API URL so the client bundle never contains localhost. Custom domains (newchums.com, www.newchums.com) and vars are preserved; wrangler.toml matches remote.
+
+**Verification after deploy:** Open https://newchums.com/signup → DevTools Network tab → trigger signup → confirm requests go to `https://newchums-api.robsmith775.workers.dev` (not localhost). If stale, hard refresh (Ctrl+Shift+R) or clear cache.
 
 ### API
 
@@ -177,6 +183,7 @@ Local config now matches production; deploy no longer triggers config drift warn
 | api-token returns 401 after Google sign-in | Fixed: api-token now uses auth() + jose (not getToken). Redeploy web. |
 | CORS blocked on API (preflight fails) | API uses explicit origin allowlist. Redeploy API. |
 | /auth/signup, /profile, /interests return 404 in prod | Web points to root worker newchums-api. Deploy with `npm run deploy` (not `--env production`). |
+| Signup / API calls go to localhost in prod | Client bundle was built with dev env. Use `npm run deploy` (not raw `next build`); it sets `NEXT_PUBLIC_API_BASE_URL` to prod. Hard refresh / clear cache. |
 
 ---
 

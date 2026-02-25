@@ -1,12 +1,26 @@
 /**
  * Client for calling the API worker.
- * Uses NEXT_PUBLIC_API_BASE_URL (e.g. http://127.0.0.1:8787 locally, https://api.newchums.com in prod).
+ * Uses NEXT_PUBLIC_API_BASE_URL (e.g. http://127.0.0.1:8787 locally, https://newchums-api.*.workers.dev in prod).
  */
 
 const getApiBase = () => {
   const base = process.env.NEXT_PUBLIC_API_BASE_URL;
   if (!base) throw new Error("NEXT_PUBLIC_API_BASE_URL is not set");
-  return base.replace(/\/$/, "");
+  const normalized = base.replace(/\/$/, "");
+
+  // Fail fast if production site would call localhost (baked at build time)
+  if (
+    typeof window !== "undefined" &&
+    (normalized.includes("127.0.0.1") || normalized.includes("localhost"))
+  ) {
+    const host = window.location?.hostname ?? "";
+    if (host !== "localhost" && host !== "127.0.0.1") {
+      throw new Error(
+        "NEXT_PUBLIC_API_BASE_URL cannot be localhost in production. Rebuild with production API URL."
+      );
+    }
+  }
+  return normalized;
 };
 
 let cachedToken: string | null = null;

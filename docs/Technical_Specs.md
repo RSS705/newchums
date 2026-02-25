@@ -78,7 +78,7 @@ The following business logic now lives in the API worker; the web app calls it v
 
 The web retains only `GET/POST /api/auth/[...nextauth]` for Auth.js. All other former web API routes have been removed.
 
-**Required env:** Web needs `NEXT_PUBLIC_API_BASE_URL`; API needs `DATABASE_URL`, `NEXTAUTH_SECRET` (same value as web AUTH_SECRET).
+**Required env:** Web needs `NEXT_PUBLIC_API_BASE_URL`; API needs `DATABASE_URL`, `NEXTAUTH_SECRET` (same value as web AUTH_SECRET). Production web deploy sets `NEXT_PUBLIC_API_BASE_URL` to the public API URL (e.g. `https://newchums-api.robsmith775.workers.dev`) — the client bundle must never call localhost in production.
 
 ## Not Implemented
 
