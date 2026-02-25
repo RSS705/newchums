@@ -93,10 +93,25 @@ npm run dev
 
 ---
 
+## Email Verification (Credentials)
+
+Credentials signups require email verification before sign-in. Flow:
+
+1. Signup → user created with `email_verified_at = NULL`; POST /auth/email-verify/request sends email; redirect to `/auth/verify/pending?email=...`
+2. User clicks verify link in email → `/auth/verify?email=&token=` calls POST /auth/email-verify/confirm → success message
+3. Pending page polls GET /auth/email-verify/status every ~3s; when verified, shows “Verified” + link to login
+4. Login before verify → blocked with friendly message + “Resend verification email”
+
+**API env:** `POSTMARK_TEMPLATE_VERIFY`, `POSTMARK_SERVER_TOKEN`, `EMAIL_FROM`, `WEB_BASE_URL` (verification link base).
+
+**Google OAuth:** Users are treated as verified; no flow.
+
+---
+
 
 ## Database Migrations
 
-Migrations: `web/sql/` (001–005).
+Migrations: `web/sql/` (001–007).
 
 ```bash
 cd web
@@ -105,6 +120,8 @@ psql "$DATABASE_URL" -f sql/002_password_reset_tokens.sql
 psql "$DATABASE_URL" -f sql/003_add_username_to_users.sql
 psql "$DATABASE_URL" -f sql/004_add_username_norm.sql
 psql "$DATABASE_URL" -f sql/005_add_date_of_birth.sql
+psql "$DATABASE_URL" -f sql/006_add_email_verified_at.sql
+psql "$DATABASE_URL" -f sql/007_email_verification_tokens.sql
 ```
 
 ---

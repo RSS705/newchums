@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import AppShell from "@/components/layout/AppShell";
+import MarkOAuthVerified from "@/components/auth/MarkOAuthVerified";
 import { getRequestedPathFromHeaders } from "@/lib/authRedirect";
 import { getOrCreateAppUser } from "@/lib/user";
 import { headers } from "next/headers";
@@ -45,5 +46,10 @@ export default async function AppLayout({
     );
   }
 
-  return <AppShell>{children}</AppShell>;
+  return (
+    <>
+      <MarkOAuthVerified session={session} />
+      <AppShell>{children}</AppShell>
+    </>
+  );
 }

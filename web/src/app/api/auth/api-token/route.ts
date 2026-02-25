@@ -30,11 +30,14 @@ export async function GET() {
 
   const user = session.user as { id?: string; email: string; name?: string | null };
   const id = user.id ?? user.email;
+  const sessionWithProvider = session as { provider?: string };
+  const provider = sessionWithProvider.provider ?? null;
 
   const token = await new SignJWT({
     email: session.user.email,
     id,
     name: user.name ?? null,
+    ...(provider ? { provider } : {}),
   })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()

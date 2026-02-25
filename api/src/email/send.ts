@@ -62,6 +62,6 @@ export const sendRsvpConfirmationEmail = async (
       eventTitle,
       eventStartsAt: eventStartsAtISO,
       eventLocation: eventLocation ?? "",
-      eventUrl,
-    },
+    eventUrl,
+  },
   });

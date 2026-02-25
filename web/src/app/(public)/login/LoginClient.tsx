@@ -23,6 +23,7 @@ export default function LoginClient() {
   const [password, setPassword] = React.useState("");
   const [rememberDevice, setRememberDevice] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [emailUnverified, setEmailUnverified] = React.useState(false);
 
   const emailPrefill = searchParams.get("email");
   const nextParam = searchParams.get("next");
@@ -84,6 +85,14 @@ export default function LoginClient() {
             redirectTo: redirectTarget,
           });
           if (result?.error) {
+            const isUnverified =
+              result.error === "EmailNotVerified" ||
+              result.error?.toLowerCase().includes("verify");
+            if (isUnverified) {
+              setEmailUnverified(true);
+              setError("Please verify your email before signing in.");
+              return;
+            }
             setError("Invalid email or password.");
             return;
           }
@@ -95,7 +104,11 @@ export default function LoginClient() {
           label="Email"
           type="email"
           value={email}
-          onChange={(event) => setEmail(event.target.value)}
+          onChange={(event) => {
+            setEmail(event.target.value);
+            setError(null);
+            setEmailUnverified(false);
+          }}
           required
         />
         <AuthField
@@ -103,11 +116,26 @@ export default function LoginClient() {
           label="Password"
           type="password"
           value={password}
-          onChange={(event) => setPassword(event.target.value)}
+          onChange={(event) => {
+            setPassword(event.target.value);
+            setError(null);
+            setEmailUnverified(false);
+          }}
           required
           helperText={error ?? undefined}
           error={Boolean(error)}
         />
+
+        {emailUnverified && (
+          <Typography variant="body2" color="primary" sx={{ mt: -1 }}>
+            <Link
+              href={`/auth/verify/pending?email=${encodeURIComponent(email)}`}
+              style={{ fontWeight: 500 }}
+            >
+              Resend verification email
+            </Link>
+          </Typography>
+        )}
 
         <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ my: 2 }}>
           <FormControlLabel

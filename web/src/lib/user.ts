@@ -41,8 +41,8 @@ export async function getOrCreateAppUser(
 
   try {
     const inserted = (await sql`
-      INSERT INTO users (email, name)
-      VALUES (${normalized}, ${name ?? null})
+      INSERT INTO users (email, name, email_verified_at)
+      VALUES (${normalized}, ${name ?? null}, now())
       RETURNING id, username, date_of_birth
     `) as { id: string; username: string | null; date_of_birth: unknown }[];
 

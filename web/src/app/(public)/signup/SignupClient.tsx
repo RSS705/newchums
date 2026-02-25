@@ -165,10 +165,13 @@ export default function SignupClient() {
                   return;
                 }
 
+                const signedUpEmail = email.trim().toLowerCase();
+                await apiFetch("/auth/email-verify/request", {
+                  method: "POST",
+                  body: JSON.stringify({ email: signedUpEmail }),
+                });
                 router.push(
-                  `/login?email=${encodeURIComponent(
-                    email.trim().toLowerCase()
-                  )}`
+                  `/auth/verify/pending?email=${encodeURIComponent(signedUpEmail)}`
                 );
               } catch {
                 setError("Sign up failed. Please try again.");

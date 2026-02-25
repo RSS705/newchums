@@ -66,6 +66,10 @@ The following business logic now lives in the API worker; the web app calls it v
 | POST /auth/signup | User signup |
 | POST /auth/password-reset/request | Create reset token (email not yet wired) |
 | POST /auth/password-reset/confirm | Confirm reset and set new password |
+| POST /auth/email-verify/request | Send verification email (Credentials only; always 200) |
+| POST /auth/email-verify/confirm | Confirm token and set email_verified_at |
+| GET /auth/email-verify/status | Returns { verified: boolean } for polling |
+| POST /auth/email-verify/mark-oauth | Auth required; sets email_verified_at for Google OAuth users |
 | GET /profile, PUT /profile | User profile (auth required) |
 | GET /interests | List interests |
 | POST /user/username, POST /user/date-of-birth | Onboarding (auth required) |
@@ -130,6 +134,8 @@ Principles:
 # 7. Auth (Auth.js)
 
 - **Providers:** Google OAuth, Credentials (email/password).
+- **Email verification (Credentials only):** Signups with email/password require verification. User is created with `email_verified_at = NULL`. Credentials sign-in is blocked until verified. Google OAuth users are treated as verified at creation.
+- **Verification flow:** Signup → POST /auth/email-verify/request → redirect to /auth/verify/pending → user clicks link → POST /auth/email-verify/confirm → /auth/verify success. Pending page polls GET /auth/email-verify/status until verified.
 - **Session:** JWT (no DB adapter).
 - **Post-auth redirect:** `/` by default. Source: `web/src/lib/authRedirect.ts`.
 - **Onboarding gate:** If username or date_of_birth missing → redirect to `/onboarding/username?returnTo=<path>`. Guards root `/`, `(app)/` layout.

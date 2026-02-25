@@ -17,8 +17,8 @@ export async function ensureAppUserId(
 
   try {
     const inserted = (await sql`
-      INSERT INTO newchums.users (email, name)
-      VALUES (${normalized}, ${name ?? null})
+      INSERT INTO newchums.users (email, name, email_verified_at)
+      VALUES (${normalized}, ${name ?? null}, now())
       RETURNING id
     `) as { id: string }[];
     if (inserted.length > 0) return inserted[0].id;

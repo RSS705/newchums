@@ -326,8 +326,8 @@ app.post("/auth/signup", async (c) => {
 
     const passwordHash = hashSync(body.password, 10);
     await sql`
-      INSERT INTO users (email, name, username, username_norm, password_hash, date_of_birth)
-      VALUES (${normalizedEmail}, ${normalizedName}, ${usernameDisplay}, ${usernameNorm}, ${passwordHash}, ${parsedDob})
+      INSERT INTO users (email, name, username, username_norm, password_hash, date_of_birth, email_verified_at)
+      VALUES (${normalizedEmail}, ${normalizedName}, ${usernameDisplay}, ${usernameNorm}, ${passwordHash}, ${parsedDob}, NULL)
     `;
     return c.json({ ok: true }, 201);
   } catch (err) {
@@ -433,6 +433,130 @@ app.post("/auth/password-reset/confirm", async (c) => {
   const passwordHash = hashSync(body.password, 10);
   await sql`UPDATE users SET password_hash = ${passwordHash} WHERE id = ${record.user_id}`;
   await sql`UPDATE password_reset_tokens SET used_at = NOW() WHERE id = ${record.id}`;
+  return c.json({ ok: true });
+});
+
+// ---- Email verification (Credentials only) ----
+const VERIFY_EXPIRY_MS = 24 * 60 * 60 * 1000;
+
+app.post("/auth/email-verify/request", async (c) => {
+  const body = await c.req.json<{ email?: string }>();
+  const normalizedEmail = body.email?.trim().toLowerCase();
+  if (!normalizedEmail) {
+    return c.json({ ok: true, message: "If an account exists, a verification email was sent." });
+  }
+
+  const sql = getSql(c.env);
+  const users = (await sql`
+    SELECT id, email_verified_at, password_hash
+    FROM users
+    WHERE email = ${normalizedEmail}
+    LIMIT 1
+  `) as { id: string; email_verified_at: string | null; password_hash: string | null }[];
+
+  if (users.length === 0) {
+    return c.json({ ok: true, message: "If an account exists, a verification email was sent." });
+  }
+
+  const user = users[0];
+  if (user.email_verified_at) {
+    return c.json({ ok: true, message: "If an account exists, a verification email was sent." });
+  }
+
+  await sql`
+    UPDATE email_verification_tokens SET used_at = NOW()
+    WHERE user_id = ${user.id} AND used_at IS NULL
+  `;
+
+  const rawToken = generateResetToken();
+  const tokenHash = await hashResetToken(rawToken);
+  const expiresAt = new Date(Date.now() + VERIFY_EXPIRY_MS);
+  await sql`
+    INSERT INTO email_verification_tokens (user_id, token_hash, expires_at)
+    VALUES (${user.id}, ${tokenHash}, ${expiresAt})
+  `;
+
+  const verifyUrl = `${c.env.WEB_BASE_URL}/auth/verify?email=${encodeURIComponent(normalizedEmail)}&token=${encodeURIComponent(rawToken)}`;
+  const nameRows = (await sql`SELECT name FROM users WHERE id = ${user.id} LIMIT 1`) as { name: string | null }[];
+  const name = nameRows[0]?.name ?? null;
+  await sendVerificationEmail(c.env, {
+    to: normalizedEmail,
+    name: name ?? undefined,
+    verifyUrl,
+  });
+
+  return c.json({ ok: true, message: "If an account exists, a verification email was sent." });
+});
+
+app.post("/auth/email-verify/confirm", async (c) => {
+  const body = await c.req.json<{ email?: string; token?: string }>();
+  const normalizedEmail = body.email?.trim().toLowerCase();
+  const tokenRaw = body.token?.trim();
+  if (!normalizedEmail || !tokenRaw) {
+    return c.json({ ok: false, error: "INVALID_INPUT" }, 400);
+  }
+
+  const tokenHash = await hashResetToken(tokenRaw);
+  const sql = getSql(c.env);
+  const users = (await sql`
+    SELECT id FROM users WHERE email = ${normalizedEmail} LIMIT 1
+  `) as { id: string }[];
+  if (users.length === 0) {
+    return c.json({ ok: false, error: "INVALID_OR_EXPIRED" }, 400);
+  }
+
+  const tokens = (await sql`
+    SELECT id
+    FROM email_verification_tokens
+    WHERE user_id = ${users[0].id}
+      AND token_hash = ${tokenHash}
+      AND used_at IS NULL
+      AND expires_at > NOW()
+    LIMIT 1
+  `) as { id: string }[];
+
+  if (tokens.length === 0) {
+    return c.json({ ok: false, error: "INVALID_OR_EXPIRED" }, 400);
+  }
+
+  await sql`UPDATE users SET email_verified_at = NOW() WHERE id = ${users[0].id}`;
+  await sql`UPDATE email_verification_tokens SET used_at = NOW() WHERE id = ${tokens[0].id}`;
+  return c.json({ ok: true });
+});
+
+app.get("/auth/email-verify/status", async (c) => {
+  const email = c.req.query("email")?.trim().toLowerCase();
+  if (!email) {
+    return c.json({ verified: false });
+  }
+
+  const sql = getSql(c.env);
+  const rows = (await sql`
+    SELECT email_verified_at FROM users WHERE email = ${email} LIMIT 1
+  `) as { email_verified_at: string | null }[];
+  if (rows.length === 0) {
+    return c.json({ verified: false });
+  }
+  return c.json({ verified: !!rows[0].email_verified_at });
+});
+
+app.post("/auth/email-verify/mark-oauth", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+  const provider = (payload as { provider?: string }).provider;
+  if (provider !== "google") {
+    return c.json({ ok: true });
+  }
+
+  const sql = getSql(c.env);
+  const normalized = payload.email.trim().toLowerCase();
+  await sql`
+    UPDATE users
+    SET email_verified_at = COALESCE(email_verified_at, NOW())
+    WHERE email = ${normalized} AND email_verified_at IS NULL
+  `;
   return c.json({ ok: true });
 });
 

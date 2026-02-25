@@ -1,4 +1,4 @@
-import NextAuth from "next-auth";
+import NextAuth, { CredentialsSignin } from "next-auth";
 import Google from "next-auth/providers/google";
 import Credentials from "next-auth/providers/credentials";
 import { compareSync } from "bcryptjs";
@@ -28,11 +28,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!email || !password) return null;
 
         const rows = (await sql`
-          SELECT id, email, name, password_hash
+          SELECT id, email, name, password_hash, email_verified_at
           FROM users
           WHERE email = ${email}
           LIMIT 1
-        `) as { id: string; email: string; name: string | null; password_hash: string | null }[];
+        `) as { id: string; email: string; name: string | null; password_hash: string | null; email_verified_at: string | null }[];
 
         const user = rows[0];
         if (!user || !user.password_hash) return null;
@@ -40,18 +40,28 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const isValid = compareSync(password, user.password_hash);
         if (!isValid) return null;
 
+        if (!user.email_verified_at) {
+          const err = new CredentialsSignin("Please verify your email before signing in.");
+          err.code = "EmailNotVerified";
+          throw err;
+        }
+
         return { id: user.id, email: user.email, name: user.name };
       },
     }),
   ],
   session: { strategy: "jwt" },
   callbacks: {
-    jwt({ token, user }) {
+    jwt({ token, user, account }) {
       if (user?.id) token.id = user.id;
+      if (account?.provider) (token as { provider?: string }).provider = account.provider;
       return token;
     },
     session({ session, token }) {
       if (session?.user) (session.user as { id?: string }).id = (token.id ?? token.sub) as string;
+      if ((token as { provider?: string }).provider) {
+        (session as { provider?: string }).provider = (token as { provider?: string }).provider;
+      }
       return session;
     },
     redirect({ url, baseUrl }) {
