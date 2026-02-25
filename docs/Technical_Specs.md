@@ -109,6 +109,8 @@ The web retains only `GET/POST /api/auth/[...nextauth]` for Auth.js. All other f
 
 # 6. UI Architecture
 
+**Template parity:** `template_reference/` at repo root is the canonical design reference (non-runtime; development only). Template parity is a core principle: new views copy/adapt template patterns; avoid ad-hoc structure or styling drift.
+
 Canonical theme location:
 web/src/theme/
 
@@ -119,6 +121,9 @@ Principles:
 - Prefer theme overrides over per-page sx patches.
 - Shared layouts for cross-cutting UI structure.
 - Single source of truth for typography, spacing, palette.
+- Inspect template_reference before building new views; use shared components.
+
+**template_reference:** Not deployed. Influences how we build web UI. Gitignored (obtain separately; see Development_Setup_Guide).
 
 ---
 

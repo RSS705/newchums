@@ -21,7 +21,36 @@ Last Updated: February 24, 2026
 
 ---
 
+## Template Parity (UI Governance)
+
+`template_reference/` at the repo root is the **canonical design reference**. New views should copy/adapt template patterns.
+
+### Template Reference Status
+
+- **Location:** `template_reference/` (repo root)
+- **Gitignored:** Yes. Not committed; not present in CI.
+- **Obtaining:** See [`docs/Gitignored_Assets_and_Restore.md`](Gitignored_Assets_and_Restore.md). Source currently TBD (decision needed: commit reference vs. vendor bundle vs. re-download).
+- **Risk:** If missing, agents and developers cannot enforce template parity. CI will not have it. Consider documenting restore steps and/or revisiting .gitignore if team consensus favors committing a reference copy for reproducibility.
+
+### Where to Look First
+
+| Task | First | Then |
+|------|-------|------|
+| New view/page | `template_reference/src/app/` — closest page | Replicate in `web/src/app/` |
+| Auth views | `template_reference/src/app/auth/auth1/` | `web/src/components/layout/AuthSplitLayout.tsx` |
+| Styling | `web/src/theme/` | Theme overrides, shared components |
+| Components | `template_reference/src/app/components/` | Copy and adapt |
+
+### Do / Don't
+
+- **Do:** Copy template structure, use shared components, prefer theme overrides.
+- **Don't:** Invent one-off styling, add mobile-only CSS that diverges from desktop, per-page `sx` patches (unless isolated).
+
+---
+
 ## Local Development
+
+**First-time or fresh clone:** Restore gitignored assets per [`docs/Gitignored_Assets_and_Restore.md`](Gitignored_Assets_and_Restore.md) (env files, template_reference if doing UI work).
 
 ### Web
 

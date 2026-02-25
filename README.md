@@ -46,6 +46,20 @@ Two-worker separation is intentional and long-term.
 
 ---
 
+## UI Template Governance
+
+`template_reference/` at the repo root is the canonical design reference (purchased UI template). When building or modifying views:
+
+- Copy/adapt patterns from `template_reference/` instead of inventing structure
+- Prefer theme overrides and shared components over per-page hacks
+- Avoid mobile-only CSS that diverges from desktop
+
+`template_reference/` is gitignored; obtain it separately (see `docs/Development_Setup_Guide.md`). Template parity is a core principle for any UI work.
+
+**Restoring gitignored assets:** See [`docs/Gitignored_Assets_and_Restore.md`](docs/Gitignored_Assets_and_Restore.md) for a complete list and step-by-step restore instructions.
+
+---
+
 ## Canonical Documentation
 
 These documents are the source of truth:

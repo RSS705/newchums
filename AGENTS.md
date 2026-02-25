@@ -72,25 +72,39 @@ in the same change set.
 
 ---
 
-## UI Governance Principles
+## UI Governance Principles (Template Parity)
 
-When making UI changes:
+`template_reference/` at the repo root is the **canonical design/layout reference**. It is a purchased UI template; NewChums adapts its patterns, not invents from scratch.
 
-1. Inspect the template reference (`C:\\NewChums\\template_reference`).
-2. Inspect our current theme structure (`/web/src/theme`).
-3. Diagnose mismatches at architectural level:
-   - Typography scale
-   - Spacing system
-   - Breakpoints
-   - Component overrides
-   - Provider duplication
-   - Global CSS conflicts
-4. Prefer:
-   - Theme overrides
-   - Shared layout components
-   - Global structural fixes
-5. Avoid:
-   - Page-level `sx` patches unless isolated and intentional.
+### Template Parity Rules
+
+- **New views:** Start by copying/adapting an equivalent template view or component. Do not invent new structure.
+- **Styling:** Prefer theme overrides and shared components over per-page `sx` patches.
+- **Mobile:** Avoid mobile-only CSS edits that diverge from desktop. Keep responsive behavior consistent with the template.
+- **Done means:** Matches template structure, uses shared components, no ad-hoc styling drift.
+
+### Where to Look First (Agent Checklist)
+
+| Task | Look first | Then |
+|------|------------|------|
+| View/page change | `template_reference/src/app/` — find closest template page | Replicate structure in `web/src/app/` |
+| Auth views (login, register, forgot-password) | `template_reference/src/app/auth/auth1/` or `auth2/` | Use AuthSplitLayout, AuthField patterns in `web/src/components/` |
+| Global styling | `web/src/theme/` | Theme overrides, not per-page hacks |
+| Component pattern | `template_reference/src/app/components/` | Copy and adapt for NewChums |
+
+### Agent Workflow for UI Work
+
+1. **Preflight:** Ensure gitignored assets are restored (env files, template_reference if doing UI). See [`docs/Gitignored_Assets_and_Restore.md`](docs/Gitignored_Assets_and_Restore.md).
+2. **Always** inspect `template_reference/` before implementing a new UI view.
+2. Prefer modifying shared components (`web/src/components/`), layouts, and theme.
+3. Keep changes minimal and consistent with template patterns.
+4. When in doubt: copy a template component and adapt it rather than inventing new structure.
+
+### Technical Notes
+
+- Inspect current theme: `web/src/theme/`
+- Diagnose mismatches: typography scale, spacing, breakpoints, component overrides, provider duplication.
+- Avoid: page-level `sx` patches unless isolated and intentional.
 
 Agents may refactor theme structure if doing so improves long-term maintainability.
 

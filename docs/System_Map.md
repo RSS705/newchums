@@ -193,6 +193,7 @@ flowchart TB
 
 # 6) Architectural Commitments
 
+- **Template parity:** `template_reference/` is the canonical UI reference (dev only; not deployed). New views copy/adapt template patterns.
 - Two-worker model is intentional and long-term.
 - Business logic belongs in API Worker.
 - Web Worker focuses on UI and auth orchestration (Auth.js, /api/auth/[...nextauth]).
