@@ -1,9 +1,17 @@
 "use client";
 
 import Button from "@mui/material/Button";
+import Link from "next/link";
+import Stack from "@mui/material/Stack";
 import Toolbar from "@mui/material/Toolbar";
 import { signOut } from "next-auth/react";
 import BrandLogo from "@/components/BrandLogo";
+
+const headerLinks = [
+  { label: "How it Works", href: "/how-it-works" },
+  { label: "Science of Friendship", href: "/science-of-friendship" },
+  { label: "Safety Center", href: "/safety-center" },
+] as const;
 
 /**
  * Header content only — no Container (Layout provides it).
@@ -24,6 +32,30 @@ export default function LandingHeader({ isLoggedIn = false }: { isLoggedIn?: boo
         alt="NewChums"
         height={32}
       />
+      <Stack
+        component="nav"
+        direction="row"
+        spacing={3}
+        sx={{
+          position: "absolute",
+          left: "50%",
+          transform: "translateX(-50%)",
+          display: { xs: "none", md: "flex" },
+        }}
+      >
+        {headerLinks.map((link) => (
+          <Button
+            key={link.href}
+            component={Link}
+            href={link.href}
+            color="inherit"
+            variant="text"
+            sx={{ fontSize: "inherit" }}
+          >
+            {link.label}
+          </Button>
+        ))}
+      </Stack>
       {isLoggedIn ? (
         <Button
           variant="contained"

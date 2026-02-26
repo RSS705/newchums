@@ -53,13 +53,12 @@ export default function LandingHero({ isLoggedIn = false }: { isLoggedIn?: boole
               </Box>
             </Typography>
             <Typography
-              variant="h6"
+              variant="h5"
               fontWeight={300}
               color="text.primary"
               sx={{ lineHeight: 1.65 }}
             >
-              Sign up, note your interests, and get notified when people are doing things you like
-              to do; in your area.
+              Sign up once, and get notified when your kind of people are planning something fun.
             </Typography>
             <Stack direction={{ xs: "column", sm: "row" }} spacing={2} pt={2}>
               {isLoggedIn ? (
