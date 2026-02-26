@@ -1,8 +1,8 @@
 import HomeRoundedIcon from "@mui/icons-material/HomeRounded";
-import EventRoundedIcon from "@mui/icons-material/EventRounded";
-import AddCircleRoundedIcon from "@mui/icons-material/AddCircleRounded";
+import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
+import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
 import PersonRoundedIcon from "@mui/icons-material/PersonRounded";
-import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
+import AddCircleRoundedIcon from "@mui/icons-material/AddCircleRounded";
 import type { SvgIconComponent } from "@mui/icons-material";
 
 export type NavItem = {
@@ -13,8 +13,15 @@ export type NavItem = {
 
 export const appNavItems: NavItem[] = [
   { label: "Home", href: "/", icon: HomeRoundedIcon },
-  { label: "Events", href: "/events", icon: EventRoundedIcon },
-  { label: "Create", href: "/events/create", icon: AddCircleRoundedIcon },
+  { label: "Chum Groups", href: "/chum-groups", icon: GroupsRoundedIcon },
+  { label: "Calendar", href: "/calendar", icon: CalendarMonthRoundedIcon },
   { label: "Profile", href: "/profile", icon: PersonRoundedIcon },
-  { label: "Settings", href: "/settings", icon: SettingsRoundedIcon },
 ];
+
+export const createEventHref = "/events/create";
+
+export const headerNavLinks = [
+  { label: "How it Works", href: "/how-it-works" },
+  { label: "Science of Friendship", href: "/science-of-friendship" },
+  { label: "Safety Center", href: "/safety-center" },
+] as const;

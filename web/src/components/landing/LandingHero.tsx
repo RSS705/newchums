@@ -105,9 +105,6 @@ export default function LandingHero({ isLoggedIn = false }: { isLoggedIn?: boole
                 borderRadius: 2,
               }}
             >
-              <Typography variant="body2" color="primary.dark">
-                Illustration placeholder
-              </Typography>
             </Paper>
           ) : null}
         </Grid>

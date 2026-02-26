@@ -1,6 +1,8 @@
 "use client";
 
+import AddCircleRoundedIcon from "@mui/icons-material/AddCircleRounded";
 import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
+import NotificationsOutlinedIcon from "@mui/icons-material/NotificationsOutlined";
 import PersonRoundedIcon from "@mui/icons-material/PersonRounded";
 import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
 import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
@@ -9,16 +11,19 @@ import {
   BottomNavigation,
   BottomNavigationAction,
   Box,
+  Button,
   Container,
   Divider,
   Drawer,
   IconButton,
-  Menu,
-  MenuItem,
   List,
   ListItemButton,
   ListItemIcon,
   ListItemText,
+  Menu,
+  MenuItem,
+  Paper,
+  Stack,
   Toolbar,
   Typography,
 } from "@mui/material";
@@ -26,194 +31,257 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import * as React from "react";
 import { signOut } from "next-auth/react";
-import { appNavItems } from "@/config/nav";
+import {
+  appNavItems,
+  createEventHref,
+} from "@/config/nav";
+import SiteHeader, { HEADER_MIN_HEIGHT } from "@/components/layout/SiteHeader";
 
-const drawerWidth = 240;
+export type AppShellUser = {
+  name?: string | null;
+};
+
+const navCardWidth = 260;
 
 function isNavItemActive(pathname: string, href: string) {
-  if (href === "/events" && pathname.startsWith("/events")) {
-    return true;
+  if (href === "/") return pathname === "/";
+  if (href === "/events/create" || pathname.startsWith("/events")) {
+    return pathname === href || pathname.startsWith(href);
   }
-
-  return pathname === href;
+  return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export default function AppShell({ children }: { children: React.ReactNode }) {
+type AppShellProps = {
+  children: React.ReactNode;
+  /** User data for sidebar welcome; omit when unknown */
+  user?: AppShellUser | null;
+};
+
+export default function AppShell({ children, user }: AppShellProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [accountMenuAnchor, setAccountMenuAnchor] = React.useState<null | HTMLElement>(null);
 
   const accountMenuOpen = Boolean(accountMenuAnchor);
+  const displayName = user?.name?.trim() || "there";
 
   const currentBottomValue = React.useMemo(() => {
     const matchingItem = appNavItems.find((item) => isNavItemActive(pathname, item.href));
     return matchingItem?.href ?? "/";
   }, [pathname]);
 
+  const NavCardContent = () => (
+    <>
+      <Box sx={{ px: 2, py: 2 }}>
+        <Typography variant="caption" color="text.secondary" sx={{ textTransform: "uppercase" }}>
+          Welcome back
+        </Typography>
+        <Typography variant="subtitle1" fontWeight={600}>
+          {displayName}
+        </Typography>
+      </Box>
+      <Box sx={{ px: 2, pb: 2 }}>
+        <Button
+          component={Link}
+          href={createEventHref}
+          variant="contained"
+          color="primary"
+          fullWidth
+          startIcon={<AddCircleRoundedIcon />}
+          onClick={() => setMobileOpen(false)}
+        >
+          Create Event
+        </Button>
+      </Box>
+      <Divider />
+      <List sx={{ px: 1.5, py: 1 }}>
+        {appNavItems.map((item) => {
+          const Icon = item.icon;
+          const active = isNavItemActive(pathname, item.href);
+          return (
+            <ListItemButton
+              key={item.href}
+              component={Link}
+              href={item.href}
+              selected={active}
+              onClick={() => setMobileOpen(false)}
+              sx={{ borderRadius: 2, mb: 0.5 }}
+            >
+              <ListItemIcon sx={{ minWidth: 38 }}>
+                <Icon color={active ? "primary" : "inherit"} />
+              </ListItemIcon>
+              <ListItemText primary={item.label} />
+            </ListItemButton>
+          );
+        })}
+      </List>
+    </>
+  );
+
   return (
     <Box sx={{ display: "flex", minHeight: "100dvh", bgcolor: "background.default" }}>
       <AppBar
         position="fixed"
-        color="transparent"
         elevation={0}
         sx={{
           zIndex: (theme) => theme.zIndex.drawer + 1,
           borderBottom: 1,
           borderColor: "divider",
-          backdropFilter: "blur(10px)",
+          backgroundColor: "background.default",
+          color: "text.secondary",
+          minHeight: HEADER_MIN_HEIGHT,
         }}
       >
-        <Toolbar sx={{ px: { xs: 2, md: 3 } }}>
-          <IconButton
-            color="inherit"
-            aria-label="open navigation"
-            edge="start"
-            onClick={() => setMobileOpen((previous) => !previous)}
-            sx={{ mr: 1, display: { md: "none" } }}
-          >
-            <MenuRoundedIcon />
-          </IconButton>
-          <Typography component={Link} href="/" variant="h6" sx={{ color: "inherit" }}>
-            NewChums
-          </Typography>
-          <Box sx={{ flexGrow: 1 }} />
-          <IconButton
-            color="inherit"
-            aria-label="open account menu"
-            aria-controls={accountMenuOpen ? "appshell-account-menu" : undefined}
-            aria-haspopup="true"
-            aria-expanded={accountMenuOpen ? "true" : undefined}
-            onClick={(event) => setAccountMenuAnchor(event.currentTarget)}
-          >
-            <PersonRoundedIcon />
-          </IconButton>
-          <Menu
-            id="appshell-account-menu"
-            anchorEl={accountMenuAnchor}
-            open={accountMenuOpen}
-            onClose={() => setAccountMenuAnchor(null)}
-            anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-            transformOrigin={{ vertical: "top", horizontal: "right" }}
-          >
-            <MenuItem
-              onClick={() => {
-                setAccountMenuAnchor(null);
-                router.push("/profile");
-              }}
+        <SiteHeader
+          mobileMenuButton={
+            <IconButton
+              color="inherit"
+              aria-label="open navigation"
+              edge="start"
+              onClick={() => setMobileOpen((previous) => !previous)}
+              sx={{ mr: 0, display: { md: "none" } }}
             >
-              <ListItemIcon>
-                <PersonRoundedIcon fontSize="small" />
-              </ListItemIcon>
-              Profile
-            </MenuItem>
-            <MenuItem
-              onClick={() => {
-                setAccountMenuAnchor(null);
-                router.push("/settings");
-              }}
-            >
-              <ListItemIcon>
-                <SettingsRoundedIcon fontSize="small" />
-              </ListItemIcon>
-              Settings
-            </MenuItem>
-            <MenuItem
-              onClick={async () => {
-                setAccountMenuAnchor(null);
-                await signOut({ redirectTo: "/login" });
-              }}
-            >
-              <ListItemIcon>
-                <LogoutRoundedIcon fontSize="small" />
-              </ListItemIcon>
-              Logout
-            </MenuItem>
-          </Menu>
-        </Toolbar>
+              <MenuRoundedIcon />
+            </IconButton>
+          }
+          rightSide={
+            <>
+              <IconButton
+                color="inherit"
+                aria-label="notifications"
+                size="medium"
+              >
+                <NotificationsOutlinedIcon fontSize="medium" />
+              </IconButton>
+              <IconButton
+                color="inherit"
+                aria-label="open account menu"
+                size="medium"
+                aria-controls={accountMenuOpen ? "appshell-account-menu" : undefined}
+                aria-haspopup="true"
+                aria-expanded={accountMenuOpen ? "true" : undefined}
+                onClick={(event) => setAccountMenuAnchor(event.currentTarget)}
+              >
+                <PersonRoundedIcon fontSize="medium" />
+              </IconButton>
+              <Menu
+                id="appshell-account-menu"
+                anchorEl={accountMenuAnchor}
+                open={accountMenuOpen}
+                onClose={() => setAccountMenuAnchor(null)}
+                anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+                transformOrigin={{ vertical: "top", horizontal: "right" }}
+              >
+                <MenuItem
+                  onClick={() => {
+                    setAccountMenuAnchor(null);
+                    router.push("/profile");
+                  }}
+                >
+                  <ListItemIcon>
+                    <PersonRoundedIcon fontSize="small" />
+                  </ListItemIcon>
+                  Profile
+                </MenuItem>
+                <MenuItem
+                  onClick={() => {
+                    setAccountMenuAnchor(null);
+                    router.push("/settings");
+                  }}
+                >
+                  <ListItemIcon>
+                    <SettingsRoundedIcon fontSize="small" />
+                  </ListItemIcon>
+                  Settings
+                </MenuItem>
+                <MenuItem
+                  onClick={async () => {
+                    setAccountMenuAnchor(null);
+                    await signOut({ redirectTo: "/" });
+                  }}
+                >
+                  <ListItemIcon>
+                    <LogoutRoundedIcon fontSize="small" />
+                  </ListItemIcon>
+                  Logout
+                </MenuItem>
+              </Menu>
+            </>
+          }
+        />
       </AppBar>
 
-      <Box component="nav" sx={{ width: { md: drawerWidth }, flexShrink: { md: 0 } }}>
-        <Drawer
-          variant="temporary"
-          open={mobileOpen}
-          onClose={() => setMobileOpen(false)}
-          ModalProps={{ keepMounted: true }}
+      {/* Mobile drawer */}
+      <Drawer
+        variant="temporary"
+        open={mobileOpen}
+        onClose={() => setMobileOpen(false)}
+        ModalProps={{ keepMounted: true }}
+        sx={{
+          display: { xs: "block", md: "none" },
+          "& .MuiDrawer-paper": {
+            boxSizing: "border-box",
+            width: navCardWidth,
+            display: "flex",
+            flexDirection: "column",
+          },
+        }}
+      >
+        <Toolbar sx={{ minHeight: HEADER_MIN_HEIGHT }} />
+        <Divider />
+        <NavCardContent />
+      </Drawer>
+
+      {/* Main content: pt clears fixed header (MUI spacing: 8=64px, 10=80px) */}
+      <Box
+        component="main"
+        sx={{
+          flexGrow: 1,
+          pt: { xs: 8, lg: 10 },
+          pb: { xs: 11, md: 4 },
+        }}
+      >
+        <Container
+          maxWidth="lg"
           sx={{
-            display: { xs: "block", md: "none" },
-            "& .MuiDrawer-paper": { boxSizing: "border-box", width: drawerWidth },
+            pt: 4,
+            pb: { xs: 2, sm: 3 },
+            px: { xs: 2, sm: 3 },
           }}
         >
-          <Toolbar />
-          <Divider />
-          <List sx={{ p: 1 }}>
-            {appNavItems.map((item) => {
-              const Icon = item.icon;
+          <Box
+            sx={{
+              display: "grid",
+              gridTemplateColumns: { xs: "1fr", md: `${navCardWidth}px 1fr` },
+              gap: 3,
+              alignItems: "start",
+            }}
+          >
+            {/* Desktop: floating nav card */}
+            <Paper
+              variant="outlined"
+              sx={{
+                display: { xs: "none", md: "block" },
+                position: "sticky",
+                top: "88px",
+                borderRadius: 2,
+                overflow: "hidden",
+                flexShrink: 0,
+              }}
+            >
+              <NavCardContent />
+            </Paper>
 
-              return (
-                <ListItemButton
-                  key={item.href}
-                  component={Link}
-                  href={item.href}
-                  selected={isNavItemActive(pathname, item.href)}
-                  onClick={() => setMobileOpen(false)}
-                  sx={{ borderRadius: 2, mb: 0.5 }}
-                >
-                  <ListItemIcon sx={{ minWidth: 38 }}>
-                    <Icon />
-                  </ListItemIcon>
-                  <ListItemText primary={item.label} />
-                </ListItemButton>
-              );
-            })}
-          </List>
-        </Drawer>
-
-        <Drawer
-          variant="permanent"
-          open
-          sx={{
-            display: { xs: "none", md: "block" },
-            "& .MuiDrawer-paper": {
-              boxSizing: "border-box",
-              width: drawerWidth,
-              borderRight: 1,
-              borderColor: "divider",
-              bgcolor: "background.paper",
-            },
-          }}
-        >
-          <Toolbar />
-          <List sx={{ p: 1.5 }}>
-            {appNavItems.map((item) => {
-              const Icon = item.icon;
-
-              return (
-                <ListItemButton
-                  key={item.href}
-                  component={Link}
-                  href={item.href}
-                  selected={isNavItemActive(pathname, item.href)}
-                  sx={{ borderRadius: 2, mb: 0.5 }}
-                >
-                  <ListItemIcon sx={{ minWidth: 38 }}>
-                    <Icon />
-                  </ListItemIcon>
-                  <ListItemText primary={item.label} />
-                </ListItemButton>
-              );
-            })}
-          </List>
-        </Drawer>
-      </Box>
-
-      <Box component="main" sx={{ flexGrow: 1, pb: { xs: 11, md: 4 } }}>
-        <Toolbar />
-        <Container maxWidth="lg" sx={{ py: { xs: 2, sm: 3 } }}>
-          {children}
+            {/* Page content */}
+            <Box sx={{ minWidth: 0 }}>
+              {children}
+            </Box>
+          </Box>
         </Container>
       </Box>
 
+      {/* Mobile bottom nav */}
       <Box
         sx={{
           position: "fixed",
@@ -234,7 +302,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         >
           {appNavItems.map((item) => {
             const Icon = item.icon;
-
             return (
               <BottomNavigationAction
                 key={item.href}

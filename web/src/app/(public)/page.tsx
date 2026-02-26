@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { auth } from "@/auth";
 import { getOrCreateAppUser } from "@/lib/user";
 import { redirect } from "next/navigation";
+import AppShell from "@/components/layout/AppShell";
+import DashboardHome from "@/components/dashboard/DashboardHome";
 import LandingHero from "@/components/landing/LandingHero";
 import LandingLayout from "@/components/landing/LandingLayout";
 
@@ -37,8 +39,11 @@ export default async function RootPage() {
   }
 
   return (
-    <LandingLayout isLoggedIn>
-      <LandingHero isLoggedIn />
-    </LandingLayout>
+    <AppShell user={{ name: (session.user as { name?: string | null })?.name }}>
+      <DashboardHome
+        userName={(session.user as { name?: string | null })?.name}
+        upcomingCount={2}
+      />
+    </AppShell>
   );
 }

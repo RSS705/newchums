@@ -49,7 +49,9 @@ export default async function AppLayout({
   return (
     <>
       <MarkOAuthVerified session={session} />
-      <AppShell>{children}</AppShell>
+      <AppShell user={{ name: (session.user as { name?: string | null })?.name }}>
+        {children}
+      </AppShell>
     </>
   );
 }

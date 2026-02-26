@@ -193,7 +193,7 @@ export default function SignupClient() {
               required
               helperText={
                 usernameError ??
-                "You unique handle (letters, numbers, underscores)."
+                "Your unique handle (letters, numbers, underscores)."
               }
               error={Boolean(usernameError)}
               inputProps={{ autoComplete: "username" }}

@@ -1,0 +1,84 @@
+"use client";
+
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Container from "@mui/material/Container";
+import Link from "next/link";
+import Stack from "@mui/material/Stack";
+import Toolbar from "@mui/material/Toolbar";
+import type { ReactNode } from "react";
+import BrandLogo from "@/components/BrandLogo";
+import { headerNavLinks } from "@/config/nav";
+
+/**
+ * Shared header used by both public (LandingLayout) and logged-in (AppShell).
+ * Single source of truth for header height, typography, spacing, and alignment.
+ * Content uses maxWidth="lg" container for inward positioning.
+ */
+const HEADER_MIN_HEIGHT = { xs: 64, lg: 80 };
+
+export type SiteHeaderProps = {
+  /** Right-side content: Login button (public) or bell + profile (logged-in) */
+  rightSide: ReactNode;
+  /** Optional mobile menu button (hamburger) – shown only when provided */
+  mobileMenuButton?: ReactNode;
+};
+
+export default function SiteHeader({
+  rightSide,
+  mobileMenuButton,
+}: SiteHeaderProps) {
+  return (
+    <Container maxWidth="lg" disableGutters>
+      <Toolbar
+        disableGutters
+        sx={{
+          width: "100%",
+          justifyContent: "space-between",
+          minHeight: HEADER_MIN_HEIGHT,
+        }}
+      >
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          {mobileMenuButton}
+          <Link href="/" style={{ display: "inline-flex" }}>
+          <BrandLogo
+            src="/logo-horizontal-black.png"
+            alt="NewChums"
+            height={32}
+          />
+        </Link>
+        </Box>
+        <Stack
+          component="nav"
+          direction="row"
+          spacing={3}
+          sx={{
+            position: "absolute",
+            left: "50%",
+            transform: "translateX(-50%)",
+            display: { xs: "none", md: "flex" },
+          }}
+        >
+          {headerNavLinks.map((link) => (
+            <Button
+              key={link.href}
+              component={Link}
+              href={link.href}
+              color="inherit"
+              variant="text"
+              sx={{ fontSize: "inherit" }}
+            >
+              {link.label}
+            </Button>
+          ))}
+        </Stack>
+        <Box sx={{ flexGrow: 1 }} />
+        <Stack direction="row" alignItems="center" spacing={0.5}>
+          {rightSide}
+        </Stack>
+      </Toolbar>
+    </Container>
+  );
+}
+
+export { HEADER_MIN_HEIGHT };
