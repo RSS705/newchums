@@ -7,7 +7,7 @@ import Typography from "@mui/material/Typography";
 import EventCard, { type EventCardData } from "@/components/events/EventCard";
 import EventListItem, { type EventListItemData } from "@/components/events/EventListItem";
 import ExploreFilterBar from "@/components/events/ExploreFilterBar";
-import SectionHeader from "@/components/dashboard/SectionHeader";
+import { SectionHeader } from "@/components/ui";
 
 const PLACEHOLDER_UPCOMING: EventCardData[] = [
   {
@@ -80,33 +80,57 @@ export default function DashboardHome({
   const displayName = userName?.trim() || "there";
 
   return (
-    <Stack spacing={4}>
-      <Box>
-        <Typography component="h1" variant="h4" fontWeight={700} gutterBottom>
-          Welcome back, {displayName}
+    <Stack spacing={5}>
+      <Box sx={{ pt: 0.5, pb: 0, mb: 0 }}>
+        <Typography
+          component="h1"
+          sx={{
+            mb: 1.5,
+            lineHeight: 1.25,
+            fontSize: { xs: "1.75rem", sm: "2rem" },
+            letterSpacing: "-0.02em",
+          }}
+        >
+          <Box
+            component="span"
+            sx={{ color: "text.secondary", fontWeight: 500, fontSize: "0.65em" }}
+          >
+            Welcome back,{" "}
+          </Box>
+          <Box component="span" sx={{ fontWeight: 700, color: "text.primary" }}>
+            {displayName}
+          </Box>
         </Typography>
-        <Typography variant="body1" color="text.secondary">
-          You have {upcomingCount} gathering{upcomingCount !== 1 ? "s" : ""} coming up this
-          week. Ready to meet some new chums?
+        <Typography
+          variant="body1"
+          color="text.secondary"
+          sx={{
+            fontSize: "0.9375rem",
+            fontWeight: 400,
+            whiteSpace: "nowrap",
+          }}
+        >
+          {upcomingCount} gathering{upcomingCount !== 1 ? "s" : ""} this week. Ready to meet
+          some new chums?
         </Typography>
       </Box>
 
       <Box>
-        <SectionHeader title="Your Upcoming Gatherings" />
+        <SectionHeader title="Your Upcoming Gatherings" emphasis="primary" />
         <Grid container spacing={2}>
           {PLACEHOLDER_UPCOMING.map((event) => (
             <Grid key={event.id} size={{ xs: 12, sm: 6 }}>
-              <EventCard event={event} />
+              <EventCard event={event} emphasis="upcoming" />
             </Grid>
           ))}
         </Grid>
       </Box>
 
       <Box>
-        <SectionHeader title="Explore New Gatherings" />
+        <SectionHeader title="Explore New Gatherings" emphasis="primary" />
         <Stack spacing={2}>
           <ExploreFilterBar />
-          <Stack spacing={2}>
+          <Stack spacing={1.5} sx={{ mt: 0.5 }}>
             {PLACEHOLDER_EXPLORE.map((event) => (
               <EventListItem key={event.id} event={event} />
             ))}
@@ -115,11 +139,11 @@ export default function DashboardHome({
       </Box>
 
       <Box>
-        <SectionHeader title="Previous Gatherings in your Area" />
+        <SectionHeader title="Previous Gatherings in your Area" emphasis="primary" />
         <Grid container spacing={2}>
           {PLACEHOLDER_PAST.map((event) => (
             <Grid key={event.id} size={{ xs: 12, sm: 6 }}>
-              <EventCard event={event} imageHeight={120} />
+              <EventCard event={event} imageHeight={120} emphasis="past" />
             </Grid>
           ))}
         </Grid>

@@ -13,7 +13,7 @@ export type NavItem = {
 
 export const appNavItems: NavItem[] = [
   { label: "Home", href: "/", icon: HomeRoundedIcon },
-  { label: "Chum Groups", href: "/chum-groups", icon: GroupsRoundedIcon },
+  { label: "Your Chums", href: "/chum-groups", icon: GroupsRoundedIcon },
   { label: "Calendar", href: "/calendar", icon: CalendarMonthRoundedIcon },
   { label: "Profile", href: "/profile", icon: PersonRoundedIcon },
 ];

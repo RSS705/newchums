@@ -2,14 +2,14 @@ import type { Metadata } from "next";
 import StubPage from "@/components/layout/StubPage";
 
 export const metadata: Metadata = {
-  title: "Chum Groups | NewChums",
+  title: "Your Chums | NewChums",
 };
 
 export default function ChumGroupsPage() {
   return (
     <StubPage
-      title="Chum Groups"
-      description="Connect with groups around your interests."
+      title="Your Chums"
+      description="Connect with friends and groups around your interests."
     />
   );
 }

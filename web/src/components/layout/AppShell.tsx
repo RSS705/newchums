@@ -6,6 +6,7 @@ import NotificationsOutlinedIcon from "@mui/icons-material/NotificationsOutlined
 import PersonRoundedIcon from "@mui/icons-material/PersonRounded";
 import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
 import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
+import WavingHandRoundedIcon from "@mui/icons-material/WavingHandRounded";
 import {
   AppBar,
   BottomNavigation,
@@ -74,16 +75,49 @@ export default function AppShell({ children, user }: AppShellProps) {
 
   const NavCardContent = () => (
     <>
-      <Box sx={{ px: 2, py: 2 }}>
-        <Typography variant="caption" color="text.secondary" sx={{ textTransform: "uppercase" }}>
-          Welcome back
-        </Typography>
-        <Typography variant="subtitle1" fontWeight={600}>
-          {displayName}
-        </Typography>
+      <Box sx={{ px: 2, py: 2.5, display: "flex", alignItems: "flex-start", gap: 1.5 }}>
+        <WavingHandRoundedIcon
+          sx={{
+            fontSize: 26,
+            color: "primary.main",
+            opacity: 0.85,
+            flexShrink: 0,
+          }}
+          aria-hidden
+        />
+        <Box sx={{ minWidth: 0 }}>
+          <Typography
+            variant="caption"
+            sx={{
+              color: "text.secondary",
+              fontWeight: 500,
+              letterSpacing: 0.3,
+              opacity: 0.9,
+            }}
+          >
+            Welcome back
+          </Typography>
+          <Typography
+            variant="subtitle1"
+            fontWeight={700}
+            sx={{ mt: 0.25, fontSize: "1rem" }}
+          >
+            {displayName}
+          </Typography>
+        </Box>
       </Box>
-      <Divider />
-      <List sx={{ px: 1.5, py: 1 }}>
+      <Divider sx={{ borderColor: "divider", opacity: 0.6 }} />
+      <List
+        sx={{
+          px: 1.5,
+          py: 1.5,
+          "& .MuiListItemButton-root": {
+            mb: 0.25,
+            transition: "background-color 0.2s ease",
+            borderRadius: 2,
+          },
+        }}
+      >
         {appNavItems.map((item) => {
           const Icon = item.icon;
           const active = isNavItemActive(pathname, item.href);
@@ -94,7 +128,7 @@ export default function AppShell({ children, user }: AppShellProps) {
               href={item.href}
               selected={active}
               onClick={() => setMobileOpen(false)}
-              sx={{ borderRadius: 2, mb: 0.5 }}
+              sx={{ borderRadius: 2 }}
             >
               <ListItemIcon sx={{ minWidth: 38 }}>
                 <Icon color={active ? "primary" : "inherit"} />
@@ -104,15 +138,24 @@ export default function AppShell({ children, user }: AppShellProps) {
           );
         })}
       </List>
-      <Box sx={{ px: 2, pt: 0.5, pb: 2 }}>
+      <Box sx={{ px: 2, pt: 1, pb: 2 }}>
         <Button
           component={Link}
           href={createEventHref}
           variant="contained"
           color="primary"
           fullWidth
+          size="medium"
           startIcon={<AddCircleRoundedIcon />}
           onClick={() => setMobileOpen(false)}
+          sx={{
+            py: 1.25,
+            borderRadius: 2,
+            textTransform: "capitalize",
+            boxShadow: "none",
+            transition: "opacity 0.2s ease",
+            "&:hover": { boxShadow: "none", opacity: 0.95 },
+          }}
         >
           Create Event
         </Button>
@@ -129,6 +172,7 @@ export default function AppShell({ children, user }: AppShellProps) {
           zIndex: (theme) => theme.zIndex.drawer + 1,
           borderBottom: 1,
           borderColor: "divider",
+          borderBottomColor: "grey.200",
           backgroundColor: "background.default",
           color: "text.secondary",
           minHeight: HEADER_MIN_HEIGHT,
@@ -173,6 +217,7 @@ export default function AppShell({ children, user }: AppShellProps) {
                 onClose={() => setAccountMenuAnchor(null)}
                 anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
                 transformOrigin={{ vertical: "top", horizontal: "right" }}
+                disableScrollLock
               >
                 <MenuItem
                   onClick={() => {
@@ -263,9 +308,13 @@ export default function AppShell({ children, user }: AppShellProps) {
                   display: { xs: "none", md: "block" },
                   position: "sticky",
                   top: "88px",
-                  borderRadius: 2,
+                  borderRadius: 2.5,
                   overflow: "hidden",
                   flexShrink: 0,
+                  bgcolor: "background.paper",
+                  borderColor: "divider",
+                  borderWidth: 1,
+                  boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
                 }}
               >
                 <NavCardContent />
@@ -285,7 +334,7 @@ export default function AppShell({ children, user }: AppShellProps) {
             mt: "auto",
             backgroundColor: "background.paper",
             borderTop: 1,
-            borderColor: "divider",
+            borderColor: "grey.200",
           }}
         >
           <Container maxWidth="lg" sx={{ px: { xs: 2, sm: 3 } }}>
@@ -302,7 +351,7 @@ export default function AppShell({ children, user }: AppShellProps) {
           left: 0,
           right: 0,
           borderTop: 1,
-          borderColor: "divider",
+          borderColor: "grey.200",
           bgcolor: "background.paper",
           display: { xs: "block", md: "none" },
           zIndex: (theme) => theme.zIndex.appBar,
