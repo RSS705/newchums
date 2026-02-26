@@ -113,7 +113,7 @@ export default function AuthSplitLayout({
             flexDirection: "column",
             alignItems: "center",
             justifyContent: "center",
-            p: { xs: 2, md: 4 },
+            p: { xs: 2.5, sm: 3, md: 4 },
             bgcolor: "background.paper",
           }}
         >

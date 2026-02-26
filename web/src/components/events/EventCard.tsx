@@ -45,7 +45,7 @@ export default function EventCard({
       component="article"
       sx={{
         overflow: "hidden",
-        borderRadius: 2.5,
+        borderRadius: { xs: 2, sm: 2.5 },
         borderColor: isPast ? "grey.200" : "divider",
         borderWidth: 1,
         boxShadow: isPast
@@ -90,8 +90,9 @@ export default function EventCard({
       </Box>
       <CardContent
         sx={{
-          py: isUpcoming ? 2.5 : 2,
-          "&:last-child": { pb: isUpcoming ? 2.5 : 2 },
+          py: { xs: 1.5, sm: isUpcoming ? 2.5 : 2 },
+          px: { xs: 1.5, sm: 2 },
+          "&:last-child": { pb: { xs: 1.5, sm: isUpcoming ? 2.5 : 2 } },
         }}
       >
         {!event.isPast && (

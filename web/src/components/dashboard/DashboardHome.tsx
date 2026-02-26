@@ -80,7 +80,7 @@ export default function DashboardHome({
   const displayName = userName?.trim() || "there";
 
   return (
-    <Stack spacing={5}>
+    <Stack spacing={{ xs: 4, sm: 5 }}>
       <Box sx={{ pt: 0.5, pb: 0, mb: 0 }}>
         <Typography
           component="h1"
@@ -105,9 +105,9 @@ export default function DashboardHome({
           variant="body1"
           color="text.secondary"
           sx={{
-            fontSize: "0.9375rem",
+            fontSize: { xs: "0.875rem", sm: "0.9375rem" },
             fontWeight: 400,
-            whiteSpace: "nowrap",
+            whiteSpace: { xs: "normal", sm: "nowrap" },
           }}
         >
           {upcomingCount} gathering{upcomingCount !== 1 ? "s" : ""} this week. Ready to meet
@@ -126,7 +126,7 @@ export default function DashboardHome({
         </Grid>
       </Box>
 
-      <Box>
+      <Box sx={{ pt: { xs: 1.5, sm: 2 } }}>
         <SectionHeader title="Explore New Gatherings" emphasis="primary" />
         <Stack spacing={2}>
           <ExploreFilterBar />
@@ -138,7 +138,7 @@ export default function DashboardHome({
         </Stack>
       </Box>
 
-      <Box>
+      <Box sx={{ pt: { xs: 1.5, sm: 2 } }}>
         <SectionHeader title="Previous Gatherings in your Area" emphasis="primary" />
         <Grid container spacing={2}>
           {PLACEHOLDER_PAST.map((event) => (

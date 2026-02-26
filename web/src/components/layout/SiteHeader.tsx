@@ -29,22 +29,39 @@ export default function SiteHeader({
   mobileMenuButton,
 }: SiteHeaderProps) {
   return (
-    <Container maxWidth="lg" disableGutters>
+    <Container
+      maxWidth="lg"
+      disableGutters
+      sx={{
+        px: { xs: 2, sm: 3 },
+        overflow: "hidden",
+      }}
+    >
       <Toolbar
         disableGutters
         sx={{
           width: "100%",
+          minWidth: 0,
           justifyContent: "space-between",
           minHeight: HEADER_MIN_HEIGHT,
         }}
       >
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            gap: 1,
+            minWidth: 0,
+            flexShrink: 1,
+          }}
+        >
           {mobileMenuButton}
-          <Link href="/" style={{ display: "inline-flex" }}>
+          <Link href="/" style={{ display: "inline-flex", minWidth: 0 }}>
           <BrandLogo
             src="/logo-horizontal-black.png"
             alt="NewChums"
             height={32}
+            sx={{ maxWidth: { xs: 140, sm: 200 } }}
           />
         </Link>
         </Box>
@@ -72,8 +89,13 @@ export default function SiteHeader({
             </Button>
           ))}
         </Stack>
-        <Box sx={{ flexGrow: 1 }} />
-        <Stack direction="row" alignItems="center" spacing={0.5}>
+        <Box sx={{ flexGrow: 1, minWidth: 0 }} />
+        <Stack
+          direction="row"
+          alignItems="center"
+          spacing={0.5}
+          sx={{ flexShrink: 0 }}
+        >
           {rightSide}
         </Stack>
       </Toolbar>

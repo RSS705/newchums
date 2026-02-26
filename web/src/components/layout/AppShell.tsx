@@ -288,7 +288,7 @@ export default function AppShell({ children, user }: AppShellProps) {
           <Container
             maxWidth="lg"
             sx={{
-              pt: 4,
+              pt: { xs: 3, sm: 4 },
               pb: { xs: 2, sm: 3 },
               px: { xs: 2, sm: 3 },
             }}
@@ -297,7 +297,7 @@ export default function AppShell({ children, user }: AppShellProps) {
               sx={{
                 display: "grid",
                 gridTemplateColumns: { xs: "1fr", md: `${navCardWidth}px 1fr` },
-                gap: 3,
+                gap: { xs: 2, sm: 3 },
                 alignItems: "start",
               }}
             >

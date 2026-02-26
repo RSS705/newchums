@@ -21,14 +21,18 @@ export default function SectionHeader({ title, emphasis = "secondary" }: Section
   const color = emphasis === "subdued" ? "text.secondary" : "text.primary";
   const fontWeight = isPrimary ? 700 : 600;
   const fontSize =
-    isPrimary ? "1.375rem" : emphasis === "secondary" ? "1.125rem" : undefined;
+    isPrimary
+      ? { xs: "1.2rem", sm: "1.375rem" }
+      : emphasis === "secondary"
+        ? { xs: "1.0625rem", sm: "1.125rem" }
+        : undefined;
 
   return (
     <Box
       component="header"
       sx={{
         display: "block",
-        mb: 3,
+        mb: { xs: 2, sm: 3 },
       }}
     >
       <Box

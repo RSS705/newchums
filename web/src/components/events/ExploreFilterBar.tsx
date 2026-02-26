@@ -24,19 +24,19 @@ export default function ExploreFilterBar() {
     <Paper
       variant="outlined"
       sx={{
-        p: 2,
-        borderRadius: 2.5,
+        p: { xs: 1.5, sm: 2 },
+        borderRadius: { xs: 2, sm: 2.5 },
         borderColor: "divider",
         bgcolor: "background.paper",
         boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
       }}
     >
-      <Stack spacing={2}>
+      <Stack spacing={{ xs: 1.5, sm: 2 }}>
         <Stack
           direction="row"
           flexWrap="wrap"
           useFlexGap
-          gap={1.25}
+          gap={{ xs: 1, sm: 1.25 }}
           sx={{
             alignItems: "center",
             "& .MuiInputBase-root": { minHeight: ROW_HEIGHT },
@@ -44,7 +44,7 @@ export default function ExploreFilterBar() {
           }}
         >
           <AppTextField
-            placeholder="Central Park, NY"
+            placeholder="London, ON"
             helperText={null}
             InputProps={{
               startAdornment: (
@@ -53,7 +53,7 @@ export default function ExploreFilterBar() {
                 </InputAdornment>
               ),
             }}
-            sx={{ flex: { xs: "1 1 100%", sm: "1 1 160px" }, minWidth: 140 }}
+            sx={{ flex: { xs: "1 1 100%", sm: "1 1 160px" }, minWidth: { xs: 0, sm: 140 } }}
           />
           <AppTextField
             select
@@ -62,7 +62,7 @@ export default function ExploreFilterBar() {
             defaultValue="5"
             sx={{
               flex: { xs: "1 1 100%", sm: "0 0 auto" },
-              minWidth: 145,
+              minWidth: { xs: 0, sm: 145 },
             }}
           >
             <option value="5">Within 5 km</option>
@@ -71,7 +71,7 @@ export default function ExploreFilterBar() {
             <option value="50">Within 50 km</option>
           </AppTextField>
           <AppTextField
-            placeholder="Interests (e.g. Hiking)"
+            placeholder="Hobbies (e.g. Hiking)"
             helperText={null}
             InputProps={{
               startAdornment: (
@@ -80,7 +80,7 @@ export default function ExploreFilterBar() {
                 </InputAdornment>
               ),
             }}
-            sx={{ flex: { xs: "1 1 100%", sm: "1 1 160px" }, minWidth: 140 }}
+            sx={{ flex: { xs: "1 1 100%", sm: "1 1 160px" }, minWidth: { xs: 0, sm: 140 } }}
           />
           <Button
             variant="contained"

@@ -28,14 +28,14 @@ export default function EventListItem({ event }: EventListItemProps) {
   return (
     <Stack
       direction={{ xs: "column", sm: "row" }}
-      spacing={2}
+      spacing={{ xs: 1.5, sm: 2 }}
       component="article"
       sx={{
         position: "relative",
-        p: 2,
+        p: { xs: 1.5, sm: 2 },
         border: 1,
         borderColor: "divider",
-        borderRadius: 2.5,
+        borderRadius: { xs: 2, sm: 2.5 },
         alignItems: { sm: "stretch" },
         bgcolor: "background.paper",
         transition: "box-shadow 0.2s ease, border-color 0.2s ease",
@@ -51,8 +51,10 @@ export default function EventListItem({ event }: EventListItemProps) {
           size="small"
           sx={{
             position: "absolute",
-            top: 16,
-            right: 16,
+            top: { xs: "unset", sm: 16 },
+            right: { xs: "unset", sm: 16 },
+            bottom: { xs: 12, sm: "unset" },
+            left: { xs: 12, sm: "unset" },
             height: 22,
             fontSize: "0.6875rem",
             fontWeight: 500,
@@ -127,6 +129,7 @@ export default function EventListItem({ event }: EventListItemProps) {
             textTransform: "capitalize",
             boxShadow: "none",
             fontWeight: 600,
+            minWidth: { xs: 80, sm: "auto" },
             transition: "opacity 0.2s ease, transform 0.15s ease",
             "&:hover": { boxShadow: "none", opacity: 0.95 },
             "&:active": { transform: "scale(0.98)" },

@@ -21,7 +21,7 @@ export default function LandingHero({ isLoggedIn = false }: { isLoggedIn?: boole
       component="section"
       sx={{
         overflow: "hidden",
-        py: { xs: 6, md: 10 },
+        py: { xs: 4, sm: 6, md: 10 },
       }}
     >
       <Grid container spacing={3} alignItems="center">
@@ -56,7 +56,10 @@ export default function LandingHero({ isLoggedIn = false }: { isLoggedIn?: boole
               variant="h5"
               fontWeight={300}
               color="text.primary"
-              sx={{ lineHeight: 1.65 }}
+              sx={{
+                lineHeight: 1.65,
+                fontSize: { xs: "1rem", sm: "1.25rem" },
+              }}
             >
               Sign up once, and get notified when your kind of people are planning something fun.
             </Typography>

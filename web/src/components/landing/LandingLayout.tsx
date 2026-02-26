@@ -15,7 +15,11 @@ import LandingFooter from "./LandingFooter";
  * Header, hero, and footer content all use this — no competing Containers.
  */
 function LandingContainer({ children }: { children: ReactNode }) {
-  return <Container maxWidth="lg">{children}</Container>;
+  return (
+    <Container maxWidth="lg" sx={{ px: { xs: 2, sm: 3 } }}>
+      {children}
+    </Container>
+  );
 }
 
 /**
