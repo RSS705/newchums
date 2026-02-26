@@ -2,14 +2,14 @@
 
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
-import { DatePicker } from "@mui/x-date-pickers/DatePicker";
-import type { DatePickerProps } from "@mui/x-date-pickers/DatePicker";
+import { DateField } from "@mui/x-date-pickers/DateField";
+import type { DateFieldProps } from "@mui/x-date-pickers/DateField";
 import dayjs, { type Dayjs } from "dayjs";
 import * as React from "react";
 
-type BasePickerProps = DatePickerProps<boolean>;
+type BaseFieldProps = DateFieldProps<boolean>;
 export type NCDatePickerProps = Omit<
-  BasePickerProps,
+  BaseFieldProps,
   "value" | "onChange" | "label"
 > & {
   /** Current value as YYYY-MM-DD (empty string = no selection) */
@@ -25,8 +25,9 @@ export type NCDatePickerProps = Omit<
 };
 
 /**
- * Reusable date picker aligned with template Calendar Add Event modal.
- * Uses MUI X DatePicker + AdapterDayjs. Expects LocalizationProvider at app root.
+ * Reusable date field for keyboard-friendly date entry (e.g. date of birth).
+ * Uses MUI X DateField (lighter than DatePicker) for responsive typing.
+ * Expects LocalizationProvider at app root.
  * API: value/onChange as YYYY-MM-DD for form/API compatibility.
  */
 export default function NCDatePicker({
@@ -62,9 +63,10 @@ export default function NCDatePicker({
       >
         {label}
       </Typography>
-      <DatePicker
+      <DateField
         value={dayjsValue}
         onChange={handleChange}
+        format="YYYY-MM-DD"
         slotProps={{
           textField: {
             id: fieldId,

@@ -14,7 +14,7 @@ export default function LandingFooter() {
       <Stack spacing={2} mb={3}>
         <BrandLogo src="/logo-horizontal-black-no-dot-com.png" alt="NewChums" height={32} />
         <Typography variant="body2" color="text.primary">
-          Go do something fun!
+          Building a world where no one is a stranger. One hobby at a time.
         </Typography>
       </Stack>
       <Divider sx={{ my: 3 }} />

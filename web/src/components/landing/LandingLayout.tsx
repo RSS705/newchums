@@ -64,7 +64,7 @@ export default function LandingLayout({
                 color="primary"
                 component={Link}
                 href="/login"
-                sx={{ px: 2.5 }}
+                sx={{ px: 2.5, fontSize: "0.875rem" }}
               >
                 Login
               </Button>

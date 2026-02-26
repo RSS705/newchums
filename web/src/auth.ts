@@ -35,10 +35,23 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         `) as { id: string; email: string; name: string | null; password_hash: string | null; email_verified_at: string | null }[];
 
         const user = rows[0];
-        if (!user || !user.password_hash) return null;
+        if (!user) {
+          const err = new CredentialsSignin("No account found with this email.");
+          err.code = "EmailNotFound";
+          throw err;
+        }
+        if (!user.password_hash) {
+          const err = new CredentialsSignin("Sign in with Google instead.");
+          err.code = "OAuthAccount";
+          throw err;
+        }
 
         const isValid = compareSync(password, user.password_hash);
-        if (!isValid) return null;
+        if (!isValid) {
+          const err = new CredentialsSignin("Incorrect password.");
+          err.code = "InvalidPassword";
+          throw err;
+        }
 
         if (!user.email_verified_at) {
           const err = new CredentialsSignin("Please verify your email before signing in.");

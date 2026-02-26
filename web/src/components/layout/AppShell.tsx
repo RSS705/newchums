@@ -36,6 +36,7 @@ import {
   createEventHref,
 } from "@/config/nav";
 import SiteHeader, { HEADER_MIN_HEIGHT } from "@/components/layout/SiteHeader";
+import LandingFooter from "@/components/landing/LandingFooter";
 
 export type AppShellUser = {
   name?: string | null;
@@ -81,19 +82,6 @@ export default function AppShell({ children, user }: AppShellProps) {
           {displayName}
         </Typography>
       </Box>
-      <Box sx={{ px: 2, pb: 2 }}>
-        <Button
-          component={Link}
-          href={createEventHref}
-          variant="contained"
-          color="primary"
-          fullWidth
-          startIcon={<AddCircleRoundedIcon />}
-          onClick={() => setMobileOpen(false)}
-        >
-          Create Event
-        </Button>
-      </Box>
       <Divider />
       <List sx={{ px: 1.5, py: 1 }}>
         {appNavItems.map((item) => {
@@ -116,6 +104,19 @@ export default function AppShell({ children, user }: AppShellProps) {
           );
         })}
       </List>
+      <Box sx={{ px: 2, pt: 0.5, pb: 2 }}>
+        <Button
+          component={Link}
+          href={createEventHref}
+          variant="contained"
+          color="primary"
+          fullWidth
+          startIcon={<AddCircleRoundedIcon />}
+          onClick={() => setMobileOpen(false)}
+        >
+          Create Event
+        </Button>
+      </Box>
     </>
   );
 
@@ -176,17 +177,6 @@ export default function AppShell({ children, user }: AppShellProps) {
                 <MenuItem
                   onClick={() => {
                     setAccountMenuAnchor(null);
-                    router.push("/profile");
-                  }}
-                >
-                  <ListItemIcon>
-                    <PersonRoundedIcon fontSize="small" />
-                  </ListItemIcon>
-                  Profile
-                </MenuItem>
-                <MenuItem
-                  onClick={() => {
-                    setAccountMenuAnchor(null);
                     router.push("/settings");
                   }}
                 >
@@ -233,52 +223,75 @@ export default function AppShell({ children, user }: AppShellProps) {
         <NavCardContent />
       </Drawer>
 
-      {/* Main content: pt clears fixed header (MUI spacing: 8=64px, 10=80px) */}
+      {/* Main content + footer */}
       <Box
         component="main"
         sx={{
           flexGrow: 1,
+          display: "flex",
+          flexDirection: "column",
           pt: { xs: 8, lg: 10 },
-          pb: { xs: 11, md: 4 },
+          pb: { xs: 11, md: 0 },
         }}
       >
-        <Container
-          maxWidth="lg"
+        <Box
           sx={{
-            pt: 4,
-            pb: { xs: 2, sm: 3 },
-            px: { xs: 2, sm: 3 },
+            flex: 1,
+            pb: { xs: 0, md: 4 },
           }}
         >
-          <Box
+          <Container
+            maxWidth="lg"
             sx={{
-              display: "grid",
-              gridTemplateColumns: { xs: "1fr", md: `${navCardWidth}px 1fr` },
-              gap: 3,
-              alignItems: "start",
+              pt: 4,
+              pb: { xs: 2, sm: 3 },
+              px: { xs: 2, sm: 3 },
             }}
           >
-            {/* Desktop: floating nav card */}
-            <Paper
-              variant="outlined"
+            <Box
               sx={{
-                display: { xs: "none", md: "block" },
-                position: "sticky",
-                top: "88px",
-                borderRadius: 2,
-                overflow: "hidden",
-                flexShrink: 0,
+                display: "grid",
+                gridTemplateColumns: { xs: "1fr", md: `${navCardWidth}px 1fr` },
+                gap: 3,
+                alignItems: "start",
               }}
             >
-              <NavCardContent />
-            </Paper>
+              {/* Desktop: floating nav card */}
+              <Paper
+                variant="outlined"
+                sx={{
+                  display: { xs: "none", md: "block" },
+                  position: "sticky",
+                  top: "88px",
+                  borderRadius: 2,
+                  overflow: "hidden",
+                  flexShrink: 0,
+                }}
+              >
+                <NavCardContent />
+              </Paper>
 
-            {/* Page content */}
-            <Box sx={{ minWidth: 0 }}>
-              {children}
+              {/* Page content */}
+              <Box sx={{ minWidth: 0 }}>
+                {children}
+              </Box>
             </Box>
-          </Box>
-        </Container>
+          </Container>
+        </Box>
+        <Box
+          component="footer"
+          sx={{
+            py: 4,
+            mt: "auto",
+            backgroundColor: "background.paper",
+            borderTop: 1,
+            borderColor: "divider",
+          }}
+        >
+          <Container maxWidth="lg" sx={{ px: { xs: 2, sm: 3 } }}>
+            <LandingFooter />
+          </Container>
+        </Box>
       </Box>
 
       {/* Mobile bottom nav */}

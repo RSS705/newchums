@@ -41,9 +41,9 @@ export const typography: ThemeOptions["typography"] = {
     lineHeight: "1.2rem",
   },
   body1: {
-    fontSize: "0.875rem",
+    fontSize: "1rem",
     fontWeight: 400,
-    lineHeight: "1.334rem",
+    lineHeight: 1.5,
   },
   body2: {
     fontSize: "0.75rem",
@@ -52,6 +52,7 @@ export const typography: ThemeOptions["typography"] = {
     lineHeight: "1rem",
   },
   button: {
+    fontSize: "1rem",
     textTransform: "capitalize",
     fontWeight: 600,
   },

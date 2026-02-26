@@ -91,15 +91,32 @@ export default function LoginClient() {
             redirectTo: redirectTarget,
           });
           if (result?.error) {
+            // Auth.js passes our custom codes via result.code for CredentialsSignin
+            const code = result.code;
             const isUnverified =
-              result.error === "EmailNotVerified" ||
+              code === "EmailNotVerified" ||
               result.error?.toLowerCase().includes("verify");
             if (isUnverified) {
               setEmailUnverified(true);
               setError("Please verify your email before signing in.");
               return;
             }
-            setError("Invalid email or password.");
+            if (code === "EmailNotFound") {
+              setError("No account found with this email.");
+              return;
+            }
+            if (code === "OAuthAccount") {
+              setError("Sign in with Google instead.");
+              return;
+            }
+            if (code === "InvalidPassword") {
+              setError("Incorrect password.");
+              return;
+            }
+            // CredentialsSignin without our custom code - show a friendly generic message
+            setError(
+              "Sign in failed. Please check your email and password and try again."
+            );
             return;
           }
           router.replace(redirectTarget);
