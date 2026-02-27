@@ -9,25 +9,6 @@ import EventListItem, { type EventListItemData } from "@/components/events/Event
 import ExploreFilterBar from "@/components/events/ExploreFilterBar";
 import { SectionHeader } from "@/components/ui";
 
-const PLACEHOLDER_UPCOMING: EventCardData[] = [
-  {
-    id: "1",
-    title: "Morning Brew & Chat",
-    category: "COFFEE & CHAT",
-    dateTime: "Tomorrow, 9:00 AM",
-    location: "The Daily Grind Cafe",
-    attendeeSummary: "3 joined",
-  },
-  {
-    id: "2",
-    title: "Catan & Cocktails Night",
-    category: "BOARD GAMES",
-    dateTime: "Thursday, 7:00 PM",
-    location: "The Dice & Drink Hub",
-    attendeeSummary: "4/6 joined",
-  },
-];
-
 const PLACEHOLDER_EXPLORE: EventListItemData[] = [
   {
     id: "3",
@@ -70,13 +51,9 @@ const PLACEHOLDER_PAST: EventCardData[] = [
 
 type DashboardHomeProps = {
   userName?: string | null;
-  upcomingCount?: number;
 };
 
-export default function DashboardHome({
-  userName,
-  upcomingCount = 2,
-}: DashboardHomeProps) {
+export default function DashboardHome({ userName }: DashboardHomeProps) {
   const displayName = userName?.trim() || "there";
 
   return (
@@ -110,23 +87,11 @@ export default function DashboardHome({
             whiteSpace: { xs: "normal", sm: "nowrap" },
           }}
         >
-          {upcomingCount} gathering{upcomingCount !== 1 ? "s" : ""} this week. Ready to meet
-          some new chums?
+          Ready to meet some new chums?
         </Typography>
       </Box>
 
       <Box>
-        <SectionHeader title="Your Upcoming Gatherings" emphasis="primary" />
-        <Grid container spacing={2}>
-          {PLACEHOLDER_UPCOMING.map((event) => (
-            <Grid key={event.id} size={{ xs: 12, sm: 6 }}>
-              <EventCard event={event} emphasis="upcoming" />
-            </Grid>
-          ))}
-        </Grid>
-      </Box>
-
-      <Box sx={{ pt: { xs: 1.5, sm: 2 } }}>
         <SectionHeader title="Explore New Gatherings" emphasis="primary" />
         <Stack spacing={2}>
           <ExploreFilterBar />

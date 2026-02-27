@@ -1,4 +1,5 @@
 import ExploreRoundedIcon from "@mui/icons-material/ExploreRounded";
+import EventNoteRoundedIcon from "@mui/icons-material/EventNoteRounded";
 import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
 import PersonRoundedIcon from "@mui/icons-material/PersonRounded";
 import AddCircleRoundedIcon from "@mui/icons-material/AddCircleRounded";
@@ -12,6 +13,7 @@ export type NavItem = {
 
 export const appNavItems: NavItem[] = [
   { label: "Explore", href: "/", icon: ExploreRoundedIcon },
+  { label: "Your Plans", href: "/plans", icon: EventNoteRoundedIcon },
   { label: "Your Chums", href: "/chum-groups", icon: GroupsRoundedIcon },
   { label: "Profile", href: "/profile", icon: PersonRoundedIcon },
 ];

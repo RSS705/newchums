@@ -40,10 +40,7 @@ export default async function RootPage() {
 
   return (
     <AppShell user={{ name: (session.user as { name?: string | null })?.name }}>
-      <DashboardHome
-        userName={(session.user as { name?: string | null })?.name}
-        upcomingCount={2}
-      />
+      <DashboardHome userName={(session.user as { name?: string | null })?.name} />
     </AppShell>
   );
 }
