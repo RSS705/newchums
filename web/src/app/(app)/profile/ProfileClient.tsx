@@ -1,43 +1,35 @@
 "use client";
 
+import Autocomplete from "@mui/material/Autocomplete";
 import Box from "@mui/material/Box";
 import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/apiClient";
 import { AppButton, AppCard, useToast } from "@/components/ui";
 import DistanceSelect from "@/components/common/DistanceSelect";
 import PlacesAutocompleteInput from "@/components/common/PlacesAutocompleteInput";
 import { TRAVEL_RADIUS_OPTIONS } from "@/config/travelRadius";
+import { isDuplicate, nameToSlug, slugToName } from "@/lib/interestUtils";
 
-type Interest = { id: string; name: string; category: string; slug: string; sort_order: number };
+type InterestOption = { id?: string; name: string; slug: string };
 type Profile = {
   home_city: string | null;
   home_lat: number | null;
   home_lng: number | null;
   travel_radius_km: number;
   interest_slugs: string[];
+  interest_items?: { slug: string; name: string }[];
   email_chat_digest: boolean;
   email_new_events: boolean;
 };
 
-function groupByCategory(interests: Interest[]): Map<string, Interest[]> {
-  const map = new Map<string, Interest[]>();
-  for (const i of interests) {
-    const list = map.get(i.category) ?? [];
-    list.push(i);
-    map.set(i.category, list);
-  }
-  for (const list of map.values()) {
-    list.sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
-  }
-  return map;
-}
+const MAX_INTEREST_LENGTH = 50;
 
 export default function ProfileClient() {
-  const [interests, setInterests] = useState<Interest[]>([]);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -46,22 +38,60 @@ export default function ProfileClient() {
   const [homeLat, setHomeLat] = useState<number | null>(null);
   const [homeLng, setHomeLng] = useState<number | null>(null);
   const [travelRadiusKm, setTravelRadiusKm] = useState(25);
-  const [interestSlugs, setInterestSlugs] = useState<Set<string>>(new Set());
+  const [interestItems, setInterestItems] = useState<InterestOption[]>([]);
+
+  const [suggestions, setSuggestions] = useState<InterestOption[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [inputValue, setInputValue] = useState("");
 
   const toast = useToast();
+
+  const fetchSuggestions = useCallback(async (q: string) => {
+    const term = q.trim();
+    if (!term) {
+      setSuggestions([]);
+      return;
+    }
+    setSuggestionsLoading(true);
+    try {
+      const res = await apiFetch(`/interests?q=${encodeURIComponent(term)}`);
+      const data = await res.json();
+      if (data.ok && data.interests) {
+        const opts = data.interests.map((r: { id?: string; name: string; slug: string }) => ({
+          id: r.id,
+          name: r.name,
+          slug: r.slug,
+        }));
+        setSuggestions(opts);
+      } else {
+        setSuggestions([]);
+      }
+    } catch {
+      setSuggestions([]);
+    } finally {
+      setSuggestionsLoading(false);
+    }
+  }, []);
+
+  const debouncedFetch = useMemo(() => {
+    let t: ReturnType<typeof setTimeout>;
+    return (q: string) => {
+      clearTimeout(t);
+      t = setTimeout(() => fetchSuggestions(q), 250);
+    };
+  }, [fetchSuggestions]);
+
+  useEffect(() => {
+    if (inputValue) debouncedFetch(inputValue);
+    else setSuggestions([]);
+  }, [inputValue, debouncedFetch]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [interestsRes, profileRes] = await Promise.all([
-        apiFetch("/interests"),
-        apiFetch("/profile", { auth: true }),
-      ]);
-
-      const interestsData = await interestsRes.json();
+      const profileRes = await apiFetch("/profile", { auth: true });
       const profileData = await profileRes.json();
 
-      if (interestsData.ok) setInterests(interestsData.interests ?? []);
       if (profileData.ok && profileData.profile) {
         const p = profileData.profile;
         setProfile(p);
@@ -69,7 +99,12 @@ export default function ProfileClient() {
         setHomeLat(p.home_lat ?? null);
         setHomeLng(p.home_lng ?? null);
         setTravelRadiusKm(p.travel_radius_km ?? 25);
-        setInterestSlugs(new Set(p.interest_slugs ?? []));
+        const raw = p.interest_items ?? (p.interest_slugs ?? []).map((s: string) => ({ slug: s, name: slugToName(s) }));
+        const items = raw.map((x: { slug: string; name: string }) => ({
+          name: x.name || slugToName(x.slug),
+          slug: x.slug,
+        }));
+        setInterestItems(items);
       }
     } finally {
       setLoading(false);
@@ -80,25 +115,24 @@ export default function ProfileClient() {
     fetchData();
   }, [fetchData]);
 
+  const interestSlugsSet = useMemo(
+    () => new Set(interestItems.map((i) => i.slug.toLowerCase())),
+    [interestItems],
+  );
+
   const isDirty = useCallback(() => {
     if (!profile) return true;
     if (homeAddress !== (profile.home_city ?? "")) return true;
     if (homeLat !== profile.home_lat || homeLng !== profile.home_lng) return true;
     if (travelRadiusKm !== profile.travel_radius_km) return true;
-    const prevSlugs = new Set(profile.interest_slugs ?? []);
-    if (interestSlugs.size !== prevSlugs.size) return true;
-    for (const s of interestSlugs) if (!prevSlugs.has(s)) return true;
+    const prevSlugs = new Set((profile.interest_items ?? profile.interest_slugs ?? []).map((x: { slug?: string } | string) =>
+      typeof x === "string" ? x : x.slug ?? "",
+    ));
+    const currSlugs = new Set(interestItems.map((i) => i.slug));
+    if (currSlugs.size !== prevSlugs.size) return true;
+    for (const s of currSlugs) if (!prevSlugs.has(s)) return true;
     return false;
-  }, [profile, homeAddress, homeLat, homeLng, travelRadiusKm, interestSlugs]);
-
-  const toggleInterest = (slug: string) => {
-    setInterestSlugs((prev) => {
-      const next = new Set(prev);
-      if (next.has(slug)) next.delete(slug);
-      else next.add(slug);
-      return next;
-    });
-  };
+  }, [profile, homeAddress, homeLat, homeLng, travelRadiusKm, interestItems]);
 
   const handleSave = async () => {
     if (saving || !isDirty()) return;
@@ -116,7 +150,7 @@ export default function ProfileClient() {
           home_lat: homeLat,
           home_lng: homeLng,
           travel_radius_km: travelRadiusKm,
-          interest_slugs: Array.from(interestSlugs),
+          interest_slugs: interestItems.map((i) => i.slug),
         }),
       });
 
@@ -143,7 +177,20 @@ export default function ProfileClient() {
     );
   }
 
-  const grouped = groupByCategory(interests);
+  const addInterest = (option: InterestOption | string) => {
+    const item: InterestOption =
+      typeof option === "string"
+        ? { name: option.trim(), slug: nameToSlug(option) }
+        : option;
+    if (!item.name?.trim() || !item.slug) return;
+    if (item.name.length > MAX_INTEREST_LENGTH) {
+      toast.error(`Interest must be ${MAX_INTEREST_LENGTH} characters or less`);
+      return;
+    }
+    const already = interestItems.some((i) => isDuplicate(i, item));
+    if (already) return;
+    setInterestItems((prev) => [...prev, item]);
+  };
 
   return (
     <Stack spacing={3}>
@@ -193,29 +240,49 @@ export default function ProfileClient() {
         <Stack spacing={2}>
           <Typography variant="h6">Interests</Typography>
           <Typography color="text.secondary" variant="body2">
-            Select the interests you’d like to see events for.
+            Add interests you’d like to see events for. Type to search or create new ones.
           </Typography>
-          {Array.from(grouped.entries())
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([category, items]) => (
-              <Box key={category}>
-                <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                  {category}
-                </Typography>
-                <Stack direction="row" flexWrap="wrap" gap={0.5}>
-                  {items.map((i) => (
-                    <Chip
-                      key={i.id}
-                      label={i.name}
-                      onClick={() => toggleInterest(i.slug)}
-                      color={interestSlugs.has(i.slug) ? "primary" : "default"}
-                      variant={interestSlugs.has(i.slug) ? "filled" : "outlined"}
-                      size="small"
-                    />
-                  ))}
-                </Stack>
-              </Box>
-            ))}
+          <Autocomplete
+            freeSolo
+            multiple
+            filterOptions={(x) => x}
+            options={suggestions}
+            value={interestItems}
+            inputValue={inputValue}
+            onInputChange={(_, v) => setInputValue(v)}
+            onChange={(_, newValue) => {
+              const last = newValue[newValue.length - 1];
+              if (typeof last === "string") addInterest(last);
+              else setInterestItems(newValue as InterestOption[]);
+            }}
+            getOptionLabel={(opt) => (typeof opt === "string" ? opt : opt.name)}
+            isOptionEqualToValue={(opt, val) =>
+              typeof opt !== "string" && typeof val !== "string" && opt.slug === val.slug
+            }
+            loading={suggestionsLoading}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="Add interests"
+                placeholder="Type to search or create..."
+              />
+            )}
+            renderTags={(values, getTagProps) =>
+              values.map((item, i) => {
+                const { key, ...tagProps } = getTagProps({ index: i });
+                return (
+                  <Chip
+                    key={key}
+                    label={item.name}
+                    size="small"
+                    color="primary"
+                    variant="filled"
+                    {...tagProps}
+                  />
+                );
+              })
+            }
+          />
         </Stack>
       </AppCard>
 

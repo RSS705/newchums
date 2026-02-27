@@ -11,6 +11,7 @@ import {
   sendVerificationEmail,
 } from "./email/send";
 import { canAccessInternalTestRoute, notFound } from "./internalAccess";
+import { nameToSlug, slugToName, validateInterestName } from "./interests";
 import { ensureAppUserId } from "./profile";
 import { generateResetToken, hashResetToken } from "./resetTokens";
 import {
@@ -593,26 +594,34 @@ app.post("/auth/email-verify/mark-oauth", async (c) => {
 app.get("/interests", async (c) => {
   try {
     const sql = getSql(c.env);
-    const rows = (await sql`
-      SELECT id, name, category, slug, sort_order
-      FROM interests
-      ORDER BY sort_order ASC, name ASC
-    `) as {
-      id: string;
-      name: string;
-      category: string;
-      slug: string;
-      sort_order: number;
-    }[];
+    const q = c.req.query("q")?.trim();
+    const likePattern = q ? `%${q.toLowerCase()}%` : null;
+    const rows = likePattern
+      ? ((await sql`
+          SELECT id, name, slug
+          FROM interests
+          WHERE LOWER(name) LIKE ${likePattern}
+          ORDER BY name ASC
+          LIMIT 20
+        `) as { id: string; name: string; slug: string }[])
+      : ((await sql`
+          SELECT id, name, category, slug, sort_order
+          FROM interests
+          ORDER BY sort_order ASC, name ASC
+        `) as {
+          id: string;
+          name: string;
+          category: string;
+          slug: string;
+          sort_order: number;
+        }[]);
     return c.json({
       ok: true,
-      interests: rows.map((r) => ({
-        id: r.id,
-        name: r.name,
-        category: r.category,
-        slug: r.slug,
-        sort_order: r.sort_order,
-      })),
+      interests: rows.map((r) =>
+        "category" in r
+          ? { id: r.id, name: r.name, category: r.category, slug: r.slug, sort_order: r.sort_order }
+          : { id: r.id, name: r.name, slug: r.slug },
+      ),
     });
   } catch (err) {
     console.error(err);
@@ -665,12 +674,13 @@ app.get("/profile", async (c) => {
     }>;
     const profile = profileRows[0];
     const interestRows = (await sql`
-      SELECT i.slug
+      SELECT i.slug, i.name
       FROM user_interests ui
       JOIN interests i ON i.id = ui.interest_id
       WHERE ui.user_id = ${appUserId}
       ORDER BY i.sort_order, i.name
-    `) as { slug: string }[];
+    `) as { slug: string; name: string }[];
+    const interest_items = interestRows.map((r) => ({ slug: r.slug, name: r.name }));
     if (!profile) {
       return c.json({
         ok: true,
@@ -680,6 +690,7 @@ app.get("/profile", async (c) => {
           home_lng: null,
           travel_radius_km: 25,
           interest_slugs: [] as string[],
+          interest_items: [] as { slug: string; name: string }[],
           email_chat_digest: true,
           email_new_events: true,
         },
@@ -693,6 +704,7 @@ app.get("/profile", async (c) => {
         home_lng: profile.home_lng,
         travel_radius_km: profile.travel_radius_km,
         interest_slugs: interestRows.map((r) => r.slug),
+        interest_items,
         email_chat_digest: profile.email_chat_digest,
         email_new_events: profile.email_new_events,
       },
@@ -834,25 +846,39 @@ app.put("/profile", async (c) => {
         ? lngCoerced
         : null
       : (existing?.home_lng ?? null);
-    const interest_slugs =
-      "interest_slugs" in body ? (body.interest_slugs ?? []) : null;
-    if (interest_slugs !== null && interest_slugs.length > 0) {
-      const known = (await sql`
-        SELECT slug FROM interests WHERE slug = ANY(${interest_slugs})
-      `) as { slug: string }[];
-      const knownSet = new Set(known.map((r) => r.slug));
-      const unknown = interest_slugs.filter((s) => !knownSet.has(s));
-      if (unknown.length > 0) {
-        return c.json(
-          {
-            ok: false,
-            error: {
-              code: "INVALID_INPUT",
-              message: `Unknown interest slugs: ${unknown.join(", ")}`,
-            },
-          },
-          400,
-        );
+    let finalInterestSlugs: string[] = [];
+    const rawInterestSlugs = "interest_slugs" in body ? (body.interest_slugs ?? []) : null;
+    if (rawInterestSlugs !== null) {
+      const normalized = rawInterestSlugs
+        .map((s) => nameToSlug(String(s).trim()))
+        .filter((s) => s.length > 0);
+      finalInterestSlugs = [...new Set(normalized)];
+      for (const slug of finalInterestSlugs) {
+        const nameForValidation = slugToName(slug);
+        const v = validateInterestName(nameForValidation);
+        if (!v.valid) {
+          return c.json(
+            { ok: false, error: { code: "INVALID_INPUT", message: v.error } },
+            400,
+          );
+        }
+      }
+      const existingRows = (await sql`
+        SELECT id, slug FROM interests WHERE LOWER(slug) = ANY(${finalInterestSlugs.map((s) => s.toLowerCase())})
+      `) as { id: string; slug: string }[];
+      const existingBySlug = new Map(existingRows.map((r) => [r.slug.toLowerCase(), r.id]));
+      for (const slug of finalInterestSlugs) {
+        if (!existingBySlug.has(slug.toLowerCase())) {
+          const name = slugToName(slug);
+          try {
+            await sql`
+              INSERT INTO interests (name, category, slug, sort_order)
+              VALUES (${name}, '', ${slug}, 0)
+            `;
+          } catch {
+            // Ignore duplicate (race with concurrent insert)
+          }
+        }
       }
     }
     const home_city =
@@ -898,15 +924,15 @@ app.put("/profile", async (c) => {
             email_new_events = EXCLUDED.email_new_events
         `;
     const txQueries: unknown[] = [upsertQuery];
-    if (interest_slugs !== null) {
+    if (rawInterestSlugs !== null) {
       txQueries.push(
         sql`DELETE FROM user_interests WHERE user_id = ${appUserId}`,
       );
       txQueries.push(
-        interest_slugs.length > 0
+        finalInterestSlugs.length > 0
           ? sql`
               INSERT INTO user_interests (user_id, interest_id)
-              SELECT ${appUserId}, i.id FROM interests i WHERE i.slug = ANY(${interest_slugs})
+              SELECT ${appUserId}, i.id FROM interests i WHERE i.slug = ANY(${finalInterestSlugs})
             `
           : sql`SELECT 1`,
       );
