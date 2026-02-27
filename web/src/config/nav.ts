@@ -1,6 +1,5 @@
-import HomeRoundedIcon from "@mui/icons-material/HomeRounded";
+import ExploreRoundedIcon from "@mui/icons-material/ExploreRounded";
 import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
-import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
 import PersonRoundedIcon from "@mui/icons-material/PersonRounded";
 import AddCircleRoundedIcon from "@mui/icons-material/AddCircleRounded";
 import type { SvgIconComponent } from "@mui/icons-material";
@@ -12,9 +11,8 @@ export type NavItem = {
 };
 
 export const appNavItems: NavItem[] = [
-  { label: "Home", href: "/", icon: HomeRoundedIcon },
+  { label: "Explore", href: "/", icon: ExploreRoundedIcon },
   { label: "Your Chums", href: "/chum-groups", icon: GroupsRoundedIcon },
-  { label: "Calendar", href: "/calendar", icon: CalendarMonthRoundedIcon },
   { label: "Profile", href: "/profile", icon: PersonRoundedIcon },
 ];
 
