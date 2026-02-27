@@ -2,6 +2,7 @@ import { auth } from "@/auth";
 import AppShell from "@/components/layout/AppShell";
 import MarkOAuthVerified from "@/components/auth/MarkOAuthVerified";
 import { getRequestedPathFromHeaders } from "@/lib/authRedirect";
+import { getGreetingName } from "@/lib/greeting";
 import { getOrCreateAppUser } from "@/lib/user";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -29,7 +30,7 @@ export default async function AppLayout({
     return <AppShell>{children}</AppShell>;
   }
 
-  const { username, date_of_birth } = await getOrCreateAppUser(
+  const { username, date_of_birth, name } = await getOrCreateAppUser(
     email,
     (session.user as { name?: string | null })?.name
   );
@@ -46,10 +47,15 @@ export default async function AppLayout({
     );
   }
 
+  const greetingName = getGreetingName({
+    displayName: name,
+    handle: username,
+  });
+
   return (
     <>
       <MarkOAuthVerified session={session} />
-      <AppShell user={{ name: (session.user as { name?: string | null })?.name }}>
+      <AppShell user={{ name: greetingName }}>
         {children}
       </AppShell>
     </>

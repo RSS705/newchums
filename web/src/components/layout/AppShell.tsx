@@ -30,12 +30,9 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import * as React from "react";
 import { signOut } from "next-auth/react";
-import {
-  appNavItems,
-  createEventHref,
-  headerNavLinks,
-} from "@/config/nav";
+import { appNavItems, createEventHref } from "@/config/nav";
 import SiteHeader, { HEADER_MIN_HEIGHT } from "@/components/layout/SiteHeader";
+import MarketingNavSection from "@/components/layout/MarketingNavSection";
 import LandingFooter from "@/components/landing/LandingFooter";
 
 export type AppShellUser = {
@@ -261,44 +258,7 @@ export default function AppShell({ children, user }: AppShellProps) {
         <Divider />
         <NavCardContent />
         <Divider sx={{ borderColor: "divider", opacity: 0.6, mt: 0 }} />
-        <Box sx={{ px: 2, py: 2 }}>
-          <Typography
-            variant="caption"
-            sx={{
-              display: "block",
-              color: "text.secondary",
-              fontWeight: 600,
-              letterSpacing: 0.5,
-              mb: 1.5,
-            }}
-          >
-            More Goodness
-          </Typography>
-          <Stack spacing={0.5}>
-            {headerNavLinks.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                onClick={() => setMobileOpen(false)}
-                style={{ textDecoration: "none" }}
-              >
-                <Typography
-                  component="span"
-                  variant="body2"
-                  sx={{
-                    color: "text.secondary",
-                    fontSize: "0.8125rem",
-                    "&:hover": { color: "primary.main" },
-                    display: "block",
-                    py: 1,
-                  }}
-                >
-                  {link.label}
-                </Typography>
-              </Link>
-            ))}
-          </Stack>
-        </Box>
+        <MarketingNavSection onLinkClick={() => setMobileOpen(false)} />
       </Drawer>
 
       {/* Main content + footer */}

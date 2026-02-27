@@ -1,6 +1,6 @@
 # System Map
 
-Last Updated: February 24, 2026
+Last Updated: February 26, 2026
 
 This document reflects the current production reality of NewChums.
 
@@ -62,6 +62,7 @@ The following flows now run entirely in the API worker; the web app calls the AP
 | Password reset confirm | POST /auth/password-reset/confirm | None |
 | Interests list | GET /interests | None |
 | Profile (get/update) | GET /profile, PUT /profile | Bearer JWT |
+| Handle availability check | GET /handles/available?handle=... | Bearer JWT |
 | Set username (onboarding) | POST /user/username | Bearer JWT |
 | Set date of birth (onboarding) | POST /user/date-of-birth | Bearer JWT |
 

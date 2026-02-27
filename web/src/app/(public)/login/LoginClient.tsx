@@ -145,20 +145,30 @@ export default function LoginClient() {
             setEmailUnverified(false);
           }}
           required
-          helperText={error ?? undefined}
+          helperText={
+            error ? (
+              <Stack component="span" spacing={0.75}>
+                <span>{error}</span>
+                {emailUnverified && (
+                  <Typography
+                    component={Link}
+                    href={`/auth/verify/pending?email=${encodeURIComponent(email)}`}
+                    variant="body2"
+                    sx={{
+                      color: "primary.main",
+                      fontWeight: 500,
+                      display: "block",
+                      "&:hover": { color: "primary.dark", textDecoration: "underline" },
+                    }}
+                  >
+                    Resend verification email
+                  </Typography>
+                )}
+              </Stack>
+            ) : undefined
+          }
           error={Boolean(error)}
         />
-
-        {emailUnverified && (
-          <Typography variant="body2" color="primary" sx={{ mt: -1 }}>
-            <Link
-              href={`/auth/verify/pending?email=${encodeURIComponent(email)}`}
-              style={{ fontWeight: 500 }}
-            >
-              Resend verification email
-            </Link>
-          </Typography>
-        )}
 
         <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ my: 2 }}>
           <FormControlLabel

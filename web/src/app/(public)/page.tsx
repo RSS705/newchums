@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { auth } from "@/auth";
+import { getGreetingName } from "@/lib/greeting";
 import { getOrCreateAppUser } from "@/lib/user";
 import { redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
@@ -23,7 +24,7 @@ export default async function RootPage() {
     );
   }
 
-  const { username, date_of_birth } = await getOrCreateAppUser(
+  const { username, date_of_birth, name } = await getOrCreateAppUser(
     session.user.email,
     (session.user as { name?: string | null })?.name
   );
@@ -38,9 +39,14 @@ export default async function RootPage() {
     redirect(`/onboarding/username?returnTo=${encodeURIComponent("/")}`);
   }
 
+  const greetingName = getGreetingName({
+    displayName: name,
+    handle: username,
+  });
+
   return (
-    <AppShell user={{ name: (session.user as { name?: string | null })?.name }}>
-      <DashboardHome userName={(session.user as { name?: string | null })?.name} />
+    <AppShell user={{ name: greetingName }}>
+      <DashboardHome greetingName={greetingName} />
     </AppShell>
   );
 }

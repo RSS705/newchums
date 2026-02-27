@@ -13,6 +13,7 @@ import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import dayjs from "dayjs";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/apiClient";
 import { AppButton, AppCard, useToast } from "@/components/ui";
@@ -79,6 +80,7 @@ export default function ProfileClient() {
   const [showAllChips, setShowAllChips] = useState(false);
 
   const toast = useToast();
+  const router = useRouter();
 
   const fetchSuggestions = useCallback(async (q: string) => {
     const term = q.trim();
@@ -322,6 +324,7 @@ export default function ProfileClient() {
       toast.success("Profile saved");
       setProfile(data.profile);
       fetchData();
+      router.refresh();
     } finally {
       setSaving(false);
     }
@@ -399,7 +402,7 @@ export default function ProfileClient() {
                 inputProps={{ maxLength: MAX_DISPLAY_NAME_LENGTH }}
               />
               <TextField
-                label="Handle"
+                label="Username"
                 value={handle}
                 onChange={(e) => {
                   setHandle(e.target.value.replace(/^@/, "").replace(/\s/g, ""));

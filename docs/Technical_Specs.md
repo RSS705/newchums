@@ -1,7 +1,7 @@
 # Technical Specifications
 
-Last Updated: February 24, 2026
-Version: 5.0
+Last Updated: February 26, 2026
+Version: 5.1
 
 This document defines the authoritative technical architecture of NewChums.
 It describes what exists today and the structural commitments we are making.
@@ -70,7 +70,8 @@ The following business logic now lives in the API worker; the web app calls it v
 | POST /auth/email-verify/confirm | Confirm token and set email_verified_at |
 | GET /auth/email-verify/status | Returns { verified: boolean } for polling |
 | POST /auth/email-verify/mark-oauth | Auth required; sets email_verified_at for Google OAuth users |
-| GET /profile, PUT /profile | User profile (auth required) |
+| GET /profile, PUT /profile | User profile (auth required). Returns name, username, date_of_birth, bio, home_city, travel_radius_km, interests. PUT accepts name, bio, date_of_birth, location, interests. |
+| GET /handles/available | Auth required. Query `?handle=...` returns `{ available: boolean }`. Used for handle uniqueness check before save. |
 | GET /interests | List interests |
 | POST /user/username, POST /user/date-of-birth | Onboarding (auth required) |
 | GET /health | Health check `{ ok: true }` |
@@ -140,7 +141,7 @@ Principles:
 - **Post-auth redirect:** `/` by default. Source: `web/src/lib/authRedirect.ts`.
 - **Onboarding gate:** If username or date_of_birth missing → redirect to `/onboarding/username?returnTo=<path>`. Guards root `/`, `(app)/` layout.
 - **Canonical host requirement:** AUTH_URL and NEXTAUTH_URL must be `https://newchums.com` so OAuth callback matches signin origin.
-- **API worker auth:** For routes that require a logged-in user (profile, user/username, user/date-of-birth), the web client obtains the JWT via `GET /api/auth/api-token` and sends it as `Authorization: Bearer <token>`. The api-token route uses auth() to get session, then mints a 15-min JWT with jose (HS256). The API verifies using `api/src/auth.ts`: jose jwtVerify (API token) or @auth/core decode (Auth.js session JWT). getBearerToken supports Hono `req.header()` and standard `req.headers.get()`.
+- **API worker auth:** For routes that require a logged-in user (profile, user/username, user/date-of-birth, handles/available), the web client obtains the JWT via `GET /api/auth/api-token` and sends it as `Authorization: Bearer <token>`. The api-token route uses auth() to get session, then mints a 15-min JWT with jose (HS256). The API verifies using `api/src/auth.ts`: jose jwtVerify (API token) or @auth/core decode (Auth.js session JWT). getBearerToken supports Hono `req.header()` and standard `req.headers.get()`.
 - **Auth UI routes:** /login, /signup, /forgot-password, /reset-password, /auth/verify, /auth/verify/pending.
 
 ---
@@ -156,7 +157,7 @@ Core tables exist in varying completeness. API worker queries use `newchums.user
 - events
 - rsvps
 - interests
-- user_profile (partial implementation)
+- **user_profile** — home_city, home_lat, home_lng, travel_radius_km, email_chat_digest, email_new_events, bio (VARCHAR 500; migration 009)
 
 Schema is still evolving as MVP stabilizes.
 PostGIS is available for geospatial queries.

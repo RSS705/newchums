@@ -15,22 +15,22 @@ function normalizeDateOfBirth(val: unknown): string | null {
 
 /**
  * Ensure user exists in DB by email (creates with email, name, username=null, date_of_birth=null if new).
- * Returns { id, username, date_of_birth } (date_of_birth as YYYY-MM-DD string or null).
+ * Returns { id, username, date_of_birth, name } (date_of_birth as YYYY-MM-DD string or null).
  * Used for Google OAuth users who may not exist until first app access.
  */
 export async function getOrCreateAppUser(
   email: string,
   name?: string | null
-): Promise<{ id: string; username: string | null; date_of_birth: string | null }> {
+): Promise<{ id: string; username: string | null; date_of_birth: string | null; name: string | null }> {
   const normalized = email.trim().toLowerCase();
   if (!normalized) throw new Error("getOrCreateAppUser requires email");
 
   const existing = (await sql`
-    SELECT id, username, date_of_birth
+    SELECT id, username, date_of_birth, name
     FROM users
     WHERE email = ${normalized}
     LIMIT 1
-  `) as { id: string; username: string | null; date_of_birth: unknown }[];
+  `) as { id: string; username: string | null; date_of_birth: unknown; name: string | null }[];
 
   if (existing.length > 0) {
     return {
@@ -43,8 +43,8 @@ export async function getOrCreateAppUser(
     const inserted = (await sql`
       INSERT INTO users (email, name, email_verified_at)
       VALUES (${normalized}, ${name ?? null}, now())
-      RETURNING id, username, date_of_birth
-    `) as { id: string; username: string | null; date_of_birth: unknown }[];
+      RETURNING id, username, date_of_birth, name
+    `) as { id: string; username: string | null; date_of_birth: unknown; name: string | null }[];
 
     if (inserted.length > 0) {
       return {
@@ -61,11 +61,11 @@ export async function getOrCreateAppUser(
       msg.includes("violates unique constraint")
     ) {
       const retry = (await sql`
-        SELECT id, username, date_of_birth
+        SELECT id, username, date_of_birth, name
         FROM users
         WHERE email = ${normalized}
         LIMIT 1
-      `) as { id: string; username: string | null; date_of_birth: unknown }[];
+      `) as { id: string; username: string | null; date_of_birth: unknown; name: string | null }[];
       if (retry.length > 0) {
         return {
           ...retry[0],
@@ -77,11 +77,11 @@ export async function getOrCreateAppUser(
   }
 
   const fallback = (await sql`
-    SELECT id, username, date_of_birth
+    SELECT id, username, date_of_birth, name
     FROM users
     WHERE email = ${normalized}
     LIMIT 1
-  `) as { id: string; username: string | null; date_of_birth: unknown }[];
+  `) as { id: string; username: string | null; date_of_birth: unknown; name: string | null }[];
 
   if (fallback.length > 0) {
     return {

@@ -6,11 +6,12 @@ Last Updated: February 26, 2026
 
 ## Current State
 
-- **API migration:** Signup, password-reset, profile, interests, user/username, user/date-of-birth now live in API worker. Web calls API via NEXT_PUBLIC_API_BASE_URL; auth via JWT (Bearer) from GET /api/auth/api-token.
+- **API migration:** Signup, password-reset, profile, interests, user/username, user/date-of-birth, handles/available now live in API worker. Web calls API via NEXT_PUBLIC_API_BASE_URL; auth via JWT (Bearer) from GET /api/auth/api-token.
 - **Email verification:** Credentials signups require verification before sign-in; Postmark sends link; /auth/verify and /auth/verify/pending handle flow.
 - **Logged-in nav:** Explore (/), Your Plans (/plans), Your Chums (/chum-groups), Profile (/profile). Calendar removed. Mobile: hamburger drawer only (no bottom tab bar); Learn links (How it Works, Science of Friendship, Safety Center) in drawer below Create Event.
+- **Profile:** About you section fully wired: display name, handle, bio, date of birth load and save via GET/PUT /profile. Handle changes via POST /user/username. Handle availability checked on blur and debounce (400ms) via GET /handles/available. Save disabled while handle check in progress. Validation matches signup (3–20 chars, no leading/trailing underscore). Migration 009 adds bio column to user_profile.
 - **Your Plans:** /plans page with Upcoming + Previous sections (placeholder data). Explore page shows Explore New Gatherings + Previous Gatherings in your Area only.
-- **Mobile UI:** SectionHeader centered with dynamic underline (50% of title width via ResizeObserver); Explore toggle pills centered with gap; EventListItem: no distance badge, full-width Join; welcome text centered on mobile, left on desktop.
+- **Mobile UI:** SectionHeader centered with dynamic underline; Explore toggle pills centered with gap; EventListItem: no distance badge, full-width Join; welcome text centered on mobile. Profile: responsive header, avatar, cards; full-width Save; avatar dialog with mobile margins.
 - **Production environment:** Single deploy target (newchums-web-dev, newchums-api); domain newchums.com.
 - **Build:** `cd web && npm run build` passes. No deploy run this session.
 - **Next session:** Deploy to verify mobile UX changes; wire real data to Your Plans if ready.
@@ -279,3 +280,16 @@ Chunk XX — YYYY-MM-DD
 - **Open Issues / Next Steps:**
   - Deploy to production and verify mobile UX on device.
   - Wire real data to Your Plans (Upcoming / Previous) when APIs available.
+
+### Chunk 4 — 2026-02-26 — Profile About you wiring and mobile polish
+
+- **Goal:** Wire Profile About you fields to real data; add handle availability UX; polish mobile layout.
+- **Changes Made:**
+  - **API:** GET /profile returns date_of_birth (users), bio (user_profile). PUT /profile accepts bio, date_of_birth; validates DOB (18+, parseDateOnly, isAtLeast18); persists to users and user_profile. New GET /handles/available?handle=... returns { available: boolean }; uses same uniqueness logic as signup.
+  - **Migration 009:** `web/sql/009_add_bio_to_user_profile.sql` adds bio VARCHAR(500) to user_profile.
+  - **ProfileClient:** Load/save display name, handle, bio, DOB. Handle: debounced availability check (400ms) + onBlur; Save disabled with "Checking handle…" while checking; validation (3–20 chars, no leading/trailing underscore). Bio max 500 chars; display name max 100. NCDatePicker for DOB.
+  - **Layout polish:** Avatar right on desktop, top on mobile; larger avatar (96 mobile, 128 desktop); "Choose avatar" button below avatar; extra padding below button on mobile.
+  - **Mobile compatibility:** Responsive page header (fontSize, textAlign); responsive section titles and card borderRadius; full-width Save; avatar dialog margins.
+- **Verification:** `cd web && npm run build` passes.
+- **Deploy:** None this session.
+- **Preflight:** Run migration 009 before using bio/date_of_birth in profile: `psql "$DATABASE_URL" -f web/sql/009_add_bio_to_user_profile.sql`

@@ -50,11 +50,11 @@ const PLACEHOLDER_PAST: EventCardData[] = [
 ];
 
 type DashboardHomeProps = {
-  userName?: string | null;
+  /** Pre-computed greeting name (display name, handle, or "friend") */
+  greetingName: string;
 };
 
-export default function DashboardHome({ userName }: DashboardHomeProps) {
-  const displayName = userName?.trim() || "there";
+export default function DashboardHome({ greetingName }: DashboardHomeProps) {
 
   return (
     <Stack spacing={{ xs: 4, sm: 5 }}>
@@ -75,7 +75,7 @@ export default function DashboardHome({ userName }: DashboardHomeProps) {
             Welcome back,{" "}
           </Box>
           <Box component="span" sx={{ fontWeight: 700, color: "text.primary" }}>
-            {displayName}
+            {greetingName}
           </Box>
         </Typography>
         <Typography

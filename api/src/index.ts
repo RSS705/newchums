@@ -736,7 +736,7 @@ app.get("/profile", async (c) => {
           name: displayName,
           username: handle,
           email,
-          date_of_birth: null,
+          date_of_birth: dateOfBirth,
           bio: null,
           home_city: null,
           home_lat: null,
@@ -1055,7 +1055,9 @@ app.put("/profile", async (c) => {
       const dobVal = parts
         ? `${parts.y}-${String(parts.m).padStart(2, "0")}-${String(parts.d).padStart(2, "0")}`
         : null;
-      txQueries.push(sql`UPDATE newchums.users SET date_of_birth = ${dobVal} WHERE id = ${appUserId}`);
+      if (dobVal !== null) {
+        txQueries.push(sql`UPDATE newchums.users SET date_of_birth = ${dobVal} WHERE id = ${appUserId}`);
+      }
     }
     if (rawInterestSlugs !== null) {
       txQueries.push(
