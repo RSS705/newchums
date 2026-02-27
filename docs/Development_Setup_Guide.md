@@ -147,7 +147,7 @@ curl -X POST http://127.0.0.1:8787/auth/password-reset/confirm \
 
 ## Database Migrations
 
-Migrations: `web/sql/` (001–007).
+Migrations: `web/sql/` (001–008).
 
 ```bash
 cd web
@@ -158,7 +158,10 @@ psql "$DATABASE_URL" -f sql/004_add_username_norm.sql
 psql "$DATABASE_URL" -f sql/005_add_date_of_birth.sql
 psql "$DATABASE_URL" -f sql/006_add_email_verified_at.sql
 psql "$DATABASE_URL" -f sql/007_email_verification_tokens.sql
+psql "$DATABASE_URL" -f sql/008_interests_seed.sql
 ```
+
+**008 (interests seed):** Requires `interests` and `user_interests` tables to exist. Adds `is_seed` column, removes legacy seed slugs, inserts generic base list. Run before deploying API code that inserts interests with `is_seed`.
 
 ---
 

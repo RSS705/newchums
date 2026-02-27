@@ -872,8 +872,8 @@ app.put("/profile", async (c) => {
           const name = slugToName(slug);
           try {
             await sql`
-              INSERT INTO interests (name, category, slug, sort_order)
-              VALUES (${name}, '', ${slug}, 0)
+              INSERT INTO interests (name, category, slug, sort_order, is_seed)
+              VALUES (${name}, '', ${slug}, 0, false)
             `;
           } catch {
             // Ignore duplicate (race with concurrent insert)
