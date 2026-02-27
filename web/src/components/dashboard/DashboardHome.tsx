@@ -58,7 +58,7 @@ export default function DashboardHome({ userName }: DashboardHomeProps) {
 
   return (
     <Stack spacing={{ xs: 4, sm: 5 }}>
-      <Box sx={{ pt: 0.5, pb: 0, mb: 0 }}>
+      <Box sx={{ pt: 0.5, pb: 0, mb: 0, textAlign: { xs: "center", sm: "left" } }}>
         <Typography
           component="h1"
           sx={{
@@ -91,7 +91,7 @@ export default function DashboardHome({ userName }: DashboardHomeProps) {
         </Typography>
       </Box>
 
-      <Box>
+      <Box sx={{ mt: { xs: -0.5, sm: 0 } }}>
         <SectionHeader title="Explore New Gatherings" emphasis="primary" />
         <Stack spacing={2}>
           <ExploreFilterBar />

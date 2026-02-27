@@ -1,5 +1,8 @@
+"use client";
+
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
+import * as React from "react";
 
 type SectionEmphasis = "primary" | "secondary" | "subdued";
 
@@ -8,11 +11,32 @@ export type SectionHeaderProps = {
   emphasis?: SectionEmphasis;
 };
 
+const FALLBACK_UNDERLINE_WIDTH = 56;
+
 /**
  * Reusable section header with accent bar. Use across dashboard, profile, and other pages.
  * Spacing below the header is controlled here for consistent rhythm system-wide.
+ * On mobile: centered title with dynamic underline (50% of title width).
  */
 export default function SectionHeader({ title, emphasis = "secondary" }: SectionHeaderProps) {
+  const titleRef = React.useRef<HTMLHeadingElement>(null);
+  const [underlineWidth, setUnderlineWidth] = React.useState(FALLBACK_UNDERLINE_WIDTH);
+
+  React.useEffect(() => {
+    const el = titleRef.current;
+    if (!el) return;
+
+    const updateWidth = () => {
+      const w = el.offsetWidth;
+      setUnderlineWidth(w > 0 ? Math.round(w * 0.5) : FALLBACK_UNDERLINE_WIDTH);
+    };
+
+    updateWidth();
+    const ro = new ResizeObserver(updateWidth);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [title]);
+
   const isPrimary = emphasis === "primary";
   const accentWidth = isPrimary ? 4 : 3;
   const accentColor =
@@ -32,18 +56,24 @@ export default function SectionHeader({ title, emphasis = "secondary" }: Section
       component="header"
       sx={{
         display: "block",
-        mb: { xs: 2, sm: 3 },
+        mb: { xs: 2.5, sm: 3 },
       }}
     >
       <Box
         sx={{
-          borderLeft: accentWidth,
+          borderLeft: { xs: 0, sm: accentWidth },
           borderColor: accentColor,
-          pl: 2,
-          py: 0.25,
+          pl: { xs: 0, sm: 2 },
+          pt: { xs: 0, sm: 0.25 },
+          pb: { xs: 0, sm: 0.25 },
+          display: "flex",
+          flexDirection: "column",
+          alignItems: { xs: "center", sm: "flex-start" },
+          textAlign: { xs: "center", sm: "left" },
         }}
       >
         <Typography
+          ref={titleRef}
           component="h2"
           variant={variant}
           fontWeight={fontWeight}
@@ -52,6 +82,18 @@ export default function SectionHeader({ title, emphasis = "secondary" }: Section
         >
           {title}
         </Typography>
+        <Box
+          sx={{
+            display: { xs: "block", sm: "none" },
+            width: underlineWidth,
+            minWidth: FALLBACK_UNDERLINE_WIDTH,
+            height: 3.5,
+            borderRadius: 2,
+            bgcolor: accentColor,
+            mt: 1.25,
+            mb: 0.5,
+          }}
+        />
       </Box>
     </Box>
   );

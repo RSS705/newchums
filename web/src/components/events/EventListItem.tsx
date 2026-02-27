@@ -2,7 +2,6 @@
 
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import Chip from "@mui/material/Chip";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
@@ -45,25 +44,6 @@ export default function EventListItem({ event }: EventListItemProps) {
         },
       }}
     >
-      {event.distance && (
-        <Chip
-          label={event.distance}
-          size="small"
-          sx={{
-            position: "absolute",
-            top: { xs: "unset", sm: 16 },
-            right: { xs: "unset", sm: 16 },
-            bottom: { xs: 12, sm: "unset" },
-            left: { xs: 12, sm: "unset" },
-            height: 22,
-            fontSize: "0.6875rem",
-            fontWeight: 500,
-            bgcolor: "grey.100",
-            color: "text.secondary",
-            "& .MuiChip-label": { px: 1 },
-          }}
-        />
-      )}
       <Box
         sx={{
           width: { xs: "100%", sm: 80 },
@@ -116,7 +96,7 @@ export default function EventListItem({ event }: EventListItemProps) {
         sx={{
           display: "flex",
           alignItems: { xs: "stretch", sm: "flex-end" },
-          justifyContent: "flex-end",
+          justifyContent: { xs: "center", sm: "flex-end" },
           pt: { sm: 2 },
         }}
       >
@@ -129,7 +109,7 @@ export default function EventListItem({ event }: EventListItemProps) {
             textTransform: "capitalize",
             boxShadow: "none",
             fontWeight: 600,
-            minWidth: { xs: 80, sm: "auto" },
+            width: { xs: "100%", sm: "auto" },
             transition: "opacity 0.2s ease, transform 0.15s ease",
             "&:hover": { boxShadow: "none", opacity: 0.95 },
             "&:active": { transform: "scale(0.98)" },

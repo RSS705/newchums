@@ -101,15 +101,22 @@ export default function ExploreFilterBar() {
             Search
           </Button>
         </Stack>
-        <Box>
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent: { xs: "center", sm: "flex-start" },
+            flexWrap: "wrap",
+          }}
+        >
           <ToggleButtonGroup
             value={timeRange}
             exclusive
             onChange={(_, v) => v != null && setTimeRange(v)}
             size="small"
             sx={{
+              gap: { xs: 0.5, sm: 0 },
               "& .MuiToggleButton-root": {
-                ml: 0.5,
+                ml: { xs: 0, sm: 0.5 },
                 "&:first-of-type": { ml: 0 },
                 px: 1.5,
                 py: 0.5,

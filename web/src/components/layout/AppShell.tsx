@@ -9,8 +9,6 @@ import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
 import WavingHandRoundedIcon from "@mui/icons-material/WavingHandRounded";
 import {
   AppBar,
-  BottomNavigation,
-  BottomNavigationAction,
   Box,
   Button,
   Container,
@@ -35,6 +33,7 @@ import { signOut } from "next-auth/react";
 import {
   appNavItems,
   createEventHref,
+  headerNavLinks,
 } from "@/config/nav";
 import SiteHeader, { HEADER_MIN_HEIGHT } from "@/components/layout/SiteHeader";
 import LandingFooter from "@/components/landing/LandingFooter";
@@ -67,11 +66,6 @@ export default function AppShell({ children, user }: AppShellProps) {
 
   const accountMenuOpen = Boolean(accountMenuAnchor);
   const displayName = user?.name?.trim() || "there";
-
-  const currentBottomValue = React.useMemo(() => {
-    const matchingItem = appNavItems.find((item) => isNavItemActive(pathname, item.href));
-    return matchingItem?.href ?? "/";
-  }, [pathname]);
 
   const NavCardContent = () => (
     <>
@@ -266,6 +260,45 @@ export default function AppShell({ children, user }: AppShellProps) {
         <Toolbar sx={{ minHeight: HEADER_MIN_HEIGHT }} />
         <Divider />
         <NavCardContent />
+        <Divider sx={{ borderColor: "divider", opacity: 0.6, mt: 0 }} />
+        <Box sx={{ px: 2, py: 2 }}>
+          <Typography
+            variant="caption"
+            sx={{
+              display: "block",
+              color: "text.secondary",
+              fontWeight: 600,
+              letterSpacing: 0.5,
+              mb: 1.5,
+            }}
+          >
+            More Goodness
+          </Typography>
+          <Stack spacing={0.5}>
+            {headerNavLinks.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                onClick={() => setMobileOpen(false)}
+                style={{ textDecoration: "none" }}
+              >
+                <Typography
+                  component="span"
+                  variant="body2"
+                  sx={{
+                    color: "text.secondary",
+                    fontSize: "0.8125rem",
+                    "&:hover": { color: "primary.main" },
+                    display: "block",
+                    py: 1,
+                  }}
+                >
+                  {link.label}
+                </Typography>
+              </Link>
+            ))}
+          </Stack>
+        </Box>
       </Drawer>
 
       {/* Main content + footer */}
@@ -276,7 +309,7 @@ export default function AppShell({ children, user }: AppShellProps) {
           display: "flex",
           flexDirection: "column",
           pt: { xs: 8, lg: 10 },
-          pb: { xs: 11, md: 0 },
+          pb: 0,
         }}
       >
         <Box
@@ -343,38 +376,6 @@ export default function AppShell({ children, user }: AppShellProps) {
         </Box>
       </Box>
 
-      {/* Mobile bottom nav */}
-      <Box
-        sx={{
-          position: "fixed",
-          bottom: 0,
-          left: 0,
-          right: 0,
-          borderTop: 1,
-          borderColor: "grey.200",
-          bgcolor: "background.paper",
-          display: { xs: "block", md: "none" },
-          zIndex: (theme) => theme.zIndex.appBar,
-        }}
-      >
-        <BottomNavigation
-          value={currentBottomValue}
-          onChange={(_event, value) => router.push(value)}
-          showLabels
-        >
-          {appNavItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <BottomNavigationAction
-                key={item.href}
-                label={item.label}
-                value={item.href}
-                icon={<Icon />}
-              />
-            );
-          })}
-        </BottomNavigation>
-      </Box>
     </Box>
   );
 }

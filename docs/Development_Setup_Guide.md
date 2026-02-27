@@ -1,6 +1,6 @@
 # Development Setup Guide
 
-Last Updated: February 24, 2026
+Last Updated: February 26, 2026
 
 ---
 
@@ -8,18 +8,12 @@ Last Updated: February 24, 2026
 
 - **API migration:** Signup, password-reset, profile, interests, user/username, user/date-of-birth now live in API worker. Web calls API via NEXT_PUBLIC_API_BASE_URL; auth via JWT (Bearer) from GET /api/auth/api-token.
 - **Email verification:** Credentials signups require verification before sign-in; Postmark sends link; /auth/verify and /auth/verify/pending handle flow.
-- **Password reset:** Forgot-password → Postmark reset email → reset-password page; 404 if no user, 409 if OAuth-only.
-- **api-token:** Uses auth() + jose to mint 15-min JWT (works on Cloudflare Workers/OpenNext). API verifies jose-signed token or Auth.js session JWT.
-- **CORS:** Explicit allowlist: https://newchums.com, https://www.newchums.com, http://localhost:3000.
-- **Production environment:** Single deploy target
-- **Web Worker:** newchums-web-dev (production; suffix acknowledged)
-- **API Worker:** newchums-api (web points to this; deploy root with `npm run deploy` in api/)
-- **Domain:** newchums.com and www.newchums.com live (custom domains in wrangler.toml)
-- **Canonical host:** https://newchums.com; www → non-www redirect enforced via middleware
-- **Google OAuth:** Operational (AUTH_URL / NEXTAUTH_URL = https://newchums.com)
-- **Deploy config:** Wrangler drift resolved — routes, workers_dev, preview_urls, vars defined in code; deploy no longer wipes remote config
-- **Plausible:** Live
-- **Observability:** Sentry, Axiom configured
+- **Logged-in nav:** Explore (/), Your Plans (/plans), Your Chums (/chum-groups), Profile (/profile). Calendar removed. Mobile: hamburger drawer only (no bottom tab bar); Learn links (How it Works, Science of Friendship, Safety Center) in drawer below Create Event.
+- **Your Plans:** /plans page with Upcoming + Previous sections (placeholder data). Explore page shows Explore New Gatherings + Previous Gatherings in your Area only.
+- **Mobile UI:** SectionHeader centered with dynamic underline (50% of title width via ResizeObserver); Explore toggle pills centered with gap; EventListItem: no distance badge, full-width Join; welcome text centered on mobile, left on desktop.
+- **Production environment:** Single deploy target (newchums-web-dev, newchums-api); domain newchums.com.
+- **Build:** `cd web && npm run build` passes. No deploy run this session.
+- **Next session:** Deploy to verify mobile UX changes; wire real data to Your Plans if ready.
 
 ---
 
@@ -264,3 +258,19 @@ Chunk XX — YYYY-MM-DD
   - API deploy: Root worker newchums-api is production target. `npm run deploy` uses `--env=""`; added deploy:production for newchums-api-production env. APP_ENV in root vars.
   - __routes: GET /__routes (dev-only) lists registered routes.
 - **Verification:** Google sign-in → onboarding completes; POST /user/username, /user/date-of-birth succeed.
+
+### Chunk 3 — 2026-02-26 — Mobile Explore refinements, nav cleanup
+
+- **Goal:** Refine mobile Explore experience, add Learn links to drawer, consolidate nav (Explore/Your Plans), remove distance badge and bottom nav.
+- **Changes Made:**
+  - `web/src/config/nav.ts`: Home → Explore; Calendar removed; Your Plans added; headerNavLinks used in drawer.
+  - `web/src/components/layout/AppShell.tsx`: Mobile bottom nav removed; Learn section (How it Works, Science of Friendship, Safety Center) added below Create Event in drawer; padding adjusted.
+  - `web/src/components/ui/SectionHeader.tsx`: "use client"; dynamic underline width = 50% of title text via ref + ResizeObserver (mobile only); fallback 56px.
+  - `web/src/components/events/ExploreFilterBar.tsx`: Toggle pills centered on mobile; gap between pills.
+  - `web/src/components/events/EventListItem.tsx`: Distance badge removed; Join full-width and centered on mobile.
+  - `web/src/components/dashboard/DashboardHome.tsx`: Welcome text centered on mobile, left on desktop (`textAlign: { xs: "center", sm: "left" }`).
+- **Verification:** `cd web && npm run build` → ✓ Compiled successfully; routes include /plans.
+- **Deploy:** None this session.
+- **Open Issues / Next Steps:**
+  - Deploy to production and verify mobile UX on device.
+  - Wire real data to Your Plans (Upcoming / Previous) when APIs available.
