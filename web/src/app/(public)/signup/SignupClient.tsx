@@ -15,6 +15,7 @@ import AuthFooterLink from "@/components/auth/AuthFooterLink";
 import AuthSplitLayout from "@/components/layout/AuthSplitLayout";
 import { AppButton, AppCard } from "@/components/ui";
 import { apiFetch } from "@/lib/apiClient";
+import { validateCleanText } from "@/lib/contentSafety";
 import { getSafeRedirectPath } from "@/lib/authRedirect";
 
 export default function SignupClient() {
@@ -104,6 +105,11 @@ export default function SignupClient() {
                 );
                 return;
               }
+              const usernameContentCheck = validateCleanText(trimmed, "username");
+              if (!usernameContentCheck.ok) {
+                setUsernameError(usernameContentCheck.reason ?? "That username isn't allowed. Try something else.");
+                return;
+              }
 
               if (confirmPassword !== password) {
                 setConfirmPasswordError("Passwords do not match.");
@@ -132,6 +138,8 @@ export default function SignupClient() {
                 if (!response.ok || !data.ok) {
                   if (data.error === "USERNAME_TAKEN") {
                     setUsernameError("Username is already taken.");
+                  } else if (data.error === "INAPPROPRIATE_TEXT" || data.code === "INAPPROPRIATE_TEXT") {
+                    setUsernameError("That username isn't allowed. Try something else.");
                   } else if (data.error === "INVALID_USERNAME") {
                     setUsernameError(
                       "Use 3–20 lowercase letters, numbers, or underscores; no leading/trailing underscore."
@@ -189,7 +197,17 @@ export default function SignupClient() {
                 setUsername(event.target.value.replace(/\s/g, ""));
                 setUsernameError(null);
               }}
-              onBlur={() => setUsername((prev) => prev.trim())}
+              onBlur={() => {
+                const prev = username;
+                const trimmed = prev.trim();
+                if (trimmed !== prev) setUsername(trimmed);
+                if (trimmed) {
+                  const check = validateCleanText(trimmed, "username");
+                  setUsernameError(!check.ok ? (check.reason ?? "That username isn't allowed. Try something else.") : null);
+                } else {
+                  setUsernameError(null);
+                }
+              }}
               required
               helperText={
                 usernameError ??

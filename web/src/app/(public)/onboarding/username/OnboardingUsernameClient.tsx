@@ -10,6 +10,7 @@ import NCDatePicker from "@/components/fields/NCDatePicker";
 import AuthSplitLayout from "@/components/layout/AuthSplitLayout";
 import { AppButton, AppCard } from "@/components/ui";
 import { apiFetch } from "@/lib/apiClient";
+import { validateCleanText } from "@/lib/contentSafety";
 import { getSafeRedirectPath } from "@/lib/authRedirect";
 
 export default function OnboardingUsernameClient() {
@@ -64,6 +65,11 @@ export default function OnboardingUsernameClient() {
               );
               return;
             }
+            const usernameContentCheck = validateCleanText(trimmed, "username");
+            if (!usernameContentCheck.ok) {
+              setUsernameError(usernameContentCheck.reason ?? "That username isn't allowed. Try something else.");
+              return;
+            }
 
             const trimmedDob = dateOfBirth.trim();
             if (!trimmedDob) {
@@ -96,6 +102,7 @@ export default function OnboardingUsernameClient() {
               const usernameData = (await usernameResponse.json()) as {
                 ok: boolean;
                 error?: string;
+                code?: string;
               };
 
               let hasError = false;
@@ -120,6 +127,8 @@ export default function OnboardingUsernameClient() {
                 hasError = true;
                 if (usernameData.error === "USERNAME_TAKEN") {
                   setUsernameError("Username is already taken.");
+                } else if (usernameData.error === "INAPPROPRIATE_TEXT" || usernameData.code === "INAPPROPRIATE_TEXT") {
+                  setUsernameError("That username isn't allowed. Try something else.");
                 } else if (usernameData.error === "INVALID_USERNAME") {
                   setUsernameError(
                     "Use 3–20 lowercase letters, numbers, or underscores; no leading/trailing underscore."
@@ -148,7 +157,17 @@ export default function OnboardingUsernameClient() {
               setUsername(event.target.value.replace(/\s/g, ""));
               setUsernameError(null);
             }}
-            onBlur={() => setUsername((prev) => prev.trim())}
+            onBlur={() => {
+              const prev = username;
+              const t = prev.trim();
+              if (t !== prev) setUsername(t);
+              if (t) {
+                const check = validateCleanText(t, "username");
+                setUsernameError(!check.ok ? (check.reason ?? "That username isn't allowed. Try something else.") : null);
+              } else {
+                setUsernameError(null);
+              }
+            }}
             required
             helperText={
               usernameError ??

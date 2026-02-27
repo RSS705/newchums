@@ -14,6 +14,7 @@ import { canAccessInternalTestRoute, notFound } from "./internalAccess";
 import { nameToSlug, slugToName, validateInterestName } from "./interests";
 import { ensureAppUserId } from "./profile";
 import { generateResetToken, hashResetToken } from "./resetTokens";
+import { validateCleanText } from "./lib/contentSafety";
 import {
   normalizeUsernameDisplay,
   normalizeUsernameForUniq,
@@ -264,6 +265,13 @@ app.post("/auth/signup", async (c) => {
     const usernameValidation = validateUsername(body.username ?? "");
     if (!usernameValidation.valid) {
       return c.json({ ok: false, error: usernameValidation.error }, 400);
+    }
+    const signupContentCheck = validateCleanText(body.username ?? "", "username");
+    if (!signupContentCheck.ok) {
+      return c.json(
+        { ok: false, error: "INAPPROPRIATE_TEXT", code: "INAPPROPRIATE_TEXT", field: "handle" },
+        400,
+      );
     }
 
     const trimmedDob = body.date_of_birth?.trim() ?? "";
@@ -849,6 +857,16 @@ app.put("/profile", async (c) => {
       );
     }
 
+    if ("name" in body && body.name != null && String(body.name).trim() !== "") {
+      const nameCheck = validateCleanText(String(body.name).trim(), "display_name");
+      if (!nameCheck.ok) {
+        return c.json(
+          { ok: false, error: { code: "INAPPROPRIATE_TEXT", field: "display_name", message: nameCheck.reason } },
+          400,
+        );
+      }
+    }
+
     const existingRows = (await sql`
       SELECT home_city, home_lat, home_lng, travel_radius_km, email_chat_digest, email_new_events, bio
       FROM user_profile WHERE user_id = ${appUserId} LIMIT 1
@@ -972,6 +990,13 @@ app.put("/profile", async (c) => {
         if (!v.valid) {
           return c.json(
             { ok: false, error: { code: "INVALID_INPUT", message: v.error } },
+            400,
+          );
+        }
+        const hobbyCheck = validateCleanText(nameForValidation, "hobby");
+        if (!hobbyCheck.ok) {
+          return c.json(
+            { ok: false, error: { code: "INAPPROPRIATE_TEXT", field: "hobby", message: hobbyCheck.reason } },
             400,
           );
         }
@@ -1141,6 +1166,13 @@ app.post("/user/username", async (c) => {
     const usernameValidation = validateUsername(body.username ?? "");
     if (!usernameValidation.valid) {
       return c.json({ ok: false, error: usernameValidation.error }, 400);
+    }
+    const contentCheck = validateCleanText(body.username ?? "", "username");
+    if (!contentCheck.ok) {
+      return c.json(
+        { ok: false, error: "INAPPROPRIATE_TEXT", code: "INAPPROPRIATE_TEXT", field: "handle" },
+        400,
+      );
     }
     const usernameDisplay = normalizeUsernameDisplay(body.username!);
     const usernameNorm = normalizeUsernameForUniq(body.username!);

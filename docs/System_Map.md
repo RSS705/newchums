@@ -1,6 +1,6 @@
 # System Map
 
-Last Updated: February 26, 2026
+Last Updated: February 27, 2026
 
 This document reflects the current production reality of NewChums.
 
@@ -65,6 +65,8 @@ The following flows now run entirely in the API worker; the web app calls the AP
 | Handle availability check | GET /handles/available?handle=... | Bearer JWT |
 | Set username (onboarding) | POST /user/username | Bearer JWT |
 | Set date of birth (onboarding) | POST /user/date-of-birth | Bearer JWT |
+
+**Content safety:** Signup, POST /user/username, and PUT /profile validate display name, username, and hobbies for inappropriate terms. Returns 400 with `code: "INAPPROPRIATE_TEXT"` and `field` when invalid.
 
 **Auth flow:** For authenticated routes, the client calls `GET /api/auth/api-token` (same-origin, cookies sent). The route uses auth() to get the session, then mints a 15-min JWT with jose. The client passes it as `Authorization: Bearer <token>` to the API. The API verifies using jose (API token) or @auth/core (Auth.js session JWT). NEXTAUTH_SECRET must match web AUTH_SECRET. CORS: explicit allowlist (newchums.com, www, localhost:3000).
 

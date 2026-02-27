@@ -1,15 +1,16 @@
 # Development Setup Guide
 
-Last Updated: February 26, 2026
+Last Updated: February 27, 2026
 
 ---
 
 ## Current State
 
 - **API migration:** Signup, password-reset, profile, interests, user/username, user/date-of-birth, handles/available now live in API worker. Web calls API via NEXT_PUBLIC_API_BASE_URL; auth via JWT (Bearer) from GET /api/auth/api-token.
+- **Content safety:** Inappropriate-word validation on signup username, profile display name, profile username, profile hobbies, onboarding username. Server uses full list (api/src/data/bannedTerms.ts, ~230 terms from LDNOOBW); client uses quick-catch list (~90 terms). Matching: CamelCase split, leetspeak, repeated-char collapse, phrase checks.
 - **Email verification:** Credentials signups require verification before sign-in; Postmark sends link; /auth/verify and /auth/verify/pending handle flow.
 - **Logged-in nav:** Explore (/), Your Plans (/plans), Your Chums (/chum-groups), Profile (/profile). Calendar removed. Mobile: hamburger drawer only (no bottom tab bar); Learn links (How it Works, Science of Friendship, Safety Center) in drawer below Create Event.
-- **Profile:** About you section fully wired: display name, handle, bio, date of birth load and save via GET/PUT /profile. Handle changes via POST /user/username. Handle availability checked on blur and debounce (400ms) via GET /handles/available. Save disabled while handle check in progress. Validation matches signup (3–20 chars, no leading/trailing underscore). Migration 009 adds bio column to user_profile.
+- **Profile:** About you section fully wired: display name, username (label), bio, date of birth load and save via GET/PUT /profile. Handle changes via POST /user/username. Handle availability checked on blur and debounce (400ms) via GET /handles/available. Save disabled while handle check in progress. Validation matches signup (3–20 chars, no leading/trailing underscore). `router.refresh()` after save updates sidebar greeting ("Welcome back [name]") immediately. Migration 009 adds bio column to user_profile.
 - **Your Plans:** /plans page with Upcoming + Previous sections (placeholder data). Explore page shows Explore New Gatherings + Previous Gatherings in your Area only.
 - **Mobile UI:** SectionHeader centered with dynamic underline; Explore toggle pills centered with gap; EventListItem: no distance badge, full-width Join; welcome text centered on mobile. Profile: responsive header, avatar, cards; full-width Save; avatar dialog with mobile margins.
 - **Production environment:** Single deploy target (newchums-web-dev, newchums-api); domain newchums.com.
@@ -293,3 +294,15 @@ Chunk XX — YYYY-MM-DD
 - **Verification:** `cd web && npm run build` passes.
 - **Deploy:** None this session.
 - **Preflight:** Run migration 009 before using bio/date_of_birth in profile: `psql "$DATABASE_URL" -f web/sql/009_add_bio_to_user_profile.sql`
+
+### Chunk 5 — 2026-02-27 — Profile UX polish, content safety (inappropriate-word validation)
+
+- **Goal:** Polish profile UX (greeting refresh, label); add inappropriate-word validation across signup, profile, onboarding.
+- **Changes Made:**
+  - **Profile greeting:** `router.refresh()` after profile save so "Welcome back [name]" in sidebar updates immediately.
+  - **Profile label:** Handle field relabeled to "Username" for consistency with signup.
+  - **Content safety (API):** New `api/src/data/bannedTerms.ts` (~230 terms from LDNOOBW single-word list). New `api/src/lib/contentSafety.ts` with `validateCleanText()`: CamelCase split, leetspeak (0→o, 1→i, etc.), repeated-char collapse, dots as separators, merged single-char tokens (e.g. f.u.c.k), multi-word phrases ("kill yourself"). Enforced on: POST /auth/signup, POST /user/username, PUT /profile (display name, handle, hobbies).
+  - **Content safety (web):** New `web/src/lib/contentSafety.ts` with quick-catch list (~90 terms). Client validation on blur and before submit for signup, onboarding username, profile display name, profile username, profile hobbies. Maps API `INAPPROPRIATE_TEXT` to field-level errors.
+- **Error shape:** `{ ok: false, code: "INAPPROPRIATE_TEXT", field: "handle" | "display_name" | "hobby" }` (400).
+- **Verification:** `cd web && npm run build` passes.
+- **Deploy:** None this session.

@@ -21,6 +21,7 @@ import DistanceSelect from "@/components/common/DistanceSelect";
 import NCDatePicker from "@/components/fields/NCDatePicker";
 import PlacesAutocompleteInput from "@/components/common/PlacesAutocompleteInput";
 import { TRAVEL_RADIUS_OPTIONS } from "@/config/travelRadius";
+import { validateCleanText } from "@/lib/contentSafety";
 import { isDuplicate, nameToSlug, slugToName } from "@/lib/interestUtils";
 
 const AVATAR_OPTIONS = [
@@ -67,6 +68,7 @@ export default function ProfileClient() {
   const [avatarDialogOpen, setAvatarDialogOpen] = useState(false);
   const [handleStatus, setHandleStatus] = useState<"idle" | "checking" | "available" | "unavailable">("idle");
   const [handleError, setHandleError] = useState<string | null>(null);
+  const [displayNameError, setDisplayNameError] = useState<string | null>(null);
 
   const [homeAddress, setHomeAddress] = useState("");
   const [homeLat, setHomeLat] = useState<number | null>(null);
@@ -240,8 +242,21 @@ export default function ProfileClient() {
       toast.error(`Display name must be ${MAX_DISPLAY_NAME_LENGTH} characters or less`);
       return;
     }
+    const displayNameTrimmed = displayName.trim();
+    if (displayNameTrimmed) {
+      const displayNameCheck = validateCleanText(displayNameTrimmed, "display_name");
+      if (!displayNameCheck.ok) {
+        setDisplayNameError(displayNameCheck.reason ?? "Please choose a different display name.");
+        return;
+      }
+    }
     const handleTrimmed = handle.trim();
     if (handleTrimmed) {
+      const handleContentCheck = validateCleanText(handleTrimmed, "username");
+      if (!handleContentCheck.ok) {
+        setHandleError(handleContentCheck.reason ?? "That username isn't allowed. Try something else.");
+        return;
+      }
       if (!HANDLE_REGEX.test(handleTrimmed) || handleTrimmed.toLowerCase().startsWith("_") || handleTrimmed.toLowerCase().endsWith("_")) {
         toast.error("Use 3–20 letters, numbers, or underscores; no leading/trailing underscore.");
         return;
@@ -280,14 +295,17 @@ export default function ProfileClient() {
           auth: true,
           body: JSON.stringify({ username: handleTrimmed }),
         });
-        const usernameData = (await usernameRes.json()) as { ok?: boolean; error?: string };
+        const usernameData = (await usernameRes.json()) as { ok?: boolean; error?: string; code?: string };
         if (!usernameData.ok) {
           const msg =
             usernameData.error === "USERNAME_TAKEN"
               ? "This handle is already taken."
-              : usernameData.error === "INVALID_USERNAME"
-                ? "Use 3–20 letters, numbers, or underscores; no leading/trailing underscore."
-                : "Failed to update handle.";
+              : usernameData.error === "INAPPROPRIATE_TEXT" || usernameData.code === "INAPPROPRIATE_TEXT"
+                ? "That username isn't allowed. Try something else."
+                : usernameData.error === "INVALID_USERNAME"
+                  ? "Use 3–20 letters, numbers, or underscores; no leading/trailing underscore."
+                  : "Failed to update handle.";
+          setHandleError(msg);
           toast.error(msg);
           setSaving(false);
           return;
@@ -312,16 +330,29 @@ export default function ProfileClient() {
       const data = (await res.json()) as {
         ok?: boolean;
         profile?: Profile;
-        error?: { code?: string; message?: string } | string;
+        error?: { code?: string; field?: string; message?: string } | string;
       };
-      const errMsg = typeof data.error === "object" ? data.error?.message : data.error;
+      const errObj = typeof data.error === "object" ? data.error : null;
+      const errMsg = errObj?.message ?? (typeof data.error === "string" ? data.error : null);
 
       if (!data.ok || !data.profile) {
-        toast.error(errMsg ?? "Failed to save");
+        if (errObj?.code === "INAPPROPRIATE_TEXT") {
+          if (errObj.field === "display_name") {
+            setDisplayNameError(errObj.message ?? "Please choose a different display name.");
+          } else if (errObj.field === "hobby") {
+            toast.error(errObj.message ?? "That hobby name isn't allowed. Try a different wording.");
+          } else {
+            toast.error(errMsg ?? "Failed to save");
+          }
+        } else {
+          toast.error(errMsg ?? "Failed to save");
+        }
         return;
       }
 
       toast.success("Profile saved");
+      setDisplayNameError(null);
+      setHandleError(null);
       setProfile(data.profile);
       fetchData();
       router.refresh();
@@ -346,6 +377,11 @@ export default function ProfileClient() {
     if (!item.name?.trim() || !item.slug) return;
     if (item.name.length > MAX_INTEREST_LENGTH) {
       toast.error(`Hobby must be ${MAX_INTEREST_LENGTH} characters or less`);
+      return;
+    }
+    const hobbyCheck = validateCleanText(item.name, "hobby");
+    if (!hobbyCheck.ok) {
+      toast.error(hobbyCheck.reason ?? "That hobby name isn't allowed. Try a different wording.");
       return;
     }
     const already = interestItems.some((i) => isDuplicate(i, item));
@@ -394,11 +430,24 @@ export default function ProfileClient() {
               <TextField
                 label="Display name"
                 value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
+                onChange={(e) => {
+                  setDisplayName(e.target.value);
+                  setDisplayNameError(null);
+                }}
+                onBlur={() => {
+                  const trimmed = displayName.trim();
+                  if (trimmed) {
+                    const check = validateCleanText(trimmed, "display_name");
+                    setDisplayNameError(!check.ok ? (check.reason ?? "Please choose a different display name.") : null);
+                  } else {
+                    setDisplayNameError(null);
+                  }
+                }}
                 fullWidth
                 size="medium"
                 placeholder="Your real name"
-                helperText="Your real name. Visible when someone views your full profile."
+                helperText={displayNameError ?? "Your real name. Visible when someone views your full profile."}
+                error={Boolean(displayNameError)}
                 inputProps={{ maxLength: MAX_DISPLAY_NAME_LENGTH }}
               />
               <TextField
@@ -408,7 +457,18 @@ export default function ProfileClient() {
                   setHandle(e.target.value.replace(/^@/, "").replace(/\s/g, ""));
                   setHandleError(null);
                 }}
-                onBlur={() => checkHandleAvailable(handle)}
+                onBlur={() => {
+                  const trimmed = handle.trim();
+                  if (trimmed) {
+                    const check = validateCleanText(trimmed, "username");
+                    if (!check.ok) {
+                      setHandleError(check.reason ?? "That username isn't allowed. Try something else.");
+                      setHandleStatus("unavailable");
+                      return;
+                    }
+                  }
+                  checkHandleAvailable(handle);
+                }}
                 fullWidth
                 size="medium"
                 placeholder="yourhandle"

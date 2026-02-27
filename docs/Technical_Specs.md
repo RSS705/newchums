@@ -1,7 +1,7 @@
 # Technical Specifications
 
-Last Updated: February 26, 2026
-Version: 5.1
+Last Updated: February 27, 2026
+Version: 5.2
 
 This document defines the authoritative technical architecture of NewChums.
 It describes what exists today and the structural commitments we are making.
@@ -75,6 +75,8 @@ The following business logic now lives in the API worker; the web app calls it v
 | GET /interests | List interests |
 | POST /user/username, POST /user/date-of-birth | Onboarding (auth required) |
 | GET /health | Health check `{ ok: true }` |
+
+**Content safety:** Signup, POST /user/username, and PUT /profile validate user-entered text for inappropriate terms. Invalid content returns `{ ok: false, code: "INAPPROPRIATE_TEXT", field: "handle" | "display_name" | "hobby" }` (400).
 | GET /health/env | Diagnostic: reports DATABASE_URL, NEXTAUTH_SECRET, WEB_BASE_URL presence (local/dev) |
 
 The web retains only `GET/POST /api/auth/[...nextauth]` for Auth.js. All other former web API routes have been removed.
@@ -143,6 +145,17 @@ Principles:
 - **Canonical host requirement:** AUTH_URL and NEXTAUTH_URL must be `https://newchums.com` so OAuth callback matches signin origin.
 - **API worker auth:** For routes that require a logged-in user (profile, user/username, user/date-of-birth, handles/available), the web client obtains the JWT via `GET /api/auth/api-token` and sends it as `Authorization: Bearer <token>`. The api-token route uses auth() to get session, then mints a 15-min JWT with jose (HS256). The API verifies using `api/src/auth.ts`: jose jwtVerify (API token) or @auth/core decode (Auth.js session JWT). getBearerToken supports Hono `req.header()` and standard `req.headers.get()`.
 - **Auth UI routes:** /login, /signup, /forgot-password, /reset-password, /auth/verify, /auth/verify/pending.
+
+---
+
+# 7a. Content Safety (Inappropriate Word Validation)
+
+- **Purpose:** Block profanity, slurs, and similar terms in display names, usernames, and hobbies.
+- **Server (canonical):** `api/src/lib/contentSafety.ts` imports full list from `api/src/data/bannedTerms.ts` (~230 terms, LDNOOBW single-word list).
+- **Client (quick feedback):** `web/src/lib/contentSafety.ts` uses a smaller list (~90 terms) for fast inline validation.
+- **Fields validated:** Signup username, onboarding username, profile display name, profile username/handle, profile hobbies (new/edited).
+- **Matching:** CamelCase split, spaces/underscores/hyphens/dots as separators, repeated-char collapse, basic leetspeak (0→o, 1→i, etc.), multi-word phrases (e.g. "kill yourself").
+- **Error shape:** `{ ok: false, code: "INAPPROPRIATE_TEXT", field: "handle" | "display_name" | "hobby" }` (400). Client maps to field-level errors.
 
 ---
 
