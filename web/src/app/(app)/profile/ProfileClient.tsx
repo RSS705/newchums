@@ -12,10 +12,12 @@ import InputAdornment from "@mui/material/InputAdornment";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+import dayjs from "dayjs";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/apiClient";
 import { AppButton, AppCard, useToast } from "@/components/ui";
 import DistanceSelect from "@/components/common/DistanceSelect";
+import NCDatePicker from "@/components/fields/NCDatePicker";
 import PlacesAutocompleteInput from "@/components/common/PlacesAutocompleteInput";
 import { TRAVEL_RADIUS_OPTIONS } from "@/config/travelRadius";
 import { isDuplicate, nameToSlug, slugToName } from "@/lib/interestUtils";
@@ -33,6 +35,8 @@ type InterestOption = { id?: string; name: string; slug: string };
 type Profile = {
   name?: string | null;
   username?: string | null;
+  date_of_birth?: string | null;
+  bio?: string | null;
   home_city: string | null;
   home_lat: number | null;
   home_lng: number | null;
@@ -44,7 +48,10 @@ type Profile = {
 };
 
 const MAX_INTEREST_LENGTH = 50;
+const MAX_DISPLAY_NAME_LENGTH = 100;
+const MAX_BIO_LENGTH = 500;
 const CHIPS_COLLAPSED_COUNT = 12;
+const HANDLE_REGEX = /^[A-Za-z0-9_]{3,20}$/;
 
 export default function ProfileClient() {
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -53,9 +60,12 @@ export default function ProfileClient() {
 
   const [displayName, setDisplayName] = useState("");
   const [handle, setHandle] = useState("");
+  const [dateOfBirth, setDateOfBirth] = useState("");
   const [avatarId, setAvatarId] = useState("1");
   const [bio, setBio] = useState("");
   const [avatarDialogOpen, setAvatarDialogOpen] = useState(false);
+  const [handleStatus, setHandleStatus] = useState<"idle" | "checking" | "available" | "unavailable">("idle");
+  const [handleError, setHandleError] = useState<string | null>(null);
 
   const [homeAddress, setHomeAddress] = useState("");
   const [homeLat, setHomeLat] = useState<number | null>(null);
@@ -110,6 +120,55 @@ export default function ProfileClient() {
     else setSuggestions([]);
   }, [inputValue, debouncedFetch]);
 
+  const checkHandleAvailable = useCallback(async (h: string) => {
+    const trimmed = h.trim();
+    if (!trimmed || trimmed.length < 3) {
+      setHandleStatus("idle");
+      setHandleError(null);
+      return;
+    }
+    if (!HANDLE_REGEX.test(trimmed) || trimmed.toLowerCase().startsWith("_") || trimmed.toLowerCase().endsWith("_")) {
+      setHandleStatus("unavailable");
+      setHandleError("Use 3–20 letters, numbers, or underscores; no leading/trailing underscore.");
+      return;
+    }
+    setHandleStatus("checking");
+    setHandleError(null);
+    try {
+      const res = await apiFetch(`/handles/available?handle=${encodeURIComponent(trimmed)}`, { auth: true });
+      const data = (await res.json()) as { available?: boolean };
+      setHandleStatus(data.available ? "available" : "unavailable");
+      setHandleError(data.available ? null : "This handle is already taken.");
+    } catch {
+      setHandleStatus("idle");
+      setHandleError(null);
+    }
+  }, []);
+
+  const debouncedCheckHandle = useMemo(() => {
+    let t: ReturnType<typeof setTimeout>;
+    return (h: string) => {
+      clearTimeout(t);
+      t = setTimeout(() => checkHandleAvailable(h), 400);
+    };
+  }, [checkHandleAvailable]);
+
+  useEffect(() => {
+    const trimmed = handle.trim();
+    const prevHandle = (profile?.username ?? "").replace(/^@/, "");
+    if (trimmed === prevHandle) {
+      setHandleStatus("idle");
+      setHandleError(null);
+      return;
+    }
+    if (!trimmed || trimmed.length < 3) {
+      setHandleStatus("idle");
+      setHandleError(null);
+      return;
+    }
+    debouncedCheckHandle(handle);
+  }, [handle, profile?.username, debouncedCheckHandle]);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
@@ -121,6 +180,8 @@ export default function ProfileClient() {
         setProfile(p);
         setDisplayName(p.name ?? "");
         setHandle((p.username ?? "").replace(/^@/, ""));
+        setDateOfBirth(p.date_of_birth ?? "");
+        setBio(p.bio ?? "");
         setHomeAddress(p.home_city ?? "");
         setHomeLat(p.home_lat ?? null);
         setHomeLng(p.home_lng ?? null);
@@ -131,6 +192,8 @@ export default function ProfileClient() {
           slug: x.slug,
         }));
         setInterestItems(items);
+        setHandleStatus("idle");
+        setHandleError(null);
       }
     } finally {
       setLoading(false);
@@ -155,6 +218,8 @@ export default function ProfileClient() {
     if (!profile) return true;
     if (displayName !== (profile.name ?? "")) return true;
     if (handle !== (profile.username ?? "").replace(/^@/, "")) return true;
+    if (dateOfBirth !== (profile.date_of_birth ?? "")) return true;
+    if (bio !== (profile.bio ?? "")) return true;
     if (homeAddress !== (profile.home_city ?? "")) return true;
     if (homeLat !== profile.home_lat || homeLng !== profile.home_lng) return true;
     if (travelRadiusKm !== profile.travel_radius_km) return true;
@@ -165,23 +230,44 @@ export default function ProfileClient() {
     if (currSlugs.size !== prevSlugs.size) return true;
     for (const s of currSlugs) if (!prevSlugs.has(s)) return true;
     return false;
-  }, [profile, displayName, handle, homeAddress, homeLat, homeLng, travelRadiusKm, interestItems]);
+  }, [profile, displayName, handle, dateOfBirth, bio, homeAddress, homeLat, homeLng, travelRadiusKm, interestItems]);
 
   const handleSave = async () => {
     if (saving || !isDirty()) return;
-    if (travelRadiusKm < 1 || travelRadiusKm > 200) {
-      toast.error("Please select a valid travel radius");
+    if (displayName.length > MAX_DISPLAY_NAME_LENGTH) {
+      toast.error(`Display name must be ${MAX_DISPLAY_NAME_LENGTH} characters or less`);
       return;
     }
     const handleTrimmed = handle.trim();
-    if (handleTrimmed && !/^[A-Za-z0-9_]{3,20}$/.test(handleTrimmed)) {
-      toast.error("Handle must be 3–20 characters, letters, numbers, and underscores only");
-      return;
+    if (handleTrimmed) {
+      if (!HANDLE_REGEX.test(handleTrimmed) || handleTrimmed.toLowerCase().startsWith("_") || handleTrimmed.toLowerCase().endsWith("_")) {
+        toast.error("Use 3–20 letters, numbers, or underscores; no leading/trailing underscore.");
+        return;
+      }
+      if (handleStatus === "unavailable") {
+        toast.error("Please choose an available handle.");
+        return;
+      }
+      if (handleStatus === "checking") {
+        return;
+      }
     }
     const prevHandle = (profile?.username ?? "").replace(/^@/, "");
     const handleChanged = handleTrimmed !== prevHandle;
     if (handleChanged && !handleTrimmed) {
       toast.error("Handle is required when changing it");
+      return;
+    }
+    if (handleChanged && handleStatus !== "available" && handleTrimmed !== prevHandle) {
+      toast.error("Please choose an available handle.");
+      return;
+    }
+    if (bio.length > MAX_BIO_LENGTH) {
+      toast.error(`Bio must be ${MAX_BIO_LENGTH} characters or less`);
+      return;
+    }
+    if (travelRadiusKm < 1 || travelRadiusKm > 200) {
+      toast.error("Please select a valid travel radius");
       return;
     }
     setSaving(true);
@@ -192,9 +278,15 @@ export default function ProfileClient() {
           auth: true,
           body: JSON.stringify({ username: handleTrimmed }),
         });
-        const usernameData = await usernameRes.json();
+        const usernameData = (await usernameRes.json()) as { ok?: boolean; error?: string };
         if (!usernameData.ok) {
-          toast.error(usernameData.error?.message ?? "Failed to update handle");
+          const msg =
+            usernameData.error === "USERNAME_TAKEN"
+              ? "This handle is already taken."
+              : usernameData.error === "INVALID_USERNAME"
+                ? "Use 3–20 letters, numbers, or underscores; no leading/trailing underscore."
+                : "Failed to update handle.";
+          toast.error(msg);
           setSaving(false);
           return;
         }
@@ -204,6 +296,8 @@ export default function ProfileClient() {
         auth: true,
         body: JSON.stringify({
           name: displayName.trim() || null,
+          bio: bio.trim() || null,
+          date_of_birth: dateOfBirth.trim() || null,
           home_city: homeAddress.trim() || null,
           home_lat: homeLat,
           home_lng: homeLng,
@@ -213,10 +307,15 @@ export default function ProfileClient() {
         }),
       });
 
-      const data = await res.json();
+      const data = (await res.json()) as {
+        ok?: boolean;
+        profile?: Profile;
+        error?: { code?: string; message?: string } | string;
+      };
+      const errMsg = typeof data.error === "object" ? data.error?.message : data.error;
 
-      if (!data.ok) {
-        toast.error(data.error?.message ?? "Failed to save");
+      if (!data.ok || !data.profile) {
+        toast.error(errMsg ?? "Failed to save");
         return;
       }
 
@@ -252,23 +351,42 @@ export default function ProfileClient() {
   };
 
   return (
-    <Stack spacing={3}>
-      <Typography component="h1" variant="h3">
-        Profile
-      </Typography>
-      <Stack spacing={0.25}>
-        <Typography color="text.secondary">
-          Shape how you show up on NewChums.
+    <Stack spacing={{ xs: 3, sm: 4 }}>
+      <Box sx={{ textAlign: { xs: "center", sm: "left" } }}>
+        <Typography
+          component="h1"
+          sx={{
+            fontSize: { xs: "1.75rem", sm: "2rem" },
+            fontWeight: 700,
+            lineHeight: 1.25,
+            letterSpacing: "-0.02em",
+          }}
+        >
+          Profile
         </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ opacity: 0.85 }}>
-          The more complete your profile, the better your matches.
-        </Typography>
-      </Stack>
+        <Stack spacing={0.25} sx={{ mt: 1 }}>
+          <Typography
+            color="text.secondary"
+            sx={{ fontSize: { xs: "0.875rem", sm: "0.9375rem" } }}
+          >
+            Shape how you show up on NewChums.
+          </Typography>
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            sx={{ opacity: 0.85, fontSize: { xs: "0.8125rem", sm: "0.875rem" } }}
+          >
+            The more complete your profile, the better your matches.
+          </Typography>
+        </Stack>
+      </Box>
 
-      <AppCard>
+      <AppCard sx={{ borderRadius: { xs: 2, sm: 2.5 }, overflow: "hidden" }}>
         <Stack spacing={2}>
-          <Typography variant="h6">About you</Typography>
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ xs: "center", sm: "flex-start" }}>
+          <Typography variant="h6" sx={{ fontSize: { xs: "1rem", sm: "1.125rem" } }}>
+            About you
+          </Typography>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={{ xs: 2, sm: 2 }} alignItems={{ xs: "center", sm: "flex-start" }}>
             <Stack spacing={2} flex={1} minWidth={0} order={{ xs: 1, sm: 0 }}>
               <TextField
                 label="Display name"
@@ -278,14 +396,20 @@ export default function ProfileClient() {
                 size="medium"
                 placeholder="Your real name"
                 helperText="Your real name. Visible when someone views your full profile."
+                inputProps={{ maxLength: MAX_DISPLAY_NAME_LENGTH }}
               />
               <TextField
                 label="Handle"
                 value={handle}
-                onChange={(e) => setHandle(e.target.value.replace(/^@/, ""))}
+                onChange={(e) => {
+                  setHandle(e.target.value.replace(/^@/, "").replace(/\s/g, ""));
+                  setHandleError(null);
+                }}
+                onBlur={() => checkHandleAvailable(handle)}
                 fullWidth
                 size="medium"
                 placeholder="yourhandle"
+                error={Boolean(handleError)}
                 InputProps={{
                   startAdornment: (
                     <InputAdornment position="start">
@@ -293,7 +417,23 @@ export default function ProfileClient() {
                     </InputAdornment>
                   ),
                 }}
-                helperText="This is your public username. Others will see this in gatherings and lists. 3–20 characters, letters, numbers, underscores"
+                helperText={
+                  handleError ??
+                  (handleStatus === "available"
+                    ? "This handle is available."
+                    : handleStatus === "checking"
+                      ? "Checking availability…"
+                      : "Your unique handle (3–20 chars, letters, numbers, underscores).")
+                }
+              />
+              <NCDatePicker
+                id="profile-date-of-birth"
+                label="Date of birth"
+                value={dateOfBirth}
+                onChange={(v) => setDateOfBirth(v)}
+                maxDate={dayjs()}
+                helperText="You must be 18+ to use NewChums."
+                noTopMargin
               />
               <TextField
                 label="Bio"
@@ -303,14 +443,22 @@ export default function ProfileClient() {
                 multiline
                 rows={3}
                 placeholder="Tell people a bit about what you enjoy, what you're looking for, or the kind of gatherings you like."
+                inputProps={{ maxLength: MAX_BIO_LENGTH }}
+                helperText={`${bio.length}/${MAX_BIO_LENGTH}`}
               />
             </Stack>
-            <Stack alignItems="center" spacing={1.5} flexShrink={0} order={{ xs: 0, sm: 1 }}>
+            <Stack
+              alignItems="center"
+              spacing={1.5}
+              flexShrink={0}
+              order={{ xs: 0, sm: 1 }}
+              sx={{ pb: { xs: 2.5, sm: 0 } }}
+            >
               <Avatar
                 sx={{
-                  width: 128,
-                  height: 128,
-                  fontSize: "3rem",
+                  width: { xs: 96, sm: 128 },
+                  height: { xs: 96, sm: 128 },
+                  fontSize: { xs: "2.25rem", sm: "3rem" },
                   bgcolor: AVATAR_OPTIONS.find((a) => a.id === avatarId)?.color ?? "primary.main",
                   border: "2px solid",
                   borderColor: "divider",
@@ -326,9 +474,11 @@ export default function ProfileClient() {
         </Stack>
       </AppCard>
 
-      <AppCard>
+      <AppCard sx={{ borderRadius: { xs: 2, sm: 2.5 }, overflow: "hidden" }}>
         <Stack spacing={2}>
-          <Typography variant="h6">Location</Typography>
+          <Typography variant="h6" sx={{ fontSize: { xs: "1rem", sm: "1.125rem" } }}>
+            Location
+          </Typography>
           <PlacesAutocompleteInput
             value={homeAddress}
             onChange={(v) => {
@@ -361,9 +511,11 @@ export default function ProfileClient() {
         </Stack>
       </AppCard>
 
-      <AppCard>
+      <AppCard sx={{ borderRadius: { xs: 2, sm: 2.5 }, overflow: "hidden" }}>
         <Stack spacing={2}>
-          <Typography variant="h6">Hobbies</Typography>
+          <Typography variant="h6" sx={{ fontSize: { xs: "1rem", sm: "1.125rem" } }}>
+            Hobbies
+          </Typography>
           <Typography color="text.secondary" variant="body2">
             Add hobbies you enjoy. You can pick existing ones or create your own.
           </Typography>
@@ -462,15 +614,41 @@ export default function ProfileClient() {
 
       <AppButton
         onClick={handleSave}
-        disabled={saving || !isDirty()}
+        fullWidth
+        disabled={
+          saving ||
+          !isDirty() ||
+          (handle.trim() !== (profile?.username ?? "").replace(/^@/, "") &&
+            handleStatus === "checking")
+        }
+        sx={{
+          py: { xs: 1.25, sm: 1 },
+          borderRadius: 2,
+          textTransform: "capitalize",
+        }}
       >
-        {saving ? "Saving…" : "Save profile"}
+        {saving
+          ? "Saving…"
+          : handle.trim() !== (profile?.username ?? "").replace(/^@/, "") && handleStatus === "checking"
+            ? "Checking handle…"
+            : "Save profile"}
       </AppButton>
 
-      <Dialog open={avatarDialogOpen} onClose={() => setAvatarDialogOpen(false)} maxWidth="xs" fullWidth>
+      <Dialog
+        open={avatarDialogOpen}
+        onClose={() => setAvatarDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{
+          sx: {
+            m: { xs: 2, sm: 3 },
+            maxHeight: { xs: "calc(100dvh - 32px)", sm: "calc(100dvh - 48px)" },
+          },
+        }}
+      >
         <DialogTitle>Choose avatar</DialogTitle>
-        <DialogContent>
-          <Stack direction="row" flexWrap="wrap" gap={1} sx={{ pt: 1 }}>
+        <DialogContent sx={{ px: { xs: 2, sm: 3 } }}>
+          <Stack direction="row" flexWrap="wrap" gap={1.5} sx={{ pt: 1, justifyContent: "center" }}>
             {AVATAR_OPTIONS.map((opt) => (
               <Avatar
                 key={opt.id}

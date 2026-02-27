@@ -643,6 +643,40 @@ async function requireAuth(c: { req: Request; env: Bindings }) {
   return verifyAuthToken(token, c.env.NEXTAUTH_SECRET);
 }
 
+app.get("/handles/available", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+  const handleParam = c.req.query("handle");
+  const trimmed = (handleParam ?? "").trim();
+  if (!trimmed) {
+    return c.json({ available: false });
+  }
+  const validation = validateUsername(trimmed);
+  if (!validation.valid) {
+    return c.json({ available: false });
+  }
+  try {
+    const sql = getSql(c.env);
+    const appUserId = await ensureAppUserId(
+      sql,
+      payload.email,
+      (payload as { name?: string | null }).name,
+    );
+    const usernameNorm = normalizeUsernameForUniq(trimmed);
+    const existing = (await sql`
+      SELECT id FROM newchums.users WHERE username_norm = ${usernameNorm} LIMIT 1
+    `) as { id: string }[];
+    if (existing.length === 0) {
+      return c.json({ available: true });
+    }
+    return c.json({ available: existing[0].id === appUserId });
+  } catch {
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
 app.get("/profile", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string") {
@@ -662,11 +696,11 @@ app.get("/profile", async (c) => {
       (payload as { name?: string | null }).name,
     );
     const userRows = (await sql`
-      SELECT name, username, email FROM newchums.users WHERE id = ${appUserId} LIMIT 1
-    `) as Array<{ name: string | null; username: string | null; email: string }>;
+      SELECT name, username, email, date_of_birth FROM newchums.users WHERE id = ${appUserId} LIMIT 1
+    `) as Array<{ name: string | null; username: string | null; email: string; date_of_birth: string | Date | null }>;
     const userInfo = userRows[0];
     const profileRows = (await sql`
-      SELECT home_city, home_lat, home_lng, travel_radius_km, email_chat_digest, email_new_events
+      SELECT home_city, home_lat, home_lng, travel_radius_km, email_chat_digest, email_new_events, bio
       FROM user_profile WHERE user_id = ${appUserId} LIMIT 1
     `) as Array<{
       home_city: string | null;
@@ -675,6 +709,7 @@ app.get("/profile", async (c) => {
       travel_radius_km: number;
       email_chat_digest: boolean;
       email_new_events: boolean;
+      bio?: string | null;
     }>;
     const profile = profileRows[0];
     const interestRows = (await sql`
@@ -688,6 +723,12 @@ app.get("/profile", async (c) => {
     const displayName = userInfo?.name ?? null;
     const handle = userInfo?.username ?? null;
     const email = userInfo?.email ?? payload.email ?? null;
+    const dateOfBirth = userInfo?.date_of_birth
+      ? (typeof userInfo.date_of_birth === "string"
+          ? userInfo.date_of_birth
+          : (userInfo.date_of_birth as Date).toISOString().slice(0, 10))
+      : null;
+    const bio = profile?.bio ?? null;
     if (!profile) {
       return c.json({
         ok: true,
@@ -695,6 +736,8 @@ app.get("/profile", async (c) => {
           name: displayName,
           username: handle,
           email,
+          date_of_birth: null,
+          bio: null,
           home_city: null,
           home_lat: null,
           home_lng: null,
@@ -712,6 +755,8 @@ app.get("/profile", async (c) => {
         name: displayName,
         username: handle,
         email,
+        date_of_birth: dateOfBirth,
+        bio,
         home_city: profile.home_city,
         home_lat: profile.home_lat,
         home_lng: profile.home_lng,
@@ -754,6 +799,8 @@ app.put("/profile", async (c) => {
     );
     const body = (await c.req.json()) as {
       name?: string | null;
+      bio?: string | null;
+      date_of_birth?: string | null;
       home_city?: string | null;
       home_lat?: number | string | null;
       home_lng?: number | string | null;
@@ -762,8 +809,48 @@ app.put("/profile", async (c) => {
       email_chat_digest?: boolean;
       email_new_events?: boolean;
     };
+
+    if ("date_of_birth" in body && body.date_of_birth !== undefined) {
+      const trimmedDob = body.date_of_birth != null ? String(body.date_of_birth).trim() : "";
+      if (trimmedDob) {
+        const parts = parseDateOnly(trimmedDob);
+        if (!parts) {
+          return c.json(
+            { ok: false, error: { code: "INVALID_DATE", message: "Invalid date format" } },
+            400,
+          );
+        }
+        const today = new Date();
+        const birth = new Date(parts.y, parts.m - 1, parts.d);
+        const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        if (birth > todayMidnight) {
+          return c.json(
+            { ok: false, error: { code: "FUTURE_DATE", message: "Date cannot be in the future" } },
+            400,
+          );
+        }
+        if (!isAtLeast18(trimmedDob)) {
+          return c.json(
+            {
+              ok: false,
+              error: { code: "UNDERAGE", message: "NewChums is currently available to people 18 and older." },
+            },
+            400,
+          );
+        }
+      }
+    }
+
+    const BIO_MAX_LENGTH = 500;
+    if ("bio" in body && body.bio != null && String(body.bio).length > BIO_MAX_LENGTH) {
+      return c.json(
+        { ok: false, error: { code: "INVALID_INPUT", message: `Bio must be ${BIO_MAX_LENGTH} characters or less` } },
+        400,
+      );
+    }
+
     const existingRows = (await sql`
-      SELECT home_city, home_lat, home_lng, travel_radius_km, email_chat_digest, email_new_events
+      SELECT home_city, home_lat, home_lng, travel_radius_km, email_chat_digest, email_new_events, bio
       FROM user_profile WHERE user_id = ${appUserId} LIMIT 1
     `) as Array<{
       home_city: string | null;
@@ -772,6 +859,7 @@ app.put("/profile", async (c) => {
       travel_radius_km: number;
       email_chat_digest: boolean;
       email_new_events: boolean;
+      bio?: string | null;
     }>;
     const existing = existingRows[0];
     const travel_radius_km =
@@ -910,6 +998,12 @@ app.put("/profile", async (c) => {
       "home_city" in body
         ? (body.home_city ?? null)
         : (existing?.home_city ?? null);
+    const bio =
+      "bio" in body && body.bio !== undefined
+        ? (body.bio != null && String(body.bio).trim() !== ""
+            ? String(body.bio).trim().slice(0, BIO_MAX_LENGTH)
+            : null)
+        : (existing?.bio ?? null);
     const email_chat_digest =
       "email_chat_digest" in body
         ? (body.email_chat_digest ?? true)
@@ -925,8 +1019,8 @@ app.put("/profile", async (c) => {
       Number.isFinite(home_lng);
     const upsertQuery = hasLocation
       ? sql`
-          INSERT INTO user_profile (user_id, home_city, home_lat, home_lng, home_location, travel_radius_km, email_chat_digest, email_new_events)
-          VALUES (${appUserId}, ${home_city}, ${home_lat}, ${home_lng}, ST_SetSRID(ST_MakePoint(${home_lng}, ${home_lat}), 4326)::geography, ${travel_radius_km}, ${email_chat_digest}, ${email_new_events})
+          INSERT INTO user_profile (user_id, home_city, home_lat, home_lng, home_location, travel_radius_km, email_chat_digest, email_new_events, bio)
+          VALUES (${appUserId}, ${home_city}, ${home_lat}, ${home_lng}, ST_SetSRID(ST_MakePoint(${home_lng}, ${home_lat}), 4326)::geography, ${travel_radius_km}, ${email_chat_digest}, ${email_new_events}, ${bio})
           ON CONFLICT (user_id) DO UPDATE SET
             home_city = EXCLUDED.home_city,
             home_lat = EXCLUDED.home_lat,
@@ -934,11 +1028,12 @@ app.put("/profile", async (c) => {
             home_location = ST_SetSRID(ST_MakePoint(${home_lng}, ${home_lat}), 4326)::geography,
             travel_radius_km = EXCLUDED.travel_radius_km,
             email_chat_digest = EXCLUDED.email_chat_digest,
-            email_new_events = EXCLUDED.email_new_events
+            email_new_events = EXCLUDED.email_new_events,
+            bio = EXCLUDED.bio
         `
       : sql`
-          INSERT INTO user_profile (user_id, home_city, home_lat, home_lng, home_location, travel_radius_km, email_chat_digest, email_new_events)
-          VALUES (${appUserId}, ${home_city}, ${home_lat}, ${home_lng}, NULL, ${travel_radius_km}, ${email_chat_digest}, ${email_new_events})
+          INSERT INTO user_profile (user_id, home_city, home_lat, home_lng, home_location, travel_radius_km, email_chat_digest, email_new_events, bio)
+          VALUES (${appUserId}, ${home_city}, ${home_lat}, ${home_lng}, NULL, ${travel_radius_km}, ${email_chat_digest}, ${email_new_events}, ${bio})
           ON CONFLICT (user_id) DO UPDATE SET
             home_city = EXCLUDED.home_city,
             home_lat = EXCLUDED.home_lat,
@@ -946,12 +1041,21 @@ app.put("/profile", async (c) => {
             home_location = NULL,
             travel_radius_km = EXCLUDED.travel_radius_km,
             email_chat_digest = EXCLUDED.email_chat_digest,
-            email_new_events = EXCLUDED.email_new_events
+            email_new_events = EXCLUDED.email_new_events,
+            bio = EXCLUDED.bio
         `;
     const txQueries: unknown[] = [upsertQuery];
     if ("name" in body && body.name !== undefined) {
       const nameVal = body.name != null && String(body.name).trim() !== "" ? String(body.name).trim() : null;
       txQueries.push(sql`UPDATE newchums.users SET name = ${nameVal} WHERE id = ${appUserId}`);
+    }
+    if ("date_of_birth" in body && body.date_of_birth !== undefined) {
+      const trimmedDob = body.date_of_birth != null ? String(body.date_of_birth).trim() : "";
+      const parts = trimmedDob ? parseDateOnly(trimmedDob) : null;
+      const dobVal = parts
+        ? `${parts.y}-${String(parts.m).padStart(2, "0")}-${String(parts.d).padStart(2, "0")}`
+        : null;
+      txQueries.push(sql`UPDATE newchums.users SET date_of_birth = ${dobVal} WHERE id = ${appUserId}`);
     }
     if (rawInterestSlugs !== null) {
       txQueries.push(
@@ -968,11 +1072,11 @@ app.put("/profile", async (c) => {
     }
     await sql.transaction(txQueries);
     const userRowsAfter = (await sql`
-      SELECT name, username, email FROM newchums.users WHERE id = ${appUserId} LIMIT 1
-    `) as Array<{ name: string | null; username: string | null; email: string }>;
+      SELECT name, username, email, date_of_birth FROM newchums.users WHERE id = ${appUserId} LIMIT 1
+    `) as Array<{ name: string | null; username: string | null; email: string; date_of_birth: string | Date | null }>;
     const userAfter = userRowsAfter[0];
     const profileRows = (await sql`
-      SELECT home_city, home_lat, home_lng, travel_radius_km, email_chat_digest, email_new_events
+      SELECT home_city, home_lat, home_lng, travel_radius_km, email_chat_digest, email_new_events, bio
       FROM user_profile WHERE user_id = ${appUserId} LIMIT 1
     `) as Array<{
       home_city: string | null;
@@ -981,6 +1085,7 @@ app.put("/profile", async (c) => {
       travel_radius_km: number;
       email_chat_digest: boolean;
       email_new_events: boolean;
+      bio?: string | null;
     }>;
     const interestRows = (await sql`
       SELECT i.slug FROM user_interests ui
@@ -989,17 +1094,25 @@ app.put("/profile", async (c) => {
       ORDER BY i.sort_order, i.name
     `) as { slug: string }[];
     const profile = profileRows[0]!;
+    const dateOfBirthAfter = userAfter?.date_of_birth
+      ? (typeof userAfter.date_of_birth === "string"
+          ? userAfter.date_of_birth
+          : (userAfter.date_of_birth as Date).toISOString().slice(0, 10))
+      : null;
     return c.json({
       ok: true,
       profile: {
         name: userAfter?.name ?? null,
         username: userAfter?.username ?? null,
         email: userAfter?.email ?? null,
+        date_of_birth: dateOfBirthAfter,
+        bio: profile.bio ?? null,
         home_city: profile.home_city,
         home_lat: profile.home_lat,
         home_lng: profile.home_lng,
         travel_radius_km: profile.travel_radius_km,
         interest_slugs: interestRows.map((r) => r.slug),
+        interest_items: interestRows.map((r) => ({ slug: r.slug, name: slugToName(r.slug) })),
         email_chat_digest: profile.email_chat_digest,
         email_new_events: profile.email_new_events,
       },
