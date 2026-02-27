@@ -78,6 +78,7 @@ npm run dev
 - AUTH_SECRET
 - AUTH_TRUST_HOST=true
 - GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+- NEXT_PUBLIC_GOOGLE_MAPS_API_KEY — optional; required for Profile Location Google Places autocomplete. If unset, address field works as plain text input.
 - NEXT_PUBLIC_API_BASE_URL — optional; defaults from .env.development (http://127.0.0.1:8787). Only needed if overriding.
 
 **Web env by mode:**
