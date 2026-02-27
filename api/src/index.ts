@@ -848,13 +848,24 @@ app.put("/profile", async (c) => {
       : (existing?.home_lng ?? null);
     let finalInterestSlugs: string[] = [];
     const rawInterestSlugs = "interest_slugs" in body ? (body.interest_slugs ?? []) : null;
+    const rawInterestItems = "interest_items" in body
+      ? (body.interest_items as Array<{ slug?: string; name?: string }> | null)
+      : null;
+    const nameBySlug = new Map<string, string>();
+    if (Array.isArray(rawInterestItems)) {
+      for (const it of rawInterestItems) {
+        const slug = it?.slug != null ? nameToSlug(String(it.slug).trim()) : "";
+        const name = it?.name != null ? String(it.name).trim() : "";
+        if (slug && name) nameBySlug.set(slug.toLowerCase(), name);
+      }
+    }
     if (rawInterestSlugs !== null) {
       const normalized = rawInterestSlugs
         .map((s) => nameToSlug(String(s).trim()))
         .filter((s) => s.length > 0);
       finalInterestSlugs = [...new Set(normalized)];
       for (const slug of finalInterestSlugs) {
-        const nameForValidation = slugToName(slug);
+        const nameForValidation = nameBySlug.get(slug.toLowerCase()) ?? slugToName(slug);
         const v = validateInterestName(nameForValidation);
         if (!v.valid) {
           return c.json(
@@ -869,7 +880,7 @@ app.put("/profile", async (c) => {
       const existingBySlug = new Map(existingRows.map((r) => [r.slug.toLowerCase(), r.id]));
       for (const slug of finalInterestSlugs) {
         if (!existingBySlug.has(slug.toLowerCase())) {
-          const name = slugToName(slug);
+          const name = nameBySlug.get(slug.toLowerCase()) ?? slugToName(slug);
           try {
             await sql`
               INSERT INTO interests (name, category, slug, sort_order, is_seed)

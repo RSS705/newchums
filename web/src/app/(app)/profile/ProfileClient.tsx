@@ -28,6 +28,7 @@ type Profile = {
 };
 
 const MAX_INTEREST_LENGTH = 50;
+const CHIPS_COLLAPSED_COUNT = 12;
 
 export default function ProfileClient() {
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -43,6 +44,7 @@ export default function ProfileClient() {
   const [suggestions, setSuggestions] = useState<InterestOption[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [inputValue, setInputValue] = useState("");
+  const [showAllChips, setShowAllChips] = useState(false);
 
   const toast = useToast();
 
@@ -120,6 +122,11 @@ export default function ProfileClient() {
     [interestItems],
   );
 
+  const sortedInterestItems = useMemo(
+    () => [...interestItems].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })),
+    [interestItems],
+  );
+
   const isDirty = useCallback(() => {
     if (!profile) return true;
     if (homeAddress !== (profile.home_city ?? "")) return true;
@@ -151,6 +158,7 @@ export default function ProfileClient() {
           home_lng: homeLng,
           travel_radius_km: travelRadiusKm,
           interest_slugs: interestItems.map((i) => i.slug),
+          interest_items: interestItems.map((i) => ({ slug: i.slug, name: i.name })),
         }),
       });
 
@@ -184,7 +192,7 @@ export default function ProfileClient() {
         : option;
     if (!item.name?.trim() || !item.slug) return;
     if (item.name.length > MAX_INTEREST_LENGTH) {
-      toast.error(`Interest must be ${MAX_INTEREST_LENGTH} characters or less`);
+      toast.error(`Hobby must be ${MAX_INTEREST_LENGTH} characters or less`);
       return;
     }
     const already = interestItems.some((i) => isDuplicate(i, item));
@@ -198,7 +206,7 @@ export default function ProfileClient() {
         Profile
       </Typography>
       <Typography color="text.secondary">
-        Set your interests, location, and travel radius to find events near you.
+        Tell us what you enjoy and how far you’re willing to travel. We’ll help you find your people.
       </Typography>
 
       <AppCard>
@@ -220,7 +228,7 @@ export default function ProfileClient() {
             }}
             label="Home location"
             placeholder="Enter your address"
-            helperText="Enter your home address for accurate distance calculations."
+            helperText="Enter your home address so we can show accurate distances to gatherings."
           />
           <DistanceSelect
             value={
@@ -238,15 +246,23 @@ export default function ProfileClient() {
 
       <AppCard>
         <Stack spacing={2}>
-          <Typography variant="h6">Interests</Typography>
+          <Typography variant="h6">Hobbies</Typography>
           <Typography color="text.secondary" variant="body2">
-            Add interests you’d like to see events for. Type to search or create new ones.
+            Add hobbies you enjoy. You can search existing ones or create your own.
           </Typography>
           <Autocomplete
             freeSolo
             multiple
             filterOptions={(x) => x}
             options={suggestions}
+            sx={{
+              "& .MuiOutlinedInput-root": { alignItems: "center" },
+              "& .MuiInputBase-input": {
+                paddingTop: 14,
+                paddingBottom: 14,
+                lineHeight: 1.4375,
+              },
+            }}
             value={interestItems}
             inputValue={inputValue}
             onInputChange={(_, v) => setInputValue(v)}
@@ -263,26 +279,67 @@ export default function ProfileClient() {
             renderInput={(params) => (
               <TextField
                 {...params}
-                label="Add interests"
+                label="Add hobbies"
                 placeholder="Type to search or create..."
+                fullWidth
+                size="medium"
+                variant="outlined"
+                onKeyDown={(e) => {
+                  if (e.key === "Backspace" && !inputValue) {
+                    e.preventDefault();
+                  }
+                }}
               />
             )}
-            renderTags={(values, getTagProps) =>
-              values.map((item, i) => {
-                const { key, ...tagProps } = getTagProps({ index: i });
-                return (
-                  <Chip
-                    key={key}
-                    label={item.name}
-                    size="small"
-                    color="primary"
-                    variant="filled"
-                    {...tagProps}
-                  />
-                );
-              })
-            }
+            renderTags={() => null}
           />
+          {interestItems.length > 0 ? (
+            <Stack spacing={1}>
+              <Stack direction="row" alignItems="center" flexWrap="wrap" gap={0.5}>
+                <Typography variant="body2" color="text.secondary">
+                  {interestItems.length} {interestItems.length === 1 ? "hobby" : "hobbies"} selected
+                </Typography>
+                {interestItems.length > CHIPS_COLLAPSED_COUNT && (
+                  <Typography
+                    component="button"
+                    type="button"
+                    variant="body2"
+                    onClick={() => setShowAllChips((v) => !v)}
+                    sx={{
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      color: "primary.main",
+                      textDecoration: "underline",
+                      "&:hover": { color: "primary.dark" },
+                    }}
+                  >
+                    {showAllChips ? "Show fewer" : `Show all (${interestItems.length})`}
+                  </Typography>
+                )}
+              </Stack>
+              <Stack direction="row" flexWrap="wrap" gap={0.5} useFlexGap>
+                {(showAllChips ? sortedInterestItems : sortedInterestItems.slice(0, CHIPS_COLLAPSED_COUNT)).map(
+                  (item) => (
+                    <Chip
+                      key={item.slug}
+                      label={item.name}
+                      size="small"
+                      color="primary"
+                      variant="filled"
+                      onDelete={() =>
+                        setInterestItems((prev) => prev.filter((i) => i.slug !== item.slug))
+                      }
+                    />
+                  )
+                )}
+              </Stack>
+            </Stack>
+          ) : (
+            <Typography variant="body2" color="text.secondary">
+              Add a few hobbies to help others find you.
+            </Typography>
+          )}
         </Stack>
       </AppCard>
 
