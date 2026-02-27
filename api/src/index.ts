@@ -661,6 +661,10 @@ app.get("/profile", async (c) => {
       payload.email,
       (payload as { name?: string | null }).name,
     );
+    const userRows = (await sql`
+      SELECT name, username, email FROM newchums.users WHERE id = ${appUserId} LIMIT 1
+    `) as Array<{ name: string | null; username: string | null; email: string }>;
+    const userInfo = userRows[0];
     const profileRows = (await sql`
       SELECT home_city, home_lat, home_lng, travel_radius_km, email_chat_digest, email_new_events
       FROM user_profile WHERE user_id = ${appUserId} LIMIT 1
@@ -681,10 +685,16 @@ app.get("/profile", async (c) => {
       ORDER BY i.sort_order, i.name
     `) as { slug: string; name: string }[];
     const interest_items = interestRows.map((r) => ({ slug: r.slug, name: r.name }));
+    const displayName = userInfo?.name ?? null;
+    const handle = userInfo?.username ?? null;
+    const email = userInfo?.email ?? payload.email ?? null;
     if (!profile) {
       return c.json({
         ok: true,
         profile: {
+          name: displayName,
+          username: handle,
+          email,
           home_city: null,
           home_lat: null,
           home_lng: null,
@@ -699,6 +709,9 @@ app.get("/profile", async (c) => {
     return c.json({
       ok: true,
       profile: {
+        name: displayName,
+        username: handle,
+        email,
         home_city: profile.home_city,
         home_lat: profile.home_lat,
         home_lng: profile.home_lng,
@@ -740,6 +753,7 @@ app.put("/profile", async (c) => {
       (payload as { name?: string | null }).name,
     );
     const body = (await c.req.json()) as {
+      name?: string | null;
       home_city?: string | null;
       home_lat?: number | string | null;
       home_lng?: number | string | null;
@@ -935,6 +949,10 @@ app.put("/profile", async (c) => {
             email_new_events = EXCLUDED.email_new_events
         `;
     const txQueries: unknown[] = [upsertQuery];
+    if ("name" in body && body.name !== undefined) {
+      const nameVal = body.name != null && String(body.name).trim() !== "" ? String(body.name).trim() : null;
+      txQueries.push(sql`UPDATE newchums.users SET name = ${nameVal} WHERE id = ${appUserId}`);
+    }
     if (rawInterestSlugs !== null) {
       txQueries.push(
         sql`DELETE FROM user_interests WHERE user_id = ${appUserId}`,
@@ -949,6 +967,10 @@ app.put("/profile", async (c) => {
       );
     }
     await sql.transaction(txQueries);
+    const userRowsAfter = (await sql`
+      SELECT name, username, email FROM newchums.users WHERE id = ${appUserId} LIMIT 1
+    `) as Array<{ name: string | null; username: string | null; email: string }>;
+    const userAfter = userRowsAfter[0];
     const profileRows = (await sql`
       SELECT home_city, home_lat, home_lng, travel_radius_km, email_chat_digest, email_new_events
       FROM user_profile WHERE user_id = ${appUserId} LIMIT 1
@@ -970,6 +992,9 @@ app.put("/profile", async (c) => {
     return c.json({
       ok: true,
       profile: {
+        name: userAfter?.name ?? null,
+        username: userAfter?.username ?? null,
+        email: userAfter?.email ?? null,
         home_city: profile.home_city,
         home_lat: profile.home_lat,
         home_lng: profile.home_lng,
