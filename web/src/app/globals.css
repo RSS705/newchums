@@ -16,7 +16,15 @@ body {
   height: 100%;
   width: 100%;
   max-width: 100vw;
-  overflow-x: hidden;
+  overflow-x: hidden; /* fallback for older browsers */
+}
+
+@supports (overflow-x: clip) {
+  html,
+  body {
+    /* clip avoids extra scrollbar that overflow-x: hidden can introduce on focus */
+    overflow-x: clip;
+  }
 }
 
 body {
@@ -25,6 +33,12 @@ body {
   font-family: var(--font-plus-jakarta), system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Google Places autocomplete dropdown: ensure visible above MUI/z-index layers */
+.pac-container {
+  z-index: 1400 !important;
+  font-family: inherit;
 }
 
 a {

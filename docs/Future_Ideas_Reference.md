@@ -48,9 +48,7 @@ This document is meant to:
   - Do you want to set up hobbies now?
   - Do you want to set up your location radius?
   - Do you want to set chum preferences?
-- Consider a “Quick Start” vs “Guided Setup” option
 - Explore lightweight onboarding checklist with progress bar
-- Test delayed hobby selection (after first login instead)
 
 ---
 
@@ -66,9 +64,9 @@ This document is meant to:
 
 ## Profile
 
-- Visual hobby tags (icon + color)
+- Section to specify what kind of chums you are looking for.
+
 - Public vs private profile toggle
-- “Why I joined NewChums” optional prompt
 - Profile completeness indicator
 - Soft gamification (levels, badges)
 - Badge for inviting someone else into the app.

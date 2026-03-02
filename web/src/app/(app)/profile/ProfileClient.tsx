@@ -27,6 +27,7 @@ import { TRAVEL_RADIUS_OPTIONS } from "@/config/travelRadius";
 import { validateCleanText } from "@/lib/contentSafety";
 import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
 import { isDuplicate, nameToSlug, slugToName } from "@/lib/interestUtils";
+import { loadGooglePlacesScript } from "@/lib/loadGooglePlaces";
 
 type InterestOption = { id?: string; name: string; slug: string };
 type Profile = {
@@ -210,6 +211,10 @@ export default function ProfileClient() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    loadGooglePlacesScript().catch(() => {});
+  }, []);
 
   const interestSlugsSet = useMemo(
     () => new Set(interestItems.map((i) => i.slug.toLowerCase())),
@@ -667,7 +672,7 @@ export default function ProfileClient() {
             }}
             label="Home location"
             placeholder="Enter your address"
-            helperText="Enter your home address so we can show accurate distances to gatherings."
+            helperText="Enter your home address so we can show accurate distances to gatherings. This will not be shared publicly."
           />
           <DistanceSelect
             value={
