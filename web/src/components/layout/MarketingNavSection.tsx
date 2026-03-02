@@ -9,6 +9,8 @@ import { headerNavLinks } from "@/config/nav";
 type MarketingNavSectionProps = {
   /** Called when a link is clicked (e.g. to close drawer) */
   onLinkClick?: () => void;
+  /** Section header text; default "More Goodness" */
+  sectionTitle?: string;
 };
 
 /**
@@ -16,7 +18,7 @@ type MarketingNavSectionProps = {
  * Used in AppShell (logged-in drawer) and LandingLayout (logged-out drawer).
  * Typography slightly larger for improved mobile readability.
  */
-export default function MarketingNavSection({ onLinkClick }: MarketingNavSectionProps) {
+export default function MarketingNavSection({ onLinkClick, sectionTitle = "More Goodness" }: MarketingNavSectionProps) {
   return (
     <Box sx={{ px: 2, py: 2 }}>
       <Typography
@@ -30,7 +32,7 @@ export default function MarketingNavSection({ onLinkClick }: MarketingNavSection
           mb: 1.5,
         }}
       >
-        More Goodness
+        {sectionTitle}
       </Typography>
       <Stack spacing={0.5}>
         {headerNavLinks.map((link) => (

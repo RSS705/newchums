@@ -421,7 +421,7 @@ export default function ProfileClient() {
       </Box>
 
       <AppCard sx={{ borderRadius: { xs: 2, sm: 2.5 }, overflow: "hidden" }}>
-        <Stack spacing={2}>
+        <Stack spacing={{ xs: 0, sm: 2 }}>
           <Typography variant="h6" sx={{ fontSize: { xs: "1rem", sm: "1.125rem" } }}>
             About you
           </Typography>

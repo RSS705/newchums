@@ -4,6 +4,7 @@ import AppBar from "@mui/material/AppBar";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Container from "@mui/material/Container";
+import Typography from "@mui/material/Typography";
 import Divider from "@mui/material/Divider";
 import Drawer from "@mui/material/Drawer";
 import Stack from "@mui/material/Stack";
@@ -18,6 +19,7 @@ import MarketingNavSection from "@/components/layout/MarketingNavSection";
 import LandingFooter from "./LandingFooter";
 
 const LOGGED_OUT_DRAWER_WIDTH = 260;
+const APP_BAR_HEIGHT_MOBILE = 64;
 
 /**
  * Single source of truth for landing horizontal gutters.
@@ -54,9 +56,13 @@ export default function LandingLayout({
       }}
     >
       <AppBar
-        position="sticky"
+        position="fixed"
         elevation={0}
         sx={{
+          zIndex: (theme) => theme.zIndex.drawer + 1,
+          borderBottom: 1,
+          borderColor: "divider",
+          borderBottomColor: "grey.200",
           backgroundColor: "background.default",
           color: "text.secondary",
           minHeight: HEADER_MIN_HEIGHT,
@@ -68,7 +74,7 @@ export default function LandingLayout({
               color="inherit"
               aria-label="open navigation"
               edge="start"
-              onClick={() => setMobileOpen(true)}
+              onClick={() => setMobileOpen((prev) => !prev)}
               sx={{ mr: 0, display: { md: "none" } }}
             >
               <MenuRoundedIcon />
@@ -99,7 +105,7 @@ export default function LandingLayout({
         />
       </AppBar>
 
-      {/* Mobile drawer (logged-out): More Goodness + Login/Sign up */}
+      {/* Mobile drawer (logged-out): Get Started first, Learn More below; header stays visible */}
       <Drawer
         variant="temporary"
         open={mobileOpen}
@@ -112,14 +118,25 @@ export default function LandingLayout({
             width: LOGGED_OUT_DRAWER_WIDTH,
             display: "flex",
             flexDirection: "column",
+            top: APP_BAR_HEIGHT_MOBILE,
+            height: `calc(100% - ${APP_BAR_HEIGHT_MOBILE}px)`,
           },
         }}
       >
-        <Box component="div" sx={{ minHeight: HEADER_MIN_HEIGHT }} />
-        <Divider />
-        <MarketingNavSection onLinkClick={() => setMobileOpen(false)} />
-        <Divider sx={{ borderColor: "divider", opacity: 0.6, mt: 0 }} />
-        <Box sx={{ px: 2, py: 2, mt: "auto" }}>
+        <Box sx={{ px: 2, py: 2.5, flexShrink: 0 }}>
+          <Typography
+            variant="body2"
+            sx={{
+              display: "block",
+              color: "text.secondary",
+              fontWeight: 600,
+              letterSpacing: 0.5,
+              fontSize: "0.9375rem",
+              mb: 1.5,
+            }}
+          >
+            Get Started
+          </Typography>
           <Stack direction="column" spacing={1}>
             <Button
               component={Link}
@@ -145,9 +162,11 @@ export default function LandingLayout({
             </Button>
           </Stack>
         </Box>
+        <Divider sx={{ borderColor: "divider", opacity: 0.6 }} />
+        <MarketingNavSection sectionTitle="Learn More" onLinkClick={() => setMobileOpen(false)} />
       </Drawer>
 
-      <Box component="main" sx={{ flex: 1 }}>
+      <Box component="main" sx={{ flex: 1, pt: { xs: 8, lg: 10 } }}>
         <LandingContainer>{children}</LandingContainer>
       </Box>
 
