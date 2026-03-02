@@ -31,7 +31,7 @@ import { usePathname, useRouter } from "next/navigation";
 import * as React from "react";
 import { signOut } from "next-auth/react";
 import { appNavItems, createEventHref } from "@/config/nav";
-import { apiFetch, getApiBaseUrl } from "@/lib/apiClient";
+import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import UserAvatar from "@/components/common/UserAvatar";
 import SiteHeader, { HEADER_MIN_HEIGHT } from "@/components/layout/SiteHeader";
 import MarketingNavSection from "@/components/layout/MarketingNavSection";
@@ -81,7 +81,7 @@ export default function AppShell({ children, user }: AppShellProps) {
         if (!cancelled && data.ok && data.profile) {
           setNavProfile(data.profile);
           if (data.profile.avatar_url) {
-            cachedAvatarUrl = `${getApiBaseUrl()}${data.profile.avatar_url}`;
+            cachedAvatarUrl = `${getAvatarBaseUrl()}${data.profile.avatar_url}`;
           } else {
             cachedAvatarUrl = null;
           }
@@ -93,7 +93,7 @@ export default function AppShell({ children, user }: AppShellProps) {
 
   const accountMenuOpen = Boolean(accountMenuAnchor);
   const displayName = navProfile?.name?.trim() || user?.name?.trim() || "there";
-  const avatarUrl = navProfile?.avatar_url ? `${getApiBaseUrl()}${navProfile.avatar_url}` : null;
+  const avatarUrl = navProfile?.avatar_url ? `${getAvatarBaseUrl()}${navProfile.avatar_url}` : null;
   const isLoading = Boolean(user) && navProfile === null;
   const effectiveAvatarUrl = avatarUrl ?? cachedAvatarUrl;
   const showWaveIcon = !isLoading && !effectiveAvatarUrl;

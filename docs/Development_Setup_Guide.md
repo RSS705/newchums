@@ -15,7 +15,7 @@ Last Updated: February 26, 2026
 - **Mobile UI:** SectionHeader centered with dynamic underline; Explore toggle pills centered with gap; EventListItem: no distance badge, full-width Join; welcome text centered on mobile. Profile: responsive header, avatar, cards; full-width Save; avatar dialog with mobile margins.
 - **Production environment:** Single deploy target (newchums-web-dev, newchums-api); domain newchums.com.
 - **Build:** `cd web && npm run build` passes. No deploy run this session.
-- **Avatar storage:** R2 bucket `newchums-media` (MEDIA_BUCKET binding). API wrangler.toml defines r2_buckets. Users table has avatar_key; GET /users/:userId/avatar serves from R2. **Note:** Avatars uploaded in local dev (wrangler dev) go to a simulated R2, not production R2. To see an avatar in prod, upload it while on production (newchums.com). Profile/avatar endpoints only return avatar_url when the R2 object exists.
+- **Avatar storage:** R2 bucket `newchums-media` (MEDIA_BUCKET binding). Users table has avatar_key (object key like `avatars/<userId>/<ts>.webp`). GET /users/:userId/avatar serves from R2. **Cross-env consistency (shared DB):** In web/.env.local set `NEXT_PUBLIC_AVATAR_BASE_URL=https://newchums-api.robsmith775.workers.dev`. The client routes all media operations (init, upload, finalize, delete) and avatar display through this URL, so both local and prod use the same R2. No `wrangler dev --remote` required.
 - **Next session:** Deploy to verify mobile UX changes; wire real data to Your Plans if ready.
 
 ---
@@ -85,10 +85,11 @@ npm run dev
 - GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
 - NEXT_PUBLIC_GOOGLE_MAPS_API_KEY — optional; required for Profile Location Google Places autocomplete. If unset, address field works as plain text input.
 - NEXT_PUBLIC_API_BASE_URL — optional; defaults from .env.development (http://127.0.0.1:8787). Only needed if overriding.
+- NEXT_PUBLIC_AVATAR_BASE_URL — optional; base URL for media/avatar operations (init, upload, finalize, delete, display). Defaults to NEXT_PUBLIC_API_BASE_URL. **When sharing DB with prod:** set to prod API URL (`https://newchums-api.robsmith775.workers.dev`) so all avatar operations use prod R2; no `wrangler dev --remote` needed.
 
 **Web env by mode:**
 - **Local dev:** `.env.development` → `NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8787`. `.env.local` overrides if present.
-- **Production deploy:** `npm run deploy` sets `NEXT_PUBLIC_API_BASE_URL=https://newchums-api.robsmith775.workers.dev` so the client bundle always calls the public API — never localhost.
+- **Production deploy:** `npm run deploy` sets `NEXT_PUBLIC_API_BASE_URL` and `NEXT_PUBLIC_AVATAR_BASE_URL` to prod API URL so the client bundle never uses localhost.
 
 **API (api/.dev.vars):**
 - DATABASE_URL (required; non-empty; same Neon URL as web/.env.local)
@@ -242,6 +243,8 @@ Local config now matches production; deploy no longer triggers config drift warn
 | /auth/signup, /profile, /interests return 404 in prod | Web points to root worker newchums-api. Deploy with `npm run deploy` (not `--env production`). |
 | Signup / API calls go to localhost in prod | Client bundle was built with dev env. Use `npm run deploy` (not raw `next build`); it sets `NEXT_PUBLIC_API_BASE_URL` to prod. Hard refresh / clear cache. |
 | Password reset link goes to localhost | Ensure `WEB_BASE_URL` in api/.dev.vars (local) or wrangler vars (prod) is correct. Prod must be `https://newchums.com`. |
+| Avatar missing when sharing DB (local vs prod) | In web/.env.local set `NEXT_PUBLIC_AVATAR_BASE_URL=https://newchums-api.robsmith775.workers.dev`. Media operations (init, upload, finalize, delete) and avatar display are routed through prod API. Restart web dev server after changing. Profile API now returns avatar_url whenever avatar_key is set (no R2 check) so display works. |
+| Avatar upload fails with 401 when using AVATAR_BASE_URL | Prod API must accept the JWT from local session. Ensure `NEXTAUTH_SECRET` (API prod secret) matches `AUTH_SECRET` (web). Set `npx wrangler secret list` and `npx wrangler secret put NEXTAUTH_SECRET` if needed. |
 
 ---
 

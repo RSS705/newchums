@@ -68,6 +68,7 @@ const CORS_ALLOWED_ORIGINS = new Set([
   "https://newchums.com",
   "https://www.newchums.com",
   "http://localhost:3000",
+  "http://127.0.0.1:3000",
 ]);
 
 app.use("*", async (c, next) => {
@@ -961,14 +962,13 @@ app.get("/profile", async (c) => {
     const bio = profile?.bio ?? null;
     const avatarKey = userInfo?.avatar_key ?? null;
     const avatarUpdatedAt = userInfo?.avatar_updated_at;
-    // Only return avatar_url if R2 object exists (avoids 404 when avatar was uploaded in local dev but prod R2 is empty)
-    let avatarUrl: string | null = null;
-    if (avatarKey && c.env.MEDIA_BUCKET) {
-      const obj = await c.env.MEDIA_BUCKET.head(avatarKey);
-      if (obj) {
-        avatarUrl = `/users/${appUserId}/avatar?v=${avatarUpdatedAt ? new Date(avatarUpdatedAt as Date).getTime() : 0}`;
-      }
-    }
+    // Return avatar_url when avatar_key is set. Client uses getAvatarBaseUrl() which may point to a
+    // different API (e.g. prod when sharing DB), so we don't check R2 here—avoids empty avatar_url
+    // when local API has different R2 than where uploads were written.
+    const avatarUrl =
+      avatarKey && c.env.MEDIA_BUCKET
+        ? `/users/${appUserId}/avatar?v=${avatarUpdatedAt ? new Date(avatarUpdatedAt as Date).getTime() : 0}`
+        : null;
 
     if (!profile) {
       return c.json({
@@ -1370,13 +1370,10 @@ app.put("/profile", async (c) => {
       : null;
     const avatarKey = userAfter?.avatar_key ?? null;
     const avatarUpdatedAt = userAfter?.avatar_updated_at;
-    let avatarUrl: string | null = null;
-    if (avatarKey && c.env.MEDIA_BUCKET) {
-      const obj = await c.env.MEDIA_BUCKET.head(avatarKey);
-      if (obj) {
-        avatarUrl = `/users/${appUserId}/avatar?v=${avatarUpdatedAt ? new Date(avatarUpdatedAt as Date).getTime() : 0}`;
-      }
-    }
+    const avatarUrl =
+      avatarKey && c.env.MEDIA_BUCKET
+        ? `/users/${appUserId}/avatar?v=${avatarUpdatedAt ? new Date(avatarUpdatedAt as Date).getTime() : 0}`
+        : null;
     return c.json({
       ok: true,
       profile: {

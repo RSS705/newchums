@@ -17,7 +17,7 @@ import dayjs from "dayjs";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Cropper, { type Area } from "react-easy-crop";
-import { apiFetch, getApiBaseUrl } from "@/lib/apiClient";
+import { apiFetch, getAvatarBaseUrl, getMediaApiBaseUrl } from "@/lib/apiClient";
 import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
 import DistanceSelect from "@/components/common/DistanceSelect";
 import NCDatePicker from "@/components/fields/NCDatePicker";
@@ -260,6 +260,7 @@ export default function ProfileClient() {
       try {
         const initRes = await apiFetch("/media/init", {
           auth: true,
+          baseUrl: getMediaApiBaseUrl(),
           method: "POST",
           body: JSON.stringify({
             purpose: "avatar",
@@ -278,7 +279,7 @@ export default function ProfileClient() {
           toast.error(initData.error ?? "Failed to prepare upload");
           return;
         }
-        const uploadUrl = `${getApiBaseUrl()}${initData.uploadUrl}`;
+        const uploadUrl = `${getMediaApiBaseUrl()}${initData.uploadUrl}`;
         const uploadRes = await fetch(uploadUrl, {
           method: "PUT",
           body: fileOrBlob,
@@ -292,6 +293,7 @@ export default function ProfileClient() {
         }
         const finalizeRes = await apiFetch("/media/finalize", {
           auth: true,
+          baseUrl: getMediaApiBaseUrl(),
           method: "POST",
           body: JSON.stringify({ objectKey: initData.objectKey, purpose: "avatar" }),
         });
@@ -327,7 +329,11 @@ export default function ProfileClient() {
     if (!profile || avatarUploading) return;
     setAvatarUploading(true);
     try {
-      const res = await apiFetch("/profile/avatar", { auth: true, method: "DELETE" });
+      const res = await apiFetch("/profile/avatar", {
+        auth: true,
+        baseUrl: getMediaApiBaseUrl(),
+        method: "DELETE",
+      });
       const data = (await res.json()) as { ok?: boolean; error?: string };
       if (!data.ok) {
         toast.error(data.error ?? "Failed to remove avatar");
@@ -637,7 +643,7 @@ export default function ProfileClient() {
               sx={{ pb: { xs: 2.5, sm: 0 } }}
             >
               <UserAvatar
-                src={profile?.avatar_url ? `${getApiBaseUrl()}${profile.avatar_url}` : null}
+                src={profile?.avatar_url ? `${getAvatarBaseUrl()}${profile.avatar_url}` : null}
                 name={displayName}
                 username={handle}
                 size={128}

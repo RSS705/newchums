@@ -89,7 +89,7 @@ The web retains only `GET/POST /api/auth/[...nextauth]` for Auth.js. All other f
 
 **Required env:** Web needs `NEXT_PUBLIC_API_BASE_URL`; API needs `DATABASE_URL`, `NEXTAUTH_SECRET` (same value as web AUTH_SECRET). Production web deploy sets `NEXT_PUBLIC_API_BASE_URL` to the public API URL (e.g. `https://newchums-api.robsmith775.workers.dev`) — the client bundle must never call localhost in production.
 
-**Avatar storage (R2):** Profile avatars are stored in Cloudflare R2 (MEDIA_BUCKET binding, bucket `newchums-media`). Flow: POST /media/init → client PUT to presigned uploadUrl → POST /media/finalize. Users table has avatar_key; GET /users/:userId/avatar serves from R2. Max 2MB; JPEG/PNG/WebP. DELETE /profile/avatar clears avatar.
+**Avatar storage (R2):** Profile avatars are stored in Cloudflare R2 (MEDIA_BUCKET binding, bucket `newchums-media`). Flow: POST /media/init → client PUT to presigned uploadUrl → POST /media/finalize. Users table has avatar_key; GET /users/:userId/avatar serves from R2. Max 2MB; JPEG/PNG/WebP. DELETE /profile/avatar clears avatar. **Cross-env consistency:** When sharing DB, set NEXT_PUBLIC_AVATAR_BASE_URL to prod API URL in web/.env.local. The client routes all media ops (init, upload, finalize, delete) and avatar display through that URL, so both local and prod use the same R2. No wrangler dev --remote required.
 
 ## Not Implemented
 

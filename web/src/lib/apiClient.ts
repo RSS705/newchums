@@ -2,7 +2,6 @@
  * Client for calling the API worker.
  * Uses NEXT_PUBLIC_API_BASE_URL (e.g. http://127.0.0.1:8787 locally, https://newchums-api.*.workers.dev in prod).
  */
-
 export const getApiBaseUrl = () => {
   const base = process.env.NEXT_PUBLIC_API_BASE_URL;
   if (!base) throw new Error("NEXT_PUBLIC_API_BASE_URL is not set");
@@ -21,6 +20,19 @@ export const getApiBaseUrl = () => {
     }
   }
   return normalized;
+};
+
+/**
+ * Canonical base URL for avatar images. Use this for avatar img src so both local and prod
+ * resolve avatars from the same origin (production API + R2), enabling cross-env consistency
+ * when sharing the same DB.
+ * Falls back to NEXT_PUBLIC_API_BASE_URL if not set.
+ */
+export const getAvatarBaseUrl = () => {
+  const base =
+    process.env.NEXT_PUBLIC_AVATAR_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL;
+  if (!base) throw new Error("NEXT_PUBLIC_AVATAR_BASE_URL or NEXT_PUBLIC_API_BASE_URL is not set");
+  return base.replace(/\/$/, "");
 };
 
 let cachedToken: string | null = null;
@@ -46,19 +58,30 @@ export function clearAuthTokenCache() {
   cachedToken = null;
 }
 
-export type ApiFetchOptions = RequestInit & { auth?: boolean };
+export type ApiFetchOptions = RequestInit & {
+  auth?: boolean;
+  /** Override base URL (e.g. use prod API for media when sharing DB with local) */
+  baseUrl?: string;
+};
+
+/**
+ * Base URL for media/avatar operations. When set, use for init/upload/finalize so both
+ * local and prod write to the same R2, enabling cross-env consistency when sharing DB.
+ */
+export const getMediaApiBaseUrl = () => getAvatarBaseUrl();
 
 /**
  * Fetch from the API worker.
  * @param path - e.g. "/auth/signup" or "/profile"
  * @param options - fetch options. Set auth: true for routes that require a Bearer token.
+ *   Use baseUrl to call a different API (e.g. prod for media when sharing DB).
  */
 export async function apiFetch(
   path: string,
   options: ApiFetchOptions = {}
 ): Promise<Response> {
-  const { auth = false, ...fetchOptions } = options;
-  const base = getApiBaseUrl();
+  const { auth = false, baseUrl, ...fetchOptions } = options;
+  const base = baseUrl ?? getApiBaseUrl();
   const url = `${base}${path.startsWith("/") ? path : `/${path}`}`;
 
   const headers = new Headers(fetchOptions.headers);
