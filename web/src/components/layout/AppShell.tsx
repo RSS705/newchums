@@ -43,6 +43,9 @@ export type AppShellUser = {
 
 const navCardWidth = 260;
 
+/** Survives remounts; prevents avatar flash when navigating between pages */
+let cachedAvatarUrl: string | null = null;
+
 function isNavItemActive(pathname: string, href: string) {
   if (href === "/") return pathname === "/";
   if (href === "/events/create" || pathname.startsWith("/events")) {
@@ -67,12 +70,22 @@ export default function AppShell({ children, user }: AppShellProps) {
   const [navProfile, setNavProfile] = React.useState<NavProfile | null>(null);
 
   React.useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      cachedAvatarUrl = null;
+      return;
+    }
     let cancelled = false;
     apiFetch("/profile", { auth: true })
       .then((res) => res.json())
       .then((data: { ok?: boolean; profile?: NavProfile }) => {
-        if (!cancelled && data.ok && data.profile) setNavProfile(data.profile);
+        if (!cancelled && data.ok && data.profile) {
+          setNavProfile(data.profile);
+          if (data.profile.avatar_url) {
+            cachedAvatarUrl = `${getApiBaseUrl()}${data.profile.avatar_url}`;
+          } else {
+            cachedAvatarUrl = null;
+          }
+        }
       })
       .catch(() => {});
     return () => { cancelled = true; };
@@ -81,20 +94,23 @@ export default function AppShell({ children, user }: AppShellProps) {
   const accountMenuOpen = Boolean(accountMenuAnchor);
   const displayName = navProfile?.name?.trim() || user?.name?.trim() || "there";
   const avatarUrl = navProfile?.avatar_url ? `${getApiBaseUrl()}${navProfile.avatar_url}` : null;
+  const isLoading = Boolean(user) && navProfile === null;
+  const effectiveAvatarUrl = avatarUrl ?? cachedAvatarUrl;
+  const showWaveIcon = !isLoading && !effectiveAvatarUrl;
   const navIconSize = 48;
 
   const NavCardContent = () => (
     <>
       <Box sx={{ px: 2, py: 2.5, display: "flex", alignItems: "flex-start", gap: 1.5 }}>
-        {avatarUrl ? (
+        {effectiveAvatarUrl ? (
           <UserAvatar
-            src={avatarUrl}
+            src={effectiveAvatarUrl}
             name={navProfile?.name}
             username={navProfile?.username}
             size={navIconSize}
             sx={{ flexShrink: 0 }}
           />
-        ) : (
+        ) : showWaveIcon ? (
           <Box
             sx={{
               width: navIconSize,
@@ -114,6 +130,17 @@ export default function AppShell({ children, user }: AppShellProps) {
               aria-hidden
             />
           </Box>
+        ) : (
+          <Box
+            sx={{
+              width: navIconSize,
+              height: navIconSize,
+              borderRadius: "50%",
+              bgcolor: "action.hover",
+              flexShrink: 0,
+            }}
+            aria-hidden
+          />
         )}
         <Box sx={{ minWidth: 0 }}>
           <Typography
@@ -263,6 +290,7 @@ export default function AppShell({ children, user }: AppShellProps) {
                 <MenuItem
                   onClick={async () => {
                     setAccountMenuAnchor(null);
+                    cachedAvatarUrl = null;
                     await signOut({ redirectTo: "/" });
                   }}
                 >
