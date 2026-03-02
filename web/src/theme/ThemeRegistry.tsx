@@ -15,7 +15,9 @@ export default function ThemeRegistry({ children }: { children: React.ReactNode 
       <ThemeProvider theme={theme}>
         <LocalizationProvider dateAdapter={AdapterDayjs}>
           <CssBaseline />
-          <ToastProvider>{children}</ToastProvider>
+          <div id="app-scroll-root">
+            <ToastProvider>{children}</ToastProvider>
+          </div>
         </LocalizationProvider>
       </ThemeProvider>
     </AppRouterCacheProvider>

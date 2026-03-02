@@ -95,6 +95,7 @@ npm run dev
 - NEXTAUTH_SECRET (must match web AUTH_SECRET; required for profile, user/username, user/date-of-birth)
 - POSTMARK_SERVER_TOKEN, EMAIL_FROM, WEB_BASE_URL
 - POSTMARK_TEMPLATE_VERIFY, POSTMARK_TEMPLATE_RESET, POSTMARK_TEMPLATE_RSVP
+- POSTMARK_TEMPLATE_EMAIL_CHANGE_CONFIRM, POSTMARK_TEMPLATE_EMAIL_CHANGE_NOTIFY_OLD, POSTMARK_TEMPLATE_EMAIL_CHANGE_SUCCESS (for Change email flow; create templates in Postmark)
 - SENTRY_DSN, AXIOM_TOKEN, AXIOM_DATASET (optional)
 
 ---
@@ -146,6 +147,21 @@ curl -X POST http://127.0.0.1:8787/auth/password-reset/confirm \
 ```
 
 **Production:** Same endpoints at `https://newchums-api.robsmith775.workers.dev`. Replace base URL in curl.
+
+---
+
+## Email Change (Settings)
+
+Flow: Settings → Change email → enter new email → receive confirm link at new email + notification at old → click link → /auth/email-change/confirm → redirect to login → sign in with new email.
+
+**API:** POST /account/email-change/request (auth), POST /account/email-change/confirm (token + rid). Token 60min expiry; rate limit 3/hour per user. Rejects if new email already in use.
+
+**Postmark templates (create in Postmark dashboard):**
+1. Confirm new email: `confirmUrl`, `name`, `productName`, `year`
+2. Notify old email: `newEmail`, `name`, `productName`, `year` (link fixed in template as https://newchums.com/contact; CTA contact@newchums.com)
+3. Success (to new email): `name`, `productName`, `year`
+
+**Migration:** Run `psql "$DATABASE_URL" -f web/sql/011_email_change_requests.sql` before using.
 
 ---
 

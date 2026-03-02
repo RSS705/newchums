@@ -16,7 +16,7 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/apiClient";
-import { AppCard, AppTextField, useToast } from "@/components/ui";
+import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
 
 type EmailFrequency = "instant" | "daily" | "weekly" | "off";
 
@@ -31,6 +31,10 @@ export default function SettingsClient() {
   const [notifMessages, setNotifMessages] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
   const [changeEmailOpen, setChangeEmailOpen] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [changeEmailSubmitting, setChangeEmailSubmitting] = useState(false);
+  const [changeEmailSuccess, setChangeEmailSuccess] = useState(false);
+  const [changeEmailError, setChangeEmailError] = useState<string | null>(null);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
   const toast = useToast();
@@ -231,16 +235,94 @@ export default function SettingsClient() {
         </Stack>
       </AppCard>
 
-      {/* Stub dialogs */}
-      <Dialog open={changeEmailOpen} onClose={() => setChangeEmailOpen(false)} maxWidth="sm" fullWidth>
+      {/* Change email dialog */}
+      <Dialog
+        open={changeEmailOpen}
+        onClose={() => {
+          if (!changeEmailSubmitting) {
+            setChangeEmailOpen(false);
+            setChangeEmailSuccess(false);
+            setNewEmail("");
+            setChangeEmailError(null);
+          }
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
         <DialogTitle>Change email</DialogTitle>
         <DialogContent>
-          <Typography color="text.secondary">Coming next. We’ll add email change flow soon.</Typography>
+          {changeEmailSuccess ? (
+            <Typography color="text.secondary">
+              Check your new email to confirm the change. We've also sent a notification to your current email.
+            </Typography>
+          ) : (
+            <Stack spacing={2} sx={{ mt: 1 }}>
+              <Typography color="text.secondary" variant="body2">
+                We'll send a confirmation link to your new email. Your current email will also receive a notification.
+              </Typography>
+              <AppTextField
+                label="New email"
+                type="email"
+                value={newEmail}
+                onChange={(e) => {
+                  setNewEmail(e.target.value);
+                  setChangeEmailError(null);
+                }}
+                placeholder="you@example.com"
+                helperText={changeEmailError ?? " "}
+                error={Boolean(changeEmailError)}
+                disabled={changeEmailSubmitting}
+                autoComplete="email"
+              />
+            </Stack>
+          )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setChangeEmailOpen(false)}>OK</Button>
+          {changeEmailSuccess ? (
+            <Button onClick={() => setChangeEmailOpen(false)}>Done</Button>
+          ) : (
+            <>
+              <Button onClick={() => setChangeEmailOpen(false)} disabled={changeEmailSubmitting}>
+                Cancel
+              </Button>
+              <AppButton
+                variant="contained"
+                disabled={changeEmailSubmitting || !newEmail.trim()}
+                onClick={async () => {
+                  const trimmed = newEmail.trim().toLowerCase();
+                  if (!trimmed) return;
+                  setChangeEmailSubmitting(true);
+                  setChangeEmailError(null);
+                  try {
+                    const res = await apiFetch("/account/email-change/request", {
+                      method: "POST",
+                      auth: true,
+                      body: JSON.stringify({ newEmail: trimmed }),
+                    });
+                    const data = (await res.json()) || {};
+                    if (!res.ok || !data.ok) {
+                      if (data.error === "SAME_EMAIL") setChangeEmailError("New email is the same as your current email.");
+                      else if (data.error === "EMAIL_IN_USE") setChangeEmailError("This email is already in use by another account.");
+                      else if (data.error === "RATE_LIMIT") setChangeEmailError("Too many requests. Please try again later.");
+                      else if (data.error === "INVALID_INPUT") setChangeEmailError(data.message || "Please enter a valid email address.");
+                      else setChangeEmailError(data.message || "Failed to send confirmation email.");
+                      return;
+                    }
+                    setChangeEmailSuccess(true);
+                  } catch {
+                    setChangeEmailError("Something went wrong. Please try again.");
+                  } finally {
+                    setChangeEmailSubmitting(false);
+                  }
+                }}
+              >
+                {changeEmailSubmitting ? "Sending…" : "Send confirmation link"}
+              </AppButton>
+            </>
+          )}
         </DialogActions>
       </Dialog>
+      
       <Dialog open={changePasswordOpen} onClose={() => setChangePasswordOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Change password</DialogTitle>
         <DialogContent>

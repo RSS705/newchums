@@ -70,6 +70,8 @@ The following business logic now lives in the API worker; the web app calls it v
 | POST /auth/email-verify/confirm | Confirm token and set email_verified_at |
 | GET /auth/email-verify/status | Returns { verified: boolean } for polling |
 | POST /auth/email-verify/mark-oauth | Auth required; sets email_verified_at for Google OAuth users |
+| POST /account/email-change/request | Auth required. Creates pending request; sends confirm to new email, notify to old; 409 if new email in use; 429 rate limit (3/hour). |
+| POST /account/email-change/confirm | Verifies token, updates user email, marks request consumed; returns redirectTo for /login?emailChanged=1. |
 | GET /profile, PUT /profile | User profile (auth required). Returns name, username, date_of_birth, bio, home_city, travel_radius_km, interests, avatar_url. PUT accepts name, bio, date_of_birth, location, interests. |
 | POST /media/init | Auth required. Prepares avatar upload; returns uploadToken, objectKey, uploadUrl. Client PUTs file to uploadUrl, then POST /media/finalize. |
 | POST /media/finalize | Auth required. Associates uploaded R2 object with user as avatar; returns avatarUrl. |
@@ -174,6 +176,7 @@ Core tables exist in varying completeness. API worker queries use `newchums.user
 - **users** — includes email_verified_at (Credentials verification), password_hash (Credentials)
 - **email_verification_tokens** — single-use, 24h expiry; for Credentials signup verification
 - **password_reset_tokens** — single-use, 1h expiry; for forgot-password flow
+- **email_change_requests** — pending email changes; single-use token, 60min expiry; rate limited 3/hour per user (migration 011)
 - events
 - rsvps
 - interests
@@ -205,7 +208,7 @@ PostGIS is available for geospatial queries.
 **API (api/wrangler.toml):**
 - Root worker `newchums-api` is production (web points here). Deploy with `npm run deploy` (uses `--env=""`). Env production deploys `newchums-api-production` (separate worker).
 - Envs: preview, production (APP_ENV)
-- Vars: EMAIL_FROM, WEB_BASE_URL, POSTMARK_TEMPLATE_VERIFY, POSTMARK_TEMPLATE_RESET, POSTMARK_TEMPLATE_RSVP, AXIOM_DATASET
+- Vars: EMAIL_FROM, WEB_BASE_URL, POSTMARK_TEMPLATE_VERIFY, POSTMARK_TEMPLATE_RESET, POSTMARK_TEMPLATE_RSVP, POSTMARK_TEMPLATE_EMAIL_CHANGE_CONFIRM, POSTMARK_TEMPLATE_EMAIL_CHANGE_NOTIFY_OLD, POSTMARK_TEMPLATE_EMAIL_CHANGE_SUCCESS, AXIOM_DATASET
 - Secrets (via `npx wrangler secret put`): DATABASE_URL, NEXTAUTH_SECRET (must match web AUTH_SECRET)
 - CORS: Explicit allowlist (newchums.com, www.newchums.com, localhost:3000) in api/src/index.ts
 

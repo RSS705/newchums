@@ -6,6 +6,9 @@ import { isAtLeast18, parseDateOnly } from "./ageValidation";
 import { getBearerToken, verifyAuthToken } from "./auth";
 import { DATABASE_URL_HINT, type Bindings, getSql } from "./db";
 import {
+  sendEmailChangeConfirmEmail,
+  sendEmailChangeNotifyOldEmail,
+  sendEmailChangeSuccessEmail,
   sendPasswordResetEmail,
   sendRsvpConfirmationEmail,
   sendVerificationEmail,
@@ -603,6 +606,210 @@ app.post("/auth/email-verify/mark-oauth", async (c) => {
     WHERE email = ${normalized} AND email_verified_at IS NULL
   `;
   return c.json({ ok: true });
+});
+
+// ---- Email change ----
+const EMAIL_CHANGE_EXPIRY_MS = 60 * 60 * 1000; // 60 min
+const EMAIL_CHANGE_RATE_LIMIT_PER_HOUR = 3;
+
+app.post("/account/email-change/request", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+
+  const body = await c.req.json<{ newEmail?: string }>();
+  const newEmailRaw = body.newEmail?.trim().toLowerCase() ?? "";
+  if (!newEmailRaw) {
+    return c.json(
+      { ok: false, error: "INVALID_INPUT", message: "New email is required." },
+      400
+    );
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(newEmailRaw)) {
+    return c.json(
+      { ok: false, error: "INVALID_INPUT", message: "Please enter a valid email address." },
+      400
+    );
+  }
+
+  const currentEmail = payload.email.trim().toLowerCase();
+  if (newEmailRaw === currentEmail) {
+    return c.json(
+      { ok: false, error: "SAME_EMAIL", message: "New email is the same as your current email." },
+      400
+    );
+  }
+
+  const sql = getSql(c.env);
+  const appUserId = await ensureAppUserId(
+    sql,
+    currentEmail,
+    (payload as { name?: string | null }).name,
+  );
+
+  const existingNew = (await sql`
+    SELECT id FROM newchums.users WHERE email = ${newEmailRaw} LIMIT 1
+  `) as { id: string }[];
+  if (existingNew.length > 0) {
+    return c.json(
+      { ok: false, error: "EMAIL_IN_USE", message: "This email is already in use by another account." },
+      409
+    );
+  }
+
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+  const recentCount = (await sql`
+    SELECT COUNT(*)::int as c
+    FROM newchums.email_change_requests
+    WHERE user_id = ${appUserId} AND created_at > ${oneHourAgo}
+  `) as { c: number }[];
+  if (recentCount[0]?.c >= EMAIL_CHANGE_RATE_LIMIT_PER_HOUR) {
+    return c.json(
+      { ok: false, error: "RATE_LIMIT", message: "Too many requests. Please try again later." },
+      429
+    );
+  }
+
+  await sql`
+    UPDATE newchums.email_change_requests
+    SET consumed_at = NOW()
+    WHERE user_id = ${appUserId} AND consumed_at IS NULL
+  `;
+
+  const rawToken = generateResetToken();
+  const tokenHash = await hashResetToken(rawToken);
+  const expiresAt = new Date(Date.now() + EMAIL_CHANGE_EXPIRY_MS);
+  const requestIp = c.req.header("CF-Connecting-IP") ?? c.req.header("X-Forwarded-For") ?? null;
+  const userAgent = c.req.header("User-Agent") ?? null;
+
+  const inserted = (await sql`
+    INSERT INTO newchums.email_change_requests
+      (user_id, new_email, token_hash, expires_at, request_ip, user_agent)
+    VALUES (${appUserId}, ${newEmailRaw}, ${tokenHash}, ${expiresAt}, ${requestIp}, ${userAgent})
+    RETURNING id
+  `) as { id: string }[];
+
+  const requestId = inserted[0]?.id;
+  if (!requestId) {
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+
+  const confirmUrl = `${c.env.WEB_BASE_URL}/auth/email-change/confirm?token=${encodeURIComponent(rawToken)}&rid=${encodeURIComponent(requestId)}`;
+
+  const userName = (await sql`
+    SELECT name FROM newchums.users WHERE id = ${appUserId} LIMIT 1
+  `) as { name: string | null }[];
+  const name = userName[0]?.name ?? undefined;
+
+  try {
+    await sendEmailChangeConfirmEmail(c.env, {
+      to: newEmailRaw,
+      name,
+      confirmUrl,
+    });
+    await sendEmailChangeNotifyOldEmail(c.env, {
+      to: currentEmail,
+      name,
+      newEmail: newEmailRaw,
+    });
+  } catch (err) {
+    console.error("[POST /account/email-change/request] send failed", err);
+    return c.json({ ok: false, error: "EMAIL_SEND_FAILED", message: "Failed to send confirmation email." }, 500);
+  }
+
+  try {
+    await axiomIngest(c.env, [
+      {
+        message: "email_change_requested",
+        userId: appUserId,
+        newEmailHash: "**", // never log email
+        requestId,
+      },
+    ]);
+  } catch {
+    /* ignore */
+  }
+
+  return c.json({ ok: true, message: "Check your new email to confirm the change." });
+});
+
+app.post("/account/email-change/confirm", async (c) => {
+  const body = await c.req.json<{ token?: string; rid?: string }>();
+  const tokenRaw = (body.token ?? "").trim();
+  const rid = (body.rid ?? "").trim();
+  if (!tokenRaw || !rid) {
+    return c.json(
+      { ok: false, error: "INVALID_INPUT", message: "Token and request ID are required." },
+      400
+    );
+  }
+
+  const tokenHash = await hashResetToken(tokenRaw);
+  const sql = getSql(c.env);
+
+  const requests = (await sql`
+    SELECT id, user_id, new_email
+    FROM newchums.email_change_requests
+    WHERE id = ${rid}
+      AND token_hash = ${tokenHash}
+      AND consumed_at IS NULL
+      AND expires_at > NOW()
+    LIMIT 1
+  `) as { id: string; user_id: string; new_email: string }[];
+
+  const req = requests[0];
+  if (!req) {
+    return c.json(
+      { ok: false, error: "INVALID_OR_EXPIRED", message: "This link is invalid or has expired." },
+      400
+    );
+  }
+
+  const stillAvailable = (await sql`
+    SELECT id FROM newchums.users WHERE email = ${req.new_email} LIMIT 1
+  `) as { id: string }[];
+  if (stillAvailable.length > 0) {
+    return c.json(
+      { ok: false, error: "EMAIL_IN_USE", message: "This email is now in use by another account." },
+      409
+    );
+  }
+
+  const oldUser = (await sql`
+    SELECT email, name FROM newchums.users WHERE id = ${req.user_id} LIMIT 1
+  `) as { email: string; name: string | null }[];
+  const oldEmail = oldUser[0]?.email ?? null;
+  const name = oldUser[0]?.name ?? undefined;
+
+  await sql`UPDATE newchums.users SET email = ${req.new_email} WHERE id = ${req.user_id}`;
+  await sql`UPDATE newchums.email_change_requests SET consumed_at = NOW() WHERE id = ${req.id}`;
+
+  try {
+    await sendEmailChangeSuccessEmail(c.env, { to: req.new_email, name });
+  } catch (err) {
+    console.error("[POST /account/email-change/confirm] success email failed", err);
+  }
+
+  try {
+    await axiomIngest(c.env, [
+      {
+        message: "email_change_confirmed",
+        userId: req.user_id,
+        requestId: req.id,
+      },
+    ]);
+  } catch {
+    /* ignore */
+  }
+
+  return c.json({
+    ok: true,
+    redirectTo: `${c.env.WEB_BASE_URL}/login?emailChanged=1`,
+    message: "Your email has been updated. Please sign in with your new email.",
+  });
 });
 
 app.get("/interests", async (c) => {

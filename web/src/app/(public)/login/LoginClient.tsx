@@ -5,7 +5,7 @@ import Checkbox from "@mui/material/Checkbox";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
-import { signIn } from "next-auth/react";
+import { signIn, signOut } from "next-auth/react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
@@ -28,6 +28,7 @@ export default function LoginClient() {
   const emailPrefill = searchParams.get("email");
   const nextParam = searchParams.get("next");
   const resetSuccess = searchParams.get("reset") === "success";
+  const emailChanged = searchParams.get("emailChanged") === "1";
   const redirectTarget = getSafeRedirectPath(nextParam);
 
   React.useEffect(() => {
@@ -36,9 +37,20 @@ export default function LoginClient() {
     }
   }, [emailPrefill]);
 
+  React.useEffect(() => {
+    if (emailChanged) {
+      signOut({ redirect: false });
+    }
+  }, [emailChanged]);
+
   const formContent = (
     <Stack spacing={2.5}>
-      {resetSuccess && (
+      {emailChanged && (
+        <Typography variant="body2" color="success.main" sx={{ textAlign: "center", fontWeight: 500 }}>
+          Your email has been updated. Please sign in with your new email.
+        </Typography>
+      )}
+      {resetSuccess && !emailChanged && (
         <Typography variant="body2" color="success.main" sx={{ textAlign: "center", fontWeight: 500 }}>
           Your password has been reset. Sign in with your new password.
         </Typography>
