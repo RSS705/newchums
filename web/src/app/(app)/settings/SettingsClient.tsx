@@ -98,13 +98,28 @@ export default function SettingsClient() {
   }
 
   return (
-    <Stack spacing={3}>
-      <Typography component="h1" variant="h3">
-        Settings
-      </Typography>
-      <Typography color="text.secondary">
-        Account, notifications, and preferences.
-      </Typography>
+    <Stack spacing={{ xs: 3, sm: 4 }}>
+      <Box sx={{ textAlign: { xs: "center", sm: "left" } }}>
+        <Typography
+          component="h1"
+          sx={{
+            fontSize: { xs: "1.75rem", sm: "2rem" },
+            fontWeight: 700,
+            lineHeight: 1.25,
+            letterSpacing: "-0.02em",
+          }}
+        >
+          Settings
+        </Typography>
+        <Stack spacing={0.25} sx={{ mt: 1 }}>
+          <Typography
+            color="text.secondary"
+            sx={{ fontSize: { xs: "0.875rem", sm: "0.9375rem" } }}
+          >
+            Manage your account, notifications, and preferences.
+          </Typography>
+        </Stack>
+      </Box>
 
       {/* Account */}
       <AppCard>
