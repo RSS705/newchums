@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import Avatar from "@mui/material/Avatar";
 import type { SxProps, Theme } from "@mui/material/styles";
 
@@ -38,6 +39,12 @@ export default function UserAvatar({
   fallbackIcon,
   sx = {},
 }: UserAvatarProps) {
+  const [imgError, setImgError] = React.useState(false);
+  const effectiveSrc = src && !imgError ? src : null;
+  React.useEffect(() => {
+    setImgError(false);
+  }, [src]);
+
   const initial = getInitial(name, username);
   const colors = AVATAR_INITIALS_COLORS;
   const sizeNum =
@@ -49,18 +56,19 @@ export default function UserAvatar({
           ? 128
           : 96;
 
-  const showFallbackIcon = !src && fallbackIcon != null;
+  const showFallbackIcon = !effectiveSrc && fallbackIcon != null;
 
   return (
     <Avatar
-      src={src ?? undefined}
+      src={effectiveSrc ?? undefined}
+      imgProps={{ onError: () => setImgError(true) }}
       sx={{
         width: sizeNum,
         height: sizeNum,
         fontSize: sizeNum * 0.45,
         fontWeight: 600,
-        bgcolor: src ? "transparent" : colors.bg,
-        color: src ? undefined : colors.text,
+        bgcolor: effectiveSrc ? "transparent" : colors.bg,
+        color: effectiveSrc ? undefined : colors.text,
         border: "2px solid",
         borderColor: "divider",
         objectFit: "cover",
@@ -68,7 +76,7 @@ export default function UserAvatar({
         ...sx,
       }}
     >
-      {showFallbackIcon ? fallbackIcon : !src ? initial : null}
+      {showFallbackIcon ? fallbackIcon : !effectiveSrc ? initial : null}
     </Avatar>
   );
 }

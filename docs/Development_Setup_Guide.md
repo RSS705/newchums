@@ -15,7 +15,7 @@ Last Updated: February 26, 2026
 - **Mobile UI:** SectionHeader centered with dynamic underline; Explore toggle pills centered with gap; EventListItem: no distance badge, full-width Join; welcome text centered on mobile. Profile: responsive header, avatar, cards; full-width Save; avatar dialog with mobile margins.
 - **Production environment:** Single deploy target (newchums-web-dev, newchums-api); domain newchums.com.
 - **Build:** `cd web && npm run build` passes. No deploy run this session.
-- **Avatar storage:** R2 bucket `newchums-media` (MEDIA_BUCKET binding). API wrangler.toml defines r2_buckets. Users table has avatar_key; GET /users/:userId/avatar serves from R2.
+- **Avatar storage:** R2 bucket `newchums-media` (MEDIA_BUCKET binding). API wrangler.toml defines r2_buckets. Users table has avatar_key; GET /users/:userId/avatar serves from R2. **Note:** Avatars uploaded in local dev (wrangler dev) go to a simulated R2, not production R2. To see an avatar in prod, upload it while on production (newchums.com). Profile/avatar endpoints only return avatar_url when the R2 object exists.
 - **Next session:** Deploy to verify mobile UX changes; wire real data to Your Plans if ready.
 
 ---

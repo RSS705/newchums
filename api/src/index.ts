@@ -106,7 +106,9 @@ app.get("/health/env", (c) => {
       DATABASE_URL: !!env.DATABASE_URL,
       NEXTAUTH_SECRET: !!env.NEXTAUTH_SECRET,
       WEB_BASE_URL: !!env.WEB_BASE_URL,
+      MEDIA_BUCKET: !!env.MEDIA_BUCKET,
     },
+    app_env: env.APP_ENV ?? undefined,
   });
 });
 app.get("/health/db", async (c) => {
@@ -959,9 +961,14 @@ app.get("/profile", async (c) => {
     const bio = profile?.bio ?? null;
     const avatarKey = userInfo?.avatar_key ?? null;
     const avatarUpdatedAt = userInfo?.avatar_updated_at;
-    const avatarUrl = avatarKey
-      ? `/users/${appUserId}/avatar?v=${avatarUpdatedAt ? new Date(avatarUpdatedAt as Date).getTime() : 0}`
-      : null;
+    // Only return avatar_url if R2 object exists (avoids 404 when avatar was uploaded in local dev but prod R2 is empty)
+    let avatarUrl: string | null = null;
+    if (avatarKey && c.env.MEDIA_BUCKET) {
+      const obj = await c.env.MEDIA_BUCKET.head(avatarKey);
+      if (obj) {
+        avatarUrl = `/users/${appUserId}/avatar?v=${avatarUpdatedAt ? new Date(avatarUpdatedAt as Date).getTime() : 0}`;
+      }
+    }
 
     if (!profile) {
       return c.json({
@@ -1363,9 +1370,13 @@ app.put("/profile", async (c) => {
       : null;
     const avatarKey = userAfter?.avatar_key ?? null;
     const avatarUpdatedAt = userAfter?.avatar_updated_at;
-    const avatarUrl = avatarKey
-      ? `/users/${appUserId}/avatar?v=${avatarUpdatedAt ? new Date(avatarUpdatedAt as Date).getTime() : 0}`
-      : null;
+    let avatarUrl: string | null = null;
+    if (avatarKey && c.env.MEDIA_BUCKET) {
+      const obj = await c.env.MEDIA_BUCKET.head(avatarKey);
+      if (obj) {
+        avatarUrl = `/users/${appUserId}/avatar?v=${avatarUpdatedAt ? new Date(avatarUpdatedAt as Date).getTime() : 0}`;
+      }
+    }
     return c.json({
       ok: true,
       profile: {
