@@ -16,6 +16,12 @@ import { ensureAppUserId } from "./profile";
 import { generateResetToken, hashResetToken } from "./resetTokens";
 import { validateCleanText } from "./lib/contentSafety";
 import {
+  buildObjectKey,
+  createUploadToken,
+  validateMediaInit,
+  verifyUploadToken,
+} from "./media";
+import {
   normalizeUsernameDisplay,
   normalizeUsernameForUniq,
   validateUsername,
@@ -704,8 +710,15 @@ app.get("/profile", async (c) => {
       (payload as { name?: string | null }).name,
     );
     const userRows = (await sql`
-      SELECT name, username, email, date_of_birth FROM newchums.users WHERE id = ${appUserId} LIMIT 1
-    `) as Array<{ name: string | null; username: string | null; email: string; date_of_birth: string | Date | null }>;
+      SELECT name, username, email, date_of_birth, avatar_key, avatar_updated_at FROM newchums.users WHERE id = ${appUserId} LIMIT 1
+    `) as Array<{
+      name: string | null;
+      username: string | null;
+      email: string;
+      date_of_birth: string | Date | null;
+      avatar_key: string | null;
+      avatar_updated_at: string | Date | null;
+    }>;
     const userInfo = userRows[0];
     const profileRows = (await sql`
       SELECT home_city, home_lat, home_lng, travel_radius_km, email_chat_digest, email_new_events, bio
@@ -737,6 +750,12 @@ app.get("/profile", async (c) => {
           : (userInfo.date_of_birth as Date).toISOString().slice(0, 10))
       : null;
     const bio = profile?.bio ?? null;
+    const avatarKey = userInfo?.avatar_key ?? null;
+    const avatarUpdatedAt = userInfo?.avatar_updated_at;
+    const avatarUrl = avatarKey
+      ? `/users/${appUserId}/avatar?v=${avatarUpdatedAt ? new Date(avatarUpdatedAt as Date).getTime() : 0}`
+      : null;
+
     if (!profile) {
       return c.json({
         ok: true,
@@ -754,6 +773,7 @@ app.get("/profile", async (c) => {
           interest_items: [] as { slug: string; name: string }[],
           email_chat_digest: true,
           email_new_events: true,
+          avatar_url: avatarUrl,
         },
       });
     }
@@ -773,6 +793,7 @@ app.get("/profile", async (c) => {
         interest_items,
         email_chat_digest: profile.email_chat_digest,
         email_new_events: profile.email_new_events,
+        avatar_url: avatarUrl,
       },
     });
   } catch (err) {
@@ -1099,8 +1120,15 @@ app.put("/profile", async (c) => {
     }
     await sql.transaction(txQueries);
     const userRowsAfter = (await sql`
-      SELECT name, username, email, date_of_birth FROM newchums.users WHERE id = ${appUserId} LIMIT 1
-    `) as Array<{ name: string | null; username: string | null; email: string; date_of_birth: string | Date | null }>;
+      SELECT name, username, email, date_of_birth, avatar_key, avatar_updated_at FROM newchums.users WHERE id = ${appUserId} LIMIT 1
+    `) as Array<{
+      name: string | null;
+      username: string | null;
+      email: string;
+      date_of_birth: string | Date | null;
+      avatar_key: string | null;
+      avatar_updated_at: string | Date | null;
+    }>;
     const userAfter = userRowsAfter[0];
     const profileRows = (await sql`
       SELECT home_city, home_lat, home_lng, travel_radius_km, email_chat_digest, email_new_events, bio
@@ -1126,6 +1154,11 @@ app.put("/profile", async (c) => {
           ? userAfter.date_of_birth
           : (userAfter.date_of_birth as Date).toISOString().slice(0, 10))
       : null;
+    const avatarKey = userAfter?.avatar_key ?? null;
+    const avatarUpdatedAt = userAfter?.avatar_updated_at;
+    const avatarUrl = avatarKey
+      ? `/users/${appUserId}/avatar?v=${avatarUpdatedAt ? new Date(avatarUpdatedAt as Date).getTime() : 0}`
+      : null;
     return c.json({
       ok: true,
       profile: {
@@ -1134,6 +1167,7 @@ app.put("/profile", async (c) => {
         email: userAfter?.email ?? null,
         date_of_birth: dateOfBirthAfter,
         bio: profile.bio ?? null,
+        avatar_url: avatarUrl,
         home_city: profile.home_city,
         home_lat: profile.home_lat,
         home_lng: profile.home_lng,
@@ -1155,6 +1189,205 @@ app.put("/profile", async (c) => {
     );
   }
 });
+
+// ---- Media upload (R2, short-lived tokens) ----
+
+app.post("/media/init", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+  if (!c.env.MEDIA_BUCKET || !c.env.NEXTAUTH_SECRET) {
+    return c.json({ ok: false, error: "MEDIA_NOT_CONFIGURED" }, 503);
+  }
+  try {
+    const body = (await c.req.json()) as {
+      purpose?: string;
+      contentType?: string;
+      contentLength?: number;
+    };
+    const purpose = (body.purpose ?? "avatar") as "avatar";
+    const contentType = (body.contentType ?? "").trim().toLowerCase();
+    const contentLength = typeof body.contentLength === "number" ? body.contentLength : 0;
+
+    const validation = validateMediaInit(purpose, contentType, contentLength);
+    if (!validation.ok) {
+      return c.json(
+        { ok: false, error: validation.error ?? "Invalid media request" },
+        400,
+      );
+    }
+
+    const sql = getSql(c.env);
+    const appUserId = await ensureAppUserId(
+      sql,
+      payload.email,
+      (payload as { name?: string | null }).name,
+    );
+
+    const objectKey = buildObjectKey(appUserId, purpose, contentType);
+    const uploadToken = await createUploadToken(
+      {
+        userId: appUserId,
+        objectKey,
+        purpose,
+        contentType,
+        contentLength,
+      },
+      c.env.NEXTAUTH_SECRET,
+    );
+
+    return c.json({
+      ok: true,
+      uploadToken,
+      objectKey,
+      uploadUrl: `/media/upload/${uploadToken}`,
+      viewUrl: `/users/${appUserId}/avatar`,
+      constraints: { maxBytes: 2 * 1024 * 1024, allowedTypes: ["image/jpeg", "image/png", "image/webp"] },
+    });
+  } catch (err) {
+    console.error("[POST /media/init]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+app.put("/media/upload/:token", async (c) => {
+  const tokenParam = c.req.param("token");
+  if (!tokenParam || !c.env.NEXTAUTH_SECRET || !c.env.MEDIA_BUCKET) {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+  const payload = await verifyUploadToken(tokenParam, c.env.NEXTAUTH_SECRET);
+  if (!payload) {
+    return c.json({ ok: false, error: "INVALID_OR_EXPIRED_TOKEN" }, 401);
+  }
+  const contentType = payload.contentType;
+  const contentLength = payload.contentLength;
+  const objectKey = payload.objectKey;
+
+  const reqLen = c.req.header("Content-Length");
+  const actualLen = reqLen ? parseInt(reqLen, 10) : 0;
+  if (contentLength > 0 && actualLen > contentLength) {
+    return c.json({ ok: false, error: "FILE_TOO_LARGE" }, 413);
+  }
+
+  try {
+    const body = c.req.raw.body;
+    if (!body) {
+      return c.json({ ok: false, error: "NO_BODY" }, 400);
+    }
+    await c.env.MEDIA_BUCKET.put(objectKey, body, {
+      httpMetadata: { contentType },
+    });
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[PUT /media/upload]", err);
+    return c.json({ ok: false, error: "UPLOAD_FAILED" }, 500);
+  }
+});
+
+app.post("/media/finalize", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+  if (!c.env.MEDIA_BUCKET) {
+    return c.json({ ok: false, error: "MEDIA_NOT_CONFIGURED" }, 503);
+  }
+  try {
+    const body = (await c.req.json()) as { objectKey?: string; purpose?: string };
+    const objectKey = (body.objectKey ?? "").trim();
+    const purpose = (body.purpose ?? "avatar") as "avatar";
+
+    if (!objectKey || !objectKey.startsWith("avatars/")) {
+      return c.json({ ok: false, error: "INVALID_OBJECT_KEY" }, 400);
+    }
+
+    const sql = getSql(c.env);
+    const appUserId = await ensureAppUserId(
+      sql,
+      payload.email,
+      (payload as { name?: string | null }).name,
+    );
+
+    // Ensure objectKey belongs to this user (avatars/<userId>/...)
+    const expectedPrefix = `avatars/${appUserId}/`;
+    if (!objectKey.startsWith(expectedPrefix)) {
+      return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+    }
+
+    const obj = await c.env.MEDIA_BUCKET.head(objectKey);
+    if (!obj) {
+      return c.json({ ok: false, error: "OBJECT_NOT_FOUND" }, 404);
+    }
+
+    await sql`
+      UPDATE newchums.users
+      SET avatar_key = ${objectKey}, avatar_updated_at = NOW()
+      WHERE id = ${appUserId}
+    `;
+
+    const avatarUrl = `/users/${appUserId}/avatar?v=${Date.now()}`;
+    return c.json({ ok: true, avatarUrl });
+  } catch (err) {
+    console.error("[POST /media/finalize]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+app.delete("/profile/avatar", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+  try {
+    const sql = getSql(c.env);
+    const appUserId = await ensureAppUserId(
+      sql,
+      payload.email,
+      (payload as { name?: string | null }).name,
+    );
+    await sql`
+      UPDATE newchums.users
+      SET avatar_key = NULL, avatar_updated_at = NULL
+      WHERE id = ${appUserId}
+    `;
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[DELETE /profile/avatar]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+app.get("/users/:userId/avatar", async (c) => {
+  const userId = c.req.param("userId");
+  if (!userId || !c.env.MEDIA_BUCKET) {
+    return c.notFound();
+  }
+  try {
+    const sql = getSql(c.env);
+    const rows = (await sql`
+      SELECT avatar_key FROM newchums.users WHERE id = ${userId} LIMIT 1
+    `) as { avatar_key: string | null }[];
+    const avatarKey = rows[0]?.avatar_key ?? null;
+    if (!avatarKey) {
+      return c.notFound();
+    }
+    const obj = await c.env.MEDIA_BUCKET.get(avatarKey);
+    if (!obj) {
+      return c.notFound();
+    }
+    const body = obj.body;
+    const headers = new Headers();
+    const ct = obj.httpMetadata?.contentType ?? "image/jpeg";
+    headers.set("Content-Type", ct);
+    headers.set("Cache-Control", "public, max-age=86400");
+    return new Response(body, { headers, status: 200 });
+  } catch {
+    return c.notFound();
+  }
+});
+
+// ---- User routes ----
 
 app.post("/user/username", async (c) => {
   const payload = await requireAuth(c);

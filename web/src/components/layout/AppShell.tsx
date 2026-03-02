@@ -31,6 +31,8 @@ import { usePathname, useRouter } from "next/navigation";
 import * as React from "react";
 import { signOut } from "next-auth/react";
 import { appNavItems, createEventHref } from "@/config/nav";
+import { apiFetch, getApiBaseUrl } from "@/lib/apiClient";
+import UserAvatar from "@/components/common/UserAvatar";
 import SiteHeader, { HEADER_MIN_HEIGHT } from "@/components/layout/SiteHeader";
 import MarketingNavSection from "@/components/layout/MarketingNavSection";
 import LandingFooter from "@/components/landing/LandingFooter";
@@ -55,27 +57,64 @@ type AppShellProps = {
   user?: AppShellUser | null;
 };
 
+type NavProfile = { avatar_url?: string | null; name?: string | null; username?: string | null };
+
 export default function AppShell({ children, user }: AppShellProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [accountMenuAnchor, setAccountMenuAnchor] = React.useState<null | HTMLElement>(null);
+  const [navProfile, setNavProfile] = React.useState<NavProfile | null>(null);
+
+  React.useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    apiFetch("/profile", { auth: true })
+      .then((res) => res.json())
+      .then((data: { ok?: boolean; profile?: NavProfile }) => {
+        if (!cancelled && data.ok && data.profile) setNavProfile(data.profile);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [user]);
 
   const accountMenuOpen = Boolean(accountMenuAnchor);
-  const displayName = user?.name?.trim() || "there";
+  const displayName = navProfile?.name?.trim() || user?.name?.trim() || "there";
+  const avatarUrl = navProfile?.avatar_url ? `${getApiBaseUrl()}${navProfile.avatar_url}` : null;
+  const navIconSize = 48;
 
   const NavCardContent = () => (
     <>
       <Box sx={{ px: 2, py: 2.5, display: "flex", alignItems: "flex-start", gap: 1.5 }}>
-        <WavingHandRoundedIcon
-          sx={{
-            fontSize: 26,
-            color: "primary.main",
-            opacity: 0.85,
-            flexShrink: 0,
-          }}
-          aria-hidden
-        />
+        {avatarUrl ? (
+          <UserAvatar
+            src={avatarUrl}
+            name={navProfile?.name}
+            username={navProfile?.username}
+            size={navIconSize}
+            sx={{ flexShrink: 0 }}
+          />
+        ) : (
+          <Box
+            sx={{
+              width: navIconSize,
+              height: navIconSize,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            <WavingHandRoundedIcon
+              sx={{
+                fontSize: 26,
+                color: "primary.main",
+                opacity: 0.85,
+              }}
+              aria-hidden
+            />
+          </Box>
+        )}
         <Box sx={{ minWidth: 0 }}>
           <Typography
             variant="caption"

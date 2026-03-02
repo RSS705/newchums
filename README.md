@@ -53,6 +53,7 @@ Two-worker separation is intentional and long-term.
 - Copy/adapt patterns from `template_reference/` instead of inventing structure
 - Prefer theme overrides and shared components over per-page hacks
 - Avoid mobile-only CSS that diverges from desktop
+- **Form fields:** Always use label-above style (like Date of birth). Use `AppTextField`, `AuthField`, or `NCDatePicker`; never floating/in-field labels. See `AGENTS.md` Form Inputs section.
 
 `template_reference/` is gitignored; obtain it separately (see `docs/Development_Setup_Guide.md`). Template parity is a core principle for any UI work.
 

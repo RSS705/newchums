@@ -1,6 +1,6 @@
 # System Map
 
-Last Updated: February 27, 2026
+Last Updated: February 26, 2026
 
 This document reflects the current production reality of NewChums.
 
@@ -62,6 +62,9 @@ The following flows now run entirely in the API worker; the web app calls the AP
 | Password reset confirm | POST /auth/password-reset/confirm | None |
 | Interests list | GET /interests | None |
 | Profile (get/update) | GET /profile, PUT /profile | Bearer JWT |
+| Avatar upload | POST /media/init → PUT to uploadUrl → POST /media/finalize | Bearer JWT |
+| Avatar remove | DELETE /profile/avatar | Bearer JWT |
+| Avatar image | GET /users/:userId/avatar | None (public) |
 | Handle availability check | GET /handles/available?handle=... | Bearer JWT |
 | Set username (onboarding) | POST /user/username | Bearer JWT |
 | Set date of birth (onboarding) | POST /user/date-of-birth | Bearer JWT |
@@ -204,7 +207,7 @@ flowchart TB
 - Web Worker focuses on UI and auth orchestration (Auth.js, /api/auth/[...nextauth]).
 - Core user flows (signup, profile, interests, password reset, onboarding) now live in API worker.
 - Canonical host is non-www; middleware enforces before Auth.js.
-- R2 and background jobs (Cron/Queues) are planned but not yet implemented.
+- R2 stores profile avatars (MEDIA_BUCKET); Cron/Queues are planned but not yet implemented.
 - Single production environment currently active.
 - Wrangler config (routes, workers_dev, vars) is code-managed to prevent deploy drift.
 
@@ -249,5 +252,5 @@ flowchart TB
   W --> PLAUS["Plausible"]
 
   CRON["Future Cron/Queues"] -.-> API
-  R2["Future R2 Storage"] -.-> API
+  R2["R2 (avatars)"] --> API
 ```

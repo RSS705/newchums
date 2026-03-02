@@ -13,12 +13,10 @@ import FormControlLabel from "@mui/material/FormControlLabel";
 import FormGroup from "@mui/material/FormGroup";
 import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
-import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/apiClient";
-import { useToast } from "@/components/ui";
-import AppCard from "@/components/ui/AppCard";
+import { AppCard, AppTextField, useToast } from "@/components/ui";
 
 type EmailFrequency = "instant" | "daily" | "weekly" | "off";
 
@@ -112,23 +110,19 @@ export default function SettingsClient() {
       <AppCard>
         <Stack spacing={2}>
           <Typography variant="h6">Account</Typography>
-          <TextField
+          <AppTextField
             label="Email"
             value={email}
             disabled
-            fullWidth
-            size="medium"
             helperText="Your sign-in email address"
           />
           <Button variant="outlined" size="small" onClick={() => setChangeEmailOpen(true)}>
             Change email
           </Button>
-          <TextField
+          <AppTextField
             label="Password"
             value="••••••••"
             disabled
-            fullWidth
-            size="medium"
             type="password"
             InputProps={{
               readOnly: true,
@@ -148,20 +142,18 @@ export default function SettingsClient() {
           <Typography color="text.secondary" variant="body2">
             Manage how we reach you.
           </Typography>
-          <TextField
+          <AppTextField
             select
             label="Email frequency"
             value={emailFrequency}
             onChange={(e) => setEmailFrequency(e.target.value as EmailFrequency)}
-            fullWidth
-            size="medium"
             helperText="TODO: Persistence coming next"
           >
             <MenuItem value="instant">Instant</MenuItem>
             <MenuItem value="daily">Daily</MenuItem>
             <MenuItem value="weekly">Weekly</MenuItem>
             <MenuItem value="off">Off</MenuItem>
-          </TextField>
+          </AppTextField>
           <FormGroup>
             <FormControlLabel
               control={

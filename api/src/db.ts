@@ -3,6 +3,7 @@ import { neon } from "@neondatabase/serverless";
 export type Bindings = {
   DATABASE_URL: string;
   NEXTAUTH_SECRET?: string; // Required for auth routes (profile, user/username, user/date-of-birth)
+  MEDIA_BUCKET?: R2Bucket; // R2 bucket for media (avatars, etc.)
   POSTMARK_SERVER_TOKEN: string;
   EMAIL_FROM: string;
   WEB_BASE_URL: string;

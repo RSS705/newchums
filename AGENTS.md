@@ -1,6 +1,6 @@
 # NewChums Agent Governance
 
-Last Updated: February 24, 2026
+Last Updated: February 26, 2026
 
 This document defines how agents (AI or human) should operate within the NewChums repository.
 
@@ -76,6 +76,17 @@ in the same change set.
 
 `template_reference/` at the repo root is the **canonical design/layout reference**. It is a purchased UI template; NewChums adapts its patterns, not invents from scratch.
 
+### Form Inputs (Label-Above Style)
+
+- **Always prefer labels above fields.** Match the Date of birth / NCDatePicker pattern: a static Typography label above the input, not a floating or in-field label.
+- **Use the right component:**
+  - `AppTextField` — for text fields, selects, and any field with a label (renders label above automatically).
+  - `AuthField` — for auth flows (login, signup, forgot-password); same label-above pattern with optional `noTopMargin`.
+  - `NCDatePicker` — for date fields (e.g. date of birth).
+- **Do not use** raw MUI `TextField` with `label` prop for new form fields. Use `AppTextField` instead.
+- **For Autocomplete or custom inputs:** render a Typography label above (subtitle1, fontWeight 600, mb: 0.625), then the input with `label={undefined}`.
+- Floating / in-field labels are not permitted. Do not reintroduce them.
+
 ### Template Parity Rules
 
 - **New views:** Start by copying/adapting an equivalent template view or component. Do not invent new structure.
@@ -85,20 +96,21 @@ in the same change set.
 
 ### Where to Look First (Agent Checklist)
 
-| Task | Look first | Then |
-|------|------------|------|
-| View/page change | `template_reference/src/app/` — find closest template page | Replicate structure in `web/src/app/` |
-| Auth views (login, register, forgot-password) | `template_reference/src/app/auth/auth1/` or `auth2/` | Use AuthSplitLayout, AuthField patterns in `web/src/components/` |
-| Global styling | `web/src/theme/` | Theme overrides, not per-page hacks |
-| Component pattern | `template_reference/src/app/components/` | Copy and adapt for NewChums |
+| Task                                          | Look first                                                 | Then                                                             |
+| --------------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------- |
+| View/page change                              | `template_reference/src/app/` — find closest template page | Replicate structure in `web/src/app/`                            |
+| Auth views (login, register, forgot-password) | `template_reference/src/app/auth/auth1/` or `auth2/`       | Use AuthSplitLayout, AuthField patterns in `web/src/components/` |
+| Form fields (text, select, date)              | `web/src/components/ui/AppTextField.tsx`                  | AppTextField (label above), AuthField, NCDatePicker              |
+| Global styling                                | `web/src/theme/`                                           | Theme overrides, not per-page hacks                              |
+| Component pattern                             | `template_reference/src/app/components/`                   | Copy and adapt for NewChums                                      |
 
 ### Agent Workflow for UI Work
 
 1. **Preflight:** Ensure gitignored assets are restored (env files, template_reference if doing UI). See [`docs/Gitignored_Assets_and_Restore.md`](docs/Gitignored_Assets_and_Restore.md).
 2. **Always** inspect `template_reference/` before implementing a new UI view.
-2. Prefer modifying shared components (`web/src/components/`), layouts, and theme.
-3. Keep changes minimal and consistent with template patterns.
-4. When in doubt: copy a template component and adapt it rather than inventing new structure.
+3. Prefer modifying shared components (`web/src/components/`), layouts, and theme.
+4. Keep changes minimal and consistent with template patterns.
+5. When in doubt: copy a template component and adapt it rather than inventing new structure.
 
 ### Technical Notes
 

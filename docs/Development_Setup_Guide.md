@@ -1,6 +1,6 @@
 # Development Setup Guide
 
-Last Updated: February 27, 2026
+Last Updated: February 26, 2026
 
 ---
 
@@ -10,11 +10,12 @@ Last Updated: February 27, 2026
 - **Content safety:** Inappropriate-word validation on signup username, profile display name, profile username, profile hobbies, onboarding username. Server uses full list (api/src/data/bannedTerms.ts, ~230 terms from LDNOOBW); client uses quick-catch list (~90 terms). Matching: CamelCase split, leetspeak, repeated-char collapse, phrase checks.
 - **Email verification:** Credentials signups require verification before sign-in; Postmark sends link; /auth/verify and /auth/verify/pending handle flow.
 - **Logged-in nav:** Explore (/), Your Plans (/plans), Your Chums (/chum-groups), Profile (/profile). Calendar removed. Mobile: hamburger drawer only (no bottom tab bar); Learn links (How it Works, Science of Friendship, Safety Center) in drawer below Create Event.
-- **Profile:** About you section fully wired: display name, username (label), bio, date of birth load and save via GET/PUT /profile. Handle changes via POST /user/username. Handle availability checked on blur and debounce (400ms) via GET /handles/available. Save disabled while handle check in progress. Validation matches signup (3–20 chars, no leading/trailing underscore). `router.refresh()` after save updates sidebar greeting ("Welcome back [name]") immediately. Migration 009 adds bio column to user_profile.
+- **Profile:** About you section fully wired: display name ("Your Name" label), username, bio, date of birth load and save via GET/PUT /profile. Handle changes via POST /user/username. Handle availability checked on blur and debounce (400ms) via GET /handles/available. Avatar upload via POST /media/init → PUT to presigned URL → POST /media/finalize; client-side crop (react-easy-crop, 256×256 WebP) before upload. Avatar remove via DELETE /profile/avatar. Shared `UserAvatar` component: shows uploaded image or initials fallback (deterministic color from hash of username, 8-brand palette). Sidebar nav header shows avatar when present (48px), waving hand when not. Migration 009 adds bio column to user_profile.
 - **Your Plans:** /plans page with Upcoming + Previous sections (placeholder data). Explore page shows Explore New Gatherings + Previous Gatherings in your Area only.
 - **Mobile UI:** SectionHeader centered with dynamic underline; Explore toggle pills centered with gap; EventListItem: no distance badge, full-width Join; welcome text centered on mobile. Profile: responsive header, avatar, cards; full-width Save; avatar dialog with mobile margins.
 - **Production environment:** Single deploy target (newchums-web-dev, newchums-api); domain newchums.com.
 - **Build:** `cd web && npm run build` passes. No deploy run this session.
+- **Avatar storage:** R2 bucket `newchums-media` (MEDIA_BUCKET binding). API wrangler.toml defines r2_buckets. Users table has avatar_key; GET /users/:userId/avatar serves from R2.
 - **Next session:** Deploy to verify mobile UX changes; wire real data to Your Plans if ready.
 
 ---
@@ -42,7 +43,9 @@ Last Updated: February 27, 2026
 ### Do / Don't
 
 - **Do:** Copy template structure, use shared components, prefer theme overrides.
+- **Do:** Use label-above style for all form fields — `AppTextField`, `AuthField`, or `NCDatePicker` (not raw TextField with label).
 - **Don't:** Invent one-off styling, add mobile-only CSS that diverges from desktop, per-page `sx` patches (unless isolated).
+- **Don't:** Use floating or in-field labels for form inputs.
 
 ---
 
@@ -304,5 +307,19 @@ Chunk XX — YYYY-MM-DD
   - **Content safety (API):** New `api/src/data/bannedTerms.ts` (~230 terms from LDNOOBW single-word list). New `api/src/lib/contentSafety.ts` with `validateCleanText()`: CamelCase split, leetspeak (0→o, 1→i, etc.), repeated-char collapse, dots as separators, merged single-char tokens (e.g. f.u.c.k), multi-word phrases ("kill yourself"). Enforced on: POST /auth/signup, POST /user/username, PUT /profile (display name, handle, hobbies).
   - **Content safety (web):** New `web/src/lib/contentSafety.ts` with quick-catch list (~90 terms). Client validation on blur and before submit for signup, onboarding username, profile display name, profile username, profile hobbies. Maps API `INAPPROPRIATE_TEXT` to field-level errors.
 - **Error shape:** `{ ok: false, code: "INAPPROPRIATE_TEXT", field: "handle" | "display_name" | "hobby" }` (400).
+- **Verification:** `cd web && npm run build` passes.
+- **Deploy:** None this session.
+
+### Chunk 6 — 2026-02-26 — Profile & Avatar polish
+
+- **Goal:** Polish profile copy, avatar upload flow (crop, remove), shared UserAvatar component, sidebar avatar display.
+- **Changes Made:**
+  - **Profile copy:** "Display name" → "Your Name"; helper text "Your real name. Visible only when someone views your full profile." Username helper: "Your unique handle, visible throughout the system."
+  - **Avatar upload:** Crop UI (react-easy-crop) after file select: 1:1 circular crop, zoom slider, drag to reposition. Export 256×256 WebP (or PNG/JPEG) before upload; max 2MB enforced. Removed color circle picker.
+  - **Avatar remove:** "Remove current avatar" button in Choose avatar modal; DELETE /profile/avatar API endpoint.
+  - **UserAvatar component:** `web/src/components/common/UserAvatar.tsx`. Shows uploaded image or initials (name preferred over username). Deterministic background from hash of userId/username; 8-color brand palette including #F4B400; fontWeight 600. Optional fallbackIcon prop.
+  - **Sidebar:** AppShell fetches /profile on mount; shows 48px avatar when avatar_url present, otherwise waving hand in same-size slot.
+  - **Crop utility:** `web/src/lib/cropImage.ts` — getCroppedImg() outputs 256×256; quality reduction if over 2MB.
+- **API:** DELETE /profile/avatar clears avatar_key. POST /media/init, POST /media/finalize, GET /users/:userId/avatar (existing).
 - **Verification:** `cd web && npm run build` passes.
 - **Deploy:** None this session.

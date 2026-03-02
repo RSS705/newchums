@@ -3,7 +3,7 @@
  * Uses NEXT_PUBLIC_API_BASE_URL (e.g. http://127.0.0.1:8787 locally, https://newchums-api.*.workers.dev in prod).
  */
 
-const getApiBase = () => {
+export const getApiBaseUrl = () => {
   const base = process.env.NEXT_PUBLIC_API_BASE_URL;
   if (!base) throw new Error("NEXT_PUBLIC_API_BASE_URL is not set");
   const normalized = base.replace(/\/$/, "");
@@ -58,7 +58,7 @@ export async function apiFetch(
   options: ApiFetchOptions = {}
 ): Promise<Response> {
   const { auth = false, ...fetchOptions } = options;
-  const base = getApiBase();
+  const base = getApiBaseUrl();
   const url = `${base}${path.startsWith("/") ? path : `/${path}`}`;
 
   const headers = new Headers(fetchOptions.headers);

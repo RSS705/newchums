@@ -32,3 +32,7 @@ POSTMARK_TEMPLATE_VERIFY = "43483393"
 POSTMARK_TEMPLATE_RESET = "43483403"
 POSTMARK_TEMPLATE_RSVP = "43483423"
 AXIOM_DATASET = "newchums-api"
+
+[[r2_buckets]]
+binding = "MEDIA_BUCKET"
+bucket_name = "newchums-media"

@@ -1,7 +1,7 @@
 # Technical Specifications
 
-Last Updated: February 27, 2026
-Version: 5.2
+Last Updated: February 26, 2026
+Version: 5.3
 
 This document defines the authoritative technical architecture of NewChums.
 It describes what exists today and the structural commitments we are making.
@@ -70,7 +70,11 @@ The following business logic now lives in the API worker; the web app calls it v
 | POST /auth/email-verify/confirm | Confirm token and set email_verified_at |
 | GET /auth/email-verify/status | Returns { verified: boolean } for polling |
 | POST /auth/email-verify/mark-oauth | Auth required; sets email_verified_at for Google OAuth users |
-| GET /profile, PUT /profile | User profile (auth required). Returns name, username, date_of_birth, bio, home_city, travel_radius_km, interests. PUT accepts name, bio, date_of_birth, location, interests. |
+| GET /profile, PUT /profile | User profile (auth required). Returns name, username, date_of_birth, bio, home_city, travel_radius_km, interests, avatar_url. PUT accepts name, bio, date_of_birth, location, interests. |
+| POST /media/init | Auth required. Prepares avatar upload; returns uploadToken, objectKey, uploadUrl. Client PUTs file to uploadUrl, then POST /media/finalize. |
+| POST /media/finalize | Auth required. Associates uploaded R2 object with user as avatar; returns avatarUrl. |
+| DELETE /profile/avatar | Auth required. Clears user avatar (sets avatar_key = NULL). |
+| GET /users/:userId/avatar | Serves avatar image from R2. Returns 404 if no avatar. Public; cacheable. |
 | GET /handles/available | Auth required. Query `?handle=...` returns `{ available: boolean }`. Used for handle uniqueness check before save. |
 | GET /interests | List interests |
 | POST /user/username, POST /user/date-of-birth | Onboarding (auth required) |
@@ -83,10 +87,12 @@ The web retains only `GET/POST /api/auth/[...nextauth]` for Auth.js. All other f
 
 **Required env:** Web needs `NEXT_PUBLIC_API_BASE_URL`; API needs `DATABASE_URL`, `NEXTAUTH_SECRET` (same value as web AUTH_SECRET). Production web deploy sets `NEXT_PUBLIC_API_BASE_URL` to the public API URL (e.g. `https://newchums-api.robsmith775.workers.dev`) — the client bundle must never call localhost in production.
 
+**Avatar storage (R2):** Profile avatars are stored in Cloudflare R2 (MEDIA_BUCKET binding, bucket `newchums-media`). Flow: POST /media/init → client PUT to presigned uploadUrl → POST /media/finalize. Users table has avatar_key; GET /users/:userId/avatar serves from R2. Max 2MB; JPEG/PNG/WebP. DELETE /profile/avatar clears avatar.
+
 ## Not Implemented
 
 - No dedicated dev Worker environment yet.
-- R2, Cron, Queues are planned but not in production.
+- Cron, Queues are planned but not in production.
 
 ---
 
@@ -128,6 +134,7 @@ Principles:
 - Shared layouts for cross-cutting UI structure.
 - Single source of truth for typography, spacing, palette.
 - Inspect template_reference before building new views; use shared components.
+- **Form fields:** Label-above style only. Use AppTextField, AuthField, or NCDatePicker; no floating/in-field labels.
 
 **template_reference:** Not deployed. Influences how we build web UI. Gitignored (obtain separately; see Development_Setup_Guide).
 
@@ -224,7 +231,6 @@ cd web && npm run build
 
 # 12. Planned Infrastructure (Not Yet Implemented)
 
-- Cloudflare R2 (profile images)
 - Cron triggers for automated workflows
 - Queues for async jobs
 - Dedicated dev Worker environment

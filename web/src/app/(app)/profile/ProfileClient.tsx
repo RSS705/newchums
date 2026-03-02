@@ -1,37 +1,32 @@
 "use client";
 
 import Autocomplete from "@mui/material/Autocomplete";
-import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
 import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
 import InputAdornment from "@mui/material/InputAdornment";
+import Slider from "@mui/material/Slider";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import dayjs from "dayjs";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { apiFetch } from "@/lib/apiClient";
-import { AppButton, AppCard, useToast } from "@/components/ui";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Cropper, { type Area } from "react-easy-crop";
+import { apiFetch, getApiBaseUrl } from "@/lib/apiClient";
+import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
 import DistanceSelect from "@/components/common/DistanceSelect";
 import NCDatePicker from "@/components/fields/NCDatePicker";
 import PlacesAutocompleteInput from "@/components/common/PlacesAutocompleteInput";
+import UserAvatar from "@/components/common/UserAvatar";
 import { TRAVEL_RADIUS_OPTIONS } from "@/config/travelRadius";
 import { validateCleanText } from "@/lib/contentSafety";
+import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
 import { isDuplicate, nameToSlug, slugToName } from "@/lib/interestUtils";
-
-const AVATAR_OPTIONS = [
-  { id: "1", color: "primary.main" as const, label: "Blue" },
-  { id: "2", color: "secondary.main" as const, label: "Purple" },
-  { id: "3", color: "success.main" as const, label: "Green" },
-  { id: "4", color: "info.main" as const, label: "Cyan" },
-  { id: "5", color: "warning.main" as const, label: "Orange" },
-  { id: "6", color: "error.main" as const, label: "Red" },
-];
 
 type InterestOption = { id?: string; name: string; slug: string };
 type Profile = {
@@ -39,6 +34,7 @@ type Profile = {
   username?: string | null;
   date_of_birth?: string | null;
   bio?: string | null;
+  avatar_url?: string | null;
   home_city: string | null;
   home_lat: number | null;
   home_lng: number | null;
@@ -50,6 +46,8 @@ type Profile = {
 };
 
 const MAX_INTEREST_LENGTH = 50;
+const MAX_AVATAR_BYTES = 2 * 1024 * 1024; // 2MB
+const ALLOWED_AVATAR_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_DISPLAY_NAME_LENGTH = 100;
 const MAX_BIO_LENGTH = 500;
 const CHIPS_COLLAPSED_COUNT = 12;
@@ -63,12 +61,16 @@ export default function ProfileClient() {
   const [displayName, setDisplayName] = useState("");
   const [handle, setHandle] = useState("");
   const [dateOfBirth, setDateOfBirth] = useState("");
-  const [avatarId, setAvatarId] = useState("1");
   const [bio, setBio] = useState("");
   const [avatarDialogOpen, setAvatarDialogOpen] = useState(false);
+  const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
+  const [cropZoom, setCropZoom] = useState(1);
+  const [cropPosition, setCropPosition] = useState({ x: 0, y: 0 });
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
   const [handleStatus, setHandleStatus] = useState<"idle" | "checking" | "available" | "unavailable">("idle");
   const [handleError, setHandleError] = useState<string | null>(null);
   const [displayNameError, setDisplayNameError] = useState<string | null>(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
 
   const [homeAddress, setHomeAddress] = useState("");
   const [homeLat, setHomeLat] = useState<number | null>(null);
@@ -83,6 +85,7 @@ export default function ProfileClient() {
 
   const toast = useToast();
   const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchSuggestions = useCallback(async (q: string) => {
     const term = q.trim();
@@ -236,10 +239,126 @@ export default function ProfileClient() {
     return false;
   }, [profile, displayName, handle, dateOfBirth, bio, homeAddress, homeLat, homeLng, travelRadiusKm, interestItems]);
 
+  const handleAvatarUpload = useCallback(
+    async (fileOrBlob: File | Blob) => {
+      if (!profile) return;
+      const contentType = fileOrBlob.type || "image/webp";
+      if (!ALLOWED_AVATAR_TYPES.includes(contentType)) {
+        toast.error("Please use JPEG, PNG, or WebP.");
+        return;
+      }
+      if (fileOrBlob.size > MAX_AVATAR_BYTES) {
+        toast.error("Image must be 2MB or less.");
+        return;
+      }
+      setAvatarUploading(true);
+      try {
+        const initRes = await apiFetch("/media/init", {
+          auth: true,
+          method: "POST",
+          body: JSON.stringify({
+            purpose: "avatar",
+            contentType,
+            contentLength: fileOrBlob.size,
+          }),
+        });
+        const initData = (await initRes.json()) as {
+          ok?: boolean;
+          uploadToken?: string;
+          objectKey?: string;
+          uploadUrl?: string;
+          error?: string;
+        };
+        if (!initData.ok || !initData.uploadToken || !initData.uploadUrl) {
+          toast.error(initData.error ?? "Failed to prepare upload");
+          return;
+        }
+        const uploadUrl = `${getApiBaseUrl()}${initData.uploadUrl}`;
+        const uploadRes = await fetch(uploadUrl, {
+          method: "PUT",
+          body: fileOrBlob,
+          headers: { "Content-Type": contentType },
+          credentials: "omit",
+        });
+        if (!uploadRes.ok) {
+          const errData = await uploadRes.json().catch(() => ({}));
+          toast.error(errData.error === "FILE_TOO_LARGE" ? "Image too large." : "Upload failed.");
+          return;
+        }
+        const finalizeRes = await apiFetch("/media/finalize", {
+          auth: true,
+          method: "POST",
+          body: JSON.stringify({ objectKey: initData.objectKey, purpose: "avatar" }),
+        });
+        const finalizeData = (await finalizeRes.json()) as {
+          ok?: boolean;
+          avatarUrl?: string;
+          error?: string;
+        };
+        if (!finalizeData.ok || !finalizeData.avatarUrl) {
+          toast.error(finalizeData.error ?? "Failed to save avatar");
+          return;
+        }
+        setProfile((p) => (p ? { ...p, avatar_url: finalizeData.avatarUrl! } : p));
+        setAvatarDialogOpen(false);
+        setCropImageSrc(null);
+        toast.success("Avatar updated");
+        router.refresh();
+      } catch {
+        toast.error("Upload failed");
+      } finally {
+        setAvatarUploading(false);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      }
+    },
+    [profile, toast, router],
+  );
+
+  const handleCropComplete = useCallback((_: Area, croppedAreaPx: Area) => {
+    setCroppedAreaPixels(croppedAreaPx);
+  }, []);
+
+  const handleRemoveAvatar = useCallback(async () => {
+    if (!profile || avatarUploading) return;
+    setAvatarUploading(true);
+    try {
+      const res = await apiFetch("/profile/avatar", { auth: true, method: "DELETE" });
+      const data = (await res.json()) as { ok?: boolean; error?: string };
+      if (!data.ok) {
+        toast.error(data.error ?? "Failed to remove avatar");
+        return;
+      }
+      setProfile((p) => (p ? { ...p, avatar_url: null } : p));
+      setAvatarDialogOpen(false);
+      toast.success("Avatar removed");
+      router.refresh();
+    } catch {
+      toast.error("Failed to remove avatar");
+    } finally {
+      setAvatarUploading(false);
+    }
+  }, [profile, avatarUploading, toast, router]);
+
+  const handleCropSave = useCallback(async () => {
+    if (!cropImageSrc || !croppedAreaPixels) return;
+    setAvatarUploading(true);
+    try {
+      const blob = await getCroppedImg(cropImageSrc, croppedAreaPixels as PixelCrop);
+      URL.revokeObjectURL(cropImageSrc);
+      setCropImageSrc(null);
+      setCroppedAreaPixels(null);
+      await handleAvatarUpload(blob);
+    } catch {
+      toast.error("Failed to process image");
+    } finally {
+      setAvatarUploading(false);
+    }
+  }, [cropImageSrc, croppedAreaPixels, handleAvatarUpload, toast]);
+
   const handleSave = async () => {
     if (saving || !isDirty()) return;
     if (displayName.length > MAX_DISPLAY_NAME_LENGTH) {
-      toast.error(`Display name must be ${MAX_DISPLAY_NAME_LENGTH} characters or less`);
+      toast.error(`Name must be ${MAX_DISPLAY_NAME_LENGTH} characters or less`);
       return;
     }
     const displayNameTrimmed = displayName.trim();
@@ -427,8 +546,8 @@ export default function ProfileClient() {
           </Typography>
           <Stack direction={{ xs: "column", sm: "row" }} spacing={{ xs: 2, sm: 2 }} alignItems={{ xs: "center", sm: "flex-start" }}>
             <Stack spacing={2} flex={1} minWidth={0} order={{ xs: 1, sm: 0 }}>
-              <TextField
-                label="Display name"
+              <AppTextField
+                label="Your Name"
                 value={displayName}
                 onChange={(e) => {
                   setDisplayName(e.target.value);
@@ -443,14 +562,12 @@ export default function ProfileClient() {
                     setDisplayNameError(null);
                   }
                 }}
-                fullWidth
-                size="medium"
                 placeholder="Your real name"
-                helperText={displayNameError ?? "Your real name. Visible when someone views your full profile."}
+                helperText={displayNameError ?? "Your real name. Visible only when someone views your full profile."}
                 error={Boolean(displayNameError)}
                 inputProps={{ maxLength: MAX_DISPLAY_NAME_LENGTH }}
               />
-              <TextField
+              <AppTextField
                 label="Username"
                 value={handle}
                 onChange={(e) => {
@@ -469,8 +586,6 @@ export default function ProfileClient() {
                   }
                   checkHandleAvailable(handle);
                 }}
-                fullWidth
-                size="medium"
                 placeholder="yourhandle"
                 error={Boolean(handleError)}
                 InputProps={{
@@ -486,7 +601,7 @@ export default function ProfileClient() {
                     ? "This handle is available."
                     : handleStatus === "checking"
                       ? "Checking availability…"
-                      : "Your unique handle (3–20 chars, letters, numbers, underscores).")
+                      : "Your unique handle, visible throughout the system.")
                 }
               />
               <NCDatePicker
@@ -498,11 +613,10 @@ export default function ProfileClient() {
                 helperText="You must be 18+ to use NewChums."
                 noTopMargin
               />
-              <TextField
+              <AppTextField
                 label="Bio"
                 value={bio}
                 onChange={(e) => setBio(e.target.value)}
-                fullWidth
                 multiline
                 rows={3}
                 placeholder="Tell people a bit about what you enjoy, what you're looking for, or the kind of gatherings you like."
@@ -517,18 +631,13 @@ export default function ProfileClient() {
               order={{ xs: 0, sm: 1 }}
               sx={{ pb: { xs: 2.5, sm: 0 } }}
             >
-              <Avatar
-                sx={{
-                  width: { xs: 96, sm: 128 },
-                  height: { xs: 96, sm: 128 },
-                  fontSize: { xs: "2.25rem", sm: "3rem" },
-                  bgcolor: AVATAR_OPTIONS.find((a) => a.id === avatarId)?.color ?? "primary.main",
-                  border: "2px solid",
-                  borderColor: "divider",
-                }}
-              >
-                {displayName?.slice(0, 1)?.toUpperCase() || "?"}
-              </Avatar>
+              <UserAvatar
+                src={profile?.avatar_url ? `${getApiBaseUrl()}${profile.avatar_url}` : null}
+                name={displayName}
+                username={handle}
+                size={128}
+                sx={{ width: { xs: 96, sm: 128 }, height: { xs: 96, sm: 128 } }}
+              />
               <AppButton variant="outlined" size="small" onClick={() => setAvatarDialogOpen(true)}>
                 Choose avatar
               </AppButton>
@@ -609,19 +718,30 @@ export default function ProfileClient() {
             }
             loading={suggestionsLoading}
             renderInput={(params) => (
-              <TextField
-                {...params}
-                label="Add hobbies"
-                placeholder="Type to search or create..."
-                fullWidth
-                size="medium"
-                variant="outlined"
-                onKeyDown={(e) => {
-                  if (e.key === "Backspace" && !inputValue) {
-                    e.preventDefault();
-                  }
-                }}
-              />
+              <Box>
+                <Typography
+                  component="label"
+                  htmlFor={params.id}
+                  variant="subtitle1"
+                  fontWeight={600}
+                  sx={{ display: "block", mb: 0.625, cursor: "text" }}
+                >
+                  Add hobbies
+                </Typography>
+                <TextField
+                  {...params}
+                  label={undefined}
+                  placeholder="Type to search or create..."
+                  fullWidth
+                  size="medium"
+                  variant="outlined"
+                  onKeyDown={(e) => {
+                    if (e.key === "Backspace" && !inputValue) {
+                      e.preventDefault();
+                    }
+                  }}
+                />
+              </Box>
             )}
             renderTags={() => null}
           />
@@ -697,10 +817,34 @@ export default function ProfileClient() {
             : "Save profile"}
       </AppButton>
 
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        style={{ display: "none" }}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          if (!ALLOWED_AVATAR_TYPES.includes(file.type)) {
+            toast.error("Please use JPEG, PNG, or WebP.");
+            return;
+          }
+          const url = URL.createObjectURL(file);
+          setCropImageSrc(url);
+          setCropZoom(1);
+          setCropPosition({ x: 0, y: 0 });
+          setCroppedAreaPixels(null);
+        }}
+      />
       <Dialog
         open={avatarDialogOpen}
-        onClose={() => setAvatarDialogOpen(false)}
-        maxWidth="xs"
+        onClose={() => {
+          if (avatarUploading) return;
+          if (cropImageSrc) URL.revokeObjectURL(cropImageSrc);
+          setCropImageSrc(null);
+          setAvatarDialogOpen(false);
+        }}
+        maxWidth="sm"
         fullWidth
         PaperProps={{
           sx: {
@@ -709,31 +853,89 @@ export default function ProfileClient() {
           },
         }}
       >
-        <DialogTitle>Choose avatar</DialogTitle>
+        <DialogTitle>{cropImageSrc ? "Crop avatar" : "Choose avatar"}</DialogTitle>
         <DialogContent sx={{ px: { xs: 2, sm: 3 } }}>
-          <Stack direction="row" flexWrap="wrap" gap={1.5} sx={{ pt: 1, justifyContent: "center" }}>
-            {AVATAR_OPTIONS.map((opt) => (
-              <Avatar
-                key={opt.id}
-                onClick={() => {
-                  setAvatarId(opt.id);
-                  setAvatarDialogOpen(false);
-                }}
-                sx={{
-                  width: 48,
-                  height: 48,
-                  bgcolor: opt.color,
-                  cursor: "pointer",
-                  border: avatarId === opt.id ? 3 : 0,
-                  borderColor: "primary.main",
-                  "&:hover": { opacity: 0.9 },
-                }}
+          {cropImageSrc ? (
+            <Stack spacing={2} sx={{ pt: 1 }}>
+              <Box sx={{ position: "relative", height: 320 }}>
+                <Cropper
+                  image={cropImageSrc}
+                  crop={cropPosition}
+                  zoom={cropZoom}
+                  aspect={1}
+                  cropShape="round"
+                  onCropChange={setCropPosition}
+                  onZoomChange={setCropZoom}
+                  onCropComplete={handleCropComplete}
+                />
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary" gutterBottom>
+                  Zoom
+                </Typography>
+                <Slider
+                  value={cropZoom}
+                  min={1}
+                  max={3}
+                  step={0.1}
+                  valueLabelDisplay="auto"
+                  onChange={(_, v) => setCropZoom(Number(v))}
+                />
+              </Box>
+              <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center" }}>
+                Drag to reposition, use the slider to zoom.
+              </Typography>
+            </Stack>
+          ) : (
+            <Stack spacing={2} sx={{ pt: 1 }}>
+              <AppButton
+                variant="outlined"
+                size="medium"
+                fullWidth
+                disabled={avatarUploading}
+                onClick={() => fileInputRef.current?.click()}
               >
-                {displayName?.slice(0, 1)?.toUpperCase() || "?"}
-              </Avatar>
-            ))}
-          </Stack>
+                {avatarUploading ? "Uploading…" : "Upload avatar"}
+              </AppButton>
+              {profile?.avatar_url && (
+                <AppButton
+                  variant="text"
+                  size="medium"
+                  fullWidth
+                  disabled={avatarUploading}
+                  onClick={handleRemoveAvatar}
+                  color="error"
+                >
+                  Remove current avatar
+                </AppButton>
+              )}
+              <Typography variant="body2" color="text.secondary">
+                JPEG, PNG, or WebP. Max 2MB. We&apos;ll crop to a square.
+              </Typography>
+            </Stack>
+          )}
         </DialogContent>
+        {cropImageSrc && (
+          <DialogActions sx={{ px: { xs: 2, sm: 3 }, pb: 2 }}>
+            <AppButton
+              variant="outlined"
+              onClick={() => {
+                URL.revokeObjectURL(cropImageSrc);
+                setCropImageSrc(null);
+                setCroppedAreaPixels(null);
+              }}
+            >
+              Choose different
+            </AppButton>
+            <AppButton
+              variant="contained"
+              disabled={avatarUploading || !croppedAreaPixels}
+              onClick={handleCropSave}
+            >
+              {avatarUploading ? "Uploading…" : "Save avatar"}
+            </AppButton>
+          </DialogActions>
+        )}
       </Dialog>
     </Stack>
   );
