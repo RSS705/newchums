@@ -17,6 +17,8 @@ body {
   width: 100%;
   max-width: 100vw;
   overflow-x: hidden; /* fallback for older browsers */
+  /* Reserve scrollbar space to prevent layout shift when content causes scrollbar to appear */
+  scrollbar-gutter: stable;
 }
 
 @supports (overflow-x: clip) {
