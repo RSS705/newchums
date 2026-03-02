@@ -3,41 +3,17 @@
 import Avatar from "@mui/material/Avatar";
 import type { SxProps, Theme } from "@mui/material/styles";
 
-/** Curated palette for avatar initials; includes NewChums golden accent. */
-const AVATAR_PALETTE = [
-  { bg: "#F4B400", text: "#1a1a1a" }, // Golden (NewChums accent)
-  { bg: "#E8F4EA", text: "#1a5c2e" }, // Soft green
-  { bg: "#E3F2FD", text: "#1a4d8f" }, // Soft blue
-  { bg: "#F3E5F5", text: "#5c1a6b" }, // Soft purple
-  { bg: "#FFF3E0", text: "#b45309" }, // Soft orange
-  { bg: "#FCE4EC", text: "#9e1946" }, // Soft pink
-  { bg: "#E0F7FA", text: "#006064" }, // Soft cyan
-  { bg: "#FFF8E1", text: "#7a5c00" }, // Soft amber
-] as const;
-
-function hash(str: string): number {
-  let h = 0;
-  for (let i = 0; i < str.length; i++) {
-    h = (h << 5) - h + str.charCodeAt(i);
-    h |= 0;
-  }
-  return Math.abs(h);
-}
-
-function getAvatarColors(userId?: string | null, username?: string | null): { bg: string; text: string } {
-  const seed = (userId ?? username ?? "").trim() || "0";
-  const idx = hash(seed) % AVATAR_PALETTE.length;
-  return AVATAR_PALETTE[idx];
-}
+/** Avatar initials use NewChums golden accent for consistent, on-brand fallback. */
+const AVATAR_INITIALS_COLORS = { bg: "#F4B400", text: "#1a1a1a" } as const;
 
 export type UserAvatarProps = {
   /** URL to avatar image (e.g. from API /users/:id/avatar) */
   src?: string | null;
   /** Display name - first letter used as fallback when no src */
   name?: string | null;
-  /** Username/handle - used as fallback when no name; also for deterministic color */
+  /** Username/handle - used as fallback when no name */
   username?: string | null;
-  /** User ID for deterministic color when no src (optional; falls back to username) */
+  /** User ID (optional; unused for color, kept for API compatibility) */
   userId?: string | null;
   size?: number | "small" | "medium" | "large";
   /** When provided and no src, render this instead of the initial letter */
@@ -63,7 +39,7 @@ export default function UserAvatar({
   sx = {},
 }: UserAvatarProps) {
   const initial = getInitial(name, username);
-  const colors = getAvatarColors(userId, username);
+  const colors = AVATAR_INITIALS_COLORS;
   const sizeNum =
     typeof size === "number"
       ? size
