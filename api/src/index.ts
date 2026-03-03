@@ -18,8 +18,10 @@ import { canAccessInternalTestRoute, notFound } from "./internalAccess";
 import { nameToSlug, slugToName, validateInterestName } from "./interests";
 import { ensureAppUserId } from "./profile";
 import { generateResetToken, hashResetToken } from "./resetTokens";
+import { isValidContactSubject } from "./lib/contact";
 import { checkContactRateLimit } from "./lib/contactRateLimit";
 import { validateCleanText } from "./lib/contentSafety";
+import { verifyTurnstileToken } from "./lib/turnstile";
 import {
   getDefaultPrefsJson,
   normalizeNotificationPrefs,
@@ -1012,7 +1014,14 @@ app.get("/interests", async (c) => {
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 app.post("/contact", async (c) => {
-  let body: { name?: string; email?: string; message?: string; website?: string };
+  let body: {
+    name?: string;
+    email?: string;
+    message?: string;
+    website?: string;
+    subject?: string;
+    turnstileToken?: string;
+  };
   try {
     body = await c.req.json();
   } catch {
@@ -1026,6 +1035,8 @@ app.post("/contact", async (c) => {
   const email = typeof body.email === "string" ? body.email.trim() : "";
   const message = typeof body.message === "string" ? body.message.trim() : "";
   const website = typeof body.website === "string" ? body.website.trim() : "";
+  const subject = typeof body.subject === "string" ? body.subject.trim() : "";
+  const turnstileToken = typeof body.turnstileToken === "string" ? body.turnstileToken.trim() : "";
 
   // Honeypot: if website is non-empty, pretend success without sending
   if (website !== "") {
@@ -1033,6 +1044,12 @@ app.post("/contact", async (c) => {
   }
 
   // Validation
+  if (!isValidContactSubject(subject)) {
+    return c.json(
+      { ok: false, error: "INVALID_INPUT", message: "Please select a subject" },
+      400
+    );
+  }
   if (name.length < 1 || name.length > 80) {
     return c.json(
       { ok: false, error: "INVALID_INPUT", message: "Name must be 1–80 characters" },
@@ -1047,7 +1064,7 @@ app.post("/contact", async (c) => {
   }
   if (message.length < 10 || message.length > 2000) {
     return c.json(
-      { ok: false, error: "INVALID_INPUT", message: "Message must be 10–2000 characters" },
+      { ok: false, error: "INVALID_INPUT", message: "Message must be at least 10 characters" },
       400
     );
   }
@@ -1070,27 +1087,51 @@ app.post("/contact", async (c) => {
 
   let userId: string | undefined;
   let username: string | undefined;
-  const token = getBearerToken(c.req);
-  if (token && c.env.NEXTAUTH_SECRET) {
-    const payload = await verifyAuthToken(token, c.env.NEXTAUTH_SECRET);
-    if (payload?.email && typeof payload.email === "string") {
-      try {
-        const sql = getSql(c.env);
-        const appUserId = await ensureAppUserId(
-          sql,
-          payload.email,
-          (payload as { name?: string | null }).name
-        );
-        userId = appUserId;
-        const row = (await sql`
-          SELECT username FROM newchums.users WHERE id = ${appUserId} LIMIT 1
-        `) as { username: string | null }[];
-        if (row[0]?.username) {
-          username = row[0].username.replace(/^@/, "");
-        }
-      } catch {
-        // Ignore; we still send the email without user context
+  const authToken = getBearerToken(c.req);
+  const payload =
+    authToken && c.env.NEXTAUTH_SECRET
+      ? await verifyAuthToken(authToken, c.env.NEXTAUTH_SECRET)
+      : null;
+  const isLoggedIn = Boolean(payload?.email && typeof payload.email === "string");
+
+  // Turnstile required for logged-out users when secret is configured
+  if (!isLoggedIn && c.env.TURNSTILE_SECRET_KEY) {
+    if (!turnstileToken) {
+      return c.json(
+        { ok: false, error: "TURNSTILE_REQUIRED", message: "Please complete the verification." },
+        400
+      );
+    }
+    const verifyResult = await verifyTurnstileToken(
+      turnstileToken,
+      c.env.TURNSTILE_SECRET_KEY,
+      requestIp
+    );
+    if (!verifyResult.success) {
+      return c.json(
+        { ok: false, error: "TURNSTILE_FAILED", message: "Verification failed. Please try again." },
+        400
+      );
+    }
+  }
+
+  if (payload?.email && typeof payload.email === "string") {
+    try {
+      const sql = getSql(c.env);
+      const appUserId = await ensureAppUserId(
+        sql,
+        payload.email,
+        (payload as { name?: string | null }).name
+      );
+      userId = appUserId;
+      const row = (await sql`
+        SELECT username FROM newchums.users WHERE id = ${appUserId} LIMIT 1
+      `) as { username: string | null }[];
+      if (row[0]?.username) {
+        username = row[0].username.replace(/^@/, "");
       }
+    } catch {
+      // Ignore; we still send the email without user context
     }
   }
 
@@ -1098,6 +1139,7 @@ app.post("/contact", async (c) => {
     await sendContactFormEmail(c.env, {
       name,
       email,
+      subject,
       message,
       requestIp,
       userId,

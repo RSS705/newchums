@@ -183,11 +183,13 @@ Users manage privacy preferences in **Settings** (`/settings`). These toggles co
 ### Contact form
 
 - `POST /contact` (public, no auth required)
-  - JSON: `{ name: string, email: string, message: string, website?: string }`
+  - JSON: `{ name: string, email: string, subject: string, message: string, website?: string, turnstileToken?: string }`
+  - `subject`: required, must be one of (Account issue, Safety concern, Feature request / suggestion, Bug report, Partnership / business inquiry, Other)
   - Validation: name 1–80 chars, email valid format, message 10–2000 chars
   - Honeypot: `website` field; if non-empty, returns `{ ok: true }` without sending
   - Rate limit: 5 submissions per 10 minutes per IP (KV `CONTACT_RATELIMIT_KV`, optional)
-  - Email: Postmark sends to `contact@newchums.com` from `contact@newchums.com`, Reply-To from form; includes Name, Email, Message, Timestamp, IP; if logged in (Bearer token), includes userId and username
+  - **Spam protection (logged-out):** Cloudflare Turnstile required when `TURNSTILE_SECRET_KEY` is set. Logged-in users (Bearer token) skip Turnstile.
+  - Email: Postmark sends to `contact@newchums.com` from `contact@newchums.com`, Reply-To from form; subject line "NewChums: Contact — &lt;Subject&gt;"; includes Subject, Name, Email, Message, Timestamp, IP, Environment; if logged in, includes userId and username
 
 ### Media (avatar)
 

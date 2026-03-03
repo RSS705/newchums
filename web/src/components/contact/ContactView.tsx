@@ -5,8 +5,12 @@ import Grid from "@mui/material/Grid";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { useCallback, useState } from "react";
+import Link from "next/link";
+import CheckCircleOutlineRoundedIcon from "@mui/icons-material/CheckCircleOutlineRounded";
 import { apiFetch } from "@/lib/apiClient";
+import { CONTACT_SUBJECT_OPTIONS } from "@/lib/contact";
 import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
+import TurnstileWidget from "./TurnstileWidget";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_MESSAGE_LEN = 10;
@@ -17,26 +21,46 @@ type ContactViewProps = {
   /** Prefill when user is logged in */
   initialName?: string;
   initialEmail?: string;
+  /** When true, Turnstile is not shown and not required */
+  isLoggedIn?: boolean;
+  /** Cloudflare Turnstile site key for logged-out spam protection. If unset, no Turnstile. */
+  turnstileSiteKey?: string;
 };
 
 /**
  * Contact form. Sends to POST /contact.
  */
-export default function ContactView({ initialName = "", initialEmail = "" }: ContactViewProps) {
+export default function ContactView({
+  initialName = "",
+  initialEmail = "",
+  isLoggedIn = false,
+  turnstileSiteKey = "",
+}: ContactViewProps) {
   const [name, setName] = useState(initialName);
   const [email, setEmail] = useState(initialEmail);
+  const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
   const [website, setWebsite] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileKey, setTurnstileKey] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [submittedEmail, setSubmittedEmail] = useState("");
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [messageError, setMessageError] = useState<string | null>(null);
   const toast = useToast();
 
+  const needsTurnstile = !isLoggedIn && turnstileSiteKey;
+  const turnstileValid = !needsTurnstile || turnstileToken !== "";
+
   const isValid =
+    subject !== "" &&
     name.trim().length >= 1 &&
     name.trim().length <= MAX_NAME_LEN &&
     EMAIL_REGEX.test(email.trim()) &&
     message.trim().length >= MIN_MESSAGE_LEN &&
-    message.trim().length <= MAX_MESSAGE_LEN;
+    message.trim().length <= MAX_MESSAGE_LEN &&
+    turnstileValid;
 
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
@@ -44,16 +68,22 @@ export default function ContactView({ initialName = "", initialEmail = "" }: Con
       if (!isValid || submitting) return;
 
       setSubmitting(true);
+      setEmailError(null);
+      setMessageError(null);
       try {
+        const body: Record<string, string> = {
+          name: name.trim(),
+          email: email.trim(),
+          subject,
+          message: message.trim(),
+          website: website.trim(),
+        };
+        if (turnstileToken) body.turnstileToken = turnstileToken;
+
         const res = await apiFetch("/contact", {
           method: "POST",
           auth: true,
-          body: JSON.stringify({
-            name: name.trim(),
-            email: email.trim(),
-            message: message.trim(),
-            website: website.trim(),
-          }),
+          body: JSON.stringify(body),
         });
         const data = (await res.json()) as { ok?: boolean; error?: string; message?: string };
 
@@ -61,17 +91,22 @@ export default function ContactView({ initialName = "", initialEmail = "" }: Con
           const msg =
             data.error === "RATE_LIMITED"
               ? "Too many submissions. Please try again later."
-              : data.message ?? "Something went wrong. Please try again.";
+              : data.error === "TURNSTILE_REQUIRED" || data.error === "TURNSTILE_FAILED"
+                ? "Verification failed. Please try again."
+                : data.message ?? "Something went wrong. Please try again.";
           toast.error(msg);
           return;
         }
 
         if (data.ok) {
+          setSubmittedEmail(email.trim());
           setSuccess(true);
           setName("");
           setEmail("");
+          setSubject("");
           setMessage("");
           setWebsite("");
+          setTurnstileToken("");
         }
       } catch {
         toast.error("Failed to send message. Please try again.");
@@ -79,12 +114,29 @@ export default function ContactView({ initialName = "", initialEmail = "" }: Con
         setSubmitting(false);
       }
     },
-    [isValid, submitting, name, email, message, website, toast]
+    [isValid, submitting, name, email, subject, message, website, turnstileToken, toast]
   );
+
+  const handleEmailBlur = useCallback(() => {
+    if (email.trim() && !EMAIL_REGEX.test(email.trim())) {
+      setEmailError("Please enter a valid email address.");
+    } else {
+      setEmailError(null);
+    }
+  }, [email]);
+
+  const handleMessageBlur = useCallback(() => {
+    const len = message.trim().length;
+    if (len > 0 && len < MIN_MESSAGE_LEN) {
+      setMessageError(`Message must be at least ${MIN_MESSAGE_LEN} characters.`);
+    } else {
+      setMessageError(null);
+    }
+  }, [message]);
 
   if (success) {
     return (
-      <Stack spacing={{ xs: 3, sm: 4 }}>
+      <Stack spacing={{ xs: 3, sm: 4 }} sx={{ width: "100%" }}>
         <Box sx={{ textAlign: { xs: "center", sm: "left" } }}>
           <Typography
             component="h1"
@@ -98,10 +150,75 @@ export default function ContactView({ initialName = "", initialEmail = "" }: Con
             Contact
           </Typography>
         </Box>
-        <AppCard sx={{ borderRadius: { xs: 2, sm: 2.5 }, overflow: "hidden" }}>
-          <Typography color="success.main" sx={{ py: 2, fontSize: "1.0625rem" }}>
-            Thanks — we received your message.
-          </Typography>
+        <AppCard
+          component="section"
+          aria-live="polite"
+          aria-atomic="true"
+          sx={{
+            borderRadius: { xs: 2, sm: 2.5 },
+            overflow: "hidden",
+            bgcolor: "background.paper",
+            boxShadow: (theme) =>
+              theme.palette.mode === "light"
+                ? "0 1px 3px rgba(0,0,0,0.08)"
+                : "0 1px 3px rgba(0,0,0,0.2)",
+            borderTop: "4px solid",
+            borderTopColor: "secondary.main",
+          }}
+        >
+          <Stack spacing={2}>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
+              <CheckCircleOutlineRoundedIcon
+                sx={{ fontSize: 32, color: "success.main" }}
+                aria-hidden
+              />
+              <Typography
+                component="h2"
+                sx={{
+                  fontSize: { xs: "1.25rem", sm: "1.375rem" },
+                  fontWeight: 700,
+                  color: "text.primary",
+                  letterSpacing: "-0.01em",
+                }}
+              >
+                Message received
+              </Typography>
+            </Box>
+            <Stack spacing={1.25}>
+              <Typography color="text.secondary" sx={{ fontSize: "0.9375rem", lineHeight: 1.5 }}>
+                Thanks for reaching out, we&apos;ve got your message.
+              </Typography>
+              <Typography color="text.secondary" sx={{ fontSize: "0.9375rem", lineHeight: 1.5 }}>
+                We typically reply within 1–2 business days.
+              </Typography>
+              {submittedEmail && (
+                <Typography color="text.secondary" sx={{ fontSize: "0.9375rem", lineHeight: 1.5 }}>
+                  We&apos;ll reply to{" "}
+                  <Typography component="span" sx={{ fontWeight: 600, color: "text.primary" }}>
+                    {submittedEmail}
+                  </Typography>
+                  .
+                </Typography>
+              )}
+            </Stack>
+            <Box sx={{ pt: 1 }}>
+              <AppButton
+                component={Link}
+                href="/"
+                variant="contained"
+                color="primary"
+                size="medium"
+                sx={{
+                  alignSelf: "flex-start",
+                  borderRadius: 2,
+                  textTransform: "capitalize",
+                  "&:hover": { backgroundColor: "primary.dark" },
+                }}
+              >
+                {isLoggedIn ? "Back to Exploring" : "Back to home"}
+              </AppButton>
+            </Box>
+          </Stack>
         </AppCard>
       </Stack>
     );
@@ -121,22 +238,20 @@ export default function ContactView({ initialName = "", initialEmail = "" }: Con
         >
           Contact
         </Typography>
-        <Stack spacing={0.25} sx={{ mt: 1 }}>
+        <Typography
+          color="text.secondary"
+          sx={{ fontSize: { xs: "0.875rem", sm: "0.9375rem" }, mt: 1 }}
+        >
+          Need help or have feedback? Reach us at{" "}
           <Typography
-            color="text.secondary"
-            sx={{ fontSize: { xs: "0.875rem", sm: "0.9375rem" } }}
+            component="a"
+            href="mailto:contact@newchums.com"
+            sx={{ color: "primary.main", fontWeight: 500, textDecoration: "none" }}
           >
-            Need help or have feedback? Reach us at{" "}
-            <Typography
-              component="a"
-              href="mailto:contact@newchums.com"
-              sx={{ color: "primary.main", fontWeight: 500, textDecoration: "none" }}
-            >
-              contact@newchums.com
-            </Typography>
-            .
+            contact@newchums.com
           </Typography>
-        </Stack>
+          .
+        </Typography>
       </Box>
 
       <AppCard sx={{ borderRadius: { xs: 2, sm: 2.5 }, overflow: "hidden" }}>
@@ -145,7 +260,7 @@ export default function ContactView({ initialName = "", initialEmail = "" }: Con
             <Typography variant="h6" sx={{ fontSize: { xs: "1rem", sm: "1.125rem" } }}>
               Contact form
             </Typography>
-            {/* Honeypot - hidden from users, bots may fill it */}
+            {/* Honeypot */}
             <Box component="div" aria-hidden="true" sx={{ position: "absolute", left: -9999, overflow: "hidden" }}>
               <label htmlFor="contact-website">Website</label>
               <input
@@ -177,8 +292,32 @@ export default function ContactView({ initialName = "", initialEmail = "" }: Con
                   type="email"
                   placeholder="you@example.com"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    setEmailError(null);
+                  }}
+                  onBlur={handleEmailBlur}
+                  error={Boolean(emailError)}
+                  helperText={emailError ?? " "}
                 />
+              </Grid>
+              <Grid size={12}>
+                <AppTextField
+                  select
+                  id="contact-subject"
+                  label="Subject"
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                  SelectProps={{ native: true }}
+                  helperText=" "
+                  required
+                >
+                  {CONTACT_SUBJECT_OPTIONS.map((opt) => (
+                    <option key={opt.value || "placeholder"} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </AppTextField>
               </Grid>
               <Grid size={12}>
                 <AppTextField
@@ -186,13 +325,29 @@ export default function ContactView({ initialName = "", initialEmail = "" }: Con
                   label="Message"
                   placeholder="Your message (10–2000 characters)"
                   value={message}
-                  onChange={(e) => setMessage(e.target.value)}
+                  onChange={(e) => {
+                    setMessage(e.target.value);
+                    setMessageError(null);
+                  }}
+                  onBlur={handleMessageBlur}
                   multiline
                   rows={4}
                   inputProps={{ maxLength: MAX_MESSAGE_LEN }}
-                  helperText={`${message.length}/${MAX_MESSAGE_LEN}`}
+                  error={Boolean(messageError)}
+                  helperText={messageError ?? `${message.length}/${MAX_MESSAGE_LEN}`}
                 />
               </Grid>
+              {needsTurnstile && (
+                <Grid size={12}>
+                  <TurnstileWidget
+                    key={turnstileKey}
+                    siteKey={turnstileSiteKey}
+                    onVerify={setTurnstileToken}
+                    onExpire={() => setTurnstileToken("")}
+                    onError={() => setTurnstileToken("")}
+                  />
+                </Grid>
+              )}
               <Grid size={12}>
                 <AppButton
                   type="submit"

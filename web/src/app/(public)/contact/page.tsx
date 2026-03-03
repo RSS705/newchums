@@ -17,10 +17,11 @@ export default async function ContactPage() {
   const session = await auth();
 
   if (!session?.user?.email) {
+    const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
     return (
       <LandingLayout isLoggedIn={false}>
         <Box sx={{ py: { xs: 4, sm: 6 } }}>
-          <ContactView />
+          <ContactView isLoggedIn={false} turnstileSiteKey={turnstileSiteKey} />
         </Box>
       </LandingLayout>
     );
@@ -51,6 +52,7 @@ export default async function ContactPage() {
       <ContactView
         initialName={name ?? ""}
         initialEmail={session.user.email ?? ""}
+        isLoggedIn={true}
       />
     </AppShell>
   );

@@ -60,6 +60,7 @@ Required (typical local dev):
 - `GOOGLE_CLIENT_SECRET`
 
 Optional / situational:
+- `NEXT_PUBLIC_TURNSTILE_SITE_KEY` — Cloudflare Turnstile site key for contact form (logged-out users). If unset, Turnstile widget is not shown.
 - `NEXT_PUBLIC_API_BASE_URL`  
   - Defaults via `.env.development` to `http://127.0.0.1:8787` unless overridden.
 - `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`  
@@ -86,9 +87,40 @@ Email / Postmark (required for email flows):
 - `POSTMARK_TEMPLATE_EMAIL_CHANGE_SUCCESS`
 
 Optional:
+- `TURNSTILE_SECRET_KEY` — Cloudflare Turnstile secret key for contact form verification (logged-out users). If unset, Turnstile is skipped (useful for local dev).
 - `SENTRY_DSN`
 - `AXIOM_TOKEN`
 - `AXIOM_DATASET`
+
+---
+
+## Environment Variable Locations (API vs Web)
+
+### API Worker (`newchums-api`)
+
+- **Deployment:** Cloudflare Worker via `wrangler deploy`
+- **Secrets:** `npx wrangler secret put <NAME>` — stored in Cloudflare, not in code (e.g. `DATABASE_URL`, `NEXTAUTH_SECRET`, `POSTMARK_SERVER_TOKEN`, `TURNSTILE_SECRET_KEY`)
+- **Public vars:** `api/wrangler.toml` `[vars]` (e.g. `APP_ENV`, `EMAIL_FROM`, `WEB_BASE_URL`, template IDs)
+- **Local dev:** `api/.dev.vars` (gitignored; copy from `.dev.vars.example`)
+
+### Web Worker (`newchums-web-dev`)
+
+- **Deployment:** OpenNext → Cloudflare Worker via `wrangler deploy` from `web/`
+- **NEXT_PUBLIC_* variables are baked in at build time** — they must exist when `opennextjs-cloudflare build` runs. They are **not** read from `wrangler.toml` (that only affects Worker runtime; the client bundle is pre-built).
+- **Production build-time vars:**
+  - `web/.env.production` — committed; used when `next build` runs. Add `NEXT_PUBLIC_TURNSTILE_SITE_KEY` here for production.
+  - Or: the deploy script (`npm run deploy`) prefixes the build with `NEXT_PUBLIC_API_BASE_URL=...` — any vars you set in the environment before running `npm run deploy` are passed to the build.
+- **Local dev:** `web/.env.local` (gitignored) overrides `.env.development`
+
+**Where to set `NEXT_PUBLIC_TURNSTILE_SITE_KEY` for production:**
+
+1. **Option A (simplest):** Add to `web/.env.production` (Turnstile site key is public, so committing it is acceptable):
+   ```
+   NEXT_PUBLIC_TURNSTILE_SITE_KEY=0x4AAAAAAA...
+   ```
+2. **Option B:** Set in your shell or CI before deploy: `NEXT_PUBLIC_TURNSTILE_SITE_KEY=0x4AAAA... npm run deploy`
+
+**Redeploy after adding:** `cd web && npm run deploy`
 
 ---
 
@@ -107,6 +139,13 @@ Credentials signups require email verification before sign-in.
 ### Contact form
 
 - `POST /contact` sends email to `contact@newchums.com` from `contact@newchums.com` via Postmark (uses `POSTMARK_SERVER_TOKEN`).
+- **Turnstile setup (production):**
+  1. Create a Turnstile widget at [Cloudflare Dashboard → Turnstile](https://dash.cloudflare.com/?to=/:account/turnstile).
+  2. **Add your domain:** In the widget settings, add `newchums.com` (and `www.newchums.com` if used) to the widget’s allowed domains. Otherwise the widget will not render.
+  3. **Web:** Add `NEXT_PUBLIC_TURNSTILE_SITE_KEY` to `web/.env.production` (see § Environment Variable Locations).
+  4. **API:** Run `npx wrangler secret put TURNSTILE_SECRET_KEY` and paste the secret key.
+  4. Logged-out users must complete the Turnstile challenge before submit. Logged-in users skip it.
+- **Testing:** Use Cloudflare’s [test keys](https://developers.cloudflare.com/turnstile/troubleshooting/testing/) (always pass) for local dev.
 - For production rate limiting (5 per 10 min per IP): run `npx wrangler kv namespace create CONTACT_RATELIMIT`, then add the `[[kv_namespaces]]` block to `api/wrangler.toml` (see commented example in file).
 
 ### Password reset

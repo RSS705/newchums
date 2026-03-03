@@ -121,6 +121,7 @@ export const sendContactFormEmail = async (
   params: {
     name: string;
     email: string;
+    subject: string;
     message: string;
     requestIp: string | null;
     userId?: string;
@@ -131,11 +132,13 @@ export const sendContactFormEmail = async (
   const templateParams = {
     name: params.name,
     email: params.email,
+    subject: params.subject,
     message: params.message,
     requestIp: params.requestIp,
     timestamp,
     userId: params.userId,
     username: params.username,
+    environment: env.APP_ENV === "production" ? "Prod" : env.APP_ENV === "development" ? "Local" : env.APP_ENV ?? "Unknown",
   };
 
   const htmlBody = renderContactSubmissionHtml(templateParams);
@@ -144,7 +147,7 @@ export const sendContactFormEmail = async (
   await sendPostmarkRawEmail(env, {
     From: CONTACT_EMAIL,
     To: CONTACT_EMAIL,
-    Subject: "NewChums: Contact form submission",
+    Subject: `NewChums: Contact — ${params.subject}`,
     HtmlBody: htmlBody,
     TextBody: textBody,
     ReplyTo: params.email,

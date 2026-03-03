@@ -27,5 +27,8 @@ SENTRY_DSN=
 AXIOM_TOKEN=
 AXIOM_DATASET=
 
+# Optional: Cloudflare Turnstile for contact form (logged-out). Test keys: https://developers.cloudflare.com/turnstile/troubleshooting/testing/
+# TURNSTILE_SECRET_KEY=
+
 # Optional: for internal test routes in production
 # INTERNAL_TEST_TOKEN=

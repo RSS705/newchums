@@ -36,11 +36,13 @@ function formatTimestampReadable(iso: string): string {
 export type ContactSubmissionParams = {
   name: string;
   email: string;
+  subject: string;
   message: string;
   requestIp: string | null;
   timestamp: string;
   userId?: string;
   username?: string;
+  environment?: string;
 };
 
 export function renderContactSubmissionHtml(params: ContactSubmissionParams): string {
@@ -55,6 +57,8 @@ export function renderContactSubmissionHtml(params: ContactSubmissionParams): st
     : "—";
   const userId = params.userId != null ? escapeHtml(params.userId) : "—";
   const ip = params.requestIp ? escapeHtml(params.requestIp) : "—";
+  const subjectDisplay = escapeHtml(params.subject);
+  const envDisplay = escapeHtml(params.environment ?? "—");
   const timestampReadable = escapeHtml(formatTimestampReadable(params.timestamp));
   const timestampRaw = escapeHtml(params.timestamp);
 
@@ -92,13 +96,17 @@ export function renderContactSubmissionHtml(params: ContactSubmissionParams): st
           <tr>
             <td style="padding: 24px 32px 32px 32px;">
               <h1 style="margin: 0 0 8px 0; font-size: 24px; font-weight: 700; color: #111827;">New contact form submission</h1>
-              <p style="margin: 0 0 24px 0; font-size: 14px; color: #6B7280;">Someone sent a message via newchums.com/contact.</p>
+              <p style="margin: 0 0 24px 0; font-size: 14px; color: #6B7280;">A new message came in via the Contact page.</p>
               
               <!-- Details section -->
               <h2 style="margin: 0 0 12px 0; font-size: 16px; font-weight: 600; color: #374151;">Details</h2>
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="font-size: 14px; margin-bottom: 24px;">
                 <tr>
-                  <td style="padding: 8px 0; width: 140px; color: #6B7280; vertical-align: top;">Name</td>
+                  <td style="padding: 8px 0; width: 140px; color: #6B7280; vertical-align: top;">Subject</td>
+                  <td style="padding: 8px 0; color: #111827;">${subjectDisplay}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; color: #6B7280; vertical-align: top;">Name</td>
                   <td style="padding: 8px 0; color: #111827;">${name}</td>
                 </tr>
                 <tr>
@@ -122,6 +130,10 @@ export function renderContactSubmissionHtml(params: ContactSubmissionParams): st
                   <td style="padding: 8px 0; color: #111827;">${ip}</td>
                 </tr>
                 <tr>
+                  <td style="padding: 8px 0; color: #6B7280; vertical-align: top;">Environment</td>
+                  <td style="padding: 8px 0; color: #111827;">${envDisplay}</td>
+                </tr>
+                <tr>
                   <td style="padding: 8px 0; color: #6B7280; vertical-align: top;">Submitted at</td>
                   <td style="padding: 8px 0; color: #111827;">${timestampReadable}<br/><span style="font-size: 12px; color: #9CA3AF;">${timestampRaw}</span></td>
                 </tr>
@@ -129,10 +141,13 @@ export function renderContactSubmissionHtml(params: ContactSubmissionParams): st
               
               <!-- Message section -->
               <h2 style="margin: 0 0 12px 0; font-size: 16px; font-weight: 600; color: #374151;">Message</h2>
-              <div style="background-color: #eef0f5; border-radius: 8px; padding: 16px; font-size: 14px; line-height: 1.6; color: #111827; word-break: break-word; overflow-wrap: anywhere;">${messageHtml}</div>
+              <div style="background-color: #f6f7fb; border: 1px solid #d1d5db; border-radius: 8px; padding: 20px; font-size: 15px; line-height: 1.65; color: #111827; word-break: break-word; overflow-wrap: anywhere;">${messageHtml}</div>
               
-              <!-- Footer -->
-              <p style="margin: 24px 0 0 0; font-size: 13px; color: #6B7280;">Reply to this email to respond (Reply-To is set to the sender).</p>
+              <!-- Quick actions -->
+              <p style="margin: 24px 0 0 0; font-size: 13px; color: #6B7280;">Reply to this email to respond to the sender.</p>
+              <p style="margin: 8px 0 0 0; font-size: 13px;">
+                <a href="${emailHref}" style="color: #2563EB; text-decoration: none;">Reply via mailto → ${emailDisplay}</a>
+              </p>
             </td>
           </tr>
           <!-- Footer bar -->
@@ -155,12 +170,14 @@ export function renderContactSubmissionHtml(params: ContactSubmissionParams): st
 
 export function renderContactSubmissionText(params: ContactSubmissionParams): string {
   const lines: string[] = [
+    "Subject: " + params.subject,
     "Name: " + params.name,
     "Email: " + params.email,
     "Logged in: " + (params.userId != null ? "Yes" : "No"),
     "Username: " + (params.username != null && params.username.trim() !== "" ? "@" + params.username.replace(/^@/, "").trim() : "—"),
     "User ID: " + (params.userId ?? "—"),
     "IP: " + (params.requestIp ?? "—"),
+    "Environment: " + (params.environment ?? "—"),
     "Timestamp: " + params.timestamp,
     "",
     "Message:",
