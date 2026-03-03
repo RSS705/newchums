@@ -17,6 +17,7 @@ import { apiFetch, clearAuthTokenCache } from "@/lib/apiClient";
 import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
 import { NOTIFICATION_TYPES } from "./notificationConfig";
 import NotificationRow from "./NotificationRow";
+import PrivacyToggleRow from "./PrivacyToggleRow";
 
 export default function SettingsClient() {
   const [loading, setLoading] = useState(true);
@@ -38,6 +39,10 @@ export default function SettingsClient() {
   const [deleteAccountPassword, setDeleteAccountPassword] = useState("");
   const [deleteAccountSubmitting, setDeleteAccountSubmitting] = useState(false);
   const [deleteAccountError, setDeleteAccountError] = useState<string | null>(null);
+  const [isHiddenFromSearch, setIsHiddenFromSearch] = useState(false);
+  const [isHiddenFromExternalIndexing, setIsHiddenFromExternalIndexing] = useState(false);
+  const [privacyLoading, setPrivacyLoading] = useState(false);
+  const privacySaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toast = useToast();
   const router = useRouter();
 
@@ -49,6 +54,8 @@ export default function SettingsClient() {
       if (data.ok && data.profile) {
         setEmail(data.profile.email ?? "");
         setHasPassword(data.profile.has_password ?? true);
+        setIsHiddenFromSearch(data.profile.is_hidden_from_search ?? false);
+        setIsHiddenFromExternalIndexing(data.profile.is_hidden_from_external_indexing ?? false);
       }
     } finally {
       setLoading(false);
@@ -166,9 +173,58 @@ export default function SettingsClient() {
     scheduleNotificationSave(next);
   };
 
+  const persistPrivacy = useCallback(
+    async (hiddenFromSearch: boolean, hiddenFromExternalIndexing: boolean) => {
+      setPrivacyLoading(true);
+      try {
+        const res = await apiFetch("/profile", {
+          method: "PUT",
+          auth: true,
+          body: JSON.stringify({
+            is_hidden_from_search: hiddenFromSearch,
+            is_hidden_from_external_indexing: hiddenFromExternalIndexing,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          toast.error("Couldn't save privacy settings");
+          return;
+        }
+        toast.success("Privacy settings saved");
+      } catch {
+        toast.error("Couldn't save privacy settings");
+      } finally {
+        setPrivacyLoading(false);
+      }
+    },
+    [toast]
+  );
+
+  const schedulePrivacySave = useCallback(
+    (hiddenFromSearch: boolean, hiddenFromExternalIndexing: boolean) => {
+      if (privacySaveTimeoutRef.current) clearTimeout(privacySaveTimeoutRef.current);
+      privacySaveTimeoutRef.current = setTimeout(() => {
+        privacySaveTimeoutRef.current = null;
+        persistPrivacy(hiddenFromSearch, hiddenFromExternalIndexing);
+      }, 500);
+    },
+    [persistPrivacy]
+  );
+
+  const setPrivacyHiddenFromSearch = (enabled: boolean) => {
+    setIsHiddenFromSearch(enabled);
+    schedulePrivacySave(enabled, isHiddenFromExternalIndexing);
+  };
+
+  const setPrivacyHiddenFromExternalIndexing = (enabled: boolean) => {
+    setIsHiddenFromExternalIndexing(enabled);
+    schedulePrivacySave(isHiddenFromSearch, enabled);
+  };
+
   useEffect(() => {
     return () => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      if (privacySaveTimeoutRef.current) clearTimeout(privacySaveTimeoutRef.current);
     };
   }, []);
 
@@ -273,6 +329,34 @@ export default function SettingsClient() {
               />
             );
           })}
+        </Stack>
+      </AppCard>
+
+      {/* Privacy */}
+      <AppCard>
+        <Stack spacing={2}>
+          <Box>
+            <Typography variant="h6">Privacy</Typography>
+            <Typography color="text.secondary" variant="body2" sx={{ mt: 0.5 }}>
+              Control how your profile appears within and outside NewChums.
+            </Typography>
+          </Box>
+          <PrivacyToggleRow
+            title="Hide my profile from NewChums search"
+            description="If enabled, your profile will not appear in Chum searches, and other users will not be able to add you as a chum or invite you to events. If you join an event, attendees will still be able to view your profile."
+            enabled={isHiddenFromSearch}
+            onToggle={setPrivacyHiddenFromSearch}
+            showDivider={false}
+            disabled={privacyLoading}
+          />
+          <PrivacyToggleRow
+            title="Hide my profile from search engines"
+            description="If enabled, your profile will not be indexed by external search engines."
+            enabled={isHiddenFromExternalIndexing}
+            onToggle={setPrivacyHiddenFromExternalIndexing}
+            showDivider={true}
+            disabled={privacyLoading}
+          />
         </Stack>
       </AppCard>
 

@@ -1142,7 +1142,10 @@ app.get("/profile", async (c) => {
       (payload as { name?: string | null }).name,
     );
     const userRows = (await sql`
-      SELECT name, username, email, date_of_birth, avatar_key, avatar_updated_at, (password_hash IS NOT NULL) AS has_password FROM newchums.users WHERE id = ${appUserId} LIMIT 1
+      SELECT name, username, email, date_of_birth, avatar_key, avatar_updated_at, (password_hash IS NOT NULL) AS has_password,
+        COALESCE(is_hidden_from_search, false) AS is_hidden_from_search,
+        COALESCE(is_hidden_from_external_indexing, false) AS is_hidden_from_external_indexing
+      FROM newchums.users WHERE id = ${appUserId} LIMIT 1
     `) as Array<{
       name: string | null;
       username: string | null;
@@ -1151,6 +1154,8 @@ app.get("/profile", async (c) => {
       avatar_key: string | null;
       avatar_updated_at: string | Date | null;
       has_password: boolean;
+      is_hidden_from_search: boolean;
+      is_hidden_from_external_indexing: boolean;
     }>;
     const userInfo = userRows[0];
     const profileRows = (await sql`
@@ -1194,6 +1199,8 @@ app.get("/profile", async (c) => {
         : null;
 
     const hasPassword = userInfo?.has_password ?? false;
+    const isHiddenFromSearch = userInfo?.is_hidden_from_search ?? false;
+    const isHiddenFromExternalIndexing = userInfo?.is_hidden_from_external_indexing ?? false;
 
     if (!profile) {
       return c.json({
@@ -1214,6 +1221,8 @@ app.get("/profile", async (c) => {
           email_new_events: true,
           avatar_url: avatarUrl,
           has_password: hasPassword,
+          is_hidden_from_search: isHiddenFromSearch,
+          is_hidden_from_external_indexing: isHiddenFromExternalIndexing,
         },
       });
     }
@@ -1235,6 +1244,8 @@ app.get("/profile", async (c) => {
         email_new_events: profile.email_new_events,
         avatar_url: avatarUrl,
         has_password: hasPassword,
+        is_hidden_from_search: isHiddenFromSearch,
+        is_hidden_from_external_indexing: isHiddenFromExternalIndexing,
       },
     });
   } catch (err) {
@@ -1278,6 +1289,8 @@ app.put("/profile", async (c) => {
       interest_slugs?: string[];
       email_chat_digest?: boolean;
       email_new_events?: boolean;
+      is_hidden_from_search?: boolean;
+      is_hidden_from_external_indexing?: boolean;
     };
 
     if ("date_of_birth" in body && body.date_of_birth !== undefined) {
@@ -1547,6 +1560,14 @@ app.put("/profile", async (c) => {
         txQueries.push(sql`UPDATE newchums.users SET date_of_birth = ${dobVal} WHERE id = ${appUserId}`);
       }
     }
+    if ("is_hidden_from_search" in body && body.is_hidden_from_search !== undefined) {
+      const val = body.is_hidden_from_search === true;
+      txQueries.push(sql`UPDATE newchums.users SET is_hidden_from_search = ${val} WHERE id = ${appUserId}`);
+    }
+    if ("is_hidden_from_external_indexing" in body && body.is_hidden_from_external_indexing !== undefined) {
+      const val = body.is_hidden_from_external_indexing === true;
+      txQueries.push(sql`UPDATE newchums.users SET is_hidden_from_external_indexing = ${val} WHERE id = ${appUserId}`);
+    }
     if (rawInterestSlugs !== null) {
       txQueries.push(
         sql`DELETE FROM user_interests WHERE user_id = ${appUserId}`,
@@ -1562,7 +1583,10 @@ app.put("/profile", async (c) => {
     }
     await sql.transaction(txQueries);
     const userRowsAfter = (await sql`
-      SELECT name, username, email, date_of_birth, avatar_key, avatar_updated_at, (password_hash IS NOT NULL) AS has_password FROM newchums.users WHERE id = ${appUserId} LIMIT 1
+      SELECT name, username, email, date_of_birth, avatar_key, avatar_updated_at, (password_hash IS NOT NULL) AS has_password,
+        COALESCE(is_hidden_from_search, false) AS is_hidden_from_search,
+        COALESCE(is_hidden_from_external_indexing, false) AS is_hidden_from_external_indexing
+      FROM newchums.users WHERE id = ${appUserId} LIMIT 1
     `) as Array<{
       name: string | null;
       username: string | null;
@@ -1571,6 +1595,8 @@ app.put("/profile", async (c) => {
       avatar_key: string | null;
       avatar_updated_at: string | Date | null;
       has_password: boolean;
+      is_hidden_from_search: boolean;
+      is_hidden_from_external_indexing: boolean;
     }>;
     const userAfter = userRowsAfter[0];
     const profileRows = (await sql`
@@ -1621,6 +1647,8 @@ app.put("/profile", async (c) => {
         email_chat_digest: profile.email_chat_digest,
         email_new_events: profile.email_new_events,
         has_password: userAfter?.has_password ?? false,
+        is_hidden_from_search: userAfter?.is_hidden_from_search ?? false,
+        is_hidden_from_external_indexing: userAfter?.is_hidden_from_external_indexing ?? false,
       },
     });
   } catch (err) {

@@ -141,6 +141,7 @@ psql "$DATABASE_URL" -f sql/009_add_bio_to_user_profile.sql
 psql "$DATABASE_URL" -f sql/010_add_avatar_to_users.sql
 psql "$DATABASE_URL" -f sql/011_email_change_requests.sql
 psql "$DATABASE_URL" -f sql/012_add_notification_prefs.sql
+psql "$DATABASE_URL" -f sql/013_add_privacy_columns.sql
 ```
 
 Notes:

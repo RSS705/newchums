@@ -71,6 +71,7 @@ The following flows run in the API worker; the web app calls the API via `NEXT_P
 | Password change | `POST /account/password-change` | Bearer JWT (credentials users only) |
 | Account deletion | `DELETE /account` | Bearer JWT |
 | Notification prefs | `GET /notification-preferences`, `PUT /notification-preferences` | Bearer JWT |
+| Privacy prefs | `GET /profile`, `PUT /profile` (is_hidden_from_search, is_hidden_from_external_indexing) | Bearer JWT |
 | Interests | `GET /interests` | none |
 | Profile | `GET /profile`, `PUT /profile` | Bearer JWT |
 | Handle availability | `GET /handles/available?handle=...` | Bearer JWT |

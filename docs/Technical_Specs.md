@@ -159,6 +159,19 @@ Defaults are applied at account creation (credentials signup, OAuth) and backfil
 - **Deletion scope (current):** Hard delete in a single transaction: `user_interests`, `user_profile`, `newchums.users`. Cascades handle `password_reset_tokens`, `email_verification_tokens`, `email_change_requests`.
 - **Maintenance note:** As the schema evolves (e.g. events, event_rsvps, chum groups), the delete logic in `api/src/index.ts` must be updated to remove or reassign related rows. Check `DELETE /account` when adding new user-scoped tables.
 
+### Privacy preferences (Settings toggles)
+
+Users manage privacy preferences in **Settings** (`/settings`). These toggles control profile visibility. Stored in `users` table (columns added in migration 013). Loaded via `GET /profile`, persisted via `PUT /profile` with `is_hidden_from_search` and `is_hidden_from_external_indexing` in the body. Both default to `false` (OFF) for new and existing users.
+
+**Privacy toggles (current):**
+
+| Column | UI label | Description | Enforcement |
+|--------|----------|-------------|-------------|
+| `is_hidden_from_search` | Hide my profile from NewChums search | When ON: profile not in Chum searches; others cannot add as chum or invite to events. Event attendees can still view profile. | Not yet implemented |
+| `is_hidden_from_external_indexing` | Hide my profile from search engines | When ON: profile not indexed by external search engines. | Not yet implemented |
+
+**Implementation notes:** UI: `web/src/app/(app)/settings/PrivacyToggleRow.tsx`, `SettingsClient.tsx`. API: `GET /profile` and `PUT /profile` in `api/src/index.ts`. Schema: `web/sql/013_add_privacy_columns.sql`. Future work: enforce these flags in search, chum discovery, and SEO (e.g. noindex meta).
+
 ### Profile, onboarding, and lookups
 
 - `GET /profile`, `PUT /profile` (auth required)
@@ -221,6 +234,7 @@ Core tables include:
 - `email_change_requests` (migration 011)
 - interests tables
 - `user_profile.notification_prefs` (JSONB, migration 012) — per-notification-type enabled + frequency
+- `users.is_hidden_from_search`, `users.is_hidden_from_external_indexing` (boolean, migration 013) — privacy toggles (Settings), default false; enforcement not yet implemented
 - events and rsvps (present; implementation varies by feature maturity)
 
 PostGIS is available for geo queries.
