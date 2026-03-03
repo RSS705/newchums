@@ -18,7 +18,12 @@ import { nameToSlug, slugToName, validateInterestName } from "./interests";
 import { ensureAppUserId } from "./profile";
 import { generateResetToken, hashResetToken } from "./resetTokens";
 import { validateCleanText } from "./lib/contentSafety";
-import { mergeWithDefaults, validateAndMergeInput } from "./lib/notificationPrefs";
+import {
+  getDefaultPrefsJson,
+  normalizeNotificationPrefs,
+  validateAndMergeInput,
+  VALID_KEYS,
+} from "./lib/notificationPrefs";
 import {
   buildObjectKey,
   createUploadToken,
@@ -347,10 +352,19 @@ app.post("/auth/signup", async (c) => {
     }
 
     const passwordHash = hashSync(body.password, 10);
-    await sql`
+    const inserted = (await sql`
       INSERT INTO users (email, name, username, username_norm, password_hash, date_of_birth, email_verified_at)
       VALUES (${normalizedEmail}, ${normalizedName}, ${usernameDisplay}, ${usernameNorm}, ${passwordHash}, ${parsedDob}, NULL)
-    `;
+      RETURNING id
+    `) as { id: string }[];
+    const newUserId = inserted[0]?.id;
+    if (newUserId) {
+      const defaultPrefsJson = getDefaultPrefsJson();
+      await sql`
+        INSERT INTO user_profile (user_id, home_city, home_lat, home_lng, home_location, travel_radius_km, email_chat_digest, email_new_events, bio, notification_prefs)
+        VALUES (${newUserId}, NULL, NULL, NULL, NULL, 25, true, true, NULL, ${defaultPrefsJson}::jsonb)
+      `;
+    }
     return c.json({ ok: true }, 201);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -990,7 +1004,18 @@ app.get("/notification-preferences", async (c) => {
       SELECT notification_prefs FROM user_profile WHERE user_id = ${appUserId} LIMIT 1
     `) as { notification_prefs: unknown }[];
     const raw = rows[0]?.notification_prefs;
-    const prefs = mergeWithDefaults(raw);
+    const prefs = normalizeNotificationPrefs(raw);
+    const storedItems =
+      raw && typeof raw === "object" && (raw as { items?: Record<string, unknown> }).items;
+    const keysInStored = storedItems && typeof storedItems === "object" ? Object.keys(storedItems) : [];
+    const hasAllKeys = VALID_KEYS.every((k) => keysInStored.includes(k));
+    if (!hasAllKeys && rows.length > 0) {
+      const prefsJson = JSON.stringify(prefs);
+      await sql`
+        UPDATE user_profile SET notification_prefs = ${prefsJson}::jsonb
+        WHERE user_id = ${appUserId}
+      `;
+    }
     return c.json({ ok: true, prefs });
   } catch (err) {
     console.error("[GET /notification-preferences]", err);
@@ -1419,10 +1444,11 @@ app.put("/profile", async (c) => {
       home_lng != null &&
       Number.isFinite(home_lat) &&
       Number.isFinite(home_lng);
+    const defaultPrefsJson = getDefaultPrefsJson();
     const upsertQuery = hasLocation
       ? sql`
-          INSERT INTO user_profile (user_id, home_city, home_lat, home_lng, home_location, travel_radius_km, email_chat_digest, email_new_events, bio)
-          VALUES (${appUserId}, ${home_city}, ${home_lat}, ${home_lng}, ST_SetSRID(ST_MakePoint(${home_lng}, ${home_lat}), 4326)::geography, ${travel_radius_km}, ${email_chat_digest}, ${email_new_events}, ${bio})
+          INSERT INTO user_profile (user_id, home_city, home_lat, home_lng, home_location, travel_radius_km, email_chat_digest, email_new_events, bio, notification_prefs)
+          VALUES (${appUserId}, ${home_city}, ${home_lat}, ${home_lng}, ST_SetSRID(ST_MakePoint(${home_lng}, ${home_lat}), 4326)::geography, ${travel_radius_km}, ${email_chat_digest}, ${email_new_events}, ${bio}, ${defaultPrefsJson}::jsonb)
           ON CONFLICT (user_id) DO UPDATE SET
             home_city = EXCLUDED.home_city,
             home_lat = EXCLUDED.home_lat,
@@ -1434,8 +1460,8 @@ app.put("/profile", async (c) => {
             bio = EXCLUDED.bio
         `
       : sql`
-          INSERT INTO user_profile (user_id, home_city, home_lat, home_lng, home_location, travel_radius_km, email_chat_digest, email_new_events, bio)
-          VALUES (${appUserId}, ${home_city}, ${home_lat}, ${home_lng}, NULL, ${travel_radius_km}, ${email_chat_digest}, ${email_new_events}, ${bio})
+          INSERT INTO user_profile (user_id, home_city, home_lat, home_lng, home_location, travel_radius_km, email_chat_digest, email_new_events, bio, notification_prefs)
+          VALUES (${appUserId}, ${home_city}, ${home_lat}, ${home_lng}, NULL, ${travel_radius_km}, ${email_chat_digest}, ${email_new_events}, ${bio}, ${defaultPrefsJson}::jsonb)
           ON CONFLICT (user_id) DO UPDATE SET
             home_city = EXCLUDED.home_city,
             home_lat = EXCLUDED.home_lat,

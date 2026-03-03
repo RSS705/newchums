@@ -24,10 +24,6 @@ const FREQUENCY_OPTIONS: NotificationFrequency[] = [
   { value: "monthly", label: "Monthly" },
 ];
 
-const FREQ_IMMEDIATE_DAILY_WEEKLY_MONTHLY = FREQUENCY_OPTIONS.filter((f) =>
-  ["immediately", "daily", "weekly", "monthly"].includes(f.value)
-);
-
 const FREQ_IMMEDIATE_MONTHLY = FREQUENCY_OPTIONS.filter((f) =>
   ["immediately", "monthly"].includes(f.value)
 );
@@ -54,8 +50,8 @@ export const NOTIFICATION_TYPES: NotificationTypeConfig[] = [
   {
     key: "feedback_requests",
     title: "Post-event feedback reminders",
-    description: "Receive email reminders to provide feedback after you attend events.",
-    allowedFrequencies: FREQ_IMMEDIATE_DAILY_WEEKLY_MONTHLY,
+    description: "Receive an email the day after events you attend, asking for feedback.",
+    allowedFrequencies: [],
   },
   {
     key: "event_reminders",
