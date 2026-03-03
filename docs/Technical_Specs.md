@@ -127,6 +127,7 @@ The following business logic lives in the API worker; the web app calls it via `
 - `GET /auth/email-verify/status`
 - `POST /account/email-change/request`
 - `POST /account/email-change/confirm`
+- `POST /account/password-change` (auth required; credentials users only)
 
 ### Profile, onboarding, and lookups
 

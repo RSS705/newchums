@@ -1,5 +1,5 @@
 import * as Sentry from "@sentry/cloudflare";
-import { hashSync } from "bcryptjs";
+import { compareSync, hashSync } from "bcryptjs";
 import { Hono } from "hono";
 import { inspectRoutes } from "hono/dev";
 import { isAtLeast18, parseDateOnly } from "./ageValidation";
@@ -815,6 +815,78 @@ app.post("/account/email-change/confirm", async (c) => {
   });
 });
 
+app.post("/account/password-change", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+
+  const body = await c.req.json<{ currentPassword?: string; newPassword?: string }>();
+  const currentPassword = body.currentPassword?.trim() ?? "";
+  const newPassword = body.newPassword?.trim() ?? "";
+
+  if (!currentPassword) {
+    return c.json(
+      { ok: false, error: "INVALID_INPUT", code: "INVALID_INPUT", message: "Current password is required." },
+      400
+    );
+  }
+  if (!newPassword) {
+    return c.json(
+      { ok: false, error: "WEAK_PASSWORD", code: "WEAK_PASSWORD", message: "New password is required." },
+      400
+    );
+  }
+
+  if (newPassword.length < 8) {
+    return c.json(
+      { ok: false, error: "WEAK_PASSWORD", code: "WEAK_PASSWORD", message: "Use at least 8 characters." },
+      400
+    );
+  }
+  if (newPassword.length > 72) {
+    return c.json(
+      { ok: false, error: "WEAK_PASSWORD", code: "WEAK_PASSWORD", message: "Password must be 72 characters or less." },
+      400
+    );
+  }
+
+  const sql = getSql(c.env);
+  const appUserId = await ensureAppUserId(
+    sql,
+    payload.email,
+    (payload as { name?: string | null }).name,
+  );
+
+  const userRows = (await sql`
+    SELECT password_hash FROM newchums.users WHERE id = ${appUserId} LIMIT 1
+  `) as { password_hash: string | null }[];
+
+  const user = userRows[0];
+  if (!user) {
+    return c.json({ ok: false, error: "USER_NOT_FOUND" }, 404);
+  }
+
+  if (!user.password_hash) {
+    return c.json(
+      { ok: false, error: "OAUTH_ACCOUNT", code: "OAUTH_ACCOUNT", message: "This account signs in with Google. Password changes aren't available." },
+      409
+    );
+  }
+
+  if (!compareSync(currentPassword, user.password_hash)) {
+    return c.json(
+      { ok: false, error: "INVALID_PASSWORD", code: "INVALID_PASSWORD", message: "Current password is incorrect." },
+      400
+    );
+  }
+
+  const passwordHash = hashSync(newPassword, 10);
+  await sql`UPDATE newchums.users SET password_hash = ${passwordHash} WHERE id = ${appUserId}`;
+
+  return c.json({ ok: true });
+});
+
 app.get("/interests", async (c) => {
   try {
     const sql = getSql(c.env);
@@ -920,7 +992,7 @@ app.get("/profile", async (c) => {
       (payload as { name?: string | null }).name,
     );
     const userRows = (await sql`
-      SELECT name, username, email, date_of_birth, avatar_key, avatar_updated_at FROM newchums.users WHERE id = ${appUserId} LIMIT 1
+      SELECT name, username, email, date_of_birth, avatar_key, avatar_updated_at, (password_hash IS NOT NULL) AS has_password FROM newchums.users WHERE id = ${appUserId} LIMIT 1
     `) as Array<{
       name: string | null;
       username: string | null;
@@ -928,6 +1000,7 @@ app.get("/profile", async (c) => {
       date_of_birth: string | Date | null;
       avatar_key: string | null;
       avatar_updated_at: string | Date | null;
+      has_password: boolean;
     }>;
     const userInfo = userRows[0];
     const profileRows = (await sql`
@@ -970,6 +1043,8 @@ app.get("/profile", async (c) => {
         ? `/users/${appUserId}/avatar?v=${avatarUpdatedAt ? new Date(avatarUpdatedAt as Date).getTime() : 0}`
         : null;
 
+    const hasPassword = userInfo?.has_password ?? false;
+
     if (!profile) {
       return c.json({
         ok: true,
@@ -988,6 +1063,7 @@ app.get("/profile", async (c) => {
           email_chat_digest: true,
           email_new_events: true,
           avatar_url: avatarUrl,
+          has_password: hasPassword,
         },
       });
     }
@@ -1008,6 +1084,7 @@ app.get("/profile", async (c) => {
         email_chat_digest: profile.email_chat_digest,
         email_new_events: profile.email_new_events,
         avatar_url: avatarUrl,
+        has_password: hasPassword,
       },
     });
   } catch (err) {
@@ -1334,7 +1411,7 @@ app.put("/profile", async (c) => {
     }
     await sql.transaction(txQueries);
     const userRowsAfter = (await sql`
-      SELECT name, username, email, date_of_birth, avatar_key, avatar_updated_at FROM newchums.users WHERE id = ${appUserId} LIMIT 1
+      SELECT name, username, email, date_of_birth, avatar_key, avatar_updated_at, (password_hash IS NOT NULL) AS has_password FROM newchums.users WHERE id = ${appUserId} LIMIT 1
     `) as Array<{
       name: string | null;
       username: string | null;
@@ -1342,6 +1419,7 @@ app.put("/profile", async (c) => {
       date_of_birth: string | Date | null;
       avatar_key: string | null;
       avatar_updated_at: string | Date | null;
+      has_password: boolean;
     }>;
     const userAfter = userRowsAfter[0];
     const profileRows = (await sql`
@@ -1391,6 +1469,7 @@ app.put("/profile", async (c) => {
         interest_items: interestRows.map((r) => ({ slug: r.slug, name: slugToName(r.slug) })),
         email_chat_digest: profile.email_chat_digest,
         email_new_events: profile.email_new_events,
+        has_password: userAfter?.has_password ?? false,
       },
     });
   } catch (err) {

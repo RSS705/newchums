@@ -36,6 +36,13 @@ export default function SettingsClient() {
   const [changeEmailSuccess, setChangeEmailSuccess] = useState(false);
   const [changeEmailError, setChangeEmailError] = useState<string | null>(null);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [hasPassword, setHasPassword] = useState(true);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [changePasswordSubmitting, setChangePasswordSubmitting] = useState(false);
+  const [currentPasswordError, setCurrentPasswordError] = useState<string | null>(null);
+  const [newPasswordError, setNewPasswordError] = useState<string | null>(null);
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
   const toast = useToast();
 
@@ -48,6 +55,7 @@ export default function SettingsClient() {
         setEmail(data.profile.email ?? "");
         setEmailChatDigest(data.profile.email_chat_digest ?? true);
         setEmailNewEvents(data.profile.email_new_events ?? true);
+        setHasPassword(data.profile.has_password ?? true);
       }
     } finally {
       setLoading(false);
@@ -323,13 +331,152 @@ export default function SettingsClient() {
         </DialogActions>
       </Dialog>
       
-      <Dialog open={changePasswordOpen} onClose={() => setChangePasswordOpen(false)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={changePasswordOpen}
+        onClose={() => {
+          if (!changePasswordSubmitting) {
+            setChangePasswordOpen(false);
+            setCurrentPassword("");
+            setNewPassword("");
+            setConfirmPassword("");
+            setCurrentPasswordError(null);
+            setNewPasswordError(null);
+          }
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
         <DialogTitle>Change password</DialogTitle>
         <DialogContent>
-          <Typography color="text.secondary">Coming next. We’ll add password change flow soon.</Typography>
+          {!hasPassword ? (
+            <Typography color="text.secondary">
+              This account signs in with Google. Password changes aren't available.
+            </Typography>
+          ) : (
+            <Stack spacing={2} sx={{ mt: 1 }}>
+              <Typography color="text.secondary" variant="body2">
+                You'll stay signed in.
+              </Typography>
+              <AppTextField
+                label="Current password"
+                type="password"
+                value={currentPassword}
+                onChange={(e) => {
+                  setCurrentPassword(e.target.value);
+                  setCurrentPasswordError(null);
+                }}
+                helperText={currentPasswordError ?? " "}
+                error={Boolean(currentPasswordError)}
+                disabled={changePasswordSubmitting}
+                autoComplete="current-password"
+              />
+              <AppTextField
+                label="New password"
+                type="password"
+                value={newPassword}
+                onChange={(e) => {
+                  setNewPassword(e.target.value);
+                  setNewPasswordError(null);
+                }}
+                helperText={newPasswordError ?? "Use at least 8 characters."}
+                error={Boolean(newPasswordError)}
+                disabled={changePasswordSubmitting}
+                autoComplete="new-password"
+              />
+              <AppTextField
+                label="Confirm new password"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                helperText={
+                  confirmPassword && newPassword !== confirmPassword
+                    ? "Passwords don't match"
+                    : " "
+                }
+                error={Boolean(confirmPassword && newPassword !== confirmPassword)}
+                disabled={changePasswordSubmitting}
+                autoComplete="new-password"
+              />
+            </Stack>
+          )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setChangePasswordOpen(false)}>OK</Button>
+          <Button
+            onClick={() => {
+              setChangePasswordOpen(false);
+              setCurrentPassword("");
+              setNewPassword("");
+              setConfirmPassword("");
+              setCurrentPasswordError(null);
+              setNewPasswordError(null);
+            }}
+            disabled={changePasswordSubmitting}
+          >
+            Cancel
+          </Button>
+          {hasPassword && (
+            <AppButton
+              variant="contained"
+              disabled={
+                changePasswordSubmitting ||
+                !currentPassword.trim() ||
+                !newPassword.trim() ||
+                newPassword !== confirmPassword ||
+                newPassword.length < 8
+              }
+              onClick={async () => {
+                if (
+                  !currentPassword.trim() ||
+                  !newPassword.trim() ||
+                  newPassword.length < 8 ||
+                  newPassword !== confirmPassword
+                ) {
+                  return;
+                }
+                setChangePasswordSubmitting(true);
+                setCurrentPasswordError(null);
+                setNewPasswordError(null);
+                try {
+                  const res = await apiFetch("/account/password-change", {
+                    method: "POST",
+                    auth: true,
+                    body: JSON.stringify({
+                      currentPassword: currentPassword.trim(),
+                      newPassword: newPassword.trim(),
+                    }),
+                  });
+                  const data = (await res.json()) || {};
+                  if (!res.ok || !data.ok) {
+                    const code = data.code ?? data.error;
+                    const msg = data.message ?? "Failed to change password.";
+                    if (code === "OAUTH_ACCOUNT") {
+                      setNewPasswordError("This account signs in with Google. Password changes aren't available.");
+                    } else if (code === "INVALID_PASSWORD") {
+                      setCurrentPasswordError(msg);
+                    } else if (code === "WEAK_PASSWORD" || code === "INVALID_INPUT") {
+                      setNewPasswordError(msg);
+                    } else {
+                      setNewPasswordError(msg);
+                    }
+                    return;
+                  }
+                  toast.success("Password updated");
+                  setChangePasswordOpen(false);
+                  setCurrentPassword("");
+                  setNewPassword("");
+                  setConfirmPassword("");
+                  setCurrentPasswordError(null);
+                  setNewPasswordError(null);
+                } catch {
+                  setNewPasswordError("Something went wrong. Please try again.");
+                } finally {
+                  setChangePasswordSubmitting(false);
+                }
+              }}
+            >
+              {changePasswordSubmitting ? "Saving…" : "Save"}
+            </AppButton>
+          )}
         </DialogActions>
       </Dialog>
       <Dialog open={deleteAccountOpen} onClose={() => setDeleteAccountOpen(false)} maxWidth="sm" fullWidth>
