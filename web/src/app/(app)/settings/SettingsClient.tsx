@@ -10,8 +10,10 @@ import DialogTitle from "@mui/material/DialogTitle";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { signOut } from "next-auth/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetch, clearAuthTokenCache } from "@/lib/apiClient";
 import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
 import { NOTIFICATION_TYPES } from "./notificationConfig";
 import NotificationRow from "./NotificationRow";
@@ -33,7 +35,11 @@ export default function SettingsClient() {
   const [currentPasswordError, setCurrentPasswordError] = useState<string | null>(null);
   const [newPasswordError, setNewPasswordError] = useState<string | null>(null);
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
+  const [deleteAccountPassword, setDeleteAccountPassword] = useState("");
+  const [deleteAccountSubmitting, setDeleteAccountSubmitting] = useState(false);
+  const [deleteAccountError, setDeleteAccountError] = useState<string | null>(null);
   const toast = useToast();
+  const router = useRouter();
 
   const fetchProfile = useCallback(async () => {
     setLoading(true);
@@ -526,18 +532,101 @@ export default function SettingsClient() {
           )}
         </DialogActions>
       </Dialog>
-      <Dialog open={deleteAccountOpen} onClose={() => setDeleteAccountOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Delete account</DialogTitle>
+      <Dialog
+        open={deleteAccountOpen}
+        onClose={() => {
+          if (!deleteAccountSubmitting) {
+            setDeleteAccountOpen(false);
+            setDeleteAccountPassword("");
+            setDeleteAccountError(null);
+          }
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Delete your account?</DialogTitle>
         <DialogContent>
-          <Typography color="text.secondary">
-            Account deletion is not implemented yet. This will remove your account and all associated data permanently.
+          <Typography color="text.secondary" variant="body2" sx={{ mt: 0.5 }}>
+            This will permanently delete your account, events, and related data. This action cannot be undone.
           </Typography>
+          {hasPassword ? (
+            <Box sx={{ mt: 2 }}>
+              <AppTextField
+                label="Confirm with your password"
+                type="password"
+                value={deleteAccountPassword}
+                onChange={(e) => {
+                  setDeleteAccountPassword(e.target.value);
+                  setDeleteAccountError(null);
+                }}
+                helperText={deleteAccountError ?? " "}
+                error={Boolean(deleteAccountError)}
+                disabled={deleteAccountSubmitting}
+                autoComplete="current-password"
+              />
+            </Box>
+          ) : (
+            <Typography color="text.secondary" variant="body2" sx={{ mt: 1.5 }}>
+              You&apos;ll be signed out immediately.
+            </Typography>
+          )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDeleteAccountOpen(false)}>Cancel</Button>
-          <Button color="error" variant="contained" disabled>
-            Delete (coming next)
+          <Button
+            onClick={() => {
+              setDeleteAccountOpen(false);
+              setDeleteAccountPassword("");
+              setDeleteAccountError(null);
+            }}
+            disabled={deleteAccountSubmitting}
+          >
+            Cancel
           </Button>
+          <AppButton
+            color="error"
+            variant="contained"
+            disabled={
+              deleteAccountSubmitting ||
+              (hasPassword && !deleteAccountPassword.trim())
+            }
+            onClick={async () => {
+              if (deleteAccountSubmitting) return;
+              if (hasPassword && !deleteAccountPassword.trim()) return;
+              setDeleteAccountSubmitting(true);
+              setDeleteAccountError(null);
+              try {
+                const res = await apiFetch("/account", {
+                  method: "DELETE",
+                  auth: true,
+                  body: hasPassword
+                    ? JSON.stringify({ password: deleteAccountPassword.trim() })
+                    : undefined,
+                });
+                const data = (await res.json()) || {};
+                if (!res.ok || !data.ok) {
+                  const code = data.code ?? data.error;
+                  if (code === "INVALID_PASSWORD") {
+                    setDeleteAccountError(data.message ?? "Incorrect password.");
+                    return;
+                  }
+                  toast.error("Unable to delete account. Please try again.");
+                  return;
+                }
+                clearAuthTokenCache();
+                toast.success("Your account has been deleted.");
+                setDeleteAccountOpen(false);
+                setDeleteAccountPassword("");
+                await signOut({ redirect: false });
+                router.push("/");
+              } catch {
+                toast.error("Unable to delete account. Please try again.");
+              } finally {
+                setDeleteAccountSubmitting(false);
+              }
+            }}
+          >
+            {deleteAccountSubmitting ? "Deleting…" : "Delete account"}
+          </AppButton>
         </DialogActions>
       </Dialog>
     </Stack>

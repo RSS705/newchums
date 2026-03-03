@@ -902,6 +902,66 @@ app.post("/account/password-change", async (c) => {
   return c.json({ ok: true });
 });
 
+app.delete("/account", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+
+  const sql = getSql(c.env);
+  const appUserId = await ensureAppUserId(
+    sql,
+    payload.email,
+    (payload as { name?: string | null }).name,
+  );
+
+  const userRows = (await sql`
+    SELECT password_hash FROM newchums.users WHERE id = ${appUserId} LIMIT 1
+  `) as { password_hash: string | null }[];
+  const user = userRows[0];
+  if (!user) {
+    return c.json({ ok: false, error: "USER_NOT_FOUND" }, 404);
+  }
+
+  const hasPassword = user.password_hash != null && user.password_hash.length > 0;
+  if (hasPassword) {
+    let body: { password?: string } = {};
+    try {
+      const raw = await c.req.json();
+      if (raw && typeof raw === "object") body = raw as { password?: string };
+    } catch {
+      /* empty body allowed for OAuth; credentials users need password */
+    }
+    const password = body?.password?.trim() ?? "";
+    if (!password) {
+      return c.json(
+        { ok: false, error: "INVALID_INPUT", code: "PASSWORD_REQUIRED", message: "Password is required." },
+        400,
+      );
+    }
+    const match = compareSync(password, user.password_hash);
+    if (!match) {
+      return c.json(
+        { ok: false, error: "INVALID_PASSWORD", code: "INVALID_PASSWORD", message: "Incorrect password." },
+        400,
+      );
+    }
+  }
+
+  try {
+    const txQueries = [
+      sql`DELETE FROM user_interests WHERE user_id = ${appUserId}`,
+      sql`DELETE FROM user_profile WHERE user_id = ${appUserId}`,
+      sql`DELETE FROM newchums.users WHERE id = ${appUserId}`,
+    ];
+    await sql.transaction(txQueries);
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[DELETE /account] Transaction error:", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
 app.get("/interests", async (c) => {
   try {
     const sql = getSql(c.env);

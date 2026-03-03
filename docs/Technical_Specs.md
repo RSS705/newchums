@@ -128,6 +128,7 @@ The following business logic lives in the API worker; the web app calls it via `
 - `POST /account/email-change/request`
 - `POST /account/email-change/confirm`
 - `POST /account/password-change` (auth required; credentials users only)
+- `DELETE /account` (auth required) — hard delete account and all related data; credentials users must send `{ password }` in body
 - `GET /notification-preferences` (auth required) — returns persisted notification prefs
 - `PUT /notification-preferences` (auth required) — saves notification prefs (JSONB on user_profile)
 
