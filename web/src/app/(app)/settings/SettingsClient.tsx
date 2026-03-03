@@ -14,6 +14,7 @@ import FormGroup from "@mui/material/FormGroup";
 import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/apiClient";
 import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
@@ -159,6 +160,19 @@ export default function SettingsClient() {
           <Button variant="outlined" size="small" onClick={() => setChangePasswordOpen(true)}>
             Change password
           </Button>
+          <Box sx={{ mt: 1 }}>
+            <Link
+              href={email ? `/forgot-password?email=${encodeURIComponent(email)}` : "/forgot-password"}
+              style={{ textDecoration: "none" }}
+            >
+              <Typography variant="body2" color="primary" component="span" sx={{ textDecoration: "underline" }}>
+                Forgot your password?
+              </Typography>
+            </Link>
+            <Typography variant="body2" color="text.secondary" component="span" sx={{ ml: 0.5 }}>
+              We&apos;ll email you a reset link.
+            </Typography>
+          </Box>
         </Stack>
       </AppCard>
 
