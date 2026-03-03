@@ -64,9 +64,10 @@ export default function NotificationRow({
               display: "flex",
               alignItems: "center",
               flexShrink: 0,
-              ml: "auto",
+              ml: { xs: 0, sm: "auto" },
               width: { xs: "100%", sm: "auto" },
-              justifyContent: { xs: "flex-end", sm: "flex-start" },
+              flexBasis: { xs: "100%", sm: "auto" },
+              justifyContent: { xs: "flex-start", sm: "flex-start" },
             }}
           >
             <Select
@@ -74,7 +75,10 @@ export default function NotificationRow({
               onChange={(e) => onFrequencyChange(e.target.value)}
               disabled={disabled}
               size="small"
-              sx={{ minWidth: 130, maxWidth: 160 }}
+              sx={{
+                minWidth: { xs: "100%", sm: 130 },
+                maxWidth: { xs: "none", sm: 160 },
+              }}
               aria-label="Frequency"
             >
               {config.allowedFrequencies.map((f) => (

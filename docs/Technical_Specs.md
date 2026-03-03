@@ -1,7 +1,7 @@
 # Technical Specifications
 
 Last Updated: March 3, 2026  
-Version: 5.4
+Version: 5.5
 
 This document defines the authoritative technical architecture of NewChums.  
 It describes **what exists today** and the structural commitments we are making.
@@ -131,6 +131,33 @@ The following business logic lives in the API worker; the web app calls it via `
 - `DELETE /account` (auth required) — hard delete account and all related data; credentials users must send `{ password }` in body
 - `GET /notification-preferences` (auth required) — returns persisted notification prefs
 - `PUT /notification-preferences` (auth required) — saves notification prefs (JSONB on user_profile)
+
+### Notification preferences (Settings toggles)
+
+Users manage notification preferences in **Settings** (`/settings`). Each toggle controls whether and how often they receive emails for a given event type. Stored in `user_profile.notification_prefs` (JSONB). Single source of truth: `api/src/lib/notificationPrefs.ts`.
+
+**Notification types (keys):**
+
+| Key | Description | Frequency |
+|-----|-------------|-----------|
+| `event_match` | New events matching my interests | Immediate / daily / every 3 days / weekly / monthly / never |
+| `host_join` | Someone joins my event | Immediate / daily / every 3 days / weekly / never |
+| `host_leave` | Someone leaves my event | Immediate / daily / every 3 days / weekly / never |
+| `feedback_requests` | Post-event feedback reminders (day after) | On/off only |
+| `event_reminders` | 24-hour event reminders | On/off only |
+| `event_changed_canceled` | Event canceled or changed | Immediate / daily / every 3 days / weekly / never |
+| `product_announcements` | Product updates | Immediate / daily / every 3 days / weekly / monthly / never |
+
+Defaults are applied at account creation (credentials signup, OAuth) and backfilled for existing users with missing keys. GET normalizes stored prefs and optionally persists backfilled values.
+
+### Account deletion
+
+- **Endpoint:** `DELETE /account` (auth required).
+- **Credentials users:** Must send `{ password: string }` in body; password is verified before deletion.
+- **OAuth users:** Empty body; no password required.
+- **UI:** Settings → Danger zone → Delete account. Confirmation dialog; on success, user is signed out and redirected to `/`.
+- **Deletion scope (current):** Hard delete in a single transaction: `user_interests`, `user_profile`, `newchums.users`. Cascades handle `password_reset_tokens`, `email_verification_tokens`, `email_change_requests`.
+- **Maintenance note:** As the schema evolves (e.g. events, event_rsvps, chum groups), the delete logic in `api/src/index.ts` must be updated to remove or reassign related rows. Check `DELETE /account` when adding new user-scoped tables.
 
 ### Profile, onboarding, and lookups
 

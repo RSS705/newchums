@@ -310,8 +310,8 @@ export default function SettingsClient() {
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle>Change email</DialogTitle>
-        <DialogContent>
+        <DialogTitle sx={{ px: { xs: 2, sm: 3 } }}>Change email</DialogTitle>
+        <DialogContent sx={{ px: { xs: 2, sm: 3 }, pb: { xs: 0, sm: 1.5 } }}>
           {changeEmailSuccess ? (
             <Typography color="text.secondary">
               Check your new email to confirm the change. We've also sent a notification to your current email.
@@ -338,17 +338,29 @@ export default function SettingsClient() {
             </Stack>
           )}
         </DialogContent>
-        <DialogActions>
+        <DialogActions
+          disableSpacing
+          sx={{
+            display: "flex",
+            flexDirection: { xs: "column", sm: "row" },
+            alignItems: { xs: "stretch", sm: "flex-end" },
+            justifyContent: { xs: "stretch", sm: "flex-end" },
+            gap: { xs: 1.5, sm: 1 },
+            pt: { xs: 1, sm: 1.5 },
+            px: { xs: 2, sm: 3 },
+            pb: { xs: 2, sm: 3 },
+          }}
+        >
           {changeEmailSuccess ? (
-            <Button onClick={() => setChangeEmailOpen(false)}>Done</Button>
+            <AppButton variant="contained" onClick={() => setChangeEmailOpen(false)} sx={{ width: { xs: "100%", sm: "auto" } }}>
+              Done
+            </AppButton>
           ) : (
             <>
-              <Button onClick={() => setChangeEmailOpen(false)} disabled={changeEmailSubmitting}>
-                Cancel
-              </Button>
               <AppButton
                 variant="contained"
                 disabled={changeEmailSubmitting || !newEmail.trim()}
+                sx={{ width: { xs: "100%", sm: "auto" } }}
                 onClick={async () => {
                   const trimmed = newEmail.trim().toLowerCase();
                   if (!trimmed) return;
@@ -379,6 +391,14 @@ export default function SettingsClient() {
               >
                 {changeEmailSubmitting ? "Sending…" : "Send confirmation link"}
               </AppButton>
+              <Button
+                variant="outlined"
+                onClick={() => setChangeEmailOpen(false)}
+                disabled={changeEmailSubmitting}
+                sx={{ width: { xs: "100%", sm: "auto" } }}
+              >
+                Cancel
+              </Button>
             </>
           )}
         </DialogActions>
@@ -399,14 +419,14 @@ export default function SettingsClient() {
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle>Change password</DialogTitle>
-        <DialogContent>
+        <DialogTitle sx={{ px: { xs: 2, sm: 3 } }}>Change password</DialogTitle>
+        <DialogContent sx={{ px: { xs: 2, sm: 3 }, pb: { xs: 0, sm: 1.5 } }}>
           {!hasPassword ? (
             <Typography color="text.secondary">
               This account signs in with Google. Password changes aren't available.
             </Typography>
           ) : (
-            <Stack spacing={2} sx={{ mt: 1 }}>
+            <Stack spacing={{ xs: 1.5, sm: 2 }} sx={{ mt: { xs: 0.5, sm: 1 } }}>
               <Typography color="text.secondary" variant="body2">
                 You'll stay signed in.
               </Typography>
@@ -453,23 +473,23 @@ export default function SettingsClient() {
             </Stack>
           )}
         </DialogContent>
-        <DialogActions>
-          <Button
-            onClick={() => {
-              setChangePasswordOpen(false);
-              setCurrentPassword("");
-              setNewPassword("");
-              setConfirmPassword("");
-              setCurrentPasswordError(null);
-              setNewPasswordError(null);
-            }}
-            disabled={changePasswordSubmitting}
-          >
-            Cancel
-          </Button>
+        <DialogActions
+          disableSpacing
+          sx={{
+            display: "flex",
+            flexDirection: { xs: "column", sm: "row" },
+            alignItems: { xs: "stretch", sm: "flex-end" },
+            justifyContent: { xs: "stretch", sm: "flex-end" },
+            gap: { xs: 1.5, sm: 1 },
+            pt: { xs: 1, sm: 1.5 },
+            px: { xs: 2, sm: 3 },
+            pb: { xs: 2, sm: 3 },
+          }}
+        >
           {hasPassword && (
             <AppButton
               variant="contained"
+              sx={{ width: { xs: "100%", sm: "auto" } }}
               disabled={
                 changePasswordSubmitting ||
                 !currentPassword.trim() ||
@@ -530,6 +550,21 @@ export default function SettingsClient() {
               {changePasswordSubmitting ? "Saving…" : "Save"}
             </AppButton>
           )}
+          <Button
+            variant="outlined"
+            onClick={() => {
+              setChangePasswordOpen(false);
+              setCurrentPassword("");
+              setNewPassword("");
+              setConfirmPassword("");
+              setCurrentPasswordError(null);
+              setNewPasswordError(null);
+            }}
+            disabled={changePasswordSubmitting}
+            sx={{ width: { xs: "100%", sm: "auto" } }}
+          >
+            Cancel
+          </Button>
         </DialogActions>
       </Dialog>
       <Dialog
@@ -544,8 +579,8 @@ export default function SettingsClient() {
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle>Delete your account?</DialogTitle>
-        <DialogContent>
+        <DialogTitle sx={{ px: { xs: 2, sm: 3 } }}>Delete your account?</DialogTitle>
+        <DialogContent sx={{ px: { xs: 2, sm: 3 }, pb: { xs: 0, sm: 1.5 } }}>
           <Typography color="text.secondary" variant="body2" sx={{ mt: 0.5 }}>
             This will permanently delete your account, events, and related data. This action cannot be undone.
           </Typography>
@@ -571,20 +606,23 @@ export default function SettingsClient() {
             </Typography>
           )}
         </DialogContent>
-        <DialogActions>
-          <Button
-            onClick={() => {
-              setDeleteAccountOpen(false);
-              setDeleteAccountPassword("");
-              setDeleteAccountError(null);
-            }}
-            disabled={deleteAccountSubmitting}
-          >
-            Cancel
-          </Button>
+        <DialogActions
+          disableSpacing
+          sx={{
+            display: "flex",
+            flexDirection: { xs: "column", sm: "row" },
+            alignItems: { xs: "stretch", sm: "flex-end" },
+            justifyContent: { xs: "stretch", sm: "flex-end" },
+            gap: { xs: 1.5, sm: 1 },
+            pt: { xs: 1, sm: 1.5 },
+            px: { xs: 2, sm: 3 },
+            pb: { xs: 2, sm: 3 },
+          }}
+        >
           <AppButton
             color="error"
             variant="contained"
+            sx={{ width: { xs: "100%", sm: "auto" } }}
             disabled={
               deleteAccountSubmitting ||
               (hasPassword && !deleteAccountPassword.trim())
@@ -627,6 +665,18 @@ export default function SettingsClient() {
           >
             {deleteAccountSubmitting ? "Deleting…" : "Delete account"}
           </AppButton>
+          <Button
+            variant="outlined"
+            onClick={() => {
+              setDeleteAccountOpen(false);
+              setDeleteAccountPassword("");
+              setDeleteAccountError(null);
+            }}
+            disabled={deleteAccountSubmitting}
+            sx={{ width: { xs: "100%", sm: "auto" } }}
+          >
+            Cancel
+          </Button>
         </DialogActions>
       </Dialog>
     </Stack>
