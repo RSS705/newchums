@@ -1,20 +1,24 @@
 # System Map
 
-Last Updated: February 26, 2026
+Last Updated: March 3, 2026
 
 This document reflects the current production reality of NewChums.
-
-## Production Workers
-
-- **Web Worker:** `newchums-web-dev` (production despite suffix)
-- **API Worker:** `newchums-api`
-- **Single production environment**
-- **Canonical domain:** `https://newchums.com` (live; www → non-www redirect enforced)
-- **Custom domains:** newchums.com, www.newchums.com (defined in wrangler.toml)
+It is diagram-first: use this for boundaries, flows, and “how it connects.”
 
 ---
 
-# 1) Big‑Picture Production Architecture
+## Production Reality (Current)
+
+- **Single production environment**
+- **Web Worker:** `newchums-web-dev` (production; suffix mismatch acknowledged but stable)
+- **API Worker:** `newchums-api`
+- **Canonical host:** `https://newchums.com`  
+  - `www.newchums.com` → `newchums.com` enforced via middleware **before** Auth.js
+- **Custom domains:** `newchums.com`, `www.newchums.com` (configured in `web/wrangler.toml`)
+
+---
+
+## 1) Big‑Picture Production Architecture
 
 ```mermaid
 flowchart TB
@@ -23,7 +27,6 @@ flowchart TB
   MW --> W["Web Worker<br/>(Next.js via OpenNext)<br/>newchums-web-dev"]
 
   W -->|"HTTPS API calls"| API["API Worker<br/>(Hono)<br/>newchums-api"]
-
   API -->|"SQL (Postgres)"| DB["Neon<br/>(PostgreSQL)"]
 
   W -->|"Auth flows"| AUTH["Auth.js<br/>(JWT Sessions)"]
@@ -35,200 +38,112 @@ flowchart TB
   API -->|"API errors"| SENTRY_BE["Sentry<br/>(Backend)"]
   API -->|"Logs"| AX["Axiom<br/>(Logs)"]
   W -->|"Analytics"| PLAUS["Plausible<br/>(Analytics)"]
+
+  API -->|"Avatar objects"| R2["R2 (avatars)<br/>newchums-media"]
 ```
 
 ---
 
-# 2) Canonical Host Model
+## 2) Canonical Host Model (OAuth Safety)
 
-All requests to `www.newchums.com` are 301-redirected to `https://newchums.com` (same path + query) **before** Auth.js runs. This ensures:
+All requests to `www.newchums.com` are 301-redirected to `https://newchums.com` (same path + query) **before** Auth.js runs.
 
-- OAuth signin and callback share the same origin
-- PKCE `code_verifier` cookie is available on callback
-- AUTH_URL / NEXTAUTH_URL are `https://newchums.com`
+This ensures:
+- OAuth sign-in and callback share the same origin
+- PKCE `code_verifier` cookie is present on callback
+- `AUTH_URL` / `NEXTAUTH_URL` remain `https://newchums.com`
 
-Middleware: `web/src/middleware.ts` — runs on all paths except static assets; includes `/api/auth/*`.
-
----
-
-# 3) API Migration (Web → API Worker)
-
-The following flows now run entirely in the API worker; the web app calls the API directly via `NEXT_PUBLIC_API_BASE_URL`:
-
-| Flow | API endpoint | Auth |
-|------|--------------|------|
-| Signup | POST /auth/signup | None |
-| Password reset request | POST /auth/password-reset/request | None |
-| Password reset confirm | POST /auth/password-reset/confirm | None |
-| Interests list | GET /interests | None |
-| Profile (get/update) | GET /profile, PUT /profile | Bearer JWT |
-| Avatar upload | POST /media/init → PUT to uploadUrl → POST /media/finalize | Bearer JWT |
-| Avatar remove | DELETE /profile/avatar | Bearer JWT |
-| Avatar image | GET /users/:userId/avatar | None (public) |
-| Handle availability check | GET /handles/available?handle=... | Bearer JWT |
-| Set username (onboarding) | POST /user/username | Bearer JWT |
-| Set date of birth (onboarding) | POST /user/date-of-birth | Bearer JWT |
-
-**Content safety:** Signup, POST /user/username, and PUT /profile validate display name, username, and hobbies for inappropriate terms. Returns 400 with `code: "INAPPROPRIATE_TEXT"` and `field` when invalid.
-
-**Auth flow:** For authenticated routes, the client calls `GET /api/auth/api-token` (same-origin, cookies sent). The route uses auth() to get the session, then mints a 15-min JWT with jose. The client passes it as `Authorization: Bearer <token>` to the API. The API verifies using jose (API token) or @auth/core (Auth.js session JWT). NEXTAUTH_SECRET must match web AUTH_SECRET. CORS: explicit allowlist (newchums.com, www, localhost:3000).
-
-**Email verification (Credentials):** Signup → POST /auth/email-verify/request → Postmark → /auth/verify?email=&token= → confirm. Pending page polls status. Google OAuth users are verified at creation.
-
-**Password reset:** POST /auth/password-reset/request → Postmark reset email → /reset-password?token= → confirm. 404 if no user; 409 if OAuth-only.
+Middleware: `web/src/middleware.ts`  
+Matcher includes `/api/auth/*` (OAuth flow), excludes static assets.
 
 ---
 
-# 4) Core User Flows
+## 3) API Migration (Web → API Worker)
 
-## Browse Events
+The following flows run in the API worker; the web app calls the API via `NEXT_PUBLIC_API_BASE_URL`:
+
+| Flow | API endpoint(s) | Auth |
+|------|------------------|------|
+| Signup | `POST /auth/signup` | none |
+| Email verification | `POST /auth/email-verify/request`, `POST /auth/email-verify/confirm`, `GET /auth/email-verify/status` | none |
+| Password reset | `POST /auth/password-reset/request`, `POST /auth/password-reset/confirm` | none |
+| Email change | `POST /account/email-change/request`, `POST /account/email-change/confirm` | Bearer JWT |
+| Interests | `GET /interests` | none |
+| Profile | `GET /profile`, `PUT /profile` | Bearer JWT |
+| Handle availability | `GET /handles/available?handle=...` | Bearer JWT |
+| Onboarding | `POST /user/username`, `POST /user/date-of-birth` | Bearer JWT |
+| Avatar upload | `POST /media/init` → PUT to uploadUrl → `POST /media/finalize` | Bearer JWT |
+| Avatar remove | `DELETE /profile/avatar` | Bearer JWT |
+| Avatar image | `GET /users/:userId/avatar` | public |
+
+### Content safety
+
+Signup, onboarding username, and profile edits validate:
+- display name
+- handle/username
+- hobbies
+
+Invalid returns 400 with `code: "INAPPROPRIATE_TEXT"` and `field`.
+
+---
+
+## 4) Auth-to-API Token Flow (Bearer JWT)
+
+Authenticated API calls use a short-lived Bearer token minted by the Web Worker:
 
 ```mermaid
 sequenceDiagram
   participant User
   participant Web
   participant API
-  participant DB
 
-  User->>Web: Open site
-  Web->>API: GET /events
-  API->>DB: Query events
-  DB-->>API: Rows
-  API-->>Web: JSON
+  User->>Web: Navigate to authenticated page (cookies present)
+  Web->>Web: GET /api/auth/api-token
+  Note over Web: auth() reads session cookie and mints 15-min JWT (jose)
+  Web->>API: Request with Authorization: Bearer <jwt>
+  API->>API: Verify JWT (NEXTAUTH_SECRET matches web AUTH_SECRET)
+  API-->>Web: JSON response
   Web-->>User: Render UI
 ```
 
-## Create Event
-
-```mermaid
-sequenceDiagram
-  participant User
-  participant Web
-  participant API
-  participant DB
-
-  User->>Web: Submit form
-  Web->>API: POST /events
-  API->>DB: INSERT
-  DB-->>API: Success
-  API-->>Web: 201 Created
-  Web-->>User: Show event page
-```
-
-## RSVP
-
-```mermaid
-sequenceDiagram
-  participant User
-  participant Web
-  participant API
-  participant DB
-  participant Email
-
-  User->>Web: Click RSVP
-  Web->>API: POST /events/{id}/rsvp
-  API->>DB: INSERT/UPDATE RSVP
-  API->>Email: Send confirmation
-  API-->>Web: Success
-  Web-->>User: UI update
-```
-
-## Signup / Profile (API Worker)
-
-```mermaid
-sequenceDiagram
-  participant User
-  participant Web
-  participant API
-  participant DB
-
-  Note over User,DB: Signup (no auth)
-  User->>Web: Submit signup form
-  Web->>API: POST /auth/signup
-  API->>DB: INSERT user
-  API-->>Web: 201 OK
-  Web-->>User: Redirect to login
-
-  Note over User,DB: Profile (auth required)
-  User->>Web: Visit /profile (logged in)
-  Web->>Web: GET /api/auth/api-token (cookies)
-  Web->>API: GET /profile + Authorization: Bearer <jwt>
-  API->>API: Verify JWT
-  API->>DB: Query profile
-  API-->>Web: JSON
-  Web-->>User: Render profile
-```
-
-## Google OAuth (Canonical Host Enforced)
-
-```mermaid
-sequenceDiagram
-  participant User
-  participant www
-  participant MW as Middleware
-  participant Web
-  participant Google
-
-  User->>www: Visit www.newchums.com/api/auth/signin/google
-  www->>MW: Request
-  MW->>User: 301 → https://newchums.com/api/auth/signin/google
-  User->>Web: GET newchums.com/.../signin/google
-  Web->>Google: Redirect to Google
-  Google->>User: Auth
-  User->>Web: Callback → newchums.com/api/auth/callback/google
-  Note over Web: Same origin; PKCE verifier matches
-  Web-->>User: Session established
-```
-
 ---
 
-# 5) Local Development Model
+## 5) Local Development Model
 
-Local API: `npm run dev` in `api/` → Wrangler dev on port 8787. Diagnostic: `GET http://localhost:8787/health/env` reports DATABASE_URL, NEXTAUTH_SECRET, WEB_BASE_URL presence.
+- Web dev server: `localhost:3000`
+- API dev server: `localhost:8787` (Wrangler dev)
+- Neon DB: remote
+- Postmark: used for email dispatch (dev/prod tokens as configured)
 
 ```mermaid
 flowchart TB
   Browser["Browser"] --> WebLocal["Next.js Dev Server<br/>localhost:3000"]
   WebLocal --> ApiLocal["Wrangler Dev<br/>localhost:8787"]
   ApiLocal --> Neon["Neon (Remote DB)"]
-  ApiLocal --> Postmark["Postmark (Dev)"]
-  WebLocal --> Google["Google APIs"]
+  ApiLocal --> Postmark["Postmark"]
+  WebLocal --> Google["Google OAuth"]
   WebLocal --> SentryFE["Sentry FE"]
   ApiLocal --> SentryBE["Sentry BE"]
 ```
 
 ---
 
-# 6) Architectural Commitments
-
-- **Template parity:** `template_reference/` is the canonical UI reference (dev only; not deployed). New views copy/adapt template patterns.
-- Two-worker model is intentional and long-term.
-- Business logic belongs in API Worker.
-- Web Worker focuses on UI and auth orchestration (Auth.js, /api/auth/[...nextauth]).
-- Core user flows (signup, profile, interests, password reset, onboarding) now live in API worker.
-- Canonical host is non-www; middleware enforces before Auth.js.
-- R2 stores profile avatars (MEDIA_BUCKET); Cron/Queues are planned but not yet implemented.
-- Single production environment currently active.
-- Wrangler config (routes, workers_dev, vars) is code-managed to prevent deploy drift.
-
----
-
-# 7) Deploy Configuration (Production)
+## 6) Deploy Configuration (Production)
 
 | Setting | Value |
 |---------|-------|
-| Web Worker name | newchums-web-dev |
-| API Worker name | newchums-api |
-| Custom domains | newchums.com, www.newchums.com |
-| AUTH_URL / NEXTAUTH_URL | https://newchums.com |
-| workers_dev | false |
-| preview_urls | false |
+| Web Worker name | `newchums-web-dev` |
+| API Worker name | `newchums-api` |
+| Custom domains | `newchums.com`, `www.newchums.com` |
+| Canonical host | `https://newchums.com` |
+| `workers_dev` | `false` |
+| `preview_urls` | `false` |
 
-Routes and vars in wrangler.toml match remote; deploy no longer wipes custom domains or overrides AUTH_URL. API: deploy root worker with `npm run deploy` in api/.
+Wrangler config is code-managed so deploys do not wipe routes or override canonical host vars.
 
 ---
 
-# 8) Single Consolidated System Model
+## 7) Single Consolidated System Model
 
 ```mermaid
 flowchart TB
@@ -237,7 +152,6 @@ flowchart TB
   MW --> W["Web Worker<br/>(Next.js via OpenNext)<br/>newchums-web-dev"]
 
   W -->|"API calls"| API["API Worker<br/>(Hono)<br/>newchums-api"]
-
   API -->|"SQL"| DB["Neon<br/>(Postgres)"]
 
   W --> AUTH["Auth.js"]
@@ -251,6 +165,6 @@ flowchart TB
   API --> AX["Axiom Logs"]
   W --> PLAUS["Plausible"]
 
-  CRON["Future Cron/Queues"] -.-> API
   R2["R2 (avatars)"] --> API
+  CRON["Future Cron/Queues"] -.-> API
 ```
