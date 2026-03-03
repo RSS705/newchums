@@ -69,6 +69,7 @@ The following flows run in the API worker; the web app calls the API via `NEXT_P
 | Password reset | `POST /auth/password-reset/request`, `POST /auth/password-reset/confirm` | none |
 | Email change | `POST /account/email-change/request`, `POST /account/email-change/confirm` | Bearer JWT |
 | Password change | `POST /account/password-change` | Bearer JWT (credentials users only) |
+| Notification prefs | `GET /notification-preferences`, `PUT /notification-preferences` | Bearer JWT |
 | Interests | `GET /interests` | none |
 | Profile | `GET /profile`, `PUT /profile` | Bearer JWT |
 | Handle availability | `GET /handles/available?handle=...` | Bearer JWT |

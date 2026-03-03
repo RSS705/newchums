@@ -128,6 +128,8 @@ The following business logic lives in the API worker; the web app calls it via `
 - `POST /account/email-change/request`
 - `POST /account/email-change/confirm`
 - `POST /account/password-change` (auth required; credentials users only)
+- `GET /notification-preferences` (auth required) — returns persisted notification prefs
+- `PUT /notification-preferences` (auth required) — saves notification prefs (JSONB on user_profile)
 
 ### Profile, onboarding, and lookups
 
@@ -190,6 +192,7 @@ Core tables include:
 - token tables for email verification and password reset
 - `email_change_requests` (migration 011)
 - interests tables
+- `user_profile.notification_prefs` (JSONB, migration 012) — per-notification-type enabled + frequency
 - events and rsvps (present; implementation varies by feature maturity)
 
 PostGIS is available for geo queries.

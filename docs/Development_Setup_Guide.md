@@ -13,7 +13,7 @@ For diagrams and flows, see `docs/System_Map.md`.
 - **Production:** Single production environment.
 - **Workers:** Web = `newchums-web-dev` (production), API = `newchums-api`.
 - **Canonical host:** `https://newchums.com` (www → non-www redirect enforced before Auth.js).
-- **API migration:** Signup, email verification, password reset, email change, profile (incl. DOB + bio), interests, handle availability, onboarding username/DOB, and avatar flows are in the API worker.
+- **API migration:** Signup, email verification, password reset, email change, profile (incl. DOB + bio), interests, handle availability, onboarding username/DOB, avatar flows, and notification preferences are in the API worker.
 - **Avatar storage:** R2 bucket `newchums-media` (binding `MEDIA_BUCKET`). Client can route media operations and avatar display through `NEXT_PUBLIC_AVATAR_BASE_URL` for cross-env consistency when sharing DB.
 - **Build:** `cd web && npm run build` passes (Edge/OpenNext constraints apply).
 
@@ -140,6 +140,7 @@ psql "$DATABASE_URL" -f sql/008_interests_seed.sql
 psql "$DATABASE_URL" -f sql/009_add_bio_to_user_profile.sql
 psql "$DATABASE_URL" -f sql/010_add_avatar_to_users.sql
 psql "$DATABASE_URL" -f sql/011_email_change_requests.sql
+psql "$DATABASE_URL" -f sql/012_add_notification_prefs.sql
 ```
 
 Notes:

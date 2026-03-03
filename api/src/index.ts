@@ -18,6 +18,7 @@ import { nameToSlug, slugToName, validateInterestName } from "./interests";
 import { ensureAppUserId } from "./profile";
 import { generateResetToken, hashResetToken } from "./resetTokens";
 import { validateCleanText } from "./lib/contentSafety";
+import { mergeWithDefaults, validateAndMergeInput } from "./lib/notificationPrefs";
 import {
   buildObjectKey,
   createUploadToken,
@@ -419,7 +420,7 @@ app.post("/auth/password-reset/request", async (c) => {
     return c.json({ ok: false, error: "EMAIL_NOT_FOUND" }, 404);
   }
   if (!user.password_hash) {
-    return c.json({ ok: false, error: "OAUTH_ACCOUNT", message: "This account uses Google sign-in." }, 409);
+    return c.json({ ok: false, error: "OAUTH_ACCOUNT", message: "This account uses Google sign-in. We cannot reset its password. Please sign in with Google instead." }, 409);
   }
 
   await sql`
@@ -969,6 +970,70 @@ app.get("/handles/available", async (c) => {
     }
     return c.json({ available: existing[0].id === appUserId });
   } catch {
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+app.get("/notification-preferences", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+  try {
+    const sql = getSql(c.env);
+    const appUserId = await ensureAppUserId(
+      sql,
+      payload.email,
+      (payload as { name?: string | null }).name,
+    );
+    const rows = (await sql`
+      SELECT notification_prefs FROM user_profile WHERE user_id = ${appUserId} LIMIT 1
+    `) as { notification_prefs: unknown }[];
+    const raw = rows[0]?.notification_prefs;
+    const prefs = mergeWithDefaults(raw);
+    return c.json({ ok: true, prefs });
+  } catch (err) {
+    console.error("[GET /notification-preferences]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+app.put("/notification-preferences", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+  try {
+    const body = await c.req.json();
+    const prefs = validateAndMergeInput(body);
+    if (!prefs) {
+      return c.json(
+        { ok: false, error: "INVALID_INPUT", code: "INVALID_INPUT" },
+        400,
+      );
+    }
+    const sql = getSql(c.env);
+    const appUserId = await ensureAppUserId(
+      sql,
+      payload.email,
+      (payload as { name?: string | null }).name,
+    );
+    const prefsJson = JSON.stringify(prefs);
+    const updated = (await sql`
+      UPDATE user_profile SET notification_prefs = ${prefsJson}::jsonb
+      WHERE user_id = ${appUserId}
+      RETURNING 1
+    `) as { notification_prefs?: unknown }[];
+    if (updated.length === 0) {
+      await sql`
+        INSERT INTO user_profile (user_id, home_city, home_lat, home_lng, home_location, travel_radius_km, email_chat_digest, email_new_events, bio, notification_prefs)
+        VALUES (${appUserId}, NULL, NULL, NULL, NULL, 25, true, true, NULL, ${prefsJson}::jsonb)
+        ON CONFLICT (user_id) DO UPDATE SET notification_prefs = EXCLUDED.notification_prefs
+      `;
+    }
+    return c.json({ ok: true, prefs });
+  } catch (err) {
+    console.error("[PUT /notification-preferences]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });

@@ -53,7 +53,7 @@ export default function ForgotPasswordClient() {
                 return;
               }
               if (response.status === 409 && data.error === "OAUTH_ACCOUNT") {
-                setError("This account uses Google sign-in. Please use Sign in with Google.");
+                setError("This account uses Google sign-in. We cannot reset its password. Please Sign in with Google instead.");
                 return;
               }
               if (response.status === 400 && data.error === "EMAIL_REQUIRED") {

@@ -3,34 +3,22 @@
 import Box from "@mui/material/Box";
 import CircularProgress from "@mui/material/CircularProgress";
 import Button from "@mui/material/Button";
-import Checkbox from "@mui/material/Checkbox";
 import Dialog from "@mui/material/Dialog";
-import Switch from "@mui/material/Switch";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
-import FormControlLabel from "@mui/material/FormControlLabel";
-import FormGroup from "@mui/material/FormGroup";
-import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/apiClient";
 import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
-
-type EmailFrequency = "instant" | "daily" | "weekly" | "off";
+import { NOTIFICATION_TYPES } from "./notificationConfig";
+import NotificationRow from "./NotificationRow";
 
 export default function SettingsClient() {
   const [loading, setLoading] = useState(true);
   const [email, setEmail] = useState("");
-  const [emailFrequency, setEmailFrequency] = useState<EmailFrequency>("daily");
-  const [emailChatDigest, setEmailChatDigest] = useState(true);
-  const [emailNewEvents, setEmailNewEvents] = useState(true);
-  const [notifMatches, setNotifMatches] = useState(true);
-  const [notifReminders, setNotifReminders] = useState(true);
-  const [notifMessages, setNotifMessages] = useState(true);
-  const [saving, setSaving] = useState<string | null>(null);
   const [changeEmailOpen, setChangeEmailOpen] = useState(false);
   const [newEmail, setNewEmail] = useState("");
   const [changeEmailSubmitting, setChangeEmailSubmitting] = useState(false);
@@ -54,8 +42,6 @@ export default function SettingsClient() {
       const data = await res.json();
       if (data.ok && data.profile) {
         setEmail(data.profile.email ?? "");
-        setEmailChatDigest(data.profile.email_chat_digest ?? true);
-        setEmailNewEvents(data.profile.email_new_events ?? true);
         setHasPassword(data.profile.has_password ?? true);
       }
     } finally {
@@ -63,44 +49,122 @@ export default function SettingsClient() {
     }
   }, []);
 
+  const [notificationPrefs, setNotificationPrefs] = useState<
+    Record<string, { enabled: boolean; frequency: string }>
+  >({});
+  const [notificationPrefsLoading, setNotificationPrefsLoading] = useState(true);
+  const lastGoodPrefs = useRef<Record<string, { enabled: boolean; frequency: string }>>({});
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const fetchNotificationPrefs = useCallback(async () => {
+    setNotificationPrefsLoading(true);
+    try {
+      const res = await apiFetch("/notification-preferences", { auth: true });
+      const data = await res.json();
+      if (data.ok && data.prefs?.items) {
+        const items = data.prefs.items as Record<string, { enabled: boolean; frequency: string }>;
+        const normalized = Object.fromEntries(
+          NOTIFICATION_TYPES.map((t) => {
+            const raw = items[t.key];
+            const enabled = raw?.enabled ?? true;
+            let frequency = raw?.frequency ?? t.allowedFrequencies[0]?.value ?? "immediately";
+            if (frequency === "never") {
+              frequency = t.allowedFrequencies[0]?.value ?? "immediately";
+            }
+            return [
+              t.key,
+              { enabled, frequency },
+            ];
+          })
+        );
+        setNotificationPrefs(normalized);
+        lastGoodPrefs.current = normalized;
+      }
+    } finally {
+      setNotificationPrefsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchProfile();
-  }, [fetchProfile]);
+    fetchNotificationPrefs();
+  }, [fetchProfile, fetchNotificationPrefs]);
 
-  const savePref = async (key: "email_chat_digest" | "email_new_events", value: boolean) => {
-    if (saving) return;
-    setSaving(key);
-    try {
-      const res = await apiFetch("/profile", {
-        method: "PUT",
-        auth: true,
-        body: JSON.stringify({
-          email_chat_digest: key === "email_chat_digest" ? value : emailChatDigest,
-          email_new_events: key === "email_new_events" ? value : emailNewEvents,
-        }),
-      });
-
-      const data = await res.json();
-      if (!data.ok) {
-        toast.error(data.error?.message ?? "Failed to save");
-        return;
+  const persistNotificationPrefs = useCallback(
+    async (prefs: Record<string, { enabled: boolean; frequency: string }>) => {
+      const fullItems = Object.fromEntries(
+        NOTIFICATION_TYPES.map((t) => [
+          t.key,
+          prefs[t.key] ?? {
+            enabled: true,
+            frequency: t.allowedFrequencies[0]?.value ?? "immediately",
+          },
+        ])
+      );
+      try {
+        const res = await apiFetch("/notification-preferences", {
+          method: "PUT",
+          auth: true,
+          body: JSON.stringify({
+            prefs: { version: 1, items: fullItems },
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          toast.error("Couldn't save notification settings");
+          setNotificationPrefs(lastGoodPrefs.current);
+          return;
+        }
+        lastGoodPrefs.current = fullItems;
+        toast.success("Notification preferences saved");
+      } catch {
+        toast.error("Couldn't save notification settings");
+        setNotificationPrefs(lastGoodPrefs.current);
       }
+    },
+    [toast]
+  );
 
-      toast.success("Email preferences updated");
-      if (key === "email_chat_digest") setEmailChatDigest(value);
-      else setEmailNewEvents(value);
-    } finally {
-      setSaving(null);
-    }
+  const scheduleNotificationSave = useCallback(
+    (prefs: Record<string, { enabled: boolean; frequency: string }>) => {
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = setTimeout(() => {
+        saveTimeoutRef.current = null;
+        persistNotificationPrefs(prefs);
+      }, 500);
+    },
+    [persistNotificationPrefs]
+  );
+
+  const setNotificationEnabled = (key: string, enabled: boolean) => {
+    const next = {
+      ...notificationPrefs,
+      [key]: {
+        enabled,
+        frequency: notificationPrefs[key]?.frequency ?? "immediately",
+      },
+    };
+    setNotificationPrefs(next);
+    scheduleNotificationSave(next);
   };
 
-  const handleChatDigest = (_: unknown, checked: boolean) => {
-    savePref("email_chat_digest", checked);
+  const setNotificationFrequency = (key: string, frequency: string) => {
+    const next = {
+      ...notificationPrefs,
+      [key]: {
+        enabled: notificationPrefs[key]?.enabled ?? true,
+        frequency,
+      },
+    };
+    setNotificationPrefs(next);
+    scheduleNotificationSave(next);
   };
 
-  const handleNewEvents = (_: unknown, checked: boolean) => {
-    savePref("email_new_events", checked);
-  };
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    };
+  }, []);
 
   if (loading) {
     return (
@@ -179,61 +243,30 @@ export default function SettingsClient() {
       {/* Notifications */}
       <AppCard>
         <Stack spacing={2}>
-          <Typography variant="h6">Notifications</Typography>
-          <Typography color="text.secondary" variant="body2">
-            Manage how we reach you.
-          </Typography>
-          <AppTextField
-            select
-            label="Email frequency"
-            value={emailFrequency}
-            onChange={(e) => setEmailFrequency(e.target.value as EmailFrequency)}
-            helperText="TODO: Persistence coming next"
-          >
-            <MenuItem value="instant">Instant</MenuItem>
-            <MenuItem value="daily">Daily</MenuItem>
-            <MenuItem value="weekly">Weekly</MenuItem>
-            <MenuItem value="off">Off</MenuItem>
-          </AppTextField>
-          <FormGroup>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={emailChatDigest}
-                  onChange={handleChatDigest}
-                  disabled={saving !== null}
-                />
-              }
-              label="Email me chat digests for my events"
-            />
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={emailNewEvents}
-                  onChange={handleNewEvents}
-                  disabled={saving !== null}
-                />
-              }
-              label="Email me about new events matching my interests"
-            />
-          </FormGroup>
-          <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 1 }}>
-            More notification preferences (TODO)
-          </Typography>
-          <FormGroup>
-            <FormControlLabel
-              control={<Checkbox checked={notifMatches} onChange={(_, v) => setNotifMatches(v)} disabled />}
-              label="New gathering matches"
-            />
-            <FormControlLabel
-              control={<Checkbox checked={notifReminders} onChange={(_, v) => setNotifReminders(v)} disabled />}
-              label="Event reminders"
-            />
-            <FormControlLabel
-              control={<Checkbox checked={notifMessages} onChange={(_, v) => setNotifMessages(v)} disabled />}
-              label="Messages / invites"
-            />
-          </FormGroup>
+          <Box>
+            <Typography variant="h6">Notifications</Typography>
+            <Typography color="text.secondary" variant="body2" sx={{ mt: 0.5 }}>
+               We&apos;ll save your notifications based on your preferences, and send them together in a single email.
+            </Typography>
+          </Box>
+          {NOTIFICATION_TYPES.map((type, index) => {
+            const prefs = notificationPrefs[type.key] ?? {
+              enabled: true,
+              frequency: type.allowedFrequencies[0]?.value ?? "immediately",
+            };
+            return (
+              <NotificationRow
+                key={type.key}
+                config={type}
+                enabled={prefs.enabled}
+                frequency={prefs.frequency}
+                onToggle={(enabled) => setNotificationEnabled(type.key, enabled)}
+                onFrequencyChange={(freq) => setNotificationFrequency(type.key, freq)}
+                showDivider={index > 0}
+                disabled={notificationPrefsLoading}
+              />
+            );
+          })}
         </Stack>
       </AppCard>
 
