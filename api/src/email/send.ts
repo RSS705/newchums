@@ -1,5 +1,9 @@
 import type { Bindings } from "../db";
-import { sendPostmarkTemplateEmail } from "./postmark";
+import { sendPostmarkRawEmail, sendPostmarkTemplateEmail } from "./postmark";
+import {
+  renderContactSubmissionHtml,
+  renderContactSubmissionText,
+} from "./templates/contactSubmission";
 
 type EmailPayloadBase = {
   to: string;
@@ -109,3 +113,40 @@ export const sendRsvpConfirmationEmail = async (
     eventUrl,
   },
   });
+
+const CONTACT_EMAIL = "contact@newchums.com";
+
+export const sendContactFormEmail = async (
+  env: Bindings,
+  params: {
+    name: string;
+    email: string;
+    message: string;
+    requestIp: string | null;
+    userId?: string;
+    username?: string;
+  }
+) => {
+  const timestamp = new Date().toISOString();
+  const templateParams = {
+    name: params.name,
+    email: params.email,
+    message: params.message,
+    requestIp: params.requestIp,
+    timestamp,
+    userId: params.userId,
+    username: params.username,
+  };
+
+  const htmlBody = renderContactSubmissionHtml(templateParams);
+  const textBody = renderContactSubmissionText(templateParams);
+
+  await sendPostmarkRawEmail(env, {
+    From: CONTACT_EMAIL,
+    To: CONTACT_EMAIL,
+    Subject: "NewChums: Contact form submission",
+    HtmlBody: htmlBody,
+    TextBody: textBody,
+    ReplyTo: params.email,
+  });
+};

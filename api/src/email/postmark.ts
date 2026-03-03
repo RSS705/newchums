@@ -63,3 +63,64 @@ export const sendPostmarkTemplateEmail = async (
 
   return response.json();
 };
+
+type PostmarkRawEmail = {
+  From: string;
+  To: string;
+  Subject: string;
+  HtmlBody?: string;
+  TextBody?: string;
+  ReplyTo?: string;
+};
+
+/**
+ * Send a raw (non-template) email via Postmark.
+ * Used for contact form submissions.
+ * At least one of HtmlBody or TextBody must be provided.
+ */
+export const sendPostmarkRawEmail = async (
+  env: Bindings,
+  payload: PostmarkRawEmail
+) => {
+  if (env.APP_ENV === "development") {
+    console.log("[postmark] raw email:", payload.Subject, "to:", payload.To);
+  }
+
+  if (!payload.HtmlBody && !payload.TextBody) {
+    throw new Error("Postmark raw email requires HtmlBody or TextBody");
+  }
+
+  const body: Record<string, unknown> = {
+    From: payload.From,
+    To: payload.To,
+    Subject: payload.Subject,
+    ReplyTo: payload.ReplyTo,
+  };
+  if (payload.HtmlBody) body.HtmlBody = payload.HtmlBody;
+  if (payload.TextBody) body.TextBody = payload.TextBody;
+
+  const response = await fetch("https://api.postmarkapp.com/email", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "X-Postmark-Server-Token": env.POSTMARK_SERVER_TOKEN,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    let message = `Postmark request failed with status ${response.status}`;
+    try {
+      const data = (await response.json()) as PostmarkError;
+      if (data?.Message) {
+        message = `Postmark request failed: ${data.Message}`;
+      }
+    } catch {
+      // Ignore JSON parsing errors
+    }
+    throw new Error(message);
+  }
+
+  return response.json();
+};

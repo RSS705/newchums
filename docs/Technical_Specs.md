@@ -180,6 +180,15 @@ Users manage privacy preferences in **Settings** (`/settings`). These toggles co
 - `POST /user/date-of-birth` (auth required)
 - `GET /interests`
 
+### Contact form
+
+- `POST /contact` (public, no auth required)
+  - JSON: `{ name: string, email: string, message: string, website?: string }`
+  - Validation: name 1–80 chars, email valid format, message 10–2000 chars
+  - Honeypot: `website` field; if non-empty, returns `{ ok: true }` without sending
+  - Rate limit: 5 submissions per 10 minutes per IP (KV `CONTACT_RATELIMIT_KV`, optional)
+  - Email: Postmark sends to `contact@newchums.com` from `contact@newchums.com`, Reply-To from form; includes Name, Email, Message, Timestamp, IP; if logged in (Bearer token), includes userId and username
+
 ### Media (avatar)
 
 - `POST /media/init` (auth required) → returns upload token and upload URL path

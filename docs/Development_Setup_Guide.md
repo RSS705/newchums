@@ -75,7 +75,7 @@ Required:
 - `NEXTAUTH_SECRET` (must match web `AUTH_SECRET`)
 
 Email / Postmark (required for email flows):
-- `POSTMARK_SERVER_TOKEN`
+- `POSTMARK_SERVER_TOKEN` — used for all Postmark sends (verification, reset, contact form, etc.)
 - `EMAIL_FROM`
 - `WEB_BASE_URL`
 - `POSTMARK_TEMPLATE_VERIFY`
@@ -103,6 +103,11 @@ Credentials signups require email verification before sign-in.
 3. Verify link hits `/auth/verify?email=&token=` → API confirm
 4. Pending page polls verification status until verified
 5. Google OAuth users are treated as verified at creation
+
+### Contact form
+
+- `POST /contact` sends email to `contact@newchums.com` from `contact@newchums.com` via Postmark (uses `POSTMARK_SERVER_TOKEN`).
+- For production rate limiting (5 per 10 min per IP): run `npx wrangler kv namespace create CONTACT_RATELIMIT`, then add the `[[kv_namespaces]]` block to `api/wrangler.toml` (see commented example in file).
 
 ### Password reset
 

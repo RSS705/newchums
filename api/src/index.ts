@@ -6,6 +6,7 @@ import { isAtLeast18, parseDateOnly } from "./ageValidation";
 import { getBearerToken, verifyAuthToken } from "./auth";
 import { DATABASE_URL_HINT, type Bindings, getSql } from "./db";
 import {
+  sendContactFormEmail,
   sendEmailChangeConfirmEmail,
   sendEmailChangeNotifyOldEmail,
   sendEmailChangeSuccessEmail,
@@ -17,6 +18,7 @@ import { canAccessInternalTestRoute, notFound } from "./internalAccess";
 import { nameToSlug, slugToName, validateInterestName } from "./interests";
 import { ensureAppUserId } from "./profile";
 import { generateResetToken, hashResetToken } from "./resetTokens";
+import { checkContactRateLimit } from "./lib/contactRateLimit";
 import { validateCleanText } from "./lib/contentSafety";
 import {
   getDefaultPrefsJson,
@@ -1002,6 +1004,112 @@ app.get("/interests", async (c) => {
         error: { code: "SERVER_ERROR", message: "Failed to fetch interests" },
       },
       500,
+    );
+  }
+});
+
+// Simple email format check (RFC 5322-ish, permissive)
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+app.post("/contact", async (c) => {
+  let body: { name?: string; email?: string; message?: string; website?: string };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json(
+      { ok: false, error: "INVALID_INPUT", message: "Invalid JSON body" },
+      400
+    );
+  }
+
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  const email = typeof body.email === "string" ? body.email.trim() : "";
+  const message = typeof body.message === "string" ? body.message.trim() : "";
+  const website = typeof body.website === "string" ? body.website.trim() : "";
+
+  // Honeypot: if website is non-empty, pretend success without sending
+  if (website !== "") {
+    return c.json({ ok: true });
+  }
+
+  // Validation
+  if (name.length < 1 || name.length > 80) {
+    return c.json(
+      { ok: false, error: "INVALID_INPUT", message: "Name must be 1–80 characters" },
+      400
+    );
+  }
+  if (!EMAIL_REGEX.test(email)) {
+    return c.json(
+      { ok: false, error: "INVALID_INPUT", message: "Please enter a valid email address" },
+      400
+    );
+  }
+  if (message.length < 10 || message.length > 2000) {
+    return c.json(
+      { ok: false, error: "INVALID_INPUT", message: "Message must be 10–2000 characters" },
+      400
+    );
+  }
+
+  const requestIp =
+    c.req.header("CF-Connecting-IP") ??
+    c.req.header("X-Forwarded-For")?.split(",")[0]?.trim() ??
+    null;
+
+  const rateLimit = await checkContactRateLimit(
+    c.env.CONTACT_RATELIMIT_KV,
+    requestIp ?? "unknown"
+  );
+  if (!rateLimit.allowed) {
+    return c.json(
+      { ok: false, error: "RATE_LIMITED", message: "Too many submissions. Please try again later." },
+      429
+    );
+  }
+
+  let userId: string | undefined;
+  let username: string | undefined;
+  const token = getBearerToken(c.req);
+  if (token && c.env.NEXTAUTH_SECRET) {
+    const payload = await verifyAuthToken(token, c.env.NEXTAUTH_SECRET);
+    if (payload?.email && typeof payload.email === "string") {
+      try {
+        const sql = getSql(c.env);
+        const appUserId = await ensureAppUserId(
+          sql,
+          payload.email,
+          (payload as { name?: string | null }).name
+        );
+        userId = appUserId;
+        const row = (await sql`
+          SELECT username FROM newchums.users WHERE id = ${appUserId} LIMIT 1
+        `) as { username: string | null }[];
+        if (row[0]?.username) {
+          username = row[0].username.replace(/^@/, "");
+        }
+      } catch {
+        // Ignore; we still send the email without user context
+      }
+    }
+  }
+
+  try {
+    await sendContactFormEmail(c.env, {
+      name,
+      email,
+      message,
+      requestIp,
+      userId,
+      username,
+    });
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[POST /contact] send failed", err);
+    Sentry.captureException(err);
+    return c.json(
+      { ok: false, error: "EMAIL_SEND_FAILED", message: "Failed to send message. Please try again." },
+      500
     );
   }
 });

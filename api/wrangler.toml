@@ -46,3 +46,8 @@ AXIOM_DATASET = "newchums-api"
 [[r2_buckets]]
 binding = "MEDIA_BUCKET"
 bucket_name = "newchums-media"
+
+# Contact form rate limit (5 per 10 min per IP). Create with: npx wrangler kv namespace create CONTACT_RATELIMIT
+# [[kv_namespaces]]
+# binding = "CONTACT_RATELIMIT_KV"
+# id = "<paste-id-from-create-command>"
