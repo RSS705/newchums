@@ -37,14 +37,14 @@ export default function ScienceOfFriendshipContent() {
           >
             The Science of Friendship
           </Typography>
-          <Typography variant="h5" fontWeight={400} color="text.secondary" sx={{ lineHeight: 1.65 }}>
+          <Typography variant="h5" fontWeight={400} color="text.primary" sx={{ lineHeight: 1.65 }}>
             Friendship isn&apos;t just luck.
             <br />
             <br />
             It&apos;s a set of conditions that help people connect,
             conditions that modern life quietly makes harder.
           </Typography>
-          <Typography variant="h5" fontWeight={400} color="text.secondary" sx={{ lineHeight: 1.65 }}>
+          <Typography variant="h5" fontWeight={400} color="text.primary" sx={{ lineHeight: 1.65 }}>
             NewChums was built around a simple idea: If we recreate those conditions, friendship
             becomes much more likely.
           </Typography>
@@ -314,6 +314,96 @@ export default function ScienceOfFriendshipContent() {
         </Box>
       </Box>
 
+      {/* Section 6, Persuasion: bridge to CTA */}
+      <Box
+        component="section"
+        id="friendship-by-design"
+        sx={{
+          ...SECTION_SPACING,
+          borderTop: "1px solid",
+          borderColor: (theme) =>
+            theme.palette.mode === "light" ? "grey.200" : "grey.800",
+          backgroundColor: (theme) =>
+            theme.palette.mode === "light" ? "grey.50" : "grey.900",
+        }}
+      >
+        <Box maxWidth={900} mx="auto" px={{ xs: 2, sm: 3 }}>
+          <SectionHeader
+            title="Friendship doesn&apos;t happen by accident anymore"
+            emphasis="primary"
+            accentColor="secondary"
+          />
+          <Stack spacing={3} sx={{ maxWidth: 720 }}>
+            <Stack spacing={2}>
+              <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
+                For most of human history, friendships formed automatically. You saw the same people
+                in the same places every day.
+              </Typography>
+              <Typography
+                variant="body1"
+                sx={{
+                  lineHeight: 1.75,
+                  color: "text.secondary",
+                  fontStyle: "italic",
+                  pl: 2,
+                  borderLeft: "2px solid",
+                  borderColor: "secondary.main",
+                }}
+              >
+                School. Neighborhoods. Shared routines.
+              </Typography>
+              <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
+                Modern life quietly removed many of those structures. But the desire for connection
+                never went away.
+              </Typography>
+            </Stack>
+
+            <Box sx={{ pt: 1 }}>
+              <Typography variant="body1" fontWeight={600} sx={{ lineHeight: 1.75, mb: 1.5 }}>
+                The good news is that the ingredients for friendship haven&apos;t changed.
+              </Typography>
+              <Typography variant="body1" sx={{ lineHeight: 1.75, mb: 2 }}>
+                People still connect when they:
+              </Typography>
+              <Stack spacing={1.5}>
+                {[
+                  "See each other regularly",
+                  "Share meaningful activities",
+                  "Have space for conversations to grow naturally",
+                ].map((text) => (
+                  <Stack key={text} direction="row" spacing={1.5} alignItems="center">
+                    <Box
+                      sx={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: "50%",
+                        bgcolor: "secondary.main",
+                        flexShrink: 0,
+                      }}
+                    />
+                    <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
+                      {text}
+                    </Typography>
+                  </Stack>
+                ))}
+              </Stack>
+            </Box>
+
+            <Stack spacing={2} sx={{ pt: 1 }}>
+              <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
+                NewChums simply helps recreate those conditions.
+              </Typography>
+              <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
+                You choose what you enjoy. We help you discover when people nearby are doing it.
+              </Typography>
+              <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
+                From there, friendship can take care of the rest.
+              </Typography>
+            </Stack>
+          </Stack>
+        </Box>
+      </Box>
+
       {/* Section 7, CTA */}
       <Box
         component="section"
@@ -331,14 +421,62 @@ export default function ScienceOfFriendshipContent() {
             component="h2"
             variant="h5"
             fontWeight={700}
-            sx={{ mb: 2 }}
+            sx={{ mb: 3 }}
           >
             Start meeting people who enjoy the same things you do
           </Typography>
-          <Typography variant="body1" sx={{ mb: 4, lineHeight: 1.75 }}>
-            Friendship doesn&apos;t have to be left to chance. Find people nearby who share your
-            interests, and start showing up to the same spaces together.
-          </Typography>
+
+          <Stack spacing={3} alignItems="center" sx={{ mb: 5 }}>
+            <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
+              Friendship doesn&apos;t have to be left to chance.
+            </Typography>
+
+            <Box sx={{ width: "100%", maxWidth: 400 }}>
+              <Typography
+                variant="body1"
+                fontWeight={600}
+                sx={{ lineHeight: 1.75, mb: 2 }}
+              >
+                Getting started takes less than a minute:
+              </Typography>
+              <Box
+                sx={{
+                  px: 2.5,
+                  py: 2,
+                  borderRadius: 1.5,
+                  bgcolor: (theme) =>
+                    theme.palette.mode === "light" ? "background.paper" : "grey.800",
+                  border: "1px solid",
+                  borderColor: (theme) =>
+                    theme.palette.mode === "light" ? "grey.200" : "grey.700",
+                }}
+              >
+                <Stack spacing={1.5} alignItems="flex-start">
+                  {[
+                    "Sign up",
+                    "Add a few hobbies you enjoy",
+                    "Get notified when people nearby plan events",
+                  ].map((text) => (
+                    <Stack key={text} direction="row" spacing={1.5} alignItems="center">
+                      <Box
+                        sx={{
+                          width: 6,
+                          height: 6,
+                          borderRadius: "50%",
+                          bgcolor: "secondary.main",
+                          flexShrink: 0,
+                        }}
+                      />
+                      <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
+                        {text}
+                      </Typography>
+                    </Stack>
+                  ))}
+                </Stack>
+              </Box>
+            </Box>
+          </Stack>
+
           <Stack
             direction={{ xs: "column", sm: "row" }}
             spacing={2}
