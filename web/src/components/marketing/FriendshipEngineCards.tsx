@@ -27,25 +27,28 @@ const CARDS: Array<{
     icon: PlaceRoundedIcon,
     title: "Proximity",
     hoverKey: "proximity",
-    description: "Being in the same spaces regularly.",
-    actionLabel: "Show up",
-    actionText: "Share the same places and create opportunity.",
+    description:
+      "Friendships begin when people share the same physical or digital spaces. Seeing the same faces regularly creates the low-stakes opportunities for conversation that eventually lead to deeper connection. Without shared space, meeting new people requires constant, exhausting effort.",
+    actionLabel: "ACTION",
+    actionText: 'Pick a "third place" and stick to it.',
   },
   {
     icon: RepeatIcon,
     title: "Repetition",
     hoverKey: "repetition",
-    description: "Seeing the same people over time.",
-    actionLabel: "Return",
-    actionText: "Small conversations build familiarity.",
+    description:
+      'Closeness isn\'t built in a single day; it grows through repeated, unplanned interactions over time. Small, consistent conversations accumulate into familiarity and trust over weeks and months. It is the "showing up" that transforms a stranger into a friend.',
+    actionLabel: "ACTION",
+    actionText: "Show up consistently, even when tired.",
   },
   {
     icon: ChatBubbleOutlineRoundedIcon,
     title: "Disclosure",
     hoverKey: "disclosure",
-    description: "Gradually sharing more about yourself.",
-    actionLabel: "Open up",
-    actionText: "Trust grows through gentle exchange.",
+    description:
+      "As familiarity grows, people gradually share more about their lives, thoughts, and feelings. Trust is built through these vulnerable exchanges, moving from surface-level \"small talk\" to meaningful \"big talk\" that forms the bedrock of lasting support.",
+    actionLabel: "ACTION",
+    actionText: 'Ask "second-interest" questions.',
   },
 ];
 
@@ -56,7 +59,7 @@ const CARDS: Array<{
  */
 export default function FriendshipEngineCards({ hoveredItem, onHoverChange }: Props) {
   return (
-    <Grid container spacing={3}>
+      <Grid container spacing={{ xs: 3, sm: 4 }}>
       {CARDS.map(({ icon: Icon, title, hoverKey, description, actionLabel, actionText }) => {
         const isHovered = hoveredItem === hoverKey;
         return (
@@ -94,20 +97,34 @@ export default function FriendshipEngineCards({ hoveredItem, onHoverChange }: Pr
               >
                 <Icon sx={{ fontSize: 24, color: "primary.main" }} aria-hidden />
               </Box>
-              <Typography variant="h6" fontWeight={600} gutterBottom>
+              <Typography
+                variant="h6"
+                component="h3"
+                fontWeight={700}
+                sx={{ mb: 1.5, fontSize: "1.0625rem" }}
+              >
                 {title}
               </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6, mb: 2 }}>
+              <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.7, mb: 2 }}>
                 {description}
               </Typography>
               <Typography
                 variant="caption"
                 fontWeight={700}
-                sx={{ color: "secondary.main", letterSpacing: 0.5, textTransform: "uppercase" }}
+                sx={{
+                  color: "secondary.main",
+                  letterSpacing: 0.5,
+                  textTransform: "uppercase",
+                  fontSize: "0.8125rem",
+                }}
               >
                 {actionLabel}
               </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.25 }}>
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ display: "block", mt: 0.25, fontSize: "0.875rem" }}
+              >
                 {actionText}
               </Typography>
             </CardContent>

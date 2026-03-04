@@ -56,7 +56,7 @@ export default function SectionHeader({ title, emphasis = "secondary", accentCol
   const fontWeight = isPrimary ? 700 : 600;
   const fontSize =
     isPrimary
-      ? { xs: "1.2rem", sm: "1.375rem" }
+      ? { xs: "1.3rem", sm: "1.5rem" }
       : emphasis === "secondary"
         ? { xs: "1.0625rem", sm: "1.125rem" }
         : undefined;
@@ -87,7 +87,7 @@ export default function SectionHeader({ title, emphasis = "secondary", accentCol
           variant={variant}
           fontWeight={fontWeight}
           color={color}
-          sx={{ letterSpacing: "-0.015em", ...(fontSize && { fontSize }) }}
+          sx={{ letterSpacing: "-0.015em", lineHeight: 1.35, ...(fontSize && { fontSize }) }}
         >
           {title}
         </Typography>

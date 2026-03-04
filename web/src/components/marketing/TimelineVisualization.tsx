@@ -7,9 +7,21 @@ import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
 
 const TIMELINE_ITEMS = [
-  { label: "Casual acquaintance", hours: 50, proportion: 0.25 },
-  { label: "Friend", hours: 90, proportion: 0.45 },
-  { label: "Close friend", hours: 200, proportion: 1 },
+  {
+    accent: "50 Hours",
+    rest: " to move from acquaintance to casual friend",
+    proportion: 0.25,
+  },
+  {
+    accent: "90 Hours",
+    rest: " to move to friend",
+    proportion: 0.45,
+  },
+  {
+    accent: "200+ Hours",
+    rest: ' to become a "best" friend',
+    proportion: 1,
+  },
 ] as const;
 
 /**
@@ -40,10 +52,8 @@ export default function TimelineVisualization() {
           Normalize the Pace
         </Typography>
         <Typography variant="body1" sx={{ mb: 2, opacity: 0.9, lineHeight: 1.65 }}>
-          Research by Jeffrey Hall suggests that friendship develops through accumulated time
-          together: roughly 50 hours to move from acquaintance to casual friend, 90 hours to become
-          friends, and 200+ hours to reach close friendship. NewChums helps create the repeated,
-          low-pressure interactions that add up.
+          We often expect connection to be instant. But research by Jeffrey Hall (University of
+          Kansas) suggests it takes time to move between stages:
         </Typography>
         <Typography
           variant="caption"
@@ -55,9 +65,12 @@ export default function TimelineVisualization() {
 
         <Stack spacing={4}>
           {TIMELINE_ITEMS.map((item) => (
-            <Box key={item.label}>
+            <Box key={item.accent}>
               <Typography variant="body2" sx={{ mb: 1, opacity: 0.95 }}>
-                {item.label} · {item.hours}{item.hours >= 200 ? "+" : ""} hours
+                <Box component="span" sx={{ color: secondaryMain, fontWeight: 600 }}>
+                  {item.accent}
+                </Box>
+                {item.rest}
               </Typography>
               <LinearProgress
                 variant="determinate"

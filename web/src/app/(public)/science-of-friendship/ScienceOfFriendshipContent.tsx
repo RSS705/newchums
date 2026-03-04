@@ -38,10 +38,13 @@ export default function ScienceOfFriendshipContent() {
             The Science of Friendship
           </Typography>
           <Typography variant="h5" fontWeight={400} color="text.secondary" sx={{ lineHeight: 1.65 }}>
-            Friendship isn&apos;t just luck. It&apos;s a set of conditions that help people connect,
+            Friendship isn&apos;t just luck.
+            <br />
+            <br />
+            It&apos;s a set of conditions that help people connect,
             conditions that modern life quietly makes harder.
           </Typography>
-          <Typography variant="body1" sx={{ lineHeight: 1.7 }}>
+          <Typography variant="h5" fontWeight={400} color="text.secondary" sx={{ lineHeight: 1.65 }}>
             NewChums was built around a simple idea: If we recreate those conditions, friendship
             becomes much more likely.
           </Typography>
@@ -94,15 +97,20 @@ export default function ScienceOfFriendshipContent() {
             </Typography>
             <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
               Suddenly the people you used to see all the time… disappear from your weekly life.
+              You still have acquaintances. You still see people online.
             </Typography>
             <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
-              You still have acquaintances. You still see people online. But the easy rhythm of
-              friendship, running into the same people, talking without effort, building familiarity,
-              slowly fades.
+              But the easy rhythm of friendship, running into the same people, talking without
+              effort, building familiarity, slowly fades.
             </Typography>
-            <Typography variant="body1" fontWeight={600} sx={{ lineHeight: 1.75 }}>
-              It&apos;s not that people stopped wanting friendship. It&apos;s that the structure that
-              created it quietly vanished.
+            <Typography
+              variant="body1"
+              fontWeight={700}
+              sx={{ lineHeight: 1.75, fontSize: "1.0625rem" }}
+            >
+              It&apos;s not that people stopped wanting friendship.
+              <br />
+              It&apos;s that the structure that created it quietly vanished.
             </Typography>
           </Stack>
           <Typography
@@ -121,7 +129,7 @@ export default function ScienceOfFriendshipContent() {
       <Box component="section" id="friendship-engine" sx={SECTION_SPACING}>
         <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto">
           <SectionHeader title="The Friendship Engine" emphasis="primary" accentColor="secondary" />
-          <Typography variant="body1" sx={{ mb: 2, lineHeight: 1.7 }}>
+          <Typography variant="body1" sx={{ mb: 2, lineHeight: 1.75 }}>
             Researchers studying relationships have noticed that most friendships grow from the same
             three ingredients. When these conditions exist, connection becomes much easier.
           </Typography>
@@ -135,14 +143,32 @@ export default function ScienceOfFriendshipContent() {
             onHoverChange={setHoveredItem}
           />
 
-          <Typography variant="body1" color="text.secondary" sx={{ mt: 4, mb: 2, lineHeight: 1.7 }}>
-            In school these conditions happen automatically. In adult life, we often have to create
-            them intentionally.
-          </Typography>
-          <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
-            Zajonc, R. (1968). Attitudinal effects of mere exposure. Altman & Taylor (1973). Social
-            penetration theory.
-          </Typography>
+          <Box
+            sx={{
+              mt: 4,
+              px: 2.5,
+              py: 2,
+              borderRadius: 1.5,
+              bgcolor: (theme) =>
+                theme.palette.mode === "light" ? "grey.100" : "grey.800",
+              border: "1px solid",
+              borderColor: (theme) =>
+                theme.palette.mode === "light" ? "grey.200" : "grey.700",
+            }}
+          >
+            <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
+              In school these conditions happen automatically. In adult life, we often have to create
+              them intentionally.
+            </Typography>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: "block", mt: 1 }}
+            >
+              Zajonc, R. (1968). Attitudinal effects of mere exposure. Altman & Taylor (1973). Social
+              penetration theory.
+            </Typography>
+          </Box>
         </Box>
       </Box>
 
@@ -165,32 +191,33 @@ export default function ScienceOfFriendshipContent() {
             <Grid size={{ xs: 12, md: 6 }}>
               <SectionHeader title="Why friendship feels harder in adulthood" emphasis="primary" accentColor="secondary" />
               <Stack spacing={1.5}>
-                {["Busy schedules reduce repeated interaction", "Work and relocation disrupt social circles", "Remote work weakens casual social contact", "Many social spaces are temporary instead of recurring"].map((text) => (
+                {[
+                  "Busy schedules leave less room for the repeated, spontaneous interactions where friendships usually begin.",
+                  "Work demands and relocation often disrupt existing social circles.",
+                  "Many modern routines are isolated, we move between home, work, and errands without naturally seeing the same people.",
+                  "Many social experiences today are one-off events instead of recurring spaces where relationships can grow.",
+                ].map((text) => (
                   <Stack key={text} direction="row" spacing={1.5} alignItems="center">
                     <Box sx={{ width: 6, height: 6, borderRadius: "50%", bgcolor: "secondary.main", flexShrink: 0 }} />
-                    <Typography variant="body1" sx={{ lineHeight: 1.7 }}>{text}</Typography>
+                    <Typography variant="body1" sx={{ lineHeight: 1.75 }}>{text}</Typography>
                   </Stack>
                 ))}
               </Stack>
-              <Typography variant="body1" sx={{ mt: 2, lineHeight: 1.7 }}>
-                None of these changes mean people value friendship less. They simply mean the natural
-                environments that used to create it are less common.
-              </Typography>
               <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
                 Putnam, R. (2000). Bowling Alone.
               </Typography>
             </Grid>
             <Grid size={{ xs: 12, md: 6 }} id="why-friendship-matters">
               <SectionHeader title="Why this matters more than we realize" emphasis="primary" accentColor="secondary" />
-              <Typography variant="body1" sx={{ mb: 2, lineHeight: 1.7 }}>
-                Friendship isn&apos;t only about companionship. Reliable social connections help
-                people manage stress, navigate life challenges, and experience greater life satisfaction.
-              </Typography>
               <Stack spacing={1.5}>
-                {["Friendship increases overall life satisfaction", "Social support helps buffer stress", "Feeling socially connected strengthens resilience"].map((text) => (
+                {[
+                  "Strong friendships are one of the biggest predictors of life satisfaction and happiness.",
+                  "Reliable social support helps buffer the effects of daily stress.",
+                  "Feeling socially connected strengthens emotional resilience and mental health.",
+                ].map((text) => (
                   <Stack key={text} direction="row" spacing={1.5} alignItems="center">
                     <Box sx={{ width: 6, height: 6, borderRadius: "50%", bgcolor: "secondary.main", flexShrink: 0 }} />
-                    <Typography variant="body1" sx={{ lineHeight: 1.7 }}>{text}</Typography>
+                    <Typography variant="body1" sx={{ lineHeight: 1.75 }}>{text}</Typography>
                   </Stack>
                 ))}
               </Stack>
@@ -202,45 +229,71 @@ export default function ScienceOfFriendshipContent() {
         </Box>
       </Box>
 
-      {/* Section 5, Rebuilding the Conditions: lighter typography, three columns */}
+      {/* Section 5, Rebuilding the Conditions: three columns */}
       <Box component="section" id="how-newchums-helps" sx={SECTION_SPACING}>
         <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto">
           <SectionHeader title="Rebuilding the conditions for friendship" emphasis="primary" accentColor="secondary" />
-          <Typography variant="body1" sx={{ mb: 4, lineHeight: 1.7 }}>
-            NewChums was designed around the simple mechanics that help friendships form.
+          <Typography variant="body1" sx={{ mb: 4, lineHeight: 1.75 }}>
+            NewChums isn&apos;t a dating app or a networking site. It&apos;s a platform designed to
+            recreate the simple conditions where friendships naturally grow.
           </Typography>
 
-          <Grid container spacing={4} sx={{ mb: 4 }}>
+          <Grid container spacing={{ xs: 3, md: 6 }} sx={{ mb: 4 }}>
             <Grid size={{ xs: 12, md: 4 }}>
-              <Typography variant="h6" fontWeight={600} gutterBottom color="primary.main">
+              <Typography
+                variant="h5"
+                component="h3"
+                fontWeight={700}
+                color="text.primary"
+                sx={{ mb: 2, fontSize: { xs: "1.15rem", md: "1.25rem" } }}
+              >
                 Hobbies create shared context
               </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.65 }}>
-                It&apos;s easier to talk when people are doing something they already enjoy.
+              <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.7, mb: 1 }}>
+                When people meet around something they genuinely enjoy, conversation happens naturally.
+              </Typography>
+              <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.7 }}>
+                Instead of &quot;meeting for the sake of meeting,&quot; people are already doing
+                something together.
               </Typography>
             </Grid>
             <Grid size={{ xs: 12, md: 4 }}>
-              <Typography variant="h6" fontWeight={600} gutterBottom color="primary.main">
+              <Typography
+                variant="h5"
+                component="h3"
+                fontWeight={700}
+                color="text.primary"
+                sx={{ mb: 2, fontSize: { xs: "1.15rem", md: "1.25rem" } }}
+              >
                 Local events create proximity
               </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.65 }}>
-                Meet people nearby who enjoy the same things. Seeing the same faces builds familiarity.
+              <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.7, mb: 1 }}>
+                Friendships grow when people see each other regularly.
+              </Typography>
+              <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.7 }}>
+                Local events make it easier to show up often without the barrier of long travel or
+                complicated plans.
               </Typography>
             </Grid>
             <Grid size={{ xs: 12, md: 4 }}>
-              <Typography variant="h6" fontWeight={600} gutterBottom color="primary.main">
+              <Typography
+                variant="h5"
+                component="h3"
+                fontWeight={700}
+                color="text.primary"
+                sx={{ mb: 2, fontSize: { xs: "1.15rem", md: "1.25rem" } }}
+              >
                 Low-pressure meetups
               </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.65 }}>
-                Friendship grows gradually through repeated interaction, not forced networking.
+              <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.7, mb: 1 }}>
+                Good friendships develop gradually.
+              </Typography>
+              <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.7 }}>
+                Our format encourages relaxed, low-pressure gatherings where conversations can deepen
+                naturally over time.
               </Typography>
             </Grid>
           </Grid>
-
-          <Typography variant="body1" fontWeight={500} sx={{ lineHeight: 1.7 }}>
-            Instead of hoping friendship happens by chance, NewChums helps create the conditions
-            where it can grow.
-          </Typography>
 
           <Box sx={{ mt: 6, display: "flex", justifyContent: "center" }}>
             {/* IMAGE PLACEHOLDER
@@ -282,11 +335,7 @@ export default function ScienceOfFriendshipContent() {
           >
             Start meeting people who enjoy the same things you do
           </Typography>
-          <Typography
-            variant="body1"
-            color="text.secondary"
-            sx={{ mb: 4, lineHeight: 1.7 }}
-          >
+          <Typography variant="body1" sx={{ mb: 4, lineHeight: 1.75 }}>
             Friendship doesn&apos;t have to be left to chance. Find people nearby who share your
             interests, and start showing up to the same spaces together.
           </Typography>
