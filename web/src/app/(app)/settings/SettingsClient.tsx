@@ -41,6 +41,7 @@ export default function SettingsClient() {
   const [deleteAccountError, setDeleteAccountError] = useState<string | null>(null);
   const [isHiddenFromSearch, setIsHiddenFromSearch] = useState(false);
   const [isHiddenFromExternalIndexing, setIsHiddenFromExternalIndexing] = useState(false);
+  const [isHiddenAge, setIsHiddenAge] = useState(false);
   const [privacyLoading, setPrivacyLoading] = useState(false);
   const privacySaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toast = useToast();
@@ -56,6 +57,7 @@ export default function SettingsClient() {
         setHasPassword(data.profile.has_password ?? true);
         setIsHiddenFromSearch(data.profile.is_hidden_from_search ?? false);
         setIsHiddenFromExternalIndexing(data.profile.is_hidden_from_external_indexing ?? false);
+        setIsHiddenAge(data.profile.is_hidden_age ?? false);
       }
     } finally {
       setLoading(false);
@@ -174,7 +176,7 @@ export default function SettingsClient() {
   };
 
   const persistPrivacy = useCallback(
-    async (hiddenFromSearch: boolean, hiddenFromExternalIndexing: boolean) => {
+    async (hiddenFromSearch: boolean, hiddenFromExternalIndexing: boolean, hiddenAge: boolean) => {
       setPrivacyLoading(true);
       try {
         const res = await apiFetch("/profile", {
@@ -183,6 +185,7 @@ export default function SettingsClient() {
           body: JSON.stringify({
             is_hidden_from_search: hiddenFromSearch,
             is_hidden_from_external_indexing: hiddenFromExternalIndexing,
+            is_hidden_age: hiddenAge,
           }),
         });
         const data = await res.json();
@@ -201,11 +204,11 @@ export default function SettingsClient() {
   );
 
   const schedulePrivacySave = useCallback(
-    (hiddenFromSearch: boolean, hiddenFromExternalIndexing: boolean) => {
+    (hiddenFromSearch: boolean, hiddenFromExternalIndexing: boolean, hiddenAge: boolean) => {
       if (privacySaveTimeoutRef.current) clearTimeout(privacySaveTimeoutRef.current);
       privacySaveTimeoutRef.current = setTimeout(() => {
         privacySaveTimeoutRef.current = null;
-        persistPrivacy(hiddenFromSearch, hiddenFromExternalIndexing);
+        persistPrivacy(hiddenFromSearch, hiddenFromExternalIndexing, hiddenAge);
       }, 500);
     },
     [persistPrivacy]
@@ -213,12 +216,17 @@ export default function SettingsClient() {
 
   const setPrivacyHiddenFromSearch = (enabled: boolean) => {
     setIsHiddenFromSearch(enabled);
-    schedulePrivacySave(enabled, isHiddenFromExternalIndexing);
+    schedulePrivacySave(enabled, isHiddenFromExternalIndexing, isHiddenAge);
   };
 
   const setPrivacyHiddenFromExternalIndexing = (enabled: boolean) => {
     setIsHiddenFromExternalIndexing(enabled);
-    schedulePrivacySave(isHiddenFromSearch, enabled);
+    schedulePrivacySave(isHiddenFromSearch, enabled, isHiddenAge);
+  };
+
+  const setPrivacyHiddenAge = (enabled: boolean) => {
+    setIsHiddenAge(enabled);
+    schedulePrivacySave(isHiddenFromSearch, isHiddenFromExternalIndexing, enabled);
   };
 
   useEffect(() => {
@@ -333,12 +341,12 @@ export default function SettingsClient() {
       </AppCard>
 
       {/* Privacy */}
-      <AppCard>
+      <AppCard id="privacy">
         <Stack spacing={2}>
           <Box>
             <Typography variant="h6">Privacy</Typography>
             <Typography color="text.secondary" variant="body2" sx={{ mt: 0.5 }}>
-              Control how your profile appears within and outside NewChums.
+              Control how your profile appears within and outside NewChums. Hiding some information may impact your ability to find Chums.
             </Typography>
           </Box>
           <PrivacyToggleRow
@@ -354,6 +362,14 @@ export default function SettingsClient() {
             description="If enabled, your profile will not be indexed by external search engines."
             enabled={isHiddenFromExternalIndexing}
             onToggle={setPrivacyHiddenFromExternalIndexing}
+            showDivider={true}
+            disabled={privacyLoading}
+          />
+          <PrivacyToggleRow
+            title="Hide my age"
+            description="If enabled, your age will no longer appear on your profile."
+            enabled={isHiddenAge}
+            onToggle={setPrivacyHiddenAge}
             showDivider={true}
             disabled={privacyLoading}
           />

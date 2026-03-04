@@ -160,6 +160,12 @@ If the Turnstile widget shows "For testing only" on newchums.com/contact, you ar
 3. Deploy: `cd web && npm run deploy`. The deploy script sources `NEXT_PUBLIC_TURNSTILE_SITE_KEY` from `.env.production` and passes it to the build, so the production key is always used.
 4. **API:** Run `cd api && npx wrangler secret put TURNSTILE_SECRET_KEY` and paste the production secret key (you only need to do this once).
 
+### Public profile
+
+- Route: `/u/[handle]` (e.g. `/u/yourhandle`). Works for both logged-in (app shell) and logged-out (landing layout) visitors.
+- API: `GET /public/users/:handle` (no auth). Returns `{ user: { displayName, handle, age, bio, hobbies, avatarUrl } }`. DOB never exposed; age computed server-side.
+- Profile page has “View public profile” button when username is set. Links to `/u/{handle}`.
+
 ### Password reset
 
 End-to-end:

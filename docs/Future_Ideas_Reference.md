@@ -39,6 +39,7 @@ This document is meant to:
 ## Non-Logged in Home
 
 - Add a section which explains how the app makes coordinating with existing friends easier.
+- Home page, get together easier with family. Coordinate.
 
 ---
 
@@ -80,6 +81,8 @@ This document is meant to:
 - Suggested minimum/maximum capacity guidance
 - Friction check: “Would you attend this?”
 - A way to invite people to an event by email.
+- Option for people to request a different date or time.
+- Need a robust coordination tool, works per event. Host gives date and times slots, guests indicate their date and time slots, host picks.
 
 ---
 

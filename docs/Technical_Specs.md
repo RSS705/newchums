@@ -168,13 +168,14 @@ Users manage privacy preferences in **Settings** (`/settings`). These toggles co
 | Column | UI label | Description | Enforcement |
 |--------|----------|-------------|-------------|
 | `is_hidden_from_search` | Hide my profile from NewChums search | When ON: profile not in Chum searches; others cannot add as chum or invite to events. Event attendees can still view profile. | Not yet implemented |
-| `is_hidden_from_external_indexing` | Hide my profile from search engines | When ON: profile not indexed by external search engines. | Not yet implemented |
+| `is_hidden_from_external_indexing` | Hide my profile from search engines | When ON: public profile page emits `robots: noindex, nofollow` so search engines do not index it. | Implemented |
 
 **Implementation notes:** UI: `web/src/app/(app)/settings/PrivacyToggleRow.tsx`, `SettingsClient.tsx`. API: `GET /profile` and `PUT /profile` in `api/src/index.ts`. Schema: `web/sql/013_add_privacy_columns.sql`. Future work: enforce these flags in search, chum discovery, and SEO (e.g. noindex meta).
 
 ### Profile, onboarding, and lookups
 
 - `GET /profile`, `PUT /profile` (auth required)
+- `GET /public/users/:handle` (public; no auth) — returns public profile by handle: `{ user: { userId, displayName, handle, age, bio, hobbies, avatarUrl } }`. Age computed from DOB server-side; DOB never exposed.
 - `GET /handles/available?handle=...` (auth required)
 - `POST /user/username` (auth required)
 - `POST /user/date-of-birth` (auth required)
@@ -245,7 +246,7 @@ Core tables include:
 - `email_change_requests` (migration 011)
 - interests tables
 - `user_profile.notification_prefs` (JSONB, migration 012) — per-notification-type enabled + frequency
-- `users.is_hidden_from_search`, `users.is_hidden_from_external_indexing` (boolean, migration 013) — privacy toggles (Settings), default false; enforcement not yet implemented
+- `users.is_hidden_from_search`, `users.is_hidden_from_external_indexing` (boolean, migration 013) — privacy toggles (Settings), default false; is_hidden_from_external_indexing enforced via noindex meta on public profile page
 - events and rsvps (present; implementation varies by feature maturity)
 
 PostGIS is available for geo queries.

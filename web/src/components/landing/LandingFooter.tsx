@@ -43,7 +43,7 @@ export default function LandingFooter() {
             color="text.secondary"
             sx={{ textDecoration: "none", "&:hover": { color: "primary.main", textDecoration: "underline" } }}
           >
-            Contact
+            Contact us
           </Typography>
         </Stack>
       </Box>

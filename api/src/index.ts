@@ -19,6 +19,7 @@ import { nameToSlug, slugToName, validateInterestName } from "./interests";
 import { ensureAppUserId } from "./profile";
 import { generateResetToken, hashResetToken } from "./resetTokens";
 import { isValidContactSubject } from "./lib/contact";
+import { computeAge } from "./lib/publicProfile";
 import { checkContactRateLimit } from "./lib/contactRateLimit";
 import { validateCleanText } from "./lib/contentSafety";
 import { verifyTurnstileToken } from "./lib/turnstile";
@@ -103,6 +104,87 @@ app.use("*", async (c, next) => {
 });
 
 app.get("/", (c) => c.text("NewChums API is live"));
+
+// Public profile by handle (no auth). Returns age only, never DOB.
+// TODO: If users.is_hidden_from_search is true, consider 404 or allow direct-link only.
+// is_hidden_from_external_indexing returned for profile pages to emit noindex meta.
+app.get("/public/users/:handle", async (c) => {
+  const handleParam = c.req.param("handle")?.trim();
+  if (!handleParam) {
+    return c.json({ ok: false, error: "NOT_FOUND", message: "Profile not found" }, 404);
+  }
+  const handleNorm = handleParam.toLowerCase().trim();
+  try {
+    const sql = getSql(c.env);
+    const userRows = (await sql`
+      SELECT u.id, u.name, u.username, u.date_of_birth, u.avatar_key, u.avatar_updated_at,
+        COALESCE(u.is_hidden_age, false) AS is_hidden_age,
+        COALESCE(u.is_hidden_from_external_indexing, false) AS is_hidden_from_external_indexing
+      FROM newchums.users u
+      WHERE u.username_norm = ${handleNorm}
+        AND u.username IS NOT NULL
+      LIMIT 1
+    `) as Array<{
+      id: string;
+      name: string | null;
+      username: string | null;
+      date_of_birth: string | Date | null;
+      avatar_key: string | null;
+      avatar_updated_at: string | Date | null;
+      is_hidden_age: boolean;
+      is_hidden_from_external_indexing: boolean;
+    }>;
+    const user = userRows[0];
+    if (!user) {
+      return c.json({ ok: false, error: "NOT_FOUND", message: "Profile not found" }, 404);
+    }
+    const profileRows = (await sql`
+      SELECT bio FROM user_profile WHERE user_id = ${user.id} LIMIT 1
+    `) as Array<{ bio: string | null }>;
+    const profile = profileRows[0];
+    const interestRows = (await sql`
+      SELECT i.name
+      FROM user_interests ui
+      JOIN interests i ON i.id = ui.interest_id
+      WHERE ui.user_id = ${user.id}
+      ORDER BY i.sort_order, i.name
+    `) as { name: string }[];
+    const dobStr = user.date_of_birth
+      ? typeof user.date_of_birth === "string"
+        ? user.date_of_birth
+        : (user.date_of_birth as Date).toISOString().slice(0, 10)
+      : null;
+    const age =
+      user.is_hidden_age === true ? null : computeAge(dobStr);
+    const avatarKey = user.avatar_key ?? null;
+    const avatarUpdatedAt = user.avatar_updated_at;
+    const avatarUrl =
+      avatarKey && c.env.MEDIA_BUCKET
+        ? `/users/${user.id}/avatar?v=${avatarUpdatedAt ? new Date(avatarUpdatedAt as Date).getTime() : 0}`
+        : null;
+    const displayName = user.name?.trim() ?? "NewChums user";
+    const handle = (user.username ?? "").trim();
+    return c.json({
+      ok: true,
+      user: {
+        userId: user.id,
+        displayName,
+        handle: handle ? (handle.startsWith("@") ? handle : `@${handle}`) : null,
+        age,
+        bio: profile?.bio ?? null,
+        hobbies: interestRows.map((r) => r.name),
+        avatarUrl,
+        is_hidden_from_external_indexing: user.is_hidden_from_external_indexing ?? false,
+      },
+    });
+  } catch (err) {
+    console.error("[GET /public/users/:handle]", err);
+    return c.json(
+      { ok: false, error: "SERVER_ERROR", message: "Failed to fetch profile" },
+      500,
+    );
+  }
+});
 app.get("/health", (c) =>
   c.json({ ok: true, service: "api", ts: new Date().toISOString() }),
 );
@@ -1294,7 +1376,8 @@ app.get("/profile", async (c) => {
     const userRows = (await sql`
       SELECT name, username, email, date_of_birth, avatar_key, avatar_updated_at, (password_hash IS NOT NULL) AS has_password,
         COALESCE(is_hidden_from_search, false) AS is_hidden_from_search,
-        COALESCE(is_hidden_from_external_indexing, false) AS is_hidden_from_external_indexing
+        COALESCE(is_hidden_from_external_indexing, false) AS is_hidden_from_external_indexing,
+        COALESCE(is_hidden_age, false) AS is_hidden_age
       FROM newchums.users WHERE id = ${appUserId} LIMIT 1
     `) as Array<{
       name: string | null;
@@ -1306,6 +1389,7 @@ app.get("/profile", async (c) => {
       has_password: boolean;
       is_hidden_from_search: boolean;
       is_hidden_from_external_indexing: boolean;
+      is_hidden_age: boolean;
     }>;
     const userInfo = userRows[0];
     const profileRows = (await sql`
@@ -1351,6 +1435,7 @@ app.get("/profile", async (c) => {
     const hasPassword = userInfo?.has_password ?? false;
     const isHiddenFromSearch = userInfo?.is_hidden_from_search ?? false;
     const isHiddenFromExternalIndexing = userInfo?.is_hidden_from_external_indexing ?? false;
+    const isHiddenAge = userInfo?.is_hidden_age ?? false;
 
     if (!profile) {
       return c.json({
@@ -1373,6 +1458,7 @@ app.get("/profile", async (c) => {
           has_password: hasPassword,
           is_hidden_from_search: isHiddenFromSearch,
           is_hidden_from_external_indexing: isHiddenFromExternalIndexing,
+          is_hidden_age: isHiddenAge,
         },
       });
     }
@@ -1396,6 +1482,7 @@ app.get("/profile", async (c) => {
         has_password: hasPassword,
         is_hidden_from_search: isHiddenFromSearch,
         is_hidden_from_external_indexing: isHiddenFromExternalIndexing,
+        is_hidden_age: isHiddenAge,
       },
     });
   } catch (err) {
@@ -1441,6 +1528,7 @@ app.put("/profile", async (c) => {
       email_new_events?: boolean;
       is_hidden_from_search?: boolean;
       is_hidden_from_external_indexing?: boolean;
+      is_hidden_age?: boolean;
     };
 
     if ("date_of_birth" in body && body.date_of_birth !== undefined) {
@@ -1718,6 +1806,10 @@ app.put("/profile", async (c) => {
       const val = body.is_hidden_from_external_indexing === true;
       txQueries.push(sql`UPDATE newchums.users SET is_hidden_from_external_indexing = ${val} WHERE id = ${appUserId}`);
     }
+    if ("is_hidden_age" in body && body.is_hidden_age !== undefined) {
+      const val = body.is_hidden_age === true;
+      txQueries.push(sql`UPDATE newchums.users SET is_hidden_age = ${val} WHERE id = ${appUserId}`);
+    }
     if (rawInterestSlugs !== null) {
       txQueries.push(
         sql`DELETE FROM user_interests WHERE user_id = ${appUserId}`,
@@ -1735,7 +1827,8 @@ app.put("/profile", async (c) => {
     const userRowsAfter = (await sql`
       SELECT name, username, email, date_of_birth, avatar_key, avatar_updated_at, (password_hash IS NOT NULL) AS has_password,
         COALESCE(is_hidden_from_search, false) AS is_hidden_from_search,
-        COALESCE(is_hidden_from_external_indexing, false) AS is_hidden_from_external_indexing
+        COALESCE(is_hidden_from_external_indexing, false) AS is_hidden_from_external_indexing,
+        COALESCE(is_hidden_age, false) AS is_hidden_age
       FROM newchums.users WHERE id = ${appUserId} LIMIT 1
     `) as Array<{
       name: string | null;
@@ -1747,6 +1840,7 @@ app.put("/profile", async (c) => {
       has_password: boolean;
       is_hidden_from_search: boolean;
       is_hidden_from_external_indexing: boolean;
+      is_hidden_age: boolean;
     }>;
     const userAfter = userRowsAfter[0];
     const profileRows = (await sql`
@@ -1799,6 +1893,7 @@ app.put("/profile", async (c) => {
         has_password: userAfter?.has_password ?? false,
         is_hidden_from_search: userAfter?.is_hidden_from_search ?? false,
         is_hidden_from_external_indexing: userAfter?.is_hidden_from_external_indexing ?? false,
+        is_hidden_age: userAfter?.is_hidden_age ?? false,
       },
     });
   } catch (err) {

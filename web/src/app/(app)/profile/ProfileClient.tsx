@@ -14,6 +14,7 @@ import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import dayjs from "dayjs";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Cropper, { type Area } from "react-easy-crop";
@@ -519,21 +520,33 @@ export default function ProfileClient() {
     setInterestItems((prev) => [...prev, item]);
   };
 
+  const handleForUrl = handle.trim().replace(/^@/, "");
+  const canViewPublic = handleForUrl.length >= 3 && HANDLE_REGEX.test(handleForUrl);
+
   return (
     <Stack spacing={{ xs: 3, sm: 4 }}>
-      <Box sx={{ textAlign: { xs: "center", sm: "left" } }}>
-        <Typography
-          component="h1"
-          sx={{
-            fontSize: { xs: "1.75rem", sm: "2rem" },
-            fontWeight: 700,
-            lineHeight: 1.25,
-            letterSpacing: "-0.02em",
-          }}
-        >
-          Profile
-        </Typography>
-        <Stack spacing={0.25} sx={{ mt: 1 }}>
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: { xs: "column", sm: "row" },
+          alignItems: { xs: "stretch", sm: "center" },
+          justifyContent: "space-between",
+          gap: 2,
+        }}
+      >
+        <Box sx={{ textAlign: { xs: "center", sm: "left" } }}>
+          <Typography
+            component="h1"
+            sx={{
+              fontSize: { xs: "1.75rem", sm: "2rem" },
+              fontWeight: 700,
+              lineHeight: 1.25,
+              letterSpacing: "-0.02em",
+            }}
+          >
+            Profile
+          </Typography>
+          <Stack spacing={0.25} sx={{ mt: 1 }}>
           <Typography
             color="text.secondary"
             sx={{ fontSize: { xs: "0.875rem", sm: "0.9375rem" } }}
@@ -548,6 +561,35 @@ export default function ProfileClient() {
             The more complete your profile, the better your matches.
           </Typography>
         </Stack>
+        </Box>
+        {canViewPublic ? (
+          <AppButton
+            component={Link}
+            href={`/u/${handleForUrl}`}
+            variant="outlined"
+            size="medium"
+            sx={{
+              alignSelf: { xs: "center", sm: "flex-end" },
+              flexShrink: 0,
+              borderRadius: 2,
+              textTransform: "capitalize",
+            }}
+          >
+            View public profile
+          </AppButton>
+        ) : (
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            sx={{
+              alignSelf: { xs: "center", sm: "center" },
+              fontSize: "0.8125rem",
+              fontStyle: "italic",
+            }}
+          >
+            Set a username to enable public profile preview
+          </Typography>
+        )}
       </Box>
 
       <AppCard sx={{ borderRadius: { xs: 2, sm: 2.5 }, overflow: "hidden" }}>
@@ -781,18 +823,31 @@ export default function ProfileClient() {
                   </Typography>
                 )}
               </Stack>
-              <Stack direction="row" flexWrap="wrap" gap={1} useFlexGap sx={{ py: 0.5 }}>
+              <Stack direction="row" flexWrap="wrap" gap={1.5} useFlexGap sx={{ py: 0.75 }}>
                 {(showAllChips ? sortedInterestItems : sortedInterestItems.slice(0, CHIPS_COLLAPSED_COUNT)).map(
                   (item) => (
                     <Chip
                       key={item.slug}
                       label={item.name}
-                      size="small"
+                      size="medium"
                       color="primary"
                       variant="filled"
                       onDelete={() =>
                         setInterestItems((prev) => prev.filter((i) => i.slug !== item.slug))
                       }
+                      sx={{
+                        height: 34,
+                        fontSize: "0.875rem",
+                        fontWeight: 600,
+                        "& .MuiChip-label": {
+                          px: 1.5,
+                          py: 0.5,
+                        },
+                        "& .MuiChip-deleteIcon": {
+                          fontSize: "1.125rem",
+                          "&:hover": { color: "primary.dark" },
+                        },
+                      }}
                     />
                   )
                 )}
