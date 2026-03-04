@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import OnboardingUsernameClient from "./OnboardingUsernameClient";
 import { getSafeRedirectPath } from "@/lib/authRedirect";
 
-/** Cloudflare Workers (OpenNext) requires runtime='edge' for dynamic routes. */
+/** Do NOT add runtime="edge" - OpenNext CF shims it to empty, causing 500 errors. */
 export const metadata: Metadata = {
   title: "Choose Username | NewChums",
 };

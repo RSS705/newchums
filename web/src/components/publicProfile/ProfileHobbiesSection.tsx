@@ -12,6 +12,8 @@ export type ProfileHobbiesSectionProps = {
 export default function ProfileHobbiesSection({ hobbies }: ProfileHobbiesSectionProps) {
   if (!hobbies || hobbies.length === 0) return null;
 
+  const sortedHobbies = [...hobbies].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+
   return (
     <Stack spacing={1}>
       <Typography variant="subtitle1" fontWeight={600} sx={{ fontSize: "0.9375rem" }}>
@@ -21,19 +23,24 @@ export default function ProfileHobbiesSection({ hobbies }: ProfileHobbiesSection
         sx={{
           display: "flex",
           flexWrap: "wrap",
-          gap: 1,
+          gap: 1.5,
         }}
       >
-        {hobbies.map((name) => (
+        {sortedHobbies.map((name) => (
           <Chip
             key={name}
             label={name}
-            size="small"
+            size="medium"
             color="primary"
-            variant="outlined"
+            variant="filled"
             sx={{
-              fontSize: "0.8125rem",
-              fontWeight: 500,
+              height: 34,
+              fontSize: "0.875rem",
+              fontWeight: 600,
+              "& .MuiChip-label": {
+                px: 1.5,
+                py: 0.5,
+              },
             }}
           />
         ))}

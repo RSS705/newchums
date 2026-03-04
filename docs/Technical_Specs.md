@@ -291,11 +291,7 @@ CORS is enforced via an explicit allowlist (newchums.com, www, localhost:3000) i
 
 ## 12) Runtime Constraints (Web)
 
-Dynamic routes must export:
-
-```ts
-export const runtime = "edge";
-```
+Do NOT add `export const runtime = "edge"` to routes. OpenNext Cloudflare shims the edge runtime to an empty module, causing 500 Internal Server Error; Workers already run at the edge.
 
 ### Middleware patch
 

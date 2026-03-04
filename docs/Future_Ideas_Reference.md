@@ -70,6 +70,7 @@ This document is meant to:
 - Public vs private profile toggle
 - Profile completeness indicator
 - Soft gamification (levels, badges)
+- Gamification, only next unlockable at each level shown.
 - Badge for inviting someone else into the app.
 
 ---

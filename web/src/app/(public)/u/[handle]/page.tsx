@@ -8,8 +8,6 @@ import AppShell from "@/components/layout/AppShell";
 import LandingLayout from "@/components/landing/LandingLayout";
 import PublicProfilePageClient from "./PublicProfilePageClient";
 
-export const runtime = "edge";
-
 type PageProps = {
   params: Promise<{ handle: string }>;
 };
@@ -44,23 +42,33 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 export default async function PublicProfilePage({ params }: PageProps) {
   const { handle } = await params;
-  const session = await auth();
 
-  if (!session?.user?.email) {
-    return (
-      <LandingLayout isLoggedIn={false}>
-        <Box sx={{ py: { xs: 4, sm: 6 } }}>
-          <PublicProfilePageClient handle={handle} />
-        </Box>
-      </LandingLayout>
-    );
-  }
-
-  const { username, date_of_birth, name } = await getOrCreateAppUser(
-    session.user.email,
-    (session.user as { name?: string | null }).name
+  const loggedOutView = (
+    <LandingLayout isLoggedIn={false}>
+      <Box sx={{ py: { xs: 4, sm: 6 } }}>
+        <PublicProfilePageClient handle={handle} />
+      </Box>
+    </LandingLayout>
   );
 
+  let userData: { username: string | null; date_of_birth: string | null; name: string | null } | null = null;
+
+  try {
+    const session = await auth();
+    if (!session?.user?.email) {
+      return loggedOutView;
+    }
+    userData = await getOrCreateAppUser(
+      session.user.email,
+      (session.user as { name?: string | null }).name
+    );
+  } catch {
+    // auth() or getOrCreateAppUser can fail in prod (Edge runtime, DB limits, etc.).
+    // Profile data is fetched client-side; fall back to logged-out view so the page loads.
+    return loggedOutView;
+  }
+
+  const { username, date_of_birth, name } = userData;
   const needsOnboarding =
     !date_of_birth ||
     date_of_birth.trim() === "" ||

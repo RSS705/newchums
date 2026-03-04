@@ -39,34 +39,36 @@ export default function TimelineVisualization() {
   return (
     <Box
       component="section"
-        sx={{
-          py: 6,
-          px: { xs: 2, sm: 3 },
-          backgroundColor: darkBg,
+      sx={{
+        py: { xs: 4, sm: 6 },
+        px: { xs: 2, sm: 3 },
+        backgroundColor: darkBg,
         color: "background.paper",
         mx: { xs: -2, sm: -3 },
       }}
     >
       <Box maxWidth={800} mx="auto">
-        <Typography variant="h5" fontWeight={700} gutterBottom>
-          Normalize the Pace
-        </Typography>
-        <Typography variant="body1" sx={{ mb: 2, opacity: 0.9, lineHeight: 1.65 }}>
-          We often expect connection to be instant. But research by Jeffrey Hall (University of
-          Kansas) suggests it takes time to move between stages:
-        </Typography>
-        <Typography
-          variant="caption"
-          sx={{ display: "block", mb: 4, opacity: 0.8 }}
-        >
-          Hall, J. A. (2019). How many hours does it take to make a friend? Journal of Social and
-          Personal Relationships, 36(4), 1278–1296.
-        </Typography>
+        <Box sx={{ textAlign: { xs: "center", sm: "left" } }}>
+          <Typography variant="h5" fontWeight={700} gutterBottom sx={{ fontSize: { xs: "1.15rem", sm: "1.5rem" } }}>
+            Normalize the Pace
+          </Typography>
+          <Typography variant="body1" sx={{ mb: 2, opacity: 0.9, lineHeight: 1.65 }}>
+            We often expect connection to be instant. But research by Jeffrey Hall (University of
+            Kansas) suggests it takes time to move between stages:
+          </Typography>
+          <Typography
+            variant="caption"
+            sx={{ display: "block", mb: 4, opacity: 0.8 }}
+          >
+            Hall, J. A. (2019). How many hours does it take to make a friend? Journal of Social and
+            Personal Relationships, 36(4), 1278–1296.
+          </Typography>
+        </Box>
 
-        <Stack spacing={4}>
+        <Stack spacing={{ xs: 3, sm: 4 }}>
           {TIMELINE_ITEMS.map((item) => (
             <Box key={item.accent}>
-              <Typography variant="body2" sx={{ mb: 1, opacity: 0.95 }}>
+              <Typography variant="body2" sx={{ mb: 1, opacity: 0.95, fontSize: { xs: "0.8125rem", sm: "0.875rem" } }}>
                 <Box component="span" sx={{ color: secondaryMain, fontWeight: 600 }}>
                   {item.accent}
                 </Box>

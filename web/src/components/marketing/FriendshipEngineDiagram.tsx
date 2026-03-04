@@ -38,13 +38,13 @@ export default function FriendshipEngineDiagram({ hoveredItem, onHoverChange }: 
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
-        mb: 6,
+        mb: { xs: 4, sm: 6 },
       }}
     >
       <Box
         sx={{
           width: "100%",
-          maxWidth: { xs: 320, sm: 420, md: 460 },
+          maxWidth: { xs: 280, sm: 420, md: 460 },
           aspectRatio: "1.15",
         }}
       >
@@ -64,6 +64,7 @@ export default function FriendshipEngineDiagram({ hoveredItem, onHoverChange }: 
           <g
             onMouseEnter={() => onHoverChange("proximity")}
             onMouseLeave={() => onHoverChange(null)}
+            onClick={() => onHoverChange(isHovered("proximity") ? null : "proximity")}
             style={{
               cursor: "pointer",
               transformOrigin: "70px 75px",
@@ -94,6 +95,7 @@ export default function FriendshipEngineDiagram({ hoveredItem, onHoverChange }: 
           <g
             onMouseEnter={() => onHoverChange("repetition")}
             onMouseLeave={() => onHoverChange(null)}
+            onClick={() => onHoverChange(isHovered("repetition") ? null : "repetition")}
             style={{
               cursor: "pointer",
               transformOrigin: "170px 75px",
@@ -124,6 +126,7 @@ export default function FriendshipEngineDiagram({ hoveredItem, onHoverChange }: 
           <g
             onMouseEnter={() => onHoverChange("disclosure")}
             onMouseLeave={() => onHoverChange(null)}
+            onClick={() => onHoverChange(isHovered("disclosure") ? null : "disclosure")}
             style={{
               cursor: "pointer",
               transformOrigin: "120px 155px",

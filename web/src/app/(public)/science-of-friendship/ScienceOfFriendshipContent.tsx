@@ -16,7 +16,7 @@ import TimelineVisualization from "@/components/marketing/TimelineVisualization"
  * Marketing page content. Layout provides Container, this component uses maxWidth
  * via a wrapping Box for consistent horizontal bounds with other marketing pages.
  */
-const SECTION_SPACING = { py: { xs: 8, sm: 10 } }; // ~80px
+const SECTION_SPACING = { py: { xs: 5, sm: 8, md: 10 } };
 const CONTENT_MAX_WIDTH = 800;
 
 export type FriendshipEngineHover = "proximity" | "repetition" | "disclosure" | null;
@@ -25,10 +25,10 @@ export default function ScienceOfFriendshipContent() {
   const [hoveredItem, setHoveredItem] = useState<FriendshipEngineHover>(null);
 
   return (
-    <Box sx={{ pt: 10, pb: { xs: 4, sm: 6 } }}>
+    <Box sx={{ pt: { xs: 6, sm: 8, md: 10 }, pb: { xs: 4, sm: 6 } }}>
       {/* Section 1, Hero: centered layout */}
       <Box component="section" sx={{ ...SECTION_SPACING, mb: { xs: 4, sm: 6 } }}>
-        <Stack spacing={3} alignItems="center" textAlign="center" maxWidth={CONTENT_MAX_WIDTH} mx="auto">
+        <Stack spacing={{ xs: 2, sm: 3 }} alignItems="center" textAlign="center" maxWidth={CONTENT_MAX_WIDTH} mx="auto" px={{ xs: 1, sm: 0 }}>
           <Typography
             component="h1"
             variant="h1"
@@ -37,30 +37,41 @@ export default function ScienceOfFriendshipContent() {
           >
             The Science of Friendship
           </Typography>
-          <Typography variant="h5" fontWeight={400} color="text.primary" sx={{ lineHeight: 1.65 }}>
+          <Typography
+            variant="h5"
+            fontWeight={400}
+            color="text.primary"
+            sx={{ lineHeight: 1.65, fontSize: { xs: "1.0625rem", sm: "1.25rem" } }}
+          >
             Friendship isn&apos;t just luck.
             <br />
             <br />
             It&apos;s a set of conditions that help people connect,
             conditions that modern life quietly makes harder.
           </Typography>
-          <Typography variant="h5" fontWeight={400} color="text.primary" sx={{ lineHeight: 1.65 }}>
+          <Typography
+            variant="h5"
+            fontWeight={400}
+            color="text.primary"
+            sx={{ lineHeight: 1.65, fontSize: { xs: "1.0625rem", sm: "1.25rem" } }}
+          >
             NewChums was built around a simple idea: If we recreate those conditions, friendship
             becomes much more likely.
           </Typography>
         </Stack>
         <Box
           sx={{
-            mt: 6,
+            mt: { xs: 4, sm: 6 },
             display: "flex",
             justifyContent: "center",
+            px: { xs: 1, sm: 0 },
           }}
         >
           <Box
             sx={{
               width: "100%",
               maxWidth: CONTENT_MAX_WIDTH,
-              minHeight: { xs: 220, md: 280 },
+              minHeight: { xs: 180, sm: 220, md: 280 },
               borderRadius: 2,
               overflow: "hidden",
               bgcolor: "primary.light",
@@ -89,7 +100,7 @@ export default function ScienceOfFriendshipContent() {
           px: { xs: 2, sm: 3 },
         }}
       >
-        <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto">
+        <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto" sx={{ textAlign: { xs: "center", sm: "left" } }}>
           <SectionHeader title="A quiet problem many adults recognize" emphasis="primary" accentColor="secondary" />
           <Stack spacing={2}>
             <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
@@ -127,9 +138,12 @@ export default function ScienceOfFriendshipContent() {
 
       {/* Section 3, The Friendship Engine */}
       <Box component="section" id="friendship-engine" sx={SECTION_SPACING}>
-        <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto">
+        <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto" px={{ xs: 2, sm: 0 }}>
           <SectionHeader title="The Friendship Engine" emphasis="primary" accentColor="secondary" />
-          <Typography variant="body1" sx={{ mb: 2, lineHeight: 1.75 }}>
+          <Typography
+            variant="body1"
+            sx={{ mb: 2, lineHeight: 1.75, textAlign: { xs: "center", sm: "left" } }}
+          >
             Researchers studying relationships have noticed that most friendships grow from the same
             three ingredients. When these conditions exist, connection becomes much easier.
           </Typography>
@@ -145,9 +159,9 @@ export default function ScienceOfFriendshipContent() {
 
           <Box
             sx={{
-              mt: 4,
-              px: 2.5,
-              py: 2,
+              mt: { xs: 3, sm: 4 },
+              px: { xs: 2, sm: 2.5 },
+              py: { xs: 1.5, sm: 2 },
               borderRadius: 1.5,
               bgcolor: (theme) =>
                 theme.palette.mode === "light" ? "grey.100" : "grey.800",
@@ -187,8 +201,8 @@ export default function ScienceOfFriendshipContent() {
         }}
       >
         <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto">
-          <Grid container spacing={6}>
-            <Grid size={{ xs: 12, md: 6 }}>
+          <Grid container spacing={{ xs: 4, md: 6 }}>
+            <Grid size={{ xs: 12, md: 6 }} sx={{ textAlign: { xs: "center", sm: "left" } }}>
               <SectionHeader title="Why friendship feels harder in adulthood" emphasis="primary" accentColor="secondary" />
               <Stack spacing={1.5}>
                 {[
@@ -197,8 +211,8 @@ export default function ScienceOfFriendshipContent() {
                   "Many modern routines are isolated, we move between home, work, and errands without naturally seeing the same people.",
                   "Many social experiences today are one-off events instead of recurring spaces where relationships can grow.",
                 ].map((text) => (
-                  <Stack key={text} direction="row" spacing={1.5} alignItems="center">
-                    <Box sx={{ width: 6, height: 6, borderRadius: "50%", bgcolor: "secondary.main", flexShrink: 0 }} />
+                  <Stack key={text} direction="row" spacing={1.5} alignItems="center" justifyContent={{ xs: "center", sm: "flex-start" }}>
+                    <Box sx={{ width: 6, height: 6, borderRadius: "50%", bgcolor: "secondary.main", flexShrink: 0, display: { xs: "none", sm: "block" } }} />
                     <Typography variant="body1" sx={{ lineHeight: 1.75 }}>{text}</Typography>
                   </Stack>
                 ))}
@@ -207,7 +221,7 @@ export default function ScienceOfFriendshipContent() {
                 Putnam, R. (2000). Bowling Alone.
               </Typography>
             </Grid>
-            <Grid size={{ xs: 12, md: 6 }} id="why-friendship-matters">
+            <Grid size={{ xs: 12, md: 6 }} id="why-friendship-matters" sx={{ textAlign: { xs: "center", sm: "left" } }}>
               <SectionHeader title="Why this matters more than we realize" emphasis="primary" accentColor="secondary" />
               <Stack spacing={1.5}>
                 {[
@@ -215,8 +229,8 @@ export default function ScienceOfFriendshipContent() {
                   "Reliable social support helps buffer the effects of daily stress.",
                   "Feeling socially connected strengthens emotional resilience and mental health.",
                 ].map((text) => (
-                  <Stack key={text} direction="row" spacing={1.5} alignItems="center">
-                    <Box sx={{ width: 6, height: 6, borderRadius: "50%", bgcolor: "secondary.main", flexShrink: 0 }} />
+                  <Stack key={text} direction="row" spacing={1.5} alignItems="center" justifyContent={{ xs: "center", sm: "flex-start" }}>
+                    <Box sx={{ width: 6, height: 6, borderRadius: "50%", bgcolor: "secondary.main", flexShrink: 0, display: { xs: "none", sm: "block" } }} />
                     <Typography variant="body1" sx={{ lineHeight: 1.75 }}>{text}</Typography>
                   </Stack>
                 ))}
@@ -231,14 +245,14 @@ export default function ScienceOfFriendshipContent() {
 
       {/* Section 5, Rebuilding the Conditions: three columns */}
       <Box component="section" id="how-newchums-helps" sx={SECTION_SPACING}>
-        <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto">
+        <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto" px={{ xs: 2, sm: 0 }} sx={{ textAlign: { xs: "center", sm: "left" } }}>
           <SectionHeader title="Rebuilding the conditions for friendship" emphasis="primary" accentColor="secondary" />
           <Typography variant="body1" sx={{ mb: 4, lineHeight: 1.75 }}>
             NewChums isn&apos;t a dating app or a networking site. It&apos;s a platform designed to
             recreate the simple conditions where friendships naturally grow.
           </Typography>
 
-          <Grid container spacing={{ xs: 3, md: 6 }} sx={{ mb: 4 }}>
+          <Grid container spacing={{ xs: 3, sm: 4, md: 6 }} sx={{ mb: { xs: 3, sm: 4 } }}>
             <Grid size={{ xs: 12, md: 4 }}>
               <Typography
                 variant="h5"
@@ -295,7 +309,7 @@ export default function ScienceOfFriendshipContent() {
             </Grid>
           </Grid>
 
-          <Box sx={{ mt: 6, display: "flex", justifyContent: "center" }}>
+          <Box sx={{ mt: { xs: 4, sm: 6 }, display: "flex", justifyContent: "center" }}>
             {/* IMAGE PLACEHOLDER
             Description: diverse group at casual hobby meetup (games, crafts, sports, etc.)
             Purpose: illustrate NewChums-style gatherings
@@ -333,8 +347,8 @@ export default function ScienceOfFriendshipContent() {
             emphasis="primary"
             accentColor="secondary"
           />
-          <Stack spacing={3} sx={{ maxWidth: 720 }}>
-            <Stack spacing={2}>
+          <Stack spacing={{ xs: 2.5, sm: 3 }} sx={{ maxWidth: 720, mx: { xs: "auto", sm: 0 } }}>
+            <Stack spacing={2} sx={{ textAlign: { xs: "center", sm: "left" } }}>
               <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
                 For most of human history, friendships formed automatically. You saw the same people
                 in the same places every day.
@@ -345,9 +359,10 @@ export default function ScienceOfFriendshipContent() {
                   lineHeight: 1.75,
                   color: "text.secondary",
                   fontStyle: "italic",
-                  pl: 2,
-                  borderLeft: "2px solid",
+                  borderLeft: { xs: "none", sm: "2px solid" },
                   borderColor: "secondary.main",
+                  pl: { xs: 0, sm: 2 },
+                  textAlign: { xs: "center", sm: "left" },
                 }}
               >
                 School. Neighborhoods. Shared routines.
@@ -359,37 +374,46 @@ export default function ScienceOfFriendshipContent() {
             </Stack>
 
             <Box sx={{ pt: 1 }}>
-              <Typography variant="body1" fontWeight={600} sx={{ lineHeight: 1.75, mb: 1.5 }}>
+              <Typography
+                variant="body1"
+                fontWeight={600}
+                sx={{ lineHeight: 1.75, mb: 1.5, textAlign: { xs: "center", sm: "left" } }}
+              >
                 The good news is that the ingredients for friendship haven&apos;t changed.
               </Typography>
-              <Typography variant="body1" sx={{ lineHeight: 1.75, mb: 2 }}>
+              <Typography
+                variant="body1"
+                sx={{ lineHeight: 1.75, mb: 2, textAlign: { xs: "center", sm: "left" } }}
+              >
                 People still connect when they:
               </Typography>
-              <Stack spacing={1.5}>
-                {[
-                  "See each other regularly",
-                  "Share meaningful activities",
-                  "Have space for conversations to grow naturally",
-                ].map((text) => (
-                  <Stack key={text} direction="row" spacing={1.5} alignItems="center">
-                    <Box
-                      sx={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: "50%",
-                        bgcolor: "secondary.main",
-                        flexShrink: 0,
-                      }}
-                    />
-                    <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
-                      {text}
-                    </Typography>
-                  </Stack>
-                ))}
-              </Stack>
+              <Box sx={{ textAlign: "left", maxWidth: { xs: 360, sm: "none" }, mx: { xs: "auto", sm: 0 } }}>
+                <Stack spacing={1.5}>
+                  {[
+                    "See each other regularly",
+                    "Share meaningful activities",
+                    "Have space for conversations to grow naturally",
+                  ].map((text) => (
+                    <Stack key={text} direction="row" spacing={1.5} alignItems="center">
+                      <Box
+                        sx={{
+                          width: 6,
+                          height: 6,
+                          borderRadius: "50%",
+                          bgcolor: "secondary.main",
+                          flexShrink: 0,
+                        }}
+                      />
+                      <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
+                        {text}
+                      </Typography>
+                    </Stack>
+                  ))}
+                </Stack>
+              </Box>
             </Box>
 
-            <Stack spacing={2} sx={{ pt: 1 }}>
+            <Stack spacing={2} sx={{ pt: 1, textAlign: { xs: "center", sm: "left" } }}>
               <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
                 NewChums simply helps recreate those conditions.
               </Typography>
@@ -409,7 +433,7 @@ export default function ScienceOfFriendshipContent() {
         component="section"
         id="cta"
         sx={{
-          py: { xs: 8, sm: 10 },
+          py: { xs: 6, sm: 10 },
           textAlign: "center",
           backgroundColor: (theme) => theme.palette.mode === "light" ? "grey.100" : "grey.900",
           mx: { xs: -2, sm: -3 },
@@ -421,12 +445,12 @@ export default function ScienceOfFriendshipContent() {
             component="h2"
             variant="h5"
             fontWeight={700}
-            sx={{ mb: 3 }}
+            sx={{ mb: 3, fontSize: { xs: "1.2rem", sm: "1.5rem" } }}
           >
             Start meeting people who enjoy the same things you do
           </Typography>
 
-          <Stack spacing={3} alignItems="center" sx={{ mb: 5 }}>
+          <Stack spacing={{ xs: 2, sm: 3 }} alignItems="center" sx={{ mb: { xs: 4, sm: 5 } }}>
             <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
               Friendship doesn&apos;t have to be left to chance.
             </Typography>
@@ -435,7 +459,7 @@ export default function ScienceOfFriendshipContent() {
               <Typography
                 variant="body1"
                 fontWeight={600}
-                sx={{ lineHeight: 1.75, mb: 2 }}
+                sx={{ lineHeight: 1.75, mb: 2, textAlign: { xs: "center", sm: "left" } }}
               >
                 Getting started takes less than a minute:
               </Typography>
@@ -449,6 +473,9 @@ export default function ScienceOfFriendshipContent() {
                   border: "1px solid",
                   borderColor: (theme) =>
                     theme.palette.mode === "light" ? "grey.200" : "grey.700",
+                  textAlign: "left",
+                  maxWidth: { xs: 360, sm: "none" },
+                  mx: { xs: "auto", sm: 0 },
                 }}
               >
                 <Stack spacing={1.5} alignItems="flex-start">
@@ -477,43 +504,24 @@ export default function ScienceOfFriendshipContent() {
             </Box>
           </Stack>
 
-          <Stack
-            direction={{ xs: "column", sm: "row" }}
-            spacing={2}
-            justifyContent="center"
-            flexWrap="wrap"
-          >
-            <Button
-              component={Link}
-              href="/events"
-              variant="contained"
-              color="primary"
-              size="large"
-              sx={{ px: 3, py: 1.5, textTransform: "capitalize" }}
-            >
-              Explore Events
-            </Button>
-            <Button
-              component={Link}
-              href="/events/create"
-              variant="outlined"
-              color="primary"
-              size="large"
-              sx={{ px: 3, py: 1.5, textTransform: "capitalize" }}
-            >
-              Create an Event
-            </Button>
+          <Box sx={{ display: "flex", justifyContent: "center", width: { xs: "100%", sm: "auto" } }}>
             <Button
               component={Link}
               href="/signup"
-              variant="outlined"
+              variant="contained"
               color="primary"
               size="large"
-              sx={{ px: 3, py: 1.5, textTransform: "capitalize" }}
+              fullWidth
+              sx={{
+                px: 3,
+                py: 1.5,
+                textTransform: "capitalize",
+                maxWidth: { xs: "none", sm: 200 },
+              }}
             >
-              Sign Up
+              Get Started
             </Button>
-          </Stack>
+          </Box>
         </Box>
       </Box>
     </Box>

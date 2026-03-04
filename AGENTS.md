@@ -134,10 +134,8 @@ If business logic, database access, or mutation logic appears inside the Web Wor
 
 ## Deployment & Runtime Notes
 
-- Web Worker runs on Edge runtime.
-- Dynamic routes must export:
-
-  `export const runtime = "edge";`
+- Web Worker runs on Cloudflare Workers (OpenNext).
+- Do NOT add `export const runtime = "edge"` to routes. OpenNext CF shims the edge runtime to an empty module, causing 500 Internal Server Error. Workers already run at the edge.
 
 - Validate builds before deploy:
 

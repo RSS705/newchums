@@ -2,6 +2,7 @@
 
 import Box from "@mui/material/Box";
 import Card from "@mui/material/Card";
+import Stack from "@mui/material/Stack";
 import CardContent from "@mui/material/CardContent";
 import Grid from "@mui/material/Grid";
 import Typography from "@mui/material/Typography";
@@ -82,29 +83,36 @@ export default function FriendshipEngineCards({ hoveredItem, onHoverChange }: Pr
                 },
               }}
             >
-            <CardContent sx={{ pt: 3, pb: 3, "&:last-child": { pb: 3 } }}>
-              <Box
-                sx={{
-                  width: 48,
-                  height: 48,
-                  borderRadius: "50%",
-                  bgcolor: "primary.light",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  mb: 2,
-                }}
+            <CardContent sx={{ pt: { xs: 2, sm: 3 }, pb: { xs: 2, sm: 3 }, "&:last-child": { pb: { xs: 2, sm: 3 } } }}>
+              <Stack
+                direction={{ xs: "row", sm: "column" }}
+                spacing={2}
+                alignItems={{ xs: "center", sm: "flex-start" }}
+                sx={{ mb: 1.5 }}
               >
-                <Icon sx={{ fontSize: 24, color: "primary.main" }} aria-hidden />
-              </Box>
-              <Typography
-                variant="h6"
-                component="h3"
-                fontWeight={700}
-                sx={{ mb: 1.5, fontSize: "1.0625rem" }}
-              >
-                {title}
-              </Typography>
+                <Box
+                  sx={{
+                    width: 48,
+                    height: 48,
+                    flexShrink: 0,
+                    borderRadius: "50%",
+                    bgcolor: "primary.light",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Icon sx={{ fontSize: 24, color: "primary.main" }} aria-hidden />
+                </Box>
+                <Typography
+                  variant="h6"
+                  component="h3"
+                  fontWeight={700}
+                  sx={{ fontSize: "1.0625rem" }}
+                >
+                  {title}
+                </Typography>
+              </Stack>
               <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.7, mb: 2 }}>
                 {description}
               </Typography>
