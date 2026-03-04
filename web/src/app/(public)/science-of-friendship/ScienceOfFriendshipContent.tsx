@@ -1,8 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import Divider from "@mui/material/Divider";
 import Grid from "@mui/material/Grid";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
@@ -13,16 +13,20 @@ import FriendshipEngineCards from "@/components/marketing/FriendshipEngineCards"
 import TimelineVisualization from "@/components/marketing/TimelineVisualization";
 
 /**
- * Marketing page content. Layout provides Container — this component uses maxWidth
+ * Marketing page content. Layout provides Container, this component uses maxWidth
  * via a wrapping Box for consistent horizontal bounds with other marketing pages.
  */
 const SECTION_SPACING = { py: { xs: 8, sm: 10 } }; // ~80px
 const CONTENT_MAX_WIDTH = 800;
 
+export type FriendshipEngineHover = "proximity" | "repetition" | "disclosure" | null;
+
 export default function ScienceOfFriendshipContent() {
+  const [hoveredItem, setHoveredItem] = useState<FriendshipEngineHover>(null);
+
   return (
     <Box sx={{ pt: 10, pb: { xs: 4, sm: 6 } }}>
-      {/* Section 1 — Hero: centered layout */}
+      {/* Section 1, Hero: centered layout */}
       <Box component="section" sx={{ ...SECTION_SPACING, mb: { xs: 4, sm: 6 } }}>
         <Stack spacing={3} alignItems="center" textAlign="center" maxWidth={CONTENT_MAX_WIDTH} mx="auto">
           <Typography
@@ -34,8 +38,8 @@ export default function ScienceOfFriendshipContent() {
             The Science of Friendship
           </Typography>
           <Typography variant="h5" fontWeight={400} color="text.secondary" sx={{ lineHeight: 1.65 }}>
-            Friendship isn&apos;t just luck. It&apos;s a set of conditions that help people connect
-            — conditions that modern life quietly makes harder.
+            Friendship isn&apos;t just luck. It&apos;s a set of conditions that help people connect,
+            conditions that modern life quietly makes harder.
           </Typography>
           <Typography variant="body1" sx={{ lineHeight: 1.7 }}>
             NewChums was built around a simple idea: If we recreate those conditions, friendship
@@ -72,7 +76,7 @@ export default function ScienceOfFriendshipContent() {
         </Box>
       </Box>
 
-      {/* Section 2 — Story: centered narrow readable block */}
+      {/* Section 2, Story: centered narrow readable block */}
       <Box
         component="section"
         sx={{
@@ -83,8 +87,7 @@ export default function ScienceOfFriendshipContent() {
         }}
       >
         <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto">
-          <Divider sx={{ mb: 3, borderColor: "primary.main", opacity: 0.5, maxWidth: 48 }} />
-          <SectionHeader title="A quiet problem many adults recognize" emphasis="primary" />
+          <SectionHeader title="A quiet problem many adults recognize" emphasis="primary" accentColor="secondary" />
           <Stack spacing={2}>
             <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
               You move to a new city. Or your work gets busy. Or your old routines change.
@@ -94,8 +97,8 @@ export default function ScienceOfFriendshipContent() {
             </Typography>
             <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
               You still have acquaintances. You still see people online. But the easy rhythm of
-              friendship — running into the same people, talking without effort, building familiarity
-              — slowly fades.
+              friendship, running into the same people, talking without effort, building familiarity,
+              slowly fades.
             </Typography>
             <Typography variant="body1" fontWeight={600} sx={{ lineHeight: 1.75 }}>
               It&apos;s not that people stopped wanting friendship. It&apos;s that the structure that
@@ -109,25 +112,28 @@ export default function ScienceOfFriendshipContent() {
             sx={{ mt: 3, fontStyle: "italic", lineHeight: 1.6 }}
           >
             Research on modern social life shows many adults report shrinking social circles and
-            fewer close friendships compared with previous generations.
-          </Typography>
-          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
-            Survey Center on American Life (2021). The State of American Friendship.
+            fewer close friendships compared with previous generations. Survey Center on American Life (2021). The State of American Friendship.
           </Typography>
         </Box>
       </Box>
 
-      {/* Section 3 — The Friendship Engine */}
+      {/* Section 3, The Friendship Engine */}
       <Box component="section" id="friendship-engine" sx={SECTION_SPACING}>
         <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto">
-          <SectionHeader title="The Friendship Engine" emphasis="primary" />
+          <SectionHeader title="The Friendship Engine" emphasis="primary" accentColor="secondary" />
           <Typography variant="body1" sx={{ mb: 2, lineHeight: 1.7 }}>
             Researchers studying relationships have noticed that most friendships grow from the same
             three ingredients. When these conditions exist, connection becomes much easier.
           </Typography>
 
-          <FriendshipEngineDiagram />
-          <FriendshipEngineCards />
+          <FriendshipEngineDiagram
+            hoveredItem={hoveredItem}
+            onHoverChange={setHoveredItem}
+          />
+          <FriendshipEngineCards
+            hoveredItem={hoveredItem}
+            onHoverChange={setHoveredItem}
+          />
 
           <Typography variant="body1" color="text.secondary" sx={{ mt: 4, mb: 2, lineHeight: 1.7 }}>
             In school these conditions happen automatically. In adult life, we often have to create
@@ -140,10 +146,10 @@ export default function ScienceOfFriendshipContent() {
         </Box>
       </Box>
 
-      {/* Normalize the Pace — Timeline Visualization */}
+      {/* Normalize the Pace, Timeline Visualization */}
       <TimelineVisualization />
 
-      {/* Section 4 — Why Harder / Why Matters: two-column layout */}
+      {/* Section 4, Why Harder / Why Matters: two-column layout */}
       <Box
         component="section"
         id="why-friendship-hard"
@@ -157,19 +163,11 @@ export default function ScienceOfFriendshipContent() {
         <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto">
           <Grid container spacing={6}>
             <Grid size={{ xs: 12, md: 6 }}>
-              <Box
-                sx={{
-                  borderLeft: 3,
-                  borderColor: "primary.main",
-                  pl: 2,
-                }}
-              >
-                <SectionHeader title="Why friendship feels harder in adulthood" emphasis="primary" />
-              </Box>
-              <Stack spacing={1.5} sx={{ pl: 0 }}>
+              <SectionHeader title="Why friendship feels harder in adulthood" emphasis="primary" accentColor="secondary" />
+              <Stack spacing={1.5}>
                 {["Busy schedules reduce repeated interaction", "Work and relocation disrupt social circles", "Remote work weakens casual social contact", "Many social spaces are temporary instead of recurring"].map((text) => (
-                  <Stack key={text} direction="row" spacing={1.5} alignItems="flex-start">
-                    <Box sx={{ width: 6, height: 6, borderRadius: "50%", bgcolor: "secondary.main", mt: 1.25, flexShrink: 0 }} />
+                  <Stack key={text} direction="row" spacing={1.5} alignItems="center">
+                    <Box sx={{ width: 6, height: 6, borderRadius: "50%", bgcolor: "secondary.main", flexShrink: 0 }} />
                     <Typography variant="body1" sx={{ lineHeight: 1.7 }}>{text}</Typography>
                   </Stack>
                 ))}
@@ -183,23 +181,15 @@ export default function ScienceOfFriendshipContent() {
               </Typography>
             </Grid>
             <Grid size={{ xs: 12, md: 6 }} id="why-friendship-matters">
-              <Box
-                sx={{
-                  borderLeft: 3,
-                  borderColor: "primary.main",
-                  pl: 2,
-                }}
-              >
-                <SectionHeader title="Why this matters more than we realize" emphasis="primary" />
-              </Box>
+              <SectionHeader title="Why this matters more than we realize" emphasis="primary" accentColor="secondary" />
               <Typography variant="body1" sx={{ mb: 2, lineHeight: 1.7 }}>
                 Friendship isn&apos;t only about companionship. Reliable social connections help
                 people manage stress, navigate life challenges, and experience greater life satisfaction.
               </Typography>
-              <Stack spacing={1} sx={{ pl: 0 }}>
+              <Stack spacing={1.5}>
                 {["Friendship increases overall life satisfaction", "Social support helps buffer stress", "Feeling socially connected strengthens resilience"].map((text) => (
-                  <Stack key={text} direction="row" spacing={1.5} alignItems="flex-start">
-                    <Box sx={{ width: 6, height: 6, borderRadius: "50%", bgcolor: "secondary.main", mt: 1.25, flexShrink: 0 }} />
+                  <Stack key={text} direction="row" spacing={1.5} alignItems="center">
+                    <Box sx={{ width: 6, height: 6, borderRadius: "50%", bgcolor: "secondary.main", flexShrink: 0 }} />
                     <Typography variant="body1" sx={{ lineHeight: 1.7 }}>{text}</Typography>
                   </Stack>
                 ))}
@@ -212,10 +202,10 @@ export default function ScienceOfFriendshipContent() {
         </Box>
       </Box>
 
-      {/* Section 5 — Rebuilding the Conditions: lighter typography, three columns */}
+      {/* Section 5, Rebuilding the Conditions: lighter typography, three columns */}
       <Box component="section" id="how-newchums-helps" sx={SECTION_SPACING}>
         <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto">
-          <SectionHeader title="Rebuilding the conditions for friendship" emphasis="primary" />
+          <SectionHeader title="Rebuilding the conditions for friendship" emphasis="primary" accentColor="secondary" />
           <Typography variant="body1" sx={{ mb: 4, lineHeight: 1.7 }}>
             NewChums was designed around the simple mechanics that help friendships form.
           </Typography>
@@ -242,7 +232,7 @@ export default function ScienceOfFriendshipContent() {
                 Low-pressure meetups
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.65 }}>
-                Friendship grows gradually through repeated interaction — not forced networking.
+                Friendship grows gradually through repeated interaction, not forced networking.
               </Typography>
             </Grid>
           </Grid>
@@ -271,7 +261,7 @@ export default function ScienceOfFriendshipContent() {
         </Box>
       </Box>
 
-      {/* Section 7 — CTA */}
+      {/* Section 7, CTA */}
       <Box
         component="section"
         id="cta"

@@ -2,6 +2,7 @@
 
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
+import { useTheme } from "@mui/material/styles";
 import * as React from "react";
 
 type SectionEmphasis = "primary" | "secondary" | "subdued";
@@ -9,6 +10,8 @@ type SectionEmphasis = "primary" | "secondary" | "subdued";
 export type SectionHeaderProps = {
   title: string;
   emphasis?: SectionEmphasis;
+  /** Override accent (left border, mobile underline) to secondary/gold */
+  accentColor?: "primary" | "secondary";
 };
 
 const FALLBACK_UNDERLINE_WIDTH = 56;
@@ -18,7 +21,8 @@ const FALLBACK_UNDERLINE_WIDTH = 56;
  * Spacing below the header is controlled here for consistent rhythm system-wide.
  * On mobile: centered title with dynamic underline (50% of title width).
  */
-export default function SectionHeader({ title, emphasis = "secondary" }: SectionHeaderProps) {
+export default function SectionHeader({ title, emphasis = "secondary", accentColor }: SectionHeaderProps) {
+  const theme = useTheme();
   const titleRef = React.useRef<HTMLHeadingElement>(null);
   const [underlineWidth, setUnderlineWidth] = React.useState(FALLBACK_UNDERLINE_WIDTH);
 
@@ -39,8 +43,14 @@ export default function SectionHeader({ title, emphasis = "secondary" }: Section
 
   const isPrimary = emphasis === "primary";
   const accentWidth = isPrimary ? 4 : 3;
-  const accentColor =
-    isPrimary ? "primary.main" : emphasis === "secondary" ? "primary.light" : "grey.300";
+  const accentBorderColor =
+    accentColor === "secondary"
+      ? theme.palette.secondary.main
+      : isPrimary
+        ? theme.palette.primary.main
+        : emphasis === "secondary"
+          ? theme.palette.primary.light
+          : theme.palette.grey[300];
   const variant = emphasis === "subdued" ? "h6" : "h5";
   const color = emphasis === "subdued" ? "text.secondary" : "text.primary";
   const fontWeight = isPrimary ? 700 : 600;
@@ -61,8 +71,7 @@ export default function SectionHeader({ title, emphasis = "secondary" }: Section
     >
       <Box
         sx={{
-          borderLeft: { xs: 0, sm: accentWidth },
-          borderColor: accentColor,
+          borderLeft: { xs: "none", sm: `${accentWidth}px solid ${accentBorderColor}` },
           pl: { xs: 0, sm: 2 },
           pt: { xs: 0, sm: 0.25 },
           pb: { xs: 0, sm: 0.25 },
@@ -89,7 +98,7 @@ export default function SectionHeader({ title, emphasis = "secondary" }: Section
             minWidth: FALLBACK_UNDERLINE_WIDTH,
             height: 3.5,
             borderRadius: 2,
-            bgcolor: accentColor,
+            bgcolor: accentBorderColor,
             mt: 1.25,
             mb: 0.5,
           }}

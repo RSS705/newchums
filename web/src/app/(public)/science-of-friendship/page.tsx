@@ -6,7 +6,7 @@ import ScienceOfFriendshipContent from "./ScienceOfFriendshipContent";
 export const metadata: Metadata = {
   title: "The Science of Friendship | NewChums",
   description:
-    "Friendship isn't just luck. Learn how proximity, repetition, and disclosure help people connect — and how NewChums recreates those conditions.",
+    "Friendship isn't just luck. Learn how proximity, repetition, and disclosure help people connect, and how NewChums recreates those conditions.",
 };
 
 export const runtime = "edge";

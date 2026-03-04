@@ -1,17 +1,36 @@
 "use client";
 
 import Box from "@mui/material/Box";
-import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
+import type { FriendshipEngineHover } from "@/app/(public)/science-of-friendship/ScienceOfFriendshipContent";
+
+type Props = {
+  hoveredItem: FriendshipEngineHover;
+  onHoverChange: (item: FriendshipEngineHover) => void;
+};
 
 /**
  * Venn-style diagram: three overlapping circles (Proximity, Repetition, Disclosure)
  * with Friendship at the center overlap. SVG for crisp scaling.
  */
-export default function FriendshipEngineDiagram() {
+export default function FriendshipEngineDiagram({ hoveredItem, onHoverChange }: Props) {
   const theme = useTheme();
   const primaryMain = theme.palette.primary.main;
   const primaryLight = theme.palette.primary.light;
+  const labelColor = theme.palette.primary.dark;
+
+  const isHovered = (item: NonNullable<FriendshipEngineHover>) => hoveredItem === item;
+
+  const circleProps = (item: NonNullable<FriendshipEngineHover>, cx: number, cy: number) => ({
+    cx,
+    cy,
+    r: 58,
+    fill: primaryLight,
+    fillOpacity: isHovered(item) ? 0.35 : 0.2,
+    stroke: primaryMain,
+    strokeWidth: isHovered(item) ? 2 : 1.5,
+    strokeOpacity: isHovered(item) ? 0.9 : 0.6,
+  });
 
   return (
     <Box
@@ -19,123 +38,146 @@ export default function FriendshipEngineDiagram() {
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
-        mb: 4,
+        mb: 6,
       }}
     >
       <Box
         sx={{
           width: "100%",
-          maxWidth: 300,
-          aspectRatio: "1.1",
-          position: "relative",
+          maxWidth: { xs: 320, sm: 420, md: 460 },
+          aspectRatio: "1.15",
         }}
       >
         <svg
           viewBox="0 0 240 220"
           preserveAspectRatio="xMidYMid meet"
-          style={{ width: "100%", height: "100%" }}
-          aria-hidden
+          style={{ width: "100%", height: "100%", display: "block" }}
+          aria-label="Diagram showing that friendship grows from proximity, repetition, and disclosure."
+          role="img"
         >
-          {/* Three overlapping circles - triangular Venn layout */}
-          <circle
-            cx="70"
-            cy="75"
-            r="58"
-            fill="none"
-            stroke={primaryMain}
-            strokeWidth="2.5"
-            opacity={0.5}
-          />
-          <circle
-            cx="170"
-            cy="75"
-            r="58"
-            fill="none"
-            stroke={primaryMain}
-            strokeWidth="2.5"
-            opacity={0.5}
-          />
-          <circle
-            cx="120"
-            cy="155"
-            r="58"
-            fill="none"
-            stroke={primaryMain}
-            strokeWidth="2.5"
-            opacity={0.5}
-          />
-          {/* Light fill for each circle to show overlap */}
-          <circle cx="70" cy="75" r="58" fill={primaryLight} opacity={0.35} />
-          <circle cx="170" cy="75" r="58" fill={primaryLight} opacity={0.35} />
-          <circle cx="120" cy="155" r="58" fill={primaryLight} opacity={0.35} />
-        </svg>
-        {/* Labels positioned over each circle */}
-        <Box
-          sx={{
-            position: "absolute",
-            top: "18%",
-            left: "12%",
-            transform: "translate(-50%, -50%)",
-          }}
-        >
-          <Typography
-            variant="caption"
-            fontWeight={700}
-            sx={{ color: "primary.dark", fontSize: "0.7rem", whiteSpace: "nowrap" }}
+          <defs>
+            <filter id="badgeShadow" x="-30%" y="-30%" width="160%" height="160%">
+              <feDropShadow dx="0" dy="2" stdDeviation="2" floodOpacity="0.25" />
+            </filter>
+          </defs>
+          {/* Three overlapping circles - interactive with linked hover; labels inside groups for hover */}
+          <g
+            onMouseEnter={() => onHoverChange("proximity")}
+            onMouseLeave={() => onHoverChange(null)}
+            style={{
+              cursor: "pointer",
+              transformOrigin: "70px 75px",
+              transform: isHovered("proximity") ? "scale(1.06)" : "scale(1)",
+              transition: "transform 0.2s ease",
+            }}
           >
-            Proximity
-          </Typography>
-        </Box>
-        <Box
-          sx={{
-            position: "absolute",
-            top: "18%",
-            right: "12%",
-            transform: "translate(50%, -50%)",
-          }}
-        >
-          <Typography
-            variant="caption"
-            fontWeight={700}
-            sx={{ color: "primary.dark", fontSize: "0.7rem", whiteSpace: "nowrap" }}
+            <circle
+              {...circleProps("proximity", 70, 75)}
+              style={{ transition: "fill-opacity 0.2s ease, stroke-width 0.2s ease, stroke-opacity 0.2s ease" }}
+            />
+            <text
+              x="60"
+              y="62"
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fill={labelColor}
+              style={{
+                fontSize: "11px",
+                fontWeight: 600,
+                fontFamily: "var(--font-plus-jakarta), system-ui, sans-serif",
+                letterSpacing: "0.02em",
+              }}
+            >
+              Proximity
+            </text>
+          </g>
+          <g
+            onMouseEnter={() => onHoverChange("repetition")}
+            onMouseLeave={() => onHoverChange(null)}
+            style={{
+              cursor: "pointer",
+              transformOrigin: "170px 75px",
+              transform: isHovered("repetition") ? "scale(1.06)" : "scale(1)",
+              transition: "transform 0.2s ease",
+            }}
           >
-            Repetition
-          </Typography>
-        </Box>
-        <Box
-          sx={{
-            position: "absolute",
-            bottom: "18%",
-            left: "50%",
-            transform: "translate(-50%, 50%)",
-          }}
-        >
-          <Typography
-            variant="caption"
-            fontWeight={700}
-            sx={{ color: "primary.dark", fontSize: "0.7rem", whiteSpace: "nowrap" }}
+            <circle
+              {...circleProps("repetition", 170, 75)}
+              style={{ transition: "fill-opacity 0.2s ease, stroke-width 0.2s ease, stroke-opacity 0.2s ease" }}
+            />
+            <text
+              x="180"
+              y="62"
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fill={labelColor}
+              style={{
+                fontSize: "11px",
+                fontWeight: 600,
+                fontFamily: "var(--font-plus-jakarta), system-ui, sans-serif",
+                letterSpacing: "0.02em",
+              }}
+            >
+              Repetition
+            </text>
+          </g>
+          <g
+            onMouseEnter={() => onHoverChange("disclosure")}
+            onMouseLeave={() => onHoverChange(null)}
+            style={{
+              cursor: "pointer",
+              transformOrigin: "120px 155px",
+              transform: isHovered("disclosure") ? "scale(1.06)" : "scale(1)",
+              transition: "transform 0.2s ease",
+            }}
           >
-            Disclosure
-          </Typography>
-        </Box>
-        <Box
-          sx={{
-            position: "absolute",
-            top: "50%",
-            left: "50%",
-            transform: "translate(-50%, -50%)",
-            px: 2,
-            py: 1,
-            borderRadius: 2,
-            bgcolor: "primary.main",
-            color: "primary.contrastText",
-            boxShadow: 2,
-          }}
-        >
-          <Typography variant="subtitle2" fontWeight={800} sx={{ fontSize: "0.85rem" }}>
+            <circle
+              {...circleProps("disclosure", 120, 155)}
+              style={{ transition: "fill-opacity 0.2s ease, stroke-width 0.2s ease, stroke-opacity 0.2s ease" }}
+            />
+            <text
+              x="120"
+              y="168"
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fill={labelColor}
+              style={{
+                fontSize: "11px",
+                fontWeight: 600,
+                fontFamily: "var(--font-plus-jakarta), system-ui, sans-serif",
+                letterSpacing: "0.02em",
+              }}
+            >
+              Disclosure
+            </text>
+          </g>
+
+          {/* Center Friendship badge - refined pill */}
+          <rect
+            x="78"
+            y="100"
+            width="84"
+            height="31"
+            rx="16"
+            fill={primaryMain}
+            filter="url(#badgeShadow)"
+          />
+          <text
+            x="120"
+            y="116"
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fill={theme.palette.primary.contrastText}
+            style={{
+              fontSize: "12px",
+              fontWeight: 700,
+              fontFamily: "var(--font-plus-jakarta), system-ui, sans-serif",
+              letterSpacing: "0.03em",
+            }}
+          >
             Friendship
-          </Typography>
-        </Box>
+          </text>
+        </svg>
       </Box>
     </Box>
   );
