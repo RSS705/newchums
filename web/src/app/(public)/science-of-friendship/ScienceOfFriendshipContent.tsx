@@ -135,15 +135,27 @@ export default function ScienceOfFriendshipContent({ isLoggedIn = false }: { isL
               But the easy rhythm of friendship, running into the same people, talking without
               effort, building familiarity, slowly fades.
             </Typography>
-            <Typography
-              variant="body1"
-              fontWeight={700}
-              sx={{ lineHeight: 1.75, fontSize: "1.0625rem" }}
+            <Box
+              sx={{
+                pl: { xs: 0, sm: 3 },
+                pt: { xs: 2.5, sm: 0.5 },
+                pb: { xs: 0.5, sm: 0.5 },
+                borderLeft: { xs: "none", sm: "3px solid" },
+                borderTop: { xs: "2px solid", sm: "none" },
+                borderColor: "secondary.main",
+                textAlign: { xs: "center", sm: "left" },
+              }}
             >
-              It&apos;s not that people stopped wanting friendship.
-              <br />
-              It&apos;s that the structure that created it quietly vanished.
-            </Typography>
+              <Typography
+                variant="body1"
+                fontWeight={700}
+                sx={{ lineHeight: 1.75, fontSize: "1.0625rem" }}
+              >
+                It&apos;s not that people stopped wanting friendship.
+                <br />
+                It&apos;s that the structure that created it quietly vanished.
+              </Typography>
+            </Box>
           </Stack>
           <Typography
             variant="caption"
@@ -159,7 +171,7 @@ export default function ScienceOfFriendshipContent({ isLoggedIn = false }: { isL
 
       {/* Section 3, The Friendship Engine */}
       <Box component="section" id="friendship-engine" sx={SECTION_SPACING}>
-        <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto" px={{ xs: 2, sm: 0 }}>
+        <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto">
           <SectionHeader title="The Friendship Engine" emphasis="primary" accentColor="secondary" />
           <Typography
             variant="body1"
@@ -181,14 +193,13 @@ export default function ScienceOfFriendshipContent({ isLoggedIn = false }: { isL
           <Box
             sx={{
               mt: { xs: 3, sm: 4 },
-              px: { xs: 2, sm: 2.5 },
-              py: { xs: 1.5, sm: 2 },
-              borderRadius: 1.5,
-              bgcolor: (theme) =>
-                theme.palette.mode === "light" ? "grey.100" : "grey.800",
-              border: "1px solid",
-              borderColor: (theme) =>
-                theme.palette.mode === "light" ? "grey.200" : "grey.700",
+              pl: { xs: 0, sm: 3 },
+              pt: { xs: 2.5, sm: 0.5 },
+              pb: { xs: 0.5, sm: 0.5 },
+              borderLeft: { xs: "none", sm: "3px solid" },
+              borderTop: { xs: "2px solid", sm: "none" },
+              borderColor: "secondary.main",
+              textAlign: { xs: "center", sm: "left" },
             }}
           >
             <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
@@ -200,7 +211,7 @@ export default function ScienceOfFriendshipContent({ isLoggedIn = false }: { isL
               color="text.secondary"
               sx={{ display: "block", mt: 1 }}
             >
-              Zajonc, R. (1968). Attitudinal effects of mere exposure. Altman & Taylor (1973). Social
+              Zajonc, R. (1968). Attitudinal effects of mere exposure. Altman &amp; Taylor (1973). Social
               penetration theory.
             </Typography>
           </Box>
@@ -222,8 +233,8 @@ export default function ScienceOfFriendshipContent({ isLoggedIn = false }: { isL
         }}
       >
         <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto">
-          <Grid container spacing={{ xs: 3, md: 4 }}>
-            <Grid size={{ xs: 12, md: 6 }}>
+          <Grid container spacing={{ xs: 3, sm: 4 }}>
+            <Grid size={{ xs: 12, sm: 6 }}>
               <Box
                 sx={{
                   height: "100%",
@@ -254,7 +265,7 @@ export default function ScienceOfFriendshipContent({ isLoggedIn = false }: { isL
                 </Typography>
               </Box>
             </Grid>
-            <Grid size={{ xs: 12, md: 6 }} id="why-friendship-matters">
+            <Grid size={{ xs: 12, sm: 6 }} id="why-friendship-matters">
               <Box
                 sx={{
                   height: "100%",
@@ -290,85 +301,104 @@ export default function ScienceOfFriendshipContent({ isLoggedIn = false }: { isL
 
       {/* Section 5, Rebuilding the Conditions: three columns */}
       <Box component="section" id="how-newchums-helps" sx={SECTION_SPACING}>
-        <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto" px={{ xs: 2, sm: 0 }} sx={{ textAlign: { xs: "center", sm: "left" } }}>
+        <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto" sx={{ textAlign: { xs: "center", sm: "left" } }}>
           <SectionHeader title="Rebuilding the conditions for friendship" emphasis="primary" accentColor="secondary" />
           <Typography variant="body1" sx={{ mb: 4, lineHeight: 1.75 }}>
             NewChums isn&apos;t a dating app or a networking site. It&apos;s a platform designed to
             recreate the simple conditions where friendships naturally grow.
           </Typography>
 
-          <Grid container spacing={{ xs: 3, sm: 4, md: 6 }} sx={{ mb: { xs: 3, sm: 4 } }}>
-            <Grid size={{ xs: 12, md: 4 }}>
-              <Typography
-                variant="h5"
-                component="h3"
-                fontWeight={700}
-                color="text.primary"
-                sx={{ mb: 2, fontSize: { xs: "1.15rem", md: "1.25rem" } }}
+          <Grid container spacing={{ xs: 4, sm: 5, md: 6 }} sx={{ mb: { xs: 4, sm: 6 } }}>
+            {[
+              {
+                num: "01",
+                title: "Hobbies create shared context",
+                paragraphs: [
+                  "When people meet around something they genuinely enjoy, conversation happens naturally.",
+                  'Instead of "meeting for the sake of meeting," people are already doing something together.',
+                ],
+              },
+              {
+                num: "02",
+                title: "Local events create proximity",
+                paragraphs: [
+                  "Friendships grow when people see each other regularly.",
+                  "Local events make it easier to show up often without the barrier of long travel or complicated plans.",
+                ],
+              },
+              {
+                num: "03",
+                title: "Low-pressure meetups",
+                paragraphs: [
+                  "Good friendships develop gradually.",
+                  "Our format encourages relaxed, low-pressure gatherings where conversations can deepen naturally over time.",
+                ],
+              },
+            ].map(({ num, title, paragraphs }, index) => (
+              <Grid
+                key={num}
+                size={{ xs: 12, sm: 6, md: 4 }}
+                offset={{ xs: 0, sm: index === 2 ? 3 : 0, md: 0 }}
               >
-                Hobbies create shared context
-              </Typography>
-              <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.7, mb: 1 }}>
-                When people meet around something they genuinely enjoy, conversation happens naturally.
-              </Typography>
-              <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.7 }}>
-                Instead of &quot;meeting for the sake of meeting,&quot; people are already doing
-                something together.
-              </Typography>
-            </Grid>
-            <Grid size={{ xs: 12, md: 4 }}>
-              <Typography
-                variant="h5"
-                component="h3"
-                fontWeight={700}
-                color="text.primary"
-                sx={{ mb: 2, fontSize: { xs: "1.15rem", md: "1.25rem" } }}
-              >
-                Local events create proximity
-              </Typography>
-              <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.7, mb: 1 }}>
-                Friendships grow when people see each other regularly.
-              </Typography>
-              <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.7 }}>
-                Local events make it easier to show up often without the barrier of long travel or
-                complicated plans.
-              </Typography>
-            </Grid>
-            <Grid size={{ xs: 12, md: 4 }}>
-              <Typography
-                variant="h5"
-                component="h3"
-                fontWeight={700}
-                color="text.primary"
-                sx={{ mb: 2, fontSize: { xs: "1.15rem", md: "1.25rem" } }}
-              >
-                Low-pressure meetups
-              </Typography>
-              <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.7, mb: 1 }}>
-                Good friendships develop gradually.
-              </Typography>
-              <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.7 }}>
-                Our format encourages relaxed, low-pressure gatherings where conversations can deepen
-                naturally over time.
-              </Typography>
-            </Grid>
+                <Stack spacing={1.5}>
+                  <Box
+                    sx={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: "50%",
+                      bgcolor: "secondary.main",
+                      color: (theme) => theme.palette.primary.dark,
+                      fontWeight: 800,
+                      fontSize: "0.8rem",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      alignSelf: { xs: "center", sm: "flex-start" },
+                      flexShrink: 0,
+                    }}
+                  >
+                    {num}
+                  </Box>
+                  <Typography
+                    variant="h5"
+                    component="h3"
+                    fontWeight={700}
+                    color="text.primary"
+                    sx={{ fontSize: { xs: "1.1rem", md: "1.2rem" }, textAlign: { xs: "center", sm: "left" } }}
+                  >
+                    {title}
+                  </Typography>
+                  {paragraphs.map((text, i) => (
+                    <Typography
+                      key={i}
+                      variant="body1"
+                      color="text.secondary"
+                      sx={{ lineHeight: 1.7, textAlign: { xs: "center", sm: "left" } }}
+                    >
+                      {text}
+                    </Typography>
+                  ))}
+                </Stack>
+              </Grid>
+            ))}
           </Grid>
 
-          <Box sx={{ mt: { xs: 4, sm: 6 }, display: "flex", justifyContent: "center" }}>
-            {/* IMAGE PLACEHOLDER
-            Description: diverse group at casual hobby meetup (games, crafts, sports, etc.)
-            Purpose: illustrate NewChums-style gatherings
-            */}
-            <Box
-              sx={{
-                width: "100%",
-                maxWidth: CONTENT_MAX_WIDTH,
-                height: 200,
-                borderRadius: 2,
-                bgcolor: "primary.light",
-                opacity: 0.5,
-              }}
-            />
+          {/* Image placeholder — replace with a real photo when available */}
+          <Box
+            sx={{
+              minHeight: { xs: 160, sm: 220 },
+              borderRadius: 2,
+              border: "2px dashed",
+              borderColor: "divider",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              px: 2,
+            }}
+          >
+            <Typography variant="caption" color="text.disabled" sx={{ fontStyle: "italic", textAlign: "center" }}>
+              Image placeholder — diverse group at a casual hobby meetup
+            </Typography>
           </Box>
         </Box>
       </Box>
@@ -386,78 +416,87 @@ export default function ScienceOfFriendshipContent({ isLoggedIn = false }: { isL
             theme.palette.mode === "light" ? "grey.50" : "grey.900",
         }}
       >
-        <Box maxWidth={900} mx="auto" px={{ xs: 2, sm: 3 }}>
+        <Box maxWidth={900} mx="auto">
           <SectionHeader
-            title="Friendship doesn&apos;t happen by accident anymore"
+            title="Friendship doesn't happen by accident anymore"
             emphasis="primary"
             accentColor="secondary"
           />
-          <Stack spacing={{ xs: 2.5, sm: 3 }} sx={{ maxWidth: 720, mx: { xs: "auto", sm: 0 } }}>
+          <Stack spacing={{ xs: 3, sm: 4 }} sx={{ maxWidth: 720, mx: { xs: "auto", sm: 0 } }}>
+
+            {/* Opening narrative */}
             <Stack spacing={2} sx={{ textAlign: { xs: "center", sm: "left" } }}>
               <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
                 For most of human history, friendships formed automatically. You saw the same people
                 in the same places every day.
               </Typography>
-              <Typography
-                variant="body1"
+
+              {/* "School. Neighborhoods." callout — visible on mobile too */}
+              <Box
                 sx={{
-                  lineHeight: 1.75,
-                  color: "text.secondary",
-                  fontStyle: "italic",
+                  pl: { xs: 0, sm: 3 },
+                  pt: { xs: 2.5, sm: 0.5 },
+                  pb: { xs: 0.5, sm: 0.5 },
                   borderLeft: { xs: "none", sm: "2px solid" },
+                  borderTop: { xs: "2px solid", sm: "none" },
                   borderColor: "secondary.main",
-                  pl: { xs: 0, sm: 2 },
                   textAlign: { xs: "center", sm: "left" },
                 }}
               >
-                School. Neighborhoods. Shared routines.
-              </Typography>
+                <Typography
+                  variant="body1"
+                  sx={{ lineHeight: 1.75, color: "text.secondary", fontStyle: "italic" }}
+                >
+                  School. Neighborhoods. Shared routines.
+                </Typography>
+              </Box>
+
               <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
                 Modern life quietly removed many of those structures. But the desire for connection
                 never went away.
               </Typography>
             </Stack>
 
-            <Box sx={{ pt: 1 }}>
-              <Typography
-                variant="body1"
-                fontWeight={600}
-                sx={{ lineHeight: 1.75, mb: 1.5, textAlign: { xs: "center", sm: "left" } }}
-              >
+            {/* "The good news is..." callout */}
+            <Box
+              sx={{
+                pl: { xs: 0, sm: 3 },
+                pt: { xs: 2.5, sm: 0.5 },
+                pb: { xs: 0.5, sm: 0.5 },
+                borderLeft: { xs: "none", sm: "3px solid" },
+                borderTop: { xs: "2px solid", sm: "none" },
+                borderColor: "secondary.main",
+                textAlign: { xs: "center", sm: "left" },
+              }}
+            >
+              <Typography variant="body1" fontWeight={600} sx={{ lineHeight: 1.75 }}>
                 The good news is that the ingredients for friendship haven&apos;t changed.
               </Typography>
-              <Typography
-                variant="body1"
-                sx={{ lineHeight: 1.75, mb: 2, textAlign: { xs: "center", sm: "left" } }}
-              >
-                People still connect when they:
-              </Typography>
-              <Box sx={{ textAlign: "left", maxWidth: { xs: 360, sm: "none" }, mx: { xs: "auto", sm: 0 } }}>
-                <Stack spacing={1.5}>
-                  {[
-                    "See each other regularly",
-                    "Share meaningful activities",
-                    "Have space for conversations to grow naturally",
-                  ].map((text) => (
-                    <Stack key={text} direction="row" spacing={1.5} alignItems="center">
-                      <Box
-                        sx={{
-                          width: 6,
-                          height: 6,
-                          borderRadius: "50%",
-                          bgcolor: "secondary.main",
-                          flexShrink: 0,
-                        }}
-                      />
-                      <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
-                        {text}
-                      </Typography>
-                    </Stack>
-                  ))}
-                </Stack>
-              </Box>
             </Box>
 
+            {/* "People still connect when they:" + Divider list */}
+            <Box sx={{ textAlign: { xs: "center", sm: "left" } }}>
+              <Typography variant="body1" sx={{ lineHeight: 1.75, mb: 2 }}>
+                People still connect when they:
+              </Typography>
+              <Stack
+                divider={<Divider />}
+                spacing={0}
+                sx={{ maxWidth: { xs: 360, sm: "none" }, mx: { xs: "auto", sm: 0 } }}
+              >
+                {[
+                  "See each other regularly",
+                  "Share meaningful activities",
+                  "Have space for conversations to grow naturally",
+                ].map((text) => (
+                  <Box key={text} sx={{ py: 1.5, textAlign: { xs: "center", sm: "left" } }}>
+                    <Typography variant="body1" sx={{ lineHeight: 1.75 }}>{text}</Typography>
+                  </Box>
+                ))}
+              </Stack>
+            </Box>
+
+            {/* Closing — bridge to CTA */}
             <Stack spacing={2} sx={{ pt: 1, textAlign: { xs: "center", sm: "left" } }}>
               <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
                 NewChums simply helps recreate those conditions.
@@ -465,7 +504,7 @@ export default function ScienceOfFriendshipContent({ isLoggedIn = false }: { isL
               <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
                 You choose what you enjoy. We help you discover when people nearby are doing it.
               </Typography>
-              <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
+              <Typography variant="body1" fontWeight={600} sx={{ lineHeight: 1.75 }}>
                 From there, friendship can take care of the rest.
               </Typography>
             </Stack>
@@ -525,9 +564,7 @@ export default function ScienceOfFriendshipContent({ isLoggedIn = false }: { isL
               color: "inherit",
             }}
           >
-            Start meeting people who enjoy
-            <br />
-            the same things you do
+            Start meeting people who enjoy the same things you do
           </Typography>
 
           {/* Subtext */}

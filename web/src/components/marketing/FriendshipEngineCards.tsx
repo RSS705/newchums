@@ -60,11 +60,11 @@ const CARDS: Array<{
  */
 export default function FriendshipEngineCards({ hoveredItem, onHoverChange }: Props) {
   return (
-      <Grid container spacing={{ xs: 3, sm: 4 }}>
+      <Grid container spacing={{ xs: 3, md: 4 }}>
       {CARDS.map(({ icon: Icon, title, hoverKey, description, actionLabel, actionText }) => {
         const isHovered = hoveredItem === hoverKey;
         return (
-          <Grid size={{ xs: 12, sm: 4 }} key={title}>
+          <Grid size={{ xs: 12, md: 4 }} key={title}>
             <Card
               variant="outlined"
               onMouseEnter={() => onHoverChange(hoverKey)}
