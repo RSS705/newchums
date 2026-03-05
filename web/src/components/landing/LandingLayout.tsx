@@ -105,7 +105,7 @@ export default function LandingLayout({
         />
       </AppBar>
 
-      {/* Mobile drawer (logged-out): Get Started first, Learn More below; header stays visible */}
+      {/* Mobile drawer: auth-aware top section + Learn More nav */}
       <Drawer
         variant="temporary"
         open={mobileOpen}
@@ -124,43 +124,59 @@ export default function LandingLayout({
         }}
       >
         <Box sx={{ px: 2, py: 2.5, flexShrink: 0 }}>
-          <Typography
-            variant="body2"
-            sx={{
-              display: "block",
-              color: "text.secondary",
-              fontWeight: 600,
-              letterSpacing: 0.5,
-              fontSize: "0.9375rem",
-              mb: 1.5,
-            }}
-          >
-            Get Started
-          </Typography>
-          <Stack direction="column" spacing={1}>
+          {isLoggedIn ? (
             <Button
               component={Link}
-              href="/login"
+              href="/"
               variant="contained"
               color="primary"
               fullWidth
               onClick={() => setMobileOpen(false)}
-              sx={{ textTransform: "capitalize" }}
+              sx={{ textTransform: "none" }}
             >
-              Login
+              Explore
             </Button>
-            <Button
-              component={Link}
-              href="/signup"
-              variant="outlined"
-              color="primary"
-              fullWidth
-              onClick={() => setMobileOpen(false)}
-              sx={{ textTransform: "capitalize" }}
-            >
-              Sign up
-            </Button>
-          </Stack>
+          ) : (
+            <>
+              <Typography
+                variant="body2"
+                sx={{
+                  display: "block",
+                  color: "text.secondary",
+                  fontWeight: 600,
+                  letterSpacing: 0.5,
+                  fontSize: "0.9375rem",
+                  mb: 1.5,
+                }}
+              >
+                Get Started
+              </Typography>
+              <Stack direction="column" spacing={1}>
+                <Button
+                  component={Link}
+                  href="/login"
+                  variant="contained"
+                  color="primary"
+                  fullWidth
+                  onClick={() => setMobileOpen(false)}
+                  sx={{ textTransform: "capitalize" }}
+                >
+                  Login
+                </Button>
+                <Button
+                  component={Link}
+                  href="/signup"
+                  variant="outlined"
+                  color="primary"
+                  fullWidth
+                  onClick={() => setMobileOpen(false)}
+                  sx={{ textTransform: "capitalize" }}
+                >
+                  Sign up
+                </Button>
+              </Stack>
+            </>
+          )}
         </Box>
         <Divider sx={{ borderColor: "divider", opacity: 0.6 }} />
         <MarketingNavSection sectionTitle="Learn More" onLinkClick={() => setMobileOpen(false)} />

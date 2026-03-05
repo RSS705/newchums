@@ -13,7 +13,8 @@ For diagrams and flows, see `docs/System_Map.md`.
 - **Production:** Single production environment.
 - **Workers:** Web = `newchums-web-dev` (production), API = `newchums-api`.
 - **Canonical host:** `https://newchums.com` (www → non-www redirect enforced before Auth.js).
-- **API migration:** Signup, email verification, password reset, email change, profile (incl. DOB + bio), interests, handle availability, onboarding username/DOB, avatar flows, and notification preferences are in the API worker.
+- **API migration:** Signup, email verification, password reset, email change, profile (incl. DOB + bio), interests, handle availability, onboarding username/DOB, avatar flows, notification preferences, and admin interests moderation are in the API worker.
+- **Super admin:** Users with `role = 'super_admin'` in the DB can access `/admin/interests` (soft-delete, restore, merge interests). Role is set directly in the database; no UI promotion flow.
 - **Avatar storage:** R2 bucket `newchums-media` (binding `MEDIA_BUCKET`). Client can route media operations and avatar display through `NEXT_PUBLIC_AVATAR_BASE_URL` for cross-env consistency when sharing DB.
 - **Build:** `cd web && npm run build` passes (Edge/OpenNext constraints apply).
 
@@ -204,10 +205,15 @@ psql "$DATABASE_URL" -f sql/010_add_avatar_to_users.sql
 psql "$DATABASE_URL" -f sql/011_email_change_requests.sql
 psql "$DATABASE_URL" -f sql/012_add_notification_prefs.sql
 psql "$DATABASE_URL" -f sql/013_add_privacy_columns.sql
+psql "$DATABASE_URL" -f sql/014_add_is_hidden_age.sql
+psql "$DATABASE_URL" -f sql/015_interests_moderation.sql
+psql "$DATABASE_URL" -f sql/016_interests_merged_into.sql
 ```
 
 Notes:
 - Migration `008_interests_seed.sql` requires the interests tables to exist and seeds the base list.
+- Migration `015_interests_moderation.sql` adds `role` to `users` and moderation columns (`is_deleted`, audit fields) to `interests`.
+- Migration `016_interests_merged_into.sql` adds `merged_into_interest_id` to `interests` for tracking merge targets.
 
 ---
 
@@ -267,3 +273,15 @@ Chunk XX — YYYY-MM-DD
 ## Session Log (Chunks)
 
 (Existing chunks should remain here. Add new chunks at the end.)
+
+---
+
+Chunk 01 — 2026-03-03
+- Goal: Build super admin interests moderation system from scratch.
+- Changes:
+  - DB migrations 015 (`role` on `users`; moderation columns + index on `interests`) and 016 (`merged_into_interest_id` on `interests`).
+  - API: `requireSuperAdmin` middleware helper; `GET/PATCH/DELETE /admin/interests/:id`; `POST /admin/interests/:id/restore`; `POST /admin/interests/merge`. `GET /interests` now filters `is_deleted = false`. `PUT /profile` resolves deleted/merged interests and returns `INTEREST_DELETED` for unmerged deletions. `GET /profile` returns `role`.
+  - Web: `/admin/interests` page (server + client components) — 404 for non-admins. Admin table with search, sort, edit, soft-delete, restore, and merge dialogs. Super Admin sidebar section in `AppShell` (visible to `super_admin` users on all pages). `getOrCreateAppUser` and app layout updated to pass `role`.
+  - Profile: backspace no longer removes hobby chips; `isOptionEqualToValue` hardened against undefined; `INTEREST_DELETED` error surfaced as toast.
+- Verification: `/admin/interests` accessible only to `super_admin`; merge moves `user_interests`, sets `merged_into_interest_id`, soft-deletes source; deleted interests hidden from profile hobby picker; `npm run build` passes.
+- Deploy: Run migrations 015 and 016 against production DB before deploying.

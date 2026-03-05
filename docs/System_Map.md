@@ -72,8 +72,9 @@ The following flows run in the API worker; the web app calls the API via `NEXT_P
 | Account deletion | `DELETE /account` | Bearer JWT |
 | Notification prefs | `GET /notification-preferences`, `PUT /notification-preferences` | Bearer JWT |
 | Privacy prefs | `GET /profile`, `PUT /profile` (is_hidden_from_search, is_hidden_from_external_indexing) | Bearer JWT |
-| Interests | `GET /interests` | none |
-| Profile | `GET /profile`, `PUT /profile` | Bearer JWT |
+| Interests | `GET /interests` (active only; excludes soft-deleted) | none |
+| Profile | `GET /profile` (includes `role`), `PUT /profile` | Bearer JWT |
+| Admin — interests | `GET /admin/interests`, `PATCH /admin/interests/:id`, `DELETE /admin/interests/:id`, `POST /admin/interests/:id/restore`, `POST /admin/interests/merge` | Bearer JWT + `super_admin` role |
 | Handle availability | `GET /handles/available?handle=...` | Bearer JWT |
 | Onboarding | `POST /user/username`, `POST /user/date-of-birth` | Bearer JWT |
 | Avatar upload | `POST /media/init` → PUT to uploadUrl → `POST /media/finalize` | Bearer JWT |

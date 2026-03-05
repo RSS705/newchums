@@ -75,7 +75,26 @@ Core action:
 
 ---
 
-## 5) Canonical Host and Middleware
+## 5) User Roles
+
+### Implemented
+
+The `users` table has a `role TEXT NULL` column (migration 015). The only supported value is `super_admin`. All other users have `role = NULL`.
+
+| Role | Access |
+|------|--------|
+| `NULL` (default) | Standard user |
+| `super_admin` | Admin API endpoints (`/admin/*`); Super Admin nav section in the web app sidebar |
+
+**Role assignment:** Set directly in the database (`UPDATE newchums.users SET role = 'super_admin' WHERE id = '...'`). There is no self-service or UI-based promotion flow.
+
+**Role propagation:** `GET /profile` returns `role`; `getOrCreateAppUser` in `web/src/lib/user.ts` reads it at layout time; `AppShell` conditionally renders the Super Admin sidebar section.
+
+**Admin web page:** `/admin/interests` — server component checks `role = 'super_admin'` via DB and returns 404 for non-admins. Client: `web/src/app/(app)/admin/interests/`.
+
+---
+
+## 6) Canonical Host and Middleware
 
 ### Problem solved
 
@@ -92,7 +111,7 @@ Any request to a host starting with `www.` is 301-redirected to the same path + 
 
 ---
 
-## 6) Web ↔ API Auth Model (Bearer Token)
+## 7) Web ↔ API Auth Model (Bearer Token)
 
 ### Web session
 
@@ -113,7 +132,7 @@ The API verifies:
 
 ---
 
-## 7) API Worker Responsibilities and Endpoints
+## 8) API Worker Responsibilities and Endpoints
 
 The following business logic lives in the API worker; the web app calls it via `NEXT_PUBLIC_API_BASE_URL`:
 
@@ -174,12 +193,17 @@ Users manage privacy preferences in **Settings** (`/settings`). These toggles co
 
 ### Profile, onboarding, and lookups
 
-- `GET /profile`, `PUT /profile` (auth required)
+- `GET /profile`, `PUT /profile` (auth required). `GET /profile` response includes `role` (string | null) — used by the web app to gate super-admin UI.
 - `GET /public/users/:handle` (public; no auth) — returns public profile by handle: `{ user: { userId, displayName, handle, age, bio, hobbies, avatarUrl } }`. Age computed from DOB server-side; DOB never exposed.
 - `GET /handles/available?handle=...` (auth required)
 - `POST /user/username` (auth required)
 - `POST /user/date-of-birth` (auth required)
-- `GET /interests`
+- `GET /interests` — user-facing list; excludes soft-deleted interests (`WHERE is_deleted = false`).
+
+`PUT /profile` interest resolution:
+- If an interest name matches an active interest → use it.
+- If it matches a soft-deleted interest that was merged → silently remap to the canonical (target) interest.
+- If it matches a soft-deleted interest that was **not** merged → return `400 { code: "INTEREST_DELETED" }`. Web app surfaces a user-facing error message.
 
 ### Contact form
 
@@ -191,6 +215,16 @@ Users manage privacy preferences in **Settings** (`/settings`). These toggles co
   - Rate limit: 5 submissions per 10 minutes per IP (KV `CONTACT_RATELIMIT_KV`, optional)
   - **Spam protection (logged-out):** Cloudflare Turnstile required when `TURNSTILE_SECRET_KEY` is set. Logged-in users (Bearer token) skip Turnstile.
   - Email: Postmark sends to `contact@newchums.com` from `contact@newchums.com`, Reply-To from form; subject line "NewChums: Contact — &lt;Subject&gt;"; includes Subject, Name, Email, Message, Timestamp, IP, Environment; if logged in, includes userId and username
+
+### Admin — interests moderation (super_admin only)
+
+All `/admin/*` routes require `role = 'super_admin'` on the requesting user, enforced server-side by a `requireSuperAdmin` helper in `api/src/index.ts`. Non-admins receive 403.
+
+- `GET /admin/interests` — list all interests (including deleted). Query params: `q` (search name/slug), `sort=name|created_at`, `dir=asc|desc`. Returns: `id`, `name`, `slug`, `category`, `created_at`, `is_deleted`, `created_by_user_id`, `username` (joined from `users`).
+- `PATCH /admin/interests/:id` — update `name` and/or `category`. Records `updated_at` and `updated_by_user_id`.
+- `DELETE /admin/interests/:id` — soft-delete: sets `is_deleted = true`, `deleted_at`, `deleted_by_user_id`. Also hard-deletes all `user_interests` rows for that interest (users are disconnected).
+- `POST /admin/interests/:id/restore` — restore a soft-deleted interest: clears `is_deleted`, `deleted_at`, `deleted_by_user_id`.
+- `POST /admin/interests/merge` — body: `{ sourceInterestId, targetInterestId }`. Moves all `user_interests` from source → target (deduplicating to avoid unique constraint violations), sets `source.merged_into_interest_id = target.id`, then soft-deletes source. Target must be active.
 
 ### Media (avatar)
 
@@ -207,7 +241,7 @@ Users manage privacy preferences in **Settings** (`/settings`). These toggles co
 
 ---
 
-## 8) Content Safety (Inappropriate Word Validation)
+## 9) Content Safety (Inappropriate Word Validation)
 
 ### Purpose
 
@@ -235,7 +269,7 @@ Block profanity, slurs, and similar terms in display names, usernames, and hobbi
 
 ---
 
-## 9) Storage (Database + R2)
+## 10) Storage (Database + R2)
 
 ### Neon Postgres
 
@@ -244,9 +278,14 @@ Core tables include:
 - `user_profile` (profile fields; includes `bio` per migration 009)
 - token tables for email verification and password reset
 - `email_change_requests` (migration 011)
-- interests tables
+- `interests` + `user_interests` (interest/hobby associations)
 - `user_profile.notification_prefs` (JSONB, migration 012) — per-notification-type enabled + frequency
-- `users.is_hidden_from_search`, `users.is_hidden_from_external_indexing` (boolean, migration 013) — privacy toggles (Settings), default false; is_hidden_from_external_indexing enforced via noindex meta on public profile page
+- `users.is_hidden_from_search`, `users.is_hidden_from_external_indexing` (boolean, migration 013) — privacy toggles; `is_hidden_from_external_indexing` enforced via noindex meta on public profile page
+- `users.is_hidden_age` (boolean, migration 014) — when true, age is not shown on public profile; default false
+- `users.role` (TEXT NULL, migration 015) — user role; `super_admin` unlocks admin features
+- `interests.is_deleted` (boolean, migration 015) — soft-delete flag; indexed; user-facing queries filter `WHERE is_deleted = false`
+- `interests.created_by_user_id`, `updated_at`, `updated_by_user_id`, `deleted_at`, `deleted_by_user_id` (migration 015) — audit trail for admin moderation
+- `interests.merged_into_interest_id` (UUID NULL, migration 016) — points to the canonical interest when a duplicate is merged; used by `PUT /profile` to auto-remap users
 - events and rsvps (present; implementation varies by feature maturity)
 
 PostGIS is available for geo queries.
@@ -262,7 +301,7 @@ When sharing the same DB between local and production, set `NEXT_PUBLIC_AVATAR_B
 
 ---
 
-## 10) Observability
+## 11) Observability
 
 - Sentry: frontend + API error tracking
 - Axiom: API request logs
@@ -270,7 +309,7 @@ When sharing the same DB between local and production, set `NEXT_PUBLIC_AVATAR_B
 
 ---
 
-## 11) Wrangler and Deploy Configuration (Invariants)
+## 12) Wrangler and Deploy Configuration (Invariants)
 
 ### Web (`web/wrangler.toml`)
 
@@ -289,7 +328,7 @@ CORS is enforced via an explicit allowlist (newchums.com, www, localhost:3000) i
 
 ---
 
-## 12) Runtime Constraints (Web)
+## 13) Runtime Constraints (Web)
 
 Do NOT add `export const runtime = "edge"` to routes. OpenNext Cloudflare shims the edge runtime to an empty module, causing 500 Internal Server Error; Workers already run at the edge.
 
@@ -306,7 +345,7 @@ cd web && npm run build
 
 ---
 
-## 13) Technical Debt (Acknowledged)
+## 14) Technical Debt (Acknowledged)
 
 - Web worker name suffix mismatch (`newchums-web-dev` is production).
 - Schema normalization/cleanup will be required before broader public launch.
