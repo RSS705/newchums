@@ -7,6 +7,7 @@ import Divider from "@mui/material/Divider";
 import Grid from "@mui/material/Grid";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+import Image from "next/image";
 import Link from "next/link";
 import SectionHeader from "@/components/ui/SectionHeader";
 import FriendshipEngineDiagram from "@/components/marketing/FriendshipEngineDiagram";
@@ -87,27 +88,25 @@ export default function ScienceOfFriendshipContent({ isLoggedIn = false }: { isL
           </Typography>
         </Stack>
 
-        {/* Image placeholder — replace with a real photo when available */}
         <Box
           sx={{
             mt: { xs: 5, sm: 7 },
             mx: "auto",
             maxWidth: CONTENT_MAX_WIDTH,
-            minHeight: { xs: 180, sm: 240 },
             borderRadius: 2,
-            border: "2px dashed",
-            borderColor: "divider",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 1,
-            px: 2,
+            overflow: "hidden",
+            position: "relative",
+            width: "100%",
+            aspectRatio: "16 / 9",
           }}
         >
-          <Typography variant="caption" color="text.disabled" sx={{ fontStyle: "italic", textAlign: "center" }}>
-            Image placeholder — two adults at a casual hobby meetup
-          </Typography>
+          <Image
+            src="/images/science-of-friendship/Pottery.jpg"
+            alt="Two adults enjoying a pottery class together"
+            fill
+            style={{ objectFit: "cover" }}
+            sizes="(max-width: 600px) 100vw, 860px"
+          />
         </Box>
       </Box>
 
@@ -383,22 +382,22 @@ export default function ScienceOfFriendshipContent({ isLoggedIn = false }: { isL
             ))}
           </Grid>
 
-          {/* Image placeholder — replace with a real photo when available */}
           <Box
             sx={{
-              minHeight: { xs: 160, sm: 220 },
               borderRadius: 2,
-              border: "2px dashed",
-              borderColor: "divider",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              px: 2,
+              overflow: "hidden",
+              position: "relative",
+              width: "100%",
+              aspectRatio: "16 / 9",
             }}
           >
-            <Typography variant="caption" color="text.disabled" sx={{ fontStyle: "italic", textAlign: "center" }}>
-              Image placeholder — diverse group at a casual hobby meetup
-            </Typography>
+            <Image
+              src="/images/science-of-friendship/Majong.jpg"
+              alt="A group of adults enjoying a mahjong game together"
+              fill
+              style={{ objectFit: "cover", objectPosition: "right center" }}
+              sizes="(max-width: 600px) 100vw, 860px"
+            />
           </Box>
         </Box>
       </Box>
