@@ -28,11 +28,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!email || !password) return null;
 
         const rows = (await sql`
-          SELECT id, email, name, password_hash, email_verified_at
+          SELECT id, email, name, password_hash, email_verified_at, is_suspended
           FROM users
           WHERE email = ${email}
           LIMIT 1
-        `) as { id: string; email: string; name: string | null; password_hash: string | null; email_verified_at: string | null }[];
+        `) as { id: string; email: string; name: string | null; password_hash: string | null; email_verified_at: string | null; is_suspended: boolean }[];
 
         const user = rows[0];
         if (!user) {
@@ -59,12 +59,30 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           throw err;
         }
 
+        if (user.is_suspended) {
+          const err = new CredentialsSignin("Your account has been suspended. Please contact support.");
+          err.code = "AccountSuspended";
+          throw err;
+        }
+
         return { id: user.id, email: user.email, name: user.name };
       },
     }),
   ],
   session: { strategy: "jwt" },
   callbacks: {
+    async signIn({ user, account }) {
+      if (account?.provider === "google" && user.email) {
+        const email = user.email.trim().toLowerCase();
+        const rows = (await sql`
+          SELECT is_suspended FROM users WHERE email = ${email} LIMIT 1
+        `) as { is_suspended: boolean }[];
+        if (rows[0]?.is_suspended) {
+          return "/login?error=AccountSuspended";
+        }
+      }
+      return true;
+    },
     jwt({ token, user, account }) {
       if (user?.id) token.id = user.id;
       if (account?.provider) (token as { provider?: string }).provider = account.provider;

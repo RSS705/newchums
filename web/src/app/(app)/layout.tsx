@@ -30,10 +30,14 @@ export default async function AppLayout({
     return <AppShell>{children}</AppShell>;
   }
 
-  const { username, date_of_birth, name, role } = await getOrCreateAppUser(
+  const { username, date_of_birth, name, role, is_suspended } = await getOrCreateAppUser(
     email,
     (session.user as { name?: string | null })?.name
   );
+
+  if (is_suspended) {
+    redirect("/login?error=AccountSuspended");
+  }
 
   const needsOnboarding =
     !date_of_birth ||

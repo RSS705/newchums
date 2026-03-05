@@ -4,6 +4,7 @@ import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
 import PersonRoundedIcon from "@mui/icons-material/PersonRounded";
 import AddCircleRoundedIcon from "@mui/icons-material/AddCircleRounded";
 import StyleRoundedIcon from "@mui/icons-material/StyleRounded";
+import PeopleRoundedIcon from "@mui/icons-material/PeopleRounded";
 import type { SvgIconComponent } from "@mui/icons-material";
 
 export type NavItem = {
@@ -22,6 +23,7 @@ export const appNavItems: NavItem[] = [
 export const createEventHref = "/events/create";
 
 export const superAdminNavItems: NavItem[] = [
+  { label: "Chums", href: "/admin/chums", icon: PeopleRoundedIcon },
   { label: "Interests", href: "/admin/interests", icon: StyleRoundedIcon },
 ];
 

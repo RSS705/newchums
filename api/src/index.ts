@@ -103,6 +103,37 @@ app.use("*", async (c, next) => {
   await next();
 });
 
+// ─── Suspension guard ────────────────────────────────────────────────────────
+// Any authenticated request from a suspended user returns 403 immediately.
+// Public routes (no Bearer token) are unaffected.
+app.use("*", async (c, next) => {
+  const authHeader = c.req.header("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    await next();
+    return;
+  }
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    await next();
+    return;
+  }
+  try {
+    const sql = getSql(c.env);
+    const rows = (await sql`
+      SELECT is_suspended FROM users WHERE email = ${payload.email} LIMIT 1
+    `) as { is_suspended: boolean }[];
+    if (rows[0]?.is_suspended === true) {
+      return c.json(
+        { ok: false, error: { code: "USER_SUSPENDED", message: "Your account has been suspended." } },
+        403,
+      );
+    }
+  } catch {
+    // If DB lookup fails, allow the request through — individual routes will fail safely.
+  }
+  await next();
+});
+
 app.get("/", (c) => c.text("NewChums API is live"));
 
 // Public profile by handle (no auth). Returns age only, never DOB.
@@ -424,9 +455,12 @@ app.post("/auth/signup", async (c) => {
 
     const sql = getSql(c.env);
     const existingEmail = (await sql`
-      SELECT id FROM users WHERE email = ${normalizedEmail} LIMIT 1
-    `) as { id: string }[];
+      SELECT id, is_suspended FROM users WHERE email = ${normalizedEmail} LIMIT 1
+    `) as { id: string; is_suspended: boolean }[];
     if (existingEmail.length > 0) {
+      if (existingEmail[0].is_suspended) {
+        return c.json({ ok: false, error: "EMAIL_SUSPENDED", code: "EMAIL_SUSPENDED" }, 409);
+      }
       return c.json({ ok: false, error: "EMAIL_EXISTS" }, 409);
     }
 
@@ -2927,6 +2961,139 @@ app.post("/admin/interests/:id/restore", async (c) => {
     return c.json({ ok: true });
   } catch (err) {
     console.error(err);
+    return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
+  }
+});
+
+// ─── GET /admin/users ─────────────────────────────────────────────────────────
+
+type AdminUserRow = {
+  id: string;
+  created_at: string | null;
+  email: string;
+  username: string | null;
+  name: string | null;
+  role: string | null;
+  is_suspended: boolean;
+  suspended_at: string | null;
+};
+
+app.get("/admin/users", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  try {
+    const sql = getSql(c.env);
+    const q = c.req.query("q")?.trim();
+    const likePattern = q ? `%${q.toLowerCase()}%` : null;
+
+    const rows = likePattern
+      ? ((await sql`
+          SELECT id, created_at, email, username, name, role, is_suspended, suspended_at
+          FROM users
+          WHERE
+            LOWER(email) LIKE ${likePattern}
+            OR LOWER(COALESCE(username, '')) LIKE ${likePattern}
+            OR LOWER(COALESCE(name, '')) LIKE ${likePattern}
+            OR CAST(id AS TEXT) LIKE ${likePattern}
+          ORDER BY created_at DESC NULLS LAST
+        `) as AdminUserRow[])
+      : ((await sql`
+          SELECT id, created_at, email, username, name, role, is_suspended, suspended_at
+          FROM users
+          ORDER BY created_at DESC NULLS LAST
+        `) as AdminUserRow[]);
+
+    return c.json({ ok: true, users: rows });
+  } catch (err) {
+    console.error("[GET /admin/users]", err);
+    return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
+  }
+});
+
+// ─── POST /admin/users/:id/suspend ───────────────────────────────────────────
+
+app.post("/admin/users/:id/suspend", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  const id = c.req.param("id");
+  if (!id) return c.json({ ok: false, error: { code: "INVALID_INPUT", message: "id required" } }, 400);
+
+  let reason: string | null = null;
+  try {
+    const body = await c.req.json<{ reason?: string }>();
+    reason = typeof body.reason === "string" ? body.reason.trim() || null : null;
+  } catch {
+    // reason is optional; proceed without it
+  }
+
+  try {
+    const sql = getSql(c.env);
+
+    const existing = (await sql`
+      SELECT id, is_suspended FROM users WHERE id = ${id} LIMIT 1
+    `) as { id: string; is_suspended: boolean }[];
+    if (existing.length === 0) {
+      return c.json({ ok: false, error: { code: "NOT_FOUND" } }, 404);
+    }
+    if (existing[0].is_suspended) {
+      return c.json({ ok: false, error: { code: "ALREADY_SUSPENDED" } }, 409);
+    }
+    if (id === admin.id) {
+      return c.json({ ok: false, error: { code: "CANNOT_SUSPEND_SELF" } }, 400);
+    }
+
+    await sql`
+      UPDATE users
+      SET is_suspended = true,
+          suspended_at = now(),
+          suspended_by_user_id = ${admin.id},
+          suspension_reason = ${reason}
+      WHERE id = ${id}
+    `;
+
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[POST /admin/users/:id/suspend]", err);
+    return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
+  }
+});
+
+// ─── POST /admin/users/:id/unsuspend ─────────────────────────────────────────
+
+app.post("/admin/users/:id/unsuspend", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  const id = c.req.param("id");
+  if (!id) return c.json({ ok: false, error: { code: "INVALID_INPUT", message: "id required" } }, 400);
+
+  try {
+    const sql = getSql(c.env);
+
+    const existing = (await sql`
+      SELECT id, is_suspended FROM users WHERE id = ${id} LIMIT 1
+    `) as { id: string; is_suspended: boolean }[];
+    if (existing.length === 0) {
+      return c.json({ ok: false, error: { code: "NOT_FOUND" } }, 404);
+    }
+    if (!existing[0].is_suspended) {
+      return c.json({ ok: false, error: { code: "NOT_SUSPENDED" } }, 409);
+    }
+
+    await sql`
+      UPDATE users
+      SET is_suspended = false,
+          suspended_at = NULL,
+          suspended_by_user_id = NULL,
+          suspension_reason = NULL
+      WHERE id = ${id}
+    `;
+
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[POST /admin/users/:id/unsuspend]", err);
     return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
   }
 });

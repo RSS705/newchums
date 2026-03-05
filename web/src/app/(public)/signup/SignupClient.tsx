@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
 import * as React from "react";
 import AuthDividerForm from "@/components/auth/AuthDividerForm";
+import AuthErrorBanner from "@/components/auth/AuthErrorBanner";
 import AuthField from "@/components/auth/AuthField";
 import NCDatePicker from "@/components/fields/NCDatePicker";
 import AuthFooterLink from "@/components/auth/AuthFooterLink";
@@ -36,14 +37,22 @@ export default function SignupClient() {
     string | null
   >(null);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [suspended, setSuspended] = React.useState(false);
 
   const nextParam = searchParams.get("next");
+  const errorParam = searchParams.get("error");
   const redirectTarget = getSafeRedirectPath(nextParam);
+
+  const isSuspendedParam =
+    errorParam === "AccountSuspended" ||
+    errorParam === "OAuthAccountSuspended" ||
+    errorParam === "UserSuspended";
 
   return (
     <AuthSplitLayout>
       <AppCard sx={{ width: "100%", maxWidth: 450 }}>
         <Stack spacing={2.5}>
+          <AuthErrorBanner code={isSuspendedParam ? "AccountSuspended" : suspended ? "EMAIL_SUSPENDED" : null} />
           <Box sx={{ textAlign: "center" }}>
             <Typography component="h1" variant="h4" fontWeight={700} sx={{ mb: 0.5 }}>
               Welcome to NewChums
@@ -89,6 +98,7 @@ export default function SignupClient() {
               setEmailError(null);
               setDateOfBirthError(null);
               setConfirmPasswordError(null);
+              setSuspended(false);
 
               const trimmed = username.trim();
               if (!trimmed) {
@@ -136,7 +146,14 @@ export default function SignupClient() {
                 };
 
                 if (!response.ok || !data.ok) {
-                  if (data.error === "USERNAME_TAKEN") {
+                  if (
+                    data.error === "EMAIL_SUSPENDED" ||
+                    data.code === "EMAIL_SUSPENDED" ||
+                    data.error === "USER_SUSPENDED" ||
+                    data.error === "ACCOUNT_SUSPENDED"
+                  ) {
+                    setSuspended(true);
+                  } else if (data.error === "USERNAME_TAKEN") {
                     setUsernameError("Username is already taken.");
                   } else if (data.error === "INAPPROPRIATE_TEXT" || data.code === "INAPPROPRIATE_TEXT") {
                     setUsernameError("That username isn't allowed. Try something else.");
@@ -224,6 +241,7 @@ export default function SignupClient() {
               onChange={(event) => {
                 setEmail(event.target.value);
                 setEmailError(null);
+                setSuspended(false);
               }}
               required
               helperText={emailError ?? undefined}

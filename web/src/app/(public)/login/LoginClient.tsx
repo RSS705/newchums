@@ -10,6 +10,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
 import AuthDividerForm from "@/components/auth/AuthDividerForm";
+import AuthErrorBanner from "@/components/auth/AuthErrorBanner";
 import AuthField from "@/components/auth/AuthField";
 import AuthFooterLink from "@/components/auth/AuthFooterLink";
 import AuthSplitLayout from "@/components/layout/AuthSplitLayout";
@@ -24,12 +25,19 @@ export default function LoginClient() {
   const [rememberDevice, setRememberDevice] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [emailUnverified, setEmailUnverified] = React.useState(false);
+  const [suspended, setSuspended] = React.useState(false);
 
   const emailPrefill = searchParams.get("email");
   const nextParam = searchParams.get("next");
+  const errorParam = searchParams.get("error");
   const resetSuccess = searchParams.get("reset") === "success";
   const emailChanged = searchParams.get("emailChanged") === "1";
   const redirectTarget = getSafeRedirectPath(nextParam);
+
+  const isSuspendedParam =
+    errorParam === "AccountSuspended" ||
+    errorParam === "OAuthAccountSuspended" ||
+    errorParam === "UserSuspended";
 
   React.useEffect(() => {
     if (emailPrefill) {
@@ -45,12 +53,13 @@ export default function LoginClient() {
 
   const formContent = (
     <Stack spacing={2.5}>
-      {emailChanged && (
+      <AuthErrorBanner code={isSuspendedParam ? "AccountSuspended" : suspended ? "AccountSuspended" : null} />
+      {emailChanged && !isSuspendedParam && !suspended && (
         <Typography variant="body2" color="success.main" sx={{ textAlign: "center", fontWeight: 500 }}>
           Your email has been updated. Please sign in with your new email.
         </Typography>
       )}
-      {resetSuccess && !emailChanged && (
+      {resetSuccess && !emailChanged && !isSuspendedParam && !suspended && (
         <Typography variant="body2" color="success.main" sx={{ textAlign: "center", fontWeight: 500 }}>
           Your password has been reset. Sign in with your new password.
         </Typography>
@@ -105,6 +114,10 @@ export default function LoginClient() {
           if (result?.error) {
             // Auth.js passes our custom codes via result.code for CredentialsSignin
             const code = result.code;
+            if (code === "AccountSuspended") {
+              setSuspended(true);
+              return;
+            }
             const isUnverified =
               code === "EmailNotVerified" ||
               result.error?.toLowerCase().includes("verify");
@@ -143,6 +156,7 @@ export default function LoginClient() {
             setEmail(event.target.value);
             setError(null);
             setEmailUnverified(false);
+            setSuspended(false);
           }}
           required
         />
@@ -155,6 +169,7 @@ export default function LoginClient() {
             setPassword(event.target.value);
             setError(null);
             setEmailUnverified(false);
+            setSuspended(false);
           }}
           required
           helperText={

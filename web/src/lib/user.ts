@@ -13,28 +13,40 @@ function normalizeDateOfBirth(val: unknown): string | null {
   return null;
 }
 
+type AppUser = {
+  id: string;
+  username: string | null;
+  date_of_birth: string | null;
+  name: string | null;
+  role: string | null;
+  is_suspended: boolean;
+};
+
+type AppUserRaw = Omit<AppUser, "date_of_birth"> & { date_of_birth: unknown };
+
 /**
  * Ensure user exists in DB by email (creates with email, name, username=null, date_of_birth=null if new).
- * Returns { id, username, date_of_birth, name } (date_of_birth as YYYY-MM-DD string or null).
+ * Returns { id, username, date_of_birth, name, role, is_suspended }.
  * Used for Google OAuth users who may not exist until first app access.
  */
 export async function getOrCreateAppUser(
   email: string,
   name?: string | null
-): Promise<{ id: string; username: string | null; date_of_birth: string | null; name: string | null; role: string | null }> {
+): Promise<AppUser> {
   const normalized = email.trim().toLowerCase();
   if (!normalized) throw new Error("getOrCreateAppUser requires email");
 
   const existing = (await sql`
-    SELECT id, username, date_of_birth, name, role
+    SELECT id, username, date_of_birth, name, role, is_suspended
     FROM users
     WHERE email = ${normalized}
     LIMIT 1
-  `) as { id: string; username: string | null; date_of_birth: unknown; name: string | null; role: string | null }[];
+  `) as AppUserRaw[];
 
   if (existing.length > 0) {
     return {
       ...existing[0],
+      is_suspended: Boolean(existing[0].is_suspended),
       date_of_birth: normalizeDateOfBirth(existing[0].date_of_birth),
     };
   }
@@ -43,12 +55,13 @@ export async function getOrCreateAppUser(
     const inserted = (await sql`
       INSERT INTO users (email, name, email_verified_at)
       VALUES (${normalized}, ${name ?? null}, now())
-      RETURNING id, username, date_of_birth, name, role
-    `) as { id: string; username: string | null; date_of_birth: unknown; name: string | null; role: string | null }[];
+      RETURNING id, username, date_of_birth, name, role, is_suspended
+    `) as AppUserRaw[];
 
     if (inserted.length > 0) {
       return {
         ...inserted[0],
+        is_suspended: Boolean(inserted[0].is_suspended),
         date_of_birth: normalizeDateOfBirth(inserted[0].date_of_birth),
       };
     }
@@ -61,14 +74,15 @@ export async function getOrCreateAppUser(
       msg.includes("violates unique constraint")
     ) {
       const retry = (await sql`
-        SELECT id, username, date_of_birth, name, role
+        SELECT id, username, date_of_birth, name, role, is_suspended
         FROM users
         WHERE email = ${normalized}
         LIMIT 1
-      `) as { id: string; username: string | null; date_of_birth: unknown; name: string | null; role: string | null }[];
+      `) as AppUserRaw[];
       if (retry.length > 0) {
         return {
           ...retry[0],
+          is_suspended: Boolean(retry[0].is_suspended),
           date_of_birth: normalizeDateOfBirth(retry[0].date_of_birth),
         };
       }
@@ -77,15 +91,16 @@ export async function getOrCreateAppUser(
   }
 
   const fallback = (await sql`
-    SELECT id, username, date_of_birth, name, role
+    SELECT id, username, date_of_birth, name, role, is_suspended
     FROM users
     WHERE email = ${normalized}
     LIMIT 1
-  `) as { id: string; username: string | null; date_of_birth: unknown; name: string | null; role: string | null }[];
+  `) as AppUserRaw[];
 
   if (fallback.length > 0) {
     return {
       ...fallback[0],
+      is_suspended: Boolean(fallback[0].is_suspended),
       date_of_birth: normalizeDateOfBirth(fallback[0].date_of_birth),
     };
   }
