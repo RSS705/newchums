@@ -761,14 +761,19 @@ export default function ProfileClient() {
             inputValue={inputValue}
             onInputChange={(_, v) => setInputValue(v)}
             onChange={(_, newValue) => {
-              const last = newValue[newValue.length - 1];
+              const filtered = (newValue ?? []).filter(Boolean);
+              const last = filtered[filtered.length - 1];
               if (typeof last === "string") addInterest(last);
-              else setInterestItems(newValue as InterestOption[]);
+              else setInterestItems(filtered as InterestOption[]);
             }}
             getOptionLabel={(opt) => (typeof opt === "string" ? opt : opt.name)}
-            isOptionEqualToValue={(opt, val) =>
-              typeof opt !== "string" && typeof val !== "string" && opt.slug === val.slug
-            }
+            isOptionEqualToValue={(opt, val) => {
+              // MUI may call this with undefined/null during freeSolo keyboard transitions
+              // (Sentry: Cannot read properties of undefined reading 'slug')
+              if (!opt || !val) return false;
+              if (typeof opt === "string" || typeof val === "string") return false;
+              return opt.slug === val.slug;
+            }}
             loading={suggestionsLoading}
             renderInput={(params) => (
               <Box>
@@ -789,8 +794,12 @@ export default function ProfileClient() {
                   size="medium"
                   variant="outlined"
                   onKeyDown={(e) => {
+                    // Prevent MUI Autocomplete from removing the last chip on Backspace
+                    // when the input is empty. stopPropagation is required because MUI's
+                    // internal keydown listener still fires after preventDefault alone.
                     if (e.key === "Backspace" && !inputValue) {
                       e.preventDefault();
+                      e.stopPropagation();
                     }
                   }}
                 />
