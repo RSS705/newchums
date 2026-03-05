@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import Divider from "@mui/material/Divider";
 import Grid from "@mui/material/Grid";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
@@ -21,72 +22,92 @@ const CONTENT_MAX_WIDTH = 800;
 
 export type FriendshipEngineHover = "proximity" | "repetition" | "disclosure" | null;
 
-export default function ScienceOfFriendshipContent() {
+export default function ScienceOfFriendshipContent({ isLoggedIn = false }: { isLoggedIn?: boolean }) {
   const [hoveredItem, setHoveredItem] = useState<FriendshipEngineHover>(null);
 
   return (
     <Box sx={{ pt: { xs: 6, sm: 8, md: 10 }, pb: { xs: 4, sm: 6 } }}>
-      {/* Section 1, Hero: centered layout */}
-      <Box component="section" sx={{ ...SECTION_SPACING, mb: { xs: 4, sm: 6 } }}>
-        <Stack spacing={{ xs: 2, sm: 3 }} alignItems="center" textAlign="center" maxWidth={CONTENT_MAX_WIDTH} mx="auto" px={{ xs: 1, sm: 0 }}>
+      {/* Section 1, Hero */}
+      <Box component="section" sx={{ ...SECTION_SPACING, mb: { xs: 2, sm: 4 } }}>
+        <Stack alignItems="center" textAlign="center" maxWidth={CONTENT_MAX_WIDTH} mx="auto" px={{ xs: 1, sm: 0 }}>
+          {/* Eyebrow */}
+          <Typography
+            variant="overline"
+            sx={{
+              color: "secondary.main",
+              fontWeight: 700,
+              letterSpacing: "0.12em",
+              fontSize: "0.7rem",
+              display: "block",
+              mb: 2,
+            }}
+          >
+            What the research tells us
+          </Typography>
+
+          {/* Heading */}
           <Typography
             component="h1"
             variant="h1"
             fontWeight={800}
-            sx={{ fontSize: { xs: "2rem", sm: "2.5rem", md: "2.75rem" }, lineHeight: 1.2 }}
+            sx={{ fontSize: { xs: "2rem", sm: "2.5rem", md: "2.75rem" }, lineHeight: 1.2, mb: 3 }}
           >
             The Science of Friendship
           </Typography>
+
+          {/* Gold accent bar */}
+          <Box
+            sx={{
+              width: 48,
+              height: 3,
+              bgcolor: "secondary.main",
+              borderRadius: 1,
+              mb: { xs: 3.5, sm: 4.5 },
+            }}
+          />
+
+          {/* Intro text */}
           <Typography
             variant="h5"
             fontWeight={400}
             color="text.primary"
-            sx={{ lineHeight: 1.65, fontSize: { xs: "1.0625rem", sm: "1.25rem" } }}
+            sx={{ lineHeight: 1.7, fontSize: { xs: "1.0625rem", sm: "1.25rem" }, mb: 2.5 }}
           >
-            Friendship isn&apos;t just luck.
-            <br />
-            <br />
-            It&apos;s a set of conditions that help people connect,
-            conditions that modern life quietly makes harder.
+            Friendship isn&apos;t just luck. It&apos;s a set of conditions that help people
+            connect, conditions that modern life quietly makes harder.
           </Typography>
           <Typography
             variant="h5"
             fontWeight={400}
             color="text.primary"
-            sx={{ lineHeight: 1.65, fontSize: { xs: "1.0625rem", sm: "1.25rem" } }}
+            sx={{ lineHeight: 1.7, fontSize: { xs: "1.0625rem", sm: "1.25rem" } }}
           >
-            NewChums was built around a simple idea: If we recreate those conditions, friendship
+            NewChums was built around a simple idea: if we recreate those conditions, friendship
             becomes much more likely.
           </Typography>
         </Stack>
+
+        {/* Image placeholder — replace with a real photo when available */}
         <Box
           sx={{
-            mt: { xs: 4, sm: 6 },
+            mt: { xs: 5, sm: 7 },
+            mx: "auto",
+            maxWidth: CONTENT_MAX_WIDTH,
+            minHeight: { xs: 180, sm: 240 },
+            borderRadius: 2,
+            border: "2px dashed",
+            borderColor: "divider",
             display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
             justifyContent: "center",
-            px: { xs: 1, sm: 0 },
+            gap: 1,
+            px: 2,
           }}
         >
-          <Box
-            sx={{
-              width: "100%",
-              maxWidth: CONTENT_MAX_WIDTH,
-              minHeight: { xs: 180, sm: 220, md: 280 },
-              borderRadius: 2,
-              overflow: "hidden",
-              bgcolor: "primary.light",
-              boxShadow: 3,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            {/* IMAGE PLACEHOLDER
-            Description: two adults meeting at a small hobby meetup table
-            Purpose: show welcoming, casual social environment
-            */}
-            <Box sx={{ width: "100%", height: "100%", opacity: 0.4 }} />
-          </Box>
+          <Typography variant="caption" color="text.disabled" sx={{ fontStyle: "italic", textAlign: "center" }}>
+            Image placeholder — two adults at a casual hobby meetup
+          </Typography>
         </Box>
       </Box>
 
@@ -189,55 +210,79 @@ export default function ScienceOfFriendshipContent() {
       {/* Normalize the Pace, Timeline Visualization */}
       <TimelineVisualization />
 
-      {/* Section 4, Why Harder / Why Matters: two-column layout */}
+      {/* Section 4, Why Harder / Why Matters: two-column card layout */}
       <Box
         component="section"
         id="why-friendship-hard"
         sx={{
           ...SECTION_SPACING,
-          backgroundColor: (theme) => theme.palette.mode === "light" ? "grey.100" : "grey.900",
+          backgroundColor: (theme) => theme.palette.mode === "light" ? "grey.50" : "grey.900",
           mx: { xs: -2, sm: -3 },
           px: { xs: 2, sm: 3 },
         }}
       >
         <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto">
-          <Grid container spacing={{ xs: 4, md: 6 }}>
-            <Grid size={{ xs: 12, md: 6 }} sx={{ textAlign: { xs: "center", sm: "left" } }}>
-              <SectionHeader title="Why friendship feels harder in adulthood" emphasis="primary" accentColor="secondary" />
-              <Stack spacing={1.5}>
-                {[
-                  "Busy schedules leave less room for the repeated, spontaneous interactions where friendships usually begin.",
-                  "Work demands and relocation often disrupt existing social circles.",
-                  "Many modern routines are isolated, we move between home, work, and errands without naturally seeing the same people.",
-                  "Many social experiences today are one-off events instead of recurring spaces where relationships can grow.",
-                ].map((text) => (
-                  <Stack key={text} direction="row" spacing={1.5} alignItems="center" justifyContent={{ xs: "center", sm: "flex-start" }}>
-                    <Box sx={{ width: 6, height: 6, borderRadius: "50%", bgcolor: "secondary.main", flexShrink: 0, display: { xs: "none", sm: "block" } }} />
-                    <Typography variant="body1" sx={{ lineHeight: 1.75 }}>{text}</Typography>
-                  </Stack>
-                ))}
-              </Stack>
-              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
-                Putnam, R. (2000). Bowling Alone.
-              </Typography>
+          <Grid container spacing={{ xs: 3, md: 4 }}>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Box
+                sx={{
+                  height: "100%",
+                  backgroundColor: "background.paper",
+                  borderTop: "3px solid",
+                  borderColor: "secondary.main",
+                  borderRadius: 2,
+                  p: { xs: 3, sm: 4 },
+                  boxShadow: (theme) =>
+                    theme.palette.mode === "light" ? "0 1px 6px rgba(0,0,0,0.07)" : "none",
+                }}
+              >
+                <SectionHeader title="Why friendship feels harder in adulthood" emphasis="primary" accentColor="secondary" />
+                <Stack divider={<Divider />} spacing={0}>
+                  {[
+                    "Busy schedules leave less room for the repeated, spontaneous interactions where friendships usually begin.",
+                    "Work demands and relocation often disrupt existing social circles.",
+                    "Many modern routines are isolated, we move between home, work, and errands without naturally seeing the same people.",
+                    "Many social experiences today are one-off events instead of recurring spaces where relationships can grow.",
+                  ].map((text) => (
+                    <Box key={text} sx={{ py: 1.75, textAlign: { xs: "center", sm: "left" } }}>
+                      <Typography variant="body1" sx={{ lineHeight: 1.75 }}>{text}</Typography>
+                    </Box>
+                  ))}
+                </Stack>
+                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 2 }}>
+                  Putnam, R. (2000). Bowling Alone.
+                </Typography>
+              </Box>
             </Grid>
-            <Grid size={{ xs: 12, md: 6 }} id="why-friendship-matters" sx={{ textAlign: { xs: "center", sm: "left" } }}>
-              <SectionHeader title="Why this matters more than we realize" emphasis="primary" accentColor="secondary" />
-              <Stack spacing={1.5}>
-                {[
-                  "Strong friendships are one of the biggest predictors of life satisfaction and happiness.",
-                  "Reliable social support helps buffer the effects of daily stress.",
-                  "Feeling socially connected strengthens emotional resilience and mental health.",
-                ].map((text) => (
-                  <Stack key={text} direction="row" spacing={1.5} alignItems="center" justifyContent={{ xs: "center", sm: "flex-start" }}>
-                    <Box sx={{ width: 6, height: 6, borderRadius: "50%", bgcolor: "secondary.main", flexShrink: 0, display: { xs: "none", sm: "block" } }} />
-                    <Typography variant="body1" sx={{ lineHeight: 1.75 }}>{text}</Typography>
-                  </Stack>
-                ))}
-              </Stack>
-              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 2 }}>
-                Demir & Davidson (2013). Friendship and happiness. Cohen & Wills (1985). Stress buffering hypothesis.
-              </Typography>
+            <Grid size={{ xs: 12, md: 6 }} id="why-friendship-matters">
+              <Box
+                sx={{
+                  height: "100%",
+                  backgroundColor: "background.paper",
+                  borderTop: "3px solid",
+                  borderColor: "primary.main",
+                  borderRadius: 2,
+                  p: { xs: 3, sm: 4 },
+                  boxShadow: (theme) =>
+                    theme.palette.mode === "light" ? "0 1px 6px rgba(0,0,0,0.07)" : "none",
+                }}
+              >
+                <SectionHeader title="Why this matters more than we realize" emphasis="primary" accentColor="secondary" />
+                <Stack divider={<Divider />} spacing={0}>
+                  {[
+                    "Strong friendships are one of the biggest predictors of life satisfaction and happiness.",
+                    "Reliable social support helps buffer the effects of daily stress.",
+                    "Feeling socially connected strengthens emotional resilience and mental health.",
+                  ].map((text) => (
+                    <Box key={text} sx={{ py: 1.75, textAlign: { xs: "center", sm: "left" } }}>
+                      <Typography variant="body1" sx={{ lineHeight: 1.75 }}>{text}</Typography>
+                    </Box>
+                  ))}
+                </Stack>
+                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 2 }}>
+                  Demir &amp; Davidson (2013). Friendship and happiness. Cohen &amp; Wills (1985). Stress buffering hypothesis.
+                </Typography>
+              </Box>
             </Grid>
           </Grid>
         </Box>
@@ -433,95 +478,136 @@ export default function ScienceOfFriendshipContent() {
         component="section"
         id="cta"
         sx={{
-          py: { xs: 6, sm: 10 },
+          py: { xs: 8, sm: 12 },
           textAlign: "center",
-          backgroundColor: (theme) => theme.palette.mode === "light" ? "grey.100" : "grey.900",
+          backgroundColor: (theme) =>
+            theme.palette.mode === "light" ? theme.palette.primary.dark : "grey.900",
           mx: { xs: -2, sm: -3 },
-          px: { xs: 2, sm: 3 },
+          px: { xs: 3, sm: 4 },
+          color: "white",
+          position: "relative",
+          "&::before": {
+            content: '""',
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            height: "3px",
+            backgroundColor: "secondary.main",
+          },
         }}
       >
         <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto">
+          {/* Eyebrow */}
           <Typography
-            component="h2"
-            variant="h5"
-            fontWeight={700}
-            sx={{ mb: 3, fontSize: { xs: "1.2rem", sm: "1.5rem" } }}
+            variant="overline"
+            sx={{
+              display: "block",
+              mb: 1.5,
+              opacity: 0.65,
+              letterSpacing: 2,
+              fontSize: "0.6875rem",
+              fontWeight: 600,
+            }}
           >
-            Start meeting people who enjoy the same things you do
+            Getting started takes less than a minute
           </Typography>
 
-          <Stack spacing={{ xs: 2, sm: 3 }} alignItems="center" sx={{ mb: { xs: 4, sm: 5 } }}>
-            <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
-              Friendship doesn&apos;t have to be left to chance.
-            </Typography>
+          {/* Heading */}
+          <Typography
+            component="h2"
+            variant="h4"
+            fontWeight={700}
+            sx={{
+              mb: 2,
+              fontSize: { xs: "1.5rem", sm: "2rem" },
+              lineHeight: 1.25,
+              color: "inherit",
+            }}
+          >
+            Start meeting people who enjoy
+            <br />
+            the same things you do
+          </Typography>
 
-            <Box sx={{ width: "100%", maxWidth: 400 }}>
-              <Typography
-                variant="body1"
-                fontWeight={600}
-                sx={{ lineHeight: 1.75, mb: 2, textAlign: { xs: "center", sm: "left" } }}
-              >
-                Getting started takes less than a minute:
-              </Typography>
-              <Box
-                sx={{
-                  px: 2.5,
-                  py: 2,
-                  borderRadius: 1.5,
-                  bgcolor: (theme) =>
-                    theme.palette.mode === "light" ? "background.paper" : "grey.800",
-                  border: "1px solid",
-                  borderColor: (theme) =>
-                    theme.palette.mode === "light" ? "grey.200" : "grey.700",
-                  textAlign: "left",
-                  maxWidth: { xs: 360, sm: "none" },
-                  mx: { xs: "auto", sm: 0 },
-                }}
-              >
-                <Stack spacing={1.5} alignItems="flex-start">
-                  {[
-                    "Sign up",
-                    "Add a few hobbies you enjoy",
-                    "Get notified when people nearby plan events",
-                  ].map((text) => (
-                    <Stack key={text} direction="row" spacing={1.5} alignItems="center">
-                      <Box
-                        sx={{
-                          width: 6,
-                          height: 6,
-                          borderRadius: "50%",
-                          bgcolor: "secondary.main",
-                          flexShrink: 0,
-                        }}
-                      />
-                      <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
-                        {text}
-                      </Typography>
-                    </Stack>
-                  ))}
+          {/* Subtext */}
+          <Typography
+            variant="body1"
+            sx={{ mb: { xs: 6, sm: 8 }, opacity: 0.8, lineHeight: 1.75, maxWidth: 460, mx: "auto" }}
+          >
+            Friendship doesn&apos;t have to be left to chance.
+          </Typography>
+
+          {/* Steps */}
+          <Grid
+            container
+            spacing={{ xs: 4, sm: 3 }}
+            justifyContent="center"
+            sx={{ mb: { xs: 6, sm: 8 }, maxWidth: 680, mx: "auto" }}
+          >
+            {[
+              isLoggedIn ? "Open your profile" : "Sign up",
+              "Add a few hobbies you enjoy",
+              "Get notified when people nearby plan events",
+            ].map((text, i) => (
+              <Grid key={text} size={{ xs: 12, sm: 4 }}>
+                <Stack alignItems="center" spacing={2}>
+                  <Box
+                    sx={{
+                      width: 48,
+                      height: 48,
+                      borderRadius: "50%",
+                      border: "2px solid",
+                      borderColor: "secondary.main",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "secondary.main",
+                      fontWeight: 700,
+                      fontSize: "1.1rem",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {i + 1}
+                  </Box>
+                  <Typography
+                    variant="body1"
+                    fontWeight={500}
+                    sx={{ opacity: 0.9, lineHeight: 1.5, maxWidth: 180 }}
+                  >
+                    {text}
+                  </Typography>
                 </Stack>
-              </Box>
-            </Box>
-          </Stack>
+              </Grid>
+            ))}
+          </Grid>
 
-          <Box sx={{ display: "flex", justifyContent: "center", width: { xs: "100%", sm: "auto" } }}>
-            <Button
-              component={Link}
-              href="/signup"
-              variant="contained"
-              color="primary"
-              size="large"
-              fullWidth
-              sx={{
-                px: 3,
-                py: 1.5,
-                textTransform: "capitalize",
-                maxWidth: { xs: "none", sm: 200 },
-              }}
-            >
-              Get Started
-            </Button>
-          </Box>
+          <Divider sx={{ borderColor: "rgba(255,255,255,0.12)", mb: { xs: 6, sm: 8 }, maxWidth: 480, mx: "auto" }} />
+
+          {/* CTA Button */}
+          <Button
+            component={Link}
+            href={isLoggedIn ? "/" : "/signup"}
+            variant="contained"
+            color="secondary"
+            size="large"
+            sx={{
+              px: { xs: 5, sm: 6 },
+              py: 1.75,
+              fontSize: "1.0625rem",
+              fontWeight: 600,
+              textTransform: "none",
+              borderRadius: 2,
+              minWidth: { xs: "100%", sm: 220 },
+              maxWidth: { xs: "none", sm: 280 },
+              boxShadow: "0 4px 20px rgba(0,0,0,0.35)",
+              "&:hover": {
+                boxShadow: "0 6px 28px rgba(0,0,0,0.45)",
+              },
+            }}
+          >
+            {isLoggedIn ? "Explore NewChums" : "Get Started"}
+          </Button>
         </Box>
       </Box>
     </Box>

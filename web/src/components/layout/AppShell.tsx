@@ -30,7 +30,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import * as React from "react";
 import { signOut } from "next-auth/react";
-import { appNavItems, createEventHref } from "@/config/nav";
+import { appNavItems, superAdminNavItems, createEventHref } from "@/config/nav";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import UserAvatar from "@/components/common/UserAvatar";
 import SiteHeader, { HEADER_MIN_HEIGHT } from "@/components/layout/SiteHeader";
@@ -39,6 +39,7 @@ import LandingFooter from "@/components/landing/LandingFooter";
 
 export type AppShellUser = {
   name?: string | null;
+  role?: string | null;
 };
 
 const navCardWidth = 260;
@@ -60,7 +61,7 @@ type AppShellProps = {
   user?: AppShellUser | null;
 };
 
-type NavProfile = { avatar_url?: string | null; name?: string | null; username?: string | null };
+type NavProfile = { avatar_url?: string | null; name?: string | null; username?: string | null; role?: string | null };
 
 export default function AppShell({ children, user }: AppShellProps) {
   const pathname = usePathname();
@@ -217,6 +218,59 @@ export default function AppShell({ children, user }: AppShellProps) {
           Create Event
         </Button>
       </Box>
+      {(navProfile?.role === "super_admin" || user?.role === "super_admin") && (
+        <>
+          <Divider sx={{ borderColor: "divider", opacity: 0.6 }} />
+          <Box sx={{ px: 2, pt: 1.5, pb: 0.25 }}>
+            <Typography
+              variant="caption"
+              sx={{
+                color: "text.disabled",
+                fontWeight: 600,
+                letterSpacing: 0.6,
+                textTransform: "uppercase",
+                fontSize: "0.6875rem",
+              }}
+            >
+              Super Admin
+            </Typography>
+          </Box>
+          <List
+            sx={{
+              px: 1.5,
+              pb: 1.5,
+              "& .MuiListItemButton-root": {
+                mb: 0.25,
+                transition: "background-color 0.2s ease",
+                borderRadius: 2,
+              },
+            }}
+          >
+            {superAdminNavItems.map((item) => {
+              const Icon = item.icon;
+              const active = isNavItemActive(pathname, item.href);
+              return (
+                <ListItemButton
+                  key={item.href}
+                  component={Link}
+                  href={item.href}
+                  selected={active}
+                  onClick={() => setMobileOpen(false)}
+                  sx={{ borderRadius: 2 }}
+                >
+                  <ListItemIcon sx={{ minWidth: 38 }}>
+                    <Icon color={active ? "primary" : "inherit"} />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={item.label}
+                    primaryTypographyProps={{ fontSize: "0.875rem" }}
+                  />
+                </ListItemButton>
+              );
+            })}
+          </List>
+        </>
+      )}
     </>
   );
 

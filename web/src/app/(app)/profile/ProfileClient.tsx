@@ -475,6 +475,8 @@ export default function ProfileClient() {
           } else {
             toast.error(errMsg ?? "Failed to save");
           }
+        } else if (errObj?.code === "INTEREST_DELETED") {
+          toast.error(errObj.message ?? "That hobby is not available. Please choose a different hobby.");
         } else {
           toast.error(errMsg ?? "Failed to save");
         }
@@ -503,7 +505,8 @@ export default function ProfileClient() {
   const addInterest = (option: InterestOption | string) => {
     const item: InterestOption =
       typeof option === "string"
-        ? { name: option.trim(), slug: nameToSlug(option) }
+        // We intentionally preserve user-provided casing; do not auto-title-case.
+        ? { name: option.trim().replace(/\s+/g, " "), slug: nameToSlug(option) }
         : option;
     if (!item.name?.trim() || !item.slug) return;
     if (item.name.length > MAX_INTEREST_LENGTH) {

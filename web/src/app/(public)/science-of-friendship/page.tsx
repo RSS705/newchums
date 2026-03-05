@@ -15,7 +15,7 @@ export default async function ScienceOfFriendshipPage() {
 
   return (
     <LandingLayout isLoggedIn={isLoggedIn}>
-      <ScienceOfFriendshipContent />
+      <ScienceOfFriendshipContent isLoggedIn={isLoggedIn} />
     </LandingLayout>
   );
 }

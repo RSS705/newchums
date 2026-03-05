@@ -8,18 +8,18 @@ import { useTheme } from "@mui/material/styles";
 
 const TIMELINE_ITEMS = [
   {
-    accent: "50 Hours",
-    rest: " to move from acquaintance to casual friend",
+    accent: "Around 50 hours",
+    rest: " of shared time and an acquaintance starts to feel like a casual friend",
     proportion: 0.25,
   },
   {
-    accent: "90 Hours",
-    rest: " to move to friend",
+    accent: "Around 90 hours",
+    rest: " together and a real friendship is taking shape",
     proportion: 0.45,
   },
   {
-    accent: "200+ Hours",
-    rest: ' to become a "best" friend',
+    accent: "200+ hours",
+    rest: " of shared experiences and you've built something that can genuinely last",
     proportion: 1,
   },
 ] as const;
@@ -52,16 +52,10 @@ export default function TimelineVisualization() {
           <Typography variant="h5" fontWeight={700} gutterBottom sx={{ fontSize: { xs: "1.15rem", sm: "1.5rem" } }}>
             Normalize the Pace
           </Typography>
-          <Typography variant="body1" sx={{ mb: 2, opacity: 0.9, lineHeight: 1.65 }}>
-            We often expect connection to be instant. But research by Jeffrey Hall (University of
-            Kansas) suggests it takes time to move between stages:
-          </Typography>
-          <Typography
-            variant="caption"
-            sx={{ display: "block", mb: 4, opacity: 0.8 }}
-          >
-            Hall, J. A. (2019). How many hours does it take to make a friend? Journal of Social and
-            Personal Relationships, 36(4), 1278–1296.
+          <Typography variant="body1" sx={{ mb: 4, opacity: 0.9, lineHeight: 1.65 }}>
+            Friendships don&apos;t form overnight, and that&apos;s completely normal. Research by
+            Jeffrey Hall (University of Kansas) found that connection develops naturally through
+            shared time, and the milestones are more reachable than you might expect:
           </Typography>
         </Box>
 
@@ -89,6 +83,22 @@ export default function TimelineVisualization() {
             </Box>
           ))}
         </Stack>
+
+        <Typography
+          variant="body1"
+          sx={{ mt: { xs: 4, sm: 5 }, opacity: 0.9, lineHeight: 1.65, textAlign: { xs: "center", sm: "left" } }}
+        >
+          When you meet regularly around something you enjoy, those hours have a way of adding up on
+          their own.
+        </Typography>
+
+        <Typography
+          variant="caption"
+          sx={{ display: "block", mt: { xs: 3, sm: 4 }, opacity: 0.55, textAlign: { xs: "center", sm: "left" } }}
+        >
+          Hall, J. A. (2019). How many hours does it take to make a friend? Journal of Social and
+          Personal Relationships, 36(4), 1278–1296.
+        </Typography>
       </Box>
     </Box>
   );

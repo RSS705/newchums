@@ -1058,12 +1058,14 @@ app.get("/interests", async (c) => {
           SELECT id, name, slug
           FROM interests
           WHERE LOWER(name) LIKE ${likePattern}
+            AND (is_deleted IS NULL OR is_deleted = false)
           ORDER BY name ASC
           LIMIT 20
         `) as { id: string; name: string; slug: string }[])
       : ((await sql`
           SELECT id, name, category, slug, sort_order
           FROM interests
+          WHERE is_deleted IS NULL OR is_deleted = false
           ORDER BY sort_order ASC, name ASC
         `) as {
           id: string;
@@ -1374,7 +1376,8 @@ app.get("/profile", async (c) => {
       (payload as { name?: string | null }).name,
     );
     const userRows = (await sql`
-      SELECT name, username, email, date_of_birth, avatar_key, avatar_updated_at, (password_hash IS NOT NULL) AS has_password,
+      SELECT name, username, email, date_of_birth, avatar_key, avatar_updated_at, role,
+        (password_hash IS NOT NULL) AS has_password,
         COALESCE(is_hidden_from_search, false) AS is_hidden_from_search,
         COALESCE(is_hidden_from_external_indexing, false) AS is_hidden_from_external_indexing,
         COALESCE(is_hidden_age, false) AS is_hidden_age
@@ -1386,6 +1389,7 @@ app.get("/profile", async (c) => {
       date_of_birth: string | Date | null;
       avatar_key: string | null;
       avatar_updated_at: string | Date | null;
+      role: string | null;
       has_password: boolean;
       is_hidden_from_search: boolean;
       is_hidden_from_external_indexing: boolean;
@@ -1436,6 +1440,7 @@ app.get("/profile", async (c) => {
     const isHiddenFromSearch = userInfo?.is_hidden_from_search ?? false;
     const isHiddenFromExternalIndexing = userInfo?.is_hidden_from_external_indexing ?? false;
     const isHiddenAge = userInfo?.is_hidden_age ?? false;
+    const role = userInfo?.role ?? null;
 
     if (!profile) {
       return c.json({
@@ -1459,6 +1464,7 @@ app.get("/profile", async (c) => {
           is_hidden_from_search: isHiddenFromSearch,
           is_hidden_from_external_indexing: isHiddenFromExternalIndexing,
           is_hidden_age: isHiddenAge,
+          role,
         },
       });
     }
@@ -1483,6 +1489,7 @@ app.get("/profile", async (c) => {
         is_hidden_from_search: isHiddenFromSearch,
         is_hidden_from_external_indexing: isHiddenFromExternalIndexing,
         is_hidden_age: isHiddenAge,
+        role,
       },
     });
   } catch (err) {
@@ -1714,23 +1721,68 @@ app.put("/profile", async (c) => {
           );
         }
       }
+      // Resolve each user-submitted slug to an active interest, handling soft-deleted
+      // and merged interests. We intentionally preserve user-provided casing for new interests.
       const existingRows = (await sql`
-        SELECT id, slug FROM interests WHERE LOWER(slug) = ANY(${finalInterestSlugs.map((s) => s.toLowerCase())})
-      `) as { id: string; slug: string }[];
-      const existingBySlug = new Map(existingRows.map((r) => [r.slug.toLowerCase(), r.id]));
+        SELECT id, name, slug, is_deleted, merged_into_interest_id
+        FROM interests
+        WHERE LOWER(slug) = ANY(${finalInterestSlugs.map((s) => s.toLowerCase())})
+      `) as { id: string; name: string; slug: string; is_deleted: boolean; merged_into_interest_id: string | null }[];
+      const existingBySlug = new Map(existingRows.map((r) => [r.slug.toLowerCase(), r]));
+
+      // Pre-fetch any merge targets so we can remap deleted->canonical in one pass
+      const mergeTargetIds = [...new Set(
+        existingRows
+          .filter((r) => r.is_deleted && r.merged_into_interest_id)
+          .map((r) => r.merged_into_interest_id as string),
+      )];
+      const mergeTargetRows = mergeTargetIds.length > 0
+        ? (await sql`
+            SELECT id, slug, is_deleted FROM interests WHERE id = ANY(${mergeTargetIds})
+          `) as { id: string; slug: string; is_deleted: boolean }[]
+        : [];
+      const mergeTargetById = new Map(mergeTargetRows.map((r) => [r.id, r]));
+
+      const resolvedSlugs: string[] = [];
       for (const slug of finalInterestSlugs) {
-        if (!existingBySlug.has(slug.toLowerCase())) {
-          const name = nameBySlug.get(slug.toLowerCase()) ?? slugToName(slug);
+        const existing = existingBySlug.get(slug.toLowerCase());
+        if (!existing) {
+          // Truly new interest: create it
+          const name = (nameBySlug.get(slug.toLowerCase()) ?? slugToName(slug)).trim().replace(/\s+/g, " ");
           try {
             await sql`
-              INSERT INTO interests (name, category, slug, sort_order, is_seed)
-              VALUES (${name}, '', ${slug}, 0, false)
+              INSERT INTO interests (name, category, slug, sort_order, is_seed, created_by_user_id)
+              VALUES (${name}, '', ${slug}, 0, false, ${appUserId})
             `;
           } catch {
             // Ignore duplicate (race with concurrent insert)
           }
+          resolvedSlugs.push(slug);
+        } else if (!existing.is_deleted) {
+          // Active interest: use as-is (use stored slug for canonical casing)
+          resolvedSlugs.push(existing.slug);
+        } else if (existing.merged_into_interest_id) {
+          // Deleted but merged into a canonical interest: remap transparently
+          const target = mergeTargetById.get(existing.merged_into_interest_id);
+          if (target && !target.is_deleted) {
+            resolvedSlugs.push(target.slug);
+          } else {
+            // Merge target is also deleted or gone — treat as unavailable
+            return c.json(
+              { ok: false, error: { code: "INTEREST_DELETED", field: "hobby", message: "That hobby is not available. Please choose a different hobby." } },
+              400,
+            );
+          }
+        } else {
+          // Deleted with no merge target — reject
+          return c.json(
+            { ok: false, error: { code: "INTEREST_DELETED", field: "hobby", message: "That hobby is not available. Please choose a different hobby." } },
+            400,
+          );
         }
       }
+      // Deduplicate after remapping (e.g. two slugs that both merged into same target)
+      finalInterestSlugs = [...new Set(resolvedSlugs)];
     }
     const home_city =
       "home_city" in body
@@ -1818,7 +1870,8 @@ app.put("/profile", async (c) => {
         finalInterestSlugs.length > 0
           ? sql`
               INSERT INTO user_interests (user_id, interest_id)
-              SELECT ${appUserId}, i.id FROM interests i WHERE i.slug = ANY(${finalInterestSlugs})
+              SELECT ${appUserId}, i.id FROM interests i
+              WHERE i.slug = ANY(${finalInterestSlugs}) AND i.is_deleted = false
             `
           : sql`SELECT 1`,
       );
@@ -2550,6 +2603,331 @@ app.post("/email/test", async (c) => {
     console.error(err);
     const message = err instanceof Error ? err.message : "Unknown error";
     return c.json({ ok: false, error: message }, 502);
+  }
+});
+
+// ─── Admin helpers ───────────────────────────────────────────────────────────
+
+async function requireSuperAdmin(
+  c: { req: Request; env: Bindings },
+): Promise<{ id: string; email: string } | null> {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") return null;
+  const sql = getSql(c.env);
+  const rows = (await sql`
+    SELECT id FROM users WHERE email = ${payload.email} AND role = 'super_admin' LIMIT 1
+  `) as { id: string }[];
+  if (rows.length === 0) return null;
+  return { id: rows[0].id, email: payload.email };
+}
+
+type AdminInterestRow = {
+  id: string;
+  name: string;
+  slug: string;
+  category: string;
+  created_at: string | null;
+  is_deleted: boolean;
+  created_by_user_id: string | null;
+  username: string | null;
+};
+
+// ─── GET /admin/interests ────────────────────────────────────────────────────
+
+app.get("/admin/interests", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  try {
+    const sql = getSql(c.env);
+    const q = c.req.query("q")?.trim();
+    const likePattern = q ? `%${q.toLowerCase()}%` : null;
+
+    const rows = likePattern
+      ? ((await sql`
+          SELECT i.id, i.name, i.slug, i.category, i.created_at, i.is_deleted,
+                 i.created_by_user_id, u.username
+          FROM interests i
+          LEFT JOIN users u ON u.id = i.created_by_user_id
+          WHERE LOWER(i.name) LIKE ${likePattern}
+          ORDER BY i.name ASC
+        `) as AdminInterestRow[])
+      : ((await sql`
+          SELECT i.id, i.name, i.slug, i.category, i.created_at, i.is_deleted,
+                 i.created_by_user_id, u.username
+          FROM interests i
+          LEFT JOIN users u ON u.id = i.created_by_user_id
+          ORDER BY i.name ASC
+        `) as AdminInterestRow[]);
+
+    return c.json({ ok: true, interests: rows });
+  } catch (err) {
+    console.error(err);
+    return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
+  }
+});
+
+// ─── PATCH /admin/interests/:id ──────────────────────────────────────────────
+
+app.patch("/admin/interests/:id", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  const id = c.req.param("id");
+  if (!id) return c.json({ ok: false, error: { code: "INVALID_INPUT", message: "id required" } }, 400);
+
+  let body: { name?: string; category?: string };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ ok: false, error: { code: "INVALID_INPUT", message: "Invalid JSON" } }, 400);
+  }
+
+  const name = typeof body.name === "string" ? body.name.trim() : undefined;
+  const category = typeof body.category === "string" ? body.category.trim() : undefined;
+
+  if (name !== undefined) {
+    if (!name) return c.json({ ok: false, error: { code: "INVALID_INPUT", message: "name cannot be empty" } }, 400);
+    const v = validateInterestName(name);
+    if (!v.valid) return c.json({ ok: false, error: { code: "INVALID_INPUT", message: v.error } }, 400);
+  }
+
+  if (name === undefined && category === undefined) {
+    return c.json({ ok: false, error: { code: "INVALID_INPUT", message: "Nothing to update" } }, 400);
+  }
+
+  try {
+    const sql = getSql(c.env);
+
+    const existing = (await sql`
+      SELECT id FROM interests WHERE id = ${id} LIMIT 1
+    `) as { id: string }[];
+    if (existing.length === 0) {
+      return c.json({ ok: false, error: { code: "NOT_FOUND" } }, 404);
+    }
+
+    if (name !== undefined && category !== undefined) {
+      await sql`
+        UPDATE interests
+        SET name = ${name}, category = ${category},
+            updated_at = now(), updated_by_user_id = ${admin.id}
+        WHERE id = ${id}
+      `;
+    } else if (name !== undefined) {
+      await sql`
+        UPDATE interests
+        SET name = ${name},
+            updated_at = now(), updated_by_user_id = ${admin.id}
+        WHERE id = ${id}
+      `;
+    } else if (category !== undefined) {
+      await sql`
+        UPDATE interests
+        SET category = ${category},
+            updated_at = now(), updated_by_user_id = ${admin.id}
+        WHERE id = ${id}
+      `;
+    }
+
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
+  }
+});
+
+// ─── POST /admin/interests/merge ─────────────────────────────────────────────
+
+app.post("/admin/interests/merge", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  let body: { sourceInterestId?: string; targetInterestId?: string };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ ok: false, error: { code: "INVALID_INPUT", message: "Invalid JSON" } }, 400);
+  }
+
+  const { sourceInterestId, targetInterestId } = body;
+  if (!sourceInterestId || !targetInterestId) {
+    return c.json(
+      { ok: false, error: { code: "INVALID_INPUT", message: "sourceInterestId and targetInterestId are required" } },
+      400,
+    );
+  }
+  if (sourceInterestId === targetInterestId) {
+    return c.json(
+      { ok: false, error: { code: "INVALID_INPUT", message: "Source and target must be different interests" } },
+      400,
+    );
+  }
+
+  try {
+    const sql = getSql(c.env);
+
+    // Validate both interests exist and neither is deleted (target must be active)
+    const interests = (await sql`
+      SELECT id, name, is_deleted FROM interests
+      WHERE id = ANY(${[sourceInterestId, targetInterestId]})
+    `) as { id: string; name: string; is_deleted: boolean }[];
+
+    const sourceRow = interests.find((r) => r.id === sourceInterestId);
+    const targetRow = interests.find((r) => r.id === targetInterestId);
+
+    if (!sourceRow) return c.json({ ok: false, error: { code: "NOT_FOUND", message: "Source interest not found" } }, 404);
+    if (!targetRow) return c.json({ ok: false, error: { code: "NOT_FOUND", message: "Target interest not found" } }, 404);
+    if (targetRow.is_deleted) return c.json({ ok: false, error: { code: "INVALID_INPUT", message: "Target interest is deleted" } }, 400);
+
+    // Find all user_interests rows pointing at source
+    const sourceUserRows = (await sql`
+      SELECT user_id FROM user_interests WHERE interest_id = ${sourceInterestId}
+    `) as { user_id: string }[];
+
+    if (sourceUserRows.length === 0) {
+      // No user associations to migrate — just soft-delete the source
+      await sql`
+        UPDATE interests
+        SET is_deleted = true,
+            deleted_at = now(),
+            deleted_by_user_id = ${admin.id},
+            merged_into_interest_id = ${targetInterestId}
+        WHERE id = ${sourceInterestId}
+      `;
+      return c.json({ ok: true, movedCount: 0, dedupedCount: 0, sourceId: sourceInterestId, targetId: targetInterestId });
+    }
+
+    // Find which of those users already have the target interest
+    const sourceUserIds = sourceUserRows.map((r) => r.user_id);
+    const alreadyHaveTarget = (await sql`
+      SELECT user_id FROM user_interests
+      WHERE interest_id = ${targetInterestId}
+        AND user_id = ANY(${sourceUserIds})
+    `) as { user_id: string }[];
+    const alreadyHaveTargetSet = new Set(alreadyHaveTarget.map((r) => r.user_id));
+
+    const toUpdate = sourceUserIds.filter((uid) => !alreadyHaveTargetSet.has(uid));
+    const toDelete = sourceUserIds.filter((uid) => alreadyHaveTargetSet.has(uid));
+
+    // Move users without target: update interest_id to target
+    if (toUpdate.length > 0) {
+      await sql`
+        UPDATE user_interests
+        SET interest_id = ${targetInterestId}
+        WHERE interest_id = ${sourceInterestId}
+          AND user_id = ANY(${toUpdate})
+      `;
+    }
+
+    // Dedup: remove source rows for users who already have target
+    if (toDelete.length > 0) {
+      await sql`
+        DELETE FROM user_interests
+        WHERE interest_id = ${sourceInterestId}
+          AND user_id = ANY(${toDelete})
+      `;
+    }
+
+    // Soft-delete the source interest and record the merge target
+    await sql`
+      UPDATE interests
+      SET is_deleted = true,
+          deleted_at = now(),
+          deleted_by_user_id = ${admin.id},
+          merged_into_interest_id = ${targetInterestId}
+      WHERE id = ${sourceInterestId}
+    `;
+
+    return c.json({
+      ok: true,
+      movedCount: toUpdate.length,
+      dedupedCount: toDelete.length,
+      sourceId: sourceInterestId,
+      targetId: targetInterestId,
+    });
+  } catch (err) {
+    console.error(err);
+    return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
+  }
+});
+
+// ─── DELETE /admin/interests/:id (soft delete) ───────────────────────────────
+
+app.delete("/admin/interests/:id", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  const id = c.req.param("id");
+  if (!id) return c.json({ ok: false, error: { code: "INVALID_INPUT", message: "id required" } }, 400);
+
+  try {
+    const sql = getSql(c.env);
+
+    const existing = (await sql`
+      SELECT id, is_deleted FROM interests WHERE id = ${id} LIMIT 1
+    `) as { id: string; is_deleted: boolean }[];
+    if (existing.length === 0) {
+      return c.json({ ok: false, error: { code: "NOT_FOUND" } }, 404);
+    }
+    if (existing[0].is_deleted) {
+      return c.json({ ok: false, error: { code: "ALREADY_DELETED" } }, 409);
+    }
+
+    await sql`
+      UPDATE interests
+      SET is_deleted = true,
+          deleted_at = now(),
+          deleted_by_user_id = ${admin.id}
+      WHERE id = ${id}
+    `;
+
+    // Remove all user connections — caller should merge first if they want to preserve them
+    await sql`DELETE FROM user_interests WHERE interest_id = ${id}`;
+
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
+  }
+});
+
+// ─── POST /admin/interests/:id/restore ───────────────────────────────────────
+
+app.post("/admin/interests/:id/restore", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  const id = c.req.param("id");
+  if (!id) return c.json({ ok: false, error: { code: "INVALID_INPUT", message: "id required" } }, 400);
+
+  try {
+    const sql = getSql(c.env);
+
+    const existing = (await sql`
+      SELECT id, is_deleted FROM interests WHERE id = ${id} LIMIT 1
+    `) as { id: string; is_deleted: boolean }[];
+    if (existing.length === 0) {
+      return c.json({ ok: false, error: { code: "NOT_FOUND" } }, 404);
+    }
+    if (!existing[0].is_deleted) {
+      return c.json({ ok: false, error: { code: "NOT_DELETED", message: "Interest is not deleted" } }, 409);
+    }
+
+    await sql`
+      UPDATE interests
+      SET is_deleted = false,
+          deleted_at = NULL,
+          deleted_by_user_id = NULL,
+          merged_into_interest_id = NULL,
+          updated_at = now(),
+          updated_by_user_id = ${admin.id}
+      WHERE id = ${id}
+    `;
+
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
   }
 });
 

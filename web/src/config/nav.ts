@@ -3,6 +3,7 @@ import EventNoteRoundedIcon from "@mui/icons-material/EventNoteRounded";
 import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
 import PersonRoundedIcon from "@mui/icons-material/PersonRounded";
 import AddCircleRoundedIcon from "@mui/icons-material/AddCircleRounded";
+import StyleRoundedIcon from "@mui/icons-material/StyleRounded";
 import type { SvgIconComponent } from "@mui/icons-material";
 
 export type NavItem = {
@@ -19,6 +20,10 @@ export const appNavItems: NavItem[] = [
 ];
 
 export const createEventHref = "/events/create";
+
+export const superAdminNavItems: NavItem[] = [
+  { label: "Interests", href: "/admin/interests", icon: StyleRoundedIcon },
+];
 
 export const headerNavLinks = [
   { label: "How it Works", href: "/how-it-works" },

@@ -21,16 +21,16 @@ function normalizeDateOfBirth(val: unknown): string | null {
 export async function getOrCreateAppUser(
   email: string,
   name?: string | null
-): Promise<{ id: string; username: string | null; date_of_birth: string | null; name: string | null }> {
+): Promise<{ id: string; username: string | null; date_of_birth: string | null; name: string | null; role: string | null }> {
   const normalized = email.trim().toLowerCase();
   if (!normalized) throw new Error("getOrCreateAppUser requires email");
 
   const existing = (await sql`
-    SELECT id, username, date_of_birth, name
+    SELECT id, username, date_of_birth, name, role
     FROM users
     WHERE email = ${normalized}
     LIMIT 1
-  `) as { id: string; username: string | null; date_of_birth: unknown; name: string | null }[];
+  `) as { id: string; username: string | null; date_of_birth: unknown; name: string | null; role: string | null }[];
 
   if (existing.length > 0) {
     return {
@@ -43,8 +43,8 @@ export async function getOrCreateAppUser(
     const inserted = (await sql`
       INSERT INTO users (email, name, email_verified_at)
       VALUES (${normalized}, ${name ?? null}, now())
-      RETURNING id, username, date_of_birth, name
-    `) as { id: string; username: string | null; date_of_birth: unknown; name: string | null }[];
+      RETURNING id, username, date_of_birth, name, role
+    `) as { id: string; username: string | null; date_of_birth: unknown; name: string | null; role: string | null }[];
 
     if (inserted.length > 0) {
       return {
@@ -61,11 +61,11 @@ export async function getOrCreateAppUser(
       msg.includes("violates unique constraint")
     ) {
       const retry = (await sql`
-        SELECT id, username, date_of_birth, name
+        SELECT id, username, date_of_birth, name, role
         FROM users
         WHERE email = ${normalized}
         LIMIT 1
-      `) as { id: string; username: string | null; date_of_birth: unknown; name: string | null }[];
+      `) as { id: string; username: string | null; date_of_birth: unknown; name: string | null; role: string | null }[];
       if (retry.length > 0) {
         return {
           ...retry[0],
@@ -77,11 +77,11 @@ export async function getOrCreateAppUser(
   }
 
   const fallback = (await sql`
-    SELECT id, username, date_of_birth, name
+    SELECT id, username, date_of_birth, name, role
     FROM users
     WHERE email = ${normalized}
     LIMIT 1
-  `) as { id: string; username: string | null; date_of_birth: unknown; name: string | null }[];
+  `) as { id: string; username: string | null; date_of_birth: unknown; name: string | null; role: string | null }[];
 
   if (fallback.length > 0) {
     return {

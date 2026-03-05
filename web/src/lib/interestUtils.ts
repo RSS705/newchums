@@ -1,5 +1,5 @@
 /**
- * Client-side interest slug normalization. Must match API logic.
+ * Client-side interest slug/name normalization. Must match API logic.
  */
 
 export function nameToSlug(name: string): string {
