@@ -47,11 +47,11 @@ export default function LandingHero({ isLoggedIn = false }: { isLoggedIn?: boole
                 lineHeight: { md: 1.2 },
               }}
             >
-              Turn{" "}
+              Organize{" "}
               <Box component="span" sx={{ color: "primary.main" }}>
-                shared interests
+                hobbies and events
               </Box>
-              {" "}into real-life gatherings
+              {" "}without the group chat chaos
             </Typography>
             <Typography
               variant="h5"
@@ -62,7 +62,7 @@ export default function LandingHero({ isLoggedIn = false }: { isLoggedIn?: boole
                 fontSize: { xs: "1rem", sm: "1.25rem" },
               }}
             >
-              Sign up once and get notified when people nearby are planning something you&apos;d enjoy.
+              Sign up once and get notified when people nearby are organizing activities around your interests.
             </Typography>
             <Stack direction={{ xs: "column", sm: "row" }} spacing={2} pt={2}>
               {isLoggedIn ? (
