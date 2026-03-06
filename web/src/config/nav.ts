@@ -23,7 +23,7 @@ export const appNavItems: NavItem[] = [
 export const createEventHref = "/events/create";
 
 export const superAdminNavItems: NavItem[] = [
-  { label: "Chums", href: "/admin/chums", icon: PeopleRoundedIcon },
+  { label: "Users", href: "/admin/chums", icon: PeopleRoundedIcon },
   { label: "Interests", href: "/admin/interests", icon: StyleRoundedIcon },
 ];
 

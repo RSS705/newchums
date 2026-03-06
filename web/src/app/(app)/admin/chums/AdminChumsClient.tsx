@@ -181,7 +181,7 @@ export default function AdminChumsClient() {
     <Stack spacing={3}>
       <Box>
         <Typography variant="h5" fontWeight={700} sx={{ mb: 0.5 }}>
-          Chums
+          Users
         </Typography>
         <Typography variant="body2" color="text.secondary">
           View all registered users, search by email, handle, or name, and suspend or unsuspend accounts.
