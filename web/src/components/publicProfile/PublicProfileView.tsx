@@ -5,6 +5,7 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import Link from "next/link";
 import { AppCard } from "@/components/ui";
+import { getProfileCardBg } from "@/lib/profileTheme";
 import ProfileHeaderSection from "./ProfileHeaderSection";
 import ProfileBioSection from "./ProfileBioSection";
 import ProfileHobbiesSection from "./ProfileHobbiesSection";
@@ -15,6 +16,7 @@ export type PublicProfileUser = {
   handle: string | null;
   age: number | null;
   gender: string | null;
+  profile_theme: string | null;
   bio: string | null;
   hobbies: string[];
   avatarUrl: string | null;
@@ -32,6 +34,7 @@ export type PublicProfileViewProps = {
  * sections (XP, badges, trust metrics, unlockables) as separate components.
  */
 export default function PublicProfileView({ user, avatarBaseUrl, isOwner }: PublicProfileViewProps) {
+  const cardBg = getProfileCardBg(user.profile_theme);
   return (
     <Stack spacing={{ xs: 3, sm: 4 }} sx={{ width: "100%" }}>
       <Box sx={{ textAlign: { xs: "center", sm: "left" } }}>
@@ -71,7 +74,7 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner }: Publ
         )}
       </Box>
 
-      <AppCard sx={{ borderRadius: { xs: 2, sm: 2.5 }, overflow: "hidden" }}>
+      <AppCard sx={{ borderRadius: { xs: 2, sm: 2.5 }, overflow: "hidden", backgroundColor: cardBg }}>
         <Stack spacing={2}>
           <ProfileHeaderSection
             displayName={user.displayName}
@@ -85,7 +88,7 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner }: Publ
       </AppCard>
 
       {user.bio && user.bio.trim() && (
-        <AppCard sx={{ borderRadius: { xs: 2, sm: 2.5 }, overflow: "hidden" }}>
+        <AppCard sx={{ borderRadius: { xs: 2, sm: 2.5 }, overflow: "hidden", backgroundColor: cardBg }}>
           <Stack spacing={1}>
             <Typography variant="subtitle1" fontWeight={600} sx={{ fontSize: "0.9375rem" }}>
               About
@@ -96,7 +99,7 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner }: Publ
       )}
 
       {user.hobbies && user.hobbies.length > 0 && (
-        <AppCard sx={{ borderRadius: { xs: 2, sm: 2.5 }, overflow: "hidden" }}>
+        <AppCard sx={{ borderRadius: { xs: 2, sm: 2.5 }, overflow: "hidden", backgroundColor: cardBg }}>
           <ProfileHobbiesSection hobbies={user.hobbies} />
         </AppCard>
       )}

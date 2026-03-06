@@ -148,7 +148,8 @@ app.get("/public/users/:handle", async (c) => {
   try {
     const sql = getSql(c.env);
     const userRows = (await sql`
-      SELECT u.id, u.name, u.username, u.date_of_birth, u.gender, u.avatar_key, u.avatar_updated_at,
+      SELECT u.id, u.name, u.username, u.date_of_birth, u.gender, u.profile_theme,
+        u.avatar_key, u.avatar_updated_at,
         COALESCE(u.is_hidden_age, false) AS is_hidden_age,
         COALESCE(u.is_hidden_from_external_indexing, false) AS is_hidden_from_external_indexing
       FROM newchums.users u
@@ -161,6 +162,7 @@ app.get("/public/users/:handle", async (c) => {
       username: string | null;
       date_of_birth: string | Date | null;
       gender: string | null;
+      profile_theme: string | null;
       avatar_key: string | null;
       avatar_updated_at: string | Date | null;
       is_hidden_age: boolean;
@@ -206,6 +208,7 @@ app.get("/public/users/:handle", async (c) => {
         handle: handle ? (handle.startsWith("@") ? handle : `@${handle}`) : null,
         age,
         gender: publicGender,
+        profile_theme: user.profile_theme ?? null,
         bio: profile?.bio ?? null,
         hobbies: interestRows.map((r) => r.name),
         avatarUrl,
@@ -1414,7 +1417,7 @@ app.get("/profile", async (c) => {
       (payload as { name?: string | null }).name,
     );
     const userRows = (await sql`
-      SELECT name, username, email, date_of_birth, gender, avatar_key, avatar_updated_at, role,
+      SELECT name, username, email, date_of_birth, gender, profile_theme, avatar_key, avatar_updated_at, role,
         (password_hash IS NOT NULL) AS has_password,
         COALESCE(is_hidden_from_search, false) AS is_hidden_from_search,
         COALESCE(is_hidden_from_external_indexing, false) AS is_hidden_from_external_indexing,
@@ -1426,6 +1429,7 @@ app.get("/profile", async (c) => {
       email: string;
       date_of_birth: string | Date | null;
       gender: string | null;
+      profile_theme: string | null;
       avatar_key: string | null;
       avatar_updated_at: string | Date | null;
       role: string | null;
@@ -1481,6 +1485,7 @@ app.get("/profile", async (c) => {
     const isHiddenAge = userInfo?.is_hidden_age ?? false;
     const role = userInfo?.role ?? null;
     const gender = userInfo?.gender ?? null;
+    const profileTheme = userInfo?.profile_theme ?? null;
 
     if (!profile) {
       return c.json({
@@ -1491,6 +1496,7 @@ app.get("/profile", async (c) => {
           email,
           date_of_birth: dateOfBirth,
           gender,
+          profile_theme: profileTheme,
           bio: null,
           home_city: null,
           home_lat: null,
@@ -1517,6 +1523,7 @@ app.get("/profile", async (c) => {
         email,
         date_of_birth: dateOfBirth,
         gender,
+        profile_theme: profileTheme,
         bio,
         home_city: profile.home_city,
         home_lat: profile.home_lat,
@@ -1569,6 +1576,7 @@ app.put("/profile", async (c) => {
       bio?: string | null;
       date_of_birth?: string | null;
       gender?: string | null;
+      profile_theme?: string | null;
       home_city?: string | null;
       home_lat?: number | string | null;
       home_lng?: number | string | null;
@@ -1617,6 +1625,23 @@ app.put("/profile", async (c) => {
       if (!ALLOWED_GENDERS.has(String(body.gender))) {
         return c.json(
           { ok: false, error: { code: "INVALID_GENDER", message: "Invalid gender value" } },
+          400,
+        );
+      }
+    }
+
+    const ALLOWED_PROFILE_THEMES = new Set([
+      "default",
+      "blush", "peach", "honey", "warm_sand", "stone",
+      "sage", "forest",
+      "sky", "ocean", "soft_blue", "slate", "steel",
+      "lavender", "dusk",
+      "graphite",
+    ]);
+    if ("profile_theme" in body && body.profile_theme != null && body.profile_theme !== "") {
+      if (!ALLOWED_PROFILE_THEMES.has(String(body.profile_theme))) {
+        return c.json(
+          { ok: false, error: { code: "INVALID_PROFILE_THEME", message: "Invalid profile theme value" } },
           400,
         );
       }
@@ -1919,6 +1944,10 @@ app.put("/profile", async (c) => {
       const genderVal = body.gender != null && body.gender !== "" ? String(body.gender) : null;
       txQueries.push(sql`UPDATE newchums.users SET gender = ${genderVal} WHERE id = ${appUserId}`);
     }
+    if ("profile_theme" in body && body.profile_theme !== undefined) {
+      const themeVal = body.profile_theme != null && body.profile_theme !== "" ? String(body.profile_theme) : null;
+      txQueries.push(sql`UPDATE newchums.users SET profile_theme = ${themeVal} WHERE id = ${appUserId}`);
+    }
     if (rawInterestSlugs !== null) {
       txQueries.push(
         sql`DELETE FROM user_interests WHERE user_id = ${appUserId}`,
@@ -1935,7 +1964,7 @@ app.put("/profile", async (c) => {
     }
     await sql.transaction(txQueries);
     const userRowsAfter = (await sql`
-      SELECT name, username, email, date_of_birth, gender, avatar_key, avatar_updated_at, (password_hash IS NOT NULL) AS has_password,
+      SELECT name, username, email, date_of_birth, gender, profile_theme, avatar_key, avatar_updated_at, (password_hash IS NOT NULL) AS has_password,
         COALESCE(is_hidden_from_search, false) AS is_hidden_from_search,
         COALESCE(is_hidden_from_external_indexing, false) AS is_hidden_from_external_indexing,
         COALESCE(is_hidden_age, false) AS is_hidden_age
@@ -1946,6 +1975,7 @@ app.put("/profile", async (c) => {
       email: string;
       date_of_birth: string | Date | null;
       gender: string | null;
+      profile_theme: string | null;
       avatar_key: string | null;
       avatar_updated_at: string | Date | null;
       has_password: boolean;
@@ -1992,6 +2022,7 @@ app.put("/profile", async (c) => {
         email: userAfter?.email ?? null,
         date_of_birth: dateOfBirthAfter,
         gender: userAfter?.gender ?? null,
+        profile_theme: userAfter?.profile_theme ?? null,
         bio: profile.bio ?? null,
         avatar_url: avatarUrl,
         home_city: profile.home_city,

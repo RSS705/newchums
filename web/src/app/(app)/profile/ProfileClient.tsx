@@ -26,6 +26,7 @@ import NCDatePicker from "@/components/fields/NCDatePicker";
 import PlacesAutocompleteInput from "@/components/common/PlacesAutocompleteInput";
 import UserAvatar from "@/components/common/UserAvatar";
 import { TRAVEL_RADIUS_OPTIONS } from "@/config/travelRadius";
+import { PROFILE_THEME_KEYS, PROFILE_THEMES } from "@/lib/profileTheme";
 import { validateCleanText } from "@/lib/contentSafety";
 import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
 import { isDuplicate, nameToSlug, slugToName } from "@/lib/interestUtils";
@@ -45,6 +46,7 @@ type Profile = {
   username?: string | null;
   date_of_birth?: string | null;
   gender?: string | null;
+  profile_theme?: string | null;
   bio?: string | null;
   avatar_url?: string | null;
   home_city: string | null;
@@ -73,6 +75,7 @@ export default function ProfileClient() {
   const [displayName, setDisplayName] = useState("");
   const [handle, setHandle] = useState("");
   const [gender, setGender] = useState("");
+  const [profileTheme, setProfileTheme] = useState("default");
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [bio, setBio] = useState("");
   const [avatarDialogOpen, setAvatarDialogOpen] = useState(false);
@@ -201,6 +204,7 @@ export default function ProfileClient() {
         setDisplayName(p.name ?? "");
         setHandle((p.username ?? "").replace(/^@/, ""));
         setGender(p.gender ?? "");
+        setProfileTheme(p.profile_theme ?? "default");
         setDateOfBirth(p.date_of_birth ?? "");
         setBio(p.bio ?? "");
         setHomeAddress(p.home_city ?? "");
@@ -244,6 +248,7 @@ export default function ProfileClient() {
     if (displayName !== (profile.name ?? "")) return true;
     if (handle !== (profile.username ?? "").replace(/^@/, "")) return true;
     if (gender !== (profile.gender ?? "")) return true;
+    if (profileTheme !== (profile.profile_theme ?? "default")) return true;
     if (dateOfBirth !== (profile.date_of_birth ?? "")) return true;
     if (bio !== (profile.bio ?? "")) return true;
     if (homeAddress !== (profile.home_city ?? "")) return true;
@@ -256,7 +261,7 @@ export default function ProfileClient() {
     if (currSlugs.size !== prevSlugs.size) return true;
     for (const s of currSlugs) if (!prevSlugs.has(s)) return true;
     return false;
-  }, [profile, displayName, handle, gender, dateOfBirth, bio, homeAddress, homeLat, homeLng, travelRadiusKm, interestItems]);
+  }, [profile, displayName, handle, gender, profileTheme, dateOfBirth, bio, homeAddress, homeLat, homeLng, travelRadiusKm, interestItems]);
 
   const handleAvatarUpload = useCallback(
     async (fileOrBlob: File | Blob) => {
@@ -462,6 +467,7 @@ export default function ProfileClient() {
           name: displayName.trim() || null,
           bio: bio.trim() || null,
           gender: gender || null,
+          profile_theme: profileTheme || null,
           date_of_birth: dateOfBirth.trim() || null,
           home_city: homeAddress.trim() || null,
           home_lat: homeLat,
@@ -706,6 +712,58 @@ export default function ProfileClient() {
                 inputProps={{ maxLength: MAX_BIO_LENGTH }}
                 helperText={`${bio.length}/${MAX_BIO_LENGTH}`}
               />
+
+              {/* Profile theme swatch picker */}
+              <Box>
+                <Typography
+                  variant="subtitle1"
+                  fontWeight={600}
+                  sx={{ display: "block", mb: 0.625 }}
+                >
+                  Profile color
+                </Typography>
+                <Stack direction="row" flexWrap="wrap" gap={1.25} sx={{ mb: 0.5 }}>
+                  {PROFILE_THEME_KEYS.map((key) => {
+                    const { label, color } = PROFILE_THEMES[key];
+                    const isSelected = profileTheme === key;
+                    return (
+                      <Box
+                        key={key}
+                        component="button"
+                        type="button"
+                        aria-label={label}
+                        title={label}
+                        onClick={() => setProfileTheme(key)}
+                        sx={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: "50%",
+                          backgroundColor: color,
+                          border: isSelected
+                            ? "2.5px solid"
+                            : "1.5px solid",
+                          borderColor: isSelected ? "primary.main" : "divider",
+                          cursor: "pointer",
+                          outline: isSelected ? "2px solid" : "none",
+                          outlineColor: "primary.light",
+                          outlineOffset: "1px",
+                          transition: "border-color 0.15s, outline 0.15s",
+                          boxShadow: isSelected
+                            ? "0 0 0 3px rgba(37,99,235,0.15)"
+                            : "none",
+                          padding: 0,
+                          "&:hover": {
+                            borderColor: "primary.main",
+                          },
+                        }}
+                      />
+                    );
+                  })}
+                </Stack>
+                <Typography variant="caption" color="text.secondary">
+                  {PROFILE_THEMES[profileTheme as keyof typeof PROFILE_THEMES]?.label ?? "Default"} — sets the card color on your public profile.
+                </Typography>
+              </Box>
             </Stack>
             <Stack
               alignItems="center"
