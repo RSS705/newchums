@@ -26,7 +26,7 @@ import NCDatePicker from "@/components/fields/NCDatePicker";
 import PlacesAutocompleteInput from "@/components/common/PlacesAutocompleteInput";
 import UserAvatar from "@/components/common/UserAvatar";
 import { TRAVEL_RADIUS_OPTIONS } from "@/config/travelRadius";
-import { PROFILE_THEME_KEYS, PROFILE_THEMES } from "@/lib/profileTheme";
+import { PROFILE_THEME_KEYS, PROFILE_THEMES, type ProfileThemeKey } from "@/lib/profileTheme";
 import { validateCleanText } from "@/lib/contentSafety";
 import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
 import { isDuplicate, nameToSlug, slugToName } from "@/lib/interestUtils";
@@ -713,57 +713,36 @@ export default function ProfileClient() {
                 helperText={`${bio.length}/${MAX_BIO_LENGTH}`}
               />
 
-              {/* Profile theme swatch picker */}
-              <Box>
-                <Typography
-                  variant="subtitle1"
-                  fontWeight={600}
-                  sx={{ display: "block", mb: 0.625 }}
-                >
-                  Profile color
-                </Typography>
-                <Stack direction="row" flexWrap="wrap" gap={1.25} sx={{ mb: 0.5 }}>
-                  {PROFILE_THEME_KEYS.map((key) => {
-                    const { label, color } = PROFILE_THEMES[key];
-                    const isSelected = profileTheme === key;
-                    return (
-                      <Box
-                        key={key}
-                        component="button"
-                        type="button"
-                        aria-label={label}
-                        title={label}
-                        onClick={() => setProfileTheme(key)}
-                        sx={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: "50%",
-                          backgroundColor: color,
-                          border: isSelected
-                            ? "2.5px solid"
-                            : "1.5px solid",
-                          borderColor: isSelected ? "primary.main" : "divider",
-                          cursor: "pointer",
-                          outline: isSelected ? "2px solid" : "none",
-                          outlineColor: "primary.light",
-                          outlineOffset: "1px",
-                          transition: "border-color 0.15s, outline 0.15s",
-                          boxShadow: isSelected
-                            ? "0 0 0 3px rgba(37,99,235,0.15)"
-                            : "none",
-                          padding: 0,
-                          "&:hover": {
-                            borderColor: "primary.main",
-                          },
-                        }}
-                      />
-                    );
-                  })}
-                </Stack>
-                <Typography variant="caption" color="text.secondary">
-                  {PROFILE_THEMES[profileTheme as keyof typeof PROFILE_THEMES]?.label ?? "Default"} — sets the card color on your public profile.
-                </Typography>
-              </Box>
+              {/* Profile accent dropdown */}
+              <AppTextField
+                select
+                label="Profile accent"
+                value={profileTheme}
+                onChange={(e) => setProfileTheme(e.target.value)}
+                helperText="Choose a color accent for your public profile."
+              >
+                {PROFILE_THEME_KEYS.map((key: ProfileThemeKey) => {
+                  const { label, color } = PROFILE_THEMES[key];
+                  return (
+                    <MenuItem key={key} value={key}>
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+                        <Box
+                          sx={{
+                            width: 16,
+                            height: 16,
+                            borderRadius: "50%",
+                            backgroundColor: color,
+                            border: "1px solid",
+                            borderColor: "divider",
+                            flexShrink: 0,
+                          }}
+                        />
+                        {label}
+                      </Box>
+                    </MenuItem>
+                  );
+                })}
+              </AppTextField>
             </Stack>
             <Stack
               alignItems="center"

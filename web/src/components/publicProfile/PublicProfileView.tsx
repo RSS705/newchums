@@ -4,10 +4,12 @@ import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import Link from "next/link";
+import Button from "@mui/material/Button";
 import { AppCard } from "@/components/ui";
 import { getProfileCardBg } from "@/lib/profileTheme";
 import ProfileHeaderSection from "./ProfileHeaderSection";
 import ProfileBioSection from "./ProfileBioSection";
+import ProfileChumsSection from "./ProfileChumsSection";
 import ProfileHobbiesSection from "./ProfileHobbiesSection";
 
 export type PublicProfileUser = {
@@ -20,6 +22,13 @@ export type PublicProfileUser = {
   bio: string | null;
   hobbies: string[];
   avatarUrl: string | null;
+  is_hidden_chum_list: boolean;
+};
+
+export type ChumAction = {
+  isChummed: boolean;
+  loading: boolean;
+  onToggle: () => void;
 };
 
 export type PublicProfileViewProps = {
@@ -27,14 +36,17 @@ export type PublicProfileViewProps = {
   avatarBaseUrl: string;
   /** When true, show preview subheader (this is how others see your profile; privacy in Settings) */
   isOwner?: boolean;
+  /** When present (viewer is logged in and not the owner), show Add/Remove Chum button. */
+  chumAction?: ChumAction;
 };
 
 /**
  * Shared public profile view. Renders modular sections; easy to add future
  * sections (XP, badges, trust metrics, unlockables) as separate components.
  */
-export default function PublicProfileView({ user, avatarBaseUrl, isOwner }: PublicProfileViewProps) {
+export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAction }: PublicProfileViewProps) {
   const cardBg = getProfileCardBg(user.profile_theme);
+  const ownerHandleSlug = user.handle?.replace(/^@/, "") ?? null;
   return (
     <Stack spacing={{ xs: 3, sm: 4 }} sx={{ width: "100%" }}>
       <Box sx={{ textAlign: { xs: "center", sm: "left" } }}>
@@ -75,20 +87,36 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner }: Publ
       </Box>
 
       <AppCard sx={{ borderRadius: { xs: 2, sm: 2.5 }, overflow: "hidden", backgroundColor: cardBg }}>
-        <Stack spacing={2}>
-          <ProfileHeaderSection
-            displayName={user.displayName}
-            handle={user.handle}
-            age={user.age}
-            gender={user.gender}
-            avatarUrl={user.avatarUrl}
-            avatarBaseUrl={avatarBaseUrl}
-          />
-        </Stack>
+        <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1 }}>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <ProfileHeaderSection
+              displayName={user.displayName}
+              handle={user.handle}
+              age={user.age}
+              gender={user.gender}
+              avatarUrl={user.avatarUrl}
+              avatarBaseUrl={avatarBaseUrl}
+            />
+          </Box>
+          {chumAction && (
+            <Box sx={{ flexShrink: 0, pt: 0.25 }}>
+              <Button
+                variant={chumAction.isChummed ? "outlined" : "contained"}
+                size="small"
+                color={chumAction.isChummed ? "inherit" : "primary"}
+                disabled={chumAction.loading}
+                onClick={chumAction.onToggle}
+                sx={{ fontSize: "0.8125rem", whiteSpace: "nowrap" }}
+              >
+                {chumAction.isChummed ? "Remove from Chums" : "Add to Chums"}
+              </Button>
+            </Box>
+          )}
+        </Box>
       </AppCard>
 
       {user.bio && user.bio.trim() && (
-        <AppCard sx={{ borderRadius: { xs: 2, sm: 2.5 }, overflow: "hidden", backgroundColor: cardBg }}>
+        <AppCard sx={{ borderRadius: { xs: 2, sm: 2.5 }, overflow: "hidden" }}>
           <Stack spacing={1}>
             <Typography variant="subtitle1" fontWeight={600} sx={{ fontSize: "0.9375rem" }}>
               About
@@ -99,9 +127,14 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner }: Publ
       )}
 
       {user.hobbies && user.hobbies.length > 0 && (
-        <AppCard sx={{ borderRadius: { xs: 2, sm: 2.5 }, overflow: "hidden", backgroundColor: cardBg }}>
+        <AppCard sx={{ borderRadius: { xs: 2, sm: 2.5 }, overflow: "hidden" }}>
           <ProfileHobbiesSection hobbies={user.hobbies} />
         </AppCard>
+      )}
+
+      {/* Public Chums section — self-contained card, hidden if owner toggled it off or list is empty */}
+      {ownerHandleSlug && !user.is_hidden_chum_list && (
+        <ProfileChumsSection ownerHandle={ownerHandleSlug} />
       )}
 
       {/* TODO: Future sections — XP, badges, trust metrics, unlockables — add as separate components. */}

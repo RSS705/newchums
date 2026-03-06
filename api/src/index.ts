@@ -151,7 +151,8 @@ app.get("/public/users/:handle", async (c) => {
       SELECT u.id, u.name, u.username, u.date_of_birth, u.gender, u.profile_theme,
         u.avatar_key, u.avatar_updated_at,
         COALESCE(u.is_hidden_age, false) AS is_hidden_age,
-        COALESCE(u.is_hidden_from_external_indexing, false) AS is_hidden_from_external_indexing
+        COALESCE(u.is_hidden_from_external_indexing, false) AS is_hidden_from_external_indexing,
+        COALESCE(u.is_hidden_chum_list, false) AS is_hidden_chum_list
       FROM newchums.users u
       WHERE u.username_norm = ${handleNorm}
         AND u.username IS NOT NULL
@@ -167,6 +168,7 @@ app.get("/public/users/:handle", async (c) => {
       avatar_updated_at: string | Date | null;
       is_hidden_age: boolean;
       is_hidden_from_external_indexing: boolean;
+      is_hidden_chum_list: boolean;
     }>;
     const user = userRows[0];
     if (!user) {
@@ -213,6 +215,7 @@ app.get("/public/users/:handle", async (c) => {
         hobbies: interestRows.map((r) => r.name),
         avatarUrl,
         is_hidden_from_external_indexing: user.is_hidden_from_external_indexing ?? false,
+        is_hidden_chum_list: user.is_hidden_chum_list ?? false,
       },
     });
   } catch (err) {
@@ -1421,7 +1424,9 @@ app.get("/profile", async (c) => {
         (password_hash IS NOT NULL) AS has_password,
         COALESCE(is_hidden_from_search, false) AS is_hidden_from_search,
         COALESCE(is_hidden_from_external_indexing, false) AS is_hidden_from_external_indexing,
-        COALESCE(is_hidden_age, false) AS is_hidden_age
+        COALESCE(is_hidden_age, false) AS is_hidden_age,
+        COALESCE(is_hidden_chum_list, false) AS is_hidden_chum_list,
+        COALESCE(is_hidden_from_chum_lists, false) AS is_hidden_from_chum_lists
       FROM newchums.users WHERE id = ${appUserId} LIMIT 1
     `) as Array<{
       name: string | null;
@@ -1437,6 +1442,8 @@ app.get("/profile", async (c) => {
       is_hidden_from_search: boolean;
       is_hidden_from_external_indexing: boolean;
       is_hidden_age: boolean;
+      is_hidden_chum_list: boolean;
+      is_hidden_from_chum_lists: boolean;
     }>;
     const userInfo = userRows[0];
     const profileRows = (await sql`
@@ -1483,6 +1490,8 @@ app.get("/profile", async (c) => {
     const isHiddenFromSearch = userInfo?.is_hidden_from_search ?? false;
     const isHiddenFromExternalIndexing = userInfo?.is_hidden_from_external_indexing ?? false;
     const isHiddenAge = userInfo?.is_hidden_age ?? false;
+    const isHiddenChumList = userInfo?.is_hidden_chum_list ?? false;
+    const isHiddenFromChumLists = userInfo?.is_hidden_from_chum_lists ?? false;
     const role = userInfo?.role ?? null;
     const gender = userInfo?.gender ?? null;
     const profileTheme = userInfo?.profile_theme ?? null;
@@ -1511,6 +1520,8 @@ app.get("/profile", async (c) => {
           is_hidden_from_search: isHiddenFromSearch,
           is_hidden_from_external_indexing: isHiddenFromExternalIndexing,
           is_hidden_age: isHiddenAge,
+          is_hidden_chum_list: isHiddenChumList,
+          is_hidden_from_chum_lists: isHiddenFromChumLists,
           role,
         },
       });
@@ -1538,6 +1549,8 @@ app.get("/profile", async (c) => {
         is_hidden_from_search: isHiddenFromSearch,
         is_hidden_from_external_indexing: isHiddenFromExternalIndexing,
         is_hidden_age: isHiddenAge,
+        is_hidden_chum_list: isHiddenChumList,
+        is_hidden_from_chum_lists: isHiddenFromChumLists,
         role,
       },
     });
@@ -1587,6 +1600,8 @@ app.put("/profile", async (c) => {
       is_hidden_from_search?: boolean;
       is_hidden_from_external_indexing?: boolean;
       is_hidden_age?: boolean;
+      is_hidden_chum_list?: boolean;
+      is_hidden_from_chum_lists?: boolean;
     };
 
     if ("date_of_birth" in body && body.date_of_birth !== undefined) {
@@ -1940,6 +1955,14 @@ app.put("/profile", async (c) => {
       const val = body.is_hidden_age === true;
       txQueries.push(sql`UPDATE newchums.users SET is_hidden_age = ${val} WHERE id = ${appUserId}`);
     }
+    if ("is_hidden_chum_list" in body && body.is_hidden_chum_list !== undefined) {
+      const val = body.is_hidden_chum_list === true;
+      txQueries.push(sql`UPDATE newchums.users SET is_hidden_chum_list = ${val} WHERE id = ${appUserId}`);
+    }
+    if ("is_hidden_from_chum_lists" in body && body.is_hidden_from_chum_lists !== undefined) {
+      const val = body.is_hidden_from_chum_lists === true;
+      txQueries.push(sql`UPDATE newchums.users SET is_hidden_from_chum_lists = ${val} WHERE id = ${appUserId}`);
+    }
     if ("gender" in body && body.gender !== undefined) {
       const genderVal = body.gender != null && body.gender !== "" ? String(body.gender) : null;
       txQueries.push(sql`UPDATE newchums.users SET gender = ${genderVal} WHERE id = ${appUserId}`);
@@ -1967,7 +1990,9 @@ app.put("/profile", async (c) => {
       SELECT name, username, email, date_of_birth, gender, profile_theme, avatar_key, avatar_updated_at, (password_hash IS NOT NULL) AS has_password,
         COALESCE(is_hidden_from_search, false) AS is_hidden_from_search,
         COALESCE(is_hidden_from_external_indexing, false) AS is_hidden_from_external_indexing,
-        COALESCE(is_hidden_age, false) AS is_hidden_age
+        COALESCE(is_hidden_age, false) AS is_hidden_age,
+        COALESCE(is_hidden_chum_list, false) AS is_hidden_chum_list,
+        COALESCE(is_hidden_from_chum_lists, false) AS is_hidden_from_chum_lists
       FROM newchums.users WHERE id = ${appUserId} LIMIT 1
     `) as Array<{
       name: string | null;
@@ -1982,6 +2007,8 @@ app.put("/profile", async (c) => {
       is_hidden_from_search: boolean;
       is_hidden_from_external_indexing: boolean;
       is_hidden_age: boolean;
+      is_hidden_chum_list: boolean;
+      is_hidden_from_chum_lists: boolean;
     }>;
     const userAfter = userRowsAfter[0];
     const profileRows = (await sql`
@@ -2037,6 +2064,8 @@ app.put("/profile", async (c) => {
         is_hidden_from_search: userAfter?.is_hidden_from_search ?? false,
         is_hidden_from_external_indexing: userAfter?.is_hidden_from_external_indexing ?? false,
         is_hidden_age: userAfter?.is_hidden_age ?? false,
+        is_hidden_chum_list: userAfter?.is_hidden_chum_list ?? false,
+        is_hidden_from_chum_lists: userAfter?.is_hidden_from_chum_lists ?? false,
       },
     });
   } catch (err) {
@@ -3150,6 +3179,248 @@ app.post("/admin/users/:id/unsuspend", async (c) => {
     return c.json({ ok: true });
   } catch (err) {
     console.error("[POST /admin/users/:id/unsuspend]", err);
+    return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
+  }
+});
+
+// ---- Chums ----
+
+/** Shared helper: build the avatar URL string used in chum responses. */
+function buildAvatarUrl(
+  userId: string,
+  avatarKey: string | null,
+  avatarUpdatedAt: string | Date | null,
+  mediaBucket: unknown,
+): string | null {
+  if (!avatarKey || !mediaBucket) return null;
+  const ts = avatarUpdatedAt ? new Date(avatarUpdatedAt as Date).getTime() : 0;
+  return `/users/${userId}/avatar?v=${ts}`;
+}
+
+/** GET /chums — list all chums for the authenticated user (private). */
+app.get("/chums", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+  try {
+    const sql = getSql(c.env);
+    const appUserId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+    const rows = (await sql`
+      SELECT u.id, u.name, u.username, u.avatar_key, u.avatar_updated_at,
+             uc.created_at AS chummed_at
+      FROM user_chums uc
+      JOIN newchums.users u ON u.id = uc.chum_user_id
+      WHERE uc.user_id = ${appUserId}
+      ORDER BY uc.created_at DESC
+    `) as {
+      id: string;
+      name: string | null;
+      username: string | null;
+      avatar_key: string | null;
+      avatar_updated_at: string | Date | null;
+      chummed_at: string | Date;
+    }[];
+    const chums = rows.map((r) => ({
+      userId: r.id,
+      displayName: r.name?.trim() ?? "NewChums user",
+      handle: r.username ? (r.username.startsWith("@") ? r.username : `@${r.username}`) : null,
+      avatarUrl: buildAvatarUrl(r.id, r.avatar_key, r.avatar_updated_at, c.env.MEDIA_BUCKET),
+      chummedAt: r.chummed_at,
+    }));
+    return c.json({ ok: true, chums });
+  } catch (err) {
+    console.error("[GET /chums]", err);
+    return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
+  }
+});
+
+/** GET /chums/search?q= — search eligible users to add as a Chum.
+ *  Excludes self and users with is_hidden_from_search = true.
+ *  Returns up to 10 results including whether each is already a Chum. */
+app.get("/chums/search", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+  const q = (c.req.query("q") ?? "").trim();
+  if (q.length < 2) {
+    return c.json({ ok: true, users: [] });
+  }
+  try {
+    const sql = getSql(c.env);
+    const appUserId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+    const likePattern = `%${q.toLowerCase()}%`;
+    const rows = (await sql`
+      SELECT u.id, u.name, u.username, u.avatar_key, u.avatar_updated_at,
+             (uc.chum_user_id IS NOT NULL) AS is_chummed
+      FROM newchums.users u
+      LEFT JOIN user_chums uc
+        ON uc.user_id = ${appUserId} AND uc.chum_user_id = u.id
+      WHERE u.id <> ${appUserId}
+        AND u.username IS NOT NULL
+        AND COALESCE(u.is_hidden_from_search, false) = false
+        AND COALESCE(u.is_suspended, false) = false
+        AND (
+          LOWER(COALESCE(u.name, '')) LIKE ${likePattern}
+          OR LOWER(COALESCE(u.username, '')) LIKE ${likePattern}
+        )
+      ORDER BY u.name ASC NULLS LAST
+      LIMIT 10
+    `) as {
+      id: string;
+      name: string | null;
+      username: string | null;
+      avatar_key: string | null;
+      avatar_updated_at: string | Date | null;
+      is_chummed: boolean;
+    }[];
+    const users = rows.map((r) => ({
+      userId: r.id,
+      displayName: r.name?.trim() ?? "NewChums user",
+      handle: r.username ? (r.username.startsWith("@") ? r.username : `@${r.username}`) : null,
+      avatarUrl: buildAvatarUrl(r.id, r.avatar_key, r.avatar_updated_at, c.env.MEDIA_BUCKET),
+      isChummed: r.is_chummed === true,
+    }));
+    return c.json({ ok: true, users });
+  } catch (err) {
+    console.error("[GET /chums/search]", err);
+    return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
+  }
+});
+
+/** GET /chums/check/:userId — returns whether the authenticated user has this person as a Chum. */
+app.get("/chums/check/:userId", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+  const targetId = c.req.param("userId");
+  if (!targetId) return c.json({ ok: false, error: "INVALID_ID" }, 400);
+  try {
+    const sql = getSql(c.env);
+    const appUserId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+    const rows = (await sql`
+      SELECT 1 FROM user_chums
+      WHERE user_id = ${appUserId} AND chum_user_id = ${targetId}
+      LIMIT 1
+    `) as unknown[];
+    return c.json({ ok: true, isChummed: rows.length > 0 });
+  } catch (err) {
+    console.error("[GET /chums/check/:userId]", err);
+    return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
+  }
+});
+
+/** POST /chums/:userId — add a user to the authenticated user's Chum list. */
+app.post("/chums/:userId", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+  const targetId = c.req.param("userId");
+  if (!targetId) return c.json({ ok: false, error: "INVALID_ID" }, 400);
+  try {
+    const sql = getSql(c.env);
+    const appUserId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+    if (appUserId === targetId) {
+      return c.json({ ok: false, error: { code: "CANNOT_CHUM_SELF", message: "You cannot add yourself as a Chum." } }, 400);
+    }
+    const targetRows = (await sql`
+      SELECT id FROM newchums.users WHERE id = ${targetId} LIMIT 1
+    `) as { id: string }[];
+    if (targetRows.length === 0) {
+      return c.json({ ok: false, error: { code: "USER_NOT_FOUND" } }, 404);
+    }
+    await sql`
+      INSERT INTO user_chums (user_id, chum_user_id)
+      VALUES (${appUserId}, ${targetId})
+      ON CONFLICT (user_id, chum_user_id) DO NOTHING
+    `;
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[POST /chums/:userId]", err);
+    return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
+  }
+});
+
+/** DELETE /chums/:userId — remove a user from the authenticated user's Chum list. */
+app.delete("/chums/:userId", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+  const targetId = c.req.param("userId");
+  if (!targetId) return c.json({ ok: false, error: "INVALID_ID" }, 400);
+  try {
+    const sql = getSql(c.env);
+    const appUserId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+    await sql`
+      DELETE FROM user_chums
+      WHERE user_id = ${appUserId} AND chum_user_id = ${targetId}
+    `;
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[DELETE /chums/:userId]", err);
+    return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
+  }
+});
+
+/** GET /public/users/:handle/chums — public-facing paginated Chum list for a profile.
+ *  Respects owner's is_hidden_chum_list and each Chum's is_hidden_from_chum_lists flag. */
+app.get("/public/users/:handle/chums", async (c) => {
+  const handleParam = c.req.param("handle")?.trim();
+  if (!handleParam) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+  const handleNorm = handleParam.toLowerCase().trim();
+  const offset = Math.max(0, parseInt(c.req.query("offset") ?? "0", 10) || 0);
+  const limit = Math.min(20, Math.max(1, parseInt(c.req.query("limit") ?? "8", 10) || 8));
+  try {
+    const sql = getSql(c.env);
+    const ownerRows = (await sql`
+      SELECT id, COALESCE(is_hidden_chum_list, false) AS is_hidden_chum_list
+      FROM newchums.users
+      WHERE username_norm = ${handleNorm} AND username IS NOT NULL
+      LIMIT 1
+    `) as { id: string; is_hidden_chum_list: boolean }[];
+    const owner = ownerRows[0];
+    if (!owner) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    if (owner.is_hidden_chum_list) {
+      return c.json({ ok: true, chums: [], total: 0, hasMore: false, hidden: true });
+    }
+    const countRows = (await sql`
+      SELECT COUNT(*) AS total
+      FROM user_chums uc
+      JOIN newchums.users u ON u.id = uc.chum_user_id
+      WHERE uc.user_id = ${owner.id}
+        AND COALESCE(u.is_hidden_from_chum_lists, false) = false
+        AND u.username IS NOT NULL
+    `) as { total: string }[];
+    const total = parseInt(countRows[0]?.total ?? "0", 10);
+    const rows = (await sql`
+      SELECT u.id, u.name, u.username, u.avatar_key, u.avatar_updated_at
+      FROM user_chums uc
+      JOIN newchums.users u ON u.id = uc.chum_user_id
+      WHERE uc.user_id = ${owner.id}
+        AND COALESCE(u.is_hidden_from_chum_lists, false) = false
+        AND u.username IS NOT NULL
+      ORDER BY uc.created_at DESC
+      LIMIT ${limit} OFFSET ${offset}
+    `) as {
+      id: string;
+      name: string | null;
+      username: string | null;
+      avatar_key: string | null;
+      avatar_updated_at: string | Date | null;
+    }[];
+    const chums = rows.map((r) => ({
+      userId: r.id,
+      displayName: r.name?.trim() ?? "NewChums user",
+      handle: r.username ? (r.username.startsWith("@") ? r.username : `@${r.username}`) : null,
+      avatarUrl: buildAvatarUrl(r.id, r.avatar_key, r.avatar_updated_at, c.env.MEDIA_BUCKET),
+    }));
+    return c.json({ ok: true, chums, total, hasMore: offset + limit < total });
+  } catch (err) {
+    console.error("[GET /public/users/:handle/chums]", err);
     return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
   }
 });

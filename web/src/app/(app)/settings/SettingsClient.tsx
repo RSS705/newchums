@@ -42,6 +42,8 @@ export default function SettingsClient() {
   const [isHiddenFromSearch, setIsHiddenFromSearch] = useState(false);
   const [isHiddenFromExternalIndexing, setIsHiddenFromExternalIndexing] = useState(false);
   const [isHiddenAge, setIsHiddenAge] = useState(false);
+  const [isHiddenChumList, setIsHiddenChumList] = useState(false);
+  const [isHiddenFromChumLists, setIsHiddenFromChumLists] = useState(false);
   const [privacyLoading, setPrivacyLoading] = useState(false);
   const privacySaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toast = useToast();
@@ -58,6 +60,8 @@ export default function SettingsClient() {
         setIsHiddenFromSearch(data.profile.is_hidden_from_search ?? false);
         setIsHiddenFromExternalIndexing(data.profile.is_hidden_from_external_indexing ?? false);
         setIsHiddenAge(data.profile.is_hidden_age ?? false);
+        setIsHiddenChumList(data.profile.is_hidden_chum_list ?? false);
+        setIsHiddenFromChumLists(data.profile.is_hidden_from_chum_lists ?? false);
       }
     } finally {
       setLoading(false);
@@ -176,7 +180,13 @@ export default function SettingsClient() {
   };
 
   const persistPrivacy = useCallback(
-    async (hiddenFromSearch: boolean, hiddenFromExternalIndexing: boolean, hiddenAge: boolean) => {
+    async (
+      hiddenFromSearch: boolean,
+      hiddenFromExternalIndexing: boolean,
+      hiddenAge: boolean,
+      hiddenChumList: boolean,
+      hiddenFromChumLists: boolean,
+    ) => {
       setPrivacyLoading(true);
       try {
         const res = await apiFetch("/profile", {
@@ -186,6 +196,8 @@ export default function SettingsClient() {
             is_hidden_from_search: hiddenFromSearch,
             is_hidden_from_external_indexing: hiddenFromExternalIndexing,
             is_hidden_age: hiddenAge,
+            is_hidden_chum_list: hiddenChumList,
+            is_hidden_from_chum_lists: hiddenFromChumLists,
           }),
         });
         const data = await res.json();
@@ -204,11 +216,17 @@ export default function SettingsClient() {
   );
 
   const schedulePrivacySave = useCallback(
-    (hiddenFromSearch: boolean, hiddenFromExternalIndexing: boolean, hiddenAge: boolean) => {
+    (
+      hiddenFromSearch: boolean,
+      hiddenFromExternalIndexing: boolean,
+      hiddenAge: boolean,
+      hiddenChumList: boolean,
+      hiddenFromChumLists: boolean,
+    ) => {
       if (privacySaveTimeoutRef.current) clearTimeout(privacySaveTimeoutRef.current);
       privacySaveTimeoutRef.current = setTimeout(() => {
         privacySaveTimeoutRef.current = null;
-        persistPrivacy(hiddenFromSearch, hiddenFromExternalIndexing, hiddenAge);
+        persistPrivacy(hiddenFromSearch, hiddenFromExternalIndexing, hiddenAge, hiddenChumList, hiddenFromChumLists);
       }, 500);
     },
     [persistPrivacy]
@@ -216,17 +234,27 @@ export default function SettingsClient() {
 
   const setPrivacyHiddenFromSearch = (enabled: boolean) => {
     setIsHiddenFromSearch(enabled);
-    schedulePrivacySave(enabled, isHiddenFromExternalIndexing, isHiddenAge);
+    schedulePrivacySave(enabled, isHiddenFromExternalIndexing, isHiddenAge, isHiddenChumList, isHiddenFromChumLists);
   };
 
   const setPrivacyHiddenFromExternalIndexing = (enabled: boolean) => {
     setIsHiddenFromExternalIndexing(enabled);
-    schedulePrivacySave(isHiddenFromSearch, enabled, isHiddenAge);
+    schedulePrivacySave(isHiddenFromSearch, enabled, isHiddenAge, isHiddenChumList, isHiddenFromChumLists);
   };
 
   const setPrivacyHiddenAge = (enabled: boolean) => {
     setIsHiddenAge(enabled);
-    schedulePrivacySave(isHiddenFromSearch, isHiddenFromExternalIndexing, enabled);
+    schedulePrivacySave(isHiddenFromSearch, isHiddenFromExternalIndexing, enabled, isHiddenChumList, isHiddenFromChumLists);
+  };
+
+  const setPrivacyHiddenChumList = (enabled: boolean) => {
+    setIsHiddenChumList(enabled);
+    schedulePrivacySave(isHiddenFromSearch, isHiddenFromExternalIndexing, isHiddenAge, enabled, isHiddenFromChumLists);
+  };
+
+  const setPrivacyHiddenFromChumLists = (enabled: boolean) => {
+    setIsHiddenFromChumLists(enabled);
+    schedulePrivacySave(isHiddenFromSearch, isHiddenFromExternalIndexing, isHiddenAge, isHiddenChumList, enabled);
   };
 
   useEffect(() => {
@@ -370,6 +398,22 @@ export default function SettingsClient() {
             description="If enabled, your age will no longer appear on your profile."
             enabled={isHiddenAge}
             onToggle={setPrivacyHiddenAge}
+            showDivider={true}
+            disabled={privacyLoading}
+          />
+          <PrivacyToggleRow
+            title="Hide my Chums from my public profile"
+            description="If enabled, the Chums section will not be shown on your public profile."
+            enabled={isHiddenChumList}
+            onToggle={setPrivacyHiddenChumList}
+            showDivider={true}
+            disabled={privacyLoading}
+          />
+          <PrivacyToggleRow
+            title="Hide me from appearing on other people's profile Chum lists"
+            description="If enabled, you will not appear in the Chums section on other users' profiles. You will still appear on other users' private Chum list and can still be found in Chum search."
+            enabled={isHiddenFromChumLists}
+            onToggle={setPrivacyHiddenFromChumLists}
             showDivider={true}
             disabled={privacyLoading}
           />

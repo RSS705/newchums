@@ -7,7 +7,7 @@ import Typography from "@mui/material/Typography";
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import { AppButton } from "@/components/ui";
-import PublicProfileView, { type PublicProfileUser } from "@/components/publicProfile/PublicProfileView";
+import PublicProfileView, { type ChumAction, type PublicProfileUser } from "@/components/publicProfile/PublicProfileView";
 
 type PublicProfilePageClientProps = {
   handle: string;
@@ -23,6 +23,8 @@ type FetchState =
 
 export default function PublicProfilePageClient({ handle, viewerHandle }: PublicProfilePageClientProps) {
   const [state, setState] = useState<FetchState>({ status: "loading" });
+  const [chummed, setChummed] = useState<boolean | null>(null);
+  const [chumLoading, setChumLoading] = useState(false);
 
   const fetchProfile = useCallback(async () => {
     if (!handle?.trim()) {
@@ -54,6 +56,23 @@ export default function PublicProfilePageClient({ handle, viewerHandle }: Public
   useEffect(() => {
     fetchProfile();
   }, [fetchProfile]);
+
+  // Fetch chum status once the profile loads (only for logged-in non-owners)
+  useEffect(() => {
+    if (state.status !== "success") return;
+    if (!viewerHandle) return;
+    const profileHandleNorm = (state.user.handle ?? "").replace(/^@/, "").toLowerCase().trim();
+    const viewerNorm = viewerHandle.replace(/^@/, "").toLowerCase().trim();
+    if (profileHandleNorm === viewerNorm) return; // own profile
+    const userId = state.user.userId;
+    apiFetch(`/chums/check/${userId}`, { auth: true })
+      .then((res) => res.json())
+      .then((data: unknown) => {
+        const d = data as { ok?: boolean; isChummed?: boolean };
+        if (d.ok) setChummed(d.isChummed ?? false);
+      })
+      .catch(() => {/* silently ignore */});
+  }, [state.status, viewerHandle, state]);
 
   if (state.status === "loading") {
     return (
@@ -98,11 +117,37 @@ export default function PublicProfilePageClient({ handle, viewerHandle }: Public
   const viewerNorm = (viewerHandle ?? "").replace(/^@/, "").toLowerCase().trim();
   const isOwner = Boolean(viewerNorm && profileHandleNorm && profileHandleNorm === viewerNorm);
 
+  const chumAction: ChumAction | undefined =
+    viewerHandle && !isOwner && chummed !== null
+      ? {
+          isChummed: chummed,
+          loading: chumLoading,
+          onToggle: async () => {
+            setChumLoading(true);
+            try {
+              const userId = state.user.userId;
+              const endpoint = `/chums/${userId}`;
+              const res = await apiFetch(endpoint, {
+                method: chummed ? "DELETE" : "POST",
+                auth: true,
+              });
+              const data = (await res.json()) as { ok?: boolean };
+              if (data.ok) setChummed((prev) => !prev);
+            } catch {
+              /* silently ignore */
+            } finally {
+              setChumLoading(false);
+            }
+          },
+        }
+      : undefined;
+
   return (
     <PublicProfileView
       user={state.user}
       avatarBaseUrl={getAvatarBaseUrl()}
       isOwner={isOwner}
+      chumAction={chumAction}
     />
   );
 }
