@@ -4,7 +4,6 @@ import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
-import HandshakeRoundedIcon from "@mui/icons-material/HandshakeRounded";
 import UserAvatar from "@/components/common/UserAvatar";
 
 const GENDER_DISPLAY: Record<string, string> = {
@@ -76,10 +75,10 @@ export default function ProfileHeaderSection({
               <Tooltip title="Mutual Chums" placement="top" arrow>
                 <Box
                   component="span"
-                  sx={{ display: "flex", alignItems: "center", lineHeight: 0 }}
+                  sx={{ display: "flex", alignItems: "center", fontSize: 16, lineHeight: 1 }}
                   aria-label="Mutual Chums"
                 >
-                  <HandshakeRoundedIcon sx={{ fontSize: 16, color: "#F4B400", opacity: 0.9 }} />
+                  🤝
                 </Box>
               </Tooltip>
             )}

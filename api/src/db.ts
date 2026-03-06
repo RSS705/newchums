@@ -17,6 +17,8 @@ export type Bindings = {
   POSTMARK_TEMPLATE_EMAIL_CHANGE_CONFIRM: string;
   POSTMARK_TEMPLATE_EMAIL_CHANGE_NOTIFY_OLD: string;
   POSTMARK_TEMPLATE_EMAIL_CHANGE_SUCCESS: string;
+  /** Postmark template ID for Chum invite emails (template 43805532) */
+  POSTMARK_TEMPLATE_INVITE?: string;
   SENTRY_DSN: string;
   APP_ENV?: string;
   ENVIRONMENT?: string;

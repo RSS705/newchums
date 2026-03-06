@@ -13,9 +13,9 @@ For diagrams and flows, see `docs/System_Map.md`.
 - **Production:** Single production environment.
 - **Workers:** Web = `newchums-web-dev` (production), API = `newchums-api`.
 - **Canonical host:** `https://newchums.com` (www → non-www redirect enforced before Auth.js).
-- **API migration:** Signup, email verification, password reset, email change, profile (incl. DOB, bio, gender, profile theme), interests, handle availability, onboarding, avatar flows, notification preferences, admin moderation, user suspension, and Chums are in the API worker.
+- **API migration:** Signup, email verification, password reset, email change, profile (incl. DOB, bio, gender, profile theme), interests, handle availability, onboarding, avatar flows, notification preferences, admin moderation, user suspension, Chums, and Chum invites are in the API worker.
 - **Super admin:** Users with `role = 'super_admin'` can access `/admin/interests` (interests moderation) and `/admin/chums` (view + suspend/unsuspend user accounts). Role is set directly in the database; no UI promotion flow.
-- **Chums:** One-way saved-people feature. `/chum-groups` page (search + private list). Add/Remove button on public profiles. Public Chums section on profiles (privacy-gated). Two new privacy toggles in Settings.
+- **Chums:** One-way saved-people feature. `/chum-groups` page (search by name, @handle, or exact email + private list). Search auto-detects email input and offers an invite flow for non-existing emails. Add/Remove button on public profiles. Public Chums section on profiles (privacy-gated). Two new privacy toggles in Settings. Mutual Chums state shown via 🤝 emoji indicator.
 - **Notifications:** In-app notification bell in top nav. Currently supports `chum_added_you`. Bell turns gold when unread notifications exist; dropdown marks them as read on open.
 - **Avatar storage:** R2 bucket `newchums-media` (binding `MEDIA_BUCKET`). Client can route media operations and avatar display through `NEXT_PUBLIC_AVATAR_BASE_URL` for cross-env consistency when sharing DB.
 - **Build:** `cd web && npm run build` passes (Edge/OpenNext constraints apply).
@@ -216,6 +216,7 @@ psql "$DATABASE_URL" -f sql/019_add_profile_theme.sql
 psql "$DATABASE_URL" -f sql/020_add_chum_privacy_columns.sql
 psql "$DATABASE_URL" -f sql/021_create_user_chums.sql
 psql "$DATABASE_URL" -f sql/022_create_notifications.sql
+psql "$DATABASE_URL" -f sql/023_create_chum_invites.sql
 ```
 
 Notes:
@@ -228,6 +229,7 @@ Notes:
 - Migration `020_add_chum_privacy_columns.sql` adds `is_hidden_chum_list` and `is_hidden_from_chum_lists` (both boolean, default false) to `users`.
 - Migration `021_create_user_chums.sql` creates the `newchums.user_chums` table for one-way Chum relationships.
 - Migration `022_create_notifications.sql` creates the `newchums.notifications` table for in-app notifications.
+- Migration `023_create_chum_invites.sql` creates the `newchums.chum_invites` table for Chum invite links (token hash, status, 30-day expiry).
 
 ---
 
@@ -289,6 +291,17 @@ Chunk XX — YYYY-MM-DD
 (Existing chunks should remain here. Add new chunks at the end.)
 
 ---
+
+Chunk 04 — 2026-03-06
+- Goal: Chum invite flow, email-based Chum search, Mutual Chums emoji refresh.
+- Changes:
+  - DB migration 023 (`newchums.chum_invites` table — token hash, status, 30-day expiry, accepted_user_id).
+  - API: `GET /chums/search` extended — detects email input, performs exact email lookup (hidden/suspended users treated as not found), returns `inviteEligible`, `inviteeEmail`, `alreadyInvited`; `POST /chums/invite` creates invite record and sends Postmark template 43805532; `POST /chums/invite/accept` consumes token during signup and creates mutual Chum links + notifications for both users. Rate limit: 10 invites per inviter per 24 h.
+  - Web: `ChumsClient.tsx` — email-aware search input (mail icon when email detected), invite CTA banner, confirmation dialog (`InviteDialog`), already-sent state, warm success toasts. `SignupClient.tsx` — reads `?invite=<token>` from URL and calls `POST /chums/invite/accept` after successful account creation (non-fatal). `SettingsClient.tsx` — privacy toggle label updated to "Hide me from NewChums search and discovery" with helper text covering email lookup.
+  - Mutual Chums indicators: replaced all `HandshakeRoundedIcon` usages with 🤝 emoji in `ChumsClient.tsx`, `ProfileHeaderSection.tsx`, and `ProfileChumsSection.tsx`. Tooltips and accessible labels preserved.
+- Verification: Email search returns existing users or invite CTA; duplicate invite prevention works; invite token consumed on signup creates mutual Chums; Mutual Chums emoji shows in all three locations; `npm run build` passes.
+- Deploy: Run migration 023 against production DB before deploying.
+- Next Steps: —
 
 Chunk 03 — 2026-03-06
 - Goal: First-version in-app notification system using the existing bell icon.

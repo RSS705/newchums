@@ -6,6 +6,7 @@ import { isAtLeast18, parseDateOnly } from "./ageValidation";
 import { getBearerToken, verifyAuthToken } from "./auth";
 import { DATABASE_URL_HINT, type Bindings, getSql } from "./db";
 import {
+  sendChumInviteEmail,
   sendContactFormEmail,
   sendEmailChangeConfirmEmail,
   sendEmailChangeNotifyOldEmail,
@@ -198,7 +199,8 @@ app.get("/public/users/:handle", async (c) => {
       avatarKey && c.env.MEDIA_BUCKET
         ? `/users/${user.id}/avatar?v=${avatarUpdatedAt ? new Date(avatarUpdatedAt as Date).getTime() : 0}`
         : null;
-    const displayName = user.name?.trim() ?? "NewChums user";
+    const rawUsername = (user.username ?? "").trim().replace(/^@/, "");
+    const displayName = user.name?.trim() || rawUsername || "NewChums user";
     const handle = (user.username ?? "").trim();
     const publicGender =
       user.gender && user.gender !== "prefer_not_to_say" ? user.gender : null;
@@ -3226,14 +3228,17 @@ app.get("/chums", async (c) => {
       chummed_at: string | Date;
       is_mutual: boolean;
     }[];
-    const chums = rows.map((r) => ({
-      userId: r.id,
-      displayName: r.name?.trim() ?? "NewChums user",
-      handle: r.username ? (r.username.startsWith("@") ? r.username : `@${r.username}`) : null,
-      avatarUrl: buildAvatarUrl(r.id, r.avatar_key, r.avatar_updated_at, c.env.MEDIA_BUCKET),
-      chummedAt: r.chummed_at,
-      isMutual: r.is_mutual === true,
-    }));
+    const chums = rows.map((r) => {
+      const uname = r.username?.replace(/^@/, "") ?? null;
+      return {
+        userId: r.id,
+        displayName: r.name?.trim() || uname || "NewChums user",
+        handle: uname ? `@${uname}` : null,
+        avatarUrl: buildAvatarUrl(r.id, r.avatar_key, r.avatar_updated_at, c.env.MEDIA_BUCKET),
+        chummedAt: r.chummed_at,
+        isMutual: r.is_mutual === true,
+      };
+    });
     return c.json({ ok: true, chums });
   } catch (err) {
     console.error("[GET /chums]", err);
@@ -3241,9 +3246,13 @@ app.get("/chums", async (c) => {
   }
 });
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 /** GET /chums/search?q= — search eligible users to add as a Chum.
  *  Excludes self and users with is_hidden_from_search = true.
- *  Returns up to 10 results including whether each is already a Chum. */
+ *  If q looks like an email, performs exact email lookup instead of name/handle search.
+ *  Returns up to 10 results with isChummed; for email lookups also returns inviteEligible
+ *  when the email doesn't belong to any eligible account. */
 app.get("/chums/search", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string") {
@@ -3251,11 +3260,66 @@ app.get("/chums/search", async (c) => {
   }
   const q = (c.req.query("q") ?? "").trim();
   if (q.length < 2) {
-    return c.json({ ok: true, users: [] });
+    return c.json({ ok: true, users: [], inviteEligible: false });
   }
   try {
     const sql = getSql(c.env);
     const appUserId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+
+    // ── Email lookup path ──────────────────────────────────────────────────────
+    if (EMAIL_RE.test(q)) {
+      const emailNorm = q.toLowerCase();
+      // Never allow lookup of self
+      if (emailNorm === payload.email.toLowerCase()) {
+        return c.json({ ok: true, users: [], inviteEligible: false });
+      }
+      const rows = (await sql`
+        SELECT u.id, u.name, u.username, u.avatar_key, u.avatar_updated_at,
+               COALESCE(u.is_hidden_from_search, false) AS is_hidden,
+               COALESCE(u.is_suspended, false) AS is_suspended,
+               (uc.chum_user_id IS NOT NULL) AS is_chummed
+        FROM newchums.users u
+        LEFT JOIN user_chums uc ON uc.user_id = ${appUserId} AND uc.chum_user_id = u.id
+        WHERE LOWER(u.email) = ${emailNorm}
+        LIMIT 1
+      `) as {
+        id: string;
+        name: string | null;
+        username: string | null;
+        avatar_key: string | null;
+        avatar_updated_at: string | Date | null;
+        is_hidden: boolean;
+        is_suspended: boolean;
+        is_chummed: boolean;
+      }[];
+      const match = rows[0];
+      // If the account exists but is hidden from search or suspended, treat as not found.
+      // This avoids confirming the existence of hidden accounts.
+      if (!match || match.is_hidden || match.is_suspended) {
+        // Check whether a pending invite already exists (only if no eligible user found)
+        const inviteRows = (await sql`
+          SELECT 1 FROM newchums.chum_invites
+          WHERE inviter_user_id = ${appUserId}
+            AND invitee_email = ${emailNorm}
+            AND status = 'pending'
+            AND expires_at > NOW()
+          LIMIT 1
+        `) as unknown[];
+        const alreadyInvited = inviteRows.length > 0;
+        return c.json({ ok: true, users: [], inviteEligible: true, inviteeEmail: emailNorm, alreadyInvited });
+      }
+      const muname = match.username?.replace(/^@/, "") ?? null;
+      const users = [{
+        userId: match.id,
+        displayName: match.name?.trim() || muname || "NewChums user",
+        handle: muname ? `@${muname}` : null,
+        avatarUrl: buildAvatarUrl(match.id, match.avatar_key, match.avatar_updated_at, c.env.MEDIA_BUCKET),
+        isChummed: match.is_chummed === true,
+      }];
+      return c.json({ ok: true, users, inviteEligible: false });
+    }
+
+    // ── Name / handle search path ─────────────────────────────────────────────
     const likePattern = `%${q.toLowerCase()}%`;
     const rows = (await sql`
       SELECT u.id, u.name, u.username, u.avatar_key, u.avatar_updated_at,
@@ -3281,14 +3345,17 @@ app.get("/chums/search", async (c) => {
       avatar_updated_at: string | Date | null;
       is_chummed: boolean;
     }[];
-    const users = rows.map((r) => ({
-      userId: r.id,
-      displayName: r.name?.trim() ?? "NewChums user",
-      handle: r.username ? (r.username.startsWith("@") ? r.username : `@${r.username}`) : null,
-      avatarUrl: buildAvatarUrl(r.id, r.avatar_key, r.avatar_updated_at, c.env.MEDIA_BUCKET),
-      isChummed: r.is_chummed === true,
-    }));
-    return c.json({ ok: true, users });
+    const users = rows.map((r) => {
+      const uname = r.username?.replace(/^@/, "") ?? null;
+      return {
+        userId: r.id,
+        displayName: r.name?.trim() || uname || "NewChums user",
+        handle: uname ? `@${uname}` : null,
+        avatarUrl: buildAvatarUrl(r.id, r.avatar_key, r.avatar_updated_at, c.env.MEDIA_BUCKET),
+        isChummed: r.is_chummed === true,
+      };
+    });
+    return c.json({ ok: true, users, inviteEligible: false });
   } catch (err) {
     console.error("[GET /chums/search]", err);
     return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
@@ -3321,6 +3388,177 @@ app.get("/chums/check/:userId", async (c) => {
     return c.json({ ok: true, isChummed, isMutual, sharedCount: row?.shared_count ?? 0 });
   } catch (err) {
     console.error("[GET /chums/check/:userId]", err);
+    return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
+  }
+});
+
+/** POST /chums/invite — send a Chum invite email to an address not yet on NewChums.
+ *  Prevents duplicate pending invites. Rate limit: 10 invites per inviter per 24 h. */
+app.post("/chums/invite", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+  const body = await c.req.json().catch(() => ({})) as { email?: unknown };
+  const inviteeEmail = typeof body.email === "string" ? body.email.toLowerCase().trim() : "";
+  if (!EMAIL_RE.test(inviteeEmail)) {
+    return c.json({ ok: false, error: { code: "INVALID_EMAIL" } }, 400);
+  }
+  try {
+    const sql = getSql(c.env);
+    const appUserId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+
+    // Can't invite yourself
+    if (inviteeEmail === payload.email.toLowerCase()) {
+      return c.json({ ok: false, error: { code: "CANNOT_INVITE_SELF" } }, 400);
+    }
+
+    // If a user already exists at this email and is eligible, frontend should add directly
+    const existingRows = (await sql`
+      SELECT id FROM newchums.users
+      WHERE LOWER(email) = ${inviteeEmail}
+        AND COALESCE(is_hidden_from_search, false) = false
+        AND COALESCE(is_suspended, false) = false
+      LIMIT 1
+    `) as { id: string }[];
+    if (existingRows.length > 0) {
+      return c.json({ ok: false, error: { code: "USER_ALREADY_EXISTS" } }, 409);
+    }
+
+    // Prevent duplicate pending invite
+    const pendingRows = (await sql`
+      SELECT id FROM newchums.chum_invites
+      WHERE inviter_user_id = ${appUserId}
+        AND invitee_email = ${inviteeEmail}
+        AND status = 'pending'
+        AND expires_at > NOW()
+      LIMIT 1
+    `) as { id: string }[];
+    if (pendingRows.length > 0) {
+      return c.json({ ok: true, alreadyPending: true });
+    }
+
+    // Rate limit: max 10 invites per inviter in last 24 h
+    const recentRows = (await sql`
+      SELECT COUNT(*)::int AS cnt FROM newchums.chum_invites
+      WHERE inviter_user_id = ${appUserId}
+        AND created_at > NOW() - INTERVAL '24 hours'
+    `) as { cnt: number }[];
+    if ((recentRows[0]?.cnt ?? 0) >= 10) {
+      return c.json({ ok: false, error: { code: "RATE_LIMITED", message: "You've sent too many invites today. Try again tomorrow." } }, 429);
+    }
+
+    // Generate token, hash it, store hash only
+    const { generateResetToken, hashResetToken } = await import("./resetTokens");
+    const token = generateResetToken();
+    const tokenHash = await hashResetToken(token);
+
+    await sql`
+      INSERT INTO newchums.chum_invites (inviter_user_id, invitee_email, token_hash)
+      VALUES (${appUserId}, ${inviteeEmail}, ${tokenHash})
+    `;
+
+    // Resolve inviter display name for the email
+    const inviterRows = (await sql`
+      SELECT name, username FROM newchums.users WHERE id = ${appUserId} LIMIT 1
+    `) as { name: string | null; username: string | null }[];
+    const inviter = inviterRows[0];
+    const inviterName =
+      inviter?.name?.trim() ||
+      (inviter?.username ? (inviter.username.startsWith("@") ? inviter.username : `@${inviter.username}`) : null) ||
+      "A NewChums member";
+
+    const inviteUrl = `${c.env.WEB_BASE_URL}/signup?invite=${encodeURIComponent(token)}`;
+
+    // Send email (non-fatal if it fails to avoid silent DB state / email mismatch)
+    try {
+      await sendChumInviteEmail(c.env, { to: inviteeEmail, inviterName, inviteUrl });
+    } catch (emailErr) {
+      console.error("[POST /chums/invite] email send failed:", emailErr);
+    }
+
+    return c.json({ ok: true, alreadyPending: false });
+  } catch (err) {
+    console.error("[POST /chums/invite]", err);
+    return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
+  }
+});
+
+/** POST /chums/invite/accept — consume an invite token after account creation.
+ *  Called by the web app immediately after successful signup when an invite token is present.
+ *  Accepts the invite, marks it accepted, and creates mutual Chum links. */
+app.post("/chums/invite/accept", async (c) => {
+  const body = await c.req.json().catch(() => ({})) as { token?: unknown; email?: unknown };
+  const token = typeof body.token === "string" ? body.token.trim() : "";
+  const newUserEmail = typeof body.email === "string" ? body.email.toLowerCase().trim() : "";
+  if (!token || !newUserEmail) {
+    return c.json({ ok: false, error: { code: "INVALID_INPUT" } }, 400);
+  }
+  try {
+    const sql = getSql(c.env);
+    const { hashResetToken } = await import("./resetTokens");
+    const tokenHash = await hashResetToken(token);
+
+    // Find valid pending invite
+    const inviteRows = (await sql`
+      SELECT id, inviter_user_id, invitee_email
+      FROM newchums.chum_invites
+      WHERE token_hash = ${tokenHash}
+        AND status = 'pending'
+        AND expires_at > NOW()
+      LIMIT 1
+    `) as { id: string; inviter_user_id: string; invitee_email: string }[];
+    const invite = inviteRows[0];
+    if (!invite) {
+      return c.json({ ok: false, error: { code: "INVITE_NOT_FOUND" } }, 404);
+    }
+
+    // Verify the signing-up email matches the invite
+    if (invite.invitee_email !== newUserEmail) {
+      return c.json({ ok: false, error: { code: "EMAIL_MISMATCH" } }, 400);
+    }
+
+    // Look up the newly created user
+    const newUserRows = (await sql`
+      SELECT id FROM newchums.users WHERE LOWER(email) = ${newUserEmail} LIMIT 1
+    `) as { id: string }[];
+    const newUserId = newUserRows[0]?.id;
+    if (!newUserId) {
+      return c.json({ ok: false, error: { code: "USER_NOT_FOUND" } }, 404);
+    }
+
+    const inviterId = invite.inviter_user_id;
+
+    // Mark invite accepted
+    await sql`
+      UPDATE newchums.chum_invites
+      SET status = 'accepted', accepted_at = NOW(), accepted_user_id = ${newUserId}
+      WHERE id = ${invite.id}
+    `;
+
+    // Create mutual Chum links (both directions), ignoring conflicts
+    await sql`
+      INSERT INTO user_chums (user_id, chum_user_id)
+      VALUES (${inviterId}, ${newUserId}), (${newUserId}, ${inviterId})
+      ON CONFLICT (user_id, chum_user_id) DO NOTHING
+    `;
+
+    // Create notifications for both sides
+    try {
+      await sql`
+        INSERT INTO newchums.notifications (user_id, type, actor_user_id)
+        VALUES
+          (${newUserId}, 'chum_added_you', ${inviterId}),
+          (${inviterId}, 'chum_added_you', ${newUserId})
+        ON CONFLICT DO NOTHING
+      `;
+    } catch {
+      // Non-fatal
+    }
+
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[POST /chums/invite/accept]", err);
     return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
   }
 });
@@ -3551,13 +3789,16 @@ app.get("/public/users/:handle/chums", async (c) => {
       avatar_updated_at: string | Date | null;
       is_mutual_with_viewer: boolean;
     }[];
-    const chums = rows.map((r) => ({
-      userId: r.id,
-      displayName: r.name?.trim() ?? "NewChums user",
-      handle: r.username ? (r.username.startsWith("@") ? r.username : `@${r.username}`) : null,
-      avatarUrl: buildAvatarUrl(r.id, r.avatar_key, r.avatar_updated_at, c.env.MEDIA_BUCKET),
-      isMutualWithViewer: r.is_mutual_with_viewer === true,
-    }));
+    const chums = rows.map((r) => {
+      const uname = r.username?.replace(/^@/, "") ?? null;
+      return {
+        userId: r.id,
+        displayName: r.name?.trim() || uname || "NewChums user",
+        handle: uname ? `@${uname}` : null,
+        avatarUrl: buildAvatarUrl(r.id, r.avatar_key, r.avatar_updated_at, c.env.MEDIA_BUCKET),
+        isMutualWithViewer: r.is_mutual_with_viewer === true,
+      };
+    });
     return c.json({ ok: true, chums, total, hasMore: offset + limit < total });
   } catch (err) {
     console.error("[GET /public/users/:handle/chums]", err);

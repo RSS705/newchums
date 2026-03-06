@@ -1,7 +1,7 @@
 # Technical Specifications
 
 Last Updated: March 6, 2026  
-Version: 5.7
+Version: 5.8
 
 This document defines the authoritative technical architecture of NewChums.  
 It describes **what exists today** and the structural commitments we are making.
@@ -186,7 +186,7 @@ Users manage privacy preferences in **Settings** (`/settings`). Stored in the `u
 
 | Column | UI label | Enforcement |
 |--------|----------|-------------|
-| `is_hidden_from_search` | Hide my profile from NewChums search | Enforced in `GET /chums/search` — users with this ON are excluded from Chum search results. |
+| `is_hidden_from_search` | Hide me from NewChums search and discovery | Enforced in `GET /chums/search` — users with this ON are excluded from both name/handle search AND exact email lookup in the Chum flow. Also blocks invite eligibility for their email (treated as "not found"). |
 | `is_hidden_from_external_indexing` | Hide my profile from search engines | Public profile page emits `robots: noindex, nofollow`. |
 | `is_hidden_age` | Hide my age | Age field is not shown on the public profile. |
 | `is_hidden_chum_list` | Hide my Chums from my public profile | When ON, the Chums section is not rendered on the user's public profile. Private Chum lists are unaffected. |
@@ -248,14 +248,16 @@ One-way saved-people feature. No approval flow, no mutual-state requirement.
 | Route | Description |
 |-------|-------------|
 | `GET /chums` | Returns the authenticated user's full private Chum list (all added users, regardless of their privacy settings). Ordered by most recently added. |
-| `GET /chums/search?q=` | Search for users to add. Excludes self and users with `is_hidden_from_search = true`. Minimum 2 characters. Returns up to 10 results with `isChummed` flag. |
-| `GET /chums/check/:userId` | Returns `{ isChummed: boolean }` for a specific user. Used by the public profile page to determine button state. |
-| `POST /chums/:userId` | Add a user to Chum list. Idempotent (`ON CONFLICT DO NOTHING`). Cannot chum self. |
+| `GET /chums/search?q=` | Search for users to add. If `q` is a valid email, performs exact email lookup (returns single result or invite eligibility); otherwise searches by name/handle. Excludes self and hidden-from-search users in both modes. Min 2 chars. Returns up to 10 results with `isChummed`, and for email mode also `inviteEligible`, `inviteeEmail`, `alreadyInvited`. |
+| `GET /chums/check/:userId` | Returns `{ isChummed, isMutual, sharedCount }` for a specific user. Used by the public profile page. |
+| `POST /chums/:userId` | Add a user to Chum list. Idempotent (`ON CONFLICT DO NOTHING`). Cannot chum self. Creates `chum_added_you` notification for the recipient. |
 | `DELETE /chums/:userId` | Remove a user from Chum list. |
+| `POST /chums/invite` | Send a Chum invite email to an address not yet on NewChums. Prevents duplicate pending invites. Rate limit: 10 per inviter per 24 h. Uses Postmark template `43805532`. |
+| `POST /chums/invite/accept` | Consume an invite token during signup. Called with `{ token, email }`. Verifies invite, creates mutual Chum links in both directions, creates `chum_added_you` notifications for both users. |
 | `GET /public/users/:handle/chums` | Public-facing paginated Chum list for a profile. No auth required. Respects: owner's `is_hidden_chum_list` (if ON, returns `{ hidden: true }`) and each listed Chum's `is_hidden_from_chum_lists` (filters them out). Query params: `offset`, `limit` (max 20, default 8). |
 
 **Privacy rules:**
-- `is_hidden_from_search = true` → user excluded from `GET /chums/search` results.
+- `is_hidden_from_search = true` → user excluded from `GET /chums/search` results AND from exact email lookup (treated as "not found"). Invite eligibility is also blocked for their email.
 - Users already on a private Chum list remain there even if they later enable `is_hidden_from_search`.
 - `is_hidden_chum_list = true` → Chums section hidden on that user's public profile (enforced in both the API response and the web component).
 - `is_hidden_from_chum_lists = true` → user excluded from all `GET /public/users/:handle/chums` responses, but remains on private Chum lists.
@@ -351,6 +353,7 @@ Core tables include:
 - `users.is_hidden_chum_list`, `users.is_hidden_from_chum_lists` (boolean, migration 020) — Chums privacy toggles; both default false
 - `newchums.user_chums` (migration 021) — one-way Chum relationships; columns: `id`, `user_id`, `chum_user_id`, `created_at`; unique constraint on `(user_id, chum_user_id)`; self-chum prevented by CHECK constraint; indexed on both FKs
 - `newchums.notifications` (migration 022) — general notifications table; columns: `id`, `user_id`, `type`, `actor_user_id`, `entity_id`, `metadata` (JSONB), `read_at`, `created_at`; indexed for unread queries
+- `newchums.chum_invites` (migration 023) — invite records for emails not yet on NewChums; columns: `id`, `inviter_user_id`, `invitee_email`, `token_hash`, `status` (`pending`/`accepted`/`expired`), `expires_at` (30 days), `accepted_at`, `accepted_user_id`, `created_at`; unique index on `token_hash`; indexed on `(invitee_email, status)` and `inviter_user_id`
 - events and rsvps (present; implementation varies by feature maturity)
 
 PostGIS is available for geo queries.

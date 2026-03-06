@@ -8,7 +8,6 @@ import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
 import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
-import HandshakeRoundedIcon from "@mui/icons-material/HandshakeRounded";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
@@ -145,9 +144,11 @@ export default function ProfileChumsSection({ ownerHandle, viewerLoggedIn }: Pro
                           border: "1.5px solid",
                           borderColor: "divider",
                           boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+                          fontSize: 11,
+                          lineHeight: 1,
                         }}
                       >
-                        <HandshakeRoundedIcon sx={{ fontSize: 11, color: "#F4B400" }} />
+                        🤝
                       </Box>
                     </Tooltip>
                   )}

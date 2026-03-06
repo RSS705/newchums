@@ -114,6 +114,25 @@ export const sendRsvpConfirmationEmail = async (
   },
   });
 
+export const sendChumInviteEmail = async (
+  env: Bindings,
+  {
+    to,
+    inviterName,
+    inviteUrl,
+  }: { to: string; inviterName: string; inviteUrl: string }
+) =>
+  sendPostmarkTemplateEmail(env, {
+    From: env.EMAIL_FROM,
+    To: to,
+    TemplateId: "43805532",
+    TemplateModel: {
+      productName: "NewChums",
+      inviterName,
+      inviteUrl,
+    },
+  });
+
 const CONTACT_EMAIL = "contact@newchums.com";
 
 export const sendContactFormEmail = async (

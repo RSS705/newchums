@@ -41,6 +41,7 @@ export default function SignupClient() {
 
   const nextParam = searchParams.get("next");
   const errorParam = searchParams.get("error");
+  const inviteToken = searchParams.get("invite");
   const redirectTarget = getSafeRedirectPath(nextParam);
 
   const isSuspendedParam =
@@ -75,7 +76,14 @@ export default function SignupClient() {
                 sx={{ width: 20, height: 20 }}
               />
             }
-            onClick={() => signIn("google", { redirectTo: redirectTarget })}
+            onClick={() => {
+              // Persist the invite token across the OAuth redirect so AppShell can
+              // consume it once the new Google account has been created and the profile loads.
+              if (inviteToken) {
+                sessionStorage.setItem("nc_pending_invite", inviteToken);
+              }
+              signIn("google", { redirectTo: redirectTarget });
+            }}
             sx={{
               borderColor: "divider",
               color: "text.primary",
@@ -191,6 +199,19 @@ export default function SignupClient() {
                 }
 
                 const signedUpEmail = email.trim().toLowerCase();
+
+                // Consume invite token if present (non-fatal — signup already succeeded)
+                if (inviteToken) {
+                  try {
+                    await apiFetch("/chums/invite/accept", {
+                      method: "POST",
+                      body: JSON.stringify({ token: inviteToken, email: signedUpEmail }),
+                    });
+                  } catch {
+                    // Non-fatal; invite acceptance failure should not block the signup flow
+                  }
+                }
+
                 await apiFetch("/auth/email-verify/request", {
                   method: "POST",
                   body: JSON.stringify({ email: signedUpEmail }),

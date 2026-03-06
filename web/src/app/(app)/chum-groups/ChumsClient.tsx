@@ -3,19 +3,27 @@
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import CircularProgress from "@mui/material/CircularProgress";
+import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogTitle from "@mui/material/DialogTitle";
 import Divider from "@mui/material/Divider";
 import InputAdornment from "@mui/material/InputAdornment";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
-import HandshakeRoundedIcon from "@mui/icons-material/HandshakeRounded";
+import MailOutlineRoundedIcon from "@mui/icons-material/MailOutlineRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import { AppCard, useToast } from "@/components/ui";
 import UserAvatar from "@/components/common/UserAvatar";
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type ChumUser = {
   userId: string;
@@ -27,6 +35,16 @@ type ChumUser = {
 };
 
 type SearchUser = ChumUser & { isChummed: boolean };
+
+type SearchResponse = {
+  ok?: boolean;
+  users?: SearchUser[];
+  inviteEligible?: boolean;
+  inviteeEmail?: string;
+  alreadyInvited?: boolean;
+};
+
+// ─── ChumRow ─────────────────────────────────────────────────────────────────
 
 function ChumRow({
   user,
@@ -105,18 +123,20 @@ function ChumRow({
           </Typography>
         )}
       </Box>
-      {/* Mutual Chums indicator — shown only when both users have added each other */}
+
+      {/* Mutual Chums indicator */}
       {user.isMutual && isChummed && (
         <Tooltip title="Mutual Chums" placement="top" arrow>
           <Box
             component="span"
-            sx={{ display: "flex", alignItems: "center", flexShrink: 0 }}
+            sx={{ display: "flex", alignItems: "center", flexShrink: 0, fontSize: 18, lineHeight: 1 }}
             aria-label="Mutual Chums"
           >
-            <HandshakeRoundedIcon sx={{ fontSize: 18, color: "#F4B400", opacity: 0.9 }} />
+            🤝
           </Box>
         </Tooltip>
       )}
+
       <Box sx={{ flexShrink: 0 }}>
         {isChummed ? (
           <Button
@@ -145,6 +165,65 @@ function ChumRow({
   );
 }
 
+// ─── InviteDialog ────────────────────────────────────────────────────────────
+
+function InviteDialog({
+  open,
+  email,
+  alreadyInvited,
+  onClose,
+  onConfirm,
+  sending,
+}: {
+  open: boolean;
+  email: string;
+  alreadyInvited: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  sending: boolean;
+}) {
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
+      <DialogTitle sx={{ fontWeight: 700, pb: 1 }}>
+        {alreadyInvited ? "Invitation already sent" : "Invite to NewChums"}
+      </DialogTitle>
+      <DialogContent>
+        {alreadyInvited ? (
+          <Typography variant="body2" color="text.secondary">
+            You already have a pending invitation out to <strong>{email}</strong>. Once they sign up through your invite, you&apos;ll automatically be added to each other&apos;s Chums.
+          </Typography>
+        ) : (
+          <Stack spacing={1.5}>
+            <Typography variant="body2" color="text.secondary">
+              <strong>{email}</strong> isn&apos;t on NewChums yet. We&apos;ll send them a friendly invite on your behalf.
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              If they sign up through your invite link, you&apos;ll automatically become Mutual Chums, no extra steps needed.
+            </Typography>
+          </Stack>
+        )}
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2.5 }}>
+        <Button variant="text" color="inherit" onClick={onClose} disabled={sending}>
+          {alreadyInvited ? "Close" : "Cancel"}
+        </Button>
+        {!alreadyInvited && (
+          <Button
+            variant="contained"
+            onClick={onConfirm}
+            disabled={sending}
+            startIcon={sending ? <CircularProgress size={14} color="inherit" /> : undefined}
+          >
+            {sending ? "Sending…" : "Send invitation"}
+          </Button>
+        )}
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
 export default function ChumsClient() {
   const toast = useToast();
   const avatarBaseUrl = getAvatarBaseUrl();
@@ -157,11 +236,18 @@ export default function ChumsClient() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
 
+  // Invite state
+  const [inviteEligible, setInviteEligible] = useState(false);
+  const [inviteeEmail, setInviteeEmail] = useState("");
+  const [alreadyInvited, setAlreadyInvited] = useState(false);
+  const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+  const [inviteSending, setInviteSending] = useState(false);
+
   const [actionLoading, setActionLoading] = useState<Set<string>>(new Set());
-
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   const chummedIds = useMemo(() => new Set(chums.map((c) => c.userId)), [chums]);
+
+  const isEmailInput = EMAIL_RE.test(searchQuery.trim());
 
   const fetchChums = useCallback(async () => {
     setChumsLoading(true);
@@ -183,18 +269,24 @@ export default function ChumsClient() {
   }, [fetchChums]);
 
   const doSearch = useCallback(async (q: string) => {
-    if (q.trim().length < 2) {
+    const trimmed = q.trim();
+    if (trimmed.length < 2) {
       setSearchResults([]);
       setHasSearched(false);
+      setInviteEligible(false);
       return;
     }
     setSearchLoading(true);
     setHasSearched(true);
+    setInviteEligible(false);
     try {
-      const res = await apiFetch(`/chums/search?q=${encodeURIComponent(q.trim())}`, { auth: true });
-      const data = await res.json() as { ok?: boolean; users?: SearchUser[] };
-      if (data.ok && Array.isArray(data.users)) {
-        setSearchResults(data.users);
+      const res = await apiFetch(`/chums/search?q=${encodeURIComponent(trimmed)}`, { auth: true });
+      const data = await res.json() as SearchResponse;
+      if (data.ok) {
+        setSearchResults(data.users ?? []);
+        setInviteEligible(data.inviteEligible ?? false);
+        setInviteeEmail(data.inviteeEmail ?? "");
+        setAlreadyInvited(data.alreadyInvited ?? false);
       }
     } catch {
       // Silently fail search
@@ -206,9 +298,7 @@ export default function ChumsClient() {
   const handleSearchChange = (value: string) => {
     setSearchQuery(value);
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-    searchDebounceRef.current = setTimeout(() => {
-      doSearch(value);
-    }, 300);
+    searchDebounceRef.current = setTimeout(() => doSearch(value), 300);
   };
 
   const handleAdd = async (userId: string) => {
@@ -217,12 +307,10 @@ export default function ChumsClient() {
       const res = await apiFetch(`/chums/${userId}`, { method: "POST", auth: true });
       const data = await res.json() as { ok?: boolean };
       if (!data.ok) throw new Error();
-      // Optimistically add to chums list
       const added = searchResults.find((u) => u.userId === userId);
       if (added) {
         setChums((prev) => [{ userId: added.userId, displayName: added.displayName, handle: added.handle, avatarUrl: added.avatarUrl }, ...prev]);
       }
-      // Update search results
       setSearchResults((prev) => prev.map((u) => u.userId === userId ? { ...u, isChummed: true } : u));
       toast.success(`${added?.displayName ?? "User"} added to your Chums.`);
     } catch {
@@ -249,6 +337,32 @@ export default function ChumsClient() {
     }
   };
 
+  const handleSendInvite = async () => {
+    setInviteSending(true);
+    try {
+      const res = await apiFetch("/chums/invite", {
+        method: "POST",
+        auth: true,
+        body: JSON.stringify({ email: inviteeEmail }),
+      });
+      const data = await res.json() as { ok?: boolean; alreadyPending?: boolean; error?: { code?: string; message?: string } };
+      if (!res.ok && data.error?.code === "RATE_LIMITED") {
+        toast.error(data.error.message ?? "You've sent too many invites today.");
+        setInviteDialogOpen(false);
+        return;
+      }
+      if (!data.ok && !data.alreadyPending) throw new Error();
+      setInviteDialogOpen(false);
+      toast.success(`Invitation sent to ${inviteeEmail}! They'll be added to your Chums when they join.`);
+      // Mark locally as already invited so re-search shows that state
+      setAlreadyInvited(true);
+    } catch {
+      toast.error("Couldn't send invitation. Please try again.");
+    } finally {
+      setInviteSending(false);
+    }
+  };
+
   return (
     <Stack spacing={{ xs: 3, sm: 4 }}>
       {/* Header */}
@@ -270,11 +384,11 @@ export default function ChumsClient() {
           <Box>
             <Typography variant="h6" sx={{ fontWeight: 700 }}>Find New Chums</Typography>
             <Typography color="text.secondary" variant="body2" sx={{ mt: 0.5 }}>
-              Search by name or @handle to find someone and add them to your Chums.
+              Search by name, @handle, or email address to find someone and add them to your Chums.
             </Typography>
           </Box>
           <TextField
-            placeholder="Search by name or @handle…"
+            placeholder="Search by name, @handle, or email…"
             value={searchQuery}
             onChange={(e) => handleSearchChange(e.target.value)}
             fullWidth
@@ -284,18 +398,57 @@ export default function ChumsClient() {
                 <InputAdornment position="start">
                   {searchLoading
                     ? <CircularProgress size={18} />
-                    : <SearchRoundedIcon sx={{ color: "text.secondary" }} />}
+                    : isEmailInput
+                      ? <MailOutlineRoundedIcon sx={{ color: "text.secondary" }} />
+                      : <SearchRoundedIcon sx={{ color: "text.secondary" }} />}
                 </InputAdornment>
               ),
             }}
           />
 
-          {/* Search results */}
-          {hasSearched && searchResults.length === 0 && !searchLoading && (
+          {/* No results */}
+          {hasSearched && searchResults.length === 0 && !searchLoading && !inviteEligible && (
             <Typography variant="body2" color="text.secondary" sx={{ py: 1 }}>
               No results found for &ldquo;{searchQuery}&rdquo;.
             </Typography>
           )}
+
+          {/* Invite CTA — email entered, no eligible account found */}
+          {hasSearched && inviteEligible && !searchLoading && (
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: 1.5,
+                py: 1,
+                px: 1.5,
+                borderRadius: 2,
+                bgcolor: "action.hover",
+              }}
+            >
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="body2" fontWeight={600} sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {inviteeEmail}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {alreadyInvited ? "Invitation already sent" : "Not on NewChums yet — invite them!"}
+                </Typography>
+              </Box>
+              <Button
+                variant={alreadyInvited ? "outlined" : "contained"}
+                size="small"
+                color={alreadyInvited ? "inherit" : "primary"}
+                onClick={() => setInviteDialogOpen(true)}
+                sx={{ flexShrink: 0, fontSize: "0.8125rem" }}
+              >
+                {alreadyInvited ? "Invited" : "Invite to NewChums"}
+              </Button>
+            </Box>
+          )}
+
+          {/* Search results */}
           {searchResults.length > 0 && (
             <Stack divider={<Divider />} sx={{ mt: 0.5 }}>
               {searchResults.map((user) => (
@@ -354,6 +507,16 @@ export default function ChumsClient() {
           )}
         </Stack>
       </AppCard>
+
+      {/* Invite confirmation dialog */}
+      <InviteDialog
+        open={inviteDialogOpen}
+        email={inviteeEmail}
+        alreadyInvited={alreadyInvited}
+        onClose={() => setInviteDialogOpen(false)}
+        onConfirm={handleSendInvite}
+        sending={inviteSending}
+      />
     </Stack>
   );
 }

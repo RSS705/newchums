@@ -378,8 +378,8 @@ export default function SettingsClient() {
             </Typography>
           </Box>
           <PrivacyToggleRow
-            title="Hide my profile from NewChums search"
-            description="If enabled, your profile will not appear in Chum searches, and other users will not be able to add you as a chum or invite you to events. If you join an event, attendees will still be able to view your profile."
+            title="Hide me from NewChums search and discovery"
+            description="If enabled, your profile will not appear in Chum searches, exact email lookups in the Chum flow, or other in-app discovery features. Other users will not be able to add you as a Chum through search. If you join an event, attendees will still be able to view your profile."
             enabled={isHiddenFromSearch}
             onToggle={setPrivacyHiddenFromSearch}
             showDivider={false}

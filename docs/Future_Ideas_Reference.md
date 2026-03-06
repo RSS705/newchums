@@ -126,3 +126,127 @@ This document is meant to:
 - “Host score” reputation system
 - Event streak mechanic
 - Anonymous feedback after events
+
+# Metrics
+
+# Early Success Metrics for NewChums
+
+These metrics help determine whether the platform is gaining real traction once events are live.
+
+They should eventually appear in **Super Admin analytics views**, but do not need to be implemented yet.
+
+---
+
+## 1. Events Created per Active User
+
+**Purpose**  
+Measures whether users are willing to host events and whether the platform can generate enough event supply.
+
+**Formula**
+
+Events created in period ÷ Active users in same period
+
+**Healthy Early Range**
+
+0.1 – 0.3
+
+Meaning **10–30% of active users create events**.
+
+**Example**
+
+100 active users  
+15 events created  
+= 0.15 (healthy)
+
+If the value falls **below ~0.05**, the platform may struggle to generate enough events.
+
+---
+
+## 2. Invite Conversion Rate
+
+**Purpose**  
+Measures how effectively event invitations bring new users into the platform.
+
+**Formula**
+
+New accounts created from event invites ÷ Total invites sent
+
+Includes:
+
+- Email invites
+- Shared event links
+
+**Healthy Early Range**
+
+10% – 30%
+
+**Example**
+
+50 invites sent  
+10 new accounts created  
+= 20% conversion
+
+Low conversion may indicate:
+
+- unclear event pages
+- signup friction
+- weak event descriptions
+
+---
+
+## 3. Event Attendance Rate
+
+**Purpose**  
+Measures whether events are compelling enough for people to actually attend.
+
+**Formula**
+
+RSVP yes (or actual attendees) ÷ Total event page views
+
+**Healthy Early Range**
+
+10% – 25%
+
+**Example**
+
+40 event page views  
+8 RSVPs  
+= 20% attendance rate
+
+Low attendance may indicate:
+
+- weak event descriptions
+- inconvenient event timing/location
+- low trust in early platform usage
+
+---
+
+## Bonus Metric (Most Predictive)
+
+### Repeat Event Participation
+
+**Purpose**  
+Measures whether attendees return to the platform after their first event.
+
+**Formula**
+
+Users who attend a second event ÷ Users who attended a first event
+
+**Healthy Early Range**
+
+40% – 60%
+
+If people attend one event and return for another, the platform is likely delivering real value.
+
+---
+
+## Key Principle
+
+NewChums success should be measured by **successful gatherings**, not simply total users.
+
+Strong events naturally lead to:
+
+- repeat usage
+- friendships forming
+- more event hosts
+- organic platform growth

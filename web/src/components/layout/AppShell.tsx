@@ -78,13 +78,25 @@ export default function AppShell({ children, user }: AppShellProps) {
     let cancelled = false;
     apiFetch("/profile", { auth: true })
       .then((res) => res.json())
-      .then((data: { ok?: boolean; profile?: NavProfile }) => {
+      .then((data: { ok?: boolean; profile?: NavProfile & { email?: string } }) => {
         if (!cancelled && data.ok && data.profile) {
           setNavProfile(data.profile);
           if (data.profile.avatar_url) {
             cachedAvatarUrl = `${getAvatarBaseUrl()}${data.profile.avatar_url}`;
           } else {
             cachedAvatarUrl = null;
+          }
+
+          // Consume any pending invite token stored before a Google OAuth redirect.
+          // Only runs once: token is removed from sessionStorage before the request fires.
+          const pendingInvite = sessionStorage.getItem("nc_pending_invite");
+          const userEmail = data.profile.email;
+          if (pendingInvite && userEmail) {
+            sessionStorage.removeItem("nc_pending_invite");
+            apiFetch("/chums/invite/accept", {
+              method: "POST",
+              body: JSON.stringify({ token: pendingInvite, email: userEmail }),
+            }).catch(() => {});
           }
         }
       })
