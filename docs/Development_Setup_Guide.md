@@ -293,13 +293,16 @@ Chunk XX — YYYY-MM-DD
 ---
 
 Chunk 04 — 2026-03-06
-- Goal: Chum invite flow, email-based Chum search, Mutual Chums emoji refresh.
+- Goal: Chum invite flow, email-based Chum search, Mutual Chums emoji refresh, display name fallback fix, admin "Users" rename.
 - Changes:
   - DB migration 023 (`newchums.chum_invites` table — token hash, status, 30-day expiry, accepted_user_id).
   - API: `GET /chums/search` extended — detects email input, performs exact email lookup (hidden/suspended users treated as not found), returns `inviteEligible`, `inviteeEmail`, `alreadyInvited`; `POST /chums/invite` creates invite record and sends Postmark template 43805532; `POST /chums/invite/accept` consumes token during signup and creates mutual Chum links + notifications for both users. Rate limit: 10 invites per inviter per 24 h.
-  - Web: `ChumsClient.tsx` — email-aware search input (mail icon when email detected), invite CTA banner, confirmation dialog (`InviteDialog`), already-sent state, warm success toasts. `SignupClient.tsx` — reads `?invite=<token>` from URL and calls `POST /chums/invite/accept` after successful account creation (non-fatal). `SettingsClient.tsx` — privacy toggle label updated to "Hide me from NewChums search and discovery" with helper text covering email lookup.
+  - API route ordering fix: `POST /chums/invite` and `POST /chums/invite/accept` moved before `POST /chums/:userId` in the Hono route table to prevent "invite" being parsed as a UUID `:userId`.
+  - API display name fallback: all Chum-related endpoints now fall back to username (without `@`) before the generic "NewChums user" string, when `name` is not set.
+  - Web: `ChumsClient.tsx` — email-aware search input (mail icon when email detected), invite CTA banner with "Not on NewChums yet — invite them!" label, confirmation dialog (`InviteDialog`), already-sent state, warm success toasts. `SignupClient.tsx` — credentials path reads `?invite=<token>` from URL and calls `POST /chums/invite/accept` after account creation (non-fatal); Google OAuth path saves token to `sessionStorage` before the OAuth redirect. `AppShell.tsx` — on every authenticated profile load, checks `sessionStorage` for `nc_pending_invite` token, clears it, and calls `POST /chums/invite/accept` to handle the Google OAuth invite path. `SettingsClient.tsx` — privacy toggle label updated to "Hide me from NewChums search and discovery" with helper text covering email lookup.
   - Mutual Chums indicators: replaced all `HandshakeRoundedIcon` usages with 🤝 emoji in `ChumsClient.tsx`, `ProfileHeaderSection.tsx`, and `ProfileChumsSection.tsx`. Tooltips and accessible labels preserved.
-- Verification: Email search returns existing users or invite CTA; duplicate invite prevention works; invite token consumed on signup creates mutual Chums; Mutual Chums emoji shows in all three locations; `npm run build` passes.
+  - Admin sidebar tab and page header renamed from "Chums" to "Users" (`nav.ts`, `AdminChumsClient.tsx`).
+- Verification: Email search returns existing users or invite CTA; duplicate invite prevention works; invite token consumed on both credentials and Google OAuth signup paths creates mutual Chums; Mutual Chums emoji shows in all three locations; display name falls back to username when name is unset; `npm run build` passes.
 - Deploy: Run migration 023 against production DB before deploying.
 - Next Steps: —
 

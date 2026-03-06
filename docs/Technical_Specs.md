@@ -1,7 +1,7 @@
 # Technical Specifications
 
 Last Updated: March 6, 2026  
-Version: 5.8
+Version: 5.9
 
 This document defines the authoritative technical architecture of NewChums.  
 It describes **what exists today** and the structural commitments we are making.
@@ -235,7 +235,7 @@ All `/admin/*` routes require `role = 'super_admin'` on the requesting user, enf
 - `POST /admin/users/:id/suspend` — suspend a user. Stores `suspended_at`, `suspended_by_user_id`. Cannot self-suspend.
 - `POST /admin/users/:id/unsuspend` — clear suspension fields.
 
-**Web page:** `/admin/chums` — table with search, sort, status chips, suspend/unsuspend actions with confirmation dialogs.
+**Web page:** `/admin/chums` — table with search, sort, status chips, suspend/unsuspend actions with confirmation dialogs. Sidebar tab and page header label: **"Users"**.
 
 **Suspension enforcement:** credentials login rejected with `AccountSuspended`; OAuth sign-in redirected to `/login?error=AccountSuspended`; all authenticated API requests from suspended users return `403 USER_SUSPENDED`; signup with a suspended email returns `409 EMAIL_SUSPENDED`.
 
@@ -262,8 +262,23 @@ One-way saved-people feature. No approval flow, no mutual-state requirement.
 - `is_hidden_chum_list = true` → Chums section hidden on that user's public profile (enforced in both the API response and the web component).
 - `is_hidden_from_chum_lists = true` → user excluded from all `GET /public/users/:handle/chums` responses, but remains on private Chum lists.
 
+**Invite flow details:**
+- `POST /chums/invite` and `POST /chums/invite/accept` must be registered **before** `POST /chums/:userId` in the Hono route table. Hono matches routes in registration order; registering them after the parameterised route causes "invite" to be interpreted as a `:userId`, resulting in a UUID parse error.
+- Invite token is a 32-byte URL-safe base64 string (same generator as password reset tokens). Only the SHA-256 hash is stored in the database; the plaintext token appears only in the invite URL.
+- Invite expiry: 30 days from creation. Expired invites are ignored by `POST /chums/invite/accept`.
+- Anti-spam: one valid pending invite per `(inviter_user_id, invitee_email)` pair; rate limit 10 invites per inviter per 24 hours.
+
+**Invite acceptance — both signup paths:**
+
+| Path | Mechanism |
+|------|-----------|
+| Credentials signup | `SignupClient.tsx` reads `?invite=<token>` from URL and calls `POST /chums/invite/accept` immediately after successful account creation (non-fatal). |
+| Google OAuth signup | `SignupClient.tsx` saves the token to `sessionStorage` (`nc_pending_invite`) before triggering the OAuth redirect. `AppShell.tsx` reads and clears the token after the authenticated profile loads, then calls `POST /chums/invite/accept`. The token is removed from `sessionStorage` before the request fires to prevent double-execution. |
+
+**Display name fallback:** All Chum-related API responses use `displayName: name?.trim() || username (without @) || "NewChums user"`. Users without a set display name show their username instead of the generic fallback.
+
 **Web:**
-- `/chum-groups` — "Your Chums" page with two sections: search/add (debounced, 300 ms) and private Chum list with Remove action.
+- `/chum-groups` — "Your Chums" page. Single search input auto-detects email input (mail icon shown); name/handle search otherwise. For email lookups with no eligible account found, an invite CTA is shown inline. Confirmation dialog before sending invite; friendly "already sent" state for duplicate attempts. Private Chum list below with Remove action. Mutual Chums shown with 🤝 emoji.
 - `/u/[handle]` — "Add to Chums" / "Remove from Chums" button in the profile header card (top-right). Shown for logged-in viewers who are not the profile owner. Chum status fetched via `GET /chums/check/:userId` after profile loads.
 - Public Chums section renders below the hobbies card when the profile owner's `is_hidden_chum_list = false` and they have at least one public-visible Chum. Paginated (8 per page, prev/next). Section is entirely absent (no empty card) when the list is empty.
 
