@@ -2,7 +2,9 @@
 
 import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
+import HandshakeRoundedIcon from "@mui/icons-material/HandshakeRounded";
 import UserAvatar from "@/components/common/UserAvatar";
 
 const GENDER_DISPLAY: Record<string, string> = {
@@ -18,6 +20,8 @@ export type ProfileHeaderSectionProps = {
   gender: string | null;
   avatarUrl: string | null;
   avatarBaseUrl: string;
+  /** When true, show a mutual Chums handshake indicator near the handle */
+  isMutual?: boolean;
 };
 
 export default function ProfileHeaderSection({
@@ -27,6 +31,7 @@ export default function ProfileHeaderSection({
   gender,
   avatarUrl,
   avatarBaseUrl,
+  isMutual,
 }: ProfileHeaderSectionProps) {
   const ageText = age != null ? `${age} years old` : null;
   // prefer_not_to_say is suppressed at the API level, but guard here too
@@ -55,9 +60,30 @@ export default function ProfileHeaderSection({
           {displayName}
         </Typography>
         {handleDisplay && (
-          <Typography color="text.secondary" sx={{ fontSize: "0.9375rem", mt: 0.25 }}>
-            {handleDisplay}
-          </Typography>
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: 0.75,
+              justifyContent: { xs: "center", sm: "flex-start" },
+              mt: 0.25,
+            }}
+          >
+            <Typography color="text.secondary" sx={{ fontSize: "0.9375rem" }}>
+              {handleDisplay}
+            </Typography>
+            {isMutual && (
+              <Tooltip title="Mutual Chums" placement="top" arrow>
+                <Box
+                  component="span"
+                  sx={{ display: "flex", alignItems: "center", lineHeight: 0 }}
+                  aria-label="Mutual Chums"
+                >
+                  <HandshakeRoundedIcon sx={{ fontSize: 16, color: "#F4B400", opacity: 0.9 }} />
+                </Box>
+              </Tooltip>
+            )}
+          </Box>
         )}
         {identityText && (
           <Typography color="text.secondary" sx={{ fontSize: "0.875rem", mt: 0.25 }}>

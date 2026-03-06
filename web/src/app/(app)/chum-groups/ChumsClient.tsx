@@ -7,7 +7,9 @@ import Divider from "@mui/material/Divider";
 import InputAdornment from "@mui/material/InputAdornment";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
+import HandshakeRoundedIcon from "@mui/icons-material/HandshakeRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -21,6 +23,7 @@ type ChumUser = {
   handle: string | null;
   avatarUrl: string | null;
   chummedAt?: string | Date;
+  isMutual?: boolean;
 };
 
 type SearchUser = ChumUser & { isChummed: boolean };
@@ -102,6 +105,18 @@ function ChumRow({
           </Typography>
         )}
       </Box>
+      {/* Mutual Chums indicator — shown only when both users have added each other */}
+      {user.isMutual && isChummed && (
+        <Tooltip title="Mutual Chums" placement="top" arrow>
+          <Box
+            component="span"
+            sx={{ display: "flex", alignItems: "center", flexShrink: 0 }}
+            aria-label="Mutual Chums"
+          >
+            <HandshakeRoundedIcon sx={{ fontSize: 18, color: "#F4B400", opacity: 0.9 }} />
+          </Box>
+        </Tooltip>
+      )}
       <Box sx={{ flexShrink: 0 }}>
         {isChummed ? (
           <Button

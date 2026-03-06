@@ -38,13 +38,19 @@ export type PublicProfileViewProps = {
   isOwner?: boolean;
   /** When present (viewer is logged in and not the owner), show Add/Remove Chum button. */
   chumAction?: ChumAction;
+  /** When true, both users have added each other — show mutual handshake icon */
+  isMutual?: boolean;
+  /** Number of Chums shared between viewer and profile owner (0 or undefined = hide) */
+  sharedCount?: number;
+  /** True when the current viewer is logged in (used to enable auth'd fetches in sub-sections) */
+  viewerLoggedIn?: boolean;
 };
 
 /**
  * Shared public profile view. Renders modular sections; easy to add future
  * sections (XP, badges, trust metrics, unlockables) as separate components.
  */
-export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAction }: PublicProfileViewProps) {
+export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAction, isMutual, sharedCount, viewerLoggedIn }: PublicProfileViewProps) {
   const cardBg = getProfileCardBg(user.profile_theme);
   const ownerHandleSlug = user.handle?.replace(/^@/, "") ?? null;
   return (
@@ -96,6 +102,7 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
               gender={user.gender}
               avatarUrl={user.avatarUrl}
               avatarBaseUrl={avatarBaseUrl}
+              isMutual={isMutual}
             />
           </Box>
           {chumAction && (
@@ -132,9 +139,24 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
         </AppCard>
       )}
 
+      {/* Shared Chums count — subtle line below header for logged-in non-owners when > 0 */}
+      {!isOwner && sharedCount !== undefined && sharedCount > 0 && (
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          sx={{
+            fontSize: "0.8125rem",
+            textAlign: { xs: "center", sm: "left" },
+            mt: { xs: -1.5, sm: -2 },
+          }}
+        >
+          You have {sharedCount} {sharedCount === 1 ? "Chum" : "Chums"} in common.
+        </Typography>
+      )}
+
       {/* Public Chums section — self-contained card, hidden if owner toggled it off or list is empty */}
       {ownerHandleSlug && !user.is_hidden_chum_list && (
-        <ProfileChumsSection ownerHandle={ownerHandleSlug} />
+        <ProfileChumsSection ownerHandle={ownerHandleSlug} viewerLoggedIn={viewerLoggedIn} />
       )}
 
       {/* TODO: Future sections — XP, badges, trust metrics, unlockables — add as separate components. */}

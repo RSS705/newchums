@@ -3208,7 +3208,11 @@ app.get("/chums", async (c) => {
     const appUserId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
     const rows = (await sql`
       SELECT u.id, u.name, u.username, u.avatar_key, u.avatar_updated_at,
-             uc.created_at AS chummed_at
+             uc.created_at AS chummed_at,
+             EXISTS(
+               SELECT 1 FROM user_chums back
+               WHERE back.user_id = uc.chum_user_id AND back.chum_user_id = ${appUserId}
+             ) AS is_mutual
       FROM user_chums uc
       JOIN newchums.users u ON u.id = uc.chum_user_id
       WHERE uc.user_id = ${appUserId}
@@ -3220,6 +3224,7 @@ app.get("/chums", async (c) => {
       avatar_key: string | null;
       avatar_updated_at: string | Date | null;
       chummed_at: string | Date;
+      is_mutual: boolean;
     }[];
     const chums = rows.map((r) => ({
       userId: r.id,
@@ -3227,6 +3232,7 @@ app.get("/chums", async (c) => {
       handle: r.username ? (r.username.startsWith("@") ? r.username : `@${r.username}`) : null,
       avatarUrl: buildAvatarUrl(r.id, r.avatar_key, r.avatar_updated_at, c.env.MEDIA_BUCKET),
       chummedAt: r.chummed_at,
+      isMutual: r.is_mutual === true,
     }));
     return c.json({ ok: true, chums });
   } catch (err) {
@@ -3301,11 +3307,18 @@ app.get("/chums/check/:userId", async (c) => {
     const sql = getSql(c.env);
     const appUserId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
     const rows = (await sql`
-      SELECT 1 FROM user_chums
-      WHERE user_id = ${appUserId} AND chum_user_id = ${targetId}
-      LIMIT 1
-    `) as unknown[];
-    return c.json({ ok: true, isChummed: rows.length > 0 });
+      SELECT
+        EXISTS(SELECT 1 FROM user_chums WHERE user_id = ${appUserId} AND chum_user_id = ${targetId}) AS is_chummed,
+        EXISTS(SELECT 1 FROM user_chums WHERE user_id = ${targetId}  AND chum_user_id = ${appUserId}) AS they_chummed_me,
+        (SELECT COUNT(*)::int
+         FROM user_chums a
+         JOIN user_chums b ON a.chum_user_id = b.chum_user_id
+         WHERE a.user_id = ${appUserId} AND b.user_id = ${targetId}) AS shared_count
+    `) as { is_chummed: boolean; they_chummed_me: boolean; shared_count: number }[];
+    const row = rows[0];
+    const isChummed = row?.is_chummed === true;
+    const isMutual = isChummed && row?.they_chummed_me === true;
+    return c.json({ ok: true, isChummed, isMutual, sharedCount: row?.shared_count ?? 0 });
   } catch (err) {
     console.error("[GET /chums/check/:userId]", err);
     return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
@@ -3497,6 +3510,18 @@ app.get("/public/users/:handle/chums", async (c) => {
     if (owner.is_hidden_chum_list) {
       return c.json({ ok: true, chums: [], total: 0, hasMore: false, hidden: true });
     }
+    // Optional viewer auth: if logged in and not the owner, compute isMutualWithViewer per chum.
+    // When viewerId is null the EXISTS subquery safely returns false for all rows.
+    let viewerId: string | null = null;
+    try {
+      const authPayload = await requireAuth(c);
+      if (authPayload?.email && typeof authPayload.email === "string") {
+        const vId = await ensureAppUserId(sql, authPayload.email, null);
+        if (vId !== owner.id) viewerId = vId;
+      }
+    } catch {
+      // Non-critical; proceed without mutual indicators
+    }
     const countRows = (await sql`
       SELECT COUNT(*) AS total
       FROM user_chums uc
@@ -3507,7 +3532,10 @@ app.get("/public/users/:handle/chums", async (c) => {
     `) as { total: string }[];
     const total = parseInt(countRows[0]?.total ?? "0", 10);
     const rows = (await sql`
-      SELECT u.id, u.name, u.username, u.avatar_key, u.avatar_updated_at
+      SELECT u.id, u.name, u.username, u.avatar_key, u.avatar_updated_at,
+        (EXISTS(SELECT 1 FROM user_chums v1 WHERE v1.user_id = ${viewerId} AND v1.chum_user_id = u.id)
+         AND EXISTS(SELECT 1 FROM user_chums v2 WHERE v2.user_id = u.id AND v2.chum_user_id = ${viewerId}))
+           AS is_mutual_with_viewer
       FROM user_chums uc
       JOIN newchums.users u ON u.id = uc.chum_user_id
       WHERE uc.user_id = ${owner.id}
@@ -3521,12 +3549,14 @@ app.get("/public/users/:handle/chums", async (c) => {
       username: string | null;
       avatar_key: string | null;
       avatar_updated_at: string | Date | null;
+      is_mutual_with_viewer: boolean;
     }[];
     const chums = rows.map((r) => ({
       userId: r.id,
       displayName: r.name?.trim() ?? "NewChums user",
       handle: r.username ? (r.username.startsWith("@") ? r.username : `@${r.username}`) : null,
       avatarUrl: buildAvatarUrl(r.id, r.avatar_key, r.avatar_updated_at, c.env.MEDIA_BUCKET),
+      isMutualWithViewer: r.is_mutual_with_viewer === true,
     }));
     return c.json({ ok: true, chums, total, hasMore: offset + limit < total });
   } catch (err) {

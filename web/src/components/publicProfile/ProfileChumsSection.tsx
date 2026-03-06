@@ -4,9 +4,11 @@ import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import CircularProgress from "@mui/material/CircularProgress";
 import Stack from "@mui/material/Stack";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
 import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
+import HandshakeRoundedIcon from "@mui/icons-material/HandshakeRounded";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
@@ -20,6 +22,7 @@ type PublicChum = {
   displayName: string;
   handle: string | null;
   avatarUrl: string | null;
+  isMutualWithViewer?: boolean;
 };
 
 type FetchState =
@@ -29,9 +32,11 @@ type FetchState =
 
 type ProfileChumsSectionProps = {
   ownerHandle: string;
+  /** Pass true when the current viewer is logged in so mutual indicators can be fetched */
+  viewerLoggedIn?: boolean;
 };
 
-export default function ProfileChumsSection({ ownerHandle }: ProfileChumsSectionProps) {
+export default function ProfileChumsSection({ ownerHandle, viewerLoggedIn }: ProfileChumsSectionProps) {
   const avatarBaseUrl = getAvatarBaseUrl();
   const [page, setPage] = useState(0);
   const [fetchState, setFetchState] = useState<FetchState>({ status: "loading" });
@@ -44,7 +49,7 @@ export default function ProfileChumsSection({ ownerHandle }: ProfileChumsSection
         const handleSlug = ownerHandle.replace(/^@/, "");
         const res = await apiFetch(
           `/public/users/${encodeURIComponent(handleSlug)}/chums?offset=${offset}&limit=${PAGE_SIZE}`,
-          { auth: false },
+          { auth: viewerLoggedIn === true },
         );
         const data = (await res.json()) as {
           ok?: boolean;
@@ -113,12 +118,40 @@ export default function ProfileChumsSection({ ownerHandle }: ProfileChumsSection
 
             const inner = (
               <Stack spacing={0.5} alignItems="center">
-                <UserAvatar
-                  src={chum.avatarUrl ? `${avatarBaseUrl}${chum.avatarUrl}` : null}
-                  name={chum.displayName}
-                  username={chum.handle}
-                  size={64}
-                />
+                {/* Avatar with optional mutual badge */}
+                <Box sx={{ position: "relative", display: "inline-flex" }}>
+                  <UserAvatar
+                    src={chum.avatarUrl ? `${avatarBaseUrl}${chum.avatarUrl}` : null}
+                    name={chum.displayName}
+                    username={chum.handle}
+                    size={64}
+                  />
+                  {chum.isMutualWithViewer && (
+                    <Tooltip title="Mutual Chums" placement="top" arrow>
+                      <Box
+                        component="span"
+                        aria-label="Mutual Chums"
+                        sx={{
+                          position: "absolute",
+                          bottom: -2,
+                          right: -2,
+                          bgcolor: "background.paper",
+                          borderRadius: "50%",
+                          width: 20,
+                          height: 20,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          border: "1.5px solid",
+                          borderColor: "divider",
+                          boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+                        }}
+                      >
+                        <HandshakeRoundedIcon sx={{ fontSize: 11, color: "#F4B400" }} />
+                      </Box>
+                    </Tooltip>
+                  )}
+                </Box>
                 <Typography
                   variant="caption"
                   fontWeight={600}
