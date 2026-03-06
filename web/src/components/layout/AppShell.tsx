@@ -2,7 +2,6 @@
 
 import AddCircleRoundedIcon from "@mui/icons-material/AddCircleRounded";
 import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
-import NotificationsOutlinedIcon from "@mui/icons-material/NotificationsOutlined";
 import PersonRoundedIcon from "@mui/icons-material/PersonRounded";
 import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
 import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
@@ -36,6 +35,7 @@ import UserAvatar from "@/components/common/UserAvatar";
 import SiteHeader, { HEADER_MIN_HEIGHT } from "@/components/layout/SiteHeader";
 import MarketingNavSection from "@/components/layout/MarketingNavSection";
 import LandingFooter from "@/components/landing/LandingFooter";
+import NotificationBell from "@/components/layout/NotificationBell";
 
 export type AppShellUser = {
   name?: string | null;
@@ -303,13 +303,7 @@ export default function AppShell({ children, user }: AppShellProps) {
           }
           rightSide={
             <>
-              <IconButton
-                color="inherit"
-                aria-label="notifications"
-                size="medium"
-              >
-                <NotificationsOutlinedIcon fontSize="medium" />
-              </IconButton>
+              <NotificationBell />
               <IconButton
                 color="inherit"
                 aria-label="open account menu"

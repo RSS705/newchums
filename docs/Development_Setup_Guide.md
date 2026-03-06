@@ -1,6 +1,6 @@
 # Development Setup Guide
 
-Last Updated: March 3, 2026
+Last Updated: March 6, 2026
 
 This document is the operational guide for running and deploying NewChums.  
 For architectural invariants and contracts, see `docs/Technical_Specs.md`.  
@@ -13,8 +13,10 @@ For diagrams and flows, see `docs/System_Map.md`.
 - **Production:** Single production environment.
 - **Workers:** Web = `newchums-web-dev` (production), API = `newchums-api`.
 - **Canonical host:** `https://newchums.com` (www → non-www redirect enforced before Auth.js).
-- **API migration:** Signup, email verification, password reset, email change, profile (incl. DOB + bio), interests, handle availability, onboarding username/DOB, avatar flows, notification preferences, and admin interests moderation are in the API worker.
-- **Super admin:** Users with `role = 'super_admin'` in the DB can access `/admin/interests` (soft-delete, restore, merge interests). Role is set directly in the database; no UI promotion flow.
+- **API migration:** Signup, email verification, password reset, email change, profile (incl. DOB, bio, gender, profile theme), interests, handle availability, onboarding, avatar flows, notification preferences, admin moderation, user suspension, and Chums are in the API worker.
+- **Super admin:** Users with `role = 'super_admin'` can access `/admin/interests` (interests moderation) and `/admin/chums` (view + suspend/unsuspend user accounts). Role is set directly in the database; no UI promotion flow.
+- **Chums:** One-way saved-people feature. `/chum-groups` page (search + private list). Add/Remove button on public profiles. Public Chums section on profiles (privacy-gated). Two new privacy toggles in Settings.
+- **Notifications:** In-app notification bell in top nav. Currently supports `chum_added_you`. Bell turns gold when unread notifications exist; dropdown marks them as read on open.
 - **Avatar storage:** R2 bucket `newchums-media` (binding `MEDIA_BUCKET`). Client can route media operations and avatar display through `NEXT_PUBLIC_AVATAR_BASE_URL` for cross-env consistency when sharing DB.
 - **Build:** `cd web && npm run build` passes (Edge/OpenNext constraints apply).
 
@@ -208,12 +210,24 @@ psql "$DATABASE_URL" -f sql/013_add_privacy_columns.sql
 psql "$DATABASE_URL" -f sql/014_add_is_hidden_age.sql
 psql "$DATABASE_URL" -f sql/015_interests_moderation.sql
 psql "$DATABASE_URL" -f sql/016_interests_merged_into.sql
+psql "$DATABASE_URL" -f sql/017_add_user_suspension.sql
+psql "$DATABASE_URL" -f sql/018_add_gender.sql
+psql "$DATABASE_URL" -f sql/019_add_profile_theme.sql
+psql "$DATABASE_URL" -f sql/020_add_chum_privacy_columns.sql
+psql "$DATABASE_URL" -f sql/021_create_user_chums.sql
+psql "$DATABASE_URL" -f sql/022_create_notifications.sql
 ```
 
 Notes:
 - Migration `008_interests_seed.sql` requires the interests tables to exist and seeds the base list.
 - Migration `015_interests_moderation.sql` adds `role` to `users` and moderation columns (`is_deleted`, audit fields) to `interests`.
 - Migration `016_interests_merged_into.sql` adds `merged_into_interest_id` to `interests` for tracking merge targets.
+- Migration `017_add_user_suspension.sql` adds suspension columns and a partial index on `is_suspended = true`.
+- Migration `018_add_gender.sql` adds `gender TEXT NULL` to `users`.
+- Migration `019_add_profile_theme.sql` adds `profile_theme TEXT NULL` to `users`.
+- Migration `020_add_chum_privacy_columns.sql` adds `is_hidden_chum_list` and `is_hidden_from_chum_lists` (both boolean, default false) to `users`.
+- Migration `021_create_user_chums.sql` creates the `newchums.user_chums` table for one-way Chum relationships.
+- Migration `022_create_notifications.sql` creates the `newchums.notifications` table for in-app notifications.
 
 ---
 
@@ -273,6 +287,36 @@ Chunk XX — YYYY-MM-DD
 ## Session Log (Chunks)
 
 (Existing chunks should remain here. Add new chunks at the end.)
+
+---
+
+Chunk 03 — 2026-03-06
+- Goal: First-version in-app notification system using the existing bell icon.
+- Changes:
+  - DB migration 022 (`newchums.notifications` table with general schema supporting future types).
+  - API: `GET /notifications` (up to 50, newest first, actor info joined); `POST /notifications/read` (specific IDs or all unread); `POST /chums/:userId` updated — uses `RETURNING id` to detect new inserts and creates a `chum_added_you` notification only for genuine new Chum adds (not duplicate conflicts).
+  - Web: new `NotificationBell` component (`web/src/components/layout/NotificationBell.tsx`) — fetches on mount for initial state, opens Popover on click, marks unread as read, gold (#F4B400) filled icon when unread; `AppShell.tsx` updated to use it.
+- Verification: Adding someone to Chums creates notification for them; bell turns gold; opening dropdown marks as read; re-adding after removal generates new notification; duplicate adds do not duplicate notifications; `npm run build` passes.
+- Deploy: Run migration 022 against production DB before deploying.
+- Next Steps: —
+
+---
+
+Chunk 02 — 2026-03-06
+- Goal: User suspension, gender + profile theme fields, and the "Your Chums" MVP.
+- Changes:
+  - DB migrations 017 (user suspension fields + index), 018 (`gender`), 019 (`profile_theme`), 020 (Chum privacy columns), 021 (`user_chums` table).
+  - API: suspension middleware (403 on all authenticated routes for suspended users); `POST /admin/users/:id/suspend|unsuspend`; `GET /admin/users`; `gender` and `profile_theme` on `GET/PUT /profile` and `GET /public/users/:handle`; `is_hidden_chum_list` and `is_hidden_from_chum_lists` on profile endpoints; `GET /chums`, `GET /chums/search`, `GET /chums/check/:userId`, `POST /chums/:userId`, `DELETE /chums/:userId`, `GET /public/users/:handle/chums`.
+  - Auth: credentials login and OAuth sign-in reject suspended users; signup rejects suspended emails.
+  - Web — Admin: `/admin/chums` page (view + suspend/unsuspend users); "Chums" tab added above "Interests" in super admin sidebar.
+  - Web — Profile: gender select and profile accent (theme) dropdown on edit profile page; gender displayed in public profile identity line (`38 years old • Male`).
+  - Web — Public profile: "Add to Chums" / "Remove from Chums" button in header card; public Chums section (paginated, privacy-gated) below hobbies card.
+  - Web — Your Chums (`/chum-groups`): full replacement of stub with search + private Chum list view.
+  - Web — Settings: two new Chum privacy toggles.
+  - Auth error banners: shared `AuthErrorBanner` component; suspended-account messaging on `/login` and `/signup`.
+- Verification: Chum add/remove works; search excludes hidden users; public Chums section respects both privacy toggles; empty section renders nothing; suspension blocks login, OAuth, API access, and signup; `npm run build` passes.
+- Deploy: Run migrations 017–021 against production DB before deploying.
+- Next Steps: —
 
 ---
 

@@ -3332,11 +3332,25 @@ app.post("/chums/:userId", async (c) => {
     if (targetRows.length === 0) {
       return c.json({ ok: false, error: { code: "USER_NOT_FOUND" } }, 404);
     }
-    await sql`
+    const insertResult = (await sql`
       INSERT INTO user_chums (user_id, chum_user_id)
       VALUES (${appUserId}, ${targetId})
       ON CONFLICT (user_id, chum_user_id) DO NOTHING
-    `;
+      RETURNING id
+    `) as { id: string }[];
+    // Only create a notification when a new chum was actually added (not a duplicate).
+    // Removing and re-adding later creates a new notification because the conflict is gone.
+    // Must be awaited — Cloudflare Workers abandon unawaited promises when the response is sent.
+    if (insertResult.length > 0) {
+      try {
+        await sql`
+          INSERT INTO newchums.notifications (user_id, type, actor_user_id)
+          VALUES (${targetId}, 'chum_added_you', ${appUserId})
+        `;
+      } catch (notifErr) {
+        console.error("[POST /chums/:userId] notification insert failed (non-fatal):", notifErr);
+      }
+    }
     return c.json({ ok: true });
   } catch (err) {
     console.error("[POST /chums/:userId]", err);
@@ -3362,6 +3376,102 @@ app.delete("/chums/:userId", async (c) => {
     return c.json({ ok: true });
   } catch (err) {
     console.error("[DELETE /chums/:userId]", err);
+    return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
+  }
+});
+
+/** GET /notifications — fetch recent notifications for the authenticated user. */
+app.get("/notifications", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+  try {
+    const sql = getSql(c.env);
+    const appUserId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+    const rows = (await sql`
+      SELECT
+        n.id, n.type, n.actor_user_id, n.entity_id, n.metadata, n.read_at, n.created_at,
+        u.name          AS actor_name,
+        u.username      AS actor_username,
+        u.avatar_key    AS actor_avatar_key,
+        u.avatar_updated_at AS actor_avatar_updated_at
+      FROM newchums.notifications n
+      LEFT JOIN newchums.users u ON u.id = n.actor_user_id
+      WHERE n.user_id = ${appUserId}
+      ORDER BY n.created_at DESC
+      LIMIT 50
+    `) as {
+      id: string;
+      type: string;
+      actor_user_id: string | null;
+      entity_id: string | null;
+      metadata: Record<string, unknown> | null;
+      read_at: string | null;
+      created_at: string;
+      actor_name: string | null;
+      actor_username: string | null;
+      actor_avatar_key: string | null;
+      actor_avatar_updated_at: string | null;
+    }[];
+    const notifications = rows.map((r) => ({
+      id: r.id,
+      type: r.type,
+      actorUserId: r.actor_user_id,
+      actorDisplayName: r.actor_name ?? null,
+      actorHandle: r.actor_username
+        ? r.actor_username.startsWith("@")
+          ? r.actor_username
+          : `@${r.actor_username}`
+        : null,
+      actorAvatarUrl: buildAvatarUrl(
+        r.actor_user_id ?? "",
+        r.actor_avatar_key,
+        r.actor_avatar_updated_at,
+        c.env.MEDIA_BUCKET,
+      ),
+      entityId: r.entity_id,
+      metadata: r.metadata,
+      readAt: r.read_at,
+      createdAt: r.created_at,
+    }));
+    return c.json({ ok: true, notifications });
+  } catch (err) {
+    console.error("[GET /notifications]", err);
+    return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
+  }
+});
+
+/** POST /notifications/read — mark notifications as read.
+ *  Body: { ids?: string[] } — if ids omitted or empty, marks all unread as read. */
+app.post("/notifications/read", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+  try {
+    const sql = getSql(c.env);
+    const appUserId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+    const body = await c.req.json().catch(() => ({})) as { ids?: unknown };
+    const ids: string[] = Array.isArray(body?.ids) ? (body.ids as string[]).filter((x) => typeof x === "string") : [];
+    if (ids.length > 0) {
+      await sql`
+        UPDATE newchums.notifications
+        SET read_at = NOW()
+        WHERE user_id = ${appUserId}
+          AND id = ANY(${ids}::uuid[])
+          AND read_at IS NULL
+      `;
+    } else {
+      await sql`
+        UPDATE newchums.notifications
+        SET read_at = NOW()
+        WHERE user_id = ${appUserId} AND read_at IS NULL
+      `;
+    }
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[POST /notifications/read]", err);
     return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
   }
 });

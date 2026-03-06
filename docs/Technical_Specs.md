@@ -1,7 +1,7 @@
 # Technical Specifications
 
-Last Updated: March 3, 2026  
-Version: 5.5
+Last Updated: March 6, 2026  
+Version: 5.7
 
 This document defines the authoritative technical architecture of NewChums.  
 It describes **what exists today** and the structural commitments we are making.
@@ -90,7 +90,7 @@ The `users` table has a `role TEXT NULL` column (migration 015). The only suppor
 
 **Role propagation:** `GET /profile` returns `role`; `getOrCreateAppUser` in `web/src/lib/user.ts` reads it at layout time; `AppShell` conditionally renders the Super Admin sidebar section.
 
-**Admin web page:** `/admin/interests` — server component checks `role = 'super_admin'` via DB and returns 404 for non-admins. Client: `web/src/app/(app)/admin/interests/`.
+**Admin web pages:** `/admin/interests` (interests moderation) and `/admin/chums` (user account management + suspension) — server components check `role = 'super_admin'` and return 404 for non-admins.
 
 ---
 
@@ -180,21 +180,24 @@ Defaults are applied at account creation (credentials signup, OAuth) and backfil
 
 ### Privacy preferences (Settings toggles)
 
-Users manage privacy preferences in **Settings** (`/settings`). These toggles control profile visibility. Stored in `users` table (columns added in migration 013). Loaded via `GET /profile`, persisted via `PUT /profile` with `is_hidden_from_search` and `is_hidden_from_external_indexing` in the body. Both default to `false` (OFF) for new and existing users.
+Users manage privacy preferences in **Settings** (`/settings`). Stored in the `users` table. Loaded via `GET /profile`, persisted via `PUT /profile`. All default to `false` (OFF) for new and existing users.
 
 **Privacy toggles (current):**
 
-| Column | UI label | Description | Enforcement |
-|--------|----------|-------------|-------------|
-| `is_hidden_from_search` | Hide my profile from NewChums search | When ON: profile not in Chum searches; others cannot add as chum or invite to events. Event attendees can still view profile. | Not yet implemented |
-| `is_hidden_from_external_indexing` | Hide my profile from search engines | When ON: public profile page emits `robots: noindex, nofollow` so search engines do not index it. | Implemented |
+| Column | UI label | Enforcement |
+|--------|----------|-------------|
+| `is_hidden_from_search` | Hide my profile from NewChums search | Enforced in `GET /chums/search` — users with this ON are excluded from Chum search results. |
+| `is_hidden_from_external_indexing` | Hide my profile from search engines | Public profile page emits `robots: noindex, nofollow`. |
+| `is_hidden_age` | Hide my age | Age field is not shown on the public profile. |
+| `is_hidden_chum_list` | Hide my Chums from my public profile | When ON, the Chums section is not rendered on the user's public profile. Private Chum lists are unaffected. |
+| `is_hidden_from_chum_lists` | Hide me from appearing on other people's profile Chum lists | When ON, the user is excluded from `GET /public/users/:handle/chums` responses. They still appear on private Chum lists of users who have already added them. |
 
-**Implementation notes:** UI: `web/src/app/(app)/settings/PrivacyToggleRow.tsx`, `SettingsClient.tsx`. API: `GET /profile` and `PUT /profile` in `api/src/index.ts`. Schema: `web/sql/013_add_privacy_columns.sql`. Future work: enforce these flags in search, chum discovery, and SEO (e.g. noindex meta).
+**Implementation notes:** UI: `web/src/app/(app)/settings/PrivacyToggleRow.tsx`, `SettingsClient.tsx`. API: `GET /profile` and `PUT /profile` in `api/src/index.ts`. Schema: migrations 013 (`is_hidden_from_search`, `is_hidden_from_external_indexing`), 014 (`is_hidden_age`), 020 (`is_hidden_chum_list`, `is_hidden_from_chum_lists`).
 
 ### Profile, onboarding, and lookups
 
-- `GET /profile`, `PUT /profile` (auth required). `GET /profile` response includes `role` (string | null) — used by the web app to gate super-admin UI.
-- `GET /public/users/:handle` (public; no auth) — returns public profile by handle: `{ user: { userId, displayName, handle, age, bio, hobbies, avatarUrl } }`. Age computed from DOB server-side; DOB never exposed.
+- `GET /profile`, `PUT /profile` (auth required). Response includes `role`, `gender`, `profile_theme`, `is_hidden_chum_list`, `is_hidden_from_chum_lists`. `PUT /profile` validates `gender` (allowed: `male`, `female`, `other`, `prefer_not_to_say`) and `profile_theme` (allowed values defined in `web/src/lib/profileTheme.ts`).
+- `GET /public/users/:handle` (public; no auth) — returns public profile by handle. Includes `gender` (suppressed if `prefer_not_to_say` or null), `profile_theme`, `is_hidden_chum_list`. Age computed from DOB server-side; DOB never exposed.
 - `GET /handles/available?handle=...` (auth required)
 - `POST /user/username` (auth required)
 - `POST /user/date-of-birth` (auth required)
@@ -225,6 +228,63 @@ All `/admin/*` routes require `role = 'super_admin'` on the requesting user, enf
 - `DELETE /admin/interests/:id` — soft-delete: sets `is_deleted = true`, `deleted_at`, `deleted_by_user_id`. Also hard-deletes all `user_interests` rows for that interest (users are disconnected).
 - `POST /admin/interests/:id/restore` — restore a soft-deleted interest: clears `is_deleted`, `deleted_at`, `deleted_by_user_id`.
 - `POST /admin/interests/merge` — body: `{ sourceInterestId, targetInterestId }`. Moves all `user_interests` from source → target (deduplicating to avoid unique constraint violations), sets `source.merged_into_interest_id = target.id`, then soft-deletes source. Target must be active.
+
+### Admin — user accounts (super_admin only)
+
+- `GET /admin/users` — list all user accounts. Query params: `q` (search email/handle/name/userId). Returns: `id`, `created_at`, `email`, `username`, `name`, `role`, `is_suspended`, `suspended_at`.
+- `POST /admin/users/:id/suspend` — suspend a user. Stores `suspended_at`, `suspended_by_user_id`. Cannot self-suspend.
+- `POST /admin/users/:id/unsuspend` — clear suspension fields.
+
+**Web page:** `/admin/chums` — table with search, sort, status chips, suspend/unsuspend actions with confirmation dialogs.
+
+**Suspension enforcement:** credentials login rejected with `AccountSuspended`; OAuth sign-in redirected to `/login?error=AccountSuspended`; all authenticated API requests from suspended users return `403 USER_SUSPENDED`; signup with a suspended email returns `409 EMAIL_SUSPENDED`.
+
+### Chums
+
+One-way saved-people feature. No approval flow, no mutual-state requirement.
+
+**API endpoints (auth required):**
+
+| Route | Description |
+|-------|-------------|
+| `GET /chums` | Returns the authenticated user's full private Chum list (all added users, regardless of their privacy settings). Ordered by most recently added. |
+| `GET /chums/search?q=` | Search for users to add. Excludes self and users with `is_hidden_from_search = true`. Minimum 2 characters. Returns up to 10 results with `isChummed` flag. |
+| `GET /chums/check/:userId` | Returns `{ isChummed: boolean }` for a specific user. Used by the public profile page to determine button state. |
+| `POST /chums/:userId` | Add a user to Chum list. Idempotent (`ON CONFLICT DO NOTHING`). Cannot chum self. |
+| `DELETE /chums/:userId` | Remove a user from Chum list. |
+| `GET /public/users/:handle/chums` | Public-facing paginated Chum list for a profile. No auth required. Respects: owner's `is_hidden_chum_list` (if ON, returns `{ hidden: true }`) and each listed Chum's `is_hidden_from_chum_lists` (filters them out). Query params: `offset`, `limit` (max 20, default 8). |
+
+**Privacy rules:**
+- `is_hidden_from_search = true` → user excluded from `GET /chums/search` results.
+- Users already on a private Chum list remain there even if they later enable `is_hidden_from_search`.
+- `is_hidden_chum_list = true` → Chums section hidden on that user's public profile (enforced in both the API response and the web component).
+- `is_hidden_from_chum_lists = true` → user excluded from all `GET /public/users/:handle/chums` responses, but remains on private Chum lists.
+
+**Web:**
+- `/chum-groups` — "Your Chums" page with two sections: search/add (debounced, 300 ms) and private Chum list with Remove action.
+- `/u/[handle]` — "Add to Chums" / "Remove from Chums" button in the profile header card (top-right). Shown for logged-in viewers who are not the profile owner. Chum status fetched via `GET /chums/check/:userId` after profile loads.
+- Public Chums section renders below the hobbies card when the profile owner's `is_hidden_chum_list = false` and they have at least one public-visible Chum. Paginated (8 per page, prev/next). Section is entirely absent (no empty card) when the list is empty.
+
+### In-app notifications
+
+General notifications table (`newchums.notifications`, migration 022) designed for future extensibility.
+
+**Schema:** `id`, `user_id` (recipient), `type`, `actor_user_id` (nullable), `entity_id` (nullable, for future entity links), `metadata` (JSONB, nullable), `read_at` (null = unread), `created_at`. Indexed on `(user_id, created_at DESC)` and a partial index for unread rows.
+
+**Supported types:**
+
+| Type | Trigger | Recipient |
+|------|---------|-----------|
+| `chum_added_you` | `POST /chums/:userId` — only when a new Chum is created (not a duplicate `ON CONFLICT`). Re-adding after removal generates a fresh notification. | The user who was added |
+
+**API endpoints (auth required):**
+
+| Route | Description |
+|-------|-------------|
+| `GET /notifications` | Returns up to 50 recent notifications for the authenticated user, newest first. Joins actor user row to include `actorDisplayName`, `actorHandle`, `actorAvatarUrl`. |
+| `POST /notifications/read` | Marks notifications as read. Body: `{ ids?: string[] }`. If `ids` is omitted or empty, marks all unread as read. |
+
+**Web — bell icon:** `web/src/components/layout/NotificationBell.tsx`, rendered in `AppShell` top nav. Fetches notifications on mount (for initial bell state). On click: refreshes list, marks unread as read, shows Popover dropdown with newest-first list. Bell icon turns `#F4B400` (brand gold) and switches to filled icon when unread notifications exist.
 
 ### Media (avatar)
 
@@ -280,12 +340,17 @@ Core tables include:
 - `email_change_requests` (migration 011)
 - `interests` + `user_interests` (interest/hobby associations)
 - `user_profile.notification_prefs` (JSONB, migration 012) — per-notification-type enabled + frequency
-- `users.is_hidden_from_search`, `users.is_hidden_from_external_indexing` (boolean, migration 013) — privacy toggles; `is_hidden_from_external_indexing` enforced via noindex meta on public profile page
+- `users.is_hidden_from_search`, `users.is_hidden_from_external_indexing` (boolean, migration 013) — privacy toggles
 - `users.is_hidden_age` (boolean, migration 014) — when true, age is not shown on public profile; default false
 - `users.role` (TEXT NULL, migration 015) — user role; `super_admin` unlocks admin features
-- `interests.is_deleted` (boolean, migration 015) — soft-delete flag; indexed; user-facing queries filter `WHERE is_deleted = false`
-- `interests.created_by_user_id`, `updated_at`, `updated_by_user_id`, `deleted_at`, `deleted_by_user_id` (migration 015) — audit trail for admin moderation
-- `interests.merged_into_interest_id` (UUID NULL, migration 016) — points to the canonical interest when a duplicate is merged; used by `PUT /profile` to auto-remap users
+- `interests.is_deleted`, audit columns (migration 015) — soft-delete + audit trail for admin moderation
+- `interests.merged_into_interest_id` (UUID NULL, migration 016) — merge target for deleted/duplicate interests
+- `users.is_suspended`, `suspended_at`, `suspended_by_user_id`, `suspension_reason` (migration 017) — account suspension; indexed on `is_suspended = true`
+- `users.gender` (TEXT NULL, migration 018) — allowed values: `male`, `female`, `other`, `prefer_not_to_say`; suppressed on public profile if `prefer_not_to_say` or null
+- `users.profile_theme` (TEXT NULL, migration 019) — controls accent color of the identity card on the public profile; allowed values: 16 curated palette keys defined in `web/src/lib/profileTheme.ts`
+- `users.is_hidden_chum_list`, `users.is_hidden_from_chum_lists` (boolean, migration 020) — Chums privacy toggles; both default false
+- `newchums.user_chums` (migration 021) — one-way Chum relationships; columns: `id`, `user_id`, `chum_user_id`, `created_at`; unique constraint on `(user_id, chum_user_id)`; self-chum prevented by CHECK constraint; indexed on both FKs
+- `newchums.notifications` (migration 022) — general notifications table; columns: `id`, `user_id`, `type`, `actor_user_id`, `entity_id`, `metadata` (JSONB), `read_at`, `created_at`; indexed for unread queries
 - events and rsvps (present; implementation varies by feature maturity)
 
 PostGIS is available for geo queries.
