@@ -14,6 +14,7 @@ export type PublicProfileUser = {
   displayName: string;
   handle: string | null;
   age: number | null;
+  gender: string | null;
   bio: string | null;
   hobbies: string[];
   avatarUrl: string | null;
@@ -76,6 +77,7 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner }: Publ
             displayName={user.displayName}
             handle={user.handle}
             age={user.age}
+            gender={user.gender}
             avatarUrl={user.avatarUrl}
             avatarBaseUrl={avatarBaseUrl}
           />

@@ -9,6 +9,7 @@ import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
 import InputAdornment from "@mui/material/InputAdornment";
+import MenuItem from "@mui/material/MenuItem";
 import Slider from "@mui/material/Slider";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
@@ -31,10 +32,19 @@ import { isDuplicate, nameToSlug, slugToName } from "@/lib/interestUtils";
 import { loadGooglePlacesScript } from "@/lib/loadGooglePlaces";
 
 type InterestOption = { id?: string; name: string; slug: string };
+const GENDER_OPTIONS = [
+  { value: "", label: "Not specified" },
+  { value: "male", label: "Male" },
+  { value: "female", label: "Female" },
+  { value: "other", label: "Other" },
+  { value: "prefer_not_to_say", label: "Prefer not to say" },
+] as const;
+
 type Profile = {
   name?: string | null;
   username?: string | null;
   date_of_birth?: string | null;
+  gender?: string | null;
   bio?: string | null;
   avatar_url?: string | null;
   home_city: string | null;
@@ -62,6 +72,7 @@ export default function ProfileClient() {
 
   const [displayName, setDisplayName] = useState("");
   const [handle, setHandle] = useState("");
+  const [gender, setGender] = useState("");
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [bio, setBio] = useState("");
   const [avatarDialogOpen, setAvatarDialogOpen] = useState(false);
@@ -189,6 +200,7 @@ export default function ProfileClient() {
         setProfile(p);
         setDisplayName(p.name ?? "");
         setHandle((p.username ?? "").replace(/^@/, ""));
+        setGender(p.gender ?? "");
         setDateOfBirth(p.date_of_birth ?? "");
         setBio(p.bio ?? "");
         setHomeAddress(p.home_city ?? "");
@@ -231,6 +243,7 @@ export default function ProfileClient() {
     if (!profile) return true;
     if (displayName !== (profile.name ?? "")) return true;
     if (handle !== (profile.username ?? "").replace(/^@/, "")) return true;
+    if (gender !== (profile.gender ?? "")) return true;
     if (dateOfBirth !== (profile.date_of_birth ?? "")) return true;
     if (bio !== (profile.bio ?? "")) return true;
     if (homeAddress !== (profile.home_city ?? "")) return true;
@@ -243,7 +256,7 @@ export default function ProfileClient() {
     if (currSlugs.size !== prevSlugs.size) return true;
     for (const s of currSlugs) if (!prevSlugs.has(s)) return true;
     return false;
-  }, [profile, displayName, handle, dateOfBirth, bio, homeAddress, homeLat, homeLng, travelRadiusKm, interestItems]);
+  }, [profile, displayName, handle, gender, dateOfBirth, bio, homeAddress, homeLat, homeLng, travelRadiusKm, interestItems]);
 
   const handleAvatarUpload = useCallback(
     async (fileOrBlob: File | Blob) => {
@@ -448,6 +461,7 @@ export default function ProfileClient() {
         body: JSON.stringify({
           name: displayName.trim() || null,
           bio: bio.trim() || null,
+          gender: gender || null,
           date_of_birth: dateOfBirth.trim() || null,
           home_city: homeAddress.trim() || null,
           home_lat: homeLat,
@@ -660,6 +674,19 @@ export default function ProfileClient() {
                       : "Your unique handle, visible throughout the system.")
                 }
               />
+              <AppTextField
+                select
+                label="Gender"
+                value={gender}
+                onChange={(e) => setGender(e.target.value)}
+                helperText="Optional. Visible on your public profile."
+              >
+                {GENDER_OPTIONS.map((opt) => (
+                  <MenuItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </MenuItem>
+                ))}
+              </AppTextField>
               <NCDatePicker
                 id="profile-date-of-birth"
                 label="Date of birth"

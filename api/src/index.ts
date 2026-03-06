@@ -148,7 +148,7 @@ app.get("/public/users/:handle", async (c) => {
   try {
     const sql = getSql(c.env);
     const userRows = (await sql`
-      SELECT u.id, u.name, u.username, u.date_of_birth, u.avatar_key, u.avatar_updated_at,
+      SELECT u.id, u.name, u.username, u.date_of_birth, u.gender, u.avatar_key, u.avatar_updated_at,
         COALESCE(u.is_hidden_age, false) AS is_hidden_age,
         COALESCE(u.is_hidden_from_external_indexing, false) AS is_hidden_from_external_indexing
       FROM newchums.users u
@@ -160,6 +160,7 @@ app.get("/public/users/:handle", async (c) => {
       name: string | null;
       username: string | null;
       date_of_birth: string | Date | null;
+      gender: string | null;
       avatar_key: string | null;
       avatar_updated_at: string | Date | null;
       is_hidden_age: boolean;
@@ -195,6 +196,8 @@ app.get("/public/users/:handle", async (c) => {
         : null;
     const displayName = user.name?.trim() ?? "NewChums user";
     const handle = (user.username ?? "").trim();
+    const publicGender =
+      user.gender && user.gender !== "prefer_not_to_say" ? user.gender : null;
     return c.json({
       ok: true,
       user: {
@@ -202,6 +205,7 @@ app.get("/public/users/:handle", async (c) => {
         displayName,
         handle: handle ? (handle.startsWith("@") ? handle : `@${handle}`) : null,
         age,
+        gender: publicGender,
         bio: profile?.bio ?? null,
         hobbies: interestRows.map((r) => r.name),
         avatarUrl,
@@ -1410,7 +1414,7 @@ app.get("/profile", async (c) => {
       (payload as { name?: string | null }).name,
     );
     const userRows = (await sql`
-      SELECT name, username, email, date_of_birth, avatar_key, avatar_updated_at, role,
+      SELECT name, username, email, date_of_birth, gender, avatar_key, avatar_updated_at, role,
         (password_hash IS NOT NULL) AS has_password,
         COALESCE(is_hidden_from_search, false) AS is_hidden_from_search,
         COALESCE(is_hidden_from_external_indexing, false) AS is_hidden_from_external_indexing,
@@ -1421,6 +1425,7 @@ app.get("/profile", async (c) => {
       username: string | null;
       email: string;
       date_of_birth: string | Date | null;
+      gender: string | null;
       avatar_key: string | null;
       avatar_updated_at: string | Date | null;
       role: string | null;
@@ -1475,6 +1480,7 @@ app.get("/profile", async (c) => {
     const isHiddenFromExternalIndexing = userInfo?.is_hidden_from_external_indexing ?? false;
     const isHiddenAge = userInfo?.is_hidden_age ?? false;
     const role = userInfo?.role ?? null;
+    const gender = userInfo?.gender ?? null;
 
     if (!profile) {
       return c.json({
@@ -1484,6 +1490,7 @@ app.get("/profile", async (c) => {
           username: handle,
           email,
           date_of_birth: dateOfBirth,
+          gender,
           bio: null,
           home_city: null,
           home_lat: null,
@@ -1509,6 +1516,7 @@ app.get("/profile", async (c) => {
         username: handle,
         email,
         date_of_birth: dateOfBirth,
+        gender,
         bio,
         home_city: profile.home_city,
         home_lat: profile.home_lat,
@@ -1560,6 +1568,7 @@ app.put("/profile", async (c) => {
       name?: string | null;
       bio?: string | null;
       date_of_birth?: string | null;
+      gender?: string | null;
       home_city?: string | null;
       home_lat?: number | string | null;
       home_lng?: number | string | null;
@@ -1600,6 +1609,16 @@ app.put("/profile", async (c) => {
             400,
           );
         }
+      }
+    }
+
+    const ALLOWED_GENDERS = new Set(["male", "female", "other", "prefer_not_to_say"]);
+    if ("gender" in body && body.gender != null && body.gender !== "") {
+      if (!ALLOWED_GENDERS.has(String(body.gender))) {
+        return c.json(
+          { ok: false, error: { code: "INVALID_GENDER", message: "Invalid gender value" } },
+          400,
+        );
       }
     }
 
@@ -1896,6 +1915,10 @@ app.put("/profile", async (c) => {
       const val = body.is_hidden_age === true;
       txQueries.push(sql`UPDATE newchums.users SET is_hidden_age = ${val} WHERE id = ${appUserId}`);
     }
+    if ("gender" in body && body.gender !== undefined) {
+      const genderVal = body.gender != null && body.gender !== "" ? String(body.gender) : null;
+      txQueries.push(sql`UPDATE newchums.users SET gender = ${genderVal} WHERE id = ${appUserId}`);
+    }
     if (rawInterestSlugs !== null) {
       txQueries.push(
         sql`DELETE FROM user_interests WHERE user_id = ${appUserId}`,
@@ -1912,7 +1935,7 @@ app.put("/profile", async (c) => {
     }
     await sql.transaction(txQueries);
     const userRowsAfter = (await sql`
-      SELECT name, username, email, date_of_birth, avatar_key, avatar_updated_at, (password_hash IS NOT NULL) AS has_password,
+      SELECT name, username, email, date_of_birth, gender, avatar_key, avatar_updated_at, (password_hash IS NOT NULL) AS has_password,
         COALESCE(is_hidden_from_search, false) AS is_hidden_from_search,
         COALESCE(is_hidden_from_external_indexing, false) AS is_hidden_from_external_indexing,
         COALESCE(is_hidden_age, false) AS is_hidden_age
@@ -1922,6 +1945,7 @@ app.put("/profile", async (c) => {
       username: string | null;
       email: string;
       date_of_birth: string | Date | null;
+      gender: string | null;
       avatar_key: string | null;
       avatar_updated_at: string | Date | null;
       has_password: boolean;
@@ -1967,6 +1991,7 @@ app.put("/profile", async (c) => {
         username: userAfter?.username ?? null,
         email: userAfter?.email ?? null,
         date_of_birth: dateOfBirthAfter,
+        gender: userAfter?.gender ?? null,
         bio: profile.bio ?? null,
         avatar_url: avatarUrl,
         home_city: profile.home_city,

@@ -5,10 +5,17 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import UserAvatar from "@/components/common/UserAvatar";
 
+const GENDER_DISPLAY: Record<string, string> = {
+  male: "Male",
+  female: "Female",
+  other: "Other",
+};
+
 export type ProfileHeaderSectionProps = {
   displayName: string;
   handle: string | null;
   age: number | null;
+  gender: string | null;
   avatarUrl: string | null;
   avatarBaseUrl: string;
 };
@@ -17,10 +24,14 @@ export default function ProfileHeaderSection({
   displayName,
   handle,
   age,
+  gender,
   avatarUrl,
   avatarBaseUrl,
 }: ProfileHeaderSectionProps) {
   const ageText = age != null ? `${age} years old` : null;
+  // prefer_not_to_say is suppressed at the API level, but guard here too
+  const genderText = gender && gender !== "prefer_not_to_say" ? (GENDER_DISPLAY[gender] ?? null) : null;
+  const identityText = [ageText, genderText].filter(Boolean).join(" • ") || null;
   const handleDisplay = handle ? (handle.startsWith("@") ? handle : `@${handle}`) : null;
 
   return (
@@ -48,9 +59,9 @@ export default function ProfileHeaderSection({
             {handleDisplay}
           </Typography>
         )}
-        {ageText && (
+        {identityText && (
           <Typography color="text.secondary" sx={{ fontSize: "0.875rem", mt: 0.25 }}>
-            {ageText}
+            {identityText}
           </Typography>
         )}
       </Box>
