@@ -36,7 +36,7 @@ export default function LandingHero({ isLoggedIn = false }: { isLoggedIn?: boole
             <Stack direction="row" alignItems="center" spacing={1}>
               <EmojiPeopleOutlinedIcon sx={{ fontSize: 20, color: "primary.main" }} />
               <Typography variant="h6" color="text.secondary">
-                Find your people
+                Shared interests bring people together
               </Typography>
             </Stack>
             <Typography
@@ -47,10 +47,11 @@ export default function LandingHero({ isLoggedIn = false }: { isLoggedIn?: boole
                 lineHeight: { md: 1.2 },
               }}
             >
-              Meet nearby people with{" "}
+              Turn{" "}
               <Box component="span" sx={{ color: "primary.main" }}>
-                similar interests
+                shared interests
               </Box>
+              {" "}into real-life gatherings
             </Typography>
             <Typography
               variant="h5"
@@ -61,7 +62,7 @@ export default function LandingHero({ isLoggedIn = false }: { isLoggedIn?: boole
                 fontSize: { xs: "1rem", sm: "1.25rem" },
               }}
             >
-              Sign up once, and get notified when your kind of people are planning something fun.
+              Sign up once and get notified when people nearby are planning something you&apos;d enjoy.
             </Typography>
             <Stack direction={{ xs: "column", sm: "row" }} spacing={2} pt={2}>
               {isLoggedIn ? (
