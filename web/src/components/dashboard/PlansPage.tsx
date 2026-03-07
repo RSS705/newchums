@@ -1,102 +1,188 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import CircularProgress from "@mui/material/CircularProgress";
 import Grid from "@mui/material/Grid";
 import Stack from "@mui/material/Stack";
+import Tab from "@mui/material/Tab";
+import Tabs from "@mui/material/Tabs";
 import Typography from "@mui/material/Typography";
-import EventCard, { type EventCardData } from "@/components/events/EventCard";
+import AddCircleRoundedIcon from "@mui/icons-material/AddCircleRounded";
+import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
+import Link from "next/link";
+import EventCard, { type PlanEvent } from "@/components/events/EventCard";
 import { SectionHeader } from "@/components/ui";
-
-const PLACEHOLDER_UPCOMING: EventCardData[] = [
-  {
-    id: "1",
-    title: "Morning Brew & Chat",
-    category: "COFFEE & CHAT",
-    dateTime: "Tomorrow, 9:00 AM",
-    location: "The Daily Grind Cafe",
-    attendeeSummary: "3 joined",
-  },
-  {
-    id: "2",
-    title: "Catan & Cocktails Night",
-    category: "BOARD GAMES",
-    dateTime: "Thursday, 7:00 PM",
-    location: "The Dice & Drink Hub",
-    attendeeSummary: "4/6 joined",
-  },
-];
-
-const PLACEHOLDER_PAST: EventCardData[] = [
-  {
-    id: "5",
-    title: "Sunset Yoga Session",
-    category: "WELLNESS",
-    dateTime: "Last Sunday",
-    location: "Riverside Park",
-    attendeeSummary: "5 attended",
-    isPast: true,
-  },
-  {
-    id: "6",
-    title: "Weekly Coding Jam",
-    category: "TECH",
-    dateTime: "Last Wednesday",
-    location: "The Hive Co-working",
-    attendeeSummary: "8 attended",
-    isPast: true,
-  },
-];
+import { apiFetch } from "@/lib/apiClient";
 
 export default function PlansPage() {
+  const [tab, setTab] = useState(0);
+  const [upcoming, setUpcoming] = useState<PlanEvent[]>([]);
+  const [past, setPast] = useState<PlanEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      try {
+        const [upRes, pastRes] = await Promise.all([
+          apiFetch("/events/mine?filter=upcoming", { auth: true }),
+          apiFetch("/events/mine?filter=past", { auth: true }),
+        ]);
+        if (upRes.ok) {
+          const d = (await upRes.json()) as { events: PlanEvent[] };
+          setUpcoming(d.events ?? []);
+        }
+        if (pastRes.ok) {
+          const d = (await pastRes.json()) as { events: PlanEvent[] };
+          setPast(d.events ?? []);
+        }
+      } catch { /* ignore */ }
+      setLoading(false);
+    };
+    load();
+  }, []);
+
+  const hosted = (tab === 0 ? upcoming : past).filter((e) => e.isHost);
+  const joined = (tab === 0 ? upcoming : past).filter((e) => !e.isHost);
+  const isPast = tab === 1;
+
   return (
-    <Stack spacing={{ xs: 4, sm: 5 }}>
-      <Box sx={{ pt: 0.5, pb: 0, mb: 0 }}>
-        <Typography
-          component="h1"
-          sx={{
-            mb: 1,
-            lineHeight: 1.25,
-            fontSize: { xs: "1.75rem", sm: "2rem" },
-            letterSpacing: "-0.02em",
-            fontWeight: 700,
-            color: "text.primary",
-          }}
+    <Stack spacing={{ xs: 3, sm: 4 }}>
+      {/* Header */}
+      <Stack
+        direction={{ xs: "column", sm: "row" }}
+        alignItems={{ xs: "flex-start", sm: "center" }}
+        justifyContent="space-between"
+        spacing={2}
+      >
+        <Box>
+          <Typography
+            component="h1"
+            sx={{
+              mb: 0.5,
+              lineHeight: 1.25,
+              fontSize: { xs: "1.75rem", sm: "2rem" },
+              letterSpacing: "-0.02em",
+              fontWeight: 700,
+            }}
+          >
+            Your Plans
+          </Typography>
+          <Typography variant="body1" color="text.secondary" sx={{ fontSize: { xs: "0.875rem", sm: "0.9375rem" } }}>
+            Gatherings you&apos;re hosting, attending, or have been invited to.
+          </Typography>
+        </Box>
+        <Button
+          component={Link}
+          href="/events/create"
+          variant="contained"
+          color="primary"
+          startIcon={<AddCircleRoundedIcon />}
+          sx={{ px: 3, py: 1.25, fontWeight: 600, textTransform: "none", whiteSpace: "nowrap" }}
         >
-          Your Plans
-        </Typography>
-        <Typography
-          variant="body1"
-          color="text.secondary"
-          sx={{
-            fontSize: { xs: "0.875rem", sm: "0.9375rem" },
-            fontWeight: 400,
-          }}
+          Start a plan
+        </Button>
+      </Stack>
+
+      {/* Tabs */}
+      <Box sx={{ borderBottom: 1, borderColor: "divider" }}>
+        <Tabs
+          value={tab}
+          onChange={(_, v) => setTab(v)}
+          textColor="primary"
+          indicatorColor="primary"
         >
-          Gatherings you&apos;ve joined or are interested in.
-        </Typography>
+          <Tab label={`Upcoming${upcoming.length > 0 ? ` (${upcoming.length})` : ""}`} />
+          <Tab label={`Past${past.length > 0 ? ` (${past.length})` : ""}`} />
+        </Tabs>
       </Box>
 
-      <Box>
-        <SectionHeader title="Your Upcoming Gatherings" emphasis="primary" />
-        <Grid container spacing={2}>
-          {PLACEHOLDER_UPCOMING.map((event) => (
-            <Grid key={event.id} size={{ xs: 12, sm: 6 }}>
-              <EventCard event={event} emphasis="upcoming" />
-            </Grid>
-          ))}
-        </Grid>
-      </Box>
+      {/* Loading */}
+      {loading && (
+        <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}>
+          <CircularProgress />
+        </Box>
+      )}
 
-      <Box sx={{ pt: { xs: 1.5, sm: 2 } }}>
-        <SectionHeader title="Your Previous Gatherings" emphasis="secondary" />
-        <Grid container spacing={2}>
-          {PLACEHOLDER_PAST.map((event) => (
-            <Grid key={event.id} size={{ xs: 12, sm: 6 }}>
-              <EventCard event={event} imageHeight={120} emphasis="past" />
-            </Grid>
-          ))}
-        </Grid>
-      </Box>
+      {/* Content */}
+      {!loading && (
+        <Stack spacing={{ xs: 4, sm: 5 }}>
+          {/* Hosted section */}
+          {hosted.length > 0 && (
+            <Box>
+              <SectionHeader
+                title={isPast ? "Plans you hosted" : "Plans you\u2019re hosting"}
+                emphasis="primary"
+              />
+              <Grid container spacing={2}>
+                {hosted.map((event) => (
+                  <Grid key={event.id} size={{ xs: 12, sm: 6, md: 4 }}>
+                    <EventCard event={event} isPast={isPast} />
+                  </Grid>
+                ))}
+              </Grid>
+            </Box>
+          )}
+
+          {/* Joined / invited section */}
+          {joined.length > 0 && (
+            <Box>
+              <SectionHeader
+                title={isPast ? "Plans you attended" : "Plans you\u2019ve joined or been invited to"}
+                emphasis={hosted.length > 0 ? "secondary" : "primary"}
+              />
+              <Grid container spacing={2}>
+                {joined.map((event) => (
+                  <Grid key={event.id} size={{ xs: 12, sm: 6, md: 4 }}>
+                    <EventCard event={event} isPast={isPast} />
+                  </Grid>
+                ))}
+              </Grid>
+            </Box>
+          )}
+
+          {/* Empty state */}
+          {hosted.length === 0 && joined.length === 0 && (
+            <Box
+              sx={{
+                textAlign: "center",
+                py: { xs: 8, sm: 12 },
+                px: 3,
+              }}
+            >
+              <CalendarMonthRoundedIcon
+                sx={{ fontSize: 56, color: "primary.light", mb: 2 }}
+              />
+              <Typography variant="h6" fontWeight={600} sx={{ mb: 1 }}>
+                {isPast ? "No past plans yet" : "No upcoming plans"}
+              </Typography>
+              <Typography
+                variant="body1"
+                color="text.secondary"
+                sx={{ mb: 3, maxWidth: 400, mx: "auto", lineHeight: 1.6 }}
+              >
+                {isPast
+                  ? "Once you attend or host a gathering, it\u2019ll show up here."
+                  : "Start a plan around something you enjoy, or wait for an invite from a friend."}
+              </Typography>
+              {!isPast && (
+                <Button
+                  component={Link}
+                  href="/events/create"
+                  variant="contained"
+                  color="primary"
+                  startIcon={<AddCircleRoundedIcon />}
+                  sx={{ px: 4, py: 1.5, fontWeight: 600 }}
+                >
+                  Start a plan
+                </Button>
+              )}
+            </Box>
+          )}
+        </Stack>
+      )}
     </Stack>
   );
 }

@@ -133,6 +133,98 @@ export const sendChumInviteEmail = async (
     },
   });
 
+// ── Event email helpers ─────────────────────────────────────────────────
+// These require Postmark templates to be created. If the template ID env var
+// is not set, the send is silently skipped (noop). This lets the event system
+// run without email infrastructure blocking core functionality.
+//
+// TEMPLATES TO CREATE IN POSTMARK:
+//   1. Event Invite          — POSTMARK_TEMPLATE_EVENT_INVITE
+//      Model: productName, recipientName, hostName, eventTitle, eventDate, eventUrl
+//   2. Event Updated         — POSTMARK_TEMPLATE_EVENT_UPDATED
+//      Model: productName, recipientName, eventTitle, changeDescription, eventUrl
+//   3. Event Canceled        — POSTMARK_TEMPLATE_EVENT_CANCELED
+//      Model: productName, recipientName, hostName, eventTitle, eventDate
+//   4. Event Reminder        — POSTMARK_TEMPLATE_EVENT_REMINDER
+//      Model: productName, recipientName, eventTitle, eventDate, eventLocation, eventUrl
+//   5. RSVP Update to Host   — POSTMARK_TEMPLATE_EVENT_RSVP_UPDATE
+//      Model: productName, hostName, attendeeName, eventTitle, rsvpStatus, eventUrl
+
+export const sendEventInviteEmail = async (
+  env: Bindings,
+  { to, recipientName, hostName, eventTitle, eventDate, eventUrl }: {
+    to: string; recipientName: string; hostName: string;
+    eventTitle: string; eventDate: string; eventUrl: string;
+  }
+) => {
+  if (!env.POSTMARK_TEMPLATE_EVENT_INVITE) return;
+  return sendPostmarkTemplateEmail(env, {
+    From: env.EMAIL_FROM, To: to,
+    TemplateId: env.POSTMARK_TEMPLATE_EVENT_INVITE,
+    TemplateModel: { productName: "NewChums", recipientName, hostName, eventTitle, eventDate, eventUrl },
+  });
+};
+
+export const sendEventUpdatedEmail = async (
+  env: Bindings,
+  { to, recipientName, eventTitle, changeDescription, eventUrl }: {
+    to: string; recipientName: string;
+    eventTitle: string; changeDescription: string; eventUrl: string;
+  }
+) => {
+  if (!env.POSTMARK_TEMPLATE_EVENT_UPDATED) return;
+  return sendPostmarkTemplateEmail(env, {
+    From: env.EMAIL_FROM, To: to,
+    TemplateId: env.POSTMARK_TEMPLATE_EVENT_UPDATED,
+    TemplateModel: { productName: "NewChums", recipientName, eventTitle, changeDescription, eventUrl },
+  });
+};
+
+export const sendEventCanceledEmail = async (
+  env: Bindings,
+  { to, recipientName, hostName, eventTitle, eventDate }: {
+    to: string; recipientName: string; hostName: string;
+    eventTitle: string; eventDate: string;
+  }
+) => {
+  if (!env.POSTMARK_TEMPLATE_EVENT_CANCELED) return;
+  return sendPostmarkTemplateEmail(env, {
+    From: env.EMAIL_FROM, To: to,
+    TemplateId: env.POSTMARK_TEMPLATE_EVENT_CANCELED,
+    TemplateModel: { productName: "NewChums", recipientName, hostName, eventTitle, eventDate },
+  });
+};
+
+export const sendEventReminderEmail = async (
+  env: Bindings,
+  { to, recipientName, eventTitle, eventDate, eventLocation, eventUrl }: {
+    to: string; recipientName: string;
+    eventTitle: string; eventDate: string; eventLocation: string; eventUrl: string;
+  }
+) => {
+  if (!env.POSTMARK_TEMPLATE_EVENT_REMINDER) return;
+  return sendPostmarkTemplateEmail(env, {
+    From: env.EMAIL_FROM, To: to,
+    TemplateId: env.POSTMARK_TEMPLATE_EVENT_REMINDER,
+    TemplateModel: { productName: "NewChums", recipientName, eventTitle, eventDate, eventLocation, eventUrl },
+  });
+};
+
+export const sendEventRsvpUpdateEmail = async (
+  env: Bindings,
+  { to, hostName, attendeeName, eventTitle, rsvpStatus, eventUrl }: {
+    to: string; hostName: string; attendeeName: string;
+    eventTitle: string; rsvpStatus: string; eventUrl: string;
+  }
+) => {
+  if (!env.POSTMARK_TEMPLATE_EVENT_RSVP_UPDATE) return;
+  return sendPostmarkTemplateEmail(env, {
+    From: env.EMAIL_FROM, To: to,
+    TemplateId: env.POSTMARK_TEMPLATE_EVENT_RSVP_UPDATE,
+    TemplateModel: { productName: "NewChums", hostName, attendeeName, eventTitle, rsvpStatus, eventUrl },
+  });
+};
+
 const CONTACT_EMAIL = "contact@newchums.com";
 
 export const sendContactFormEmail = async (

@@ -1,6 +1,6 @@
 # Development Setup Guide
 
-Last Updated: March 6, 2026
+Last Updated: March 7, 2026
 
 This document is the operational guide for running and deploying NewChums.  
 For architectural invariants and contracts, see `docs/Technical_Specs.md`.  
@@ -13,11 +13,13 @@ For diagrams and flows, see `docs/System_Map.md`.
 - **Production:** Single production environment.
 - **Workers:** Web = `newchums-web-dev` (production), API = `newchums-api`.
 - **Canonical host:** `https://newchums.com` (www → non-www redirect enforced before Auth.js).
-- **API migration:** Signup, email verification, password reset, email change, profile (incl. DOB, bio, gender, profile theme), interests, handle availability, onboarding, avatar flows, notification preferences, admin moderation, user suspension, Chums, and Chum invites are in the API worker.
+- **API migration:** Signup, email verification, password reset, email change, profile (incl. DOB, bio, gender, profile theme), interests, handle availability, onboarding, avatar flows, notification preferences, admin moderation, user suspension, Chums, Chum invites, and events (plans) are in the API worker.
+- **Events (plans):** Full event creation, RSVP, invite, and alternate time system. `/events/create` — "Start a plan" form. `/plans` — tabbed Upcoming/Past view with hosted/joined sections (real API data). `/events/[id]` — event detail with RSVP actions. Visibility: invite_only, chums_only, public. RSVP: going, maybe, cant_make_it. Event email templates scaffolded but require Postmark template creation.
 - **Super admin:** Users with `role = 'super_admin'` can access `/admin/interests` (interests moderation) and `/admin/chums` (view + suspend/unsuspend user accounts). Role is set directly in the database; no UI promotion flow.
 - **Chums:** One-way saved-people feature. `/chum-groups` page (search by name, @handle, or exact email + private list). Search auto-detects email input and offers an invite flow for non-existing emails. Add/Remove button on public profiles. Public Chums section on profiles (privacy-gated). Two new privacy toggles in Settings. Mutual Chums state shown via 🤝 emoji indicator.
 - **Notifications:** In-app notification bell in top nav. Currently supports `chum_added_you`. Bell turns gold when unread notifications exist; dropdown marks them as read on open.
 - **Avatar storage:** R2 bucket `newchums-media` (binding `MEDIA_BUCKET`). Client can route media operations and avatar display through `NEXT_PUBLIC_AVATAR_BASE_URL` for cross-env consistency when sharing DB.
+- **Public marketing site:** Four polished public pages sharing `LandingLayout`: Homepage (redesigned with event discovery section, category filters, and product-preview hero panel), How it Works (6-step walkthrough, coordination mock panel, discovery panel), Science of Friendship (interactive research page), Safety Center (community guidance). All pages use shared design system (SectionHeader, section spacing, CTA blocks, responsive patterns). Nav links defined in `web/src/config/nav.ts` (`headerNavLinks`). Former `LandingHero.tsx` is superseded by `LandingPageContent.tsx`.
 - **Build:** `cd web && npm run build` passes (Edge/OpenNext constraints apply).
 
 ---
@@ -291,6 +293,40 @@ Chunk XX — YYYY-MM-DD
 (Existing chunks should remain here. Add new chunks at the end.)
 
 ---
+
+Chunk 06 — 2026-03-07
+- Goal: First full iteration of the event/plan creation system, Your Plans view, event detail page, RSVP/invite/alternate-time system, and notification/email scaffolding.
+- Changes:
+  - DB migration 024 (`newchums.events`, `newchums.event_invites`, `newchums.event_rsvps`, `newchums.event_alt_times`). Events support visibility (invite_only / chums_only / public), status (draft / published / canceled), location (in_person / online), seats, hobby association, and alternate time toggle.
+  - API: `POST /events` (create with inline invites + notifications + emails), `GET /events/mine` (upcoming/past with host/RSVP context), `GET /events/:id` (detail with visibility enforcement), `POST /events/:id/rsvp` (going/maybe/cant_make_it with capacity check), `POST /events/:id/alt-time` (alternate time suggestion), `POST /events/:id/cancel` (host only, notifies attendees), `POST /events/:id/invite` (add invitees post-creation).
+  - Event email scaffolding: 5 Postmark template helpers (`sendEventInviteEmail`, `sendEventUpdatedEmail`, `sendEventCanceledEmail`, `sendEventReminderEmail`, `sendEventRsvpUpdateEmail`) — all noop-safe when template IDs are not configured. Template env vars added to `Bindings` and placeholder entries in `wrangler.toml`.
+  - In-app notifications created for: `event_invite`, `event_rsvp`, `event_alt_time`, `event_canceled`.
+  - Web — `/events/create` (`CreateEventClient.tsx`): Full "Start a plan" form with fields for title, description, hobby (Autocomplete from `/interests`), seats, date/time, location type toggle (in-person name/address vs online link), visibility radio group with helper text, invite-people search (reuses `/chums/search`), email invite support, invitee chips, publish CTA.
+  - Web — `/plans` (`PlansPage.tsx`): Replaced placeholder with real API-driven page. Tabs for Upcoming/Past. Sections for "Plans you're hosting" and "Plans you've joined or been invited to". Empty states with "Start a plan" CTA. Integrated with `GET /events/mine`.
+  - Web — `/events/[id]` (`EventDetailClient.tsx`): New event detail page with RSVP actions (Going / Maybe / Can't make it), "Suggest another time" form, attendee response list, host cancel action, back navigation.
+  - `EventCard.tsx` rebuilt from scratch for real `PlanEvent` data — hobby chip, visibility label, host indicator, RSVP status, formatted date/time, going count, CardActionArea linking to event detail.
+  - `DashboardHome.tsx` updated to remove old `EventCardData` usage (removed placeholder past events section that used old type).
+  - `AppShell.tsx`: "Create Event" button label updated to "Start a plan".
+- Verification: TypeScript passes (`npx tsc --noEmit`) in both web and api. No linter errors. Event creation form validates and submits. Plans page tabs work. Event detail shows RSVP actions and attendee list.
+- Deploy: Run migration 024 against production DB before deploying. Create Postmark email templates and add IDs to `wrangler.toml` (see `api/src/email/send.ts` for template model specs).
+- Next Steps: Create Postmark templates for event emails. Build public event discovery/browse page. Add event update (edit) endpoint. Wire real event data into homepage and How it Works mock panels. Implement event reminder scheduling.
+
+---
+
+Chunk 05 — 2026-03-07
+- Goal: Build and polish all public marketing pages — Safety Center, redesigned homepage, and How it Works.
+- Changes:
+  - Safety Center (`/safety-center`): Created `SafetyCenterContent.tsx`. Seven sections: hero with eyebrow/H1/gold bar/CTAs/image placeholder, five-habits confidence checklist (icon cards), practical gathering tips (numbered 2-column grid), respect and comfort cards (2×2 top-border accent cards), "if something feels off" empowerment section with gold-border callout, reporting/contact section, CTA block.
+  - Homepage redesign (`/`): Replaced `LandingHero` with `LandingPageContent.tsx`. New structure: hero (preserved headline + subtext, updated buttons to "Sign up" primary + "How it works" anchor secondary, desktop-only mini product-preview panel showing 3 event rows), event discovery section (6 mock event cards with interactive category filter chips, hover lift, empty state), "making plans easier" 3-column feature blocks, "why this works" top-border benefit cards with Science of Friendship bridge link, dark CTA section. Updated page metadata title and description.
+  - How it Works (`/how-it-works`): Created route and both `page.tsx` + `HowItWorksContent.tsx` from scratch (was a 404 — nav config referenced it but no route existed). Seven sections: hero with "See the steps" anchor CTA, 6-step product walkthrough (numbered gold badges with alternating icon backgrounds), "made for real plans" section with pain-point divider list and mock coordination panel (RSVP statuses, alternate time suggestion), friends + new connections 2-card section, discovery mock panel with 3 nearby event previews, trust/comfort icon-row cards with links to Science of Friendship and Safety Center, dark CTA section.
+  - All pages share consistent design system: `SECTION_SPACING`, `CONTENT_MAX_WIDTH`, `SectionHeader` with `emphasis="primary" accentColor="secondary"`, full-bleed alternating backgrounds, gold accent bars, responsive collapse (centered mobile, left-aligned desktop), CTA section pattern (primary.dark bg, gold top stripe, numbered steps, secondary contained button).
+  - Updated `page.tsx` to import `LandingPageContent` instead of `LandingHero`. `LandingHero.tsx` is now unused (preserved for reference; safe to delete).
+  - Mock event data in homepage and How it Works is structured with typed arrays (`EventCard`, `MOCK_EVENTS`, `DISCOVERY_PREVIEWS`) for easy future replacement with real API data.
+  - Updated `docs/Technical_Specs.md` v6.0: new §9 "Public Marketing Site" documenting shared structure, nav links, implemented pages, design system patterns, and future-ready elements. Renumbered §10–§15.
+  - Updated `docs/Development_Setup_Guide.md`: Current State expanded to cover public marketing site.
+- Verification: All four public pages render correctly with consistent nav/footer; category filter chips work on homepage; anchor links scroll to correct sections; pages are fully responsive; no linter errors.
+- Deploy: No DB migrations. Standard web deploy: `cd web && npm run deploy`.
+- Next Steps: Connect homepage/How it Works mock event data to real API when event system is ready. Add real hero images to replace gradient placeholders. Delete unused `LandingHero.tsx`.
 
 Chunk 04 — 2026-03-06
 - Goal: Chum invite flow, email-based Chum search, Mutual Chums emoji refresh, display name fallback fix, admin "Users" rename.

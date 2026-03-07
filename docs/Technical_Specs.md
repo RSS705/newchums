@@ -1,7 +1,7 @@
 # Technical Specifications
 
-Last Updated: March 6, 2026  
-Version: 5.9
+Last Updated: March 7, 2026  
+Version: 7.0
 
 This document defines the authoritative technical architecture of NewChums.  
 It describes **what exists today** and the structural commitments we are making.
@@ -303,6 +303,70 @@ General notifications table (`newchums.notifications`, migration 022) designed f
 
 **Web — bell icon:** `web/src/components/layout/NotificationBell.tsx`, rendered in `AppShell` top nav. Fetches notifications on mount (for initial bell state). On click: refreshes list, marks unread as read, shows Popover dropdown with newest-first list. Bell icon turns `#F4B400` (brand gold) and switches to filled icon when unread notifications exist.
 
+### Events (plans)
+
+Event/gathering system. Events are created by a host and can be discovered, RSVP'd, and coordinated around.
+
+**Schema (migration 024):**
+
+| Table | Purpose |
+|-------|---------|
+| `newchums.events` | Core event entity — title, description, interest_id, starts_at, location, max_seats, visibility, status |
+| `newchums.event_invites` | Invite records — supports both in-app users (user_id) and email invitees (email) |
+| `newchums.event_rsvps` | Attendance responses — going, maybe, cant_make_it (one per user per event) |
+| `newchums.event_alt_times` | Alternate date/time suggestions from attendees |
+
+**Key fields on `events`:**
+- `visibility`: `invite_only` | `chums_only` | `public`
+- `status`: `draft` | `published` | `canceled`
+- `location_type`: `in_person` | `online`
+- `allow_alt_times`: boolean — whether attendees can suggest alternate times
+- `interest_id`: FK to `interests` table (hobbies)
+
+**API endpoints (auth required):**
+
+| Route | Description |
+|-------|-------------|
+| `POST /events` | Create event. Validates title, starts_at, location_type, visibility. Accepts `invitees[]` array of `{ user_id?, email? }`. Published events send invite notifications and emails. |
+| `GET /events/mine?filter=upcoming\|past` | List events the user hosts, is invited to, or has RSVP'd. Includes going/maybe counts, host info, RSVP status. |
+| `GET /events/:id` | Event detail with RSVP list and alternate time suggestions. Visibility enforcement: invite_only requires invite/RSVP, chums_only requires chum relationship or invite. |
+| `POST /events/:id/rsvp` | RSVP to an event — `{ status: "going"\|"maybe"\|"cant_make_it", note? }`. Capacity enforcement for going status. Notifies host via in-app notification and email. |
+| `POST /events/:id/alt-time` | Suggest alternate time — `{ suggested_at, note? }`. Only if event.allow_alt_times. Notifies host. |
+| `POST /events/:id/cancel` | Cancel event (host only). Notifies all attendees via in-app notification and email. |
+| `POST /events/:id/invite` | Add invitees to published event (host only). Sends notifications and invite emails. |
+
+**Visibility enforcement:**
+- `invite_only`: only host, invited users, and RSVP'd users can view
+- `chums_only`: host, their chums, invited users, and RSVP'd users can view
+- `public`: any authenticated user can view
+
+**Notification types created:**
+
+| Type | Trigger | Recipient |
+|------|---------|-----------|
+| `event_invite` | User invited to event | Invited user |
+| `event_rsvp` | Someone RSVPs | Event host |
+| `event_alt_time` | Someone suggests alternate time | Event host |
+| `event_canceled` | Event canceled | All attendees |
+
+**Email scaffolding (noop if template ID not configured):**
+
+| Email | Env var | Template model |
+|-------|---------|----------------|
+| Event invite | `POSTMARK_TEMPLATE_EVENT_INVITE` | recipientName, hostName, eventTitle, eventDate, eventUrl |
+| Event updated | `POSTMARK_TEMPLATE_EVENT_UPDATED` | recipientName, eventTitle, changeDescription, eventUrl |
+| Event canceled | `POSTMARK_TEMPLATE_EVENT_CANCELED` | recipientName, hostName, eventTitle, eventDate |
+| Event reminder | `POSTMARK_TEMPLATE_EVENT_REMINDER` | recipientName, eventTitle, eventDate, eventLocation, eventUrl |
+| RSVP update to host | `POSTMARK_TEMPLATE_EVENT_RSVP_UPDATE` | hostName, attendeeName, eventTitle, rsvpStatus, eventUrl |
+
+**Web pages:**
+
+| Route | Component | Description |
+|-------|-----------|-------------|
+| `/events/create` | `CreateEventClient` | "Start a plan" form — title, description, hobby, seats, date/time, location (in-person/online), visibility, invite people, publish |
+| `/plans` | `PlansPage` | Tabbed view (Upcoming / Past) with hosted/joined sections, real API data, empty states |
+| `/events/[id]` | `EventDetailClient` | Event detail — RSVP actions, alternate time suggestions, attendee list, cancel (host) |
+
 ### Media (avatar)
 
 - `POST /media/init` (auth required) → returns upload token and upload URL path
@@ -318,7 +382,63 @@ General notifications table (`newchums.notifications`, migration 022) designed f
 
 ---
 
-## 9) Content Safety (Inappropriate Word Validation)
+## 9) Public Marketing Site
+
+The public-facing site (visible to logged-out visitors) consists of four marketing pages plus auth/onboarding flows, all sharing a common layout.
+
+### Shared structure
+
+| Component | Location | Role |
+|-----------|----------|------|
+| `LandingLayout` | `web/src/components/landing/LandingLayout.tsx` | Shared wrapper: fixed AppBar with `SiteHeader`, mobile drawer with auth-aware CTA + `MarketingNavSection`, `<main>` with `LandingContainer` (`Container maxWidth="lg"`, horizontal gutters `px: {xs:2, sm:3}`), footer with `LandingFooter`. |
+| `SiteHeader` | `web/src/components/layout/SiteHeader.tsx` | Header bar shared by both `LandingLayout` and `AppShell`. Logo (left), centered desktop nav links, right slot (Login or user controls). `HEADER_MIN_HEIGHT = { xs: 64, lg: 80 }`. |
+| `MarketingNavSection` | `web/src/components/layout/MarketingNavSection.tsx` | "Learn More" nav section listing `headerNavLinks` (How it Works, Science of Friendship, Safety Center). Used in both public and logged-in mobile drawers. |
+| `LandingFooter` | `web/src/components/landing/LandingFooter.tsx` | Logo + tagline, "Contact us" link, copyright. |
+| `SectionHeader` | `web/src/components/ui/SectionHeader.tsx` | Reusable heading with accent bar (left border on desktop, dynamic underline on mobile). `emphasis` and `accentColor` props. |
+
+### Nav links
+
+Defined in `web/src/config/nav.ts` (`headerNavLinks`):
+
+| Label | Route |
+|-------|-------|
+| How it Works | `/how-it-works` |
+| Science of Friendship | `/science-of-friendship` |
+| Safety Center | `/safety-center` |
+
+### Implemented pages
+
+All pages live under `web/src/app/(public)/` and follow the same pattern: a thin server-component `page.tsx` (auth check + metadata) wrapping a `"use client"` content component.
+
+| Page | Route | Content component | Purpose |
+|------|-------|-------------------|---------|
+| Homepage | `/` | `LandingPageContent.tsx` | Hero (preserved headline), event discovery section with mock data and category filter chips, "making plans easier" feature blocks, "why this works" benefit cards, CTA. Logged-in users see `DashboardHome` instead. |
+| How it Works | `/how-it-works` | `HowItWorksContent.tsx` | 6-step product walkthrough, "made for real plans" section with coordination mock panel, friends + new connections cards, discovery mock panel, trust/comfort section, CTA. |
+| Science of Friendship | `/science-of-friendship` | `ScienceOfFriendshipContent.tsx` | Research-backed trust page. Interactive friendship-engine diagram, timeline visualization, two-column research cards, CTA. |
+| Safety Center | `/safety-center` | `SafetyCenterContent.tsx` | Community guidance. Confidence checklist, gathering tips, respect/comfort cards, "if something feels off" section, reporting link, CTA. |
+
+### Design system patterns (public pages)
+
+- **Section spacing:** `SECTION_SPACING = { py: { xs: 5, sm: 8, md: 10 } }`; `CONTENT_MAX_WIDTH = 800` (widened to 1100 for discovery grids).
+- **Full-bleed backgrounds:** Sections use `mx: { xs: -2, sm: -3 }, px: { xs: 2, sm: 3 }` to extend beyond `LandingContainer` gutters.
+- **Alternating backgrounds:** white → `grey.100` → white → `grey.50` → `primary.dark` CTA.
+- **Card styles:** Top-border accent cards (`borderTop: 3px solid`, `borderRadius: 2`, paper background, light shadow). Outlined lift cards (hover `translateY(-4px)`).
+- **CTA section:** `primary.dark` background, gold `secondary.main` 3px top stripe via `::before`, white text, numbered step circles, `contained color="secondary"` button.
+- **Responsive:** Mobile = centered text/stacked layout; `sm`+ = left-aligned/row. Consistent `textAlign: { xs: "center", sm: "left" }` and `alignSelf: { xs: "center", sm: "flex-start" }` across all sections.
+- **Hero pattern:** Eyebrow (overline, gold) → H1 (800 weight) → gold accent bar (48×3px) → subtext → CTA buttons.
+
+### Future-ready elements
+
+The homepage and How it Works page contain mock event data and UI panels that are structured for easy replacement with real API data:
+
+- **Homepage discovery section:** `MOCK_EVENTS` array with `EventCard` type, category filter chips with client-side state, empty state handler. Intended future fallback: nearby events → featured events → empty state.
+- **Homepage hero panel:** Mini product-preview showing 3 event rows (desktop only).
+- **How it Works coordination panel:** Mock RSVP response panel (Going / Maybe / Waiting statuses).
+- **How it Works discovery panel:** Mock "Nearby Gatherings" panel with event rows.
+
+---
+
+## 10) Content Safety (Inappropriate Word Validation)
 
 ### Purpose
 
@@ -346,7 +466,7 @@ Block profanity, slurs, and similar terms in display names, usernames, and hobbi
 
 ---
 
-## 10) Storage (Database + R2)
+## 11) Storage (Database + R2)
 
 ### Neon Postgres
 
@@ -384,7 +504,7 @@ When sharing the same DB between local and production, set `NEXT_PUBLIC_AVATAR_B
 
 ---
 
-## 11) Observability
+## 12) Observability
 
 - Sentry: frontend + API error tracking
 - Axiom: API request logs
@@ -392,7 +512,7 @@ When sharing the same DB between local and production, set `NEXT_PUBLIC_AVATAR_B
 
 ---
 
-## 12) Wrangler and Deploy Configuration (Invariants)
+## 13) Wrangler and Deploy Configuration (Invariants)
 
 ### Web (`web/wrangler.toml`)
 
@@ -411,7 +531,7 @@ CORS is enforced via an explicit allowlist (newchums.com, www, localhost:3000) i
 
 ---
 
-## 13) Runtime Constraints (Web)
+## 14) Runtime Constraints (Web)
 
 Do NOT add `export const runtime = "edge"` to routes. OpenNext Cloudflare shims the edge runtime to an empty module, causing 500 Internal Server Error; Workers already run at the edge.
 
@@ -428,7 +548,7 @@ cd web && npm run build
 
 ---
 
-## 14) Technical Debt (Acknowledged)
+## 15) Technical Debt (Acknowledged)
 
 - Web worker name suffix mismatch (`newchums-web-dev` is production).
 - Schema normalization/cleanup will be required before broader public launch.

@@ -1,6 +1,6 @@
 # System Map
 
-Last Updated: March 3, 2026
+Last Updated: March 7, 2026
 
 This document reflects the current production reality of NewChums.
 It is diagram-first: use this for boundaries, flows, and “how it connects.”
@@ -80,6 +80,7 @@ The following flows run in the API worker; the web app calls the API via `NEXT_P
 | Avatar upload | `POST /media/init` → PUT to uploadUrl → `POST /media/finalize` | Bearer JWT |
 | Avatar remove | `DELETE /profile/avatar` | Bearer JWT |
 | Avatar image | `GET /users/:userId/avatar` | public |
+| Events (plans) | `POST /events`, `GET /events/mine`, `GET /events/:id`, `POST /events/:id/rsvp`, `POST /events/:id/alt-time`, `POST /events/:id/cancel`, `POST /events/:id/invite` | Bearer JWT |
 
 ### Content safety
 

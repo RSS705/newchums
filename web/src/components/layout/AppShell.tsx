@@ -227,7 +227,7 @@ export default function AppShell({ children, user }: AppShellProps) {
             "&:hover": { boxShadow: "none", opacity: 0.95 },
           }}
         >
-          Create Event
+          Start a plan
         </Button>
       </Box>
       {(navProfile?.role === "super_admin" || user?.role === "super_admin") && (
