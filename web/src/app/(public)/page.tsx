@@ -5,12 +5,13 @@ import { getOrCreateAppUser } from "@/lib/user";
 import { redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
 import DashboardHome from "@/components/dashboard/DashboardHome";
-import LandingHero from "@/components/landing/LandingHero";
+import LandingPageContent from "./LandingPageContent";
 import LandingLayout from "@/components/landing/LandingLayout";
 
 export const metadata: Metadata = {
-  title: "NewChums",
-  description: "Find your people. Meet through shared events.",
+  title: "NewChums — Organize hobbies and events without the group chat chaos",
+  description:
+    "Sign up once and get notified when people nearby are organizing activities around your interests. Board games, coffee walks, pottery, and more.",
 };
 
 export default async function RootPage() {
@@ -18,8 +19,8 @@ export default async function RootPage() {
 
   if (!session?.user?.email) {
     return (
-      <LandingLayout>
-        <LandingHero />
+      <LandingLayout isLoggedIn={false}>
+        <LandingPageContent isLoggedIn={false} />
       </LandingLayout>
     );
   }
