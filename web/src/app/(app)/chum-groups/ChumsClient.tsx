@@ -380,11 +380,11 @@ export default function ChumsClient() {
 
       {/* Find New Chums */}
       <AppCard>
-        <Stack spacing={2}>
+        <Stack spacing={2.5}>
           <Box>
-            <Typography variant="h6" sx={{ fontWeight: 700 }}>Find New Chums</Typography>
-            <Typography color="text.secondary" variant="body2" sx={{ mt: 0.5 }}>
-              Search by name, @handle, or email address to find someone and add them to your Chums.
+            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>Find new Chums</Typography>
+            <Typography color="text.secondary" variant="body2" sx={{ mt: 0.5, lineHeight: 1.6 }}>
+              Search by name, @handle, or email to connect with people you know.
             </Typography>
           </Box>
           <TextField
@@ -469,25 +469,25 @@ export default function ChumsClient() {
 
       {/* Your Chum List */}
       <AppCard>
-        <Stack spacing={2}>
+        <Stack spacing={2.5}>
           <Box>
-            <Typography variant="h6" sx={{ fontWeight: 700 }}>Your Chum List</Typography>
-            <Typography color="text.secondary" variant="body2" sx={{ mt: 0.5 }}>
-              People you&apos;ve saved. Only you can see this list.
+            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>Your Chum list</Typography>
+            <Typography color="text.secondary" variant="body2" sx={{ mt: 0.5, lineHeight: 1.6 }}>
+              People you enjoy planning with. Only you can see this list.
             </Typography>
           </Box>
 
           {chumsLoading ? (
-            <Box sx={{ display: "flex", justifyContent: "center", py: 3 }}>
+            <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
               <CircularProgress size={28} />
             </Box>
           ) : chums.length === 0 ? (
-            <Box sx={{ py: 3, textAlign: "center" }}>
-              <Typography variant="body2" color="text.secondary">
-                You haven&apos;t added any Chums yet.
+            <Box sx={{ py: 5, textAlign: "center" }}>
+              <Typography variant="body1" color="text.secondary" sx={{ mb: 0.5 }}>
+                No Chums yet
               </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                Use the search above to find people you&apos;d like to keep in touch with.
+              <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+                Use the search above to find people you know, or invite friends by email.
               </Typography>
             </Box>
           ) : (

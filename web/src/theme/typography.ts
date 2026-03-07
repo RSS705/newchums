@@ -46,10 +46,10 @@ export const typography: ThemeOptions["typography"] = {
     lineHeight: 1.5,
   },
   body2: {
-    fontSize: "0.75rem",
+    fontSize: "0.8125rem",
     letterSpacing: "0rem",
     fontWeight: 400,
-    lineHeight: "1rem",
+    lineHeight: "1.25rem",
   },
   button: {
     fontSize: "1rem",
@@ -57,11 +57,13 @@ export const typography: ThemeOptions["typography"] = {
     fontWeight: 600,
   },
   subtitle1: {
-    fontSize: "0.875rem",
+    fontSize: "0.9375rem",
     fontWeight: 400,
+    lineHeight: 1.5,
   },
   subtitle2: {
     fontSize: "0.875rem",
     fontWeight: 400,
+    lineHeight: 1.5,
   },
 };

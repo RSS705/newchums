@@ -44,11 +44,11 @@ export function getPalette(mode: PaletteMode): PaletteOptions {
       contrastText: "#ffffff",
     },
     background: {
-      default: "#F8FAFC",
+      default: "#F9FAFB",
       paper: "#FFFFFF",
     },
     grey: {
-      100: "#F8FAFC",
+      100: "#F9FAFB",
       200: "#E5E7EB",
       300: "#D1D5DB",
       400: "#9CA3AF",
@@ -56,13 +56,13 @@ export function getPalette(mode: PaletteMode): PaletteOptions {
       600: "#4B5563",
     },
     text: {
-      primary: "#111827",
+      primary: "#1F2937",
       secondary: "#4B5563",
     },
     action: {
       disabledBackground: "rgba(17,24,39,0.12)",
       hoverOpacity: 0.02,
-      hover: "#f1f5f9",
+      hover: "#F3F4F6",
     },
     divider: "#E5E7EB",
   };

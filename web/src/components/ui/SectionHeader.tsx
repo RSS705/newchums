@@ -9,6 +9,8 @@ type SectionEmphasis = "primary" | "secondary" | "subdued";
 
 export type SectionHeaderProps = {
   title: string;
+  /** Optional supporting text below the title */
+  subtitle?: string;
   emphasis?: SectionEmphasis;
   /** Override accent (left border, mobile underline) to secondary/gold */
   accentColor?: "primary" | "secondary";
@@ -21,7 +23,7 @@ const FALLBACK_UNDERLINE_WIDTH = 56;
  * Spacing below the header is controlled here for consistent rhythm system-wide.
  * On mobile: centered title with dynamic underline (50% of title width).
  */
-export default function SectionHeader({ title, emphasis = "secondary", accentColor }: SectionHeaderProps) {
+export default function SectionHeader({ title, subtitle, emphasis = "secondary", accentColor }: SectionHeaderProps) {
   const theme = useTheme();
   const titleRef = React.useRef<HTMLHeadingElement>(null);
   const [underlineWidth, setUnderlineWidth] = React.useState(FALLBACK_UNDERLINE_WIDTH);
@@ -91,6 +93,15 @@ export default function SectionHeader({ title, emphasis = "secondary", accentCol
         >
           {title}
         </Typography>
+        {subtitle && (
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            sx={{ mt: 0.5, lineHeight: 1.5 }}
+          >
+            {subtitle}
+          </Typography>
+        )}
         <Box
           sx={{
             display: { xs: "block", sm: "none" },

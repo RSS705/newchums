@@ -173,10 +173,19 @@ export default function CreateEventClient() {
     <Stack spacing={{ xs: 3, sm: 4 }}>
       {/* Header */}
       <Box>
-        <Typography component="h1" variant="h4" fontWeight={700} sx={{ mb: 0.5 }}>
+        <Typography
+          component="h1"
+          sx={{
+            fontSize: { xs: "1.75rem", sm: "2rem" },
+            fontWeight: 700,
+            lineHeight: 1.25,
+            letterSpacing: "-0.02em",
+            mb: 0.75,
+          }}
+        >
           Start a plan
         </Typography>
-        <Typography variant="body1" color="text.secondary">
+        <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.6 }}>
           Organize a gathering around something you enjoy. Keep it simple — you can always update later.
         </Typography>
       </Box>
@@ -184,7 +193,7 @@ export default function CreateEventClient() {
       {/* Basic details */}
       <AppCard>
         <Stack spacing={2.5}>
-          <Typography variant="h6" fontWeight={600}>
+          <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
             What&apos;s the plan?
           </Typography>
 
@@ -251,7 +260,7 @@ export default function CreateEventClient() {
       {/* Date & time */}
       <AppCard>
         <Stack spacing={2.5}>
-          <Typography variant="h6" fontWeight={600}>
+          <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
             When?
           </Typography>
 
@@ -296,7 +305,7 @@ export default function CreateEventClient() {
       {/* Location */}
       <AppCard>
         <Stack spacing={2.5}>
-          <Typography variant="h6" fontWeight={600}>
+          <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
             Where?
           </Typography>
 
@@ -342,7 +351,7 @@ export default function CreateEventClient() {
       {/* Visibility */}
       <AppCard>
         <Stack spacing={2}>
-          <Typography variant="h6" fontWeight={600}>
+          <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
             Who can see this?
           </Typography>
 
@@ -396,7 +405,7 @@ export default function CreateEventClient() {
       {/* Invite people */}
       <AppCard>
         <Stack spacing={2.5}>
-          <Typography variant="h6" fontWeight={600}>
+          <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
             Invite people
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: -1 }}>
@@ -515,24 +524,24 @@ export default function CreateEventClient() {
 
       {/* Submit */}
       <Stack
-        direction={{ xs: "column", sm: "row" }}
+        direction={{ xs: "column-reverse", sm: "row" }}
         spacing={2}
         justifyContent="flex-end"
         sx={{ pt: 1, pb: 4 }}
       >
         <AppButton
           variant="outlined"
-          color="primary"
+          color="inherit"
           onClick={() => router.push("/plans")}
           disabled={submitting}
-          sx={{ minWidth: { xs: "100%", sm: 140 } }}
+          sx={{ minWidth: { xs: "100%", sm: 140 }, borderRadius: 2.5, textTransform: "none" }}
         >
           Cancel
         </AppButton>
         <AppButton
           onClick={handleSubmit}
           disabled={submitting}
-          sx={{ minWidth: { xs: "100%", sm: 200 }, py: 1.5 }}
+          sx={{ minWidth: { xs: "100%", sm: 200 }, py: 1.5, borderRadius: 2.5, fontWeight: 600, textTransform: "none", fontSize: "1rem" }}
         >
           {submitting ? <CircularProgress size={22} color="inherit" /> : "Publish plan"}
         </AppButton>

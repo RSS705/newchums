@@ -20,21 +20,22 @@ type MarketingNavSectionProps = {
  */
 export default function MarketingNavSection({ onLinkClick, sectionTitle = "More Goodness" }: MarketingNavSectionProps) {
   return (
-    <Box sx={{ px: 2, py: 2 }}>
+    <Box sx={{ px: 2.5, py: 2 }}>
       <Typography
         variant="body2"
         sx={{
           display: "block",
-          color: "text.secondary",
+          color: "text.disabled",
           fontWeight: 600,
           letterSpacing: 0.5,
-          fontSize: "0.9375rem",
+          fontSize: "0.75rem",
+          textTransform: "uppercase",
           mb: 1.5,
         }}
       >
         {sectionTitle}
       </Typography>
-      <Stack spacing={0.5}>
+      <Stack spacing={0.25}>
         {headerNavLinks.map((link) => (
           <Link
             key={link.href}
@@ -48,9 +49,10 @@ export default function MarketingNavSection({ onLinkClick, sectionTitle = "More 
               sx={{
                 color: "text.secondary",
                 fontSize: "0.9375rem",
+                fontWeight: 500,
                 "&:hover": { color: "primary.main" },
                 display: "block",
-                py: 1,
+                py: 0.875,
               }}
             >
               {link.label}

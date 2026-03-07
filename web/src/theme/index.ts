@@ -19,7 +19,7 @@ export function buildTheme(mode: PaletteMode = "light") {
     palette: getPalette(mode),
     spacing: 8,
     shape: {
-      borderRadius: 7,
+      borderRadius: 10,
     },
     typography,
     shadows,

@@ -147,10 +147,10 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
         variant="outlined"
         sx={{
           p: { xs: 1.5, sm: 2 },
-          borderRadius: { xs: 2, sm: 2.5 },
-          borderColor: "divider",
+          borderRadius: 3,
+          borderColor: "grey.200",
           bgcolor: "background.paper",
-          boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+          boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
         }}
       >
         <Stack spacing={1.5}>
@@ -263,23 +263,25 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
         <Paper
           variant="outlined"
           sx={{
-            p: 2.5,
-            borderRadius: 2,
+            p: { xs: 2.5, sm: 3 },
+            borderRadius: 3,
             borderColor: "secondary.light",
-            bgcolor: "rgba(244, 180, 0, 0.04)",
+            bgcolor: "rgba(244, 180, 0, 0.035)",
             display: "flex",
             flexDirection: { xs: "column", sm: "row" },
             alignItems: { xs: "flex-start", sm: "center" },
             gap: 2,
           }}
         >
-          <EditLocationRoundedIcon sx={{ color: "secondary.main", fontSize: 28 }} />
+          <Box sx={{ width: 44, height: 44, borderRadius: "50%", bgcolor: "secondary.light", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <EditLocationRoundedIcon sx={{ color: "secondary.dark", fontSize: 22 }} />
+          </Box>
           <Box sx={{ flex: 1 }}>
             <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.25 }}>
-              Set your home location for better results
+              Add your location for better results
             </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Adding your location helps us show plans happening near you first.
+            <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+              We&apos;ll prioritize plans and gatherings happening near you.
             </Typography>
           </Box>
           <Button
@@ -287,7 +289,7 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
             href="/profile"
             variant="outlined"
             size="small"
-            sx={{ textTransform: "none", fontWeight: 600, whiteSpace: "nowrap" }}
+            sx={{ textTransform: "none", fontWeight: 600, whiteSpace: "nowrap", borderRadius: 2 }}
           >
             Update profile
           </Button>
@@ -317,7 +319,7 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
           }}
         >
           <ExploreRoundedIcon
-            sx={{ fontSize: 56, color: "primary.light", mb: 2, opacity: 0.7 }}
+            sx={{ fontSize: 52, color: "secondary.main", mb: 2, opacity: 0.6 }}
           />
           <Typography variant="h6" fontWeight={600} sx={{ mb: 1 }}>
             {isFiltered ? "No plans match your filters" : "No upcoming plans nearby yet"}
@@ -325,7 +327,7 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
           <Typography
             variant="body1"
             color="text.secondary"
-            sx={{ mb: 3, maxWidth: 440, mx: "auto", lineHeight: 1.6 }}
+            sx={{ mb: 3, maxWidth: 440, mx: "auto", lineHeight: 1.7 }}
           >
             {isFiltered
               ? "Try broadening your search, changing the time window, or clearing filters to see more."
@@ -359,7 +361,7 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
               href="/events/create"
               variant="contained"
               startIcon={<AddCircleRoundedIcon />}
-              sx={{ textTransform: "none", fontWeight: 600 }}
+              sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3 }}
             >
               Start a plan
             </Button>
@@ -369,7 +371,7 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
                 href="/profile"
                 variant="outlined"
                 startIcon={<EditLocationRoundedIcon />}
-                sx={{ textTransform: "none", fontWeight: 600 }}
+                sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3 }}
               >
                 Set your location
               </Button>

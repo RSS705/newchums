@@ -48,11 +48,11 @@ export default function AuthDividerForm({
       <Box sx={{ mt: 2.5 }}>
         <Divider sx={{ "&::before, &::after": { borderColor: "divider" } }}>
           <Typography
-            variant="h6"
-            fontWeight={400}
+            variant="body2"
+            fontWeight={500}
             color="text.secondary"
             component="span"
-            sx={{ px: 2 }}
+            sx={{ px: 2, fontSize: "0.8125rem" }}
           >
             {dividerText}
           </Typography>

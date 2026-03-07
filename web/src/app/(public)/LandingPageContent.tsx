@@ -258,8 +258,9 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                         px: 4,
                         py: 1.625,
                         fontWeight: 600,
-                        borderRadius: 2,
+                        borderRadius: 2.5,
                         minWidth: { xs: "100%", sm: "auto" },
+                        textTransform: "none",
                       }}
                     >
                       Browse gatherings
@@ -274,8 +275,9 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                         px: 4,
                         py: 1.625,
                         fontWeight: 600,
-                        borderRadius: 2,
+                        borderRadius: 2.5,
                         minWidth: { xs: "100%", sm: "auto" },
+                        textTransform: "none",
                       }}
                     >
                       My profile
@@ -293,8 +295,9 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                         px: 4,
                         py: 1.625,
                         fontWeight: 600,
-                        borderRadius: 2,
+                        borderRadius: 2.5,
                         minWidth: { xs: "100%", sm: "auto" },
+                        textTransform: "none",
                       }}
                     >
                       Sign up &mdash; it&apos;s free
@@ -309,8 +312,9 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                         px: 4,
                         py: 1.625,
                         fontWeight: 600,
-                        borderRadius: 2,
+                        borderRadius: 2.5,
                         minWidth: { xs: "100%", sm: "auto" },
+                        textTransform: "none",
                       }}
                     >
                       How it works
@@ -692,11 +696,12 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                   px: 5,
                   py: 1.5,
                   fontWeight: 600,
-                  borderRadius: 2,
+                  borderRadius: 2.5,
                   minWidth: { xs: "100%", sm: "auto" },
+                  textTransform: "none",
                 }}
               >
-                Sign up to discover events near you
+                Sign up to discover plans near you
               </Button>
             )}
           </Box>
@@ -975,12 +980,12 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
               fontSize: "1.0625rem",
               fontWeight: 600,
               textTransform: "none",
-              borderRadius: 2,
+              borderRadius: 2.5,
               minWidth: { xs: "100%", sm: 240 },
               maxWidth: { xs: "none", sm: 320 },
-              boxShadow: "0 4px 20px rgba(0,0,0,0.35)",
+              boxShadow: "0 2px 12px rgba(0,0,0,0.15)",
               "&:hover": {
-                boxShadow: "0 6px 28px rgba(0,0,0,0.45)",
+                boxShadow: "0 4px 20px rgba(0,0,0,0.2)",
               },
             }}
           >

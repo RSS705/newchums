@@ -27,7 +27,7 @@ export type AuthSplitLayoutProps = {
 export default function AuthSplitLayout({
   children,
   illustrationSrc = DEFAULT_ILLUSTRATION,
-  tagline = "Find your people",
+  tagline = "Better plans start here",
 }: AuthSplitLayoutProps) {
   return (
     <AuthLayout>
@@ -48,7 +48,7 @@ export default function AuthSplitLayout({
             justifyContent: "center",
             p: 4,
             background: (t) =>
-              `linear-gradient(135deg, ${t.palette.primary.light} 0%, ${t.palette.primary.main}20 100%)`,
+              `linear-gradient(145deg, ${t.palette.primary.light}90 0%, ${t.palette.secondary.light}60 100%)`,
           }}
         >
           <Box

@@ -114,7 +114,7 @@ export default function AppShell({ children, user }: AppShellProps) {
 
   const NavCardContent = () => (
     <>
-      <Box sx={{ px: 2, py: 2.5, display: "flex", alignItems: "flex-start", gap: 1.5 }}>
+      <Box sx={{ px: 2.5, py: 2.5, display: "flex", alignItems: "center", gap: 1.5 }}>
         {effectiveAvatarUrl ? (
           <UserAvatar
             src={effectiveAvatarUrl}
@@ -132,13 +132,14 @@ export default function AppShell({ children, user }: AppShellProps) {
               alignItems: "center",
               justifyContent: "center",
               flexShrink: 0,
+              borderRadius: "50%",
+              bgcolor: "secondary.light",
             }}
           >
             <WavingHandRoundedIcon
               sx={{
-                fontSize: 26,
-                color: "primary.main",
-                opacity: 0.85,
+                fontSize: 24,
+                color: "secondary.dark",
               }}
               aria-hidden
             />
@@ -157,12 +158,11 @@ export default function AppShell({ children, user }: AppShellProps) {
         )}
         <Box sx={{ minWidth: 0 }}>
           <Typography
-            variant="caption"
+            variant="body2"
             sx={{
               color: "text.secondary",
               fontWeight: 500,
-              letterSpacing: 0.3,
-              opacity: 0.9,
+              lineHeight: 1.3,
             }}
           >
             Welcome back
@@ -170,7 +170,7 @@ export default function AppShell({ children, user }: AppShellProps) {
           <Typography
             variant="subtitle1"
             fontWeight={700}
-            sx={{ mt: 0.25, fontSize: "1rem" }}
+            sx={{ mt: 0.125, fontSize: "1rem", lineHeight: 1.3 }}
           >
             {displayName}
           </Typography>
@@ -180,11 +180,10 @@ export default function AppShell({ children, user }: AppShellProps) {
       <List
         sx={{
           px: 1.5,
-          py: 1.5,
+          py: 1,
           "& .MuiListItemButton-root": {
-            mb: 0.25,
-            transition: "background-color 0.2s ease",
-            borderRadius: 2,
+            mb: 0.5,
+            py: 1,
           },
         }}
       >
@@ -198,17 +197,22 @@ export default function AppShell({ children, user }: AppShellProps) {
               href={item.href}
               selected={active}
               onClick={() => setMobileOpen(false)}
-              sx={{ borderRadius: 2 }}
             >
-              <ListItemIcon sx={{ minWidth: 38 }}>
-                <Icon color={active ? "primary" : "inherit"} />
+              <ListItemIcon sx={{ minWidth: 36 }}>
+                <Icon sx={{ fontSize: 22, color: active ? "primary.main" : "text.secondary" }} />
               </ListItemIcon>
-              <ListItemText primary={item.label} />
+              <ListItemText
+                primary={item.label}
+                primaryTypographyProps={{
+                  fontWeight: active ? 600 : 500,
+                  fontSize: "0.9375rem",
+                }}
+              />
             </ListItemButton>
           );
         })}
       </List>
-      <Box sx={{ px: 2, pt: 1, pb: 2 }}>
+      <Box sx={{ px: 2, pt: 0.5, pb: 2.5 }}>
         <Button
           component={Link}
           href={createEventHref}
@@ -220,11 +224,12 @@ export default function AppShell({ children, user }: AppShellProps) {
           onClick={() => setMobileOpen(false)}
           sx={{
             py: 1.25,
-            borderRadius: 2,
-            textTransform: "capitalize",
+            borderRadius: 2.5,
+            textTransform: "none",
+            fontWeight: 600,
+            fontSize: "0.9375rem",
             boxShadow: "none",
-            transition: "opacity 0.2s ease",
-            "&:hover": { boxShadow: "none", opacity: 0.95 },
+            "&:hover": { boxShadow: "none", opacity: 0.92 },
           }}
         >
           Start a plan
@@ -252,9 +257,7 @@ export default function AppShell({ children, user }: AppShellProps) {
               px: 1.5,
               pb: 1.5,
               "& .MuiListItemButton-root": {
-                mb: 0.25,
-                transition: "background-color 0.2s ease",
-                borderRadius: 2,
+                mb: 0.5,
               },
             }}
           >
@@ -268,14 +271,13 @@ export default function AppShell({ children, user }: AppShellProps) {
                   href={item.href}
                   selected={active}
                   onClick={() => setMobileOpen(false)}
-                  sx={{ borderRadius: 2 }}
                 >
-                  <ListItemIcon sx={{ minWidth: 38 }}>
-                    <Icon color={active ? "primary" : "inherit"} />
+                  <ListItemIcon sx={{ minWidth: 36 }}>
+                    <Icon sx={{ fontSize: 20, color: active ? "primary.main" : "text.secondary" }} />
                   </ListItemIcon>
                   <ListItemText
                     primary={item.label}
-                    primaryTypographyProps={{ fontSize: "0.875rem" }}
+                    primaryTypographyProps={{ fontSize: "0.875rem", fontWeight: active ? 600 : 500 }}
                   />
                 </ListItemButton>
               );
@@ -428,13 +430,13 @@ export default function AppShell({ children, user }: AppShellProps) {
                   display: { xs: "none", md: "block" },
                   position: "sticky",
                   top: "88px",
-                  borderRadius: 2.5,
+                  borderRadius: 3,
                   overflow: "hidden",
                   flexShrink: 0,
                   bgcolor: "background.paper",
-                  borderColor: "divider",
+                  borderColor: "grey.200",
                   borderWidth: 1,
-                  boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+                  boxShadow: "0 1px 4px rgba(0,0,0,0.04), 0 2px 8px rgba(0,0,0,0.02)",
                 }}
               >
                 <NavCardContent />
@@ -450,7 +452,7 @@ export default function AppShell({ children, user }: AppShellProps) {
         <Box
           component="footer"
           sx={{
-            py: 4,
+            py: 5,
             mt: "auto",
             backgroundColor: "background.paper",
             borderTop: 1,

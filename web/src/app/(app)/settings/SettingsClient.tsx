@@ -298,8 +298,8 @@ export default function SettingsClient() {
 
       {/* Account */}
       <AppCard>
-        <Stack spacing={2}>
-          <Typography variant="h6">Account</Typography>
+        <Stack spacing={2.5}>
+          <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>Account</Typography>
           <AppTextField
             label="Email"
             value={email}
@@ -340,11 +340,11 @@ export default function SettingsClient() {
 
       {/* Notifications */}
       <AppCard>
-        <Stack spacing={2}>
+        <Stack spacing={2.5}>
           <Box>
-            <Typography variant="h6">Notifications</Typography>
-            <Typography color="text.secondary" variant="body2" sx={{ mt: 0.5 }}>
-               We&apos;ll save your notifications based on your preferences, and send them together in a single email.
+            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>Notifications</Typography>
+            <Typography color="text.secondary" variant="body2" sx={{ mt: 0.75, lineHeight: 1.6 }}>
+              Choose how and when you&apos;d like to hear from us.
             </Typography>
           </Box>
           {NOTIFICATION_TYPES.map((type, index) => {
@@ -370,11 +370,11 @@ export default function SettingsClient() {
 
       {/* Privacy */}
       <AppCard id="privacy">
-        <Stack spacing={2}>
+        <Stack spacing={2.5}>
           <Box>
-            <Typography variant="h6">Privacy</Typography>
-            <Typography color="text.secondary" variant="body2" sx={{ mt: 0.5 }}>
-              Control how your profile appears within and outside NewChums. Hiding some information may impact your ability to find Chums.
+            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>Privacy</Typography>
+            <Typography color="text.secondary" variant="body2" sx={{ mt: 0.75, lineHeight: 1.6 }}>
+              Control how your profile appears to others. Some options may affect your discoverability.
             </Typography>
           </Box>
           <PrivacyToggleRow
@@ -421,13 +421,13 @@ export default function SettingsClient() {
       </AppCard>
 
       {/* Danger zone */}
-      <AppCard sx={{ borderColor: "error.light", borderWidth: 1 }}>
+      <AppCard sx={{ borderColor: "error.light", borderWidth: 1, borderStyle: "solid" }}>
         <Stack spacing={2}>
-          <Typography variant="h6" color="error">
+          <Typography variant="h6" fontWeight={700} color="error.dark" sx={{ fontSize: "1.0625rem" }}>
             Danger zone
           </Typography>
-          <Typography color="text.secondary" variant="body2">
-            Permanently delete your account and all data. This cannot be undone.
+          <Typography color="text.secondary" variant="body2" sx={{ lineHeight: 1.6 }}>
+            Permanently delete your account and all associated data. This action cannot be undone.
           </Typography>
           <Button
             variant="outlined"

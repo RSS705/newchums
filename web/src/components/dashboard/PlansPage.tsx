@@ -80,7 +80,7 @@ export default function PlansPage() {
           variant="contained"
           color="primary"
           startIcon={<AddCircleRoundedIcon />}
-          sx={{ px: 3, py: 1.25, fontWeight: 600, textTransform: "none", whiteSpace: "nowrap" }}
+          sx={{ px: 3, py: 1.25, fontWeight: 600, textTransform: "none", whiteSpace: "nowrap", borderRadius: 2.5 }}
         >
           Start a plan
         </Button>
@@ -153,7 +153,7 @@ export default function PlansPage() {
               }}
             >
               <CalendarMonthRoundedIcon
-                sx={{ fontSize: 56, color: "primary.light", mb: 2 }}
+                sx={{ fontSize: 52, color: "secondary.main", mb: 2, opacity: 0.7 }}
               />
               <Typography variant="h6" fontWeight={600} sx={{ mb: 1 }}>
                 {isPast ? "No past plans yet" : "No upcoming plans"}
@@ -161,11 +161,11 @@ export default function PlansPage() {
               <Typography
                 variant="body1"
                 color="text.secondary"
-                sx={{ mb: 3, maxWidth: 400, mx: "auto", lineHeight: 1.6 }}
+                sx={{ mb: 3, maxWidth: 400, mx: "auto", lineHeight: 1.7 }}
               >
                 {isPast
-                  ? "Once you attend or host a gathering, it\u2019ll show up here."
-                  : "Start a plan around something you enjoy, or wait for an invite from a friend."}
+                  ? "Once you attend or host a gathering, it\u2019ll show up here so you can look back on the good times."
+                  : "Start a plan around something you enjoy, or keep an eye out for an invite from someone you know."}
               </Typography>
               {!isPast && (
                 <Button
@@ -174,7 +174,7 @@ export default function PlansPage() {
                   variant="contained"
                   color="primary"
                   startIcon={<AddCircleRoundedIcon />}
-                  sx={{ px: 4, py: 1.5, fontWeight: 600 }}
+                  sx={{ px: 4, py: 1.25, fontWeight: 600, borderRadius: 2.5, textTransform: "none" }}
                 >
                   Start a plan
                 </Button>

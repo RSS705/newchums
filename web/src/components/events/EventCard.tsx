@@ -96,21 +96,22 @@ export default function EventCard({ event, isPast = false }: EventCardProps) {
       component="article"
       sx={{
         overflow: "hidden",
-        borderRadius: { xs: 2, sm: 2.5 },
-        borderColor: isPast || isCanceled ? "grey.200" : "divider",
-        boxShadow: isPast ? "none" : "0 1px 4px rgba(0,0,0,0.05)",
-        transition: "box-shadow 0.2s, border-color 0.2s",
-        bgcolor: isPast || isCanceled ? "grey.50" : "background.paper",
-        opacity: isCanceled ? 0.7 : 1,
+        borderRadius: 3,
+        borderColor: isPast || isCanceled ? "grey.200" : "grey.200",
+        boxShadow: isPast ? "none" : "0 1px 3px rgba(0,0,0,0.04), 0 2px 8px rgba(0,0,0,0.03)",
+        transition: "box-shadow 0.2s ease, transform 0.15s ease",
+        bgcolor: isPast || isCanceled ? "grey.100" : "background.paper",
+        opacity: isCanceled ? 0.65 : 1,
         "&:hover": {
-          boxShadow: isPast ? "0 1px 3px rgba(0,0,0,0.03)" : "0 4px 12px rgba(0,0,0,0.08)",
+          boxShadow: isPast ? "0 1px 3px rgba(0,0,0,0.03)" : "0 4px 16px rgba(0,0,0,0.08)",
+          transform: isPast ? "none" : "translateY(-1px)",
         },
       }}
     >
       <CardActionArea component={Link} href={`/events/${event.id}`}>
-        <CardContent sx={{ py: { xs: 2, sm: 2.5 }, px: { xs: 2, sm: 2.5 } }}>
+        <CardContent sx={{ py: { xs: 2.25, sm: 2.5 }, px: { xs: 2.25, sm: 2.5 } }}>
           {/* Top row: hobby chip + visibility */}
-          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.25 }}>
+          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5 }}>
             <Stack direction="row" spacing={0.75} alignItems="center">
               {event.hobby && (
                 <Chip
@@ -119,9 +120,8 @@ export default function EventCard({ event, isPast = false }: EventCardProps) {
                   sx={{
                     bgcolor: isPast ? "grey.200" : "primary.light",
                     color: isPast ? "text.secondary" : "primary.dark",
-                    fontWeight: 500,
+                    fontWeight: 600,
                     fontSize: "0.6875rem",
-                    height: 22,
                   }}
                 />
               )}
@@ -129,7 +129,7 @@ export default function EventCard({ event, isPast = false }: EventCardProps) {
                 <Chip
                   label="Canceled"
                   size="small"
-                  sx={{ bgcolor: "error.light", color: "error.dark", fontWeight: 600, fontSize: "0.6875rem", height: 22 }}
+                  sx={{ bgcolor: "error.light", color: "error.dark", fontWeight: 600, fontSize: "0.6875rem" }}
                 />
               )}
             </Stack>
@@ -139,41 +139,44 @@ export default function EventCard({ event, isPast = false }: EventCardProps) {
           </Stack>
 
           {/* Title */}
-          <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 0.75, fontSize: "1.0625rem", lineHeight: 1.3 }}>
+          <Typography fontWeight={700} sx={{ mb: 0.5, fontSize: "1.0625rem", lineHeight: 1.35 }}>
             {event.title}
           </Typography>
 
           {/* Host */}
-          <Typography variant="caption" color="text.secondary" sx={{ mb: 1.5, display: "block" }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.75, fontSize: "0.8125rem" }}>
             {event.isHost ? "Hosted by you" : `Hosted by ${event.hostName}`}
           </Typography>
 
           {/* Meta */}
-          <Stack spacing={0.5}>
+          <Stack spacing={0.75}>
             <Stack direction="row" alignItems="center" spacing={1}>
-              <AccessTimeRoundedIcon sx={{ fontSize: 15, color: isPast ? "text.disabled" : "primary.main" }} />
-              <Typography variant="body2" color="text.secondary">
+              <AccessTimeRoundedIcon sx={{ fontSize: 16, color: isPast ? "text.disabled" : "primary.main", opacity: 0.85 }} />
+              <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
                 {formatDateTime(event.startsAt)}
               </Typography>
             </Stack>
             <Stack direction="row" alignItems="center" spacing={1}>
               {event.locationType === "online" ? (
-                <LinkRoundedIcon sx={{ fontSize: 15, color: isPast ? "text.disabled" : "primary.main" }} />
+                <LinkRoundedIcon sx={{ fontSize: 16, color: isPast ? "text.disabled" : "primary.main", opacity: 0.85 }} />
               ) : (
-                <PlaceRoundedIcon sx={{ fontSize: 15, color: isPast ? "text.disabled" : "primary.main" }} />
+                <PlaceRoundedIcon sx={{ fontSize: 16, color: isPast ? "text.disabled" : "primary.main", opacity: 0.85 }} />
               )}
-              <Typography variant="body2" color="text.secondary" noWrap sx={{ flex: 1 }}>
+              <Typography variant="body2" color="text.secondary" noWrap sx={{ flex: 1, fontSize: "0.8125rem" }}>
                 {locationDisplay}
               </Typography>
               {event.distanceKm != null && (
-                <Typography variant="caption" color="text.disabled" sx={{ flexShrink: 0, ml: 0.5, fontSize: "0.6875rem" }}>
-                  {event.distanceKm < 1 ? "< 1 km" : `${Math.round(event.distanceKm)} km`}
-                </Typography>
+                <Chip
+                  label={event.distanceKm < 1 ? "< 1 km" : `${Math.round(event.distanceKm)} km`}
+                  size="small"
+                  variant="outlined"
+                  sx={{ fontSize: "0.6875rem", height: 20, borderColor: "grey.300", color: "text.secondary" }}
+                />
               )}
             </Stack>
             <Stack direction="row" alignItems="center" spacing={1}>
-              <PeopleOutlineRoundedIcon sx={{ fontSize: 15, color: "text.disabled" }} />
-              <Typography variant="body2" color="text.secondary">
+              <PeopleOutlineRoundedIcon sx={{ fontSize: 16, color: "text.disabled", opacity: 0.85 }} />
+              <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
                 {attendeeSummary}
               </Typography>
             </Stack>
@@ -181,8 +184,8 @@ export default function EventCard({ event, isPast = false }: EventCardProps) {
 
           {/* RSVP status (for non-hosts) */}
           {!event.isHost && (
-            <Box sx={{ mt: 1.5, pt: 1.25, borderTop: "1px solid", borderColor: "divider" }}>
-              <Typography variant="caption" sx={{ color: rsvpColor(event.myRsvpStatus), fontWeight: 600 }}>
+            <Box sx={{ mt: 1.75, pt: 1.25, borderTop: "1px solid", borderColor: "grey.200" }}>
+              <Typography variant="body2" sx={{ color: rsvpColor(event.myRsvpStatus), fontWeight: 600, fontSize: "0.8125rem" }}>
                 {rsvpLabel(event.myRsvpStatus)}
               </Typography>
             </Box>

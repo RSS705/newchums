@@ -569,21 +569,12 @@ export default function ProfileClient() {
           >
             Profile
           </Typography>
-          <Stack spacing={0.25} sx={{ mt: 1 }}>
           <Typography
             color="text.secondary"
-            sx={{ fontSize: { xs: "0.875rem", sm: "0.9375rem" } }}
+            sx={{ mt: 0.75, fontSize: { xs: "0.875rem", sm: "0.9375rem" }, lineHeight: 1.5 }}
           >
-            Shape how you show up on NewChums.
+            Shape how you show up on NewChums. A complete profile helps people feel comfortable planning with you.
           </Typography>
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{ opacity: 0.85, fontSize: { xs: "0.8125rem", sm: "0.875rem" } }}
-          >
-            The more complete your profile, the better your matches.
-          </Typography>
-        </Stack>
         </Box>
         {canViewPublic ? (
           <AppButton
@@ -615,9 +606,9 @@ export default function ProfileClient() {
         )}
       </Box>
 
-      <AppCard sx={{ borderRadius: { xs: 2, sm: 2.5 }, overflow: "hidden" }}>
-        <Stack spacing={{ xs: 0, sm: 2 }}>
-          <Typography variant="h6" sx={{ fontSize: { xs: "1rem", sm: "1.125rem" } }}>
+      <AppCard sx={{ borderRadius: { xs: 2.5, sm: 3 }, overflow: "hidden" }}>
+        <Stack spacing={{ xs: 1, sm: 2.5 }}>
+          <Typography variant="h6" fontWeight={700} sx={{ fontSize: { xs: "1.0625rem", sm: "1.125rem" } }}>
             About you
           </Typography>
           <Stack direction={{ xs: "column", sm: "row" }} spacing={{ xs: 2, sm: 2 }} alignItems={{ xs: "center", sm: "flex-start" }}>
@@ -766,11 +757,16 @@ export default function ProfileClient() {
         </Stack>
       </AppCard>
 
-      <AppCard sx={{ borderRadius: { xs: 2, sm: 2.5 }, overflow: "hidden" }}>
-        <Stack spacing={2}>
-          <Typography variant="h6" sx={{ fontSize: { xs: "1rem", sm: "1.125rem" } }}>
-            Location
-          </Typography>
+      <AppCard sx={{ borderRadius: { xs: 2.5, sm: 3 }, overflow: "hidden" }}>
+        <Stack spacing={2.5}>
+          <Box>
+            <Typography variant="h6" fontWeight={700} sx={{ fontSize: { xs: "1.0625rem", sm: "1.125rem" } }}>
+              Location
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, lineHeight: 1.5 }}>
+              Helps us show plans and gatherings near you.
+            </Typography>
+          </Box>
           <PlacesAutocompleteInput
             value={homeAddress}
             onChange={(v) => {
@@ -803,14 +799,16 @@ export default function ProfileClient() {
         </Stack>
       </AppCard>
 
-      <AppCard sx={{ borderRadius: { xs: 2, sm: 2.5 }, overflow: "hidden" }}>
-        <Stack spacing={2}>
-          <Typography variant="h6" sx={{ fontSize: { xs: "1rem", sm: "1.125rem" } }}>
-            Hobbies
-          </Typography>
-          <Typography color="text.secondary" variant="body2">
-            Add hobbies you enjoy. You can pick existing ones or create your own.
-          </Typography>
+      <AppCard sx={{ borderRadius: { xs: 2.5, sm: 3 }, overflow: "hidden" }}>
+        <Stack spacing={2.5}>
+          <Box>
+            <Typography variant="h6" fontWeight={700} sx={{ fontSize: { xs: "1.0625rem", sm: "1.125rem" } }}>
+              Hobbies
+            </Typography>
+            <Typography color="text.secondary" variant="body2" sx={{ mt: 0.5, lineHeight: 1.5 }}>
+              Add hobbies you enjoy so people can find gatherings around shared interests.
+            </Typography>
+          </Box>
           <Autocomplete
             freeSolo
             multiple

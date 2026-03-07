@@ -92,15 +92,15 @@ export function getComponents(theme: Theme): Theme["components"] {
         textPrimary: {
           backgroundColor: theme.palette.primary.light,
           "&:hover": {
-            backgroundColor: theme.palette.primary.main,
-            color: "white",
+            backgroundColor: `${theme.palette.primary.main}18`,
+            color: theme.palette.primary.dark,
           },
         },
         textSecondary: {
           backgroundColor: theme.palette.secondary.light,
           "&:hover": {
-            backgroundColor: theme.palette.secondary.main,
-            color: "white",
+            backgroundColor: `${theme.palette.secondary.main}18`,
+            color: theme.palette.secondary.dark,
           },
         },
         outlinedPrimary: {
@@ -204,10 +204,10 @@ export function getComponents(theme: Theme): Theme["components"] {
       styleOverrides: {
         root: {
           width: "100%",
-          borderRadius: theme.shape.borderRadius,
+          borderRadius: Number(theme.shape.borderRadius) + 2,
           backgroundImage: "none",
           boxShadow:
-            "rgb(145 158 171 / 30%) 0px 0px 2px 0px, rgb(145 158 171 / 12%) 0px 12px 24px -4px",
+            "0px 1px 3px rgba(0,0,0,0.04), 0px 4px 12px rgba(0,0,0,0.04)",
         },
       },
     },
@@ -224,9 +224,9 @@ export function getComponents(theme: Theme): Theme["components"] {
     MuiCardContent: {
       styleOverrides: {
         root: {
-          padding: "24px",
+          padding: "24px 28px",
           "&:last-child": {
-            paddingBottom: "24px",
+            paddingBottom: "28px",
           },
         },
       },
@@ -337,6 +337,10 @@ export function getComponents(theme: Theme): Theme["components"] {
         root: {
           fontWeight: 600,
           fontSize: "0.75rem",
+          borderRadius: "999px",
+        },
+        sizeSmall: {
+          height: 26,
         },
       },
     },
@@ -428,7 +432,39 @@ export function getComponents(theme: Theme): Theme["components"] {
       styleOverrides: {
         paper: {
           boxShadow:
-            "rgb(145 158 171 / 30%) 0px 0px 2px 0px, rgb(145 158 171 / 12%) 0px 12px 24px -4px",
+            "0px 2px 8px rgba(0,0,0,0.08), 0px 8px 24px rgba(0,0,0,0.06)",
+          borderRadius: Number(theme.shape.borderRadius) + 2,
+        },
+      },
+    },
+    MuiListItemButton: {
+      styleOverrides: {
+        root: {
+          borderRadius: Number(theme.shape.borderRadius),
+          transition: "background-color 0.15s ease, color 0.15s ease",
+          "&.Mui-selected": {
+            backgroundColor: `${theme.palette.primary.main}0F`,
+            color: theme.palette.primary.dark,
+            "&:hover": {
+              backgroundColor: `${theme.palette.primary.main}1A`,
+            },
+            "& .MuiListItemIcon-root": {
+              color: theme.palette.primary.main,
+            },
+          },
+          "&:hover": {
+            backgroundColor: theme.palette.action.hover,
+          },
+        },
+      },
+    },
+    MuiTab: {
+      styleOverrides: {
+        root: {
+          textTransform: "none",
+          fontWeight: 600,
+          fontSize: "0.9375rem",
+          minHeight: 44,
         },
       },
     },
