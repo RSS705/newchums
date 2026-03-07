@@ -31,20 +31,28 @@ export default function LandingFooter() {
           </Typography>
         </Stack>
         <Stack
-          direction="column"
+          direction={{ xs: "column", sm: "row" }}
+          spacing={{ xs: 0.75, sm: 2.5 }}
           alignItems={{ xs: "flex-start", md: "flex-end" }}
-          spacing={1}
           sx={{ flexShrink: 0 }}
         >
-          <Typography
-            component={Link}
-            href="/contact"
-            variant="body2"
-            color="text.secondary"
-            sx={{ textDecoration: "none", "&:hover": { color: "primary.main", textDecoration: "underline" } }}
-          >
-            Contact us
-          </Typography>
+          {[
+            { href: "/how-it-works", label: "How it Works" },
+            { href: "/safety-center", label: "Safety Center" },
+            { href: "/science-of-friendship", label: "Science of Friendship" },
+            { href: "/contact", label: "Contact" },
+          ].map((link) => (
+            <Typography
+              key={link.href}
+              component={Link}
+              href={link.href}
+              variant="body2"
+              color="text.secondary"
+              sx={{ textDecoration: "none", "&:hover": { color: "primary.main", textDecoration: "underline" } }}
+            >
+              {link.label}
+            </Typography>
+          ))}
         </Stack>
       </Box>
       <Divider sx={{ my: 3 }} />

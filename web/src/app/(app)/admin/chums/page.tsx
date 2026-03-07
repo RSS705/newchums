@@ -5,7 +5,7 @@ import { sql } from "@/lib/db";
 import AdminChumsClient from "./AdminChumsClient";
 
 export const metadata: Metadata = {
-  title: "Chums Admin | NewChums",
+  title: "Users Admin | NewChums",
 };
 
 export default async function AdminChumsPage() {

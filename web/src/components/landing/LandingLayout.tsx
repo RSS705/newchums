@@ -86,9 +86,9 @@ export default function LandingLayout({
                 variant="contained"
                 color="primary"
                 onClick={() => signOut({ redirectTo: "/" })}
-                sx={{ px: 2.5 }}
+                sx={{ px: 2.5, textTransform: "none" }}
               >
-                Logout
+                Sign out
               </Button>
             ) : (
               <Button
@@ -96,9 +96,9 @@ export default function LandingLayout({
                 color="primary"
                 component={Link}
                 href="/login"
-                sx={{ px: 2.5, fontSize: "0.875rem" }}
+                sx={{ px: 2.5, fontSize: "0.875rem", textTransform: "none" }}
               >
-                Login
+                Sign in
               </Button>
             )
           }
@@ -159,9 +159,9 @@ export default function LandingLayout({
                   color="primary"
                   fullWidth
                   onClick={() => setMobileOpen(false)}
-                  sx={{ textTransform: "capitalize" }}
+                  sx={{ textTransform: "none" }}
                 >
-                  Login
+                  Sign in
                 </Button>
                 <Button
                   component={Link}
@@ -170,7 +170,7 @@ export default function LandingLayout({
                   color="primary"
                   fullWidth
                   onClick={() => setMobileOpen(false)}
-                  sx={{ textTransform: "capitalize" }}
+                  sx={{ textTransform: "none" }}
                 >
                   Sign up
                 </Button>

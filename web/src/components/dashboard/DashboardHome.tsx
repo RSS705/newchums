@@ -289,7 +289,7 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
             href="/profile"
             variant="outlined"
             size="small"
-            sx={{ textTransform: "none", fontWeight: 600, whiteSpace: "nowrap", borderRadius: 2 }}
+            sx={{ textTransform: "none", fontWeight: 600, whiteSpace: "nowrap", borderRadius: 2.5 }}
           >
             Update profile
           </Button>

@@ -210,12 +210,12 @@ export default function ContactView({
                 size="medium"
                 sx={{
                   alignSelf: "flex-start",
-                  borderRadius: 2,
-                  textTransform: "capitalize",
+                  borderRadius: 2.5,
+                  textTransform: "none",
                   "&:hover": { backgroundColor: "primary.dark" },
                 }}
               >
-                {isLoggedIn ? "Back to Exploring" : "Back to home"}
+                {isLoggedIn ? "Back to exploring" : "Back to home"}
               </AppButton>
             </Box>
           </Stack>
@@ -242,7 +242,7 @@ export default function ContactView({
           color="text.secondary"
           sx={{ fontSize: { xs: "0.875rem", sm: "0.9375rem" }, mt: 1 }}
         >
-          Need help or have feedback? Reach us at{" "}
+          Have a question, idea, or something to report? Reach us at{" "}
           <Typography
             component="a"
             href="mailto:contact@newchums.com"
@@ -356,8 +356,8 @@ export default function ContactView({
                   size="large"
                   sx={{
                     py: { xs: 1.25, sm: 1 },
-                    borderRadius: 2,
-                    textTransform: "capitalize",
+                    borderRadius: 2.5,
+                    textTransform: "none",
                   }}
                 >
                   {submitting ? "Sending…" : "Submit"}

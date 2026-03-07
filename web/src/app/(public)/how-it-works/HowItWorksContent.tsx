@@ -269,7 +269,8 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
                   py: 1.625,
                   fontSize: "1rem",
                   fontWeight: 600,
-                  borderRadius: 2,
+                  borderRadius: 2.5,
+                  textTransform: "none",
                   minWidth: { xs: "100%", sm: 160 },
                 }}
               >
@@ -287,7 +288,8 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
                 py: 1.625,
                 fontSize: "1rem",
                 fontWeight: 600,
-                borderRadius: 2,
+                borderRadius: 2.5,
+                textTransform: "none",
                 minWidth: { xs: "100%", sm: 160 },
               }}
             >
@@ -1070,12 +1072,12 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
               fontSize: "1.0625rem",
               fontWeight: 600,
               textTransform: "none",
-              borderRadius: 2,
+              borderRadius: 2.5,
               minWidth: { xs: "100%", sm: 220 },
               maxWidth: { xs: "none", sm: 300 },
-              boxShadow: "0 4px 20px rgba(0,0,0,0.35)",
+              boxShadow: "0 2px 12px rgba(0,0,0,0.15)",
               "&:hover": {
-                boxShadow: "0 6px 28px rgba(0,0,0,0.45)",
+                boxShadow: "0 4px 20px rgba(0,0,0,0.25)",
               },
             }}
           >

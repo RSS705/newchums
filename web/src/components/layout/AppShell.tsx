@@ -359,7 +359,7 @@ export default function AppShell({ children, user }: AppShellProps) {
                   <ListItemIcon>
                     <LogoutRoundedIcon fontSize="small" />
                   </ListItemIcon>
-                  Logout
+                  Sign out
                 </MenuItem>
               </Menu>
             </>

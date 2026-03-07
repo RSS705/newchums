@@ -6,8 +6,9 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
 import { apiFetch } from "@/lib/apiClient";
+import AuthField from "@/components/auth/AuthField";
 import AuthSplitLayout from "@/components/layout/AuthSplitLayout";
-import { AppButton, AppCard, AppTextField } from "@/components/ui";
+import { AppButton, AppCard } from "@/components/ui";
 
 type ConfirmResponse = { ok?: boolean; error?: string; message?: string };
 
@@ -79,7 +80,7 @@ export default function ResetPasswordClient() {
               Request new link
             </AppButton>
             <AppButton variant="outlined" component={Link} href="/login" fullWidth>
-              Back to login
+              Back to sign in
             </AppButton>
           </Stack>
         </AppCard>
@@ -102,7 +103,7 @@ export default function ResetPasswordClient() {
               Request new link
             </AppButton>
             <AppButton variant="outlined" component={Link} href="/login" fullWidth>
-              Back to login
+              Back to sign in
             </AppButton>
           </Stack>
         </AppCard>
@@ -114,33 +115,38 @@ export default function ResetPasswordClient() {
     <AuthSplitLayout>
       <AppCard sx={{ width: "100%", maxWidth: 450 }}>
         <Stack spacing={2}>
-          <Typography component="h1" variant="h4" fontWeight={700}>
+          <Typography component="h1" variant="h4" fontWeight={700} sx={{ textAlign: "center" }}>
             Set your new password
           </Typography>
-          <Stack component="form" spacing={1.5} onSubmit={handleSubmit}>
-            <AppTextField
-              type="password"
+          <Typography variant="subtitle1" color="text.secondary" sx={{ textAlign: "center", mb: 1 }}>
+            Choose a password at least 8 characters long.
+          </Typography>
+          <Stack component="form" spacing={0} onSubmit={handleSubmit}>
+            <AuthField
+              id="reset-password"
               label="New password"
+              type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               required
               inputProps={{ minLength: 8, autoComplete: "new-password" }}
             />
-            <AppTextField
-              type="password"
+            <AuthField
+              id="reset-confirm-password"
               label="Confirm password"
+              type="password"
               value={confirmPassword}
               onChange={(event) => setConfirmPassword(event.target.value)}
               required
-              helperText={error ?? " "}
+              helperText={error ?? undefined}
               error={Boolean(error)}
               inputProps={{ autoComplete: "new-password" }}
             />
-            <AppButton type="submit" disabled={isSubmitting} fullWidth>
+            <AppButton type="submit" disabled={isSubmitting} fullWidth size="large" sx={{ mt: 2.5 }}>
               {isSubmitting ? "Updating…" : "Update password"}
             </AppButton>
-            <AppButton variant="outlined" component={Link} href="/login" fullWidth>
-              Back to login
+            <AppButton variant="outlined" component={Link} href="/login" fullWidth size="large" sx={{ mt: 1.5 }}>
+              Back to sign in
             </AppButton>
           </Stack>
         </Stack>

@@ -1,8 +1,6 @@
 "use client";
 
 import Box from "@mui/material/Box";
-import Checkbox from "@mui/material/Checkbox";
-import FormControlLabel from "@mui/material/FormControlLabel";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { signIn, signOut } from "next-auth/react";
@@ -22,7 +20,6 @@ export default function LoginClient() {
   const searchParams = useSearchParams();
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
-  const [rememberDevice, setRememberDevice] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [emailUnverified, setEmailUnverified] = React.useState(false);
   const [suspended, setSuspended] = React.useState(false);
@@ -66,10 +63,10 @@ export default function LoginClient() {
       )}
       <Box sx={{ textAlign: "center", mx: "auto" }}>
         <Typography component="h1" variant="h4" fontWeight={700} sx={{ mb: 0.5 }}>
-          Welcome back friend
+          Welcome back
         </Typography>
         <Typography variant="subtitle1" color="text.secondary" sx={{ mb: 1 }}>
-          If you&apos;re new here, click create an account below
+          Sign in to get back to your plans and gatherings
         </Typography>
       </Box>
 
@@ -197,32 +194,21 @@ export default function LoginClient() {
           error={Boolean(error)}
         />
 
-        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ my: 2 }}>
-          <FormControlLabel
-            control={
-              <Checkbox
-                size="small"
-                checked={rememberDevice}
-                onChange={(e) => setRememberDevice(e.target.checked)}
-              />
-            }
-            label="Remember this device"
-            sx={{ "& .MuiFormControlLabel-label": { fontSize: "0.875rem" } }}
-          />
+        <Box sx={{ my: 2, textAlign: "right" }}>
           <Typography
             component={Link}
             href="/forgot-password"
-            variant="subtitle1"
+            variant="body2"
             fontWeight={500}
             color="primary"
-            sx={{ textDecoration: "none" }}
+            sx={{ textDecoration: "none", "&:hover": { textDecoration: "underline" } }}
           >
-            Forgot Password?
+            Forgot your password?
           </Typography>
-        </Stack>
+        </Box>
 
         <AppButton type="submit" fullWidth size="large">
-          Sign In
+          Sign in
         </AppButton>
       </AuthDividerForm>
 

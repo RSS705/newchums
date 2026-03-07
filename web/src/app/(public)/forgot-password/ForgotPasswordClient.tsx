@@ -7,6 +7,7 @@ import { useSearchParams } from "next/navigation";
 import * as React from "react";
 import { apiFetch } from "@/lib/apiClient";
 import AuthField from "@/components/auth/AuthField";
+import AuthFooterLink from "@/components/auth/AuthFooterLink";
 import AuthSplitLayout from "@/components/layout/AuthSplitLayout";
 import { AppButton, AppCard } from "@/components/ui";
 
@@ -91,14 +92,15 @@ export default function ForgotPasswordClient() {
             size="large"
             color="primary"
           >
-            Back to login
+            Back to sign in
           </AppButton>
         </Stack>
-        {submitted ? (
-          <Typography color="text.secondary" sx={{ mt: 2 }}>
-            Reset link sent, please check your email.
+        {submitted && (
+          <Typography color="success.main" sx={{ mt: 2, textAlign: "center", fontWeight: 500 }}>
+            Reset link sent — please check your email.
           </Typography>
-        ) : null}
+        )}
+        <AuthFooterLink prompt="Don't have an account?" linkText="Sign up" href="/signup" />
       </AppCard>
     </AuthSplitLayout>
   );

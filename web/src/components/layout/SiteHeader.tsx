@@ -83,7 +83,7 @@ export default function SiteHeader({
               href={link.href}
               color="inherit"
               variant="text"
-              sx={{ fontSize: "inherit" }}
+              sx={{ fontSize: "inherit", textTransform: "none" }}
             >
               {link.label}
             </Button>

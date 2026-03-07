@@ -59,7 +59,7 @@ export default function SignupClient() {
               Welcome to NewChums
             </Typography>
             <Typography variant="subtitle1" color="text.secondary" sx={{ mb: 1 }}>
-              Let&apos;s get you started
+              Create your account to start organizing plans and gatherings
             </Typography>
           </Box>
 
@@ -323,7 +323,7 @@ export default function SignupClient() {
 
           <AuthFooterLink
             prompt="Already have an account?"
-            linkText="Sign In"
+            linkText="Sign in"
             href="/login"
           />
         </Stack>

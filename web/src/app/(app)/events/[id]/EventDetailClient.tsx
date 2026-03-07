@@ -73,7 +73,7 @@ export default function EventDetailClient() {
     try {
       const res = await apiFetch(`/events/${eventId}`, { auth: true });
       if (!res.ok) {
-        setError("Event not found");
+        setError("Plan not found");
         setLoading(false);
         return;
       }
@@ -87,7 +87,7 @@ export default function EventDetailClient() {
       setRsvps(data.rsvps);
       setAltTimes(data.altTimes);
     } catch {
-      setError("Failed to load event");
+      setError("Failed to load plan");
     }
     setLoading(false);
   }, [eventId]);

@@ -585,8 +585,8 @@ export default function ProfileClient() {
             sx={{
               alignSelf: { xs: "center", sm: "flex-end" },
               flexShrink: 0,
-              borderRadius: 2,
-              textTransform: "capitalize",
+              borderRadius: 2.5,
+              textTransform: "none",
             }}
           >
             View public profile
@@ -946,8 +946,8 @@ export default function ProfileClient() {
         }
         sx={{
           py: { xs: 1.25, sm: 1 },
-          borderRadius: 2,
-          textTransform: "capitalize",
+          borderRadius: 2.5,
+          textTransform: "none",
         }}
       >
         {saving

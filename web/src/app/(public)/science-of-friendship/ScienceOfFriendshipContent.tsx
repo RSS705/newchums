@@ -633,16 +633,16 @@ export default function ScienceOfFriendshipContent({ isLoggedIn = false }: { isL
               fontSize: "1.0625rem",
               fontWeight: 600,
               textTransform: "none",
-              borderRadius: 2,
+              borderRadius: 2.5,
               minWidth: { xs: "100%", sm: 220 },
               maxWidth: { xs: "none", sm: 280 },
-              boxShadow: "0 4px 20px rgba(0,0,0,0.35)",
+              boxShadow: "0 2px 12px rgba(0,0,0,0.15)",
               "&:hover": {
-                boxShadow: "0 6px 28px rgba(0,0,0,0.45)",
+                boxShadow: "0 4px 20px rgba(0,0,0,0.25)",
               },
             }}
           >
-            {isLoggedIn ? "Explore NewChums" : "Get Started"}
+            {isLoggedIn ? "Explore NewChums" : "Get started \u2014 it\u2019s free"}
           </Button>
         </Box>
       </Box>

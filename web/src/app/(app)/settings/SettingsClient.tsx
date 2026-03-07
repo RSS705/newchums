@@ -306,7 +306,7 @@ export default function SettingsClient() {
             disabled
             helperText="Your sign-in email address"
           />
-          <Button variant="outlined" size="small" onClick={() => setChangeEmailOpen(true)}>
+          <Button variant="outlined" size="small" onClick={() => setChangeEmailOpen(true)} sx={{ textTransform: "none", borderRadius: 2.5, alignSelf: "flex-start" }}>
             Change email
           </Button>
           <AppTextField
@@ -319,7 +319,7 @@ export default function SettingsClient() {
             }}
             helperText="Your password is hidden for security"
           />
-          <Button variant="outlined" size="small" onClick={() => setChangePasswordOpen(true)}>
+          <Button variant="outlined" size="small" onClick={() => setChangePasswordOpen(true)} sx={{ textTransform: "none", borderRadius: 2.5, alignSelf: "flex-start" }}>
             Change password
           </Button>
           <Box sx={{ mt: 1 }}>
@@ -379,7 +379,7 @@ export default function SettingsClient() {
           </Box>
           <PrivacyToggleRow
             title="Hide me from NewChums search and discovery"
-            description="If enabled, your profile will not appear in Chum searches, exact email lookups in the Chum flow, or other in-app discovery features. Other users will not be able to add you as a Chum through search. If you join an event, attendees will still be able to view your profile."
+            description="Your profile won't appear in Chum searches or discovery features, and others won't be able to add you through search. If you join a plan, attendees can still view your profile."
             enabled={isHiddenFromSearch}
             onToggle={setPrivacyHiddenFromSearch}
             showDivider={false}
@@ -387,7 +387,7 @@ export default function SettingsClient() {
           />
           <PrivacyToggleRow
             title="Hide my profile from search engines"
-            description="If enabled, your profile will not be indexed by external search engines."
+            description="Your profile won't appear in Google or other search engines."
             enabled={isHiddenFromExternalIndexing}
             onToggle={setPrivacyHiddenFromExternalIndexing}
             showDivider={true}
@@ -395,7 +395,7 @@ export default function SettingsClient() {
           />
           <PrivacyToggleRow
             title="Hide my age"
-            description="If enabled, your age will no longer appear on your profile."
+            description="Your age won't be shown on your public profile."
             enabled={isHiddenAge}
             onToggle={setPrivacyHiddenAge}
             showDivider={true}
@@ -403,7 +403,7 @@ export default function SettingsClient() {
           />
           <PrivacyToggleRow
             title="Hide my Chums from my public profile"
-            description="If enabled, the Chums section will not be shown on your public profile."
+            description="The Chums section won't appear on your public profile."
             enabled={isHiddenChumList}
             onToggle={setPrivacyHiddenChumList}
             showDivider={true}
@@ -411,7 +411,7 @@ export default function SettingsClient() {
           />
           <PrivacyToggleRow
             title="Hide me from appearing on other people's profile Chum lists"
-            description="If enabled, you will not appear in the Chums section on other users' profiles. You will still appear on other users' private Chum list and can still be found in Chum search."
+            description="You won't appear in the Chums section on other people's profiles, but you'll still show on their private Chum list."
             enabled={isHiddenFromChumLists}
             onToggle={setPrivacyHiddenFromChumLists}
             showDivider={true}
@@ -434,6 +434,7 @@ export default function SettingsClient() {
             color="error"
             size="small"
             onClick={() => setDeleteAccountOpen(true)}
+            sx={{ textTransform: "none", borderRadius: 2.5, alignSelf: "flex-start" }}
           >
             Delete account
           </Button>
