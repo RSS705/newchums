@@ -53,7 +53,7 @@ function formatDateTime(iso: string): string {
 export default function EventDetailClient() {
   const params = useParams();
   const router = useRouter();
-  const { showToast } = useToast();
+  const toast = useToast();
   const eventId = params.id as string;
 
   const [event, setEvent] = useState<EventDetail | null>(null);
@@ -105,20 +105,20 @@ export default function EventDetailClient() {
       });
       const data = (await res.json()) as { ok: boolean; error?: string; message?: string };
       if (data.ok) {
-        showToast(status === "going" ? "You're going!" : status === "maybe" ? "Marked as maybe" : "Response recorded", "success");
+        toast.success(status === "going" ? "You're going!" : status === "maybe" ? "Marked as maybe" : "Response recorded");
         load();
       } else {
-        showToast(data.message ?? "Something went wrong", "error");
+        toast.error(data.message ?? "Something went wrong");
       }
     } catch {
-      showToast("Network error", "error");
+      toast.error("Network error");
     }
     setRsvpSubmitting(false);
   };
 
   const handleAltTimeSubmit = async () => {
     if (!altDate || !altTime) {
-      showToast("Please pick a date and time", "error");
+      toast.error("Please pick a date and time");
       return;
     }
     try {
@@ -133,17 +133,17 @@ export default function EventDetailClient() {
       });
       const data = (await res.json()) as { ok: boolean; message?: string };
       if (data.ok) {
-        showToast("Alternate time suggested!", "success");
+        toast.success("Alternate time suggested!");
         setShowAltTimeForm(false);
         setAltDate("");
         setAltTime("");
         setAltNote("");
         load();
       } else {
-        showToast(data.message ?? "Error", "error");
+        toast.error(data.message ?? "Error");
       }
     } catch {
-      showToast("Network error", "error");
+      toast.error("Network error");
     }
   };
 
@@ -153,11 +153,11 @@ export default function EventDetailClient() {
       const res = await apiFetch(`/events/${eventId}/cancel`, { auth: true, method: "POST" });
       const data = (await res.json()) as { ok: boolean };
       if (data.ok) {
-        showToast("Plan canceled", "success");
+        toast.success("Plan canceled");
         load();
       }
     } catch {
-      showToast("Network error", "error");
+      toast.error("Network error");
     }
   };
 

@@ -27,7 +27,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function CreateEventClient() {
   const router = useRouter();
-  const { showToast } = useToast();
+  const toast = useToast();
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -154,17 +154,17 @@ export default function CreateEventClient() {
       });
       const data = (await res.json()) as { ok: boolean; event?: { id: string }; error?: string; message?: string; field?: string };
       if (data.ok && data.event) {
-        showToast("Plan created! 🎉", "success");
+        toast.success("Plan created!");
         router.push("/plans");
       } else {
         if (data.field) {
           setErrors({ [data.field]: data.message ?? "Validation error" });
         } else {
-          showToast(data.message ?? "Something went wrong", "error");
+          toast.error(data.message ?? "Something went wrong");
         }
       }
     } catch {
-      showToast("Network error — please try again", "error");
+      toast.error("Network error — please try again");
     }
     setSubmitting(false);
   };
