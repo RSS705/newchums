@@ -1,6 +1,6 @@
 # NewChums Agent Governance
 
-Last Updated: February 26, 2026
+Last Updated: March 7, 2026
 
 This document defines how agents (AI or human) should operate within the NewChums repository.
 
@@ -8,6 +8,50 @@ The repository itself is the source of truth.
 Agents are encouraged to inspect the full codebase and make architectural improvements when justified.
 
 Architecture clarity > rigidity.
+
+---
+
+## Product Context (Read This First)
+
+NewChums helps people organize gatherings more easily around hobbies and shared interests.
+
+**Current product positioning:**
+- Primary pitch: making it easier to plan and coordinate real-world gatherings — board game nights, coffee walks, study sessions, pottery, sports, etc.
+- Secondary pitch: reducing group chat chaos and helping people follow through on things they actually want to do.
+- Tertiary / contextual: meeting new people naturally through shared interests and proximity.
+- Broader mission: reducing loneliness and helping people build real-world social connections. This is still true and still core to why the product exists, but it is not always the front-facing message.
+
+**Why this matters for agents:**
+- Do not frame user-facing copy as primarily about "meeting strangers" or "finding friends." The product should feel like a practical tool for organizing real-life plans.
+- Loneliness / friendship framing is appropriate on the Science of Friendship page, in mission-oriented contexts, and in internal docs — but it should not dominate product surfaces.
+- The product should feel warm, practical, grounded, and social — not corporate, not heavy, not clinical.
+
+### Terminology
+
+| Term | Usage |
+|------|-------|
+| **plan** | Preferred user-facing term for an event/gathering. "Start a plan," "Your Plans." |
+| **gathering** | Softer alternative to "event." Used in descriptions and copy where "plan" feels too rigid. |
+| **event** | Acceptable in technical/internal contexts and in API naming. Avoid as the primary user-facing word in new UI copy. |
+| **hobby** | User-facing term for interests. Aligned with the profile interests system. |
+| **chum** | NewChums term for a saved person (one-way relationship, no approval flow). |
+
+Internal code may use `event`, `PlanEvent`, `EventCard`, etc. — this is fine. The distinction is between code identifiers and user-visible strings.
+
+### Design and UX Tone
+
+NewChums should feel:
+- warm, welcoming, social, grounded, practical, low-pressure, human
+
+NewChums should NOT feel:
+- corporate, ERP-like, cold, back-office, admin-heavy, sterile, overly formal
+
+When building or modifying UI:
+- Prefer friendly, approachable language over jargon
+- Prefer "none" textTransform over "capitalize" or "uppercase" on buttons
+- Keep empty states helpful and encouraging, not dead or embarrassing
+- Keep helper text human and concise, not mechanical
+- Use the theme's design language (softer shadows, warmer palette, rounded corners)
 
 ---
 
@@ -60,8 +104,14 @@ The following documents serve distinct purposes and must remain structured accor
 - Operational instructions.
 - Local setup.
 - Deployment process.
-- Daily session “Chunk” log.
+- Daily session "Chunk" log.
 - Current State must remain short and accurate.
+
+### `docs/Future_Ideas_Reference.md`
+
+- Strategic idea bank maintained by Robert.
+- Agents may read for context but must **not** treat contents as requirements.
+- Agents must **not** modify this file.
 
 If architectural invariants change, update both:
 
@@ -69,6 +119,20 @@ If architectural invariants change, update both:
 - System_Map.md
 
 in the same change set.
+
+---
+
+## Incomplete Areas (Do Not Overbuild)
+
+The following areas are partially implemented. Agents should polish and improve them incrementally, but should not speculatively build out the full vision without being asked:
+
+| Area | Status | Guidance |
+|------|--------|----------|
+| **Explore page** (`/`, logged in) | Functional but evolving. Real API data, filters, location-aware ordering. | Improve polish, fix bugs, refine empty states. Do not invent the final discovery experience. |
+| **Event Details** (`/events/[id]`) | Basic detail + RSVP + cancel. No edit, no chat, no public event page. | Fix issues, improve UI. Do not build chat, edit, or public sharing without being asked. |
+| **Event email templates** | Scaffolded in code. Postmark templates not yet created. Sends noop safely. | Do not assume emails are live. Note template requirements when relevant. |
+| **Recurring events** | Not implemented. Schema supports single-time events only. | Do not add recurring event logic. |
+| **Event chat** | Not implemented. Scaffolded conceptually in schema. | Do not build. |
 
 ---
 
@@ -161,6 +225,8 @@ Agents should:
 - Avoid overengineering.
 - Preserve auth integrity and routing behavior.
 - Clearly separate implemented vs planned systems.
+- Use "plan" / "gathering" language in user-facing copy, not "event."
+- Respect the product tone: warm, practical, grounded — not corporate.
 
 ---
 

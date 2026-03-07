@@ -2,9 +2,10 @@
 
 Last Updated: March 7, 2026
 
-This document is the operational guide for running and deploying NewChums.  
-For architectural invariants and contracts, see `docs/Technical_Specs.md`.  
+This document is the operational guide for running and deploying NewChums.
+For architectural invariants and contracts, see `docs/Technical_Specs.md`.
 For diagrams and flows, see `docs/System_Map.md`.
+For product direction, terminology, and agent governance, see `AGENTS.md`.
 
 ---
 
@@ -13,14 +14,14 @@ For diagrams and flows, see `docs/System_Map.md`.
 - **Production:** Single production environment.
 - **Workers:** Web = `newchums-web-dev` (production), API = `newchums-api`.
 - **Canonical host:** `https://newchums.com` (www → non-www redirect enforced before Auth.js).
-- **API migration:** Signup, email verification, password reset, email change, profile (incl. DOB, bio, gender, profile theme), interests, handle availability, onboarding, avatar flows, notification preferences, admin moderation, user suspension, Chums, Chum invites, and events (plans) are in the API worker.
-- **Events (plans):** Full event creation, RSVP, invite, and alternate time system. `/events/create` — "Start a plan" form. `/plans` — tabbed Upcoming/Past view with hosted/joined sections (real API data). `/events/[id]` — event detail with RSVP actions. Visibility: invite_only, chums_only, public. RSVP: going, maybe, cant_make_it. Event email templates scaffolded but require Postmark template creation.
-- **Explore page:** Logged-in Explore (`/`) is a real event discovery feed. Uses `GET /events/explore` with location-aware nearby-first ordering (Haversine), hobby filter, time-range chips, text search. Shows location nudge when profile location is not set. Contextual empty states guide users to clear filters, start a plan, or update profile.
-- **Super admin:** Users with `role = 'super_admin'` can access `/admin/interests` (interests moderation) and `/admin/chums` (view + suspend/unsuspend user accounts). Role is set directly in the database; no UI promotion flow.
-- **Chums:** One-way saved-people feature. `/chum-groups` page (search by name, @handle, or exact email + private list). Search auto-detects email input and offers an invite flow for non-existing emails. Add/Remove button on public profiles. Public Chums section on profiles (privacy-gated). Two new privacy toggles in Settings. Mutual Chums state shown via 🤝 emoji indicator.
-- **Notifications:** In-app notification bell in top nav. Currently supports `chum_added_you`. Bell turns gold when unread notifications exist; dropdown marks them as read on open.
-- **Avatar storage:** R2 bucket `newchums-media` (binding `MEDIA_BUCKET`). Client can route media operations and avatar display through `NEXT_PUBLIC_AVATAR_BASE_URL` for cross-env consistency when sharing DB.
-- **Public marketing site:** Four polished public pages sharing `LandingLayout`: Homepage (redesigned with event discovery section, category filters, and product-preview hero panel), How it Works (6-step walkthrough, coordination mock panel, discovery panel), Science of Friendship (interactive research page), Safety Center (community guidance). All pages use shared design system (SectionHeader, section spacing, CTA blocks, responsive patterns). Nav links defined in `web/src/config/nav.ts` (`headerNavLinks`). Former `LandingHero.tsx` is superseded by `LandingPageContent.tsx`.
+- **API migration:** All business logic is in the API worker — auth flows, profile, interests, Chums, Chum invites, events (plans), notifications, admin, avatar, contact form.
+- **Events (plans):** Full event creation, RSVP (going/maybe/can't make it), invite, alternate time suggestion, and cancel system. Visibility: invite_only, chums_only, public. Event email templates scaffolded but require Postmark template creation (sends noop safely).
+- **Explore page:** Logged-in event discovery feed (`/`). Uses `GET /events/explore` with location-aware nearby-first ordering (Haversine), hobby filter, time-range chips, text search. Contextual empty states.
+- **Your Plans:** Tabbed upcoming/past view with hosted and joined sections, real API data.
+- **Chums:** One-way saved-people feature with search, email invite flow, mutual indicators, privacy controls, and public Chums on profiles.
+- **Notifications:** In-app bell with unread state. Supports `chum_added_you`, `event_invite`, `event_rsvp`, `event_alt_time`, `event_canceled`.
+- **Admin:** Interests moderation + user account management (super_admin only).
+- **Public site:** Homepage, How it Works, Science of Friendship, Safety Center, Contact — all sharing `LandingLayout`.
 - **Build:** `cd web && npm run build` passes (Edge/OpenNext constraints apply).
 
 ---
@@ -67,11 +68,11 @@ Required (typical local dev):
 
 Optional / situational:
 - `NEXT_PUBLIC_TURNSTILE_SITE_KEY` — Cloudflare Turnstile site key for contact form (logged-out users). If unset, Turnstile widget is not shown.
-- `NEXT_PUBLIC_API_BASE_URL`  
+- `NEXT_PUBLIC_API_BASE_URL`
   - Defaults via `.env.development` to `http://127.0.0.1:8787` unless overridden.
-- `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`  
+- `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`
   - Optional; required for Places autocomplete on Profile Location. If unset, address input behaves as plain text.
-- `NEXT_PUBLIC_AVATAR_BASE_URL`  
+- `NEXT_PUBLIC_AVATAR_BASE_URL`
   - Defaults to `NEXT_PUBLIC_API_BASE_URL`.
   - **When sharing DB with prod:** set to the production API URL so avatar upload + display use the same R2 origin.
 
@@ -91,6 +92,13 @@ Email / Postmark (required for email flows):
 - `POSTMARK_TEMPLATE_EMAIL_CHANGE_CONFIRM`
 - `POSTMARK_TEMPLATE_EMAIL_CHANGE_NOTIFY_OLD`
 - `POSTMARK_TEMPLATE_EMAIL_CHANGE_SUCCESS`
+
+Event email templates (optional — sends noop if not set):
+- `POSTMARK_TEMPLATE_EVENT_INVITE`
+- `POSTMARK_TEMPLATE_EVENT_UPDATED`
+- `POSTMARK_TEMPLATE_EVENT_CANCELED`
+- `POSTMARK_TEMPLATE_EVENT_REMINDER`
+- `POSTMARK_TEMPLATE_EVENT_RSVP_UPDATE`
 
 Optional:
 - `TURNSTILE_SECRET_KEY` — Cloudflare Turnstile secret key for contact form verification (logged-out users). If unset, Turnstile is skipped (useful for local dev).
@@ -147,11 +155,11 @@ Credentials signups require email verification before sign-in.
 - `POST /contact` sends email to `contact@newchums.com` from `contact@newchums.com` via Postmark (uses `POSTMARK_SERVER_TOKEN`).
 - **Turnstile setup (production):**
   1. Create a Turnstile widget at [Cloudflare Dashboard → Turnstile](https://dash.cloudflare.com/?to=/:account/turnstile).
-  2. **Add your domain:** In the widget settings, add `newchums.com` (and `www.newchums.com` if used) to the widget’s allowed domains. Otherwise the widget will not render.
+  2. **Add your domain:** In the widget settings, add `newchums.com` (and `www.newchums.com` if used) to the widget's allowed domains. Otherwise the widget will not render.
   3. **Web:** Add `NEXT_PUBLIC_TURNSTILE_SITE_KEY` to `web/.env.production` (see § Environment Variable Locations).
   4. **API:** Run `npx wrangler secret put TURNSTILE_SECRET_KEY` and paste the secret key.
   4. Logged-out users must complete the Turnstile challenge before submit. Logged-in users skip it.
-- **Testing:** Use Cloudflare’s [test keys](https://developers.cloudflare.com/turnstile/troubleshooting/testing/) (always pass) for local dev.
+- **Testing:** Use Cloudflare's [test keys](https://developers.cloudflare.com/turnstile/troubleshooting/testing/) (always pass) for local dev.
 - For production rate limiting (5 per 10 min per IP): run `npx wrangler kv namespace create CONTACT_RATELIMIT`, then add the `[[kv_namespaces]]` block to `api/wrangler.toml` (see commented example in file).
 
 **Troubleshooting: "For testing only" on production**
@@ -170,7 +178,7 @@ If the Turnstile widget shows "For testing only" on newchums.com/contact, you ar
 
 - Route: `/u/[handle]` (e.g. `/u/yourhandle`). Works for both logged-in (app shell) and logged-out (landing layout) visitors.
 - API: `GET /public/users/:handle` (no auth). Returns `{ user: { displayName, handle, age, bio, hobbies, avatarUrl } }`. DOB never exposed; age computed server-side.
-- Profile page has “View public profile” button when username is set. Links to `/u/{handle}`.
+- Profile page has "View public profile" button when username is set. Links to `/u/{handle}`.
 
 ### Password reset
 
@@ -193,7 +201,7 @@ Migration required:
 
 ## Database Migrations
 
-Migrations live in `web/sql/`.
+Migrations live in `web/sql/`. Run them in order against your Neon database.
 
 ```bash
 cd web
@@ -220,6 +228,7 @@ psql "$DATABASE_URL" -f sql/020_add_chum_privacy_columns.sql
 psql "$DATABASE_URL" -f sql/021_create_user_chums.sql
 psql "$DATABASE_URL" -f sql/022_create_notifications.sql
 psql "$DATABASE_URL" -f sql/023_create_chum_invites.sql
+psql "$DATABASE_URL" -f sql/024_create_events.sql
 ```
 
 Notes:
@@ -233,6 +242,7 @@ Notes:
 - Migration `021_create_user_chums.sql` creates the `newchums.user_chums` table for one-way Chum relationships.
 - Migration `022_create_notifications.sql` creates the `newchums.notifications` table for in-app notifications.
 - Migration `023_create_chum_invites.sql` creates the `newchums.chum_invites` table for Chum invite links (token hash, status, 30-day expiry).
+- Migration `024_create_events.sql` creates `newchums.events`, `newchums.event_invites`, `newchums.event_rsvps`, and `newchums.event_alt_times` tables for the event/plan system.
 
 ---
 
@@ -261,16 +271,45 @@ npm run deploy
 
 ---
 
+## Postmark Email Templates
+
+### Active templates
+
+| Purpose | Template ID / env var | Status |
+|---------|----------------------|--------|
+| Email verification | `POSTMARK_TEMPLATE_VERIFY` | Active |
+| Password reset | `POSTMARK_TEMPLATE_RESET` | Active |
+| RSVP invite | `POSTMARK_TEMPLATE_RSVP` | Active |
+| Email change confirm | `POSTMARK_TEMPLATE_EMAIL_CHANGE_CONFIRM` | Active |
+| Email change notify old | `POSTMARK_TEMPLATE_EMAIL_CHANGE_NOTIFY_OLD` | Active |
+| Email change success | `POSTMARK_TEMPLATE_EMAIL_CHANGE_SUCCESS` | Active |
+| Chum invite | Hardcoded template ID `43805532` | Active |
+
+### Templates to create
+
+| Purpose | Env var | Template model | Status |
+|---------|---------|----------------|--------|
+| Event invite | `POSTMARK_TEMPLATE_EVENT_INVITE` | recipientName, hostName, eventTitle, eventDate, eventUrl | Not created |
+| Event updated | `POSTMARK_TEMPLATE_EVENT_UPDATED` | recipientName, eventTitle, changeDescription, eventUrl | Not created |
+| Event canceled | `POSTMARK_TEMPLATE_EVENT_CANCELED` | recipientName, hostName, eventTitle, eventDate | Not created |
+| Event reminder | `POSTMARK_TEMPLATE_EVENT_REMINDER` | recipientName, eventTitle, eventDate, eventLocation, eventUrl | Not created |
+| RSVP update to host | `POSTMARK_TEMPLATE_EVENT_RSVP_UPDATE` | hostName, attendeeName, eventTitle, rsvpStatus, eventUrl | Not created |
+
+After creating templates in Postmark, add template IDs to `api/wrangler.toml` `[vars]` section or via `wrangler secret put`. The send functions in `api/src/email/send.ts` noop safely when template IDs are not configured.
+
+---
+
 ## Troubleshooting
 
 | Issue | Fix |
 |------|-----|
-| Google OAuth “Invalid code verifier” | Ensure canonical host redirect is active and `AUTH_URL/NEXTAUTH_URL` are `https://newchums.com` |
+| Google OAuth "Invalid code verifier" | Ensure canonical host redirect is active and `AUTH_URL/NEXTAUTH_URL` are `https://newchums.com` |
 | API says `DATABASE_URL is not set` | Ensure `api/.dev.vars` has non-empty `DATABASE_URL`; restart API; verify via `/health/env` |
 | Authenticated API calls fail (401) | Ensure API `NEXTAUTH_SECRET` matches web `AUTH_SECRET` |
 | Prod bundle calls localhost | Deploy using `npm run deploy` (not raw `next build`); hard refresh / clear cache |
 | Password reset links wrong host | Ensure API `WEB_BASE_URL` is correct (`https://newchums.com` in prod) |
 | Avatar mismatch local vs prod | Set `NEXT_PUBLIC_AVATAR_BASE_URL` to prod API URL when sharing DB so all avatar ops go through R2-backed origin |
+| `NeonDbError: invalid input syntax for type uuid: "explore"` | Ensure `GET /events/explore` is registered **before** `GET /events/:id` in the Hono route table (see API route ordering in Technical_Specs.md) |
 
 ---
 
@@ -295,17 +334,31 @@ Chunk XX — YYYY-MM-DD
 
 ---
 
+Chunk 08 — 2026-03-07
+- Goal: Full documentation review and update — product direction, terminology, design tone, AI onboarding clarity.
+- Changes:
+  - `AGENTS.md`: Added Product Context section (positioning, terminology table, design/UX tone), Incomplete Areas table, Future_Ideas_Reference doc contract. Updated Agent Authority Clause with product-tone guidance.
+  - `README.md`: Rewritten as strong onboarding doc — product description updated to current positioning, "What's Built" feature summary, architecture overview, terminology table, canonical doc index.
+  - `docs/Technical_Specs.md` v8.0: Updated §1 mission context to current positioning with terminology note. Updated notification types table to match current user-facing titles. Added event-related notification types to In-app notifications section. Added Hono route ordering note. Added event tables to storage section. Added technical debt items (event email templates, account deletion cascade). Clarified "not yet implemented" for events.
+  - `docs/System_Map.md`: Added product context cross-reference. Added §5 Key User Flows (logged-out, logged-in, incomplete flows table). Added §8 Web App Route Map (public + logged-in routes). Updated API boundary table with all current endpoints.
+  - `docs/Development_Setup_Guide.md`: Added migration 024 to migration list. Added event email template env vars to API env section. Added Postmark Email Templates section (active + to-create). Added Hono route ordering troubleshooting entry. Updated Current State to reflect current system.
+- Verification: All docs cross-reference correctly. Implemented vs planned clearly separated. No speculative content documented as implemented.
+- Deploy: No code changes. Documentation only.
+- Next Steps: Create Postmark event email templates. Update account deletion to cascade event tables.
+
+---
+
 Chunk 07 — 2026-03-07
 - Goal: Full redesign and rebuild of the logged-in Explore page as a real event discovery feed.
 - Changes:
   - API: `GET /events/explore` — new discoverable events endpoint. Accepts `lat`/`lng`/`radius_km` for location-aware nearby-first ordering (Haversine formula), `hobby` (slug filter), `time_range` (this_week/this_weekend/next_30/all), `q` (text search). Applies visibility rules: shows `public` events to all, `chums_only` events to the host's chums, excludes `invite_only`. Distance computed server-side and returned as `distanceKm`. Falls back to chronological ordering when no location is provided.
   - Web — `DashboardHome.tsx` fully rebuilt: loads user profile (`GET /profile`) for location/radius defaults, fetches events via `GET /events/explore` with reactive filter state. Integrated filter bar with search input, time-range chips (This week / This weekend / Next 30 days / All upcoming), collapsible advanced filters (distance select via shared `DistanceSelect` component, hobby Autocomplete from `/interests`), clear-filters button. Location nudge banner when user has no `home_lat`/`home_lng` set, linking to profile. Contextual empty states: no events matching filters, no events nearby, no location set, no hobbies set. Empty states guide users to clear filters, start a plan, or update profile. Event feed uses responsive `Grid` with `EventCard` components.
   - `EventCard.tsx` — `PlanEvent` type extended with `description`, `hobbySlug`, `distanceKm` optional fields. Distance display added inline with location (e.g. "< 1 km", "5 km").
-  - `ExploreFilterBar.tsx` and `EventListItem.tsx` are now unused (superseded by the integrated filter in `DashboardHome`).
+  - `ExploreFilterBar.tsx` and `EventListItem.tsx` deleted (dead code; superseded by integrated filter in `DashboardHome`).
   - Updated `docs/Technical_Specs.md`: added `GET /events/explore` to events API table; added Explore page to web pages table.
 - Verification: TypeScript passes in both web and api. No linter errors. Explore page loads profile defaults, fetches events reactively on filter changes, handles empty states gracefully.
 - Deploy: No DB migrations. Standard web + API deploy.
-- Next Steps: Build full Event Details page. Wire homepage/How it Works mock panels to real event API. Add event edit endpoint. Delete unused `ExploreFilterBar.tsx` and `EventListItem.tsx`.
+- Next Steps: Build full Event Details page. Wire homepage/How it Works mock panels to real event API. Add event edit endpoint.
 
 ---
 

@@ -1,19 +1,24 @@
 # Technical Specifications
 
-Last Updated: March 7, 2026  
-Version: 7.0
+Last Updated: March 7, 2026
+Version: 8.0
 
-This document defines the authoritative technical architecture of NewChums.  
+This document defines the authoritative technical architecture of NewChums.
 It describes **what exists today** and the structural commitments we are making.
 
 ---
 
-## 1) Mission Context
+## 1) Product Context
 
-NewChums is an event-first platform focused on helping people meet through shared real-world activities.
+NewChums helps people organize gatherings more easily around hobbies and shared interests.
 
-Core action:
-- Attend, be notified of, and create small public events around shared interests.
+**Current positioning:**
+- Primary: practical social coordination — making it easier to plan, coordinate, and follow through on real-world gatherings.
+- Secondary: reducing group chat chaos and turning "we should do something sometime" into actual plans.
+- Contextual: meeting new people naturally through shared interests and proximity.
+- Broader mission: reducing loneliness by making real-world social connection more approachable.
+
+**Terminology:** The system uses "event" internally (database, API routes, code) but user-facing surfaces prefer "plan" or "gathering." See `AGENTS.md` for full terminology guidance.
 
 ---
 
@@ -37,7 +42,7 @@ Core action:
 
 | Tool | Purpose |
 |------|---------|
-| VS Code | Primary editor |
+| VS Code / Cursor | Primary editor |
 | Wrangler CLI | Workers dev + deployment |
 | GitHub | Version control |
 | TypeScript | Type safety |
@@ -98,12 +103,12 @@ The `users` table has a `role TEXT NULL` column (migration 015). The only suppor
 
 ### Problem solved
 
-Google OAuth PKCE stores `code_verifier` in a cookie tied to origin.  
-If sign-in starts on `www.newchums.com` and callback lands on `newchums.com`, the cookie is not sent → “Invalid code verifier.”
+Google OAuth PKCE stores `code_verifier` in a cookie tied to origin.
+If sign-in starts on `www.newchums.com` and callback lands on `newchums.com`, the cookie is not sent → "Invalid code verifier."
 
 ### Implementation
 
-Middleware at `web/src/middleware.ts` runs before Auth.js.  
+Middleware at `web/src/middleware.ts` runs before Auth.js.
 Any request to a host starting with `www.` is 301-redirected to the same path + query on the non-www host.
 
 - Matcher includes `/api/auth/*` so OAuth flows always land on canonical host.
@@ -157,15 +162,15 @@ Users manage notification preferences in **Settings** (`/settings`). Each toggle
 
 **Notification types (keys):**
 
-| Key | Description | Frequency |
-|-----|-------------|-----------|
-| `event_match` | New events matching my interests | Immediate / daily / every 3 days / weekly / monthly / never |
-| `host_join` | Someone joins my event | Immediate / daily / every 3 days / weekly / never |
-| `host_leave` | Someone leaves my event | Immediate / daily / every 3 days / weekly / never |
-| `feedback_requests` | Post-event feedback reminders (day after) | On/off only |
-| `event_reminders` | 24-hour event reminders | On/off only |
-| `event_changed_canceled` | Event canceled or changed | Immediate / daily / every 3 days / weekly / never |
-| `product_announcements` | Product updates | Immediate / daily / every 3 days / weekly / monthly / never |
+| Key | UI title | Frequency |
+|-----|----------|-----------|
+| `event_match` | New plans matching my interests | Immediate / daily / every 3 days / weekly / monthly / never |
+| `host_join` | Someone joins your plan | Immediate / daily / every 3 days / weekly / never |
+| `host_leave` | Someone leaves your plan | Immediate / daily / every 3 days / weekly / never |
+| `feedback_requests` | Post-gathering feedback | On/off only |
+| `event_reminders` | 24-hour reminders | On/off only |
+| `event_changed_canceled` | Plan canceled or changed | Immediate / daily / every 3 days / weekly / never |
+| `product_announcements` | Product updates | Immediate / monthly / never |
 
 Defaults are applied at account creation (credentials signup, OAuth) and backfilled for existing users with missing keys. GET normalizes stored prefs and optionally persists backfilled values.
 
@@ -293,6 +298,10 @@ General notifications table (`newchums.notifications`, migration 022) designed f
 | Type | Trigger | Recipient |
 |------|---------|-----------|
 | `chum_added_you` | `POST /chums/:userId` — only when a new Chum is created (not a duplicate `ON CONFLICT`). Re-adding after removal generates a fresh notification. | The user who was added |
+| `event_invite` | User invited to an event (at creation or via `POST /events/:id/invite`) | Invited user |
+| `event_rsvp` | Someone RSVPs to an event | Event host |
+| `event_alt_time` | Someone suggests an alternate time | Event host |
+| `event_canceled` | Event is canceled | All attendees |
 
 **API endpoints (auth required):**
 
@@ -336,19 +345,14 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 | `POST /events/:id/invite` | Add invitees to published event (host only). Sends notifications and invite emails. |
 | `GET /events/explore` | Discoverable events feed for logged-in users. Supports: `lat`/`lng`/`radius_km` (location), `hobby` (slug), `time_range` (this_week/this_weekend/next_30/all), `q` (text search). Applies visibility rules (public + chums_only for the user's chums). Distance computed via Haversine. Nearby-first ordering when location is provided. |
 
+**Important: Hono route ordering** — `GET /events/explore` must be registered **before** `GET /events/:id` in the route table. Otherwise, Hono interprets "explore" as a UUID `:id`, resulting in a database error.
+
 **Visibility enforcement:**
 - `invite_only`: only host, invited users, and RSVP'd users can view
 - `chums_only`: host, their chums, invited users, and RSVP'd users can view
 - `public`: any authenticated user can view
 
-**Notification types created:**
-
-| Type | Trigger | Recipient |
-|------|---------|-----------|
-| `event_invite` | User invited to event | Invited user |
-| `event_rsvp` | Someone RSVPs | Event host |
-| `event_alt_time` | Someone suggests alternate time | Event host |
-| `event_canceled` | Event canceled | All attendees |
+**In-app notification types created:** `event_invite`, `event_rsvp`, `event_alt_time`, `event_canceled` (see In-app notifications section above).
 
 **Email scaffolding (noop if template ID not configured):**
 
@@ -360,6 +364,8 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 | Event reminder | `POSTMARK_TEMPLATE_EVENT_REMINDER` | recipientName, eventTitle, eventDate, eventLocation, eventUrl |
 | RSVP update to host | `POSTMARK_TEMPLATE_EVENT_RSVP_UPDATE` | hostName, attendeeName, eventTitle, rsvpStatus, eventUrl |
 
+**Status: Postmark templates not yet created.** The send functions noop safely when template IDs are not configured. To activate, create templates in Postmark, then add template IDs as env vars in `api/wrangler.toml` or via `wrangler secret put`.
+
 **Web pages:**
 
 | Route | Component | Description |
@@ -368,6 +374,8 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 | `/events/create` | `CreateEventClient` | "Start a plan" form — title, description, hobby, seats, date/time, location (in-person/online), visibility, invite people, publish |
 | `/plans` | `PlansPage` | Tabbed view (Upcoming / Past) with hosted/joined sections, real API data, empty states |
 | `/events/[id]` | `EventDetailClient` | Event detail — RSVP actions, alternate time suggestions, attendee list, cancel (host) |
+
+**Not yet implemented:** event editing, event chat, recurring events, public event sharing page (for non-users).
 
 ### Media (avatar)
 
@@ -393,9 +401,9 @@ The public-facing site (visible to logged-out visitors) consists of four marketi
 | Component | Location | Role |
 |-----------|----------|------|
 | `LandingLayout` | `web/src/components/landing/LandingLayout.tsx` | Shared wrapper: fixed AppBar with `SiteHeader`, mobile drawer with auth-aware CTA + `MarketingNavSection`, `<main>` with `LandingContainer` (`Container maxWidth="lg"`, horizontal gutters `px: {xs:2, sm:3}`), footer with `LandingFooter`. |
-| `SiteHeader` | `web/src/components/layout/SiteHeader.tsx` | Header bar shared by both `LandingLayout` and `AppShell`. Logo (left), centered desktop nav links, right slot (Login or user controls). `HEADER_MIN_HEIGHT = { xs: 64, lg: 80 }`. |
+| `SiteHeader` | `web/src/components/layout/SiteHeader.tsx` | Header bar shared by both `LandingLayout` and `AppShell`. Logo (left), centered desktop nav links, right slot (Sign in or user controls). `HEADER_MIN_HEIGHT = { xs: 64, lg: 80 }`. |
 | `MarketingNavSection` | `web/src/components/layout/MarketingNavSection.tsx` | "Learn More" nav section listing `headerNavLinks` (How it Works, Science of Friendship, Safety Center). Used in both public and logged-in mobile drawers. |
-| `LandingFooter` | `web/src/components/landing/LandingFooter.tsx` | Logo + tagline, "Contact us" link, copyright. |
+| `LandingFooter` | `web/src/components/landing/LandingFooter.tsx` | Logo + tagline, links to How it Works / Safety Center / Science of Friendship / Contact, copyright. |
 | `SectionHeader` | `web/src/components/ui/SectionHeader.tsx` | Reusable heading with accent bar (left border on desktop, dynamic underline on mobile). `emphasis` and `accentColor` props. |
 
 ### Nav links
@@ -428,6 +436,7 @@ All pages live under `web/src/app/(public)/` and follow the same pattern: a thin
 - **CTA section:** `primary.dark` background, gold `secondary.main` 3px top stripe via `::before`, white text, numbered step circles, `contained color="secondary"` button.
 - **Responsive:** Mobile = centered text/stacked layout; `sm`+ = left-aligned/row. Consistent `textAlign: { xs: "center", sm: "left" }` and `alignSelf: { xs: "center", sm: "flex-start" }` across all sections.
 - **Hero pattern:** Eyebrow (overline, gold) → H1 (800 weight) → gold accent bar (48×3px) → subtext → CTA buttons.
+- **Button styling:** `borderRadius: 2.5`, `textTransform: "none"`, softened `boxShadow` on CTA buttons.
 
 ### Future-ready elements
 
@@ -491,7 +500,10 @@ Core tables include:
 - `newchums.user_chums` (migration 021) — one-way Chum relationships; columns: `id`, `user_id`, `chum_user_id`, `created_at`; unique constraint on `(user_id, chum_user_id)`; self-chum prevented by CHECK constraint; indexed on both FKs
 - `newchums.notifications` (migration 022) — general notifications table; columns: `id`, `user_id`, `type`, `actor_user_id`, `entity_id`, `metadata` (JSONB), `read_at`, `created_at`; indexed for unread queries
 - `newchums.chum_invites` (migration 023) — invite records for emails not yet on NewChums; columns: `id`, `inviter_user_id`, `invitee_email`, `token_hash`, `status` (`pending`/`accepted`/`expired`), `expires_at` (30 days), `accepted_at`, `accepted_user_id`, `created_at`; unique index on `token_hash`; indexed on `(invitee_email, status)` and `inviter_user_id`
-- events and rsvps (present; implementation varies by feature maturity)
+- `newchums.events` (migration 024) — core event entity; columns include `host_user_id`, `title`, `description`, `interest_id` (FK), `starts_at`, `location_type`, `location_name`, `location_address`, `location_lat`, `location_lng`, `online_link`, `max_seats`, `visibility`, `status`, `allow_alt_times`, `created_at`, `updated_at`
+- `newchums.event_invites` (migration 024) — invite records supporting both user_id and email invitees
+- `newchums.event_rsvps` (migration 024) — RSVP responses; one per user per event; status: `going`, `maybe`, `cant_make_it`
+- `newchums.event_alt_times` (migration 024) — alternate time suggestions from attendees
 
 PostGIS is available for geo queries.
 
@@ -501,7 +513,7 @@ PostGIS is available for geo queries.
 - Users table stores `avatar_key` like `avatars/<userId>/<ts>.webp`
 - Public serving via `GET /users/:userId/avatar`
 
-**Cross-environment consistency:**  
+**Cross-environment consistency:**
 When sharing the same DB between local and production, set `NEXT_PUBLIC_AVATAR_BASE_URL` in `web/.env.local` to the production API URL so all media operations and avatar display resolve through the same R2-backed origin.
 
 ---
@@ -539,7 +551,7 @@ Do NOT add `export const runtime = "edge"` to routes. OpenNext Cloudflare shims 
 
 ### Middleware patch
 
-A post-build patch is required because Next.js 16 may emit middleware with `nodejs` runtime markers that break OpenNext.  
+A post-build patch is required because Next.js 16 may emit middleware with `nodejs` runtime markers that break OpenNext.
 `web/scripts/patch-functions-config.js` runs after `next build` to remove/adjust the middleware entry in the functions config manifest.
 
 Validation command:
@@ -554,3 +566,5 @@ cd web && npm run build
 
 - Web worker name suffix mismatch (`newchums-web-dev` is production).
 - Schema normalization/cleanup will be required before broader public launch.
+- Event email templates not yet created in Postmark (sends noop safely).
+- Account deletion (`DELETE /account`) does not yet cascade to events, event_rsvps, event_invites, or event_alt_times — must be updated when those tables accumulate production data.

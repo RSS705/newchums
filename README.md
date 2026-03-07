@@ -1,70 +1,91 @@
 # NewChums
 
-NewChums is an event-first platform designed to help people connect through small, interest-based real-world gatherings.
+NewChums helps people organize gatherings more easily around hobbies and shared interests — from board game nights and coffee walks to pottery sessions and pickup sports.
 
-This repository contains the full-stack application deployed on Cloudflare Workers (two-worker model).
+The broader mission is reducing loneliness by making real-world social connection easier and more approachable. The product achieves this by focusing on practical coordination: clear plans, shared interests, and low-pressure ways to get together with existing friends or meet new people naturally.
 
 ---
 
-## Production Reality (Current)
+## What's Built
 
-- **Single production environment** (we are intentionally not running a separate dev Worker environment yet).
-- **Web Worker:** `newchums-web-dev` (this is production; the `-dev` suffix is acknowledged but stable).
+NewChums is a live, deployed product — not a prototype. The current system includes:
+
+- **Event/plan creation and discovery** — users create gatherings around hobbies, invite people, set visibility (invite-only / chums-only / public), and manage RSVPs (going / maybe / can't make it / suggest another time).
+- **Explore feed** — logged-in users browse discoverable plans with location-aware nearby-first ordering, hobby filtering, time-range chips, and text search.
+- **Your Plans** — tabbed view of upcoming/past plans the user hosts or has joined.
+- **Chums** — one-way saved-people system with search, email invite flow, mutual indicators, and privacy controls.
+- **Profiles** — editable profiles with hobbies, location, bio, gender, profile theme, avatar upload, and public profile pages (`/u/handle`).
+- **Settings** — notification preferences, privacy toggles, email/password change, account deletion.
+- **Admin** — interests moderation (soft delete, merge, restore) and user account management (search, suspend/unsuspend). Requires `super_admin` role.
+- **In-app notifications** — bell icon with unread state, currently supports chum and event notification types.
+- **Public marketing site** — homepage, How it Works, Science of Friendship, Safety Center, and contact form.
+- **Auth** — Google OAuth + email/password credentials, email verification, password reset, suspended account handling.
+
+### What's Partially Built or Evolving
+
+- **Event Details page** — basic RSVP actions and attendee list exist, but no edit flow, chat, or public sharing yet.
+- **Event emails** — code scaffolded with noop-safe sends; Postmark templates not yet created.
+- **Explore page** — functional with real data, but likely to evolve as event supply grows.
+
+---
+
+## Architecture
+
+Two Cloudflare Workers backed by Neon PostgreSQL:
+
+```
+Users → Cloudflare Edge → Web Worker (Next.js via OpenNext) → API Worker (Hono) → Neon PostgreSQL
+```
+
+| Layer | Technology | Role |
+|-------|-----------|------|
+| Web Worker | Next.js (App Router) via OpenNext | UI rendering, auth orchestration (Auth.js), session management, API token minting |
+| API Worker | Hono | All business logic, database access, transactional email (Postmark), media upload (R2) |
+| Database | Neon PostgreSQL (PostGIS available) | Primary data store |
+| Auth | Auth.js (JWT sessions) | Google OAuth + Credentials |
+| Email | Postmark | Transactional emails |
+| Storage | Cloudflare R2 | Avatar media |
+| Observability | Sentry + Axiom + Plausible | Error tracking, API logs, analytics |
+
+**Key rule:** Business logic belongs in the API Worker. The Web Worker handles rendering and auth. Do not introduce new business logic in Next.js route handlers.
+
+---
+
+## Production
+
+- **Web Worker:** `newchums-web-dev` (suffix mismatch acknowledged; this is production)
 - **API Worker:** `newchums-api`
-- **Canonical host:** `https://newchums.com`  
-  - All `www.newchums.com` traffic is 301-redirected to `newchums.com` *before* Auth.js runs (prevents OAuth PKCE code_verifier mismatches).
-- **Custom domains:** `newchums.com`, `www.newchums.com` (configured in `web/wrangler.toml`).
-- **Observability:** Plausible (analytics), Sentry (web + API), Axiom (API logs).
-- **Planned (not implemented):** Cron triggers, Queues.
-
----
-
-## Architecture Overview
-
-Users → Cloudflare Edge → **Web Worker** (Next.js via OpenNext) → **API Worker** (Hono) → Neon PostgreSQL
-
-### Web Worker responsibilities
-
-- UI rendering (Next.js App Router)
-- Auth.js (`/api/auth/[...nextauth]`)
-- Session orchestration + minting API Bearer tokens (`/api/auth/api-token`)
-
-### API Worker responsibilities
-
-- Business logic + data access
-- Transactional email dispatch (Postmark)
-- Media upload orchestration (avatar init/finalize)
-- Public avatar serving (`GET /users/:userId/avatar`)
+- **Canonical host:** `https://newchums.com` (www → non-www redirect enforced before Auth.js)
+- **Single production environment** (no separate dev Worker environment yet)
 
 ---
 
 ## Canonical Documentation
 
-These docs are the source of truth:
-
-- `docs/Technical_Specs.md` — architectural contract (invariants, constraints, implemented vs planned).
-- `docs/System_Map.md` — diagrams + core flows + boundaries (production reality).
-- `docs/Development_Setup_Guide.md` — operational guide (setup, env, deploy, troubleshooting, chunk log).
-- `AGENTS.md` — governance for agents (Cursor/AI + humans): invariants, UI rules, doc contract.
-
----
-
-## UI Governance (Template Parity)
-
-`template_reference/` at the repo root is the canonical UI reference (purchased template; dev-only; not deployed).
-
-Rules:
-
-- Start new UI work by copying/adapting the closest template pattern.
-- Prefer theme overrides + shared components over per-page styling patches.
-- Avoid mobile-only styling that diverges from desktop.
-- **Form fields:** label-above style only. Use `AppTextField`, `AuthField`, or `NCDatePicker`. No floating/in-field labels.
-
-See `AGENTS.md` for detailed UI governance.
+| Document | Purpose |
+|----------|---------|
+| `AGENTS.md` | Agent governance — architectural rules, product direction, terminology, UI governance, design tone. **Read this first.** |
+| `docs/Technical_Specs.md` | Authoritative technical spec — stack, invariants, endpoints, schemas, implemented vs planned. |
+| `docs/System_Map.md` | Diagrams, production architecture, core flows, system boundaries. |
+| `docs/Development_Setup_Guide.md` | Operational guide — local setup, env vars, migrations, deployment, session log. |
+| `docs/Future_Ideas_Reference.md` | Strategic idea bank (Robert only). Agents may read for context but must not treat contents as requirements or modify the file. |
+| `docs/Gitignored_Assets_and_Restore.md` | Guide for restoring gitignored files on a fresh clone. |
 
 ---
 
-## Local Development (Quick Start)
+## Terminology
+
+| Term | Usage |
+|------|-------|
+| **plan** | Preferred user-facing term for an event/gathering |
+| **gathering** | Softer alternative used in descriptions |
+| **event** | Used in code, API routes, and database tables — acceptable internally |
+| **hobby** | User-facing term for interests (aligned with profile system) |
+| **chum** | NewChums term for a saved person (one-way, no approval) |
+
+---
+
+## Quick Start
 
 ### Web
 
@@ -85,7 +106,19 @@ cp .dev.vars.example .dev.vars   # fill values
 npm run dev
 ```
 
-→ http://127.0.0.1:8787 (or port shown)
+→ http://127.0.0.1:8787
 
-For detailed setup, env vars, migrations, and deploy steps, see:
-`docs/Development_Setup_Guide.md`
+For full setup details, env vars, migrations, deployment, and troubleshooting, see `docs/Development_Setup_Guide.md`.
+
+---
+
+## UI Governance
+
+`template_reference/` is the canonical UI reference (purchased template; gitignored; dev-only).
+
+- Start new UI work by copying/adapting the closest template pattern.
+- Prefer theme overrides + shared components over per-page styling patches.
+- Form fields: label-above style only (`AppTextField`, `AuthField`, `NCDatePicker`). No floating/in-field labels.
+- Product tone: warm, friendly, practical, grounded. Not corporate or ERP-like.
+
+See `AGENTS.md` for detailed UI governance rules.

@@ -3,7 +3,10 @@
 Last Updated: March 7, 2026
 
 This document reflects the current production reality of NewChums.
-It is diagram-first: use this for boundaries, flows, and “how it connects.”
+It is diagram-first: use this for boundaries, flows, and "how it connects."
+
+For product context and terminology, see `AGENTS.md`.
+For detailed technical specs, see `docs/Technical_Specs.md`.
 
 ---
 
@@ -12,13 +15,13 @@ It is diagram-first: use this for boundaries, flows, and “how it connects.”
 - **Single production environment**
 - **Web Worker:** `newchums-web-dev` (production; suffix mismatch acknowledged but stable)
 - **API Worker:** `newchums-api`
-- **Canonical host:** `https://newchums.com`  
+- **Canonical host:** `https://newchums.com`
   - `www.newchums.com` → `newchums.com` enforced via middleware **before** Auth.js
 - **Custom domains:** `newchums.com`, `www.newchums.com` (configured in `web/wrangler.toml`)
 
 ---
 
-## 1) Big‑Picture Production Architecture
+## 1) Big-Picture Production Architecture
 
 ```mermaid
 flowchart TB
@@ -53,12 +56,12 @@ This ensures:
 - PKCE `code_verifier` cookie is present on callback
 - `AUTH_URL` / `NEXTAUTH_URL` remain `https://newchums.com`
 
-Middleware: `web/src/middleware.ts`  
+Middleware: `web/src/middleware.ts`
 Matcher includes `/api/auth/*` (OAuth flow), excludes static assets.
 
 ---
 
-## 3) API Migration (Web → API Worker)
+## 3) API Boundary — What Lives Where
 
 The following flows run in the API worker; the web app calls the API via `NEXT_PUBLIC_API_BASE_URL`:
 
@@ -71,16 +74,24 @@ The following flows run in the API worker; the web app calls the API via `NEXT_P
 | Password change | `POST /account/password-change` | Bearer JWT (credentials users only) |
 | Account deletion | `DELETE /account` | Bearer JWT |
 | Notification prefs | `GET /notification-preferences`, `PUT /notification-preferences` | Bearer JWT |
-| Privacy prefs | `GET /profile`, `PUT /profile` (is_hidden_from_search, is_hidden_from_external_indexing) | Bearer JWT |
+| Privacy prefs | `GET /profile`, `PUT /profile` (privacy columns) | Bearer JWT |
 | Interests | `GET /interests` (active only; excludes soft-deleted) | none |
 | Profile | `GET /profile` (includes `role`), `PUT /profile` | Bearer JWT |
-| Admin — interests | `GET /admin/interests`, `PATCH /admin/interests/:id`, `DELETE /admin/interests/:id`, `POST /admin/interests/:id/restore`, `POST /admin/interests/merge` | Bearer JWT + `super_admin` role |
+| Public profile | `GET /public/users/:handle` | none |
 | Handle availability | `GET /handles/available?handle=...` | Bearer JWT |
 | Onboarding | `POST /user/username`, `POST /user/date-of-birth` | Bearer JWT |
 | Avatar upload | `POST /media/init` → PUT to uploadUrl → `POST /media/finalize` | Bearer JWT |
 | Avatar remove | `DELETE /profile/avatar` | Bearer JWT |
 | Avatar image | `GET /users/:userId/avatar` | public |
+| Chums | `GET /chums`, `GET /chums/search`, `GET /chums/check/:userId`, `POST /chums/:userId`, `DELETE /chums/:userId` | Bearer JWT |
+| Chum invites | `POST /chums/invite`, `POST /chums/invite/accept` | Bearer JWT |
+| Public Chums | `GET /public/users/:handle/chums` | none |
 | Events (plans) | `POST /events`, `GET /events/mine`, `GET /events/:id`, `GET /events/explore`, `POST /events/:id/rsvp`, `POST /events/:id/alt-time`, `POST /events/:id/cancel`, `POST /events/:id/invite` | Bearer JWT |
+| Notifications | `GET /notifications`, `POST /notifications/read` | Bearer JWT |
+| Contact form | `POST /contact` | none (Turnstile for logged-out) |
+| Admin — interests | `GET /admin/interests`, `PATCH /admin/interests/:id`, `DELETE /admin/interests/:id`, `POST /admin/interests/:id/restore`, `POST /admin/interests/merge` | Bearer JWT + `super_admin` role |
+| Admin — users | `GET /admin/users`, `POST /admin/users/:id/suspend`, `POST /admin/users/:id/unsuspend` | Bearer JWT + `super_admin` role |
+| Diagnostics | `GET /health`, `GET /health/env` | none |
 
 ### Content safety
 
@@ -114,7 +125,42 @@ sequenceDiagram
 
 ---
 
-## 5) Local Development Model
+## 5) Key User Flows
+
+### Logged-out visitor flow
+
+```
+Visit newchums.com → Homepage (LandingLayout)
+├── Browse: How it Works, Science of Friendship, Safety Center
+├── Contact form
+├── Sign up → Email verification → Onboarding (username → DOB → hobbies → location)
+└── Sign in → Dashboard (Explore)
+```
+
+### Logged-in core flow
+
+```
+Sign in → Explore (event discovery feed)
+├── Start a plan → Create event form → Publish → Your Plans
+├── Explore → Browse events → RSVP / Suggest alt time
+├── Your Plans → Upcoming / Past tabs → Event detail
+├── Your Chums → Search / Add / Remove / Invite by email
+├── Profile → Edit → Public profile (/u/handle)
+├── Settings → Notifications / Privacy / Email / Password / Delete account
+└── Notifications (bell) → View / mark read
+```
+
+### Incomplete flows (partially built)
+
+| Flow | What exists | What's missing |
+|------|------------|----------------|
+| Event detail | RSVP, attendee list, cancel, alt-time suggestions | Edit event, chat, public sharing for non-users |
+| Event emails | Code scaffolded, sends noop safely | Postmark templates not created |
+| Explore | Functional with real data, filters, location ordering | Will evolve as event supply grows |
+
+---
+
+## 6) Local Development Model
 
 - Web dev server: `localhost:3000`
 - API dev server: `localhost:8787` (Wrangler dev)
@@ -134,7 +180,7 @@ flowchart TB
 
 ---
 
-## 6) Deploy Configuration (Production)
+## 7) Deploy Configuration (Production)
 
 | Setting | Value |
 |---------|-------|
@@ -149,7 +195,42 @@ Wrangler config is code-managed so deploys do not wipe routes or override canoni
 
 ---
 
-## 7) Single Consolidated System Model
+## 8) Web App Route Map
+
+### Public routes (LandingLayout)
+
+| Route | Purpose |
+|-------|---------|
+| `/` (logged out) | Homepage — hero, discovery section, feature blocks, CTA |
+| `/how-it-works` | Product walkthrough |
+| `/science-of-friendship` | Research-backed trust page |
+| `/safety-center` | Community safety guidance |
+| `/contact` | Contact form (Turnstile for logged-out) |
+| `/login` | Sign in |
+| `/signup` | Create account |
+| `/forgot-password` | Request password reset |
+| `/reset-password` | Set new password |
+| `/auth/verify` | Email verification landing |
+| `/auth/verify-pending` | Verification pending polling page |
+| `/u/[handle]` | Public profile (works logged-in or out) |
+
+### Logged-in routes (AppShell)
+
+| Route | Purpose |
+|-------|---------|
+| `/` (logged in) | Explore — event discovery feed |
+| `/events/create` | Start a plan (create event) |
+| `/plans` | Your Plans — upcoming / past tabs |
+| `/events/[id]` | Event detail — RSVP, attendees, cancel |
+| `/chum-groups` | Your Chums — search, invite, list |
+| `/profile` | Edit profile |
+| `/settings` | Notifications, privacy, account |
+| `/admin/interests` | Interests moderation (super_admin) |
+| `/admin/chums` | User management (super_admin) |
+
+---
+
+## 9) Single Consolidated System Model
 
 ```mermaid
 flowchart TB
