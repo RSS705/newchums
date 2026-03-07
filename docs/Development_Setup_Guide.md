@@ -15,6 +15,7 @@ For diagrams and flows, see `docs/System_Map.md`.
 - **Canonical host:** `https://newchums.com` (www → non-www redirect enforced before Auth.js).
 - **API migration:** Signup, email verification, password reset, email change, profile (incl. DOB, bio, gender, profile theme), interests, handle availability, onboarding, avatar flows, notification preferences, admin moderation, user suspension, Chums, Chum invites, and events (plans) are in the API worker.
 - **Events (plans):** Full event creation, RSVP, invite, and alternate time system. `/events/create` — "Start a plan" form. `/plans` — tabbed Upcoming/Past view with hosted/joined sections (real API data). `/events/[id]` — event detail with RSVP actions. Visibility: invite_only, chums_only, public. RSVP: going, maybe, cant_make_it. Event email templates scaffolded but require Postmark template creation.
+- **Explore page:** Logged-in Explore (`/`) is a real event discovery feed. Uses `GET /events/explore` with location-aware nearby-first ordering (Haversine), hobby filter, time-range chips, text search. Shows location nudge when profile location is not set. Contextual empty states guide users to clear filters, start a plan, or update profile.
 - **Super admin:** Users with `role = 'super_admin'` can access `/admin/interests` (interests moderation) and `/admin/chums` (view + suspend/unsuspend user accounts). Role is set directly in the database; no UI promotion flow.
 - **Chums:** One-way saved-people feature. `/chum-groups` page (search by name, @handle, or exact email + private list). Search auto-detects email input and offers an invite flow for non-existing emails. Add/Remove button on public profiles. Public Chums section on profiles (privacy-gated). Two new privacy toggles in Settings. Mutual Chums state shown via 🤝 emoji indicator.
 - **Notifications:** In-app notification bell in top nav. Currently supports `chum_added_you`. Bell turns gold when unread notifications exist; dropdown marks them as read on open.
@@ -291,6 +292,20 @@ Chunk XX — YYYY-MM-DD
 ## Session Log (Chunks)
 
 (Existing chunks should remain here. Add new chunks at the end.)
+
+---
+
+Chunk 07 — 2026-03-07
+- Goal: Full redesign and rebuild of the logged-in Explore page as a real event discovery feed.
+- Changes:
+  - API: `GET /events/explore` — new discoverable events endpoint. Accepts `lat`/`lng`/`radius_km` for location-aware nearby-first ordering (Haversine formula), `hobby` (slug filter), `time_range` (this_week/this_weekend/next_30/all), `q` (text search). Applies visibility rules: shows `public` events to all, `chums_only` events to the host's chums, excludes `invite_only`. Distance computed server-side and returned as `distanceKm`. Falls back to chronological ordering when no location is provided.
+  - Web — `DashboardHome.tsx` fully rebuilt: loads user profile (`GET /profile`) for location/radius defaults, fetches events via `GET /events/explore` with reactive filter state. Integrated filter bar with search input, time-range chips (This week / This weekend / Next 30 days / All upcoming), collapsible advanced filters (distance select via shared `DistanceSelect` component, hobby Autocomplete from `/interests`), clear-filters button. Location nudge banner when user has no `home_lat`/`home_lng` set, linking to profile. Contextual empty states: no events matching filters, no events nearby, no location set, no hobbies set. Empty states guide users to clear filters, start a plan, or update profile. Event feed uses responsive `Grid` with `EventCard` components.
+  - `EventCard.tsx` — `PlanEvent` type extended with `description`, `hobbySlug`, `distanceKm` optional fields. Distance display added inline with location (e.g. "< 1 km", "5 km").
+  - `ExploreFilterBar.tsx` and `EventListItem.tsx` are now unused (superseded by the integrated filter in `DashboardHome`).
+  - Updated `docs/Technical_Specs.md`: added `GET /events/explore` to events API table; added Explore page to web pages table.
+- Verification: TypeScript passes in both web and api. No linter errors. Explore page loads profile defaults, fetches events reactively on filter changes, handles empty states gracefully.
+- Deploy: No DB migrations. Standard web + API deploy.
+- Next Steps: Build full Event Details page. Wire homepage/How it Works mock panels to real event API. Add event edit endpoint. Delete unused `ExploreFilterBar.tsx` and `EventListItem.tsx`.
 
 ---
 

@@ -4026,6 +4026,138 @@ app.get("/events/mine", async (c) => {
   }
 });
 
+/** GET /events/explore — discoverable events for the logged-in user.
+ *  MUST be registered before /events/:id to prevent "explore" being parsed as a UUID. */
+app.get("/events/explore", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+
+  const lat = c.req.query("lat") ? Number(c.req.query("lat")) : null;
+  const lng = c.req.query("lng") ? Number(c.req.query("lng")) : null;
+  const radiusKm = Math.min(Math.max(Number(c.req.query("radius_km") ?? 200), 1), 20000);
+  const hobbySlug = c.req.query("hobby") ?? null;
+  const search = c.req.query("q")?.trim() ?? null;
+
+  const timeRange = c.req.query("time_range") ?? "all";
+  const now = new Date();
+  let dateEnd: Date | null = null;
+  if (timeRange === "this_week") {
+    dateEnd = new Date(now);
+    dateEnd.setDate(dateEnd.getDate() + (7 - dateEnd.getDay()));
+    dateEnd.setHours(23, 59, 59, 999);
+  } else if (timeRange === "this_weekend") {
+    dateEnd = new Date(now);
+    const dayOfWeek = dateEnd.getDay();
+    const daysToSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
+    dateEnd.setDate(dateEnd.getDate() + daysToSunday);
+    dateEnd.setHours(23, 59, 59, 999);
+  } else if (timeRange === "next_30") {
+    dateEnd = new Date(now);
+    dateEnd.setDate(dateEnd.getDate() + 30);
+  }
+
+  const hasLocation = lat !== null && lng !== null && !isNaN(lat) && !isNaN(lng);
+
+  try {
+    const chumIds = (await sql`SELECT chum_user_id FROM newchums.user_chums WHERE user_id = ${userId}`) as { chum_user_id: string }[];
+    const chumIdList = chumIds.map((r) => r.chum_user_id);
+
+    const rows = (await sql`
+      SELECT
+        e.id, e.title, e.description, e.starts_at, e.location_type,
+        e.location_name, e.location_address, e.online_link,
+        e.location_lat, e.location_lng,
+        e.max_seats, e.visibility, e.status, e.allow_alt_times,
+        e.host_user_id, e.created_at,
+        i.name AS interest_name, i.slug AS interest_slug,
+        h.name AS host_name, h.username AS host_username,
+        r.status AS my_rsvp_status,
+        (SELECT COUNT(*)::int FROM newchums.event_rsvps er WHERE er.event_id = e.id AND er.status = 'going') AS going_count,
+        (SELECT COUNT(*)::int FROM newchums.event_rsvps er WHERE er.event_id = e.id AND er.status = 'maybe') AS maybe_count,
+        CASE WHEN e.host_user_id = ${userId} THEN true ELSE false END AS is_host,
+        CASE
+          WHEN ${hasLocation} AND e.location_lat IS NOT NULL AND e.location_lng IS NOT NULL THEN
+            6371 * acos(
+              LEAST(1.0, GREATEST(-1.0,
+                cos(radians(${lat ?? 0})) * cos(radians(e.location_lat)) *
+                cos(radians(e.location_lng) - radians(${lng ?? 0})) +
+                sin(radians(${lat ?? 0})) * sin(radians(e.location_lat))
+              ))
+            )
+          ELSE NULL
+        END AS distance_km
+      FROM newchums.events e
+      LEFT JOIN newchums.interests i ON i.id = e.interest_id
+      LEFT JOIN newchums.users h ON h.id = e.host_user_id
+      LEFT JOIN newchums.event_rsvps r ON r.event_id = e.id AND r.user_id = ${userId}
+      WHERE e.status = 'published'
+        AND e.starts_at >= ${now.toISOString()}
+        AND e.visibility != 'invite_only'
+        AND (
+          e.visibility = 'public'
+          OR (e.visibility = 'chums_only' AND (
+            e.host_user_id = ${userId}
+            OR e.host_user_id = ANY(${chumIdList.length > 0 ? chumIdList : ["00000000-0000-0000-0000-000000000000"]})
+          ))
+        )
+        ${hobbySlug ? sql`AND i.slug = ${hobbySlug}` : sql``}
+        ${search ? sql`AND (e.title ILIKE ${"%" + search + "%"} OR e.description ILIKE ${"%" + search + "%"})` : sql``}
+        ${dateEnd ? sql`AND e.starts_at <= ${dateEnd.toISOString()}` : sql``}
+      ORDER BY
+        CASE WHEN e.host_user_id = ${userId} THEN 0 ELSE 1 END,
+        ${hasLocation ? sql`distance_km ASC NULLS LAST` : sql`e.starts_at ASC`},
+        e.starts_at ASC
+      LIMIT 50
+    `) as Array<{
+      id: string; title: string; description: string | null; starts_at: string;
+      location_type: string; location_name: string | null; location_address: string | null;
+      online_link: string | null; location_lat: number | null; location_lng: number | null;
+      max_seats: number | null; visibility: string; status: string; allow_alt_times: boolean;
+      host_user_id: string; created_at: string;
+      interest_name: string | null; interest_slug: string | null;
+      host_name: string | null; host_username: string | null;
+      my_rsvp_status: string | null;
+      going_count: number; maybe_count: number; is_host: boolean;
+      distance_km: number | null;
+    }>;
+
+    const filtered = hasLocation && radiusKm < 20000
+      ? rows.filter((r) => r.distance_km === null || r.distance_km <= radiusKm)
+      : rows;
+
+    const events = filtered.map((r) => ({
+      id: r.id,
+      title: r.title,
+      description: r.description,
+      startsAt: r.starts_at,
+      locationType: r.location_type,
+      locationName: r.location_name,
+      locationAddress: r.location_address,
+      onlineLink: r.online_link,
+      maxSeats: r.max_seats,
+      visibility: r.visibility,
+      status: r.status,
+      hobby: r.interest_name,
+      hobbySlug: r.interest_slug,
+      hostName: r.host_name?.trim() || r.host_username?.replace(/^@/, "") || "Someone",
+      isHost: r.is_host,
+      myRsvpStatus: r.my_rsvp_status,
+      goingCount: r.going_count,
+      maybeCount: r.maybe_count,
+      distanceKm: r.distance_km !== null ? Math.round(r.distance_km * 10) / 10 : null,
+    }));
+
+    return c.json({ ok: true, events });
+  } catch (err) {
+    console.error("[GET /events/explore]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
 /** GET /events/:id — event details */
 app.get("/events/:id", async (c) => {
   const eventId = c.req.param("id");

@@ -334,6 +334,7 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 | `POST /events/:id/alt-time` | Suggest alternate time — `{ suggested_at, note? }`. Only if event.allow_alt_times. Notifies host. |
 | `POST /events/:id/cancel` | Cancel event (host only). Notifies all attendees via in-app notification and email. |
 | `POST /events/:id/invite` | Add invitees to published event (host only). Sends notifications and invite emails. |
+| `GET /events/explore` | Discoverable events feed for logged-in users. Supports: `lat`/`lng`/`radius_km` (location), `hobby` (slug), `time_range` (this_week/this_weekend/next_30/all), `q` (text search). Applies visibility rules (public + chums_only for the user's chums). Distance computed via Haversine. Nearby-first ordering when location is provided. |
 
 **Visibility enforcement:**
 - `invite_only`: only host, invited users, and RSVP'd users can view
@@ -363,6 +364,7 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 
 | Route | Component | Description |
 |-------|-----------|-------------|
+| `/` (logged in) | `DashboardHome` | Explore page — event discovery feed with search, time chips, distance/hobby filters, location-aware nearby-first ordering, location nudge, contextual empty states |
 | `/events/create` | `CreateEventClient` | "Start a plan" form — title, description, hobby, seats, date/time, location (in-person/online), visibility, invite people, publish |
 | `/plans` | `PlansPage` | Tabbed view (Upcoming / Past) with hosted/joined sections, real API data, empty states |
 | `/events/[id]` | `EventDetailClient` | Event detail — RSVP actions, alternate time suggestions, attendee list, cancel (host) |

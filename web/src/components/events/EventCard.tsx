@@ -16,6 +16,7 @@ import Link from "next/link";
 export type PlanEvent = {
   id: string;
   title: string;
+  description?: string | null;
   startsAt: string;
   locationType: string;
   locationName: string | null;
@@ -25,11 +26,13 @@ export type PlanEvent = {
   visibility: string;
   status: string;
   hobby: string | null;
+  hobbySlug?: string | null;
   hostName: string;
   isHost: boolean;
   myRsvpStatus: string | null;
   goingCount: number;
   maybeCount: number;
+  distanceKm?: number | null;
 };
 
 type EventCardProps = {
@@ -159,9 +162,14 @@ export default function EventCard({ event, isPast = false }: EventCardProps) {
               ) : (
                 <PlaceRoundedIcon sx={{ fontSize: 15, color: isPast ? "text.disabled" : "primary.main" }} />
               )}
-              <Typography variant="body2" color="text.secondary" noWrap>
+              <Typography variant="body2" color="text.secondary" noWrap sx={{ flex: 1 }}>
                 {locationDisplay}
               </Typography>
+              {event.distanceKm != null && (
+                <Typography variant="caption" color="text.disabled" sx={{ flexShrink: 0, ml: 0.5, fontSize: "0.6875rem" }}>
+                  {event.distanceKm < 1 ? "< 1 km" : `${Math.round(event.distanceKm)} km`}
+                </Typography>
+              )}
             </Stack>
             <Stack direction="row" alignItems="center" spacing={1}>
               <PeopleOutlineRoundedIcon sx={{ fontSize: 15, color: "text.disabled" }} />
