@@ -433,7 +433,7 @@ export default function ChumsClient() {
                   {inviteeEmail}
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  {alreadyInvited ? "Invitation already sent" : "Not on NewChums yet — invite them!"}
+                  {alreadyInvited ? "Invitation already sent" : "Not on NewChums yet, invite them!"}
                 </Typography>
               </Box>
               <Button

@@ -91,7 +91,7 @@ const MOCK_EVENTS: EventCard[] = [
   {
     id: 3,
     category: "Arts \u0026 Crafts",
-    title: "Pottery Session \u2014 Beginners Welcome",
+    title: "Pottery Session, Beginners Welcome",
     dayTime: "Sunday \u00b7 2 pm",
     location: "Art Studio",
     attending: 5,
@@ -141,12 +141,12 @@ const PLAN_FEATURES = [
   {
     Icon: ChatRoundedIcon,
     title: "Stop losing plans in the group chat",
-    body: "\u201cWe should hang out\u201d messages get buried. NewChums gives plans a real home \u2014 visible, clear, and easy to say yes to.",
+    body: "\u201cWe should hang out\u201d messages get buried. NewChums gives plans a real home, visible, clear, and easy to say yes to.",
   },
   {
     Icon: CalendarMonthRoundedIcon,
     title: "Easy for friends to join",
-    body: "Share an event with people you already know, or let others nearby discover it. Everyone has the same info \u2014 no chasing people down.",
+    body: "Share an event with people you already know, or let others nearby discover it. Everyone has the same info, no chasing people down.",
   },
   {
     Icon: FavoriteRoundedIcon,
@@ -165,7 +165,7 @@ const BENEFIT_CARDS = [
   {
     accentColor: "primary.main" as const,
     title: "Clear plans mean better follow-through",
-    body: "People are more likely to show up when the details are clear \u2014 what\u2019s happening, where it is, and who else is coming.",
+    body: "People are more likely to show up when the details are clear, what\u2019s happening, where it is, and who else is coming.",
   },
   {
     accentColor: "secondary.main" as const,
@@ -300,7 +300,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                         textTransform: "none",
                       }}
                     >
-                      Sign up &mdash; it&apos;s free
+                      Sign up
                     </Button>
                     <Button
                       component="a"
@@ -511,7 +511,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
               maxWidth: 680,
             }}
           >
-            From board game nights to coffee walks &mdash; real activities, shared interests,
+            From board game nights to coffee walks, real activities, shared interests,
             no group chat needed. Sign up to discover what&apos;s happening near you.
           </Typography>
 
@@ -726,7 +726,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
             sx={{ mb: { xs: 4, sm: 5 }, lineHeight: 1.75 }}
           >
             NewChums makes it easy to turn &ldquo;we should do something&rdquo; into an actual
-            plan &mdash; whether you&apos;re organizing things with friends you already know or
+            plan, whether you&apos;re organizing things with friends you already know or
             discovering others who enjoy the same things you do.
           </Typography>
 
@@ -989,7 +989,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
               },
             }}
           >
-            {isLoggedIn ? "Explore NewChums" : "Get started \u2014 it\u2019s free"}
+            {isLoggedIn ? "Explore NewChums" : "Get started"}
           </Button>
         </Box>
       </Box>

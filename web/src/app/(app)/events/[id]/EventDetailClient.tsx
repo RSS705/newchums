@@ -186,7 +186,7 @@ export default function EventDetailClient() {
   const locationDisplay =
     event.locationType === "online"
       ? event.onlineLink || "Online"
-      : [event.locationName, event.locationAddress].filter(Boolean).join(" — ") || "TBD";
+      : [event.locationName, event.locationAddress].filter(Boolean).join(", ") || "TBD";
 
   return (
     <Stack spacing={{ xs: 3, sm: 4 }}>

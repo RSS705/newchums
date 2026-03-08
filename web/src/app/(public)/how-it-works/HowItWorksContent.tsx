@@ -47,7 +47,7 @@ const WALKTHROUGH_STEPS: WalkthroughStep[] = [
     title: "Tell us what you enjoy",
     Icon: StyleRoundedIcon,
     paragraphs: [
-      "Pick the hobbies and interests that matter to you — board games, hiking, pottery, cooking, card games, whatever you like.",
+      "Pick the hobbies and interests that matter to you, board games, hiking, pottery, cooking, card games, whatever you like.",
       "Your interests help us surface relevant gatherings and connect you with people who enjoy the same things.",
     ],
   },
@@ -56,8 +56,8 @@ const WALKTHROUGH_STEPS: WalkthroughStep[] = [
     title: "Explore gatherings or create your own",
     Icon: ExploreRoundedIcon,
     paragraphs: [
-      "Browse events happening near you, or start one yourself. Creating a gathering is quick — just name it, pick a time and place, and share what people can expect.",
-      "Board game nights, coffee walks, study sessions, beginner sports — the best gatherings are simple and specific.",
+      "Browse events happening near you, or start one yourself. Creating a gathering is quick, just name it, pick a time and place, and share what people can expect.",
+      "Board game nights, coffee walks, study sessions, beginner sports, the best gatherings are simple and specific.",
     ],
   },
   {
@@ -66,7 +66,7 @@ const WALKTHROUGH_STEPS: WalkthroughStep[] = [
     Icon: GroupsRoundedIcon,
     paragraphs: [
       "Share your event with friends, chums, or let others nearby discover it. NewChums helps surface people whose interests match the gathering.",
-      "You stay in control — choose who you want to invite, or let interested people find you.",
+      "You stay in control, choose who you want to invite, or let interested people find you.",
     ],
   },
   {
@@ -74,7 +74,7 @@ const WALKTHROUGH_STEPS: WalkthroughStep[] = [
     title: "Coordinate without the chaos",
     Icon: ChatRoundedIcon,
     paragraphs: [
-      "See who\u2019s coming, chat about the plan, and make changes — all in one place. No more chasing replies across text threads and group chats.",
+      "See who\u2019s coming, chat about the plan, and make changes, all in one place. No more chasing replies across text threads and group chats.",
       "Attendees can suggest alternate times and share availability, so finding the right moment is easier for everyone.",
     ],
   },
@@ -84,7 +84,7 @@ const WALKTHROUGH_STEPS: WalkthroughStep[] = [
     Icon: EmojiPeopleRoundedIcon,
     paragraphs: [
       "When the day arrives, everyone knows the plan. Show up, do something you enjoy, and spend time with people who share your interest.",
-      "Most NewChums gatherings are small and low-pressure — the kind that are easy to say yes to.",
+      "Most NewChums gatherings are small and low-pressure, the kind that are easy to say yes to.",
     ],
   },
   {
@@ -93,7 +93,7 @@ const WALKTHROUGH_STEPS: WalkthroughStep[] = [
     Icon: RepeatRoundedIcon,
     paragraphs: [
       "After a great gathering, the connection does not have to end. Stay in touch, plan the next one, or discover new events from people you have met.",
-      "The more you show up, the easier it gets — and the more your community grows.",
+      "The more you show up, the easier it gets, and the more your community grows.",
     ],
   },
 ];
@@ -114,7 +114,7 @@ const AUDIENCE_CARDS = [
     accentColor: "secondary.main" as const,
     Icon: PeopleRoundedIcon,
     title: "Organize with people you already know",
-    body: "Create an event and invite friends directly. Everyone gets the same clear plan \u2014 no more chasing replies or losing details in long group threads.",
+    body: "Create an event and invite friends directly. Everyone gets the same clear plan, no more chasing replies or losing details in long group threads.",
   },
   {
     accentColor: "primary.main" as const,
@@ -233,7 +233,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
               mb: 2.5,
             }}
           >
-            NewChums helps you organize gatherings around the things you already enjoy &mdash;
+            NewChums helps you organize gatherings around the things you already enjoy,
             whether you&apos;re making plans with friends or discovering people nearby
             who share your interests.
           </Typography>
@@ -319,7 +319,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
           <Stack alignItems="center" spacing={1.5} sx={{ opacity: 0.5 }}>
             <CalendarMonthRoundedIcon sx={{ fontSize: 56, color: "primary.main" }} />
             <Typography variant="body2" color="text.secondary" fontWeight={500}>
-              Image placeholder &mdash; the NewChums experience
+              Image placeholder, the NewChums experience
             </Typography>
           </Stack>
         </Box>
@@ -351,7 +351,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
               textAlign: { xs: "center", sm: "left" },
             }}
           >
-            From picking your interests to meeting up in person &mdash; each step is
+            From picking your interests to meeting up in person, each step is
             designed to make organizing and attending gatherings as easy as possible.
           </Typography>
 
@@ -503,7 +503,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
             }}
           >
             <Typography variant="body1" fontWeight={600} sx={{ lineHeight: 1.75 }}>
-              NewChums gives plans a real home &mdash; visible, organized, and easy
+              NewChums gives plans a real home, visible, organized, and easy
               for people to commit to.
             </Typography>
           </Box>
@@ -547,7 +547,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
             {/* Mock rows */}
             {[
               { name: "Alex", status: "Going", statusColor: "success.main" },
-              { name: "Jordan", status: "Maybe \u2014 suggested Fri?", statusColor: "secondary.dark" },
+              { name: "Jordan", status: "Maybe, suggested Fri?", statusColor: "secondary.dark" },
               { name: "Sam", status: "Going", statusColor: "success.main" },
               { name: "Taylor", status: "Waiting", statusColor: "text.disabled" },
             ].map((row, i, arr) => (
@@ -585,7 +585,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
               }}
             >
               <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
-                Everyone sees the same plan &mdash; no chasing replies
+                Everyone sees the same plan, no chasing replies
               </Typography>
             </Box>
           </Box>
@@ -620,7 +620,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
             }}
           >
             NewChums is not just about meeting strangers. It&apos;s a better way to organize
-            anything social &mdash; from coordinating plans with friends you already have, to
+            anything social, from coordinating plans with friends you already have, to
             finding people nearby who enjoy the same things you do.
           </Typography>
 
@@ -699,7 +699,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
           <Stack spacing={2} sx={{ mb: { xs: 4, sm: 5 }, textAlign: { xs: "center", sm: "left" } }}>
             <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
               Once you set your interests, NewChums can surface gatherings that are relevant
-              to you &mdash; no more scrolling through scattered group chats, community boards,
+              to you, no more scrolling through scattered group chats, community boards,
               and social media posts trying to find something worth joining.
             </Typography>
             <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
@@ -854,7 +854,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
             }}
           >
             NewChums is designed around the idea that real connection happens when the
-            conditions are right &mdash; shared interests, clear plans, and
+            conditions are right, shared interests, clear plans, and
             low-pressure settings.
           </Typography>
 
@@ -1081,7 +1081,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
               },
             }}
           >
-            {isLoggedIn ? "Explore NewChums" : "Get started \u2014 it\u2019s free"}
+            {isLoggedIn ? "Explore NewChums" : "Get started"}
           </Button>
         </Box>
       </Box>

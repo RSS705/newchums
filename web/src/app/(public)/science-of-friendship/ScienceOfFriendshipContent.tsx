@@ -642,7 +642,7 @@ export default function ScienceOfFriendshipContent({ isLoggedIn = false }: { isL
               },
             }}
           >
-            {isLoggedIn ? "Explore NewChums" : "Get started \u2014 it\u2019s free"}
+            {isLoggedIn ? "Explore NewChums" : "Get started"}
           </Button>
         </Box>
       </Box>

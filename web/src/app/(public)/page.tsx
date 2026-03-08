@@ -9,7 +9,7 @@ import LandingPageContent from "./LandingPageContent";
 import LandingLayout from "@/components/landing/LandingLayout";
 
 export const metadata: Metadata = {
-  title: "NewChums — Organize hobbies and events without the group chat chaos",
+  title: "NewChums, Organize hobbies and events without the group chat chaos",
   description:
     "Sign up once and get notified when people nearby are organizing activities around your interests. Board games, coffee walks, pottery, and more.",
 };

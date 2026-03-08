@@ -164,7 +164,7 @@ export default function CreateEventClient() {
         }
       }
     } catch {
-      toast.error("Network error — please try again");
+      toast.error("Network error, please try again");
     }
     setSubmitting(false);
   };
@@ -186,7 +186,7 @@ export default function CreateEventClient() {
           Start a plan
         </Typography>
         <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-          Organize a gathering around something you enjoy. Keep it simple — you can always update later.
+          Organize a gathering around something you enjoy. Keep it simple, you can always update later.
         </Typography>
       </Box>
 
@@ -216,7 +216,7 @@ export default function CreateEventClient() {
             minRows={3}
             maxRows={6}
             inputProps={{ maxLength: 2000 }}
-            helperText="Optional — but a short description helps people decide to join"
+            helperText="Optional, but a short description helps people decide to join"
           />
 
           <Autocomplete
@@ -249,7 +249,7 @@ export default function CreateEventClient() {
             value={maxSeats}
             onChange={(e) => setMaxSeats(e.target.value)}
             error={!!errors.maxSeats}
-            helperText={errors.maxSeats ?? "Optional — leave blank for unlimited"}
+            helperText={errors.maxSeats ?? "Optional, leave blank for unlimited"}
             type="number"
             inputProps={{ min: 1, max: 500 }}
             sx={{ maxWidth: 200 }}
@@ -333,7 +333,7 @@ export default function CreateEventClient() {
                 placeholder="e.g. 123 Main St"
                 value={locationAddress}
                 onChange={(e) => setLocationAddress(e.target.value)}
-                helperText="Optional — helps people find the place"
+                helperText="Optional, helps people find the place"
               />
             </>
           ) : (

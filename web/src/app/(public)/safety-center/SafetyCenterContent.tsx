@@ -174,7 +174,7 @@ export default function SafetyCenterContent({ isLoggedIn = false }: { isLoggedIn
             sx={{ lineHeight: 1.7, fontSize: { xs: "1.0625rem", sm: "1.25rem" }, mb: 2.5 }}
           >
             NewChums is built around shared interests and comfortable, low-pressure gatherings.
-            A few simple habits make every meetup more enjoyable — for you and everyone else.
+            A few simple habits make every meetup more enjoyable, for you and everyone else.
           </Typography>
           <Typography
             variant="h5"
@@ -254,7 +254,7 @@ export default function SafetyCenterContent({ isLoggedIn = false }: { isLoggedIn
           <Stack alignItems="center" spacing={1.5} sx={{ opacity: 0.5 }}>
             <PeopleRoundedIcon sx={{ fontSize: 56, color: "primary.main" }} />
             <Typography variant="body2" color="text.secondary" fontWeight={500}>
-              Image placeholder — a welcoming outdoor gathering
+              Image placeholder, a welcoming outdoor gathering
             </Typography>
           </Stack>
         </Box>
@@ -277,7 +277,7 @@ export default function SafetyCenterContent({ isLoggedIn = false }: { isLoggedIn
             variant="body1"
             sx={{ mb: { xs: 4, sm: 5 }, lineHeight: 1.75, textAlign: { xs: "center", sm: "left" } }}
           >
-            These are small, practical habits — nothing complicated. Keeping them in mind helps every
+            These are small, practical habits, nothing complicated. Keeping them in mind helps every
             gathering feel smooth and comfortable from the start.
           </Typography>
 
@@ -685,7 +685,7 @@ export default function SafetyCenterContent({ isLoggedIn = false }: { isLoggedIn
               },
             }}
           >
-            {isLoggedIn ? "Explore NewChums" : "Get started \u2014 it\u2019s free"}
+            {isLoggedIn ? "Explore NewChums" : "Get started"}
           </Button>
         </Box>
       </Box>

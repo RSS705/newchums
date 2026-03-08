@@ -6,7 +6,7 @@ import HowItWorksContent from "./HowItWorksContent";
 export const metadata: Metadata = {
   title: "How it Works | NewChums",
   description:
-    "See how NewChums helps you organize gatherings around shared interests — from setting your hobbies to coordinating plans without the group chat chaos.",
+    "See how NewChums helps you organize gatherings around shared interests, from setting your hobbies to coordinating plans without the group chat chaos.",
 };
 
 export default async function HowItWorksPage() {

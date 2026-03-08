@@ -97,7 +97,7 @@ export default function ForgotPasswordClient() {
         </Stack>
         {submitted && (
           <Typography color="success.main" sx={{ mt: 2, textAlign: "center", fontWeight: 500 }}>
-            Reset link sent — please check your email.
+            Reset link sent, please check your email.
           </Typography>
         )}
         <AuthFooterLink prompt="Don't have an account?" linkText="Sign up" href="/signup" />
