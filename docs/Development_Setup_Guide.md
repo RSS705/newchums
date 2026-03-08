@@ -229,6 +229,7 @@ psql "$DATABASE_URL" -f sql/021_create_user_chums.sql
 psql "$DATABASE_URL" -f sql/022_create_notifications.sql
 psql "$DATABASE_URL" -f sql/023_create_chum_invites.sql
 psql "$DATABASE_URL" -f sql/024_create_events.sql
+psql "$DATABASE_URL" -f sql/025_event_multi_hobby_and_banner.sql
 ```
 
 Notes:
@@ -243,6 +244,7 @@ Notes:
 - Migration `022_create_notifications.sql` creates the `newchums.notifications` table for in-app notifications.
 - Migration `023_create_chum_invites.sql` creates the `newchums.chum_invites` table for Chum invite links (token hash, status, 30-day expiry).
 - Migration `024_create_events.sql` creates `newchums.events`, `newchums.event_invites`, `newchums.event_rsvps`, and `newchums.event_alt_times` tables for the event/plan system.
+- Migration `025_event_multi_hobby_and_banner.sql` adds the `newchums.event_interests` junction table for multi-hobby support on events, migrates existing `interest_id` data, and adds `banner_key` to events for banner images.
 
 ---
 

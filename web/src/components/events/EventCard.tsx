@@ -27,6 +27,7 @@ export type PlanEvent = {
   status: string;
   hobby: string | null;
   hobbySlug?: string | null;
+  hobbies?: Array<{ name: string; slug: string }>;
   hostName: string;
   isHost: boolean;
   myRsvpStatus: string | null;
@@ -78,6 +79,9 @@ function rsvpColor(s: string | null): string {
 
 export default function EventCard({ event, isPast = false }: EventCardProps) {
   const isCanceled = event.status === "canceled";
+  const hobbies = event.hobbies?.length
+    ? event.hobbies
+    : event.hobby ? [{ name: event.hobby, slug: event.hobbySlug ?? "" }] : [];
   const locationDisplay =
     event.locationType === "online"
       ? "Online"
@@ -112,10 +116,11 @@ export default function EventCard({ event, isPast = false }: EventCardProps) {
         <CardContent sx={{ py: { xs: 2.25, sm: 2.5 }, px: { xs: 2.25, sm: 2.5 } }}>
           {/* Top row: hobby chip + visibility */}
           <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5 }}>
-            <Stack direction="row" spacing={0.75} alignItems="center">
-              {event.hobby && (
+            <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
+              {hobbies.map((h) => (
                 <Chip
-                  label={event.hobby}
+                  key={h.slug}
+                  label={h.name}
                   size="small"
                   sx={{
                     bgcolor: isPast ? "grey.200" : "primary.light",
@@ -124,7 +129,7 @@ export default function EventCard({ event, isPast = false }: EventCardProps) {
                     fontSize: "0.6875rem",
                   }}
                 />
-              )}
+              ))}
               {isCanceled && (
                 <Chip
                   label="Canceled"

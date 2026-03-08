@@ -24,17 +24,25 @@ function createImage(url: string): Promise<HTMLImageElement> {
 }
 
 /**
- * Get cropped image as Blob. Outputs 256x256 WebP (or PNG/JPEG if WebP fails).
- * Reduces quality iteratively if over 2MB.
+ * Get cropped image as Blob. Outputs WebP (or PNG/JPEG if WebP fails).
+ * Reduces quality iteratively if over maxBytes.
+ * @param outputWidth  - default 256
+ * @param outputHeight - default same as outputWidth
+ * @param maxBytes     - default 2MB
  */
 export async function getCroppedImg(
   imageSrc: string,
   pixelCrop: PixelCrop,
+  outputWidth = AVATAR_OUTPUT_SIZE,
+  outputHeight?: number,
+  maxBytes = MAX_AVATAR_BYTES,
 ): Promise<Blob> {
+  const w = outputWidth;
+  const h = outputHeight ?? outputWidth;
   const image = await createImage(imageSrc);
   const canvas = document.createElement("canvas");
-  canvas.width = AVATAR_OUTPUT_SIZE;
-  canvas.height = AVATAR_OUTPUT_SIZE;
+  canvas.width = w;
+  canvas.height = h;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas 2d not available");
 
@@ -46,8 +54,8 @@ export async function getCroppedImg(
     pixelCrop.height,
     0,
     0,
-    AVATAR_OUTPUT_SIZE,
-    AVATAR_OUTPUT_SIZE,
+    w,
+    h,
   );
 
   const tryFormat = async (
@@ -68,7 +76,7 @@ export async function getCroppedImg(
     blob = await tryFormat("image/png", 1);
   }
 
-  if (blob.size <= MAX_AVATAR_BYTES) return blob;
+  if (blob.size <= maxBytes) return blob;
 
   for (const q of [0.85, 0.75, 0.65, 0.5]) {
     try {
@@ -76,7 +84,7 @@ export async function getCroppedImg(
     } catch {
       blob = await tryFormat("image/jpeg", q);
     }
-    if (blob.size <= MAX_AVATAR_BYTES) return blob;
+    if (blob.size <= maxBytes) return blob;
   }
 
   blob = await tryFormat("image/jpeg", 0.4);

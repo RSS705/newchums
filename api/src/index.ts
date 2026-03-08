@@ -2101,7 +2101,7 @@ app.post("/media/init", async (c) => {
       contentType?: string;
       contentLength?: number;
     };
-    const purpose = (body.purpose ?? "avatar") as "avatar";
+    const purpose = (body.purpose ?? "avatar") as "avatar" | "event_banner";
     const contentType = (body.contentType ?? "").trim().toLowerCase();
     const contentLength = typeof body.contentLength === "number" ? body.contentLength : 0;
 
@@ -2132,13 +2132,14 @@ app.post("/media/init", async (c) => {
       c.env.NEXTAUTH_SECRET,
     );
 
+    const maxBytes = purpose === "event_banner" ? 5 * 1024 * 1024 : 2 * 1024 * 1024;
     return c.json({
       ok: true,
       uploadToken,
       objectKey,
       uploadUrl: `/media/upload/${uploadToken}`,
-      viewUrl: `/users/${appUserId}/avatar`,
-      constraints: { maxBytes: 2 * 1024 * 1024, allowedTypes: ["image/jpeg", "image/png", "image/webp"] },
+      viewUrl: purpose === "avatar" ? `/users/${appUserId}/avatar` : undefined,
+      constraints: { maxBytes, allowedTypes: ["image/jpeg", "image/png", "image/webp"] },
     });
   } catch (err) {
     console.error("[POST /media/init]", err);
@@ -2189,13 +2190,9 @@ app.post("/media/finalize", async (c) => {
     return c.json({ ok: false, error: "MEDIA_NOT_CONFIGURED" }, 503);
   }
   try {
-    const body = (await c.req.json()) as { objectKey?: string; purpose?: string };
+    const body = (await c.req.json()) as { objectKey?: string; purpose?: string; eventId?: string };
     const objectKey = (body.objectKey ?? "").trim();
-    const purpose = (body.purpose ?? "avatar") as "avatar";
-
-    if (!objectKey || !objectKey.startsWith("avatars/")) {
-      return c.json({ ok: false, error: "INVALID_OBJECT_KEY" }, 400);
-    }
+    const purpose = (body.purpose ?? "avatar") as "avatar" | "event_banner";
 
     const sql = getSql(c.env);
     const appUserId = await ensureAppUserId(
@@ -2204,7 +2201,31 @@ app.post("/media/finalize", async (c) => {
       (payload as { name?: string | null }).name,
     );
 
-    // Ensure objectKey belongs to this user (avatars/<userId>/...)
+    if (purpose === "event_banner") {
+      const expectedPrefix = `event_banners/${appUserId}/`;
+      if (!objectKey.startsWith(expectedPrefix)) {
+        return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+      }
+      const eventId = body.eventId?.trim();
+      if (!eventId) {
+        return c.json({ ok: false, error: "MISSING_EVENT_ID" }, 400);
+      }
+      const obj = await c.env.MEDIA_BUCKET.head(objectKey);
+      if (!obj) {
+        return c.json({ ok: false, error: "OBJECT_NOT_FOUND" }, 404);
+      }
+      const ev = (await sql`SELECT id FROM newchums.events WHERE id = ${eventId} AND host_user_id = ${appUserId}`) as { id: string }[];
+      if (ev.length === 0) {
+        return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+      }
+      await sql`UPDATE newchums.events SET banner_key = ${objectKey} WHERE id = ${eventId}`;
+      return c.json({ ok: true, bannerUrl: `/events/${eventId}/banner?v=${Date.now()}` });
+    }
+
+    if (!objectKey.startsWith("avatars/")) {
+      return c.json({ ok: false, error: "INVALID_OBJECT_KEY" }, 400);
+    }
+
     const expectedPrefix = `avatars/${appUserId}/`;
     if (!objectKey.startsWith(expectedPrefix)) {
       return c.json({ ok: false, error: "FORBIDDEN" }, 403);
@@ -2268,6 +2289,35 @@ app.get("/users/:userId/avatar", async (c) => {
       return c.notFound();
     }
     const obj = await c.env.MEDIA_BUCKET.get(avatarKey);
+    if (!obj) {
+      return c.notFound();
+    }
+    const body = obj.body;
+    const headers = new Headers();
+    const ct = obj.httpMetadata?.contentType ?? "image/jpeg";
+    headers.set("Content-Type", ct);
+    headers.set("Cache-Control", "public, max-age=86400");
+    return new Response(body, { headers, status: 200 });
+  } catch {
+    return c.notFound();
+  }
+});
+
+app.get("/events/:eventId/banner", async (c) => {
+  const eventId = c.req.param("eventId");
+  if (!eventId || !c.env.MEDIA_BUCKET) {
+    return c.notFound();
+  }
+  try {
+    const sql = getSql(c.env);
+    const rows = (await sql`
+      SELECT banner_key FROM newchums.events WHERE id = ${eventId} LIMIT 1
+    `) as { banner_key: string | null }[];
+    const bannerKey = rows[0]?.banner_key ?? null;
+    if (!bannerKey) {
+      return c.notFound();
+    }
+    const obj = await c.env.MEDIA_BUCKET.get(bannerKey);
     if (!obj) {
       return c.notFound();
     }
@@ -3836,7 +3886,10 @@ app.post("/events", async (c) => {
   if (!titleCheck.ok) return c.json({ ok: false, error: "INAPPROPRIATE_TEXT", field: "title" }, 400);
 
   const description = body.description ? String(body.description).trim().slice(0, 2000) : null;
-  const interestId = body.interest_id ? String(body.interest_id) : null;
+  const interestIds: string[] = Array.isArray(body.interest_ids)
+    ? (body.interest_ids as string[]).map(String).filter(Boolean).slice(0, 10)
+    : body.interest_id ? [String(body.interest_id)] : [];
+  const interestId = interestIds[0] ?? null;
   const startsAt = body.starts_at ? String(body.starts_at) : null;
   if (!startsAt) return c.json({ ok: false, error: "VALIDATION", message: "Start date/time is required", field: "starts_at" }, 400);
 
@@ -3885,6 +3938,12 @@ app.post("/events", async (c) => {
     `) as { id: string; created_at: string }[];
 
     const eventId = rows[0].id;
+
+    for (const iid of interestIds) {
+      try {
+        await sql`INSERT INTO newchums.event_interests (event_id, interest_id) VALUES (${eventId}, ${iid}) ON CONFLICT DO NOTHING`;
+      } catch { /* skip invalid interest refs */ }
+    }
 
     const invitees = Array.isArray(body.invitees) ? (body.invitees as Array<{ user_id?: string; email?: string }>) : [];
     for (const inv of invitees.slice(0, 50)) {
@@ -3964,6 +4023,13 @@ app.get("/events/mine", async (c) => {
         e.location_name, e.location_address, e.online_link,
         e.max_seats, e.visibility, e.status, e.allow_alt_times,
         e.host_user_id, e.created_at, e.canceled_at,
+        COALESCE(
+          (SELECT json_agg(json_build_object('name', ii.name, 'slug', ii.slug))
+           FROM newchums.event_interests ei2
+           JOIN newchums.interests ii ON ii.id = ei2.interest_id
+           WHERE ei2.event_id = e.id AND ii.is_deleted = false),
+          '[]'::json
+        ) AS hobbies,
         i.name AS interest_name, i.slug AS interest_slug,
         h.name AS host_name, h.username AS host_username,
         r.status AS my_rsvp_status,
@@ -3989,35 +4055,43 @@ app.get("/events/mine", async (c) => {
       online_link: string | null; max_seats: number | null; visibility: string;
       status: string; allow_alt_times: boolean; host_user_id: string;
       created_at: string; canceled_at: string | null;
+      hobbies: Array<{ name: string; slug: string }> | string;
       interest_name: string | null; interest_slug: string | null;
       host_name: string | null; host_username: string | null;
       my_rsvp_status: string | null;
       going_count: number; maybe_count: number; is_host: boolean;
     }>;
 
-    const events = rows.map((r) => ({
-      id: r.id,
-      title: r.title,
-      description: r.description,
-      startsAt: r.starts_at,
-      locationType: r.location_type,
-      locationName: r.location_name,
-      locationAddress: r.location_address,
-      onlineLink: r.online_link,
-      maxSeats: r.max_seats,
-      visibility: r.visibility,
-      status: r.status,
-      allowAltTimes: r.allow_alt_times,
-      canceledAt: r.canceled_at,
-      createdAt: r.created_at,
-      hobby: r.interest_name,
-      hobbySlug: r.interest_slug,
-      hostName: r.host_name?.trim() || r.host_username?.replace(/^@/, "") || "Someone",
-      isHost: r.is_host,
-      myRsvpStatus: r.my_rsvp_status,
-      goingCount: r.going_count,
-      maybeCount: r.maybe_count,
-    }));
+    const events = rows.map((r) => {
+      const parsedHobbies = typeof r.hobbies === "string" ? JSON.parse(r.hobbies) : (r.hobbies ?? []);
+      const hobbyList = Array.isArray(parsedHobbies) && parsedHobbies.length > 0
+        ? parsedHobbies as Array<{ name: string; slug: string }>
+        : r.interest_name ? [{ name: r.interest_name, slug: r.interest_slug ?? "" }] : [];
+      return {
+        id: r.id,
+        title: r.title,
+        description: r.description,
+        startsAt: r.starts_at,
+        locationType: r.location_type,
+        locationName: r.location_name,
+        locationAddress: r.location_address,
+        onlineLink: r.online_link,
+        maxSeats: r.max_seats,
+        visibility: r.visibility,
+        status: r.status,
+        allowAltTimes: r.allow_alt_times,
+        canceledAt: r.canceled_at,
+        createdAt: r.created_at,
+        hobby: hobbyList[0]?.name ?? null,
+        hobbySlug: hobbyList[0]?.slug ?? null,
+        hobbies: hobbyList,
+        hostName: r.host_name?.trim() || r.host_username?.replace(/^@/, "") || "Someone",
+        isHost: r.is_host,
+        myRsvpStatus: r.my_rsvp_status,
+        goingCount: r.going_count,
+        maybeCount: r.maybe_count,
+      };
+    });
 
     return c.json({ ok: true, events });
   } catch (err) {
@@ -4073,6 +4147,13 @@ app.get("/events/explore", async (c) => {
         e.location_lat, e.location_lng,
         e.max_seats, e.visibility, e.status, e.allow_alt_times,
         e.host_user_id, e.created_at,
+        COALESCE(
+          (SELECT json_agg(json_build_object('name', ii.name, 'slug', ii.slug))
+           FROM newchums.event_interests ei2
+           JOIN newchums.interests ii ON ii.id = ei2.interest_id
+           WHERE ei2.event_id = e.id AND ii.is_deleted = false),
+          '[]'::json
+        ) AS hobbies,
         i.name AS interest_name, i.slug AS interest_slug,
         h.name AS host_name, h.username AS host_username,
         r.status AS my_rsvp_status,
@@ -4104,7 +4185,7 @@ app.get("/events/explore", async (c) => {
             OR e.host_user_id = ANY(${chumIdList.length > 0 ? chumIdList : ["00000000-0000-0000-0000-000000000000"]})
           ))
         )
-        ${hobbySlug ? sql`AND i.slug = ${hobbySlug}` : sql``}
+        ${hobbySlug ? sql`AND EXISTS (SELECT 1 FROM newchums.event_interests ei3 JOIN newchums.interests ii3 ON ii3.id = ei3.interest_id WHERE ei3.event_id = e.id AND ii3.slug = ${hobbySlug})` : sql``}
         ${search ? sql`AND (e.title ILIKE ${"%" + search + "%"} OR e.description ILIKE ${"%" + search + "%"})` : sql``}
         ${dateEnd ? sql`AND e.starts_at <= ${dateEnd.toISOString()}` : sql``}
       ORDER BY
@@ -4118,6 +4199,7 @@ app.get("/events/explore", async (c) => {
       online_link: string | null; location_lat: number | null; location_lng: number | null;
       max_seats: number | null; visibility: string; status: string; allow_alt_times: boolean;
       host_user_id: string; created_at: string;
+      hobbies: Array<{ name: string; slug: string }> | string;
       interest_name: string | null; interest_slug: string | null;
       host_name: string | null; host_username: string | null;
       my_rsvp_status: string | null;
@@ -4129,27 +4211,34 @@ app.get("/events/explore", async (c) => {
       ? rows.filter((r) => r.distance_km === null || r.distance_km <= radiusKm)
       : rows;
 
-    const events = filtered.map((r) => ({
-      id: r.id,
-      title: r.title,
-      description: r.description,
-      startsAt: r.starts_at,
-      locationType: r.location_type,
-      locationName: r.location_name,
-      locationAddress: r.location_address,
-      onlineLink: r.online_link,
-      maxSeats: r.max_seats,
-      visibility: r.visibility,
-      status: r.status,
-      hobby: r.interest_name,
-      hobbySlug: r.interest_slug,
-      hostName: r.host_name?.trim() || r.host_username?.replace(/^@/, "") || "Someone",
-      isHost: r.is_host,
-      myRsvpStatus: r.my_rsvp_status,
-      goingCount: r.going_count,
-      maybeCount: r.maybe_count,
-      distanceKm: r.distance_km !== null ? Math.round(r.distance_km * 10) / 10 : null,
-    }));
+    const events = filtered.map((r) => {
+      const parsedHobbies = typeof r.hobbies === "string" ? JSON.parse(r.hobbies) : (r.hobbies ?? []);
+      const hobbyList = Array.isArray(parsedHobbies) && parsedHobbies.length > 0
+        ? parsedHobbies as Array<{ name: string; slug: string }>
+        : r.interest_name ? [{ name: r.interest_name, slug: r.interest_slug ?? "" }] : [];
+      return {
+        id: r.id,
+        title: r.title,
+        description: r.description,
+        startsAt: r.starts_at,
+        locationType: r.location_type,
+        locationName: r.location_name,
+        locationAddress: r.location_address,
+        onlineLink: r.online_link,
+        maxSeats: r.max_seats,
+        visibility: r.visibility,
+        status: r.status,
+        hobby: hobbyList[0]?.name ?? null,
+        hobbySlug: hobbyList[0]?.slug ?? null,
+        hobbies: hobbyList,
+        hostName: r.host_name?.trim() || r.host_username?.replace(/^@/, "") || "Someone",
+        isHost: r.is_host,
+        myRsvpStatus: r.my_rsvp_status,
+        goingCount: r.going_count,
+        maybeCount: r.maybe_count,
+        distanceKm: r.distance_km !== null ? Math.round(r.distance_km * 10) / 10 : null,
+      };
+    });
 
     return c.json({ ok: true, events });
   } catch (err) {
@@ -4217,6 +4306,28 @@ app.get("/events/:id", async (c) => {
       ORDER BY eat.created_at ASC
     `) as Array<{ suggested_at: string; note: string | null; user_id: string; name: string | null; username: string | null }>;
 
+    const eventHobbies = (await sql`
+      SELECT ii.name, ii.slug
+      FROM newchums.event_interests ei2
+      JOIN newchums.interests ii ON ii.id = ei2.interest_id
+      WHERE ei2.event_id = ${eventId} AND ii.is_deleted = false
+      ORDER BY ei2.created_at ASC
+    `) as Array<{ name: string; slug: string }>;
+
+    const hobbyList = eventHobbies.length > 0
+      ? eventHobbies
+      : (event as Record<string, unknown>).interest_name
+        ? [{ name: (event as Record<string, unknown>).interest_name as string, slug: ((event as Record<string, unknown>).interest_slug as string) ?? "" }]
+        : [];
+
+    const invites = (await sql`
+      SELECT ei.user_id, ei.email, u.name, u.username
+      FROM newchums.event_invites ei
+      LEFT JOIN newchums.users u ON u.id = ei.user_id
+      WHERE ei.event_id = ${eventId}
+      ORDER BY ei.created_at ASC
+    `) as Array<{ user_id: string | null; email: string | null; name: string | null; username: string | null }>;
+
     return c.json({
       ok: true,
       event: {
@@ -4234,8 +4345,10 @@ app.get("/events/:id", async (c) => {
         allowAltTimes: event.allow_alt_times,
         canceledAt: event.canceled_at,
         createdAt: event.created_at,
-        hobby: (event as Record<string, unknown>).interest_name ?? null,
-        hobbySlug: (event as Record<string, unknown>).interest_slug ?? null,
+        bannerKey: event.banner_key ?? null,
+        hobby: hobbyList[0]?.name ?? null,
+        hobbySlug: hobbyList[0]?.slug ?? null,
+        hobbies: hobbyList,
         hostName: ((event as Record<string, unknown>).host_name as string)?.trim() || ((event as Record<string, unknown>).host_username as string)?.replace(/^@/, "") || "Someone",
         hostUserId: event.host_user_id,
         isHost: isHost === true,
@@ -4251,6 +4364,11 @@ app.get("/events/:id", async (c) => {
         name: a.name?.trim() || a.username?.replace(/^@/, "") || "Someone",
         suggestedAt: a.suggested_at,
         note: a.note,
+      })),
+      invites: invites.map((inv) => ({
+        userId: inv.user_id,
+        email: inv.email,
+        name: inv.name?.trim() || inv.username?.replace(/^@/, "") || inv.email || "Invited",
       })),
     });
   } catch (err) {

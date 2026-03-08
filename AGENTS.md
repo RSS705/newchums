@@ -129,7 +129,7 @@ The following areas are partially implemented. Agents should polish and improve 
 | Area | Status | Guidance |
 |------|--------|----------|
 | **Explore page** (`/`, logged in) | Functional but evolving. Real API data, filters, location-aware ordering. | Improve polish, fix bugs, refine empty states. Do not invent the final discovery experience. |
-| **Event Details** (`/events/[id]`) | Basic detail + RSVP + cancel. No edit, no chat, no public event page. | Fix issues, improve UI. Do not build chat, edit, or public sharing without being asked. |
+| **Event Details** (`/events/[id]`) | Detail view with RSVP, cancel, invite people, banner display. No edit, no chat, no public event page. | Fix issues, improve UI. Do not build chat, edit, or public sharing without being asked. |
 | **Event email templates** | Scaffolded in code. Postmark templates not yet created. Sends noop safely. | Do not assume emails are live. Note template requirements when relevant. |
 | **Recurring events** | Not implemented. Schema supports single-time events only. | Do not add recurring event logic. |
 | **Event chat** | Not implemented. Scaffolded conceptually in schema. | Do not build. |

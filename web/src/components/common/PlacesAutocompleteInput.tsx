@@ -11,6 +11,7 @@ import { loadGooglePlacesScript } from "@/lib/loadGooglePlaces";
 
 export type PlaceResult = {
   formattedAddress: string;
+  name: string | null;
   placeId: string;
   lat: number;
   lng: number;
@@ -26,6 +27,10 @@ export type PlacesAutocompleteInputProps = {
   error?: boolean;
   disabled?: boolean;
   sx?: Record<string, unknown>;
+  /** Google Places types filter. Defaults to ["address"]. Use ["establishment", "geocode"] for venue+address search. */
+  placeTypes?: string[];
+  /** Unique HTML id for the input (avoids conflicts when multiple instances exist). */
+  inputId?: string;
 };
 
 /**
@@ -43,6 +48,8 @@ export default function PlacesAutocompleteInput({
   error = false,
   disabled = false,
   sx,
+  placeTypes = ["address"],
+  inputId = "places-autocomplete-home",
 }: PlacesAutocompleteInputProps) {
   const theme = useTheme();
   const inputRef = React.useRef<HTMLInputElement | null>(null);
@@ -54,8 +61,8 @@ export default function PlacesAutocompleteInput({
     (el: HTMLInputElement) => {
       if (autocompleteRef.current || !el || typeof google === "undefined") return;
       const autocomplete = new google.maps.places.Autocomplete(el, {
-        types: ["address"],
-        fields: ["formatted_address", "place_id", "geometry"],
+        types: placeTypes,
+        fields: ["formatted_address", "place_id", "geometry", "name"],
       });
       autocompleteRef.current = autocomplete;
       listenerRef.current = autocomplete.addListener("place_changed", () => {
@@ -63,10 +70,11 @@ export default function PlacesAutocompleteInput({
         const addr = place.formatted_address;
         const geometry = place.geometry?.location;
         if (addr && geometry) {
-          lastEmittedRef.current = addr;
-          onChange(addr);
+          lastEmittedRef.current = place.name || addr;
+          onChange(place.name || addr);
           onPlaceSelect({
             formattedAddress: addr,
+            name: place.name ?? null,
             placeId: place.place_id ?? "",
             lat: geometry.lat(),
             lng: geometry.lng(),
@@ -133,7 +141,7 @@ export default function PlacesAutocompleteInput({
       {label && (
         <Typography
           component="label"
-          htmlFor="places-autocomplete-home"
+          htmlFor={inputId}
           variant="subtitle1"
           fontWeight={600}
           sx={{ display: "block", mb: 0.625, cursor: "text" }}
@@ -165,7 +173,7 @@ export default function PlacesAutocompleteInput({
         </InputAdornment>
         <Box
           component="input"
-          id="places-autocomplete-home"
+          id={inputId}
           ref={setInputRef}
           defaultValue={value}
           placeholder={placeholder}

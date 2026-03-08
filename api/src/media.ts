@@ -7,9 +7,10 @@ import { SignJWT, jwtVerify } from "jose";
 
 export const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 export const MAX_AVATAR_BYTES = 2 * 1024 * 1024; // 2MB
+export const MAX_EVENT_BANNER_BYTES = 5 * 1024 * 1024; // 5MB
 
-export type MediaPurpose = "avatar" | "event_cover";
-const ALLOWED_PURPOSES: MediaPurpose[] = ["avatar"];
+export type MediaPurpose = "avatar" | "event_banner";
+const ALLOWED_PURPOSES: MediaPurpose[] = ["avatar", "event_banner"];
 
 export type UploadTokenPayload = {
   userId: string;
@@ -38,10 +39,11 @@ export function validateMediaInit(
   if (!ALLOWED_IMAGE_TYPES.includes(contentType as (typeof ALLOWED_IMAGE_TYPES)[number])) {
     return { ok: false, error: "Allowed types: JPEG, PNG, WebP" };
   }
-  if (purpose === "avatar" && contentLength > MAX_AVATAR_BYTES) {
-    return { ok: false, error: "Avatar must be 2MB or less" };
+  const maxBytes = purpose === "event_banner" ? MAX_EVENT_BANNER_BYTES : MAX_AVATAR_BYTES;
+  if (contentLength > maxBytes) {
+    return { ok: false, error: purpose === "event_banner" ? "Banner must be 5MB or less" : "Avatar must be 2MB or less" };
   }
-  if (contentLength <= 0 || contentLength > MAX_AVATAR_BYTES) {
+  if (contentLength <= 0) {
     return { ok: false, error: "Invalid file size" };
   }
   return { ok: true };
@@ -52,6 +54,9 @@ export function buildObjectKey(userId: string, purpose: MediaPurpose, contentTyp
   const ts = Date.now();
   if (purpose === "avatar") {
     return `avatars/${userId}/${ts}.${ext}`;
+  }
+  if (purpose === "event_banner") {
+    return `event_banners/${userId}/${ts}.${ext}`;
   }
   return `${purpose}s/${userId}/${ts}.${ext}`;
 }

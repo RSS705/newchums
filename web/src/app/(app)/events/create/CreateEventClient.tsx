@@ -1,29 +1,40 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Autocomplete from "@mui/material/Autocomplete";
 import Box from "@mui/material/Box";
 import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
+import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogTitle from "@mui/material/DialogTitle";
 import FormControlLabel from "@mui/material/FormControlLabel";
-import IconButton from "@mui/material/IconButton";
 import Radio from "@mui/material/Radio";
 import RadioGroup from "@mui/material/RadioGroup";
+import Slider from "@mui/material/Slider";
 import Stack from "@mui/material/Stack";
 import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
-import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
-import PersonAddRoundedIcon from "@mui/icons-material/PersonAddRounded";
+import AddPhotoAlternateRoundedIcon from "@mui/icons-material/AddPhotoAlternateRounded";
+import { DatePicker } from "@mui/x-date-pickers/DatePicker";
+import { TimePicker } from "@mui/x-date-pickers/TimePicker";
+import dayjs, { type Dayjs } from "dayjs";
+import Cropper, { type Area } from "react-easy-crop";
 import { useRouter } from "next/navigation";
 import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
-import { apiFetch } from "@/lib/apiClient";
+import PlacesAutocompleteInput from "@/components/common/PlacesAutocompleteInput";
+import { apiFetch, getMediaApiBaseUrl } from "@/lib/apiClient";
+import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
+import { loadGooglePlacesScript } from "@/lib/loadGooglePlaces";
+import { isDuplicate, nameToSlug } from "@/lib/interestUtils";
+import { validateCleanText } from "@/lib/contentSafety";
 
-type HobbyOption = { id: string; name: string; slug: string };
-type Invitee = { userId?: string; email?: string; label: string };
-type SearchResult = { userId: string; displayName: string; handle: string | null; email?: string };
+type HobbyOption = { id?: string; name: string; slug: string };
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const MAX_BANNER_BYTES = 5 * 1024 * 1024;
 
 export default function CreateEventClient() {
   const router = useRouter();
@@ -31,89 +42,112 @@ export default function CreateEventClient() {
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [hobbyOptions, setHobbyOptions] = useState<HobbyOption[]>([]);
-  const [selectedHobby, setSelectedHobby] = useState<HobbyOption | null>(null);
+  const [selectedHobbies, setSelectedHobbies] = useState<HobbyOption[]>([]);
   const [maxSeats, setMaxSeats] = useState("");
 
-  const [date, setDate] = useState("");
-  const [time, setTime] = useState("");
+  const [dateValue, setDateValue] = useState<Dayjs | null>(null);
+  const [timeValue, setTimeValue] = useState<Dayjs | null>(null);
 
   const [locationType, setLocationType] = useState<"in_person" | "online">("in_person");
   const [locationName, setLocationName] = useState("");
   const [locationAddress, setLocationAddress] = useState("");
+  const [locationPlaceId, setLocationPlaceId] = useState<string | null>(null);
+  const [locationLat, setLocationLat] = useState<number | null>(null);
+  const [locationLng, setLocationLng] = useState<number | null>(null);
   const [onlineLink, setOnlineLink] = useState("");
 
   const [visibility, setVisibility] = useState<"public" | "chums_only" | "invite_only">("public");
   const [allowAltTimes, setAllowAltTimes] = useState(true);
 
-  const [invitees, setInvitees] = useState<Invitee[]>([]);
-  const [inviteSearch, setInviteSearch] = useState("");
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
-  const [searching, setSearching] = useState(false);
-
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // Hobby search
+  const [suggestions, setSuggestions] = useState<HobbyOption[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [hobbyInputValue, setHobbyInputValue] = useState("");
+
+  // Banner image
+  const [bannerFile, setBannerFile] = useState<File | null>(null);
+  const [bannerPreview, setBannerPreview] = useState<string | null>(null);
+  const [bannerCropSrc, setBannerCropSrc] = useState<string | null>(null);
+  const [bannerCropZoom, setBannerCropZoom] = useState(1);
+  const [bannerCropPosition, setBannerCropPosition] = useState({ x: 0, y: 0 });
+  const [bannerCroppedArea, setBannerCroppedArea] = useState<Area | null>(null);
+  const [bannerDialogOpen, setBannerDialogOpen] = useState(false);
+  const bannerInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
-    apiFetch("/interests").then(async (res) => {
-      if (res.ok) {
-        const data = await res.json();
-        setHobbyOptions(
-          ((data as { interests?: HobbyOption[] }).interests ?? []).map((i: HobbyOption) => ({
-            id: i.id,
-            name: i.name,
-            slug: i.slug,
-          }))
-        );
-      }
-    });
+    loadGooglePlacesScript().catch(() => {});
   }, []);
 
-  const searchPeople = useCallback(async (q: string) => {
-    if (q.length < 2) { setSearchResults([]); return; }
-    setSearching(true);
+  const fetchSuggestions = useCallback(async (q: string) => {
+    const term = q.trim();
+    if (!term) { setSuggestions([]); return; }
+    setSuggestionsLoading(true);
     try {
-      const res = await apiFetch(`/chums/search?q=${encodeURIComponent(q)}`, { auth: true });
-      if (res.ok) {
-        const data = (await res.json()) as { ok: boolean; results?: Array<{ userId: string; displayName: string; handle: string | null }> };
-        setSearchResults(data.results ?? []);
+      const res = await apiFetch(`/interests?q=${encodeURIComponent(term)}`);
+      const data = await res.json();
+      if (data.ok && data.interests) {
+        setSuggestions(data.interests.map((r: { id?: string; name: string; slug: string }) => ({
+          id: r.id, name: r.name, slug: r.slug,
+        })));
+      } else {
+        setSuggestions([]);
       }
-    } catch { /* ignore */ }
-    setSearching(false);
+    } catch { setSuggestions([]); }
+    finally { setSuggestionsLoading(false); }
   }, []);
 
+  const debouncedFetch = useMemo(() => {
+    let t: ReturnType<typeof setTimeout>;
+    return (q: string) => { clearTimeout(t); t = setTimeout(() => fetchSuggestions(q), 250); };
+  }, [fetchSuggestions]);
+
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (inviteSearch.trim().length >= 2) searchPeople(inviteSearch.trim());
-      else setSearchResults([]);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [inviteSearch, searchPeople]);
+    if (hobbyInputValue) debouncedFetch(hobbyInputValue);
+    else setSuggestions([]);
+  }, [hobbyInputValue, debouncedFetch]);
 
-  const addInvitee = (inv: Invitee) => {
-    if (inv.userId && invitees.some((i) => i.userId === inv.userId)) return;
-    if (inv.email && invitees.some((i) => i.email === inv.email)) return;
-    setInvitees((prev) => [...prev, inv]);
-    setInviteSearch("");
-    setSearchResults([]);
+  const addHobby = (option: HobbyOption | string) => {
+    const item: HobbyOption =
+      typeof option === "string"
+        ? { name: option.trim().replace(/\s+/g, " "), slug: nameToSlug(option) }
+        : option;
+    if (!item.name?.trim() || !item.slug) return;
+    if (item.name.length > 50) { toast.error("Hobby must be 50 characters or less"); return; }
+    const check = validateCleanText(item.name, "hobby");
+    if (!check.ok) { toast.error(check.reason ?? "That hobby name isn't allowed."); return; }
+    if (selectedHobbies.some((i) => isDuplicate(i, item))) return;
+    setSelectedHobbies((prev) => [...prev, item]);
   };
 
-  const removeInvitee = (idx: number) => setInvitees((prev) => prev.filter((_, i) => i !== idx));
+  const handleBannerCropComplete = useCallback((_: Area, croppedAreaPx: Area) => {
+    setBannerCroppedArea(croppedAreaPx);
+  }, []);
 
-  const handleAddEmailInvitee = () => {
-    const email = inviteSearch.trim().toLowerCase();
-    if (EMAIL_RE.test(email)) {
-      addInvitee({ email, label: email });
+  const handleBannerCropSave = useCallback(async () => {
+    if (!bannerCropSrc || !bannerCroppedArea) return;
+    try {
+      const blob = await getCroppedImg(bannerCropSrc, bannerCroppedArea as PixelCrop, 1200, 400);
+      URL.revokeObjectURL(bannerCropSrc);
+      setBannerCropSrc(null);
+      const file = new File([blob], "banner.webp", { type: blob.type || "image/webp" });
+      setBannerFile(file);
+      setBannerPreview(URL.createObjectURL(file));
+      setBannerDialogOpen(false);
+    } catch {
+      toast.error("Failed to process image");
     }
-  };
+  }, [bannerCropSrc, bannerCroppedArea, toast]);
 
   const validate = (): boolean => {
     const errs: Record<string, string> = {};
     if (!title.trim()) errs.title = "Give your plan a title";
-    if (!date) errs.date = "Pick a date";
-    if (!time) errs.time = "Pick a time";
+    if (!dateValue || !dateValue.isValid()) errs.date = "Pick a date";
+    if (!timeValue || !timeValue.isValid()) errs.time = "Pick a time";
     if (locationType === "in_person" && !locationName.trim() && !locationAddress.trim())
-      errs.location = "Add a location name or address";
+      errs.location = "Add a venue or address";
     if (maxSeats && (isNaN(Number(maxSeats)) || Number(maxSeats) < 1))
       errs.maxSeats = "Must be a positive number";
     setErrors(errs);
@@ -124,25 +158,27 @@ export default function CreateEventClient() {
     if (!validate()) return;
     setSubmitting(true);
 
-    const startsAt = new Date(`${date}T${time}`).toISOString();
+    const d = dateValue!;
+    const t = timeValue!;
+    const startsAt = d.hour(t.hour()).minute(t.minute()).second(0).toISOString();
 
     const payload: Record<string, unknown> = {
       title: title.trim(),
       description: description.trim() || null,
-      interest_id: selectedHobby?.id ?? null,
+      interest_ids: selectedHobbies.filter((h) => h.id).map((h) => h.id),
+      interest_id: selectedHobbies[0]?.id ?? null,
       starts_at: startsAt,
       location_type: locationType,
       location_name: locationName.trim() || null,
       location_address: locationAddress.trim() || null,
+      location_place_id: locationPlaceId,
+      location_lat: locationLat,
+      location_lng: locationLng,
       online_link: locationType === "online" ? onlineLink.trim() || null : null,
       max_seats: maxSeats ? Number(maxSeats) : null,
       visibility,
       allow_alt_times: allowAltTimes,
       status: "published",
-      invitees: invitees.map((inv) => ({
-        user_id: inv.userId ?? null,
-        email: inv.email ?? null,
-      })),
     };
 
     try {
@@ -154,8 +190,44 @@ export default function CreateEventClient() {
       });
       const data = (await res.json()) as { ok: boolean; event?: { id: string }; error?: string; message?: string; field?: string };
       if (data.ok && data.event) {
+        if (bannerFile) {
+          try {
+            const bInitRes = await apiFetch("/media/init", {
+              auth: true,
+              baseUrl: getMediaApiBaseUrl(),
+              method: "POST",
+              body: JSON.stringify({
+                purpose: "event_banner",
+                contentType: bannerFile.type || "image/webp",
+                contentLength: bannerFile.size,
+              }),
+            });
+            const bInitData = (await bInitRes.json()) as { ok?: boolean; uploadToken?: string; objectKey?: string; uploadUrl?: string };
+            if (bInitData.ok && bInitData.uploadToken && bInitData.uploadUrl && bInitData.objectKey) {
+              const uploadUrl = `${getMediaApiBaseUrl()}${bInitData.uploadUrl}`;
+              const uploadRes = await fetch(uploadUrl, {
+                method: "PUT",
+                body: bannerFile,
+                headers: { "Content-Type": bannerFile.type || "image/webp" },
+                credentials: "omit",
+              });
+              if (uploadRes.ok) {
+                await apiFetch("/media/finalize", {
+                  auth: true,
+                  baseUrl: getMediaApiBaseUrl(),
+                  method: "POST",
+                  body: JSON.stringify({
+                    objectKey: bInitData.objectKey,
+                    purpose: "event_banner",
+                    eventId: data.event.id,
+                  }),
+                });
+              }
+            }
+          } catch { /* banner upload failure is non-fatal */ }
+        }
         toast.success("Plan created!");
-        router.push("/plans");
+        router.push(`/events/${data.event.id}`);
       } else {
         if (data.field) {
           setErrors({ [data.field]: data.message ?? "Validation error" });
@@ -168,6 +240,11 @@ export default function CreateEventClient() {
     }
     setSubmitting(false);
   };
+
+  const sortedHobbies = useMemo(
+    () => [...selectedHobbies].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })),
+    [selectedHobbies],
+  );
 
   return (
     <Stack spacing={{ xs: 3, sm: 4 }}>
@@ -189,6 +266,76 @@ export default function CreateEventClient() {
           Organize a gathering around something you enjoy. Keep it simple, you can always update later.
         </Typography>
       </Box>
+
+      {/* Banner image */}
+      <AppCard>
+        <Stack spacing={2}>
+          <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
+            Banner image
+          </Typography>
+          <Box
+            onClick={() => bannerInputRef.current?.click()}
+            sx={{
+              width: "100%",
+              height: { xs: 140, sm: 180 },
+              borderRadius: 2.5,
+              border: "2px dashed",
+              borderColor: bannerPreview ? "transparent" : "grey.300",
+              bgcolor: bannerPreview ? "transparent" : "grey.50",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              overflow: "hidden",
+              position: "relative",
+              transition: "border-color 0.2s",
+              "&:hover": { borderColor: bannerPreview ? "transparent" : "primary.main" },
+            }}
+          >
+            {bannerPreview ? (
+              <Box
+                component="img"
+                src={bannerPreview}
+                alt="Banner preview"
+                sx={{ width: "100%", height: "100%", objectFit: "cover" }}
+              />
+            ) : (
+              <Stack alignItems="center" spacing={0.75}>
+                <AddPhotoAlternateRoundedIcon sx={{ fontSize: 36, color: "text.disabled" }} />
+                <Typography variant="body2" color="text.secondary">
+                  Add a banner image (optional)
+                </Typography>
+              </Stack>
+            )}
+          </Box>
+          {bannerPreview && (
+            <Stack direction="row" spacing={1}>
+              <AppButton
+                variant="outlined"
+                size="small"
+                onClick={() => bannerInputRef.current?.click()}
+              >
+                Change
+              </AppButton>
+              <AppButton
+                variant="text"
+                size="small"
+                color="error"
+                onClick={() => {
+                  setBannerFile(null);
+                  if (bannerPreview) URL.revokeObjectURL(bannerPreview);
+                  setBannerPreview(null);
+                }}
+              >
+                Remove
+              </AppButton>
+            </Stack>
+          )}
+          <Typography variant="caption" color="text.secondary">
+            JPEG, PNG, or WebP. Max 5MB.
+          </Typography>
+        </Stack>
+      </AppCard>
 
       {/* Basic details */}
       <AppCard>
@@ -219,41 +366,87 @@ export default function CreateEventClient() {
             helperText="Optional, but a short description helps people decide to join"
           />
 
+          {/* Multi-hobby selector (mirrors profile pattern) */}
           <Autocomplete
-            options={hobbyOptions}
-            getOptionLabel={(o) => o.name}
-            value={selectedHobby}
-            onChange={(_, v) => setSelectedHobby(v)}
-            isOptionEqualToValue={(a, b) => a.id === b.id}
+            freeSolo
+            multiple
+            filterOptions={(x) => x}
+            options={suggestions}
+            value={selectedHobbies}
+            inputValue={hobbyInputValue}
+            onInputChange={(_, v) => setHobbyInputValue(v)}
+            onChange={(_, newValue) => {
+              const filtered = (newValue ?? []).filter(Boolean);
+              const last = filtered[filtered.length - 1];
+              if (typeof last === "string") addHobby(last);
+              else setSelectedHobbies(filtered as HobbyOption[]);
+            }}
+            getOptionLabel={(opt) => (typeof opt === "string" ? opt : opt.name)}
+            isOptionEqualToValue={(opt, val) => {
+              if (!opt || !val) return false;
+              if (typeof opt === "string" || typeof val === "string") return false;
+              return opt.slug === val.slug;
+            }}
+            loading={suggestionsLoading}
             renderInput={(params) => (
               <Box sx={{ width: "100%" }}>
                 <Typography variant="subtitle1" fontWeight={600} sx={{ display: "block", mb: 0.625 }}>
-                  Hobby
+                  Hobbies
                 </Typography>
                 <TextField
                   {...params}
-                  placeholder="Search hobbies…"
+                  placeholder="Search hobbies..."
                   variant="outlined"
                   size="medium"
                   fullWidth
                   label={undefined}
-                  helperText="Link this plan to a hobby so the right people can find it"
+                  helperText="Link this plan to hobbies so the right people can find it"
+                  onKeyDown={(e) => {
+                    if (e.key === "Backspace" && !hobbyInputValue) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }
+                  }}
                 />
               </Box>
             )}
+            renderTags={() => null}
           />
+          {selectedHobbies.length > 0 && (
+            <Stack direction="row" flexWrap="wrap" gap={1.5} useFlexGap>
+              {sortedHobbies.map((item) => (
+                <Chip
+                  key={item.slug}
+                  label={item.name}
+                  size="medium"
+                  color="primary"
+                  variant="filled"
+                  onDelete={() => setSelectedHobbies((prev) => prev.filter((i) => i.slug !== item.slug))}
+                  sx={{
+                    height: 34,
+                    fontSize: "0.875rem",
+                    fontWeight: 600,
+                    "& .MuiChip-label": { px: 1.5, py: 0.5 },
+                    "& .MuiChip-deleteIcon": { fontSize: "1.125rem", "&:hover": { color: "primary.dark" } },
+                  }}
+                />
+              ))}
+            </Stack>
+          )}
 
-          <AppTextField
-            label="Seats"
-            placeholder="e.g. 8"
-            value={maxSeats}
-            onChange={(e) => setMaxSeats(e.target.value)}
-            error={!!errors.maxSeats}
-            helperText={errors.maxSeats ?? "Optional, leave blank for unlimited"}
-            type="number"
-            inputProps={{ min: 1, max: 500 }}
-            sx={{ maxWidth: 200 }}
-          />
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="flex-start">
+            <AppTextField
+              label="Seats"
+              placeholder="e.g. 8"
+              value={maxSeats}
+              onChange={(e) => setMaxSeats(e.target.value)}
+              error={!!errors.maxSeats}
+              helperText={errors.maxSeats ?? "Optional, leave blank for unlimited"}
+              type="number"
+              inputProps={{ min: 1, max: 500 }}
+              sx={{ minWidth: { xs: "100%", sm: 260 } }}
+            />
+          </Stack>
         </Stack>
       </AppCard>
 
@@ -265,26 +458,43 @@ export default function CreateEventClient() {
           </Typography>
 
           <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-            <AppTextField
-              label="Date"
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              error={!!errors.date}
-              helperText={errors.date}
-              InputLabelProps={{ shrink: true }}
-              sx={{ flex: 1 }}
-            />
-            <AppTextField
-              label="Time"
-              type="time"
-              value={time}
-              onChange={(e) => setTime(e.target.value)}
-              error={!!errors.time}
-              helperText={errors.time}
-              InputLabelProps={{ shrink: true }}
-              sx={{ flex: 1 }}
-            />
+            <Box sx={{ flex: 1 }}>
+              <Typography variant="subtitle1" fontWeight={600} sx={{ display: "block", mb: 0.625 }}>
+                Date
+              </Typography>
+              <DatePicker
+                value={dateValue}
+                onChange={setDateValue}
+                minDate={dayjs()}
+                slotProps={{
+                  textField: {
+                    fullWidth: true,
+                    size: "medium",
+                    error: !!errors.date,
+                    helperText: errors.date,
+                    placeholder: "Pick a date",
+                  },
+                }}
+              />
+            </Box>
+            <Box sx={{ flex: 1 }}>
+              <Typography variant="subtitle1" fontWeight={600} sx={{ display: "block", mb: 0.625 }}>
+                Time
+              </Typography>
+              <TimePicker
+                value={timeValue}
+                onChange={setTimeValue}
+                slotProps={{
+                  textField: {
+                    fullWidth: true,
+                    size: "medium",
+                    error: !!errors.time,
+                    helperText: errors.time,
+                    placeholder: "Pick a time",
+                  },
+                }}
+              />
+            </Box>
           </Stack>
 
           <FormControlLabel
@@ -319,23 +529,31 @@ export default function CreateEventClient() {
           </RadioGroup>
 
           {locationType === "in_person" ? (
-            <>
-              <AppTextField
-                label="Place name"
-                placeholder="e.g. Central Park, Joe's Coffee"
-                value={locationName}
-                onChange={(e) => setLocationName(e.target.value)}
-                error={!!errors.location}
-                helperText={errors.location ?? "The name of the venue or meeting spot"}
-              />
-              <AppTextField
-                label="Address"
-                placeholder="e.g. 123 Main St"
-                value={locationAddress}
-                onChange={(e) => setLocationAddress(e.target.value)}
-                helperText="Optional, helps people find the place"
-              />
-            </>
+            <PlacesAutocompleteInput
+              value={locationName}
+              onChange={(v) => {
+                setLocationName(v);
+                if (!v.trim()) {
+                  setLocationAddress("");
+                  setLocationPlaceId(null);
+                  setLocationLat(null);
+                  setLocationLng(null);
+                }
+              }}
+              onPlaceSelect={(result) => {
+                setLocationName(result.name || result.formattedAddress);
+                setLocationAddress(result.formattedAddress);
+                setLocationPlaceId(result.placeId);
+                setLocationLat(result.lat);
+                setLocationLng(result.lng);
+              }}
+              label="Venue or address"
+              placeholder="Search for a place or enter an address"
+              helperText={errors.location ?? "Start typing to search venues, parks, cafes, or addresses"}
+              error={!!errors.location}
+              placeTypes={["establishment", "geocode"]}
+              inputId="places-autocomplete-event"
+            />
           ) : (
             <AppTextField
               label="Online link or details"
@@ -402,126 +620,6 @@ export default function CreateEventClient() {
         </Stack>
       </AppCard>
 
-      {/* Invite people */}
-      <AppCard>
-        <Stack spacing={2.5}>
-          <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
-            Invite people
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: -1 }}>
-            Search by name, @handle, or email. Invite emails are sent when you publish.
-          </Typography>
-
-          <Box sx={{ position: "relative" }}>
-            <AppTextField
-              label="Search or enter email"
-              placeholder="Name, @handle, or email address"
-              value={inviteSearch}
-              onChange={(e) => setInviteSearch(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && EMAIL_RE.test(inviteSearch.trim())) {
-                  e.preventDefault();
-                  handleAddEmailInvitee();
-                }
-              }}
-            />
-            {searching && (
-              <CircularProgress size={20} sx={{ position: "absolute", right: 12, top: 44 }} />
-            )}
-          </Box>
-
-          {/* Search results dropdown */}
-          {searchResults.length > 0 && (
-            <Stack
-              spacing={0}
-              sx={{
-                border: "1px solid",
-                borderColor: "divider",
-                borderRadius: 1,
-                overflow: "hidden",
-                mt: -1,
-              }}
-            >
-              {searchResults.map((r) => (
-                <Box
-                  key={r.userId}
-                  sx={{
-                    px: 2,
-                    py: 1.25,
-                    cursor: "pointer",
-                    "&:hover": { bgcolor: "grey.50" },
-                    borderBottom: "1px solid",
-                    borderColor: "divider",
-                    "&:last-child": { borderBottom: "none" },
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                  }}
-                  onClick={() =>
-                    addInvitee({
-                      userId: r.userId,
-                      label: r.displayName + (r.handle ? ` (${r.handle})` : ""),
-                    })
-                  }
-                >
-                  <Box>
-                    <Typography variant="body2" fontWeight={500}>
-                      {r.displayName}
-                    </Typography>
-                    {r.handle && (
-                      <Typography variant="caption" color="text.secondary">
-                        {r.handle}
-                      </Typography>
-                    )}
-                  </Box>
-                  <PersonAddRoundedIcon sx={{ fontSize: 18, color: "primary.main" }} />
-                </Box>
-              ))}
-            </Stack>
-          )}
-
-          {/* Email invite prompt */}
-          {inviteSearch.trim().length > 3 &&
-            EMAIL_RE.test(inviteSearch.trim()) &&
-            searchResults.length === 0 &&
-            !searching && (
-              <Box
-                sx={{
-                  p: 2,
-                  borderRadius: 1,
-                  bgcolor: "primary.light",
-                  cursor: "pointer",
-                  "&:hover": { opacity: 0.85 },
-                }}
-                onClick={handleAddEmailInvitee}
-              >
-                <Typography variant="body2" fontWeight={500}>
-                  Invite <strong>{inviteSearch.trim()}</strong> by email
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  They&apos;ll receive an invite email when you publish this plan
-                </Typography>
-              </Box>
-            )}
-
-          {/* Invitee chips */}
-          {invitees.length > 0 && (
-            <Stack direction="row" flexWrap="wrap" gap={1} sx={{ mt: 1 }}>
-              {invitees.map((inv, idx) => (
-                <Chip
-                  key={inv.userId ?? inv.email ?? idx}
-                  label={inv.label}
-                  onDelete={() => removeInvitee(idx)}
-                  deleteIcon={<IconButton size="small"><CloseRoundedIcon sx={{ fontSize: 14 }} /></IconButton>}
-                  variant="outlined"
-                  size="small"
-                />
-              ))}
-            </Stack>
-          )}
-        </Stack>
-      </AppCard>
-
       {/* Submit */}
       <Stack
         direction={{ xs: "column-reverse", sm: "row" }}
@@ -546,6 +644,102 @@ export default function CreateEventClient() {
           {submitting ? <CircularProgress size={22} color="inherit" /> : "Publish plan"}
         </AppButton>
       </Stack>
+
+      {/* Hidden file input for banner */}
+      <input
+        ref={bannerInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        style={{ display: "none" }}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+            toast.error("Please use JPEG, PNG, or WebP.");
+            return;
+          }
+          if (file.size > MAX_BANNER_BYTES) {
+            toast.error("Image must be 5MB or less.");
+            return;
+          }
+          const url = URL.createObjectURL(file);
+          setBannerCropSrc(url);
+          setBannerCropZoom(1);
+          setBannerCropPosition({ x: 0, y: 0 });
+          setBannerCroppedArea(null);
+          setBannerDialogOpen(true);
+          if (bannerInputRef.current) bannerInputRef.current.value = "";
+        }}
+      />
+
+      {/* Banner crop dialog */}
+      <Dialog
+        open={bannerDialogOpen}
+        onClose={() => {
+          if (bannerCropSrc) URL.revokeObjectURL(bannerCropSrc);
+          setBannerCropSrc(null);
+          setBannerDialogOpen(false);
+        }}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: { m: { xs: 2, sm: 3 }, maxHeight: { xs: "calc(100dvh - 32px)", sm: "calc(100dvh - 48px)" } },
+        }}
+      >
+        <DialogTitle>Crop banner image</DialogTitle>
+        <DialogContent sx={{ px: { xs: 2, sm: 3 } }}>
+          {bannerCropSrc && (
+            <Stack spacing={2} sx={{ pt: 1 }}>
+              <Box sx={{ position: "relative", height: 280 }}>
+                <Cropper
+                  image={bannerCropSrc}
+                  crop={bannerCropPosition}
+                  zoom={bannerCropZoom}
+                  aspect={3}
+                  onCropChange={setBannerCropPosition}
+                  onZoomChange={setBannerCropZoom}
+                  onCropComplete={handleBannerCropComplete}
+                />
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary" gutterBottom>
+                  Zoom
+                </Typography>
+                <Slider
+                  value={bannerCropZoom}
+                  min={1}
+                  max={3}
+                  step={0.1}
+                  valueLabelDisplay="auto"
+                  onChange={(_, v) => setBannerCropZoom(Number(v))}
+                />
+              </Box>
+              <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center" }}>
+                Drag to reposition, use the slider to zoom.
+              </Typography>
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: { xs: 2, sm: 3 }, pb: 2 }}>
+          <AppButton
+            variant="outlined"
+            onClick={() => {
+              if (bannerCropSrc) URL.revokeObjectURL(bannerCropSrc);
+              setBannerCropSrc(null);
+              setBannerDialogOpen(false);
+            }}
+          >
+            Cancel
+          </AppButton>
+          <AppButton
+            variant="contained"
+            disabled={!bannerCroppedArea}
+            onClick={handleBannerCropSave}
+          >
+            Use this crop
+          </AppButton>
+        </DialogActions>
+      </Dialog>
     </Stack>
   );
 }

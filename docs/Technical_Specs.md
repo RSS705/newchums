@@ -320,7 +320,8 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 
 | Table | Purpose |
 |-------|---------|
-| `newchums.events` | Core event entity — title, description, interest_id, starts_at, location, max_seats, visibility, status |
+| `newchums.events` | Core event entity — title, description, starts_at, location, max_seats, visibility, status, banner_key |
+| `newchums.event_interests` | Junction table for event ↔ interest many-to-many (multi-hobby support) |
 | `newchums.event_invites` | Invite records — supports both in-app users (user_id) and email invitees (email) |
 | `newchums.event_rsvps` | Attendance responses — going, maybe, cant_make_it (one per user per event) |
 | `newchums.event_alt_times` | Alternate date/time suggestions from attendees |
@@ -500,7 +501,8 @@ Core tables include:
 - `newchums.user_chums` (migration 021) — one-way Chum relationships; columns: `id`, `user_id`, `chum_user_id`, `created_at`; unique constraint on `(user_id, chum_user_id)`; self-chum prevented by CHECK constraint; indexed on both FKs
 - `newchums.notifications` (migration 022) — general notifications table; columns: `id`, `user_id`, `type`, `actor_user_id`, `entity_id`, `metadata` (JSONB), `read_at`, `created_at`; indexed for unread queries
 - `newchums.chum_invites` (migration 023) — invite records for emails not yet on NewChums; columns: `id`, `inviter_user_id`, `invitee_email`, `token_hash`, `status` (`pending`/`accepted`/`expired`), `expires_at` (30 days), `accepted_at`, `accepted_user_id`, `created_at`; unique index on `token_hash`; indexed on `(invitee_email, status)` and `inviter_user_id`
-- `newchums.events` (migration 024) — core event entity; columns include `host_user_id`, `title`, `description`, `interest_id` (FK), `starts_at`, `location_type`, `location_name`, `location_address`, `location_lat`, `location_lng`, `online_link`, `max_seats`, `visibility`, `status`, `allow_alt_times`, `created_at`, `updated_at`
+- `newchums.events` (migration 024) — core event entity; columns include `host_user_id`, `title`, `description`, `interest_id` (legacy FK, being superseded by event_interests), `starts_at`, `location_type`, `location_name`, `location_address`, `location_lat`, `location_lng`, `online_link`, `max_seats`, `visibility`, `status`, `allow_alt_times`, `banner_key`, `created_at`, `updated_at`
+- `newchums.event_interests` (migration 025) — junction table for event ↔ interest many-to-many; events can link to multiple hobbies
 - `newchums.event_invites` (migration 024) — invite records supporting both user_id and email invitees
 - `newchums.event_rsvps` (migration 024) — RSVP responses; one per user per event; status: `going`, `maybe`, `cant_make_it`
 - `newchums.event_alt_times` (migration 024) — alternate time suggestions from attendees
