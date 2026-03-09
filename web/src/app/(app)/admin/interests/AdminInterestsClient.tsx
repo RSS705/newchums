@@ -269,12 +269,21 @@ export default function AdminInterestsClient() {
       });
       const data = await res.json();
       if (data.ok) {
-        const { movedCount, dedupedCount } = data as { movedCount: number; dedupedCount: number };
-        toast.success(
-          `Merged "${mergeSource.name}" into "${mergeTarget.name}". ` +
+        const { movedCount, dedupedCount, eventsMovedCount, eventsDedupedCount } = data as {
+          movedCount: number;
+          dedupedCount: number;
+          eventsMovedCount: number;
+          eventsDedupedCount: number;
+        };
+        const userPart =
           `${movedCount} user${movedCount !== 1 ? "s" : ""} moved` +
-          (dedupedCount > 0 ? `, ${dedupedCount} deduplicated` : "") +
-          ".",
+          (dedupedCount > 0 ? `, ${dedupedCount} deduplicated` : "");
+        const eventTotal = eventsMovedCount + eventsDedupedCount;
+        const eventPart = eventTotal > 0
+          ? ` · ${eventTotal} plan${eventTotal !== 1 ? "s" : ""} updated`
+          : "";
+        toast.success(
+          `Merged "${mergeSource.name}" into "${mergeTarget.name}". ${userPart}${eventPart}.`,
         );
         // Mark source as deleted in local state and refresh
         setRows((prev) =>
@@ -617,8 +626,8 @@ export default function AdminInterestsClient() {
                 }}
               >
                 <Typography variant="body2">
-                  All users who have <strong>{mergeSource?.name}</strong> will be moved to{" "}
-                  <strong>{mergeTarget.name}</strong>. Users who already have both will be
+                  All users and plans tagged with <strong>{mergeSource?.name}</strong> will be
+                  moved to <strong>{mergeTarget.name}</strong>. Any that already have both will be
                   deduplicated. <strong>{mergeSource?.name}</strong> will then be marked as deleted.
                 </Typography>
               </Box>

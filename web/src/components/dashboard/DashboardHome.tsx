@@ -304,7 +304,7 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
       ) : events.length > 0 ? (
         <Grid container spacing={2}>
           {events.map((event) => (
-            <Grid key={event.id} size={{ xs: 12, sm: 6, md: 4 }}>
+            <Grid key={event.id} size={{ xs: 12, sm: 6, md: 4 }} sx={{ display: "flex" }}>
               <EventCard event={event} />
             </Grid>
           ))}

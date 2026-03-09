@@ -9,9 +9,13 @@ import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
+import FormControl from "@mui/material/FormControl";
 import FormControlLabel from "@mui/material/FormControlLabel";
+import ListItemText from "@mui/material/ListItemText";
+import MenuItem from "@mui/material/MenuItem";
 import Radio from "@mui/material/Radio";
 import RadioGroup from "@mui/material/RadioGroup";
+import Select from "@mui/material/Select";
 import Slider from "@mui/material/Slider";
 import Stack from "@mui/material/Stack";
 import Switch from "@mui/material/Switch";
@@ -45,8 +49,8 @@ export default function CreateEventClient() {
   const [selectedHobbies, setSelectedHobbies] = useState<HobbyOption[]>([]);
   const [maxSeats, setMaxSeats] = useState("");
 
-  const [dateValue, setDateValue] = useState<Dayjs | null>(null);
-  const [timeValue, setTimeValue] = useState<Dayjs | null>(null);
+  const [dateValue, setDateValue] = useState<Dayjs | null>(() => dayjs());
+  const [timeValue, setTimeValue] = useState<Dayjs | null>(() => dayjs());
 
   const [locationType, setLocationType] = useState<"in_person" | "online">("in_person");
   const [locationName, setLocationName] = useState("");
@@ -54,6 +58,8 @@ export default function CreateEventClient() {
   const [locationPlaceId, setLocationPlaceId] = useState<string | null>(null);
   const [locationLat, setLocationLat] = useState<number | null>(null);
   const [locationLng, setLocationLng] = useState<number | null>(null);
+  const [locationArea, setLocationArea] = useState<string | null>(null);
+  const [locationVisibility, setLocationVisibility] = useState<"exact_everyone" | "exact_joined_only" | "approximate_only">("exact_everyone");
   const [onlineLink, setOnlineLink] = useState("");
 
   const [visibility, setVisibility] = useState<"public" | "chums_only" | "invite_only">("public");
@@ -167,6 +173,7 @@ export default function CreateEventClient() {
       description: description.trim() || null,
       interest_ids: selectedHobbies.filter((h) => h.id).map((h) => h.id),
       interest_id: selectedHobbies[0]?.id ?? null,
+      interest_items: selectedHobbies.map((h) => ({ slug: h.slug, name: h.name })),
       starts_at: startsAt,
       location_type: locationType,
       location_name: locationName.trim() || null,
@@ -174,6 +181,8 @@ export default function CreateEventClient() {
       location_place_id: locationPlaceId,
       location_lat: locationLat,
       location_lng: locationLng,
+      location_area: locationType === "in_person" ? (locationArea?.trim() || null) : null,
+      location_visibility: locationType === "in_person" ? locationVisibility : "exact_everyone",
       online_link: locationType === "online" ? onlineLink.trim() || null : null,
       max_seats: maxSeats ? Number(maxSeats) : null,
       visibility,
@@ -395,7 +404,7 @@ export default function CreateEventClient() {
                 </Typography>
                 <TextField
                   {...params}
-                  placeholder="Search hobbies..."
+                  placeholder="Type to search or create..."
                   variant="outlined"
                   size="medium"
                   fullWidth
@@ -484,6 +493,7 @@ export default function CreateEventClient() {
               <TimePicker
                 value={timeValue}
                 onChange={setTimeValue}
+                format="h:mm A"
                 slotProps={{
                   textField: {
                     fullWidth: true,
@@ -529,31 +539,90 @@ export default function CreateEventClient() {
           </RadioGroup>
 
           {locationType === "in_person" ? (
-            <PlacesAutocompleteInput
-              value={locationName}
-              onChange={(v) => {
-                setLocationName(v);
-                if (!v.trim()) {
-                  setLocationAddress("");
-                  setLocationPlaceId(null);
-                  setLocationLat(null);
-                  setLocationLng(null);
-                }
-              }}
-              onPlaceSelect={(result) => {
-                setLocationName(result.name || result.formattedAddress);
-                setLocationAddress(result.formattedAddress);
-                setLocationPlaceId(result.placeId);
-                setLocationLat(result.lat);
-                setLocationLng(result.lng);
-              }}
-              label="Venue or address"
-              placeholder="Search for a place or enter an address"
-              helperText={errors.location ?? "Start typing to search venues, parks, cafes, or addresses"}
-              error={!!errors.location}
-              placeTypes={["establishment", "geocode"]}
-              inputId="places-autocomplete-event"
-            />
+            <>
+              <PlacesAutocompleteInput
+                value={locationName}
+                onChange={(v) => {
+                  setLocationName(v);
+                  if (!v.trim()) {
+                    setLocationAddress("");
+                    setLocationPlaceId(null);
+                    setLocationLat(null);
+                    setLocationLng(null);
+                    setLocationArea(null);
+                  }
+                }}
+                onPlaceSelect={(result) => {
+                  setLocationName(result.name || result.formattedAddress);
+                  setLocationAddress(result.formattedAddress);
+                  setLocationPlaceId(result.placeId);
+                  setLocationLat(result.lat);
+                  setLocationLng(result.lng);
+                  setLocationArea(result.area ?? null);
+                }}
+                label="Venue or address"
+                placeholder="Search for a place or enter an address"
+                helperText={errors.location ?? "Start typing to search venues, parks, cafes, or addresses"}
+                error={!!errors.location}
+                placeTypes={["establishment", "geocode"]}
+                inputId="places-autocomplete-event"
+              />
+              <FormControl fullWidth size="medium" sx={{ minWidth: 200 }}>
+                <Typography
+                  component="label"
+                  htmlFor="location-visibility-select"
+                  variant="subtitle1"
+                  fontWeight={600}
+                  sx={{ display: "block", mb: 0.625 }}
+                >
+                  Who can see the exact location?
+                </Typography>
+                <Select
+                  id="location-visibility-select"
+                  value={locationVisibility}
+                  onChange={(e) => setLocationVisibility(e.target.value as typeof locationVisibility)}
+                  variant="outlined"
+                  displayEmpty={false}
+                  renderValue={(v) => {
+                    const labels: Record<typeof locationVisibility, string> = {
+                      exact_everyone: "Everyone",
+                      exact_joined_only: "Only people who join",
+                      approximate_only: "General area only",
+                    };
+                    return labels[v];
+                  }}
+                  MenuProps={{
+                    PaperProps: { sx: { minWidth: 320 } },
+                  }}
+                  sx={{ "& .MuiSelect-select": { py: 1.25 } }}
+                >
+                  <MenuItem value="exact_everyone">
+                    <ListItemText
+                      primary="Everyone"
+                      secondary="The full venue or address is shown wherever the plan appears"
+                      primaryTypographyProps={{ fontWeight: 500 }}
+                      secondaryTypographyProps={{ variant: "caption" }}
+                    />
+                  </MenuItem>
+                  <MenuItem value="exact_joined_only">
+                    <ListItemText
+                      primary="Only people who join"
+                      secondary="Others see only the general area until they respond (going or maybe)"
+                      primaryTypographyProps={{ fontWeight: 500 }}
+                      secondaryTypographyProps={{ variant: "caption" }}
+                    />
+                  </MenuItem>
+                  <MenuItem value="approximate_only">
+                    <ListItemText
+                      primary="General area only"
+                      secondary="The exact venue is never shown; everyone sees only the broader area"
+                      primaryTypographyProps={{ fontWeight: 500 }}
+                      secondaryTypographyProps={{ variant: "caption" }}
+                    />
+                  </MenuItem>
+                </Select>
+              </FormControl>
+            </>
           ) : (
             <AppTextField
               label="Online link or details"

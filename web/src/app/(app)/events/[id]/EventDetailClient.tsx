@@ -11,13 +11,17 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
+import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import LinkRoundedIcon from "@mui/icons-material/LinkRounded";
+import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import PeopleOutlineRoundedIcon from "@mui/icons-material/PeopleOutlineRounded";
 import PersonAddRoundedIcon from "@mui/icons-material/PersonAddRounded";
 import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
 import { useParams, useRouter } from "next/navigation";
+import UserAvatar from "@/components/common/UserAvatar";
 import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
-import { apiFetch, getMediaApiBaseUrl } from "@/lib/apiClient";
+import { apiFetch, getAvatarBaseUrl, getMediaApiBaseUrl } from "@/lib/apiClient";
 
 type HobbyInfo = { name: string; slug: string };
 
@@ -27,8 +31,14 @@ type EventDetail = {
   description: string | null;
   startsAt: string;
   locationType: string;
+  locationDisplay?: string;
+  locationVisibility?: string;
+  locationExact?: boolean;
+  locationArea?: string | null;
   locationName: string | null;
   locationAddress: string | null;
+  locationLat: number | null;
+  locationLng: number | null;
   onlineLink: string | null;
   maxSeats: number | null;
   visibility: string;
@@ -44,7 +54,7 @@ type EventDetail = {
   isHost: boolean;
 };
 
-type RsvpEntry = { userId: string; name: string; status: string; note: string | null };
+type RsvpEntry = { userId: string; name: string; status: string; note: string | null; avatarUrl?: string | null };
 type AltTimeEntry = { userId: string; name: string; suggestedAt: string; note: string | null };
 type InviteEntry = { userId: string | null; email: string | null; name: string };
 type SearchResult = { userId: string; displayName: string; handle: string | null };
@@ -253,10 +263,53 @@ export default function EventDetailClient() {
   const goingCount = rsvps.filter((r) => r.status === "going").length;
   const maybeCount = rsvps.filter((r) => r.status === "maybe").length;
   const isCanceled = event.status === "canceled";
+
+  // When locationExact is explicitly false the API hid the exact venue.
+  // Fall back: if the field isn't present (older API response) treat it as exact
+  // when we have coords or an address.
+  const isLocationApprox =
+    event.locationType === "in_person" &&
+    (event.locationExact === false ||
+      (event.locationExact === undefined &&
+        event.locationLat == null &&
+        event.locationAddress == null &&
+        event.locationName == null));
+
   const locationDisplay =
-    event.locationType === "online"
-      ? event.onlineLink || "Online"
-      : [event.locationName, event.locationAddress].filter(Boolean).join(", ") || "TBD";
+    event.locationDisplay ??
+    (event.locationType === "online" ? event.onlineLink || "Online" : "TBD");
+
+  // Helper text shown below the location row when the exact venue is hidden.
+  const locationHint = isLocationApprox
+    ? event.locationVisibility === "exact_joined_only"
+      ? "Approximate area shown \u2014 exact address revealed after joining"
+      : "Approximate area shown \u2014 exact address isn\u2019t shared for this plan"
+    : null;
+
+  // For the map: use exact coords at street zoom when available; otherwise use
+  // the approximate area text at a neighbourhood zoom so we don't reveal the
+  // exact venue through a pin or coords.
+  const approxQuery = event.locationArea ?? "";
+  const hasMapLocation =
+    event.locationType === "in_person" &&
+    (isLocationApprox
+      ? approxQuery.trim().length > 0
+      : (event.locationLat != null && event.locationLng != null) ||
+        (event.locationAddress ?? event.locationName ?? "").trim().length > 0);
+
+  const mapZoom = isLocationApprox ? 13 : 15;
+  const mapQuery = hasMapLocation
+    ? isLocationApprox
+      ? approxQuery.trim()
+      : event.locationLat != null && event.locationLng != null
+        ? `${event.locationLat},${event.locationLng}`
+        : (event.locationAddress ?? event.locationName ?? "").trim()
+    : "";
+
+  // "Open in Google Maps" link: exact → search by address; approximate → search
+  // by area text (safe, doesn't reveal the venue).
+  const mapsLinkQuery = isLocationApprox ? approxQuery.trim() : mapQuery;
+  const mapsLinkLabel = isLocationApprox ? "View area in Google Maps" : "Open in Google Maps";
 
   const bannerUrl = event.bannerKey
     ? `${getMediaApiBaseUrl()}/events/${event.id}/banner?v=${Date.now()}`
@@ -266,17 +319,10 @@ export default function EventDetailClient() {
     ? event.hobbies
     : event.hobby ? [{ name: event.hobby, slug: event.hobbySlug ?? "" }] : [];
 
+  const avatarBaseUrl = getAvatarBaseUrl();
+
   return (
     <Stack spacing={{ xs: 3, sm: 4 }}>
-      {/* Back */}
-      <Button
-        onClick={() => router.push("/plans")}
-        startIcon={<ArrowBackRoundedIcon />}
-        sx={{ alignSelf: "flex-start", textTransform: "none" }}
-      >
-        Your Plans
-      </Button>
-
       {/* Banner */}
       {bannerUrl && (
         <Box
@@ -309,14 +355,16 @@ export default function EventDetailClient() {
             />
           ))}
           {isCanceled && <Chip label="Canceled" size="small" color="error" />}
-          <Chip label={visibilityLabel(event.visibility)} size="small" variant="outlined" />
         </Stack>
         <Typography component="h1" variant="h4" fontWeight={700} sx={{ mb: 0.75 }}>
           {event.title}
         </Typography>
-        <Typography variant="body1" color="text.secondary">
-          {event.isHost ? "You\u2019re hosting this" : `Hosted by ${event.hostName}`}
-        </Typography>
+        <Stack spacing={0.75}>
+          <Typography variant="body1" color="text.secondary">
+            {event.isHost ? "You\u2019re hosting this" : `Hosted by ${event.hostName}`}
+          </Typography>
+          <Chip label={visibilityLabel(event.visibility)} size="small" variant="outlined" sx={{ alignSelf: "flex-start" }} />
+        </Stack>
       </Box>
 
       {/* Details card */}
@@ -326,13 +374,25 @@ export default function EventDetailClient() {
             <AccessTimeRoundedIcon sx={{ color: "primary.main" }} />
             <Typography variant="body1">{formatDateTime(event.startsAt)}</Typography>
           </Stack>
-          <Stack direction="row" spacing={1.5} alignItems="center">
+          <Stack direction="row" spacing={1.5} alignItems="flex-start">
             {event.locationType === "online" ? (
-              <LinkRoundedIcon sx={{ color: "primary.main" }} />
+              <LinkRoundedIcon sx={{ color: "primary.main", mt: "2px" }} />
+            ) : isLocationApprox ? (
+              <LockOutlinedIcon sx={{ color: "text.secondary", mt: "2px" }} />
             ) : (
-              <PlaceRoundedIcon sx={{ color: "primary.main" }} />
+              <PlaceRoundedIcon sx={{ color: "primary.main", mt: "2px" }} />
             )}
-            <Typography variant="body1">{locationDisplay}</Typography>
+            <Stack spacing={0.4}>
+              <Typography variant="body1">{locationDisplay}</Typography>
+              {locationHint && (
+                <Stack direction="row" spacing={0.5} alignItems="center">
+                  <InfoOutlinedIcon sx={{ fontSize: 14, color: "text.secondary" }} />
+                  <Typography variant="caption" color="text.secondary">
+                    {locationHint}
+                  </Typography>
+                </Stack>
+              )}
+            </Stack>
           </Stack>
           <Stack direction="row" spacing={1.5} alignItems="center">
             <PeopleOutlineRoundedIcon sx={{ color: "primary.main" }} />
@@ -343,6 +403,45 @@ export default function EventDetailClient() {
           </Stack>
         </Stack>
       </AppCard>
+
+      {/* Map (in-person events with location) */}
+      {hasMapLocation && mapQuery && process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY && (
+        <AppCard sx={{ p: 0, overflow: "hidden" }}>
+          <Box
+            component="iframe"
+            src={`https://www.google.com/maps/embed/v1/place?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&q=${encodeURIComponent(mapQuery)}&zoom=${mapZoom}`}
+            title={isLocationApprox ? "Approximate event area" : "Event location"}
+            sx={{
+              width: "100%",
+              height: 240,
+              border: "none",
+              display: "block",
+            }}
+          />
+          <Box sx={{ px: 2, py: 1.5, borderTop: "1px solid", borderColor: "divider", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 1 }}>
+            <Typography
+              component="a"
+              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapsLinkQuery)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              variant="body2"
+              sx={{
+                color: "primary.main",
+                fontWeight: 600,
+                textDecoration: "none",
+                "&:hover": { textDecoration: "underline" },
+              }}
+            >
+              {mapsLinkLabel}
+            </Typography>
+            {isLocationApprox && (
+              <Typography variant="caption" color="text.secondary" sx={{ fontStyle: "italic" }}>
+                Map shows approximate area only
+              </Typography>
+            )}
+          </Box>
+        </AppCard>
+      )}
 
       {/* Description */}
       {event.description && (
@@ -538,6 +637,76 @@ export default function EventDetailClient() {
         </AppCard>
       )}
 
+      {/* Who's in — Responses section (below Invite people, above Host actions) */}
+      {rsvps.length > 0 && (
+        <AppCard>
+          <Typography variant="h5" fontWeight={700} sx={{ mb: 0.5, fontSize: { xs: "1.25rem", sm: "1.375rem" } }}>
+            Who&apos;s in
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5, lineHeight: 1.5 }}>
+            {goingCount} going{maybeCount > 0 ? `, ${maybeCount} maybe` : ""}
+            {event.maxSeats ? ` · ${event.maxSeats} seats` : ""}
+          </Typography>
+          <Stack spacing={0}>
+            {rsvps.map((r) => (
+              <Stack
+                key={r.userId}
+                direction="row"
+                alignItems="center"
+                spacing={2}
+                sx={{
+                  py: 1.75,
+                  borderBottom: "1px solid",
+                  borderColor: "divider",
+                  "&:last-child": { borderBottom: "none" },
+                }}
+              >
+                <UserAvatar
+                  src={r.avatarUrl ? `${avatarBaseUrl}${r.avatarUrl}` : null}
+                  name={r.name}
+                  size={44}
+                  sx={{ flexShrink: 0 }}
+                />
+                <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ flex: 1, minWidth: 0 }}>
+                  <Typography variant="body1" fontWeight={600} sx={{ fontSize: "1rem" }}>
+                    {r.name}
+                  </Typography>
+                  {r.status === "going" ? (
+                    <Chip
+                      icon={<CheckCircleRoundedIcon sx={{ fontSize: "1rem !important" }} />}
+                      label="Going"
+                      size="small"
+                      color="success"
+                      variant="filled"
+                      sx={{
+                        fontWeight: 600,
+                        fontSize: "0.8125rem",
+                        "& .MuiChip-icon": { color: "inherit", opacity: 0.9 },
+                      }}
+                    />
+                  ) : r.status === "maybe" ? (
+                    <Chip
+                      label="Maybe"
+                      size="small"
+                      color="warning"
+                      variant="outlined"
+                      sx={{ fontWeight: 600, fontSize: "0.8125rem" }}
+                    />
+                  ) : (
+                    <Chip
+                      label="Can\u2019t make it"
+                      size="small"
+                      variant="outlined"
+                      sx={{ fontWeight: 500, fontSize: "0.8125rem", color: "text.secondary" }}
+                    />
+                  )}
+                </Stack>
+              </Stack>
+            ))}
+          </Stack>
+        </AppCard>
+      )}
+
       {/* Host actions */}
       {event.isHost && !isCanceled && (
         <AppCard>
@@ -545,28 +714,6 @@ export default function EventDetailClient() {
             <Button variant="outlined" color="error" onClick={handleCancel} sx={{ textTransform: "none" }}>
               Cancel this plan
             </Button>
-          </Stack>
-        </AppCard>
-      )}
-
-      {/* Attendees */}
-      {rsvps.length > 0 && (
-        <AppCard>
-          <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
-            Responses ({rsvps.length})
-          </Typography>
-          <Stack spacing={1} divider={<Divider />}>
-            {rsvps.map((r) => (
-              <Stack key={r.userId} direction="row" justifyContent="space-between" alignItems="center">
-                <Typography variant="body2">{r.name}</Typography>
-                <Chip
-                  label={r.status === "going" ? "Going" : r.status === "maybe" ? "Maybe" : "Can\u2019t make it"}
-                  size="small"
-                  color={r.status === "going" ? "success" : r.status === "maybe" ? "warning" : "default"}
-                  variant="outlined"
-                />
-              </Stack>
-            ))}
           </Stack>
         </AppCard>
       )}

@@ -12,6 +12,7 @@ import LinkRoundedIcon from "@mui/icons-material/LinkRounded";
 import PeopleOutlineRoundedIcon from "@mui/icons-material/PeopleOutlineRounded";
 import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
 import Link from "next/link";
+import { getMediaApiBaseUrl } from "@/lib/apiClient";
 
 export type PlanEvent = {
   id: string;
@@ -19,6 +20,7 @@ export type PlanEvent = {
   description?: string | null;
   startsAt: string;
   locationType: string;
+  locationDisplay?: string;
   locationName: string | null;
   locationAddress: string | null;
   onlineLink: string | null;
@@ -34,6 +36,7 @@ export type PlanEvent = {
   goingCount: number;
   maybeCount: number;
   distanceKm?: number | null;
+  bannerKey?: string | null;
 };
 
 type EventCardProps = {
@@ -83,9 +86,10 @@ export default function EventCard({ event, isPast = false }: EventCardProps) {
     ? event.hobbies
     : event.hobby ? [{ name: event.hobby, slug: event.hobbySlug ?? "" }] : [];
   const locationDisplay =
-    event.locationType === "online"
+    event.locationDisplay ??
+    (event.locationType === "online"
       ? "Online"
-      : event.locationName || event.locationAddress || "TBD";
+      : event.locationName || event.locationAddress || "TBD");
 
   const attendeeSummary =
     event.maxSeats
@@ -93,6 +97,10 @@ export default function EventCard({ event, isPast = false }: EventCardProps) {
       : event.goingCount > 0
         ? `${event.goingCount} going`
         : "No responses yet";
+
+  const bannerUrl = event.bannerKey
+    ? `${getMediaApiBaseUrl()}/events/${event.id}/banner`
+    : null;
 
   return (
     <Card
@@ -106,14 +114,46 @@ export default function EventCard({ event, isPast = false }: EventCardProps) {
         transition: "box-shadow 0.2s ease, transform 0.15s ease",
         bgcolor: isPast || isCanceled ? "grey.100" : "background.paper",
         opacity: isCanceled ? 0.65 : 1,
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        minHeight: 0,
         "&:hover": {
           boxShadow: isPast ? "0 1px 3px rgba(0,0,0,0.03)" : "0 4px 16px rgba(0,0,0,0.08)",
           transform: isPast ? "none" : "translateY(-1px)",
         },
       }}
     >
-      <CardActionArea component={Link} href={`/events/${event.id}`}>
-        <CardContent sx={{ py: { xs: 2.25, sm: 2.5 }, px: { xs: 2.25, sm: 2.5 } }}>
+      <CardActionArea
+        component={Link}
+        href={`/events/${event.id}`}
+        sx={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "stretch", minHeight: 0 }}
+      >
+        {bannerUrl && (
+          <Box
+            sx={{
+              width: "100%",
+              height: 130,
+              overflow: "hidden",
+              flexShrink: 0,
+            }}
+          >
+            <Box
+              component="img"
+              src={bannerUrl}
+              alt=""
+              sx={{
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                display: "block",
+                filter: isPast || isCanceled ? "grayscale(40%)" : "none",
+                opacity: isPast || isCanceled ? 0.8 : 1,
+              }}
+            />
+          </Box>
+        )}
+        <CardContent sx={{ py: { xs: 2.25, sm: 2.5 }, px: { xs: 2.25, sm: 2.5 }, flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
           {/* Top row: hobby chip + visibility */}
           <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5 }}>
             <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
@@ -195,6 +235,8 @@ export default function EventCard({ event, isPast = false }: EventCardProps) {
               </Typography>
             </Box>
           )}
+          {/* Spacer: fills remaining space so cards in a row share equal height */}
+          <Box sx={{ flex: 1, minHeight: 0 }} />
         </CardContent>
       </CardActionArea>
     </Card>

@@ -118,7 +118,7 @@ export default function PlansPage() {
               />
               <Grid container spacing={2}>
                 {hosted.map((event) => (
-                  <Grid key={event.id} size={{ xs: 12, sm: 6, md: 4 }}>
+                  <Grid key={event.id} size={{ xs: 12, sm: 6, md: 4 }} sx={{ display: "flex" }}>
                     <EventCard event={event} isPast={isPast} />
                   </Grid>
                 ))}
@@ -135,7 +135,7 @@ export default function PlansPage() {
               />
               <Grid container spacing={2}>
                 {joined.map((event) => (
-                  <Grid key={event.id} size={{ xs: 12, sm: 6, md: 4 }}>
+                  <Grid key={event.id} size={{ xs: 12, sm: 6, md: 4 }} sx={{ display: "flex" }}>
                     <EventCard event={event} isPast={isPast} />
                   </Grid>
                 ))}

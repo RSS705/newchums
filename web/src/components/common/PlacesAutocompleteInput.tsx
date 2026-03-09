@@ -15,6 +15,8 @@ export type PlaceResult = {
   placeId: string;
   lat: number;
   lng: number;
+  /** Approximate area for privacy display (e.g. "Seattle, WA"). Null if unavailable. */
+  area: string | null;
 };
 
 export type PlacesAutocompleteInputProps = {
@@ -57,6 +59,31 @@ export default function PlacesAutocompleteInput({
   const listenerRef = React.useRef<google.maps.MapsEventListener | null>(null);
   const lastEmittedRef = React.useRef<string>(value);
 
+  /**
+   * Build area string from address_components. Includes neighbourhood or
+   * sublocality when present, giving a more precise approximate location
+   * (e.g. "Byron, London, ON" instead of just "London, ON").
+   */
+  const buildAreaFromComponents = (components: google.maps.GeocoderAddressComponent[]): string | null => {
+    let neighborhood: string | null = null;
+    let locality: string | null = null;
+    let admin1: string | null = null;
+    for (const c of components) {
+      if (!neighborhood && (
+        c.types.includes("neighborhood") ||
+        c.types.includes("sublocality_level_1") ||
+        c.types.includes("sublocality")
+      )) {
+        neighborhood = c.long_name;
+      }
+      if (c.types.includes("locality")) locality = c.long_name;
+      if (c.types.includes("administrative_area_level_1")) admin1 = c.short_name || c.long_name;
+    }
+    const city = locality && admin1 ? `${locality}, ${admin1}` : locality || admin1;
+    if (!city) return neighborhood || null;
+    return neighborhood ? `${neighborhood}, ${city}` : city;
+  };
+
   const initAutocomplete = React.useCallback(
     (el: HTMLInputElement) => {
       if (autocompleteRef.current || !el || typeof google === "undefined") return;
@@ -69,17 +96,36 @@ export default function PlacesAutocompleteInput({
         const place = autocomplete.getPlace();
         const addr = place.formatted_address;
         const geometry = place.geometry?.location;
-        if (addr && geometry) {
+        const placeId = place.place_id ?? "";
+
+        if (!addr || !geometry) return;
+
+        const emitResult = (area: string | null) => {
           lastEmittedRef.current = place.name || addr;
           onChange(place.name || addr);
           onPlaceSelect({
             formattedAddress: addr,
             name: place.name ?? null,
-            placeId: place.place_id ?? "",
+            placeId,
             lat: geometry.lat(),
             lng: geometry.lng(),
+            area,
           });
+        };
+
+        if (!placeId) {
+          emitResult(null);
+          return;
         }
+
+        const service = new google.maps.places.PlacesService(document.createElement("div"));
+        service.getDetails({ placeId, fields: ["address_components"] }, (details, status) => {
+          let area: string | null = null;
+          if (status === google.maps.places.PlacesServiceStatus.OK && details?.address_components) {
+            area = buildAreaFromComponents(details.address_components);
+          }
+          emitResult(area);
+        });
       });
     },
     [onChange, onPlaceSelect],

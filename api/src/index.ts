@@ -2839,56 +2839,100 @@ app.post("/admin/interests/merge", async (c) => {
     if (!targetRow) return c.json({ ok: false, error: { code: "NOT_FOUND", message: "Target interest not found" } }, 404);
     if (targetRow.is_deleted) return c.json({ ok: false, error: { code: "INVALID_INPUT", message: "Target interest is deleted" } }, 400);
 
-    // Find all user_interests rows pointing at source
+    // ── 1. Migrate user_interests ────────────────────────────────────────────
     const sourceUserRows = (await sql`
       SELECT user_id FROM user_interests WHERE interest_id = ${sourceInterestId}
     `) as { user_id: string }[];
 
-    if (sourceUserRows.length === 0) {
-      // No user associations to migrate — just soft-delete the source
-      await sql`
-        UPDATE interests
-        SET is_deleted = true,
-            deleted_at = now(),
-            deleted_by_user_id = ${admin.id},
-            merged_into_interest_id = ${targetInterestId}
-        WHERE id = ${sourceInterestId}
-      `;
-      return c.json({ ok: true, movedCount: 0, dedupedCount: 0, sourceId: sourceInterestId, targetId: targetInterestId });
+    let movedCount = 0;
+    let dedupedCount = 0;
+
+    if (sourceUserRows.length > 0) {
+      const sourceUserIds = sourceUserRows.map((r) => r.user_id);
+      const alreadyHaveTarget = (await sql`
+        SELECT user_id FROM user_interests
+        WHERE interest_id = ${targetInterestId}
+          AND user_id = ANY(${sourceUserIds})
+      `) as { user_id: string }[];
+      const alreadyHaveTargetSet = new Set(alreadyHaveTarget.map((r) => r.user_id));
+
+      const toUpdate = sourceUserIds.filter((uid) => !alreadyHaveTargetSet.has(uid));
+      const toDelete = sourceUserIds.filter((uid) => alreadyHaveTargetSet.has(uid));
+
+      if (toUpdate.length > 0) {
+        await sql`
+          UPDATE user_interests
+          SET interest_id = ${targetInterestId}
+          WHERE interest_id = ${sourceInterestId}
+            AND user_id = ANY(${toUpdate})
+        `;
+      }
+      if (toDelete.length > 0) {
+        await sql`
+          DELETE FROM user_interests
+          WHERE interest_id = ${sourceInterestId}
+            AND user_id = ANY(${toDelete})
+        `;
+      }
+      movedCount = toUpdate.length;
+      dedupedCount = toDelete.length;
     }
 
-    // Find which of those users already have the target interest
-    const sourceUserIds = sourceUserRows.map((r) => r.user_id);
-    const alreadyHaveTarget = (await sql`
-      SELECT user_id FROM user_interests
-      WHERE interest_id = ${targetInterestId}
-        AND user_id = ANY(${sourceUserIds})
-    `) as { user_id: string }[];
-    const alreadyHaveTargetSet = new Set(alreadyHaveTarget.map((r) => r.user_id));
+    // ── 2. Migrate events (legacy single-interest FK) ─────────────────────────
+    // Update the denormalised interest_id column on any event that still
+    // points directly at the source.
+    await sql`
+      UPDATE newchums.events
+      SET interest_id = ${targetInterestId}
+      WHERE interest_id = ${sourceInterestId}
+    `;
 
-    const toUpdate = sourceUserIds.filter((uid) => !alreadyHaveTargetSet.has(uid));
-    const toDelete = sourceUserIds.filter((uid) => alreadyHaveTargetSet.has(uid));
+    // ── 3. Migrate event_interests (many-to-many) ─────────────────────────────
+    const sourceEventRows = (await sql`
+      SELECT event_id FROM newchums.event_interests
+      WHERE interest_id = ${sourceInterestId}
+    `) as { event_id: string }[];
 
-    // Move users without target: update interest_id to target
-    if (toUpdate.length > 0) {
-      await sql`
-        UPDATE user_interests
-        SET interest_id = ${targetInterestId}
-        WHERE interest_id = ${sourceInterestId}
-          AND user_id = ANY(${toUpdate})
-      `;
+    let eventsMovedCount = 0;
+    let eventsDedupedCount = 0;
+
+    if (sourceEventRows.length > 0) {
+      const sourceEventIds = sourceEventRows.map((r) => r.event_id);
+
+      // Which of those events already have the target interest linked?
+      const alreadyHaveTargetEvents = (await sql`
+        SELECT event_id FROM newchums.event_interests
+        WHERE interest_id = ${targetInterestId}
+          AND event_id = ANY(${sourceEventIds})
+      `) as { event_id: string }[];
+      const alreadyHaveTargetEventSet = new Set(alreadyHaveTargetEvents.map((r) => r.event_id));
+
+      const eventsToUpdate = sourceEventIds.filter((eid) => !alreadyHaveTargetEventSet.has(eid));
+      const eventsToDedup  = sourceEventIds.filter((eid) =>  alreadyHaveTargetEventSet.has(eid));
+
+      // Remap events that don't yet have the target
+      if (eventsToUpdate.length > 0) {
+        await sql`
+          UPDATE newchums.event_interests
+          SET interest_id = ${targetInterestId}
+          WHERE interest_id = ${sourceInterestId}
+            AND event_id = ANY(${eventsToUpdate})
+        `;
+        eventsMovedCount = eventsToUpdate.length;
+      }
+
+      // Remove the now-duplicate source link for events that already have target
+      if (eventsToDedup.length > 0) {
+        await sql`
+          DELETE FROM newchums.event_interests
+          WHERE interest_id = ${sourceInterestId}
+            AND event_id = ANY(${eventsToDedup})
+        `;
+        eventsDedupedCount = eventsToDedup.length;
+      }
     }
 
-    // Dedup: remove source rows for users who already have target
-    if (toDelete.length > 0) {
-      await sql`
-        DELETE FROM user_interests
-        WHERE interest_id = ${sourceInterestId}
-          AND user_id = ANY(${toDelete})
-      `;
-    }
-
-    // Soft-delete the source interest and record the merge target
+    // ── 4. Soft-delete source interest ────────────────────────────────────────
     await sql`
       UPDATE interests
       SET is_deleted = true,
@@ -2900,8 +2944,10 @@ app.post("/admin/interests/merge", async (c) => {
 
     return c.json({
       ok: true,
-      movedCount: toUpdate.length,
-      dedupedCount: toDelete.length,
+      movedCount,
+      dedupedCount,
+      eventsMovedCount,
+      eventsDedupedCount,
       sourceId: sourceInterestId,
       targetId: targetInterestId,
     });
@@ -3751,7 +3797,46 @@ app.get("/public/users/:handle/chums", async (c) => {
 
 const VALID_VISIBILITY = ["invite_only", "chums_only", "public"] as const;
 const VALID_LOCATION_TYPE = ["in_person", "online"] as const;
+const VALID_LOCATION_VISIBILITY = ["exact_everyone", "exact_joined_only", "approximate_only"] as const;
 const VALID_RSVP_STATUS = ["going", "maybe", "cant_make_it"] as const;
+
+/** Build location display without duplicating street/address when name is a prefix of address. */
+function buildLocationDisplay(name: string | null, address: string | null): string {
+  const n = name?.trim();
+  const a = address?.trim();
+  if (!n && !a) return "TBD";
+  if (!a) return n!;
+  if (!n) return a;
+  if (a === n || a.startsWith(n + ", ") || a.startsWith(n + " ")) return a;
+  return `${n}, ${a}`;
+}
+
+/**
+ * Derive an approximate area description from a full address suitable for
+ * display when the exact venue must remain hidden. Strips the street number
+ * and name (first comma-separated segment), postal codes, and country, leaving
+ * the neighbourhood/district, city, and province/state.
+ *
+ * Examples:
+ *   "2295 Kains Rd, Byron, London, ON N6K 5E2, Canada" → "Byron, London, ON"
+ *   "2295 Kains Rd, London, ON N6K 5E2, Canada"        → "London, ON"
+ *   "123 Main St, Toronto, ON M5H 1A1, Canada"         → "Toronto, ON"
+ */
+function deriveApproxArea(address: string | null): string | null {
+  if (!address) return null;
+  const skipCountry = new Set(["canada", "united states", "usa", "united kingdom", "uk", "australia", "new zealand"]);
+  const stripped = address
+    .replace(/\b[A-Z]\d[A-Z]\s*\d[A-Z]\d\b/g, "")  // Canadian postal codes
+    .replace(/\b\d{5}(-\d{4})?\b/g, "");             // US zip codes
+  const parts = stripped
+    .split(",")
+    .map((s) => s.trim())
+    .filter((p) => p && !skipCountry.has(p.toLowerCase()));
+  if (parts.length === 0) return null;
+  // Skip first segment (street address); everything else is area/city/province
+  const areaParts = parts.length > 1 ? parts.slice(1) : parts;
+  return areaParts.filter(Boolean).join(", ") || null;
+}
 
 /** POST /events — create a new event/plan */
 app.post("/events", async (c) => {
@@ -3772,10 +3857,17 @@ app.post("/events", async (c) => {
   if (!titleCheck.ok) return c.json({ ok: false, error: "INAPPROPRIATE_TEXT", field: "title" }, 400);
 
   const description = body.description ? String(body.description).trim().slice(0, 2000) : null;
-  const interestIds: string[] = Array.isArray(body.interest_ids)
+  // Seed from any explicit UUIDs the client already knows
+  const seedInterestIds: string[] = Array.isArray(body.interest_ids)
     ? (body.interest_ids as string[]).map(String).filter(Boolean).slice(0, 10)
     : body.interest_id ? [String(body.interest_id)] : [];
-  const interestId = interestIds[0] ?? null;
+
+  // Parse interest_items ({slug, name}) so we can create-or-look-up interests
+  // the same way the profile does, enabling new hobby creation from the plan form.
+  const rawInterestItems = Array.isArray(body.interest_items)
+    ? (body.interest_items as Array<{ slug?: string; name?: string }>).slice(0, 10)
+    : [];
+
   const startsAt = body.starts_at ? String(body.starts_at) : null;
   if (!startsAt) return c.json({ ok: false, error: "VALIDATION", message: "Start date/time is required", field: "starts_at" }, 400);
 
@@ -3802,22 +3894,103 @@ app.post("/events", async (c) => {
   const locationPlaceId = body.location_place_id ? String(body.location_place_id) : null;
   const locationLat = body.location_lat != null ? Number(body.location_lat) : null;
   const locationLng = body.location_lng != null ? Number(body.location_lng) : null;
+  const locationVisibility =
+    locationType === "in_person"
+      ? (VALID_LOCATION_VISIBILITY.includes(String(body.location_visibility ?? "exact_everyone") as typeof VALID_LOCATION_VISIBILITY[number])
+          ? String(body.location_visibility)
+          : "exact_everyone")
+      : "exact_everyone";
+  let locationArea = body.location_area ? String(body.location_area).trim().slice(0, 200) : null;
+  if (!locationArea && (locationVisibility === "approximate_only" || locationVisibility === "exact_joined_only") && locationAddress) {
+    locationArea = deriveApproxArea(locationAddress);
+  }
   const onlineLink = body.online_link ? String(body.online_link).trim().slice(0, 500) : null;
 
   try {
-    if (interestId) {
-      const interest = (await sql`SELECT id FROM newchums.interests WHERE id = ${interestId} AND is_deleted = false`) as { id: string }[];
-      if (interest.length === 0) return c.json({ ok: false, error: "VALIDATION", message: "Invalid hobby", field: "interest_id" }, 400);
+    // --- Resolve interests (look up existing or create new) ---
+    // Validate and canonicalise any explicitly provided UUIDs
+    const resolvedInterestIds: string[] = [];
+    for (const iid of seedInterestIds) {
+      const rows = (await sql`SELECT id FROM newchums.interests WHERE id = ${iid} AND is_deleted = false`) as { id: string }[];
+      if (rows.length > 0 && !resolvedInterestIds.includes(iid)) resolvedInterestIds.push(iid);
     }
+
+    // Process interest_items — create missing interests then collect IDs
+    if (rawInterestItems.length > 0) {
+      const slugsToResolve: { slug: string; name: string }[] = [];
+      for (const it of rawInterestItems) {
+        const slug = it?.slug ? nameToSlug(String(it.slug).trim()) : "";
+        const name = it?.name ? String(it.name).trim().replace(/\s+/g, " ") : "";
+        if (!slug || !name) continue;
+        if (name.length > 50)
+          return c.json({ ok: false, error: "VALIDATION", message: "Hobby name must be 50 characters or less", field: "hobby" }, 400);
+        const hobbyCheck = validateCleanText(name, "hobby");
+        if (!hobbyCheck.ok)
+          return c.json({ ok: false, error: "INAPPROPRIATE_TEXT", field: "hobby", message: hobbyCheck.reason ?? "That hobby name isn't allowed." }, 400);
+        slugsToResolve.push({ slug, name });
+      }
+
+      if (slugsToResolve.length > 0) {
+        const slugList = slugsToResolve.map((s) => s.slug.toLowerCase());
+        const existingRows = (await sql`
+          SELECT id, slug, is_deleted, merged_into_interest_id
+          FROM newchums.interests WHERE LOWER(slug) = ANY(${slugList})
+        `) as { id: string; slug: string; is_deleted: boolean; merged_into_interest_id: string | null }[];
+        const existingBySlug = new Map(existingRows.map((r) => [r.slug.toLowerCase(), r]));
+
+        const mergeTargetIds = [...new Set(
+          existingRows.filter((r) => r.is_deleted && r.merged_into_interest_id).map((r) => r.merged_into_interest_id!),
+        )];
+        const mergeTargetRows = mergeTargetIds.length > 0
+          ? (await sql`SELECT id, slug, is_deleted FROM newchums.interests WHERE id = ANY(${mergeTargetIds})`) as { id: string; slug: string; is_deleted: boolean }[]
+          : [];
+        const mergeTargetById = new Map(mergeTargetRows.map((r) => [r.id, r]));
+
+        for (const { slug, name } of slugsToResolve) {
+          const existing = existingBySlug.get(slug.toLowerCase());
+          let resolvedId: string | null = null;
+
+          if (!existing) {
+            // New interest: create it, then fetch the id (handles race conditions)
+            try {
+              await sql`
+                INSERT INTO newchums.interests (name, category, slug, sort_order, is_seed, created_by_user_id)
+                VALUES (${name}, '', ${slug}, 0, false, ${userId})
+                ON CONFLICT (slug) DO NOTHING
+              `;
+            } catch { /* ignore duplicate from concurrent insert */ }
+            const fetched = (await sql`
+              SELECT id FROM newchums.interests WHERE LOWER(slug) = LOWER(${slug}) AND is_deleted = false LIMIT 1
+            `) as { id: string }[];
+            resolvedId = fetched[0]?.id ?? null;
+          } else if (!existing.is_deleted) {
+            resolvedId = existing.id;
+          } else if (existing.merged_into_interest_id) {
+            const target = mergeTargetById.get(existing.merged_into_interest_id);
+            if (target && !target.is_deleted) resolvedId = target.id;
+            // else: merged target also gone — skip silently
+          }
+          // else: deleted with no merge target — skip silently
+
+          if (resolvedId && !resolvedInterestIds.includes(resolvedId)) {
+            resolvedInterestIds.push(resolvedId);
+          }
+        }
+      }
+    }
+
+    const interestId = resolvedInterestIds[0] ?? null;
 
     const rows = (await sql`
       INSERT INTO newchums.events (
         host_user_id, title, description, interest_id, starts_at,
-        location_type, location_name, location_address, location_place_id, location_lat, location_lng, online_link,
+        location_type, location_name, location_address, location_place_id, location_lat, location_lng,
+        location_visibility, location_area, online_link,
         max_seats, visibility, status, allow_alt_times
       ) VALUES (
         ${userId}, ${title}, ${description}, ${interestId}, ${startsDate.toISOString()},
-        ${locationType}, ${locationName}, ${locationAddress}, ${locationPlaceId}, ${locationLat}, ${locationLng}, ${onlineLink},
+        ${locationType}, ${locationName}, ${locationAddress}, ${locationPlaceId}, ${locationLat}, ${locationLng},
+        ${locationVisibility}, ${locationArea}, ${onlineLink},
         ${maxSeats}, ${visibility}, ${status}, ${allowAltTimes}
       )
       RETURNING id, created_at
@@ -3825,11 +3998,18 @@ app.post("/events", async (c) => {
 
     const eventId = rows[0].id;
 
-    for (const iid of interestIds) {
+    for (const iid of resolvedInterestIds) {
       try {
         await sql`INSERT INTO newchums.event_interests (event_id, interest_id) VALUES (${eventId}, ${iid}) ON CONFLICT DO NOTHING`;
       } catch { /* skip invalid interest refs */ }
     }
+
+    // Creator counts as attending: add host as RSVP "going" so they appear in participant counts and event details
+    await sql`
+      INSERT INTO newchums.event_rsvps (event_id, user_id, status)
+      VALUES (${eventId}, ${userId}, 'going')
+      ON CONFLICT (event_id, user_id) DO NOTHING
+    `;
 
     const invitees = Array.isArray(body.invitees) ? (body.invitees as Array<{ user_id?: string; email?: string }>) : [];
     for (const inv of invitees.slice(0, 50)) {
@@ -3912,9 +4092,9 @@ app.get("/events/mine", async (c) => {
     const rows = (await sql`
       SELECT
         e.id, e.title, e.description, e.starts_at, e.location_type,
-        e.location_name, e.location_address, e.online_link,
+        e.location_name, e.location_address, e.location_visibility, e.location_area, e.online_link,
         e.max_seats, e.visibility, e.status, e.allow_alt_times,
-        e.host_user_id, e.created_at, e.canceled_at,
+        e.host_user_id, e.created_at, e.canceled_at, e.banner_key,
         COALESCE(
           (SELECT json_agg(json_build_object('name', ii.name, 'slug', ii.slug))
            FROM newchums.event_interests ei2
@@ -3944,9 +4124,10 @@ app.get("/events/mine", async (c) => {
     `) as Array<{
       id: string; title: string; description: string | null; starts_at: string;
       location_type: string; location_name: string | null; location_address: string | null;
-      online_link: string | null; max_seats: number | null; visibility: string;
+      location_visibility: string | null; location_area: string | null; online_link: string | null;
+      max_seats: number | null; visibility: string;
       status: string; allow_alt_times: boolean; host_user_id: string;
-      created_at: string; canceled_at: string | null;
+      created_at: string; canceled_at: string | null; banner_key: string | null;
       hobbies: Array<{ name: string; slug: string }> | string;
       interest_name: string | null; interest_slug: string | null;
       host_name: string | null; host_username: string | null;
@@ -3959,14 +4140,28 @@ app.get("/events/mine", async (c) => {
       const hobbyList = Array.isArray(parsedHobbies) && parsedHobbies.length > 0
         ? parsedHobbies as Array<{ name: string; slug: string }>
         : r.interest_name ? [{ name: r.interest_name, slug: r.interest_slug ?? "" }] : [];
+      const locVis = r.location_visibility ?? "exact_everyone";
+      const hasRsvp = r.my_rsvp_status != null;
+      const canShowExact =
+        r.location_type !== "in_person" ||
+        locVis === "exact_everyone" ||
+        r.is_host ||
+        (locVis === "exact_joined_only" && hasRsvp);
+      const locationDisplay =
+        r.location_type === "online"
+          ? (r.online_link || "Online")
+          : canShowExact
+            ? buildLocationDisplay(r.location_name, r.location_address)
+            : (r.location_area || "General area");
       return {
         id: r.id,
         title: r.title,
         description: r.description,
         startsAt: r.starts_at,
         locationType: r.location_type,
-        locationName: r.location_name,
-        locationAddress: r.location_address,
+        locationDisplay,
+        locationName: canShowExact ? r.location_name : null,
+        locationAddress: canShowExact ? r.location_address : null,
         onlineLink: r.online_link,
         maxSeats: r.max_seats,
         visibility: r.visibility,
@@ -3982,6 +4177,7 @@ app.get("/events/mine", async (c) => {
         myRsvpStatus: r.my_rsvp_status,
         goingCount: r.going_count,
         maybeCount: r.maybe_count,
+        bannerKey: r.banner_key ?? null,
       };
     });
 
@@ -4035,10 +4231,10 @@ app.get("/events/explore", async (c) => {
     const rows = (await sql`
       SELECT
         e.id, e.title, e.description, e.starts_at, e.location_type,
-        e.location_name, e.location_address, e.online_link,
+        e.location_name, e.location_address, e.location_visibility, e.location_area, e.online_link,
         e.location_lat, e.location_lng,
         e.max_seats, e.visibility, e.status, e.allow_alt_times,
-        e.host_user_id, e.created_at,
+        e.host_user_id, e.created_at, e.banner_key,
         COALESCE(
           (SELECT json_agg(json_build_object('name', ii.name, 'slug', ii.slug))
            FROM newchums.event_interests ei2
@@ -4088,9 +4284,10 @@ app.get("/events/explore", async (c) => {
     `) as Array<{
       id: string; title: string; description: string | null; starts_at: string;
       location_type: string; location_name: string | null; location_address: string | null;
-      online_link: string | null; location_lat: number | null; location_lng: number | null;
+      location_visibility: string | null; location_area: string | null; online_link: string | null;
+      location_lat: number | null; location_lng: number | null;
       max_seats: number | null; visibility: string; status: string; allow_alt_times: boolean;
-      host_user_id: string; created_at: string;
+      host_user_id: string; created_at: string; banner_key: string | null;
       hobbies: Array<{ name: string; slug: string }> | string;
       interest_name: string | null; interest_slug: string | null;
       host_name: string | null; host_username: string | null;
@@ -4108,14 +4305,28 @@ app.get("/events/explore", async (c) => {
       const hobbyList = Array.isArray(parsedHobbies) && parsedHobbies.length > 0
         ? parsedHobbies as Array<{ name: string; slug: string }>
         : r.interest_name ? [{ name: r.interest_name, slug: r.interest_slug ?? "" }] : [];
+      const locVis = r.location_visibility ?? "exact_everyone";
+      const hasRsvp = r.my_rsvp_status != null;
+      const canShowExact =
+        r.location_type !== "in_person" ||
+        locVis === "exact_everyone" ||
+        r.is_host ||
+        (locVis === "exact_joined_only" && hasRsvp);
+      const locationDisplay =
+        r.location_type === "online"
+          ? (r.online_link || "Online")
+          : canShowExact
+            ? buildLocationDisplay(r.location_name, r.location_address)
+            : (r.location_area || "General area");
       return {
         id: r.id,
         title: r.title,
         description: r.description,
         startsAt: r.starts_at,
         locationType: r.location_type,
-        locationName: r.location_name,
-        locationAddress: r.location_address,
+        locationDisplay,
+        locationName: canShowExact ? r.location_name : null,
+        locationAddress: canShowExact ? r.location_address : null,
         onlineLink: r.online_link,
         maxSeats: r.max_seats,
         visibility: r.visibility,
@@ -4129,6 +4340,7 @@ app.get("/events/explore", async (c) => {
         goingCount: r.going_count,
         maybeCount: r.maybe_count,
         distanceKm: r.distance_km !== null ? Math.round(r.distance_km * 10) / 10 : null,
+        bannerKey: r.banner_key ?? null,
       };
     });
 
@@ -4165,6 +4377,24 @@ app.get("/events/:id", async (c) => {
     const event = rows[0];
 
     const isHost = userId && event.host_user_id === userId;
+    const rsvpRows = userId ? (await sql`SELECT 1 FROM newchums.event_rsvps WHERE event_id = ${eventId} AND user_id = ${userId}`) as unknown[] : [];
+    const hasRsvp = rsvpRows.length > 0;
+    const locVis = (event.location_visibility as string) ?? "exact_everyone";
+    const locArea = (event.location_area as string | null) ||
+      deriveApproxArea(event.location_address as string | null);
+    const canShowExactLocation =
+      event.location_type !== "in_person" ||
+      locVis === "exact_everyone" ||
+      isHost === true ||
+      (locVis === "exact_joined_only" && hasRsvp === true);
+    const approxAreaText = locArea || "General area";
+    const locationDisplayText =
+      event.location_type === "online"
+        ? (event.online_link as string) || "Online"
+        : canShowExactLocation
+          ? buildLocationDisplay(event.location_name as string | null, event.location_address as string | null)
+          : approxAreaText;
+
     if (event.status === "draft" && !isHost) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
 
     if (event.visibility === "invite_only" && !isHost) {
@@ -4183,12 +4413,12 @@ app.get("/events/:id", async (c) => {
     }
 
     const rsvps = (await sql`
-      SELECT er.status, er.note, er.user_id, u.name, u.username
+      SELECT er.status, er.note, er.user_id, u.name, u.username, u.avatar_key, u.avatar_updated_at
       FROM newchums.event_rsvps er
       JOIN newchums.users u ON u.id = er.user_id
       WHERE er.event_id = ${eventId}
       ORDER BY er.created_at ASC
-    `) as Array<{ status: string; note: string | null; user_id: string; name: string | null; username: string | null }>;
+    `) as Array<{ status: string; note: string | null; user_id: string; name: string | null; username: string | null; avatar_key: string | null; avatar_updated_at: string | Date | null }>;
 
     const altTimes = (await sql`
       SELECT eat.suggested_at, eat.note, eat.user_id, u.name, u.username
@@ -4228,8 +4458,14 @@ app.get("/events/:id", async (c) => {
         description: event.description,
         startsAt: event.starts_at,
         locationType: event.location_type,
-        locationName: event.location_name,
-        locationAddress: event.location_address,
+        locationDisplay: locationDisplayText,
+        locationVisibility: locVis,
+        locationExact: canShowExactLocation,
+        locationArea: !canShowExactLocation ? approxAreaText : null,
+        locationName: canShowExactLocation ? event.location_name : null,
+        locationAddress: canShowExactLocation ? event.location_address : null,
+        locationLat: canShowExactLocation ? (event.location_lat ?? null) : null,
+        locationLng: canShowExactLocation ? (event.location_lng ?? null) : null,
         onlineLink: event.online_link,
         maxSeats: event.max_seats,
         visibility: event.visibility,
@@ -4250,6 +4486,7 @@ app.get("/events/:id", async (c) => {
         name: r.name?.trim() || r.username?.replace(/^@/, "") || "Someone",
         status: r.status,
         note: r.note,
+        avatarUrl: buildAvatarUrl(r.user_id, r.avatar_key, r.avatar_updated_at, c.env.MEDIA_BUCKET),
       })),
       altTimes: altTimes.map((a) => ({
         userId: a.user_id,

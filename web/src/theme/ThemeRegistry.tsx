@@ -13,7 +13,10 @@ export default function ThemeRegistry({ children }: { children: React.ReactNode 
   return (
     <AppRouterCacheProvider options={{ enableCssLayer: true }}>
       <ThemeProvider theme={theme}>
-        <LocalizationProvider dateAdapter={AdapterDayjs}>
+        <LocalizationProvider
+          dateAdapter={AdapterDayjs}
+          dateFormats={{ hours12h: "h", fullTime12h: "h:mm A", keyboardDateTime12h: "L h:mm A" }}
+        >
           <CssBaseline />
           <div id="app-scroll-root">
             <ToastProvider>{children}</ToastProvider>
