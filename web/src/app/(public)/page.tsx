@@ -11,7 +11,7 @@ import LandingLayout from "@/components/landing/LandingLayout";
 export const metadata: Metadata = {
   title: "NewChums | Start, share, and join hobby-based plans nearby",
   description:
-    "One place for your plans. Create them, share invites, or discover gatherings near you, without the group chat chaos.",
+    "One place for your plans. Create them, share invites, or discover gatherings near you, around the things you enjoy.",
 };
 
 export default async function RootPage() {

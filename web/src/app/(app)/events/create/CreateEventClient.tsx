@@ -22,6 +22,7 @@ import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import AddPhotoAlternateRoundedIcon from "@mui/icons-material/AddPhotoAlternateRounded";
+import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { TimePicker } from "@mui/x-date-pickers/TimePicker";
 import dayjs, { type Dayjs } from "dayjs";
@@ -34,6 +35,7 @@ import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
 import { loadGooglePlacesScript } from "@/lib/loadGooglePlaces";
 import { isDuplicate, nameToSlug } from "@/lib/interestUtils";
 import { validateCleanText } from "@/lib/contentSafety";
+import { BANNER_PRESETS, renderBannerPreset, suggestPreset } from "@/lib/eventBanners";
 
 type HobbyOption = { id?: string; name: string; slug: string };
 
@@ -64,6 +66,7 @@ export default function CreateEventClient() {
 
   const [visibility, setVisibility] = useState<"public" | "chums_only" | "invite_only">("public");
   const [allowAltTimes, setAllowAltTimes] = useState(true);
+  const [requireReconfirmation, setRequireReconfirmation] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -82,6 +85,10 @@ export default function CreateEventClient() {
   const [bannerCroppedArea, setBannerCroppedArea] = useState<Area | null>(null);
   const [bannerDialogOpen, setBannerDialogOpen] = useState(false);
   const bannerInputRef = useRef<HTMLInputElement>(null);
+  // Which system preset is active (null = none / custom upload)
+  const [selectedPresetSlug, setSelectedPresetSlug] = useState<string | null>(null);
+  const [presetRendering, setPresetRendering] = useState(false);
+  const autoSuggestedRef = useRef(false);
 
   useEffect(() => {
     loadGooglePlacesScript().catch(() => {});
@@ -147,6 +154,33 @@ export default function CreateEventClient() {
     }
   }, [bannerCropSrc, bannerCroppedArea, toast]);
 
+  const handlePresetSelect = useCallback(async (slug: string) => {
+    if (presetRendering) return;
+    setPresetRendering(true);
+    try {
+      const blob = await renderBannerPreset(slug);
+      if (bannerPreview && selectedPresetSlug) URL.revokeObjectURL(bannerPreview);
+      const file = new File([blob], `banner-${slug}.webp`, { type: "image/webp" });
+      setBannerFile(file);
+      setBannerPreview(URL.createObjectURL(file));
+      setSelectedPresetSlug(slug);
+    } catch {
+      toast.error("Failed to generate banner");
+    } finally {
+      setPresetRendering(false);
+    }
+  }, [presetRendering, bannerPreview, selectedPresetSlug, toast]);
+
+  // Auto-suggest a preset based on the first hobby selected (fires once)
+  useEffect(() => {
+    if (autoSuggestedRef.current) return;
+    if (!selectedHobbies.length || bannerFile) return;
+    const suggestion = suggestPreset(selectedHobbies.map((h) => h.slug));
+    if (!suggestion) return;
+    autoSuggestedRef.current = true;
+    void handlePresetSelect(suggestion);
+  }, [selectedHobbies, bannerFile, handlePresetSelect]);
+
   const validate = (): boolean => {
     const errs: Record<string, string> = {};
     if (!title.trim()) errs.title = "Give your plan a title";
@@ -187,6 +221,7 @@ export default function CreateEventClient() {
       max_seats: maxSeats ? Number(maxSeats) : null,
       visibility,
       allow_alt_times: allowAltTimes,
+      require_reconfirmation: requireReconfirmation,
       status: "published",
     };
 
@@ -279,11 +314,49 @@ export default function CreateEventClient() {
       {/* Banner image */}
       <AppCard>
         <Stack spacing={2}>
-          <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
-            Banner image
-          </Typography>
+          <Box>
+            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
+              Banner image
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              Pick a colour theme or upload your own photo.
+            </Typography>
+          </Box>
+
+          {/* Preset swatches */}
+          <Stack direction="row" flexWrap="wrap" gap={1} useFlexGap>
+            {BANNER_PRESETS.map((preset) => {
+              const isSelected = selectedPresetSlug === preset.slug;
+              return (
+                <Box
+                  key={preset.slug}
+                  onClick={() => !presetRendering && handlePresetSelect(preset.slug)}
+                  title={preset.label}
+                  sx={{
+                    width: 52,
+                    height: 36,
+                    borderRadius: 1.5,
+                    background: preset.gradient,
+                    cursor: presetRendering ? "wait" : "pointer",
+                    border: "2px solid",
+                    borderColor: isSelected ? "primary.main" : "transparent",
+                    boxShadow: isSelected ? "0 0 0 2px rgba(99,102,241,0.35)" : "0 1px 3px rgba(0,0,0,0.15)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    transition: "transform 0.1s ease, box-shadow 0.1s ease",
+                    "&:hover": { transform: presetRendering ? "none" : "scale(1.06)" },
+                  }}
+                >
+                  {isSelected && <CheckRoundedIcon sx={{ fontSize: 16, color: "white", filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.4))" }} />}
+                </Box>
+              );
+            })}
+          </Stack>
+
+          {/* Preview / upload area */}
           <Box
-            onClick={() => bannerInputRef.current?.click()}
+            onClick={() => !selectedPresetSlug && bannerInputRef.current?.click()}
             sx={{
               width: "100%",
               height: { xs: 140, sm: 180 },
@@ -291,7 +364,7 @@ export default function CreateEventClient() {
               border: "2px dashed",
               borderColor: bannerPreview ? "transparent" : "grey.300",
               bgcolor: bannerPreview ? "transparent" : "grey.50",
-              cursor: "pointer",
+              cursor: selectedPresetSlug ? "default" : "pointer",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -312,20 +385,30 @@ export default function CreateEventClient() {
               <Stack alignItems="center" spacing={0.75}>
                 <AddPhotoAlternateRoundedIcon sx={{ fontSize: 36, color: "text.disabled" }} />
                 <Typography variant="body2" color="text.secondary">
-                  Add a banner image (optional)
+                  Upload a custom photo
                 </Typography>
               </Stack>
             )}
           </Box>
-          {bannerPreview && (
-            <Stack direction="row" spacing={1}>
+          <Stack direction="row" spacing={1} flexWrap="wrap">
+            {selectedPresetSlug ? (
               <AppButton
                 variant="outlined"
                 size="small"
                 onClick={() => bannerInputRef.current?.click()}
               >
-                Change
+                Upload custom photo instead
               </AppButton>
+            ) : bannerPreview ? (
+              <AppButton
+                variant="outlined"
+                size="small"
+                onClick={() => bannerInputRef.current?.click()}
+              >
+                Change photo
+              </AppButton>
+            ) : null}
+            {bannerPreview && (
               <AppButton
                 variant="text"
                 size="small"
@@ -334,14 +417,15 @@ export default function CreateEventClient() {
                   setBannerFile(null);
                   if (bannerPreview) URL.revokeObjectURL(bannerPreview);
                   setBannerPreview(null);
+                  setSelectedPresetSlug(null);
                 }}
               >
                 Remove
               </AppButton>
-            </Stack>
-          )}
+            )}
+          </Stack>
           <Typography variant="caption" color="text.secondary">
-            JPEG, PNG, or WebP. Max 5MB.
+            Colour themes are free. Custom photos: JPEG, PNG, or WebP, max 5 MB.
           </Typography>
         </Stack>
       </AppCard>
@@ -518,6 +602,20 @@ export default function CreateEventClient() {
           />
           <Typography variant="caption" color="text.secondary" sx={{ mt: -1.5 }}>
             Invitees can propose a different date or time if this one doesn&apos;t work for them.
+          </Typography>
+
+          <FormControlLabel
+            control={
+              <Switch
+                checked={requireReconfirmation}
+                onChange={(e) => setRequireReconfirmation(e.target.checked)}
+              />
+            }
+            label="Ask attendees to reconfirm before the plan"
+          />
+          <Typography variant="caption" color="text.secondary" sx={{ mt: -1.5 }}>
+            24 hours before the plan starts, attendees will receive a reminder asking whether they&apos;re still coming.
+            This doesn&apos;t automatically cancel the plan or change anyone&apos;s RSVP.
           </Typography>
         </Stack>
       </AppCard>
@@ -731,6 +829,9 @@ export default function CreateEventClient() {
             toast.error("Image must be 5MB or less.");
             return;
           }
+          // Custom upload takes precedence over any selected preset
+          setSelectedPresetSlug(null);
+          if (bannerPreview) URL.revokeObjectURL(bannerPreview);
           const url = URL.createObjectURL(file);
           setBannerCropSrc(url);
           setBannerCropZoom(1);

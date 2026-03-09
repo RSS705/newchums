@@ -10,22 +10,24 @@ The broader mission is reducing loneliness by making real-world social connectio
 
 NewChums is a live, deployed product — not a prototype. The current system includes:
 
-- **Event/plan creation and discovery** — users create gatherings around hobbies, invite people, set visibility (invite-only / chums-only / public), and manage RSVPs (going / maybe / can't make it / suggest another time).
+- **Event/plan creation and discovery** — users create gatherings around hobbies, invite people, set visibility (invite-only / chums-only / public), manage RSVPs (going / maybe / can't make it / suggest another time), and edit or cancel plans. Banner images with gradient presets or custom uploads. Attendance reconfirmation setting (24-hour reminder opt-in; email logic is future work).
 - **Explore feed** — logged-in users browse discoverable plans with location-aware nearby-first ordering, hobby filtering, time-range chips, and text search.
 - **Your Plans** — tabbed view of upcoming/past plans the user hosts or has joined.
-- **Chums** — one-way saved-people system with search, email invite flow, mutual indicators, and privacy controls.
-- **Profiles** — editable profiles with hobbies, location, bio, gender, profile theme, avatar upload, and public profile pages (`/u/handle`).
+- **Chums** — one-way saved-people system with search, email invite flow, mutual indicators, privacy controls, and private per-chum notes. Birthday display (month/day only, respecting privacy settings).
+- **Profiles** — editable profiles with hobbies, location, bio, gender, profile theme, avatar upload, and public profile pages (`/u/handle`). Attendance record placeholder (visual-only; no scoring engine yet).
 - **Settings** — notification preferences, privacy toggles, email/password change, account deletion.
-- **Admin** — interests moderation (soft delete, merge, restore) and user account management (search, suspend/unsuspend). Requires `super_admin` role.
+- **Admin** — interests moderation (soft delete, merge, restore, default sort newest-first) and user account management (search, suspend/unsuspend). Requires `super_admin` role.
 - **In-app notifications** — bell icon with unread state, currently supports chum and event notification types.
-- **Public marketing site** — homepage, How it Works, Science of Friendship, Safety Center, and contact form.
+- **Public marketing site** — homepage (gradient event cards, screenshot placeholders, updated copy), How it Works (screenshot placeholders, "Sign up" CTA), Science of Friendship, Safety Center, and contact form.
 - **Auth** — Google OAuth + email/password credentials, email verification, password reset, suspended account handling.
 
 ### What's Partially Built or Evolving
 
-- **Event Details page** — basic RSVP actions and attendee list exist, but no edit flow, chat, or public sharing yet.
+- **Attendance reconfirmation** — setting is saved and surfaced in plan creation, edit dialog, and event details. The 24-hour reminder email and cron/queue trigger are not yet implemented.
+- **Attendance record / reliability** — profile placeholder card is present. No data engine or scoring system yet.
 - **Event emails** — code scaffolded with noop-safe sends; Postmark templates not yet created.
 - **Explore page** — functional with real data, but likely to evolve as event supply grows.
+- **Event chat** — planned as a group chat created on event creation; not yet implemented.
 
 ---
 

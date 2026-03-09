@@ -1,6 +1,6 @@
 # Development Setup Guide
 
-Last Updated: March 7, 2026
+Last Updated: March 9, 2026
 
 This document is the operational guide for running and deploying NewChums.
 For architectural invariants and contracts, see `docs/Technical_Specs.md`.
@@ -15,13 +15,14 @@ For product direction, terminology, and agent governance, see `AGENTS.md`.
 - **Workers:** Web = `newchums-web-dev` (production), API = `newchums-api`.
 - **Canonical host:** `https://newchums.com` (www → non-www redirect enforced before Auth.js).
 - **API migration:** All business logic is in the API worker — auth flows, profile, interests, Chums, Chum invites, events (plans), notifications, admin, avatar, contact form.
-- **Events (plans):** Full event creation, RSVP (going/maybe/can't make it), invite, alternate time suggestion, and cancel system. Visibility: invite_only, chums_only, public. Event email templates scaffolded but require Postmark template creation (sends noop safely).
-- **Explore page:** Logged-in event discovery feed (`/`). Uses `GET /events/explore` with location-aware nearby-first ordering (Haversine), hobby filter, time-range chips, text search. Contextual empty states.
+- **Events (plans):** Full event creation, RSVP (going/maybe/can't make it), invite, alternate time suggestion, cancel, and edit (host). Visibility: invite_only, chums_only, public. Gradient banner presets + custom upload. Attendance reconfirmation setting saved; email reminder trigger is future work. Event email templates scaffolded but require Postmark template creation (sends noop safely).
+- **Explore page:** Logged-in event discovery feed (`/`). Uses `GET /events/explore` with location-aware nearby-first ordering (Haversine), hobby filter (labelled, alphabetised), time-range chips, text search.
 - **Your Plans:** Tabbed upcoming/past view with hosted and joined sections, real API data.
-- **Chums:** One-way saved-people feature with search, email invite flow, mutual indicators, privacy controls, and public Chums on profiles.
+- **Chums:** One-way saved-people feature with search, email invite flow, mutual indicators, privacy controls, public Chums on profiles, private per-chum notes, and birthday display.
 - **Notifications:** In-app bell with unread state. Supports `chum_added_you`, `event_invite`, `event_rsvp`, `event_alt_time`, `event_canceled`.
-- **Admin:** Interests moderation + user account management (super_admin only).
-- **Public site:** Homepage, How it Works, Science of Friendship, Safety Center, Contact — all sharing `LandingLayout`.
+- **Admin:** Interests moderation (default sort newest-first) + user account management (super_admin only).
+- **Profiles:** Edit profile page includes "Attendance record" placeholder card (visual-only; no scoring engine).
+- **Public site:** Homepage (updated copy, gradient event cards, screenshot placeholders), How it Works (updated copy, screenshot placeholders), Science of Friendship, Safety Center, Contact — all sharing `LandingLayout`.
 - **Build:** `cd web && npm run build` passes (Edge/OpenNext constraints apply).
 
 ---
@@ -230,6 +231,8 @@ psql "$DATABASE_URL" -f sql/022_create_notifications.sql
 psql "$DATABASE_URL" -f sql/023_create_chum_invites.sql
 psql "$DATABASE_URL" -f sql/024_create_events.sql
 psql "$DATABASE_URL" -f sql/025_event_multi_hobby_and_banner.sql
+psql "$DATABASE_URL" -f sql/027_chum_notes.sql
+psql "$DATABASE_URL" -f sql/028_event_reconfirmation.sql
 ```
 
 Notes:
@@ -245,6 +248,8 @@ Notes:
 - Migration `023_create_chum_invites.sql` creates the `newchums.chum_invites` table for Chum invite links (token hash, status, 30-day expiry).
 - Migration `024_create_events.sql` creates `newchums.events`, `newchums.event_invites`, `newchums.event_rsvps`, and `newchums.event_alt_times` tables for the event/plan system.
 - Migration `025_event_multi_hobby_and_banner.sql` adds the `newchums.event_interests` junction table for multi-hobby support on events, migrates existing `interest_id` data, and adds `banner_key` to events for banner images.
+- Migration `027_chum_notes.sql` adds a `note TEXT NULL` column to `newchums.user_chums` for private per-chum notes (visible only to the user who added them).
+- Migration `028_event_reconfirmation.sql` adds `require_reconfirmation BOOLEAN NOT NULL DEFAULT FALSE` to `newchums.events` for the attendance reconfirmation setting.
 
 ---
 
@@ -333,6 +338,34 @@ Chunk XX — YYYY-MM-DD
 ## Session Log (Chunks)
 
 (Existing chunks should remain here. Add new chunks at the end.)
+
+---
+
+Chunk 09 — 2026-03-09
+- Goal: Multiple polish passes — social/profile features, event details and creation experience, public marketing pages, attendance reconfirmation, and profile reliability placeholder.
+- Changes:
+  - DB migration 027 (`newchums.user_chums.note TEXT NULL`) — private per-chum notes.
+  - DB migration 028 (`newchums.events.require_reconfirmation BOOLEAN NOT NULL DEFAULT FALSE`) — attendance reconfirmation setting.
+  - API `GET /chums`: now returns `note` (private note) and `birthday` (month/day from DOB, respecting `is_hidden_age`) for each Chum.
+  - API `PATCH /chums/:userId/note`: new endpoint for updating private Chum notes.
+  - API `PATCH /events/:id`: new endpoint for host edits — accepts `title`, `description`, `starts_at`, `max_seats`, `visibility`, `require_reconfirmation`.
+  - API `POST /events`: accepts `require_reconfirmation`. Host name in event responses prioritises `@username`. RSVP entries include `handle` for profile links.
+  - API `GET /events/:id`: includes `requireReconfirmation` in response.
+  - `web/src/lib/eventBanners.ts` (new): `BANNER_PRESETS` gradient library, `getGradientForEventId` (deterministic fallback), `suggestPreset` (keyword-based auto-suggest), `renderBannerPreset` (canvas → WebP blob).
+  - `EventCard.tsx`: fallback gradient banner using `getGradientForEventId` when no `bannerKey` is present.
+  - `ChumsClient.tsx`: birthday display (month/day) per Chum row; inline private note editing via pencil icon and `PATCH /chums/:userId/note`.
+  - `EventDetailClient.tsx`: cancel now uses a custom MUI `Dialog` (replaced `window.confirm`). "Edit plan" button (host only) opens an inline dialog with pre-filled fields (title, description, date/time, seats, visibility, reconfirmation toggle). Attendee names link to `/u/{handle}`. Reconfirmation notice row shown when `requireReconfirmation` is true.
+  - `CreateEventClient.tsx`: gradient banner preset picker with category chips and auto-suggestion; attendance reconfirmation `Switch` with explanatory caption.
+  - `PlansPage.tsx`: refined wording to accurately represent both hosted and joined plans.
+  - `AdminInterestsClient.tsx`: default sort changed to `created_at` descending (newest first).
+  - `DashboardHome.tsx`: hobby `Autocomplete` wrapped with "Hobbies" label; filter layout uses `alignItems: "flex-end"` for alignment parity; hobby options sorted alphabetically.
+  - `ProfileClient.tsx`: display name helper text shortened to "Your real name." Attendance record placeholder card added (visual-only; "Coming soon" chip; no scoring logic).
+  - `LandingPageContent.tsx`: H1 updated to "around the things you enjoy"; group-chat copy removed; homepage event cards redesigned with 72px gradient banner strips; screenshot placeholders added.
+  - `HowItWorksContent.tsx`: "Sign up free" → "Sign up"; group-chat references softened; screenshot placeholders added.
+  - `page.tsx` + `how-it-works/page.tsx`: SEO metadata updated to remove group-chat framing.
+- Verification: TypeScript passes (`npx tsc --noEmit`) in both web and api. No linter errors.
+- Deploy: Run migrations 027 and 028 against production DB before deploying. Standard web + API deploy.
+- Next Steps: Create Postmark event email templates. Implement attendance reconfirmation reminder (Cron Trigger or Queue → `POSTMARK_TEMPLATE_EVENT_REMINDER`). Update account deletion cascade for event tables. Drop legacy `events.interest_id` in a future cleanup migration.
 
 ---
 

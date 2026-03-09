@@ -71,7 +71,7 @@ export default function PlansPage() {
             Your Plans
           </Typography>
           <Typography variant="body1" color="text.secondary" sx={{ fontSize: { xs: "0.875rem", sm: "0.9375rem" } }}>
-            Gatherings you&apos;re hosting, attending, or have been invited to.
+            Plans you&apos;re hosting or taking part in.
           </Typography>
         </Box>
         <Button
@@ -130,7 +130,7 @@ export default function PlansPage() {
           {joined.length > 0 && (
             <Box>
               <SectionHeader
-                title={isPast ? "Plans you attended" : "Plans you\u2019ve joined or been invited to"}
+                title={isPast ? "Plans you attended" : "Plans you\u2019re attending"}
                 emphasis={hosted.length > 0 ? "secondary" : "primary"}
               />
               <Grid container spacing={2}>

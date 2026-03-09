@@ -1,7 +1,7 @@
 # Technical Specifications
 
-Last Updated: March 7, 2026
-Version: 8.0
+Last Updated: March 9, 2026
+Version: 9.0
 
 This document defines the authoritative technical architecture of NewChums.
 It describes **what exists today** and the structural commitments we are making.
@@ -14,9 +14,11 @@ NewChums helps people organize gatherings more easily around hobbies and shared 
 
 **Current positioning:**
 - Primary: start, share, and join hobby-based plans nearby, a practical tool for organizing real-world gatherings.
-- Secondary: reduces group chat chaos and makes follow-through easier (one place for plans, invites, RSVPs).
+- Secondary: reduces follow-through friction — clear invites, easy RSVPs, one place for updates.
 - Tertiary: meeting new people naturally through shared interests and smaller, approachable gatherings.
 - Broader mission: reducing loneliness by supporting real-world connection; emphasized on Science of Friendship page, lightly referenced on homepage.
+
+**Note on group chat:** The product will create a group chat when a plan is created. Marketing copy must not position NewChums as "without group chats." Frame the pitch around clarity and follow-through.
 
 **Terminology:** The system uses "event" internally (database, API routes, code) but user-facing surfaces prefer "plan" or "gathering." See `AGENTS.md` for full terminology guidance.
 
@@ -201,7 +203,7 @@ Users manage privacy preferences in **Settings** (`/settings`). Stored in the `u
 
 ### Profile, onboarding, and lookups
 
-- `GET /profile`, `PUT /profile` (auth required). Response includes `role`, `gender`, `profile_theme`, `is_hidden_chum_list`, `is_hidden_from_chum_lists`. `PUT /profile` validates `gender` (allowed: `male`, `female`, `other`, `prefer_not_to_say`) and `profile_theme` (allowed values defined in `web/src/lib/profileTheme.ts`).
+- `GET /profile`, `PUT /profile` (auth required). Response includes `role`, `gender`, `profile_theme`, `is_hidden_chum_list`, `is_hidden_from_chum_lists`. `PUT /profile` validates `gender` (allowed: `male`, `female`, `other`, `prefer_not_to_say`) and `profile_theme` (allowed values defined in `web/src/lib/profileTheme.ts`). The `/profile` edit page includes an "Attendance record" placeholder card (visual-only; no scoring engine yet) to signal the future reliability feature.
 - `GET /public/users/:handle` (public; no auth) — returns public profile by handle. Includes `gender` (suppressed if `prefer_not_to_say` or null), `profile_theme`, `is_hidden_chum_list`. Age computed from DOB server-side; DOB never exposed.
 - `GET /handles/available?handle=...` (auth required)
 - `POST /user/username` (auth required)
@@ -252,7 +254,8 @@ One-way saved-people feature. No approval flow, no mutual-state requirement.
 
 | Route | Description |
 |-------|-------------|
-| `GET /chums` | Returns the authenticated user's full private Chum list (all added users, regardless of their privacy settings). Ordered by most recently added. |
+| `GET /chums` | Returns the authenticated user's full private Chum list. Includes `note` (private note) and `birthday` (month/day, from DOB if not `is_hidden_age`). Ordered by most recently added. |
+| `PATCH /chums/:userId/note` | Update the private note for a specific Chum. Body: `{ note: string \| null }`. Persisted on `newchums.user_chums.note`. Visible only to the authenticated user. |
 | `GET /chums/search?q=` | Search for users to add. If `q` is a valid email, performs exact email lookup (returns single result or invite eligibility); otherwise searches by name/handle. Excludes self and hidden-from-search users in both modes. Min 2 chars. Returns up to 10 results with `isChummed`, and for email mode also `inviteEligible`, `inviteeEmail`, `alreadyInvited`. |
 | `GET /chums/check/:userId` | Returns `{ isChummed, isMutual, sharedCount }` for a specific user. Used by the public profile page. |
 | `POST /chums/:userId` | Add a user to Chum list. Idempotent (`ON CONFLICT DO NOTHING`). Cannot chum self. Creates `chum_added_you` notification for the recipient. |
@@ -283,7 +286,7 @@ One-way saved-people feature. No approval flow, no mutual-state requirement.
 **Display name fallback:** All Chum-related API responses use `displayName: name?.trim() || username (without @) || "NewChums user"`. Users without a set display name show their username instead of the generic fallback.
 
 **Web:**
-- `/chum-groups` — "Your Chums" page. Single search input auto-detects email input (mail icon shown); name/handle search otherwise. For email lookups with no eligible account found, an invite CTA is shown inline. Confirmation dialog before sending invite; friendly "already sent" state for duplicate attempts. Private Chum list below with Remove action. Mutual Chums shown with 🤝 emoji.
+- `/chum-groups` — "Your Chums" page. Single search input auto-detects email input (mail icon shown); name/handle search otherwise. For email lookups with no eligible account found, an invite CTA is shown inline. Confirmation dialog before sending invite; friendly "already sent" state for duplicate attempts. Private Chum list below with Remove action. Mutual Chums shown with 🤝 emoji. Each Chum row displays birthday (month/day, if not `is_hidden_age`) and supports inline private note editing (pencil icon, `PATCH /chums/:userId/note`).
 - `/u/[handle]` — "Add to Chums" / "Remove from Chums" button in the profile header card (top-right). Shown for logged-in viewers who are not the profile owner. Chum status fetched via `GET /chums/check/:userId` after profile loads.
 - Public Chums section renders below the hobbies card when the profile owner's `is_hidden_chum_list = false` and they have at least one public-visible Chum. Paginated (8 per page, prev/next). Section is entirely absent (no empty card) when the list is empty.
 
@@ -332,14 +335,16 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 - `location_type`: `in_person` | `online`
 - `allow_alt_times`: boolean — whether attendees can suggest alternate times
 - `interest_id`: FK to `interests` table (hobbies)
+- `require_reconfirmation`: boolean (migration 028) — when true, attendees will receive a 24-hour reminder to reconfirm attendance; does not auto-cancel or change RSVPs; reminder email logic is future work
 
 **API endpoints (auth required):**
 
 | Route | Description |
 |-------|-------------|
-| `POST /events` | Create event. Validates title, starts_at, location_type, visibility. Accepts `invitees[]` array of `{ user_id?, email? }`. Published events send invite notifications and emails. |
-| `GET /events/mine?filter=upcoming\|past` | List events the user hosts, is invited to, or has RSVP'd. Includes going/maybe counts, host info, RSVP status. |
-| `GET /events/:id` | Event detail with RSVP list and alternate time suggestions. Visibility enforcement: invite_only requires invite/RSVP, chums_only requires chum relationship or invite. |
+| `POST /events` | Create event. Validates title, starts_at, location_type, visibility. Accepts `invitees[]` array of `{ user_id?, email? }` and `require_reconfirmation` boolean. Published events send invite notifications and emails. |
+| `GET /events/mine?filter=upcoming\|past` | List events the user hosts, is invited to, or has RSVP'd. Includes going/maybe counts, host info, RSVP status. Host name uses `@username` priority. |
+| `GET /events/:id` | Event detail with RSVP list and alternate time suggestions. Includes `requireReconfirmation`. RSVP entries include `handle` for attendee profile links. Visibility enforcement: invite_only requires invite/RSVP, chums_only requires chum relationship or invite. |
+| `PATCH /events/:id` | Edit event (host only). Accepts: `title`, `description`, `starts_at`, `max_seats`, `visibility`, `require_reconfirmation`. Returns the updated event. |
 | `POST /events/:id/rsvp` | RSVP to an event — `{ status: "going"\|"maybe"\|"cant_make_it", note? }`. Capacity enforcement for going status. Notifies host via in-app notification and email. |
 | `POST /events/:id/alt-time` | Suggest alternate time — `{ suggested_at, note? }`. Only if event.allow_alt_times. Notifies host. |
 | `POST /events/:id/cancel` | Cancel event (host only). Notifies all attendees via in-app notification and email. |
@@ -371,12 +376,14 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 
 | Route | Component | Description |
 |-------|-----------|-------------|
-| `/` (logged in) | `DashboardHome` | Explore page — event discovery feed with search, time chips, distance/hobby filters, location-aware nearby-first ordering, location nudge, contextual empty states |
-| `/events/create` | `CreateEventClient` | "Start a plan" form — title, description, hobby, seats, date/time, location (in-person/online), visibility, invite people, publish |
+| `/` (logged in) | `DashboardHome` | Explore page — event discovery feed with search, time chips, distance/hobby filters (aligned label-above layout), location-aware nearby-first ordering, location nudge, contextual empty states |
+| `/events/create` | `CreateEventClient` | "Start a plan" form — title, description, hobby, seats, date/time, location (in-person/online), visibility, invite people, gradient banner preset picker with auto-suggestion, attendance reconfirmation toggle, publish |
 | `/plans` | `PlansPage` | Tabbed view (Upcoming / Past) with hosted/joined sections, real API data, empty states |
-| `/events/[id]` | `EventDetailClient` | Event detail — RSVP actions, alternate time suggestions, attendee list, cancel (host) |
+| `/events/[id]` | `EventDetailClient` | Event detail — RSVP actions, alternate time suggestions, attendee list (with `@username` links to public profiles), reconfirmation notice, cancel (host, dialog-confirmed), edit plan (host — inline dialog for title/description/date/seats/visibility/reconfirmation) |
 
-**Not yet implemented:** event editing, event chat, recurring events, public event sharing page (for non-users).
+**Banner system:** `web/src/lib/eventBanners.ts` defines `BANNER_PRESETS` (named gradient slugs with hobby keyword mapping). `getGradientForEventId` provides a deterministic fallback gradient for cards with no `banner_key`. `renderBannerPreset` renders a preset to a WebP `Blob` via canvas for upload. `suggestPreset` picks a preset based on hobby keywords.
+
+**Not yet implemented:** attendance reconfirmation email/reminder trigger (setting is saved but email and cron/queue are future work), event chat, recurring events, public event sharing page (for non-users).
 
 ### Media (avatar)
 
@@ -438,6 +445,13 @@ All pages live under `web/src/app/(public)/` and follow the same pattern: a thin
 - **Responsive:** Mobile = centered text/stacked layout; `sm`+ = left-aligned/row. Consistent `textAlign: { xs: "center", sm: "left" }` and `alignSelf: { xs: "center", sm: "flex-start" }` across all sections.
 - **Hero pattern:** Eyebrow (overline, gold) → H1 (800 weight) → gold accent bar (48×3px) → subtext → CTA buttons.
 - **Button styling:** `borderRadius: 2.5`, `textTransform: "none"`, softened `boxShadow` on CTA buttons.
+
+### Copy and design conventions (public pages)
+
+- **Group chat framing:** Homepage and How it Works copy no longer reference "no group chat" or "without group chat chaos." The product plans to create group chats. Copy focuses on clarity, follow-through, and low-pressure coordination.
+- **CTAs:** "Sign up" (not "Sign up free" or "Sign up for free").
+- **Event cards (homepage):** Use 72px gradient banner strips at the top (colored by category), matching the in-app `EventCard` design.
+- **Screenshot placeholders:** Strategic `Box` placeholders with dashed borders and "Screenshot placeholder" labels are used in `LandingPageContent.tsx` and `HowItWorksContent.tsx` (Explore view, Event details view, Create a plan view, Your Plans view). Reuse the Safety Center pattern when replacing with real screenshots.
 
 ### Future-ready elements
 
@@ -501,11 +515,13 @@ Core tables include:
 - `newchums.user_chums` (migration 021) — one-way Chum relationships; columns: `id`, `user_id`, `chum_user_id`, `created_at`; unique constraint on `(user_id, chum_user_id)`; self-chum prevented by CHECK constraint; indexed on both FKs
 - `newchums.notifications` (migration 022) — general notifications table; columns: `id`, `user_id`, `type`, `actor_user_id`, `entity_id`, `metadata` (JSONB), `read_at`, `created_at`; indexed for unread queries
 - `newchums.chum_invites` (migration 023) — invite records for emails not yet on NewChums; columns: `id`, `inviter_user_id`, `invitee_email`, `token_hash`, `status` (`pending`/`accepted`/`expired`), `expires_at` (30 days), `accepted_at`, `accepted_user_id`, `created_at`; unique index on `token_hash`; indexed on `(invitee_email, status)` and `inviter_user_id`
-- `newchums.events` (migration 024) — core event entity; columns include `host_user_id`, `title`, `description`, `interest_id` (legacy FK, being superseded by event_interests), `starts_at`, `location_type`, `location_name`, `location_address`, `location_lat`, `location_lng`, `online_link`, `max_seats`, `visibility`, `status`, `allow_alt_times`, `banner_key`, `created_at`, `updated_at`
+- `newchums.events` (migration 024) — core event entity; columns include `host_user_id`, `title`, `description`, `interest_id` (legacy FK, being superseded by event_interests), `starts_at`, `location_type`, `location_name`, `location_address`, `location_lat`, `location_lng`, `online_link`, `max_seats`, `visibility`, `status`, `allow_alt_times`, `banner_key`, `require_reconfirmation` (migration 028), `created_at`, `updated_at`
 - `newchums.event_interests` (migration 025) — junction table for event ↔ interest many-to-many; events can link to multiple hobbies
 - `newchums.event_invites` (migration 024) — invite records supporting both user_id and email invitees
 - `newchums.event_rsvps` (migration 024) — RSVP responses; one per user per event; status: `going`, `maybe`, `cant_make_it`
 - `newchums.event_alt_times` (migration 024) — alternate time suggestions from attendees
+- `newchums.user_chums.note` (migration 027) — `TEXT NULL` column on `user_chums` for private per-chum notes; visible only to the user who added them
+- `newchums.events.require_reconfirmation` (migration 028) — `BOOLEAN NOT NULL DEFAULT FALSE` on `events`; when true, signals that attendees should receive a 24-hour reconfirmation reminder (email/cron trigger is future work)
 
 PostGIS is available for geo queries.
 
@@ -570,3 +586,5 @@ cd web && npm run build
 - Schema normalization/cleanup will be required before broader public launch.
 - Event email templates not yet created in Postmark (sends noop safely).
 - Account deletion (`DELETE /account`) does not yet cascade to events, event_rsvps, event_invites, or event_alt_times — must be updated when those tables accumulate production data.
+- Attendance reconfirmation (`require_reconfirmation`) is stored and surfaced in UI, but the 24-hour reminder email and cron/queue trigger are not yet implemented. When ready, wire a Cloudflare Cron Trigger (or Queue) to query events starting within 24 hours where `require_reconfirmation = true` and send `POSTMARK_TEMPLATE_EVENT_REMINDER` to all "going" attendees.
+- `interest_id` on `events` is a legacy FK; `event_interests` is the canonical many-to-many source of truth. The legacy column should be dropped in a future migration once all queries are migrated.

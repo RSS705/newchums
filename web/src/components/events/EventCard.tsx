@@ -13,6 +13,7 @@ import PeopleOutlineRoundedIcon from "@mui/icons-material/PeopleOutlineRounded";
 import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
 import Link from "next/link";
 import { getMediaApiBaseUrl } from "@/lib/apiClient";
+import { getGradientForEventId } from "@/lib/eventBanners";
 
 export type PlanEvent = {
   id: string;
@@ -101,6 +102,7 @@ export default function EventCard({ event, isPast = false }: EventCardProps) {
   const bannerUrl = event.bannerKey
     ? `${getMediaApiBaseUrl()}/events/${event.id}/banner`
     : null;
+  const fallbackGradient = getGradientForEventId(event.id);
 
   return (
     <Card
@@ -129,15 +131,19 @@ export default function EventCard({ event, isPast = false }: EventCardProps) {
         href={`/events/${event.id}`}
         sx={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "stretch", minHeight: 0 }}
       >
-        {bannerUrl && (
-          <Box
-            sx={{
-              width: "100%",
-              height: 130,
-              overflow: "hidden",
-              flexShrink: 0,
-            }}
-          >
+        {/* Banner — uploaded photo or deterministic gradient fallback */}
+        <Box
+          sx={{
+            width: "100%",
+            height: 120,
+            overflow: "hidden",
+            flexShrink: 0,
+            background: bannerUrl ? undefined : fallbackGradient,
+            filter: isPast || isCanceled ? "grayscale(50%)" : "none",
+            opacity: isPast || isCanceled ? 0.75 : 1,
+          }}
+        >
+          {bannerUrl && (
             <Box
               component="img"
               src={bannerUrl}
@@ -147,12 +153,10 @@ export default function EventCard({ event, isPast = false }: EventCardProps) {
                 height: "100%",
                 objectFit: "cover",
                 display: "block",
-                filter: isPast || isCanceled ? "grayscale(40%)" : "none",
-                opacity: isPast || isCanceled ? 0.8 : 1,
               }}
             />
-          </Box>
-        )}
+          )}
+        </Box>
         <CardContent sx={{ py: { xs: 2.25, sm: 2.5 }, px: { xs: 2.25, sm: 2.5 }, flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
           {/* Top row: hobby chip + visibility */}
           <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5 }}>

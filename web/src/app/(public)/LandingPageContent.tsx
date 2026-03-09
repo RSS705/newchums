@@ -21,8 +21,8 @@ import PeopleRoundedIcon from "@mui/icons-material/PeopleRounded";
  * Full public homepage content for logged-out visitors.
  * Sections: Hero → Examples (plans) → Why It Helps → Social Upside → CTA
  *
- * Messaging hierarchy: (1) organize and join hobby-based plans, (2) reduces
- * group chat chaos and follow-through, (3) social upside via shared interests.
+ * Messaging hierarchy: (1) organize and join hobby-based plans around what you enjoy,
+ * (2) clear details and easy follow-through, (3) social upside via shared interests.
  * The examples section uses mock data structured for easy replacement with real API data.
  */
 
@@ -127,6 +127,19 @@ const MOCK_EVENTS: EventCard[] = [
   },
 ];
 
+// Gradient banner colours per category — mirrors the in-app event card treatment
+const CATEGORY_GRADIENTS: Record<string, string> = {
+  "Board Games":       "linear-gradient(135deg, #475569 0%, #1e293b 100%)",
+  "Coffee \u0026 Social": "linear-gradient(135deg, #92400e 0%, #c2410c 100%)",
+  "Arts \u0026 Crafts":   "linear-gradient(135deg, #be185d 0%, #9f1239 100%)",
+  "Card Games":        "linear-gradient(135deg, #6d28d9 0%, #4f46e5 100%)",
+  "Sport \u0026 Outdoor": "linear-gradient(135deg, #15803d 0%, #0f766e 100%)",
+  "Learning":          "linear-gradient(135deg, #0284c7 0%, #7c3aed 100%)",
+};
+function getCategoryGradient(cat: string): string {
+  return CATEGORY_GRADIENTS[cat] ?? "linear-gradient(135deg, #3b82f6 0%, #6d28d9 100%)";
+}
+
 const FILTER_CATEGORIES = [
   "All",
   "Coffee \u0026 Social",
@@ -142,17 +155,17 @@ const PLAN_FEATURES = [
   {
     Icon: ChatRoundedIcon,
     title: "One clear place for every plan",
-    body: "\u201cWe should hang out\u201d gets buried in the group chat. NewChums gives plans a real home, visible, clear, and easy to say yes to.",
+    body: "\u201cWe should hang out\u201d never quite turns into a plan. NewChums gives every gathering a real home, visible, clear, and easy to say yes to.",
   },
   {
     Icon: CalendarMonthRoundedIcon,
     title: "Invites and RSVPs in one spot",
-    body: "Share a plan with people you know or let others nearby discover it. Everyone sees the same details, no chasing replies or losing updates.",
+    body: "Share a plan with people you know, or let others nearby discover it. Everyone sees the same details, no chasing replies or losing updates.",
   },
   {
     Icon: FavoriteRoundedIcon,
     title: "Clear plans mean better follow-through",
-    body: "When the details are clear (what, where, when), people are more likely to show up. A concrete plan beats a vague \u201cdrinks sometime\u201d every time.",
+    body: "When the details are clear, what, where, and when, people are more likely to show up. A concrete plan beats a vague \u201cdrinks sometime\u201d every time.",
   },
 ];
 
@@ -223,7 +236,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                 <Box component="span" sx={{ color: "primary.main" }}>
                   hobby-based plans
                 </Box>
-                {" "}without the group chat chaos
+                {" "}around the things you enjoy
               </Typography>
 
               {/* Subtext */}
@@ -234,7 +247,6 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                 sx={{
                   lineHeight: 1.7,
                   fontSize: { xs: "1rem", sm: "1.125rem" },
-                  mt: "0 !important",
                 }}
               >
                 One place for your plans. Create them, share invites, or discover
@@ -513,7 +525,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
             }}
           >
             Board game nights, coffee walks, study sessions, beginner sports.
-            Real activities with clear plans, no group chat needed.
+            Real plans with clear details and easy RSVPs.
           </Typography>
 
           {/* Category filter chips */}
@@ -552,8 +564,8 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                   <Box
                     sx={{
                       backgroundColor: "background.paper",
-                      borderRadius: 2,
-                      p: { xs: 2.5, sm: 3 },
+                      borderRadius: 3,
+                      overflow: "hidden",
                       height: "100%",
                       display: "flex",
                       flexDirection: "column",
@@ -563,103 +575,119 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                           : "none",
                       transition: "box-shadow 0.2s, transform 0.2s",
                       "&:hover": {
-                        boxShadow: "0 4px 16px rgba(0,0,0,0.11)",
+                        boxShadow: "0 4px 18px rgba(0,0,0,0.12)",
                         transform: "translateY(-2px)",
                       },
                     }}
                   >
-                    {/* Category chip */}
-                    <Chip
-                      label={event.category}
-                      size="small"
-                      variant="outlined"
-                      color="primary"
-                      sx={{
-                        alignSelf: "flex-start",
-                        mb: 1.5,
-                        fontSize: "0.6875rem",
-                        height: 22,
-                      }}
-                    />
-
-                    {/* Title */}
-                    <Typography
-                      variant="h6"
-                      component="h3"
-                      fontWeight={700}
-                      sx={{
-                        mb: 1.5,
-                        fontSize: { xs: "1rem", sm: "1.0625rem" },
-                        lineHeight: 1.3,
-                        flex: "0 0 auto",
-                      }}
-                    >
-                      {event.title}
-                    </Typography>
-
-                    {/* Meta */}
-                    <Stack spacing={0.75} sx={{ mb: "auto" }}>
-                      <Stack direction="row" alignItems="center" spacing={0.75}>
-                        <AccessTimeRoundedIcon
-                          sx={{ fontSize: 14, color: "text.disabled" }}
-                        />
-                        <Typography variant="body2" color="text.secondary">
-                          {event.dayTime}
-                        </Typography>
-                      </Stack>
-                      <Stack direction="row" alignItems="center" spacing={0.75}>
-                        <LocationOnRoundedIcon
-                          sx={{ fontSize: 14, color: "text.disabled" }}
-                        />
-                        <Typography variant="body2" color="text.secondary">
-                          {event.location}
-                        </Typography>
-                      </Stack>
-                    </Stack>
-
-                    {/* Footer */}
+                    {/* Banner strip */}
                     <Box
                       sx={{
-                        mt: 2.5,
-                        pt: 2,
-                        borderTop: "1px solid",
-                        borderColor: "divider",
+                        height: 72,
+                        background: getCategoryGradient(event.category),
+                        flexShrink: 0,
+                        display: "flex",
+                        alignItems: "flex-end",
+                        px: 2,
+                        pb: 1.25,
                       }}
                     >
-                      <Stack
-                        direction="row"
-                        alignItems="center"
-                        justifyContent="space-between"
+                      <Chip
+                        label={event.category}
+                        size="small"
+                        sx={{
+                          fontSize: "0.6875rem",
+                          height: 20,
+                          bgcolor: "rgba(255,255,255,0.18)",
+                          color: "white",
+                          border: "1px solid rgba(255,255,255,0.3)",
+                          fontWeight: 600,
+                          "& .MuiChip-label": { px: 1 },
+                        }}
+                      />
+                    </Box>
+
+                    {/* Content */}
+                    <Box sx={{ p: { xs: 2.25, sm: 2.5 }, display: "flex", flexDirection: "column", flex: 1 }}>
+                      {/* Title */}
+                      <Typography
+                        variant="h6"
+                        component="h3"
+                        fontWeight={700}
+                        sx={{
+                          mb: 1.25,
+                          fontSize: { xs: "1rem", sm: "1.0625rem" },
+                          lineHeight: 1.3,
+                          flex: "0 0 auto",
+                        }}
                       >
-                        <Stack direction="row" alignItems="center" spacing={0.5}>
-                          <PeopleRoundedIcon
-                            sx={{ fontSize: 14, color: "text.disabled" }}
+                        {event.title}
+                      </Typography>
+
+                      {/* Meta */}
+                      <Stack spacing={0.6} sx={{ mb: "auto" }}>
+                        <Stack direction="row" alignItems="center" spacing={0.75}>
+                          <AccessTimeRoundedIcon
+                            sx={{ fontSize: 13, color: "text.disabled" }}
                           />
-                          <Typography variant="caption" color="text.secondary">
-                            {event.attending} attending
+                          <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
+                            {event.dayTime}
                           </Typography>
                         </Stack>
-                        {event.spots > 0 ? (
-                          <Typography
-                            variant="caption"
-                            sx={{ color: "secondary.dark", fontWeight: 600 }}
-                          >
-                            {event.spots} spots left
-                          </Typography>
-                        ) : (
-                          <Chip
-                            label="Full"
-                            size="small"
-                            variant="outlined"
-                            sx={{
-                              height: 20,
-                              fontSize: "0.6875rem",
-                              color: "text.secondary",
-                              borderColor: "divider",
-                            }}
+                        <Stack direction="row" alignItems="center" spacing={0.75}>
+                          <LocationOnRoundedIcon
+                            sx={{ fontSize: 13, color: "text.disabled" }}
                           />
-                        )}
+                          <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
+                            {event.location}
+                          </Typography>
+                        </Stack>
                       </Stack>
+
+                      {/* Footer */}
+                      <Box
+                        sx={{
+                          mt: 2,
+                          pt: 1.75,
+                          borderTop: "1px solid",
+                          borderColor: "divider",
+                        }}
+                      >
+                        <Stack
+                          direction="row"
+                          alignItems="center"
+                          justifyContent="space-between"
+                        >
+                          <Stack direction="row" alignItems="center" spacing={0.5}>
+                            <PeopleRoundedIcon
+                              sx={{ fontSize: 13, color: "text.disabled" }}
+                            />
+                            <Typography variant="caption" color="text.secondary">
+                              {event.attending} attending
+                            </Typography>
+                          </Stack>
+                          {event.spots > 0 ? (
+                            <Typography
+                              variant="caption"
+                              sx={{ color: "secondary.dark", fontWeight: 600 }}
+                            >
+                              {event.spots} spots left
+                            </Typography>
+                          ) : (
+                            <Chip
+                              label="Full"
+                              size="small"
+                              variant="outlined"
+                              sx={{
+                                height: 20,
+                                fontSize: "0.6875rem",
+                                color: "text.secondary",
+                                borderColor: "divider",
+                              }}
+                            />
+                          )}
+                        </Stack>
+                      </Box>
                     </Box>
                   </Box>
                 </Grid>
@@ -676,6 +704,30 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
               </Typography>
             </Box>
           )}
+
+          {/* Screenshot placeholder — will be replaced with a real Explore screenshot */}
+          <Box
+            aria-hidden="true"
+            sx={{
+              mt: { xs: 4, sm: 6 },
+              borderRadius: 2.5,
+              overflow: "hidden",
+              width: "100%",
+              aspectRatio: "16 / 7",
+              background: (theme) =>
+                `linear-gradient(135deg, ${theme.palette.primary.light} 0%, ${theme.palette.grey[200]} 100%)`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Stack alignItems="center" spacing={1.5} sx={{ opacity: 0.45 }}>
+              <CalendarMonthRoundedIcon sx={{ fontSize: 52, color: "primary.main" }} />
+              <Typography variant="body2" color="text.secondary" fontWeight={500}>
+                Screenshot placeholder — Explore view
+              </Typography>
+            </Stack>
+          </Box>
 
           {/* Bottom note + CTA */}
           <Box sx={{ mt: { xs: 4, sm: 5 }, textAlign: { xs: "center", sm: "left" } }}>
@@ -778,6 +830,30 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
               </Grid>
             ))}
           </Grid>
+
+          {/* Screenshot placeholder — will be replaced with event details screen */}
+          <Box
+            aria-hidden="true"
+            sx={{
+              mt: { xs: 5, sm: 7 },
+              borderRadius: 2.5,
+              overflow: "hidden",
+              width: "100%",
+              aspectRatio: "16 / 8",
+              background: (theme) =>
+                `linear-gradient(135deg, ${theme.palette.grey[100]} 0%, ${theme.palette.primary.light} 100%)`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Stack alignItems="center" spacing={1.5} sx={{ opacity: 0.45 }}>
+              <ChatRoundedIcon sx={{ fontSize: 52, color: "primary.main" }} />
+              <Typography variant="body2" color="text.secondary" fontWeight={500}>
+                Screenshot placeholder — Event details view
+              </Typography>
+            </Stack>
+          </Box>
         </Box>
       </Box>
 

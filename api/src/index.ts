@@ -3926,6 +3926,7 @@ app.post("/events", async (c) => {
     return c.json({ ok: false, error: "VALIDATION", message: "Seats must be between 1 and 500", field: "max_seats" }, 400);
 
   const allowAltTimes = body.allow_alt_times !== false;
+  const requireReconfirmation = body.require_reconfirmation === true;
   const status = body.status === "draft" ? "draft" : "published";
 
   const locationName = body.location_name ? String(body.location_name).trim().slice(0, 200) : null;
@@ -4025,12 +4026,12 @@ app.post("/events", async (c) => {
         host_user_id, title, description, interest_id, starts_at,
         location_type, location_name, location_address, location_place_id, location_lat, location_lng,
         location_visibility, location_area, online_link,
-        max_seats, visibility, status, allow_alt_times
+        max_seats, visibility, status, allow_alt_times, require_reconfirmation
       ) VALUES (
         ${userId}, ${title}, ${description}, ${interestId}, ${startsDate.toISOString()},
         ${locationType}, ${locationName}, ${locationAddress}, ${locationPlaceId}, ${locationLat}, ${locationLng},
         ${locationVisibility}, ${locationArea}, ${onlineLink},
-        ${maxSeats}, ${visibility}, ${status}, ${allowAltTimes}
+        ${maxSeats}, ${visibility}, ${status}, ${allowAltTimes}, ${requireReconfirmation}
       )
       RETURNING id, created_at
     `) as { id: string; created_at: string }[];
@@ -4510,6 +4511,7 @@ app.get("/events/:id", async (c) => {
         visibility: event.visibility,
         status: event.status,
         allowAltTimes: event.allow_alt_times,
+        requireReconfirmation: event.require_reconfirmation === true,
         canceledAt: event.canceled_at,
         createdAt: event.created_at,
         bannerKey: event.banner_key ?? null,
@@ -4657,6 +4659,68 @@ app.post("/events/:id/alt-time", async (c) => {
     return c.json({ ok: true });
   } catch (err) {
     console.error("[POST /events/:id/alt-time]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** PATCH /events/:id — edit core event fields (host only, published events) */
+app.patch("/events/:id", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+  const eventId = c.req.param("id");
+
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+
+  try {
+    const rows = (await sql`
+      SELECT id, host_user_id, status FROM newchums.events WHERE id = ${eventId}
+    `) as { id: string; host_user_id: string; status: string }[];
+    if (rows.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    if (rows[0].host_user_id !== userId) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+    if (rows[0].status === "canceled") return c.json({ ok: false, error: "VALIDATION", message: "Cannot edit a canceled plan" }, 400);
+
+    const rawTitle = body.title != null ? String(body.title).trim() : null;
+    if (!rawTitle) return c.json({ ok: false, error: "VALIDATION", message: "Title is required", field: "title" }, 400);
+    if (rawTitle.length > 200) return c.json({ ok: false, error: "VALIDATION", message: "Title must be 200 characters or less", field: "title" }, 400);
+
+    const description = body.description != null ? String(body.description).trim().slice(0, 2000) || null : null;
+
+    const startsAtRaw = body.starts_at ? String(body.starts_at) : null;
+    if (!startsAtRaw) return c.json({ ok: false, error: "VALIDATION", message: "Date and time are required", field: "starts_at" }, 400);
+    const startsAt = new Date(startsAtRaw);
+    if (isNaN(startsAt.getTime())) return c.json({ ok: false, error: "VALIDATION", message: "Invalid date/time", field: "starts_at" }, 400);
+
+    const rawMaxSeats = body.max_seats != null ? Number(body.max_seats) : null;
+    const maxSeats = rawMaxSeats != null && !isNaN(rawMaxSeats) && rawMaxSeats >= 1 ? Math.floor(rawMaxSeats) : null;
+
+    const VALID_VISIBILITIES = ["public", "chums_only", "invite_only"];
+    const visibility = body.visibility && VALID_VISIBILITIES.includes(String(body.visibility))
+      ? String(body.visibility)
+      : null;
+    if (!visibility) return c.json({ ok: false, error: "VALIDATION", message: "Invalid visibility", field: "visibility" }, 400);
+
+    const patchRequireReconfirmation = body.require_reconfirmation === true;
+
+    await sql`
+      UPDATE newchums.events
+      SET title                  = ${rawTitle},
+          description            = ${description},
+          starts_at              = ${startsAt.toISOString()},
+          max_seats              = ${maxSeats},
+          visibility             = ${visibility},
+          require_reconfirmation = ${patchRequireReconfirmation},
+          updated_at             = NOW()
+      WHERE id = ${eventId}
+    `;
+
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[PATCH /events/:id]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });

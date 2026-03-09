@@ -1,6 +1,6 @@
 # NewChums Agent Governance
 
-Last Updated: March 7, 2026
+Last Updated: March 9, 2026
 
 This document defines how agents (AI or human) should operate within the NewChums repository.
 
@@ -17,9 +17,11 @@ NewChums helps people organize gatherings more easily around hobbies and shared 
 
 **Current product positioning:**
 - Primary pitch: making it easier to plan and coordinate real-world gatherings — board game nights, coffee walks, study sessions, pottery, sports, etc.
-- Secondary pitch: reducing group chat chaos and helping people follow through on things they actually want to do.
+- Secondary pitch: reducing follow-through friction — one place for invites, RSVPs, and updates, so plans actually happen.
 - Tertiary / contextual: meeting new people naturally through shared interests and proximity.
 - Broader mission: reducing loneliness and helping people build real-world social connections. This is still true and still core to why the product exists, but it is not always the front-facing message.
+
+**Note on group chat framing:** The product will eventually create a group chat when a plan is created. Marketing copy should not position NewChums as "without group chats" or "no group chat needed." The pitch is about clarity and follow-through, not about replacing chat tools.
 
 **Why this matters for agents:**
 - Do not frame user-facing copy as primarily about "meeting strangers" or "finding friends." The product should feel like a practical tool for organizing real-life plans.
@@ -129,10 +131,12 @@ The following areas are partially implemented. Agents should polish and improve 
 | Area | Status | Guidance |
 |------|--------|----------|
 | **Explore page** (`/`, logged in) | Functional but evolving. Real API data, filters, location-aware ordering. | Improve polish, fix bugs, refine empty states. Do not invent the final discovery experience. |
-| **Event Details** (`/events/[id]`) | Detail view with RSVP, cancel, invite people, banner display. No edit, no chat, no public event page. | Fix issues, improve UI. Do not build chat, edit, or public sharing without being asked. |
+| **Event Details** (`/events/[id]`) | Detail view with RSVP, cancel, invite, banner, and edit (host). No chat, no public event sharing page. | Fix issues, improve UI. Do not build chat or public sharing without being asked. |
 | **Event email templates** | Scaffolded in code. Postmark templates not yet created. Sends noop safely. | Do not assume emails are live. Note template requirements when relevant. |
+| **Attendance reconfirmation** | Setting saved and surfaced in UI. No email reminder logic yet. Migration 028. | Do not build auto-cancel or punitive logic. Hook reminder workflows via a cron/queue job when ready. |
+| **Attendance record / reliability** | Profile placeholder card is present. No scoring or data engine yet. | Do not build a scoring system without being explicitly asked. |
 | **Recurring events** | Not implemented. Schema supports single-time events only. | Do not add recurring event logic. |
-| **Event chat** | Not implemented. Scaffolded conceptually in schema. | Do not build. |
+| **Event chat** | Not implemented. Planned as a group chat created on event creation. | Do not build. |
 
 ---
 

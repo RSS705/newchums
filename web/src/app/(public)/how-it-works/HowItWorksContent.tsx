@@ -74,7 +74,7 @@ const WALKTHROUGH_STEPS: WalkthroughStep[] = [
     title: "Coordinate without the chaos",
     Icon: ChatRoundedIcon,
     paragraphs: [
-      "See who\u2019s coming, chat about the plan, and make changes, all in one place. No more chasing replies across text threads and group chats.",
+      "See who\u2019s coming, chat about the plan, and make changes, all in one place. No more chasing replies across scattered threads.",
       "Attendees can suggest alternate times and share availability, so finding the right moment is easier for everyone.",
     ],
   },
@@ -274,7 +274,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
                   minWidth: { xs: "100%", sm: 160 },
                 }}
               >
-                Sign up free
+                Sign up
               </Button>
             )}
             <Button
@@ -355,7 +355,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
             designed to make organizing and attending gatherings as easy as possible.
           </Typography>
 
-          <Stack spacing={{ xs: 5, sm: 6 }}>
+          <Stack spacing={{ xs: 5, sm: 6 }} sx={{ mb: { xs: 5, sm: 6 } }}>
             {WALKTHROUGH_STEPS.map(({ num, title, paragraphs, Icon }, index) => {
               const isEven = index % 2 === 0;
               return (
@@ -443,6 +443,29 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
               );
             })}
           </Stack>
+
+          {/* Screenshot placeholder — will be replaced with plan creation screen */}
+          <Box
+            aria-hidden="true"
+            sx={{
+              borderRadius: 2.5,
+              overflow: "hidden",
+              width: "100%",
+              aspectRatio: "16 / 8",
+              background: (theme) =>
+                `linear-gradient(135deg, ${theme.palette.primary.light} 0%, ${theme.palette.grey[200]} 100%)`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Stack alignItems="center" spacing={1.5} sx={{ opacity: 0.45 }}>
+              <CalendarMonthRoundedIcon sx={{ fontSize: 52, color: "primary.main" }} />
+              <Typography variant="body2" color="text.secondary" fontWeight={500}>
+                Screenshot placeholder — Create a plan
+              </Typography>
+            </Stack>
+          </Box>
         </Box>
       </Box>
 
@@ -674,6 +697,30 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
               </Grid>
             ))}
           </Grid>
+
+          {/* Screenshot placeholder — will be replaced with Your Plans / profile screen */}
+          <Box
+            aria-hidden="true"
+            sx={{
+              mt: { xs: 4, sm: 5 },
+              borderRadius: 2.5,
+              overflow: "hidden",
+              width: "100%",
+              aspectRatio: "16 / 7",
+              background: (theme) =>
+                `linear-gradient(135deg, ${theme.palette.grey[100]} 0%, ${theme.palette.primary.light} 100%)`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Stack alignItems="center" spacing={1.5} sx={{ opacity: 0.45 }}>
+              <GroupsRoundedIcon sx={{ fontSize: 52, color: "primary.main" }} />
+              <Typography variant="body2" color="text.secondary" fontWeight={500}>
+                Screenshot placeholder — Your Plans view
+              </Typography>
+            </Stack>
+          </Box>
         </Box>
       </Box>
 
@@ -699,8 +746,8 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
           <Stack spacing={2} sx={{ mb: { xs: 4, sm: 5 }, textAlign: { xs: "center", sm: "left" } }}>
             <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
               Once you set your interests, NewChums can surface gatherings that are relevant
-              to you, no more scrolling through scattered group chats, community boards,
-              and social media posts trying to find something worth joining.
+              to you, no more scrolling through scattered posts and community boards
+              trying to find something worth joining.
             </Typography>
             <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
               Get notified when something you care about is being planned nearby, or browse

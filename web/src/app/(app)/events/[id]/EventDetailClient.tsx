@@ -5,16 +5,27 @@ import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
+import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogTitle from "@mui/material/DialogTitle";
 import Divider from "@mui/material/Divider";
+import FormControl from "@mui/material/FormControl";
+import FormControlLabel from "@mui/material/FormControlLabel";
+import Switch from "@mui/material/Switch";
+import Radio from "@mui/material/Radio";
+import RadioGroup from "@mui/material/RadioGroup";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
+import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import LinkRoundedIcon from "@mui/icons-material/LinkRounded";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
+import NotificationsRoundedIcon from "@mui/icons-material/NotificationsRounded";
 import PeopleOutlineRoundedIcon from "@mui/icons-material/PeopleOutlineRounded";
 import PersonAddRoundedIcon from "@mui/icons-material/PersonAddRounded";
 import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
@@ -45,6 +56,7 @@ type EventDetail = {
   visibility: string;
   status: string;
   allowAltTimes: boolean;
+  requireReconfirmation: boolean;
   canceledAt: string | null;
   bannerKey: string | null;
   hobby: string | null;
@@ -103,6 +115,21 @@ export default function EventDetailClient() {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [inviteSubmitting, setInviteSubmitting] = useState(false);
+
+  // Cancel confirmation dialog
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [canceling, setCanceling] = useState(false);
+
+  // Edit dialog
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editDate, setEditDate] = useState("");
+  const [editTime, setEditTime] = useState("");
+  const [editMaxSeats, setEditMaxSeats] = useState("");
+  const [editVisibility, setEditVisibility] = useState<"public" | "chums_only" | "invite_only">("public");
+  const [editRequireReconfirmation, setEditRequireReconfirmation] = useState(false);
+  const [editSubmitting, setEditSubmitting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -228,17 +255,71 @@ export default function EventDetailClient() {
     }
   };
 
-  const handleCancel = async () => {
-    if (!confirm("Are you sure you want to cancel this plan?")) return;
+  const handleCancelConfirm = async () => {
+    setCanceling(true);
     try {
       const res = await apiFetch(`/events/${eventId}/cancel`, { auth: true, method: "POST" });
       const data = (await res.json()) as { ok: boolean };
       if (data.ok) {
+        setCancelDialogOpen(false);
         toast.success("Plan canceled");
         load();
+      } else {
+        toast.error("Couldn't cancel. Please try again.");
       }
     } catch {
       toast.error("Network error");
+    } finally {
+      setCanceling(false);
+    }
+  };
+
+  const openEditDialog = () => {
+    if (!event) return;
+    const d = new Date(event.startsAt);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    setEditTitle(event.title);
+    setEditDescription(event.description ?? "");
+    setEditDate(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
+    setEditTime(`${pad(d.getHours())}:${pad(d.getMinutes())}`);
+    setEditMaxSeats(event.maxSeats != null ? String(event.maxSeats) : "");
+    setEditVisibility((event.visibility as "public" | "chums_only" | "invite_only") ?? "public");
+    setEditRequireReconfirmation(event.requireReconfirmation ?? false);
+    setEditDialogOpen(true);
+  };
+
+  const handleEditSubmit = async () => {
+    if (!editTitle.trim()) { toast.error("Title is required"); return; }
+    if (!editDate || !editTime) { toast.error("Date and time are required"); return; }
+    const startsAt = new Date(`${editDate}T${editTime}`);
+    if (isNaN(startsAt.getTime())) { toast.error("Invalid date or time"); return; }
+    setEditSubmitting(true);
+    try {
+      const res = await apiFetch(`/events/${eventId}`, {
+        auth: true,
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: editTitle.trim(),
+          description: editDescription.trim() || null,
+          starts_at: startsAt.toISOString(),
+          max_seats: editMaxSeats ? Number(editMaxSeats) : null,
+          visibility: editVisibility,
+          require_reconfirmation: editRequireReconfirmation,
+        }),
+      });
+      const data = (await res.json()) as { ok: boolean; message?: string };
+      if (data.ok) {
+        setEditDialogOpen(false);
+        toast.success("Plan updated");
+        load();
+      } else {
+        toast.error(data.message ?? "Couldn't save changes");
+      }
+    } catch {
+      toast.error("Network error");
+    } finally {
+      setEditSubmitting(false);
     }
   };
 
@@ -402,6 +483,16 @@ export default function EventDetailClient() {
               {event.maxSeats ? ` (${event.maxSeats} seats)` : ""}
             </Typography>
           </Stack>
+          {event.requireReconfirmation && (
+            <Stack direction="row" spacing={1.5} alignItems="center">
+              <NotificationsRoundedIcon sx={{ color: "text.secondary", fontSize: 22 }} />
+              <Typography variant="body2" color="text.secondary">
+                {event.isHost
+                  ? "Attendees will be asked to reconfirm 24 hours before"
+                  : "You\u2019ll receive a reminder to reconfirm attendance 24 hours before"}
+              </Typography>
+            </Stack>
+          )}
         </Stack>
       </AppCard>
 
@@ -739,13 +830,170 @@ export default function EventDetailClient() {
       {/* Host actions */}
       {event.isHost && !isCanceled && (
         <AppCard>
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-            <Button variant="outlined" color="error" onClick={handleCancel} sx={{ textTransform: "none" }}>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={2} flexWrap="wrap">
+            <Button
+              variant="outlined"
+              startIcon={<EditRoundedIcon />}
+              onClick={openEditDialog}
+              sx={{ textTransform: "none" }}
+            >
+              Edit plan
+            </Button>
+            <Button
+              variant="outlined"
+              color="error"
+              onClick={() => setCancelDialogOpen(true)}
+              sx={{ textTransform: "none" }}
+            >
               Cancel this plan
             </Button>
           </Stack>
         </AppCard>
       )}
+
+      {/* Cancel confirmation dialog */}
+      <Dialog
+        open={cancelDialogOpen}
+        onClose={() => !canceling && setCancelDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 700, pb: 1 }}>Cancel this plan?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+            This will mark the plan as canceled and notify anyone who has responded. This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
+          <Button
+            variant="text"
+            color="inherit"
+            onClick={() => setCancelDialogOpen(false)}
+            disabled={canceling}
+          >
+            Keep plan
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={handleCancelConfirm}
+            disabled={canceling}
+            startIcon={canceling ? <CircularProgress size={14} color="inherit" /> : undefined}
+          >
+            {canceling ? "Canceling…" : "Yes, cancel it"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Edit plan dialog */}
+      <Dialog
+        open={editDialogOpen}
+        onClose={() => !editSubmitting && setEditDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 700, pb: 0 }}>Edit plan</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2.5} sx={{ pt: 2 }}>
+            <AppTextField
+              label="Title"
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              inputProps={{ maxLength: 200 }}
+              helperText={null}
+            />
+            <AppTextField
+              label="Description"
+              value={editDescription}
+              onChange={(e) => setEditDescription(e.target.value)}
+              multiline
+              minRows={3}
+              maxRows={6}
+              inputProps={{ maxLength: 2000 }}
+              helperText={null}
+            />
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+              <AppTextField
+                label="Date"
+                type="date"
+                value={editDate}
+                onChange={(e) => setEditDate(e.target.value)}
+                sx={{ flex: 1 }}
+                helperText={null}
+              />
+              <AppTextField
+                label="Time"
+                type="time"
+                value={editTime}
+                onChange={(e) => setEditTime(e.target.value)}
+                sx={{ flex: 1 }}
+                helperText={null}
+              />
+            </Stack>
+            <AppTextField
+              label="Max seats (optional)"
+              type="number"
+              value={editMaxSeats}
+              onChange={(e) => setEditMaxSeats(e.target.value)}
+              inputProps={{ min: 1 }}
+              helperText={null}
+            />
+            <Box>
+              <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1 }}>
+                Who can see this?
+              </Typography>
+              <FormControl component="fieldset">
+                <RadioGroup
+                  value={editVisibility}
+                  onChange={(e) => setEditVisibility(e.target.value as typeof editVisibility)}
+                >
+                  <FormControlLabel value="public" control={<Radio size="small" />} label="Public" />
+                  <FormControlLabel value="chums_only" control={<Radio size="small" />} label="Chums only" />
+                  <FormControlLabel value="invite_only" control={<Radio size="small" />} label="Invite only" />
+                </RadioGroup>
+              </FormControl>
+            </Box>
+            <Box>
+              <FormControlLabel
+                control={
+                  <Switch
+                    size="small"
+                    checked={editRequireReconfirmation}
+                    onChange={(e) => setEditRequireReconfirmation(e.target.checked)}
+                  />
+                }
+                label={
+                  <Box>
+                    <Typography variant="body2" fontWeight={500}>Ask attendees to reconfirm before the plan</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Attendees receive a reminder 24 hours before asking if they&apos;re still coming.
+                    </Typography>
+                  </Box>
+                }
+                sx={{ alignItems: "flex-start", mt: 0.5 }}
+              />
+            </Box>
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
+          <Button
+            variant="text"
+            color="inherit"
+            onClick={() => setEditDialogOpen(false)}
+            disabled={editSubmitting}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleEditSubmit}
+            disabled={editSubmitting}
+            startIcon={editSubmitting ? <CircularProgress size={14} color="inherit" /> : undefined}
+          >
+            {editSubmitting ? "Saving…" : "Save changes"}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Alternate times */}
       {altTimes.length > 0 && (

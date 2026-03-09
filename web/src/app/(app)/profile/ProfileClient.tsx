@@ -31,6 +31,7 @@ import { validateCleanText } from "@/lib/contentSafety";
 import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
 import { isDuplicate, nameToSlug, slugToName } from "@/lib/interestUtils";
 import { loadGooglePlacesScript } from "@/lib/loadGooglePlaces";
+import EventAvailableRoundedIcon from "@mui/icons-material/EventAvailableRounded";
 
 type InterestOption = { id?: string; name: string; slug: string };
 const GENDER_OPTIONS = [
@@ -932,6 +933,53 @@ export default function ProfileClient() {
               The more specific you are, the easier it is for others to find you.
             </Typography>
           )}
+        </Stack>
+      </AppCard>
+
+      {/* Attendance record — placeholder for future reliability feature */}
+      <AppCard sx={{ borderRadius: { xs: 2.5, sm: 3 }, overflow: "hidden" }}>
+        <Stack spacing={1.5}>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: "50%",
+                bgcolor: "primary.light",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <EventAvailableRoundedIcon sx={{ fontSize: 20, color: "primary.main" }} />
+            </Box>
+            <Box>
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Typography variant="h6" fontWeight={700} sx={{ fontSize: { xs: "1.0625rem", sm: "1.125rem" } }}>
+                  Attendance record
+                </Typography>
+                <Chip
+                  label="Coming soon"
+                  size="small"
+                  sx={{
+                    height: 20,
+                    fontSize: "0.6875rem",
+                    fontWeight: 600,
+                    bgcolor: (theme) => `${theme.palette.secondary.main}18`,
+                    color: "secondary.dark",
+                    border: "1px solid",
+                    borderColor: (theme) => `${theme.palette.secondary.main}40`,
+                  }}
+                />
+              </Stack>
+            </Box>
+          </Stack>
+          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.65 }}>
+            Over time, your attendance history will appear here. This helps hosts and attendees get a
+            sense of how reliably plans come together. No scores or ratings — just a simple record
+            of plans you&apos;ve joined and followed through on.
+          </Typography>
         </Stack>
       </AppCard>
 
