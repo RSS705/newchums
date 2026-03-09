@@ -36,6 +36,10 @@ This document is meant to:
 
 ---
 
+## Sign Up
+
+- During the sign up, collect hobbies with notification option, and location, using a multi-step sign up, which is skippable if desired.
+
 ## Non-Logged in Home
 
 - Add a section which explains how the app makes coordinating with existing friends easier.
@@ -116,6 +120,7 @@ This document is meant to:
 ## General
 
 - We need ways for the user to invest into the app. Build interest lists, pin events, add chums, get feedback for events, define chum preferences, etc.
+- Notification of one of their chums joins something they might be interested in
 
 ---
 

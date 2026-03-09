@@ -353,49 +353,8 @@ app.get("/db/postgis", async (c) => {
   }
 });
 
-app.get("/events", async (c) => {
-  const sql = getSql(c.env);
-  const rows = await sql<
-    {
-      id: string;
-      creator_id: string | null;
-      title: string;
-      description: string | null;
-      location_name: string;
-      location_address: string | null;
-      location_place_id: string | null;
-      lat: number;
-      lng: number;
-      starts_at: string;
-      duration_minutes: number | null;
-      seat_limit: number;
-      skill_level: string | null;
-      is_private: boolean;
-      created_at: string;
-    }[]
-  >`
-    select
-      id,
-      creator_id,
-      title,
-      description,
-      location_name,
-      location_address,
-      location_place_id,
-      st_y(location::geometry) as lat,
-      st_x(location::geometry) as lng,
-      starts_at,
-      duration_minutes,
-      seat_limit,
-      skill_level,
-      is_private,
-      created_at
-    from events
-    order by starts_at desc
-    limit 50
-  `;
-  return c.json({ ok: true, events: rows });
-});
+// NOTE: Legacy GET /events (unqualified "events" table with creator_id) removed.
+// Use GET /events/explore or GET /events/mine for event listing. See migration 024 (newchums.events).
 
 // ---- Auth & user routes (migrated from web) ----
 
@@ -2464,81 +2423,8 @@ app.post("/user/date-of-birth", async (c) => {
 
 // ---- End auth & user routes ----
 
-app.post("/events", async (c) => {
-  const body = await c.req.json<{
-    creator_id?: string | null;
-    title?: string;
-    description?: string | null;
-    location_name?: string;
-    location_address?: string | null;
-    location_place_id?: string | null;
-    lat?: number;
-    lng?: number;
-    starts_at?: string;
-    duration_minutes?: number | null;
-    seat_limit?: number;
-    skill_level?: string | null;
-    is_private?: boolean | null;
-  }>();
-
-  if (
-    !body.title ||
-    !body.location_name ||
-    body.lat == null ||
-    body.lng == null ||
-    !body.starts_at ||
-    body.seat_limit == null
-  ) {
-    return c.json(
-      {
-        ok: false,
-        error:
-          "title, location_name, lat, lng, starts_at, and seat_limit are required",
-      },
-      400,
-    );
-  }
-
-  const sql = getSql(c.env);
-  const rows = await sql<
-    {
-      id: string;
-      created_at: string;
-    }[]
-  >`
-    insert into events (
-      creator_id,
-      title,
-      description,
-      location_name,
-      location_address,
-      location_place_id,
-      location,
-      starts_at,
-      duration_minutes,
-      seat_limit,
-      skill_level,
-      is_private
-    )
-    values (
-      ${body.creator_id ?? null},
-      ${body.title},
-      ${body.description ?? null},
-      ${body.location_name},
-      ${body.location_address ?? null},
-      ${body.location_place_id ?? null},
-      st_makepoint(${body.lng}, ${body.lat})::geography,
-      ${body.starts_at},
-      ${body.duration_minutes ?? 120},
-      ${body.seat_limit},
-      ${body.skill_level ?? "all"},
-      ${body.is_private ?? false}
-    )
-    returning id, created_at
-  `;
-
-  return c.json({ ok: true, event: rows[0] ?? null }, 201);
-});
+// NOTE: Legacy POST /events (unqualified "events" table with creator_id) removed.
+// Use the auth-protected POST /events below (newchums.events with host_user_id). See migration 024.
 
 app.post("/dev/users", async (c) => {
   try {
@@ -3999,7 +3885,13 @@ app.post("/events", async (c) => {
 
     return c.json({ ok: true, event: { id: eventId, created_at: rows[0].created_at } }, 201);
   } catch (err) {
-    console.error("[POST /events]", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    const code = err && typeof err === "object" && "code" in err ? String((err as { code: unknown }).code) : "";
+    if (code === "42703" || msg.includes("does not exist")) {
+      console.error("[POST /events] Schema mismatch:", msg, "Ensure migration 024 (newchums.events) is applied.");
+    } else {
+      console.error("[POST /events]", err);
+    }
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });
