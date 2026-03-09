@@ -630,7 +630,7 @@ export default function ProfileClient() {
                   }
                 }}
                 placeholder="Your real name"
-                helperText={displayNameError ?? "Your real name. Visible only when someone views your full profile."}
+                helperText={displayNameError ?? "Your real name."}
                 error={Boolean(displayNameError)}
                 inputProps={{ maxLength: MAX_DISPLAY_NAME_LENGTH }}
               />

@@ -3195,7 +3195,8 @@ app.get("/chums", async (c) => {
     const appUserId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
     const rows = (await sql`
       SELECT u.id, u.name, u.username, u.avatar_key, u.avatar_updated_at,
-             uc.created_at AS chummed_at,
+             u.date_of_birth, COALESCE(u.is_hidden_age, false) AS is_hidden_age,
+             uc.created_at AS chummed_at, uc.note,
              EXISTS(
                SELECT 1 FROM user_chums back
                WHERE back.user_id = uc.chum_user_id AND back.chum_user_id = ${appUserId}
@@ -3210,11 +3211,20 @@ app.get("/chums", async (c) => {
       username: string | null;
       avatar_key: string | null;
       avatar_updated_at: string | Date | null;
+      date_of_birth: string | Date | null;
+      is_hidden_age: boolean;
       chummed_at: string | Date;
+      note: string | null;
       is_mutual: boolean;
     }[];
     const chums = rows.map((r) => {
       const uname = r.username?.replace(/^@/, "") ?? null;
+      let birthday: { month: number; day: number } | null = null;
+      if (!r.is_hidden_age && r.date_of_birth) {
+        const dobStr = typeof r.date_of_birth === "string" ? r.date_of_birth : (r.date_of_birth as Date).toISOString().slice(0, 10);
+        const parts = dobStr.split("-");
+        if (parts.length >= 3) birthday = { month: parseInt(parts[1], 10), day: parseInt(parts[2], 10) };
+      }
       return {
         userId: r.id,
         displayName: r.name?.trim() || uname || "NewChums user",
@@ -3222,11 +3232,40 @@ app.get("/chums", async (c) => {
         avatarUrl: buildAvatarUrl(r.id, r.avatar_key, r.avatar_updated_at, c.env.MEDIA_BUCKET),
         chummedAt: r.chummed_at,
         isMutual: r.is_mutual === true,
+        note: r.note ?? null,
+        birthday,
       };
     });
     return c.json({ ok: true, chums });
   } catch (err) {
     console.error("[GET /chums]", err);
+    return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
+  }
+});
+
+/** PATCH /chums/:userId/note — save or clear the private note for a chum entry. */
+app.patch("/chums/:userId/note", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+  try {
+    const sql = getSql(c.env);
+    const appUserId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+    const targetId = c.req.param("userId");
+    const body = await c.req.json().catch(() => ({})) as { note?: unknown };
+    const rawNote = body.note != null ? String(body.note).trim() : null;
+    const note = rawNote && rawNote.length > 0 ? rawNote.slice(0, 500) : null;
+
+    const result = (await sql`
+      UPDATE newchums.user_chums SET note = ${note}
+      WHERE user_id = ${appUserId} AND chum_user_id = ${targetId}
+      RETURNING id
+    `) as { id: string }[];
+    if (result.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[PATCH /chums/:userId/note]", err);
     return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
   }
 });
@@ -4172,7 +4211,7 @@ app.get("/events/mine", async (c) => {
         hobby: hobbyList[0]?.name ?? null,
         hobbySlug: hobbyList[0]?.slug ?? null,
         hobbies: hobbyList,
-        hostName: r.host_name?.trim() || r.host_username?.replace(/^@/, "") || "Someone",
+        hostName: (() => { const u = r.host_username?.replace(/^@/, ""); return u ? `@${u}` : (r.host_name?.trim() || "Someone"); })(),
         isHost: r.is_host,
         myRsvpStatus: r.my_rsvp_status,
         goingCount: r.going_count,
@@ -4334,7 +4373,7 @@ app.get("/events/explore", async (c) => {
         hobby: hobbyList[0]?.name ?? null,
         hobbySlug: hobbyList[0]?.slug ?? null,
         hobbies: hobbyList,
-        hostName: r.host_name?.trim() || r.host_username?.replace(/^@/, "") || "Someone",
+        hostName: (() => { const u = r.host_username?.replace(/^@/, ""); return u ? `@${u}` : (r.host_name?.trim() || "Someone"); })(),
         isHost: r.is_host,
         myRsvpStatus: r.my_rsvp_status,
         goingCount: r.going_count,
@@ -4477,17 +4516,21 @@ app.get("/events/:id", async (c) => {
         hobby: hobbyList[0]?.name ?? null,
         hobbySlug: hobbyList[0]?.slug ?? null,
         hobbies: hobbyList,
-        hostName: ((event as Record<string, unknown>).host_name as string)?.trim() || ((event as Record<string, unknown>).host_username as string)?.replace(/^@/, "") || "Someone",
+        hostName: (() => { const u = ((event as Record<string, unknown>).host_username as string)?.replace(/^@/, ""); return u ? `@${u}` : (((event as Record<string, unknown>).host_name as string)?.trim() || "Someone"); })(),
         hostUserId: event.host_user_id,
         isHost: isHost === true,
       },
-      rsvps: rsvps.map((r) => ({
-        userId: r.user_id,
-        name: r.name?.trim() || r.username?.replace(/^@/, "") || "Someone",
-        status: r.status,
-        note: r.note,
-        avatarUrl: buildAvatarUrl(r.user_id, r.avatar_key, r.avatar_updated_at, c.env.MEDIA_BUCKET),
-      })),
+      rsvps: rsvps.map((r) => {
+        const rHandle = r.username?.replace(/^@/, "") ?? null;
+        return {
+          userId: r.user_id,
+          name: r.name?.trim() || rHandle || "Someone",
+          handle: rHandle ? `@${rHandle}` : null,
+          status: r.status,
+          note: r.note,
+          avatarUrl: buildAvatarUrl(r.user_id, r.avatar_key, r.avatar_updated_at, c.env.MEDIA_BUCKET),
+        };
+      }),
       altTimes: altTimes.map((a) => ({
         userId: a.user_id,
         name: a.name?.trim() || a.username?.replace(/^@/, "") || "Someone",

@@ -18,6 +18,7 @@ import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import PeopleOutlineRoundedIcon from "@mui/icons-material/PeopleOutlineRounded";
 import PersonAddRoundedIcon from "@mui/icons-material/PersonAddRounded";
 import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import UserAvatar from "@/components/common/UserAvatar";
 import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
@@ -54,7 +55,7 @@ type EventDetail = {
   isHost: boolean;
 };
 
-type RsvpEntry = { userId: string; name: string; status: string; note: string | null; avatarUrl?: string | null };
+type RsvpEntry = { userId: string; name: string; handle: string | null; status: string; note: string | null; avatarUrl?: string | null };
 type AltTimeEntry = { userId: string; name: string; suggestedAt: string; note: string | null };
 type InviteEntry = { userId: string | null; email: string | null; name: string };
 type SearchResult = { userId: string; displayName: string; handle: string | null };
@@ -668,9 +669,37 @@ export default function EventDetailClient() {
                   sx={{ flexShrink: 0 }}
                 />
                 <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ flex: 1, minWidth: 0 }}>
-                  <Typography variant="body1" fontWeight={600} sx={{ fontSize: "1rem" }}>
-                    {r.name}
-                  </Typography>
+                  {r.handle ? (
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography
+                        component={Link}
+                        href={`/u/${r.handle.replace(/^@/, "")}`}
+                        variant="body1"
+                        fontWeight={600}
+                        sx={{
+                          fontSize: "1rem",
+                          color: "text.primary",
+                          textDecoration: "none",
+                          display: "block",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          "&:hover": { textDecoration: "underline" },
+                        }}
+                      >
+                        {r.handle}
+                      </Typography>
+                      {r.name && r.name !== r.handle.replace(/^@/, "") && (
+                        <Typography variant="caption" color="text.secondary" sx={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {r.name}
+                        </Typography>
+                      )}
+                    </Box>
+                  ) : (
+                    <Typography variant="body1" fontWeight={600} sx={{ fontSize: "1rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {r.name}
+                    </Typography>
+                  )}
                   {r.status === "going" ? (
                     <Chip
                       icon={<CheckCircleRoundedIcon sx={{ fontSize: "1rem !important" }} />}

@@ -75,7 +75,8 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
         const res = await apiFetch("/interests");
         if (res.ok) {
           const data = (await res.json()) as { interests: HobbyOption[] };
-          setHobbyOptions(data.interests ?? []);
+          const sorted = (data.interests ?? []).slice().sort((a, b) => a.name.localeCompare(b.name));
+          setHobbyOptions(sorted);
         }
       } catch { /* ignore */ }
     };
@@ -213,42 +214,54 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
             <Stack
               direction={{ xs: "column", sm: "row" }}
               spacing={1.5}
+              alignItems={{ xs: "stretch", sm: "flex-end" }}
               sx={{ pt: 0.5 }}
             >
               <DistanceSelect
                 value={radiusKm}
                 onChange={setRadiusKm}
-                label={undefined}
                 helperText={null}
                 sx={{ flex: 1, minWidth: { sm: 160 } }}
               />
-              <Autocomplete
-                options={hobbyOptions}
-                getOptionLabel={(o) => o.name}
-                value={selectedHobby}
-                onChange={(_, v) => setSelectedHobby(v)}
-                isOptionEqualToValue={(a, b) => a.slug === b.slug}
-                size="small"
-                sx={{ flex: 1, minWidth: { sm: 180 } }}
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    placeholder="Filter by hobby"
-                    variant="outlined"
-                    sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
-                  />
-                )}
-              />
+              <Box sx={{ flex: 1, minWidth: { sm: 180 } }}>
+                <Typography
+                  component="label"
+                  htmlFor="explore-hobby-filter"
+                  variant="subtitle1"
+                  fontWeight={600}
+                  sx={{ display: "block", mb: 0.625, cursor: "text" }}
+                >
+                  Hobbies
+                </Typography>
+                <Autocomplete
+                  fullWidth
+                  options={hobbyOptions}
+                  getOptionLabel={(o) => o.name}
+                  value={selectedHobby}
+                  onChange={(_, v) => setSelectedHobby(v)}
+                  isOptionEqualToValue={(a, b) => a.slug === b.slug}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      id="explore-hobby-filter"
+                      placeholder="Any hobby"
+                      variant="outlined"
+                      label={undefined}
+                      sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
+                    />
+                  )}
+                />
+              </Box>
               {isFiltered && (
                 <Button
-                  size="small"
+                  size="medium"
                   onClick={() => {
                     setSearchText("");
                     setTimeRange("all");
                     setSelectedHobby(null);
                     setRadiusKm(profile?.travel_radius_km ?? 25);
                   }}
-                  sx={{ textTransform: "none", whiteSpace: "nowrap", alignSelf: { xs: "flex-start", sm: "center" } }}
+                  sx={{ textTransform: "none", whiteSpace: "nowrap", flexShrink: 0, mb: "1px" }}
                 >
                   Clear filters
                 </Button>

@@ -8,11 +8,14 @@ import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
 import Divider from "@mui/material/Divider";
+import IconButton from "@mui/material/IconButton";
 import InputAdornment from "@mui/material/InputAdornment";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
+import CakeOutlinedIcon from "@mui/icons-material/CakeOutlined";
+import EditNoteRoundedIcon from "@mui/icons-material/EditNoteRounded";
 import MailOutlineRoundedIcon from "@mui/icons-material/MailOutlineRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import Link from "next/link";
@@ -23,6 +26,11 @@ import UserAvatar from "@/components/common/UserAvatar";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+const MONTH_NAMES = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type ChumUser = {
@@ -32,6 +40,8 @@ type ChumUser = {
   avatarUrl: string | null;
   chummedAt?: string | Date;
   isMutual?: boolean;
+  note?: string | null;
+  birthday?: { month: number; day: number } | null;
 };
 
 type SearchUser = ChumUser & { isChummed: boolean };
@@ -53,6 +63,7 @@ function ChumRow({
   avatarBaseUrl,
   onAdd,
   onRemove,
+  onNoteChange,
 }: {
   user: ChumUser;
   isChummed: boolean;
@@ -60,107 +71,242 @@ function ChumRow({
   avatarBaseUrl: string;
   onAdd: (userId: string) => void;
   onRemove: (userId: string) => void;
+  onNoteChange?: (userId: string, note: string | null) => void;
 }) {
   const handle = user.handle;
   const handleSlug = handle?.replace(/^@/, "") ?? null;
   const profileHref = handleSlug ? `/u/${handleSlug}` : null;
 
+  const showNote = typeof onNoteChange === "function";
+  const [editingNote, setEditingNote] = useState(false);
+  const [noteText, setNoteText] = useState(user.note ?? "");
+  const [noteSaving, setNoteSaving] = useState(false);
+
+  const handleSaveNote = async () => {
+    setNoteSaving(true);
+    try {
+      const res = await apiFetch(`/chums/${user.userId}/note`, {
+        method: "PATCH",
+        auth: true,
+        body: JSON.stringify({ note: noteText.trim() || null }),
+      });
+      const data = await res.json() as { ok?: boolean };
+      if (!data.ok) throw new Error();
+      onNoteChange!(user.userId, noteText.trim() || null);
+      setEditingNote(false);
+    } catch {
+      // toast is available via context but ChumRow doesn't import it directly;
+      // failure is non-critical — just close the edit and let user try again
+      setEditingNote(false);
+      setNoteText(user.note ?? "");
+    } finally {
+      setNoteSaving(false);
+    }
+  };
+
+  const handleCancelNote = () => {
+    setNoteText(user.note ?? "");
+    setEditingNote(false);
+  };
+
+  const birthday = user.birthday;
+  const birthdayLabel = birthday
+    ? `${MONTH_NAMES[(birthday.month - 1) % 12]} ${birthday.day}`
+    : null;
+
   return (
-    <Box
-      sx={{
-        display: "flex",
-        alignItems: "center",
-        gap: { xs: 1.5, sm: 2 },
-        py: 1.25,
-      }}
-    >
-      <UserAvatar
-        src={user.avatarUrl ? `${avatarBaseUrl}${user.avatarUrl}` : null}
-        name={user.displayName}
-        username={handle}
-        size={44}
-        sx={{ flexShrink: 0 }}
-      />
-      <Box sx={{ flex: 1, minWidth: 0 }}>
-        {profileHref ? (
-          <Typography
-            component={Link}
-            href={profileHref}
-            fontWeight={600}
-            sx={{
-              fontSize: "0.9375rem",
-              color: "text.primary",
-              textDecoration: "none",
-              "&:hover": { textDecoration: "underline" },
-              display: "block",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {user.displayName}
-          </Typography>
-        ) : (
-          <Typography
-            fontWeight={600}
-            sx={{
-              fontSize: "0.9375rem",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {user.displayName}
-          </Typography>
+    <Box sx={{ py: 1.5 }}>
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          gap: { xs: 1.5, sm: 2 },
+        }}
+      >
+        <UserAvatar
+          src={user.avatarUrl ? `${avatarBaseUrl}${user.avatarUrl}` : null}
+          name={user.displayName}
+          username={handle}
+          size={44}
+          sx={{ flexShrink: 0 }}
+        />
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          {profileHref ? (
+            <Typography
+              component={Link}
+              href={profileHref}
+              fontWeight={600}
+              sx={{
+                fontSize: "0.9375rem",
+                color: "text.primary",
+                textDecoration: "none",
+                "&:hover": { textDecoration: "underline" },
+                display: "block",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {user.displayName}
+            </Typography>
+          ) : (
+            <Typography
+              fontWeight={600}
+              sx={{
+                fontSize: "0.9375rem",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {user.displayName}
+            </Typography>
+          )}
+          <Stack direction="row" alignItems="center" spacing={1.25} flexWrap="wrap">
+            {handle && (
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+              >
+                {handle}
+              </Typography>
+            )}
+            {birthdayLabel && (
+              <Tooltip title="Birthday (month & day only)" placement="top" arrow>
+                <Stack direction="row" alignItems="center" spacing={0.4} sx={{ color: "text.disabled", flexShrink: 0 }}>
+                  <CakeOutlinedIcon sx={{ fontSize: 13 }} />
+                  <Typography variant="caption" sx={{ lineHeight: 1, letterSpacing: 0.1 }}>
+                    {birthdayLabel}
+                  </Typography>
+                </Stack>
+              </Tooltip>
+            )}
+          </Stack>
+        </Box>
+
+        {/* Mutual Chums indicator */}
+        {user.isMutual && isChummed && (
+          <Tooltip title="Mutual Chums" placement="top" arrow>
+            <Box
+              component="span"
+              sx={{ display: "flex", alignItems: "center", flexShrink: 0, fontSize: 18, lineHeight: 1 }}
+              aria-label="Mutual Chums"
+            >
+              🤝
+            </Box>
+          </Tooltip>
         )}
-        {handle && (
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-          >
-            {handle}
-          </Typography>
+
+        {/* Note toggle (only in chum list) */}
+        {showNote && (
+          <Tooltip title={user.note ? "Edit note" : "Add private note"} placement="top" arrow>
+            <IconButton
+              size="small"
+              onClick={() => setEditingNote((p) => !p)}
+              sx={{
+                color: user.note ? "primary.main" : "text.disabled",
+                "&:hover": { color: "primary.main" },
+                flexShrink: 0,
+              }}
+              aria-label="Private note"
+            >
+              <EditNoteRoundedIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
         )}
+
+        <Box sx={{ flexShrink: 0 }}>
+          {isChummed ? (
+            <Button
+              variant="outlined"
+              size="small"
+              color="inherit"
+              disabled={actionLoading}
+              onClick={() => onRemove(user.userId)}
+              sx={{ fontSize: "0.8125rem", whiteSpace: "nowrap" }}
+            >
+              {actionLoading ? <CircularProgress size={14} sx={{ mx: 1 }} /> : "Remove"}
+            </Button>
+          ) : (
+            <Button
+              variant="contained"
+              size="small"
+              disabled={actionLoading}
+              onClick={() => onAdd(user.userId)}
+              sx={{ fontSize: "0.8125rem", whiteSpace: "nowrap" }}
+            >
+              {actionLoading ? <CircularProgress size={14} color="inherit" sx={{ mx: 1 }} /> : "Add to Chums"}
+            </Button>
+          )}
+        </Box>
       </Box>
 
-      {/* Mutual Chums indicator */}
-      {user.isMutual && isChummed && (
-        <Tooltip title="Mutual Chums" placement="top" arrow>
-          <Box
-            component="span"
-            sx={{ display: "flex", alignItems: "center", flexShrink: 0, fontSize: 18, lineHeight: 1 }}
-            aria-label="Mutual Chums"
-          >
-            🤝
-          </Box>
-        </Tooltip>
+      {/* Inline note editor — shown when showNote is true */}
+      {showNote && editingNote && (
+        <Box sx={{ mt: 1.25, ml: { xs: 0, sm: "60px" } }}>
+          <TextField
+            value={noteText}
+            onChange={(e) => setNoteText(e.target.value)}
+            placeholder="Add a private note about this person…"
+            multiline
+            minRows={2}
+            maxRows={5}
+            fullWidth
+            size="small"
+            inputProps={{ maxLength: 500 }}
+            sx={{
+              "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: "0.875rem" },
+            }}
+          />
+          <Stack direction="row" spacing={1} sx={{ mt: 0.75 }} alignItems="center">
+            <Button
+              size="small"
+              variant="contained"
+              onClick={handleSaveNote}
+              disabled={noteSaving}
+              sx={{ fontSize: "0.8rem", py: 0.4, px: 1.5 }}
+            >
+              {noteSaving ? <CircularProgress size={12} color="inherit" sx={{ mx: 0.5 }} /> : "Save"}
+            </Button>
+            <Button
+              size="small"
+              variant="text"
+              color="inherit"
+              onClick={handleCancelNote}
+              disabled={noteSaving}
+              sx={{ fontSize: "0.8rem", py: 0.4 }}
+            >
+              Cancel
+            </Button>
+            {noteText.trim().length > 0 && (
+              <Typography variant="caption" color="text.disabled" sx={{ ml: "auto !important" }}>
+                {noteText.trim().length}/500
+              </Typography>
+            )}
+          </Stack>
+        </Box>
       )}
 
-      <Box sx={{ flexShrink: 0 }}>
-        {isChummed ? (
-          <Button
-            variant="outlined"
-            size="small"
-            color="inherit"
-            disabled={actionLoading}
-            onClick={() => onRemove(user.userId)}
-            sx={{ fontSize: "0.8125rem", whiteSpace: "nowrap" }}
+      {/* Saved note display (collapsed view) */}
+      {showNote && !editingNote && user.note && (
+        <Box sx={{ mt: 0.75, ml: { xs: 0, sm: "60px" } }}>
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{
+              display: "block",
+              fontStyle: "italic",
+              lineHeight: 1.5,
+              cursor: "pointer",
+              "&:hover": { color: "text.primary" },
+            }}
+            onClick={() => setEditingNote(true)}
           >
-            {actionLoading ? <CircularProgress size={14} sx={{ mx: 1 }} /> : "Remove"}
-          </Button>
-        ) : (
-          <Button
-            variant="contained"
-            size="small"
-            disabled={actionLoading}
-            onClick={() => onAdd(user.userId)}
-            sx={{ fontSize: "0.8125rem", whiteSpace: "nowrap" }}
-          >
-            {actionLoading ? <CircularProgress size={14} color="inherit" sx={{ mx: 1 }} /> : "Add to Chums"}
-          </Button>
-        )}
-      </Box>
+            {user.note}
+          </Typography>
+        </Box>
+      )}
     </Box>
   );
 }
@@ -309,7 +455,7 @@ export default function ChumsClient() {
       if (!data.ok) throw new Error();
       const added = searchResults.find((u) => u.userId === userId);
       if (added) {
-        setChums((prev) => [{ userId: added.userId, displayName: added.displayName, handle: added.handle, avatarUrl: added.avatarUrl }, ...prev]);
+        setChums((prev) => [{ userId: added.userId, displayName: added.displayName, handle: added.handle, avatarUrl: added.avatarUrl, note: null, birthday: null }, ...prev]);
       }
       setSearchResults((prev) => prev.map((u) => u.userId === userId ? { ...u, isChummed: true } : u));
       toast.success(`${added?.displayName ?? "User"} added to your Chums.`);
@@ -336,6 +482,10 @@ export default function ChumsClient() {
       setActionLoading((prev) => { const next = new Set(prev); next.delete(userId); return next; });
     }
   };
+
+  const handleNoteChange = useCallback((userId: string, note: string | null) => {
+    setChums((prev) => prev.map((c) => c.userId === userId ? { ...c, note } : c));
+  }, []);
 
   const handleSendInvite = async () => {
     setInviteSending(true);
@@ -501,6 +651,7 @@ export default function ChumsClient() {
                   avatarBaseUrl={avatarBaseUrl}
                   onAdd={handleAdd}
                   onRemove={handleRemove}
+                  onNoteChange={handleNoteChange}
                 />
               ))}
             </Stack>
