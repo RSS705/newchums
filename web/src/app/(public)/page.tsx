@@ -9,9 +9,9 @@ import LandingPageContent from "./LandingPageContent";
 import LandingLayout from "@/components/landing/LandingLayout";
 
 export const metadata: Metadata = {
-  title: "NewChums, Organize hobbies and events without the group chat chaos",
+  title: "NewChums | Start, share, and join hobby-based plans nearby",
   description:
-    "Sign up once and get notified when people nearby are organizing activities around your interests. Board games, coffee walks, pottery, and more.",
+    "One place for your plans. Create them, share invites, or discover gatherings near you, without the group chat chaos.",
 };
 
 export default async function RootPage() {

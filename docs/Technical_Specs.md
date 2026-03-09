@@ -13,10 +13,10 @@ It describes **what exists today** and the structural commitments we are making.
 NewChums helps people organize gatherings more easily around hobbies and shared interests.
 
 **Current positioning:**
-- Primary: practical social coordination — making it easier to plan, coordinate, and follow through on real-world gatherings.
-- Secondary: reducing group chat chaos and turning "we should do something sometime" into actual plans.
-- Contextual: meeting new people naturally through shared interests and proximity.
-- Broader mission: reducing loneliness by making real-world social connection more approachable.
+- Primary: start, share, and join hobby-based plans nearby, a practical tool for organizing real-world gatherings.
+- Secondary: reduces group chat chaos and makes follow-through easier (one place for plans, invites, RSVPs).
+- Tertiary: meeting new people naturally through shared interests and smaller, approachable gatherings.
+- Broader mission: reducing loneliness by supporting real-world connection; emphasized on Science of Friendship page, lightly referenced on homepage.
 
 **Terminology:** The system uses "event" internally (database, API routes, code) but user-facing surfaces prefer "plan" or "gathering." See `AGENTS.md` for full terminology guidance.
 
@@ -423,7 +423,7 @@ All pages live under `web/src/app/(public)/` and follow the same pattern: a thin
 
 | Page | Route | Content component | Purpose |
 |------|-------|-------------------|---------|
-| Homepage | `/` | `LandingPageContent.tsx` | Hero (preserved headline), event discovery section with mock data and category filter chips, "making plans easier" feature blocks, "why this works" benefit cards, CTA. Logged-in users see `DashboardHome` instead. |
+| Homepage | `/` | `LandingPageContent.tsx` | Hero (organize and join hobby-based plans), examples section (mock plans + category filter), "why it helps" feature blocks, "social upside" benefit cards, CTA. Logged-in users see `DashboardHome` instead. |
 | How it Works | `/how-it-works` | `HowItWorksContent.tsx` | 6-step product walkthrough, "made for real plans" section with coordination mock panel, friends + new connections cards, discovery mock panel, trust/comfort section, CTA. |
 | Science of Friendship | `/science-of-friendship` | `ScienceOfFriendshipContent.tsx` | Research-backed trust page. Interactive friendship-engine diagram, timeline visualization, two-column research cards, CTA. |
 | Safety Center | `/safety-center` | `SafetyCenterContent.tsx` | Community guidance. Confidence checklist, gathering tips, respect/comfort cards, "if something feels off" section, reporting link, CTA. |

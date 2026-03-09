@@ -15,7 +15,7 @@ export type AuthSplitLayoutProps = {
   children: ReactNode;
   /** Illustration src for left panel. Default: /auth-illustration.svg */
   illustrationSrc?: string;
-  /** Optional tagline below branding (e.g. "Find your people"). Shown on left panel. */
+  /** Optional tagline below branding (e.g. "Better plans start here"). Shown on left panel. */
   tagline?: string;
 };
 

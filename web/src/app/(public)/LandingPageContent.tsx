@@ -19,10 +19,11 @@ import PeopleRoundedIcon from "@mui/icons-material/PeopleRounded";
 
 /**
  * Full public homepage content for logged-out visitors.
- * Sections: Hero → Event Discovery → Making Plans Easier → Why This Works → CTA
+ * Sections: Hero → Examples (plans) → Why It Helps → Social Upside → CTA
  *
- * The event discovery section uses mock data structured to be easily replaced
- * with real API data. See MOCK_EVENTS and the rendering logic below.
+ * Messaging hierarchy: (1) organize and join hobby-based plans, (2) reduces
+ * group chat chaos and follow-through, (3) social upside via shared interests.
+ * The examples section uses mock data structured for easy replacement with real API data.
  */
 
 const SECTION_SPACING = { py: { xs: 5, sm: 8, md: 10 } };
@@ -136,41 +137,41 @@ const FILTER_CATEGORIES = [
   "Learning",
 ];
 
-// ── "Making Plans Easier" feature blocks ──────────────────────────────────
+// ── "Why it helps" feature blocks: one place, invites/RSVPs, follow-through ───
 const PLAN_FEATURES = [
   {
     Icon: ChatRoundedIcon,
-    title: "Stop losing plans in the group chat",
-    body: "\u201cWe should hang out\u201d messages get buried. NewChums gives plans a real home, visible, clear, and easy to say yes to.",
+    title: "One clear place for every plan",
+    body: "\u201cWe should hang out\u201d gets buried in the group chat. NewChums gives plans a real home, visible, clear, and easy to say yes to.",
   },
   {
     Icon: CalendarMonthRoundedIcon,
-    title: "Easy for friends to join",
-    body: "Share an event with people you already know, or let others nearby discover it. Everyone has the same info, no chasing people down.",
+    title: "Invites and RSVPs in one spot",
+    body: "Share a plan with people you know or let others nearby discover it. Everyone sees the same details, no chasing replies or losing updates.",
   },
   {
     Icon: FavoriteRoundedIcon,
-    title: "Hobbies give people a reason to show up",
-    body: "When a gathering has a clear activity, people are more likely to commit. A shared interest beats a vague \u201cdrinks sometime\u201d every time.",
+    title: "Clear plans mean better follow-through",
+    body: "When the details are clear (what, where, when), people are more likely to show up. A concrete plan beats a vague \u201cdrinks sometime\u201d every time.",
   },
 ];
 
-// ── "Why This Works" benefit cards ────────────────────────────────────────
+// ── "Social upside" benefit cards: shared interests, approachable, new connections ─
 const BENEFIT_CARDS = [
   {
     accentColor: "secondary.main" as const,
     title: "Shared interests make it easy to say yes",
-    body: "When you already have something in common, there\u2019s less awkwardness about meeting up. A shared hobby is a built-in conversation starter and a reason to come back.",
+    body: "When you already have something in common, there\u2019s less awkwardness about meeting up. A shared hobby is a built-in conversation starter.",
   },
   {
     accentColor: "primary.main" as const,
-    title: "Clear plans mean better follow-through",
-    body: "People are more likely to show up when the details are clear, what\u2019s happening, where it is, and who else is coming.",
+    title: "Smaller plans feel more approachable",
+    body: "NewChums is built around gatherings that don\u2019t require a big commitment: a coffee walk, a board game session, an afternoon pottery class.",
   },
   {
     accentColor: "secondary.main" as const,
-    title: "Smaller gatherings feel more approachable",
-    body: "NewChums is built around events that don\u2019t require a big commitment: a coffee walk, a board game session, an afternoon pottery class.",
+    title: "New connections happen naturally",
+    body: "When you\u2019re doing something you enjoy with people who enjoy it too, meeting new people stops feeling forced. It just happens.",
   },
 ];
 
@@ -203,10 +204,10 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                   display: "block",
                 }}
               >
-                Shared interests bring people together
+                Start, share, and join plans nearby
               </Typography>
 
-              {/* H1 — preserved from original */}
+              {/* H1 */}
               <Typography
                 component="h1"
                 variant="h1"
@@ -218,14 +219,14 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                   mt: "0 !important",
                 }}
               >
-                Organize{" "}
+                Organize and join{" "}
                 <Box component="span" sx={{ color: "primary.main" }}>
-                  hobbies and events
+                  hobby-based plans
                 </Box>
                 {" "}without the group chat chaos
               </Typography>
 
-              {/* Subtext — preserved from original */}
+              {/* Subtext */}
               <Typography
                 variant="h5"
                 fontWeight={400}
@@ -236,8 +237,8 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                   mt: "0 !important",
                 }}
               >
-                Sign up once and get notified when people nearby are organizing
-                activities around your interests.
+                One place for your plans. Create them, share invites, or discover
+                gatherings near you, no more chasing replies.
               </Typography>
 
               {/* CTAs */}
@@ -497,7 +498,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
       >
         <Box maxWidth={1100} mx="auto">
           <SectionHeader
-            title="See the kinds of gatherings NewChums makes easier"
+            title="What kinds of plans happen here"
             emphasis="primary"
             accentColor="secondary"
           />
@@ -511,8 +512,8 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
               maxWidth: 680,
             }}
           >
-            From board game nights to coffee walks, real activities, shared interests,
-            no group chat needed. Sign up to discover what&apos;s happening near you.
+            Board game nights, coffee walks, study sessions, beginner sports.
+            Real activities with clear plans, no group chat needed.
           </Typography>
 
           {/* Category filter chips */}
@@ -683,7 +684,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
               color="text.secondary"
               sx={{ mb: 2.5, fontStyle: "italic" }}
             >
-              These are examples of the kinds of gatherings you&apos;ll find on NewChums.
+              Examples of the kinds of plans you&apos;ll find on NewChums.
             </Typography>
             {!isLoggedIn && (
               <Button
@@ -701,7 +702,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                   textTransform: "none",
                 }}
               >
-                Sign up to discover plans near you
+                Sign up to see plans near you
               </Button>
             )}
           </Box>
@@ -716,7 +717,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
       >
         <Box maxWidth={900} mx="auto" sx={{ textAlign: { xs: "center", sm: "left" } }}>
           <SectionHeader
-            title="Better plans start with a clearer place to organize them"
+            title="Why it helps: one place, invites, and easier follow-through"
             emphasis="primary"
             accentColor="secondary"
           />
@@ -725,9 +726,9 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
             variant="body1"
             sx={{ mb: { xs: 4, sm: 5 }, lineHeight: 1.75 }}
           >
-            NewChums makes it easy to turn &ldquo;we should do something&rdquo; into an actual
-            plan, whether you&apos;re organizing things with friends you already know or
-            discovering others who enjoy the same things you do.
+            Plans fall apart when details get scattered. NewChums gives each plan a
+            home, invites, RSVPs, and updates in one spot. No more chasing replies or
+            losing track of who&apos;s coming.
           </Typography>
 
           <Grid container spacing={{ xs: 5, sm: 5, md: 6 }}>
@@ -797,7 +798,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
       >
         <Box maxWidth={900} mx="auto">
           <SectionHeader
-            title="A simpler way to get together"
+            title="Shared interests make plans feel approachable"
             emphasis="primary"
             accentColor="secondary"
           />
@@ -810,9 +811,8 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
               textAlign: { xs: "center", sm: "left" },
             }}
           >
-            Most plans with friends fall apart somewhere between &ldquo;good idea&rdquo;
-            and &ldquo;actually doing it.&rdquo; NewChums is built around the things that
-            help people follow through.
+            When a plan revolves around something you already enjoy, saying yes is easier.
+            Smaller gatherings, less awkwardness, and new connections can happen naturally.
           </Typography>
 
           <Grid container spacing={{ xs: 3, sm: 4 }}>
@@ -955,7 +955,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
               mx: "auto",
             }}
           >
-            Sign up once, add a few hobbies, and start discovering better plans.
+            Sign up, add the hobbies you enjoy, and start organizing or discovering plans.
           </Typography>
 
           <Divider

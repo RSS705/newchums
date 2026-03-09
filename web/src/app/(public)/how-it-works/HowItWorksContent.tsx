@@ -56,7 +56,7 @@ const WALKTHROUGH_STEPS: WalkthroughStep[] = [
     title: "Explore gatherings or create your own",
     Icon: ExploreRoundedIcon,
     paragraphs: [
-      "Browse events happening near you, or start one yourself. Creating a gathering is quick, just name it, pick a time and place, and share what people can expect.",
+      "Browse gatherings happening near you, or start one yourself. Creating a plan is quick, name it, pick a time and place, and share what people can expect.",
       "Board game nights, coffee walks, study sessions, beginner sports, the best gatherings are simple and specific.",
     ],
   },
@@ -65,7 +65,7 @@ const WALKTHROUGH_STEPS: WalkthroughStep[] = [
     title: "Invite the right people",
     Icon: GroupsRoundedIcon,
     paragraphs: [
-      "Share your event with friends, chums, or let others nearby discover it. NewChums helps surface people whose interests match the gathering.",
+      "Share your plan with friends, chums, or let others nearby discover it. NewChums helps surface people whose interests match the gathering.",
       "You stay in control, choose who you want to invite, or let interested people find you.",
     ],
   },
@@ -92,7 +92,7 @@ const WALKTHROUGH_STEPS: WalkthroughStep[] = [
     title: "Keep the momentum going",
     Icon: RepeatRoundedIcon,
     paragraphs: [
-      "After a great gathering, the connection does not have to end. Stay in touch, plan the next one, or discover new events from people you have met.",
+      "After a great gathering, the connection does not have to end. Stay in touch, plan the next one, or discover new gatherings from people you've met.",
       "The more you show up, the easier it gets, and the more your community grows.",
     ],
   },
@@ -114,13 +114,13 @@ const AUDIENCE_CARDS = [
     accentColor: "secondary.main" as const,
     Icon: PeopleRoundedIcon,
     title: "Organize with people you already know",
-    body: "Create an event and invite friends directly. Everyone gets the same clear plan, no more chasing replies or losing details in long group threads.",
+    body: "Create a plan and invite friends directly. Everyone gets the same clear details, no more chasing replies or losing track in long group threads.",
   },
   {
     accentColor: "primary.main" as const,
     Icon: FavoriteRoundedIcon,
-    title: "Meet new people through shared interests",
-    body: "When you enjoy the same hobbies, there\u2019s already common ground. NewChums makes it easy to discover local gatherings and connect with people naturally.",
+    title: "Discover plans through shared interests",
+    body: "When you enjoy the same hobbies, there\u2019s already common ground. Browse local gatherings, show up, and new connections can happen naturally.",
   },
 ];
 
@@ -691,7 +691,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
       >
         <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto">
           <SectionHeader
-            title="Discover events without the endless searching"
+            title="Discover plans without the endless searching"
             emphasis="primary"
             accentColor="secondary"
           />

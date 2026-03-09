@@ -605,7 +605,7 @@ export default function SafetyCenterContent({ isLoggedIn = false }: { isLoggedIn
               color: "inherit",
             }}
           >
-            Meet people around things you already enjoy
+            Plan around things you already enjoy
           </Typography>
 
           {/* Subtext */}

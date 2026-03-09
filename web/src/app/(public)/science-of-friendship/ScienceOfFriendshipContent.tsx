@@ -584,7 +584,7 @@ export default function ScienceOfFriendshipContent({ isLoggedIn = false }: { isL
             {[
               isLoggedIn ? "Open your profile" : "Sign up",
               "Add a few hobbies you enjoy",
-              "Get notified when people nearby plan events",
+              "Get notified when people nearby plan gatherings",
             ].map((text, i) => (
               <Grid key={text} size={{ xs: 12, sm: 4 }}>
                 <Stack alignItems="center" spacing={2}>
