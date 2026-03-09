@@ -184,6 +184,7 @@ export default function CreateEventClient() {
   const validate = (): boolean => {
     const errs: Record<string, string> = {};
     if (!title.trim()) errs.title = "Give your plan a title";
+    if (selectedHobbies.length === 0) errs.hobby = "Add at least one hobby so people can find this plan";
     if (!dateValue || !dateValue.isValid()) errs.date = "Pick a date";
     if (!timeValue || !timeValue.isValid()) errs.time = "Pick a time";
     if (locationType === "in_person" && !locationName.trim() && !locationAddress.trim())
@@ -483,7 +484,11 @@ export default function CreateEventClient() {
             loading={suggestionsLoading}
             renderInput={(params) => (
               <Box sx={{ width: "100%" }}>
-                <Typography variant="subtitle1" fontWeight={600} sx={{ display: "block", mb: 0.625 }}>
+                <Typography
+                  variant="subtitle1"
+                  fontWeight={600}
+                  sx={{ display: "block", mb: 0.625, color: errors.hobby ? "error.main" : "inherit" }}
+                >
                   Hobbies
                 </Typography>
                 <TextField
@@ -493,7 +498,8 @@ export default function CreateEventClient() {
                   size="medium"
                   fullWidth
                   label={undefined}
-                  helperText="Link this plan to hobbies so the right people can find it"
+                  error={!!errors.hobby}
+                  helperText={errors.hobby ?? "Link this plan to hobbies so the right people can find it"}
                   onKeyDown={(e) => {
                     if (e.key === "Backspace" && !hobbyInputValue) {
                       e.preventDefault();

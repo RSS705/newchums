@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import CircularProgress from "@mui/material/CircularProgress";
+import Collapse from "@mui/material/Collapse";
 import Grid from "@mui/material/Grid";
 import Stack from "@mui/material/Stack";
 import Tab from "@mui/material/Tab";
@@ -11,6 +12,8 @@ import Tabs from "@mui/material/Tabs";
 import Typography from "@mui/material/Typography";
 import AddCircleRoundedIcon from "@mui/icons-material/AddCircleRounded";
 import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
+import ExpandLessRoundedIcon from "@mui/icons-material/ExpandLessRounded";
+import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import Link from "next/link";
 import EventCard, { type PlanEvent } from "@/components/events/EventCard";
 import { SectionHeader } from "@/components/ui";
@@ -21,6 +24,7 @@ export default function PlansPage() {
   const [upcoming, setUpcoming] = useState<PlanEvent[]>([]);
   const [past, setPast] = useState<PlanEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [canceledOpen, setCanceledOpen] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -44,9 +48,13 @@ export default function PlansPage() {
     load();
   }, []);
 
-  const hosted = (tab === 0 ? upcoming : past).filter((e) => e.isHost);
-  const joined = (tab === 0 ? upcoming : past).filter((e) => !e.isHost);
   const isPast = tab === 1;
+  // Active (non-canceled) events for the current tab
+  const activeList = (isPast ? past : upcoming).filter((e) => e.status !== "canceled");
+  // Canceled upcoming events live in their own collapsed section
+  const canceledUpcoming = upcoming.filter((e) => e.status === "canceled");
+  const hosted = activeList.filter((e) => e.isHost);
+  const joined = activeList.filter((e) => !e.isHost);
 
   return (
     <Stack spacing={{ xs: 3, sm: 4 }}>
@@ -179,6 +187,38 @@ export default function PlansPage() {
                   Start a plan
                 </Button>
               )}
+            </Box>
+          )}
+
+          {/* Canceled upcoming plans — collapsed by default */}
+          {!isPast && canceledUpcoming.length > 0 && (
+            <Box sx={{ pt: hosted.length > 0 || joined.length > 0 ? 1 : 0 }}>
+              <Button
+                size="small"
+                onClick={() => setCanceledOpen((v) => !v)}
+                endIcon={canceledOpen ? <ExpandLessRoundedIcon sx={{ fontSize: 18 }} /> : <ExpandMoreRoundedIcon sx={{ fontSize: 18 }} />}
+                sx={{
+                  color: "text.disabled",
+                  fontWeight: 500,
+                  fontSize: "0.8125rem",
+                  textTransform: "none",
+                  px: 0.5,
+                  "&:hover": { color: "text.secondary", bgcolor: "transparent" },
+                }}
+              >
+                {canceledOpen
+                  ? "Hide canceled plans"
+                  : `Show canceled plans (${canceledUpcoming.length})`}
+              </Button>
+              <Collapse in={canceledOpen} unmountOnExit>
+                <Grid container spacing={2} sx={{ mt: 1 }}>
+                  {canceledUpcoming.map((event) => (
+                    <Grid key={event.id} size={{ xs: 12, sm: 6, md: 4 }} sx={{ display: "flex" }}>
+                      <EventCard event={event} />
+                    </Grid>
+                  ))}
+                </Grid>
+              </Collapse>
             </Box>
           )}
         </Stack>

@@ -1,10 +1,12 @@
 "use client";
 
 import Box from "@mui/material/Box";
+import Chip from "@mui/material/Chip";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import Link from "next/link";
 import Button from "@mui/material/Button";
+import EventAvailableRoundedIcon from "@mui/icons-material/EventAvailableRounded";
 import { AppCard } from "@/components/ui";
 import { getProfileCardBg } from "@/lib/profileTheme";
 import ProfileHeaderSection from "./ProfileHeaderSection";
@@ -138,6 +140,51 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
           <ProfileHobbiesSection hobbies={user.hobbies} />
         </AppCard>
       )}
+
+      {/* Attendance record — matches profile view placeholder, neutral public-facing wording */}
+      <AppCard sx={{ borderRadius: { xs: 2, sm: 2.5 }, overflow: "hidden" }}>
+        <Stack spacing={1.5}>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box
+              sx={{
+                width: 36,
+                height: 36,
+                borderRadius: "50%",
+                bgcolor: "primary.light",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <EventAvailableRoundedIcon sx={{ fontSize: 18, color: "primary.main" }} />
+            </Box>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Typography variant="subtitle1" fontWeight={700} sx={{ fontSize: { xs: "0.9375rem", sm: "1rem" } }}>
+                Attendance record
+              </Typography>
+              <Chip
+                label="Coming soon"
+                size="small"
+                sx={{
+                  height: 20,
+                  fontSize: "0.6875rem",
+                  fontWeight: 600,
+                  bgcolor: (theme) => `${theme.palette.secondary.main}18`,
+                  color: "secondary.dark",
+                  border: "1px solid",
+                  borderColor: (theme) => `${theme.palette.secondary.main}40`,
+                }}
+              />
+            </Stack>
+          </Stack>
+          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.65 }}>
+            {isOwner
+              ? "Your attendance history will appear here once this feature launches."
+              : "Attendance history will appear here once this feature launches."}
+          </Typography>
+        </Stack>
+      </AppCard>
 
       {/* Shared Chums count — subtle line below header for logged-in non-owners when > 0 */}
       {!isOwner && sharedCount !== undefined && sharedCount > 0 && (

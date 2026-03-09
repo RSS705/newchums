@@ -4019,6 +4019,9 @@ app.post("/events", async (c) => {
       }
     }
 
+    if (resolvedInterestIds.length === 0)
+      return c.json({ ok: false, error: "VALIDATION", message: "At least one hobby is required", field: "hobby" }, 400);
+
     const interestId = resolvedInterestIds[0] ?? null;
 
     const rows = (await sql`
@@ -4707,17 +4710,64 @@ app.patch("/events/:id", async (c) => {
 
     const patchRequireReconfirmation = body.require_reconfirmation === true;
 
+    // Resolve and validate hobby tags (required, mirrors POST /events logic)
+    const patchInterestItems = Array.isArray(body.interest_items)
+      ? (body.interest_items as Array<{ slug?: string; name?: string }>).slice(0, 10)
+      : [];
+
+    if (patchInterestItems.length === 0)
+      return c.json({ ok: false, error: "VALIDATION", message: "At least one hobby is required", field: "hobby" }, 400);
+
+    const patchInterestIds: string[] = [];
+    for (const it of patchInterestItems) {
+      const slug = it?.slug ? nameToSlug(String(it.slug).trim()) : "";
+      const name = it?.name ? String(it.name).trim().replace(/\s+/g, " ") : "";
+      if (!slug || !name) continue;
+      if (name.length > 50)
+        return c.json({ ok: false, error: "VALIDATION", message: "Hobby name must be 50 characters or less", field: "hobby" }, 400);
+      const hCheck = validateCleanText(name, "hobby");
+      if (!hCheck.ok)
+        return c.json({ ok: false, error: "INAPPROPRIATE_TEXT", field: "hobby", message: hCheck.reason ?? "That hobby name isn't allowed." }, 400);
+
+      const existRows = (await sql`
+        SELECT id, is_deleted FROM newchums.interests WHERE LOWER(slug) = LOWER(${slug}) LIMIT 1
+      `) as { id: string; is_deleted: boolean }[];
+
+      if (existRows[0] && !existRows[0].is_deleted) {
+        if (!patchInterestIds.includes(existRows[0].id)) patchInterestIds.push(existRows[0].id);
+      } else {
+        try {
+          await sql`INSERT INTO newchums.interests (name, category, slug, sort_order, is_seed, created_by_user_id) VALUES (${name}, '', ${slug}, 0, false, ${userId}) ON CONFLICT (slug) DO NOTHING`;
+        } catch { /* ignore concurrent insert race */ }
+        const fetched = (await sql`
+          SELECT id FROM newchums.interests WHERE LOWER(slug) = LOWER(${slug}) AND is_deleted = false LIMIT 1
+        `) as { id: string }[];
+        if (fetched[0] && !patchInterestIds.includes(fetched[0].id)) patchInterestIds.push(fetched[0].id);
+      }
+    }
+
+    if (patchInterestIds.length === 0)
+      return c.json({ ok: false, error: "VALIDATION", message: "At least one valid hobby is required", field: "hobby" }, 400);
+
+    const patchPrimaryInterestId = patchInterestIds[0];
+
     await sql`
       UPDATE newchums.events
       SET title                  = ${rawTitle},
           description            = ${description},
           starts_at              = ${startsAt.toISOString()},
+          interest_id            = ${patchPrimaryInterestId},
           max_seats              = ${maxSeats},
           visibility             = ${visibility},
           require_reconfirmation = ${patchRequireReconfirmation},
           updated_at             = NOW()
       WHERE id = ${eventId}
     `;
+
+    await sql`DELETE FROM newchums.event_interests WHERE event_id = ${eventId}`;
+    for (const iid of patchInterestIds) {
+      await sql`INSERT INTO newchums.event_interests (event_id, interest_id) VALUES (${eventId}, ${iid}) ON CONFLICT DO NOTHING`;
+    }
 
     return c.json({ ok: true });
   } catch (err) {

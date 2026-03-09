@@ -977,7 +977,7 @@ export default function ProfileClient() {
           </Stack>
           <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.65 }}>
             Over time, your attendance history will appear here. This helps hosts and attendees get a
-            sense of how reliably plans come together. No scores or ratings — just a simple record
+            sense of how reliably plans come together, with no scores or ratings, just a simple record
             of plans you&apos;ve joined and followed through on.
           </Typography>
         </Stack>

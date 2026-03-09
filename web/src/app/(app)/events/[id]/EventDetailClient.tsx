@@ -1,11 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Autocomplete from "@mui/material/Autocomplete";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import Dialog from "@mui/material/Dialog";
+import { DatePicker } from "@mui/x-date-pickers/DatePicker";
+import { TimePicker } from "@mui/x-date-pickers/TimePicker";
+import dayjs, { type Dayjs } from "dayjs";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
@@ -34,6 +38,7 @@ import { useParams, useRouter } from "next/navigation";
 import UserAvatar from "@/components/common/UserAvatar";
 import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
 import { apiFetch, getAvatarBaseUrl, getMediaApiBaseUrl } from "@/lib/apiClient";
+import { nameToSlug } from "@/lib/interestUtils";
 
 type HobbyInfo = { name: string; slug: string };
 
@@ -124,11 +129,15 @@ export default function EventDetailClient() {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState("");
-  const [editDate, setEditDate] = useState("");
-  const [editTime, setEditTime] = useState("");
+  const [editDate, setEditDate] = useState<Dayjs | null>(null);
+  const [editTime, setEditTime] = useState<Dayjs | null>(null);
   const [editMaxSeats, setEditMaxSeats] = useState("");
   const [editVisibility, setEditVisibility] = useState<"public" | "chums_only" | "invite_only">("public");
   const [editRequireReconfirmation, setEditRequireReconfirmation] = useState(false);
+  const [editHobbies, setEditHobbies] = useState<HobbyInfo[]>([]);
+  const [editHobbyInput, setEditHobbyInput] = useState("");
+  const [editHobbySuggestions, setEditHobbySuggestions] = useState<HobbyInfo[]>([]);
+  const [editHobbyLoading, setEditHobbyLoading] = useState(false);
   const [editSubmitting, setEditSubmitting] = useState(false);
 
   const load = useCallback(async () => {
@@ -177,6 +186,21 @@ export default function EventDetailClient() {
     }, 300);
     return () => clearTimeout(timer);
   }, [inviteSearch, showInviteForm]);
+
+  // Edit dialog hobby search
+  useEffect(() => {
+    if (!editDialogOpen || !editHobbyInput.trim()) { setEditHobbySuggestions([]); return; }
+    const timer = setTimeout(async () => {
+      setEditHobbyLoading(true);
+      try {
+        const res = await apiFetch(`/interests?q=${encodeURIComponent(editHobbyInput)}`);
+        const data = (await res.json()) as { ok: boolean; interests?: HobbyInfo[] };
+        setEditHobbySuggestions(data.ok && data.interests ? data.interests : []);
+      } catch { setEditHobbySuggestions([]); }
+      finally { setEditHobbyLoading(false); }
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [editHobbyInput, editDialogOpen]);
 
   const handleInvite = async (userId?: string, email?: string) => {
     setInviteSubmitting(true);
@@ -276,23 +300,31 @@ export default function EventDetailClient() {
 
   const openEditDialog = () => {
     if (!event) return;
-    const d = new Date(event.startsAt);
-    const pad = (n: number) => String(n).padStart(2, "0");
+    const d = dayjs(event.startsAt);
     setEditTitle(event.title);
     setEditDescription(event.description ?? "");
-    setEditDate(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
-    setEditTime(`${pad(d.getHours())}:${pad(d.getMinutes())}`);
+    setEditDate(d);
+    setEditTime(d);
     setEditMaxSeats(event.maxSeats != null ? String(event.maxSeats) : "");
     setEditVisibility((event.visibility as "public" | "chums_only" | "invite_only") ?? "public");
     setEditRequireReconfirmation(event.requireReconfirmation ?? false);
+    const initialHobbies =
+      event.hobbies?.length > 0
+        ? event.hobbies
+        : event.hobby
+          ? [{ name: event.hobby, slug: event.hobbySlug ?? "" }]
+          : [];
+    setEditHobbies(initialHobbies);
+    setEditHobbyInput("");
+    setEditHobbySuggestions([]);
     setEditDialogOpen(true);
   };
 
   const handleEditSubmit = async () => {
     if (!editTitle.trim()) { toast.error("Title is required"); return; }
-    if (!editDate || !editTime) { toast.error("Date and time are required"); return; }
-    const startsAt = new Date(`${editDate}T${editTime}`);
-    if (isNaN(startsAt.getTime())) { toast.error("Invalid date or time"); return; }
+    if (!editDate?.isValid() || !editTime?.isValid()) { toast.error("Date and time are required"); return; }
+    if (editHobbies.length === 0) { toast.error("At least one hobby is required"); return; }
+    const startsAt = editDate.hour(editTime.hour()).minute(editTime.minute()).second(0).toISOString();
     setEditSubmitting(true);
     try {
       const res = await apiFetch(`/events/${eventId}`, {
@@ -302,7 +334,8 @@ export default function EventDetailClient() {
         body: JSON.stringify({
           title: editTitle.trim(),
           description: editDescription.trim() || null,
-          starts_at: startsAt.toISOString(),
+          starts_at: startsAt,
+          interest_items: editHobbies.map((h) => ({ slug: h.slug, name: h.name })),
           max_seats: editMaxSeats ? Number(editMaxSeats) : null,
           visibility: editVisibility,
           require_reconfirmation: editRequireReconfirmation,
@@ -427,7 +460,8 @@ export default function EventDetailClient() {
 
       {/* Header */}
       <Box>
-        <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" sx={{ mb: 1, gap: 0.75 }}>
+        {/* Hobby tags + visibility badge in one intentional row */}
+        <Stack direction="row" alignItems="center" flexWrap="wrap" useFlexGap sx={{ mb: 1, gap: 0.75 }}>
           {hobbies.map((h) => (
             <Chip
               key={h.slug}
@@ -436,17 +470,15 @@ export default function EventDetailClient() {
               sx={{ bgcolor: "primary.light", color: "primary.dark", fontWeight: 600, fontSize: "0.75rem" }}
             />
           ))}
+          <Chip label={visibilityLabel(event.visibility)} size="small" variant="outlined" />
           {isCanceled && <Chip label="Canceled" size="small" color="error" />}
         </Stack>
         <Typography component="h1" variant="h4" fontWeight={700} sx={{ mb: 0.75 }}>
           {event.title}
         </Typography>
-        <Stack spacing={0.75}>
-          <Typography variant="body1" color="text.secondary">
-            {event.isHost ? "You\u2019re hosting this" : `Hosted by ${event.hostName}`}
-          </Typography>
-          <Chip label={visibilityLabel(event.visibility)} size="small" variant="outlined" sx={{ alignSelf: "flex-start" }} />
-        </Stack>
+        <Typography variant="body1" color="text.secondary">
+          {event.isHost ? "You\u2019re hosting this" : `Hosted by ${event.hostName}`}
+        </Typography>
       </Box>
 
       {/* Details card */}
@@ -913,23 +945,96 @@ export default function EventDetailClient() {
               helperText={null}
             />
             <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-              <AppTextField
-                label="Date"
-                type="date"
-                value={editDate}
-                onChange={(e) => setEditDate(e.target.value)}
-                sx={{ flex: 1 }}
-                helperText={null}
-              />
-              <AppTextField
-                label="Time"
-                type="time"
-                value={editTime}
-                onChange={(e) => setEditTime(e.target.value)}
-                sx={{ flex: 1 }}
-                helperText={null}
-              />
+              <Box sx={{ flex: 1 }}>
+                <Typography variant="subtitle1" fontWeight={600} sx={{ display: "block", mb: 0.625 }}>
+                  Date
+                </Typography>
+                <DatePicker
+                  value={editDate}
+                  onChange={setEditDate}
+                  slotProps={{ textField: { fullWidth: true, size: "medium" } }}
+                />
+              </Box>
+              <Box sx={{ flex: 1 }}>
+                <Typography variant="subtitle1" fontWeight={600} sx={{ display: "block", mb: 0.625 }}>
+                  Time
+                </Typography>
+                <TimePicker
+                  value={editTime}
+                  onChange={setEditTime}
+                  format="h:mm A"
+                  slotProps={{ textField: { fullWidth: true, size: "medium" } }}
+                />
+              </Box>
             </Stack>
+
+            {/* Hobby selector */}
+            <Box>
+              <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 0.625 }}>
+                Hobbies
+              </Typography>
+              <Autocomplete
+                freeSolo
+                multiple
+                filterOptions={(x) => x}
+                options={editHobbySuggestions}
+                value={editHobbies}
+                inputValue={editHobbyInput}
+                onInputChange={(_, v) => setEditHobbyInput(v)}
+                onChange={(_, newValue) => {
+                  const last = (newValue ?? []).length > 0 ? newValue[(newValue ?? []).length - 1] : null;
+                  if (last && typeof last === "string") {
+                    const name = last.trim().replace(/\s+/g, " ");
+                    if (!name) return;
+                    const slug = nameToSlug(name);
+                    if (slug && !editHobbies.some((h) => h.slug === slug)) {
+                      setEditHobbies((prev) => [...prev, { name, slug }]);
+                    }
+                  } else {
+                    setEditHobbies((newValue ?? []) as HobbyInfo[]);
+                  }
+                }}
+                getOptionLabel={(opt) => (typeof opt === "string" ? opt : opt.name)}
+                isOptionEqualToValue={(opt, val) => {
+                  if (typeof opt === "string" || typeof val === "string") return false;
+                  return opt.slug === val.slug;
+                }}
+                loading={editHobbyLoading}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    placeholder="Type to search or add..."
+                    variant="outlined"
+                    size="medium"
+                    fullWidth
+                    label={undefined}
+                    onKeyDown={(e) => {
+                      if (e.key === "Backspace" && !editHobbyInput) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }
+                    }}
+                  />
+                )}
+                renderTags={() => null}
+              />
+              {editHobbies.length > 0 && (
+                <Stack direction="row" flexWrap="wrap" gap={1} useFlexGap sx={{ mt: 1 }}>
+                  {editHobbies.map((h) => (
+                    <Chip
+                      key={h.slug}
+                      label={h.name}
+                      size="small"
+                      color="primary"
+                      variant="filled"
+                      onDelete={() => setEditHobbies((prev) => prev.filter((i) => i.slug !== h.slug))}
+                      sx={{ fontWeight: 600, fontSize: "0.8125rem" }}
+                    />
+                  ))}
+                </Stack>
+              )}
+            </Box>
+
             <AppTextField
               label="Max seats (optional)"
               type="number"
