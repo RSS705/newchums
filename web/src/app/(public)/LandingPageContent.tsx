@@ -28,34 +28,8 @@ import PeopleRoundedIcon from "@mui/icons-material/PeopleRounded";
 
 const SECTION_SPACING = { py: { xs: 5, sm: 8, md: 10 } };
 
-// ── Hero panel preview events ──────────────────────────────────────────────
-// Three events shown in the hero right-column mini-preview panel.
-const HERO_PREVIEW_EVENTS = [
-  {
-    id: 1,
-    category: "Board Games",
-    title: "Thursday Board Game Night",
-    dayTime: "Thu \u00b7 7 pm",
-    attending: 6,
-    spots: 2,
-  },
-  {
-    id: 2,
-    category: "Coffee \u0026 Social",
-    title: "Morning Coffee Walk",
-    dayTime: "Sat \u00b7 9 am",
-    attending: 4,
-    spots: 4,
-  },
-  {
-    id: 3,
-    category: "Sport \u0026 Outdoor",
-    title: "Beginner Pickleball",
-    dayTime: "Wed \u00b7 9 am",
-    attending: 5,
-    spots: 3,
-  },
-];
+// (Hero image placeholder — the right column of the hero section is an image frame
+//  ready to hold a screenshot or product photo. See the Grid item below.)
 
 // ── Discovery section mock events ─────────────────────────────────────────
 // Replace or supplement this data with real API events in future.
@@ -338,7 +312,9 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
             </Stack>
           </Grid>
 
-          {/* Right: mini product preview panel — desktop only */}
+          {/* Right: app screenshot frame — desktop only.
+               To add a real screenshot: replace the inner gradient Box with
+               <img src="..." alt="NewChums app screenshot" style={{ width: "100%", display: "block" }} /> */}
           <Grid size={{ xs: 12, md: 6 }} sx={{ display: { xs: "none", md: "block" } }}>
             <Box
               sx={{
@@ -350,137 +326,61 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                 boxShadow: "0 4px 32px rgba(37,99,235,0.08), 0 1px 8px rgba(0,0,0,0.05)",
               }}
             >
-              {/* Panel header */}
+              {/* Browser chrome bar */}
               <Box
                 sx={{
-                  px: 2.5,
-                  py: 1.75,
-                  backgroundColor: "primary.light",
+                  px: 2,
+                  py: 1.25,
+                  backgroundColor: "grey.50",
                   borderBottom: "1px solid",
                   borderColor: "divider",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 1.5,
                 }}
               >
-                <Stack direction="row" alignItems="center" spacing={1}>
-                  <Box
-                    sx={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: "50%",
-                      bgcolor: "primary.main",
-                      opacity: 0.75,
-                    }}
-                  />
-                  <Typography
-                    variant="caption"
-                    fontWeight={700}
-                    color="primary.dark"
-                    sx={{ letterSpacing: "0.07em", fontSize: "0.6875rem" }}
-                  >
-                    GATHERINGS NEAR YOU
-                  </Typography>
+                <Stack direction="row" spacing={0.625}>
+                  <Box sx={{ width: 10, height: 10, borderRadius: "50%", bgcolor: "#ff5f57" }} />
+                  <Box sx={{ width: 10, height: 10, borderRadius: "50%", bgcolor: "#ffbd2e" }} />
+                  <Box sx={{ width: 10, height: 10, borderRadius: "50%", bgcolor: "#28c940" }} />
                 </Stack>
-              </Box>
-
-              {/* Event rows */}
-              {HERO_PREVIEW_EVENTS.map((event, i) => (
                 <Box
-                  key={event.id}
                   sx={{
-                    px: 2.5,
-                    py: 2.25,
-                    borderBottom:
-                      i < HERO_PREVIEW_EVENTS.length - 1 ? "1px solid" : "none",
-                    borderColor: "divider",
-                    transition: "background-color 0.15s",
-                    "&:hover": { backgroundColor: "grey.50" },
+                    flex: 1,
+                    height: 22,
+                    bgcolor: "background.paper",
+                    borderRadius: 1,
+                    border: "1px solid",
+                    borderColor: "grey.200",
+                    display: "flex",
+                    alignItems: "center",
+                    px: 1.25,
                   }}
                 >
-                  <Stack
-                    direction="row"
-                    alignItems="flex-start"
-                    justifyContent="space-between"
-                    spacing={2}
-                  >
-                    <Stack spacing={0.5} sx={{ flex: 1, minWidth: 0 }}>
-                      <Typography
-                        variant="caption"
-                        sx={{
-                          color: "primary.main",
-                          fontWeight: 700,
-                          letterSpacing: "0.04em",
-                          fontSize: "0.6875rem",
-                        }}
-                      >
-                        {event.category}
-                      </Typography>
-                      <Typography
-                        variant="body2"
-                        fontWeight={600}
-                        sx={{ lineHeight: 1.35 }}
-                      >
-                        {event.title}
-                      </Typography>
-                      <Stack direction="row" alignItems="center" spacing={0.5}>
-                        <PeopleRoundedIcon sx={{ fontSize: 11, color: "text.disabled" }} />
-                        <Typography variant="caption" color="text.secondary">
-                          {event.attending} attending
-                        </Typography>
-                      </Stack>
-                    </Stack>
-
-                    <Stack alignItems="flex-end" spacing={0.75}>
-                      <Typography
-                        variant="caption"
-                        color="text.secondary"
-                        sx={{ whiteSpace: "nowrap", fontWeight: 500 }}
-                      >
-                        {event.dayTime}
-                      </Typography>
-                      {event.spots > 0 && (
-                        <Box
-                          sx={{
-                            px: 1,
-                            py: 0.25,
-                            borderRadius: 1,
-                            bgcolor: (t) => `${t.palette.secondary.main}20`,
-                            border: "1px solid",
-                            borderColor: (t) => `${t.palette.secondary.main}50`,
-                          }}
-                        >
-                          <Typography
-                            variant="caption"
-                            sx={{
-                              fontSize: "0.625rem",
-                              fontWeight: 700,
-                              color: "secondary.dark",
-                            }}
-                          >
-                            {event.spots} spots
-                          </Typography>
-                        </Box>
-                      )}
-                    </Stack>
-                  </Stack>
+                  <Typography variant="caption" color="text.disabled" sx={{ fontSize: "0.6875rem", userSelect: "none" }}>
+                    newchums.com
+                  </Typography>
                 </Box>
-              ))}
+              </Box>
 
-              {/* Panel footer */}
+              {/* Screenshot content area — swap for <img> when ready */}
               <Box
+                aria-hidden="true"
                 sx={{
-                  px: 2.5,
-                  py: 1.5,
-                  backgroundColor: "grey.50",
-                  borderTop: "1px solid",
-                  borderColor: "divider",
+                  aspectRatio: "4 / 3",
+                  background: (theme) =>
+                    `linear-gradient(150deg, ${theme.palette.primary.light} 0%, ${theme.palette.grey[100]} 55%, ${theme.palette.background.paper} 100%)`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
                 }}
               >
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ fontWeight: 500 }}
-                >
-                  Sign up to see gatherings near you &rarr;
-                </Typography>
+                <Stack alignItems="center" spacing={1.5} sx={{ opacity: 0.4, userSelect: "none" }}>
+                  <CalendarMonthRoundedIcon sx={{ fontSize: 44, color: "primary.main" }} />
+                  <Typography variant="body2" fontWeight={500} color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
+                    App preview coming soon
+                  </Typography>
+                </Stack>
               </Box>
             </Box>
           </Grid>

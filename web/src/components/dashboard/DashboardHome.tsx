@@ -47,8 +47,10 @@ type DashboardHomeProps = {
 
 export default function DashboardHome({ greetingName }: DashboardHomeProps) {
   const [profile, setProfile] = useState<ProfileData | null>(null);
-  const [events, setEvents] = useState<PlanEvent[]>([]);
+  const [allEvents, setAllEvents] = useState<PlanEvent[]>([]);
+  const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [profileLoaded, setProfileLoaded] = useState(false);
 
   const [searchText, setSearchText] = useState("");
@@ -84,9 +86,11 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
     loadHobbies();
   }, []);
 
-  const fetchEvents = useCallback(async () => {
+  const fetchEvents = useCallback(async (pageOffset: number, append: boolean) => {
+    const PAGE_SIZE = 12;
     if (!profileLoaded) return;
-    setLoading(true);
+    if (append) setLoadingMore(true);
+    else setLoading(true);
 
     const params = new URLSearchParams();
     if (profile?.home_lat != null && profile?.home_lng != null) {
@@ -97,18 +101,28 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
     if (selectedHobby) params.set("hobby", selectedHobby.slug);
     if (timeRange !== "all") params.set("time_range", timeRange);
     if (searchText.trim()) params.set("q", searchText.trim());
+    params.set("offset", String(pageOffset));
+    params.set("limit", String(PAGE_SIZE));
 
     try {
       const res = await apiFetch(`/events/explore?${params.toString()}`, { auth: true });
       if (res.ok) {
-        const data = (await res.json()) as { events: PlanEvent[] };
-        setEvents(data.events ?? []);
+        const data = (await res.json()) as { events: PlanEvent[]; hasMore: boolean };
+        if (append) {
+          setAllEvents((prev) => [...prev, ...(data.events ?? [])]);
+        } else {
+          setAllEvents(data.events ?? []);
+        }
+        setHasMore(data.hasMore ?? false);
       }
     } catch { /* ignore */ }
-    setLoading(false);
+    if (append) setLoadingMore(false);
+    else setLoading(false);
   }, [profileLoaded, profile, radiusKm, selectedHobby, timeRange, searchText]);
 
-  useEffect(() => { fetchEvents(); }, [fetchEvents]);
+  useEffect(() => { fetchEvents(0, false); }, [fetchEvents]);
+
+  const handleLoadMore = () => { fetchEvents(allEvents.length, true); };
 
   const hasLocation = profile?.home_lat != null && profile?.home_lng != null;
   const hasHobbies = (profile?.interest_items?.length ?? 0) > 0;
@@ -231,7 +245,7 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
                   fontWeight={600}
                   sx={{ display: "block", mb: 0.625, cursor: "text" }}
                 >
-                  Hobbies
+                  Hobby
                 </Typography>
                 <Autocomplete
                   fullWidth
@@ -314,14 +328,33 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
         <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}>
           <CircularProgress />
         </Box>
-      ) : events.length > 0 ? (
-        <Grid container spacing={2}>
-          {events.map((event) => (
-            <Grid key={event.id} size={{ xs: 12, sm: 6, md: 4 }} sx={{ display: "flex" }}>
-              <EventCard event={event} />
-            </Grid>
-          ))}
-        </Grid>
+      ) : allEvents.length > 0 ? (
+        <>
+          <Grid container spacing={2}>
+            {allEvents.map((event) => (
+              <Grid key={event.id} size={{ xs: 12, sm: 6, md: 4 }} sx={{ display: "flex" }}>
+                <EventCard event={event} />
+              </Grid>
+            ))}
+          </Grid>
+
+          {/* ── Load more ─────────────────────────────────────────── */}
+          {hasMore && (
+            <Box sx={{ display: "flex", justifyContent: "center", pt: 1 }}>
+              {loadingMore ? (
+                <CircularProgress size={28} />
+              ) : (
+                <Button
+                  variant="outlined"
+                  onClick={handleLoadMore}
+                  sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 4 }}
+                >
+                  Load more
+                </Button>
+              )}
+            </Box>
+          )}
+        </>
       ) : (
         /* ── Empty states ──────────────────────────────────────────── */
         <Box

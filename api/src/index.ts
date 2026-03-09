@@ -4243,6 +4243,8 @@ app.get("/events/explore", async (c) => {
   const radiusKm = Math.min(Math.max(Number(c.req.query("radius_km") ?? 200), 1), 20000);
   const hobbySlug = c.req.query("hobby") ?? null;
   const search = c.req.query("q")?.trim() ?? null;
+  const pageLimit = Math.min(Math.max(Number(c.req.query("limit") ?? 12), 1), 50);
+  const pageOffset = Math.max(Number(c.req.query("offset") ?? 0), 0);
 
   const timeRange = c.req.query("time_range") ?? "all";
   const now = new Date();
@@ -4316,11 +4318,12 @@ app.get("/events/explore", async (c) => {
         ${hobbySlug ? sql`AND EXISTS (SELECT 1 FROM newchums.event_interests ei3 JOIN newchums.interests ii3 ON ii3.id = ei3.interest_id WHERE ei3.event_id = e.id AND ii3.slug = ${hobbySlug})` : sql``}
         ${search ? sql`AND (e.title ILIKE ${"%" + search + "%"} OR e.description ILIKE ${"%" + search + "%"})` : sql``}
         ${dateEnd ? sql`AND e.starts_at <= ${dateEnd.toISOString()}` : sql``}
+        ${hasLocation && radiusKm < 20000 ? sql`AND (e.location_lat IS NULL OR e.location_lng IS NULL OR 6371 * acos(LEAST(1.0, GREATEST(-1.0, cos(radians(${lat ?? 0})) * cos(radians(e.location_lat)) * cos(radians(e.location_lng) - radians(${lng ?? 0})) + sin(radians(${lat ?? 0})) * sin(radians(e.location_lat))))) <= ${radiusKm})` : sql``}
       ORDER BY
         CASE WHEN e.host_user_id = ${userId} THEN 0 ELSE 1 END,
         ${hasLocation ? sql`distance_km ASC NULLS LAST` : sql`e.starts_at ASC`},
         e.starts_at ASC
-      LIMIT 50
+      LIMIT ${pageLimit + 1} OFFSET ${pageOffset}
     `) as Array<{
       id: string; title: string; description: string | null; starts_at: string;
       location_type: string; location_name: string | null; location_address: string | null;
@@ -4336,11 +4339,7 @@ app.get("/events/explore", async (c) => {
       distance_km: number | null;
     }>;
 
-    const filtered = hasLocation && radiusKm < 20000
-      ? rows.filter((r) => r.distance_km === null || r.distance_km <= radiusKm)
-      : rows;
-
-    const events = filtered.map((r) => {
+    const allMapped = rows.map((r) => {
       const parsedHobbies = typeof r.hobbies === "string" ? JSON.parse(r.hobbies) : (r.hobbies ?? []);
       const hobbyList = Array.isArray(parsedHobbies) && parsedHobbies.length > 0
         ? parsedHobbies as Array<{ name: string; slug: string }>
@@ -4384,7 +4383,9 @@ app.get("/events/explore", async (c) => {
       };
     });
 
-    return c.json({ ok: true, events });
+    const hasMore = allMapped.length > pageLimit;
+    const events = allMapped.slice(0, pageLimit);
+    return c.json({ ok: true, events, hasMore });
   } catch (err) {
     console.error("[GET /events/explore]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
