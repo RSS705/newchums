@@ -2,7 +2,7 @@
 
 NewChums helps people organize gatherings more easily around hobbies and shared interests — from board game nights and coffee walks to pottery sessions and pickup sports.
 
-The broader mission is reducing loneliness by making real-world social connection easier and more approachable. The product achieves this by focusing on practical coordination: clear plans, shared interests, and low-pressure ways to get together with existing friends or meet new people naturally.
+The broader mission is reducing loneliness by making real-world social connection easier. The product achieves this by focusing on practical coordination: clear plans, shared interests, and ways to get together with existing friends or meet new people naturally.
 
 ---
 
@@ -80,7 +80,7 @@ Users → Cloudflare Edge → Web Worker (Next.js via OpenNext) → API Worker (
 | Term | Usage |
 |------|-------|
 | **plan** | Preferred user-facing term for an event/gathering |
-| **gathering** | Softer alternative used in descriptions |
+| **gathering** | Alternative used in descriptions |
 | **event** | Used in code, API routes, and database tables — acceptable internally |
 | **hobby** | User-facing term for interests (aligned with profile system) |
 | **chum** | NewChums term for a saved person (one-way, no approval) |
@@ -121,6 +121,4 @@ For full setup details, env vars, migrations, deployment, and troubleshooting, s
 - Start new UI work by copying/adapting the closest template pattern.
 - Prefer theme overrides + shared components over per-page styling patches.
 - Form fields: label-above style only (`AppTextField`, `AuthField`, `NCDatePicker`). No floating/in-field labels.
-- Product tone: warm, friendly, practical, grounded. Not corporate or ERP-like.
-
 See `AGENTS.md` for detailed UI governance rules.

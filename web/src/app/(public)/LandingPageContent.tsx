@@ -3,7 +3,6 @@
 import { useState } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import Chip from "@mui/material/Chip";
 import Divider from "@mui/material/Divider";
 import Grid from "@mui/material/Grid";
 import Stack from "@mui/material/Stack";
@@ -11,12 +10,11 @@ import Typography from "@mui/material/Typography";
 import Image from "next/image";
 import Link from "next/link";
 import SectionHeader from "@/components/ui/SectionHeader";
-import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
 import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
-import ChatRoundedIcon from "@mui/icons-material/ChatRounded";
-import FavoriteRoundedIcon from "@mui/icons-material/FavoriteRounded";
-import LocationOnRoundedIcon from "@mui/icons-material/LocationOnRounded";
 import PeopleRoundedIcon from "@mui/icons-material/PeopleRounded";
+import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
+import StarRoundedIcon from "@mui/icons-material/StarRounded";
+import BlockRoundedIcon from "@mui/icons-material/BlockRounded";
 
 /**
  * Full public homepage content for logged-out visitors.
@@ -31,118 +29,6 @@ const SECTION_SPACING = { py: { xs: 5, sm: 8, md: 10 } };
 
 // (Hero image placeholder — the right column of the hero section is an image frame
 //  ready to hold a screenshot or product photo. See the Grid item below.)
-
-// ── Discovery section mock events ─────────────────────────────────────────
-// Replace or supplement this data with real API events in future.
-// Structure is intentionally simple and API-friendly.
-type EventCard = {
-  id: number;
-  category: string;
-  title: string;
-  dayTime: string;
-  location: string;
-  attending: number;
-  spots: number;
-};
-
-const MOCK_EVENTS: EventCard[] = [
-  {
-    id: 1,
-    category: "Board Games",
-    title: "Thursday Board Game Night",
-    dayTime: "Every Thu \u00b7 7 pm",
-    location: "Community Space",
-    attending: 6,
-    spots: 2,
-  },
-  {
-    id: 2,
-    category: "Coffee \u0026 Social",
-    title: "Morning Coffee Walk",
-    dayTime: "Saturday \u00b7 9 am",
-    location: "Local Park",
-    attending: 4,
-    spots: 4,
-  },
-  {
-    id: 3,
-    category: "Arts \u0026 Crafts",
-    title: "Pottery Session, Beginners Welcome",
-    dayTime: "Sunday \u00b7 2 pm",
-    location: "Art Studio",
-    attending: 5,
-    spots: 3,
-  },
-  {
-    id: 4,
-    category: "Card Games",
-    title: "MTG Draft Night",
-    dayTime: "Every Fri \u00b7 7 pm",
-    location: "Game Shop",
-    attending: 8,
-    spots: 0,
-  },
-  {
-    id: 5,
-    category: "Sport \u0026 Outdoor",
-    title: "Beginner Pickleball Meetup",
-    dayTime: "Wednesday \u00b7 9 am",
-    location: "Sports Centre",
-    attending: 5,
-    spots: 3,
-  },
-  {
-    id: 6,
-    category: "Learning",
-    title: "Casual Study Session",
-    dayTime: "Tuesday \u00b7 6 pm",
-    location: "Caf\u00e9",
-    attending: 3,
-    spots: 5,
-  },
-];
-
-// Gradient banner colours per category — mirrors the in-app event card treatment
-const CATEGORY_GRADIENTS: Record<string, string> = {
-  "Board Games":       "linear-gradient(135deg, #475569 0%, #1e293b 100%)",
-  "Coffee \u0026 Social": "linear-gradient(135deg, #92400e 0%, #c2410c 100%)",
-  "Arts \u0026 Crafts":   "linear-gradient(135deg, #be185d 0%, #9f1239 100%)",
-  "Card Games":        "linear-gradient(135deg, #6d28d9 0%, #4f46e5 100%)",
-  "Sport \u0026 Outdoor": "linear-gradient(135deg, #15803d 0%, #0f766e 100%)",
-  "Learning":          "linear-gradient(135deg, #0284c7 0%, #7c3aed 100%)",
-};
-function getCategoryGradient(cat: string): string {
-  return CATEGORY_GRADIENTS[cat] ?? "linear-gradient(135deg, #3b82f6 0%, #6d28d9 100%)";
-}
-
-const FILTER_CATEGORIES = [
-  "All",
-  "Coffee \u0026 Social",
-  "Board Games",
-  "Arts \u0026 Crafts",
-  "Card Games",
-  "Sport \u0026 Outdoor",
-  "Learning",
-];
-
-// ── "Why it helps" feature blocks: one place, invites/RSVPs, follow-through ───
-const PLAN_FEATURES = [
-  {
-    Icon: ChatRoundedIcon,
-    title: "One clear place for every plan",
-    body: "\u201cWe should hang out\u201d never quite turns into a plan. NewChums gives every gathering a real home, visible, clear, and easy to say yes to.",
-  },
-  {
-    Icon: CalendarMonthRoundedIcon,
-    title: "Invites and RSVPs in one spot",
-    body: "Share a plan with people you know, or let others nearby discover it. Everyone sees the same details, no chasing replies or losing updates.",
-  },
-  {
-    Icon: FavoriteRoundedIcon,
-    title: "Clear plans mean better follow-through",
-    body: "When the details are clear, what, where, and when, people are more likely to show up. A concrete plan beats a vague \u201cdrinks sometime\u201d every time.",
-  },
-];
 
 // ── "Social upside" benefit cards: shared interests, approachable, new connections ─
 const BENEFIT_CARDS = [
@@ -163,18 +49,86 @@ const BENEFIT_CARDS = [
   },
 ];
 
+// ── "How does it work?" two-path flow data ──────────────────────────────────
+const HOW_IT_WORKS_JOIN = [
+  {
+    title: "Add your hobbies to your profile",
+    body: "Tell us what you enjoy so we can show you relevant plans nearby.",
+  },
+  {
+    title: "Get notified about nearby plans",
+    body: "When someone organizes something you\u2019d enjoy, you\u2019ll hear about it.",
+  },
+  {
+    title: "Join and stay in the loop",
+    body: "Use the plan\u2019s bulletin board for updates and coordination, everything in one place.",
+  },
+  {
+    title: "Show up and have a great time",
+    body: "The real goal here.",
+  },
+  {
+    title: "Leave feedback afterward",
+    body: "Your input helps improve future matches and keeps the community strong.",
+  },
+];
+
+const HOW_IT_WORKS_CREATE = [
+  {
+    title: "Start a plan around something you love",
+    body: "Pick a hobby, add the details, and set it up in minutes.",
+  },
+  {
+    title: "Invite your people",
+    body: "Bring your friends, or open it up to others nearby who share the interest.",
+  },
+  {
+    title: "Find a time and keep everyone updated",
+    body: "Use the bulletin board so nobody misses a thing.",
+  },
+  {
+    title: "RSVP reminders go out automatically",
+    body: "24 hours before the gathering, everyone gets a nudge to confirm.",
+  },
+  {
+    title: "Show up and have a great time",
+    body: "You made it happen. Well done.",
+  },
+];
+
+const HOW_IT_WORKS_EXTRAS: {
+  imageSrc: string;
+  Icon: typeof TuneRoundedIcon;
+  title: string;
+  body: string;
+}[] = [
+  {
+    imageSrc: "/images/home/Your-Rules.png",
+    Icon: TuneRoundedIcon,
+    title: "Your plan, your rules",
+    body: "Keep it private for your friend group, open it to everyone, or mix both to grow your circle.",
+  },
+  {
+    imageSrc: "/images/home/Hosting-Reputation.png",
+    Icon: StarRoundedIcon,
+    title: "Build your hosting reputation",
+    body: "Organize great experiences and build a track record as someone worth showing up for.",
+  },
+  {
+    imageSrc: "/images/home/No-Shows.png",
+    Icon: BlockRoundedIcon,
+    title: "No-shows get removed",
+    body: "People who bail without notice are eliminated from the system. Your time matters.",
+  },
+];
+
 const HIGH_FIVE_IMAGE = "/images/home/High-Five.png";
 const BROKEN_CHAT_IMAGE = "/images/home/Broken-Chat.png";
 
 export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?: boolean }) {
-  const [activeCategory, setActiveCategory] = useState("All");
   const [highFiveImgError, setHighFiveImgError] = useState(false);
   const [brokenChatImgError, setBrokenChatImgError] = useState(false);
-
-  const filteredEvents =
-    activeCategory === "All"
-      ? MOCK_EVENTS
-      : MOCK_EVENTS.filter((e) => e.category === activeCategory);
+  const [extrasImageErrors, setExtrasImageErrors] = useState<Set<string>>(new Set());
 
   return (
     <Box sx={{ pt: { xs: 4, sm: 6, md: 8 }, pb: { xs: 4, sm: 6 } }}>
@@ -405,8 +359,8 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                 {highFiveImgError ? (
                   <Box
                     sx={{
-                      width: 64,
-                      height: 64,
+                      width: 80,
+                      height: 80,
                       borderRadius: 2,
                       bgcolor: "primary.light",
                       display: "flex",
@@ -415,15 +369,15 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                       flexShrink: 0,
                     }}
                   >
-                    <PeopleRoundedIcon sx={{ fontSize: 28, color: "primary.main" }} />
+                    <PeopleRoundedIcon sx={{ fontSize: 36, color: "primary.main" }} />
                   </Box>
                 ) : (
-                  <Box sx={{ width: 64, height: 64, flexShrink: 0, position: "relative" }}>
+                  <Box sx={{ width: 80, height: 80, flexShrink: 0, position: "relative" }}>
                     <Image
                       src={HIGH_FIVE_IMAGE}
                       alt=""
-                      width={64}
-                      height={64}
+                      width={80}
+                      height={80}
                       style={{ objectFit: "contain" }}
                       onError={() => setHighFiveImgError(true)}
                     />
@@ -460,8 +414,8 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                 {brokenChatImgError ? (
                   <Box
                     sx={{
-                      width: 64,
-                      height: 64,
+                      width: 80,
+                      height: 80,
                       borderRadius: 2,
                       bgcolor: "primary.light",
                       display: "flex",
@@ -470,15 +424,15 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                       flexShrink: 0,
                     }}
                   >
-                    <CalendarMonthRoundedIcon sx={{ fontSize: 28, color: "primary.main" }} />
+                    <CalendarMonthRoundedIcon sx={{ fontSize: 36, color: "primary.main" }} />
                   </Box>
                 ) : (
-                  <Box sx={{ width: 64, height: 64, flexShrink: 0, position: "relative" }}>
+                  <Box sx={{ width: 80, height: 80, flexShrink: 0, position: "relative" }}>
                     <Image
                       src={BROKEN_CHAT_IMAGE}
                       alt=""
-                      width={64}
-                      height={64}
+                      width={80}
+                      height={80}
                       style={{ objectFit: "contain" }}
                       onError={() => setBrokenChatImgError(true)}
                     />
@@ -528,376 +482,336 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
         </Box>
       </Box>
 
-      {/* ── Section 2: Event Discovery ── */}
-      {/*
-       * FUTURE-READY NOTE:
-       * Replace MOCK_EVENTS with real API data. Recommended fallback order:
-       *   1. Events near the user (if location known and logged in)
-       *   2. Featured / recently active events (fallback for logged-out / no location)
-       *   3. Empty state below if no events available
-       * The filteredEvents, card rendering, and chip filter UI are all ready for real data.
-       */}
-      <Box
-        component="section"
-        id="discover"
-        sx={{
-          ...SECTION_SPACING,
-          backgroundColor: (theme) =>
-            theme.palette.mode === "light" ? "grey.100" : "grey.900",
-          mx: { xs: -2, sm: -3 },
-          px: { xs: 2, sm: 3 },
-        }}
-      >
-        <Box maxWidth={1100} mx="auto">
-          <SectionHeader
-            title="What kinds of plans happen here"
-            emphasis="primary"
-            accentColor="secondary"
-          />
-
-          <Typography
-            variant="body1"
-            sx={{
-              mb: { xs: 3, sm: 4 },
-              lineHeight: 1.75,
-              textAlign: { xs: "center", sm: "left" },
-              maxWidth: 680,
-            }}
-          >
-            Board game nights, coffee walks, study sessions, beginner sports.
-            Real plans with clear details and easy RSVPs.
-          </Typography>
-
-          {/* Category filter chips */}
-          <Box
-            sx={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 1,
-              mb: { xs: 3.5, sm: 4.5 },
-              justifyContent: { xs: "center", sm: "flex-start" },
-            }}
-          >
-            {FILTER_CATEGORIES.map((cat) => (
-              <Chip
-                key={cat}
-                label={cat}
-                size="small"
-                onClick={() => setActiveCategory(cat)}
-                variant={activeCategory === cat ? "filled" : "outlined"}
-                color={activeCategory === cat ? "primary" : "default"}
-                sx={{
-                  fontWeight: activeCategory === cat ? 600 : 400,
-                  fontSize: "0.8125rem",
-                  cursor: "pointer",
-                  transition: "all 0.15s",
-                }}
-              />
-            ))}
-          </Box>
-
-          {/* Event cards */}
-          {filteredEvents.length > 0 ? (
-            <Grid container spacing={{ xs: 2, sm: 2.5 }}>
-              {filteredEvents.map((event) => (
-                <Grid key={event.id} size={{ xs: 12, sm: 6, md: 4 }}>
-                  <Box
-                    sx={{
-                      backgroundColor: "background.paper",
-                      borderRadius: 3,
-                      overflow: "hidden",
-                      height: "100%",
-                      display: "flex",
-                      flexDirection: "column",
-                      boxShadow: (theme) =>
-                        theme.palette.mode === "light"
-                          ? "0 1px 6px rgba(0,0,0,0.07)"
-                          : "none",
-                      transition: "box-shadow 0.2s, transform 0.2s",
-                      "&:hover": {
-                        boxShadow: "0 4px 18px rgba(0,0,0,0.12)",
-                        transform: "translateY(-2px)",
-                      },
-                    }}
-                  >
-                    {/* Banner strip */}
-                    <Box
-                      sx={{
-                        height: 72,
-                        background: getCategoryGradient(event.category),
-                        flexShrink: 0,
-                        display: "flex",
-                        alignItems: "flex-end",
-                        px: 2,
-                        pb: 1.25,
-                      }}
-                    >
-                      <Chip
-                        label={event.category}
-                        size="small"
-                        sx={{
-                          fontSize: "0.6875rem",
-                          height: 20,
-                          bgcolor: "rgba(255,255,255,0.18)",
-                          color: "white",
-                          border: "1px solid rgba(255,255,255,0.3)",
-                          fontWeight: 600,
-                          "& .MuiChip-label": { px: 1 },
-                        }}
-                      />
-                    </Box>
-
-                    {/* Content */}
-                    <Box sx={{ p: { xs: 2.25, sm: 2.5 }, display: "flex", flexDirection: "column", flex: 1 }}>
-                      {/* Title */}
-                      <Typography
-                        variant="h6"
-                        component="h3"
-                        fontWeight={700}
-                        sx={{
-                          mb: 1.25,
-                          fontSize: { xs: "1rem", sm: "1.0625rem" },
-                          lineHeight: 1.3,
-                          flex: "0 0 auto",
-                        }}
-                      >
-                        {event.title}
-                      </Typography>
-
-                      {/* Meta */}
-                      <Stack spacing={0.6} sx={{ mb: "auto" }}>
-                        <Stack direction="row" alignItems="center" spacing={0.75}>
-                          <AccessTimeRoundedIcon
-                            sx={{ fontSize: 13, color: "text.disabled" }}
-                          />
-                          <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
-                            {event.dayTime}
-                          </Typography>
-                        </Stack>
-                        <Stack direction="row" alignItems="center" spacing={0.75}>
-                          <LocationOnRoundedIcon
-                            sx={{ fontSize: 13, color: "text.disabled" }}
-                          />
-                          <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
-                            {event.location}
-                          </Typography>
-                        </Stack>
-                      </Stack>
-
-                      {/* Footer */}
-                      <Box
-                        sx={{
-                          mt: 2,
-                          pt: 1.75,
-                          borderTop: "1px solid",
-                          borderColor: "divider",
-                        }}
-                      >
-                        <Stack
-                          direction="row"
-                          alignItems="center"
-                          justifyContent="space-between"
-                        >
-                          <Stack direction="row" alignItems="center" spacing={0.5}>
-                            <PeopleRoundedIcon
-                              sx={{ fontSize: 13, color: "text.disabled" }}
-                            />
-                            <Typography variant="caption" color="text.secondary">
-                              {event.attending} attending
-                            </Typography>
-                          </Stack>
-                          {event.spots > 0 ? (
-                            <Typography
-                              variant="caption"
-                              sx={{ color: "secondary.dark", fontWeight: 600 }}
-                            >
-                              {event.spots} spots left
-                            </Typography>
-                          ) : (
-                            <Chip
-                              label="Full"
-                              size="small"
-                              variant="outlined"
-                              sx={{
-                                height: 20,
-                                fontSize: "0.6875rem",
-                                color: "text.secondary",
-                                borderColor: "divider",
-                              }}
-                            />
-                          )}
-                        </Stack>
-                      </Box>
-                    </Box>
-                  </Box>
-                </Grid>
-              ))}
-            </Grid>
-          ) : (
-            /* Empty state — shown if API returns no events for a category */
-            <Box sx={{ textAlign: "center", py: { xs: 6, sm: 8 } }}>
-              <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
-                No gatherings in this category yet.
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Be the first to organize one.
-              </Typography>
-            </Box>
-          )}
-
-          {/* Screenshot placeholder — will be replaced with a real Explore screenshot */}
-          <Box
-            aria-hidden="true"
-            sx={{
-              mt: { xs: 4, sm: 6 },
-              borderRadius: 2.5,
-              overflow: "hidden",
-              width: "100%",
-              aspectRatio: "16 / 7",
-              background: (theme) =>
-                `linear-gradient(135deg, ${theme.palette.primary.light} 0%, ${theme.palette.grey[200]} 100%)`,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Stack alignItems="center" spacing={1.5} sx={{ opacity: 0.45 }}>
-              <CalendarMonthRoundedIcon sx={{ fontSize: 52, color: "primary.main" }} />
-              <Typography variant="body2" color="text.secondary" fontWeight={500}>
-                Screenshot placeholder — Explore view
-              </Typography>
-            </Stack>
-          </Box>
-
-          {/* Bottom note + CTA */}
-          <Box sx={{ mt: { xs: 4, sm: 5 }, textAlign: { xs: "center", sm: "left" } }}>
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              sx={{ mb: 2.5, fontStyle: "italic" }}
-            >
-              Examples of the kinds of plans you&apos;ll find on NewChums.
-            </Typography>
-            {!isLoggedIn && (
-              <Button
-                component={Link}
-                href="/signup"
-                variant="contained"
-                color="primary"
-                size="large"
-                sx={{
-                  px: 5,
-                  py: 1.5,
-                  fontWeight: 600,
-                  borderRadius: 2.5,
-                  minWidth: { xs: "100%", sm: "auto" },
-                  textTransform: "none",
-                }}
-              >
-                Sign up to see plans near you
-              </Button>
-            )}
-          </Box>
-        </Box>
-      </Box>
-
-      {/* ── Section 3: Making Plans Easier ── */}
+      {/* ── Section: How Does It Work? ── */}
       <Box
         component="section"
         id="how-it-works"
         sx={SECTION_SPACING}
       >
-        <Box maxWidth={900} mx="auto" sx={{ textAlign: { xs: "center", sm: "left" } }}>
-          <SectionHeader
-            title="Why it helps: one place, invites, and easier follow-through"
-            emphasis="primary"
-            accentColor="secondary"
-          />
+        <Box maxWidth={1100} mx="auto">
+          {/* Section heading */}
+          <Box sx={{ textAlign: "center", mb: { xs: 5, sm: 7 } }}>
+            <Typography
+              component="h2"
+              variant="h2"
+              fontWeight={800}
+              sx={{
+                fontSize: { xs: "1.85rem", sm: "2.5rem", md: "2.75rem" },
+                lineHeight: 1.15,
+                letterSpacing: "-0.025em",
+                mb: 2,
+              }}
+            >
+              How does it work?
+            </Typography>
+            <Typography
+              variant="h5"
+              fontWeight={500}
+              sx={{
+                fontSize: { xs: "1.05rem", sm: "1.2rem" },
+                lineHeight: 1.6,
+                color: "text.secondary",
+              }}
+            >
+              There are two main ways to use NewChums.
+            </Typography>
+          </Box>
 
-          <Typography
-            variant="body1"
-            sx={{ mb: { xs: 4, sm: 5 }, lineHeight: 1.75 }}
-          >
-            Plans fall apart when details get scattered. NewChums gives each plan a
-            home, invites, RSVPs, and updates in one spot. No more chasing replies or
-            losing track of who&apos;s coming.
-          </Typography>
-
-          <Grid container spacing={{ xs: 5, sm: 5, md: 6 }}>
-            {PLAN_FEATURES.map(({ Icon, title, body }) => (
-              <Grid key={title} size={{ xs: 12, sm: 4 }}>
-                <Stack
-                  spacing={1.75}
-                  alignItems={{ xs: "center", sm: "flex-start" }}
+          {/* Two-path layout */}
+          <Grid container spacing={{ xs: 4, md: 5 }}>
+            {/* Path 1: Discover & Join */}
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Box
+                sx={{
+                  height: "100%",
+                  backgroundColor: "background.paper",
+                  borderRadius: 3,
+                  overflow: "hidden",
+                  boxShadow: (theme) =>
+                    theme.palette.mode === "light"
+                      ? "0 2px 12px rgba(0,0,0,0.08)"
+                      : "none",
+                  border: "1px solid",
+                  borderColor: "divider",
+                  display: "flex",
+                  flexDirection: "column",
+                }}
+              >
+                {/* Card header */}
+                <Box
+                  sx={{
+                    background: "linear-gradient(135deg, #1565c0 0%, #1976d2 100%)",
+                    px: { xs: 3, sm: 4 },
+                    py: { xs: 3, sm: 3.5 },
+                  }}
                 >
-                  <Box
+                  <Typography
+                    variant="overline"
                     sx={{
-                      width: 48,
-                      height: 48,
-                      borderRadius: 2,
-                      bgcolor: "primary.light",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      flexShrink: 0,
+                      color: "rgba(255,255,255,0.7)",
+                      fontWeight: 600,
+                      letterSpacing: "0.1em",
+                      fontSize: "0.65rem",
+                      display: "block",
+                      mb: 0.5,
                     }}
                   >
-                    <Icon sx={{ fontSize: 24, color: "primary.main" }} />
-                  </Box>
+                    Path 1
+                  </Typography>
                   <Typography
-                    variant="h6"
-                    component="h3"
+                    variant="h5"
                     fontWeight={700}
                     sx={{
-                      fontSize: { xs: "1rem", sm: "1.0625rem" },
-                      lineHeight: 1.35,
-                      textAlign: { xs: "center", sm: "left" },
+                      color: "white",
+                      fontSize: { xs: "1.15rem", sm: "1.3rem" },
+                      lineHeight: 1.3,
                     }}
                   >
-                    {title}
+                    Find and join plans around your hobbies
+                  </Typography>
+                </Box>
+
+                {/* Steps */}
+                <Box sx={{ px: { xs: 3, sm: 4 }, py: { xs: 3, sm: 4 }, flex: 1 }}>
+                  <Stack spacing={3}>
+                    {HOW_IT_WORKS_JOIN.map((step, idx) => (
+                      <Stack key={idx} direction="row" spacing={2} alignItems="flex-start">
+                        <Box
+                          sx={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: "50%",
+                            bgcolor: "primary.light",
+                            color: "primary.main",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontWeight: 700,
+                            fontSize: "0.875rem",
+                            flexShrink: 0,
+                            mt: 0.25,
+                          }}
+                        >
+                          {idx + 1}
+                        </Box>
+                        <Box>
+                          <Typography variant="body1" fontWeight={700} sx={{ mb: 0.25, lineHeight: 1.4 }}>
+                            {step.title}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.65 }}>
+                            {step.body}
+                          </Typography>
+                        </Box>
+                      </Stack>
+                    ))}
+                  </Stack>
+                </Box>
+
+                {/* Screenshot placeholder */}
+                <Box
+                  aria-hidden="true"
+                  sx={{
+                    mx: { xs: 2, sm: 3 },
+                    mb: { xs: 2, sm: 3 },
+                    borderRadius: 2,
+                    overflow: "hidden",
+                    aspectRatio: "4 / 3",
+                    background: (theme) =>
+                      `linear-gradient(135deg, ${theme.palette.primary.light} 0%, ${theme.palette.grey[200]} 100%)`,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Stack alignItems="center" spacing={1} sx={{ opacity: 0.4 }}>
+                    <PeopleRoundedIcon sx={{ fontSize: 36, color: "primary.main" }} />
+                    <Typography variant="caption" color="text.secondary" fontWeight={500}>
+                      Screenshot &mdash; Explore view
+                    </Typography>
+                  </Stack>
+                </Box>
+              </Box>
+            </Grid>
+
+            {/* Path 2: Create & Organize */}
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Box
+                sx={{
+                  height: "100%",
+                  backgroundColor: "background.paper",
+                  borderRadius: 3,
+                  overflow: "hidden",
+                  boxShadow: (theme) =>
+                    theme.palette.mode === "light"
+                      ? "0 2px 12px rgba(0,0,0,0.08)"
+                      : "none",
+                  border: "1px solid",
+                  borderColor: "divider",
+                  display: "flex",
+                  flexDirection: "column",
+                }}
+              >
+                {/* Card header */}
+                <Box
+                  sx={{
+                    background: "linear-gradient(135deg, #c2410c 0%, #e65100 100%)",
+                    px: { xs: 3, sm: 4 },
+                    py: { xs: 3, sm: 3.5 },
+                  }}
+                >
+                  <Typography
+                    variant="overline"
+                    sx={{
+                      color: "rgba(255,255,255,0.7)",
+                      fontWeight: 600,
+                      letterSpacing: "0.1em",
+                      fontSize: "0.65rem",
+                      display: "block",
+                      mb: 0.5,
+                    }}
+                  >
+                    Path 2
                   </Typography>
                   <Typography
-                    variant="body2"
-                    color="text.secondary"
+                    variant="h5"
+                    fontWeight={700}
                     sx={{
-                      lineHeight: 1.75,
-                      textAlign: { xs: "center", sm: "left" },
+                      color: "white",
+                      fontSize: { xs: "1.15rem", sm: "1.3rem" },
+                      lineHeight: 1.3,
                     }}
                   >
-                    {body}
+                    Create and organize your own plans
                   </Typography>
-                </Stack>
-              </Grid>
-            ))}
+                </Box>
+
+                {/* Steps */}
+                <Box sx={{ px: { xs: 3, sm: 4 }, py: { xs: 3, sm: 4 }, flex: 1 }}>
+                  <Stack spacing={3}>
+                    {HOW_IT_WORKS_CREATE.map((step, idx) => (
+                      <Stack key={idx} direction="row" spacing={2} alignItems="flex-start">
+                        <Box
+                          sx={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: "50%",
+                            bgcolor: "#fff3e0",
+                            color: "#bf360c",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontWeight: 700,
+                            fontSize: "0.875rem",
+                            flexShrink: 0,
+                            mt: 0.25,
+                          }}
+                        >
+                          {idx + 1}
+                        </Box>
+                        <Box>
+                          <Typography variant="body1" fontWeight={700} sx={{ mb: 0.25, lineHeight: 1.4 }}>
+                            {step.title}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.65 }}>
+                            {step.body}
+                          </Typography>
+                        </Box>
+                      </Stack>
+                    ))}
+                  </Stack>
+                </Box>
+
+                {/* Screenshot placeholder */}
+                <Box
+                  aria-hidden="true"
+                  sx={{
+                    mx: { xs: 2, sm: 3 },
+                    mb: { xs: 2, sm: 3 },
+                    borderRadius: 2,
+                    overflow: "hidden",
+                    aspectRatio: "4 / 3",
+                    background: (theme) =>
+                      `linear-gradient(135deg, ${theme.palette.grey[100]} 0%, ${theme.palette.primary.light} 100%)`,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Stack alignItems="center" spacing={1} sx={{ opacity: 0.4 }}>
+                    <CalendarMonthRoundedIcon sx={{ fontSize: 36, color: "primary.main" }} />
+                    <Typography variant="caption" color="text.secondary" fontWeight={500}>
+                      Screenshot &mdash; Plan details view
+                    </Typography>
+                  </Stack>
+                </Box>
+              </Box>
+            </Grid>
           </Grid>
 
-          {/* Screenshot placeholder — will be replaced with event details screen */}
-          <Box
-            aria-hidden="true"
-            sx={{
-              mt: { xs: 5, sm: 7 },
-              borderRadius: 2.5,
-              overflow: "hidden",
-              width: "100%",
-              aspectRatio: "16 / 8",
-              background: (theme) =>
-                `linear-gradient(135deg, ${theme.palette.grey[100]} 0%, ${theme.palette.primary.light} 100%)`,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Stack alignItems="center" spacing={1.5} sx={{ opacity: 0.45 }}>
-              <ChatRoundedIcon sx={{ fontSize: 52, color: "primary.main" }} />
-              <Typography variant="body2" color="text.secondary" fontWeight={500}>
-                Screenshot placeholder — Event details view
-              </Typography>
-            </Stack>
-          </Box>
+          {/* Supporting points */}
+          <Grid container spacing={{ xs: 3, sm: 4 }} sx={{ mt: { xs: 4, sm: 6 } }}>
+            {HOW_IT_WORKS_EXTRAS.map(({ imageSrc, Icon, title, body }) => {
+              const showFallback = extrasImageErrors.has(title);
+              return (
+                <Grid key={title} size={{ xs: 12, sm: 4 }}>
+                  <Box
+                    sx={{
+                      height: "100%",
+                      backgroundColor: (theme) =>
+                        theme.palette.mode === "light" ? "grey.50" : "grey.800",
+                      borderRadius: 2.5,
+                      p: { xs: 2.5, sm: 3 },
+                      display: "flex",
+                      flexDirection: "row",
+                      alignItems: "flex-start",
+                      gap: 2,
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        width: 80,
+                        height: 80,
+                        borderRadius: 2,
+                        bgcolor: showFallback ? "primary.light" : "transparent",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0,
+                        overflow: "hidden",
+                      }}
+                    >
+                      {showFallback ? (
+                        <Icon sx={{ fontSize: 40, color: "primary.main" }} />
+                      ) : (
+                        <Image
+                          src={imageSrc}
+                          alt=""
+                          width={80}
+                          height={80}
+                          style={{ objectFit: "contain" }}
+                          onError={() =>
+                            setExtrasImageErrors((prev) => new Set(prev).add(title))
+                          }
+                        />
+                      )}
+                    </Box>
+                    <Box>
+                      <Typography variant="body1" fontWeight={700} sx={{ mb: 0.5, lineHeight: 1.4 }}>
+                        {title}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.65 }}>
+                        {body}
+                      </Typography>
+                    </Box>
+                  </Box>
+                </Grid>
+              );
+            })}
+          </Grid>
         </Box>
       </Box>
 
-      {/* ── Section 4: Why This Works ── */}
+      {/* ── Section: Why This Works ── */}
       <Box
         component="section"
         id="why-this-works"

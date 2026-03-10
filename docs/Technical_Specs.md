@@ -15,7 +15,7 @@ NewChums helps people organize gatherings more easily around hobbies and shared 
 **Current positioning:**
 - Primary: start, share, and join hobby-based plans nearby, a practical tool for organizing real-world gatherings.
 - Secondary: reduces follow-through friction — clear invites, easy RSVPs, one place for updates.
-- Tertiary: meeting new people naturally through shared interests and smaller, approachable gatherings.
+- Tertiary: meeting new people naturally through shared interests and smaller gatherings.
 - Broader mission: reducing loneliness by supporting real-world connection; emphasized on Science of Friendship page, lightly referenced on homepage.
 
 **Note on group chat:** The product will create a group chat when a plan is created. Marketing copy must not position NewChums as "without group chats." Frame the pitch around clarity and follow-through.
@@ -286,7 +286,7 @@ One-way saved-people feature. No approval flow, no mutual-state requirement.
 **Display name fallback:** All Chum-related API responses use `displayName: name?.trim() || username (without @) || "NewChums user"`. Users without a set display name show their username instead of the generic fallback.
 
 **Web:**
-- `/chum-groups` — "Your Chums" page. Single search input auto-detects email input (mail icon shown); name/handle search otherwise. For email lookups with no eligible account found, an invite CTA is shown inline. Confirmation dialog before sending invite; friendly "already sent" state for duplicate attempts. Private Chum list below with Remove action. Mutual Chums shown with 🤝 emoji. Each Chum row displays birthday (month/day, if not `is_hidden_age`) and supports inline private note editing (pencil icon, `PATCH /chums/:userId/note`).
+- `/chum-groups` — "Your Chums" page. Single search input auto-detects email input (mail icon shown); name/handle search otherwise. For email lookups with no eligible account found, an invite CTA is shown inline. Confirmation dialog before sending invite; "already sent" state for duplicate attempts. Private Chum list below with Remove action. Mutual Chums shown with 🤝 emoji. Each Chum row displays birthday (month/day, if not `is_hidden_age`) and supports inline private note editing (pencil icon, `PATCH /chums/:userId/note`).
 - `/u/[handle]` — "Add to Chums" / "Remove from Chums" button in the profile header card (top-right). Shown for logged-in viewers who are not the profile owner. Chum status fetched via `GET /chums/check/:userId` after profile loads.
 - Public Chums section renders below the hobbies card when the profile owner's `is_hidden_chum_list = false` and they have at least one public-visible Chum. Paginated (8 per page, prev/next). Section is entirely absent (no empty card) when the list is empty.
 
@@ -444,7 +444,7 @@ All pages live under `web/src/app/(public)/` and follow the same pattern: a thin
 - **CTA section:** `primary.dark` background, gold `secondary.main` 3px top stripe via `::before`, white text, numbered step circles, `contained color="secondary"` button.
 - **Responsive:** Mobile = centered text/stacked layout; `sm`+ = left-aligned/row. Consistent `textAlign: { xs: "center", sm: "left" }` and `alignSelf: { xs: "center", sm: "flex-start" }` across all sections.
 - **Hero pattern:** Eyebrow (overline, gold) → H1 (800 weight) → gold accent bar (48×3px) → subtext → CTA buttons.
-- **Button styling:** `borderRadius: 2.5`, `textTransform: "none"`, softened `boxShadow` on CTA buttons.
+- **Button styling:** `borderRadius: 2.5`, `textTransform: "none"`, subtle `boxShadow` on CTA buttons.
 
 ### Copy and design conventions (public pages)
 

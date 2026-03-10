@@ -26,14 +26,13 @@ NewChums helps people organize gatherings more easily around hobbies and shared 
 **Why this matters for agents:**
 - Do not frame user-facing copy as primarily about "meeting strangers" or "finding friends." The product should feel like a practical tool for organizing real-life plans.
 - Loneliness / friendship framing is appropriate on the Science of Friendship page, in mission-oriented contexts, and in internal docs — but it should not dominate product surfaces.
-- The product should feel warm, practical, grounded, and social — not corporate, not heavy, not clinical.
 
 ### Terminology
 
 | Term | Usage |
 |------|-------|
 | **plan** | Preferred user-facing term for an event/gathering. "Start a plan," "Your Plans." |
-| **gathering** | Softer alternative to "event." Used in descriptions and copy where "plan" feels too rigid. |
+| **gathering** | Alternative to "event." Used in descriptions and copy where "plan" feels too rigid. |
 | **event** | Acceptable in technical/internal contexts and in API naming. Avoid as the primary user-facing word in new UI copy. |
 | **hobby** | User-facing term for interests. Aligned with the profile interests system. |
 | **chum** | NewChums term for a saved person (one-way relationship, no approval flow). |
@@ -42,18 +41,11 @@ Internal code may use `event`, `PlanEvent`, `EventCard`, etc. — this is fine. 
 
 ### Design and UX Tone
 
-NewChums should feel:
-- warm, welcoming, social, grounded, practical, low-pressure, human
-
-NewChums should NOT feel:
-- corporate, ERP-like, cold, back-office, admin-heavy, sterile, overly formal
-
 When building or modifying UI:
-- Prefer friendly, approachable language over jargon
 - Prefer "none" textTransform over "capitalize" or "uppercase" on buttons
 - Keep empty states helpful and encouraging, not dead or embarrassing
 - Keep helper text human and concise, not mechanical
-- Use the theme's design language (softer shadows, warmer palette, rounded corners)
+- Use the theme's design language (rounded corners, consistent spacing)
 
 ---
 
@@ -230,7 +222,6 @@ Agents should:
 - Preserve auth integrity and routing behavior.
 - Clearly separate implemented vs planned systems.
 - Use "plan" / "gathering" language in user-facing copy, not "event."
-- Respect the product tone: warm, practical, grounded — not corporate.
 
 ---
 
