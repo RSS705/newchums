@@ -47,10 +47,10 @@ export const typography: ThemeOptions["typography"] = {
     lineHeight: 1.5,
   },
   body2: {
-    fontSize: "0.8125rem",
+    fontSize: "1rem",
     letterSpacing: "0rem",
     fontWeight: 400,
-    lineHeight: "1.25rem",
+    lineHeight: "1.65rem",
   },
   button: {
     fontSize: "1rem",

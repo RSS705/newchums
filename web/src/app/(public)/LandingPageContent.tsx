@@ -8,6 +8,7 @@ import Divider from "@mui/material/Divider";
 import Grid from "@mui/material/Grid";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+import Image from "next/image";
 import Link from "next/link";
 import SectionHeader from "@/components/ui/SectionHeader";
 import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
@@ -162,8 +163,13 @@ const BENEFIT_CARDS = [
   },
 ];
 
+const HIGH_FIVE_IMAGE = "/images/home/High-Five.png";
+const BROKEN_CHAT_IMAGE = "/images/home/Broken-Chat.png";
+
 export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?: boolean }) {
   const [activeCategory, setActiveCategory] = useState("All");
+  const [highFiveImgError, setHighFiveImgError] = useState(false);
+  const [brokenChatImgError, setBrokenChatImgError] = useState(false);
 
   const filteredEvents =
     activeCategory === "All"
@@ -191,7 +197,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                   display: "block",
                 }}
               >
-                Start, share, and join plans
+                Start, share, and join plans nearby
               </Typography>
 
               {/* H1 */}
@@ -321,6 +327,205 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
           </Grid>
 
         </Grid>
+      </Box>
+
+      {/* ── Section 1.5: Brand / Positioning ── */}
+      <Box
+        component="section"
+        sx={{
+          py: { xs: 7, sm: 9, md: 11 },
+          mx: { xs: -2, sm: -3 },
+          px: { xs: 2, sm: 3 },
+          backgroundColor: (theme) =>
+            theme.palette.mode === "light" ? "#FCECC3" : "grey.900",
+        }}
+      >
+        <Box maxWidth={720} mx="auto" sx={{ textAlign: "center" }}>
+          {/* Heading */}
+          <Typography
+            component="h2"
+            variant="h2"
+            fontWeight={800}
+            sx={{
+              fontSize: { xs: "1.85rem", sm: "2.5rem", md: "2.75rem" },
+              lineHeight: 1.15,
+              letterSpacing: "-0.025em",
+              mb: 2,
+            }}
+          >
+            Tired of boring nights on the couch?
+          </Typography>
+
+          {/* Subtitle */}
+          <Typography
+            variant="h5"
+            fontWeight={500}
+            sx={{
+              fontSize: { xs: "1.05rem", sm: "1.2rem" },
+              lineHeight: 1.6,
+              color: "text.secondary",
+              mb: { xs: 5, sm: 6 },
+            }}
+          >
+            You&apos;re in the right place. So are we.
+          </Typography>
+
+          {/* Accent bar */}
+          <Box
+            sx={{
+              width: 48,
+              height: 3.5,
+              bgcolor: "primary.main",
+              borderRadius: 2,
+              mx: "auto",
+              mb: { xs: 5, sm: 6 },
+            }}
+          />
+
+          {/* Messaging pillars */}
+          <Stack
+            spacing={{ xs: 4, sm: 5 }}
+            sx={{ textAlign: { xs: "center", sm: "left" } }}
+          >
+            {/* Pillar 1 */}
+            <Box
+              sx={{
+                backgroundColor: (theme) =>
+                  theme.palette.mode === "light"
+                    ? "rgba(255,255,255,0.65)"
+                    : "rgba(255,255,255,0.04)",
+                borderRadius: 2.5,
+                px: { xs: 3, sm: 4 },
+                py: { xs: 3, sm: 3.5 },
+                borderLeft: { xs: "none", sm: "4px solid #E65B13" },
+                borderTop: { xs: "3px solid #E65B13", sm: "none" },
+              }}
+            >
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={{ xs: 2, sm: 3 }} alignItems={{ xs: "center", sm: "flex-start" }}>
+                {highFiveImgError ? (
+                  <Box
+                    sx={{
+                      width: 64,
+                      height: 64,
+                      borderRadius: 2,
+                      bgcolor: "primary.light",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <PeopleRoundedIcon sx={{ fontSize: 28, color: "primary.main" }} />
+                  </Box>
+                ) : (
+                  <Box sx={{ width: 64, height: 64, flexShrink: 0, position: "relative" }}>
+                    <Image
+                      src={HIGH_FIVE_IMAGE}
+                      alt=""
+                      width={64}
+                      height={64}
+                      style={{ objectFit: "contain" }}
+                      onError={() => setHighFiveImgError(true)}
+                    />
+                  </Box>
+                )}
+                <Box>
+                  <Typography variant="body1" fontWeight={700} sx={{ mb: 0.5 }}>
+                    For the people who actually show up
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.75 }}>
+                    NewChums is for people who want to organize gatherings with
+                    friends, the people you already know and the new ones you&apos;re
+                    excited to meet.
+                  </Typography>
+                </Box>
+              </Stack>
+            </Box>
+
+            {/* Pillar 2 */}
+            <Box
+              sx={{
+                backgroundColor: (theme) =>
+                  theme.palette.mode === "light"
+                    ? "rgba(255,255,255,0.65)"
+                    : "rgba(255,255,255,0.04)",
+                borderRadius: 2.5,
+                px: { xs: 3, sm: 4 },
+                py: { xs: 3, sm: 3.5 },
+                borderLeft: { xs: "none", sm: "4px solid #E65B13" },
+                borderTop: { xs: "3px solid #E65B13", sm: "none" },
+              }}
+            >
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={{ xs: 2, sm: 3 }} alignItems={{ xs: "center", sm: "flex-start" }}>
+                {brokenChatImgError ? (
+                  <Box
+                    sx={{
+                      width: 64,
+                      height: 64,
+                      borderRadius: 2,
+                      bgcolor: "primary.light",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <CalendarMonthRoundedIcon sx={{ fontSize: 28, color: "primary.main" }} />
+                  </Box>
+                ) : (
+                  <Box sx={{ width: 64, height: 64, flexShrink: 0, position: "relative" }}>
+                    <Image
+                      src={BROKEN_CHAT_IMAGE}
+                      alt=""
+                      width={64}
+                      height={64}
+                      style={{ objectFit: "contain" }}
+                      onError={() => setBrokenChatImgError(true)}
+                    />
+                  </Box>
+                )}
+                <Box>
+                  <Typography variant="body1" fontWeight={700} sx={{ mb: 0.5 }}>
+                    Built to eliminate every annoyance
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.75 }}>
+                    Stalled group chats, vague &ldquo;let&apos;s do something&rdquo;
+                    plans, flaky replies. This tool is built to remove the friction of
+                    getting people together. All of it. Including the unreliable people
+                    who take your time for granted.
+                  </Typography>
+                </Box>
+              </Stack>
+            </Box>
+
+            {/* Pillar 3 — closing statement */}
+            <Box
+              sx={{
+                backgroundColor: (theme) =>
+                  theme.palette.mode === "light"
+                    ? "primary.dark"
+                    : "grey.800",
+                borderRadius: 2.5,
+                px: { xs: 3, sm: 4 },
+                py: { xs: 3, sm: 3.5 },
+                textAlign: "center",
+              }}
+            >
+              <Typography
+                variant="body1"
+                fontWeight={700}
+                sx={{
+                  fontSize: { xs: "1.05rem", sm: "1.15rem" },
+                  lineHeight: 1.5,
+                  color: "white",
+                  letterSpacing: "-0.01em",
+                }}
+              >
+                Your time is your most precious resource. We defend it.
+              </Typography>
+            </Box>
+          </Stack>
+        </Box>
       </Box>
 
       {/* ── Section 2: Event Discovery ── */}
