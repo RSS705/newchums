@@ -54,11 +54,25 @@ export function getComponents(theme: Theme): Theme["components"] {
         variant: "contained",
       },
       styleOverrides: {
-        root: {
-          borderRadius: theme.shape.borderRadius,
-          boxShadow: "none",
-          textTransform: "none",
-          fontWeight: 600,
+        root: ({ ownerState }) => {
+          const base = {
+            borderRadius: theme.shape.borderRadius,
+            boxShadow: "none",
+            textTransform: "none",
+            fontWeight: 600,
+          };
+          if (ownerState.color === "onPrimary" && ownerState.variant === "contained") {
+            return {
+              ...base,
+              backgroundColor: theme.palette.onPrimary.main,
+              color: theme.palette.onPrimary.contrastText,
+              "&:hover": {
+                backgroundColor: theme.palette.onPrimary.dark,
+                color: theme.palette.onPrimary.contrastText,
+              },
+            };
+          }
+          return base;
         },
         containedPrimary: {
           color: theme.palette.common.white,

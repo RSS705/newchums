@@ -203,7 +203,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
             variant="h1"
             fontWeight={800}
             sx={{
-              fontSize: { xs: "2rem", sm: "2.5rem", md: "2.75rem" },
+              fontSize: "4rem",
               lineHeight: 1.2,
               mb: 3,
             }}
@@ -991,7 +991,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
           py: { xs: 8, sm: 12 },
           textAlign: "center",
           backgroundColor: (theme) =>
-            theme.palette.mode === "light" ? theme.palette.primary.dark : "grey.900",
+            theme.palette.mode === "light" ? theme.palette.primary.main : "grey.900",
           mx: { xs: -2, sm: -3 },
           px: { xs: 3, sm: 4 },
           color: "white",
@@ -1111,7 +1111,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
             component={Link}
             href={isLoggedIn ? "/" : "/signup"}
             variant="contained"
-            color="secondary"
+            color="onPrimary"
             size="large"
             sx={{
               px: { xs: 5, sm: 6 },

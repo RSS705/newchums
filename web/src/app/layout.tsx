@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Plus_Jakarta_Sans } from "next/font/google";
+import { Gabarito, Honk, Plus_Jakarta_Sans } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 import ThemeRegistry from "../theme/ThemeRegistry";
@@ -9,6 +9,19 @@ const plusJakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
   display: "swap",
   variable: "--font-plus-jakarta",
+});
+
+const honk = Honk({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-honk",
+});
+
+const gabarito = Gabarito({
+  weight: ["400", "600", "700"],
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-gabarito",
 });
 
 export const metadata: Metadata = {
@@ -38,7 +51,7 @@ export default function RootLayout({
           />
         ) : null}
       </head>
-      <body className={plusJakarta.variable}>
+      <body className={`${plusJakarta.variable} ${honk.variable} ${gabarito.variable}`}>
         <ThemeRegistry>{children}</ThemeRegistry>
       </body>
     </html>

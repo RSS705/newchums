@@ -5,11 +5,12 @@ import type { ThemeOptions } from "@mui/material/styles";
  * Uses CSS variable for font (set by layout).
  */
 export const typography: ThemeOptions["typography"] = {
-  fontFamily: "var(--font-plus-jakarta), system-ui, -apple-system, sans-serif",
+  fontFamily: "var(--font-gabarito), system-ui, -apple-system, sans-serif",
   h1: {
-    fontWeight: 600,
-    fontSize: "2.25rem",
-    lineHeight: "2.75rem",
+    fontFamily: "var(--font-honk), sans-serif",
+    fontWeight: 400,
+    fontSize: "4rem",
+    lineHeight: 1.15,
     letterSpacing: "-0.02em",
   },
   h2: {
@@ -41,7 +42,7 @@ export const typography: ThemeOptions["typography"] = {
     lineHeight: "1.2rem",
   },
   body1: {
-    fontSize: "1rem",
+    fontSize: "1.15rem",
     fontWeight: 400,
     lineHeight: 1.5,
   },

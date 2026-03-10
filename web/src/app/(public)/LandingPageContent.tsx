@@ -175,7 +175,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
 
       {/* ── Section 1: Hero ── */}
       <Box component="section" sx={{ pb: { xs: 6, sm: 8, md: 10 } }}>
-        <Grid container spacing={{ xs: 4, md: 8 }} alignItems="center">
+        <Grid container spacing={{ xs: 4, md: 8 }} alignItems="stretch">
 
           {/* Left: copy + CTAs */}
           <Grid size={{ xs: 12, md: 6 }}>
@@ -195,36 +195,23 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
               </Typography>
 
               {/* H1 */}
-              <Typography
-                component="h1"
-                variant="h1"
-                fontWeight={900}
-                sx={{
-                  fontSize: { xs: "2.25rem", sm: "2.75rem", md: "3rem" },
-                  lineHeight: 1.15,
-                  letterSpacing: "-0.02em",
-                  mt: "0 !important",
-                }}
-              >
-                Organize and join{" "}
-                <Box component="span" sx={{ color: "primary.main" }}>
-                  hobby-based plans
-                </Box>
-                {" "}around the things you enjoy
+              <Typography component="h1" variant="h1" sx={{ mt: "0 !important" }}>
+                Get off your phone and organize something
               </Typography>
 
               {/* Subtext */}
               <Typography
                 variant="h5"
                 fontWeight={400}
-                color="text.secondary"
                 sx={{
+                  color: "grey.800",
                   lineHeight: 1.7,
-                  fontSize: { xs: "1rem", sm: "1.125rem" },
+                  fontSize: "1.2rem",
                 }}
               >
-                One place for your plans. Create them, share invites, or discover
-                gatherings near you, no more chasing replies.
+                <Box component="span" sx={{ fontWeight: 700 }}>Life&apos;s short.</Box>{" "}
+                Don&apos;t waste it staring at screens.
+                Create an account, invite friends, meet new friends, actually be with people.
               </Typography>
 
               {/* CTAs */}
@@ -245,6 +232,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                         px: 4,
                         py: 1.625,
                         fontWeight: 600,
+                        fontSize: "1.125rem",
                         borderRadius: 2.5,
                         minWidth: { xs: "100%", sm: "auto" },
                         textTransform: "none",
@@ -262,6 +250,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                         px: 4,
                         py: 1.625,
                         fontWeight: 600,
+                        fontSize: "1.125rem",
                         borderRadius: 2.5,
                         minWidth: { xs: "100%", sm: "auto" },
                         textTransform: "none",
@@ -282,12 +271,13 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                         px: 4,
                         py: 1.625,
                         fontWeight: 600,
+                        fontSize: "1.125rem",
                         borderRadius: 2.5,
                         minWidth: { xs: "100%", sm: "auto" },
                         textTransform: "none",
                       }}
                     >
-                      Sign up
+                      Do something
                     </Button>
                     <Button
                       component="a"
@@ -299,12 +289,13 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                         px: 4,
                         py: 1.625,
                         fontWeight: 600,
+                        fontSize: "1.125rem",
                         borderRadius: 2.5,
                         minWidth: { xs: "100%", sm: "auto" },
                         textTransform: "none",
                       }}
                     >
-                      How it works
+                      Explain it to me
                     </Button>
                   </>
                 )}
@@ -312,77 +303,21 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
             </Stack>
           </Grid>
 
-          {/* Right: app screenshot frame — desktop only.
-               To add a real screenshot: replace the inner gradient Box with
-               <img src="..." alt="NewChums app screenshot" style={{ width: "100%", display: "block" }} /> */}
-          <Grid size={{ xs: 12, md: 6 }} sx={{ display: { xs: "none", md: "block" } }}>
+          {/* Right: hero image — desktop only, height matches left column */}
+          <Grid size={{ xs: 12, md: 6 }} sx={{ display: { xs: "none", md: "flex" }, alignItems: "center", justifyContent: "center", overflow: "visible" }}>
             <Box
+              component="img"
+              src="/images/home/Phone-Exploding.png"
+              alt="Get off your phone and organize a gathering"
               sx={{
-                backgroundColor: "background.paper",
-                borderRadius: 3,
-                border: "1px solid",
-                borderColor: "divider",
-                overflow: "hidden",
-                boxShadow: "0 4px 32px rgba(37,99,235,0.08), 0 1px 8px rgba(0,0,0,0.05)",
+                height: "100%",
+                width: "auto",
+                maxWidth: "100%",
+                objectFit: "contain",
+                display: "block",
+                transform: "scale(1.25)",
               }}
-            >
-              {/* Browser chrome bar */}
-              <Box
-                sx={{
-                  px: 2,
-                  py: 1.25,
-                  backgroundColor: "grey.50",
-                  borderBottom: "1px solid",
-                  borderColor: "divider",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 1.5,
-                }}
-              >
-                <Stack direction="row" spacing={0.625}>
-                  <Box sx={{ width: 10, height: 10, borderRadius: "50%", bgcolor: "#ff5f57" }} />
-                  <Box sx={{ width: 10, height: 10, borderRadius: "50%", bgcolor: "#ffbd2e" }} />
-                  <Box sx={{ width: 10, height: 10, borderRadius: "50%", bgcolor: "#28c940" }} />
-                </Stack>
-                <Box
-                  sx={{
-                    flex: 1,
-                    height: 22,
-                    bgcolor: "background.paper",
-                    borderRadius: 1,
-                    border: "1px solid",
-                    borderColor: "grey.200",
-                    display: "flex",
-                    alignItems: "center",
-                    px: 1.25,
-                  }}
-                >
-                  <Typography variant="caption" color="text.disabled" sx={{ fontSize: "0.6875rem", userSelect: "none" }}>
-                    newchums.com
-                  </Typography>
-                </Box>
-              </Box>
-
-              {/* Screenshot content area — swap for <img> when ready */}
-              <Box
-                aria-hidden="true"
-                sx={{
-                  aspectRatio: "4 / 3",
-                  background: (theme) =>
-                    `linear-gradient(150deg, ${theme.palette.primary.light} 0%, ${theme.palette.grey[100]} 55%, ${theme.palette.background.paper} 100%)`,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <Stack alignItems="center" spacing={1.5} sx={{ opacity: 0.4, userSelect: "none" }}>
-                  <CalendarMonthRoundedIcon sx={{ fontSize: 44, color: "primary.main" }} />
-                  <Typography variant="body2" fontWeight={500} color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
-                    App preview coming soon
-                  </Typography>
-                </Stack>
-              </Box>
-            </Box>
+            />
           </Grid>
 
         </Grid>
@@ -873,7 +808,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
           py: { xs: 8, sm: 12 },
           textAlign: "center",
           backgroundColor: (theme) =>
-            theme.palette.mode === "light" ? theme.palette.primary.dark : "grey.900",
+            theme.palette.mode === "light" ? theme.palette.primary.main : "grey.900",
           mx: { xs: -2, sm: -3 },
           px: { xs: 3, sm: 4 },
           color: "white",
@@ -885,7 +820,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
             left: 0,
             right: 0,
             height: "3px",
-            backgroundColor: "secondary.main",
+            backgroundColor: (theme) => theme.palette.onPrimary.main,
           },
         }}
       >
@@ -948,7 +883,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
             component={Link}
             href={isLoggedIn ? "/" : "/signup"}
             variant="contained"
-            color="secondary"
+            color="onPrimary"
             size="large"
             sx={{
               px: { xs: 5, sm: 6 },

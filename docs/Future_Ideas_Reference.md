@@ -255,3 +255,12 @@ Strong events naturally lead to:
 - friendships forming
 - more event hosts
 - organic platform growth
+
+## Full UI Redesign Someday
+
+- RPG-inspired website concept: Reframe the landing page as a small journey/world rather than a standard SaaS page.
+- Hero idea: A slightly pixelated or pixel-inspired porch/wilderness scene with a path leading toward town, symbolizing leaving home to join real-life gatherings.
+- Plans/events section: Present event cards as a village notice board / town job board, with themed framing but still clear modern UX underneath.
+- Implementation approach: Keep the product UI readable and modern; use the RPG theme mostly through background scenes, section metaphors, decorative assets, and layout composition, not through heavy game-like controls.
+- Best style direction: Prefer pixel-inspired over full retro UI, so the site feels memorable and charming without becoming confusing or gimmicky.
+- Key caution: Avoid turning all copy and controls into fantasy/game language; let the environment/metaphor carry the theme while the product messaging stays clear and broad.

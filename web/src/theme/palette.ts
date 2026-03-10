@@ -8,16 +8,23 @@ export function getPalette(mode: PaletteMode): PaletteOptions {
   const light = {
     mode: "light" as const,
     primary: {
-      main: "#2563EB",
-      light: "#DBEAFE",
-      dark: "#1D4ED8",
+      main: "#E65B13",
+      light: "#FCE4D6",
+      dark: "#C44D10",
       contrastText: "#ffffff",
     },
+    /** Used for buttons/elements on primary (E65B13) background */
+    onPrimary: {
+      main: "#F7CE16",
+      light: "#FAE066",
+      dark: "#D4AD0F",
+      contrastText: "#1F2937",
+    },
     secondary: {
-      main: "#F4B400",
-      light: "#FEF3C7",
-      dark: "#D97706",
-      contrastText: "#111827",
+      main: "#68315A",
+      light: "#E8DCE4",
+      dark: "#4A2340",
+      contrastText: "#ffffff",
     },
     success: {
       main: "#13DEB9",
@@ -70,16 +77,22 @@ export function getPalette(mode: PaletteMode): PaletteOptions {
   const dark = {
     mode: "dark" as const,
     primary: {
-      main: "#2563EB",
-      light: "#1E3A8A",
-      dark: "#1D4ED8",
+      main: "#E65B13",
+      light: "#8B380C",
+      dark: "#C44D10",
       contrastText: "#ffffff",
     },
+    onPrimary: {
+      main: "#F7CE16",
+      light: "#FAE066",
+      dark: "#D4AD0F",
+      contrastText: "#1F2937",
+    },
     secondary: {
-      main: "#F4B400",
-      light: "#422006",
-      dark: "#D97706",
-      contrastText: "#111827",
+      main: "#68315A",
+      light: "#3D2640",
+      dark: "#8B4A7D",
+      contrastText: "#ffffff",
     },
     success: {
       main: "#13DEB9",
