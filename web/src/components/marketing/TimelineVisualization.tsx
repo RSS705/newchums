@@ -30,7 +30,6 @@ const TIMELINE_ITEMS = [
  */
 export default function TimelineVisualization() {
   const theme = useTheme();
-  const secondaryMain = theme.palette.secondary.main;
   const darkBg =
     theme.palette.mode === "light"
       ? theme.palette.primary.dark
@@ -63,7 +62,7 @@ export default function TimelineVisualization() {
           {TIMELINE_ITEMS.map((item) => (
             <Box key={item.accent}>
               <Typography variant="body2" sx={{ mb: 1, opacity: 0.95, fontSize: { xs: "0.8125rem", sm: "0.875rem" } }}>
-                <Box component="span" sx={{ color: secondaryMain, fontWeight: 600 }}>
+                <Box component="span" sx={{ color: "#F7CE16", fontWeight: 600 }}>
                   {item.accent}
                 </Box>
                 {item.rest}
@@ -76,7 +75,7 @@ export default function TimelineVisualization() {
                   borderRadius: 1,
                   backgroundColor: "rgba(255,255,255,0.2)",
                   "& .MuiLinearProgress-bar": {
-                    backgroundColor: secondaryMain,
+                    backgroundColor: "#F7CE16",
                   },
                 }}
               />

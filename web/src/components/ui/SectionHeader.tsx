@@ -47,7 +47,7 @@ export default function SectionHeader({ title, subtitle, emphasis = "secondary",
   const accentWidth = isPrimary ? 4 : 3;
   const accentBorderColor =
     accentColor === "secondary"
-      ? theme.palette.secondary.main
+      ? theme.palette.primary.main
       : isPrimary
         ? theme.palette.primary.main
         : emphasis === "secondary"

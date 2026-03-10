@@ -191,7 +191,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                   display: "block",
                 }}
               >
-                Start, share, and join plans nearby
+                Start, share, and join plans
               </Typography>
 
               {/* H1 */}
@@ -776,7 +776,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
               pb: { xs: 0.5, sm: 0.5 },
               borderLeft: { xs: "none", sm: "3px solid" },
               borderTop: { xs: "2px solid", sm: "none" },
-              borderColor: "secondary.main",
+              borderColor: "primary.main",
               textAlign: { xs: "center", sm: "left" },
             }}
           >
@@ -871,7 +871,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
 
           <Divider
             sx={{
-              borderColor: "rgba(255,255,255,0.12)",
+              borderColor: "rgba(247,206,22,0.7)",
               mb: { xs: 6, sm: 8 },
               maxWidth: 480,
               mx: "auto",

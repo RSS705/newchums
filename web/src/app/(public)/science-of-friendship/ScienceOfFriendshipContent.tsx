@@ -35,7 +35,7 @@ export default function ScienceOfFriendshipContent({ isLoggedIn = false }: { isL
           <Typography
             variant="overline"
             sx={{
-              color: "secondary.main",
+              color: "primary.main",
               fontWeight: 700,
               letterSpacing: "0.12em",
               fontSize: "0.7rem",
@@ -61,7 +61,7 @@ export default function ScienceOfFriendshipContent({ isLoggedIn = false }: { isL
             sx={{
               width: 48,
               height: 3,
-              bgcolor: "secondary.main",
+              bgcolor: "primary.main",
               borderRadius: 1,
               mb: { xs: 3.5, sm: 4.5 },
             }}
@@ -139,9 +139,8 @@ export default function ScienceOfFriendshipContent({ isLoggedIn = false }: { isL
                 pl: { xs: 0, sm: 3 },
                 pt: { xs: 2.5, sm: 0.5 },
                 pb: { xs: 0.5, sm: 0.5 },
-                borderLeft: { xs: "none", sm: "3px solid" },
-                borderTop: { xs: "2px solid", sm: "none" },
-                borderColor: "secondary.main",
+                borderLeft: { xs: "none", sm: "3px solid #E65B13" },
+                borderTop: { xs: "2px solid #E65B13", sm: "none" },
                 textAlign: { xs: "center", sm: "left" },
               }}
             >
@@ -195,9 +194,8 @@ export default function ScienceOfFriendshipContent({ isLoggedIn = false }: { isL
               pl: { xs: 0, sm: 3 },
               pt: { xs: 2.5, sm: 0.5 },
               pb: { xs: 0.5, sm: 0.5 },
-              borderLeft: { xs: "none", sm: "3px solid" },
-              borderTop: { xs: "2px solid", sm: "none" },
-              borderColor: "secondary.main",
+              borderLeft: { xs: "none", sm: "3px solid #E65B13" },
+              borderTop: { xs: "2px solid #E65B13", sm: "none" },
               textAlign: { xs: "center", sm: "left" },
             }}
           >
@@ -239,7 +237,7 @@ export default function ScienceOfFriendshipContent({ isLoggedIn = false }: { isL
                   height: "100%",
                   backgroundColor: "background.paper",
                   borderTop: "3px solid",
-                  borderColor: "secondary.main",
+                  borderColor: "primary.main",
                   borderRadius: 2,
                   p: { xs: 3, sm: 4 },
                   boxShadow: (theme) =>
@@ -346,7 +344,7 @@ export default function ScienceOfFriendshipContent({ isLoggedIn = false }: { isL
                       height: 40,
                       borderRadius: "50%",
                       bgcolor: "secondary.main",
-                      color: (theme) => theme.palette.primary.dark,
+                      color: "#F7CE16",
                       fontWeight: 800,
                       fontSize: "0.8rem",
                       display: "flex",
@@ -436,9 +434,8 @@ export default function ScienceOfFriendshipContent({ isLoggedIn = false }: { isL
                   pl: { xs: 0, sm: 3 },
                   pt: { xs: 2.5, sm: 0.5 },
                   pb: { xs: 0.5, sm: 0.5 },
-                  borderLeft: { xs: "none", sm: "2px solid" },
-                  borderTop: { xs: "2px solid", sm: "none" },
-                  borderColor: "secondary.main",
+                  borderLeft: { xs: "none", sm: "2px solid #E65B13" },
+                  borderTop: { xs: "2px solid #E65B13", sm: "none" },
                   textAlign: { xs: "center", sm: "left" },
                 }}
               >
@@ -462,9 +459,8 @@ export default function ScienceOfFriendshipContent({ isLoggedIn = false }: { isL
                 pl: { xs: 0, sm: 3 },
                 pt: { xs: 2.5, sm: 0.5 },
                 pb: { xs: 0.5, sm: 0.5 },
-                borderLeft: { xs: "none", sm: "3px solid" },
-                borderTop: { xs: "2px solid", sm: "none" },
-                borderColor: "secondary.main",
+                borderLeft: { xs: "none", sm: "3px solid #E65B13" },
+                borderTop: { xs: "2px solid #E65B13", sm: "none" },
                 textAlign: { xs: "center", sm: "left" },
               }}
             >
@@ -531,7 +527,7 @@ export default function ScienceOfFriendshipContent({ isLoggedIn = false }: { isL
             left: 0,
             right: 0,
             height: "3px",
-            backgroundColor: "secondary.main",
+            backgroundColor: (theme) => theme.palette.onPrimary.main,
           },
         }}
       >
@@ -594,11 +590,11 @@ export default function ScienceOfFriendshipContent({ isLoggedIn = false }: { isL
                       height: 48,
                       borderRadius: "50%",
                       border: "2px solid",
-                      borderColor: "secondary.main",
+                      borderColor: "#F7CE16",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      color: "secondary.main",
+                      color: "#F7CE16",
                       fontWeight: 700,
                       fontSize: "1.1rem",
                       flexShrink: 0,
@@ -618,7 +614,7 @@ export default function ScienceOfFriendshipContent({ isLoggedIn = false }: { isL
             ))}
           </Grid>
 
-          <Divider sx={{ borderColor: "rgba(255,255,255,0.12)", mb: { xs: 6, sm: 8 }, maxWidth: 480, mx: "auto" }} />
+          <Divider sx={{ borderColor: "rgba(247,206,22,0.7)", mb: { xs: 6, sm: 8 }, maxWidth: 480, mx: "auto" }} />
 
           {/* CTA Button */}
           <Button

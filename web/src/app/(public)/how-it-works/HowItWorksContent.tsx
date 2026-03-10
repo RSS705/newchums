@@ -399,7 +399,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
                         height: 24,
                         borderRadius: "50%",
                         bgcolor: "secondary.main",
-                        color: (theme) => theme.palette.primary.dark,
+                        color: "#F7CE16",
                         fontWeight: 800,
                         fontSize: "0.6875rem",
                         display: "flex",
@@ -518,9 +518,8 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
               pl: { xs: 0, sm: 3 },
               pt: { xs: 2.5, sm: 0.5 },
               pb: { xs: 0.5, sm: 0.5 },
-              borderLeft: { xs: "none", sm: "3px solid" },
-              borderTop: { xs: "2px solid", sm: "none" },
-              borderColor: "secondary.main",
+              borderLeft: { xs: "none", sm: "3px solid #E65B13" },
+              borderTop: { xs: "2px solid #E65B13", sm: "none" },
               textAlign: { xs: "center", sm: "left" },
               mb: { xs: 3.5, sm: 4 },
             }}
@@ -1003,7 +1002,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
             left: 0,
             right: 0,
             height: "3px",
-            backgroundColor: "secondary.main",
+            backgroundColor: (theme) => theme.palette.onPrimary.main,
           },
         }}
       >
@@ -1073,11 +1072,11 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
                       height: 48,
                       borderRadius: "50%",
                       border: "2px solid",
-                      borderColor: "secondary.main",
+                      borderColor: "#F7CE16",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      color: "secondary.main",
+                      color: "#F7CE16",
                       fontWeight: 700,
                       fontSize: "1.1rem",
                       flexShrink: 0,
@@ -1099,7 +1098,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
 
           <Divider
             sx={{
-              borderColor: "rgba(255,255,255,0.12)",
+              borderColor: "rgba(247,206,22,0.7)",
               mb: { xs: 6, sm: 8 },
               maxWidth: 480,
               mx: "auto",
