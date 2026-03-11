@@ -22,10 +22,12 @@ import Radio from "@mui/material/Radio";
 import RadioGroup from "@mui/material/RadioGroup";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
+import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import LinkRoundedIcon from "@mui/icons-material/LinkRounded";
@@ -163,6 +165,28 @@ export default function EventDetailClient() {
   const [chatSending, setChatSending] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
+
+  // Copy link
+  const handleCopyLink = useCallback(async () => {
+    const url = window.location.href;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+      } else {
+        // Fallback for environments without Clipboard API
+        const el = document.createElement("textarea");
+        el.value = url;
+        el.style.cssText = "position:fixed;top:-9999px;left:-9999px";
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand("copy");
+        document.body.removeChild(el);
+      }
+      toast.success("Link copied to clipboard");
+    } catch {
+      toast.error("Could not copy link — please copy it from your browser's address bar");
+    }
+  }, [toast]);
 
   // Lock state
   const [lockToggling, setLockToggling] = useState(false);
@@ -708,9 +732,21 @@ export default function EventDetailClient() {
           )}
           {isCanceled && <Chip label="Canceled" size="small" color="error" />}
         </Stack>
-        <Typography component="h1" variant="h4" fontWeight={700} sx={{ mb: 0.75 }}>
-          {event.title}
-        </Typography>
+        <Stack direction="row" alignItems="center" flexWrap="nowrap" sx={{ mb: 0.75 }}>
+          <Typography component="h1" variant="h4" fontWeight={700}>
+            {event.title}
+          </Typography>
+          <Tooltip title="Copy link" placement="top">
+            <IconButton
+              onClick={handleCopyLink}
+              size="small"
+              aria-label="Copy link to this plan"
+              sx={{ ml: 0.5, color: "text.secondary", flexShrink: 0 }}
+            >
+              <ContentCopyRoundedIcon sx={{ fontSize: 18 }} />
+            </IconButton>
+          </Tooltip>
+        </Stack>
         <Typography variant="body1" color="text.secondary">
           {event.isHost ? "You\u2019re hosting this" : `Hosted by ${event.hostName}`}
         </Typography>
