@@ -38,7 +38,7 @@ const SECTION_SPACING = { py: { xs: 5, sm: 8, md: 10 } };
 const HOW_IT_WORKS_JOIN = [
   {
     title: "Add your hobbies to your profile",
-    body: "Enter what you enjoy so we can show you relevant plans nearby.",
+    body: "Tell us what you enjoy so we can show you relevant plans nearby.",
   },
   {
     title: "Get notified about nearby plans",
@@ -115,19 +115,19 @@ const MEET_PEOPLE_CALLOUTS: {
   body: string;
 }[] = [
   {
-    imageSrc: "/images/home/Drive.png",
+    imageSrc: "/images/home/Preferences.png",
     Icon: ExploreRoundedIcon,
     title: "Your profile does the work",
     body: "Set your hobbies, your location, how far you\u2019d travel, and the kind of people you enjoy spending time with. NewChums handles the rest.",
   },
   {
-    imageSrc: "/images/home/Inbox.png",
+    imageSrc: "/images/home/Notifications.png",
     Icon: NotificationsActiveRoundedIcon,
     title: "Only plans that fit you",
     body: "You won\u2019t get flooded with everything happening nearby. You\u2019ll only hear about gatherings that match your interests and preferences.",
   },
   {
-    imageSrc: "/images/home/Matching.png",
+    imageSrc: "/images/home/Meet.png",
     Icon: VerifiedUserRoundedIcon,
     title: "Thoughtful, not random",
     body: "Matching is based on shared hobbies, location, and the social preferences you set. The right people find the right plans.",
