@@ -204,7 +204,7 @@ Wrangler config is code-managed so deploys do not wipe routes or override canoni
 | Route | Purpose |
 |-------|---------|
 | `/` (logged out) | Homepage — hero, discovery section, feature blocks, CTA |
-| `/how-it-works` | Product walkthrough |
+| `/how-it-works` | How it works |
 | `/science-of-friendship` | Research-backed trust page |
 | `/safety-center` | Community safety guidance |
 | `/contact` | Contact form (Turnstile for logged-out) |

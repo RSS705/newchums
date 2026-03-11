@@ -44,11 +44,11 @@ type WalkthroughStep = {
 const WALKTHROUGH_STEPS: WalkthroughStep[] = [
   {
     num: "01",
-    title: "Tell us what you enjoy",
+    title: "Enter what you enjoy",
     Icon: StyleRoundedIcon,
     paragraphs: [
       "Pick the hobbies and interests that matter to you, board games, hiking, pottery, cooking, card games, whatever you like.",
-      "Your interests help us surface relevant gatherings and connect you with people who enjoy the same things.",
+      "Your interests inform the system of relevant gatherings and connect you with people who enjoy the same things.",
     ],
   },
   {
@@ -65,7 +65,7 @@ const WALKTHROUGH_STEPS: WalkthroughStep[] = [
     title: "Invite the right people",
     Icon: GroupsRoundedIcon,
     paragraphs: [
-      "Share your plan with friends, chums, or let others nearby discover it. NewChums helps surface people whose interests match the gathering.",
+      "Share your plan with existing friends, or let others nearby discover it. NewChums helps find people whose interests match the gathering.",
       "You stay in control, choose who you want to invite, or let interested people find you.",
     ],
   },
@@ -75,16 +75,16 @@ const WALKTHROUGH_STEPS: WalkthroughStep[] = [
     Icon: ChatRoundedIcon,
     paragraphs: [
       "See who\u2019s coming, chat about the plan, and make changes, all in one place. No more chasing replies across scattered threads.",
-      "Attendees can suggest alternate times and share availability, so finding the right moment is easier for everyone.",
+      "Attendees can suggest alternate times and share availability, so finding the right moment is easier for everyone without the endless back and forth.",
     ],
   },
   {
     num: "05",
-    title: "Meet up and enjoy it",
+    title: "Meet up and have fun",
     Icon: EmojiPeopleRoundedIcon,
     paragraphs: [
       "When the day arrives, everyone knows the plan. Show up, do something you enjoy, and spend time with people who share your interest.",
-      "Most NewChums gatherings are small and low-pressure, the kind that are easy to say yes to.",
+      "Most NewChums gatherings are small and low-pressure.",
     ],
   },
   {
@@ -92,8 +92,8 @@ const WALKTHROUGH_STEPS: WalkthroughStep[] = [
     title: "Keep the momentum going",
     Icon: RepeatRoundedIcon,
     paragraphs: [
-      "After a great gathering, the connection does not have to end. Stay in touch, plan the next one, or discover new gatherings from people you've met.",
-      "The more you show up, the easier it gets, and the more your community grows.",
+      "After a gathering, the connection does not have to end. Stay in touch, plan the next one, or discover new gatherings from people you've met.",
+      "The more you show up, the easier it gets.",
     ],
   },
 ];
@@ -103,7 +103,7 @@ const WALKTHROUGH_STEPS: WalkthroughStep[] = [
 const PAIN_POINTS = [
   "\u201cWe should do something sometime\u201d never turns into a plan",
   "Good ideas get buried in the group chat",
-  "Scheduling is awkward and nobody wants to pin things down",
+  "Scheduling is awkward and nobody wants to take charge",
   "People mean well, but plans fall apart before they start",
 ];
 
@@ -186,7 +186,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
           <Typography
             variant="overline"
             sx={{
-              color: "secondary.main",
+              color: "primary.main",
               fontWeight: 700,
               letterSpacing: "0.12em",
               fontSize: "0.7rem",
@@ -194,7 +194,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
               mb: 2,
             }}
           >
-            Product walkthrough
+            How this works
           </Typography>
 
           {/* Heading */}
@@ -208,7 +208,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
               mb: 3,
             }}
           >
-            From shared interests to real&nbsp;plans
+            Shared interests to plans that actually happen
           </Typography>
 
           {/* Gold accent bar */}
@@ -233,9 +233,8 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
               mb: 2.5,
             }}
           >
-            NewChums helps you organize gatherings around the things you already enjoy,
-            whether you&apos;re making plans with friends or discovering people nearby
-            who share your interests.
+            NewChums is designed to make it easy to organize gatherings around the things you enjoy,
+            whether you&apos;re making plans with friends or discovering people nearby.
           </Typography>
           <Typography
             variant="h5"
@@ -247,55 +246,8 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
               mb: { xs: 4, sm: 5 },
             }}
           >
-            Here&apos;s how it works, step by step.
+            Let&apos;s go through it step by step.
           </Typography>
-
-          {/* CTAs */}
-          <Stack
-            direction={{ xs: "column", sm: "row" }}
-            spacing={2}
-            justifyContent="center"
-            sx={{ width: "100%", maxWidth: 420 }}
-          >
-            {!isLoggedIn && (
-              <Button
-                component={Link}
-                href="/signup"
-                variant="contained"
-                color="primary"
-                size="large"
-                sx={{
-                  px: { xs: 4, sm: 5 },
-                  py: 1.625,
-                  fontSize: "1rem",
-                  fontWeight: 600,
-                  borderRadius: 2.5,
-                  textTransform: "none",
-                  minWidth: { xs: "100%", sm: 160 },
-                }}
-              >
-                Sign up
-              </Button>
-            )}
-            <Button
-              component="a"
-              href="#walkthrough"
-              variant="outlined"
-              color="primary"
-              size="large"
-              sx={{
-                px: { xs: 4, sm: 5 },
-                py: 1.625,
-                fontSize: "1rem",
-                fontWeight: 600,
-                borderRadius: 2.5,
-                textTransform: "none",
-                minWidth: { xs: "100%", sm: 160 },
-              }}
-            >
-              See the steps
-            </Button>
-          </Stack>
         </Stack>
 
         {/* Hero image placeholder */}
@@ -339,7 +291,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
       >
         <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto">
           <SectionHeader
-            title="How NewChums works in six simple steps"
+            title="Six simple steps"
             emphasis="primary"
             accentColor="secondary"
           />
@@ -641,7 +593,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
               textAlign: { xs: "center", sm: "left" },
             }}
           >
-            NewChums is not just about meeting strangers. It&apos;s a better way to organize
+            NewChums is not just about meeting your neighbors. It&apos;s a better way to organize
             anything social, from coordinating plans with friends you already have, to
             finding people nearby who enjoy the same things you do.
           </Typography>
@@ -1127,7 +1079,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
               },
             }}
           >
-            {isLoggedIn ? "Explore NewChums" : "Get started"}
+            {isLoggedIn ? "Explore NewChums" : "Let's do it"}
           </Button>
         </Box>
       </Box>

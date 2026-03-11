@@ -38,7 +38,7 @@ const SECTION_SPACING = { py: { xs: 5, sm: 8, md: 10 } };
 const HOW_IT_WORKS_JOIN = [
   {
     title: "Add your hobbies to your profile",
-    body: "Tell us what you enjoy so we can show you relevant plans nearby.",
+    body: "Enter what you enjoy so we can show you relevant plans nearby.",
   },
   {
     title: "Get notified about nearby plans",
