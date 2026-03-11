@@ -9,12 +9,16 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import Image from "next/image";
 import Link from "next/link";
-import SectionHeader from "@/components/ui/SectionHeader";
 import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
 import PeopleRoundedIcon from "@mui/icons-material/PeopleRounded";
 import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
 import StarRoundedIcon from "@mui/icons-material/StarRounded";
 import BlockRoundedIcon from "@mui/icons-material/BlockRounded";
+import ExploreRoundedIcon from "@mui/icons-material/ExploreRounded";
+import InterestsRoundedIcon from "@mui/icons-material/InterestsRounded";
+import NotificationsActiveRoundedIcon from "@mui/icons-material/NotificationsActiveRounded";
+import VerifiedUserRoundedIcon from "@mui/icons-material/VerifiedUserRounded";
+import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 
 /**
  * Full public homepage content for logged-out visitors.
@@ -30,25 +34,6 @@ const SECTION_SPACING = { py: { xs: 5, sm: 8, md: 10 } };
 // (Hero image placeholder — the right column of the hero section is an image frame
 //  ready to hold a screenshot or product photo. See the Grid item below.)
 
-// ── "Social upside" benefit cards: shared interests, approachable, new connections ─
-const BENEFIT_CARDS = [
-  {
-    accentColor: "secondary.main" as const,
-    title: "Shared interests make it easy to say yes",
-    body: "When you already have something in common, there\u2019s less awkwardness about meeting up. A shared hobby is a built-in conversation starter.",
-  },
-  {
-    accentColor: "primary.main" as const,
-    title: "Smaller plans feel more approachable",
-    body: "NewChums is built around gatherings that don\u2019t require a big commitment: a coffee walk, a board game session, an afternoon pottery class.",
-  },
-  {
-    accentColor: "secondary.main" as const,
-    title: "New connections happen naturally",
-    body: "When you\u2019re doing something you enjoy with people who enjoy it too, meeting new people stops feeling forced. It just happens.",
-  },
-];
-
 // ── "How does it work?" two-path flow data ──────────────────────────────────
 const HOW_IT_WORKS_JOIN = [
   {
@@ -61,7 +46,7 @@ const HOW_IT_WORKS_JOIN = [
   },
   {
     title: "Join and stay in the loop",
-    body: "Use the plan\u2019s bulletin board for updates and coordination, everything in one place.",
+    body: "Use the plan\u2019s chat room for updates and coordination, everything in one place.",
   },
   {
     title: "Show up and have a great time",
@@ -84,7 +69,7 @@ const HOW_IT_WORKS_CREATE = [
   },
   {
     title: "Find a time and keep everyone updated",
-    body: "Use the bulletin board so nobody misses a thing.",
+    body: "Use the built in chat so nobody misses a thing.",
   },
   {
     title: "RSVP reminders go out automatically",
@@ -122,6 +107,60 @@ const HOW_IT_WORKS_EXTRAS: {
   },
 ];
 
+// ── "Meet new people" section feature callouts ──────────────────────────────
+const MEET_PEOPLE_CALLOUTS: {
+  imageSrc?: string;
+  Icon: typeof ExploreRoundedIcon;
+  title: string;
+  body: string;
+}[] = [
+  {
+    imageSrc: "/images/home/Drive.png",
+    Icon: ExploreRoundedIcon,
+    title: "Your profile does the work",
+    body: "Set your hobbies, your location, how far you\u2019d travel, and the kind of people you enjoy spending time with. NewChums handles the rest.",
+  },
+  {
+    imageSrc: "/images/home/Inbox.png",
+    Icon: NotificationsActiveRoundedIcon,
+    title: "Only plans that fit you",
+    body: "You won\u2019t get flooded with everything happening nearby. You\u2019ll only hear about gatherings that match your interests and preferences.",
+  },
+  {
+    imageSrc: "/images/home/Matching.png",
+    Icon: VerifiedUserRoundedIcon,
+    title: "Thoughtful, not random",
+    body: "Matching is based on shared hobbies, location, and the social preferences you set. The right people find the right plans.",
+  },
+];
+
+// ── "Why this works" reasoning cards ─────────────────────────────────────────
+const WHY_THIS_WORKS_CARDS: {
+  Icon: typeof InterestsRoundedIcon;
+  accentColor: string;
+  title: string;
+  body: string;
+}[] = [
+  {
+    Icon: InterestsRoundedIcon,
+    accentColor: "#E65B13",
+    title: "Shared hobbies make everything easier",
+    body: "When you already have something in common, meeting up feels natural. A shared activity gives people something to do and talk about, not just sit across from each other trying to think of something to say.",
+  },
+  {
+    Icon: PeopleRoundedIcon,
+    accentColor: "#1565c0",
+    title: "Smaller gatherings, stronger connections",
+    body: "Big groups make it hard to get to know anyone. NewChums is designed for the kind of gathering where people actually talk, learn names, and get to know each other.",
+  },
+  {
+    Icon: AutoAwesomeRoundedIcon,
+    accentColor: "#7c3aed",
+    title: "It gets better the more you use it",
+    body: "Your feedback after each gathering helps improve which plans and people you\u2019re notified about. Each time, the experience becomes more customized to you.",
+  },
+];
+
 const HIGH_FIVE_IMAGE = "/images/home/High-Five.png";
 const BROKEN_CHAT_IMAGE = "/images/home/Broken-Chat.png";
 
@@ -129,6 +168,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
   const [highFiveImgError, setHighFiveImgError] = useState(false);
   const [brokenChatImgError, setBrokenChatImgError] = useState(false);
   const [extrasImageErrors, setExtrasImageErrors] = useState<Set<string>>(new Set());
+  const [meetPeopleImageErrors, setMeetPeopleImageErrors] = useState<Set<string>>(new Set());
 
   return (
     <Box sx={{ pt: { xs: 4, sm: 6, md: 8 }, pb: { xs: 4, sm: 6 } }}>
@@ -811,6 +851,198 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
         </Box>
       </Box>
 
+      {/* ── Section: Meet New People ── */}
+      <Box
+        component="section"
+        id="meet-people"
+        sx={{
+          ...SECTION_SPACING,
+          backgroundColor: (theme) =>
+            theme.palette.mode === "light" ? "#FCECC3" : "grey.900",
+          mx: { xs: -2, sm: -3 },
+          px: { xs: 2, sm: 3 },
+        }}
+      >
+        <Box maxWidth={1100} mx="auto">
+          {/* Section heading */}
+          <Box sx={{ textAlign: "center", mb: { xs: 4, sm: 6 } }}>
+            <Typography
+              component="h2"
+              variant="h2"
+              fontWeight={800}
+              sx={{
+                fontSize: { xs: "1.85rem", sm: "2.5rem", md: "2.75rem" },
+                lineHeight: 1.15,
+                letterSpacing: "-0.025em",
+                mb: 2,
+              }}
+            >
+              A great way to meet new people, too
+            </Typography>
+            <Typography
+              variant="h5"
+              fontWeight={500}
+              sx={{
+                fontSize: { xs: "1.05rem", sm: "1.2rem" },
+                lineHeight: 1.6,
+                color: "text.secondary",
+                maxWidth: 580,
+                mx: "auto",
+              }}
+            >
+              Not every plan has to be with people you already know.
+            </Typography>
+          </Box>
+
+          {/* Split content: copy left, placeholder right */}
+          <Grid container spacing={{ xs: 4, md: 6 }} alignItems="center" sx={{ mb: { xs: 5, sm: 7 } }}>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Typography
+                variant="body1"
+                sx={{ lineHeight: 1.85, mb: 3, color: "text.primary" }}
+              >
+                When you create a plan on NewChums, you decide who can join.
+                Keep it private for your friends, open it up to new people, or
+                both, it&apos;s up to you.
+              </Typography>
+              <Typography
+                variant="body1"
+                sx={{ lineHeight: 1.85, mb: { xs: 3, sm: 4 }, color: "text.primary" }}
+              >
+                Public plans are where it gets interesting. When someone nearby
+                shares your hobbies and fits your preferences, they&apos;ll hear about
+                your plan. And you&apos;ll hear about theirs. No cold introductions,
+                no awkward swiping, just real people showing up to do
+                something they already enjoy.
+              </Typography>
+              {!isLoggedIn && (
+                <Button
+                  component={Link}
+                  href="/signup"
+                  variant="contained"
+                  color="primary"
+                  size="large"
+                  sx={{
+                    px: 4,
+                    py: 1.5,
+                    fontWeight: 600,
+                    borderRadius: 2.5,
+                    textTransform: "none",
+                    minWidth: { xs: "100%", sm: "auto" },
+                  }}
+                >
+                  Setup your profile
+                </Button>
+              )}
+            </Grid>
+
+            {/* Placeholder for screenshot or lifestyle image */}
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Box
+                aria-hidden="true"
+                sx={{
+                  borderRadius: 3,
+                  overflow: "hidden",
+                  aspectRatio: "4 / 3",
+                  background: (theme) =>
+                    theme.palette.mode === "light"
+                      ? `linear-gradient(135deg, ${theme.palette.primary.light} 0%, ${theme.palette.grey[200]} 100%)`
+                      : `linear-gradient(135deg, ${theme.palette.grey[800]} 0%, ${theme.palette.grey[700]} 100%)`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Stack alignItems="center" spacing={1.5} sx={{ opacity: 0.4 }}>
+                  <PeopleRoundedIcon sx={{ fontSize: 48, color: "primary.main" }} />
+                  <Typography variant="body2" color="text.secondary" fontWeight={500}>
+                    Screenshot placeholder &mdash; Profile preferences
+                  </Typography>
+                </Stack>
+              </Box>
+            </Grid>
+          </Grid>
+
+          {/* Three feature callouts */}
+          <Grid container spacing={{ xs: 3, sm: 4 }}>
+            {MEET_PEOPLE_CALLOUTS.map(({ imageSrc, Icon, title, body }) => {
+              const showFallback = !imageSrc || meetPeopleImageErrors.has(title);
+              return (
+                <Grid key={title} size={{ xs: 12, sm: 4 }}>
+                  <Box
+                    sx={{
+                      height: "100%",
+                      backgroundColor: (theme) =>
+                        theme.palette.mode === "light"
+                          ? "rgba(255,255,255,0.7)"
+                          : "rgba(255,255,255,0.04)",
+                      borderRadius: 2.5,
+                      overflow: "hidden",
+                      display: "flex",
+                      flexDirection: "column",
+                    }}
+                  >
+                    {/* Image area */}
+                    <Box
+                      sx={{
+                        width: "100%",
+                        aspectRatio: "2 / 1",
+                        position: "relative",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        bgcolor: showFallback ? "primary.light" : "transparent",
+                        p: showFallback ? 0 : 2,
+                      }}
+                    >
+                      {showFallback ? (
+                        <Icon sx={{ fontSize: 40, color: "primary.main" }} />
+                      ) : (
+                        <Box sx={{ position: "relative", width: "100%", height: "100%" }}>
+                          <Image
+                            src={imageSrc}
+                            alt=""
+                            fill
+                            sizes="(max-width: 600px) 100vw, 33vw"
+                            style={{ objectFit: "contain" }}
+                            onError={() =>
+                              setMeetPeopleImageErrors((prev) => new Set(prev).add(title))
+                            }
+                          />
+                        </Box>
+                      )}
+                    </Box>
+
+                    {/* Text content */}
+                    <Box sx={{ px: { xs: 3, sm: 3 }, pb: { xs: 3, sm: 3.5 }, pt: 1.5, flex: 1 }}>
+                      <Typography
+                        variant="h6"
+                        component="h3"
+                        fontWeight={700}
+                        sx={{
+                          mb: 1,
+                          fontSize: { xs: "1rem", sm: "1.0625rem" },
+                          lineHeight: 1.35,
+                        }}
+                      >
+                        {title}
+                      </Typography>
+                      <Typography
+                        variant="body2"
+                        color="text.secondary"
+                        sx={{ lineHeight: 1.75 }}
+                      >
+                        {body}
+                      </Typography>
+                    </Box>
+                  </Box>
+                </Grid>
+              );
+            })}
+          </Grid>
+        </Box>
+      </Box>
+
       {/* ── Section: Why This Works ── */}
       <Box
         component="section"
@@ -826,27 +1058,41 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
             theme.palette.mode === "light" ? "grey.200" : "grey.800",
         }}
       >
-        <Box maxWidth={900} mx="auto">
-          <SectionHeader
-            title="Shared interests make plans feel approachable"
-            emphasis="primary"
-            accentColor="secondary"
-          />
+        <Box maxWidth={960} mx="auto">
+          {/* Section heading */}
+          <Box sx={{ textAlign: "center", mb: { xs: 4, sm: 6 } }}>
+            <Typography
+              component="h2"
+              variant="h2"
+              fontWeight={800}
+              sx={{
+                fontSize: { xs: "1.85rem", sm: "2.5rem", md: "2.75rem" },
+                lineHeight: 1.15,
+                letterSpacing: "-0.025em",
+                mb: 2,
+              }}
+            >
+              The nitty gritty
+            </Typography>
+            <Typography
+              variant="h5"
+              fontWeight={500}
+              sx={{
+                fontSize: { xs: "1.05rem", sm: "1.2rem" },
+                lineHeight: 1.6,
+                color: "text.secondary",
+                maxWidth: 560,
+                mx: "auto",
+              }}
+            >
+              This isn&apos;t guesswork. NewChums is designed around the conditions that make plans work.
+        
+            </Typography>
+          </Box>
 
-          <Typography
-            variant="body1"
-            sx={{
-              mb: { xs: 4, sm: 5 },
-              lineHeight: 1.75,
-              textAlign: { xs: "center", sm: "left" },
-            }}
-          >
-            When a plan revolves around something you already enjoy, saying yes is easier.
-            Smaller gatherings, less awkwardness, and new connections can happen naturally.
-          </Typography>
-
+          {/* Three reasoning cards */}
           <Grid container spacing={{ xs: 3, sm: 4 }}>
-            {BENEFIT_CARDS.map(({ accentColor, title, body }) => (
+            {WHY_THIS_WORKS_CARDS.map(({ Icon, accentColor, title, body }) => (
               <Grid key={title} size={{ xs: 12, sm: 4 }}>
                 <Box
                   sx={{
@@ -854,14 +1100,32 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                     backgroundColor: "background.paper",
                     borderTop: "3px solid",
                     borderColor: accentColor,
-                    borderRadius: 2,
+                    borderRadius: 2.5,
                     p: { xs: 3, sm: 3.5 },
                     boxShadow: (theme) =>
                       theme.palette.mode === "light"
                         ? "0 1px 6px rgba(0,0,0,0.07)"
                         : "none",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: { xs: "center", sm: "flex-start" },
+                    textAlign: { xs: "center", sm: "left" },
                   }}
                 >
+                  <Box
+                    sx={{
+                      width: 48,
+                      height: 48,
+                      borderRadius: 2,
+                      bgcolor: `${accentColor}14`,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      mb: 2,
+                    }}
+                  >
+                    <Icon sx={{ fontSize: 24, color: accentColor }} />
+                  </Box>
                   <Typography
                     variant="h6"
                     component="h3"
@@ -889,32 +1153,54 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
           {/* Bridge to Science of Friendship */}
           <Box
             sx={{
-              mt: { xs: 4, sm: 5 },
-              pl: { xs: 0, sm: 3 },
-              pt: { xs: 2.5, sm: 0.5 },
-              pb: { xs: 0.5, sm: 0.5 },
-              borderLeft: { xs: "none", sm: "3px solid" },
-              borderTop: { xs: "2px solid", sm: "none" },
-              borderColor: "primary.main",
-              textAlign: { xs: "center", sm: "left" },
+              mt: { xs: 5, sm: 7 },
+              textAlign: "center",
             }}
           >
-            <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
-              There&apos;s research behind why this works.{" "}
+            <Box
+              sx={{
+                backgroundColor: (theme) =>
+                  theme.palette.mode === "light"
+                    ? "primary.dark"
+                    : "grey.800",
+                borderRadius: 2.5,
+                px: { xs: 3, sm: 5 },
+                py: { xs: 3.5, sm: 4 },
+                maxWidth: 640,
+                mx: "auto",
+              }}
+            >
               <Typography
-                component={Link}
-                href="/science-of-friendship"
                 variant="body1"
+                fontWeight={600}
                 sx={{
-                  color: "primary.main",
-                  fontWeight: 600,
-                  textDecoration: "none",
-                  "&:hover": { textDecoration: "underline" },
+                  color: "white",
+                  lineHeight: 1.65,
+                  mb: 2.5,
+                  fontSize: { xs: "0.975rem", sm: "1.05rem" },
                 }}
               >
-                Read the science &rarr;
+                There&apos;s real research behind why shared activities, smaller groups,
+                and repeated contact lead to stronger friendships.
               </Typography>
-            </Typography>
+              <Button
+                component={Link}
+                href="/science-of-friendship"
+                variant="contained"
+                color="onPrimary"
+                size="large"
+                sx={{
+                  px: 4,
+                  py: 1.25,
+                  fontWeight: 600,
+                  borderRadius: 2.5,
+                  textTransform: "none",
+                  fontSize: "0.9375rem",
+                }}
+              >
+                Read the science behind it
+              </Button>
+            </Box>
           </Box>
         </Box>
       </Box>
@@ -971,7 +1257,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
               color: "inherit",
             }}
           >
-            Organize something around what you already enjoy
+            DO SOMETHING!
           </Typography>
 
           {/* Subtext */}
@@ -985,7 +1271,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
               mx: "auto",
             }}
           >
-            Sign up, add the hobbies you enjoy, and start organizing or discovering plans.
+            Sign up, add the hobbies you enjoy, and start organizing and discovering plans.
           </Typography>
 
           <Divider
@@ -1019,7 +1305,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
               },
             }}
           >
-            {isLoggedIn ? "Explore NewChums" : "Get started"}
+            {isLoggedIn ? "Explore NewChums" : "Alright, I'm in"}
           </Button>
         </Box>
       </Box>
