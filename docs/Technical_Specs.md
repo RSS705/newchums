@@ -1,7 +1,7 @@
 # Technical Specifications
 
-Last Updated: March 9, 2026
-Version: 9.0
+Last Updated: March 11, 2026
+Version: 10.0
 
 This document defines the authoritative technical architecture of NewChums.
 It describes **what exists today** and the structural commitments we are making.
@@ -18,7 +18,7 @@ NewChums helps people organize gatherings more easily around hobbies and shared 
 - Tertiary: meeting new people naturally through shared interests and smaller gatherings.
 - Broader mission: reducing loneliness by supporting real-world connection; emphasized on Science of Friendship page, lightly referenced on homepage.
 
-**Note on group chat:** The product will create a group chat when a plan is created. Marketing copy must not position NewChums as "without group chats." Frame the pitch around clarity and follow-through.
+**Note on group chat:** Each plan has a built-in participant group chat with real-time WebSocket delivery. Marketing copy must not position NewChums as "without group chats." Frame the pitch around clarity and follow-through.
 
 **Terminology:** The system uses "event" internally (database, API routes, code) but user-facing surfaces prefer "plan" or "gathering." See `AGENTS.md` for full terminology guidance.
 
@@ -38,6 +38,7 @@ NewChums helps people organize gatherings more easily around hobbies and shared 
 | Analytics | Plausible | Production |
 | Error tracking | Sentry | Web + API |
 | Logging | Axiom | API |
+| Real-time | Cloudflare Durable Objects | WebSocket relay for plan chat (Hibernation API) |
 | Hosting | Cloudflare Workers | Two-worker model |
 
 ### Development Tools
@@ -62,6 +63,8 @@ NewChums helps people organize gatherings more easily around hobbies and shared 
 - **Custom domains:** `newchums.com`, `www.newchums.com` (defined in `web/wrangler.toml`).
 - **Canonical host:** `https://newchums.com` (www → non-www redirect enforced before Auth.js).
 - **Deploy safeguards:** `workers_dev = false`, `preview_urls = false`, and custom domain routes are code-defined to prevent deploy drift.
+
+- **Durable Objects:** `ChatRoom` class bound as `CHAT_ROOM` in the API worker. Per-plan WebSocket relay for real-time chat. Uses the Hibernation API so idle connections consume no CPU. Configured via `[[durable_objects.bindings]]` and `[[migrations]]` in `api/wrangler.toml`.
 
 ### Not implemented
 
@@ -328,6 +331,8 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 | `newchums.event_invites` | Invite records — supports both in-app users (user_id) and email invitees (email) |
 | `newchums.event_rsvps` | Attendance responses — going, maybe, cant_make_it (one per user per event) |
 | `newchums.event_alt_times` | Alternate date/time suggestions from attendees |
+| `newchums.event_chat_messages` | Per-plan chat messages — id, event_id, user_id, body, created_at. Indexed on `(event_id, created_at ASC)` |
+| `newchums.event_chat_reads` | Last-read tracking per user per plan — PK `(event_id, user_id)`, `last_read_at` timestamp |
 
 **Key fields on `events`:**
 - `visibility`: `invite_only` | `chums_only` | `public`
@@ -336,20 +341,26 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 - `allow_alt_times`: boolean — whether attendees can suggest alternate times
 - `interest_id`: FK to `interests` table (hobbies)
 - `require_reconfirmation`: boolean (migration 028) — when true, attendees will receive a 24-hour reminder to reconfirm attendance; does not auto-cancel or change RSVPs; reminder email logic is future work
+- `locked_at`: timestamptz nullable (migration 029) — when set, the plan is locked and no new participants can join; existing participants and host retain access
 
 **API endpoints (auth required):**
 
 | Route | Description |
 |-------|-------------|
 | `POST /events` | Create event. Validates title, starts_at, location_type, visibility. Accepts `invitees[]` array of `{ user_id?, email? }` and `require_reconfirmation` boolean. Published events send invite notifications and emails. |
-| `GET /events/mine?filter=upcoming\|past` | List events the user hosts, is invited to, or has RSVP'd. Includes going/maybe counts, host info, RSVP status. Host name uses `@username` priority. |
-| `GET /events/:id` | Event detail with RSVP list and alternate time suggestions. Includes `requireReconfirmation`. RSVP entries include `handle` for attendee profile links. Visibility enforcement: invite_only requires invite/RSVP, chums_only requires chum relationship or invite. |
+| `GET /events/mine?filter=upcoming\|past` | List events the user hosts, is invited to, or has RSVP'd. Includes going/maybe counts, host info, RSVP status, `has_unread_chat` flag. Host name uses `@username` priority. |
+| `GET /events/:id` | Event detail with RSVP list and alternate time suggestions. Includes `requireReconfirmation`, `lockedAt`. RSVP entries include `handle` for attendee profile links. Visibility enforcement: invite_only requires invite/RSVP, chums_only requires chum relationship or invite. |
 | `PATCH /events/:id` | Edit event (host only). Accepts: `title`, `description`, `starts_at`, `max_seats`, `visibility`, `require_reconfirmation`. Returns the updated event. |
-| `POST /events/:id/rsvp` | RSVP to an event — `{ status: "going"\|"maybe"\|"cant_make_it", note? }`. Capacity enforcement for going status. Notifies host via in-app notification and email. |
+| `POST /events/:id/rsvp` | RSVP to an event — `{ status: "going"\|"maybe"\|"cant_make_it", note? }`. Capacity enforcement for going status. Locked plans reject new RSVPs (`EVENT_LOCKED` error) but allow existing participants to change status. Notifies host via in-app notification and email. |
 | `POST /events/:id/alt-time` | Suggest alternate time — `{ suggested_at, note? }`. Only if event.allow_alt_times. Notifies host. |
 | `POST /events/:id/cancel` | Cancel event (host only). Notifies all attendees via in-app notification and email. |
 | `POST /events/:id/invite` | Add invitees to published event (host only). Sends notifications and invite emails. |
 | `GET /events/explore` | Discoverable events feed for logged-in users. Supports: `lat`/`lng`/`radius_km` (location), `hobby` (slug), `time_range` (this_week/this_weekend/next_30/all), `q` (text search). Applies visibility rules (public + chums_only for the user's chums). Distance computed via Haversine. Nearby-first ordering when location is provided. |
+| `GET /events/:id/chat` | Fetch chat messages and user's `lastReadAt` for a plan. Access: host or `going` RSVP only. |
+| `POST /events/:id/chat` | Send a chat message. Body: `{ body: string }`. Inserts into DB, then broadcasts to the ChatRoom Durable Object for real-time delivery. Access: host or `going` RSVP only. |
+| `POST /events/:id/chat/read` | Mark chat as read. Upserts `last_read_at` in `event_chat_reads`. |
+| `GET /events/:id/chat/ws` | WebSocket upgrade endpoint. Authenticates via `?token=` query param (JWT), verifies chat access, then forwards to the ChatRoom Durable Object. Returns 101 on success. |
+| `POST /events/:id/lock` | Toggle plan lock (host only). Sets or clears `locked_at` on the event. Returns updated `lockedAt`. |
 
 **Important: Hono route ordering** — `GET /events/explore` must be registered **before** `GET /events/:id` in the route table. Otherwise, Hono interprets "explore" as a UUID `:id`, resulting in a database error.
 
@@ -357,6 +368,42 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 - `invite_only`: only host, invited users, and RSVP'd users can view
 - `chums_only`: host, their chums, invited users, and RSVP'd users can view
 - `public`: any authenticated user can view
+
+**Plan chat (real-time):**
+
+Each plan has an embedded group chat visible to the host and participants with `going` RSVP status. Chat is delivered in real time via WebSockets, backed by a Cloudflare Durable Object (`ChatRoom`) that acts as a stateless broadcast relay — the database is the source of truth for message history, while the Durable Object holds open WebSocket connections and forwards new messages.
+
+Architecture:
+1. Client opens a WebSocket via `GET /events/:id/chat/ws?token=<jwt>`.
+2. API worker authenticates the JWT, verifies chat access (host or `going` RSVP), then forwards the connection to the per-plan `ChatRoom` Durable Object.
+3. When a message is sent via `POST /events/:id/chat`, the API inserts it into the database, then POSTs to the Durable Object's `/broadcast` endpoint.
+4. The Durable Object relays the message payload to all connected WebSocket clients.
+5. If the WebSocket connection drops, the frontend falls back to REST polling (`GET /events/:id/chat`) with exponential backoff reconnection attempts.
+
+The Durable Object uses the Hibernation API so idle connections consume no CPU. The `ChatRoom` class is defined in `api/src/ChatRoom.ts` and bound as `CHAT_ROOM` in `api/wrangler.toml`.
+
+Access control:
+- Host can always access chat.
+- Participants with `going` RSVP can access chat.
+- Non-participants, `maybe`, and `cant_make_it` statuses cannot access chat.
+- If a user leaves or is removed, they lose chat access.
+
+Unread tracking:
+- `event_chat_reads` table stores `last_read_at` per user per event.
+- `GET /events/mine` includes a `has_unread_chat` flag (subquery comparing last message time to last read time).
+- `EventCard` on the Your Plans page shows a small primary-colored dot when `hasUnreadChat` is true.
+- Chat view includes a "new messages" divider for unread messages.
+
+No email notifications are sent for chat activity.
+
+**Plan lock (host-controlled):**
+
+The host can lock a plan to prevent new participants from joining. This stabilizes the attendee list and chat access.
+
+- `POST /events/:id/lock` toggles `locked_at` on the event (host only).
+- When locked: new RSVPs are rejected with `EVENT_LOCKED` error; existing participants can still change their RSVP status.
+- UI shows a "Locked" chip in the header and chat section; RSVP buttons are disabled for non-participants with an explanatory message.
+- Explanatory text below the lock button helps the host understand the feature.
 
 **In-app notification types created:** `event_invite`, `event_rsvp`, `event_alt_time`, `event_canceled` (see In-app notifications section above).
 
@@ -379,11 +426,11 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 | `/` (logged in) | `DashboardHome` | Explore page — event discovery feed with search, time chips, distance/hobby filters (aligned label-above layout), location-aware nearby-first ordering, location nudge, contextual empty states |
 | `/events/create` | `CreateEventClient` | "Start a plan" form — title, description, hobby, seats, date/time, location (in-person/online), visibility, invite people, gradient banner preset picker with auto-suggestion, attendance reconfirmation toggle, publish |
 | `/plans` | `PlansPage` | Tabbed view (Upcoming / Past) with hosted/joined sections, real API data, empty states |
-| `/events/[id]` | `EventDetailClient` | Event detail — RSVP actions, alternate time suggestions, attendee list (with `@username` links to public profiles), reconfirmation notice, cancel (host, dialog-confirmed), edit plan (host — inline dialog for title/description/date/seats/visibility/reconfirmation) |
+| `/events/[id]` | `EventDetailClient` | Event detail — RSVP actions, alternate time suggestions, attendee list, participant chat (real-time via WebSocket), lock/unlock (host), reconfirmation notice, cancel (host), edit plan (host) |
 
 **Banner system:** `web/src/lib/eventBanners.ts` defines `BANNER_PRESETS` (named gradient slugs with hobby keyword mapping). `getGradientForEventId` provides a deterministic fallback gradient for cards with no `banner_key`. `renderBannerPreset` renders a preset to a WebP `Blob` via canvas for upload. `suggestPreset` picks a preset based on hobby keywords.
 
-**Not yet implemented:** attendance reconfirmation email/reminder trigger (setting is saved but email and cron/queue are future work), event chat, recurring events, public event sharing page (for non-users).
+**Not yet implemented:** attendance reconfirmation email/reminder trigger (setting is saved but email and cron/queue are future work), recurring events, public event sharing page (for non-users).
 
 ### Media (avatar)
 
@@ -515,13 +562,16 @@ Core tables include:
 - `newchums.user_chums` (migration 021) — one-way Chum relationships; columns: `id`, `user_id`, `chum_user_id`, `created_at`; unique constraint on `(user_id, chum_user_id)`; self-chum prevented by CHECK constraint; indexed on both FKs
 - `newchums.notifications` (migration 022) — general notifications table; columns: `id`, `user_id`, `type`, `actor_user_id`, `entity_id`, `metadata` (JSONB), `read_at`, `created_at`; indexed for unread queries
 - `newchums.chum_invites` (migration 023) — invite records for emails not yet on NewChums; columns: `id`, `inviter_user_id`, `invitee_email`, `token_hash`, `status` (`pending`/`accepted`/`expired`), `expires_at` (30 days), `accepted_at`, `accepted_user_id`, `created_at`; unique index on `token_hash`; indexed on `(invitee_email, status)` and `inviter_user_id`
-- `newchums.events` (migration 024) — core event entity; columns include `host_user_id`, `title`, `description`, `interest_id` (legacy FK, being superseded by event_interests), `starts_at`, `location_type`, `location_name`, `location_address`, `location_lat`, `location_lng`, `online_link`, `max_seats`, `visibility`, `status`, `allow_alt_times`, `banner_key`, `require_reconfirmation` (migration 028), `created_at`, `updated_at`
+- `newchums.events` (migration 024) — core event entity; columns include `host_user_id`, `title`, `description`, `interest_id` (legacy FK, being superseded by event_interests), `starts_at`, `location_type`, `location_name`, `location_address`, `location_lat`, `location_lng`, `online_link`, `max_seats`, `visibility`, `status`, `allow_alt_times`, `banner_key`, `require_reconfirmation` (migration 028), `locked_at` (migration 029), `created_at`, `updated_at`
 - `newchums.event_interests` (migration 025) — junction table for event ↔ interest many-to-many; events can link to multiple hobbies
 - `newchums.event_invites` (migration 024) — invite records supporting both user_id and email invitees
 - `newchums.event_rsvps` (migration 024) — RSVP responses; one per user per event; status: `going`, `maybe`, `cant_make_it`
 - `newchums.event_alt_times` (migration 024) — alternate time suggestions from attendees
 - `newchums.user_chums.note` (migration 027) — `TEXT NULL` column on `user_chums` for private per-chum notes; visible only to the user who added them
 - `newchums.events.require_reconfirmation` (migration 028) — `BOOLEAN NOT NULL DEFAULT FALSE` on `events`; when true, signals that attendees should receive a 24-hour reconfirmation reminder (email/cron trigger is future work)
+- `newchums.event_chat_messages` (migration 029) — per-plan chat messages; columns: `id` (UUID PK), `event_id` (FK), `user_id` (FK), `body` (TEXT NOT NULL), `created_at`; indexed on `(event_id, created_at ASC)`
+- `newchums.event_chat_reads` (migration 029) — last-read tracking; columns: `event_id`, `user_id`, `last_read_at`; PK `(event_id, user_id)`
+- `newchums.events.locked_at` (migration 029) — `TIMESTAMPTZ NULL` on `events`; when set, prevents new participants from joining; existing participants and host retain access
 
 PostGIS is available for geo queries.
 
@@ -558,6 +608,7 @@ When sharing the same DB between local and production, set `NEXT_PUBLIC_AVATAR_B
 
 - Root worker `newchums-api` is the production API target
 - Secrets (via Wrangler/CF dashboard): `DATABASE_URL`, `NEXTAUTH_SECRET`, `POSTMARK_SERVER_TOKEN`
+- Durable Objects: `[[durable_objects.bindings]]` binds `CHAT_ROOM` → `ChatRoom` class; `[[migrations]]` tag `v1` with `new_classes = ["ChatRoom"]`
 
 CORS is enforced via an explicit allowlist (newchums.com, www, localhost:3000) in API code.
 
@@ -585,6 +636,6 @@ cd web && npm run build
 - Web worker name suffix mismatch (`newchums-web-dev` is production).
 - Schema normalization/cleanup will be required before broader public launch.
 - Event email templates not yet created in Postmark (sends noop safely).
-- Account deletion (`DELETE /account`) does not yet cascade to events, event_rsvps, event_invites, or event_alt_times — must be updated when those tables accumulate production data.
+- Account deletion (`DELETE /account`) does not yet cascade to events, event_rsvps, event_invites, event_alt_times, event_chat_messages, or event_chat_reads — must be updated when those tables accumulate production data.
 - Attendance reconfirmation (`require_reconfirmation`) is stored and surfaced in UI, but the 24-hour reminder email and cron/queue trigger are not yet implemented. When ready, wire a Cloudflare Cron Trigger (or Queue) to query events starting within 24 hours where `require_reconfirmation = true` and send `POSTMARK_TEMPLATE_EVENT_REMINDER` to all "going" attendees.
 - `interest_id` on `events` is a legacy FK; `event_interests` is the canonical many-to-many source of truth. The legacy column should be dropped in a future migration once all queries are migrated.

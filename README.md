@@ -10,7 +10,7 @@ The broader mission is reducing loneliness by making real-world social connectio
 
 NewChums is a live, deployed product — not a prototype. The current system includes:
 
-- **Event/plan creation and discovery** — users create gatherings around hobbies, invite people, set visibility (invite-only / chums-only / public), manage RSVPs (going / maybe / can't make it / suggest another time), and edit or cancel plans. Banner images with gradient presets or custom uploads. Attendance reconfirmation setting (24-hour reminder opt-in; email logic is future work).
+- **Event/plan creation and discovery** — users create gatherings around hobbies, invite people, set visibility (invite-only / chums-only / public), manage RSVPs (going / maybe / can't make it / suggest another time), and edit or cancel plans. Banner images with gradient presets or custom uploads. Attendance reconfirmation setting (24-hour reminder opt-in; email logic is future work). Per-plan participant group chat with real-time WebSocket delivery. Host-controlled plan locking to stabilize attendee lists.
 - **Explore feed** — logged-in users browse discoverable plans with location-aware nearby-first ordering, hobby filtering, time-range chips, and text search.
 - **Your Plans** — tabbed view of upcoming/past plans the user hosts or has joined.
 - **Chums** — one-way saved-people system with search, email invite flow, mutual indicators, privacy controls, and private per-chum notes. Birthday display (month/day only, respecting privacy settings).
@@ -27,7 +27,7 @@ NewChums is a live, deployed product — not a prototype. The current system inc
 - **Attendance record / reliability** — profile placeholder card is present. No data engine or scoring system yet.
 - **Event emails** — code scaffolded with noop-safe sends; Postmark templates not yet created.
 - **Explore page** — functional with real data, but likely to evolve as event supply grows.
-- **Event chat** — planned as a group chat created on event creation; not yet implemented.
+- **Event chat** — per-plan participant group chat is implemented with real-time WebSocket delivery via Cloudflare Durable Objects. Future enhancements (reactions, threads, attachments) are not yet built.
 
 ---
 
@@ -46,6 +46,7 @@ Users → Cloudflare Edge → Web Worker (Next.js via OpenNext) → API Worker (
 | Database | Neon PostgreSQL (PostGIS available) | Primary data store |
 | Auth | Auth.js (JWT sessions) | Google OAuth + Credentials |
 | Email | Postmark | Transactional emails |
+| Real-time | Cloudflare Durable Objects | WebSocket relay for plan chat (ChatRoom, Hibernation API) |
 | Storage | Cloudflare R2 | Avatar media |
 | Observability | Sentry + Axiom + Plausible | Error tracking, API logs, analytics |
 

@@ -1,6 +1,6 @@
 # Development Setup Guide
 
-Last Updated: March 9, 2026
+Last Updated: March 11, 2026
 
 This document is the operational guide for running and deploying NewChums.
 For architectural invariants and contracts, see `docs/Technical_Specs.md`.
@@ -15,7 +15,7 @@ For product direction, terminology, and agent governance, see `AGENTS.md`.
 - **Workers:** Web = `newchums-web-dev` (production), API = `newchums-api`.
 - **Canonical host:** `https://newchums.com` (www → non-www redirect enforced before Auth.js).
 - **API migration:** All business logic is in the API worker — auth flows, profile, interests, Chums, Chum invites, events (plans), notifications, admin, avatar, contact form.
-- **Events (plans):** Full event creation, RSVP (going/maybe/can't make it), invite, alternate time suggestion, cancel, and edit (host). Visibility: invite_only, chums_only, public. Gradient banner presets + custom upload. Attendance reconfirmation setting saved; email reminder trigger is future work. Event email templates scaffolded but require Postmark template creation (sends noop safely).
+- **Events (plans):** Full event creation, RSVP (going/maybe/can't make it), invite, alternate time suggestion, cancel, and edit (host). Visibility: invite_only, chums_only, public. Gradient banner presets + custom upload. Attendance reconfirmation setting saved; email reminder trigger is future work. Event email templates scaffolded but require Postmark template creation (sends noop safely). Per-plan participant chat with real-time WebSocket delivery via Cloudflare Durable Objects. Host can lock/unlock plans to prevent new joins.
 - **Explore page:** Logged-in event discovery feed (`/`). Uses `GET /events/explore` with location-aware nearby-first ordering (Haversine), hobby filter (labelled, alphabetised), time-range chips, text search.
 - **Your Plans:** Tabbed upcoming/past view with hosted and joined sections, real API data.
 - **Chums:** One-way saved-people feature with search, email invite flow, mutual indicators, privacy controls, public Chums on profiles, private per-chum notes, and birthday display.
@@ -233,6 +233,7 @@ psql "$DATABASE_URL" -f sql/024_create_events.sql
 psql "$DATABASE_URL" -f sql/025_event_multi_hobby_and_banner.sql
 psql "$DATABASE_URL" -f sql/027_chum_notes.sql
 psql "$DATABASE_URL" -f sql/028_event_reconfirmation.sql
+psql "$DATABASE_URL" -f sql/029_event_chat_and_lock.sql
 ```
 
 Notes:
@@ -250,6 +251,7 @@ Notes:
 - Migration `025_event_multi_hobby_and_banner.sql` adds the `newchums.event_interests` junction table for multi-hobby support on events, migrates existing `interest_id` data, and adds `banner_key` to events for banner images.
 - Migration `027_chum_notes.sql` adds a `note TEXT NULL` column to `newchums.user_chums` for private per-chum notes (visible only to the user who added them).
 - Migration `028_event_reconfirmation.sql` adds `require_reconfirmation BOOLEAN NOT NULL DEFAULT FALSE` to `newchums.events` for the attendance reconfirmation setting.
+- Migration `029_event_chat_and_lock.sql` creates `newchums.event_chat_messages` (per-plan chat messages), `newchums.event_chat_reads` (last-read tracking), and adds `locked_at TIMESTAMPTZ NULL` to `newchums.events` for host-controlled plan locking.
 
 ---
 
@@ -338,6 +340,24 @@ Chunk XX — YYYY-MM-DD
 ## Session Log (Chunks)
 
 (Existing chunks should remain here. Add new chunks at the end.)
+
+---
+
+Chunk 10 — 2026-03-11
+- Goal: Per-plan participant group chat with real-time WebSocket delivery, host-controlled plan locking, and unread indicators.
+- Changes:
+  - DB migration 029 (`newchums.event_chat_messages`, `newchums.event_chat_reads`, `events.locked_at TIMESTAMPTZ NULL`).
+  - New Cloudflare Durable Object `ChatRoom` (`api/src/ChatRoom.ts`) — per-plan WebSocket relay using the Hibernation API; stateless broadcast relay with database as source of truth.
+  - `api/wrangler.toml`: added `[[durable_objects.bindings]]` (`CHAT_ROOM` → `ChatRoom`) and `[[migrations]]` (`v1`, `new_classes = ["ChatRoom"]`).
+  - `api/src/db.ts`: added `CHAT_ROOM: DurableObjectNamespace` to `Bindings` type.
+  - API: `GET /events/:id/chat` (fetch messages + lastReadAt), `POST /events/:id/chat` (insert + broadcast via DO), `POST /events/:id/chat/read` (upsert last_read_at), `GET /events/:id/chat/ws` (WebSocket upgrade with JWT auth + access check → ChatRoom DO), `POST /events/:id/lock` (host-only toggle). `POST /events/:id/rsvp` rejects new RSVPs on locked plans (`EVENT_LOCKED`). `GET /events/:id` includes `lockedAt`. `GET /events/mine` includes `has_unread_chat` subquery.
+  - `web/src/lib/apiClient.ts`: exported `getAuthToken`; added `getChatWebSocketUrl` helper.
+  - `EventDetailClient.tsx`: full chat UI (message list, composer, privacy notice, new-messages divider, empty/loading/access-denied states). WebSocket connection with exponential backoff reconnection and REST polling fallback. Lock/unlock button with explanatory text for host. "Locked" chip in header and chat. RSVP buttons disabled with message when plan is locked and user has no existing RSVP.
+  - `EventCard.tsx`: unread chat dot (primary-colored) on plan cards when `hasUnreadChat` is true.
+  - `ChatRoom` class exported from `api/src/index.ts` entry point.
+- Verification: Chat messages persist and display in real-time via WebSocket. Lock prevents new joins. Host controls visible only to host. Non-participants cannot access chat. Unread indicators surface on Your Plans cards. WebSocket falls back to polling on connection failure.
+- Deploy: Run migration 029 against production DB. Deploy API first (new DO binding + routes), then web. Durable Object migration (`v1`) runs automatically on first API deploy with the new wrangler.toml config.
+- Next Steps: Future enhancements (reactions, threads, attachments, message editing/deletion) only when requested. Implement attendance reconfirmation email trigger. Create Postmark event email templates. Update account deletion cascade for chat tables.
 
 ---
 
