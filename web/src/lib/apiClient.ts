@@ -37,7 +37,7 @@ export const getAvatarBaseUrl = () => {
 
 let cachedToken: string | null = null;
 
-async function getAuthToken(): Promise<string | null> {
+export async function getAuthToken(): Promise<string | null> {
   if (typeof window === "undefined") return null;
   if (cachedToken) return cachedToken;
   try {
@@ -69,6 +69,11 @@ export type ApiFetchOptions = RequestInit & {
  * local and prod write to the same R2, enabling cross-env consistency when sharing DB.
  */
 export const getMediaApiBaseUrl = () => getAvatarBaseUrl();
+
+export function getChatWebSocketUrl(eventId: string, token: string): string {
+  const base = getApiBaseUrl().replace(/^http/, "ws");
+  return `${base}/events/${eventId}/chat/ws?token=${encodeURIComponent(token)}`;
+}
 
 /**
  * Fetch from the API worker.

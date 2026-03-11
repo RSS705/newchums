@@ -65,6 +65,15 @@ AXIOM_DATASET = "newchums-api"
 binding = "MEDIA_BUCKET"
 bucket_name = "newchums-media"
 
+# Durable Objects for real-time plan chat
+[[durable_objects.bindings]]
+name = "CHAT_ROOM"
+class_name = "ChatRoom"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["ChatRoom"]
+
 # Contact form rate limit (5 per 10 min per IP). Create with: npx wrangler kv namespace create CONTACT_RATELIMIT
 # [[kv_namespaces]]
 # binding = "CONTACT_RATELIMIT_KV"

@@ -4,6 +4,7 @@ export type Bindings = {
   DATABASE_URL: string;
   NEXTAUTH_SECRET?: string; // Required for auth routes (profile, user/username, user/date-of-birth)
   MEDIA_BUCKET?: R2Bucket; // R2 bucket for media (avatars, etc.)
+  CHAT_ROOM: DurableObjectNamespace;
   /** Optional KV for contact form rate limiting (5 per 10 min per IP). If unset, rate limit is skipped. */
   CONTACT_RATELIMIT_KV?: KVNamespace;
   /** Cloudflare Turnstile secret key for contact form (logged-out users). If unset, Turnstile is skipped. */

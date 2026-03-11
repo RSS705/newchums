@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Autocomplete from "@mui/material/Autocomplete";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -10,6 +10,7 @@ import Dialog from "@mui/material/Dialog";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { TimePicker } from "@mui/x-date-pickers/TimePicker";
 import dayjs, { type Dayjs } from "dayjs";
+import IconButton from "@mui/material/IconButton";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
@@ -28,8 +29,11 @@ import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import LinkRoundedIcon from "@mui/icons-material/LinkRounded";
+import LockOpenRoundedIcon from "@mui/icons-material/LockOpenRounded";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
+import LockRoundedIcon from "@mui/icons-material/LockRounded";
 import NotificationsRoundedIcon from "@mui/icons-material/NotificationsRounded";
+import SendRoundedIcon from "@mui/icons-material/SendRounded";
 import PeopleOutlineRoundedIcon from "@mui/icons-material/PeopleOutlineRounded";
 import PersonAddRoundedIcon from "@mui/icons-material/PersonAddRounded";
 import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
@@ -37,7 +41,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import UserAvatar from "@/components/common/UserAvatar";
 import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
-import { apiFetch, getAvatarBaseUrl, getMediaApiBaseUrl } from "@/lib/apiClient";
+import { apiFetch, getAuthToken, getAvatarBaseUrl, getChatWebSocketUrl, getMediaApiBaseUrl } from "@/lib/apiClient";
 import { nameToSlug } from "@/lib/interestUtils";
 
 type HobbyInfo = { name: string; slug: string };
@@ -70,14 +74,40 @@ type EventDetail = {
   hostName: string;
   hostUserId: string;
   isHost: boolean;
+  lockedAt: string | null;
 };
 
 type RsvpEntry = { userId: string; name: string; handle: string | null; status: string; note: string | null; avatarUrl?: string | null };
 type AltTimeEntry = { userId: string; name: string; suggestedAt: string; note: string | null };
 type InviteEntry = { userId: string | null; email: string | null; name: string };
 type SearchResult = { userId: string; displayName: string; handle: string | null };
+type ChatMessage = {
+  id: string;
+  body: string;
+  createdAt: string;
+  senderId: string;
+  senderName: string;
+  senderHandle: string | null;
+  avatarUrl: string | null;
+};
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const WS_RECONNECT_BASE = 2_000;
+const WS_RECONNECT_MAX = 30_000;
+const WS_FALLBACK_POLL_INTERVAL = 30_000;
+
+function formatChatTime(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffMin = Math.floor(diffMs / 60_000);
+  if (diffMin < 1) return "Just now";
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHrs = Math.floor(diffMin / 60);
+  if (diffHrs < 24) return `${diffHrs}h ago`;
+  if (diffHrs < 48) return "Yesterday";
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
@@ -124,6 +154,18 @@ export default function EventDetailClient() {
   // Cancel confirmation dialog
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [canceling, setCanceling] = useState(false);
+
+  // Chat state
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatLastReadAt, setChatLastReadAt] = useState<string | null>(null);
+  const [chatLoading, setChatLoading] = useState(true);
+  const [chatInput, setChatInput] = useState("");
+  const [chatSending, setChatSending] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+
+  // Lock state
+  const [lockToggling, setLockToggling] = useState(false);
 
   // Edit dialog
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -202,6 +244,187 @@ export default function EventDetailClient() {
     return () => clearTimeout(timer);
   }, [editHobbyInput, editDialogOpen]);
 
+  // --- Chat helpers ---
+  const [chatAccessible, setChatAccessible] = useState<boolean | null>(null);
+  const chatEligible = !!event && event.status !== "canceled";
+  const wsRef = useRef<WebSocket | null>(null);
+
+  const markChatRead = useCallback(async () => {
+    try {
+      await apiFetch(`/events/${eventId}/chat/read`, { auth: true, method: "POST" });
+      setChatLastReadAt(new Date().toISOString());
+    } catch { /* ignore */ }
+  }, [eventId]);
+
+  const loadChat = useCallback(async () => {
+    try {
+      const res = await apiFetch(`/events/${eventId}/chat`, { auth: true });
+      if (res.status === 403 || res.status === 404) {
+        setChatAccessible(false);
+        setChatLoading(false);
+        return;
+      }
+      const data = (await res.json()) as { ok: boolean; messages: ChatMessage[]; lastReadAt: string | null };
+      if (data.ok) {
+        setChatAccessible(true);
+        setChatMessages(data.messages);
+        setChatLastReadAt(data.lastReadAt);
+      }
+    } catch { /* ignore */ }
+    setChatLoading(false);
+  }, [eventId]);
+
+  // WebSocket connection with reconnection + polling fallback
+  useEffect(() => {
+    if (!chatEligible) return;
+
+    let ws: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let fallbackPollTimer: ReturnType<typeof setInterval> | null = null;
+    let reconnectDelay = WS_RECONNECT_BASE;
+    let disposed = false;
+
+    const stopFallbackPolling = () => {
+      if (fallbackPollTimer) { clearInterval(fallbackPollTimer); fallbackPollTimer = null; }
+    };
+
+    const startFallbackPolling = () => {
+      stopFallbackPolling();
+      fallbackPollTimer = setInterval(loadChat, WS_FALLBACK_POLL_INTERVAL);
+    };
+
+    const scheduleReconnect = () => {
+      if (disposed) return;
+      reconnectTimer = setTimeout(() => {
+        if (!disposed) connect();
+      }, reconnectDelay);
+      reconnectDelay = Math.min(reconnectDelay * 2, WS_RECONNECT_MAX);
+    };
+
+    const connect = async () => {
+      if (disposed) return;
+      try {
+        const token = await getAuthToken();
+        if (!token || disposed) {
+          startFallbackPolling();
+          return;
+        }
+
+        const url = getChatWebSocketUrl(eventId, token);
+        ws = new WebSocket(url);
+        wsRef.current = ws;
+
+        ws.onopen = () => {
+          reconnectDelay = WS_RECONNECT_BASE;
+          stopFallbackPolling();
+          loadChat();
+        };
+
+        ws.onmessage = (evt) => {
+          try {
+            const data = JSON.parse(evt.data) as { type: string; message: ChatMessage };
+            if (data.type === "chat_message" && data.message) {
+              setChatMessages((prev) => {
+                if (prev.some((m) => m.id === data.message.id)) return prev;
+                return [...prev, data.message];
+              });
+              markChatRead();
+            }
+          } catch { /* ignore malformed messages */ }
+        };
+
+        ws.onclose = () => {
+          wsRef.current = null;
+          if (!disposed) {
+            startFallbackPolling();
+            scheduleReconnect();
+          }
+        };
+
+        ws.onerror = () => {
+          // onclose will fire after onerror, so reconnect is handled there
+        };
+      } catch {
+        startFallbackPolling();
+        scheduleReconnect();
+      }
+    };
+
+    // Initial load via REST (gets history + sets chatAccessible), then open WebSocket
+    loadChat().then(() => {
+      if (!disposed) connect();
+    });
+
+    return () => {
+      disposed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      stopFallbackPolling();
+      if (ws) {
+        ws.onclose = null;
+        ws.onerror = null;
+        ws.onmessage = null;
+        ws.close();
+      }
+      wsRef.current = null;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatEligible, eventId]);
+
+  const prevChatLenRef = useRef(0);
+  useEffect(() => {
+    if (chatMessages.length > prevChatLenRef.current && chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+    prevChatLenRef.current = chatMessages.length;
+    if (chatAccessible && chatMessages.length > 0) {
+      markChatRead();
+    }
+  }, [chatMessages.length, chatAccessible, markChatRead]);
+
+  const handleSendChat = async () => {
+    const text = chatInput.trim();
+    if (!text) return;
+    setChatSending(true);
+    try {
+      const res = await apiFetch(`/events/${eventId}/chat`, {
+        auth: true,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: text }),
+      });
+      const data = (await res.json()) as { ok: boolean; message?: ChatMessage };
+      if (data.ok) {
+        setChatInput("");
+        // Message will arrive via WebSocket broadcast.
+        // If WebSocket is disconnected, append locally as fallback.
+        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+          if (data.message) {
+            setChatMessages((prev) => {
+              if (prev.some((m) => m.id === data.message!.id)) return prev;
+              return [...prev, data.message!];
+            });
+          }
+        }
+      }
+    } catch { /* ignore */ }
+    setChatSending(false);
+  };
+
+  const handleToggleLock = async () => {
+    setLockToggling(true);
+    try {
+      const res = await apiFetch(`/events/${eventId}/lock`, { auth: true, method: "POST" });
+      const data = (await res.json()) as { ok: boolean; locked: boolean };
+      if (data.ok) {
+        setEvent((prev) => prev ? { ...prev, lockedAt: data.locked ? new Date().toISOString() : null } : prev);
+        toast.success(data.locked ? "Plan locked" : "Plan unlocked");
+      }
+    } catch {
+      toast.error("Failed to update lock status");
+    }
+    setLockToggling(false);
+  };
+
   const handleInvite = async (userId?: string, email?: string) => {
     setInviteSubmitting(true);
     try {
@@ -235,9 +458,12 @@ export default function EventDetailClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
       });
-      const data = (await res.json()) as { ok: boolean; message?: string };
+      const data = (await res.json()) as { ok: boolean; error?: string; message?: string };
       if (data.ok) {
         toast.success(status === "going" ? "You're going!" : status === "maybe" ? "Marked as maybe" : "Response recorded");
+        load();
+      } else if (data.error === "EVENT_LOCKED") {
+        toast.error("This plan is locked and not accepting new participants");
         load();
       } else {
         toast.error(data.message ?? "Something went wrong");
@@ -471,6 +697,15 @@ export default function EventDetailClient() {
             />
           ))}
           <Chip label={visibilityLabel(event.visibility)} size="small" variant="outlined" />
+          {event.lockedAt && !isCanceled && (
+            <Chip
+              icon={<LockRoundedIcon sx={{ fontSize: "0.875rem !important" }} />}
+              label="Locked"
+              size="small"
+              variant="outlined"
+              sx={{ fontWeight: 600, fontSize: "0.75rem" }}
+            />
+          )}
           {isCanceled && <Chip label="Canceled" size="small" color="error" />}
         </Stack>
         <Typography component="h1" variant="h4" fontWeight={700} sx={{ mb: 0.75 }}>
@@ -582,14 +817,22 @@ export default function EventDetailClient() {
           <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
             Are you in?
           </Typography>
+          {event.lockedAt && chatAccessible !== true && (
+            <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2, p: 1.5, bgcolor: "grey.100", borderRadius: 2 }}>
+              <LockRoundedIcon sx={{ fontSize: 18, color: "text.secondary" }} />
+              <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
+                This plan is locked and not accepting new participants.
+              </Typography>
+            </Stack>
+          )}
           <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
-            <AppButton onClick={() => handleRsvp("going")} disabled={rsvpSubmitting} sx={{ flex: 1 }}>
+            <AppButton onClick={() => handleRsvp("going")} disabled={rsvpSubmitting || (!!event.lockedAt && chatAccessible !== true)} sx={{ flex: 1 }}>
               Going
             </AppButton>
-            <AppButton onClick={() => handleRsvp("maybe")} disabled={rsvpSubmitting} variant="outlined" sx={{ flex: 1 }}>
+            <AppButton onClick={() => handleRsvp("maybe")} disabled={rsvpSubmitting || (!!event.lockedAt && chatAccessible !== true)} variant="outlined" sx={{ flex: 1 }}>
               Maybe
             </AppButton>
-            <AppButton onClick={() => handleRsvp("cant_make_it")} disabled={rsvpSubmitting} variant="outlined" color="inherit" sx={{ flex: 1 }}>
+            <AppButton onClick={() => handleRsvp("cant_make_it")} disabled={rsvpSubmitting || (!!event.lockedAt && chatAccessible !== true)} variant="outlined" color="inherit" sx={{ flex: 1 }}>
               Can&apos;t make it
             </AppButton>
           </Stack>
@@ -859,6 +1102,125 @@ export default function EventDetailClient() {
         </AppCard>
       )}
 
+      {/* Plan Chat */}
+      {chatAccessible === true && !isCanceled && (
+        <AppCard>
+          <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
+            <Typography variant="h5" fontWeight={700} sx={{ fontSize: { xs: "1.25rem", sm: "1.375rem" } }}>
+              Plan Chat
+            </Typography>
+            {event.lockedAt && (
+              <Chip
+                icon={<LockRoundedIcon sx={{ fontSize: "0.875rem !important" }} />}
+                label="Locked"
+                size="small"
+                variant="outlined"
+                sx={{ fontWeight: 600, fontSize: "0.75rem" }}
+              />
+            )}
+          </Stack>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.5, fontSize: "0.8125rem" }}>
+            Visible to current participants only. Be thoughtful about what you share.
+          </Typography>
+
+          {/* Message list */}
+          <Box
+            ref={chatContainerRef}
+            sx={{
+              maxHeight: 400,
+              overflowY: "auto",
+              mb: 2,
+              border: "1px solid",
+              borderColor: "divider",
+              borderRadius: 2,
+              bgcolor: "grey.50",
+            }}
+          >
+            {chatLoading ? (
+              <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
+                <CircularProgress size={24} />
+              </Box>
+            ) : chatMessages.length === 0 ? (
+              <Box sx={{ textAlign: "center", py: 6, px: 2 }}>
+                <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+                  No messages yet. Say something to get the conversation going.
+                </Typography>
+              </Box>
+            ) : (
+              <Stack spacing={0} sx={{ p: { xs: 1.5, sm: 2 } }}>
+                {chatMessages.map((msg, idx) => {
+                  const showUnreadDivider =
+                    chatLastReadAt &&
+                    idx > 0 &&
+                    new Date(msg.createdAt) > new Date(chatLastReadAt) &&
+                    (idx === 0 || new Date(chatMessages[idx - 1].createdAt) <= new Date(chatLastReadAt));
+                  return (
+                    <Box key={msg.id}>
+                      {showUnreadDivider && (
+                        <Divider sx={{ my: 1.5, fontSize: "0.75rem", color: "primary.main", fontWeight: 600 }}>
+                          New messages
+                        </Divider>
+                      )}
+                      <Stack direction="row" spacing={1.5} sx={{ py: 1 }}>
+                        <UserAvatar
+                          src={msg.avatarUrl ? `${avatarBaseUrl}${msg.avatarUrl}` : null}
+                          name={msg.senderName}
+                          size={32}
+                          sx={{ flexShrink: 0, mt: 0.25 }}
+                        />
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Stack direction="row" alignItems="baseline" spacing={1} sx={{ mb: 0.25 }}>
+                            <Typography variant="body2" fontWeight={600} sx={{ fontSize: "0.8125rem" }}>
+                              {msg.senderHandle || msg.senderName}
+                            </Typography>
+                            <Typography variant="caption" color="text.disabled" sx={{ fontSize: "0.6875rem", flexShrink: 0 }}>
+                              {formatChatTime(msg.createdAt)}
+                            </Typography>
+                          </Stack>
+                          <Typography variant="body2" sx={{ fontSize: "0.875rem", lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                            {msg.body}
+                          </Typography>
+                        </Box>
+                      </Stack>
+                    </Box>
+                  );
+                })}
+                <div ref={chatEndRef} />
+              </Stack>
+            )}
+          </Box>
+
+          {/* Composer */}
+          <Stack direction="row" spacing={1} alignItems="flex-end">
+            <TextField
+              fullWidth
+              size="small"
+              placeholder="Write a message…"
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value.slice(0, 2000))}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSendChat();
+                }
+              }}
+              multiline
+              maxRows={4}
+              disabled={chatSending}
+              sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
+            />
+            <IconButton
+              color="primary"
+              onClick={handleSendChat}
+              disabled={chatSending || !chatInput.trim()}
+              sx={{ flexShrink: 0 }}
+            >
+              {chatSending ? <CircularProgress size={20} /> : <SendRoundedIcon />}
+            </IconButton>
+          </Stack>
+        </AppCard>
+      )}
+
       {/* Host actions */}
       {event.isHost && !isCanceled && (
         <AppCard>
@@ -873,6 +1235,15 @@ export default function EventDetailClient() {
             </Button>
             <Button
               variant="outlined"
+              startIcon={event.lockedAt ? <LockOpenRoundedIcon /> : <LockRoundedIcon />}
+              onClick={handleToggleLock}
+              disabled={lockToggling}
+              sx={{ textTransform: "none" }}
+            >
+              {lockToggling ? "Updating…" : event.lockedAt ? "Unlock plan" : "Lock plan"}
+            </Button>
+            <Button
+              variant="outlined"
               color="error"
               onClick={() => setCancelDialogOpen(true)}
               sx={{ textTransform: "none" }}
@@ -880,6 +1251,11 @@ export default function EventDetailClient() {
               Cancel this plan
             </Button>
           </Stack>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 2, fontSize: "0.8125rem", lineHeight: 1.6 }}>
+            {event.lockedAt
+              ? "This plan is locked — no new people can join. Existing participants still have full access. Unlock to allow new people in again."
+              : "Locking this plan prevents anyone new from joining. People who\u2019ve already joined keep their access and can still use the chat."}
+          </Typography>
         </AppCard>
       )}
 
@@ -963,7 +1339,7 @@ export default function EventDetailClient() {
                   value={editTime}
                   onChange={setEditTime}
                   format="h:mm A"
-                  slotProps={{ textField: { fullWidth: true, size: "medium" } }}
+                  slotProps={{ field: { shouldRespectLeadingZeros: true } as Record<string, unknown>, textField: { fullWidth: true, size: "medium" } }}
                 />
               </Box>
             </Stack>

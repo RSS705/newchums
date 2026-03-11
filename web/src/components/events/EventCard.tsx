@@ -38,6 +38,7 @@ export type PlanEvent = {
   maybeCount: number;
   distanceKm?: number | null;
   bannerKey?: string | null;
+  hasUnreadChat?: boolean;
 };
 
 type EventCardProps = {
@@ -188,9 +189,22 @@ export default function EventCard({ event, isPast = false }: EventCardProps) {
           </Stack>
 
           {/* Title */}
-          <Typography fontWeight={700} sx={{ mb: 0.5, fontSize: "1.0625rem", lineHeight: 1.35 }}>
-            {event.title}
-          </Typography>
+          <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mb: 0.5 }}>
+            <Typography fontWeight={700} sx={{ fontSize: "1.0625rem", lineHeight: 1.35, flex: 1, minWidth: 0 }}>
+              {event.title}
+            </Typography>
+            {event.hasUnreadChat && (
+              <Box
+                sx={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  bgcolor: "primary.main",
+                  flexShrink: 0,
+                }}
+              />
+            )}
+          </Stack>
 
           {/* Host */}
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1.75, fontSize: "0.8125rem" }}>

@@ -585,6 +585,7 @@ export default function CreateEventClient() {
                 onChange={setTimeValue}
                 format="h:mm A"
                 slotProps={{
+                  field: { shouldRespectLeadingZeros: true } as Record<string, unknown>,
                   textField: {
                     fullWidth: true,
                     size: "medium",

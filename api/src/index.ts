@@ -4150,7 +4150,18 @@ app.get("/events/mine", async (c) => {
         r.status AS my_rsvp_status,
         (SELECT COUNT(*)::int FROM newchums.event_rsvps er WHERE er.event_id = e.id AND er.status = 'going') AS going_count,
         (SELECT COUNT(*)::int FROM newchums.event_rsvps er WHERE er.event_id = e.id AND er.status = 'maybe') AS maybe_count,
-        CASE WHEN e.host_user_id = ${userId} THEN true ELSE false END AS is_host
+        CASE WHEN e.host_user_id = ${userId} THEN true ELSE false END AS is_host,
+        CASE WHEN (
+          e.host_user_id = ${userId}
+          OR EXISTS (SELECT 1 FROM newchums.event_rsvps er2 WHERE er2.event_id = e.id AND er2.user_id = ${userId} AND er2.status = 'going')
+        ) AND EXISTS (
+          SELECT 1 FROM newchums.event_chat_messages cm
+          WHERE cm.event_id = e.id
+            AND cm.created_at > COALESCE(
+              (SELECT cr.last_read_at FROM newchums.event_chat_reads cr WHERE cr.event_id = e.id AND cr.user_id = ${userId}),
+              '1970-01-01'::timestamptz
+            )
+        ) THEN true ELSE false END AS has_unread_chat
       FROM newchums.events e
       LEFT JOIN newchums.interests i ON i.id = e.interest_id
       LEFT JOIN newchums.users h ON h.id = e.host_user_id
@@ -4176,6 +4187,7 @@ app.get("/events/mine", async (c) => {
       host_name: string | null; host_username: string | null;
       my_rsvp_status: string | null;
       going_count: number; maybe_count: number; is_host: boolean;
+      has_unread_chat: boolean;
     }>;
 
     const events = rows.map((r) => {
@@ -4221,6 +4233,7 @@ app.get("/events/mine", async (c) => {
         goingCount: r.going_count,
         maybeCount: r.maybe_count,
         bannerKey: r.banner_key ?? null,
+        hasUnreadChat: r.has_unread_chat === true,
       };
     });
 
@@ -4525,6 +4538,7 @@ app.get("/events/:id", async (c) => {
         hostName: (() => { const u = ((event as Record<string, unknown>).host_username as string)?.replace(/^@/, ""); return u ? `@${u}` : (((event as Record<string, unknown>).host_name as string)?.trim() || "Someone"); })(),
         hostUserId: event.host_user_id,
         isHost: isHost === true,
+        lockedAt: event.locked_at ?? null,
       },
       rsvps: rsvps.map((r) => {
         const rHandle = r.username?.replace(/^@/, "") ?? null;
@@ -4575,11 +4589,17 @@ app.post("/events/:id/rsvp", async (c) => {
   const note = body.note ? String(body.note).trim().slice(0, 500) : null;
 
   try {
-    const ev = (await sql`SELECT id, host_user_id, visibility, status, max_seats, title FROM newchums.events WHERE id = ${eventId} AND status = 'published'`) as { id: string; host_user_id: string; visibility: string; status: string; max_seats: number | null; title: string }[];
+    const ev = (await sql`SELECT id, host_user_id, visibility, status, max_seats, title, locked_at FROM newchums.events WHERE id = ${eventId} AND status = 'published'`) as { id: string; host_user_id: string; visibility: string; status: string; max_seats: number | null; title: string; locked_at: string | null }[];
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     const event = ev[0];
 
     if (event.host_user_id === userId) return c.json({ ok: false, error: "VALIDATION", message: "Hosts cannot RSVP to their own event" }, 400);
+
+    if (event.locked_at) {
+      const existingRsvp = (await sql`SELECT id FROM newchums.event_rsvps WHERE event_id = ${eventId} AND user_id = ${userId}`) as { id: string }[];
+      if (existingRsvp.length === 0)
+        return c.json({ ok: false, error: "EVENT_LOCKED", message: "This plan is locked and not accepting new participants" }, 403);
+    }
 
     if (status === "going" && event.max_seats) {
       const goingCount = (await sql`SELECT COUNT(*)::int AS c FROM newchums.event_rsvps WHERE event_id = ${eventId} AND status = 'going'`) as { c: number }[];
@@ -4892,6 +4912,252 @@ app.post("/events/:id/invite", async (c) => {
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });
+
+// ---- Chat access helper ----
+async function checkChatAccess(
+  sql: ReturnType<typeof getSql>,
+  eventId: string,
+  userId: string,
+): Promise<{ allowed: boolean; event?: Record<string, unknown>; reason?: string }> {
+  const ev = (await sql`
+    SELECT id, host_user_id, status FROM newchums.events WHERE id = ${eventId}
+  `) as Array<Record<string, unknown>>;
+  if (ev.length === 0) return { allowed: false, reason: "NOT_FOUND" };
+  const event = ev[0];
+  if (event.status === "canceled") return { allowed: false, event, reason: "EVENT_CANCELED" };
+  if (event.host_user_id === userId) return { allowed: true, event };
+  const rsvp = (await sql`
+    SELECT status FROM newchums.event_rsvps WHERE event_id = ${eventId} AND user_id = ${userId}
+  `) as { status: string }[];
+  if (rsvp.length > 0 && rsvp[0].status === "going") return { allowed: true, event };
+  return { allowed: false, event, reason: "NOT_PARTICIPANT" };
+}
+
+/** GET /events/:id/chat/ws — WebSocket upgrade for real-time plan chat */
+app.get("/events/:id/chat/ws", async (c) => {
+  const upgradeHeader = c.req.header("Upgrade");
+  if (!upgradeHeader || upgradeHeader.toLowerCase() !== "websocket") {
+    return c.json({ ok: false, error: "EXPECTED_WEBSOCKET" }, 426);
+  }
+
+  const token = c.req.query("token");
+  if (!token || !c.env.NEXTAUTH_SECRET) {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+
+  const payload = await verifyAuthToken(token, c.env.NEXTAUTH_SECRET);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+  const eventId = c.req.param("id");
+
+  const access = await checkChatAccess(sql, eventId, userId);
+  if (!access.allowed) {
+    const status = access.reason === "NOT_FOUND" ? 404 : 403;
+    return c.json({ ok: false, error: access.reason }, status);
+  }
+
+  const user = (await sql`SELECT name, username FROM newchums.users WHERE id = ${userId}`) as { name: string | null; username: string | null }[];
+  const userName = user[0]?.name?.trim() || user[0]?.username?.replace(/^@/, "") || "Someone";
+
+  const doId = c.env.CHAT_ROOM.idFromName(eventId);
+  const doStub = c.env.CHAT_ROOM.get(doId);
+
+  const doRequest = new Request(c.req.url, {
+    headers: new Headers({
+      "Upgrade": "websocket",
+      "X-User-Id": userId,
+      "X-User-Name": userName,
+    }),
+  });
+
+  return doStub.fetch(doRequest);
+});
+
+/** GET /events/:id/chat — fetch chat messages for a plan */
+app.get("/events/:id/chat", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+  const eventId = c.req.param("id");
+
+  try {
+    const access = await checkChatAccess(sql, eventId, userId);
+    if (!access.allowed) {
+      const status = access.reason === "NOT_FOUND" ? 404 : 403;
+      return c.json({ ok: false, error: access.reason }, status);
+    }
+
+    const messages = (await sql`
+      SELECT m.id, m.body, m.created_at, m.user_id,
+             u.name AS sender_name, u.username AS sender_username,
+             u.avatar_key, u.avatar_updated_at
+      FROM newchums.event_chat_messages m
+      JOIN newchums.users u ON u.id = m.user_id
+      WHERE m.event_id = ${eventId}
+      ORDER BY m.created_at ASC
+      LIMIT 100
+    `) as Array<{
+      id: string; body: string; created_at: string; user_id: string;
+      sender_name: string | null; sender_username: string | null;
+      avatar_key: string | null; avatar_updated_at: string | Date | null;
+    }>;
+
+    const readRow = (await sql`
+      SELECT last_read_at FROM newchums.event_chat_reads
+      WHERE event_id = ${eventId} AND user_id = ${userId}
+    `) as { last_read_at: string }[];
+
+    return c.json({
+      ok: true,
+      messages: messages.map((m) => {
+        const handle = m.sender_username?.replace(/^@/, "") ?? null;
+        return {
+          id: m.id,
+          body: m.body,
+          createdAt: m.created_at,
+          senderId: m.user_id,
+          senderName: m.sender_name?.trim() || (handle || "Someone"),
+          senderHandle: handle ? `@${handle}` : null,
+          avatarUrl: buildAvatarUrl(m.user_id, m.avatar_key, m.avatar_updated_at, c.env.MEDIA_BUCKET),
+        };
+      }),
+      lastReadAt: readRow.length > 0 ? readRow[0].last_read_at : null,
+    });
+  } catch (err) {
+    console.error("[GET /events/:id/chat]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /events/:id/chat — send a chat message */
+app.post("/events/:id/chat", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+  const eventId = c.req.param("id");
+
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+
+  const messageBody = typeof body.body === "string" ? body.body.trim() : "";
+  if (messageBody.length === 0) return c.json({ ok: false, error: "VALIDATION", message: "Message cannot be empty" }, 400);
+  if (messageBody.length > 2000) return c.json({ ok: false, error: "VALIDATION", message: "Message is too long (max 2000 characters)" }, 400);
+
+  try {
+    const access = await checkChatAccess(sql, eventId, userId);
+    if (!access.allowed) {
+      const status = access.reason === "NOT_FOUND" ? 404 : 403;
+      return c.json({ ok: false, error: access.reason }, status);
+    }
+
+    const inserted = (await sql`
+      INSERT INTO newchums.event_chat_messages (event_id, user_id, body)
+      VALUES (${eventId}, ${userId}, ${messageBody})
+      RETURNING id, created_at
+    `) as { id: string; created_at: string }[];
+
+    const user = (await sql`SELECT name, username, avatar_key, avatar_updated_at FROM newchums.users WHERE id = ${userId}`) as { name: string | null; username: string | null; avatar_key: string | null; avatar_updated_at: string | Date | null }[];
+    const handle = user[0]?.username?.replace(/^@/, "") ?? null;
+    const avatarUrl = buildAvatarUrl(userId, user[0]?.avatar_key ?? null, user[0]?.avatar_updated_at ?? null, c.env.MEDIA_BUCKET);
+
+    const chatMessage = {
+      id: inserted[0].id,
+      body: messageBody,
+      createdAt: inserted[0].created_at,
+      senderId: userId,
+      senderName: user[0]?.name?.trim() || (handle || "Someone"),
+      senderHandle: handle ? `@${handle}` : null,
+      avatarUrl,
+    };
+
+    try {
+      const doId = c.env.CHAT_ROOM.idFromName(eventId);
+      const doStub = c.env.CHAT_ROOM.get(doId);
+      c.executionCtx.waitUntil(
+        doStub.fetch(new Request("https://do/broadcast", {
+          method: "POST",
+          body: JSON.stringify(chatMessage),
+        }))
+      );
+    } catch { /* DO broadcast failure should not fail the API response */ }
+
+    return c.json({ ok: true, message: chatMessage });
+  } catch (err) {
+    console.error("[POST /events/:id/chat]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /events/:id/chat/read — mark chat as read */
+app.post("/events/:id/chat/read", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+  const eventId = c.req.param("id");
+
+  try {
+    const access = await checkChatAccess(sql, eventId, userId);
+    if (!access.allowed) {
+      const status = access.reason === "NOT_FOUND" ? 404 : 403;
+      return c.json({ ok: false, error: access.reason }, status);
+    }
+
+    await sql`
+      INSERT INTO newchums.event_chat_reads (event_id, user_id, last_read_at)
+      VALUES (${eventId}, ${userId}, NOW())
+      ON CONFLICT (event_id, user_id) DO UPDATE SET last_read_at = NOW()
+    `;
+
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[POST /events/:id/chat/read]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /events/:id/lock — toggle plan lock (host only) */
+app.post("/events/:id/lock", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+  const eventId = c.req.param("id");
+
+  try {
+    const ev = (await sql`SELECT id, host_user_id, locked_at FROM newchums.events WHERE id = ${eventId}`) as { id: string; host_user_id: string; locked_at: string | null }[];
+    if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    if (ev[0].host_user_id !== userId) return c.json({ ok: false, error: "FORBIDDEN", message: "Only the host can lock or unlock a plan" }, 403);
+
+    const isCurrentlyLocked = ev[0].locked_at !== null;
+    if (isCurrentlyLocked) {
+      await sql`UPDATE newchums.events SET locked_at = NULL WHERE id = ${eventId}`;
+    } else {
+      await sql`UPDATE newchums.events SET locked_at = NOW() WHERE id = ${eventId}`;
+    }
+
+    return c.json({ ok: true, locked: !isCurrentlyLocked });
+  } catch (err) {
+    console.error("[POST /events/:id/lock]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+export { ChatRoom } from "./ChatRoom";
 
 export default Sentry.withSentry(
   (env) => ({
