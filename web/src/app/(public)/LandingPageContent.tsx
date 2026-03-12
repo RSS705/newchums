@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useState } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -19,6 +20,12 @@ import InterestsRoundedIcon from "@mui/icons-material/InterestsRounded";
 import NotificationsActiveRoundedIcon from "@mui/icons-material/NotificationsActiveRounded";
 import VerifiedUserRoundedIcon from "@mui/icons-material/VerifiedUserRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
+import ChatRoundedIcon from "@mui/icons-material/ChatRounded";
+import EmojiEventsRoundedIcon from "@mui/icons-material/EmojiEventsRounded";
+import EventAvailableRoundedIcon from "@mui/icons-material/EventAvailableRounded";
+import MailOutlineRoundedIcon from "@mui/icons-material/MailOutlineRounded";
+import ThumbUpAltRoundedIcon from "@mui/icons-material/ThumbUpAltRounded";
+import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 
 /**
  * Full public homepage content for logged-out visitors.
@@ -42,11 +49,19 @@ const HOW_IT_WORKS_JOIN = [
   },
   {
     title: "Get notified about nearby plans",
-    body: "When someone organizes something you\u2019d enjoy, you\u2019ll hear about it.",
+    body: (
+      <>
+        When someone organizes something you&apos;d enjoy, you&apos;ll <Box component="span" sx={{ color: "#E65B13", fontWeight: 600 }}>hear about it</Box>.
+      </>
+    ),
   },
   {
     title: "Join and stay in the loop",
-    body: "Use the plan\u2019s chat room for updates and coordination, everything in one place.",
+    body: (
+      <>
+        Use the plan&apos;s <Box component="span" sx={{ color: "#E65B13", fontWeight: 600 }}>chat room</Box> for updates and coordination, everything in one place.
+      </>
+    ),
   },
   {
     title: "Show up and have a great time",
@@ -65,15 +80,27 @@ const HOW_IT_WORKS_CREATE = [
   },
   {
     title: "Invite your people",
-    body: "Bring your friends, or open it up to others nearby who share the interest.",
+    body: (
+      <>
+        Bring your friends, or open it up to <Box component="span" sx={{ color: "#E65B13", fontWeight: 600 }}>others nearby</Box> who share the interest.
+      </>
+    ),
   },
   {
     title: "Find a time and keep everyone updated",
-    body: "Use the built in chat so nobody misses a thing.",
+    body: (
+      <>
+        Use the <Box component="span" sx={{ color: "#E65B13", fontWeight: 600 }}>built in chat</Box> so nobody misses a thing.
+      </>
+    ),
   },
   {
     title: "RSVP reminders go out automatically",
-    body: "24 hours before the gathering, everyone gets a nudge to confirm.",
+    body: (
+      <>
+        24 hours before the gathering, everyone gets a <Box component="span" sx={{ color: "#E65B13", fontWeight: 600 }}>nudge</Box> to confirm.
+      </>
+    ),
   },
   {
     title: "Show up and have a great time",
@@ -90,7 +117,7 @@ const HOW_IT_WORKS_EXTRAS: {
   {
     imageSrc: "/images/home/Your-Rules.png",
     Icon: TuneRoundedIcon,
-    title: "Your plan, your rules",
+    title: "Control who sees your plans",
     body: "Keep it private for your friend group, open it to everyone, or mix both to grow your circle.",
   },
   {
@@ -117,19 +144,19 @@ const MEET_PEOPLE_CALLOUTS: {
   {
     imageSrc: "/images/home/Preferences.png",
     Icon: ExploreRoundedIcon,
-    title: "Your profile does the work",
+    title: "Setup your profile",
     body: "Set your hobbies, your location, how far you\u2019d travel, and the kind of people you enjoy spending time with. NewChums handles the rest.",
   },
   {
     imageSrc: "/images/home/Notifications.png",
     Icon: NotificationsActiveRoundedIcon,
-    title: "Only plans that fit you",
+    title: "Get notified of plans that fit you",
     body: "You won\u2019t get flooded with everything happening nearby. You\u2019ll only hear about gatherings that match your interests and preferences.",
   },
   {
     imageSrc: "/images/home/Meet.png",
     Icon: VerifiedUserRoundedIcon,
-    title: "Thoughtful, not random",
+    title: "Your chum preferences are remembered",
     body: "Matching is based on shared hobbies, location, and the social preferences you set. The right people find the right plans.",
   },
 ];
@@ -139,7 +166,7 @@ const WHY_THIS_WORKS_CARDS: {
   Icon: typeof InterestsRoundedIcon;
   accentColor: string;
   title: string;
-  body: string;
+  body: string | ReactNode;
 }[] = [
   {
     Icon: InterestsRoundedIcon,
@@ -157,7 +184,74 @@ const WHY_THIS_WORKS_CARDS: {
     Icon: AutoAwesomeRoundedIcon,
     accentColor: "#7c3aed",
     title: "It gets better the more you use it",
-    body: "Your feedback after each gathering helps improve which plans and people you\u2019re notified about. Each time, the experience becomes more customized to you.",
+    body: (
+      <>
+        Your <Box component="span" sx={{ color: "#E65B13", fontWeight: 600 }}>feedback</Box> after each gathering helps improve which plans and people you&apos;re notified about. Each time, the experience becomes more customized to you.
+      </>
+    ),
+  },
+];
+
+// ── "NewChums Features" section ──────────────────────────────────────────────
+const FEATURES: {
+  Icon: typeof TuneRoundedIcon;
+  accentColor: string;
+  title: string;
+  body: string | ReactNode;
+}[] = [
+  {
+    Icon: VisibilityRoundedIcon,
+    accentColor: "#1565c0",
+    title: "Create public or private plans",
+    body: "Create a plan for just your friend group, open it to others nearby, or use a mix of both.",
+  },
+  {
+    Icon: MailOutlineRoundedIcon,
+    accentColor: "#E65B13",
+    title: "Invite friends easily",
+    body: (
+      <>
+        Send invites directly, and your chums receive an <Box component="span" sx={{ color: "#E65B13", fontWeight: 600 }}>email notification</Box> so they know you&apos;re planning something.
+      </>
+    ),
+  },
+  {
+    Icon: EventAvailableRoundedIcon,
+    accentColor: "#2e7d32",
+    title: "RSVP tools",
+    body: "Attendees can confirm whether they can make it, and if you allow it, suggest a better time that works for everyone.",
+  },
+  {
+    Icon: ChatRoundedIcon,
+    accentColor: "#7c3aed",
+    title: "Built-in plan chat",
+    body: "Use the plan details page to share updates, coordinate details, or just say hi before meeting up.",
+  },
+  {
+    Icon: NotificationsActiveRoundedIcon,
+    accentColor: "#c2410c",
+    title: "Automatic reminder nudges",
+    body: "Everyone gets an email reminder 24 hours before the plan. No excuses for no-shows and no last-minute confusion.",
+  },
+  {
+    Icon: ThumbUpAltRoundedIcon,
+    accentColor: "#0e7490",
+    title: "Feedback that improves future matches",
+    body: (
+      <>
+        After the plan, attendees share <Box component="span" sx={{ color: "#0e7490", fontWeight: 600 }}>feedback</Box>. NewChums remembers your preferences and avoids notifying people about your plans who aren&apos;t a good fit, and flags potential mismatches in other people&apos;s plans.
+      </>
+    ),
+  },
+  {
+    Icon: EmojiEventsRoundedIcon,
+    accentColor: "#b45309",
+    title: "Earn Chum Points",
+    body: (
+      <>
+        Hosts and attendees earn <Box component="span" sx={{ color: "#b45309", fontWeight: 600 }}>Chum Points</Box> for successful plans, building a reputation as a solid chum who can be relied on.
+      </>
+    ),
   },
 ];
 
@@ -428,8 +522,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                     For the people who actually show up
                   </Typography>
                   <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.75 }}>
-                    NewChums is for people who want to organize gatherings with
-                    friends, the people you already know and the new ones you&apos;re
+                    NewChums is for people who want to <Box component="span" sx={{ fontWeight: 700 }}>organize gatherings with friends</Box>, the people you already know and the new ones you&apos;re
                     excited to meet.
                   </Typography>
                 </Box>
@@ -484,7 +577,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                   </Typography>
                   <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.75 }}>
                     Stalled group chats, vague &ldquo;let&apos;s do something&rdquo;
-                    plans, flaky replies. This tool is built to remove the friction of
+                    plans, flaky replies. This tool is built to <Box component="span" sx={{ fontWeight: 700 }}>remove the friction</Box> of
                     getting people together. All of it. Including the unreliable people
                     who take your time for granted.
                   </Typography>
@@ -851,6 +944,111 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
         </Box>
       </Box>
 
+      {/* ── Section: NewChums Features ── */}
+      <Box
+        component="section"
+        id="features"
+        sx={{
+          ...SECTION_SPACING,
+          backgroundColor: (theme) =>
+            theme.palette.mode === "light" ? "grey.50" : "grey.900",
+          mx: { xs: -2, sm: -3 },
+          px: { xs: 2, sm: 3 },
+        }}
+      >
+        <Box maxWidth={1100} mx="auto">
+          {/* Section heading */}
+          <Box sx={{ textAlign: "center", mb: { xs: 5, sm: 7 } }}>
+            <Typography
+              component="h2"
+              variant="h2"
+              fontWeight={800}
+              sx={{
+                fontSize: { xs: "1.85rem", sm: "2.5rem", md: "2.75rem" },
+                lineHeight: 1.15,
+                letterSpacing: "-0.025em",
+                mb: 2,
+              }}
+            >
+              NewChums Features
+            </Typography>
+            <Typography
+              variant="h5"
+              fontWeight={500}
+              sx={{
+                fontSize: { xs: "1.05rem", sm: "1.2rem" },
+                lineHeight: 1.6,
+                color: "text.secondary",
+                maxWidth: 620,
+                mx: "auto",
+              }}
+            >
+              Everything you need to organize great plans, keep everyone in the loop, and make future get-togethers even better.
+            </Typography>
+          </Box>
+
+          {/* Feature cards grid */}
+          <Grid container spacing={{ xs: 3, sm: 4 }}>
+            {FEATURES.map(({ Icon, accentColor, title, body }) => (
+              <Grid key={title} size={{ xs: 12, sm: 6, md: 4 }}>
+                <Box
+                  sx={{
+                    height: "100%",
+                    backgroundColor: "background.paper",
+                    borderRadius: 2.5,
+                    p: { xs: 3, sm: 3.5 },
+                    boxShadow: (theme) =>
+                      theme.palette.mode === "light"
+                        ? "0 1px 6px rgba(0,0,0,0.07)"
+                        : "none",
+                    border: "1px solid",
+                    borderColor: "divider",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: { xs: "center", sm: "flex-start" },
+                    textAlign: { xs: "center", sm: "left" },
+                  }}
+                >
+                  <Box
+                    sx={{
+                      width: 48,
+                      height: 48,
+                      borderRadius: 2,
+                      bgcolor: `${accentColor}14`,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      mb: 2,
+                    }}
+                  >
+                    <Icon sx={{ fontSize: 24, color: accentColor }} />
+                  </Box>
+                  <Typography
+                    variant="h6"
+                    component="h3"
+                    fontWeight={700}
+                    sx={{
+                      mb: 1,
+                      fontSize: { xs: "1rem", sm: "1.0625rem" },
+                      lineHeight: 1.35,
+                    }}
+                  >
+                    {title}
+                  </Typography>
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ lineHeight: 1.75 }}
+                  >
+                    {body}
+                  </Typography>
+                </Box>
+              </Grid>
+            ))}
+          </Grid>
+        </Box>
+      </Box>
+
       {/* ── Section: Meet New People ── */}
       <Box
         component="section"
@@ -901,7 +1099,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                 variant="body1"
                 sx={{ lineHeight: 1.85, mb: 3, color: "text.primary" }}
               >
-                When you create a plan on NewChums, you decide who can join.
+                When you create a plan on NewChums, <Box component="span" sx={{ fontWeight: 700 }}>you decide who can join</Box>.
                 Keep it private for your friends, open it up to new people, or
                 both, it&apos;s up to you.
               </Typography>
@@ -909,7 +1107,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                 variant="body1"
                 sx={{ lineHeight: 1.85, mb: { xs: 3, sm: 4 }, color: "text.primary" }}
               >
-                Public plans are where it gets interesting. When someone nearby
+                <Box component="span" sx={{ fontWeight: 700 }}>Public plans</Box> are where it gets interesting. When someone nearby
                 shares your hobbies and fits your preferences, they&apos;ll hear about
                 your plan. And you&apos;ll hear about theirs. No cold introductions,
                 no awkward swiping, just real people showing up to do
