@@ -23,7 +23,9 @@ export function middleware(request: NextRequest) {
     return redirect;
   }
 
-  return NextResponse.next();
+  const response = NextResponse.next();
+  response.headers.set("x-request-path", request.nextUrl.pathname);
+  return response;
 }
 
 export const config = {

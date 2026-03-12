@@ -17,7 +17,13 @@ export default async function AppLayout({
   const requestHeaders = await headers();
   const requestedPath = getRequestedPathFromHeaders(requestHeaders);
 
+  // Allow unauthenticated users to view event detail pages (public preview)
+  const isPublicRoute = /^\/?(\(app\)\/)?events\/[^/]+/.test(requestedPath);
+
   if (!session) {
+    if (isPublicRoute) {
+      return <AppShell>{children}</AppShell>;
+    }
     redirect(`/login?next=${encodeURIComponent(requestedPath)}`);
   }
 

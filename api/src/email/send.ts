@@ -152,16 +152,25 @@ export const sendChumInviteEmail = async (
 
 export const sendEventInviteEmail = async (
   env: Bindings,
-  { to, recipientName, hostName, eventTitle, eventDate, eventUrl }: {
+  { to, recipientName, hostName, eventTitle, eventDate, eventLocation, eventUrl, inviteToken }: {
     to: string; recipientName: string; hostName: string;
-    eventTitle: string; eventDate: string; eventUrl: string;
+    eventTitle: string; eventDate: string; eventLocation?: string; eventUrl: string;
+    inviteToken?: string;
   }
 ) => {
   if (!env.POSTMARK_TEMPLATE_EVENT_INVITE) return;
+  const tokenParam = inviteToken ? `&invite_token=${encodeURIComponent(inviteToken)}` : "";
+  const goingUrl = `${eventUrl}?rsvp=going${tokenParam}`;
+  const maybeUrl = `${eventUrl}?rsvp=maybe${tokenParam}`;
+  const cantMakeItUrl = `${eventUrl}?rsvp=cant_make_it${tokenParam}`;
   return sendPostmarkTemplateEmail(env, {
     From: env.EMAIL_FROM, To: to,
     TemplateId: env.POSTMARK_TEMPLATE_EVENT_INVITE,
-    TemplateModel: { productName: "NewChums", recipientName, hostName, eventTitle, eventDate, eventUrl },
+    TemplateModel: {
+      productName: "NewChums", recipientName, hostName, eventTitle, eventDate,
+      eventLocation: eventLocation || "",
+      eventUrl, goingUrl, maybeUrl, cantMakeItUrl,
+    },
   });
 };
 

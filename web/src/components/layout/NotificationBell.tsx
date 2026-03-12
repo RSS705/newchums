@@ -48,26 +48,62 @@ function formatRelativeTime(iso: string): string {
 function notificationText(n: AppNotification): {
   actorLabel: string;
   actorHref: string | null;
-  body: string;
+  body: React.ReactNode;
 } {
-  // Always show @handle; fall back to "Someone" only if no handle is available
   const handleSlug = n.actorHandle ? n.actorHandle.replace(/^@/, "") : null;
   const actorLabel = handleSlug ? `@${handleSlug}` : "Someone";
   const actorHref = handleSlug ? `/u/${handleSlug}` : null;
+
+  const eventTitle = n.metadata?.eventTitle as string | undefined;
+  const eventId = n.entityId;
+  const eventHref = eventId ? `/events/${eventId}` : null;
+
+  const titleLink = eventTitle && eventHref ? (
+    <Link href={eventHref} style={{ fontWeight: 600, color: "inherit", textDecoration: "none" }}
+      onMouseOver={(e) => { (e.target as HTMLElement).style.textDecoration = "underline"; }}
+      onMouseOut={(e) => { (e.target as HTMLElement).style.textDecoration = "none"; }}
+    >
+      &ldquo;{eventTitle}&rdquo;
+    </Link>
+  ) : eventTitle ? <>{`"${eventTitle}"`}</> : null;
+
+  const rsvpStatus = n.metadata?.rsvpStatus as string | undefined;
 
   switch (n.type) {
     case "chum_added_you":
       return { actorLabel, actorHref, body: " added you to their Chums list. 🎉" };
     case "event_rsvp":
-      return { actorLabel, actorHref, body: ` responded to your plan${n.metadata?.eventTitle ? ` "${n.metadata.eventTitle}"` : ""}.` };
+      return {
+        actorLabel,
+        actorHref,
+        body: titleLink
+          ? <>{rsvpStatus ? ` responded ${rsvpStatus} to your plan ` : " responded to your plan "}{titleLink}.</>
+          : rsvpStatus ? ` responded ${rsvpStatus} to your plan.` : " responded to your plan.",
+      };
     case "event_invite":
-      return { actorLabel, actorHref, body: ` invited you to${n.metadata?.eventTitle ? ` "${n.metadata.eventTitle}"` : " a plan"}.` };
+      return {
+        actorLabel,
+        actorHref,
+        body: titleLink ? <>{" invited you to "}{titleLink}.</> : " invited you to a plan.",
+      };
     case "join_request":
-      return { actorLabel, actorHref, body: ` requested to join${n.metadata?.eventTitle ? ` "${n.metadata.eventTitle}"` : " your plan"}.` };
+      return {
+        actorLabel,
+        actorHref,
+        body: titleLink ? <>{" requested to join "}{titleLink}.</> : " requested to join your plan.",
+      };
     case "join_request_approved":
-      return { actorLabel, actorHref, body: ` approved your request to join${n.metadata?.eventTitle ? ` "${n.metadata.eventTitle}"` : " their plan"}!` };
+      return {
+        actorLabel,
+        actorHref,
+        body: titleLink ? <>{" approved your request to join "}{titleLink}!</> : " approved your request to join their plan!",
+      };
     case "join_request_declined":
-      return { actorLabel, actorHref, body: ` declined your request to join${n.metadata?.eventTitle ? ` "${n.metadata.eventTitle}"` : " their plan"}.` };
+      return {
+        actorLabel,
+        actorHref,
+        body: titleLink ? <>{" declined your request to join "}{titleLink}.</> : " declined your request to join their plan.",
+      };
     default:
       return { actorLabel, actorHref, body: " did something." };
   }

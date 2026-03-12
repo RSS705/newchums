@@ -101,6 +101,22 @@
                       </tr>
                     </table>
 
+                    <!-- Location row (conditional) -->
+                    {{#eventLocation}}
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top: 10px; background-color: #F9FAFB; border-radius: 8px;">
+                      <tr>
+                        <td style="padding: 14px 16px;">
+                          <p style="margin: 0 0 2px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 11px; font-weight: 600; color: #4B5563; text-transform: uppercase; letter-spacing: 0.5px;">
+                            Where
+                          </p>
+                          <p style="margin: 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 16px; font-weight: 600; color: #1F2937;">
+                            {{.}}
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
+                    {{/eventLocation}}
+
                     <!-- Host row -->
                     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top: 10px; background-color: #F9FAFB; border-radius: 8px;">
                       <tr>
@@ -118,28 +134,79 @@
                 </tr>
               </table>
 
-              <!-- CTA -->
+              <!-- RSVP heading -->
+              <p style="margin: 0 0 14px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 15px; font-weight: 700; color: #1F2937; text-align: center;">
+                Can you make it?
+              </p>
+
+              <!-- RSVP buttons -->
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 24px;">
                 <tr>
                   <td align="center">
-                    <!--[if mso]>
-                    <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{eventUrl}}" style="height:48px;v-text-anchor:middle;width:280px;" arcsize="17%" strokecolor="#C44D10" fillcolor="#E65B13">
-                      <w:anchorlock/>
-                      <center style="color:#ffffff;font-family:'Segoe UI',sans-serif;font-size:15px;font-weight:bold;">View plan details</center>
-                    </v:roundrect>
-                    <![endif]-->
-                    <!--[if !mso]><!-->
-                    <a href="{{eventUrl}}" style="display: inline-block; background-color: #E65B13; color: #ffffff; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 15px; font-weight: 700; text-decoration: none; padding: 14px 40px; border-radius: 8px; line-height: 1; text-align: center;">
-                      View plan details
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <!-- Going -->
+                        <td style="padding: 0 6px;">
+                          <!--[if mso]>
+                          <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{goingUrl}}" style="height:44px;v-text-anchor:middle;width:130px;" arcsize="18%" strokecolor="#047857" fillcolor="#059669">
+                            <w:anchorlock/>
+                            <center style="color:#ffffff;font-family:'Segoe UI',sans-serif;font-size:14px;font-weight:bold;">&#10003; Going</center>
+                          </v:roundrect>
+                          <![endif]-->
+                          <!--[if !mso]><!-->
+                          <a href="{{goingUrl}}" style="display: inline-block; background-color: #059669; color: #ffffff; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 14px; font-weight: 700; text-decoration: none; padding: 12px 24px; border-radius: 8px; line-height: 1; text-align: center;">
+                            &#10003;&ensp;Going
+                          </a>
+                          <!--<![endif]-->
+                        </td>
+                        <!-- Maybe -->
+                        <td style="padding: 0 6px;">
+                          <!--[if mso]>
+                          <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{maybeUrl}}" style="height:44px;v-text-anchor:middle;width:130px;" arcsize="18%" strokecolor="#D97706" fillcolor="#F59E0B">
+                            <w:anchorlock/>
+                            <center style="color:#ffffff;font-family:'Segoe UI',sans-serif;font-size:14px;font-weight:bold;">Maybe</center>
+                          </v:roundrect>
+                          <![endif]-->
+                          <!--[if !mso]><!-->
+                          <a href="{{maybeUrl}}" style="display: inline-block; background-color: #F59E0B; color: #ffffff; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 14px; font-weight: 700; text-decoration: none; padding: 12px 24px; border-radius: 8px; line-height: 1; text-align: center;">
+                            Maybe
+                          </a>
+                          <!--<![endif]-->
+                        </td>
+                        <!-- Can't make it -->
+                        <td style="padding: 0 6px;">
+                          <!--[if mso]>
+                          <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{cantMakeItUrl}}" style="height:44px;v-text-anchor:middle;width:130px;" arcsize="18%" strokecolor="#9CA3AF" fillcolor="#6B7280">
+                            <w:anchorlock/>
+                            <center style="color:#ffffff;font-family:'Segoe UI',sans-serif;font-size:14px;font-weight:bold;">Can't make it</center>
+                          </v:roundrect>
+                          <![endif]-->
+                          <!--[if !mso]><!-->
+                          <a href="{{cantMakeItUrl}}" style="display: inline-block; background-color: #6B7280; color: #ffffff; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 14px; font-weight: 700; text-decoration: none; padding: 12px 24px; border-radius: 8px; line-height: 1; text-align: center;">
+                            Can't make it
+                          </a>
+                          <!--<![endif]-->
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- View details link -->
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 24px;">
+                <tr>
+                  <td align="center">
+                    <a href="{{eventUrl}}" style="font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 14px; font-weight: 600; color: #E65B13; text-decoration: none;">
+                      View full plan details &rarr;
                     </a>
-                    <!--<![endif]-->
                   </td>
                 </tr>
               </table>
 
               <!-- Helper text -->
               <p style="margin: 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 13px; color: #9CA3AF; line-height: 1.55; text-align: center;">
-                Check the plan page to RSVP and see all the details.
+                Clicking a button above will take you to the plan page and record your response.
               </p>
             </td>
           </tr>

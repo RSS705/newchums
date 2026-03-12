@@ -43,7 +43,7 @@ import PeopleOutlineRoundedIcon from "@mui/icons-material/PeopleOutlineRounded";
 import PersonAddRoundedIcon from "@mui/icons-material/PersonAddRounded";
 import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import UserAvatar from "@/components/common/UserAvatar";
 import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
 import { apiFetch, clearAuthTokenCache, getAuthToken, getAvatarBaseUrl, getChatWebSocketUrl, getMediaApiBaseUrl } from "@/lib/apiClient";
@@ -81,13 +81,14 @@ type EventDetail = {
   isHost: boolean;
   lockedAt: string | null;
   requireApproval: boolean;
+  reserveSeats: boolean;
   isInvited: boolean;
   hasRsvp: boolean;
 };
 
 type RsvpEntry = { userId: string; name: string; handle: string | null; status: string; note: string | null; avatarUrl?: string | null };
 type AltTimeEntry = { userId: string; name: string; suggestedAt: string; note: string | null };
-type InviteEntry = { userId: string | null; email: string | null; name: string };
+type InviteEntry = { userId: string | null; email: string | null; name: string; handle?: string | null };
 type SearchResult = { userId: string; displayName: string; handle: string | null; avatarUrl?: string | null };
 type ChatMessage = {
   id: string;
@@ -146,9 +147,12 @@ function visibilityLabel(v: string): string {
   return "Public";
 }
 
+const VALID_RSVP_PARAMS = ["going", "maybe", "cant_make_it"] as const;
+
 export default function EventDetailClient() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const toast = useToast();
   const eventId = params.id as string;
 
@@ -160,6 +164,8 @@ export default function EventDetailClient() {
   const [error, setError] = useState<string | null>(null);
 
   const [rsvpSubmitting, setRsvpSubmitting] = useState(false);
+  // Tracks RSVP status set via email invite token (unauthenticated flow)
+  const [emailRsvpStatus, setEmailRsvpStatus] = useState<string | null>(null);
   const [showAltTimeForm, setShowAltTimeForm] = useState(false);
   const [altDate, setAltDate] = useState("");
   const [altTime, setAltTime] = useState("");
@@ -235,6 +241,21 @@ export default function EventDetailClient() {
   const [editHobbyLoading, setEditHobbyLoading] = useState(false);
   const [editSubmitting, setEditSubmitting] = useState(false);
 
+  const applyEventData = useCallback((data: {
+    ok: boolean;
+    event: EventDetail;
+    rsvps: RsvpEntry[];
+    altTimes: AltTimeEntry[];
+    invites: InviteEntry[];
+    joinRequests: JoinRequest[];
+  }) => {
+    setEvent(data.event);
+    setRsvps(data.rsvps);
+    setAltTimes(data.altTimes);
+    setInvites(data.invites ?? []);
+    setJoinRequests(data.joinRequests ?? []);
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -244,26 +265,90 @@ export default function EventDetailClient() {
         setLoading(false);
         return;
       }
-      const data = (await res.json()) as {
-        ok: boolean;
-        event: EventDetail;
-        rsvps: RsvpEntry[];
-        altTimes: AltTimeEntry[];
-        invites: InviteEntry[];
-        joinRequests: JoinRequest[];
-      };
-      setEvent(data.event);
-      setRsvps(data.rsvps);
-      setAltTimes(data.altTimes);
-      setInvites(data.invites ?? []);
-      setJoinRequests(data.joinRequests ?? []);
+      const data = await res.json();
+      applyEventData(data);
     } catch {
       setError("Failed to load plan");
     }
     setLoading(false);
-  }, [eventId]);
+  }, [eventId, applyEventData]);
+
+  const refresh = useCallback(async () => {
+    try {
+      const res = await apiFetch(`/events/${eventId}`, { auth: true });
+      if (res.ok) {
+        const data = await res.json();
+        applyEventData(data);
+      }
+    } catch { /* silent */ }
+  }, [eventId, applyEventData]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Auto-RSVP from email link (?rsvp=going&invite_token=xxx)
+  const pendingRsvpRef = useRef<string | null>(null);
+  const pendingInviteTokenRef = useRef<string | null>(null);
+  useEffect(() => {
+    const rsvpParam = searchParams.get("rsvp");
+    const inviteTokenParam = searchParams.get("invite_token");
+    if (rsvpParam && VALID_RSVP_PARAMS.includes(rsvpParam as typeof VALID_RSVP_PARAMS[number])) {
+      pendingRsvpRef.current = rsvpParam;
+      pendingInviteTokenRef.current = inviteTokenParam;
+      const url = new URL(window.location.href);
+      url.searchParams.delete("rsvp");
+      url.searchParams.delete("invite_token");
+      window.history.replaceState({}, "", url.pathname + url.search);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!event || !pendingRsvpRef.current) return;
+    if (event.status === "canceled") {
+      pendingRsvpRef.current = null;
+      pendingInviteTokenRef.current = null;
+      return;
+    }
+    const rsvpStatus = pendingRsvpRef.current;
+    const inviteToken = pendingInviteTokenRef.current;
+    pendingRsvpRef.current = null;
+    pendingInviteTokenRef.current = null;
+
+    if (inviteToken) {
+      // Token-based RSVP — works without login
+      (async () => {
+        setRsvpSubmitting(true);
+        try {
+          const res = await apiFetch(`/events/${eventId}/email-rsvp`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ invite_token: inviteToken, status: rsvpStatus }),
+          });
+          const data = (await res.json()) as { ok: boolean; error?: string; message?: string };
+          if (data.ok) {
+            setEmailRsvpStatus(rsvpStatus);
+            toast.success(rsvpStatus === "going" ? "You're going!" : rsvpStatus === "maybe" ? "Marked as maybe" : "Response recorded");
+            refresh();
+          } else {
+            toast.error(data.message ?? "Something went wrong");
+          }
+        } catch {
+          toast.error("Network error");
+        }
+        setRsvpSubmitting(false);
+      })();
+    } else {
+      // Logged-in RSVP — requires auth
+      getAuthToken().then((token) => {
+        if (token) {
+          handleRsvp(rsvpStatus);
+        } else {
+          const returnUrl = `/events/${eventId}?rsvp=${rsvpStatus}`;
+          router.push(`/login?next=${encodeURIComponent(returnUrl)}`);
+        }
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [event]);
 
   // Invite search
   useEffect(() => {
@@ -511,6 +596,23 @@ export default function EventDetailClient() {
     setLockToggling(false);
   };
 
+  const [reserveSeatsToggling, setReserveSeatsToggling] = useState(false);
+
+  const handleToggleReserveSeats = async () => {
+    setReserveSeatsToggling(true);
+    try {
+      const res = await apiFetch(`/events/${eventId}/reserve-seats`, { auth: true, method: "POST" });
+      const data = (await res.json()) as { ok: boolean; reserveSeats: boolean };
+      if (data.ok) {
+        setEvent((prev) => prev ? { ...prev, reserveSeats: data.reserveSeats } : prev);
+        toast.success(data.reserveSeats ? "Seats will be reserved for invites" : "Seat reservation turned off");
+      }
+    } catch {
+      toast.error("Failed to update setting");
+    }
+    setReserveSeatsToggling(false);
+  };
+
   const handleInvite = async (userId?: string, email?: string) => {
     setInviteSubmitting(true);
     setInvitingUserId(userId ?? null);
@@ -526,7 +628,15 @@ export default function EventDetailClient() {
         toast.success("Invite sent!");
         setInviteSearch("");
         setSearchResults([]);
-        load();
+        setHasSearched(false);
+        // Update the invited list locally without a full page reload
+        const match = userId ? searchResults.find((r) => r.userId === userId) : undefined;
+        const name = match?.displayName ?? email ?? "Invited user";
+        const handle = match?.handle ?? null;
+        setInvites((prev) => {
+          if (prev.some((i) => (userId ? i.userId === userId : i.email === email))) return prev;
+          return [...prev, { userId: userId ?? null, email: email ?? null, name, handle }];
+        });
       } else {
         toast.error(data.message ?? "Failed to send invite");
       }
@@ -546,16 +656,14 @@ export default function EventDetailClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
       });
-      const data = (await res.json()) as { ok: boolean; error?: string; message?: string };
+      const data = (await res.json()) as { ok: boolean; error?: string; message?: string; status?: string };
       if (data.ok) {
         toast.success(status === "going" ? "You're going!" : status === "maybe" ? "Marked as maybe" : "Response recorded");
-        load();
+        refresh();
       } else if (data.error === "EVENT_LOCKED") {
         toast.error("This plan is locked and not accepting new participants");
-        load();
       } else if (data.error === "APPROVAL_REQUIRED") {
         toast.error("This plan requires host approval — use \"Request to join\" instead");
-        load();
       } else {
         toast.error(data.message ?? "Something went wrong");
       }
@@ -578,7 +686,7 @@ export default function EventDetailClient() {
       if (data.ok) {
         toast.success("Request sent! The host will review it.");
         setJoinRequestMessage("");
-        load();
+        refresh();
       } else if (data.error === "DUPLICATE_REQUEST") {
         toast.error("You already have a pending request for this plan");
       } else if (data.error === "EVENT_LOCKED") {
@@ -605,7 +713,7 @@ export default function EventDetailClient() {
       if (data.ok) {
         toast.success("Request approved — they've been added as Going");
         setHostResponseMessage((prev) => { const next = { ...prev }; delete next[requestId]; return next; });
-        load();
+        refresh();
       } else if (data.error === "EVENT_FULL") {
         toast.error("This plan is full — cannot approve more participants");
       } else {
@@ -630,7 +738,7 @@ export default function EventDetailClient() {
       if (data.ok) {
         toast.success("Request declined");
         setHostResponseMessage((prev) => { const next = { ...prev }; delete next[requestId]; return next; });
-        load();
+        refresh();
       } else {
         toast.error(data.message ?? "Failed to decline");
       }
@@ -662,7 +770,7 @@ export default function EventDetailClient() {
         setAltDate("");
         setAltTime("");
         setAltNote("");
-        load();
+        refresh();
       } else {
         toast.error(data.message ?? "Error");
       }
@@ -679,7 +787,7 @@ export default function EventDetailClient() {
       if (data.ok) {
         setCancelDialogOpen(false);
         toast.success("Plan canceled");
-        load();
+        refresh();
       } else {
         toast.error("Couldn't cancel. Please try again.");
       }
@@ -740,7 +848,7 @@ export default function EventDetailClient() {
       if (data.ok) {
         setEditDialogOpen(false);
         toast.success("Plan updated");
-        load();
+        refresh();
       } else {
         toast.error(data.message ?? "Couldn't save changes");
       }
@@ -772,14 +880,25 @@ export default function EventDetailClient() {
 
   const goingCount = rsvps.filter((r) => r.status === "going").length;
   const maybeCount = rsvps.filter((r) => r.status === "maybe").length;
+  const declinedCount = rsvps.filter((r) => r.status === "cant_make_it").length;
   const isCanceled = event.status === "canceled";
+
+  // Invitees who haven't RSVP'd yet (shown with "Invited" status in Who's in)
+  const rsvpUserIds = new Set(rsvps.map((r) => r.userId));
+  const pendingInvites = invites.filter((inv) => inv.userId && !rsvpUserIds.has(inv.userId));
+  // Reserved seats: pending invites + maybe RSVPs from invitees (maybe RSVPs
+  // already appear in the RSVP list but their seat stays held when reserve_seats is on)
+  const maybeInviteeCount = event.reserveSeats
+    ? rsvps.filter((r) => r.status === "maybe" && invites.some((inv) => inv.userId === r.userId)).length
+    : 0;
+  const reservedSeatCount = event.reserveSeats ? pendingInvites.length + maybeInviteeCount : 0;
 
   // Request-to-join derived state
   const userJoinRequest = !event.isHost && joinRequests.length > 0 ? joinRequests[0] : null;
   const pendingJoinRequests = event.isHost ? joinRequests.filter((jr) => jr.status === "pending") : [];
   // Show request-to-join CTA instead of RSVP buttons when approval is required,
-  // user is not the host, not invited, and has no existing RSVP
-  const showRequestToJoin = event.requireApproval && !event.isHost && !event.isInvited && !event.hasRsvp;
+  // user is not the host, not invited, has no existing RSVP, and hasn't just RSVP'd via email token
+  const showRequestToJoin = event.requireApproval && !event.isHost && !event.isInvited && !event.hasRsvp && !emailRsvpStatus;
 
   // When locationExact is explicitly false the API hid the exact venue.
   // Fall back: if the field isn't present (older API response) treat it as exact
@@ -883,14 +1002,16 @@ export default function EventDetailClient() {
             />
           )}
           {event.requireApproval && !isCanceled && (
-            <Chip
-              icon={<PersonAddRoundedIcon sx={{ fontSize: "0.875rem !important" }} />}
-              label="Approval required"
-              size="small"
-              variant="outlined"
-              color="info"
-              sx={{ fontWeight: 600, fontSize: "0.75rem" }}
-            />
+            <Tooltip title="The host must approve each person before they can join this plan." placement="top" arrow>
+              <Chip
+                icon={<PersonAddRoundedIcon sx={{ fontSize: "0.875rem !important" }} />}
+                label="Approval required"
+                size="small"
+                variant="outlined"
+                color="info"
+                sx={{ fontWeight: 600, fontSize: "0.75rem", cursor: "default" }}
+              />
+            </Tooltip>
           )}
           {isCanceled && <Chip label="Canceled" size="small" color="error" />}
         </Stack>
@@ -945,7 +1066,8 @@ export default function EventDetailClient() {
             <PeopleOutlineRoundedIcon sx={{ color: "primary.main" }} />
             <Typography variant="body1">
               {goingCount} going{maybeCount > 0 ? `, ${maybeCount} maybe` : ""}
-              {event.maxSeats ? ` (${event.maxSeats} seats)` : ""}
+              {reservedSeatCount > 0 ? `, ${reservedSeatCount} reserved` : ""}
+              {event.maxSeats ? ` · ${event.maxSeats} seats` : ""}
             </Typography>
           </Stack>
           {event.requireReconfirmation && (
@@ -1012,7 +1134,31 @@ export default function EventDetailClient() {
       {/* RSVP / Request-to-join actions (non-hosts, non-canceled) */}
       {!event.isHost && !isCanceled && (
         <AppCard>
-          {showRequestToJoin ? (
+          {emailRsvpStatus ? (
+            <Stack spacing={1.5} alignItems="center" sx={{ py: 1 }}>
+              <CheckCircleRoundedIcon sx={{ fontSize: 36, color: "success.main" }} />
+              <Typography variant="h6" fontWeight={600}>
+                {emailRsvpStatus === "going" ? "You\u2019re going!" : emailRsvpStatus === "maybe" ? "Marked as maybe" : "Response recorded"}
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center" }}>
+                {emailRsvpStatus === "going"
+                  ? "Your attendance has been confirmed. Sign in to see the full plan details and chat."
+                  : emailRsvpStatus === "maybe"
+                  ? "You\u2019ve been marked as maybe. Sign in to update your response or see the full plan details."
+                  : "Your response has been recorded. Sign in to see the full plan details."}
+              </Typography>
+              <Button
+                component={Link}
+                href={`/login?next=${encodeURIComponent(`/events/${eventId}`)}`}
+                variant="contained"
+                color="primary"
+                size="medium"
+                sx={{ mt: 1, textTransform: "none", fontWeight: 600, borderRadius: 2, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
+              >
+                Sign in
+              </Button>
+            </Stack>
+          ) : showRequestToJoin ? (
             <>
               <Typography variant="h6" fontWeight={600} sx={{ mb: 1 }}>
                 Want to join?
@@ -1147,234 +1293,205 @@ export default function EventDetailClient() {
         </AppCard>
       )}
 
-      {/* Invite people (host only, not canceled) */}
+      {/* Invite people (host only, not canceled) — compact collapsible */}
       {event.isHost && !isCanceled && (
         <AppCard>
-          <Stack spacing={2}>
+          {!showInviteForm ? (
             <Stack direction="row" justifyContent="space-between" alignItems="center">
-              <Typography variant="h6" fontWeight={600}>
+              <Typography variant="subtitle1" fontWeight={600}>
                 Invite people
               </Typography>
-              {!showInviteForm && (
-                <AppButton
-                  size="small"
-                  variant="outlined"
-                  startIcon={<PersonAddRoundedIcon />}
-                  onClick={() => setShowInviteForm(true)}
-                  sx={{ textTransform: "none" }}
-                >
-                  Add
-                </AppButton>
-              )}
+              <AppButton
+                size="small"
+                variant="outlined"
+                startIcon={<PersonAddRoundedIcon />}
+                onClick={() => setShowInviteForm(true)}
+                sx={{ textTransform: "none" }}
+              >
+                Add
+              </AppButton>
             </Stack>
+          ) : (
+            <Stack spacing={2}>
+              <Typography variant="subtitle1" fontWeight={600}>
+                Invite people
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.5 }}>
+                Search by name, @handle, or email. Invite emails are sent immediately.
+              </Typography>
+              <TextField
+                fullWidth
+                size="medium"
+                placeholder="Search by name, @handle, or email…"
+                value={inviteSearch}
+                onChange={(e) => setInviteSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && EMAIL_RE.test(inviteSearch.trim())) {
+                    e.preventDefault();
+                    handleInvite(undefined, inviteSearch.trim().toLowerCase());
+                  }
+                }}
+                disabled={inviteSubmitting}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      {searching
+                        ? <CircularProgress size={18} />
+                        : EMAIL_RE.test(inviteSearch.trim())
+                          ? <MailOutlineRoundedIcon sx={{ color: "text.secondary" }} />
+                          : <SearchRoundedIcon sx={{ color: "text.secondary" }} />}
+                    </InputAdornment>
+                  ),
+                }}
+              />
 
-            {showInviteForm && (
-              <Stack spacing={2}>
-                <Typography variant="body2" color="text.secondary">
-                  Search by name, @handle, or email. Invite emails are sent immediately.
-                </Typography>
-                <TextField
-                  fullWidth
-                  size="medium"
-                  placeholder="Search by name, @handle, or email…"
-                  value={inviteSearch}
-                  onChange={(e) => setInviteSearch(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && EMAIL_RE.test(inviteSearch.trim())) {
-                      e.preventDefault();
-                      handleInvite(undefined, inviteSearch.trim().toLowerCase());
-                    }
-                  }}
-                  disabled={inviteSubmitting}
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        {searching
-                          ? <CircularProgress size={18} />
-                          : EMAIL_RE.test(inviteSearch.trim())
-                            ? <MailOutlineRoundedIcon sx={{ color: "text.secondary" }} />
-                            : <SearchRoundedIcon sx={{ color: "text.secondary" }} />}
-                      </InputAdornment>
-                    ),
-                  }}
-                />
-
-                {/* No results */}
-                {hasSearched &&
-                  searchResults.length === 0 &&
-                  !searching &&
-                  !EMAIL_RE.test(inviteSearch.trim()) && (
-                    <Typography variant="body2" color="text.secondary" sx={{ py: 1 }}>
-                      No results found for &ldquo;{inviteSearch.trim()}&rdquo;.
-                    </Typography>
-                  )}
-
-                {/* Search results */}
-                {searchResults.length > 0 && (
-                  <Stack divider={<Divider />} sx={{ mt: 0.5 }}>
-                    {searchResults.map((r) => {
-                      const handleSlug = r.handle?.replace(/^@/, "") ?? null;
-                      const profileHref = handleSlug ? `/u/${handleSlug}` : null;
-                      const avatarSrc = r.avatarUrl ? `${avatarBaseUrl}${r.avatarUrl}` : null;
-                      const isInviting = invitingUserId === r.userId;
-                      return (
-                        <Box
-                          key={r.userId}
-                          sx={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: { xs: 1.5, sm: 2 },
-                            py: 1.5,
-                            borderRadius: 1,
-                            px: 1,
-                            mx: -1,
-                          }}
-                        >
-                          <UserAvatar
-                            src={avatarSrc}
-                            name={r.displayName}
-                            username={r.handle}
-                            size={44}
-                            sx={{ flexShrink: 0 }}
-                          />
-                          <Box sx={{ flex: 1, minWidth: 0 }}>
-                            {profileHref ? (
-                              <Typography
-                                component={Link}
-                                href={profileHref}
-                                fontWeight={600}
-                                sx={{
-                                  fontSize: "0.9375rem",
-                                  color: "text.primary",
-                                  textDecoration: "none",
-                                  "&:hover": { textDecoration: "underline" },
-                                  display: "block",
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                  whiteSpace: "nowrap",
-                                }}
-                              >
-                                {r.displayName}
-                              </Typography>
-                            ) : (
-                              <Typography
-                                fontWeight={600}
-                                sx={{
-                                  fontSize: "0.9375rem",
-                                  display: "block",
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                  whiteSpace: "nowrap",
-                                }}
-                              >
-                                {r.displayName}
-                              </Typography>
-                            )}
-                            {r.handle && (
-                              <Typography
-                                variant="caption"
-                                color="text.secondary"
-                                sx={{
-                                  display: "block",
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                  whiteSpace: "nowrap",
-                                }}
-                              >
-                                {r.handle}
-                              </Typography>
-                            )}
-                          </Box>
-                          <Button
-                            variant="contained"
-                            size="small"
-                            disabled={inviteSubmitting}
-                            onClick={() => handleInvite(r.userId)}
-                            sx={{ flexShrink: 0, fontSize: "0.8125rem", whiteSpace: "nowrap" }}
-                          >
-                            {isInviting ? <CircularProgress size={14} color="inherit" sx={{ mx: 1 }} /> : "Send Invite"}
-                          </Button>
-                        </Box>
-                      );
-                    })}
-                  </Stack>
+              {hasSearched &&
+                searchResults.length === 0 &&
+                !searching &&
+                !EMAIL_RE.test(inviteSearch.trim()) && (
+                  <Typography variant="body2" color="text.secondary" sx={{ py: 1 }}>
+                    No results found for &ldquo;{inviteSearch.trim()}&rdquo;.
+                  </Typography>
                 )}
 
-                {/* Email invite prompt */}
-                {inviteSearch.trim().length > 3 &&
-                  EMAIL_RE.test(inviteSearch.trim()) &&
-                  searchResults.length === 0 &&
-                  !searching && (
-                    <Box
-                      sx={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        flexWrap: "wrap",
-                        gap: 1.5,
-                        py: 1,
-                        px: 1.5,
-                        borderRadius: 2,
-                        bgcolor: "action.hover",
-                        cursor: inviteSubmitting ? "default" : "pointer",
-                        opacity: inviteSubmitting ? 0.7 : 1,
-                      }}
-                      onClick={() => !inviteSubmitting && handleInvite(undefined, inviteSearch.trim().toLowerCase())}
-                    >
-                      <Box sx={{ minWidth: 0 }}>
-                        <Typography variant="body2" fontWeight={600} sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {inviteSearch.trim()}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          Not on NewChums yet. Invite them to this plan by email.
-                        </Typography>
-                      </Box>
-                      <Button
-                        variant="contained"
-                        size="small"
-                        color="primary"
-                        disabled={inviteSubmitting}
-                        startIcon={inviteSubmitting ? <CircularProgress size={14} color="inherit" /> : <PersonAddRoundedIcon />}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleInvite(undefined, inviteSearch.trim().toLowerCase());
+              {searchResults.length > 0 && (
+                <Stack divider={<Divider />} sx={{ mt: 0.5 }}>
+                  {searchResults.map((r) => {
+                    const handleSlug = r.handle?.replace(/^@/, "") ?? null;
+                    const profileHref = handleSlug ? `/u/${handleSlug}` : null;
+                    const avatarSrc = r.avatarUrl ? `${avatarBaseUrl}${r.avatarUrl}` : null;
+                    const isInviting = invitingUserId === r.userId;
+                    return (
+                      <Box
+                        key={r.userId}
+                        sx={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: { xs: 1.5, sm: 2 },
+                          py: 1.5,
+                          borderRadius: 1,
+                          px: 1,
+                          mx: -1,
                         }}
-                        sx={{ flexShrink: 0, fontSize: "0.8125rem", textTransform: "none" }}
                       >
-                        Invite by email
-                      </Button>
-                    </Box>
-                  )}
-
-                <Button
-                  size="small"
-                  onClick={() => { setShowInviteForm(false); setInviteSearch(""); setSearchResults([]); setHasSearched(false); }}
-                  sx={{ alignSelf: "flex-start", textTransform: "none" }}
-                >
-                  Done inviting
-                </Button>
-              </Stack>
-            )}
-
-            {/* Existing invites */}
-            {invites.length > 0 && (
-              <Stack spacing={0.75} sx={{ mt: 1 }}>
-                <Typography variant="caption" color="text.secondary" fontWeight={600}>
-                  Invited ({invites.length})
-                </Typography>
-                <Stack direction="row" flexWrap="wrap" gap={0.75}>
-                  {invites.map((inv, idx) => (
-                    <Chip
-                      key={inv.userId ?? inv.email ?? idx}
-                      label={inv.name}
-                      size="small"
-                      variant="outlined"
-                    />
-                  ))}
+                        <UserAvatar
+                          src={avatarSrc}
+                          name={r.displayName}
+                          username={r.handle}
+                          size={40}
+                          sx={{ flexShrink: 0 }}
+                        />
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          {profileHref ? (
+                            <Typography
+                              component={Link}
+                              href={profileHref}
+                              fontWeight={600}
+                              sx={{
+                                fontSize: "0.9375rem",
+                                color: "text.primary",
+                                textDecoration: "none",
+                                "&:hover": { textDecoration: "underline" },
+                                display: "block",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {r.displayName}
+                            </Typography>
+                          ) : (
+                            <Typography
+                              fontWeight={600}
+                              sx={{
+                                fontSize: "0.9375rem",
+                                display: "block",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {r.displayName}
+                            </Typography>
+                          )}
+                          {r.handle && (
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={{
+                                display: "block",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {r.handle}
+                            </Typography>
+                          )}
+                        </Box>
+                        <Button
+                          variant="contained"
+                          size="small"
+                          disabled={inviteSubmitting}
+                          onClick={() => handleInvite(r.userId)}
+                          sx={{ flexShrink: 0, fontSize: "0.8125rem", whiteSpace: "nowrap" }}
+                        >
+                          {isInviting ? <CircularProgress size={14} color="inherit" sx={{ mx: 1 }} /> : "Send Invite"}
+                        </Button>
+                      </Box>
+                    );
+                  })}
                 </Stack>
-              </Stack>
-            )}
-          </Stack>
+              )}
+
+              {inviteSearch.trim().length > 3 &&
+                EMAIL_RE.test(inviteSearch.trim()) &&
+                searchResults.length === 0 &&
+                !searching && (
+                  <Box
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      flexWrap: "wrap",
+                      gap: 1.5,
+                      py: 1,
+                      px: 1.5,
+                      borderRadius: 2,
+                      bgcolor: "action.hover",
+                    }}
+                  >
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography variant="body2" fontWeight={600} sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {inviteSearch.trim()}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Not on NewChums yet. Invite them to this plan by email.
+                      </Typography>
+                    </Box>
+                    <Button
+                      variant="contained"
+                      size="small"
+                      color="primary"
+                      disabled={inviteSubmitting}
+                      startIcon={inviteSubmitting ? <CircularProgress size={14} color="inherit" /> : <PersonAddRoundedIcon />}
+                      onClick={() => handleInvite(undefined, inviteSearch.trim().toLowerCase())}
+                      sx={{ flexShrink: 0, fontSize: "0.8125rem", textTransform: "none" }}
+                    >
+                      Invite by email
+                    </Button>
+                  </Box>
+                )}
+
+              <Button
+                size="small"
+                onClick={() => { setShowInviteForm(false); setInviteSearch(""); setSearchResults([]); setHasSearched(false); }}
+                sx={{ alignSelf: "flex-start", textTransform: "none" }}
+              >
+                Done inviting
+              </Button>
+            </Stack>
+          )}
         </AppCard>
       )}
 
@@ -1518,17 +1635,20 @@ export default function EventDetailClient() {
         </AppCard>
       )}
 
-      {/* Who's in — Responses section (below Invite people, above Host actions) */}
-      {rsvps.length > 0 && (
+      {/* Who's in — combined RSVP + invite status */}
+      {(rsvps.length > 0 || pendingInvites.length > 0) && (
         <AppCard>
           <Typography variant="h5" fontWeight={700} sx={{ mb: 0.5, fontSize: { xs: "1.25rem", sm: "1.375rem" } }}>
             Who&apos;s in
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5, lineHeight: 1.5 }}>
             {goingCount} going{maybeCount > 0 ? `, ${maybeCount} maybe` : ""}
+            {declinedCount > 0 ? `, ${declinedCount} can\u2019t make it` : ""}
+            {reservedSeatCount > 0 ? `, ${reservedSeatCount} invited` : ""}
             {event.maxSeats ? ` · ${event.maxSeats} seats` : ""}
           </Typography>
           <Stack spacing={0}>
+            {/* RSVP'd participants */}
             {rsvps.map((r) => (
               <Stack
                 key={r.userId}
@@ -1539,7 +1659,7 @@ export default function EventDetailClient() {
                   py: 1.75,
                   borderBottom: "1px solid",
                   borderColor: "divider",
-                  "&:last-child": { borderBottom: "none" },
+                  "&:last-child": { borderBottom: pendingInvites.length > 0 ? undefined : "none" },
                 }}
               >
                 <UserAvatar
@@ -1603,7 +1723,7 @@ export default function EventDetailClient() {
                     />
                   ) : (
                     <Chip
-                      label="Can\u2019t make it"
+                      label={"Can\u2019t make it"}
                       size="small"
                       variant="outlined"
                       sx={{ fontWeight: 500, fontSize: "0.8125rem", color: "text.secondary" }}
@@ -1612,6 +1732,74 @@ export default function EventDetailClient() {
                 </Stack>
               </Stack>
             ))}
+
+            {/* Pending invites (awaiting response) */}
+            {pendingInvites.map((inv, idx) => {
+              const invHandleSlug = inv.handle?.replace(/^@/, "") ?? null;
+              const invProfileHref = invHandleSlug ? `/u/${invHandleSlug}` : null;
+              return (
+                <Stack
+                  key={inv.userId ?? inv.email ?? `inv-${idx}`}
+                  direction="row"
+                  alignItems="center"
+                  spacing={2}
+                  sx={{
+                    py: 1.75,
+                    borderBottom: "1px solid",
+                    borderColor: "divider",
+                    "&:last-child": { borderBottom: "none" },
+                    opacity: 0.75,
+                  }}
+                >
+                  <UserAvatar
+                    name={inv.name}
+                    size={44}
+                    sx={{ flexShrink: 0 }}
+                  />
+                  <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ flex: 1, minWidth: 0 }}>
+                    {invProfileHref ? (
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography
+                          component={Link}
+                          href={invProfileHref}
+                          variant="body1"
+                          fontWeight={600}
+                          sx={{
+                            fontSize: "1rem",
+                            color: "text.primary",
+                            textDecoration: "none",
+                            display: "block",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            "&:hover": { textDecoration: "underline" },
+                          }}
+                        >
+                          {inv.handle}
+                        </Typography>
+                        {inv.name && inv.name !== invHandleSlug && (
+                          <Typography variant="caption" color="text.secondary" sx={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {inv.name}
+                          </Typography>
+                        )}
+                      </Box>
+                    ) : (
+                      <Typography variant="body1" fontWeight={600} sx={{ fontSize: "1rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {inv.name || inv.email}
+                      </Typography>
+                    )}
+                    <Chip
+                      icon={<MailOutlineRoundedIcon sx={{ fontSize: "0.875rem !important" }} />}
+                      label={event.reserveSeats ? "Invited \u00b7 Seat held" : "Invited"}
+                      size="small"
+                      variant="outlined"
+                      color="info"
+                      sx={{ fontWeight: 600, fontSize: "0.75rem", flexShrink: 0 }}
+                    />
+                  </Stack>
+                </Stack>
+              );
+            })}
           </Stack>
         </AppCard>
       )}
@@ -1767,9 +1955,31 @@ export default function EventDetailClient() {
           </Stack>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 2, fontSize: "0.8125rem", lineHeight: 1.6 }}>
             {event.lockedAt
-              ? "This plan is locked — no new people can join. Existing participants still have full access. Unlock to allow new people in again."
+              ? "This plan is locked \u2014 no new people can join. Existing participants still have full access. Unlock to allow new people in again."
               : "Locking this plan prevents anyone new from joining. People who\u2019ve already joined keep their access and can still use the chat."}
           </Typography>
+
+          {event.maxSeats && (
+            <>
+              <Divider sx={{ my: 2 }} />
+              <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={2}>
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Typography variant="subtitle2" fontWeight={600}>
+                    Reserve seats for invited people
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem", lineHeight: 1.5, mt: 0.25 }}>
+                    When enabled, invited guests hold a seat until they respond. Declined invites release the seat. Maybe keeps it reserved.
+                  </Typography>
+                </Box>
+                <Switch
+                  checked={event.reserveSeats}
+                  onChange={handleToggleReserveSeats}
+                  disabled={reserveSeatsToggling}
+                  size="small"
+                />
+              </Stack>
+            </>
+          )}
         </AppCard>
       )}
 

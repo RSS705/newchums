@@ -3,6 +3,7 @@ import { compareSync, hashSync } from "bcryptjs";
 import { Hono } from "hono";
 import { inspectRoutes } from "hono/dev";
 import { isAtLeast18, parseDateOnly } from "./ageValidation";
+import { SignJWT, jwtVerify } from "jose";
 import { getBearerToken, verifyAuthToken } from "./auth";
 import { DATABASE_URL_HINT, type Bindings, getSql } from "./db";
 import {
@@ -1257,6 +1258,41 @@ async function requireAuth(c: { req: Request; env: Bindings }) {
     return null;
   }
   return verifyAuthToken(token, c.env.NEXTAUTH_SECRET);
+}
+
+// Invite tokens — allow one-click RSVP from email without requiring login.
+// Token encodes the eventId + invitee identifier (userId or email) and is
+// signed with NEXTAUTH_SECRET. Valid for 30 days.
+const INVITE_TOKEN_EXPIRY_SECONDS = 30 * 24 * 60 * 60;
+
+async function createInviteToken(
+  secret: string,
+  payload: { eventId: string; userId?: string | null; email?: string | null },
+): Promise<string> {
+  const exp = Math.floor(Date.now() / 1000) + INVITE_TOKEN_EXPIRY_SECONDS;
+  return new SignJWT({ eid: payload.eventId, uid: payload.userId ?? undefined, em: payload.email ?? undefined, purpose: "invite_rsvp" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setExpirationTime(exp)
+    .sign(new TextEncoder().encode(secret));
+}
+
+async function verifyInviteToken(
+  token: string,
+  secret: string,
+): Promise<{ eventId: string; userId?: string; email?: string } | null> {
+  try {
+    const { payload } = await jwtVerify(token, new TextEncoder().encode(secret));
+    if (payload.purpose !== "invite_rsvp") return null;
+    const eventId = payload.eid as string | undefined;
+    if (!eventId) return null;
+    return {
+      eventId,
+      userId: payload.uid as string | undefined,
+      email: payload.em as string | undefined,
+    };
+  } catch {
+    return null;
+  }
 }
 
 app.get("/handles/available", async (c) => {
@@ -4106,13 +4142,16 @@ app.post("/events", async (c) => {
               const hostUser = (await sql`SELECT name, username FROM newchums.users WHERE id = ${userId}`) as { name: string | null; username: string | null }[];
               const hostName = hostUser[0]?.name?.trim() || hostUser[0]?.username?.replace(/^@/, "") || "Someone";
               try {
+                const iToken = await createInviteToken(c.env.NEXTAUTH_SECRET, { eventId, userId: invUserId });
                 await sendEventInviteEmail(c.env, {
                   to: invUser[0].email,
                   recipientName: invUser[0].name?.trim() || "there",
                   hostName,
                   eventTitle: title,
                   eventDate: formatEventDate(startsDate.toISOString(), timezone),
+                  eventLocation: locationType === "online" ? (onlineLink || "Online") : buildLocationDisplay(locationName, locationAddress),
                   eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
+                  inviteToken: iToken,
                 });
               } catch { /* noop if template missing */ }
             }
@@ -4120,14 +4159,17 @@ app.post("/events", async (c) => {
             const hostUser = (await sql`SELECT name, username FROM newchums.users WHERE id = ${userId}`) as { name: string | null; username: string | null }[];
             const hostName = hostUser[0]?.name?.trim() || hostUser[0]?.username?.replace(/^@/, "") || "Someone";
             try {
+              const iToken = await createInviteToken(c.env.NEXTAUTH_SECRET, { eventId, email: invEmail });
               await sendEventInviteEmail(c.env, {
                 to: invEmail,
                 recipientName: "there",
                 hostName,
                 eventTitle: title,
                 eventDate: formatEventDate(startsDate.toISOString(), timezone),
+                eventLocation: locationType === "online" ? (onlineLink || "Online") : buildLocationDisplay(locationName, locationAddress),
                 eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
-              });
+                inviteToken: iToken,
+                });
             } catch { /* noop if template missing */ }
           }
         }
@@ -4604,6 +4646,7 @@ app.get("/events/:id", async (c) => {
         isHost: isHost === true,
         lockedAt: event.locked_at ?? null,
         requireApproval: event.require_approval === true,
+        reserveSeats: event.reserve_seats === true,
         isInvited,
         hasRsvp,
       },
@@ -4624,11 +4667,15 @@ app.get("/events/:id", async (c) => {
         suggestedAt: a.suggested_at,
         note: a.note,
       })),
-      invites: invites.map((inv) => ({
-        userId: inv.user_id,
-        email: inv.email,
-        name: inv.name?.trim() || inv.username?.replace(/^@/, "") || inv.email || "Invited",
-      })),
+      invites: invites.map((inv) => {
+        const invHandle = inv.username?.replace(/^@/, "") ?? null;
+        return {
+          userId: inv.user_id,
+          email: inv.email,
+          name: inv.name?.trim() || invHandle || inv.email || "Invited",
+          handle: invHandle ? `@${invHandle}` : null,
+        };
+      }),
       joinRequests: joinRequests.map((jr) => {
         const jrHandle = jr.username?.replace(/^@/, "") ?? null;
         return {
@@ -4671,7 +4718,7 @@ app.post("/events/:id/rsvp", async (c) => {
   const note = body.note ? String(body.note).trim().slice(0, 500) : null;
 
   try {
-    const ev = (await sql`SELECT id, host_user_id, visibility, status, max_seats, title, locked_at, require_approval FROM newchums.events WHERE id = ${eventId} AND status = 'published'`) as { id: string; host_user_id: string; visibility: string; status: string; max_seats: number | null; title: string; locked_at: string | null; require_approval: boolean }[];
+    const ev = (await sql`SELECT id, host_user_id, visibility, status, max_seats, title, locked_at, require_approval, reserve_seats FROM newchums.events WHERE id = ${eventId} AND status = 'published'`) as { id: string; host_user_id: string; visibility: string; status: string; max_seats: number | null; title: string; locked_at: string | null; require_approval: boolean; reserve_seats: boolean }[];
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     const event = ev[0];
 
@@ -4693,7 +4740,21 @@ app.post("/events/:id/rsvp", async (c) => {
 
     if (status === "going" && event.max_seats) {
       const goingCount = (await sql`SELECT COUNT(*)::int AS c FROM newchums.event_rsvps WHERE event_id = ${eventId} AND status = 'going'`) as { c: number }[];
-      if (goingCount[0].c >= event.max_seats)
+      let occupiedSeats = goingCount[0].c;
+      // When reserve_seats is on, pending invites (no RSVP yet, not declined) hold a seat
+      if (event.reserve_seats) {
+        const reservedCount = (await sql`
+          SELECT COUNT(*)::int AS c FROM newchums.event_invites ei
+          WHERE ei.event_id = ${eventId}
+            AND ei.user_id IS NOT NULL
+            AND (
+              NOT EXISTS (SELECT 1 FROM newchums.event_rsvps er WHERE er.event_id = ${eventId} AND er.user_id = ei.user_id)
+              OR EXISTS (SELECT 1 FROM newchums.event_rsvps er2 WHERE er2.event_id = ${eventId} AND er2.user_id = ei.user_id AND er2.status = 'maybe')
+            )
+        `) as { c: number }[];
+        occupiedSeats += reservedCount[0].c;
+      }
+      if (occupiedSeats >= event.max_seats)
         return c.json({ ok: false, error: "EVENT_FULL", message: "This gathering is full" }, 409);
     }
 
@@ -4727,6 +4788,89 @@ app.post("/events/:id/rsvp", async (c) => {
     return c.json({ ok: true, status });
   } catch (err) {
     console.error("[POST /events/:id/rsvp]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /events/:id/email-rsvp — RSVP via signed invite token (no login required) */
+app.post("/events/:id/email-rsvp", async (c) => {
+  const eventId = c.req.param("id");
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+
+  const token = body.invite_token ? String(body.invite_token) : null;
+  const status = body.status ? String(body.status) : null;
+  if (!token) return c.json({ ok: false, error: "MISSING_TOKEN" }, 400);
+  if (!status || !VALID_RSVP_STATUS.includes(status as typeof VALID_RSVP_STATUS[number]))
+    return c.json({ ok: false, error: "INVALID_STATUS" }, 400);
+
+  const decoded = await verifyInviteToken(token, c.env.NEXTAUTH_SECRET);
+  if (!decoded || decoded.eventId !== eventId)
+    return c.json({ ok: false, error: "INVALID_TOKEN", message: "This link has expired or is invalid." }, 403);
+
+  const sql = getSql(c.env);
+
+  try {
+    const ev = (await sql`SELECT id, host_user_id, status, max_seats, title, locked_at, require_approval, reserve_seats FROM newchums.events WHERE id = ${eventId} AND status = 'published'`) as { id: string; host_user_id: string; status: string; max_seats: number | null; title: string; locked_at: string | null; require_approval: boolean; reserve_seats: boolean }[];
+    if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    const event = ev[0];
+
+    // Resolve the invitee to a userId
+    let userId: string | null = decoded.userId ?? null;
+    if (!userId && decoded.email) {
+      const userRows = (await sql`SELECT id FROM newchums.users WHERE email = ${decoded.email.toLowerCase()} LIMIT 1`) as { id: string }[];
+      userId = userRows[0]?.id ?? null;
+    }
+    if (!userId) return c.json({ ok: false, error: "USER_NOT_FOUND", message: "Please sign up or log in to RSVP." }, 400);
+
+    if (event.host_user_id === userId)
+      return c.json({ ok: false, error: "VALIDATION", message: "Hosts cannot RSVP to their own plan" }, 400);
+
+    // Verify invitee is actually invited
+    const invited = (await sql`SELECT 1 FROM newchums.event_invites WHERE event_id = ${eventId} AND (user_id = ${userId} OR email = ${decoded.email ?? ''}) LIMIT 1`) as unknown[];
+    if (invited.length === 0)
+      return c.json({ ok: false, error: "NOT_INVITED", message: "This invite link is no longer valid." }, 403);
+
+    const existingRsvp = (await sql`SELECT id FROM newchums.event_rsvps WHERE event_id = ${eventId} AND user_id = ${userId}`) as { id: string }[];
+
+    if (event.locked_at && existingRsvp.length === 0)
+      return c.json({ ok: false, error: "EVENT_LOCKED", message: "This plan is locked and not accepting new participants" }, 403);
+
+    if (status === "going" && event.max_seats) {
+      const goingCount = (await sql`SELECT COUNT(*)::int AS c FROM newchums.event_rsvps WHERE event_id = ${eventId} AND status = 'going'`) as { c: number }[];
+      let occupiedSeats = goingCount[0].c;
+      if (event.reserve_seats) {
+        const reservedCount = (await sql`
+          SELECT COUNT(*)::int AS c FROM newchums.event_invites ei
+          WHERE ei.event_id = ${eventId}
+            AND ei.user_id IS NOT NULL
+            AND (
+              NOT EXISTS (SELECT 1 FROM newchums.event_rsvps er WHERE er.event_id = ${eventId} AND er.user_id = ei.user_id)
+              OR EXISTS (SELECT 1 FROM newchums.event_rsvps er2 WHERE er2.event_id = ${eventId} AND er2.user_id = ei.user_id AND er2.status = 'maybe')
+            )
+        `) as { c: number }[];
+        occupiedSeats += reservedCount[0].c;
+      }
+      if (occupiedSeats >= event.max_seats)
+        return c.json({ ok: false, error: "EVENT_FULL", message: "This plan is full" }, 409);
+    }
+
+    await sql`
+      INSERT INTO newchums.event_rsvps (event_id, user_id, status)
+      VALUES (${eventId}, ${userId}, ${status})
+      ON CONFLICT (event_id, user_id) DO UPDATE SET status = ${status}, updated_at = NOW()
+    `;
+
+    // Notify the host
+    const statusLabel = status === "going" ? "Going" : status === "maybe" ? "Maybe" : "Can't make it";
+    await sql`
+      INSERT INTO newchums.notifications (user_id, type, actor_user_id, entity_id, metadata)
+      VALUES (${event.host_user_id}, 'event_rsvp', ${userId}, ${eventId}, ${JSON.stringify({ eventTitle: event.title, rsvpStatus: statusLabel })})
+    `;
+
+    return c.json({ ok: true, status });
+  } catch (err) {
+    console.error("[POST /events/:id/email-rsvp]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });
@@ -4954,9 +5098,13 @@ app.post("/events/:id/invite", async (c) => {
   try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
 
   try {
-    const ev = (await sql`SELECT id, host_user_id, title, starts_at, status, timezone FROM newchums.events WHERE id = ${eventId}`) as { id: string; host_user_id: string; title: string; starts_at: string; status: string; timezone: string }[];
+    const ev = (await sql`SELECT id, host_user_id, title, starts_at, status, timezone, location_type, location_name, location_address, online_link FROM newchums.events WHERE id = ${eventId}`) as { id: string; host_user_id: string; title: string; starts_at: string; status: string; timezone: string; location_type: string; location_name: string | null; location_address: string | null; online_link: string | null }[];
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     if (ev[0].host_user_id !== userId) return c.json({ ok: false, error: "FORBIDDEN", message: "Only the host can invite" }, 403);
+
+    const inviteLocationDisplay = ev[0].location_type === "online"
+      ? (ev[0].online_link || "Online")
+      : buildLocationDisplay(ev[0].location_name, ev[0].location_address);
 
     const invitees = Array.isArray(body.invitees) ? (body.invitees as Array<{ user_id?: string; email?: string }>) : [];
     let added = 0;
@@ -4987,25 +5135,31 @@ app.post("/events/:id/invite", async (c) => {
             const invUser = (await sql`SELECT email, name FROM newchums.users WHERE id = ${invUserId}`) as { email: string; name: string | null }[];
             if (invUser.length > 0) {
               try {
+                const iToken = await createInviteToken(c.env.NEXTAUTH_SECRET, { eventId, userId: invUserId });
                 await sendEventInviteEmail(c.env, {
                   to: invUser[0].email,
                   recipientName: invUser[0].name?.trim() || "there",
                   hostName,
                   eventTitle: ev[0].title,
                   eventDate: formatEventDate(ev[0].starts_at, ev[0].timezone),
+                  eventLocation: inviteLocationDisplay,
                   eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
+                  inviteToken: iToken,
                 });
               } catch { /* noop */ }
             }
           } else if (invEmail) {
             try {
+              const iToken = await createInviteToken(c.env.NEXTAUTH_SECRET, { eventId, email: invEmail });
               await sendEventInviteEmail(c.env, {
                 to: invEmail,
                 recipientName: "there",
                 hostName,
                 eventTitle: ev[0].title,
                 eventDate: formatEventDate(ev[0].starts_at, ev[0].timezone),
+                eventLocation: inviteLocationDisplay,
                 eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
+                inviteToken: iToken,
               });
             } catch { /* noop */ }
           }
@@ -5260,6 +5414,31 @@ app.post("/events/:id/lock", async (c) => {
     return c.json({ ok: true, locked: !isCurrentlyLocked });
   } catch (err) {
     console.error("[POST /events/:id/lock]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /events/:id/reserve-seats — toggle reserve seats for invites (host only) */
+app.post("/events/:id/reserve-seats", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+  const eventId = c.req.param("id");
+
+  try {
+    const ev = (await sql`SELECT id, host_user_id, reserve_seats FROM newchums.events WHERE id = ${eventId}`) as { id: string; host_user_id: string; reserve_seats: boolean }[];
+    if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    if (ev[0].host_user_id !== userId) return c.json({ ok: false, error: "FORBIDDEN", message: "Only the host can change this setting" }, 403);
+
+    const newValue = !ev[0].reserve_seats;
+    await sql`UPDATE newchums.events SET reserve_seats = ${newValue} WHERE id = ${eventId}`;
+
+    return c.json({ ok: true, reserveSeats: newValue });
+  } catch (err) {
+    console.error("[POST /events/:id/reserve-seats]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });

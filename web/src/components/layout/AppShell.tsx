@@ -66,6 +66,7 @@ type NavProfile = { avatar_url?: string | null; name?: string | null; username?:
 export default function AppShell({ children, user }: AppShellProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const isAuthenticated = Boolean(user);
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [accountMenuAnchor, setAccountMenuAnchor] = React.useState<null | HTMLElement>(null);
   const [navProfile, setNavProfile] = React.useState<NavProfile | null>(null);
@@ -103,6 +104,72 @@ export default function AppShell({ children, user }: AppShellProps) {
       .catch(() => {});
     return () => { cancelled = true; };
   }, [user]);
+
+  // Unauthenticated shell: minimal header with logo + Sign in / Sign up, no sidebar
+  if (!isAuthenticated) {
+    return (
+      <Box sx={{ display: "flex", flexDirection: "column", minHeight: "100dvh", bgcolor: "background.default" }}>
+        <AppBar
+          position="fixed"
+          elevation={0}
+          sx={{
+            zIndex: (theme) => theme.zIndex.drawer + 1,
+            borderBottom: 1,
+            borderColor: "divider",
+            borderBottomColor: "grey.200",
+            backgroundColor: "background.default",
+            color: "text.secondary",
+            minHeight: HEADER_MIN_HEIGHT,
+          }}
+        >
+          <SiteHeader
+            rightSide={
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Button
+                  component={Link}
+                  href="/login"
+                  variant="text"
+                  size="small"
+                  sx={{ textTransform: "none", fontWeight: 600, fontSize: "0.875rem" }}
+                >
+                  Sign in
+                </Button>
+                <Button
+                  component={Link}
+                  href="/signup"
+                  variant="contained"
+                  color="primary"
+                  size="small"
+                  sx={{ textTransform: "none", fontWeight: 600, fontSize: "0.875rem", borderRadius: 2, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
+                >
+                  Sign up
+                </Button>
+              </Stack>
+            }
+          />
+        </AppBar>
+
+        <Box
+          component="main"
+          sx={{ flexGrow: 1, display: "flex", flexDirection: "column", pt: { xs: 8, lg: 10 } }}
+        >
+          <Box sx={{ flex: 1, pb: { xs: 0, md: 4 } }}>
+            <Container maxWidth="lg" sx={{ pt: { xs: 3, sm: 4 }, pb: { xs: 2, sm: 3 }, px: { xs: 2, sm: 3 } }}>
+              {children}
+            </Container>
+          </Box>
+          <Box
+            component="footer"
+            sx={{ py: 5, mt: "auto", backgroundColor: "background.paper", borderTop: 1, borderColor: "grey.200" }}
+          >
+            <Container maxWidth="lg" sx={{ px: { xs: 2, sm: 3 } }}>
+              <LandingFooter />
+            </Container>
+          </Box>
+        </Box>
+      </Box>
+    );
+  }
 
   const accountMenuOpen = Boolean(accountMenuAnchor);
   const displayName = navProfile?.name?.trim() || user?.name?.trim() || "there";
