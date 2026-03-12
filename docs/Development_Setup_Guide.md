@@ -234,6 +234,7 @@ psql "$DATABASE_URL" -f sql/025_event_multi_hobby_and_banner.sql
 psql "$DATABASE_URL" -f sql/027_chum_notes.sql
 psql "$DATABASE_URL" -f sql/028_event_reconfirmation.sql
 psql "$DATABASE_URL" -f sql/029_event_chat_and_lock.sql
+psql "$DATABASE_URL" -f sql/030_event_join_requests.sql
 ```
 
 Notes:
@@ -252,6 +253,7 @@ Notes:
 - Migration `027_chum_notes.sql` adds a `note TEXT NULL` column to `newchums.user_chums` for private per-chum notes (visible only to the user who added them).
 - Migration `028_event_reconfirmation.sql` adds `require_reconfirmation BOOLEAN NOT NULL DEFAULT FALSE` to `newchums.events` for the attendance reconfirmation setting.
 - Migration `029_event_chat_and_lock.sql` creates `newchums.event_chat_messages` (per-plan chat messages), `newchums.event_chat_reads` (last-read tracking), and adds `locked_at TIMESTAMPTZ NULL` to `newchums.events` for host-controlled plan locking.
+- Migration `030_event_join_requests.sql` adds `require_approval BOOLEAN NOT NULL DEFAULT FALSE` to `newchums.events` and creates `newchums.event_join_requests` (join request records with status, messages, and timestamps).
 
 ---
 

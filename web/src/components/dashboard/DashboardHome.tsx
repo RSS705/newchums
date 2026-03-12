@@ -172,6 +172,7 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
           {/* Search + toggle */}
           <Stack direction="row" spacing={1} alignItems="center">
             <TextField
+              id="explore-search-input"
               placeholder="Search plans…"
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}

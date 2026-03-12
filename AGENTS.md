@@ -125,7 +125,7 @@ The following areas are partially implemented. Agents should polish and improve 
 | Area | Status | Guidance |
 |------|--------|----------|
 | **Explore page** (`/`, logged in) | Functional but evolving. Real API data, filters, location-aware ordering. | Improve polish, fix bugs, refine empty states. Do not invent the final discovery experience. |
-| **Event Details** (`/events/[id]`) | Detail view with RSVP, cancel, invite, banner, edit (host), participant chat (real-time via WebSocket), and host lock. No public event sharing page. | Fix issues, improve UI. Do not build public sharing without being asked. |
+| **Event Details** (`/events/[id]`) | Detail view with RSVP, cancel, invite, banner, edit (host), participant chat (real-time via WebSocket), host lock, and request-to-join (host approval required). No public event sharing page. | Fix issues, improve UI. Do not build public sharing without being asked. |
 | **Event email templates** | Scaffolded in code. Postmark templates not yet created. Sends noop safely. | Do not assume emails are live. Note template requirements when relevant. |
 | **Attendance reconfirmation** | Setting saved and surfaced in UI. No email reminder logic yet. Migration 028. | Do not build auto-cancel or punitive logic. Hook reminder workflows via a cron/queue job when ready. |
 | **Attendance record / reliability** | Profile placeholder card is present. No scoring or data engine yet. | Do not build a scoring system without being explicitly asked. |

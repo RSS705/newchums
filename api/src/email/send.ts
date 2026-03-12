@@ -225,6 +225,56 @@ export const sendEventRsvpUpdateEmail = async (
   });
 };
 
+// ── Join-request email helpers ──────────────────────────────────────────
+//   6. Join Request (to host)    — hardcoded template 43906440
+//      Model: productName, hostName, requesterName, eventTitle, requestMessage, eventUrl
+//   7. Join Request Approved     — hardcoded template 43906609
+//      Model: productName, recipientName, hostName, eventTitle, hostMessage, eventUrl
+//   8. Join Request Declined     — hardcoded template 43906703
+//      Model: productName, recipientName, hostName, eventTitle, hostMessage, eventUrl
+
+export const sendJoinRequestEmail = async (
+  env: Bindings,
+  { to, hostName, requesterName, eventTitle, requestMessage, eventUrl }: {
+    to: string; hostName: string; requesterName: string;
+    eventTitle: string; requestMessage: string; eventUrl: string;
+  }
+) => {
+  return sendPostmarkTemplateEmail(env, {
+    From: env.EMAIL_FROM, To: to,
+    TemplateId: "43906440",
+    TemplateModel: { productName: "NewChums", hostName, requesterName, eventTitle, requestMessage, eventUrl },
+  });
+};
+
+export const sendJoinRequestApprovedEmail = async (
+  env: Bindings,
+  { to, recipientName, hostName, eventTitle, hostMessage, eventUrl }: {
+    to: string; recipientName: string; hostName: string;
+    eventTitle: string; hostMessage: string; eventUrl: string;
+  }
+) => {
+  return sendPostmarkTemplateEmail(env, {
+    From: env.EMAIL_FROM, To: to,
+    TemplateId: "43906609",
+    TemplateModel: { productName: "NewChums", recipientName, hostName, eventTitle, hostMessage, eventUrl },
+  });
+};
+
+export const sendJoinRequestDeclinedEmail = async (
+  env: Bindings,
+  { to, recipientName, hostName, eventTitle, hostMessage, eventUrl }: {
+    to: string; recipientName: string; hostName: string;
+    eventTitle: string; hostMessage: string; eventUrl: string;
+  }
+) => {
+  return sendPostmarkTemplateEmail(env, {
+    From: env.EMAIL_FROM, To: to,
+    TemplateId: "43906703",
+    TemplateModel: { productName: "NewChums", recipientName, hostName, eventTitle, hostMessage, eventUrl },
+  });
+};
+
 const CONTACT_EMAIL = "contact@newchums.com";
 
 export const sendContactFormEmail = async (

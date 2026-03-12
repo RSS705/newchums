@@ -77,6 +77,9 @@ type EventDetail = {
   hostUserId: string;
   isHost: boolean;
   lockedAt: string | null;
+  requireApproval: boolean;
+  isInvited: boolean;
+  hasRsvp: boolean;
 };
 
 type RsvpEntry = { userId: string; name: string; handle: string | null; status: string; note: string | null; avatarUrl?: string | null };
@@ -90,6 +93,19 @@ type ChatMessage = {
   senderId: string;
   senderName: string;
   senderHandle: string | null;
+  avatarUrl: string | null;
+};
+
+type JoinRequest = {
+  id: string;
+  userId: string;
+  status: string;
+  message: string | null;
+  hostMessage: string | null;
+  decidedAt: string | null;
+  createdAt: string;
+  name: string;
+  handle: string | null;
   avatarUrl: string | null;
 };
 
@@ -191,6 +207,13 @@ export default function EventDetailClient() {
   // Lock state
   const [lockToggling, setLockToggling] = useState(false);
 
+  // Join request state
+  const [joinRequests, setJoinRequests] = useState<JoinRequest[]>([]);
+  const [joinRequestMessage, setJoinRequestMessage] = useState("");
+  const [joinRequestSubmitting, setJoinRequestSubmitting] = useState(false);
+  const [approveDeclineLoading, setApproveDeclineLoading] = useState<string | null>(null);
+  const [hostResponseMessage, setHostResponseMessage] = useState<Record<string, string>>({});
+
   // Edit dialog
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editTitle, setEditTitle] = useState("");
@@ -200,6 +223,7 @@ export default function EventDetailClient() {
   const [editMaxSeats, setEditMaxSeats] = useState("");
   const [editVisibility, setEditVisibility] = useState<"public" | "chums_only" | "invite_only">("public");
   const [editRequireReconfirmation, setEditRequireReconfirmation] = useState(false);
+  const [editRequireApproval, setEditRequireApproval] = useState(false);
   const [editHobbies, setEditHobbies] = useState<HobbyInfo[]>([]);
   const [editHobbyInput, setEditHobbyInput] = useState("");
   const [editHobbySuggestions, setEditHobbySuggestions] = useState<HobbyInfo[]>([]);
@@ -221,11 +245,13 @@ export default function EventDetailClient() {
         rsvps: RsvpEntry[];
         altTimes: AltTimeEntry[];
         invites: InviteEntry[];
+        joinRequests: JoinRequest[];
       };
       setEvent(data.event);
       setRsvps(data.rsvps);
       setAltTimes(data.altTimes);
       setInvites(data.invites ?? []);
+      setJoinRequests(data.joinRequests ?? []);
     } catch {
       setError("Failed to load plan");
     }
@@ -489,6 +515,9 @@ export default function EventDetailClient() {
       } else if (data.error === "EVENT_LOCKED") {
         toast.error("This plan is locked and not accepting new participants");
         load();
+      } else if (data.error === "APPROVAL_REQUIRED") {
+        toast.error("This plan requires host approval — use \"Request to join\" instead");
+        load();
       } else {
         toast.error(data.message ?? "Something went wrong");
       }
@@ -496,6 +525,81 @@ export default function EventDetailClient() {
       toast.error("Network error");
     }
     setRsvpSubmitting(false);
+  };
+
+  const handleJoinRequest = async () => {
+    setJoinRequestSubmitting(true);
+    try {
+      const res = await apiFetch(`/events/${eventId}/join-request`, {
+        auth: true,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: joinRequestMessage.trim() || null }),
+      });
+      const data = (await res.json()) as { ok: boolean; error?: string; message?: string };
+      if (data.ok) {
+        toast.success("Request sent! The host will review it.");
+        setJoinRequestMessage("");
+        load();
+      } else if (data.error === "DUPLICATE_REQUEST") {
+        toast.error("You already have a pending request for this plan");
+      } else if (data.error === "EVENT_LOCKED") {
+        toast.error("This plan is locked and not accepting new participants");
+      } else {
+        toast.error(data.message ?? "Something went wrong");
+      }
+    } catch {
+      toast.error("Network error");
+    }
+    setJoinRequestSubmitting(false);
+  };
+
+  const handleApproveRequest = async (requestId: string) => {
+    setApproveDeclineLoading(requestId);
+    try {
+      const res = await apiFetch(`/events/${eventId}/join-request/${requestId}/approve`, {
+        auth: true,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: hostResponseMessage[requestId]?.trim() || null }),
+      });
+      const data = (await res.json()) as { ok: boolean; error?: string; message?: string };
+      if (data.ok) {
+        toast.success("Request approved — they've been added as Going");
+        setHostResponseMessage((prev) => { const next = { ...prev }; delete next[requestId]; return next; });
+        load();
+      } else if (data.error === "EVENT_FULL") {
+        toast.error("This plan is full — cannot approve more participants");
+      } else {
+        toast.error(data.message ?? "Failed to approve");
+      }
+    } catch {
+      toast.error("Network error");
+    }
+    setApproveDeclineLoading(null);
+  };
+
+  const handleDeclineRequest = async (requestId: string) => {
+    setApproveDeclineLoading(requestId);
+    try {
+      const res = await apiFetch(`/events/${eventId}/join-request/${requestId}/decline`, {
+        auth: true,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: hostResponseMessage[requestId]?.trim() || null }),
+      });
+      const data = (await res.json()) as { ok: boolean; error?: string; message?: string };
+      if (data.ok) {
+        toast.success("Request declined");
+        setHostResponseMessage((prev) => { const next = { ...prev }; delete next[requestId]; return next; });
+        load();
+      } else {
+        toast.error(data.message ?? "Failed to decline");
+      }
+    } catch {
+      toast.error("Network error");
+    }
+    setApproveDeclineLoading(null);
   };
 
   const handleAltTimeSubmit = async () => {
@@ -558,6 +662,7 @@ export default function EventDetailClient() {
     setEditMaxSeats(event.maxSeats != null ? String(event.maxSeats) : "");
     setEditVisibility((event.visibility as "public" | "chums_only" | "invite_only") ?? "public");
     setEditRequireReconfirmation(event.requireReconfirmation ?? false);
+    setEditRequireApproval(event.requireApproval ?? false);
     const initialHobbies =
       event.hobbies?.length > 0
         ? event.hobbies
@@ -589,6 +694,7 @@ export default function EventDetailClient() {
           max_seats: editMaxSeats ? Number(editMaxSeats) : null,
           visibility: editVisibility,
           require_reconfirmation: editRequireReconfirmation,
+          require_approval: editRequireApproval,
         }),
       });
       const data = (await res.json()) as { ok: boolean; message?: string };
@@ -628,6 +734,13 @@ export default function EventDetailClient() {
   const goingCount = rsvps.filter((r) => r.status === "going").length;
   const maybeCount = rsvps.filter((r) => r.status === "maybe").length;
   const isCanceled = event.status === "canceled";
+
+  // Request-to-join derived state
+  const userJoinRequest = !event.isHost && joinRequests.length > 0 ? joinRequests[0] : null;
+  const pendingJoinRequests = event.isHost ? joinRequests.filter((jr) => jr.status === "pending") : [];
+  // Show request-to-join CTA instead of RSVP buttons when approval is required,
+  // user is not the host, not invited, and has no existing RSVP
+  const showRequestToJoin = event.requireApproval && !event.isHost && !event.isInvited && !event.hasRsvp;
 
   // When locationExact is explicitly false the API hid the exact venue.
   // Fall back: if the field isn't present (older API response) treat it as exact
@@ -727,6 +840,16 @@ export default function EventDetailClient() {
               label="Locked"
               size="small"
               variant="outlined"
+              sx={{ fontWeight: 600, fontSize: "0.75rem" }}
+            />
+          )}
+          {event.requireApproval && !isCanceled && (
+            <Chip
+              icon={<PersonAddRoundedIcon sx={{ fontSize: "0.875rem !important" }} />}
+              label="Approval required"
+              size="small"
+              variant="outlined"
+              color="info"
               sx={{ fontWeight: 600, fontSize: "0.75rem" }}
             />
           )}
@@ -847,55 +970,140 @@ export default function EventDetailClient() {
         </AppCard>
       )}
 
-      {/* RSVP actions (non-hosts, non-canceled) */}
+      {/* RSVP / Request-to-join actions (non-hosts, non-canceled) */}
       {!event.isHost && !isCanceled && (
         <AppCard>
-          <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
-            Are you in?
-          </Typography>
-          {event.lockedAt && chatAccessible !== true && (
-            <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2, p: 1.5, bgcolor: "grey.100", borderRadius: 2 }}>
-              <LockRoundedIcon sx={{ fontSize: 18, color: "text.secondary" }} />
-              <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
-                This plan is locked and not accepting new participants.
+          {showRequestToJoin ? (
+            <>
+              <Typography variant="h6" fontWeight={600} sx={{ mb: 1 }}>
+                Want to join?
               </Typography>
-            </Stack>
-          )}
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
-            <AppButton onClick={() => handleRsvp("going")} disabled={rsvpSubmitting || (!!event.lockedAt && chatAccessible !== true)} sx={{ flex: 1 }}>
-              Going
-            </AppButton>
-            <AppButton onClick={() => handleRsvp("maybe")} disabled={rsvpSubmitting || (!!event.lockedAt && chatAccessible !== true)} variant="outlined" sx={{ flex: 1 }}>
-              Maybe
-            </AppButton>
-            <AppButton onClick={() => handleRsvp("cant_make_it")} disabled={rsvpSubmitting || (!!event.lockedAt && chatAccessible !== true)} variant="outlined" color="inherit" sx={{ flex: 1 }}>
-              Can&apos;t make it
-            </AppButton>
-          </Stack>
+              <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2, p: 1.5, bgcolor: "grey.50", borderRadius: 2 }}>
+                <InfoOutlinedIcon sx={{ fontSize: 18, color: "text.secondary" }} />
+                <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
+                  The host reviews each request before adding you to the plan.
+                </Typography>
+              </Stack>
 
-          {event.allowAltTimes && (
-            <Box sx={{ mt: 2 }}>
-              {!showAltTimeForm ? (
-                <Button size="small" onClick={() => setShowAltTimeForm(true)} sx={{ textTransform: "none" }}>
-                  Suggest another time
-                </Button>
-              ) : (
-                <Stack spacing={2} sx={{ pt: 1, borderTop: "1px solid", borderColor: "divider" }}>
-                  <Typography variant="subtitle2" fontWeight={600}>
-                    Suggest another time
+              {event.lockedAt && (
+                <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2, p: 1.5, bgcolor: "grey.100", borderRadius: 2 }}>
+                  <LockRoundedIcon sx={{ fontSize: 18, color: "text.secondary" }} />
+                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
+                    This plan is locked and not accepting new participants.
                   </Typography>
-                  <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-                    <AppTextField label="Date" type="date" value={altDate} onChange={(e) => setAltDate(e.target.value)} sx={{ flex: 1 }} />
-                    <AppTextField label="Time" type="time" value={altTime} onChange={(e) => setAltTime(e.target.value)} sx={{ flex: 1 }} />
-                  </Stack>
-                  <AppTextField label="Note (optional)" placeholder="e.g. Friday works better for me" value={altNote} onChange={(e) => setAltNote(e.target.value)} />
-                  <Stack direction="row" spacing={1}>
-                    <AppButton size="small" onClick={handleAltTimeSubmit}>Submit</AppButton>
-                    <Button size="small" onClick={() => setShowAltTimeForm(false)}>Cancel</Button>
-                  </Stack>
                 </Stack>
               )}
-            </Box>
+
+              {userJoinRequest ? (
+                <Box sx={{ p: 2, border: "1px solid", borderColor: "divider", borderRadius: 2 }}>
+                  <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
+                    {userJoinRequest.status === "pending" && (
+                      <Chip label="Pending" size="small" color="warning" variant="outlined" sx={{ fontWeight: 600, fontSize: "0.8125rem" }} />
+                    )}
+                    {userJoinRequest.status === "approved" && (
+                      <Chip icon={<CheckCircleRoundedIcon sx={{ fontSize: "1rem !important" }} />} label="Approved" size="small" color="success" variant="filled" sx={{ fontWeight: 600, fontSize: "0.8125rem" }} />
+                    )}
+                    {userJoinRequest.status === "declined" && (
+                      <Chip label="Declined" size="small" color="error" variant="outlined" sx={{ fontWeight: 600, fontSize: "0.8125rem" }} />
+                    )}
+                  </Stack>
+                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem", lineHeight: 1.6 }}>
+                    {userJoinRequest.status === "pending" && "Your request is waiting for the host to review it."}
+                    {userJoinRequest.status === "approved" && "You\u2019ve been approved and added to this plan as Going."}
+                    {userJoinRequest.status === "declined" && "The host has declined your request to join this plan."}
+                  </Typography>
+                  {userJoinRequest.message && (
+                    <Typography variant="body2" sx={{ mt: 1, fontSize: "0.8125rem", fontStyle: "italic", color: "text.secondary" }}>
+                      Your message: &ldquo;{userJoinRequest.message}&rdquo;
+                    </Typography>
+                  )}
+                  {userJoinRequest.hostMessage && (
+                    <Typography variant="body2" sx={{ mt: 1, fontSize: "0.8125rem" }}>
+                      Host message: &ldquo;{userJoinRequest.hostMessage}&rdquo;
+                    </Typography>
+                  )}
+                </Box>
+              ) : !event.lockedAt ? (
+                <Stack spacing={1.5}>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    placeholder="Add a note to the host (optional)"
+                    value={joinRequestMessage}
+                    onChange={(e) => setJoinRequestMessage(e.target.value.slice(0, 500))}
+                    multiline
+                    maxRows={3}
+                    disabled={joinRequestSubmitting}
+                    sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
+                  />
+                  <AppButton
+                    onClick={handleJoinRequest}
+                    disabled={joinRequestSubmitting}
+                    startIcon={joinRequestSubmitting ? <CircularProgress size={14} color="inherit" /> : <PersonAddRoundedIcon />}
+                  >
+                    {joinRequestSubmitting ? "Sending…" : "Request to join"}
+                  </AppButton>
+                </Stack>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
+                Are you in?
+              </Typography>
+              {event.lockedAt && chatAccessible !== true && (
+                <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2, p: 1.5, bgcolor: "grey.100", borderRadius: 2 }}>
+                  <LockRoundedIcon sx={{ fontSize: 18, color: "text.secondary" }} />
+                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
+                    This plan is locked and not accepting new participants.
+                  </Typography>
+                </Stack>
+              )}
+              {event.requireApproval && !event.isInvited && event.hasRsvp && (
+                <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2, p: 1.5, bgcolor: "grey.50", borderRadius: 2 }}>
+                  <CheckCircleRoundedIcon sx={{ fontSize: 18, color: "success.main" }} />
+                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
+                    You were approved to join this plan.
+                  </Typography>
+                </Stack>
+              )}
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                <AppButton onClick={() => handleRsvp("going")} disabled={rsvpSubmitting || (!!event.lockedAt && chatAccessible !== true)} sx={{ flex: 1 }}>
+                  Going
+                </AppButton>
+                <AppButton onClick={() => handleRsvp("maybe")} disabled={rsvpSubmitting || (!!event.lockedAt && chatAccessible !== true)} variant="outlined" sx={{ flex: 1 }}>
+                  Maybe
+                </AppButton>
+                <AppButton onClick={() => handleRsvp("cant_make_it")} disabled={rsvpSubmitting || (!!event.lockedAt && chatAccessible !== true)} variant="outlined" color="inherit" sx={{ flex: 1 }}>
+                  Can&apos;t make it
+                </AppButton>
+              </Stack>
+
+              {event.allowAltTimes && (
+                <Box sx={{ mt: 2 }}>
+                  {!showAltTimeForm ? (
+                    <Button size="small" onClick={() => setShowAltTimeForm(true)} sx={{ textTransform: "none" }}>
+                      Suggest another time
+                    </Button>
+                  ) : (
+                    <Stack spacing={2} sx={{ pt: 1, borderTop: "1px solid", borderColor: "divider" }}>
+                      <Typography variant="subtitle2" fontWeight={600}>
+                        Suggest another time
+                      </Typography>
+                      <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                        <AppTextField label="Date" type="date" value={altDate} onChange={(e) => setAltDate(e.target.value)} sx={{ flex: 1 }} />
+                        <AppTextField label="Time" type="time" value={altTime} onChange={(e) => setAltTime(e.target.value)} sx={{ flex: 1 }} />
+                      </Stack>
+                      <AppTextField label="Note (optional)" placeholder="e.g. Friday works better for me" value={altNote} onChange={(e) => setAltNote(e.target.value)} />
+                      <Stack direction="row" spacing={1}>
+                        <AppButton size="small" onClick={handleAltTimeSubmit}>Submit</AppButton>
+                        <Button size="small" onClick={() => setShowAltTimeForm(false)}>Cancel</Button>
+                      </Stack>
+                    </Stack>
+                  )}
+                </Box>
+              )}
+            </>
           )}
         </AppCard>
       )}
@@ -1036,6 +1244,146 @@ export default function EventDetailClient() {
                 </Stack>
               </Stack>
             )}
+          </Stack>
+        </AppCard>
+      )}
+
+      {/* Join requests (host only) */}
+      {event.isHost && !isCanceled && event.requireApproval && joinRequests.length > 0 && (
+        <AppCard>
+          <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 0.5 }}>
+            <Typography variant="h5" fontWeight={700} sx={{ fontSize: { xs: "1.25rem", sm: "1.375rem" } }}>
+              Join requests
+            </Typography>
+            {pendingJoinRequests.length > 0 && (
+              <Chip
+                label={`${pendingJoinRequests.length} pending`}
+                size="small"
+                color="warning"
+                variant="filled"
+                sx={{ fontWeight: 600, fontSize: "0.75rem" }}
+              />
+            )}
+          </Stack>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5, lineHeight: 1.5 }}>
+            People requesting to join your plan. Approved requests are automatically added as Going.
+          </Typography>
+          <Stack spacing={0}>
+            {joinRequests.map((jr) => (
+              <Box
+                key={jr.id}
+                sx={{
+                  py: 2,
+                  borderBottom: "1px solid",
+                  borderColor: "divider",
+                  "&:last-child": { borderBottom: "none" },
+                }}
+              >
+                <Stack direction="row" alignItems="center" spacing={2} sx={{ mb: 1 }}>
+                  <UserAvatar
+                    src={jr.avatarUrl ? `${avatarBaseUrl}${jr.avatarUrl}` : null}
+                    name={jr.name}
+                    size={44}
+                    sx={{ flexShrink: 0 }}
+                  />
+                  <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ flex: 1, minWidth: 0 }}>
+                    <Box sx={{ minWidth: 0 }}>
+                      {jr.handle ? (
+                        <>
+                          <Typography
+                            component={Link}
+                            href={`/u/${jr.handle.replace(/^@/, "")}`}
+                            variant="body1"
+                            fontWeight={600}
+                            sx={{
+                              fontSize: "1rem",
+                              color: "text.primary",
+                              textDecoration: "none",
+                              display: "block",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                              "&:hover": { textDecoration: "underline" },
+                            }}
+                          >
+                            {jr.handle}
+                          </Typography>
+                          {jr.name && jr.name !== jr.handle.replace(/^@/, "") && (
+                            <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                              {jr.name}
+                            </Typography>
+                          )}
+                        </>
+                      ) : (
+                        <Typography variant="body1" fontWeight={600} sx={{ fontSize: "1rem" }}>
+                          {jr.name}
+                        </Typography>
+                      )}
+                      <Typography variant="caption" color="text.disabled" sx={{ fontSize: "0.6875rem" }}>
+                        Requested {new Date(jr.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                      </Typography>
+                    </Box>
+                    {jr.status === "pending" ? (
+                      <Chip label="Pending" size="small" color="warning" variant="outlined" sx={{ fontWeight: 600, fontSize: "0.8125rem", flexShrink: 0 }} />
+                    ) : jr.status === "approved" ? (
+                      <Chip icon={<CheckCircleRoundedIcon sx={{ fontSize: "1rem !important" }} />} label="Approved" size="small" color="success" variant="filled" sx={{ fontWeight: 600, fontSize: "0.8125rem", flexShrink: 0 }} />
+                    ) : (
+                      <Chip label="Declined" size="small" color="error" variant="outlined" sx={{ fontWeight: 600, fontSize: "0.8125rem", flexShrink: 0 }} />
+                    )}
+                  </Stack>
+                </Stack>
+
+                {jr.message && (
+                  <Typography variant="body2" sx={{ ml: 7.5, mb: 1, fontSize: "0.8125rem", fontStyle: "italic", color: "text.secondary", lineHeight: 1.5 }}>
+                    &ldquo;{jr.message}&rdquo;
+                  </Typography>
+                )}
+
+                {jr.status === "pending" && (
+                  <Box sx={{ ml: 7.5, mt: 1 }}>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      placeholder="Add a message (optional)"
+                      value={hostResponseMessage[jr.id] ?? ""}
+                      onChange={(e) => setHostResponseMessage((prev) => ({ ...prev, [jr.id]: e.target.value.slice(0, 500) }))}
+                      multiline
+                      maxRows={2}
+                      disabled={approveDeclineLoading === jr.id}
+                      sx={{ mb: 1, "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
+                    />
+                    <Stack direction="row" spacing={1}>
+                      <Button
+                        size="small"
+                        variant="contained"
+                        color="success"
+                        onClick={() => handleApproveRequest(jr.id)}
+                        disabled={approveDeclineLoading === jr.id}
+                        sx={{ textTransform: "none", fontWeight: 600 }}
+                      >
+                        {approveDeclineLoading === jr.id ? "Processing…" : "Approve"}
+                      </Button>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        color="error"
+                        onClick={() => handleDeclineRequest(jr.id)}
+                        disabled={approveDeclineLoading === jr.id}
+                        sx={{ textTransform: "none", fontWeight: 600 }}
+                      >
+                        Decline
+                      </Button>
+                    </Stack>
+                  </Box>
+                )}
+
+                {jr.hostMessage && jr.status !== "pending" && (
+                  <Typography variant="body2" sx={{ ml: 7.5, mt: 0.5, fontSize: "0.8125rem" }}>
+                    Your response: &ldquo;{jr.hostMessage}&rdquo;
+                  </Typography>
+                )}
+              </Box>
+            ))}
           </Stack>
         </AppCard>
       )}
@@ -1484,6 +1832,26 @@ export default function EventDetailClient() {
                     <Typography variant="body2" fontWeight={500}>Ask attendees to reconfirm before the plan</Typography>
                     <Typography variant="caption" color="text.secondary">
                       Attendees receive a reminder 24 hours before asking if they&apos;re still coming.
+                    </Typography>
+                  </Box>
+                }
+                sx={{ alignItems: "flex-start", mt: 0.5 }}
+              />
+            </Box>
+            <Box>
+              <FormControlLabel
+                control={
+                  <Switch
+                    size="small"
+                    checked={editRequireApproval}
+                    onChange={(e) => setEditRequireApproval(e.target.checked)}
+                  />
+                }
+                label={
+                  <Box>
+                    <Typography variant="body2" fontWeight={500}>Require approval before joining</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      People who are not directly invited will need to request to join.
                     </Typography>
                   </Box>
                 }

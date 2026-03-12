@@ -66,7 +66,8 @@ export default function CreateEventClient() {
 
   const [visibility, setVisibility] = useState<"public" | "chums_only" | "invite_only">("public");
   const [allowAltTimes, setAllowAltTimes] = useState(true);
-  const [requireReconfirmation, setRequireReconfirmation] = useState(false);
+  const [requireReconfirmation, setRequireReconfirmation] = useState(true);
+  const [requireApproval, setRequireApproval] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -223,6 +224,7 @@ export default function CreateEventClient() {
       visibility,
       allow_alt_times: allowAltTimes,
       require_reconfirmation: requireReconfirmation,
+      require_approval: requireApproval,
       status: "published",
     };
 
@@ -623,6 +625,18 @@ export default function CreateEventClient() {
           <Typography variant="caption" color="text.secondary" sx={{ mt: -1.5 }}>
             24 hours before the plan starts, attendees will receive a reminder asking whether they&apos;re still coming.
             This doesn&apos;t automatically cancel the plan or change anyone&apos;s RSVP.
+          </Typography>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={requireApproval}
+                onChange={(e) => setRequireApproval(e.target.checked)}
+              />
+            }
+            label="Require approval before joining"
+          />
+          <Typography variant="caption" color="text.secondary" sx={{ mt: -1.5 }}>
+            People who are not directly invited will need to request to join, and you&apos;ll approve or decline each request.
           </Typography>
         </Stack>
       </AppCard>

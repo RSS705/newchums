@@ -1,7 +1,7 @@
 # Technical Specifications
 
-Last Updated: March 11, 2026
-Version: 10.0
+Last Updated: March 12, 2026
+Version: 11.0
 
 This document defines the authoritative technical architecture of NewChums.
 It describes **what exists today** and the structural commitments we are making.
@@ -333,6 +333,7 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 | `newchums.event_alt_times` | Alternate date/time suggestions from attendees |
 | `newchums.event_chat_messages` | Per-plan chat messages — id, event_id, user_id, body, created_at. Indexed on `(event_id, created_at ASC)` |
 | `newchums.event_chat_reads` | Last-read tracking per user per plan — PK `(event_id, user_id)`, `last_read_at` timestamp |
+| `newchums.event_join_requests` | Join request records (migration 030) — id, event_id, user_id, status (pending/approved/declined), message, host_message, decided_at, created_at. Unique partial index on `(event_id, user_id) WHERE status = 'pending'` prevents duplicate active requests. |
 
 **Key fields on `events`:**
 - `visibility`: `invite_only` | `chums_only` | `public`
@@ -342,16 +343,17 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 - `interest_id`: FK to `interests` table (hobbies)
 - `require_reconfirmation`: boolean (migration 028) — when true, attendees will receive a 24-hour reminder to reconfirm attendance; does not auto-cancel or change RSVPs; reminder email logic is future work
 - `locked_at`: timestamptz nullable (migration 029) — when set, the plan is locked and no new participants can join; existing participants and host retain access
+- `require_approval`: boolean (migration 030) — when true, non-invited users must submit a join request that the host approves or declines before being added to the plan
 
 **API endpoints (auth required):**
 
 | Route | Description |
 |-------|-------------|
-| `POST /events` | Create event. Validates title, starts_at, location_type, visibility. Accepts `invitees[]` array of `{ user_id?, email? }` and `require_reconfirmation` boolean. Published events send invite notifications and emails. |
+| `POST /events` | Create event. Validates title, starts_at, location_type, visibility. Accepts `invitees[]` array of `{ user_id?, email? }`, `require_reconfirmation` and `require_approval` booleans. Published events send invite notifications and emails. |
 | `GET /events/mine?filter=upcoming\|past` | List events the user hosts, is invited to, or has RSVP'd. Includes going/maybe counts, host info, RSVP status, `has_unread_chat` flag. Host name uses `@username` priority. |
-| `GET /events/:id` | Event detail with RSVP list and alternate time suggestions. Includes `requireReconfirmation`, `lockedAt`. RSVP entries include `handle` for attendee profile links. Visibility enforcement: invite_only requires invite/RSVP, chums_only requires chum relationship or invite. |
-| `PATCH /events/:id` | Edit event (host only). Accepts: `title`, `description`, `starts_at`, `max_seats`, `visibility`, `require_reconfirmation`. Returns the updated event. |
-| `POST /events/:id/rsvp` | RSVP to an event — `{ status: "going"\|"maybe"\|"cant_make_it", note? }`. Capacity enforcement for going status. Locked plans reject new RSVPs (`EVENT_LOCKED` error) but allow existing participants to change status. Notifies host via in-app notification and email. |
+| `GET /events/:id` | Event detail with RSVP list, alternate time suggestions, and join requests. Includes `requireReconfirmation`, `lockedAt`, `requireApproval`, `isInvited`, `hasRsvp`. Join requests: full list for host, own request only for non-hosts. RSVP entries include `handle` for attendee profile links. Visibility enforcement: invite_only requires invite/RSVP, chums_only requires chum relationship or invite. |
+| `PATCH /events/:id` | Edit event (host only). Accepts: `title`, `description`, `starts_at`, `max_seats`, `visibility`, `require_reconfirmation`, `require_approval`. Returns the updated event. |
+| `POST /events/:id/rsvp` | RSVP to an event — `{ status: "going"\|"maybe"\|"cant_make_it", note? }`. Capacity enforcement for going status. Locked plans reject new RSVPs (`EVENT_LOCKED` error) but allow existing participants to change status. Plans with `require_approval` reject non-invited users who have no existing RSVP (`APPROVAL_REQUIRED` error). Notifies host via in-app notification and email. |
 | `POST /events/:id/alt-time` | Suggest alternate time — `{ suggested_at, note? }`. Only if event.allow_alt_times. Notifies host. |
 | `POST /events/:id/cancel` | Cancel event (host only). Notifies all attendees via in-app notification and email. |
 | `POST /events/:id/invite` | Add invitees to published event (host only). Sends notifications and invite emails. |
@@ -361,6 +363,9 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 | `POST /events/:id/chat/read` | Mark chat as read. Upserts `last_read_at` in `event_chat_reads`. |
 | `GET /events/:id/chat/ws` | WebSocket upgrade endpoint. Authenticates via `?token=` query param (JWT), verifies chat access, then forwards to the ChatRoom Durable Object. Returns 101 on success. |
 | `POST /events/:id/lock` | Toggle plan lock (host only). Sets or clears `locked_at` on the event. Returns updated `lockedAt`. |
+| `POST /events/:id/join-request` | Submit a join request (requires `require_approval` to be on). Body: `{ message? }`. Validates not-host, not-invited, not-already-RSVP'd, no duplicate pending request. Notifies host via in-app notification and email (template 43906440). |
+| `POST /events/:id/join-request/:requestId/approve` | Approve a join request (host only). Body: `{ message? }`. Checks seat capacity. Marks request approved, adds user as Going RSVP. Notifies requester via in-app notification and email (template 43906609). |
+| `POST /events/:id/join-request/:requestId/decline` | Decline a join request (host only). Body: `{ message? }`. Marks request declined. Notifies requester via in-app notification and email (template 43906703). |
 
 **Important: Hono route ordering** — `GET /events/explore` must be registered **before** `GET /events/:id` in the route table. Otherwise, Hono interprets "explore" as a UUID `:id`, resulting in a database error.
 
@@ -405,7 +410,20 @@ The host can lock a plan to prevent new participants from joining. This stabiliz
 - UI shows a "Locked" chip in the header and chat section; RSVP buttons are disabled for non-participants with an explanatory message.
 - Explanatory text below the lock button helps the host understand the feature.
 
-**In-app notification types created:** `event_invite`, `event_rsvp`, `event_alt_time`, `event_canceled` (see In-app notifications section above).
+**Request to join (host approval required):**
+
+Hosts can enable `require_approval` on a plan, requiring non-invited users to submit a join request before being added. Invited users bypass this and can RSVP normally.
+
+- `event_join_requests` table tracks each request with status (`pending`, `approved`, `declined`), requester message, host response message, and timestamps.
+- Unique partial index `(event_id, user_id) WHERE status = 'pending'` prevents duplicate active requests.
+- On approval, the requester is automatically added to the plan as Going (subject to seat capacity).
+- Three Postmark email templates: request submitted (to host, template 43906440), approved (to requester, template 43906609), declined (to requester, template 43906703).
+- In-app notification types: `join_request` (to host), `join_request_approved` (to requester), `join_request_declined` (to requester).
+- UI: plan details shows "Request to join" CTA with optional message for non-invited users; shows request status (pending/approved/declined) after submission; host sees a "Join requests" review section with approve/decline actions and optional response message.
+- Plan header shows an "Approval required" badge when enabled.
+- Setting available in both create and edit plan forms.
+
+**In-app notification types created:** `event_invite`, `event_rsvp`, `event_alt_time`, `event_canceled`, `join_request`, `join_request_approved`, `join_request_declined` (see In-app notifications section above).
 
 **Email scaffolding (noop if template ID not configured):**
 
@@ -572,6 +590,8 @@ Core tables include:
 - `newchums.event_chat_messages` (migration 029) — per-plan chat messages; columns: `id` (UUID PK), `event_id` (FK), `user_id` (FK), `body` (TEXT NOT NULL), `created_at`; indexed on `(event_id, created_at ASC)`
 - `newchums.event_chat_reads` (migration 029) — last-read tracking; columns: `event_id`, `user_id`, `last_read_at`; PK `(event_id, user_id)`
 - `newchums.events.locked_at` (migration 029) — `TIMESTAMPTZ NULL` on `events`; when set, prevents new participants from joining; existing participants and host retain access
+- `newchums.events.require_approval` (migration 030) — `BOOLEAN NOT NULL DEFAULT FALSE`; when true, non-invited users must request to join and be approved by the host
+- `newchums.event_join_requests` (migration 030) — join request records; columns: `id` (UUID PK), `event_id` (FK), `user_id` (FK), `status` (pending/approved/declined), `message` (TEXT NULL), `host_message` (TEXT NULL), `decided_at` (TIMESTAMPTZ NULL), `created_at`; unique partial index on `(event_id, user_id) WHERE status = 'pending'`
 
 PostGIS is available for geo queries.
 
@@ -636,6 +656,6 @@ cd web && npm run build
 - Web worker name suffix mismatch (`newchums-web-dev` is production).
 - Schema normalization/cleanup will be required before broader public launch.
 - Event email templates not yet created in Postmark (sends noop safely).
-- Account deletion (`DELETE /account`) does not yet cascade to events, event_rsvps, event_invites, event_alt_times, event_chat_messages, or event_chat_reads — must be updated when those tables accumulate production data.
+- Account deletion (`DELETE /account`) does not yet cascade to events, event_rsvps, event_invites, event_alt_times, event_chat_messages, event_chat_reads, or event_join_requests — must be updated when those tables accumulate production data.
 - Attendance reconfirmation (`require_reconfirmation`) is stored and surfaced in UI, but the 24-hour reminder email and cron/queue trigger are not yet implemented. When ready, wire a Cloudflare Cron Trigger (or Queue) to query events starting within 24 hours where `require_reconfirmation = true` and send `POSTMARK_TEMPLATE_EVENT_REMINDER` to all "going" attendees.
 - `interest_id` on `events` is a legacy FK; `event_interests` is the canonical many-to-many source of truth. The legacy column should be dropped in a future migration once all queries are migrated.

@@ -58,6 +58,16 @@ function notificationText(n: AppNotification): {
   switch (n.type) {
     case "chum_added_you":
       return { actorLabel, actorHref, body: " added you to their Chums list. 🎉" };
+    case "event_rsvp":
+      return { actorLabel, actorHref, body: ` responded to your plan${n.metadata?.eventTitle ? ` "${n.metadata.eventTitle}"` : ""}.` };
+    case "event_invite":
+      return { actorLabel, actorHref, body: ` invited you to${n.metadata?.eventTitle ? ` "${n.metadata.eventTitle}"` : " a plan"}.` };
+    case "join_request":
+      return { actorLabel, actorHref, body: ` requested to join${n.metadata?.eventTitle ? ` "${n.metadata.eventTitle}"` : " your plan"}.` };
+    case "join_request_approved":
+      return { actorLabel, actorHref, body: ` approved your request to join${n.metadata?.eventTitle ? ` "${n.metadata.eventTitle}"` : " their plan"}!` };
+    case "join_request_declined":
+      return { actorLabel, actorHref, body: ` declined your request to join${n.metadata?.eventTitle ? ` "${n.metadata.eventTitle}"` : " their plan"}.` };
     default:
       return { actorLabel, actorHref, body: " did something." };
   }
