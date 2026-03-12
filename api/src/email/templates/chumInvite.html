@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
-  <title>Someone wants to join your plan</title>
+  <title>You've received an invite to join NewChums</title>
   <!--[if mso]>
   <noscript>
     <xml>
@@ -19,12 +19,10 @@
   </style>
 </head>
 <body style="margin: 0; padding: 0; background-color: #F9FAFB; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%;">
-  <!-- Wrapper -->
   <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color: #F9FAFB;">
     <tr>
       <td align="center" style="padding: 40px 16px 32px 16px;">
 
-        <!-- Email container -->
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="560" style="max-width: 560px; width: 100%; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.06);">
 
           <!-- Header band -->
@@ -54,58 +52,41 @@
           <!-- Body -->
           <tr>
             <td style="padding: 32px 32px 12px 32px;">
-              <!-- Greeting -->
               <p style="margin: 0 0 6px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 22px; font-weight: 700; color: #1F2937; line-height: 1.3;">
-                New join request
+                You've been invited!
               </p>
               <p style="margin: 0 0 24px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 15px; color: #4B5563; line-height: 1.55;">
-                Hey {{hostName}}, someone wants to join your plan.
+                {{inviterName}} has invited you to join NewChums, a place to organize real-world gatherings around the hobbies and interests you love.
               </p>
 
-              <!-- Plan card -->
+              <!-- Highlight card -->
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 24px; border: 1px solid #E5E7EB; border-radius: 12px; overflow: hidden;">
-                <!-- Orange top accent -->
                 <tr>
                   <td style="background-color: #E65B13; height: 4px; font-size: 0; line-height: 0;">&nbsp;</td>
                 </tr>
                 <tr>
                   <td style="padding: 20px 24px;">
-                    <p style="margin: 0 0 4px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 11px; font-weight: 600; color: #E65B13; text-transform: uppercase; letter-spacing: 0.8px;">
-                      Plan
+                    <p style="margin: 0 0 12px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 15px; font-weight: 600; color: #1F2937; line-height: 1.45;">
+                      With NewChums you can:
                     </p>
-                    <p style="margin: 0 0 16px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 18px; font-weight: 700; color: #1F2937; line-height: 1.35;">
-                      {{eventTitle}}
-                    </p>
-
-                    <!-- Requester row -->
-                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color: #F9FAFB; border-radius: 8px;">
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 14px; color: #4B5563; line-height: 1.55;">
                       <tr>
-                        <td style="padding: 14px 16px;">
-                          <p style="margin: 0 0 2px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 11px; font-weight: 600; color: #4B5563; text-transform: uppercase; letter-spacing: 0.5px;">
-                            Requested by
-                          </p>
-                          <p style="margin: 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 16px; font-weight: 600; color: #1F2937;">
-                            {{requesterName}}
-                          </p>
-                        </td>
+                        <td style="padding: 4px 0; vertical-align: top; width: 24px; color: #E65B13; font-weight: 600;">&#10003;</td>
+                        <td style="padding: 4px 0;">Start plans around your favourite hobbies</td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 4px 0; vertical-align: top; width: 24px; color: #E65B13; font-weight: 600;">&#10003;</td>
+                        <td style="padding: 4px 0;">Discover and join plans happening near you</td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 4px 0; vertical-align: top; width: 24px; color: #E65B13; font-weight: 600;">&#10003;</td>
+                        <td style="padding: 4px 0;">Coordinate details with a built-in plan chat</td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 4px 0; vertical-align: top; width: 24px; color: #E65B13; font-weight: 600;">&#10003;</td>
+                        <td style="padding: 4px 0;">Meet new people who share your interests</td>
                       </tr>
                     </table>
-
-                    <!-- Requester message (conditional) -->
-                    {{#requestMessage}}
-                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top: 14px;">
-                      <tr>
-                        <td style="padding: 14px 16px; background-color: #FFF7ED; border-left: 3px solid #E65B13; border-radius: 0 8px 8px 0;">
-                          <p style="margin: 0 0 4px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 11px; font-weight: 600; color: #4B5563; text-transform: uppercase; letter-spacing: 0.5px;">
-                            Their message
-                          </p>
-                          <p style="margin: 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 14px; color: #1F2937; line-height: 1.55; font-style: italic;">
-                            &ldquo;{{.}}&rdquo;
-                          </p>
-                        </td>
-                      </tr>
-                    </table>
-                    {{/requestMessage}}
                   </td>
                 </tr>
               </table>
@@ -115,28 +96,26 @@
                 <tr>
                   <td align="center">
                     <!--[if mso]>
-                    <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{eventUrl}}" style="height:48px;v-text-anchor:middle;width:280px;" arcsize="17%" strokecolor="#C44D10" fillcolor="#E65B13">
+                    <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{inviteUrl}}" style="height:48px;v-text-anchor:middle;width:280px;" arcsize="17%" strokecolor="#C44D10" fillcolor="#E65B13">
                       <w:anchorlock/>
-                      <center style="color:#ffffff;font-family:'Segoe UI',sans-serif;font-size:15px;font-weight:bold;">Review request</center>
+                      <center style="color:#ffffff;font-family:'Segoe UI',sans-serif;font-size:15px;font-weight:bold;">Accept invite</center>
                     </v:roundrect>
                     <![endif]-->
                     <!--[if !mso]><!-->
-                    <a href="{{eventUrl}}" style="display: inline-block; background-color: #E65B13; color: #ffffff; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 15px; font-weight: 700; text-decoration: none; padding: 14px 40px; border-radius: 8px; line-height: 1; text-align: center;">
-                      Review request
+                    <a href="{{inviteUrl}}" style="display: inline-block; background-color: #E65B13; color: #ffffff; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 15px; font-weight: 700; text-decoration: none; padding: 14px 40px; border-radius: 8px; line-height: 1; text-align: center;">
+                      Accept invite
                     </a>
                     <!--<![endif]-->
                   </td>
                 </tr>
               </table>
 
-              <!-- Helper text -->
               <p style="margin: 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 13px; color: #9CA3AF; line-height: 1.55; text-align: center;">
-                You can approve or decline this request from the plan details page.
+                Click the button above to get started. It only takes a minute.
               </p>
             </td>
           </tr>
 
-          <!-- Spacer -->
           <tr><td style="height: 12px;"></td></tr>
 
           <!-- Footer -->
@@ -145,7 +124,7 @@
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                 <tr>
                   <td style="font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 12px; color: #9CA3AF; line-height: 1.5;">
-                    You&rsquo;re receiving this because you host a plan on <a href="https://newchums.com" style="color: #E65B13; text-decoration: none;">NewChums</a>.
+                    You received this because {{inviterName}} invited you to <a href="https://newchums.com" style="color: #E65B13; text-decoration: none;">NewChums</a>.
                   </td>
                 </tr>
                 <tr>
@@ -158,11 +137,9 @@
           </tr>
 
         </table>
-        <!-- /Email container -->
 
       </td>
     </tr>
   </table>
-  <!-- /Wrapper -->
 </body>
 </html>

@@ -3176,6 +3176,29 @@ app.post("/admin/users/:id/unsuspend", async (c) => {
 // ---- Chums ----
 
 /** Shared helper: build the avatar URL string used in chum responses. */
+/** Format an ISO date string into a human-readable form for email templates.
+ *  Uses the event's stored IANA timezone (e.g. "America/New_York") so the
+ *  time matches what the host entered and what the plan details page shows. */
+function formatEventDate(iso: string, timezone = "UTC"): string {
+  try {
+    const d = new Date(iso);
+    // Validate the timezone; fall back to UTC if unsupported
+    let tz = timezone;
+    try { Intl.DateTimeFormat(undefined, { timeZone: tz }); } catch { tz = "UTC"; }
+    return d.toLocaleString("en-US", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone: tz,
+    });
+  } catch {
+    return iso;
+  }
+}
+
 function buildAvatarUrl(
   userId: string,
   avatarKey: string | null,
@@ -3932,6 +3955,7 @@ app.post("/events", async (c) => {
   const requireReconfirmation = body.require_reconfirmation === true;
   const requireApproval = body.require_approval === true;
   const status = body.status === "draft" ? "draft" : "published";
+  const timezone = body.timezone && typeof body.timezone === "string" ? body.timezone.trim().slice(0, 64) : "UTC";
 
   const locationName = body.location_name ? String(body.location_name).trim().slice(0, 200) : null;
   const locationAddress = body.location_address ? String(body.location_address).trim().slice(0, 500) : null;
@@ -4033,12 +4057,12 @@ app.post("/events", async (c) => {
         host_user_id, title, description, interest_id, starts_at,
         location_type, location_name, location_address, location_place_id, location_lat, location_lng,
         location_visibility, location_area, online_link,
-        max_seats, visibility, status, allow_alt_times, require_reconfirmation, require_approval
+        max_seats, visibility, status, allow_alt_times, require_reconfirmation, require_approval, timezone
       ) VALUES (
         ${userId}, ${title}, ${description}, ${interestId}, ${startsDate.toISOString()},
         ${locationType}, ${locationName}, ${locationAddress}, ${locationPlaceId}, ${locationLat}, ${locationLng},
         ${locationVisibility}, ${locationArea}, ${onlineLink},
-        ${maxSeats}, ${visibility}, ${status}, ${allowAltTimes}, ${requireReconfirmation}, ${requireApproval}
+        ${maxSeats}, ${visibility}, ${status}, ${allowAltTimes}, ${requireReconfirmation}, ${requireApproval}, ${timezone}
       )
       RETURNING id, created_at
     `) as { id: string; created_at: string }[];
@@ -4087,7 +4111,7 @@ app.post("/events", async (c) => {
                   recipientName: invUser[0].name?.trim() || "there",
                   hostName,
                   eventTitle: title,
-                  eventDate: startsDate.toISOString(),
+                  eventDate: formatEventDate(startsDate.toISOString(), timezone),
                   eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
                 });
               } catch { /* noop if template missing */ }
@@ -4101,7 +4125,7 @@ app.post("/events", async (c) => {
                 recipientName: "there",
                 hostName,
                 eventTitle: title,
-                eventDate: startsDate.toISOString(),
+                eventDate: formatEventDate(startsDate.toISOString(), timezone),
                 eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
               });
             } catch { /* noop if template missing */ }
@@ -4796,6 +4820,7 @@ app.patch("/events/:id", async (c) => {
 
     const patchRequireReconfirmation = body.require_reconfirmation === true;
     const patchRequireApproval = body.require_approval === true;
+    const patchTimezone = body.timezone && typeof body.timezone === "string" ? body.timezone.trim().slice(0, 64) : null;
 
     // Resolve and validate hobby tags (required, mirrors POST /events logic)
     const patchInterestItems = Array.isArray(body.interest_items)
@@ -4848,6 +4873,7 @@ app.patch("/events/:id", async (c) => {
           visibility             = ${visibility},
           require_reconfirmation = ${patchRequireReconfirmation},
           require_approval       = ${patchRequireApproval},
+          timezone               = COALESCE(${patchTimezone}, timezone),
           updated_at             = NOW()
       WHERE id = ${eventId}
     `;
@@ -4928,7 +4954,7 @@ app.post("/events/:id/invite", async (c) => {
   try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
 
   try {
-    const ev = (await sql`SELECT id, host_user_id, title, starts_at, status FROM newchums.events WHERE id = ${eventId}`) as { id: string; host_user_id: string; title: string; starts_at: string; status: string }[];
+    const ev = (await sql`SELECT id, host_user_id, title, starts_at, status, timezone FROM newchums.events WHERE id = ${eventId}`) as { id: string; host_user_id: string; title: string; starts_at: string; status: string; timezone: string }[];
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     if (ev[0].host_user_id !== userId) return c.json({ ok: false, error: "FORBIDDEN", message: "Only the host can invite" }, 403);
 
@@ -4952,20 +4978,33 @@ app.post("/events/:id/invite", async (c) => {
 
       if (result.length > 0) {
         added++;
-        if (ev[0].status === "published" && invUserId) {
-          await sql`
-            INSERT INTO newchums.notifications (user_id, type, actor_user_id, entity_id, metadata)
-            VALUES (${invUserId}, 'event_invite', ${userId}, ${eventId}, ${JSON.stringify({ eventTitle: ev[0].title })})
-          `;
-          const invUser = (await sql`SELECT email, name FROM newchums.users WHERE id = ${invUserId}`) as { email: string; name: string | null }[];
-          if (invUser.length > 0) {
+        if (ev[0].status === "published") {
+          if (invUserId) {
+            await sql`
+              INSERT INTO newchums.notifications (user_id, type, actor_user_id, entity_id, metadata)
+              VALUES (${invUserId}, 'event_invite', ${userId}, ${eventId}, ${JSON.stringify({ eventTitle: ev[0].title })})
+            `;
+            const invUser = (await sql`SELECT email, name FROM newchums.users WHERE id = ${invUserId}`) as { email: string; name: string | null }[];
+            if (invUser.length > 0) {
+              try {
+                await sendEventInviteEmail(c.env, {
+                  to: invUser[0].email,
+                  recipientName: invUser[0].name?.trim() || "there",
+                  hostName,
+                  eventTitle: ev[0].title,
+                  eventDate: formatEventDate(ev[0].starts_at, ev[0].timezone),
+                  eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
+                });
+              } catch { /* noop */ }
+            }
+          } else if (invEmail) {
             try {
               await sendEventInviteEmail(c.env, {
-                to: invUser[0].email,
-                recipientName: invUser[0].name?.trim() || "there",
+                to: invEmail,
+                recipientName: "there",
                 hostName,
                 eventTitle: ev[0].title,
-                eventDate: ev[0].starts_at,
+                eventDate: formatEventDate(ev[0].starts_at, ev[0].timezone),
                 eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
               });
             } catch { /* noop */ }

@@ -17,6 +17,7 @@ import DialogTitle from "@mui/material/DialogTitle";
 import Divider from "@mui/material/Divider";
 import FormControl from "@mui/material/FormControl";
 import FormControlLabel from "@mui/material/FormControlLabel";
+import InputAdornment from "@mui/material/InputAdornment";
 import Switch from "@mui/material/Switch";
 import Radio from "@mui/material/Radio";
 import RadioGroup from "@mui/material/RadioGroup";
@@ -34,7 +35,9 @@ import LinkRoundedIcon from "@mui/icons-material/LinkRounded";
 import LockOpenRoundedIcon from "@mui/icons-material/LockOpenRounded";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import LockRoundedIcon from "@mui/icons-material/LockRounded";
+import MailOutlineRoundedIcon from "@mui/icons-material/MailOutlineRounded";
 import NotificationsRoundedIcon from "@mui/icons-material/NotificationsRounded";
+import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import SendRoundedIcon from "@mui/icons-material/SendRounded";
 import PeopleOutlineRoundedIcon from "@mui/icons-material/PeopleOutlineRounded";
 import PersonAddRoundedIcon from "@mui/icons-material/PersonAddRounded";
@@ -43,7 +46,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import UserAvatar from "@/components/common/UserAvatar";
 import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
-import { apiFetch, getAuthToken, getAvatarBaseUrl, getChatWebSocketUrl, getMediaApiBaseUrl } from "@/lib/apiClient";
+import { apiFetch, clearAuthTokenCache, getAuthToken, getAvatarBaseUrl, getChatWebSocketUrl, getMediaApiBaseUrl } from "@/lib/apiClient";
 import { nameToSlug } from "@/lib/interestUtils";
 
 type HobbyInfo = { name: string; slug: string };
@@ -85,7 +88,7 @@ type EventDetail = {
 type RsvpEntry = { userId: string; name: string; handle: string | null; status: string; note: string | null; avatarUrl?: string | null };
 type AltTimeEntry = { userId: string; name: string; suggestedAt: string; note: string | null };
 type InviteEntry = { userId: string | null; email: string | null; name: string };
-type SearchResult = { userId: string; displayName: string; handle: string | null };
+type SearchResult = { userId: string; displayName: string; handle: string | null; avatarUrl?: string | null };
 type ChatMessage = {
   id: string;
   body: string;
@@ -167,7 +170,9 @@ export default function EventDetailClient() {
   const [inviteSearch, setInviteSearch] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
   const [inviteSubmitting, setInviteSubmitting] = useState(false);
+  const [invitingUserId, setInvitingUserId] = useState<string | null>(null);
 
   // Cancel confirmation dialog
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
@@ -264,17 +269,23 @@ export default function EventDetailClient() {
   useEffect(() => {
     if (!showInviteForm) return;
     const q = inviteSearch.trim();
-    if (q.length < 2) { setSearchResults([]); return; }
+    if (q.length < 2) {
+      setSearchResults([]);
+      setHasSearched(false);
+      return;
+    }
     const timer = setTimeout(async () => {
       setSearching(true);
+      setHasSearched(false);
       try {
         const res = await apiFetch(`/chums/search?q=${encodeURIComponent(q)}`, { auth: true });
         if (res.ok) {
-          const data = (await res.json()) as { ok: boolean; results?: SearchResult[] };
-          setSearchResults(data.results ?? []);
+          const data = (await res.json()) as { ok: boolean; users?: SearchResult[] };
+          setSearchResults(data.users ?? []);
         }
       } catch { /* ignore */ }
       setSearching(false);
+      setHasSearched(true);
     }, 300);
     return () => clearTimeout(timer);
   }, [inviteSearch, showInviteForm]);
@@ -296,7 +307,10 @@ export default function EventDetailClient() {
 
   // --- Chat helpers ---
   const [chatAccessible, setChatAccessible] = useState<boolean | null>(null);
-  const chatEligible = !!event && event.status !== "canceled";
+  const chatEligible =
+    !!event &&
+    event.status !== "canceled" &&
+    (event.isHost || event.hasRsvp);
   const wsRef = useRef<WebSocket | null>(null);
 
   const markChatRead = useCallback(async () => {
@@ -405,8 +419,30 @@ export default function EventDetailClient() {
       if (!disposed) connect();
     });
 
+    // When the user returns to a tab that was idle, the WS may have disconnected and the
+    // backoff timer may be sitting at its max delay. Skip the wait, clear the stale token
+    // cache, and reconnect immediately so the chat works right away.
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible" || disposed) return;
+      // Cancel any pending backoff timer so we don't double-connect
+      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+      // Close any half-open socket before reconnecting
+      if (ws && ws.readyState !== WebSocket.CLOSED) {
+        ws.onclose = null;
+        ws.close();
+        ws = null;
+        wsRef.current = null;
+      }
+      // Reset backoff and force a fresh token on next connect()
+      reconnectDelay = WS_RECONNECT_BASE;
+      clearAuthTokenCache();
+      connect();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
     return () => {
       disposed = true;
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       if (reconnectTimer) clearTimeout(reconnectTimer);
       stopFallbackPolling();
       if (ws) {
@@ -477,6 +513,7 @@ export default function EventDetailClient() {
 
   const handleInvite = async (userId?: string, email?: string) => {
     setInviteSubmitting(true);
+    setInvitingUserId(userId ?? null);
     try {
       const res = await apiFetch(`/events/${eventId}/invite`, {
         auth: true,
@@ -497,6 +534,7 @@ export default function EventDetailClient() {
       toast.error("Network error");
     }
     setInviteSubmitting(false);
+    setInvitingUserId(null);
   };
 
   const handleRsvp = async (status: string) => {
@@ -695,6 +733,7 @@ export default function EventDetailClient() {
           visibility: editVisibility,
           require_reconfirmation: editRequireReconfirmation,
           require_approval: editRequireApproval,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         }),
       });
       const data = (await res.json()) as { ok: boolean; message?: string };
@@ -1134,62 +1173,130 @@ export default function EventDetailClient() {
                 <Typography variant="body2" color="text.secondary">
                   Search by name, @handle, or email. Invite emails are sent immediately.
                 </Typography>
-                <Box sx={{ position: "relative" }}>
-                  <TextField
-                    fullWidth
-                    size="medium"
-                    placeholder="Name, @handle, or email address"
-                    value={inviteSearch}
-                    onChange={(e) => setInviteSearch(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && EMAIL_RE.test(inviteSearch.trim())) {
-                        e.preventDefault();
-                        handleInvite(undefined, inviteSearch.trim().toLowerCase());
-                      }
-                    }}
-                    disabled={inviteSubmitting}
-                  />
-                  {searching && (
-                    <CircularProgress size={20} sx={{ position: "absolute", right: 12, top: 18 }} />
+                <TextField
+                  fullWidth
+                  size="medium"
+                  placeholder="Search by name, @handle, or email…"
+                  value={inviteSearch}
+                  onChange={(e) => setInviteSearch(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && EMAIL_RE.test(inviteSearch.trim())) {
+                      e.preventDefault();
+                      handleInvite(undefined, inviteSearch.trim().toLowerCase());
+                    }
+                  }}
+                  disabled={inviteSubmitting}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        {searching
+                          ? <CircularProgress size={18} />
+                          : EMAIL_RE.test(inviteSearch.trim())
+                            ? <MailOutlineRoundedIcon sx={{ color: "text.secondary" }} />
+                            : <SearchRoundedIcon sx={{ color: "text.secondary" }} />}
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+
+                {/* No results */}
+                {hasSearched &&
+                  searchResults.length === 0 &&
+                  !searching &&
+                  !EMAIL_RE.test(inviteSearch.trim()) && (
+                    <Typography variant="body2" color="text.secondary" sx={{ py: 1 }}>
+                      No results found for &ldquo;{inviteSearch.trim()}&rdquo;.
+                    </Typography>
                   )}
-                </Box>
 
                 {/* Search results */}
                 {searchResults.length > 0 && (
-                  <Stack
-                    spacing={0}
-                    sx={{
-                      border: "1px solid",
-                      borderColor: "divider",
-                      borderRadius: 1,
-                      overflow: "hidden",
-                    }}
-                  >
-                    {searchResults.map((r) => (
-                      <Box
-                        key={r.userId}
-                        sx={{
-                          px: 2, py: 1.25,
-                          cursor: "pointer",
-                          "&:hover": { bgcolor: "grey.50" },
-                          borderBottom: "1px solid",
-                          borderColor: "divider",
-                          "&:last-child": { borderBottom: "none" },
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                        }}
-                        onClick={() => handleInvite(r.userId)}
-                      >
-                        <Box>
-                          <Typography variant="body2" fontWeight={500}>{r.displayName}</Typography>
-                          {r.handle && (
-                            <Typography variant="caption" color="text.secondary">{r.handle}</Typography>
-                          )}
+                  <Stack divider={<Divider />} sx={{ mt: 0.5 }}>
+                    {searchResults.map((r) => {
+                      const handleSlug = r.handle?.replace(/^@/, "") ?? null;
+                      const profileHref = handleSlug ? `/u/${handleSlug}` : null;
+                      const avatarSrc = r.avatarUrl ? `${avatarBaseUrl}${r.avatarUrl}` : null;
+                      const isInviting = invitingUserId === r.userId;
+                      return (
+                        <Box
+                          key={r.userId}
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: { xs: 1.5, sm: 2 },
+                            py: 1.5,
+                            borderRadius: 1,
+                            px: 1,
+                            mx: -1,
+                          }}
+                        >
+                          <UserAvatar
+                            src={avatarSrc}
+                            name={r.displayName}
+                            username={r.handle}
+                            size={44}
+                            sx={{ flexShrink: 0 }}
+                          />
+                          <Box sx={{ flex: 1, minWidth: 0 }}>
+                            {profileHref ? (
+                              <Typography
+                                component={Link}
+                                href={profileHref}
+                                fontWeight={600}
+                                sx={{
+                                  fontSize: "0.9375rem",
+                                  color: "text.primary",
+                                  textDecoration: "none",
+                                  "&:hover": { textDecoration: "underline" },
+                                  display: "block",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {r.displayName}
+                              </Typography>
+                            ) : (
+                              <Typography
+                                fontWeight={600}
+                                sx={{
+                                  fontSize: "0.9375rem",
+                                  display: "block",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {r.displayName}
+                              </Typography>
+                            )}
+                            {r.handle && (
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                                sx={{
+                                  display: "block",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {r.handle}
+                              </Typography>
+                            )}
+                          </Box>
+                          <Button
+                            variant="contained"
+                            size="small"
+                            disabled={inviteSubmitting}
+                            onClick={() => handleInvite(r.userId)}
+                            sx={{ flexShrink: 0, fontSize: "0.8125rem", whiteSpace: "nowrap" }}
+                          >
+                            {isInviting ? <CircularProgress size={14} color="inherit" sx={{ mx: 1 }} /> : "Send Invite"}
+                          </Button>
                         </Box>
-                        <PersonAddRoundedIcon sx={{ fontSize: 18, color: "primary.main" }} />
-                      </Box>
-                    ))}
+                      );
+                    })}
                   </Stack>
                 )}
 
@@ -1200,25 +1307,48 @@ export default function EventDetailClient() {
                   !searching && (
                     <Box
                       sx={{
-                        p: 2, borderRadius: 1,
-                        bgcolor: "primary.light",
-                        cursor: "pointer",
-                        "&:hover": { opacity: 0.85 },
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        flexWrap: "wrap",
+                        gap: 1.5,
+                        py: 1,
+                        px: 1.5,
+                        borderRadius: 2,
+                        bgcolor: "action.hover",
+                        cursor: inviteSubmitting ? "default" : "pointer",
+                        opacity: inviteSubmitting ? 0.7 : 1,
                       }}
-                      onClick={() => handleInvite(undefined, inviteSearch.trim().toLowerCase())}
+                      onClick={() => !inviteSubmitting && handleInvite(undefined, inviteSearch.trim().toLowerCase())}
                     >
-                      <Typography variant="body2" fontWeight={500}>
-                        Invite <strong>{inviteSearch.trim()}</strong> by email
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        They&apos;ll receive an invite email
-                      </Typography>
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography variant="body2" fontWeight={600} sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {inviteSearch.trim()}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Not on NewChums yet. Invite them to this plan by email.
+                        </Typography>
+                      </Box>
+                      <Button
+                        variant="contained"
+                        size="small"
+                        color="primary"
+                        disabled={inviteSubmitting}
+                        startIcon={inviteSubmitting ? <CircularProgress size={14} color="inherit" /> : <PersonAddRoundedIcon />}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleInvite(undefined, inviteSearch.trim().toLowerCase());
+                        }}
+                        sx={{ flexShrink: 0, fontSize: "0.8125rem", textTransform: "none" }}
+                      >
+                        Invite by email
+                      </Button>
                     </Box>
                   )}
 
                 <Button
                   size="small"
-                  onClick={() => { setShowInviteForm(false); setInviteSearch(""); setSearchResults([]); }}
+                  onClick={() => { setShowInviteForm(false); setInviteSearch(""); setSearchResults([]); setHasSearched(false); }}
                   sx={{ alignSelf: "flex-start", textTransform: "none" }}
                 >
                   Done inviting

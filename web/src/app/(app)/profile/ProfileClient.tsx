@@ -230,6 +230,19 @@ export default function ProfileClient() {
     fetchData();
   }, [fetchData]);
 
+  // Re-fetch profile data when the user returns to a previously idle tab.
+  // The tab may have been idle long enough for the auth token to expire, and
+  // the profile fields would otherwise remain blank until a manual page reload.
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        fetchData();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [fetchData]);
+
   useEffect(() => {
     loadGooglePlacesScript().catch(() => {});
   }, []);

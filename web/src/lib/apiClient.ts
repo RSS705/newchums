@@ -36,16 +36,38 @@ export const getAvatarBaseUrl = () => {
 };
 
 let cachedToken: string | null = null;
+/** Unix ms at which the cached token should be considered expired (1-min buffer baked in). */
+let cachedTokenExpiry = 0;
+
+/**
+ * Decode the `exp` claim from a JWT payload without verifying the signature.
+ * Returns the expiry as a Unix ms timestamp minus a 60-second safety buffer,
+ * so we proactively refresh before the server rejects it.
+ */
+function extractTokenExpiry(token: string): number {
+  try {
+    const b64 = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const payload = JSON.parse(atob(b64)) as { exp?: number };
+    return typeof payload.exp === "number" ? (payload.exp - 60) * 1000 : 0;
+  } catch {
+    return 0;
+  }
+}
 
 export async function getAuthToken(): Promise<string | null> {
   if (typeof window === "undefined") return null;
-  if (cachedToken) return cachedToken;
+  // Return cached token only if it has not yet reached its expiry (with buffer).
+  if (cachedToken && Date.now() < cachedTokenExpiry) return cachedToken;
+  // Cache is stale or empty — clear and fetch a fresh token.
+  cachedToken = null;
+  cachedTokenExpiry = 0;
   try {
     const res = await fetch("/api/auth/api-token", { credentials: "include" });
     if (!res.ok) return null;
     const data = await res.json();
     if (data.ok && typeof data.token === "string") {
       cachedToken = data.token;
+      cachedTokenExpiry = extractTokenExpiry(data.token);
       return cachedToken;
     }
     return null;
@@ -56,6 +78,7 @@ export async function getAuthToken(): Promise<string | null> {
 
 export function clearAuthTokenCache() {
   cachedToken = null;
+  cachedTokenExpiry = 0;
 }
 
 export type ApiFetchOptions = RequestInit & {
@@ -80,6 +103,10 @@ export function getChatWebSocketUrl(eventId: string, token: string): string {
  * @param path - e.g. "/auth/signup" or "/profile"
  * @param options - fetch options. Set auth: true for routes that require a Bearer token.
  *   Use baseUrl to call a different API (e.g. prod for media when sharing DB).
+ *
+ * For authenticated requests, automatically retries once on 401/403 after clearing the
+ * token cache and fetching a fresh token. This covers edge cases where the token expired
+ * between the cache check and the time the API worker validates it.
  */
 export async function apiFetch(
   path: string,
@@ -89,18 +116,35 @@ export async function apiFetch(
   const base = baseUrl ?? getApiBaseUrl();
   const url = `${base}${path.startsWith("/") ? path : `/${path}`}`;
 
-  const headers = new Headers(fetchOptions.headers);
-  if (auth) {
-    const token = await getAuthToken();
-    if (token) headers.set("Authorization", `Bearer ${token}`);
-  }
-  if (!headers.has("Content-Type") && fetchOptions.body) {
-    headers.set("Content-Type", "application/json");
-  }
+  const buildHeaders = (token?: string | null): Headers => {
+    const h = new Headers(fetchOptions.headers);
+    if (token) h.set("Authorization", `Bearer ${token}`);
+    if (!h.has("Content-Type") && fetchOptions.body) {
+      h.set("Content-Type", "application/json");
+    }
+    return h;
+  };
 
-  return fetch(url, {
+  const token = auth ? await getAuthToken() : null;
+  const res = await fetch(url, {
     ...fetchOptions,
-    headers,
+    headers: buildHeaders(token),
     credentials: "omit",
   });
+
+  // On 401/403 for authenticated requests, clear the cache and retry once with a fresh token.
+  // The expiry-aware cache above should prevent most occurrences, but this acts as a safety net.
+  if (auth && (res.status === 401 || res.status === 403)) {
+    clearAuthTokenCache();
+    const freshToken = await getAuthToken();
+    if (freshToken) {
+      return fetch(url, {
+        ...fetchOptions,
+        headers: buildHeaders(freshToken),
+        credentials: "omit",
+      });
+    }
+  }
+
+  return res;
 }

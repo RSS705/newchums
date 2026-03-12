@@ -225,6 +225,7 @@ export default function CreateEventClient() {
       allow_alt_times: allowAltTimes,
       require_reconfirmation: requireReconfirmation,
       require_approval: requireApproval,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       status: "published",
     };
 
@@ -542,7 +543,7 @@ export default function CreateEventClient() {
               value={maxSeats}
               onChange={(e) => setMaxSeats(e.target.value)}
               error={!!errors.maxSeats}
-              helperText={errors.maxSeats ?? "Optional, leave blank for unlimited"}
+              helperText={errors.maxSeats ?? "Include yourself in the count"}
               type="number"
               inputProps={{ min: 1, max: 500 }}
               sx={{ minWidth: { xs: "100%", sm: 260 } }}
