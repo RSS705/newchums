@@ -5742,7 +5742,7 @@ app.post("/events/:id/join-request", async (c) => {
           requesterName,
           eventTitle: event.title,
           requestMessage: message || "",
-          eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
+          eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}?context=host_review`,
         }).catch(() => {})
       );
     }
@@ -5780,6 +5780,8 @@ app.post("/events/:id/join-request/:requestId/approve", async (c) => {
       SELECT id, user_id, status FROM newchums.event_join_requests WHERE id = ${requestId} AND event_id = ${eventId}
     `) as { id: string; user_id: string; status: string }[];
     if (req.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    if (req[0].status === "withdrawn")
+      return c.json({ ok: false, error: "REQUEST_WITHDRAWN", message: "This request was withdrawn by the requester" }, 400);
     if (req[0].status !== "pending")
       return c.json({ ok: false, error: "ALREADY_DECIDED", message: `This request has already been ${req[0].status}` }, 400);
 
@@ -5823,7 +5825,7 @@ app.post("/events/:id/join-request/:requestId/approve", async (c) => {
           hostName,
           eventTitle: ev[0].title,
           hostMessage: hostMessage || "",
-          eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
+          eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}?context=request_approved`,
         }).catch(() => {})
       );
     }
@@ -5861,6 +5863,8 @@ app.post("/events/:id/join-request/:requestId/decline", async (c) => {
       SELECT id, user_id, status FROM newchums.event_join_requests WHERE id = ${requestId} AND event_id = ${eventId}
     `) as { id: string; user_id: string; status: string }[];
     if (req.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    if (req[0].status === "withdrawn")
+      return c.json({ ok: false, error: "REQUEST_WITHDRAWN", message: "This request was withdrawn by the requester" }, 400);
     if (req[0].status !== "pending")
       return c.json({ ok: false, error: "ALREADY_DECIDED", message: `This request has already been ${req[0].status}` }, 400);
 
@@ -5898,6 +5902,39 @@ app.post("/events/:id/join-request/:requestId/decline", async (c) => {
     return c.json({ ok: true });
   } catch (err) {
     console.error("[POST /events/:id/join-request/:requestId/decline]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /events/:id/join-request/:requestId/withdraw — withdraw own pending join request */
+app.post("/events/:id/join-request/:requestId/withdraw", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+  const eventId = c.req.param("id");
+  const requestId = c.req.param("requestId");
+
+  try {
+    const req = (await sql`
+      SELECT id, user_id, status FROM newchums.event_join_requests WHERE id = ${requestId} AND event_id = ${eventId}
+    `) as { id: string; user_id: string; status: string }[];
+    if (req.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    if (req[0].user_id !== userId) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+    if (req[0].status !== "pending")
+      return c.json({ ok: false, error: "NOT_PENDING", message: "Only pending requests can be withdrawn" }, 400);
+
+    await sql`
+      UPDATE newchums.event_join_requests
+      SET status = 'withdrawn', decided_at = NOW()
+      WHERE id = ${requestId}
+    `;
+
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[POST /events/:id/join-request/:requestId/withdraw]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });

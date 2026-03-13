@@ -233,10 +233,18 @@ export default function EventDetailClient() {
   // Lock state
   const [lockToggling, setLockToggling] = useState(false);
 
+  // Auth detection for logged-out user handling
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  useEffect(() => {
+    getAuthToken().then((t) => setIsAuthenticated(!!t));
+  }, []);
+
   // Join request state
   const [joinRequests, setJoinRequests] = useState<JoinRequest[]>([]);
   const [joinRequestMessage, setJoinRequestMessage] = useState("");
   const [joinRequestSubmitting, setJoinRequestSubmitting] = useState(false);
+  const [withdrawConfirmId, setWithdrawConfirmId] = useState<string | null>(null);
+  const [withdrawSubmitting, setWithdrawSubmitting] = useState(false);
   const [approveDeclineLoading, setApproveDeclineLoading] = useState<string | null>(null);
   const [hostResponseMessage, setHostResponseMessage] = useState<Record<string, string>>({});
 
@@ -306,19 +314,25 @@ export default function EventDetailClient() {
   // can re-RSVP and access invite-only events without auth.
   const inviteTokenRef = useRef<string | null>(null);
 
+  // Email link context hint (?context=host_review or ?context=request_approved)
+  const [emailContext, setEmailContext] = useState<string | null>(null);
+
   // Auto-RSVP from email link (?rsvp=going&invite_token=xxx)
   const pendingRsvpRef = useRef<string | null>(null);
   useEffect(() => {
     const rsvpParam = searchParams.get("rsvp");
     const inviteTokenParam = searchParams.get("invite_token");
+    const contextParam = searchParams.get("context");
     if (inviteTokenParam) inviteTokenRef.current = inviteTokenParam;
     if (rsvpParam && VALID_RSVP_PARAMS.includes(rsvpParam as typeof VALID_RSVP_PARAMS[number])) {
       pendingRsvpRef.current = rsvpParam;
     }
-    if (rsvpParam || inviteTokenParam) {
+    if (contextParam) setEmailContext(contextParam);
+    if (rsvpParam || inviteTokenParam || contextParam) {
       const url = new URL(window.location.href);
       url.searchParams.delete("rsvp");
       url.searchParams.delete("invite_token");
+      url.searchParams.delete("context");
       window.history.replaceState({}, "", url.pathname + url.search);
     }
   }, [searchParams]);
@@ -773,6 +787,28 @@ export default function EventDetailClient() {
       toast.error("Network error");
     }
     setJoinRequestSubmitting(false);
+  };
+
+  const handleWithdrawRequest = async (requestId: string) => {
+    setWithdrawSubmitting(true);
+    try {
+      const res = await apiFetch(`/events/${eventId}/join-request/${requestId}/withdraw`, {
+        auth: true,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const data = (await res.json()) as { ok: boolean; error?: string; message?: string };
+      if (data.ok) {
+        toast.success("Request withdrawn");
+        setWithdrawConfirmId(null);
+        refresh();
+      } else {
+        toast.error(data.message ?? "Something went wrong");
+      }
+    } catch {
+      toast.error("Network error");
+    }
+    setWithdrawSubmitting(false);
   };
 
   const handleApproveRequest = async (requestId: string) => {
@@ -1239,7 +1275,48 @@ export default function EventDetailClient() {
       {/* RSVP / Request-to-join actions (non-hosts, non-canceled) */}
       {!event.isHost && !isCanceled && (
         <AppCard>
-          {(isGuestInvite && guestRsvpStatus) || (emailRsvpStatus && !isGuestInvite) ? (
+          {isAuthenticated === false && emailContext === "host_review" ? (
+            <Stack spacing={2} sx={{ py: 1 }}>
+              <Typography variant="h6" fontWeight={600}>
+                Review join requests
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+                Sign in to review join requests for your plan.
+              </Typography>
+              <Button
+                component={Link}
+                href={`/login?next=${encodeURIComponent(`/events/${eventId}`)}`}
+                variant="contained"
+                color="primary"
+                size="medium"
+                sx={{ alignSelf: "flex-start", textTransform: "none", fontWeight: 600, borderRadius: 2.5, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
+              >
+                Sign in
+              </Button>
+            </Stack>
+          ) : isAuthenticated === false && emailContext === "request_approved" ? (
+            <Stack spacing={2} sx={{ py: 1 }}>
+              <Stack spacing={1.5} alignItems="center">
+                <CheckCircleRoundedIcon sx={{ fontSize: 36, color: "success.main" }} />
+                <Typography variant="h6" fontWeight={600}>
+                  Your request was approved
+                </Typography>
+              </Stack>
+              <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center", lineHeight: 1.6 }}>
+                Sign in to see the full plan details, chat with participants, and manage your RSVP.
+              </Typography>
+              <Button
+                component={Link}
+                href={`/login?next=${encodeURIComponent(`/events/${eventId}`)}`}
+                variant="contained"
+                color="primary"
+                size="medium"
+                sx={{ alignSelf: "center", textTransform: "none", fontWeight: 600, borderRadius: 2.5, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
+              >
+                Sign in
+              </Button>
+            </Stack>
+          ) : (isGuestInvite && guestRsvpStatus) || (emailRsvpStatus && !isGuestInvite) ? (
             <Stack spacing={2} sx={{ py: 1 }}>
               <Stack spacing={1.5} alignItems="center">
                 <CheckCircleRoundedIcon sx={{ fontSize: 36, color: "success.main" }} />
@@ -1342,11 +1419,15 @@ export default function EventDetailClient() {
                     {userJoinRequest.status === "declined" && (
                       <Chip label="Declined" size="small" color="error" variant="outlined" sx={{ fontWeight: 600, fontSize: "0.8125rem" }} />
                     )}
+                    {userJoinRequest.status === "withdrawn" && (
+                      <Chip label="Withdrawn" size="small" variant="outlined" sx={{ fontWeight: 600, fontSize: "0.8125rem", color: "text.secondary", borderColor: "grey.400" }} />
+                    )}
                   </Stack>
                   <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem", lineHeight: 1.6 }}>
                     {userJoinRequest.status === "pending" && "Your request is waiting for the host to review it."}
                     {userJoinRequest.status === "approved" && "You\u2019ve been approved and added to this plan as Going."}
                     {userJoinRequest.status === "declined" && "The host has declined your request to join this plan."}
+                    {userJoinRequest.status === "withdrawn" && "You withdrew your request to join this plan."}
                   </Typography>
                   {userJoinRequest.message && (
                     <Typography variant="body2" sx={{ mt: 1, fontSize: "0.8125rem", fontStyle: "italic", color: "text.secondary" }}>
@@ -1358,29 +1439,122 @@ export default function EventDetailClient() {
                       Host message: &ldquo;{userJoinRequest.hostMessage}&rdquo;
                     </Typography>
                   )}
+                  {userJoinRequest.status === "pending" && (
+                    <Box sx={{ mt: 1.5 }}>
+                      {withdrawConfirmId === userJoinRequest.id ? (
+                        <Stack spacing={1}>
+                          <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
+                            Are you sure? This will withdraw your request.
+                          </Typography>
+                          <Stack direction="row" spacing={1}>
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              color="error"
+                              onClick={() => handleWithdrawRequest(userJoinRequest.id)}
+                              disabled={withdrawSubmitting}
+                              sx={{ textTransform: "none", fontSize: "0.8125rem" }}
+                            >
+                              {withdrawSubmitting ? "Withdrawing\u2026" : "Yes, withdraw"}
+                            </Button>
+                            <Button
+                              size="small"
+                              onClick={() => setWithdrawConfirmId(null)}
+                              disabled={withdrawSubmitting}
+                              sx={{ textTransform: "none", fontSize: "0.8125rem" }}
+                            >
+                              Cancel
+                            </Button>
+                          </Stack>
+                        </Stack>
+                      ) : (
+                        <Button
+                          size="small"
+                          color="inherit"
+                          onClick={() => setWithdrawConfirmId(userJoinRequest.id)}
+                          sx={{ textTransform: "none", fontSize: "0.8125rem", color: "text.secondary" }}
+                        >
+                          Withdraw request
+                        </Button>
+                      )}
+                    </Box>
+                  )}
                 </Box>
               ) : !event.lockedAt ? (
-                <Stack spacing={1.5}>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    placeholder="Add a note to the host (optional)"
-                    value={joinRequestMessage}
-                    onChange={(e) => setJoinRequestMessage(e.target.value.slice(0, 500))}
-                    multiline
-                    maxRows={3}
-                    disabled={joinRequestSubmitting}
-                    sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
-                  />
-                  <AppButton
-                    onClick={handleJoinRequest}
-                    disabled={joinRequestSubmitting}
-                    startIcon={joinRequestSubmitting ? <CircularProgress size={14} color="inherit" /> : <PersonAddRoundedIcon />}
-                  >
-                    {joinRequestSubmitting ? "Sending…" : "Request to join"}
-                  </AppButton>
-                </Stack>
+                isAuthenticated === false ? (
+                  <Stack spacing={1.5}>
+                    <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+                      You&apos;ll need a NewChums account to request to join this plan.
+                    </Typography>
+                    <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                      <Button
+                        component={Link}
+                        href={`/login?next=${encodeURIComponent(`/events/${eventId}`)}`}
+                        variant="contained"
+                        sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
+                      >
+                        Sign in
+                      </Button>
+                      <Button
+                        component={Link}
+                        href={`/signup?next=${encodeURIComponent(`/events/${eventId}`)}`}
+                        variant="outlined"
+                        sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5 }}
+                      >
+                        Create an account
+                      </Button>
+                    </Stack>
+                  </Stack>
+                ) : (
+                  <Stack spacing={1.5}>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      placeholder="Add a note to the host (optional)"
+                      value={joinRequestMessage}
+                      onChange={(e) => setJoinRequestMessage(e.target.value.slice(0, 500))}
+                      multiline
+                      maxRows={3}
+                      disabled={joinRequestSubmitting}
+                      sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
+                    />
+                    <AppButton
+                      onClick={handleJoinRequest}
+                      disabled={joinRequestSubmitting}
+                      startIcon={joinRequestSubmitting ? <CircularProgress size={14} color="inherit" /> : <PersonAddRoundedIcon />}
+                    >
+                      {joinRequestSubmitting ? "Sending…" : "Request to join"}
+                    </AppButton>
+                  </Stack>
+                )
               ) : null}
+            </>
+          ) : isAuthenticated === false ? (
+            <>
+              <Typography variant="h6" fontWeight={600} sx={{ mb: 1 }}>
+                Interested in this plan?
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.6 }}>
+                Sign in or create a NewChums account to RSVP and join the conversation.
+              </Typography>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                <Button
+                  component={Link}
+                  href={`/login?next=${encodeURIComponent(`/events/${eventId}`)}`}
+                  variant="contained"
+                  sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
+                >
+                  Sign in
+                </Button>
+                <Button
+                  component={Link}
+                  href={`/signup?next=${encodeURIComponent(`/events/${eventId}`)}`}
+                  variant="outlined"
+                  sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5 }}
+                >
+                  Create an account
+                </Button>
+              </Stack>
             </>
           ) : (
             <>
@@ -1747,6 +1921,8 @@ export default function EventDetailClient() {
                       <Chip label="Pending" size="small" color="warning" variant="outlined" sx={{ fontWeight: 600, fontSize: "0.8125rem", flexShrink: 0 }} />
                     ) : jr.status === "approved" ? (
                       <Chip icon={<CheckCircleRoundedIcon sx={{ fontSize: "1rem !important" }} />} label="Approved" size="small" color="success" variant="filled" sx={{ fontWeight: 600, fontSize: "0.8125rem", flexShrink: 0 }} />
+                    ) : jr.status === "withdrawn" ? (
+                      <Chip label="Withdrawn" size="small" variant="outlined" sx={{ fontWeight: 600, fontSize: "0.8125rem", flexShrink: 0, color: "text.secondary", borderColor: "grey.400" }} />
                     ) : (
                       <Chip label="Declined" size="small" color="error" variant="outlined" sx={{ fontWeight: 600, fontSize: "0.8125rem", flexShrink: 0 }} />
                     )}
@@ -1756,6 +1932,12 @@ export default function EventDetailClient() {
                 {jr.message && (
                   <Typography variant="body2" sx={{ ml: 7.5, mb: 1, fontSize: "0.8125rem", fontStyle: "italic", color: "text.secondary", lineHeight: 1.5 }}>
                     &ldquo;{jr.message}&rdquo;
+                  </Typography>
+                )}
+
+                {jr.status === "withdrawn" && (
+                  <Typography variant="body2" color="text.secondary" sx={{ ml: 7.5, mt: 0.5, fontSize: "0.8125rem", fontStyle: "italic" }}>
+                    This request was withdrawn by the requester.
                   </Typography>
                 )}
 
