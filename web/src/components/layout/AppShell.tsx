@@ -200,13 +200,13 @@ export default function AppShell({ children, user }: AppShellProps) {
               justifyContent: "center",
               flexShrink: 0,
               borderRadius: "50%",
-              bgcolor: "secondary.light",
+              bgcolor: "primary.light",
             }}
           >
             <WavingHandRoundedIcon
               sx={{
                 fontSize: 24,
-                color: "secondary.dark",
+                color: "primary.main",
               }}
               aria-hidden
             />

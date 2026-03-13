@@ -309,7 +309,7 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
               Add your location for better results
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-              We&apos;ll prioritize plans and gatherings happening near you.
+              We&apos;ll prioritize plans and gatherings near you. You can also set how far you&apos;re willing to travel.
             </Typography>
           </Box>
           <Button

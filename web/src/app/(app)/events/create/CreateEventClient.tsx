@@ -40,7 +40,8 @@ import { BANNER_PRESETS, renderBannerPreset, suggestPreset } from "@/lib/eventBa
 type HobbyOption = { id?: string; name: string; slug: string };
 
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
-const MAX_BANNER_BYTES = 5 * 1024 * 1024;
+const MAX_BANNER_INPUT_BYTES = 20 * 1024 * 1024; // 20MB — raw file limit before compression
+const MAX_BANNER_OUTPUT_BYTES = 400 * 1024;       // 400KB — compressed output target
 
 export default function CreateEventClient() {
   const router = useRouter();
@@ -143,7 +144,7 @@ export default function CreateEventClient() {
   const handleBannerCropSave = useCallback(async () => {
     if (!bannerCropSrc || !bannerCroppedArea) return;
     try {
-      const blob = await getCroppedImg(bannerCropSrc, bannerCroppedArea as PixelCrop, 1200, 400);
+      const blob = await getCroppedImg(bannerCropSrc, bannerCroppedArea as PixelCrop, 1200, 400, MAX_BANNER_OUTPUT_BYTES);
       URL.revokeObjectURL(bannerCropSrc);
       setBannerCropSrc(null);
       const file = new File([blob], "banner.webp", { type: blob.type || "image/webp" });
@@ -429,7 +430,7 @@ export default function CreateEventClient() {
             )}
           </Stack>
           <Typography variant="caption" color="text.secondary">
-            Colour themes are free. Custom photos: JPEG, PNG, or WebP, max 5 MB.
+            Colour themes are free. Custom photos: JPEG, PNG, or WebP up to 20 MB — we&apos;ll compress it automatically.
           </Typography>
         </Stack>
       </AppCard>
@@ -847,8 +848,8 @@ export default function CreateEventClient() {
             toast.error("Please use JPEG, PNG, or WebP.");
             return;
           }
-          if (file.size > MAX_BANNER_BYTES) {
-            toast.error("Image must be 5MB or less.");
+          if (file.size > MAX_BANNER_INPUT_BYTES) {
+            toast.error("Image must be 20MB or less.");
             return;
           }
           // Custom upload takes precedence over any selected preset

@@ -380,10 +380,6 @@ export default function EventDetailClient() {
       setSearching(false);
       return;
     }
-    if (EMAIL_RE.test(q)) {
-      setSearching(false);
-      return;
-    }
     setSearching(true);
     const timer = setTimeout(async () => {
       try {
@@ -1136,21 +1132,9 @@ export default function EventDetailClient() {
           )}
           {isCanceled && <Chip label="Canceled" size="small" color="error" />}
         </Stack>
-        <Stack direction="row" alignItems="center" flexWrap="nowrap" sx={{ mb: 0.75 }}>
-          <Typography component="h1" variant="h4" fontWeight={700}>
-            {event.title}
-          </Typography>
-          <Tooltip title="Copy link" placement="top">
-            <IconButton
-              onClick={handleCopyLink}
-              size="small"
-              aria-label="Copy link to this plan"
-              sx={{ ml: 0.5, color: "text.secondary", flexShrink: 0 }}
-            >
-              <ContentCopyRoundedIcon sx={{ fontSize: 18 }} />
-            </IconButton>
-          </Tooltip>
-        </Stack>
+        <Typography component="h1" variant="h4" fontWeight={700} sx={{ mb: 0.75 }}>
+          {event.title}
+        </Typography>
         <Typography variant="body1" color="text.secondary">
           {event.isHost ? "You\u2019re hosting this" : `Hosted by ${event.hostName}`}
         </Typography>
@@ -1464,25 +1448,47 @@ export default function EventDetailClient() {
       {event.isHost && !isCanceled && (
         <AppCard>
           {!showInviteForm ? (
-            <Stack direction="row" justifyContent="space-between" alignItems="center">
+            <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1}>
               <Typography variant="subtitle1" fontWeight={600}>
                 Invite people
               </Typography>
-              <AppButton
-                size="small"
-                variant="outlined"
-                startIcon={<PersonAddRoundedIcon />}
-                onClick={() => setShowInviteForm(true)}
-                sx={{ textTransform: "none" }}
-              >
-                Add
-              </AppButton>
+              <Stack direction="row" spacing={1}>
+                <AppButton
+                  size="small"
+                  variant="outlined"
+                  startIcon={<ContentCopyRoundedIcon sx={{ fontSize: 16 }} />}
+                  onClick={handleCopyLink}
+                  sx={{ textTransform: "none" }}
+                >
+                  Share plan link
+                </AppButton>
+                <AppButton
+                  size="small"
+                  variant="outlined"
+                  startIcon={<PersonAddRoundedIcon />}
+                  onClick={() => setShowInviteForm(true)}
+                  sx={{ textTransform: "none" }}
+                >
+                  Add
+                </AppButton>
+              </Stack>
             </Stack>
           ) : (
             <Stack spacing={2}>
-              <Typography variant="subtitle1" fontWeight={600}>
-                Invite people
-              </Typography>
+              <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1}>
+                <Typography variant="subtitle1" fontWeight={600}>
+                  Invite people
+                </Typography>
+                <AppButton
+                  size="small"
+                  variant="outlined"
+                  startIcon={<ContentCopyRoundedIcon sx={{ fontSize: 16 }} />}
+                  onClick={handleCopyLink}
+                  sx={{ textTransform: "none" }}
+                >
+                  Share plan link
+                </AppButton>
+              </Stack>
               <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.5 }}>
                 Search by name, @handle, or email. Invite emails are sent immediately.
               </Typography>
@@ -1611,7 +1617,7 @@ export default function EventDetailClient() {
                 </Stack>
               )}
 
-              {inviteSearch.trim().length > 3 &&
+              {hasSearched &&
                 EMAIL_RE.test(inviteSearch.trim()) &&
                 searchResults.length === 0 &&
                 !searching && (

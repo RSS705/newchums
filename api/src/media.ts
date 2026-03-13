@@ -7,7 +7,7 @@ import { SignJWT, jwtVerify } from "jose";
 
 export const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 export const MAX_AVATAR_BYTES = 2 * 1024 * 1024; // 2MB
-export const MAX_EVENT_BANNER_BYTES = 5 * 1024 * 1024; // 5MB
+export const MAX_EVENT_BANNER_BYTES = 400 * 1024; // 400KB
 
 export type MediaPurpose = "avatar" | "event_banner";
 const ALLOWED_PURPOSES: MediaPurpose[] = ["avatar", "event_banner"];
@@ -41,7 +41,7 @@ export function validateMediaInit(
   }
   const maxBytes = purpose === "event_banner" ? MAX_EVENT_BANNER_BYTES : MAX_AVATAR_BYTES;
   if (contentLength > maxBytes) {
-    return { ok: false, error: purpose === "event_banner" ? "Banner must be 5MB or less" : "Avatar must be 2MB or less" };
+    return { ok: false, error: purpose === "event_banner" ? "Banner must be 400KB or less" : "Avatar must be 2MB or less" };
   }
   if (contentLength <= 0) {
     return { ok: false, error: "Invalid file size" };

@@ -42,6 +42,8 @@ import {
   VALID_KEYS,
 } from "./lib/notificationPrefs";
 import {
+  MAX_AVATAR_BYTES,
+  MAX_EVENT_BANNER_BYTES,
   buildObjectKey,
   createUploadToken,
   validateMediaInit,
@@ -464,7 +466,7 @@ app.post("/auth/signup", async (c) => {
       const defaultPrefsJson = getDefaultPrefsJson();
       await sql`
         INSERT INTO user_profile (user_id, home_city, home_lat, home_lng, home_location, travel_radius_km, email_chat_digest, email_new_events, bio, notification_prefs)
-        VALUES (${newUserId}, NULL, NULL, NULL, NULL, 25, true, true, NULL, ${defaultPrefsJson}::jsonb)
+        VALUES (${newUserId}, NULL, NULL, NULL, NULL, 200, true, true, NULL, ${defaultPrefsJson}::jsonb)
       `;
     }
     return c.json({ ok: true }, 201);
@@ -1397,7 +1399,7 @@ app.put("/notification-preferences", async (c) => {
     if (updated.length === 0) {
       await sql`
         INSERT INTO user_profile (user_id, home_city, home_lat, home_lng, home_location, travel_radius_km, email_chat_digest, email_new_events, bio, notification_prefs)
-        VALUES (${appUserId}, NULL, NULL, NULL, NULL, 25, true, true, NULL, ${prefsJson}::jsonb)
+        VALUES (${appUserId}, NULL, NULL, NULL, NULL, 200, true, true, NULL, ${prefsJson}::jsonb)
         ON CONFLICT (user_id) DO UPDATE SET notification_prefs = EXCLUDED.notification_prefs
       `;
     }
@@ -1517,7 +1519,7 @@ app.get("/profile", async (c) => {
           home_city: null,
           home_lat: null,
           home_lng: null,
-          travel_radius_km: 25,
+          travel_radius_km: 200,
           interest_slugs: [] as string[],
           interest_items: [] as { slug: string; name: string }[],
           email_chat_digest: true,
@@ -1703,7 +1705,7 @@ app.put("/profile", async (c) => {
     const travel_radius_km =
       "travel_radius_km" in body && body.travel_radius_km != null
         ? Number(body.travel_radius_km)
-        : (existing?.travel_radius_km ?? 25);
+        : (existing?.travel_radius_km ?? 200);
     if (
       !Number.isFinite(travel_radius_km) ||
       travel_radius_km < 1 ||
@@ -2134,7 +2136,7 @@ app.post("/media/init", async (c) => {
       c.env.NEXTAUTH_SECRET,
     );
 
-    const maxBytes = purpose === "event_banner" ? 5 * 1024 * 1024 : 2 * 1024 * 1024;
+    const maxBytes = purpose === "event_banner" ? MAX_EVENT_BANNER_BYTES : MAX_AVATAR_BYTES;
     return c.json({
       ok: true,
       uploadToken,
