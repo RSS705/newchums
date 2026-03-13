@@ -1444,7 +1444,7 @@ export default function EventDetailClient() {
                       {withdrawConfirmId === userJoinRequest.id ? (
                         <Stack spacing={1}>
                           <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
-                            Are you sure? This will withdraw your request.
+                            Are you sure? This will permanently withdraw your request and cannot be undone. The host will be notified.
                           </Typography>
                           <Stack direction="row" spacing={1}>
                             <Button
@@ -2376,6 +2376,7 @@ export default function EventDetailClient() {
               </Stack>
             </>
           )}
+
         </AppCard>
       )}
 

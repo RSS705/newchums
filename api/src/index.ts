@@ -5932,6 +5932,19 @@ app.post("/events/:id/join-request/:requestId/withdraw", async (c) => {
       WHERE id = ${requestId}
     `;
 
+    // Notify host (in-app only — no email to avoid noise)
+    const ev = (await sql`
+      SELECT host_user_id, title FROM newchums.events WHERE id = ${eventId}
+    `) as { host_user_id: string; title: string }[];
+    if (ev.length > 0) {
+      const requesterUser = (await sql`SELECT name, username FROM newchums.users WHERE id = ${userId}`) as { name: string | null; username: string | null }[];
+      const requesterName = requesterUser[0]?.name?.trim() || requesterUser[0]?.username?.replace(/^@/, "") || "Someone";
+      await sql`
+        INSERT INTO newchums.notifications (user_id, type, actor_user_id, entity_id, metadata)
+        VALUES (${ev[0].host_user_id}, 'join_request_withdrawn', ${userId}, ${eventId}, ${JSON.stringify({ eventTitle: ev[0].title, requesterName })})
+      `;
+    }
+
     return c.json({ ok: true });
   } catch (err) {
     console.error("[POST /events/:id/join-request/:requestId/withdraw]", err);

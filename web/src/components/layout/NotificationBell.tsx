@@ -92,6 +92,12 @@ function notificationText(n: AppNotification): {
         actorHref,
         body: titleLink ? <>{" requested to join "}{titleLink}.</> : " requested to join your plan.",
       };
+    case "join_request_withdrawn":
+      return {
+        actorLabel,
+        actorHref,
+        body: titleLink ? <>{" withdrew their request to join "}{titleLink}.</> : " withdrew their request to join your plan.",
+      };
     case "join_request_approved":
       return {
         actorLabel,
