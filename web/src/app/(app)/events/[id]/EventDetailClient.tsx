@@ -41,6 +41,7 @@ import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import SendRoundedIcon from "@mui/icons-material/SendRounded";
 import PeopleOutlineRoundedIcon from "@mui/icons-material/PeopleOutlineRounded";
 import PersonAddRoundedIcon from "@mui/icons-material/PersonAddRounded";
+import PersonRemoveRoundedIcon from "@mui/icons-material/PersonRemoveRounded";
 import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
@@ -89,6 +90,9 @@ type EventDetail = {
 type RsvpEntry = { userId: string; name: string; handle: string | null; status: string; note: string | null; avatarUrl?: string | null };
 type AltTimeEntry = { userId: string; name: string; suggestedAt: string; note: string | null };
 type InviteEntry = { userId: string | null; email: string | null; name: string; handle?: string | null };
+type RemoveTarget =
+  | { type: "rsvp"; userId: string; name: string }
+  | { type: "invite"; userId: string | null; email: string | null; name: string };
 type SearchResult = { userId: string; displayName: string; handle: string | null; avatarUrl?: string | null };
 type ChatMessage = {
   id: string;
@@ -186,6 +190,12 @@ export default function EventDetailClient() {
   // Cancel confirmation dialog
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [canceling, setCanceling] = useState(false);
+
+  // Remove attendee dialog
+  const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
+  const [removeTarget, setRemoveTarget] = useState<RemoveTarget | null>(null);
+  const [removeReason, setRemoveReason] = useState("");
+  const [removing, setRemoving] = useState(false);
 
   // Chat state
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -833,6 +843,43 @@ export default function EventDetailClient() {
     }
   };
 
+  const handleRemoveAttendee = async () => {
+    if (!removeTarget) return;
+    setRemoving(true);
+    try {
+      const endpoint = removeTarget.type === "invite" ? `/events/${eventId}/remove-invite` : `/events/${eventId}/remove-attendee`;
+      const body = removeTarget.type === "invite"
+        ? { user_id: removeTarget.userId, email: removeTarget.email, reason: removeReason.trim() || null }
+        : { user_id: removeTarget.userId, reason: removeReason.trim() || null };
+      const res = await apiFetch(endpoint, {
+        auth: true,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = (await res.json()) as { ok: boolean };
+      if (data.ok) {
+        if (removeTarget.type === "rsvp") {
+          setRsvps((prev) => prev.filter((r) => r.userId !== removeTarget.userId));
+        } else {
+          setInvites((prev) => prev.filter((inv) =>
+            removeTarget.userId ? inv.userId !== removeTarget.userId : inv.email !== removeTarget.email
+          ));
+        }
+        setRemoveDialogOpen(false);
+        setRemoveTarget(null);
+        setRemoveReason("");
+        toast.success(removeTarget.type === "invite" ? "Invite removed" : "Attendee removed");
+      } else {
+        toast.error("Couldn\u2019t remove this person. Please try again.");
+      }
+    } catch {
+      toast.error("Network error");
+    } finally {
+      setRemoving(false);
+    }
+  };
+
   const openEditDialog = () => {
     if (!event) return;
     const d = dayjs(event.startsAt);
@@ -917,6 +964,7 @@ export default function EventDetailClient() {
   const maybeCount = rsvps.filter((r) => r.status === "maybe").length;
   const declinedCount = rsvps.filter((r) => r.status === "cant_make_it").length;
   const isCanceled = event.status === "canceled";
+  const isPast = new Date(event.startsAt) < new Date();
 
   // Invitees who haven't RSVP'd yet (shown with "Invited" status in Who's in)
   const rsvpUserIds = new Set(rsvps.map((r) => r.userId));
@@ -1735,36 +1783,48 @@ export default function EventDetailClient() {
                       {r.name}
                     </Typography>
                   )}
-                  {r.status === "going" ? (
-                    <Chip
-                      icon={<CheckCircleRoundedIcon sx={{ fontSize: "1rem !important" }} />}
-                      label="Going"
-                      size="small"
-                      color="success"
-                      variant="filled"
-                      sx={{
-                        fontWeight: 600,
-                        fontSize: "0.8125rem",
-                        "& .MuiChip-icon": { color: "inherit", opacity: 0.9 },
-                        flexShrink: 0,
-                      }}
-                    />
-                  ) : r.status === "maybe" ? (
-                    <Chip
-                      label="Maybe"
-                      size="small"
-                      color="warning"
-                      variant="outlined"
-                      sx={{ fontWeight: 600, fontSize: "0.8125rem", flexShrink: 0 }}
-                    />
-                  ) : (
-                    <Chip
-                      label={"Can\u2019t make it"}
-                      size="small"
-                      variant="outlined"
-                      sx={{ fontWeight: 500, fontSize: "0.8125rem", color: "text.secondary", flexShrink: 0 }}
-                    />
-                  )}
+                  <Stack direction="row" alignItems="center" spacing={0.5} sx={{ flexShrink: 0 }}>
+                    {r.status === "going" ? (
+                      <Chip
+                        icon={<CheckCircleRoundedIcon sx={{ fontSize: "1rem !important" }} />}
+                        label="Going"
+                        size="small"
+                        color="success"
+                        variant="filled"
+                        sx={{
+                          fontWeight: 600,
+                          fontSize: "0.8125rem",
+                          "& .MuiChip-icon": { color: "inherit", opacity: 0.9 },
+                        }}
+                      />
+                    ) : r.status === "maybe" ? (
+                      <Chip
+                        label="Maybe"
+                        size="small"
+                        color="warning"
+                        variant="outlined"
+                        sx={{ fontWeight: 600, fontSize: "0.8125rem" }}
+                      />
+                    ) : (
+                      <Chip
+                        label={"Can\u2019t make it"}
+                        size="small"
+                        variant="outlined"
+                        sx={{ fontWeight: 500, fontSize: "0.8125rem", color: "text.secondary" }}
+                      />
+                    )}
+                    {event.isHost && !isCanceled && !isPast && r.userId !== event.hostUserId && (r.status === "going" || r.status === "maybe") && (
+                      <Tooltip title="Remove from plan" arrow>
+                        <IconButton
+                          size="small"
+                          onClick={() => { setRemoveTarget({ type: "rsvp", userId: r.userId, name: r.name }); setRemoveReason(""); setRemoveDialogOpen(true); }}
+                          sx={{ color: "text.disabled", "&:hover": { color: "error.main" } }}
+                        >
+                          <PersonRemoveRoundedIcon sx={{ fontSize: "1.125rem" }} />
+                        </IconButton>
+                      </Tooltip>
+                    )}
+                  </Stack>
                 </Stack>
                 {r.note && (
                   <Typography
@@ -1839,14 +1899,27 @@ export default function EventDetailClient() {
                         {inv.name || inv.email}
                       </Typography>
                     )}
-                    <Chip
-                      icon={<MailOutlineRoundedIcon sx={{ fontSize: "0.875rem !important" }} />}
-                      label={event.reserveSeats ? "Invited \u00b7 Seat held" : "Invited"}
-                      size="small"
-                      variant="outlined"
-                      color="info"
-                      sx={{ fontWeight: 600, fontSize: "0.75rem", flexShrink: 0 }}
-                    />
+                    <Stack direction="row" alignItems="center" spacing={0.5} sx={{ flexShrink: 0 }}>
+                      <Chip
+                        icon={<MailOutlineRoundedIcon sx={{ fontSize: "0.875rem !important" }} />}
+                        label={event.reserveSeats ? "Invited \u00b7 Seat held" : "Invited"}
+                        size="small"
+                        variant="outlined"
+                        color="info"
+                        sx={{ fontWeight: 600, fontSize: "0.75rem" }}
+                      />
+                      {event.isHost && !isCanceled && !isPast && inv.userId !== null && (
+                        <Tooltip title="Remove invite" arrow>
+                          <IconButton
+                            size="small"
+                            onClick={() => { setRemoveTarget({ type: "invite", userId: inv.userId, email: inv.email, name: inv.name || inv.email || "this person" }); setRemoveReason(""); setRemoveDialogOpen(true); }}
+                            sx={{ color: "text.disabled", "&:hover": { color: "error.main" } }}
+                          >
+                            <PersonRemoveRoundedIcon sx={{ fontSize: "1.125rem" }} />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                    </Stack>
                   </Stack>
                 </Stack>
               );
@@ -2064,6 +2137,64 @@ export default function EventDetailClient() {
             startIcon={canceling ? <CircularProgress size={14} color="inherit" /> : undefined}
           >
             {canceling ? "Canceling…" : "Yes, cancel it"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Remove attendee confirmation dialog */}
+      <Dialog
+        open={removeDialogOpen}
+        onClose={() => !removing && setRemoveDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 700, pb: 1 }}>
+          {removeTarget?.type === "invite" ? "Remove invite?" : "Remove attendee?"}
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.7, mb: 1.5 }}>
+            <strong>{removeTarget?.name || "This person"}</strong>{" "}
+            {removeTarget?.type === "invite"
+              ? "will have their invite to this plan removed and will be notified by email."
+              : "will be removed from your plan and notified by email."}
+          </Typography>
+          <TextField
+            multiline
+            minRows={2}
+            maxRows={4}
+            fullWidth
+            label="Reason (optional)"
+            placeholder="E.g. Plans changed / Need to reduce the group size / This plan isn't the right fit…"
+            value={removeReason}
+            onChange={(e) => setRemoveReason(e.target.value.slice(0, 500))}
+            inputProps={{ maxLength: 500 }}
+            helperText={`${removeReason.length}/500 — This will be included in the notification email to the attendee.`}
+            sx={{ mb: 2 }}
+          />
+          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.7, mb: 1.5 }}>
+            This action is recorded by the system. Attendee removals may be considered in future host quality and trust metrics.
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.7 }}>
+            Removing someone is completely your call as a host, just use it thoughtfully.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
+          <Button
+            variant="text"
+            color="inherit"
+            onClick={() => { setRemoveDialogOpen(false); setRemoveTarget(null); setRemoveReason(""); }}
+            disabled={removing}
+          >
+            Keep them
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={handleRemoveAttendee}
+            disabled={removing}
+            startIcon={removing ? <CircularProgress size={14} color="inherit" /> : <PersonRemoveRoundedIcon />}
+          >
+            {removing ? "Removing\u2026" : "Remove attendee"}
           </Button>
         </DialogActions>
       </Dialog>

@@ -7,6 +7,7 @@ import { SignJWT, jwtVerify } from "jose";
 import { getBearerToken, verifyAuthToken } from "./auth";
 import { DATABASE_URL_HINT, type Bindings, getSql } from "./db";
 import {
+  sendAttendeeRemovedEmail,
   sendChumInviteEmail,
   sendContactFormEmail,
   sendEmailChangeConfirmEmail,
@@ -5114,6 +5115,138 @@ app.post("/events/:id/cancel", async (c) => {
     return c.json({ ok: true });
   } catch (err) {
     console.error("[POST /events/:id/cancel]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /events/:id/remove-attendee — host removes an attendee from a plan */
+app.post("/events/:id/remove-attendee", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+  const eventId = c.req.param("id");
+
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+
+  const targetUserId = body.user_id ? String(body.user_id) : null;
+  if (!targetUserId) return c.json({ ok: false, error: "VALIDATION", message: "user_id is required" }, 400);
+  const reason = body.reason ? String(body.reason).trim().slice(0, 500) : null;
+
+  try {
+    const ev = (await sql`SELECT id, host_user_id, title, status, starts_at FROM newchums.events WHERE id = ${eventId}`) as { id: string; host_user_id: string; title: string; status: string; starts_at: string }[];
+    if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    const event = ev[0];
+
+    if (event.host_user_id !== userId)
+      return c.json({ ok: false, error: "FORBIDDEN", message: "Only the host can remove attendees" }, 403);
+
+    if (new Date(event.starts_at) < new Date())
+      return c.json({ ok: false, error: "VALIDATION", message: "Attendees cannot be removed from past events" }, 400);
+
+    if (targetUserId === userId)
+      return c.json({ ok: false, error: "VALIDATION", message: "You cannot remove yourself from your own plan" }, 400);
+
+    const rsvpRows = (await sql`SELECT id, status FROM newchums.event_rsvps WHERE event_id = ${eventId} AND user_id = ${targetUserId}`) as { id: string; status: string }[];
+    if (rsvpRows.length === 0)
+      return c.json({ ok: false, error: "NOT_FOUND", message: "This person is not an attendee of this plan" }, 404);
+
+    const statusAtRemoval = rsvpRows[0].status;
+
+    await sql`DELETE FROM newchums.event_rsvps WHERE event_id = ${eventId} AND user_id = ${targetUserId}`;
+
+    await sql`
+      INSERT INTO newchums.host_attendee_removals (event_id, host_user_id, removed_user_id, status_at_removal, reason)
+      VALUES (${eventId}, ${userId}, ${targetUserId}, ${statusAtRemoval}, ${reason})
+    `;
+
+    const removedUser = (await sql`SELECT email, name, username FROM newchums.users WHERE id = ${targetUserId}`) as { email: string; name: string | null; username: string | null }[];
+    const hostUser = (await sql`SELECT name, username FROM newchums.users WHERE id = ${userId}`) as { name: string | null; username: string | null }[];
+
+    if (removedUser.length > 0) {
+      try {
+        await sendAttendeeRemovedEmail(c.env, {
+          to: removedUser[0].email,
+          recipientName: removedUser[0].name?.trim() || removedUser[0].username?.replace(/^@/, "") || "there",
+          hostName: hostUser[0]?.name?.trim() || hostUser[0]?.username?.replace(/^@/, "") || "the host",
+          eventTitle: event.title,
+          eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
+          removalReason: reason,
+        });
+      } catch { /* noop */ }
+    }
+
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[POST /events/:id/remove-attendee]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /events/:id/remove-invite — host revokes a pending invite */
+app.post("/events/:id/remove-invite", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+  const eventId = c.req.param("id");
+
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+
+  const targetUserId = body.user_id ? String(body.user_id) : null;
+  if (!targetUserId) return c.json({ ok: false, error: "VALIDATION", message: "user_id is required" }, 400);
+  const reason = body.reason ? String(body.reason).trim().slice(0, 500) : null;
+
+  try {
+    const ev = (await sql`SELECT id, host_user_id, title, starts_at FROM newchums.events WHERE id = ${eventId}`) as { id: string; host_user_id: string; title: string; starts_at: string }[];
+    if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    const event = ev[0];
+
+    if (event.host_user_id !== userId)
+      return c.json({ ok: false, error: "FORBIDDEN", message: "Only the host can remove invites" }, 403);
+
+    if (new Date(event.starts_at) < new Date())
+      return c.json({ ok: false, error: "VALIDATION", message: "Invites cannot be removed from past events" }, 400);
+
+    if (targetUserId === userId)
+      return c.json({ ok: false, error: "VALIDATION", message: "You cannot remove yourself from your own plan" }, 400);
+
+    const inviteRows = (await sql`SELECT id FROM newchums.event_invites WHERE event_id = ${eventId} AND user_id = ${targetUserId}`) as { id: string }[];
+    if (inviteRows.length === 0)
+      return c.json({ ok: false, error: "NOT_FOUND", message: "No pending invite found for this user" }, 404);
+
+    await sql`DELETE FROM newchums.event_invites WHERE event_id = ${eventId} AND user_id = ${targetUserId}`;
+
+    await sql`
+      INSERT INTO newchums.host_attendee_removals (event_id, host_user_id, removed_user_id, status_at_removal, reason)
+      VALUES (${eventId}, ${userId}, ${targetUserId}, ${"invited"}, ${reason})
+    `;
+
+    const removedUser = (await sql`SELECT email, name, username FROM newchums.users WHERE id = ${targetUserId}`) as { email: string; name: string | null; username: string | null }[];
+    const hostUser = (await sql`SELECT name, username FROM newchums.users WHERE id = ${userId}`) as { name: string | null; username: string | null }[];
+
+    if (removedUser.length > 0) {
+      try {
+        await sendAttendeeRemovedEmail(c.env, {
+          to: removedUser[0].email,
+          recipientName: removedUser[0].name?.trim() || removedUser[0].username?.replace(/^@/, "") || "there",
+          hostName: hostUser[0]?.name?.trim() || hostUser[0]?.username?.replace(/^@/, "") || "the host",
+          eventTitle: event.title,
+          eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
+          removalReason: reason,
+        });
+      } catch { /* noop */ }
+    }
+
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[POST /events/:id/remove-invite]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });

@@ -181,6 +181,16 @@ Defaults are applied at account creation (credentials signup, OAuth) and backfil
 
 Each RSVP status has a dedicated host notification email, each gated on its own preference toggle: `host_join` controls the going notification (Postmark template 43922675), `host_maybe` controls the maybe notification (Postmark template 43922237), and `host_leave` controls the leave notification (Postmark template 43921920). Migration 033 removes the obsolete `event_reminders` key and `frequency` fields from existing JSONB data.
 
+### Host attendee removal
+
+Hosts can remove attendees with status "going" or "maybe" from their plans via `POST /events/:id/remove-attendee`. The endpoint requires authentication and verifies the caller is the plan host. It:
+
+1. Deletes the attendee's RSVP row from `event_rsvps`
+2. Records the removal in `newchums.host_attendee_removals` (migration 034) for future host quality metrics, moderation review, and trust scoring
+3. Sends a notification email to the removed user (Postmark template 43923102)
+
+The `host_attendee_removals` table tracks: `event_id`, `host_user_id`, `removed_user_id`, `status_at_removal`, and `created_at`. Hosts cannot remove themselves or attendees with "can't make it" status (since they're already not attending).
+
 ### Account deletion
 
 - **Endpoint:** `DELETE /account` (auth required).

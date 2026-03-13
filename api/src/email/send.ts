@@ -288,6 +288,25 @@ export const sendEventMaybeEmail = async (
   });
 };
 
+// ── Attendee removed notification ───────────────────────────────────────
+//   You were removed from a plan — Postmark template 43923102
+//   Model: productName, recipientName, hostName, eventTitle, eventUrl, removalReason
+
+export const sendAttendeeRemovedEmail = async (
+  env: Bindings,
+  { to, recipientName, hostName, eventTitle, eventUrl, removalReason }: {
+    to: string; recipientName: string; hostName: string;
+    eventTitle: string; eventUrl: string; removalReason?: string | null;
+  }
+) => {
+  if (!env.POSTMARK_TEMPLATE_ATTENDEE_REMOVED) return;
+  return sendPostmarkTemplateEmail(env, {
+    From: env.EMAIL_FROM, To: to,
+    TemplateId: env.POSTMARK_TEMPLATE_ATTENDEE_REMOVED,
+    TemplateModel: { productName: "NewChums", recipientName, hostName, eventTitle, eventUrl, removalReason: removalReason || "" },
+  });
+};
+
 // ── Join-request email helpers ──────────────────────────────────────────
 //   6. Join Request (to host)    — hardcoded template 43906440
 //      Model: productName, hostName, requesterName, eventTitle, requestMessage, eventUrl
