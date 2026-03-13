@@ -26,6 +26,8 @@ export type Bindings = {
   POSTMARK_TEMPLATE_EVENT_CANCELED?: string;
   POSTMARK_TEMPLATE_EVENT_REMINDER?: string;
   POSTMARK_TEMPLATE_EVENT_RSVP_UPDATE?: string;
+  /** Postmark template ID for host leave notification (template 43921920) */
+  POSTMARK_TEMPLATE_EVENT_LEAVE?: string;
   SENTRY_DSN: string;
   APP_ENV?: string;
   ENVIRONMENT?: string;

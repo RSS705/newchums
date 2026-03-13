@@ -163,21 +163,22 @@ The following business logic lives in the API worker; the web app calls it via `
 
 ### Notification preferences (Settings toggles)
 
-Users manage notification preferences in **Settings** (`/settings`). Each toggle controls whether and how often they receive emails for a given event type. Stored in `user_profile.notification_prefs` (JSONB). Single source of truth: `api/src/lib/notificationPrefs.ts`.
+Users manage notification preferences in **Settings** (`/settings`). Each notification type is a simple on/off toggle; supported emails send immediately when enabled. Stored in `user_profile.notification_prefs` (JSONB). Single source of truth: `api/src/lib/notificationPrefs.ts`.
 
 **Notification types (keys):**
 
-| Key | UI title | Frequency |
-|-----|----------|-----------|
-| `event_match` | New plans matching my interests | Immediate / daily / every 3 days / weekly / monthly / never |
-| `host_join` | Someone joins your plan | Immediate / daily / every 3 days / weekly / never |
-| `host_leave` | Someone leaves your plan | Immediate / daily / every 3 days / weekly / never |
-| `feedback_requests` | Post-gathering feedback | On/off only |
-| `event_reminders` | 24-hour reminders | On/off only |
-| `event_changed_canceled` | Plan canceled or changed | Immediate / daily / every 3 days / weekly / never |
-| `product_announcements` | Product updates | Immediate / monthly / never |
+| Key | UI title |
+|-----|----------|
+| `event_match` | New plans matching my interests |
+| `host_join` | Someone joins your plan |
+| `host_leave` | Someone leaves your plan |
+| `feedback_requests` | Post-gathering feedback |
+| `event_changed_canceled` | Plan canceled or changed |
+| `product_announcements` | Product updates |
 
 Defaults are applied at account creation (credentials signup, OAuth) and backfilled for existing users with missing keys. GET normalizes stored prefs and optionally persists backfilled values.
+
+The `host_leave` preference controls the leave notification email (Postmark template 43921920) sent to the host when someone changes their RSVP to "Can't make it." Migration 033 removes the obsolete `event_reminders` key and `frequency` fields from existing JSONB data.
 
 ### Account deletion
 
@@ -567,7 +568,7 @@ Core tables include:
 - token tables for email verification and password reset
 - `email_change_requests` (migration 011)
 - `interests` + `user_interests` (interest/hobby associations)
-- `user_profile.notification_prefs` (JSONB, migration 012) — per-notification-type enabled + frequency
+- `user_profile.notification_prefs` (JSONB, migration 012; cleaned by migration 033) — per-notification-type enabled toggle
 - `users.is_hidden_from_search`, `users.is_hidden_from_external_indexing` (boolean, migration 013) — privacy toggles
 - `users.is_hidden_age` (boolean, migration 014) — when true, age is not shown on public profile; default false
 - `users.role` (TEXT NULL, migration 015) — user role; `super_admin` unlocks admin features

@@ -234,6 +234,25 @@ export const sendEventRsvpUpdateEmail = async (
   });
 };
 
+// ── Host leave notification ─────────────────────────────────────────────
+//   Someone left your plan — Postmark template 43921920
+//   Model: productName, hostName, attendeeName, eventTitle, eventUrl
+
+export const sendEventLeaveEmail = async (
+  env: Bindings,
+  { to, hostName, attendeeName, eventTitle, eventUrl }: {
+    to: string; hostName: string; attendeeName: string;
+    eventTitle: string; eventUrl: string;
+  }
+) => {
+  if (!env.POSTMARK_TEMPLATE_EVENT_LEAVE) return;
+  return sendPostmarkTemplateEmail(env, {
+    From: env.EMAIL_FROM, To: to,
+    TemplateId: env.POSTMARK_TEMPLATE_EVENT_LEAVE,
+    TemplateModel: { productName: "NewChums", hostName, attendeeName, eventTitle, eventUrl },
+  });
+};
+
 // ── Join-request email helpers ──────────────────────────────────────────
 //   6. Join Request (to host)    — hardcoded template 43906440
 //      Model: productName, hostName, requesterName, eventTitle, requestMessage, eventUrl

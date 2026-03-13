@@ -69,10 +69,10 @@ export default function SettingsClient() {
   }, []);
 
   const [notificationPrefs, setNotificationPrefs] = useState<
-    Record<string, { enabled: boolean; frequency: string }>
+    Record<string, { enabled: boolean }>
   >({});
   const [notificationPrefsLoading, setNotificationPrefsLoading] = useState(true);
-  const lastGoodPrefs = useRef<Record<string, { enabled: boolean; frequency: string }>>({});
+  const lastGoodPrefs = useRef<Record<string, { enabled: boolean }>>({});
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchNotificationPrefs = useCallback(async () => {
@@ -81,20 +81,12 @@ export default function SettingsClient() {
       const res = await apiFetch("/notification-preferences", { auth: true });
       const data = await res.json();
       if (data.ok && data.prefs?.items) {
-        const items = data.prefs.items as Record<string, { enabled: boolean; frequency: string }>;
+        const items = data.prefs.items as Record<string, { enabled: boolean }>;
         const normalized = Object.fromEntries(
-          NOTIFICATION_TYPES.map((t) => {
-            const raw = items[t.key];
-            const enabled = raw?.enabled ?? true;
-            let frequency = raw?.frequency ?? t.allowedFrequencies[0]?.value ?? "immediately";
-            if (frequency === "never") {
-              frequency = t.allowedFrequencies[0]?.value ?? "immediately";
-            }
-            return [
-              t.key,
-              { enabled, frequency },
-            ];
-          })
+          NOTIFICATION_TYPES.map((t) => [
+            t.key,
+            { enabled: items[t.key]?.enabled ?? true },
+          ])
         );
         setNotificationPrefs(normalized);
         lastGoodPrefs.current = normalized;
@@ -110,14 +102,11 @@ export default function SettingsClient() {
   }, [fetchProfile, fetchNotificationPrefs]);
 
   const persistNotificationPrefs = useCallback(
-    async (prefs: Record<string, { enabled: boolean; frequency: string }>) => {
+    async (prefs: Record<string, { enabled: boolean }>) => {
       const fullItems = Object.fromEntries(
         NOTIFICATION_TYPES.map((t) => [
           t.key,
-          prefs[t.key] ?? {
-            enabled: true,
-            frequency: t.allowedFrequencies[0]?.value ?? "immediately",
-          },
+          prefs[t.key] ?? { enabled: true },
         ])
       );
       try {
@@ -145,7 +134,7 @@ export default function SettingsClient() {
   );
 
   const scheduleNotificationSave = useCallback(
-    (prefs: Record<string, { enabled: boolean; frequency: string }>) => {
+    (prefs: Record<string, { enabled: boolean }>) => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
       saveTimeoutRef.current = setTimeout(() => {
         saveTimeoutRef.current = null;
@@ -158,22 +147,7 @@ export default function SettingsClient() {
   const setNotificationEnabled = (key: string, enabled: boolean) => {
     const next = {
       ...notificationPrefs,
-      [key]: {
-        enabled,
-        frequency: notificationPrefs[key]?.frequency ?? "immediately",
-      },
-    };
-    setNotificationPrefs(next);
-    scheduleNotificationSave(next);
-  };
-
-  const setNotificationFrequency = (key: string, frequency: string) => {
-    const next = {
-      ...notificationPrefs,
-      [key]: {
-        enabled: notificationPrefs[key]?.enabled ?? true,
-        frequency,
-      },
+      [key]: { enabled },
     };
     setNotificationPrefs(next);
     scheduleNotificationSave(next);
@@ -344,22 +318,17 @@ export default function SettingsClient() {
           <Box>
             <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>Notifications</Typography>
             <Typography color="text.secondary" variant="body2" sx={{ mt: 0.75, lineHeight: 1.6 }}>
-              Choose how and when you&apos;d like to hear from us.
+              Choose which email notifications you&apos;d like to receive.
             </Typography>
           </Box>
           {NOTIFICATION_TYPES.map((type, index) => {
-            const prefs = notificationPrefs[type.key] ?? {
-              enabled: true,
-              frequency: type.allowedFrequencies[0]?.value ?? "immediately",
-            };
+            const enabled = notificationPrefs[type.key]?.enabled ?? true;
             return (
               <NotificationRow
                 key={type.key}
                 config={type}
-                enabled={prefs.enabled}
-                frequency={prefs.frequency}
-                onToggle={(enabled) => setNotificationEnabled(type.key, enabled)}
-                onFrequencyChange={(freq) => setNotificationFrequency(type.key, freq)}
+                enabled={enabled}
+                onToggle={(val) => setNotificationEnabled(type.key, val)}
                 showDivider={index > 0}
                 disabled={notificationPrefsLoading}
               />
