@@ -164,6 +164,9 @@ export default function EventDetailClient() {
   const [error, setError] = useState<string | null>(null);
 
   const [rsvpSubmitting, setRsvpSubmitting] = useState(false);
+  const [rsvpDialogOpen, setRsvpDialogOpen] = useState(false);
+  const [rsvpDialogStatus, setRsvpDialogStatus] = useState<string>("");
+  const [rsvpDialogMessage, setRsvpDialogMessage] = useState("");
   // Tracks RSVP status set via email invite token (unauthenticated flow)
   const [emailRsvpStatus, setEmailRsvpStatus] = useState<string | null>(null);
   const [showAltTimeForm, setShowAltTimeForm] = useState(false);
@@ -660,6 +663,37 @@ export default function EventDetailClient() {
       if (data.ok) {
         toast.success(status === "going" ? "You're going!" : status === "maybe" ? "Marked as maybe" : "Response recorded");
         refresh();
+      } else {
+        toast.error(data.message ?? "Something went wrong");
+      }
+    } catch {
+      toast.error("Network error");
+    }
+    setRsvpSubmitting(false);
+  };
+
+  const openRsvpDialog = (status: string) => {
+    setRsvpDialogStatus(status);
+    setRsvpDialogMessage("");
+    setRsvpDialogOpen(true);
+  };
+
+  const handleRsvpConfirm = async () => {
+    const status = rsvpDialogStatus;
+    const note = rsvpDialogMessage.trim() || null;
+    setRsvpDialogOpen(false);
+    setRsvpSubmitting(true);
+    try {
+      const res = await apiFetch(`/events/${eventId}/rsvp`, {
+        auth: true,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status, note }),
+      });
+      const data = (await res.json()) as { ok: boolean; error?: string; message?: string; status?: string };
+      if (data.ok) {
+        toast.success(status === "going" ? "You're going!" : status === "maybe" ? "Marked as maybe" : "Response recorded");
+        refresh();
       } else if (data.error === "EVENT_LOCKED") {
         toast.error("This plan is locked and not accepting new participants");
       } else if (data.error === "APPROVAL_REQUIRED") {
@@ -671,6 +705,7 @@ export default function EventDetailClient() {
       toast.error("Network error");
     }
     setRsvpSubmitting(false);
+    setRsvpDialogMessage("");
   };
 
   const handleJoinRequest = async () => {
@@ -1253,13 +1288,13 @@ export default function EventDetailClient() {
                 </Stack>
               )}
               <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
-                <AppButton onClick={() => handleRsvp("going")} disabled={rsvpSubmitting || (!!event.lockedAt && chatAccessible !== true)} sx={{ flex: 1 }}>
+                <AppButton onClick={() => openRsvpDialog("going")} disabled={rsvpSubmitting || (!!event.lockedAt && chatAccessible !== true)} sx={{ flex: 1 }}>
                   Going
                 </AppButton>
-                <AppButton onClick={() => handleRsvp("maybe")} disabled={rsvpSubmitting || (!!event.lockedAt && chatAccessible !== true)} variant="outlined" sx={{ flex: 1 }}>
+                <AppButton onClick={() => openRsvpDialog("maybe")} disabled={rsvpSubmitting || (!!event.lockedAt && chatAccessible !== true)} variant="outlined" sx={{ flex: 1 }}>
                   Maybe
                 </AppButton>
-                <AppButton onClick={() => handleRsvp("cant_make_it")} disabled={rsvpSubmitting || (!!event.lockedAt && chatAccessible !== true)} variant="outlined" color="inherit" sx={{ flex: 1 }}>
+                <AppButton onClick={() => openRsvpDialog("cant_make_it")} disabled={rsvpSubmitting || (!!event.lockedAt && chatAccessible !== true)} variant="outlined" color="inherit" sx={{ flex: 1 }}>
                   Can&apos;t make it
                 </AppButton>
               </Stack>
@@ -1711,6 +1746,7 @@ export default function EventDetailClient() {
                         fontWeight: 600,
                         fontSize: "0.8125rem",
                         "& .MuiChip-icon": { color: "inherit", opacity: 0.9 },
+                        flexShrink: 0,
                       }}
                     />
                   ) : r.status === "maybe" ? (
@@ -1719,17 +1755,32 @@ export default function EventDetailClient() {
                       size="small"
                       color="warning"
                       variant="outlined"
-                      sx={{ fontWeight: 600, fontSize: "0.8125rem" }}
+                      sx={{ fontWeight: 600, fontSize: "0.8125rem", flexShrink: 0 }}
                     />
                   ) : (
                     <Chip
                       label={"Can\u2019t make it"}
                       size="small"
                       variant="outlined"
-                      sx={{ fontWeight: 500, fontSize: "0.8125rem", color: "text.secondary" }}
+                      sx={{ fontWeight: 500, fontSize: "0.8125rem", color: "text.secondary", flexShrink: 0 }}
                     />
                   )}
                 </Stack>
+                {r.note && (
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{
+                      mt: 0.5,
+                      ml: 7.5,
+                      fontStyle: "italic",
+                      lineHeight: 1.5,
+                      fontSize: "0.8125rem",
+                    }}
+                  >
+                    &ldquo;{r.note}&rdquo;
+                  </Typography>
+                )}
               </Stack>
             ))}
 
@@ -2242,6 +2293,36 @@ export default function EventDetailClient() {
           </Stack>
         </AppCard>
       )}
+      {/* RSVP confirmation dialog */}
+      <Dialog open={rsvpDialogOpen} onClose={() => setRsvpDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontWeight: 700 }}>
+          {rsvpDialogStatus === "going" ? "Confirm you\u2019re going" : rsvpDialogStatus === "maybe" ? "RSVP as maybe" : "Can\u2019t make it"}
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Add an optional message, it will be sent to the host and shown on the plan details.
+          </Typography>
+          <TextField
+            multiline
+            minRows={2}
+            maxRows={4}
+            fullWidth
+            placeholder="An optional message for the group"
+            value={rsvpDialogMessage}
+            onChange={(e) => setRsvpDialogMessage(e.target.value.slice(0, 500))}
+            inputProps={{ maxLength: 500 }}
+            helperText={`${rsvpDialogMessage.length}/500`}
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
+          <Button variant="text" color="inherit" onClick={() => setRsvpDialogOpen(false)}>
+            Cancel
+          </Button>
+          <Button variant="contained" onClick={handleRsvpConfirm} disabled={rsvpSubmitting}>
+            {rsvpDialogStatus === "going" ? "I\u2019m going" : rsvpDialogStatus === "maybe" ? "Maybe" : "Can\u2019t make it"}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Stack>
   );
 }

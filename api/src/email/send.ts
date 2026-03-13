@@ -234,22 +234,57 @@ export const sendEventRsvpUpdateEmail = async (
   });
 };
 
-// ── Host leave notification ─────────────────────────────────────────────
-//   Someone left your plan — Postmark template 43921920
-//   Model: productName, hostName, attendeeName, eventTitle, eventUrl
+// ── Host RSVP notification helpers ──────────────────────────────────────
+//   Each RSVP status has its own Postmark template and preference toggle.
+//   Model: productName, hostName, attendeeName, eventTitle, eventUrl, attendeeMessage
+
+type HostRsvpEmailParams = {
+  to: string; hostName: string; attendeeName: string;
+  eventTitle: string; eventUrl: string; attendeeMessage?: string | null;
+};
+
+export const sendEventJoinEmail = async (
+  env: Bindings, params: HostRsvpEmailParams
+) => {
+  if (!env.POSTMARK_TEMPLATE_EVENT_JOIN) return;
+  return sendPostmarkTemplateEmail(env, {
+    From: env.EMAIL_FROM, To: params.to,
+    TemplateId: env.POSTMARK_TEMPLATE_EVENT_JOIN,
+    TemplateModel: {
+      productName: "NewChums", hostName: params.hostName, attendeeName: params.attendeeName,
+      eventTitle: params.eventTitle, eventUrl: params.eventUrl,
+      attendeeMessage: params.attendeeMessage || "",
+    },
+  });
+};
 
 export const sendEventLeaveEmail = async (
-  env: Bindings,
-  { to, hostName, attendeeName, eventTitle, eventUrl }: {
-    to: string; hostName: string; attendeeName: string;
-    eventTitle: string; eventUrl: string;
-  }
+  env: Bindings, params: HostRsvpEmailParams
 ) => {
   if (!env.POSTMARK_TEMPLATE_EVENT_LEAVE) return;
   return sendPostmarkTemplateEmail(env, {
-    From: env.EMAIL_FROM, To: to,
+    From: env.EMAIL_FROM, To: params.to,
     TemplateId: env.POSTMARK_TEMPLATE_EVENT_LEAVE,
-    TemplateModel: { productName: "NewChums", hostName, attendeeName, eventTitle, eventUrl },
+    TemplateModel: {
+      productName: "NewChums", hostName: params.hostName, attendeeName: params.attendeeName,
+      eventTitle: params.eventTitle, eventUrl: params.eventUrl,
+      attendeeMessage: params.attendeeMessage || "",
+    },
+  });
+};
+
+export const sendEventMaybeEmail = async (
+  env: Bindings, params: HostRsvpEmailParams
+) => {
+  if (!env.POSTMARK_TEMPLATE_EVENT_MAYBE) return;
+  return sendPostmarkTemplateEmail(env, {
+    From: env.EMAIL_FROM, To: params.to,
+    TemplateId: env.POSTMARK_TEMPLATE_EVENT_MAYBE,
+    TemplateModel: {
+      productName: "NewChums", hostName: params.hostName, attendeeName: params.attendeeName,
+      eventTitle: params.eventTitle, eventUrl: params.eventUrl,
+      attendeeMessage: params.attendeeMessage || "",
+    },
   });
 };
 

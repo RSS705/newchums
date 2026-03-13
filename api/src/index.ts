@@ -14,7 +14,9 @@ import {
   sendEmailChangeSuccessEmail,
   sendEventCanceledEmail,
   sendEventInviteEmail,
+  sendEventJoinEmail,
   sendEventLeaveEmail,
+  sendEventMaybeEmail,
   sendEventRsvpUpdateEmail,
   sendJoinRequestApprovedEmail,
   sendJoinRequestDeclinedEmail,
@@ -4774,34 +4776,24 @@ app.post("/events/:id/rsvp", async (c) => {
     const hostUser = (await sql`SELECT email, name, username FROM newchums.users WHERE id = ${event.host_user_id}`) as { email: string; name: string | null; username: string | null }[];
     const attendeeUser = (await sql`SELECT name, username FROM newchums.users WHERE id = ${userId}`) as { name: string | null; username: string | null }[];
     if (hostUser.length > 0) {
-      const hostName = hostUser[0].name?.trim() || hostUser[0].username?.replace(/^@/, "") || "there";
-      const attendeeName = attendeeUser[0]?.name?.trim() || attendeeUser[0]?.username?.replace(/^@/, "") || "Someone";
-      const eventUrl = `${c.env.WEB_BASE_URL}/events/${eventId}`;
-
       try {
-        await sendEventRsvpUpdateEmail(c.env, {
-          to: hostUser[0].email,
-          hostName, attendeeName,
-          eventTitle: event.title,
-          rsvpStatus: statusLabel,
-          eventUrl,
-        });
-      } catch { /* noop */ }
+        const hostProfileRows = (await sql`SELECT notification_prefs FROM user_profile WHERE user_id = ${event.host_user_id} LIMIT 1`) as { notification_prefs: unknown }[];
+        const hostPrefs = normalizeNotificationPrefs(hostProfileRows[0]?.notification_prefs);
+        const hostName = hostUser[0].name?.trim() || hostUser[0].username?.replace(/^@/, "") || "there";
+        const attendeeName = attendeeUser[0]?.name?.trim() || attendeeUser[0]?.username?.replace(/^@/, "") || "Someone";
+        const eventUrl = `${c.env.WEB_BASE_URL}/events/${eventId}`;
+        const emailArgs = { to: hostUser[0].email, hostName, attendeeName, eventTitle: event.title, eventUrl, attendeeMessage: note };
 
-      if (status === "cant_make_it") {
-        try {
-          const hostProfileRows = (await sql`SELECT notification_prefs FROM user_profile WHERE user_id = ${event.host_user_id} LIMIT 1`) as { notification_prefs: unknown }[];
-          const hostPrefs = normalizeNotificationPrefs(hostProfileRows[0]?.notification_prefs);
-          if (hostPrefs.items.host_leave?.enabled !== false) {
-            await sendEventLeaveEmail(c.env, {
-              to: hostUser[0].email,
-              hostName, attendeeName,
-              eventTitle: event.title,
-              eventUrl,
-            });
-          }
-        } catch { /* noop */ }
-      }
+        if (status === "going" && hostPrefs.items.host_join?.enabled !== false) {
+          await sendEventJoinEmail(c.env, emailArgs);
+        }
+        if (status === "maybe" && hostPrefs.items.host_maybe?.enabled !== false) {
+          await sendEventMaybeEmail(c.env, emailArgs);
+        }
+        if (status === "cant_make_it" && hostPrefs.items.host_leave?.enabled !== false) {
+          await sendEventLeaveEmail(c.env, emailArgs);
+        }
+      } catch { /* noop */ }
     }
 
     return c.json({ ok: true, status });
@@ -4887,25 +4879,28 @@ app.post("/events/:id/email-rsvp", async (c) => {
       VALUES (${event.host_user_id}, 'event_rsvp', ${userId}, ${eventId}, ${JSON.stringify({ eventTitle: event.title, rsvpStatus: statusLabel })})
     `;
 
-    if (status === "cant_make_it") {
-      try {
-        const hostUser = (await sql`SELECT email, name, username FROM newchums.users WHERE id = ${event.host_user_id}`) as { email: string; name: string | null; username: string | null }[];
-        const attendeeUser = (await sql`SELECT name, username FROM newchums.users WHERE id = ${userId}`) as { name: string | null; username: string | null }[];
-        if (hostUser.length > 0) {
-          const hostProfileRows = (await sql`SELECT notification_prefs FROM user_profile WHERE user_id = ${event.host_user_id} LIMIT 1`) as { notification_prefs: unknown }[];
-          const hostPrefs = normalizeNotificationPrefs(hostProfileRows[0]?.notification_prefs);
-          if (hostPrefs.items.host_leave?.enabled !== false) {
-            await sendEventLeaveEmail(c.env, {
-              to: hostUser[0].email,
-              hostName: hostUser[0].name?.trim() || hostUser[0].username?.replace(/^@/, "") || "there",
-              attendeeName: attendeeUser[0]?.name?.trim() || attendeeUser[0]?.username?.replace(/^@/, "") || "Someone",
-              eventTitle: event.title,
-              eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
-            });
-          }
+    try {
+      const hostUser = (await sql`SELECT email, name, username FROM newchums.users WHERE id = ${event.host_user_id}`) as { email: string; name: string | null; username: string | null }[];
+      const attendeeUser = (await sql`SELECT name, username FROM newchums.users WHERE id = ${userId}`) as { name: string | null; username: string | null }[];
+      if (hostUser.length > 0) {
+        const hostProfileRows = (await sql`SELECT notification_prefs FROM user_profile WHERE user_id = ${event.host_user_id} LIMIT 1`) as { notification_prefs: unknown }[];
+        const hostPrefs = normalizeNotificationPrefs(hostProfileRows[0]?.notification_prefs);
+        const hostName = hostUser[0].name?.trim() || hostUser[0].username?.replace(/^@/, "") || "there";
+        const attendeeName = attendeeUser[0]?.name?.trim() || attendeeUser[0]?.username?.replace(/^@/, "") || "Someone";
+        const eventUrl = `${c.env.WEB_BASE_URL}/events/${eventId}`;
+        const emailArgs = { to: hostUser[0].email, hostName, attendeeName, eventTitle: event.title, eventUrl };
+
+        if (status === "going" && hostPrefs.items.host_join?.enabled !== false) {
+          await sendEventJoinEmail(c.env, emailArgs);
         }
-      } catch { /* noop */ }
-    }
+        if (status === "maybe" && hostPrefs.items.host_maybe?.enabled !== false) {
+          await sendEventMaybeEmail(c.env, emailArgs);
+        }
+        if (status === "cant_make_it" && hostPrefs.items.host_leave?.enabled !== false) {
+          await sendEventLeaveEmail(c.env, emailArgs);
+        }
+      }
+    } catch { /* noop */ }
 
     return c.json({ ok: true, status });
   } catch (err) {

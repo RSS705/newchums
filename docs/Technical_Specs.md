@@ -170,7 +170,8 @@ Users manage notification preferences in **Settings** (`/settings`). Each notifi
 | Key | UI title |
 |-----|----------|
 | `event_match` | New plans matching my interests |
-| `host_join` | Someone joins your plan |
+| `host_join` | Someone is going to your plan |
+| `host_maybe` | Someone might attend your plan |
 | `host_leave` | Someone leaves your plan |
 | `feedback_requests` | Post-gathering feedback |
 | `event_changed_canceled` | Plan canceled or changed |
@@ -178,7 +179,7 @@ Users manage notification preferences in **Settings** (`/settings`). Each notifi
 
 Defaults are applied at account creation (credentials signup, OAuth) and backfilled for existing users with missing keys. GET normalizes stored prefs and optionally persists backfilled values.
 
-The `host_leave` preference controls the leave notification email (Postmark template 43921920) sent to the host when someone changes their RSVP to "Can't make it." Migration 033 removes the obsolete `event_reminders` key and `frequency` fields from existing JSONB data.
+Each RSVP status has a dedicated host notification email, each gated on its own preference toggle: `host_join` controls the going notification (Postmark template 43922675), `host_maybe` controls the maybe notification (Postmark template 43922237), and `host_leave` controls the leave notification (Postmark template 43921920). Migration 033 removes the obsolete `event_reminders` key and `frequency` fields from existing JSONB data.
 
 ### Account deletion
 

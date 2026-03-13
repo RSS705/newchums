@@ -17,8 +17,13 @@ export const NOTIFICATION_TYPES: NotificationTypeConfig[] = [
   },
   {
     key: "host_join",
-    title: "Someone joins your plan",
-    description: "When someone signs up for a plan you're hosting.",
+    title: "Someone is going to your plan",
+    description: "When someone confirms they're attending a plan you're hosting.",
+  },
+  {
+    key: "host_maybe",
+    title: "Someone might attend your plan",
+    description: "When someone RSVPs as \"maybe\" to a plan you're hosting.",
   },
   {
     key: "host_leave",
