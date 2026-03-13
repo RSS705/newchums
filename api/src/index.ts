@@ -4493,6 +4493,18 @@ app.get("/events/:id", async (c) => {
     userId = await ensureAppUserId(sql, authPayload.email, (authPayload as { name?: string | null }).name);
   }
 
+  // Token-based access for email invite recipients (may not have an account)
+  const inviteTokenParam = c.req.query("invite_token") ?? null;
+  let tokenGuestEmail: string | null = null;
+  let tokenGrantsAccess = false;
+  if (inviteTokenParam) {
+    const decoded = await verifyInviteToken(inviteTokenParam, c.env.NEXTAUTH_SECRET);
+    if (decoded && decoded.eventId === eventId) {
+      tokenGrantsAccess = true;
+      if (!userId && decoded.email) tokenGuestEmail = decoded.email.toLowerCase();
+    }
+  }
+
   try {
     const rows = (await sql`
       SELECT
@@ -4528,14 +4540,14 @@ app.get("/events/:id", async (c) => {
 
     if (event.status === "draft" && !isHost) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
 
-    if (event.visibility === "invite_only" && !isHost) {
+    if (event.visibility === "invite_only" && !isHost && !tokenGrantsAccess) {
       if (!userId) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
       const invite = (await sql`SELECT id FROM newchums.event_invites WHERE event_id = ${eventId} AND user_id = ${userId}`) as { id: string }[];
       const rsvp = (await sql`SELECT id FROM newchums.event_rsvps WHERE event_id = ${eventId} AND user_id = ${userId}`) as { id: string }[];
       if (invite.length === 0 && rsvp.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     }
 
-    if (event.visibility === "chums_only" && !isHost) {
+    if (event.visibility === "chums_only" && !isHost && !tokenGrantsAccess) {
       if (!userId) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
       const isChum = (await sql`SELECT id FROM newchums.user_chums WHERE user_id = ${event.host_user_id} AND chum_user_id = ${userId}`) as { id: string }[];
       const invite = (await sql`SELECT id FROM newchums.event_invites WHERE event_id = ${eventId} AND user_id = ${userId}`) as { id: string }[];
@@ -4544,12 +4556,13 @@ app.get("/events/:id", async (c) => {
     }
 
     const rsvps = (await sql`
-      SELECT er.status, er.note, er.user_id, u.name, u.username, u.avatar_key, u.avatar_updated_at
+      SELECT er.status, er.note, er.user_id, er.guest_email, er.guest_name,
+             u.name, u.username, u.avatar_key, u.avatar_updated_at
       FROM newchums.event_rsvps er
-      JOIN newchums.users u ON u.id = er.user_id
+      LEFT JOIN newchums.users u ON u.id = er.user_id
       WHERE er.event_id = ${eventId}
       ORDER BY er.created_at ASC
-    `) as Array<{ status: string; note: string | null; user_id: string; name: string | null; username: string | null; avatar_key: string | null; avatar_updated_at: string | Date | null }>;
+    `) as Array<{ status: string; note: string | null; user_id: string | null; guest_email: string | null; guest_name: string | null; name: string | null; username: string | null; avatar_key: string | null; avatar_updated_at: string | Date | null }>;
 
     const altTimes = (await sql`
       SELECT eat.suggested_at, eat.note, eat.user_id, u.name, u.username
@@ -4653,16 +4666,21 @@ app.get("/events/:id", async (c) => {
         reserveSeats: event.reserve_seats === true,
         isInvited,
         hasRsvp,
+        guestInvite: tokenGuestEmail ? true : undefined,
+        guestRsvpStatus: tokenGuestEmail
+          ? (rsvps.find((r) => !r.user_id && r.guest_email === tokenGuestEmail)?.status ?? null)
+          : undefined,
       },
       rsvps: rsvps.map((r) => {
         const rHandle = r.username?.replace(/^@/, "") ?? null;
         return {
-          userId: r.user_id,
-          name: r.name?.trim() || rHandle || "Someone",
+          userId: r.user_id ?? r.guest_email ?? "guest",
+          name: r.name?.trim() || rHandle || r.guest_name || r.guest_email || "Someone",
           handle: rHandle ? `@${rHandle}` : null,
           status: r.status,
           note: r.note,
-          avatarUrl: buildAvatarUrl(r.user_id, r.avatar_key, r.avatar_updated_at, c.env.MEDIA_BUCKET),
+          avatarUrl: r.user_id ? buildAvatarUrl(r.user_id, r.avatar_key, r.avatar_updated_at, c.env.MEDIA_BUCKET) : null,
+          isGuest: !r.user_id,
         };
       }),
       altTimes: altTimes.map((a) => ({
@@ -4827,67 +4845,102 @@ app.post("/events/:id/email-rsvp", async (c) => {
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     const event = ev[0];
 
-    // Resolve the invitee to a userId
+    // Resolve the invitee to a userId (may be null for email-only invitees without an account)
     let userId: string | null = decoded.userId ?? null;
-    if (!userId && decoded.email) {
-      const userRows = (await sql`SELECT id FROM newchums.users WHERE email = ${decoded.email.toLowerCase()} LIMIT 1`) as { id: string }[];
+    const guestEmail = decoded.email?.toLowerCase() ?? null;
+    if (!userId && guestEmail) {
+      const userRows = (await sql`SELECT id FROM newchums.users WHERE email = ${guestEmail} LIMIT 1`) as { id: string }[];
       userId = userRows[0]?.id ?? null;
     }
-    if (!userId) return c.json({ ok: false, error: "USER_NOT_FOUND", message: "Please sign up or log in to RSVP." }, 400);
 
-    if (event.host_user_id === userId)
+    const isGuest = !userId && !!guestEmail;
+
+    if (!userId && !guestEmail)
+      return c.json({ ok: false, error: "INVALID_TOKEN", message: "This invite link is invalid." }, 400);
+
+    if (userId && event.host_user_id === userId)
       return c.json({ ok: false, error: "VALIDATION", message: "Hosts cannot RSVP to their own plan" }, 400);
 
     // Verify invitee is actually invited
-    const invited = (await sql`SELECT 1 FROM newchums.event_invites WHERE event_id = ${eventId} AND (user_id = ${userId} OR email = ${decoded.email ?? ''}) LIMIT 1`) as unknown[];
+    const invited = userId
+      ? (await sql`SELECT 1 FROM newchums.event_invites WHERE event_id = ${eventId} AND user_id = ${userId} LIMIT 1`) as unknown[]
+      : (await sql`SELECT 1 FROM newchums.event_invites WHERE event_id = ${eventId} AND email = ${guestEmail} LIMIT 1`) as unknown[];
     if (invited.length === 0)
       return c.json({ ok: false, error: "NOT_INVITED", message: "This invite link is no longer valid." }, 403);
 
-    const existingRsvp = (await sql`SELECT id FROM newchums.event_rsvps WHERE event_id = ${eventId} AND user_id = ${userId}`) as { id: string }[];
+    if (isGuest) {
+      // Guest RSVP path — no user account
+      const existingGuest = (await sql`SELECT id FROM newchums.event_rsvps WHERE event_id = ${eventId} AND guest_email = ${guestEmail} AND user_id IS NULL`) as { id: string }[];
 
-    if (event.locked_at && existingRsvp.length === 0)
-      return c.json({ ok: false, error: "EVENT_LOCKED", message: "This plan is locked and not accepting new participants" }, 403);
+      if (event.locked_at && existingGuest.length === 0)
+        return c.json({ ok: false, error: "EVENT_LOCKED", message: "This plan is locked and not accepting new participants" }, 403);
 
-    if (status === "going" && event.max_seats) {
-      const goingCount = (await sql`SELECT COUNT(*)::int AS c FROM newchums.event_rsvps WHERE event_id = ${eventId} AND status = 'going'`) as { c: number }[];
-      let occupiedSeats = goingCount[0].c;
-      if (event.reserve_seats) {
-        const reservedCount = (await sql`
-          SELECT COUNT(*)::int AS c FROM newchums.event_invites ei
-          WHERE ei.event_id = ${eventId}
-            AND ei.user_id IS NOT NULL
-            AND (
-              NOT EXISTS (SELECT 1 FROM newchums.event_rsvps er WHERE er.event_id = ${eventId} AND er.user_id = ei.user_id)
-              OR EXISTS (SELECT 1 FROM newchums.event_rsvps er2 WHERE er2.event_id = ${eventId} AND er2.user_id = ei.user_id AND er2.status = 'maybe')
-            )
-        `) as { c: number }[];
-        occupiedSeats += reservedCount[0].c;
+      if (status === "going" && event.max_seats) {
+        const goingCount = (await sql`SELECT COUNT(*)::int AS c FROM newchums.event_rsvps WHERE event_id = ${eventId} AND status = 'going'`) as { c: number }[];
+        if (goingCount[0].c >= event.max_seats)
+          return c.json({ ok: false, error: "EVENT_FULL", message: "This plan is full" }, 409);
       }
-      if (occupiedSeats >= event.max_seats)
-        return c.json({ ok: false, error: "EVENT_FULL", message: "This plan is full" }, 409);
+
+      if (existingGuest.length > 0) {
+        await sql`UPDATE newchums.event_rsvps SET status = ${status}, updated_at = NOW() WHERE event_id = ${eventId} AND guest_email = ${guestEmail} AND user_id IS NULL`;
+      } else {
+        await sql`INSERT INTO newchums.event_rsvps (event_id, user_id, guest_email, guest_name, status) VALUES (${eventId}, ${null}, ${guestEmail}, ${guestEmail}, ${status})`;
+      }
+    } else {
+      // Registered user RSVP path
+      const existingRsvp = (await sql`SELECT id FROM newchums.event_rsvps WHERE event_id = ${eventId} AND user_id = ${userId}`) as { id: string }[];
+
+      if (event.locked_at && existingRsvp.length === 0)
+        return c.json({ ok: false, error: "EVENT_LOCKED", message: "This plan is locked and not accepting new participants" }, 403);
+
+      if (status === "going" && event.max_seats) {
+        const goingCount = (await sql`SELECT COUNT(*)::int AS c FROM newchums.event_rsvps WHERE event_id = ${eventId} AND status = 'going'`) as { c: number }[];
+        let occupiedSeats = goingCount[0].c;
+        if (event.reserve_seats) {
+          const reservedCount = (await sql`
+            SELECT COUNT(*)::int AS c FROM newchums.event_invites ei
+            WHERE ei.event_id = ${eventId}
+              AND ei.user_id IS NOT NULL
+              AND (
+                NOT EXISTS (SELECT 1 FROM newchums.event_rsvps er WHERE er.event_id = ${eventId} AND er.user_id = ei.user_id)
+                OR EXISTS (SELECT 1 FROM newchums.event_rsvps er2 WHERE er2.event_id = ${eventId} AND er2.user_id = ei.user_id AND er2.status = 'maybe')
+              )
+          `) as { c: number }[];
+          occupiedSeats += reservedCount[0].c;
+        }
+        if (occupiedSeats >= event.max_seats)
+          return c.json({ ok: false, error: "EVENT_FULL", message: "This plan is full" }, 409);
+      }
+
+      await sql`
+        INSERT INTO newchums.event_rsvps (event_id, user_id, status)
+        VALUES (${eventId}, ${userId}, ${status})
+        ON CONFLICT (event_id, user_id) DO UPDATE SET status = ${status}, updated_at = NOW()
+      `;
     }
 
-    await sql`
-      INSERT INTO newchums.event_rsvps (event_id, user_id, status)
-      VALUES (${eventId}, ${userId}, ${status})
-      ON CONFLICT (event_id, user_id) DO UPDATE SET status = ${status}, updated_at = NOW()
-    `;
-
     // Notify the host
+    const attendeeName = isGuest
+      ? (guestEmail ?? "Someone")
+      : await (async () => {
+          const rows = (await sql`SELECT name, username FROM newchums.users WHERE id = ${userId}`) as { name: string | null; username: string | null }[];
+          return rows[0]?.name?.trim() || rows[0]?.username?.replace(/^@/, "") || "Someone";
+        })();
+
     const statusLabel = status === "going" ? "Going" : status === "maybe" ? "Maybe" : "Can't make it";
-    await sql`
-      INSERT INTO newchums.notifications (user_id, type, actor_user_id, entity_id, metadata)
-      VALUES (${event.host_user_id}, 'event_rsvp', ${userId}, ${eventId}, ${JSON.stringify({ eventTitle: event.title, rsvpStatus: statusLabel })})
-    `;
+    if (userId) {
+      await sql`
+        INSERT INTO newchums.notifications (user_id, type, actor_user_id, entity_id, metadata)
+        VALUES (${event.host_user_id}, 'event_rsvp', ${userId}, ${eventId}, ${JSON.stringify({ eventTitle: event.title, rsvpStatus: statusLabel })})
+      `;
+    }
 
     try {
       const hostUser = (await sql`SELECT email, name, username FROM newchums.users WHERE id = ${event.host_user_id}`) as { email: string; name: string | null; username: string | null }[];
-      const attendeeUser = (await sql`SELECT name, username FROM newchums.users WHERE id = ${userId}`) as { name: string | null; username: string | null }[];
       if (hostUser.length > 0) {
         const hostProfileRows = (await sql`SELECT notification_prefs FROM user_profile WHERE user_id = ${event.host_user_id} LIMIT 1`) as { notification_prefs: unknown }[];
         const hostPrefs = normalizeNotificationPrefs(hostProfileRows[0]?.notification_prefs);
         const hostName = hostUser[0].name?.trim() || hostUser[0].username?.replace(/^@/, "") || "there";
-        const attendeeName = attendeeUser[0]?.name?.trim() || attendeeUser[0]?.username?.replace(/^@/, "") || "Someone";
         const eventUrl = `${c.env.WEB_BASE_URL}/events/${eventId}`;
         const emailArgs = { to: hostUser[0].email, hostName, attendeeName, eventTitle: event.title, eventUrl };
 
@@ -4903,7 +4956,7 @@ app.post("/events/:id/email-rsvp", async (c) => {
       }
     } catch { /* noop */ }
 
-    return c.json({ ok: true, status });
+    return c.json({ ok: true, status, isGuest });
   } catch (err) {
     console.error("[POST /events/:id/email-rsvp]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);

@@ -85,6 +85,8 @@ type EventDetail = {
   reserveSeats: boolean;
   isInvited: boolean;
   hasRsvp: boolean;
+  guestInvite?: boolean;
+  guestRsvpStatus?: string | null;
 };
 
 type RsvpEntry = { userId: string; name: string; handle: string | null; status: string; note: string | null; avatarUrl?: string | null };
@@ -272,7 +274,8 @@ export default function EventDetailClient() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await apiFetch(`/events/${eventId}`, { auth: true });
+      const tokenSuffix = inviteTokenRef.current ? `?invite_token=${encodeURIComponent(inviteTokenRef.current)}` : "";
+      const res = await apiFetch(`/events/${eventId}${tokenSuffix}`, { auth: true });
       if (!res.ok) {
         setError("Plan not found");
         setLoading(false);
@@ -288,7 +291,8 @@ export default function EventDetailClient() {
 
   const refresh = useCallback(async () => {
     try {
-      const res = await apiFetch(`/events/${eventId}`, { auth: true });
+      const tokenSuffix = inviteTokenRef.current ? `?invite_token=${encodeURIComponent(inviteTokenRef.current)}` : "";
+      const res = await apiFetch(`/events/${eventId}${tokenSuffix}`, { auth: true });
       if (res.ok) {
         const data = await res.json();
         applyEventData(data);
@@ -298,15 +302,20 @@ export default function EventDetailClient() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Persistent invite token — survives for the component lifecycle so guests
+  // can re-RSVP and access invite-only events without auth.
+  const inviteTokenRef = useRef<string | null>(null);
+
   // Auto-RSVP from email link (?rsvp=going&invite_token=xxx)
   const pendingRsvpRef = useRef<string | null>(null);
-  const pendingInviteTokenRef = useRef<string | null>(null);
   useEffect(() => {
     const rsvpParam = searchParams.get("rsvp");
     const inviteTokenParam = searchParams.get("invite_token");
+    if (inviteTokenParam) inviteTokenRef.current = inviteTokenParam;
     if (rsvpParam && VALID_RSVP_PARAMS.includes(rsvpParam as typeof VALID_RSVP_PARAMS[number])) {
       pendingRsvpRef.current = rsvpParam;
-      pendingInviteTokenRef.current = inviteTokenParam;
+    }
+    if (rsvpParam || inviteTokenParam) {
       const url = new URL(window.location.href);
       url.searchParams.delete("rsvp");
       url.searchParams.delete("invite_token");
@@ -318,16 +327,14 @@ export default function EventDetailClient() {
     if (!event || !pendingRsvpRef.current) return;
     if (event.status === "canceled") {
       pendingRsvpRef.current = null;
-      pendingInviteTokenRef.current = null;
       return;
     }
     const rsvpStatus = pendingRsvpRef.current;
-    const inviteToken = pendingInviteTokenRef.current;
+    const inviteToken = inviteTokenRef.current;
     pendingRsvpRef.current = null;
-    pendingInviteTokenRef.current = null;
 
     if (inviteToken) {
-      // Token-based RSVP — works without login
+      // Token-based RSVP — works without login (registered users + guest invitees)
       (async () => {
         setRsvpSubmitting(true);
         try {
@@ -336,10 +343,10 @@ export default function EventDetailClient() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ invite_token: inviteToken, status: rsvpStatus }),
           });
-          const data = (await res.json()) as { ok: boolean; error?: string; message?: string };
+          const data = (await res.json()) as { ok: boolean; error?: string; message?: string; isGuest?: boolean };
           if (data.ok) {
             setEmailRsvpStatus(rsvpStatus);
-            toast.success(rsvpStatus === "going" ? "You're going!" : rsvpStatus === "maybe" ? "Marked as maybe" : "Response recorded");
+            toast.success(rsvpStatus === "going" ? "You\u2019re going!" : rsvpStatus === "maybe" ? "Marked as maybe" : "Response recorded");
             refresh();
           } else {
             toast.error(data.message ?? "Something went wrong");
@@ -367,14 +374,18 @@ export default function EventDetailClient() {
   useEffect(() => {
     if (!showInviteForm) return;
     const q = inviteSearch.trim();
+    setSearchResults([]);
+    setHasSearched(false);
     if (q.length < 2) {
-      setSearchResults([]);
-      setHasSearched(false);
+      setSearching(false);
       return;
     }
+    if (EMAIL_RE.test(q)) {
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
     const timer = setTimeout(async () => {
-      setSearching(true);
-      setHasSearched(false);
       try {
         const res = await apiFetch(`/chums/search?q=${encodeURIComponent(q)}`, { auth: true });
         if (res.ok) {
@@ -682,6 +693,29 @@ export default function EventDetailClient() {
     setRsvpSubmitting(false);
   };
 
+  const handleGuestRsvp = async (status: string) => {
+    if (!inviteTokenRef.current) return;
+    setRsvpSubmitting(true);
+    try {
+      const res = await apiFetch(`/events/${eventId}/email-rsvp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invite_token: inviteTokenRef.current, status }),
+      });
+      const data = (await res.json()) as { ok: boolean; error?: string; message?: string };
+      if (data.ok) {
+        setEmailRsvpStatus(status);
+        toast.success(status === "going" ? "You\u2019re going!" : status === "maybe" ? "Marked as maybe" : "Response recorded");
+        refresh();
+      } else {
+        toast.error(data.message ?? "Something went wrong");
+      }
+    } catch {
+      toast.error("Network error");
+    }
+    setRsvpSubmitting(false);
+  };
+
   const openRsvpDialog = (status: string) => {
     setRsvpDialogStatus(status);
     setRsvpDialogMessage("");
@@ -979,9 +1013,13 @@ export default function EventDetailClient() {
   // Request-to-join derived state
   const userJoinRequest = !event.isHost && joinRequests.length > 0 ? joinRequests[0] : null;
   const pendingJoinRequests = event.isHost ? joinRequests.filter((jr) => jr.status === "pending") : [];
+  // Guest invite: the viewer arrived via a valid invite token but has no NewChums account
+  const isGuestInvite = event.guestInvite === true;
+  const guestRsvpStatus = emailRsvpStatus ?? event.guestRsvpStatus ?? null;
+
   // Show request-to-join CTA instead of RSVP buttons when approval is required,
   // user is not the host, not invited, has no existing RSVP, and hasn't just RSVP'd via email token
-  const showRequestToJoin = event.requireApproval && !event.isHost && !event.isInvited && !event.hasRsvp && !emailRsvpStatus;
+  const showRequestToJoin = event.requireApproval && !event.isHost && !event.isInvited && !event.hasRsvp && !emailRsvpStatus && !isGuestInvite;
 
   // When locationExact is explicitly false the API hid the exact venue.
   // Fall back: if the field isn't present (older API response) treat it as exact
@@ -1217,30 +1255,76 @@ export default function EventDetailClient() {
       {/* RSVP / Request-to-join actions (non-hosts, non-canceled) */}
       {!event.isHost && !isCanceled && (
         <AppCard>
-          {emailRsvpStatus ? (
-            <Stack spacing={1.5} alignItems="center" sx={{ py: 1 }}>
-              <CheckCircleRoundedIcon sx={{ fontSize: 36, color: "success.main" }} />
-              <Typography variant="h6" fontWeight={600}>
-                {emailRsvpStatus === "going" ? "You\u2019re going!" : emailRsvpStatus === "maybe" ? "Marked as maybe" : "Response recorded"}
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center" }}>
-                {emailRsvpStatus === "going"
-                  ? "Your attendance has been confirmed. Sign in to see the full plan details and chat."
-                  : emailRsvpStatus === "maybe"
-                  ? "You\u2019ve been marked as maybe. Sign in to update your response or see the full plan details."
-                  : "Your response has been recorded. Sign in to see the full plan details."}
-              </Typography>
-              <Button
-                component={Link}
-                href={`/login?next=${encodeURIComponent(`/events/${eventId}`)}`}
-                variant="contained"
-                color="primary"
-                size="medium"
-                sx={{ mt: 1, textTransform: "none", fontWeight: 600, borderRadius: 2, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
-              >
-                Sign in
-              </Button>
+          {(isGuestInvite && guestRsvpStatus) || (emailRsvpStatus && !isGuestInvite) ? (
+            <Stack spacing={2} sx={{ py: 1 }}>
+              <Stack spacing={1.5} alignItems="center">
+                <CheckCircleRoundedIcon sx={{ fontSize: 36, color: "success.main" }} />
+                <Typography variant="h6" fontWeight={600}>
+                  {(guestRsvpStatus ?? emailRsvpStatus) === "going" ? "You\u2019re going!" : (guestRsvpStatus ?? emailRsvpStatus) === "maybe" ? "Marked as maybe" : "Response recorded"}
+                </Typography>
+              </Stack>
+              {isGuestInvite && inviteTokenRef.current ? (
+                <>
+                  <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center" }}>
+                    Want to change your response?
+                  </Typography>
+                  <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                    {guestRsvpStatus !== "going" && (
+                      <AppButton onClick={() => handleGuestRsvp("going")} disabled={rsvpSubmitting} sx={{ flex: 1 }}>Going</AppButton>
+                    )}
+                    {guestRsvpStatus !== "maybe" && (
+                      <AppButton onClick={() => handleGuestRsvp("maybe")} disabled={rsvpSubmitting} variant="outlined" sx={{ flex: 1 }}>Maybe</AppButton>
+                    )}
+                    {guestRsvpStatus !== "cant_make_it" && (
+                      <AppButton onClick={() => handleGuestRsvp("cant_make_it")} disabled={rsvpSubmitting} variant="outlined" color="inherit" sx={{ flex: 1 }}>Can&apos;t make it</AppButton>
+                    )}
+                  </Stack>
+                  <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center", fontSize: "0.8125rem" }}>
+                    Create a free account for the full experience — chat, updates, and more.
+                  </Typography>
+                  <Button
+                    component={Link}
+                    href={`/signup?next=${encodeURIComponent(`/events/${eventId}`)}`}
+                    variant="text"
+                    size="small"
+                    sx={{ alignSelf: "center", textTransform: "none", fontWeight: 600 }}
+                  >
+                    Sign up for NewChums
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center" }}>
+                    {(guestRsvpStatus ?? emailRsvpStatus) === "going"
+                      ? "Your attendance has been confirmed. Sign in to see the full plan details and chat."
+                      : (guestRsvpStatus ?? emailRsvpStatus) === "maybe"
+                      ? "You\u2019ve been marked as maybe. Sign in to update your response or see the full plan details."
+                      : "Your response has been recorded. Sign in to see the full plan details."}
+                  </Typography>
+                  <Button
+                    component={Link}
+                    href={`/login?next=${encodeURIComponent(`/events/${eventId}`)}`}
+                    variant="contained"
+                    color="primary"
+                    size="medium"
+                    sx={{ alignSelf: "center", mt: 0.5, textTransform: "none", fontWeight: 600, borderRadius: 2, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
+                  >
+                    Sign in
+                  </Button>
+                </>
+              )}
             </Stack>
+          ) : isGuestInvite && inviteTokenRef.current ? (
+            <>
+              <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
+                You&apos;re invited!
+              </Typography>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                <AppButton onClick={() => handleGuestRsvp("going")} disabled={rsvpSubmitting} sx={{ flex: 1 }}>Going</AppButton>
+                <AppButton onClick={() => handleGuestRsvp("maybe")} disabled={rsvpSubmitting} variant="outlined" sx={{ flex: 1 }}>Maybe</AppButton>
+                <AppButton onClick={() => handleGuestRsvp("cant_make_it")} disabled={rsvpSubmitting} variant="outlined" color="inherit" sx={{ flex: 1 }}>Can&apos;t make it</AppButton>
+              </Stack>
+            </>
           ) : showRequestToJoin ? (
             <>
               <Typography variant="h6" fontWeight={600} sx={{ mb: 1 }}>

@@ -191,6 +191,18 @@ Hosts can remove attendees with status "going" or "maybe" from their plans via `
 
 The `host_attendee_removals` table tracks: `event_id`, `host_user_id`, `removed_user_id`, `status_at_removal`, and `created_at`. Hosts cannot remove themselves or attendees with "can't make it" status (since they're already not attending).
 
+### Guest RSVP for email-only invitees
+
+When a host invites someone by email who does not have a NewChums account, that person can still RSVP and view the plan without signing up. The flow works via the invite token (JWT, 30-day expiry) embedded in the invite email.
+
+**How it works:**
+- `POST /events/:id/email-rsvp` — when the invite token's email has no matching user account, a guest RSVP is created with `user_id = NULL` and `guest_email` set. The guest can change their RSVP by clicking different links from the email or using the on-page RSVP buttons.
+- `GET /events/:id` — accepts an optional `invite_token` query param. A valid token grants access to invite-only and chums-only events, and the response includes `guestInvite: true` and `guestRsvpStatus` so the frontend can render appropriate UI.
+- The invite email's "View plan" link includes the invite token, so guests can revisit the plan page from the email at any time during the 30-day token window.
+- Guest RSVPs appear in the attendee list with their email as the display name and no avatar.
+- Migration 035 adds `guest_email TEXT NULL` and `guest_name TEXT NULL` to `event_rsvps` and makes `user_id` nullable, with a partial unique index on `(event_id, guest_email)` for guest rows.
+- Host notification emails are sent for guest RSVPs the same way as for registered users.
+
 ### Account deletion
 
 - **Endpoint:** `DELETE /account` (auth required).

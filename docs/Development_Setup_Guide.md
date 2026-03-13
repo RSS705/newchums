@@ -237,6 +237,7 @@ psql "$DATABASE_URL" -f sql/029_event_chat_and_lock.sql
 psql "$DATABASE_URL" -f sql/030_event_join_requests.sql
 psql "$DATABASE_URL" -f sql/033_simplify_notification_prefs.sql
 psql "$DATABASE_URL" -f sql/034_host_attendee_removals.sql
+psql "$DATABASE_URL" -f sql/035_guest_rsvps.sql
 ```
 
 Notes:
@@ -258,6 +259,7 @@ Notes:
 - Migration `030_event_join_requests.sql` adds `require_approval BOOLEAN NOT NULL DEFAULT FALSE` to `newchums.events` and creates `newchums.event_join_requests` (join request records with status, messages, and timestamps).
 - Migration `033_simplify_notification_prefs.sql` removes the obsolete `event_reminders` key and `frequency` fields from existing `notification_prefs` JSONB data in `user_profile`. No columns are added or dropped.
 - Migration `034_host_attendee_removals.sql` creates `newchums.host_attendee_removals` to track host-initiated attendee removals for future host quality metrics and moderation.
+- Migration `035_guest_rsvps.sql` adds guest RSVP support: makes `user_id` nullable on `event_rsvps`, adds `guest_email` and `guest_name` columns, and a partial unique index for guest RSVPs.
 
 ---
 

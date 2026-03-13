@@ -163,13 +163,14 @@ export const sendEventInviteEmail = async (
   const goingUrl = `${eventUrl}?rsvp=going${tokenParam}`;
   const maybeUrl = `${eventUrl}?rsvp=maybe${tokenParam}`;
   const cantMakeItUrl = `${eventUrl}?rsvp=cant_make_it${tokenParam}`;
+  const viewUrl = inviteToken ? `${eventUrl}?invite_token=${encodeURIComponent(inviteToken)}` : eventUrl;
   return sendPostmarkTemplateEmail(env, {
     From: env.EMAIL_FROM, To: to,
     TemplateId: env.POSTMARK_TEMPLATE_EVENT_INVITE,
     TemplateModel: {
       productName: "NewChums", recipientName, hostName, eventTitle, eventDate,
       eventLocation: eventLocation || "",
-      eventUrl, goingUrl, maybeUrl, cantMakeItUrl,
+      eventUrl: viewUrl, goingUrl, maybeUrl, cantMakeItUrl,
     },
   });
 };
