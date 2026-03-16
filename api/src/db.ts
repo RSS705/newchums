@@ -36,6 +36,8 @@ export type Bindings = {
   POSTMARK_TEMPLATE_ATTENDEE_REMOVED?: string;
   /** Postmark template ID for plan-changed/locked/cancelled attendee notification (template 43971187) */
   POSTMARK_TEMPLATE_EVENT_CHANGED?: string;
+  /** Postmark template ID for daily unread-chat digest email (template 43975299) */
+  POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST?: string;
   SENTRY_DSN: string;
   APP_ENV?: string;
   ENVIRONMENT?: string;

@@ -10,14 +10,16 @@ The broader mission is reducing loneliness by making real-world social connectio
 
 NewChums is a live, deployed product — not a prototype. The current system includes:
 
-- **Event/plan creation and discovery** — users create gatherings around hobbies, invite people, set visibility (invite-only / chums-only / public), manage RSVPs (going / maybe / can't make it / suggest another time), and edit or cancel plans. Banner images with gradient presets or custom uploads. Attendance reconfirmation setting (24-hour reminder opt-in; email logic is future work). Per-plan participant group chat with real-time WebSocket delivery. Host-controlled plan locking to stabilize attendee lists.
-- **Explore feed** — logged-in users browse discoverable plans with location-aware nearby-first ordering, hobby filtering, time-range chips, and text search.
-- **Your Plans** — tabbed view of upcoming/past plans the user hosts or has joined.
+- **Event/plan creation and discovery** — users create gatherings around hobbies, invite people, set visibility (invite-only / chums-only / public), manage RSVPs (context-aware going / maybe / can't make it / suggest another time), and edit or cancel plans. Banner images with gradient presets or custom uploads. Attendance reconfirmation setting (24-hour reminder opt-in; email logic is future work). Per-plan participant group chat with real-time WebSocket delivery. Host-controlled plan locking to stabilize attendee lists. Request-to-join with host approval flow. Plan-change email notifications to attendees (edits, locks, cancellations).
+- **Explore feed** — personalized discovery feed with hobby-based ranking, sort options (upcoming / newest), location-aware ordering, hobby filtering, time-range chips, text search, and session state persistence.
+- **Your Plans** — tabbed view of upcoming/past plans the user hosts or has joined, with unread chat indicators.
 - **Chums** — one-way saved-people system with search, email invite flow, mutual indicators, privacy controls, and private per-chum notes. Birthday display (month/day only, respecting privacy settings).
-- **Profiles** — editable profiles with hobbies, location, bio, gender, profile theme, avatar upload, and public profile pages (`/u/handle`). Attendance record placeholder (visual-only; no scoring engine yet).
-- **Settings** — notification preferences, privacy toggles, email/password change, account deletion.
+- **Profiles** — editable profiles with hobbies, location, travel distance, bio, gender, profile theme, avatar upload, and public profile pages (`/u/handle`). Attendance record placeholder (visual-only; no scoring engine yet).
+- **Settings** — notification preferences (13 email toggles), privacy toggles, email/password change, account deletion.
 - **Admin** — interests moderation (soft delete, merge, restore, default sort newest-first) and user account management (search, suspend/unsuspend). Requires `super_admin` role.
-- **In-app notifications** — bell icon with unread state, currently supports chum and event notification types.
+- **In-app notifications** — bell icon with unread state for chum, event, and join-request notification types. Unread chat message indicators derived from per-plan read tracking.
+- **Email notifications** — transactional emails for invites, RSVPs, plan changes, join requests, attendee removals, and a daily unread-chat digest. Per-type unsubscribe via tokenized email links. Sent via Postmark.
+- **Signup and onboarding** — multi-step wizard for both email/password and Google OAuth paths. Collects required fields (email, password, username, DOB) across focused steps, then optionally captures hobbies and location/travel distance.
 - **Public marketing site** — homepage (gradient event cards, screenshot placeholders, updated copy), How it Works (screenshot placeholders, "Sign up" CTA), Science of Friendship, Safety Center, and contact form.
 - **Auth** — Google OAuth + email/password credentials, email verification, password reset, suspended account handling.
 
@@ -25,9 +27,7 @@ NewChums is a live, deployed product — not a prototype. The current system inc
 
 - **Attendance reconfirmation** — setting is saved and surfaced in plan creation, edit dialog, and event details. The 24-hour reminder email and cron/queue trigger are not yet implemented.
 - **Attendance record / reliability** — profile placeholder card is present. No data engine or scoring system yet.
-- **Event emails** — code scaffolded with noop-safe sends; Postmark templates not yet created.
-- **Explore page** — functional with real data, but likely to evolve as event supply grows.
-- **Event chat** — per-plan participant group chat is implemented with real-time WebSocket delivery via Cloudflare Durable Objects. Future enhancements (reactions, threads, attachments) are not yet built.
+- **Event chat** — per-plan participant group chat is implemented with real-time WebSocket delivery via Cloudflare Durable Objects. Unread indicators in bell and plan cards, plus daily digest email. Future enhancements (reactions, threads, attachments) are not yet built.
 
 ---
 
@@ -47,7 +47,8 @@ Users → Cloudflare Edge → Web Worker (Next.js via OpenNext) → API Worker (
 | Auth | Auth.js (JWT sessions) | Google OAuth + Credentials |
 | Email | Postmark | Transactional emails |
 | Real-time | Cloudflare Durable Objects | WebSocket relay for plan chat (ChatRoom, Hibernation API) |
-| Storage | Cloudflare R2 | Avatar media |
+| Scheduled tasks | Cloudflare Cron Triggers | Daily unread-chat digest email |
+| Storage | Cloudflare R2 | Avatar and banner media |
 | Observability | Sentry + Axiom + Plausible | Error tracking, API logs, analytics |
 
 **Key rule:** Business logic belongs in the API Worker. The Web Worker handles rendering and auth. Do not introduce new business logic in Next.js route handlers.

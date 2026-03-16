@@ -436,6 +436,48 @@ export const sendJoinRequestDeclinedEmail = async (
   });
 };
 
+// ── Unread chat digest email ────────────────────────────────────────────
+
+export type DigestPlanItem = {
+  title: string;
+  unreadCount: number;
+  url: string;
+};
+
+export const sendUnreadChatDigestEmail = async (
+  env: Bindings,
+  { to, recipientName, plans, unsubscribeUrl }: {
+    to: string; recipientName: string;
+    plans: DigestPlanItem[];
+    unsubscribeUrl?: string;
+  }
+) => {
+  if (!env.POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST) return;
+
+  // Flatten plans into top-level variables (Postmark Mustachio lacks array iteration)
+  const model: Record<string, string | number> = {
+    productName: "NewChums",
+    recipientName,
+    planCount: plans.length,
+    unsubscribeUrl: unsubscribeUrl || "",
+  };
+  const maxPlans = Math.min(plans.length, 10);
+  for (let i = 0; i < maxPlans; i++) {
+    const p = plans[i];
+    model[`plan${i + 1}Title`] = p.title;
+    model[`plan${i + 1}Count`] = p.unreadCount;
+    model[`plan${i + 1}Url`] = p.url;
+    model[`plan${i + 1}Label`] = `${p.unreadCount} unread ${p.unreadCount === 1 ? "message" : "messages"}`;
+  }
+
+  return sendPostmarkTemplateEmail(env, {
+    From: env.EMAIL_FROM,
+    To: to,
+    TemplateId: env.POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST,
+    TemplateModel: model,
+  });
+};
+
 const CONTACT_EMAIL = "contact@newchums.com";
 
 export const sendContactFormEmail = async (

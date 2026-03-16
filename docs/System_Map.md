@@ -1,6 +1,6 @@
 # System Map
 
-Last Updated: March 11, 2026
+Last Updated: March 16, 2026
 
 This document reflects the current production reality of NewChums.
 It is diagram-first: use this for boundaries, flows, and "how it connects."
@@ -46,6 +46,7 @@ flowchart TB
   API -->|"Avatar objects"| R2["R2 (avatars)<br/>newchums-media"]
   API -->|"WebSocket relay"| DO["Durable Objects<br/>(ChatRoom per plan)"]
   U -->|"WebSocket"| API
+  CRON["Cron Triggers<br/>(daily digest)"] -->|"scheduled"| API
 ```
 
 ---
@@ -92,7 +93,8 @@ The following flows run in the API worker; the web app calls the API via `NEXT_P
 | Events (plans) | `POST /events`, `GET /events/mine`, `GET /events/:id`, `GET /events/explore`, `PATCH /events/:id`, `POST /events/:id/rsvp`, `POST /events/:id/alt-time`, `POST /events/:id/cancel`, `POST /events/:id/invite` | Bearer JWT |
 | Plan chat | `GET /events/:id/chat`, `POST /events/:id/chat`, `POST /events/:id/chat/read`, `GET /events/:id/chat/ws` (WebSocket upgrade) | Bearer JWT |
 | Plan lock | `POST /events/:id/lock` | Bearer JWT (host only) |
-| Notifications | `GET /notifications`, `POST /notifications/read` | Bearer JWT |
+| Notifications | `GET /notifications` (includes `unreadChats`), `POST /notifications/read` | Bearer JWT |
+| Email unsubscribe | `POST /email/unsubscribe` | Signed JWT token |
 | Contact form | `POST /contact` | none (Turnstile for logged-out) |
 | Admin — interests | `GET /admin/interests`, `PATCH /admin/interests/:id`, `DELETE /admin/interests/:id`, `POST /admin/interests/:id/restore`, `POST /admin/interests/merge` | Bearer JWT + `super_admin` role |
 | Admin — users | `GET /admin/users`, `POST /admin/users/:id/suspend`, `POST /admin/users/:id/unsuspend` | Bearer JWT + `super_admin` role |
@@ -138,7 +140,8 @@ sequenceDiagram
 Visit newchums.com → Homepage (LandingLayout)
 ├── Browse: How it Works, Science of Friendship, Safety Center
 ├── Contact form
-├── Sign up → Email verification → Onboarding (username → DOB → hobbies → location)
+├── Sign up (multi-step: credentials → username/DOB → hobbies → location) → Email verification → Dashboard
+├── Sign up (Google OAuth) → Onboarding (username/DOB → hobbies → location) → Dashboard
 └── Sign in → Dashboard (Explore)
 ```
 
@@ -159,11 +162,9 @@ Sign in → Explore (event discovery feed)
 
 | Flow | What exists | What's missing |
 |------|------------|----------------|
-| Event detail | RSVP, attendee list, cancel, alt-time suggestions, host edit dialog, participant chat (real-time via WebSocket), host lock/unlock | Public sharing page for non-users |
-| Attendance reconfirmation | Setting saved to DB, surfaced in create/edit/detail UI | 24-hour reminder email and cron/queue trigger |
+| Event detail | Context-aware RSVP, attendee list, cancel, alt-time suggestions, host edit dialog, participant chat (real-time via WebSocket), host lock/unlock, plan-change notifications | Public sharing page for non-users |
+| Attendance reconfirmation | Setting saved to DB, surfaced in create/edit/detail UI | 24-hour reminder email trigger (can reuse existing Cron infrastructure) |
 | Attendance record | Profile placeholder card (visual only) | Data engine, history tracking, scoring |
-| Event emails | Code scaffolded, sends noop safely | Postmark templates not created |
-| Explore | Functional with real data, filters, location ordering | Will evolve as event supply grows |
 
 ---
 
@@ -214,7 +215,7 @@ Wrangler config is code-managed so deploys do not wipe routes or override canoni
 | `/safety-center` | Community safety guidance |
 | `/contact` | Contact form (Turnstile for logged-out) |
 | `/login` | Sign in |
-| `/signup` | Create account |
+| `/signup` | Create account (multi-step wizard) |
 | `/forgot-password` | Request password reset |
 | `/reset-password` | Set new password |
 | `/auth/verify` | Email verification landing |
@@ -234,6 +235,7 @@ Wrangler config is code-managed so deploys do not wipe routes or override canoni
 | `/settings` | Notifications, privacy, account |
 | `/admin/interests` | Interests moderation (super_admin) |
 | `/admin/chums` | User management (super_admin) |
+| `/unsubscribe` | Email notification unsubscribe (public, token-based) |
 
 ---
 
@@ -262,5 +264,5 @@ flowchart TB
   R2["R2 (avatars)"] --> API
   API -->|"WebSocket relay"| DO["Durable Objects<br/>(ChatRoom)"]
   U -->|"WebSocket"| API
-  CRON["Future Cron/Queues"] -.-> API
+  CRON["Cron Triggers<br/>(daily digest)"] -->|"scheduled"| API
 ```

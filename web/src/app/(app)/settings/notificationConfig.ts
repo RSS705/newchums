@@ -70,4 +70,9 @@ export const NOTIFICATION_TYPES: NotificationTypeConfig[] = [
     title: "Product updates",
     description: "Occasional news about NewChums features and improvements.",
   },
+  {
+    key: "unread_chat_digest",
+    title: "Unread messages in your plans",
+    description: "A daily email when you have unread chat messages in plans you\u2019re part of.",
+  },
 ];

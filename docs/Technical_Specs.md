@@ -1,7 +1,7 @@
 # Technical Specifications
 
-Last Updated: March 12, 2026
-Version: 11.0
+Last Updated: March 16, 2026
+Version: 12.0
 
 This document defines the authoritative technical architecture of NewChums.
 It describes **what exists today** and the structural commitments we are making.
@@ -66,10 +66,12 @@ NewChums helps people organize gatherings more easily around hobbies and shared 
 
 - **Durable Objects:** `ChatRoom` class bound as `CHAT_ROOM` in the API worker. Per-plan WebSocket relay for real-time chat. Uses the Hibernation API so idle connections consume no CPU. Configured via `[[durable_objects.bindings]]` and `[[migrations]]` in `api/wrangler.toml`.
 
+- **Cron Triggers:** `[triggers] crons = ["0 14 * * *"]` in `api/wrangler.toml`. Runs the daily unread-chat digest email handler at 2 PM UTC. The `scheduled` handler is integrated into the Sentry-wrapped export alongside `fetch`.
+
 ### Not implemented
 
 - Dedicated dev Worker environment(s).
-- Cron triggers and Queues.
+- Queues.
 
 ---
 
@@ -148,7 +150,7 @@ The following business logic lives in the API worker; the web app calls it via `
 
 ### Auth and account flows
 
-- `POST /auth/signup`
+- `POST /auth/signup` — accepts optional `interest_slugs[]`, `home_city`, `home_lat`, `home_lng`, `travel_radius_km` for multi-step signup
 - `POST /auth/password-reset/request`
 - `POST /auth/password-reset/confirm`
 - `POST /auth/email-verify/request`
@@ -160,6 +162,7 @@ The following business logic lives in the API worker; the web app calls it via `
 - `DELETE /account` (auth required) — hard delete account and all related data; credentials users must send `{ password }` in body
 - `GET /notification-preferences` (auth required) — returns persisted notification prefs
 - `PUT /notification-preferences` (auth required) — saves notification prefs (JSONB on user_profile)
+- `POST /email/unsubscribe` — verifies a signed JWT (containing `userId` and `prefKey`), disables the corresponding notification preference. Used by tokenized unsubscribe links in email footers.
 
 ### Notification preferences (Settings toggles)
 
@@ -167,19 +170,25 @@ Users manage notification preferences in **Settings** (`/settings`). Each notifi
 
 **Notification types (keys):**
 
-| Key | UI title |
-|-----|----------|
-| `event_match` | New plans matching my interests |
-| `host_join` | Someone is going to your plan |
-| `host_maybe` | Someone might attend your plan |
-| `host_leave` | Someone leaves your plan |
-| `feedback_requests` | Post-gathering feedback |
-| `event_changed_canceled` | Plan canceled or changed |
-| `product_announcements` | Product updates |
+| Key | UI title | Postmark template |
+|-----|----------|-------------------|
+| `event_match` | New plans matching my interests | — (not yet wired) |
+| `event_invite` | Someone invited you to a plan | `POSTMARK_TEMPLATE_RSVP` |
+| `join_request_received` | Someone requested to join your plan | Template 43906440 |
+| `join_request_accepted` | Your join request was accepted | Template 43906609 |
+| `join_request_declined` | Your join request was declined | Template 43906703 |
+| `host_join` | Someone is going to your plan | Template 43922675 |
+| `host_maybe` | Someone might attend your plan | Template 43922237 |
+| `host_leave` | Someone leaves your plan | Template 43921920 |
+| `feedback_requests` | Post-gathering feedback | — (not yet wired) |
+| `event_changed_canceled` | Plan canceled or changed | `POSTMARK_TEMPLATE_EVENT_CHANGED` (template 43971187) |
+| `attendee_removed` | You were removed from a plan | Template 43923102 |
+| `product_announcements` | Product updates | — |
+| `unread_chat_digest` | Unread messages in your plans | `POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST` (template 43975299) |
 
 Defaults are applied at account creation (credentials signup, OAuth) and backfilled for existing users with missing keys. GET normalizes stored prefs and optionally persists backfilled values.
 
-Each RSVP status has a dedicated host notification email, each gated on its own preference toggle: `host_join` controls the going notification (Postmark template 43922675), `host_maybe` controls the maybe notification (Postmark template 43922237), and `host_leave` controls the leave notification (Postmark template 43921920). Migration 033 removes the obsolete `event_reminders` key and `frequency` fields from existing JSONB data.
+Each RSVP status has a dedicated host notification email, each gated on its own preference toggle. Each email includes a tokenized unsubscribe link that toggles the corresponding preference. Migration 033 removes the obsolete `event_reminders` key and `frequency` fields from existing JSONB data.
 
 ### Host attendee removal
 
@@ -331,16 +340,22 @@ General notifications table (`newchums.notifications`, migration 022) designed f
 | `event_invite` | User invited to an event (at creation or via `POST /events/:id/invite`) | Invited user |
 | `event_rsvp` | Someone RSVPs to an event | Event host |
 | `event_alt_time` | Someone suggests an alternate time | Event host |
-| `event_canceled` | Event is canceled | All attendees |
+| `event_updated` | Host edits plan details (date, description, capacity, visibility) | Going/maybe attendees |
+| `event_locked` | Host locks a plan | Going/maybe attendees |
+| `event_canceled` | Event is canceled | Going/maybe attendees |
+| `join_request` | User submits a join request | Event host |
+| `join_request_withdrawn` | User withdraws their pending join request | Event host |
+| `join_request_approved` | Host approves a join request | Requester |
+| `join_request_declined` | Host declines a join request | Requester |
 
 **API endpoints (auth required):**
 
 | Route | Description |
 |-------|-------------|
-| `GET /notifications` | Returns up to 50 recent notifications for the authenticated user, newest first. Joins actor user row to include `actorDisplayName`, `actorHandle`, `actorAvatarUrl`. |
+| `GET /notifications` | Returns up to 50 recent notifications for the authenticated user, newest first. Joins actor user row to include `actorDisplayName`, `actorHandle`, `actorAvatarUrl`. Also returns an `unreadChats` array (up to 10 plans with unread messages), derived from `event_chat_messages` and `event_chat_reads`. |
 | `POST /notifications/read` | Marks notifications as read. Body: `{ ids?: string[] }`. If `ids` is omitted or empty, marks all unread as read. |
 
-**Web — bell icon:** `web/src/components/layout/NotificationBell.tsx`, rendered in `AppShell` top nav. Fetches notifications on mount (for initial bell state). On click: refreshes list, marks unread as read, shows Popover dropdown with newest-first list. Bell icon turns `#F4B400` (brand gold) and switches to filled icon when unread notifications exist.
+**Web — bell icon:** `web/src/components/layout/NotificationBell.tsx`, rendered in `AppShell` top nav. Fetches notifications on mount (for initial bell state). On click: refreshes list, marks unread as read, shows Popover dropdown with newest-first list. Bell icon turns `#F4B400` (brand gold) and switches to filled icon when unread notifications or unread chat entries exist. Unread chat entries are rendered with a chat bubble icon, plan title, unread count, latest message preview, and a link to the plan.
 
 ### Events (plans)
 
@@ -377,11 +392,11 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 | `GET /events/mine?filter=upcoming\|past` | List events the user hosts, is invited to, or has RSVP'd. Includes going/maybe counts, host info, RSVP status, `has_unread_chat` flag. Host name uses `@username` priority. |
 | `GET /events/:id` | Event detail with RSVP list, alternate time suggestions, and join requests. Includes `requireReconfirmation`, `lockedAt`, `requireApproval`, `isInvited`, `hasRsvp`. Join requests: full list for host, own request only for non-hosts. RSVP entries include `handle` for attendee profile links. Visibility enforcement: invite_only requires invite/RSVP, chums_only requires chum relationship or invite. |
 | `PATCH /events/:id` | Edit event (host only). Accepts: `title`, `description`, `starts_at`, `max_seats`, `visibility`, `require_reconfirmation`, `require_approval`. Returns the updated event. |
-| `POST /events/:id/rsvp` | RSVP to an event — `{ status: "going"\|"maybe"\|"cant_make_it", note? }`. Capacity enforcement for going status. Locked plans reject new RSVPs (`EVENT_LOCKED` error) but allow existing participants to change status. Plans with `require_approval` reject non-invited users who have no existing RSVP (`APPROVAL_REQUIRED` error). Notifies host via in-app notification and email. |
+| `POST /events/:id/rsvp` | RSVP to an event — `{ status: "going"\|"maybe"\|"cant_make_it", note? }`. Capacity enforcement for going status. Locked plans reject new RSVPs (`EVENT_LOCKED` error) but allow existing participants to change status. Plans with `require_approval` reject non-invited users who have no existing RSVP (`APPROVAL_REQUIRED` error). Notifies host via in-app notification and email. UI: "Can't make it" button only shown when user is invited or has an existing RSVP; heading text is context-aware ("Can you make it?" for invited users, "Are you in?" otherwise). |
 | `POST /events/:id/alt-time` | Suggest alternate time — `{ suggested_at, note? }`. Only if event.allow_alt_times. Notifies host. |
 | `POST /events/:id/cancel` | Cancel event (host only). Notifies all attendees via in-app notification and email. |
 | `POST /events/:id/invite` | Add invitees to published event (host only). Sends notifications and invite emails. |
-| `GET /events/explore` | Discoverable events feed for logged-in users. Supports: `lat`/`lng`/`radius_km` (location), `hobby` (slug), `time_range` (this_week/this_weekend/next_30/all), `q` (text search). Applies visibility rules (public + chums_only for the user's chums). Distance computed via Haversine. Nearby-first ordering when location is provided. |
+| `GET /events/explore` | Personalized discovery feed for logged-in users. Supports: `lat`/`lng`/`radius_km` (location), `hobby` (slug), `time_range` (this_week/this_weekend/next_30/all), `q` (text search), `sort` (upcoming/newest), `personalize` (0/1 — hobby-based ranking boost). Applies visibility rules (public + chums_only for the user's chums). Distance computed via Haversine. Prioritizes host's own events, then hobby matches (when personalized), then distance/time. |
 | `GET /events/:id/chat` | Fetch chat messages and user's `lastReadAt` for a plan. Access: host or `going` RSVP only. |
 | `POST /events/:id/chat` | Send a chat message. Body: `{ body: string }`. Inserts into DB, then broadcasts to the ChatRoom Durable Object for real-time delivery. Access: host or `going` RSVP only. |
 | `POST /events/:id/chat/read` | Mark chat as read. Upserts `last_read_at` in `event_chat_reads`. |
@@ -423,7 +438,10 @@ Unread tracking:
 - `EventCard` on the Your Plans page shows a small primary-colored dot when `hasUnreadChat` is true.
 - Chat view includes a "new messages" divider for unread messages.
 
-No email notifications are sent for chat activity.
+**Unread chat notifications:**
+
+- **Bell icon:** `GET /notifications` returns an `unreadChats` array derived from `event_chat_messages` and `event_chat_reads`. These are not persisted as notification rows; they are computed at query time. The bell UI renders them as separate entries above regular notifications.
+- **Daily email digest:** A Cloudflare Cron Trigger (`0 14 * * *` UTC) runs the `scheduled` handler, which queries for users with unread chat messages in plans they are part of (host or going RSVP). It checks the `unread_chat_digest` preference, enforces a 23-hour cooldown via `user_profile.chat_digest_sent_at` (migration 037), and sends via Postmark template 43975299. The email lists up to 10 plans with unread counts and direct links.
 
 **Plan lock (host-controlled):**
 
@@ -447,25 +465,37 @@ Hosts can enable `require_approval` on a plan, requiring non-invited users to su
 - Plan header shows an "Approval required" badge when enabled.
 - Setting available in both create and edit plan forms.
 
-**In-app notification types created:** `event_invite`, `event_rsvp`, `event_alt_time`, `event_canceled`, `join_request`, `join_request_approved`, `join_request_declined` (see In-app notifications section above).
+**In-app notification types created:** `event_invite`, `event_rsvp`, `event_alt_time`, `event_updated`, `event_locked`, `event_canceled`, `join_request`, `join_request_withdrawn`, `join_request_approved`, `join_request_declined` (see In-app notifications section above).
 
-**Email scaffolding (noop if template ID not configured):**
+**Active event email templates:**
+
+| Email | Template ID / Env var | Gated by preference |
+|-------|----------------------|---------------------|
+| Event invite | `POSTMARK_TEMPLATE_RSVP` | `event_invite` |
+| Plan changed/locked/canceled (attendee) | `POSTMARK_TEMPLATE_EVENT_CHANGED` (43971187) | `event_changed_canceled` |
+| Someone is going | Template 43922675 | `host_join` |
+| Someone is maybe | Template 43922237 | `host_maybe` |
+| Someone can't make it | Template 43921920 | `host_leave` |
+| Attendee removed by host | Template 43923102 | `attendee_removed` |
+| Join request received | Template 43906440 | `join_request_received` |
+| Join request accepted | Template 43906609 | `join_request_accepted` |
+| Join request declined | Template 43906703 | `join_request_declined` |
+| Unread chat digest (daily) | `POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST` (43975299) | `unread_chat_digest` |
+
+All emails with a notification preference toggle include a tokenized unsubscribe link in the footer. The unsubscribe endpoint (`POST /email/unsubscribe`) verifies a JWT containing the user ID and preference key, then disables that preference.
+
+**Remaining scaffolded templates (noop if template ID not configured):**
 
 | Email | Env var | Template model |
 |-------|---------|----------------|
-| Event invite | `POSTMARK_TEMPLATE_EVENT_INVITE` | recipientName, hostName, eventTitle, eventDate, eventUrl |
-| Event updated | `POSTMARK_TEMPLATE_EVENT_UPDATED` | recipientName, eventTitle, changeDescription, eventUrl |
-| Event canceled | `POSTMARK_TEMPLATE_EVENT_CANCELED` | recipientName, hostName, eventTitle, eventDate |
-| Event reminder | `POSTMARK_TEMPLATE_EVENT_REMINDER` | recipientName, eventTitle, eventDate, eventLocation, eventUrl |
-| RSVP update to host | `POSTMARK_TEMPLATE_EVENT_RSVP_UPDATE` | hostName, attendeeName, eventTitle, rsvpStatus, eventUrl |
-
-**Status: Postmark templates not yet created.** The send functions noop safely when template IDs are not configured. To activate, create templates in Postmark, then add template IDs as env vars in `api/wrangler.toml` or via `wrangler secret put`.
+| Event reminder (24h) | `POSTMARK_TEMPLATE_EVENT_REMINDER` | recipientName, eventTitle, eventDate, eventLocation, eventUrl |
+| RSVP update to host (legacy) | `POSTMARK_TEMPLATE_EVENT_RSVP_UPDATE` | hostName, attendeeName, eventTitle, rsvpStatus, eventUrl |
 
 **Web pages:**
 
 | Route | Component | Description |
 |-------|-----------|-------------|
-| `/` (logged in) | `DashboardHome` | Explore page — event discovery feed with search, time chips, distance/hobby filters (aligned label-above layout), location-aware nearby-first ordering, location nudge, contextual empty states |
+| `/` (logged in) | `DashboardHome` | Explore page — personalized discovery feed with search, time chips, sort options (upcoming / newest), personalization toggle, distance/hobby filters, location-aware ordering, session state persistence via `localStorage`, location nudge, contextual empty states |
 | `/events/create` | `CreateEventClient` | "Start a plan" form — title, description, hobby, seats, date/time, location (in-person/online), visibility, invite people, gradient banner preset picker with auto-suggestion, attendance reconfirmation toggle, publish |
 | `/plans` | `PlansPage` | Tabbed view (Upcoming / Past) with hosted/joined sections, real API data, empty states |
 | `/events/[id]` | `EventDetailClient` | Event detail — RSVP actions, alternate time suggestions, attendee list, participant chat (real-time via WebSocket), lock/unlock (host), reconfirmation notice, cancel (host), edit plan (host) |
@@ -473,6 +503,18 @@ Hosts can enable `require_approval` on a plan, requiring non-invited users to su
 **Banner system:** `web/src/lib/eventBanners.ts` defines `BANNER_PRESETS` (named gradient slugs with hobby keyword mapping). `getGradientForEventId` provides a deterministic fallback gradient for cards with no `banner_key`. `renderBannerPreset` renders a preset to a WebP `Blob` via canvas for upload. `suggestPreset` picks a preset based on hobby keywords.
 
 **Not yet implemented:** attendance reconfirmation email/reminder trigger (setting is saved but email and cron/queue are future work), recurring events, public event sharing page (for non-users).
+
+### Signup and onboarding
+
+Account creation is a multi-step wizard for both standard email/password and Google OAuth paths.
+
+**Standard signup (`/signup`):** 4-step flow — (1) email, password, confirm password → (2) username, date of birth → (3) hobbies (optional, skip available) → (4) location + travel distance (optional, skip available). All data is submitted in a single `POST /auth/signup` call, which now accepts optional `interest_slugs`, `home_city`, `home_lat`, `home_lng`, `travel_radius_km`.
+
+**Google OAuth onboarding (`/onboarding/username`):** 3-step flow — (1) username, date of birth → (2) hobbies (optional) → (3) location + travel distance (optional). Username/DOB submitted via existing `POST /user/username` + `POST /user/date-of-birth`; hobbies and location submitted via `PUT /profile`.
+
+Shared UI components: `OnboardingProgress` (step indicator + progress bar), `StepTransition` (animated slide transitions), `HobbiesStep` (interest search + chip selection), `LocationStep` (Places autocomplete + travel distance select). All live in `web/src/components/onboarding/`.
+
+**Interest resolution helper:** `resolveInterestSlugs` is extracted in `api/src/index.ts` — validates interest slugs, resolves merged interests, and returns resolved IDs. Used by both `POST /auth/signup` and `PUT /profile`.
 
 ### Media (avatar)
 
@@ -616,6 +658,9 @@ Core tables include:
 - `newchums.events.locked_at` (migration 029) — `TIMESTAMPTZ NULL` on `events`; when set, prevents new participants from joining; existing participants and host retain access
 - `newchums.events.require_approval` (migration 030) — `BOOLEAN NOT NULL DEFAULT FALSE`; when true, non-invited users must request to join and be approved by the host
 - `newchums.event_join_requests` (migration 030) — join request records; columns: `id` (UUID PK), `event_id` (FK), `user_id` (FK), `status` (pending/approved/declined), `message` (TEXT NULL), `host_message` (TEXT NULL), `decided_at` (TIMESTAMPTZ NULL), `created_at`; unique partial index on `(event_id, user_id) WHERE status = 'pending'`
+- `newchums.host_attendee_removals` (migration 034) — tracks host-initiated attendee removals; columns: `event_id`, `host_user_id`, `removed_user_id`, `status_at_removal`, `created_at`
+- `newchums.event_rsvps` guest columns (migration 035) — `user_id` made nullable, added `guest_email TEXT NULL`, `guest_name TEXT NULL`, partial unique index on `(event_id, guest_email)` for guest rows
+- `newchums.user_profile.chat_digest_sent_at` (migration 037) — `TIMESTAMPTZ NULL`; tracks when the daily unread-chat digest email was last sent to each user, enforcing once-per-day sending
 
 PostGIS is available for geo queries.
 
@@ -653,6 +698,8 @@ When sharing the same DB between local and production, set `NEXT_PUBLIC_AVATAR_B
 - Root worker `newchums-api` is the production API target
 - Secrets (via Wrangler/CF dashboard): `DATABASE_URL`, `NEXTAUTH_SECRET`, `POSTMARK_SERVER_TOKEN`
 - Durable Objects: `[[durable_objects.bindings]]` binds `CHAT_ROOM` → `ChatRoom` class; `[[migrations]]` tag `v1` with `new_classes = ["ChatRoom"]`
+- Cron Triggers: `[triggers] crons = ["0 14 * * *"]` — daily unread-chat digest at 2 PM UTC
+- Vars include `POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST`, `POSTMARK_TEMPLATE_EVENT_CHANGED`, and other template IDs
 
 CORS is enforced via an explicit allowlist (newchums.com, www, localhost:3000) in API code.
 
@@ -679,7 +726,7 @@ cd web && npm run build
 
 - Web worker name suffix mismatch (`newchums-web-dev` is production).
 - Schema normalization/cleanup will be required before broader public launch.
-- Event email templates not yet created in Postmark (sends noop safely).
-- Account deletion (`DELETE /account`) does not yet cascade to events, event_rsvps, event_invites, event_alt_times, event_chat_messages, event_chat_reads, or event_join_requests — must be updated when those tables accumulate production data.
-- Attendance reconfirmation (`require_reconfirmation`) is stored and surfaced in UI, but the 24-hour reminder email and cron/queue trigger are not yet implemented. When ready, wire a Cloudflare Cron Trigger (or Queue) to query events starting within 24 hours where `require_reconfirmation = true` and send `POSTMARK_TEMPLATE_EVENT_REMINDER` to all "going" attendees.
+- Account deletion (`DELETE /account`) does not yet cascade to events, event_rsvps, event_invites, event_alt_times, event_chat_messages, event_chat_reads, event_join_requests, or host_attendee_removals — must be updated when those tables accumulate production data.
+- Attendance reconfirmation (`require_reconfirmation`) is stored and surfaced in UI, but the 24-hour reminder email and cron/queue trigger are not yet implemented. When ready, add a second Cron Trigger to query events starting within 24 hours where `require_reconfirmation = true` and send `POSTMARK_TEMPLATE_EVENT_REMINDER` to all "going" attendees.
 - `interest_id` on `events` is a legacy FK; `event_interests` is the canonical many-to-many source of truth. The legacy column should be dropped in a future migration once all queries are migrated.
+- Legacy scaffolded email env vars (`POSTMARK_TEMPLATE_EVENT_RSVP_UPDATE`) can be removed once confirmed unused.

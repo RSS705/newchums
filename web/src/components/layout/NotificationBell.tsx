@@ -1,5 +1,6 @@
 "use client";
 
+import ChatBubbleOutlineRoundedIcon from "@mui/icons-material/ChatBubbleOutlineRounded";
 import NotificationsOutlinedIcon from "@mui/icons-material/NotificationsOutlined";
 import NotificationsRoundedIcon from "@mui/icons-material/NotificationsRounded";
 import Box from "@mui/material/Box";
@@ -27,6 +28,15 @@ type AppNotification = {
   metadata: Record<string, unknown> | null;
   readAt: string | null;
   createdAt: string;
+};
+
+type UnreadChatEntry = {
+  eventId: string;
+  eventTitle: string;
+  unreadCount: number;
+  latestAt: string;
+  latestMessageBody: string | null;
+  latestSenderName: string | null;
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -128,6 +138,19 @@ function notificationText(n: AppNotification): {
         actorHref,
         body: titleLink ? <>{" cancelled "}{titleLink}.</> : " cancelled a plan you were attending.",
       };
+    case "event_alt_time": {
+      const suggestedIso = n.metadata?.suggestedAt as string | undefined;
+      const formattedTime = suggestedIso
+        ? new Date(suggestedIso).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+        : null;
+      return {
+        actorLabel,
+        actorHref,
+        body: titleLink
+          ? <>{" suggested "}{formattedTime ? <><strong>{formattedTime}</strong>{" as an alternate time for "}</> : " an alternate time for "}{titleLink}.</>
+          : formattedTime ? <>{" suggested "}<strong>{formattedTime}</strong>{" as an alternate time."}</> : " suggested an alternate time.",
+      };
+    }
     default:
       return { actorLabel, actorHref, body: " did something." };
   }
@@ -234,11 +257,102 @@ function NotificationRow({
   );
 }
 
+// ─── Unread chat row ──────────────────────────────────────────────────────────
+
+function UnreadChatRow({ entry }: { entry: UnreadChatEntry }) {
+  return (
+    <Box
+      component={Link}
+      href={`/events/${entry.eventId}`}
+      sx={{
+        px: 2,
+        py: 1.5,
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 1.5,
+        bgcolor: "rgba(244, 180, 0, 0.06)",
+        transition: "background-color 0.2s ease",
+        "&:hover": { bgcolor: "action.hover" },
+        position: "relative",
+        textDecoration: "none",
+        color: "inherit",
+      }}
+    >
+      {/* Unread indicator dot */}
+      <Box
+        sx={{
+          position: "absolute",
+          left: 6,
+          top: "50%",
+          transform: "translateY(-50%)",
+          width: 6,
+          height: 6,
+          borderRadius: "50%",
+          bgcolor: GOLD,
+          flexShrink: 0,
+        }}
+      />
+
+      {/* Chat icon */}
+      <Box
+        sx={{
+          flexShrink: 0,
+          width: 36,
+          height: 36,
+          borderRadius: "50%",
+          bgcolor: "primary.main",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <ChatBubbleOutlineRoundedIcon sx={{ fontSize: 18, color: "#fff" }} />
+      </Box>
+
+      {/* Text */}
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Typography variant="body2" sx={{ lineHeight: 1.45, color: "text.primary" }}>
+          <Box component="span" sx={{ fontWeight: 600 }}>
+            {entry.unreadCount} new {entry.unreadCount === 1 ? "message" : "messages"}
+          </Box>
+          {" in "}
+          <Box component="span" sx={{ fontWeight: 600 }}>
+            {entry.eventTitle}
+          </Box>
+        </Typography>
+        {entry.latestMessageBody && (
+          <Typography
+            variant="caption"
+            sx={{
+              color: "text.secondary",
+              mt: 0.25,
+              display: "block",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {entry.latestSenderName ? `${entry.latestSenderName}: ` : ""}
+            {entry.latestMessageBody}
+          </Typography>
+        )}
+        <Typography
+          variant="caption"
+          sx={{ color: "text.disabled", mt: 0.25, display: "block" }}
+        >
+          {formatRelativeTime(entry.latestAt)}
+        </Typography>
+      </Box>
+    </Box>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function NotificationBell() {
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
   const [notifications, setNotifications] = React.useState<AppNotification[]>([]);
+  const [unreadChats, setUnreadChats] = React.useState<UnreadChatEntry[]>([]);
   const [fetching, setFetching] = React.useState(false);
   const avatarBaseUrl = React.useMemo(() => {
     try {
@@ -248,21 +362,34 @@ export default function NotificationBell() {
     }
   }, []);
 
-  const hasUnread = notifications.some((n) => !n.readAt);
+  const hasUnread = notifications.some((n) => !n.readAt) || unreadChats.length > 0;
   const open = Boolean(anchorEl);
+
+  type NotificationsResponse = {
+    ok: boolean;
+    notifications?: AppNotification[];
+    unreadChats?: UnreadChatEntry[];
+  };
+
+  const applyFetchResult = React.useCallback((data: NotificationsResponse) => {
+    if (data.ok && Array.isArray(data.notifications)) {
+      setNotifications(data.notifications);
+    }
+    if (data.ok && Array.isArray(data.unreadChats)) {
+      setUnreadChats(data.unreadChats);
+    }
+  }, []);
 
   const fetchNotifications = React.useCallback(async () => {
     try {
       const res = await apiFetch("/notifications", { auth: true });
       if (!res.ok) return;
-      const data = (await res.json()) as { ok: boolean; notifications?: AppNotification[] };
-      if (data.ok && Array.isArray(data.notifications)) {
-        setNotifications(data.notifications);
-      }
+      const data = (await res.json()) as NotificationsResponse;
+      applyFetchResult(data);
     } catch {
       // Non-critical; silently fail
     }
-  }, []);
+  }, [applyFetchResult]);
 
   // Initial load: fetch to populate unread state for bell colour
   React.useEffect(() => {
@@ -274,16 +401,16 @@ export default function NotificationBell() {
       setAnchorEl(event.currentTarget);
       setFetching(true);
       try {
-        // Refresh the list
         const res = await apiFetch("/notifications", { auth: true });
         if (!res.ok) return;
-        const data = (await res.json()) as { ok: boolean; notifications?: AppNotification[] };
+        const data = (await res.json()) as NotificationsResponse;
         if (!data.ok || !Array.isArray(data.notifications)) return;
 
         const fresh = data.notifications;
         setNotifications(fresh);
+        if (Array.isArray(data.unreadChats)) setUnreadChats(data.unreadChats);
 
-        // Mark all unread as read
+        // Mark all unread regular notifications as read (chat entries clear when visited)
         const unreadIds = fresh.filter((n) => !n.readAt).map((n) => n.id);
         if (unreadIds.length > 0) {
           apiFetch("/notifications/read", {
@@ -291,7 +418,6 @@ export default function NotificationBell() {
             auth: true,
             body: JSON.stringify({ ids: unreadIds }),
           }).catch(() => {});
-          // Optimistically update local state
           setNotifications((prev) =>
             prev.map((n) =>
               unreadIds.includes(n.id) ? { ...n, readAt: new Date().toISOString() } : n,
@@ -379,22 +505,35 @@ export default function NotificationBell() {
 
         {/* Scrollable notification list */}
         <Box sx={{ overflowY: "auto", flex: 1 }}>
-          {notifications.length === 0 ? (
+          {notifications.length === 0 && unreadChats.length === 0 ? (
             <Box sx={{ py: 5, px: 2, textAlign: "center" }}>
               <Typography variant="body2" color="text.secondary">
                 You&apos;re all caught up.
               </Typography>
             </Box>
           ) : (
-            notifications.map((notification, index) => (
-              <React.Fragment key={notification.id}>
-                {index > 0 && <Divider sx={{ opacity: 0.5 }} />}
-                <NotificationRow
-                  notification={notification}
-                  avatarBaseUrl={avatarBaseUrl}
-                />
-              </React.Fragment>
-            ))
+            <>
+              {/* Unread chat entries first */}
+              {unreadChats.map((entry, index) => (
+                <React.Fragment key={`chat-${entry.eventId}`}>
+                  {index > 0 && <Divider sx={{ opacity: 0.5 }} />}
+                  <UnreadChatRow entry={entry} />
+                </React.Fragment>
+              ))}
+              {unreadChats.length > 0 && notifications.length > 0 && (
+                <Divider />
+              )}
+              {/* Regular notifications */}
+              {notifications.map((notification, index) => (
+                <React.Fragment key={notification.id}>
+                  {index > 0 && <Divider sx={{ opacity: 0.5 }} />}
+                  <NotificationRow
+                    notification={notification}
+                    avatarBaseUrl={avatarBaseUrl}
+                  />
+                </React.Fragment>
+              ))}
+            </>
           )}
         </Box>
       </Popover>

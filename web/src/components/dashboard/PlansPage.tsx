@@ -12,6 +12,7 @@ import Tabs from "@mui/material/Tabs";
 import Typography from "@mui/material/Typography";
 import AddCircleRoundedIcon from "@mui/icons-material/AddCircleRounded";
 import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
+import Divider from "@mui/material/Divider";
 import ExpandLessRoundedIcon from "@mui/icons-material/ExpandLessRounded";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import Link from "next/link";
@@ -192,26 +193,36 @@ export default function PlansPage() {
 
           {/* Canceled upcoming plans — collapsed by default */}
           {!isPast && canceledUpcoming.length > 0 && (
-            <Box sx={{ pt: hosted.length > 0 || joined.length > 0 ? 1 : 0 }}>
-              <Button
-                size="small"
+            <Box>
+              <Divider sx={{ mb: 2 }} />
+              <Box
+                component="button"
                 onClick={() => setCanceledOpen((v) => !v)}
-                endIcon={canceledOpen ? <ExpandLessRoundedIcon sx={{ fontSize: 18 }} /> : <ExpandMoreRoundedIcon sx={{ fontSize: 18 }} />}
                 sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 0.75,
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  p: 0,
+                  mb: canceledOpen ? 2 : 0,
                   color: "text.disabled",
-                  fontWeight: 500,
                   fontSize: "0.8125rem",
-                  textTransform: "none",
-                  px: 0.5,
-                  "&:hover": { color: "text.secondary", bgcolor: "transparent" },
+                  fontWeight: 500,
+                  fontFamily: "inherit",
+                  letterSpacing: "0.01em",
+                  transition: "color 0.15s",
+                  "&:hover": { color: "text.secondary" },
                 }}
               >
+                Canceled plans ({canceledUpcoming.length})
                 {canceledOpen
-                  ? "Hide canceled plans"
-                  : `Show canceled plans (${canceledUpcoming.length})`}
-              </Button>
+                  ? <ExpandLessRoundedIcon sx={{ fontSize: 16 }} />
+                  : <ExpandMoreRoundedIcon sx={{ fontSize: 16 }} />}
+              </Box>
               <Collapse in={canceledOpen} unmountOnExit>
-                <Grid container spacing={2} sx={{ mt: 1 }}>
+                <Grid container spacing={2}>
                   {canceledUpcoming.map((event) => (
                     <Grid key={event.id} size={{ xs: 12, sm: 6, md: 4 }} sx={{ display: "flex" }}>
                       <EventCard event={event} />

@@ -1,6 +1,6 @@
 # Development Setup Guide
 
-Last Updated: March 11, 2026
+Last Updated: March 16, 2026
 
 This document is the operational guide for running and deploying NewChums.
 For architectural invariants and contracts, see `docs/Technical_Specs.md`.
@@ -14,12 +14,14 @@ For product direction, terminology, and agent governance, see `AGENTS.md`.
 - **Production:** Single production environment.
 - **Workers:** Web = `newchums-web-dev` (production), API = `newchums-api`.
 - **Canonical host:** `https://newchums.com` (www → non-www redirect enforced before Auth.js).
-- **API migration:** All business logic is in the API worker — auth flows, profile, interests, Chums, Chum invites, events (plans), notifications, admin, avatar, contact form.
-- **Events (plans):** Full event creation, RSVP (going/maybe/can't make it), invite, alternate time suggestion, cancel, and edit (host). Visibility: invite_only, chums_only, public. Gradient banner presets + custom upload. Attendance reconfirmation setting saved; email reminder trigger is future work. Event email templates scaffolded but require Postmark template creation (sends noop safely). Per-plan participant chat with real-time WebSocket delivery via Cloudflare Durable Objects. Host can lock/unlock plans to prevent new joins.
-- **Explore page:** Logged-in event discovery feed (`/`). Uses `GET /events/explore` with location-aware nearby-first ordering (Haversine), hobby filter (labelled, alphabetised), time-range chips, text search.
-- **Your Plans:** Tabbed upcoming/past view with hosted and joined sections, real API data.
+- **API migration:** All business logic is in the API worker — auth flows, profile, interests, Chums, Chum invites, events (plans), notifications, email unsubscribe, admin, avatar, contact form, scheduled tasks.
+- **Signup/Onboarding:** Multi-step wizard for both email/password (4 steps) and Google OAuth (3 steps). Collects credentials → username/DOB → hobbies (optional) → location/travel distance (optional). Shared `OnboardingProgress`, `StepTransition`, `HobbiesStep`, `LocationStep` components.
+- **Events (plans):** Full event creation, context-aware RSVP (going/maybe/can't make it), invite, alternate time suggestion, cancel, edit (host), request-to-join (host approval), host attendee removal. Visibility: invite_only, chums_only, public. Gradient banner presets + custom upload. Plan-change email notifications to attendees (edits, locks, cancellations). Per-plan participant chat with real-time WebSocket delivery via Cloudflare Durable Objects, unread chat indicators in bell and plan cards, daily unread-chat digest email. Host can lock/unlock plans.
+- **Explore page:** Personalized discovery feed (`/`). Uses `GET /events/explore` with hobby-based ranking, sort options (upcoming/newest), personalization toggle, location-aware ordering (Haversine), hobby filter, time-range chips, text search, session state persistence via `localStorage`.
+- **Your Plans:** Tabbed upcoming/past view with hosted and joined sections, unread chat indicators, real API data.
 - **Chums:** One-way saved-people feature with search, email invite flow, mutual indicators, privacy controls, public Chums on profiles, private per-chum notes, and birthday display.
-- **Notifications:** In-app bell with unread state. Supports `chum_added_you`, `event_invite`, `event_rsvp`, `event_alt_time`, `event_canceled`.
+- **Notifications:** In-app bell with unread state for chum, event, and join-request notification types. Unread chat indicators derived from per-plan read tracking. 13 email notification types with per-type Settings toggles and tokenized email unsubscribe links.
+- **Scheduled tasks:** Cloudflare Cron Trigger (`0 14 * * *` UTC) runs daily unread-chat digest email.
 - **Admin:** Interests moderation (default sort newest-first) + user account management (super_admin only).
 - **Profiles:** Edit profile page includes "Attendance record" placeholder card (visual-only; no scoring engine).
 - **Public site:** Homepage (updated copy, gradient event cards, screenshot placeholders), How it Works (updated copy, screenshot placeholders), Science of Friendship, Safety Center, Contact — all sharing `LandingLayout`.
@@ -94,10 +96,12 @@ Email / Postmark (required for email flows):
 - `POSTMARK_TEMPLATE_EMAIL_CHANGE_NOTIFY_OLD`
 - `POSTMARK_TEMPLATE_EMAIL_CHANGE_SUCCESS`
 
-Event email templates (optional — sends noop if not set):
+Event email templates (active — set in `wrangler.toml` vars):
+- `POSTMARK_TEMPLATE_EVENT_CHANGED` (template 43971187 — plan changed/locked/canceled)
+- `POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST` (template 43975299 — daily unread chat digest)
+
+Event email templates (scaffolded — sends noop if not set):
 - `POSTMARK_TEMPLATE_EVENT_INVITE`
-- `POSTMARK_TEMPLATE_EVENT_UPDATED`
-- `POSTMARK_TEMPLATE_EVENT_CANCELED`
 - `POSTMARK_TEMPLATE_EVENT_REMINDER`
 - `POSTMARK_TEMPLATE_EVENT_RSVP_UPDATE`
 
@@ -238,6 +242,8 @@ psql "$DATABASE_URL" -f sql/030_event_join_requests.sql
 psql "$DATABASE_URL" -f sql/033_simplify_notification_prefs.sql
 psql "$DATABASE_URL" -f sql/034_host_attendee_removals.sql
 psql "$DATABASE_URL" -f sql/035_guest_rsvps.sql
+psql "$DATABASE_URL" -f sql/036_join_request_withdrawn.sql
+psql "$DATABASE_URL" -f sql/037_chat_digest_tracking.sql
 ```
 
 Notes:
@@ -260,6 +266,8 @@ Notes:
 - Migration `033_simplify_notification_prefs.sql` removes the obsolete `event_reminders` key and `frequency` fields from existing `notification_prefs` JSONB data in `user_profile`. No columns are added or dropped.
 - Migration `034_host_attendee_removals.sql` creates `newchums.host_attendee_removals` to track host-initiated attendee removals for future host quality metrics and moderation.
 - Migration `035_guest_rsvps.sql` adds guest RSVP support: makes `user_id` nullable on `event_rsvps`, adds `guest_email` and `guest_name` columns, and a partial unique index for guest RSVPs.
+- Migration `036_join_request_withdrawn.sql` supports the `join_request_withdrawn` notification type for tracking withdrawn join requests.
+- Migration `037_chat_digest_tracking.sql` adds `chat_digest_sent_at TIMESTAMPTZ NULL` to `user_profile` for tracking when the daily unread-chat digest email was last sent.
 
 ---
 
@@ -296,23 +304,29 @@ npm run deploy
 |---------|----------------------|--------|
 | Email verification | `POSTMARK_TEMPLATE_VERIFY` | Active |
 | Password reset | `POSTMARK_TEMPLATE_RESET` | Active |
-| RSVP invite | `POSTMARK_TEMPLATE_RSVP` | Active |
+| Event invite | `POSTMARK_TEMPLATE_RSVP` | Active |
 | Email change confirm | `POSTMARK_TEMPLATE_EMAIL_CHANGE_CONFIRM` | Active |
 | Email change notify old | `POSTMARK_TEMPLATE_EMAIL_CHANGE_NOTIFY_OLD` | Active |
 | Email change success | `POSTMARK_TEMPLATE_EMAIL_CHANGE_SUCCESS` | Active |
 | Chum invite | Hardcoded template ID `43805532` | Active |
+| Someone is going | Hardcoded template ID `43922675` | Active |
+| Someone is maybe | Hardcoded template ID `43922237` | Active |
+| Someone can't make it | Hardcoded template ID `43921920` | Active |
+| Attendee removed by host | Hardcoded template ID `43923102` | Active |
+| Join request received | Hardcoded template ID `43906440` | Active |
+| Join request accepted | Hardcoded template ID `43906609` | Active |
+| Join request declined | Hardcoded template ID `43906703` | Active |
+| Plan changed/locked/canceled | `POSTMARK_TEMPLATE_EVENT_CHANGED` (43971187) | Active |
+| Unread chat digest (daily) | `POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST` (43975299) | Active |
 
-### Templates to create
+### Scaffolded templates (send noop if not configured)
 
-| Purpose | Env var | Template model | Status |
-|---------|---------|----------------|--------|
-| Event invite | `POSTMARK_TEMPLATE_EVENT_INVITE` | recipientName, hostName, eventTitle, eventDate, eventUrl | Not created |
-| Event updated | `POSTMARK_TEMPLATE_EVENT_UPDATED` | recipientName, eventTitle, changeDescription, eventUrl | Not created |
-| Event canceled | `POSTMARK_TEMPLATE_EVENT_CANCELED` | recipientName, hostName, eventTitle, eventDate | Not created |
-| Event reminder | `POSTMARK_TEMPLATE_EVENT_REMINDER` | recipientName, eventTitle, eventDate, eventLocation, eventUrl | Not created |
-| RSVP update to host | `POSTMARK_TEMPLATE_EVENT_RSVP_UPDATE` | hostName, attendeeName, eventTitle, rsvpStatus, eventUrl | Not created |
+| Purpose | Env var | Status |
+|---------|---------|--------|
+| Event reminder (24h) | `POSTMARK_TEMPLATE_EVENT_REMINDER` | Not created |
+| RSVP update to host (legacy) | `POSTMARK_TEMPLATE_EVENT_RSVP_UPDATE` | Not created |
 
-After creating templates in Postmark, add template IDs to `api/wrangler.toml` `[vars]` section or via `wrangler secret put`. The send functions in `api/src/email/send.ts` noop safely when template IDs are not configured.
+The send functions in `api/src/email/send.ts` noop safely when template IDs are not configured.
 
 ---
 
@@ -348,6 +362,69 @@ Chunk XX — YYYY-MM-DD
 ## Session Log (Chunks)
 
 (Existing chunks should remain here. Add new chunks at the end.)
+
+---
+
+Chunk 14 — 2026-03-16
+- Goal: Documentation review and update — reflect all features built since last doc update.
+- Changes:
+  - `AGENTS.md`: Updated Cron status (active), event email templates status (many live), event chat status (has unread notifications and daily digest).
+  - `README.md`: Updated feature list (personalized Explore, multi-step signup, email notifications, RSVP context-awareness, cron triggers). Removed "Event emails" from partially built. Added signup/onboarding and email notifications sections.
+  - `docs/Technical_Specs.md` v12.0: Updated notification preference types table (13 keys with Postmark template IDs). Updated in-app notification types (added `event_updated`, `event_locked`, `join_request_withdrawn`). Added `POST /email/unsubscribe` endpoint. Documented Cron Triggers, `scheduled` handler, unread chat notifications (bell + digest), multi-step signup/onboarding, `resolveInterestSlugs` helper, context-aware RSVP UI, Explore personalization params. Added migrations 034–037 to schema. Updated email templates from "not created" to "active" with template IDs. Updated technical debt.
+  - `docs/System_Map.md`: Updated production architecture and consolidated diagrams (Cron Triggers active). Updated incomplete flows table. Added email unsubscribe route. Updated signup flow descriptions.
+  - `docs/Development_Setup_Guide.md`: Updated current state. Added new env vars and active template IDs. Added migrations 036–037 to list. Updated Postmark templates section (active vs scaffolded). Removed MVP reference.
+- Verification: All docs cross-reference correctly. No speculative content documented as implemented.
+- Deploy: No code changes. Documentation only.
+- Next Steps: —
+
+---
+
+Chunk 13 — 2026-03-13
+- Goal: Unread plan chat notifications — in-app bell indicators and daily email digest.
+- Changes:
+  - DB migration 037 (`user_profile.chat_digest_sent_at TIMESTAMPTZ NULL`).
+  - `api/src/lib/notificationPrefs.ts`: Added `unread_chat_digest` to VALID_KEYS and DEFAULT_PREFS.
+  - `api/src/index.ts`: Extended `GET /notifications` to return `unreadChats` array (derived from `event_chat_messages` and `event_chat_reads`). Added `handleScheduled` function for daily digest cron job — queries users with unread chats, checks preferences, sends emails via `sendUnreadChatDigestEmail`, updates `chat_digest_sent_at`.
+  - `api/src/email/send.ts`: Added `sendUnreadChatDigestEmail` with flattened template model.
+  - `api/src/email/templates/unreadChatDigest.html`: New Postmark template for digest.
+  - `api/src/db.ts`: Added `POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST` to Bindings.
+  - `api/wrangler.toml`: Added template ID env var and `[triggers] crons = ["0 14 * * *"]`.
+  - `web/src/components/layout/NotificationBell.tsx`: Added `UnreadChatRow` component, `unreadChats` state, chat bubble icon rendering.
+  - `web/src/app/(app)/settings/notificationConfig.ts`: Added `unread_chat_digest` toggle.
+  - `web/src/app/(public)/unsubscribe/UnsubscribeClient.tsx`: Added unsubscribe label.
+- Verification: TypeScript passes in both packages. Bell shows unread chat entries. Settings toggle present.
+- Deploy: Run migration 037. Deploy API first (new cron trigger + scheduled handler), then web.
+- Next Steps: —
+
+---
+
+Chunk 12 — 2026-03-13
+- Goal: Context-aware RSVP buttons and improved Explore feed personalization.
+- Changes:
+  - `EventDetailClient.tsx`: "Can't make it" button conditionally rendered (only when `event.isInvited || event.hasRsvp`). RSVP heading text dynamically set ("Can you make it?" for invited users, "Are you in?" otherwise).
+  - `api/src/index.ts`: `GET /events/explore` extended with `sort` (upcoming/newest) and `personalize` (0/1) params. Hobby-match ranking expression. ORDER BY prioritizes host's events → hobby match (when personalized) → distance/time.
+  - `DashboardHome.tsx`: Added sort and personalization states with `localStorage` persistence (`nc_explore_state`). Added sort chips (Upcoming / Newest added) and toggleable Personalized chip with tooltip. Removed redundant location/distance context chips.
+- Verification: TypeScript passes in both packages.
+- Deploy: Standard web + API deploy.
+- Next Steps: —
+
+---
+
+Chunk 11 — 2026-03-12
+- Goal: Multi-step signup/onboarding redesign, plan-change email notifications, email unsubscribe infrastructure, and various notification improvements.
+- Changes:
+  - New shared onboarding components: `OnboardingProgress`, `StepTransition`, `HobbiesStep`, `LocationStep` in `web/src/components/onboarding/`.
+  - `SignupClient.tsx`: Rewritten as 4-step wizard (credentials → username/DOB → hobbies → location).
+  - `OnboardingUsernameClient.tsx`: Rewritten as 3-step wizard (username/DOB → hobbies → location) for Google OAuth users.
+  - `api/src/index.ts`: `POST /auth/signup` extended with optional `interest_slugs`, `home_city`, `home_lat`, `home_lng`, `travel_radius_km`. Extracted `resolveInterestSlugs` helper. Added `notifyAttendeesPlanChanged` for plan-change notifications. Added `POST /email/unsubscribe` endpoint.
+  - Plan-change notifications: `PATCH /events/:id`, `POST /events/:id/lock`, `POST /events/:id/cancel` now notify going/maybe attendees via in-app notification and email (Postmark template 43971187).
+  - Email unsubscribe: Tokenized JWT links in all notification email footers. `UnsubscribeClient.tsx` with label map. Settings toggles for all 13 notification types.
+  - `NotificationBell.tsx`: Added cases for `event_updated`, `event_locked`, `join_request_withdrawn`.
+  - DB migration 036 (join request withdrawn notification support).
+  - Various Postmark template connections: RSVP status emails (43922675, 43922237, 43921920), attendee removed (43923102), join requests (43906440, 43906609, 43906703), plan changed (43971187).
+- Verification: TypeScript passes in both packages.
+- Deploy: Run migration 036. Deploy API then web.
+- Next Steps: Add unread chat notifications.
 
 ---
 
@@ -486,7 +563,7 @@ Chunk 03 — 2026-03-06
 ---
 
 Chunk 02 — 2026-03-06
-- Goal: User suspension, gender + profile theme fields, and the "Your Chums" MVP.
+- Goal: User suspension, gender + profile theme fields, and the "Your Chums" feature.
 - Changes:
   - DB migrations 017 (user suspension fields + index), 018 (`gender`), 019 (`profile_theme`), 020 (Chum privacy columns), 021 (`user_chums` table).
   - API: suspension middleware (403 on all authenticated routes for suspended users); `POST /admin/users/:id/suspend|unsuspend`; `GET /admin/users`; `gender` and `profile_theme` on `GET/PUT /profile` and `GET /public/users/:handle`; `is_hidden_chum_list` and `is_hidden_from_chum_lists` on profile endpoints; `GET /chums`, `GET /chums/search`, `GET /chums/check/:userId`, `POST /chums/:userId`, `DELETE /chums/:userId`, `GET /public/users/:handle/chums`.

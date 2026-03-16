@@ -29,8 +29,11 @@ import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
+import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import StarRoundedIcon from "@mui/icons-material/StarRounded";
+import Paper from "@mui/material/Paper";
 import LinkRoundedIcon from "@mui/icons-material/LinkRounded";
 import LockOpenRoundedIcon from "@mui/icons-material/LockOpenRounded";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
@@ -90,7 +93,7 @@ type EventDetail = {
 };
 
 type RsvpEntry = { userId: string; name: string; handle: string | null; status: string; note: string | null; avatarUrl?: string | null };
-type AltTimeEntry = { userId: string; name: string; suggestedAt: string; note: string | null };
+type AltTimeEntry = { id: string; userId: string; name: string; handle: string | null; suggestedAt: string; endsAt: string | null; note: string | null };
 type InviteEntry = { userId: string | null; email: string | null; name: string; handle?: string | null };
 type RemoveTarget =
   | { type: "rsvp"; userId: string; name: string }
@@ -166,6 +169,7 @@ export default function EventDetailClient() {
   const [rsvps, setRsvps] = useState<RsvpEntry[]>([]);
   const [altTimes, setAltTimes] = useState<AltTimeEntry[]>([]);
   const [invites, setInvites] = useState<InviteEntry[]>([]);
+  const [viewerUserId, setViewerUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -176,9 +180,16 @@ export default function EventDetailClient() {
   // Tracks RSVP status set via email invite token (unauthenticated flow)
   const [emailRsvpStatus, setEmailRsvpStatus] = useState<string | null>(null);
   const [showAltTimeForm, setShowAltTimeForm] = useState(false);
-  const [altDate, setAltDate] = useState("");
-  const [altTime, setAltTime] = useState("");
+  const [altStartDate, setAltStartDate] = useState<Dayjs | null>(null);
+  const [altEndDate, setAltEndDate] = useState<Dayjs | null>(null);
+  const [altStartTime, setAltStartTime] = useState<Dayjs | null>(null);
+  const [altEndTime, setAltEndTime] = useState<Dayjs | null>(null);
   const [altNote, setAltNote] = useState("");
+  const [altEditingId, setAltEditingId] = useState<string | null>(null);
+  const [altSubmitting, setAltSubmitting] = useState(false);
+  const [altDeleting, setAltDeleting] = useState<string | null>(null);
+  const [promoteConfirmTime, setPromoteConfirmTime] = useState<string | null>(null);
+  const [promoting, setPromoting] = useState(false);
 
   // Invite people state
   const [showInviteForm, setShowInviteForm] = useState(false);
@@ -266,6 +277,7 @@ export default function EventDetailClient() {
 
   const applyEventData = useCallback((data: {
     ok: boolean;
+    viewerUserId?: string | null;
     event: EventDetail;
     rsvps: RsvpEntry[];
     altTimes: AltTimeEntry[];
@@ -277,6 +289,7 @@ export default function EventDetailClient() {
     setAltTimes(data.altTimes);
     setInvites(data.invites ?? []);
     setJoinRequests(data.joinRequests ?? []);
+    if (data.viewerUserId) setViewerUserId(data.viewerUserId);
   }, []);
 
   const load = useCallback(async () => {
@@ -859,35 +872,119 @@ export default function EventDetailClient() {
     setApproveDeclineLoading(null);
   };
 
+  const resetAltForm = () => {
+    setAltStartDate(null);
+    setAltEndDate(null);
+    setAltStartTime(null);
+    setAltEndTime(null);
+    setAltNote("");
+    setAltEditingId(null);
+    setShowAltTimeForm(false);
+  };
+
   const handleAltTimeSubmit = async () => {
-    if (!altDate || !altTime) {
-      toast.error("Please pick a date and time");
+    if (!altStartDate || !altStartTime) {
+      toast.error("Please pick a date and start time");
       return;
     }
+
+    const dayCount = altEndDate && altEndDate.isAfter(altStartDate, "day")
+      ? altEndDate.diff(altStartDate, "day") + 1
+      : 1;
+
+    if (dayCount > 14) {
+      toast.error("Date range can be at most 14 days");
+      return;
+    }
+
+    setAltSubmitting(true);
     try {
-      const res = await apiFetch(`/events/${eventId}/alt-time`, {
-        auth: true,
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          suggested_at: new Date(`${altDate}T${altTime}`).toISOString(),
-          note: altNote.trim() || null,
-        }),
-      });
-      const data = (await res.json()) as { ok: boolean; message?: string };
-      if (data.ok) {
-        toast.success("Alternate time suggested!");
-        setShowAltTimeForm(false);
-        setAltDate("");
-        setAltTime("");
-        setAltNote("");
-        refresh();
+      const noteVal = altNote.trim() || null;
+      const startH = altStartTime.hour();
+      const startM = altStartTime.minute();
+      const endH = altEndTime?.hour();
+      const endM = altEndTime?.minute();
+
+      if (altEditingId) {
+        const suggestedAt = altStartDate.hour(startH).minute(startM).second(0).millisecond(0).toISOString();
+        const endsAt = endH != null && endM != null
+          ? altStartDate.hour(endH).minute(endM).second(0).millisecond(0).toISOString()
+          : null;
+        const res = await apiFetch(`/events/${eventId}/alt-time/${altEditingId}`, {
+          auth: true, method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ suggested_at: suggestedAt, ends_at: endsAt, note: noteVal }),
+        });
+        const data = (await res.json()) as { ok: boolean; message?: string };
+        if (data.ok) { toast.success("Alternate time updated"); resetAltForm(); refresh(); }
+        else toast.error(data.message ?? "Error");
       } else {
-        toast.error(data.message ?? "Error");
+        let created = 0;
+        for (let i = 0; i < dayCount; i++) {
+          const day = altStartDate.add(i, "day");
+          const suggestedAt = day.hour(startH).minute(startM).second(0).millisecond(0).toISOString();
+          const endsAt = endH != null && endM != null
+            ? day.hour(endH).minute(endM).second(0).millisecond(0).toISOString()
+            : null;
+          const res = await apiFetch(`/events/${eventId}/alt-time`, {
+            auth: true, method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ suggested_at: suggestedAt, ends_at: endsAt, note: noteVal }),
+          });
+          const data = (await res.json()) as { ok: boolean; message?: string };
+          if (!data.ok) {
+            toast.error(data.message ?? "Error");
+            break;
+          }
+          created++;
+        }
+        if (created > 0) {
+          toast.success(created === 1 ? "Alternate time added" : `${created} alternate times added`);
+          resetAltForm();
+          refresh();
+        }
       }
     } catch {
       toast.error("Network error");
     }
+    setAltSubmitting(false);
+  };
+
+  const handleAltTimeDelete = async (id: string) => {
+    setAltDeleting(id);
+    try {
+      const res = await apiFetch(`/events/${eventId}/alt-time/${id}`, { auth: true, method: "DELETE" });
+      const data = (await res.json()) as { ok: boolean };
+      if (data.ok) { toast.success("Alternate time removed"); refresh(); }
+      else toast.error("Could not remove");
+    } catch { toast.error("Network error"); }
+    setAltDeleting(null);
+  };
+
+  const handleAltTimeEdit = (entry: AltTimeEntry) => {
+    setAltStartDate(dayjs(entry.suggestedAt));
+    setAltEndDate(null);
+    setAltStartTime(dayjs(entry.suggestedAt));
+    setAltEndTime(entry.endsAt ? dayjs(entry.endsAt) : null);
+    setAltNote(entry.note ?? "");
+    setAltEditingId(entry.id);
+    setShowAltTimeForm(true);
+  };
+
+  const handlePromoteAltTime = async () => {
+    if (!promoteConfirmTime) return;
+    setPromoting(true);
+    try {
+      const res = await apiFetch(`/events/${eventId}/promote-alt-time`, {
+        auth: true, method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ starts_at: promoteConfirmTime }),
+      });
+      const data = (await res.json()) as { ok: boolean; message?: string };
+      if (data.ok) { toast.success("Plan time updated"); setPromoteConfirmTime(null); refresh(); }
+      else toast.error(data.message ?? "Error");
+    } catch { toast.error("Network error"); }
+    setPromoting(false);
   };
 
   const handleCancelConfirm = async () => {
@@ -1052,6 +1149,9 @@ export default function EventDetailClient() {
   // Show request-to-join CTA instead of RSVP buttons when approval is required,
   // user is not the host, not invited, has no existing RSVP, and hasn't just RSVP'd via email token
   const showRequestToJoin = event.requireApproval && !event.isHost && !event.isInvited && !event.hasRsvp && !emailRsvpStatus && !isGuestInvite;
+
+  const viewerRsvp = viewerUserId ? rsvps.find((r) => r.userId === viewerUserId) : null;
+  const viewerRsvpStatus = viewerRsvp?.status ?? null;
 
   // When locationExact is explicitly false the API hid the exact venue.
   // Fall back: if the field isn't present (older API response) treat it as exact
@@ -1558,62 +1658,82 @@ export default function EventDetailClient() {
             </>
           ) : (
             <>
-              <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
-                {event.isInvited && !event.hasRsvp ? "Can you make it?" : "Are you in?"}
-              </Typography>
-              {event.lockedAt && chatAccessible !== true && (
-                <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2, p: 1.5, bgcolor: "grey.100", borderRadius: 2 }}>
-                  <LockRoundedIcon sx={{ fontSize: 18, color: "text.secondary" }} />
-                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
-                    This plan is locked and not accepting new participants.
-                  </Typography>
-                </Stack>
-              )}
-              {event.requireApproval && !event.isInvited && event.hasRsvp && (
-                <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2, p: 1.5, bgcolor: "grey.50", borderRadius: 2 }}>
-                  <CheckCircleRoundedIcon sx={{ fontSize: 18, color: "success.main" }} />
-                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
-                    You were approved to join this plan.
-                  </Typography>
-                </Stack>
-              )}
-              <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
-                <AppButton onClick={() => openRsvpDialog("going")} disabled={rsvpSubmitting || (!!event.lockedAt && chatAccessible !== true)} sx={{ flex: 1 }}>
-                  Going
-                </AppButton>
-                <AppButton onClick={() => openRsvpDialog("maybe")} disabled={rsvpSubmitting || (!!event.lockedAt && chatAccessible !== true)} variant="outlined" sx={{ flex: 1 }}>
-                  Maybe
-                </AppButton>
-                {(event.isInvited || event.hasRsvp) && (
-                  <AppButton onClick={() => openRsvpDialog("cant_make_it")} disabled={rsvpSubmitting || (!!event.lockedAt && chatAccessible !== true)} variant="outlined" color="inherit" sx={{ flex: 1 }}>
-                    Can&apos;t make it
-                  </AppButton>
-                )}
-              </Stack>
-
-              {event.allowAltTimes && (
-                <Box sx={{ mt: 2 }}>
-                  {!showAltTimeForm ? (
-                    <Button size="small" onClick={() => setShowAltTimeForm(true)} sx={{ textTransform: "none" }}>
-                      Suggest another time
-                    </Button>
-                  ) : (
-                    <Stack spacing={2} sx={{ pt: 1, borderTop: "1px solid", borderColor: "divider" }}>
-                      <Typography variant="subtitle2" fontWeight={600}>
-                        Suggest another time
+              {viewerRsvpStatus ? (
+                <Stack spacing={1.5}>
+                  <Stack direction="row" alignItems="center" spacing={1}>
+                    {viewerRsvpStatus === "going" && <CheckCircleRoundedIcon sx={{ fontSize: 20, color: "success.main" }} />}
+                    {viewerRsvpStatus === "maybe" && <AccessTimeRoundedIcon sx={{ fontSize: 20, color: "warning.main" }} />}
+                    {viewerRsvpStatus === "cant_make_it" && <InfoOutlinedIcon sx={{ fontSize: 20, color: "text.secondary" }} />}
+                    <Typography variant="h6" fontWeight={600}>
+                      {viewerRsvpStatus === "going" ? "You\u2019re going" : viewerRsvpStatus === "maybe" ? "You\u2019re a maybe" : "You can\u2019t make it"}
+                    </Typography>
+                  </Stack>
+                  {event.requireApproval && !event.isInvited && event.hasRsvp && (
+                    <Stack direction="row" alignItems="center" spacing={1} sx={{ p: 1.5, bgcolor: "grey.50", borderRadius: 2 }}>
+                      <CheckCircleRoundedIcon sx={{ fontSize: 18, color: "success.main" }} />
+                      <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
+                        You were approved to join this plan.
                       </Typography>
-                      <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-                        <AppTextField label="Date" type="date" value={altDate} onChange={(e) => setAltDate(e.target.value)} sx={{ flex: 1 }} />
-                        <AppTextField label="Time" type="time" value={altTime} onChange={(e) => setAltTime(e.target.value)} sx={{ flex: 1 }} />
-                      </Stack>
-                      <AppTextField label="Note (optional)" placeholder="e.g. Friday works better for me" value={altNote} onChange={(e) => setAltNote(e.target.value)} />
-                      <Stack direction="row" spacing={1}>
-                        <AppButton size="small" onClick={handleAltTimeSubmit}>Submit</AppButton>
-                        <Button size="small" onClick={() => setShowAltTimeForm(false)}>Cancel</Button>
-                      </Stack>
                     </Stack>
                   )}
-                </Box>
+                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem", lineHeight: 1.6 }}>
+                    Want to change your response?
+                  </Typography>
+                  <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                    <AppButton
+                      onClick={() => openRsvpDialog("going")}
+                      disabled={rsvpSubmitting || (!!event.lockedAt && chatAccessible !== true)}
+                      variant={viewerRsvpStatus === "going" ? "contained" : "outlined"}
+                      sx={{ flex: 1 }}
+                    >
+                      Going
+                    </AppButton>
+                    <AppButton
+                      onClick={() => openRsvpDialog("maybe")}
+                      disabled={rsvpSubmitting || (!!event.lockedAt && chatAccessible !== true)}
+                      variant={viewerRsvpStatus === "maybe" ? "contained" : "outlined"}
+                      sx={{ flex: 1 }}
+                    >
+                      Maybe
+                    </AppButton>
+                    <AppButton
+                      onClick={() => openRsvpDialog("cant_make_it")}
+                      disabled={rsvpSubmitting || (!!event.lockedAt && chatAccessible !== true)}
+                      variant={viewerRsvpStatus === "cant_make_it" ? "contained" : "outlined"}
+                      color={viewerRsvpStatus === "cant_make_it" ? "primary" : "inherit"}
+                      sx={{ flex: 1 }}
+                    >
+                      Can&apos;t make it
+                    </AppButton>
+                  </Stack>
+                </Stack>
+              ) : (
+                <>
+                  <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
+                    {event.isInvited ? "Can you make it?" : "Are you in?"}
+                  </Typography>
+                  {event.lockedAt && chatAccessible !== true && (
+                    <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2, p: 1.5, bgcolor: "grey.100", borderRadius: 2 }}>
+                      <LockRoundedIcon sx={{ fontSize: 18, color: "text.secondary" }} />
+                      <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
+                        This plan is locked and not accepting new participants.
+                      </Typography>
+                    </Stack>
+                  )}
+                  <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                    <AppButton onClick={() => openRsvpDialog("going")} disabled={rsvpSubmitting || (!!event.lockedAt && chatAccessible !== true)} sx={{ flex: 1 }}>
+                      Going
+                    </AppButton>
+                    <AppButton onClick={() => openRsvpDialog("maybe")} disabled={rsvpSubmitting || (!!event.lockedAt && chatAccessible !== true)} variant="outlined" sx={{ flex: 1 }}>
+                      Maybe
+                    </AppButton>
+                    {(event.isInvited || event.hasRsvp) && (
+                      <AppButton onClick={() => openRsvpDialog("cant_make_it")} disabled={rsvpSubmitting || (!!event.lockedAt && chatAccessible !== true)} variant="outlined" color="inherit" sx={{ flex: 1 }}>
+                        Can&apos;t make it
+                      </AppButton>
+                    )}
+                  </Stack>
+                </>
               )}
             </>
           )}
@@ -1991,6 +2111,312 @@ export default function EventDetailClient() {
           </Stack>
         </AppCard>
       )}
+
+      {/* Find a better time — collaborative alternate scheduling */}
+      {event.allowAltTimes && !isCanceled && (event.isHost || event.hasRsvp || event.isInvited) && (() => {
+        type OverlapWindow = { startMs: number; endMs: number; entries: AltTimeEntry[] };
+
+        const fmtTime = (d: Date) => d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+
+        const byDay = altTimes.reduce<Record<string, AltTimeEntry[]>>((acc, entry) => {
+          const dayKey = new Date(entry.suggestedAt).toDateString();
+          if (!acc[dayKey]) acc[dayKey] = [];
+          acc[dayKey].push(entry);
+          return acc;
+        }, {});
+
+        function computeOverlaps(entries: AltTimeEntry[]): OverlapWindow[] {
+          const ranged = entries.filter((e) => e.endsAt);
+          if (ranged.length < 2) return [];
+
+          const intervals = ranged.map((e) => ({
+            entry: e,
+            s: new Date(e.suggestedAt).getTime(),
+            e: new Date(e.endsAt!).getTime(),
+          }));
+
+          const windowMap = new Map<string, { startMs: number; endMs: number; entrySet: Set<string> }>();
+
+          for (let i = 0; i < intervals.length; i++) {
+            for (let j = i + 1; j < intervals.length; j++) {
+              const oStart = Math.max(intervals[i].s, intervals[j].s);
+              const oEnd = Math.min(intervals[i].e, intervals[j].e);
+              if (oStart >= oEnd) continue;
+              const key = `${oStart}-${oEnd}`;
+              const existing = windowMap.get(key);
+              if (existing) {
+                existing.entrySet.add(intervals[i].entry.id);
+                existing.entrySet.add(intervals[j].entry.id);
+              } else {
+                windowMap.set(key, {
+                  startMs: oStart,
+                  endMs: oEnd,
+                  entrySet: new Set([intervals[i].entry.id, intervals[j].entry.id]),
+                });
+              }
+            }
+          }
+
+          const entryById = new Map(entries.map((e) => [e.id, e]));
+          const pointEntries = entries.filter((e) => !e.endsAt);
+
+          const windows: OverlapWindow[] = [];
+          for (const w of windowMap.values()) {
+            for (const pt of pointEntries) {
+              const ptMs = new Date(pt.suggestedAt).getTime();
+              if (ptMs >= w.startMs && ptMs < w.endMs) {
+                w.entrySet.add(pt.id);
+              }
+            }
+            windows.push({
+              startMs: w.startMs,
+              endMs: w.endMs,
+              entries: [...w.entrySet].map((id) => entryById.get(id)!).filter(Boolean),
+            });
+          }
+
+          windows.sort((a, b) => b.entries.length - a.entries.length || a.startMs - b.startMs);
+          return windows;
+        }
+
+        const dayGroups = Object.entries(byDay)
+          .map(([dayKey, entries]) => {
+            const overlaps = computeOverlaps(entries);
+            entries.sort((a, b) => new Date(a.suggestedAt).getTime() - new Date(b.suggestedAt).getTime());
+            return { dayKey, date: new Date(entries[0].suggestedAt), entries, overlaps };
+          })
+          .sort((a, b) => {
+            const aMax = a.overlaps[0]?.entries.length ?? 0;
+            const bMax = b.overlaps[0]?.entries.length ?? 0;
+            if (bMax !== aMax) return bMax - aMax;
+            return a.date.getTime() - b.date.getTime();
+          });
+
+        const globalBestOverlapCount = Math.max(0, ...dayGroups.flatMap((dg) => dg.overlaps.map((o) => o.entries.length)));
+
+        return (
+          <AppCard>
+            <Typography variant="h5" fontWeight={700} sx={{ mb: 0.5, fontSize: { xs: "1.25rem", sm: "1.375rem" } }}>
+              Find a better time
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Suggest a start time that works better for you, everyone in the plan can see them.
+            </Typography>
+
+            <Box sx={{ maxHeight: 420, overflowY: "auto" }}>
+            {!showAltTimeForm ? (
+              <Button
+                size="small"
+                onClick={() => { setAltEditingId(null); setShowAltTimeForm(true); }}
+                sx={{ textTransform: "none", mb: altTimes.length > 0 ? 2 : 0 }}
+              >
+                + Suggest a time
+              </Button>
+            ) : (
+              <Paper variant="outlined" sx={{ p: 2, mb: altTimes.length > 0 ? 2 : 0, borderRadius: 2 }}>
+                <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1.5 }}>
+                  {altEditingId ? "Edit your suggested time" : "Suggest a start time"}
+                </Typography>
+                <Stack spacing={2}>
+                  <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                    <Box sx={{ flex: 1 }}>
+                      <Typography variant="subtitle1" fontWeight={600} sx={{ display: "block", mb: 0.625 }}>
+                        Date
+                      </Typography>
+                      <DatePicker
+                        value={altStartDate}
+                        onChange={setAltStartDate}
+                        minDate={dayjs()}
+                        slotProps={{ textField: { fullWidth: true, size: "medium", placeholder: "Pick a date" } }}
+                      />
+                    </Box>
+                    {!altEditingId && (
+                      <Box sx={{ flex: 1 }}>
+                        <Typography variant="subtitle1" fontWeight={600} sx={{ display: "block", mb: 0.625 }}>
+                          Through (optional)
+                        </Typography>
+                        <DatePicker
+                          value={altEndDate}
+                          onChange={setAltEndDate}
+                          minDate={altStartDate ?? dayjs()}
+                          disabled={!altStartDate}
+                          slotProps={{ textField: { fullWidth: true, size: "medium", placeholder: "Same day" } }}
+                        />
+                      </Box>
+                    )}
+                  </Stack>
+                  {altStartDate && altEndDate && altEndDate.isAfter(altStartDate, "day") && (
+                    <Typography variant="caption" color="primary" sx={{ mt: -1 }}>
+                      {altEndDate.diff(altStartDate, "day") + 1} days selected — one entry will be created for each day with the same time.
+                    </Typography>
+                  )}
+                  <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                    <Box sx={{ flex: 1 }}>
+                      <Typography variant="subtitle1" fontWeight={600} sx={{ display: "block", mb: 0.625 }}>
+                        Start time
+                      </Typography>
+                      <TimePicker
+                        value={altStartTime}
+                        onChange={setAltStartTime}
+                        format="h:mm A"
+                        slotProps={{ field: { shouldRespectLeadingZeros: true } as Record<string, unknown>, textField: { fullWidth: true, size: "medium", placeholder: "Pick a time" } }}
+                      />
+                    </Box>
+                    <Box sx={{ flex: 1 }}>
+                      <Typography variant="subtitle1" fontWeight={600} sx={{ display: "block", mb: 0.625 }}>
+                        End time (optional)
+                      </Typography>
+                      <TimePicker
+                        value={altEndTime}
+                        onChange={setAltEndTime}
+                        format="h:mm A"
+                        slotProps={{ field: { shouldRespectLeadingZeros: true } as Record<string, unknown>, textField: { fullWidth: true, size: "medium", placeholder: "Pick a time" } }}
+                      />
+                    </Box>
+                  </Stack>
+                  <AppTextField label="Note (optional)" placeholder="e.g. Friday works better for me" value={altNote} onChange={(e) => setAltNote(e.target.value)} />
+                  <Stack direction="row" spacing={1}>
+                    <AppButton size="small" onClick={handleAltTimeSubmit} disabled={altSubmitting}>
+                      {altSubmitting ? "Saving…" : altEditingId ? "Save" : "Add"}
+                    </AppButton>
+                    <Button size="small" onClick={resetAltForm} sx={{ textTransform: "none" }}>Cancel</Button>
+                  </Stack>
+                </Stack>
+              </Paper>
+            )}
+
+            {dayGroups.length > 0 && (
+              <Stack spacing={1.5}>
+                {dayGroups.map((dg) => {
+                  const dayLabel = dg.date.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+
+                  return (
+                    <Paper key={dg.dayKey} variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+                      <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1, color: "text.primary" }}>
+                        {dayLabel}
+                      </Typography>
+
+                      <Stack spacing={0} divider={<Divider />}>
+                        {dg.overlaps.map((ov, oi) => {
+                          const ovStart = fmtTime(new Date(ov.startMs));
+                          const ovEnd = fmtTime(new Date(ov.endMs));
+                          const isBest = ov.entries.length === globalBestOverlapCount && globalBestOverlapCount > 1;
+                          return (
+                            <Stack key={`ov-${oi}`} direction="row" alignItems="center" justifyContent="space-between" sx={{ py: 1 }}>
+                              <Box sx={{ minWidth: 0 }}>
+                                <Stack direction="row" alignItems="center" spacing={0.75} sx={{ flexWrap: "wrap" }}>
+                                  <Typography variant="body2" fontWeight={600} color="primary.main">
+                                    {ovStart} – {ovEnd}
+                                  </Typography>
+                                  <Typography variant="caption" fontWeight={600} color="primary.main">
+                                    {ov.entries.length} people overlap{isBest ? " — best fit" : ""}
+                                  </Typography>
+                                </Stack>
+                                <Typography variant="caption" color="text.secondary">
+                                  {ov.entries.map((e) => e.name).join(", ")}
+                                </Typography>
+                              </Box>
+                              {event.isHost && (
+                                <Tooltip title="Make official time" arrow>
+                                  <IconButton size="small" onClick={() => setPromoteConfirmTime(new Date(ov.startMs).toISOString())} aria-label="Make official time">
+                                    <AccessTimeRoundedIcon sx={{ fontSize: 16 }} />
+                                  </IconButton>
+                                </Tooltip>
+                              )}
+                            </Stack>
+                          );
+                        })}
+                        {dg.entries.map((entry) => {
+                          const isOwn = entry.userId === viewerUserId;
+                          const entryStart = fmtTime(new Date(entry.suggestedAt));
+                          const entryEnd = entry.endsAt ? fmtTime(new Date(entry.endsAt)) : null;
+                          return (
+                            <Stack key={entry.id} direction="row" alignItems="center" justifyContent="space-between" sx={{ py: 0.75 }}>
+                              <Box sx={{ minWidth: 0 }}>
+                                <Stack direction="row" alignItems="center" spacing={0.5} sx={{ flexWrap: "wrap" }}>
+                                  <Typography variant="body2" color="text.primary">
+                                    {entryStart}{entryEnd ? ` – ${entryEnd}` : ""}
+                                  </Typography>
+                                  <Typography variant="body2" color="text.disabled">
+                                    &middot;
+                                  </Typography>
+                                  <Typography variant="body2" color="text.secondary" noWrap>
+                                    {entry.handle ? (
+                                      <Link href={`/u/${entry.handle.replace(/^@/, "")}`} style={{ color: "inherit", textDecoration: "none" }}>
+                                        {entry.name}
+                                      </Link>
+                                    ) : entry.name}
+                                  </Typography>
+                                </Stack>
+                                {entry.note && (
+                                  <Typography variant="caption" color="text.disabled" sx={{ display: "block" }}>
+                                    {entry.note}
+                                  </Typography>
+                                )}
+                              </Box>
+                              <Stack direction="row" spacing={0} sx={{ flexShrink: 0 }}>
+                                {event.isHost && (
+                                  <Tooltip title="Make official time" arrow>
+                                    <IconButton size="small" onClick={() => setPromoteConfirmTime(entry.suggestedAt)} aria-label="Make official time">
+                                      <AccessTimeRoundedIcon sx={{ fontSize: 16, color: "text.disabled" }} />
+                                    </IconButton>
+                                  </Tooltip>
+                                )}
+                                {isOwn && (
+                                  <IconButton size="small" onClick={() => handleAltTimeEdit(entry)} aria-label="Edit">
+                                    <EditRoundedIcon sx={{ fontSize: 16, color: "text.disabled" }} />
+                                  </IconButton>
+                                )}
+                                {(isOwn || event.isHost) && (
+                                  <IconButton
+                                    size="small"
+                                    onClick={() => handleAltTimeDelete(entry.id)}
+                                    disabled={altDeleting === entry.id}
+                                    aria-label="Remove"
+                                  >
+                                    <DeleteOutlineRoundedIcon sx={{ fontSize: 16, color: "text.disabled" }} />
+                                  </IconButton>
+                                )}
+                              </Stack>
+                            </Stack>
+                          );
+                        })}
+                      </Stack>
+                    </Paper>
+                  );
+                })}
+              </Stack>
+            )}
+
+            {altTimes.length === 0 && !showAltTimeForm && (
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                No times suggested yet. Be the first to suggest one.
+              </Typography>
+            )}
+            </Box>
+          </AppCard>
+        );
+      })()}
+
+      {/* Promote confirmation dialog */}
+      <Dialog open={!!promoteConfirmTime} onClose={() => setPromoteConfirmTime(null)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 700 }}>Update official plan time?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            This will change the official plan time to{" "}
+            <strong>{promoteConfirmTime ? formatDateTime(promoteConfirmTime) : ""}</strong>.
+            Going and Maybe attendees will be notified.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
+          <Button variant="text" color="inherit" onClick={() => setPromoteConfirmTime(null)} disabled={promoting}>
+            Cancel
+          </Button>
+          <Button variant="contained" onClick={handlePromoteAltTime} disabled={promoting}>
+            {promoting ? "Updating…" : "Update plan time"}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Who's in — combined RSVP + invite status */}
       {(rsvps.length > 0 || pendingInvites.length > 0) && (
@@ -2680,28 +3106,6 @@ export default function EventDetailClient() {
         </DialogActions>
       </Dialog>
 
-      {/* Alternate times */}
-      {altTimes.length > 0 && (
-        <AppCard>
-          <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
-            Suggested alternate times
-          </Typography>
-          <Stack spacing={1} divider={<Divider />}>
-            {altTimes.map((a, i) => (
-              <Box key={i}>
-                <Typography variant="body2" fontWeight={500}>
-                  {a.name} suggested {formatDateTime(a.suggestedAt)}
-                </Typography>
-                {a.note && (
-                  <Typography variant="caption" color="text.secondary">
-                    {a.note}
-                  </Typography>
-                )}
-              </Box>
-            ))}
-          </Stack>
-        </AppCard>
-      )}
       {/* RSVP confirmation dialog */}
       <Dialog open={rsvpDialogOpen} onClose={() => setRsvpDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ fontWeight: 700 }}>

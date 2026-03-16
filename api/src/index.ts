@@ -26,6 +26,7 @@ import {
   sendJoinRequestEmail,
   sendPasswordResetEmail,
   sendRsvpConfirmationEmail,
+  sendUnreadChatDigestEmail,
   sendVerificationEmail,
 } from "./email/send";
 import { canAccessInternalTestRoute, notFound } from "./internalAccess";
@@ -3910,7 +3911,55 @@ app.get("/notifications", async (c) => {
       readAt: r.read_at,
       createdAt: r.created_at,
     }));
-    return c.json({ ok: true, notifications });
+    // Derive unread chat summaries from chat tables (host or going RSVP)
+    const chatRows = (await sql`
+      SELECT
+        e.id        AS event_id,
+        e.title     AS event_title,
+        COUNT(cm.id)::int AS unread_count,
+        MAX(cm.created_at) AS latest_at,
+        (SELECT cm2.body FROM newchums.event_chat_messages cm2
+         WHERE cm2.event_id = e.id ORDER BY cm2.created_at DESC LIMIT 1
+        ) AS latest_body,
+        (SELECT u2.name FROM newchums.event_chat_messages cm2
+         JOIN newchums.users u2 ON u2.id = cm2.user_id
+         WHERE cm2.event_id = e.id ORDER BY cm2.created_at DESC LIMIT 1
+        ) AS latest_sender_name
+      FROM newchums.event_chat_messages cm
+      JOIN newchums.events e ON e.id = cm.event_id AND e.status != 'canceled'
+      LEFT JOIN newchums.event_chat_reads cr
+        ON cr.event_id = cm.event_id AND cr.user_id = ${appUserId}
+      WHERE (
+        e.host_user_id = ${appUserId}
+        OR EXISTS (
+          SELECT 1 FROM newchums.event_rsvps er
+          WHERE er.event_id = e.id AND er.user_id = ${appUserId} AND er.status = 'going'
+        )
+      )
+      AND cm.created_at > COALESCE(cr.last_read_at, '1970-01-01'::timestamptz)
+      AND cm.user_id != ${appUserId}
+      GROUP BY e.id, e.title
+      ORDER BY MAX(cm.created_at) DESC
+      LIMIT 10
+    `) as {
+      event_id: string;
+      event_title: string;
+      unread_count: number;
+      latest_at: string;
+      latest_body: string | null;
+      latest_sender_name: string | null;
+    }[];
+
+    const unreadChats = chatRows.map((r) => ({
+      eventId: r.event_id,
+      eventTitle: r.event_title,
+      unreadCount: r.unread_count,
+      latestAt: r.latest_at,
+      latestMessageBody: r.latest_body ? (r.latest_body.length > 80 ? r.latest_body.slice(0, 80) + "\u2026" : r.latest_body) : null,
+      latestSenderName: r.latest_sender_name ?? null,
+    }));
+
+    return c.json({ ok: true, notifications, unreadChats });
   } catch (err) {
     console.error("[GET /notifications]", err);
     return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
@@ -4740,12 +4789,12 @@ app.get("/events/:id", async (c) => {
     `) as Array<{ status: string; note: string | null; user_id: string | null; guest_email: string | null; guest_name: string | null; name: string | null; username: string | null; avatar_key: string | null; avatar_updated_at: string | Date | null }>;
 
     const altTimes = (await sql`
-      SELECT eat.suggested_at, eat.note, eat.user_id, u.name, u.username
+      SELECT eat.id, eat.suggested_at, eat.ends_at, eat.note, eat.user_id, u.name, u.username
       FROM newchums.event_alt_times eat
       JOIN newchums.users u ON u.id = eat.user_id
       WHERE eat.event_id = ${eventId}
       ORDER BY eat.created_at ASC
-    `) as Array<{ suggested_at: string; note: string | null; user_id: string; name: string | null; username: string | null }>;
+    `) as Array<{ id: string; suggested_at: string; ends_at: string | null; note: string | null; user_id: string; name: string | null; username: string | null }>;
 
     const eventHobbies = (await sql`
       SELECT ii.name, ii.slug
@@ -4807,6 +4856,7 @@ app.get("/events/:id", async (c) => {
 
     return c.json({
       ok: true,
+      viewerUserId: userId ?? null,
       event: {
         id: event.id,
         title: event.title,
@@ -4858,12 +4908,18 @@ app.get("/events/:id", async (c) => {
           isGuest: !r.user_id,
         };
       }),
-      altTimes: altTimes.map((a) => ({
-        userId: a.user_id,
-        name: a.name?.trim() || a.username?.replace(/^@/, "") || "Someone",
-        suggestedAt: a.suggested_at,
-        note: a.note,
-      })),
+      altTimes: altTimes.map((a) => {
+        const aHandle = a.username?.replace(/^@/, "") ?? null;
+        return {
+          id: a.id,
+          userId: a.user_id,
+          name: a.name?.trim() || aHandle || "Someone",
+          handle: aHandle ? `@${aHandle}` : null,
+          suggestedAt: a.suggested_at,
+          endsAt: a.ends_at,
+          note: a.note,
+        };
+      }),
       invites: invites.map((inv) => {
         const invHandle = inv.username?.replace(/^@/, "") ?? null;
         return {
@@ -5141,7 +5197,93 @@ app.post("/events/:id/email-rsvp", async (c) => {
   }
 });
 
-/** POST /events/:id/alt-time — suggest an alternate time */
+/** PATCH /events/:id/alt-time/:altTimeId — edit own alternate time entry */
+app.patch("/events/:id/alt-time/:altTimeId", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+  const altTimeId = c.req.param("altTimeId");
+
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+
+  try {
+    const row = (await sql`SELECT id, user_id, suggested_at, ends_at, note FROM newchums.event_alt_times WHERE id = ${altTimeId}`) as { id: string; user_id: string; suggested_at: string; ends_at: string | null; note: string | null }[];
+    if (row.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    if (row[0].user_id !== userId) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+    let suggestedAt: Date | null = null;
+    if (body.suggested_at != null) {
+      suggestedAt = new Date(String(body.suggested_at));
+      if (isNaN(suggestedAt.getTime())) return c.json({ ok: false, error: "VALIDATION", message: "Invalid start date/time", field: "suggested_at" }, 400);
+    }
+
+    let endsAt: Date | null | undefined = undefined;
+    if (body.ends_at !== undefined) {
+      if (body.ends_at === null || body.ends_at === "") {
+        endsAt = null;
+      } else {
+        endsAt = new Date(String(body.ends_at));
+        if (isNaN(endsAt.getTime())) return c.json({ ok: false, error: "VALIDATION", message: "Invalid end date/time", field: "ends_at" }, 400);
+      }
+    }
+
+    const effectiveStart = suggestedAt ?? new Date(row[0].suggested_at);
+    const effectiveEnd = endsAt !== undefined ? endsAt : (row[0].ends_at ? new Date(row[0].ends_at) : null);
+    if (effectiveEnd && effectiveEnd.getTime() <= effectiveStart.getTime())
+      return c.json({ ok: false, error: "VALIDATION", message: "End time must be after start time", field: "ends_at" }, 400);
+
+    const finalNote = body.note !== undefined ? (body.note ? String(body.note).trim().slice(0, 500) : null) : row[0].note;
+
+    await sql`
+      UPDATE newchums.event_alt_times SET
+        suggested_at = ${suggestedAt ? suggestedAt.toISOString() : row[0].suggested_at},
+        ends_at      = ${endsAt !== undefined ? (endsAt ? endsAt.toISOString() : null) : row[0].ends_at},
+        note         = ${finalNote}
+      WHERE id = ${altTimeId}
+    `;
+
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[PATCH /events/:id/alt-time/:altTimeId]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** DELETE /events/:id/alt-time/:altTimeId — delete own entry (or host can delete any) */
+app.delete("/events/:id/alt-time/:altTimeId", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+  const eventId = c.req.param("id");
+  const altTimeId = c.req.param("altTimeId");
+
+  try {
+    const row = (await sql`
+      SELECT eat.id, eat.user_id, e.host_user_id
+      FROM newchums.event_alt_times eat
+      JOIN newchums.events e ON e.id = eat.event_id
+      WHERE eat.id = ${altTimeId} AND eat.event_id = ${eventId}
+    `) as { id: string; user_id: string; host_user_id: string }[];
+    if (row.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    if (row[0].user_id !== userId && row[0].host_user_id !== userId)
+      return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+    await sql`DELETE FROM newchums.event_alt_times WHERE id = ${altTimeId}`;
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[DELETE /events/:id/alt-time/:altTimeId]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /events/:id/alt-time — add an alternate time */
 app.post("/events/:id/alt-time", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -5155,34 +5297,119 @@ app.post("/events/:id/alt-time", async (c) => {
   try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
 
   const suggestedAt = body.suggested_at ? String(body.suggested_at) : null;
-  if (!suggestedAt) return c.json({ ok: false, error: "VALIDATION", message: "Suggested date/time is required", field: "suggested_at" }, 400);
+  if (!suggestedAt) return c.json({ ok: false, error: "VALIDATION", message: "Start date/time is required", field: "suggested_at" }, 400);
 
   const suggestedDate = new Date(suggestedAt);
   if (isNaN(suggestedDate.getTime())) return c.json({ ok: false, error: "VALIDATION", message: "Invalid date/time", field: "suggested_at" }, 400);
+
+  let endsAtDate: Date | null = null;
+  if (body.ends_at) {
+    endsAtDate = new Date(String(body.ends_at));
+    if (isNaN(endsAtDate.getTime())) return c.json({ ok: false, error: "VALIDATION", message: "Invalid end date/time", field: "ends_at" }, 400);
+    if (endsAtDate.getTime() <= suggestedDate.getTime())
+      return c.json({ ok: false, error: "VALIDATION", message: "End time must be after start time", field: "ends_at" }, 400);
+  }
 
   const note = body.note ? String(body.note).trim().slice(0, 500) : null;
 
   try {
     const ev = (await sql`SELECT id, host_user_id, allow_alt_times, title FROM newchums.events WHERE id = ${eventId} AND status = 'published'`) as { id: string; host_user_id: string; allow_alt_times: boolean; title: string }[];
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-    if (!ev[0].allow_alt_times) return c.json({ ok: false, error: "VALIDATION", message: "This event does not accept alternate time suggestions" }, 400);
+    if (!ev[0].allow_alt_times) return c.json({ ok: false, error: "VALIDATION", message: "This plan does not accept alternate times" }, 400);
+
+    const isHost = ev[0].host_user_id === userId;
+    if (!isHost) {
+      const hasRelation = (await sql`
+        SELECT 1 FROM newchums.event_rsvps WHERE event_id = ${eventId} AND user_id = ${userId}
+        UNION ALL
+        SELECT 1 FROM newchums.event_invites WHERE event_id = ${eventId} AND user_id = ${userId}
+        LIMIT 1
+      `) as unknown[];
+      if (hasRelation.length === 0)
+        return c.json({ ok: false, error: "FORBIDDEN", message: "You must be part of this plan to add alternate times" }, 403);
+    }
 
     await sql`
-      INSERT INTO newchums.event_alt_times (event_id, user_id, suggested_at, note)
-      VALUES (${eventId}, ${userId}, ${suggestedDate.toISOString()}, ${note})
+      INSERT INTO newchums.event_alt_times (event_id, user_id, suggested_at, ends_at, note)
+      VALUES (${eventId}, ${userId}, ${suggestedDate.toISOString()}, ${endsAtDate ? endsAtDate.toISOString() : null}, ${note})
     `;
 
-    const user = (await sql`SELECT name, username FROM newchums.users WHERE id = ${userId}`) as { name: string | null; username: string | null }[];
-    const suggestorName = user[0]?.name?.trim() || user[0]?.username?.replace(/^@/, "") || "Someone";
+    const participants = (await sql`
+      SELECT DISTINCT u.id
+      FROM (
+        SELECT user_id AS id FROM newchums.event_rsvps
+        WHERE event_id = ${eventId} AND status IN ('going', 'maybe')
+        UNION
+        SELECT ${ev[0].host_user_id}::uuid AS id
+      ) sub
+      JOIN newchums.users u ON u.id = sub.id
+      WHERE sub.id != ${userId}
+    `) as { id: string }[];
 
-    await sql`
-      INSERT INTO newchums.notifications (user_id, type, actor_user_id, entity_id, metadata)
-      VALUES (${ev[0].host_user_id}, 'event_alt_time', ${userId}, ${eventId}, ${JSON.stringify({ eventTitle: ev[0].title, suggestorName, suggestedAt: suggestedDate.toISOString() })})
-    `;
+    if (participants.length > 0) {
+      const meta = JSON.stringify({ eventTitle: ev[0].title, suggestedAt: suggestedDate.toISOString() });
+      for (const p of participants) {
+        await sql`
+          INSERT INTO newchums.notifications (user_id, type, actor_user_id, entity_id, metadata)
+          VALUES (${p.id}, 'event_alt_time', ${userId}, ${eventId}, ${meta})
+        `;
+      }
+    }
 
     return c.json({ ok: true });
   } catch (err) {
     console.error("[POST /events/:id/alt-time]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /events/:id/promote-alt-time — host promotes an alternate time to official starts_at */
+app.post("/events/:id/promote-alt-time", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+  const eventId = c.req.param("id");
+
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+
+  const startsAtRaw = body.starts_at ? String(body.starts_at) : null;
+  if (!startsAtRaw) return c.json({ ok: false, error: "VALIDATION", message: "Start time is required" }, 400);
+  const startsAt = new Date(startsAtRaw);
+  if (isNaN(startsAt.getTime())) return c.json({ ok: false, error: "VALIDATION", message: "Invalid date/time" }, 400);
+
+  try {
+    const ev = (await sql`
+      SELECT id, host_user_id, status, title, starts_at, timezone FROM newchums.events WHERE id = ${eventId}
+    `) as { id: string; host_user_id: string; status: string; title: string; starts_at: string; timezone: string | null }[];
+    if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    if (ev[0].host_user_id !== userId) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+    if (ev[0].status === "canceled") return c.json({ ok: false, error: "VALIDATION", message: "Cannot update a canceled plan" }, 400);
+
+    const oldStartsAt = ev[0].starts_at;
+    if (new Date(oldStartsAt).getTime() === startsAt.getTime()) return c.json({ ok: true });
+
+    await sql`
+      UPDATE newchums.events SET starts_at = ${startsAt.toISOString()}, updated_at = NOW() WHERE id = ${eventId}
+    `;
+
+    const effectiveTz = ev[0].timezone ?? "UTC";
+    const changes: PlanChangeItem[] = [{
+      fieldName: "Date & time",
+      oldValue: formatEventDate(oldStartsAt, effectiveTz),
+      newValue: formatEventDate(startsAt.toISOString(), effectiveTz),
+    }];
+
+    c.executionCtx.waitUntil(
+      notifyAttendeesPlanChanged(sql, c.env, eventId, userId, ev[0].title, "updated", changes),
+    );
+
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[POST /events/:id/promote-alt-time]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });
@@ -6268,11 +6495,123 @@ app.post("/events/:id/join-request/:requestId/withdraw", async (c) => {
 
 export { ChatRoom } from "./ChatRoom";
 
+// ─── Scheduled handler: daily unread-chat digest ──────────────────────────────
+
+async function handleScheduled(
+  _event: ScheduledEvent,
+  env: Bindings,
+  ctx: ExecutionContext,
+) {
+  const sql = getSql(env);
+
+  // Find users with unread chat messages that arrived since their last digest
+  const rows = (await sql`
+    WITH participant AS (
+      SELECT er.user_id, er.event_id
+      FROM newchums.event_rsvps er WHERE er.status = 'going'
+      UNION
+      SELECT e.host_user_id AS user_id, e.id AS event_id
+      FROM newchums.events e WHERE e.status != 'canceled'
+    ),
+    unread AS (
+      SELECT
+        p.user_id,
+        p.event_id,
+        e.title AS event_title,
+        COUNT(cm.id)::int AS unread_count
+      FROM participant p
+      JOIN newchums.event_chat_messages cm
+        ON cm.event_id = p.event_id
+        AND cm.user_id != p.user_id
+      JOIN newchums.events e
+        ON e.id = p.event_id AND e.status != 'canceled'
+      LEFT JOIN newchums.event_chat_reads cr
+        ON cr.event_id = p.event_id AND cr.user_id = p.user_id
+      LEFT JOIN newchums.user_profile up
+        ON up.user_id = p.user_id
+      WHERE cm.created_at > COALESCE(cr.last_read_at, '1970-01-01'::timestamptz)
+        AND cm.created_at > COALESCE(up.chat_digest_sent_at, '1970-01-01'::timestamptz)
+      GROUP BY p.user_id, p.event_id, e.title
+    )
+    SELECT
+      u.id AS user_id,
+      u.email,
+      u.name,
+      up.notification_prefs,
+      json_agg(json_build_object(
+        'eventId', unread.event_id,
+        'eventTitle', unread.event_title,
+        'unreadCount', unread.unread_count
+      ) ORDER BY unread.unread_count DESC) AS plans
+    FROM unread
+    JOIN newchums.users u ON u.id = unread.user_id
+    LEFT JOIN newchums.user_profile up ON up.user_id = u.id
+    WHERE (up.chat_digest_sent_at IS NULL OR up.chat_digest_sent_at < NOW() - INTERVAL '23 hours')
+    GROUP BY u.id, u.email, u.name, up.notification_prefs
+  `) as {
+    user_id: string;
+    email: string;
+    name: string | null;
+    notification_prefs: unknown;
+    plans: { eventId: string; eventTitle: string; unreadCount: number }[];
+  }[];
+
+  if (rows.length === 0) return;
+
+  const userIds: string[] = [];
+  const emailPromises: Promise<unknown>[] = [];
+
+  for (const row of rows) {
+    const prefs = normalizeNotificationPrefs(row.notification_prefs);
+    if (prefs.items.unread_chat_digest?.enabled === false) continue;
+
+    const plans = (Array.isArray(row.plans) ? row.plans : []).slice(0, 10);
+    if (plans.length === 0) continue;
+
+    const recipientName = row.name?.trim() || "there";
+
+    let unsubscribeUrl = "";
+    try {
+      if (env.NEXTAUTH_SECRET) {
+        const token = await createUnsubscribeToken(env.NEXTAUTH_SECRET, row.user_id, "unread_chat_digest");
+        unsubscribeUrl = `${env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(token)}`;
+      }
+    } catch { /* skip token on failure */ }
+
+    emailPromises.push(
+      sendUnreadChatDigestEmail(env, {
+        to: row.email,
+        recipientName,
+        plans: plans.map((p) => ({
+          title: p.eventTitle,
+          unreadCount: p.unreadCount,
+          url: `${env.WEB_BASE_URL}/events/${p.eventId}`,
+        })),
+        unsubscribeUrl,
+      }),
+    );
+    userIds.push(row.user_id);
+  }
+
+  if (userIds.length > 0) {
+    ctx.waitUntil(
+      Promise.allSettled(emailPromises).then(async () => {
+        await sql`
+          UPDATE newchums.user_profile
+          SET chat_digest_sent_at = NOW()
+          WHERE user_id = ANY(${userIds}::uuid[])
+        `;
+      }),
+    );
+  }
+}
+
 export default Sentry.withSentry(
   (env) => ({
     dsn: env.SENTRY_DSN,
   }),
   {
     fetch: app.fetch,
-  },
+    scheduled: handleScheduled,
+  } as ExportedHandler<Bindings>,
 );

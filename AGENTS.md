@@ -1,6 +1,6 @@
 # NewChums Agent Governance
 
-Last Updated: March 11, 2026
+Last Updated: March 16, 2026
 
 This document defines how agents (AI or human) should operate within the NewChums repository.
 
@@ -69,7 +69,8 @@ Current production reality:
 - Domain live: newchums.com, www.newchums.com; canonical host enforced.
 - Durable Objects are used for real-time plan chat (WebSocket relay per plan).
 - R2 is used for media storage (avatars, banners).
-- Cron and Queues are planned but not yet implemented.
+- Cron Triggers are active (daily unread-chat digest email at `0 14 * * *` UTC).
+- Queues are planned but not yet implemented.
 
 ---
 
@@ -124,13 +125,13 @@ The following areas are partially implemented. Agents should polish and improve 
 
 | Area | Status | Guidance |
 |------|--------|----------|
-| **Explore page** (`/`, logged in) | Functional but evolving. Real API data, filters, location-aware ordering. | Improve polish, fix bugs, refine empty states. Do not invent the final discovery experience. |
-| **Event Details** (`/events/[id]`) | Detail view with RSVP, cancel, invite, banner, edit (host), participant chat (real-time via WebSocket), host lock, and request-to-join (host approval required). No public event sharing page. | Fix issues, improve UI. Do not build public sharing without being asked. |
-| **Event email templates** | Scaffolded in code. Postmark templates not yet created. Sends noop safely. | Do not assume emails are live. Note template requirements when relevant. |
+| **Explore page** (`/`, logged in) | Functional with personalized feed (hobby-based ranking, sort options, localStorage state persistence). | Improve polish, fix bugs, refine empty states. Do not invent the final discovery experience. |
+| **Event Details** (`/events/[id]`) | Detail view with context-aware RSVP, cancel, invite, banner, edit (host), participant chat (real-time via WebSocket), host lock, request-to-join, and plan-change notifications. No public event sharing page. | Fix issues, improve UI. Do not build public sharing without being asked. |
+| **Event email templates** | Most are live in Postmark (invite, join, maybe, leave, attendee removed, plan changed, join request received/approved/declined, unread chat digest). | Some placeholder env vars remain for templates not yet created (event updated, canceled, reminder standalone). |
 | **Attendance reconfirmation** | Setting saved and surfaced in UI. No email reminder logic yet. Migration 028. | Do not build auto-cancel or punitive logic. Hook reminder workflows via a cron/queue job when ready. |
 | **Attendance record / reliability** | Profile placeholder card is present. No scoring or data engine yet. | Do not build a scoring system without being explicitly asked. |
 | **Recurring events** | Not implemented. Schema supports single-time events only. | Do not add recurring event logic. |
-| **Event chat** | Implemented. Per-plan group chat with real-time WebSocket delivery (Durable Objects), host lock, unread indicators. | Improve polish, add features (reactions, threads, attachments) only when asked. Do not add email notifications for chat. |
+| **Event chat** | Implemented. Per-plan group chat with real-time WebSocket delivery (Durable Objects), host lock, unread indicators in bell and plan cards, daily digest email. | Improve polish, add features (reactions, threads, attachments) only when asked. |
 
 ---
 
