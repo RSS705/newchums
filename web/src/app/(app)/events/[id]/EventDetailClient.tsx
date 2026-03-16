@@ -2354,6 +2354,9 @@ export default function EventDetailClient() {
               ? "This plan is locked \u2014 no new people can join. Existing participants still have full access. Unlock to allow new people in again."
               : "Locking this plan prevents anyone new from joining. People who\u2019ve already joined keep their access and can still use the chat."}
           </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1, fontSize: "0.8125rem", lineHeight: 1.6 }}>
+            Locking, canceling, or editing plan details (date, description, capacity, or visibility) will send an update email to attendees who are Going or Maybe.
+          </Typography>
 
           {event.maxSeats && (
             <>

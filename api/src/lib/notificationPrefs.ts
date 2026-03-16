@@ -14,11 +14,16 @@ export type NotificationPreferences = {
 
 export const VALID_KEYS = [
   "event_match",
+  "event_invite",
+  "join_request_received",
+  "join_request_accepted",
+  "join_request_declined",
   "host_join",
   "host_maybe",
   "host_leave",
   "feedback_requests",
   "event_changed_canceled",
+  "attendee_removed",
   "product_announcements",
 ] as const;
 
@@ -30,11 +35,16 @@ export function isValidKey(key: string): key is NotificationKey {
 
 export const DEFAULT_PREFS: Record<NotificationKey, NotificationPrefItem> = {
   event_match: { enabled: true },
+  event_invite: { enabled: true },
+  join_request_received: { enabled: true },
+  join_request_accepted: { enabled: true },
+  join_request_declined: { enabled: true },
   host_join: { enabled: true },
   host_maybe: { enabled: true },
   host_leave: { enabled: true },
   feedback_requests: { enabled: true },
   event_changed_canceled: { enabled: true },
+  attendee_removed: { enabled: true },
   product_announcements: { enabled: true },
 };
 

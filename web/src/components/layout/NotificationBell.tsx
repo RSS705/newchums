@@ -110,6 +110,24 @@ function notificationText(n: AppNotification): {
         actorHref,
         body: titleLink ? <>{" declined your request to join "}{titleLink}.</> : " declined your request to join their plan.",
       };
+    case "event_updated":
+      return {
+        actorLabel,
+        actorHref,
+        body: titleLink ? <>{" updated the details for "}{titleLink}.</> : " updated a plan you\u2019re attending.",
+      };
+    case "event_locked":
+      return {
+        actorLabel,
+        actorHref,
+        body: titleLink ? <>{" locked "}{titleLink}{". No new people can join."}</> : " locked a plan you\u2019re attending.",
+      };
+    case "event_canceled":
+      return {
+        actorLabel,
+        actorHref,
+        body: titleLink ? <>{" cancelled "}{titleLink}.</> : " cancelled a plan you were attending.",
+      };
     default:
       return { actorLabel, actorHref, body: " did something." };
   }

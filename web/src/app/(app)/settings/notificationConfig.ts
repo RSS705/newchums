@@ -16,6 +16,26 @@ export const NOTIFICATION_TYPES: NotificationTypeConfig[] = [
     description: "Get notified when plans that match your hobbies and location are created nearby.",
   },
   {
+    key: "event_invite",
+    title: "Someone invited you to a plan",
+    description: "When someone invites you to join a plan.",
+  },
+  {
+    key: "join_request_received",
+    title: "Someone requested to join your plan",
+    description: "When someone requests to join a plan you're hosting that requires approval.",
+  },
+  {
+    key: "join_request_accepted",
+    title: "Your join request was accepted",
+    description: "When a host approves your request to join their plan.",
+  },
+  {
+    key: "join_request_declined",
+    title: "Your join request was declined",
+    description: "When a host declines your request to join their plan.",
+  },
+  {
     key: "host_join",
     title: "Someone is going to your plan",
     description: "When someone confirms they're attending a plan you're hosting.",
@@ -39,6 +59,11 @@ export const NOTIFICATION_TYPES: NotificationTypeConfig[] = [
     key: "event_changed_canceled",
     title: "Plan canceled or changed",
     description: "When a plan you're attending is canceled or details change.",
+  },
+  {
+    key: "attendee_removed",
+    title: "You were removed from a plan",
+    description: "When a host removes you from a plan you were attending.",
   },
   {
     key: "product_announcements",

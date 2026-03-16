@@ -26,14 +26,18 @@ export const sendPostmarkTemplateEmail = async (
     ...payload.TemplateModel,
   };
 
-  if (env.APP_ENV === "development") {
-    console.log(
-      "[postmark] template:",
-      payload.TemplateId,
-      "keys:",
-      Object.keys(templateModel).sort().join(", ")
-    );
-  }
+  const requestBody = {
+    ...payload,
+    TemplateModel: templateModel,
+  };
+
+  console.log(
+    "[postmark] template:",
+    payload.TemplateId,
+    "keys:",
+    Object.keys(templateModel).sort().join(", ")
+  );
+  console.log("[postmark] full TemplateModel:", JSON.stringify(templateModel));
 
   const response = await fetch("https://api.postmarkapp.com/email/withTemplate", {
     method: "POST",
@@ -42,26 +46,22 @@ export const sendPostmarkTemplateEmail = async (
       "Content-Type": "application/json",
       "X-Postmark-Server-Token": env.POSTMARK_SERVER_TOKEN,
     },
-    body: JSON.stringify({
-      ...payload,
-      TemplateModel: templateModel,
-    }),
+    body: JSON.stringify(requestBody),
   });
 
+  const responseBody = await response.json();
+
   if (!response.ok) {
-    let message = `Postmark request failed with status ${response.status}`;
-    try {
-      const data = (await response.json()) as PostmarkError;
-      if (data?.Message) {
-        message = `Postmark request failed: ${data.Message}`;
-      }
-    } catch {
-      // Ignore JSON parsing errors
-    }
+    const errorData = responseBody as PostmarkError;
+    const message = errorData?.Message
+      ? `Postmark request failed: ${errorData.Message}`
+      : `Postmark request failed with status ${response.status}`;
+    console.error("[postmark] error response:", JSON.stringify(responseBody));
     throw new Error(message);
   }
 
-  return response.json();
+  console.log("[postmark] success response:", JSON.stringify(responseBody));
+  return responseBody;
 };
 
 type PostmarkRawEmail = {

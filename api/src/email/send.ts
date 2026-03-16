@@ -152,10 +152,10 @@ export const sendChumInviteEmail = async (
 
 export const sendEventInviteEmail = async (
   env: Bindings,
-  { to, recipientName, hostName, eventTitle, eventDate, eventLocation, eventUrl, inviteToken }: {
+  { to, recipientName, hostName, eventTitle, eventDate, eventLocation, eventUrl, inviteToken, unsubscribeUrl }: {
     to: string; recipientName: string; hostName: string;
     eventTitle: string; eventDate: string; eventLocation?: string; eventUrl: string;
-    inviteToken?: string;
+    inviteToken?: string; unsubscribeUrl?: string;
   }
 ) => {
   if (!env.POSTMARK_TEMPLATE_EVENT_INVITE) return;
@@ -171,6 +171,7 @@ export const sendEventInviteEmail = async (
       productName: "NewChums", recipientName, hostName, eventTitle, eventDate,
       eventLocation: eventLocation || "",
       eventUrl: viewUrl, goingUrl, maybeUrl, cantMakeItUrl,
+      unsubscribeUrl: unsubscribeUrl || "",
     },
   });
 };
@@ -187,6 +188,79 @@ export const sendEventUpdatedEmail = async (
     From: env.EMAIL_FROM, To: to,
     TemplateId: env.POSTMARK_TEMPLATE_EVENT_UPDATED,
     TemplateModel: { productName: "NewChums", recipientName, eventTitle, changeDescription, eventUrl },
+  });
+};
+
+// ── Plan-changed notification ────────────────────────────────────────────
+//   Covers three host actions: plan edited, plan locked, plan cancelled.
+//   Template 43971187.
+//
+//   Postmark's Mustachio doesn't resolve parent-context variables inside
+//   string-value {{#section}} blocks. So ALL dynamic content is pre-rendered
+//   into flat top-level variables. The template uses only:
+//     {{variable}}         — top-level interpolation
+//     {{#variable}}...{{/variable}} — show/hide blocks (no nested vars)
+//     {{.}}                — self-reference inside a section (known to work)
+
+export type PlanChangeItem = { fieldName: string; oldValue: string; newValue: string };
+
+function formatChange(c: PlanChangeItem): string {
+  return `${c.fieldName}: ${c.newValue} (previously was ${c.oldValue})`;
+}
+
+export const sendEventChangedEmail = async (
+  env: Bindings,
+  { to, recipientName, eventTitle, eventUrl, changeType, changes, unsubscribeUrl }: {
+    to: string; recipientName: string;
+    eventTitle: string; eventUrl: string;
+    changeType: "updated" | "locked" | "canceled";
+    changes?: PlanChangeItem[];
+    unsubscribeUrl?: string;
+  }
+) => {
+  if (!env.POSTMARK_TEMPLATE_EVENT_CHANGED) return;
+
+  const headingMap = {
+    canceled: "A plan has been cancelled",
+    locked:   "A plan you\u2019re attending has been locked",
+    updated:  "A plan you\u2019re attending has been updated",
+  };
+  const bodyMap = {
+    canceled: `Hey ${recipientName}, we\u2019re sorry to let you know that a plan you were attending has been cancelled by the host. We hope to see you at the next one.`,
+    locked:   `Hey ${recipientName}, the host has locked a plan you\u2019re attending. Your spot is confirmed \u2014 no action needed. You can still view the plan details below.`,
+    updated:  `Hey ${recipientName}, the host has made changes to a plan you\u2019re attending. Review the updates below.`,
+  };
+  const statusMap = {
+    canceled: "Plan \u2014 Cancelled",
+    locked:   "Plan \u2014 Locked",
+    updated:  "Plan \u2014 Updated",
+  };
+  const ctaMap = {
+    canceled: "Explore other plans",
+    locked:   "View plan",
+    updated:  "View updated plan",
+  };
+
+  return sendPostmarkTemplateEmail(env, {
+    From: env.EMAIL_FROM, To: to,
+    TemplateId: env.POSTMARK_TEMPLATE_EVENT_CHANGED,
+    TemplateModel: {
+      productName: "NewChums",
+      heading:     headingMap[changeType],
+      bodyText:    bodyMap[changeType],
+      statusLabel: statusMap[changeType],
+      statusColor: changeType === "canceled" ? "#6B7280" : "#E65B13",
+      eventTitle,
+      ctaUrl:      changeType === "canceled" ? "https://newchums.com" : eventUrl,
+      ctaText:     ctaMap[changeType],
+      change1: changes?.[0] ? formatChange(changes[0]) : "",
+      change2: changes?.[1] ? formatChange(changes[1]) : "",
+      change3: changes?.[2] ? formatChange(changes[2]) : "",
+      change4: changes?.[3] ? formatChange(changes[3]) : "",
+      change5: changes?.[4] ? formatChange(changes[4]) : "",
+      hasChanges: changes && changes.length > 0 ? "1" : "",
+      unsubscribeUrl: unsubscribeUrl || "",
+    },
   });
 };
 
@@ -242,6 +316,7 @@ export const sendEventRsvpUpdateEmail = async (
 type HostRsvpEmailParams = {
   to: string; hostName: string; attendeeName: string;
   eventTitle: string; eventUrl: string; attendeeMessage?: string | null;
+  unsubscribeUrl?: string;
 };
 
 export const sendEventJoinEmail = async (
@@ -255,6 +330,7 @@ export const sendEventJoinEmail = async (
       productName: "NewChums", hostName: params.hostName, attendeeName: params.attendeeName,
       eventTitle: params.eventTitle, eventUrl: params.eventUrl,
       attendeeMessage: params.attendeeMessage || "",
+      unsubscribeUrl: params.unsubscribeUrl || "",
     },
   });
 };
@@ -270,6 +346,7 @@ export const sendEventLeaveEmail = async (
       productName: "NewChums", hostName: params.hostName, attendeeName: params.attendeeName,
       eventTitle: params.eventTitle, eventUrl: params.eventUrl,
       attendeeMessage: params.attendeeMessage || "",
+      unsubscribeUrl: params.unsubscribeUrl || "",
     },
   });
 };
@@ -285,6 +362,7 @@ export const sendEventMaybeEmail = async (
       productName: "NewChums", hostName: params.hostName, attendeeName: params.attendeeName,
       eventTitle: params.eventTitle, eventUrl: params.eventUrl,
       attendeeMessage: params.attendeeMessage || "",
+      unsubscribeUrl: params.unsubscribeUrl || "",
     },
   });
 };
@@ -295,16 +373,16 @@ export const sendEventMaybeEmail = async (
 
 export const sendAttendeeRemovedEmail = async (
   env: Bindings,
-  { to, recipientName, hostName, eventTitle, eventUrl, removalReason }: {
+  { to, recipientName, hostName, eventTitle, eventUrl, removalReason, unsubscribeUrl }: {
     to: string; recipientName: string; hostName: string;
-    eventTitle: string; eventUrl: string; removalReason?: string | null;
+    eventTitle: string; eventUrl: string; removalReason?: string | null; unsubscribeUrl?: string;
   }
 ) => {
   if (!env.POSTMARK_TEMPLATE_ATTENDEE_REMOVED) return;
   return sendPostmarkTemplateEmail(env, {
     From: env.EMAIL_FROM, To: to,
     TemplateId: env.POSTMARK_TEMPLATE_ATTENDEE_REMOVED,
-    TemplateModel: { productName: "NewChums", recipientName, hostName, eventTitle, eventUrl, removalReason: removalReason || "" },
+    TemplateModel: { productName: "NewChums", recipientName, hostName, eventTitle, eventUrl, removalReason: removalReason || "", unsubscribeUrl: unsubscribeUrl || "" },
   });
 };
 
@@ -318,43 +396,43 @@ export const sendAttendeeRemovedEmail = async (
 
 export const sendJoinRequestEmail = async (
   env: Bindings,
-  { to, hostName, requesterName, eventTitle, requestMessage, eventUrl }: {
+  { to, hostName, requesterName, eventTitle, requestMessage, eventUrl, unsubscribeUrl }: {
     to: string; hostName: string; requesterName: string;
-    eventTitle: string; requestMessage: string; eventUrl: string;
+    eventTitle: string; requestMessage: string; eventUrl: string; unsubscribeUrl?: string;
   }
 ) => {
   return sendPostmarkTemplateEmail(env, {
     From: env.EMAIL_FROM, To: to,
     TemplateId: "43906440",
-    TemplateModel: { productName: "NewChums", hostName, requesterName, eventTitle, requestMessage, eventUrl },
+    TemplateModel: { productName: "NewChums", hostName, requesterName, eventTitle, requestMessage, eventUrl, unsubscribeUrl: unsubscribeUrl || "" },
   });
 };
 
 export const sendJoinRequestApprovedEmail = async (
   env: Bindings,
-  { to, recipientName, hostName, eventTitle, hostMessage, eventUrl }: {
+  { to, recipientName, hostName, eventTitle, hostMessage, eventUrl, unsubscribeUrl }: {
     to: string; recipientName: string; hostName: string;
-    eventTitle: string; hostMessage: string; eventUrl: string;
+    eventTitle: string; hostMessage: string; eventUrl: string; unsubscribeUrl?: string;
   }
 ) => {
   return sendPostmarkTemplateEmail(env, {
     From: env.EMAIL_FROM, To: to,
     TemplateId: "43906609",
-    TemplateModel: { productName: "NewChums", recipientName, hostName, eventTitle, hostMessage, eventUrl },
+    TemplateModel: { productName: "NewChums", recipientName, hostName, eventTitle, hostMessage, eventUrl, unsubscribeUrl: unsubscribeUrl || "" },
   });
 };
 
 export const sendJoinRequestDeclinedEmail = async (
   env: Bindings,
-  { to, recipientName, hostName, eventTitle, hostMessage, eventUrl }: {
+  { to, recipientName, hostName, eventTitle, hostMessage, eventUrl, unsubscribeUrl }: {
     to: string; recipientName: string; hostName: string;
-    eventTitle: string; hostMessage: string; eventUrl: string;
+    eventTitle: string; hostMessage: string; eventUrl: string; unsubscribeUrl?: string;
   }
 ) => {
   return sendPostmarkTemplateEmail(env, {
     From: env.EMAIL_FROM, To: to,
     TemplateId: "43906703",
-    TemplateModel: { productName: "NewChums", recipientName, hostName, eventTitle, hostMessage, eventUrl },
+    TemplateModel: { productName: "NewChums", recipientName, hostName, eventTitle, hostMessage, eventUrl, unsubscribeUrl: unsubscribeUrl || "" },
   });
 };
 

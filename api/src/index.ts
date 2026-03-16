@@ -14,6 +14,8 @@ import {
   sendEmailChangeNotifyOldEmail,
   sendEmailChangeSuccessEmail,
   sendEventCanceledEmail,
+  sendEventChangedEmail,
+  type PlanChangeItem,
   sendEventInviteEmail,
   sendEventJoinEmail,
   sendEventLeaveEmail,
@@ -37,6 +39,7 @@ import { validateCleanText } from "./lib/contentSafety";
 import { verifyTurnstileToken } from "./lib/turnstile";
 import {
   getDefaultPrefsJson,
+  isValidKey,
   normalizeNotificationPrefs,
   validateAndMergeInput,
   VALID_KEYS,
@@ -1301,6 +1304,39 @@ async function verifyInviteToken(
   }
 }
 
+// Unsubscribe tokens — allow one-click email preference opt-out without requiring login.
+// Token encodes the userId + notification key and is signed with NEXTAUTH_SECRET.
+// Valid for 90 days.
+const UNSUBSCRIBE_TOKEN_EXPIRY_SECONDS = 90 * 24 * 60 * 60;
+
+async function createUnsubscribeToken(
+  secret: string,
+  userId: string,
+  key: string,
+): Promise<string> {
+  const exp = Math.floor(Date.now() / 1000) + UNSUBSCRIBE_TOKEN_EXPIRY_SECONDS;
+  return new SignJWT({ uid: userId, key, purpose: "unsubscribe" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setExpirationTime(exp)
+    .sign(new TextEncoder().encode(secret));
+}
+
+async function verifyUnsubscribeToken(
+  token: string,
+  secret: string,
+): Promise<{ userId: string; key: string } | null> {
+  try {
+    const { payload } = await jwtVerify(token, new TextEncoder().encode(secret));
+    if (payload.purpose !== "unsubscribe") return null;
+    const userId = payload.uid as string | undefined;
+    const key = payload.key as string | undefined;
+    if (!userId || !key) return null;
+    return { userId, key };
+  } catch {
+    return null;
+  }
+}
+
 app.get("/handles/available", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string") {
@@ -1406,6 +1442,50 @@ app.put("/notification-preferences", async (c) => {
     return c.json({ ok: true, prefs });
   } catch (err) {
     console.error("[PUT /notification-preferences]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /email/unsubscribe — one-click unsubscribe from a specific notification type via token.
+ *  No authentication required; the signed JWT token is the credential.
+ */
+app.post("/email/unsubscribe", async (c) => {
+  try {
+    const body = await c.req.json();
+    const token = typeof body.token === "string" ? body.token.trim() : null;
+    if (!token) return c.json({ ok: false, error: "INVALID_TOKEN" }, 400);
+
+    const data = await verifyUnsubscribeToken(token, c.env.NEXTAUTH_SECRET);
+    if (!data) return c.json({ ok: false, error: "INVALID_TOKEN" }, 400);
+
+    const { userId, key } = data;
+    if (!isValidKey(key)) return c.json({ ok: false, error: "INVALID_KEY" }, 400);
+
+    const sql = getSql(c.env);
+    const rows = (await sql`
+      SELECT notification_prefs FROM user_profile WHERE user_id = ${userId} LIMIT 1
+    `) as { notification_prefs: unknown }[];
+
+    if (rows.length === 0) {
+      const prefs = normalizeNotificationPrefs(undefined);
+      prefs.items[key] = { enabled: false };
+      await sql`
+        INSERT INTO user_profile (user_id, notification_prefs)
+        VALUES (${userId}, ${JSON.stringify(prefs)}::jsonb)
+        ON CONFLICT (user_id) DO UPDATE SET notification_prefs = EXCLUDED.notification_prefs
+      `;
+    } else {
+      const prefs = normalizeNotificationPrefs(rows[0].notification_prefs);
+      prefs.items[key] = { enabled: false };
+      await sql`
+        UPDATE user_profile SET notification_prefs = ${JSON.stringify(prefs)}::jsonb
+        WHERE user_id = ${userId}
+      `;
+    }
+
+    return c.json({ ok: true, key });
+  } catch (err) {
+    console.error("[POST /email/unsubscribe]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });
@@ -4143,23 +4223,30 @@ app.post("/events", async (c) => {
               INSERT INTO newchums.notifications (user_id, type, actor_user_id, entity_id, metadata)
               VALUES (${invUserId}, 'event_invite', ${userId}, ${eventId}, ${JSON.stringify({ eventTitle: title })})
             `;
-            const invUser = (await sql`SELECT email, name FROM newchums.users WHERE id = ${invUserId}`) as { email: string; name: string | null }[];
-            if (invUser.length > 0) {
-              const hostUser = (await sql`SELECT name, username FROM newchums.users WHERE id = ${userId}`) as { name: string | null; username: string | null }[];
-              const hostName = hostUser[0]?.name?.trim() || hostUser[0]?.username?.replace(/^@/, "") || "Someone";
-              try {
-                const iToken = await createInviteToken(c.env.NEXTAUTH_SECRET, { eventId, userId: invUserId });
-                await sendEventInviteEmail(c.env, {
-                  to: invUser[0].email,
-                  recipientName: invUser[0].name?.trim() || "there",
-                  hostName,
-                  eventTitle: title,
-                  eventDate: formatEventDate(startsDate.toISOString(), timezone),
-                  eventLocation: locationType === "online" ? (onlineLink || "Online") : buildLocationDisplay(locationName, locationAddress),
-                  eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
-                  inviteToken: iToken,
-                });
-              } catch { /* noop if template missing */ }
+            // Respect the invitee's invitation email preference
+            const invProfileRows = (await sql`SELECT notification_prefs FROM user_profile WHERE user_id = ${invUserId} LIMIT 1`) as { notification_prefs: unknown }[];
+            const invPrefs = normalizeNotificationPrefs(invProfileRows[0]?.notification_prefs);
+            if (invPrefs.items.event_invite?.enabled !== false) {
+              const invUser = (await sql`SELECT email, name FROM newchums.users WHERE id = ${invUserId}`) as { email: string; name: string | null }[];
+              if (invUser.length > 0) {
+                const hostUser = (await sql`SELECT name, username FROM newchums.users WHERE id = ${userId}`) as { name: string | null; username: string | null }[];
+                const hostName = hostUser[0]?.name?.trim() || hostUser[0]?.username?.replace(/^@/, "") || "Someone";
+                try {
+                  const iToken = await createInviteToken(c.env.NEXTAUTH_SECRET, { eventId, userId: invUserId });
+                  const unsubToken = await createUnsubscribeToken(c.env.NEXTAUTH_SECRET, invUserId, "event_invite");
+                  await sendEventInviteEmail(c.env, {
+                    to: invUser[0].email,
+                    recipientName: invUser[0].name?.trim() || "there",
+                    hostName,
+                    eventTitle: title,
+                    eventDate: formatEventDate(startsDate.toISOString(), timezone),
+                    eventLocation: locationType === "online" ? (onlineLink || "Online") : buildLocationDisplay(locationName, locationAddress),
+                    eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
+                    inviteToken: iToken,
+                    unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
+                  });
+                } catch { /* noop if template missing */ }
+              }
             }
           } else if (invEmail) {
             const hostUser = (await sql`SELECT name, username FROM newchums.users WHERE id = ${userId}`) as { name: string | null; username: string | null }[];
@@ -4175,7 +4262,8 @@ app.post("/events", async (c) => {
                 eventLocation: locationType === "online" ? (onlineLink || "Online") : buildLocationDisplay(locationName, locationAddress),
                 eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
                 inviteToken: iToken,
-                });
+                // No unsubscribeUrl for email-only guests — they have no account to update prefs on
+              });
             } catch { /* noop if template missing */ }
           }
         }
@@ -4803,16 +4891,19 @@ app.post("/events/:id/rsvp", async (c) => {
         const hostName = hostUser[0].name?.trim() || hostUser[0].username?.replace(/^@/, "") || "there";
         const attendeeName = attendeeUser[0]?.name?.trim() || attendeeUser[0]?.username?.replace(/^@/, "") || "Someone";
         const eventUrl = `${c.env.WEB_BASE_URL}/events/${eventId}`;
-        const emailArgs = { to: hostUser[0].email, hostName, attendeeName, eventTitle: event.title, eventUrl, attendeeMessage: note };
+        const baseEmailArgs = { to: hostUser[0].email, hostName, attendeeName, eventTitle: event.title, eventUrl, attendeeMessage: note };
 
         if (status === "going" && hostPrefs.items.host_join?.enabled !== false) {
-          await sendEventJoinEmail(c.env, emailArgs);
+          const unsubToken = await createUnsubscribeToken(c.env.NEXTAUTH_SECRET, event.host_user_id, "host_join");
+          await sendEventJoinEmail(c.env, { ...baseEmailArgs, unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}` });
         }
         if (status === "maybe" && hostPrefs.items.host_maybe?.enabled !== false) {
-          await sendEventMaybeEmail(c.env, emailArgs);
+          const unsubToken = await createUnsubscribeToken(c.env.NEXTAUTH_SECRET, event.host_user_id, "host_maybe");
+          await sendEventMaybeEmail(c.env, { ...baseEmailArgs, unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}` });
         }
         if (status === "cant_make_it" && hostPrefs.items.host_leave?.enabled !== false) {
-          await sendEventLeaveEmail(c.env, emailArgs);
+          const unsubToken = await createUnsubscribeToken(c.env.NEXTAUTH_SECRET, event.host_user_id, "host_leave");
+          await sendEventLeaveEmail(c.env, { ...baseEmailArgs, unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}` });
         }
       } catch { /* noop */ }
     }
@@ -5011,6 +5102,67 @@ app.post("/events/:id/alt-time", async (c) => {
   }
 });
 
+/**
+ * Notify Going/Maybe attendees (excluding the host) that a plan was changed.
+ * Respects each attendee's `event_changed_canceled` notification preference.
+ * Used by: PATCH /events/:id (edit), POST /events/:id/lock, POST /events/:id/cancel.
+ * The optional `changes` array is included in the email for the "updated" scenario.
+ */
+async function notifyAttendeesPlanChanged(
+  sql: ReturnType<typeof getSql>,
+  env: Bindings,
+  eventId: string,
+  hostUserId: string,
+  eventTitle: string,
+  changeType: "updated" | "locked" | "canceled",
+  changes?: PlanChangeItem[],
+): Promise<void> {
+  if (!env.POSTMARK_TEMPLATE_EVENT_CHANGED || !env.NEXTAUTH_SECRET) return;
+  const eventUrl = `${env.WEB_BASE_URL}/events/${eventId}`;
+
+  const attendees = (await sql`
+    SELECT u.id, u.email, u.name, u.username
+    FROM newchums.event_rsvps er
+    JOIN newchums.users u ON u.id = er.user_id
+    WHERE er.event_id = ${eventId}
+      AND er.status IN ('going', 'maybe')
+      AND er.user_id != ${hostUserId}
+  `) as Array<{ id: string; email: string; name: string | null; username: string | null }>;
+
+  const notifType = changeType === "canceled" ? "event_canceled"
+    : changeType === "locked" ? "event_locked"
+    : "event_updated";
+
+  for (const att of attendees) {
+    try {
+      await sql`
+        INSERT INTO newchums.notifications (user_id, type, actor_user_id, entity_id, metadata)
+        VALUES (${att.id}, ${notifType}, ${hostUserId}, ${eventId}, ${JSON.stringify({ eventTitle })})
+      `;
+
+      const profileRows = (await sql`
+        SELECT notification_prefs FROM newchums.user_profile WHERE user_id = ${att.id} LIMIT 1
+      `) as Array<{ notification_prefs: unknown }>;
+      const prefs = normalizeNotificationPrefs(profileRows[0]?.notification_prefs);
+      if (prefs.items.event_changed_canceled?.enabled === false) continue;
+
+      const unsubToken = await createUnsubscribeToken(env.NEXTAUTH_SECRET, att.id, "event_changed_canceled");
+      const unsubscribeUrl = `${env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`;
+      const recipientName = att.name?.trim() || att.username?.replace(/^@/, "") || "there";
+
+      await sendEventChangedEmail(env, {
+        to: att.email,
+        recipientName,
+        eventTitle,
+        eventUrl,
+        changeType,
+        changes,
+        unsubscribeUrl,
+      });
+    } catch { /* noop — never let email failure break the host's action */ }
+  }
+}
+
 /** PATCH /events/:id — edit core event fields (host only, published events) */
 app.patch("/events/:id", async (c) => {
   const payload = await requireAuth(c);
@@ -5026,8 +5178,9 @@ app.patch("/events/:id", async (c) => {
 
   try {
     const rows = (await sql`
-      SELECT id, host_user_id, status FROM newchums.events WHERE id = ${eventId}
-    `) as { id: string; host_user_id: string; status: string }[];
+      SELECT id, host_user_id, status, title, description, starts_at, timezone, max_seats, visibility
+      FROM newchums.events WHERE id = ${eventId}
+    `) as { id: string; host_user_id: string; status: string; title: string; description: string | null; starts_at: string; timezone: string | null; max_seats: number | null; visibility: string }[];
     if (rows.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     if (rows[0].host_user_id !== userId) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
     if (rows[0].status === "canceled") return c.json({ ok: false, error: "VALIDATION", message: "Cannot edit a canceled plan" }, 400);
@@ -5117,6 +5270,55 @@ app.patch("/events/:id", async (c) => {
       await sql`INSERT INTO newchums.event_interests (event_id, interest_id) VALUES (${eventId}, ${iid}) ON CONFLICT DO NOTHING`;
     }
 
+    // Build a human-readable diff for the email notification
+    const before = rows[0];
+    const effectiveTz = patchTimezone ?? before.timezone ?? "UTC";
+    const changes: PlanChangeItem[] = [];
+    const VIS_LABEL: Record<string, string> = { public: "Public", chums_only: "Chums only", invite_only: "Invite only" };
+    const truncate = (s: string | null, n: number): string => s ? (s.length > n ? s.slice(0, n) + "…" : s) : "—";
+
+    if (before.title !== rawTitle)
+      changes.push({ fieldName: "Title", oldValue: before.title, newValue: rawTitle });
+
+    if (new Date(before.starts_at).getTime() !== startsAt.getTime())
+      changes.push({
+        fieldName: "Date & time",
+        oldValue: formatEventDate(before.starts_at, effectiveTz),
+        newValue: formatEventDate(startsAt.toISOString(), effectiveTz),
+      });
+
+    if ((before.description ?? null) !== description)
+      changes.push({ fieldName: "Description", oldValue: truncate(before.description, 150), newValue: truncate(description, 150) });
+
+    if (before.max_seats !== maxSeats)
+      changes.push({
+        fieldName: "Capacity",
+        oldValue: before.max_seats != null ? `${before.max_seats} people` : "No limit",
+        newValue: maxSeats != null ? `${maxSeats} people` : "No limit",
+      });
+
+    if (before.visibility !== visibility)
+      changes.push({
+        fieldName: "Visibility",
+        oldValue: VIS_LABEL[before.visibility] ?? before.visibility,
+        newValue: VIS_LABEL[visibility] ?? visibility,
+      });
+
+    console.log("[PATCH /events/:id] plan-change diff:", JSON.stringify({
+      changesCount: changes.length,
+      changes,
+      beforeStartsAt: before.starts_at,
+      newStartsAt: startsAt.toISOString(),
+      beforeMaxSeats: before.max_seats,
+      newMaxSeats: maxSeats,
+      beforeTitle: before.title,
+      newTitle: rawTitle,
+    }));
+
+    c.executionCtx.waitUntil(
+      notifyAttendeesPlanChanged(sql, c.env, eventId, userId, rawTitle, "updated", changes),
+    );
+
     return c.json({ ok: true });
   } catch (err) {
     console.error("[PATCH /events/:id]", err);
@@ -5141,31 +5343,9 @@ app.post("/events/:id/cancel", async (c) => {
 
     await sql`UPDATE newchums.events SET status = 'canceled', canceled_at = NOW(), updated_at = NOW() WHERE id = ${eventId}`;
 
-    const attendees = (await sql`
-      SELECT u.id, u.email, u.name, u.username
-      FROM newchums.event_rsvps er
-      JOIN newchums.users u ON u.id = er.user_id
-      WHERE er.event_id = ${eventId}
-    `) as Array<{ id: string; email: string; name: string | null; username: string | null }>;
-
-    const hostUser = (await sql`SELECT name, username FROM newchums.users WHERE id = ${userId}`) as { name: string | null; username: string | null }[];
-    const hostName = hostUser[0]?.name?.trim() || hostUser[0]?.username?.replace(/^@/, "") || "Someone";
-
-    for (const att of attendees) {
-      await sql`
-        INSERT INTO newchums.notifications (user_id, type, actor_user_id, entity_id, metadata)
-        VALUES (${att.id}, 'event_canceled', ${userId}, ${eventId}, ${JSON.stringify({ eventTitle: ev[0].title })})
-      `;
-      try {
-        await sendEventCanceledEmail(c.env, {
-          to: att.email,
-          recipientName: att.name?.trim() || att.username?.replace(/^@/, "") || "there",
-          hostName,
-          eventTitle: ev[0].title,
-          eventDate: ev[0].starts_at,
-        });
-      } catch { /* noop */ }
-    }
+    c.executionCtx.waitUntil(
+      notifyAttendeesPlanChanged(sql, c.env, eventId, userId, ev[0].title, "canceled"),
+    );
 
     return c.json({ ok: true });
   } catch (err) {
@@ -5223,14 +5403,20 @@ app.post("/events/:id/remove-attendee", async (c) => {
 
     if (removedUser.length > 0) {
       try {
-        await sendAttendeeRemovedEmail(c.env, {
-          to: removedUser[0].email,
-          recipientName: removedUser[0].name?.trim() || removedUser[0].username?.replace(/^@/, "") || "there",
-          hostName: hostUser[0]?.name?.trim() || hostUser[0]?.username?.replace(/^@/, "") || "the host",
-          eventTitle: event.title,
-          eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
-          removalReason: reason,
-        });
+        const removedProfileRows = (await sql`SELECT notification_prefs FROM user_profile WHERE user_id = ${targetUserId} LIMIT 1`) as { notification_prefs: unknown }[];
+        const removedPrefs = normalizeNotificationPrefs(removedProfileRows[0]?.notification_prefs);
+        if (removedPrefs.items.attendee_removed?.enabled !== false) {
+          const unsubToken = await createUnsubscribeToken(c.env.NEXTAUTH_SECRET, targetUserId, "attendee_removed");
+          await sendAttendeeRemovedEmail(c.env, {
+            to: removedUser[0].email,
+            recipientName: removedUser[0].name?.trim() || removedUser[0].username?.replace(/^@/, "") || "there",
+            hostName: hostUser[0]?.name?.trim() || hostUser[0]?.username?.replace(/^@/, "") || "the host",
+            eventTitle: event.title,
+            eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
+            removalReason: reason,
+            unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
+          });
+        }
       } catch { /* noop */ }
     }
 
@@ -5288,14 +5474,20 @@ app.post("/events/:id/remove-invite", async (c) => {
 
     if (removedUser.length > 0) {
       try {
-        await sendAttendeeRemovedEmail(c.env, {
-          to: removedUser[0].email,
-          recipientName: removedUser[0].name?.trim() || removedUser[0].username?.replace(/^@/, "") || "there",
-          hostName: hostUser[0]?.name?.trim() || hostUser[0]?.username?.replace(/^@/, "") || "the host",
-          eventTitle: event.title,
-          eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
-          removalReason: reason,
-        });
+        const removedProfileRows = (await sql`SELECT notification_prefs FROM user_profile WHERE user_id = ${targetUserId} LIMIT 1`) as { notification_prefs: unknown }[];
+        const removedPrefs = normalizeNotificationPrefs(removedProfileRows[0]?.notification_prefs);
+        if (removedPrefs.items.attendee_removed?.enabled !== false) {
+          const unsubToken = await createUnsubscribeToken(c.env.NEXTAUTH_SECRET, targetUserId, "attendee_removed");
+          await sendAttendeeRemovedEmail(c.env, {
+            to: removedUser[0].email,
+            recipientName: removedUser[0].name?.trim() || removedUser[0].username?.replace(/^@/, "") || "there",
+            hostName: hostUser[0]?.name?.trim() || hostUser[0]?.username?.replace(/^@/, "") || "the host",
+            eventTitle: event.title,
+            eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
+            removalReason: reason,
+            unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
+          });
+        }
       } catch { /* noop */ }
     }
 
@@ -5354,21 +5546,28 @@ app.post("/events/:id/invite", async (c) => {
               INSERT INTO newchums.notifications (user_id, type, actor_user_id, entity_id, metadata)
               VALUES (${invUserId}, 'event_invite', ${userId}, ${eventId}, ${JSON.stringify({ eventTitle: ev[0].title })})
             `;
-            const invUser = (await sql`SELECT email, name FROM newchums.users WHERE id = ${invUserId}`) as { email: string; name: string | null }[];
-            if (invUser.length > 0) {
-              try {
-                const iToken = await createInviteToken(c.env.NEXTAUTH_SECRET, { eventId, userId: invUserId });
-                await sendEventInviteEmail(c.env, {
-                  to: invUser[0].email,
-                  recipientName: invUser[0].name?.trim() || "there",
-                  hostName,
-                  eventTitle: ev[0].title,
-                  eventDate: formatEventDate(ev[0].starts_at, ev[0].timezone),
-                  eventLocation: inviteLocationDisplay,
-                  eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
-                  inviteToken: iToken,
-                });
-              } catch { /* noop */ }
+            // Respect the invitee's invitation email preference
+            const invProfileRows = (await sql`SELECT notification_prefs FROM user_profile WHERE user_id = ${invUserId} LIMIT 1`) as { notification_prefs: unknown }[];
+            const invPrefs = normalizeNotificationPrefs(invProfileRows[0]?.notification_prefs);
+            if (invPrefs.items.event_invite?.enabled !== false) {
+              const invUser = (await sql`SELECT email, name FROM newchums.users WHERE id = ${invUserId}`) as { email: string; name: string | null }[];
+              if (invUser.length > 0) {
+                try {
+                  const iToken = await createInviteToken(c.env.NEXTAUTH_SECRET, { eventId, userId: invUserId });
+                  const unsubToken = await createUnsubscribeToken(c.env.NEXTAUTH_SECRET, invUserId, "event_invite");
+                  await sendEventInviteEmail(c.env, {
+                    to: invUser[0].email,
+                    recipientName: invUser[0].name?.trim() || "there",
+                    hostName,
+                    eventTitle: ev[0].title,
+                    eventDate: formatEventDate(ev[0].starts_at, ev[0].timezone),
+                    eventLocation: inviteLocationDisplay,
+                    eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
+                    inviteToken: iToken,
+                    unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
+                  });
+                } catch { /* noop */ }
+              }
             }
           } else if (invEmail) {
             try {
@@ -5382,6 +5581,7 @@ app.post("/events/:id/invite", async (c) => {
                 eventLocation: inviteLocationDisplay,
                 eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
                 inviteToken: iToken,
+                // No unsubscribeUrl for email-only guests — they have no account to update prefs on
               });
             } catch { /* noop */ }
           }
@@ -5633,7 +5833,18 @@ app.post("/events/:id/lock", async (c) => {
       await sql`UPDATE newchums.events SET locked_at = NOW() WHERE id = ${eventId}`;
     }
 
-    return c.json({ ok: true, locked: !isCurrentlyLocked });
+    const nowLocked = !isCurrentlyLocked;
+
+    if (nowLocked) {
+      const evDetails = (await sql`SELECT title FROM newchums.events WHERE id = ${eventId} LIMIT 1`) as { title: string }[];
+      if (evDetails[0]) {
+        c.executionCtx.waitUntil(
+          notifyAttendeesPlanChanged(sql, c.env, eventId, userId, evDetails[0].title, "locked"),
+        );
+      }
+    }
+
+    return c.json({ ok: true, locked: nowLocked });
   } catch (err) {
     console.error("[POST /events/:id/lock]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
@@ -5734,17 +5945,23 @@ app.post("/events/:id/join-request", async (c) => {
     // Email host
     const hostUser = (await sql`SELECT email, name, username FROM newchums.users WHERE id = ${event.host_user_id}`) as { email: string; name: string | null; username: string | null }[];
     if (hostUser.length > 0) {
-      const hostName = hostUser[0].name?.trim() || hostUser[0].username?.replace(/^@/, "") || "there";
-      c.executionCtx.waitUntil(
-        sendJoinRequestEmail(c.env, {
-          to: hostUser[0].email,
-          hostName,
-          requesterName,
-          eventTitle: event.title,
-          requestMessage: message || "",
-          eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}?context=host_review`,
-        }).catch(() => {})
-      );
+      const hostProfileRows = (await sql`SELECT notification_prefs FROM user_profile WHERE user_id = ${event.host_user_id} LIMIT 1`) as { notification_prefs: unknown }[];
+      const hostPrefs = normalizeNotificationPrefs(hostProfileRows[0]?.notification_prefs);
+      if (hostPrefs.items.join_request_received?.enabled !== false) {
+        const hostName = hostUser[0].name?.trim() || hostUser[0].username?.replace(/^@/, "") || "there";
+        const unsubToken = await createUnsubscribeToken(c.env.NEXTAUTH_SECRET, event.host_user_id, "join_request_received");
+        c.executionCtx.waitUntil(
+          sendJoinRequestEmail(c.env, {
+            to: hostUser[0].email,
+            hostName,
+            requesterName,
+            eventTitle: event.title,
+            requestMessage: message || "",
+            eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}?context=host_review`,
+            unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
+          }).catch(() => {})
+        );
+      }
     }
 
     return c.json({ ok: true });
@@ -5818,16 +6035,22 @@ app.post("/events/:id/join-request/:requestId/approve", async (c) => {
     const hostName = hostUser[0]?.name?.trim() || hostUser[0]?.username?.replace(/^@/, "") || "the host";
 
     if (requesterUser.length > 0) {
-      c.executionCtx.waitUntil(
-        sendJoinRequestApprovedEmail(c.env, {
-          to: requesterUser[0].email,
-          recipientName: requesterUser[0].name?.trim() || requesterUser[0].username?.replace(/^@/, "") || "there",
-          hostName,
-          eventTitle: ev[0].title,
-          hostMessage: hostMessage || "",
-          eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}?context=request_approved`,
-        }).catch(() => {})
-      );
+      const requesterProfileRows = (await sql`SELECT notification_prefs FROM user_profile WHERE user_id = ${req[0].user_id} LIMIT 1`) as { notification_prefs: unknown }[];
+      const requesterPrefs = normalizeNotificationPrefs(requesterProfileRows[0]?.notification_prefs);
+      if (requesterPrefs.items.join_request_accepted?.enabled !== false) {
+        const unsubToken = await createUnsubscribeToken(c.env.NEXTAUTH_SECRET, req[0].user_id, "join_request_accepted");
+        c.executionCtx.waitUntil(
+          sendJoinRequestApprovedEmail(c.env, {
+            to: requesterUser[0].email,
+            recipientName: requesterUser[0].name?.trim() || requesterUser[0].username?.replace(/^@/, "") || "there",
+            hostName,
+            eventTitle: ev[0].title,
+            hostMessage: hostMessage || "",
+            eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}?context=request_approved`,
+            unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
+          }).catch(() => {})
+        );
+      }
     }
 
     return c.json({ ok: true });
@@ -5887,16 +6110,22 @@ app.post("/events/:id/join-request/:requestId/decline", async (c) => {
     const hostName = hostUser[0]?.name?.trim() || hostUser[0]?.username?.replace(/^@/, "") || "the host";
 
     if (requesterUser.length > 0) {
-      c.executionCtx.waitUntil(
-        sendJoinRequestDeclinedEmail(c.env, {
-          to: requesterUser[0].email,
-          recipientName: requesterUser[0].name?.trim() || requesterUser[0].username?.replace(/^@/, "") || "there",
-          hostName,
-          eventTitle: ev[0].title,
-          hostMessage: hostMessage || "",
-          eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
-        }).catch(() => {})
-      );
+      const requesterProfileRows = (await sql`SELECT notification_prefs FROM user_profile WHERE user_id = ${req[0].user_id} LIMIT 1`) as { notification_prefs: unknown }[];
+      const requesterPrefs = normalizeNotificationPrefs(requesterProfileRows[0]?.notification_prefs);
+      if (requesterPrefs.items.join_request_declined?.enabled !== false) {
+        const unsubToken = await createUnsubscribeToken(c.env.NEXTAUTH_SECRET, req[0].user_id, "join_request_declined");
+        c.executionCtx.waitUntil(
+          sendJoinRequestDeclinedEmail(c.env, {
+            to: requesterUser[0].email,
+            recipientName: requesterUser[0].name?.trim() || requesterUser[0].username?.replace(/^@/, "") || "there",
+            hostName,
+            eventTitle: ev[0].title,
+            hostMessage: hostMessage || "",
+            eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
+            unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
+          }).catch(() => {})
+        );
+      }
     }
 
     return c.json({ ok: true });

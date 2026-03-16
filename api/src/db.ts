@@ -34,6 +34,8 @@ export type Bindings = {
   POSTMARK_TEMPLATE_EVENT_JOIN?: string;
   /** Postmark template ID for attendee removed notification (template 43923102) */
   POSTMARK_TEMPLATE_ATTENDEE_REMOVED?: string;
+  /** Postmark template ID for plan-changed/locked/cancelled attendee notification (template 43971187) */
+  POSTMARK_TEMPLATE_EVENT_CHANGED?: string;
   SENTRY_DSN: string;
   APP_ENV?: string;
   ENVIRONMENT?: string;
