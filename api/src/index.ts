@@ -85,6 +85,102 @@ const axiomIngest = async (
   }
 };
 
+type ResolvedInterestsOk = { ok: true; slugs: string[] };
+type ResolvedInterestsErr = {
+  ok: false;
+  error: { code: string; field?: string; message?: string };
+};
+
+async function resolveInterestSlugs(
+  sql: ReturnType<typeof getSql>,
+  userId: string,
+  rawSlugs: string[],
+  rawItems: Array<{ slug?: string; name?: string }> | null,
+): Promise<ResolvedInterestsOk | ResolvedInterestsErr> {
+  const nameBySlug = new Map<string, string>();
+  if (Array.isArray(rawItems)) {
+    for (const it of rawItems) {
+      const slug = it?.slug != null ? nameToSlug(String(it.slug).trim()) : "";
+      const name = it?.name != null ? String(it.name).trim() : "";
+      if (slug && name) nameBySlug.set(slug.toLowerCase(), name);
+    }
+  }
+
+  const normalized = rawSlugs
+    .map((s) => nameToSlug(String(s).trim()))
+    .filter((s) => s.length > 0);
+  let finalSlugs = [...new Set(normalized)];
+
+  for (const slug of finalSlugs) {
+    const nameForValidation = nameBySlug.get(slug.toLowerCase()) ?? slugToName(slug);
+    const v = validateInterestName(nameForValidation);
+    if (!v.valid) {
+      return { ok: false, error: { code: "INVALID_INPUT", message: v.error } };
+    }
+    const hobbyCheck = validateCleanText(nameForValidation, "hobby");
+    if (!hobbyCheck.ok) {
+      return {
+        ok: false,
+        error: { code: "INAPPROPRIATE_TEXT", field: "hobby", message: hobbyCheck.reason },
+      };
+    }
+  }
+
+  const existingRows = (await sql`
+    SELECT id, name, slug, is_deleted, merged_into_interest_id
+    FROM interests
+    WHERE LOWER(slug) = ANY(${finalSlugs.map((s) => s.toLowerCase())})
+  `) as { id: string; name: string; slug: string; is_deleted: boolean; merged_into_interest_id: string | null }[];
+  const existingBySlug = new Map(existingRows.map((r) => [r.slug.toLowerCase(), r]));
+
+  const mergeTargetIds = [...new Set(
+    existingRows
+      .filter((r) => r.is_deleted && r.merged_into_interest_id)
+      .map((r) => r.merged_into_interest_id as string),
+  )];
+  const mergeTargetRows = mergeTargetIds.length > 0
+    ? (await sql`
+        SELECT id, slug, is_deleted FROM interests WHERE id = ANY(${mergeTargetIds})
+      `) as { id: string; slug: string; is_deleted: boolean }[]
+    : [];
+  const mergeTargetById = new Map(mergeTargetRows.map((r) => [r.id, r]));
+
+  const resolvedSlugs: string[] = [];
+  for (const slug of finalSlugs) {
+    const existing = existingBySlug.get(slug.toLowerCase());
+    if (!existing) {
+      const name = (nameBySlug.get(slug.toLowerCase()) ?? slugToName(slug)).trim().replace(/\s+/g, " ");
+      try {
+        await sql`
+          INSERT INTO interests (name, category, slug, sort_order, is_seed, created_by_user_id)
+          VALUES (${name}, '', ${slug}, 0, false, ${userId})
+        `;
+      } catch { /* duplicate race */ }
+      resolvedSlugs.push(slug);
+    } else if (!existing.is_deleted) {
+      resolvedSlugs.push(existing.slug);
+    } else if (existing.merged_into_interest_id) {
+      const target = mergeTargetById.get(existing.merged_into_interest_id);
+      if (target && !target.is_deleted) {
+        resolvedSlugs.push(target.slug);
+      } else {
+        return {
+          ok: false,
+          error: { code: "INTEREST_DELETED", field: "hobby", message: "That hobby is not available. Please choose a different hobby." },
+        };
+      }
+    } else {
+      return {
+        ok: false,
+        error: { code: "INTEREST_DELETED", field: "hobby", message: "That hobby is not available. Please choose a different hobby." },
+      };
+    }
+  }
+
+  finalSlugs = [...new Set(resolvedSlugs)];
+  return { ok: true, slugs: finalSlugs };
+}
+
 const DEV_USER_RETURN_COLUMNS = `
   id,
   email,
@@ -379,6 +475,12 @@ app.post("/auth/signup", async (c) => {
       name?: string;
       username?: string;
       date_of_birth?: string;
+      interest_slugs?: string[];
+      interest_items?: Array<{ slug?: string; name?: string }>;
+      home_city?: string;
+      home_lat?: number;
+      home_lng?: number;
+      travel_radius_km?: number;
     }>();
 
     const normalizedEmail = body.email?.trim().toLowerCase();
@@ -467,10 +569,46 @@ app.post("/auth/signup", async (c) => {
     const newUserId = inserted[0]?.id;
     if (newUserId) {
       const defaultPrefsJson = getDefaultPrefsJson();
-      await sql`
-        INSERT INTO user_profile (user_id, home_city, home_lat, home_lng, home_location, travel_radius_km, email_chat_digest, email_new_events, bio, notification_prefs)
-        VALUES (${newUserId}, NULL, NULL, NULL, NULL, 200, true, true, NULL, ${defaultPrefsJson}::jsonb)
-      `;
+      const hasLocation =
+        body.home_lat != null &&
+        body.home_lng != null &&
+        Number.isFinite(body.home_lat) &&
+        Number.isFinite(body.home_lng);
+      const profileCity = hasLocation ? (body.home_city?.trim() || null) : null;
+      const profileLat = hasLocation ? body.home_lat! : null;
+      const profileLng = hasLocation ? body.home_lng! : null;
+      const profileRadius =
+        body.travel_radius_km != null && Number.isFinite(body.travel_radius_km)
+          ? body.travel_radius_km
+          : 200;
+
+      if (hasLocation) {
+        await sql`
+          INSERT INTO user_profile (user_id, home_city, home_lat, home_lng, home_location, travel_radius_km, email_chat_digest, email_new_events, bio, notification_prefs)
+          VALUES (${newUserId}, ${profileCity}, ${profileLat}, ${profileLng}, ST_SetSRID(ST_MakePoint(${profileLng}, ${profileLat}), 4326)::geography, ${profileRadius}, true, true, NULL, ${defaultPrefsJson}::jsonb)
+        `;
+      } else {
+        await sql`
+          INSERT INTO user_profile (user_id, home_city, home_lat, home_lng, home_location, travel_radius_km, email_chat_digest, email_new_events, bio, notification_prefs)
+          VALUES (${newUserId}, NULL, NULL, NULL, NULL, ${profileRadius}, true, true, NULL, ${defaultPrefsJson}::jsonb)
+        `;
+      }
+
+      if (Array.isArray(body.interest_slugs) && body.interest_slugs.length > 0) {
+        const interestResult = await resolveInterestSlugs(
+          sql,
+          newUserId,
+          body.interest_slugs,
+          Array.isArray(body.interest_items) ? body.interest_items : null,
+        );
+        if (interestResult.ok && interestResult.slugs.length > 0) {
+          await sql`
+            INSERT INTO user_interests (user_id, interest_id)
+            SELECT ${newUserId}, i.id FROM interests i
+            WHERE i.slug = ANY(${interestResult.slugs}) AND i.is_deleted = false
+          `;
+        }
+      }
     }
     return c.json({ ok: true }, 201);
   } catch (err) {
@@ -1873,98 +2011,12 @@ app.put("/profile", async (c) => {
     const rawInterestItems = "interest_items" in body
       ? (body.interest_items as Array<{ slug?: string; name?: string }> | null)
       : null;
-    const nameBySlug = new Map<string, string>();
-    if (Array.isArray(rawInterestItems)) {
-      for (const it of rawInterestItems) {
-        const slug = it?.slug != null ? nameToSlug(String(it.slug).trim()) : "";
-        const name = it?.name != null ? String(it.name).trim() : "";
-        if (slug && name) nameBySlug.set(slug.toLowerCase(), name);
-      }
-    }
     if (rawInterestSlugs !== null) {
-      const normalized = rawInterestSlugs
-        .map((s) => nameToSlug(String(s).trim()))
-        .filter((s) => s.length > 0);
-      finalInterestSlugs = [...new Set(normalized)];
-      for (const slug of finalInterestSlugs) {
-        const nameForValidation = nameBySlug.get(slug.toLowerCase()) ?? slugToName(slug);
-        const v = validateInterestName(nameForValidation);
-        if (!v.valid) {
-          return c.json(
-            { ok: false, error: { code: "INVALID_INPUT", message: v.error } },
-            400,
-          );
-        }
-        const hobbyCheck = validateCleanText(nameForValidation, "hobby");
-        if (!hobbyCheck.ok) {
-          return c.json(
-            { ok: false, error: { code: "INAPPROPRIATE_TEXT", field: "hobby", message: hobbyCheck.reason } },
-            400,
-          );
-        }
+      const result = await resolveInterestSlugs(sql, appUserId, rawInterestSlugs, rawInterestItems ?? null);
+      if (!result.ok) {
+        return c.json({ ok: false, error: result.error }, 400);
       }
-      // Resolve each user-submitted slug to an active interest, handling soft-deleted
-      // and merged interests. We intentionally preserve user-provided casing for new interests.
-      const existingRows = (await sql`
-        SELECT id, name, slug, is_deleted, merged_into_interest_id
-        FROM interests
-        WHERE LOWER(slug) = ANY(${finalInterestSlugs.map((s) => s.toLowerCase())})
-      `) as { id: string; name: string; slug: string; is_deleted: boolean; merged_into_interest_id: string | null }[];
-      const existingBySlug = new Map(existingRows.map((r) => [r.slug.toLowerCase(), r]));
-
-      // Pre-fetch any merge targets so we can remap deleted->canonical in one pass
-      const mergeTargetIds = [...new Set(
-        existingRows
-          .filter((r) => r.is_deleted && r.merged_into_interest_id)
-          .map((r) => r.merged_into_interest_id as string),
-      )];
-      const mergeTargetRows = mergeTargetIds.length > 0
-        ? (await sql`
-            SELECT id, slug, is_deleted FROM interests WHERE id = ANY(${mergeTargetIds})
-          `) as { id: string; slug: string; is_deleted: boolean }[]
-        : [];
-      const mergeTargetById = new Map(mergeTargetRows.map((r) => [r.id, r]));
-
-      const resolvedSlugs: string[] = [];
-      for (const slug of finalInterestSlugs) {
-        const existing = existingBySlug.get(slug.toLowerCase());
-        if (!existing) {
-          // Truly new interest: create it
-          const name = (nameBySlug.get(slug.toLowerCase()) ?? slugToName(slug)).trim().replace(/\s+/g, " ");
-          try {
-            await sql`
-              INSERT INTO interests (name, category, slug, sort_order, is_seed, created_by_user_id)
-              VALUES (${name}, '', ${slug}, 0, false, ${appUserId})
-            `;
-          } catch {
-            // Ignore duplicate (race with concurrent insert)
-          }
-          resolvedSlugs.push(slug);
-        } else if (!existing.is_deleted) {
-          // Active interest: use as-is (use stored slug for canonical casing)
-          resolvedSlugs.push(existing.slug);
-        } else if (existing.merged_into_interest_id) {
-          // Deleted but merged into a canonical interest: remap transparently
-          const target = mergeTargetById.get(existing.merged_into_interest_id);
-          if (target && !target.is_deleted) {
-            resolvedSlugs.push(target.slug);
-          } else {
-            // Merge target is also deleted or gone — treat as unavailable
-            return c.json(
-              { ok: false, error: { code: "INTEREST_DELETED", field: "hobby", message: "That hobby is not available. Please choose a different hobby." } },
-              400,
-            );
-          }
-        } else {
-          // Deleted with no merge target — reject
-          return c.json(
-            { ok: false, error: { code: "INTEREST_DELETED", field: "hobby", message: "That hobby is not available. Please choose a different hobby." } },
-            400,
-          );
-        }
-      }
-      // Deduplicate after remapping (e.g. two slugs that both merged into same target)
-      finalInterestSlugs = [...new Set(resolvedSlugs)];
+      finalInterestSlugs = result.slugs;
     }
     const home_city =
       "home_city" in body
