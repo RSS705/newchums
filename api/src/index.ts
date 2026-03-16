@@ -4477,6 +4477,9 @@ app.get("/events/explore", async (c) => {
   const search = c.req.query("q")?.trim() ?? null;
   const pageLimit = Math.min(Math.max(Number(c.req.query("limit") ?? 12), 1), 50);
   const pageOffset = Math.max(Number(c.req.query("offset") ?? 0), 0);
+  const sortParam = c.req.query("sort") ?? "upcoming";
+  const personalizeParam = c.req.query("personalize") ?? "1";
+  const personalizeEnabled = personalizeParam !== "0";
 
   const timeRange = c.req.query("time_range") ?? "all";
   const now = new Date();
@@ -4501,6 +4504,39 @@ app.get("/events/explore", async (c) => {
   try {
     const chumIds = (await sql`SELECT chum_user_id FROM newchums.user_chums WHERE user_id = ${userId}`) as { chum_user_id: string }[];
     const chumIdList = chumIds.map((r) => r.chum_user_id);
+
+    const userHobbyRows = (await sql`
+      SELECT ii.slug FROM newchums.user_interests ui
+      JOIN newchums.interests ii ON ii.id = ui.interest_id
+      WHERE ui.user_id = ${userId} AND ii.is_deleted = false
+    `) as { slug: string }[];
+    const userHobbySlugs = userHobbyRows.map((r) => r.slug);
+    const hasUserHobbies = userHobbySlugs.length > 0;
+
+    const hobbyMatchExpr = hasUserHobbies && personalizeEnabled
+      ? sql`(SELECT COUNT(*)::int FROM newchums.event_interests ei4 JOIN newchums.interests ii4 ON ii4.id = ei4.interest_id WHERE ei4.event_id = e.id AND ii4.slug = ANY(${userHobbySlugs}))`
+      : sql`0`;
+
+    const sortByNewest = sortParam === "newest";
+
+    const orderClause = sortByNewest
+      ? sql`
+          CASE WHEN e.host_user_id = ${userId} THEN 0 ELSE 1 END,
+          e.created_at DESC,
+          e.starts_at ASC
+        `
+      : hasLocation
+        ? sql`
+            CASE WHEN e.host_user_id = ${userId} THEN 0 ELSE 1 END,
+            ${hobbyMatchExpr} DESC,
+            distance_km ASC NULLS LAST,
+            e.starts_at ASC
+          `
+        : sql`
+            CASE WHEN e.host_user_id = ${userId} THEN 0 ELSE 1 END,
+            ${hobbyMatchExpr} DESC,
+            e.starts_at ASC
+          `;
 
     const rows = (await sql`
       SELECT
@@ -4551,10 +4587,7 @@ app.get("/events/explore", async (c) => {
         ${search ? sql`AND (e.title ILIKE ${"%" + search + "%"} OR e.description ILIKE ${"%" + search + "%"})` : sql``}
         ${dateEnd ? sql`AND e.starts_at <= ${dateEnd.toISOString()}` : sql``}
         ${hasLocation && radiusKm < 20000 ? sql`AND (e.location_lat IS NULL OR e.location_lng IS NULL OR 6371 * acos(LEAST(1.0, GREATEST(-1.0, cos(radians(${lat ?? 0})) * cos(radians(e.location_lat)) * cos(radians(e.location_lng) - radians(${lng ?? 0})) + sin(radians(${lat ?? 0})) * sin(radians(e.location_lat))))) <= ${radiusKm})` : sql``}
-      ORDER BY
-        CASE WHEN e.host_user_id = ${userId} THEN 0 ELSE 1 END,
-        ${hasLocation ? sql`distance_km ASC NULLS LAST` : sql`e.starts_at ASC`},
-        e.starts_at ASC
+      ORDER BY ${orderClause}
       LIMIT ${pageLimit + 1} OFFSET ${pageOffset}
     `) as Array<{
       id: string; title: string; description: string | null; starts_at: string;

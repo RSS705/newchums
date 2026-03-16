@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Autocomplete from "@mui/material/Autocomplete";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -12,26 +12,70 @@ import InputAdornment from "@mui/material/InputAdornment";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import AddCircleRoundedIcon from "@mui/icons-material/AddCircleRounded";
+import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import EditLocationRoundedIcon from "@mui/icons-material/EditLocationRounded";
 import ExploreRoundedIcon from "@mui/icons-material/ExploreRounded";
+import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
+import SortRoundedIcon from "@mui/icons-material/SortRounded";
 import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
 import Link from "next/link";
 import EventCard, { type PlanEvent } from "@/components/events/EventCard";
 import DistanceSelect from "@/components/common/DistanceSelect";
+import { TRAVEL_RADIUS_OPTIONS } from "@/config/travelRadius";
 import { apiFetch } from "@/lib/apiClient";
 
 type HobbyOption = { slug: string; name: string };
 
 type TimeChip = { value: string; label: string };
 const TIME_CHIPS: TimeChip[] = [
+  { value: "all", label: "All upcoming" },
   { value: "this_week", label: "This week" },
   { value: "this_weekend", label: "This weekend" },
   { value: "next_30", label: "Next 30 days" },
-  { value: "all", label: "All upcoming" },
 ];
+
+type SortOption = { value: string; label: string };
+const SORT_OPTIONS: SortOption[] = [
+  { value: "upcoming", label: "Upcoming" },
+  { value: "newest", label: "Newest added" },
+];
+
+const STORAGE_KEY = "nc_explore_state";
+
+type SavedExploreState = {
+  searchText?: string;
+  timeRange?: string;
+  radiusKm?: number;
+  selectedHobbySlug?: string | null;
+  sort?: string;
+  personalize?: boolean;
+};
+
+function loadExploreState(): SavedExploreState | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as SavedExploreState;
+  } catch {
+    return null;
+  }
+}
+
+function saveExploreState(state: SavedExploreState) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch { /* quota or SSR */ }
+}
+
+function clearExploreState() {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch { /* noop */ }
+}
 
 type ProfileData = {
   home_city: string | null;
@@ -55,10 +99,14 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
 
   const [searchText, setSearchText] = useState("");
   const [timeRange, setTimeRange] = useState("all");
-  const [radiusKm, setRadiusKm] = useState(25);
+  const [radiusKm, setRadiusKm] = useState(200);
   const [selectedHobby, setSelectedHobby] = useState<HobbyOption | null>(null);
   const [hobbyOptions, setHobbyOptions] = useState<HobbyOption[]>([]);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [sort, setSort] = useState("upcoming");
+  const [personalizeEnabled, setPersonalizeEnabled] = useState(true);
+
+  const initializedRef = useRef(false);
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -66,8 +114,20 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
         const res = await apiFetch("/profile", { auth: true });
         if (res.ok) {
           const data = (await res.json()) as { profile: ProfileData };
-          setProfile(data.profile);
-          if (data.profile.travel_radius_km) setRadiusKm(data.profile.travel_radius_km);
+          const p = data.profile;
+          setProfile(p);
+
+          const saved = loadExploreState();
+          if (saved) {
+            if (saved.searchText) setSearchText(saved.searchText);
+            if (saved.timeRange) setTimeRange(saved.timeRange);
+            if (saved.radiusKm != null) setRadiusKm(saved.radiusKm);
+            if (saved.sort) setSort(saved.sort);
+            if (saved.personalize === false) setPersonalizeEnabled(false);
+          } else {
+            if (p.travel_radius_km) setRadiusKm(p.travel_radius_km);
+          }
+          initializedRef.current = true;
         }
       } catch { /* ignore */ }
       setProfileLoaded(true);
@@ -86,6 +146,29 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
     loadHobbies();
   }, []);
 
+  // Restore saved hobby filter once hobbyOptions are loaded
+  useEffect(() => {
+    if (hobbyOptions.length === 0) return;
+    const saved = loadExploreState();
+    if (saved?.selectedHobbySlug) {
+      const match = hobbyOptions.find((h) => h.slug === saved.selectedHobbySlug);
+      if (match) setSelectedHobby(match);
+    }
+  }, [hobbyOptions]);
+
+  // Persist explore state to localStorage on change
+  useEffect(() => {
+    if (!initializedRef.current) return;
+    saveExploreState({
+      searchText: searchText || undefined,
+      timeRange,
+      radiusKm,
+      selectedHobbySlug: selectedHobby?.slug ?? null,
+      sort,
+      personalize: personalizeEnabled,
+    });
+  }, [searchText, timeRange, radiusKm, selectedHobby, sort, personalizeEnabled]);
+
   const fetchEvents = useCallback(async (pageOffset: number, append: boolean) => {
     const PAGE_SIZE = 12;
     if (!profileLoaded) return;
@@ -101,6 +184,8 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
     if (selectedHobby) params.set("hobby", selectedHobby.slug);
     if (timeRange !== "all") params.set("time_range", timeRange);
     if (searchText.trim()) params.set("q", searchText.trim());
+    if (sort !== "upcoming") params.set("sort", sort);
+    if (!personalizeEnabled) params.set("personalize", "0");
     params.set("offset", String(pageOffset));
     params.set("limit", String(PAGE_SIZE));
 
@@ -118,7 +203,7 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
     } catch { /* ignore */ }
     if (append) setLoadingMore(false);
     else setLoading(false);
-  }, [profileLoaded, profile, radiusKm, selectedHobby, timeRange, searchText]);
+  }, [profileLoaded, profile, radiusKm, selectedHobby, timeRange, searchText, sort, personalizeEnabled]);
 
   useEffect(() => { fetchEvents(0, false); }, [fetchEvents]);
 
@@ -126,7 +211,15 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
 
   const hasLocation = profile?.home_lat != null && profile?.home_lng != null;
   const hasHobbies = (profile?.interest_items?.length ?? 0) > 0;
-  const isFiltered = searchText.trim() || selectedHobby || timeRange !== "all" || (hasLocation && radiusKm < 200);
+
+  const defaultRadiusKm = profile?.travel_radius_km ?? 200;
+  const isFiltered =
+    searchText.trim() !== "" ||
+    selectedHobby != null ||
+    timeRange !== "all" ||
+    sort !== "upcoming" ||
+    !personalizeEnabled ||
+    (hasLocation && radiusKm !== defaultRadiusKm);
 
   const locationLabel = useMemo(() => {
     if (!profile?.home_city) return null;
@@ -134,8 +227,23 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
     return parts.length > 1 ? parts.slice(0, 2).join(",").trim() : parts[0].trim();
   }, [profile?.home_city]);
 
+  const radiusLabel = useMemo(() => {
+    const opt = TRAVEL_RADIUS_OPTIONS.find((o) => o.value === radiusKm);
+    return opt?.label ?? `Within ${radiusKm} km`;
+  }, [radiusKm]);
+
+  const clearAllFilters = () => {
+    setSearchText("");
+    setTimeRange("all");
+    setSelectedHobby(null);
+    setRadiusKm(defaultRadiusKm);
+    setSort("upcoming");
+    setPersonalizeEnabled(true);
+    clearExploreState();
+  };
+
   return (
-    <Stack spacing={{ xs: 3, sm: 4 }}>
+    <Stack spacing={{ xs: 2.5, sm: 3.5 }}>
       {/* ── Header ──────────────────────────────────────────────────── */}
       <Box>
         <Typography
@@ -157,6 +265,79 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
         </Typography>
       </Box>
 
+      {/* ── Feed context summary ──────────────────────────────────── */}
+      {profileLoaded && (
+        <Stack
+          direction="row"
+          flexWrap="wrap"
+          gap={0.75}
+          alignItems="center"
+          sx={{ minHeight: 32 }}
+        >
+          {hasLocation && locationLabel && (
+            <Chip
+              icon={<PlaceRoundedIcon sx={{ fontSize: "1rem !important" }} />}
+              label={locationLabel}
+              size="small"
+              variant="outlined"
+              sx={{
+                borderRadius: 2,
+                fontWeight: 500,
+                fontSize: "0.8125rem",
+                borderColor: "divider",
+                color: "text.secondary",
+                "& .MuiChip-icon": { color: "text.secondary" },
+              }}
+            />
+          )}
+          {hasLocation && (
+            <Chip
+              label={radiusLabel}
+              size="small"
+              variant="outlined"
+              sx={{
+                borderRadius: 2,
+                fontWeight: 500,
+                fontSize: "0.8125rem",
+                borderColor: "divider",
+                color: "text.secondary",
+              }}
+            />
+          )}
+          {selectedHobby && (
+            <Chip
+              label={selectedHobby.name}
+              size="small"
+              color="primary"
+              variant="filled"
+              onDelete={() => setSelectedHobby(null)}
+              sx={{
+                borderRadius: 2,
+                fontWeight: 600,
+                fontSize: "0.8125rem",
+              }}
+            />
+          )}
+          {sort !== "upcoming" && (
+            <Chip
+              icon={<SortRoundedIcon sx={{ fontSize: "0.9375rem !important" }} />}
+              label={SORT_OPTIONS.find((s) => s.value === sort)?.label ?? sort}
+              size="small"
+              variant="outlined"
+              onDelete={() => setSort("upcoming")}
+              sx={{
+                borderRadius: 2,
+                fontWeight: 500,
+                fontSize: "0.8125rem",
+                borderColor: "divider",
+                color: "text.secondary",
+                "& .MuiChip-icon": { color: "text.secondary" },
+              }}
+            />
+          )}
+        </Stack>
+      )}
+
       {/* ── Filter bar ──────────────────────────────────────────────── */}
       <Paper
         variant="outlined"
@@ -169,7 +350,7 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
         }}
       >
         <Stack spacing={1.5}>
-          {/* Search + toggle */}
+          {/* Search + sort + filter toggle */}
           <Stack direction="row" spacing={1} alignItems="center">
             <TextField
               id="explore-search-input"
@@ -202,8 +383,8 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
             </IconButton>
           </Stack>
 
-          {/* Time chips */}
-          <Stack direction="row" flexWrap="wrap" gap={0.75}>
+          {/* Time + sort chips */}
+          <Stack direction="row" flexWrap="wrap" gap={0.75} alignItems="center">
             {TIME_CHIPS.map((chip) => (
               <Chip
                 key={chip.value}
@@ -222,6 +403,49 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
                 }}
               />
             ))}
+            <Box sx={{ borderLeft: "1px solid", borderColor: "divider", height: 20, mx: 0.5 }} />
+            {SORT_OPTIONS.map((opt) => (
+              <Chip
+                key={opt.value}
+                label={opt.label}
+                size="small"
+                variant={sort === opt.value ? "filled" : "outlined"}
+                onClick={() => setSort(opt.value)}
+                sx={{
+                  borderRadius: 2,
+                  fontWeight: 500,
+                  fontSize: "0.8125rem",
+                  ...(sort === opt.value
+                    ? { bgcolor: "secondary.light", color: "secondary.dark", borderColor: "secondary.light" }
+                    : { borderColor: "divider", color: "text.secondary" }),
+                  "&:hover": { bgcolor: sort === opt.value ? "secondary.light" : "action.hover" },
+                }}
+              />
+            ))}
+            {hasHobbies && (
+              <>
+                <Box sx={{ borderLeft: "1px solid", borderColor: "divider", height: 20, mx: 0.5 }} />
+                <Tooltip title={personalizeEnabled ? "Hobby-matched plans are prioritized. Click to turn off." : "Hobby personalization is off. Click to turn on."} arrow>
+                  <Chip
+                    icon={<AutoAwesomeRoundedIcon sx={{ fontSize: "0.9375rem !important" }} />}
+                    label="Personalized"
+                    size="small"
+                    variant={personalizeEnabled ? "filled" : "outlined"}
+                    onClick={() => setPersonalizeEnabled((v) => !v)}
+                    sx={{
+                      borderRadius: 2,
+                      fontWeight: 500,
+                      fontSize: "0.8125rem",
+                      cursor: "pointer",
+                      ...(personalizeEnabled
+                        ? { bgcolor: "primary.light", color: "primary.dark", borderColor: "primary.light", "& .MuiChip-icon": { color: "primary.main" } }
+                        : { borderColor: "divider", color: "text.secondary", "& .MuiChip-icon": { color: "text.secondary" } }),
+                      "&:hover": { bgcolor: personalizeEnabled ? "primary.light" : "action.hover" },
+                    }}
+                  />
+                </Tooltip>
+              </>
+            )}
           </Stack>
 
           {/* Expanded filters */}
@@ -270,12 +494,7 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
               {isFiltered && (
                 <Button
                   size="medium"
-                  onClick={() => {
-                    setSearchText("");
-                    setTimeRange("all");
-                    setSelectedHobby(null);
-                    setRadiusKm(profile?.travel_radius_km ?? 25);
-                  }}
+                  onClick={clearAllFilters}
                   sx={{ textTransform: "none", whiteSpace: "nowrap", flexShrink: 0, mb: "1px" }}
                 >
                   Clear filters
@@ -392,12 +611,7 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
             {isFiltered && (
               <Button
                 variant="outlined"
-                onClick={() => {
-                  setSearchText("");
-                  setTimeRange("all");
-                  setSelectedHobby(null);
-                  setRadiusKm(200);
-                }}
+                onClick={clearAllFilters}
                 sx={{ textTransform: "none", fontWeight: 600 }}
               >
                 Clear all filters
