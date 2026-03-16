@@ -18,14 +18,11 @@ import AddCircleRoundedIcon from "@mui/icons-material/AddCircleRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import EditLocationRoundedIcon from "@mui/icons-material/EditLocationRounded";
 import ExploreRoundedIcon from "@mui/icons-material/ExploreRounded";
-import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
-import SortRoundedIcon from "@mui/icons-material/SortRounded";
 import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
 import Link from "next/link";
 import EventCard, { type PlanEvent } from "@/components/events/EventCard";
 import DistanceSelect from "@/components/common/DistanceSelect";
-import { TRAVEL_RADIUS_OPTIONS } from "@/config/travelRadius";
 import { apiFetch } from "@/lib/apiClient";
 
 type HobbyOption = { slug: string; name: string };
@@ -227,11 +224,6 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
     return parts.length > 1 ? parts.slice(0, 2).join(",").trim() : parts[0].trim();
   }, [profile?.home_city]);
 
-  const radiusLabel = useMemo(() => {
-    const opt = TRAVEL_RADIUS_OPTIONS.find((o) => o.value === radiusKm);
-    return opt?.label ?? `Within ${radiusKm} km`;
-  }, [radiusKm]);
-
   const clearAllFilters = () => {
     setSearchText("");
     setTimeRange("all");
@@ -264,79 +256,6 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
             : "Find plans around the hobbies you enjoy"}
         </Typography>
       </Box>
-
-      {/* ── Feed context summary ──────────────────────────────────── */}
-      {profileLoaded && (
-        <Stack
-          direction="row"
-          flexWrap="wrap"
-          gap={0.75}
-          alignItems="center"
-          sx={{ minHeight: 32 }}
-        >
-          {hasLocation && locationLabel && (
-            <Chip
-              icon={<PlaceRoundedIcon sx={{ fontSize: "1rem !important" }} />}
-              label={locationLabel}
-              size="small"
-              variant="outlined"
-              sx={{
-                borderRadius: 2,
-                fontWeight: 500,
-                fontSize: "0.8125rem",
-                borderColor: "divider",
-                color: "text.secondary",
-                "& .MuiChip-icon": { color: "text.secondary" },
-              }}
-            />
-          )}
-          {hasLocation && (
-            <Chip
-              label={radiusLabel}
-              size="small"
-              variant="outlined"
-              sx={{
-                borderRadius: 2,
-                fontWeight: 500,
-                fontSize: "0.8125rem",
-                borderColor: "divider",
-                color: "text.secondary",
-              }}
-            />
-          )}
-          {selectedHobby && (
-            <Chip
-              label={selectedHobby.name}
-              size="small"
-              color="primary"
-              variant="filled"
-              onDelete={() => setSelectedHobby(null)}
-              sx={{
-                borderRadius: 2,
-                fontWeight: 600,
-                fontSize: "0.8125rem",
-              }}
-            />
-          )}
-          {sort !== "upcoming" && (
-            <Chip
-              icon={<SortRoundedIcon sx={{ fontSize: "0.9375rem !important" }} />}
-              label={SORT_OPTIONS.find((s) => s.value === sort)?.label ?? sort}
-              size="small"
-              variant="outlined"
-              onDelete={() => setSort("upcoming")}
-              sx={{
-                borderRadius: 2,
-                fontWeight: 500,
-                fontSize: "0.8125rem",
-                borderColor: "divider",
-                color: "text.secondary",
-                "& .MuiChip-icon": { color: "text.secondary" },
-              }}
-            />
-          )}
-        </Stack>
-      )}
 
       {/* ── Filter bar ──────────────────────────────────────────────── */}
       <Paper

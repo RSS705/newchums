@@ -1559,7 +1559,7 @@ export default function EventDetailClient() {
           ) : (
             <>
               <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
-                Are you in?
+                {event.isInvited && !event.hasRsvp ? "Can you make it?" : "Are you in?"}
               </Typography>
               {event.lockedAt && chatAccessible !== true && (
                 <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2, p: 1.5, bgcolor: "grey.100", borderRadius: 2 }}>
@@ -1584,9 +1584,11 @@ export default function EventDetailClient() {
                 <AppButton onClick={() => openRsvpDialog("maybe")} disabled={rsvpSubmitting || (!!event.lockedAt && chatAccessible !== true)} variant="outlined" sx={{ flex: 1 }}>
                   Maybe
                 </AppButton>
-                <AppButton onClick={() => openRsvpDialog("cant_make_it")} disabled={rsvpSubmitting || (!!event.lockedAt && chatAccessible !== true)} variant="outlined" color="inherit" sx={{ flex: 1 }}>
-                  Can&apos;t make it
-                </AppButton>
+                {(event.isInvited || event.hasRsvp) && (
+                  <AppButton onClick={() => openRsvpDialog("cant_make_it")} disabled={rsvpSubmitting || (!!event.lockedAt && chatAccessible !== true)} variant="outlined" color="inherit" sx={{ flex: 1 }}>
+                    Can&apos;t make it
+                  </AppButton>
+                )}
               </Stack>
 
               {event.allowAltTimes && (
