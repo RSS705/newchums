@@ -28,6 +28,9 @@ import {
   sendRsvpConfirmationEmail,
   sendUnreadChatDigestEmail,
   sendVerificationEmail,
+  sendConfirmationRequestEmail,
+  sendPlanAtRiskEmail,
+  sendPlanAutoCancelledEmail,
 } from "./email/send";
 import { canAccessInternalTestRoute, notFound } from "./internalAccess";
 import { nameToSlug, slugToName, validateInterestName } from "./interests";
@@ -1471,6 +1474,38 @@ async function verifyUnsubscribeToken(
     const key = payload.key as string | undefined;
     if (!userId || !key) return null;
     return { userId, key };
+  } catch {
+    return null;
+  }
+}
+
+// Confirmation tokens — allow one-click attendance confirmation from email.
+// Token encodes eventId + userId, signed with NEXTAUTH_SECRET. Valid for 7 days.
+const CONFIRMATION_TOKEN_EXPIRY_SECONDS = 7 * 24 * 60 * 60;
+
+async function createConfirmationToken(
+  secret: string,
+  eventId: string,
+  userId: string,
+): Promise<string> {
+  const exp = Math.floor(Date.now() / 1000) + CONFIRMATION_TOKEN_EXPIRY_SECONDS;
+  return new SignJWT({ eid: eventId, uid: userId, purpose: "attendance_confirm" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setExpirationTime(exp)
+    .sign(new TextEncoder().encode(secret));
+}
+
+async function verifyConfirmationToken(
+  token: string,
+  secret: string,
+): Promise<{ eventId: string; userId: string } | null> {
+  try {
+    const { payload } = await jwtVerify(token, new TextEncoder().encode(secret));
+    if (payload.purpose !== "attendance_confirm") return null;
+    const eventId = payload.eid as string | undefined;
+    const userId = payload.uid as string | undefined;
+    if (!eventId || !userId) return null;
+    return { eventId, userId };
   } catch {
     return null;
   }
@@ -4180,6 +4215,15 @@ app.post("/events", async (c) => {
   const status = body.status === "draft" ? "draft" : "published";
   const timezone = body.timezone && typeof body.timezone === "string" ? body.timezone.trim().slice(0, 64) : "UTC";
 
+  // Attendance assurance fields
+  const minConfirmedAttendees = requireReconfirmation && body.min_confirmed_attendees != null
+    ? Math.max(1, Math.min(500, Math.floor(Number(body.min_confirmed_attendees))))
+    : null;
+  const VALID_FALLBACK_POLICIES = ["proceed", "notify_host", "auto_cancel"] as const;
+  const fallbackPolicy = requireReconfirmation && typeof body.fallback_policy === "string" && VALID_FALLBACK_POLICIES.includes(body.fallback_policy as typeof VALID_FALLBACK_POLICIES[number])
+    ? body.fallback_policy as string
+    : "notify_host";
+
   const locationName = body.location_name ? String(body.location_name).trim().slice(0, 200) : null;
   const locationAddress = body.location_address ? String(body.location_address).trim().slice(0, 500) : null;
   const locationPlaceId = body.location_place_id ? String(body.location_place_id) : null;
@@ -4280,12 +4324,14 @@ app.post("/events", async (c) => {
         host_user_id, title, description, interest_id, starts_at,
         location_type, location_name, location_address, location_place_id, location_lat, location_lng,
         location_visibility, location_area, online_link,
-        max_seats, visibility, status, allow_alt_times, require_reconfirmation, require_approval, timezone
+        max_seats, visibility, status, allow_alt_times, require_reconfirmation, require_approval, timezone,
+        min_confirmed_attendees, fallback_policy
       ) VALUES (
         ${userId}, ${title}, ${description}, ${interestId}, ${startsDate.toISOString()},
         ${locationType}, ${locationName}, ${locationAddress}, ${locationPlaceId}, ${locationLat}, ${locationLng},
         ${locationVisibility}, ${locationArea}, ${onlineLink},
-        ${maxSeats}, ${visibility}, ${status}, ${allowAltTimes}, ${requireReconfirmation}, ${requireApproval}, ${timezone}
+        ${maxSeats}, ${visibility}, ${status}, ${allowAltTimes}, ${requireReconfirmation}, ${requireApproval}, ${timezone},
+        ${minConfirmedAttendees}, ${fallbackPolicy}
       )
       RETURNING id, created_at
     `) as { id: string; created_at: string }[];
@@ -4854,6 +4900,52 @@ app.get("/events/:id", async (c) => {
       ? ((await sql`SELECT 1 FROM newchums.event_invites WHERE event_id = ${eventId} AND user_id = ${userId} LIMIT 1`) as unknown[]).length > 0
       : false;
 
+    // Attendance assurance — confirmation state
+    const requiresConfirmation = event.require_reconfirmation === true;
+    let confirmations: Array<{ user_id: string; status: string; responded_at: string | null }> = [];
+    let confirmationWindowOpen = false;
+    let confirmationCutoffAt: string | null = null;
+    let confirmedCount = 0;
+    let pendingConfirmationCount = 0;
+    let myConfirmationStatus: string | null = null;
+    let planViability: string | null = null;
+
+    if (requiresConfirmation) {
+      const windowHours = Number(event.confirmation_window_hours ?? 24);
+      const cutoffHours = Number(event.confirmation_cutoff_hours ?? 2);
+      const startsAtMs = new Date(event.starts_at).getTime();
+      const windowOpensAt = startsAtMs - windowHours * 60 * 60 * 1000;
+      const cutoffAt = startsAtMs - cutoffHours * 60 * 60 * 1000;
+      confirmationCutoffAt = new Date(cutoffAt).toISOString();
+      confirmationWindowOpen = Date.now() >= windowOpensAt && event.status === "published";
+
+      confirmations = (await sql`
+        SELECT user_id, status, responded_at
+        FROM newchums.event_confirmations
+        WHERE event_id = ${eventId}
+      `) as typeof confirmations;
+
+      confirmedCount = confirmations.filter((c) => c.status === "confirmed").length;
+      pendingConfirmationCount = confirmations.filter((c) => c.status === "pending").length;
+      if (userId) {
+        myConfirmationStatus = confirmations.find((c) => c.user_id === userId)?.status ?? null;
+      }
+
+      const minRequired = event.min_confirmed_attendees ? Number(event.min_confirmed_attendees) : null;
+      if (minRequired != null && confirmationWindowOpen) {
+        if (confirmedCount >= minRequired) {
+          planViability = "viable";
+        } else if (confirmedCount + pendingConfirmationCount >= minRequired) {
+          planViability = "at_risk";
+        } else {
+          planViability = "below_minimum";
+        }
+      }
+    }
+
+    // Build confirmation lookup for enriching rsvps
+    const confirmationByUserId = new Map(confirmations.map((c) => [c.user_id, c.status]));
+
     return c.json({
       ok: true,
       viewerUserId: userId ?? null,
@@ -4895,6 +4987,15 @@ app.get("/events/:id", async (c) => {
         guestRsvpStatus: tokenGuestEmail
           ? (rsvps.find((r) => !r.user_id && r.guest_email === tokenGuestEmail)?.status ?? null)
           : undefined,
+        // Attendance assurance
+        minConfirmedAttendees: event.min_confirmed_attendees ? Number(event.min_confirmed_attendees) : null,
+        fallbackPolicy: requiresConfirmation ? (event.fallback_policy ?? "notify_host") : null,
+        confirmationWindowOpen,
+        confirmationCutoffAt,
+        confirmedCount,
+        pendingConfirmationCount,
+        myConfirmationStatus,
+        planViability,
       },
       rsvps: rsvps.map((r) => {
         const rHandle = r.username?.replace(/^@/, "") ?? null;
@@ -4906,6 +5007,7 @@ app.get("/events/:id", async (c) => {
           note: r.note,
           avatarUrl: r.user_id ? buildAvatarUrl(r.user_id, r.avatar_key, r.avatar_updated_at, c.env.MEDIA_BUCKET) : null,
           isGuest: !r.user_id,
+          confirmationStatus: r.user_id ? (confirmationByUserId.get(r.user_id) ?? null) : null,
         };
       }),
       altTimes: altTimes.map((a) => {
@@ -4971,7 +5073,7 @@ app.post("/events/:id/rsvp", async (c) => {
   const note = body.note ? String(body.note).trim().slice(0, 500) : null;
 
   try {
-    const ev = (await sql`SELECT id, host_user_id, visibility, status, max_seats, title, locked_at, require_approval, reserve_seats FROM newchums.events WHERE id = ${eventId} AND status = 'published'`) as { id: string; host_user_id: string; visibility: string; status: string; max_seats: number | null; title: string; locked_at: string | null; require_approval: boolean; reserve_seats: boolean }[];
+    const ev = (await sql`SELECT id, host_user_id, visibility, status, max_seats, title, locked_at, require_approval, reserve_seats, require_reconfirmation, confirmation_sent_at FROM newchums.events WHERE id = ${eventId} AND status = 'published'`) as { id: string; host_user_id: string; visibility: string; status: string; max_seats: number | null; title: string; locked_at: string | null; require_approval: boolean; reserve_seats: boolean; require_reconfirmation: boolean; confirmation_sent_at: string | null }[];
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     const event = ev[0];
 
@@ -5016,6 +5118,28 @@ app.post("/events/:id/rsvp", async (c) => {
       VALUES (${eventId}, ${userId}, ${status}, ${note})
       ON CONFLICT (event_id, user_id) DO UPDATE SET status = ${status}, note = ${note}, updated_at = NOW()
     `;
+
+    // Sync confirmation state when RSVP changes during active confirmation window
+    if (event.require_reconfirmation) {
+      if (status === "cant_make_it") {
+        await sql`
+          UPDATE newchums.event_confirmations
+          SET status = 'declined', responded_at = NOW(), updated_at = NOW()
+          WHERE event_id = ${eventId} AND user_id = ${userId} AND status IN ('pending', 'confirmed')
+        `;
+      } else if (status === "going") {
+        const hasConfirmation = (await sql`
+          SELECT id FROM newchums.event_confirmations WHERE event_id = ${eventId} AND user_id = ${userId}
+        `) as { id: string }[];
+        if (hasConfirmation.length === 0 && event.confirmation_sent_at) {
+          await sql`
+            INSERT INTO newchums.event_confirmations (event_id, user_id, status)
+            VALUES (${eventId}, ${userId}, 'pending')
+            ON CONFLICT (event_id, user_id) DO NOTHING
+          `;
+        }
+      }
+    }
 
     const statusLabel = status === "going" ? "Going" : status === "maybe" ? "Maybe" : "Can't make it";
     await sql`
@@ -5193,6 +5317,102 @@ app.post("/events/:id/email-rsvp", async (c) => {
     return c.json({ ok: true, status, isGuest });
   } catch (err) {
     console.error("[POST /events/:id/email-rsvp]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /events/:id/confirm — logged-in user confirms or declines attendance */
+app.post("/events/:id/confirm", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+  const eventId = c.req.param("id");
+
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+
+  const action = typeof body.action === "string" ? body.action : null;
+  if (!action || !["confirm", "decline"].includes(action))
+    return c.json({ ok: false, error: "INVALID_ACTION", message: "Action must be 'confirm' or 'decline'." }, 400);
+
+  try {
+    const ev = (await sql`SELECT id, status, host_user_id FROM newchums.events WHERE id = ${eventId} AND status = 'published'`) as { id: string; status: string; host_user_id: string }[];
+    if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+
+    const newStatus = action === "confirm" ? "confirmed" : "declined";
+
+    const updated = (await sql`
+      UPDATE newchums.event_confirmations
+      SET status = ${newStatus}, responded_at = NOW(), updated_at = NOW()
+      WHERE event_id = ${eventId} AND user_id = ${userId}
+        AND status IN ('pending', 'expired')
+      RETURNING id, status
+    `) as { id: string; status: string }[];
+
+    if (updated.length === 0) {
+      const existing = (await sql`SELECT status FROM newchums.event_confirmations WHERE event_id = ${eventId} AND user_id = ${userId}`) as { status: string }[];
+      if (existing.length > 0 && existing[0].status === newStatus) {
+        return c.json({ ok: true, status: newStatus, alreadySet: true });
+      }
+      return c.json({ ok: false, error: "NO_CONFIRMATION", message: "No pending confirmation found for this plan." }, 404);
+    }
+
+    // If host declines, that's effectively a cancel intent — but don't auto-cancel here.
+    // The host can use the cancel flow separately.
+
+    return c.json({ ok: true, status: newStatus });
+  } catch (err) {
+    console.error("[POST /events/:id/confirm]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /events/:id/email-confirm — token-based attendance confirmation from email */
+app.post("/events/:id/email-confirm", async (c) => {
+  const eventId = c.req.param("id");
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+
+  const token = typeof body.token === "string" ? body.token.trim() : null;
+  const action = typeof body.action === "string" ? body.action : null;
+  if (!token) return c.json({ ok: false, error: "MISSING_TOKEN" }, 400);
+  if (!action || !["confirm", "decline"].includes(action))
+    return c.json({ ok: false, error: "INVALID_ACTION" }, 400);
+
+  const decoded = await verifyConfirmationToken(token, c.env.NEXTAUTH_SECRET);
+  if (!decoded || decoded.eventId !== eventId)
+    return c.json({ ok: false, error: "INVALID_TOKEN", message: "This link has expired or is invalid." }, 403);
+
+  const sql = getSql(c.env);
+
+  try {
+    const ev = (await sql`SELECT id, status FROM newchums.events WHERE id = ${eventId} AND status = 'published'`) as { id: string; status: string }[];
+    if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+
+    const newStatus = action === "confirm" ? "confirmed" : "declined";
+
+    const updated = (await sql`
+      UPDATE newchums.event_confirmations
+      SET status = ${newStatus}, responded_at = NOW(), updated_at = NOW()
+      WHERE event_id = ${eventId} AND user_id = ${decoded.userId}
+        AND status IN ('pending', 'expired')
+      RETURNING id, status
+    `) as { id: string; status: string }[];
+
+    if (updated.length === 0) {
+      const existing = (await sql`SELECT status FROM newchums.event_confirmations WHERE event_id = ${eventId} AND user_id = ${decoded.userId}`) as { status: string }[];
+      if (existing.length > 0 && existing[0].status === newStatus) {
+        return c.json({ ok: true, status: newStatus, alreadySet: true });
+      }
+      return c.json({ ok: false, error: "NO_CONFIRMATION", message: "No pending confirmation found." }, 404);
+    }
+
+    return c.json({ ok: true, status: newStatus });
+  } catch (err) {
+    console.error("[POST /events/:id/email-confirm]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });
@@ -5521,6 +5741,15 @@ app.patch("/events/:id", async (c) => {
     const patchRequireApproval = body.require_approval === true;
     const patchTimezone = body.timezone && typeof body.timezone === "string" ? body.timezone.trim().slice(0, 64) : null;
 
+    // Attendance assurance fields
+    const patchMinConfirmed = patchRequireReconfirmation && body.min_confirmed_attendees != null
+      ? Math.max(1, Math.min(500, Math.floor(Number(body.min_confirmed_attendees))))
+      : null;
+    const PATCH_VALID_FALLBACKS = ["proceed", "notify_host", "auto_cancel"] as const;
+    const patchFallbackPolicy = patchRequireReconfirmation && typeof body.fallback_policy === "string" && PATCH_VALID_FALLBACKS.includes(body.fallback_policy as typeof PATCH_VALID_FALLBACKS[number])
+      ? body.fallback_policy as string
+      : "notify_host";
+
     // Resolve and validate hobby tags (required, mirrors POST /events logic)
     const patchInterestItems = Array.isArray(body.interest_items)
       ? (body.interest_items as Array<{ slug?: string; name?: string }>).slice(0, 10)
@@ -5564,16 +5793,18 @@ app.patch("/events/:id", async (c) => {
 
     await sql`
       UPDATE newchums.events
-      SET title                  = ${rawTitle},
-          description            = ${description},
-          starts_at              = ${startsAt.toISOString()},
-          interest_id            = ${patchPrimaryInterestId},
-          max_seats              = ${maxSeats},
-          visibility             = ${visibility},
-          require_reconfirmation = ${patchRequireReconfirmation},
-          require_approval       = ${patchRequireApproval},
-          timezone               = COALESCE(${patchTimezone}, timezone),
-          updated_at             = NOW()
+      SET title                    = ${rawTitle},
+          description              = ${description},
+          starts_at                = ${startsAt.toISOString()},
+          interest_id              = ${patchPrimaryInterestId},
+          max_seats                = ${maxSeats},
+          visibility               = ${visibility},
+          require_reconfirmation   = ${patchRequireReconfirmation},
+          require_approval         = ${patchRequireApproval},
+          timezone                 = COALESCE(${patchTimezone}, timezone),
+          min_confirmed_attendees  = ${patchMinConfirmed},
+          fallback_policy          = ${patchFallbackPolicy},
+          updated_at               = NOW()
       WHERE id = ${eventId}
     `;
 
@@ -6495,7 +6726,265 @@ app.post("/events/:id/join-request/:requestId/withdraw", async (c) => {
 
 export { ChatRoom } from "./ChatRoom";
 
-// ─── Scheduled handler: daily unread-chat digest ──────────────────────────────
+// ─── Attendance assurance cron processing ─────────────────────────────────────
+
+async function processAttendanceAssurance(
+  sql: ReturnType<typeof getSql>,
+  env: Bindings,
+  ctx: ExecutionContext,
+) {
+  const now = new Date();
+
+  // Phase 1: Open confirmation windows — send initial confirmation requests
+  const eventsNeedingInitialSend = (await sql`
+    SELECT e.id, e.host_user_id, e.title, e.starts_at, e.timezone,
+           e.confirmation_window_hours, e.confirmation_cutoff_hours,
+           e.location_type, e.location_name, e.location_address, e.online_link
+    FROM newchums.events e
+    WHERE e.require_reconfirmation = true
+      AND e.status = 'published'
+      AND e.confirmation_sent_at IS NULL
+      AND e.starts_at > NOW()
+      AND e.starts_at - (e.confirmation_window_hours || ' hours')::interval <= NOW()
+  `) as Array<{
+    id: string; host_user_id: string; title: string; starts_at: string;
+    timezone: string | null; confirmation_window_hours: number;
+    confirmation_cutoff_hours: number; location_type: string;
+    location_name: string | null; location_address: string | null;
+    online_link: string | null;
+  }>;
+
+  for (const ev of eventsNeedingInitialSend) {
+    try {
+      const goingRsvps = (await sql`
+        SELECT er.user_id, u.email, u.name, u.username
+        FROM newchums.event_rsvps er
+        JOIN newchums.users u ON u.id = er.user_id
+        WHERE er.event_id = ${ev.id} AND er.status = 'going'
+      `) as Array<{ user_id: string; email: string; name: string | null; username: string | null }>;
+
+      for (const att of goingRsvps) {
+        await sql`
+          INSERT INTO newchums.event_confirmations (event_id, user_id, status)
+          VALUES (${ev.id}, ${att.user_id}, 'pending')
+          ON CONFLICT (event_id, user_id) DO NOTHING
+        `;
+      }
+
+      await sql`UPDATE newchums.events SET confirmation_sent_at = NOW() WHERE id = ${ev.id}`;
+
+      const tz = ev.timezone || "UTC";
+      const cutoffAt = new Date(new Date(ev.starts_at).getTime() - Number(ev.confirmation_cutoff_hours) * 3600000);
+      const deadline = formatEventDate(cutoffAt.toISOString(), tz);
+      const eventDate = formatEventDate(ev.starts_at, tz);
+      const eventUrl = `${env.WEB_BASE_URL}/events/${ev.id}`;
+      const eventLocation = ev.location_type === "online" ? (ev.online_link || "Online") : [ev.location_name, ev.location_address].filter(Boolean).join(", ") || "";
+
+      for (const att of goingRsvps) {
+        const profileRows = (await sql`SELECT notification_prefs FROM user_profile WHERE user_id = ${att.user_id} LIMIT 1`) as { notification_prefs: unknown }[];
+        const prefs = normalizeNotificationPrefs(profileRows[0]?.notification_prefs);
+        if (prefs.items.attendance_confirmation?.enabled === false) continue;
+
+        try {
+          const token = await createConfirmationToken(env.NEXTAUTH_SECRET, ev.id, att.user_id);
+          const confirmUrl = `${eventUrl}?confirm=yes&confirm_token=${encodeURIComponent(token)}`;
+          const declineUrl = `${eventUrl}?confirm=no&confirm_token=${encodeURIComponent(token)}`;
+          const isHost = att.user_id === ev.host_user_id;
+          const recipientName = att.name?.trim() || att.username?.replace(/^@/, "") || "there";
+
+          const unsubToken = await createUnsubscribeToken(env.NEXTAUTH_SECRET, att.user_id, "attendance_confirmation");
+          const unsubscribeUrl = `${env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`;
+
+          await sendConfirmationRequestEmail(env, {
+            to: att.email, recipientName, eventTitle: ev.title, eventDate,
+            eventLocation, eventUrl, confirmUrl, declineUrl,
+            isHost, isReminder: false, isFinal: false, deadline, unsubscribeUrl,
+          });
+
+          await sql`
+            UPDATE newchums.event_confirmations
+            SET reminder_count = 1, last_reminder_at = NOW(), updated_at = NOW()
+            WHERE event_id = ${ev.id} AND user_id = ${att.user_id}
+          `;
+        } catch { /* noop — don't let one email failure stop the batch */ }
+      }
+    } catch (err) {
+      console.error(`[attendance-assurance] initial send failed for event ${ev.id}:`, err);
+    }
+  }
+
+  // Phase 2: Send follow-up reminders to pending confirmations
+  const eventsWithPending = (await sql`
+    SELECT DISTINCT e.id, e.host_user_id, e.title, e.starts_at, e.timezone,
+           e.confirmation_cutoff_hours, e.location_type, e.location_name,
+           e.location_address, e.online_link
+    FROM newchums.events e
+    WHERE e.require_reconfirmation = true
+      AND e.status = 'published'
+      AND e.confirmation_sent_at IS NOT NULL
+      AND e.cutoff_processed_at IS NULL
+      AND e.starts_at > NOW()
+      AND EXISTS (
+        SELECT 1 FROM newchums.event_confirmations ec
+        WHERE ec.event_id = e.id AND ec.status = 'pending'
+      )
+  `) as Array<{
+    id: string; host_user_id: string; title: string; starts_at: string;
+    timezone: string | null; confirmation_cutoff_hours: number;
+    location_type: string; location_name: string | null;
+    location_address: string | null; online_link: string | null;
+  }>;
+
+  for (const ev of eventsWithPending) {
+    try {
+      const startsAtMs = new Date(ev.starts_at).getTime();
+      const hoursUntil = (startsAtMs - now.getTime()) / 3600000;
+      const tz = ev.timezone || "UTC";
+      const cutoffAt = new Date(startsAtMs - Number(ev.confirmation_cutoff_hours) * 3600000);
+      const deadline = formatEventDate(cutoffAt.toISOString(), tz);
+      const eventDate = formatEventDate(ev.starts_at, tz);
+      const eventUrl = `${env.WEB_BASE_URL}/events/${ev.id}`;
+      const eventLocation = ev.location_type === "online" ? (ev.online_link || "Online") : [ev.location_name, ev.location_address].filter(Boolean).join(", ") || "";
+
+      // ~12h before: send first follow-up (reminder_count = 1)
+      // ~3h before: send final reminder (reminder_count = 2)
+      let targetReminderCount: number | null = null;
+      let isFinal = false;
+      if (hoursUntil <= 3) {
+        targetReminderCount = 2;
+        isFinal = true;
+      } else if (hoursUntil <= 12) {
+        targetReminderCount = 1;
+      }
+
+      if (targetReminderCount === null) continue;
+
+      const pendingUsers = (await sql`
+        SELECT ec.user_id, ec.reminder_count, u.email, u.name, u.username
+        FROM newchums.event_confirmations ec
+        JOIN newchums.users u ON u.id = ec.user_id
+        WHERE ec.event_id = ${ev.id}
+          AND ec.status = 'pending'
+          AND ec.reminder_count < ${targetReminderCount + 1}
+      `) as Array<{ user_id: string; reminder_count: number; email: string; name: string | null; username: string | null }>;
+
+      for (const att of pendingUsers) {
+        if (att.reminder_count >= targetReminderCount + 1) continue;
+
+        const profileRows = (await sql`SELECT notification_prefs FROM user_profile WHERE user_id = ${att.user_id} LIMIT 1`) as { notification_prefs: unknown }[];
+        const prefs = normalizeNotificationPrefs(profileRows[0]?.notification_prefs);
+        if (prefs.items.attendance_confirmation?.enabled === false) continue;
+
+        try {
+          const token = await createConfirmationToken(env.NEXTAUTH_SECRET, ev.id, att.user_id);
+          const confirmUrl = `${eventUrl}?confirm=yes&confirm_token=${encodeURIComponent(token)}`;
+          const declineUrl = `${eventUrl}?confirm=no&confirm_token=${encodeURIComponent(token)}`;
+          const isHost = att.user_id === ev.host_user_id;
+          const recipientName = att.name?.trim() || att.username?.replace(/^@/, "") || "there";
+
+          const unsubToken = await createUnsubscribeToken(env.NEXTAUTH_SECRET, att.user_id, "attendance_confirmation");
+          const unsubscribeUrl = `${env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`;
+
+          await sendConfirmationRequestEmail(env, {
+            to: att.email, recipientName, eventTitle: ev.title, eventDate,
+            eventLocation, eventUrl, confirmUrl, declineUrl,
+            isHost, isReminder: true, isFinal, deadline, unsubscribeUrl,
+          });
+
+          await sql`
+            UPDATE newchums.event_confirmations
+            SET reminder_count = ${targetReminderCount + 1}, last_reminder_at = NOW(), updated_at = NOW()
+            WHERE event_id = ${ev.id} AND user_id = ${att.user_id}
+          `;
+        } catch { /* noop */ }
+      }
+    } catch (err) {
+      console.error(`[attendance-assurance] reminder failed for event ${ev.id}:`, err);
+    }
+  }
+
+  // Phase 3: Process cutoffs — expire pending confirmations and evaluate viability
+  const eventsAtCutoff = (await sql`
+    SELECT e.id, e.host_user_id, e.title, e.starts_at, e.timezone,
+           e.confirmation_cutoff_hours, e.min_confirmed_attendees, e.fallback_policy
+    FROM newchums.events e
+    WHERE e.require_reconfirmation = true
+      AND e.status = 'published'
+      AND e.confirmation_sent_at IS NOT NULL
+      AND e.cutoff_processed_at IS NULL
+      AND e.starts_at > NOW()
+      AND e.starts_at - (e.confirmation_cutoff_hours || ' hours')::interval <= NOW()
+  `) as Array<{
+    id: string; host_user_id: string; title: string; starts_at: string;
+    timezone: string | null; confirmation_cutoff_hours: number;
+    min_confirmed_attendees: number | null; fallback_policy: string;
+  }>;
+
+  for (const ev of eventsAtCutoff) {
+    try {
+      await sql`
+        UPDATE newchums.event_confirmations
+        SET status = 'expired', updated_at = NOW()
+        WHERE event_id = ${ev.id} AND status = 'pending'
+      `;
+
+      await sql`UPDATE newchums.events SET cutoff_processed_at = NOW() WHERE id = ${ev.id}`;
+
+      const minRequired = ev.min_confirmed_attendees ? Number(ev.min_confirmed_attendees) : null;
+      if (minRequired == null) continue;
+
+      const confirmedRows = (await sql`
+        SELECT COUNT(*)::int AS c FROM newchums.event_confirmations
+        WHERE event_id = ${ev.id} AND status = 'confirmed'
+      `) as { c: number }[];
+      const confirmedCount = confirmedRows[0].c;
+
+      if (confirmedCount >= minRequired) continue;
+
+      if (ev.fallback_policy === "auto_cancel") {
+        await sql`
+          UPDATE newchums.events SET status = 'canceled', canceled_at = NOW(), updated_at = NOW()
+          WHERE id = ${ev.id}
+        `;
+        const attendees = (await sql`
+          SELECT u.email, u.name, u.username
+          FROM newchums.event_rsvps er
+          JOIN newchums.users u ON u.id = er.user_id
+          WHERE er.event_id = ${ev.id} AND er.status IN ('going', 'maybe')
+        `) as Array<{ email: string; name: string | null; username: string | null }>;
+
+        for (const att of attendees) {
+          try {
+            const recipientName = att.name?.trim() || att.username?.replace(/^@/, "") || "there";
+            await sendPlanAutoCancelledEmail(env, {
+              to: att.email, recipientName, eventTitle: ev.title,
+              confirmedCount, minRequired,
+            });
+          } catch { /* noop */ }
+        }
+      } else if (ev.fallback_policy === "notify_host") {
+        const hostUser = (await sql`SELECT email, name, username FROM newchums.users WHERE id = ${ev.host_user_id}`) as { email: string; name: string | null; username: string | null }[];
+        if (hostUser.length > 0) {
+          try {
+            const hostName = hostUser[0].name?.trim() || hostUser[0].username?.replace(/^@/, "") || "there";
+            const unsubToken = await createUnsubscribeToken(env.NEXTAUTH_SECRET, ev.host_user_id, "attendance_confirmation");
+            await sendPlanAtRiskEmail(env, {
+              to: hostUser[0].email, hostName, eventTitle: ev.title,
+              eventUrl: `${env.WEB_BASE_URL}/events/${ev.id}`,
+              confirmedCount, minRequired,
+              unsubscribeUrl: `${env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
+            });
+          } catch { /* noop */ }
+        }
+      }
+      // fallback_policy === "proceed": no action needed
+    } catch (err) {
+      console.error(`[attendance-assurance] cutoff processing failed for event ${ev.id}:`, err);
+    }
+  }
+}
+
+// ─── Scheduled handler ────────────────────────────────────────────────────────
 
 async function handleScheduled(
   _event: ScheduledEvent,
@@ -6503,6 +6992,13 @@ async function handleScheduled(
   ctx: ExecutionContext,
 ) {
   const sql = getSql(env);
+
+  // Attendance assurance processing (runs every invocation)
+  try {
+    await processAttendanceAssurance(sql, env, ctx);
+  } catch (err) {
+    console.error("[scheduled] attendance assurance error:", err);
+  }
 
   // Find users with unread chat messages that arrived since their last digest
   const rows = (await sql`

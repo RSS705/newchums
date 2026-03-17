@@ -478,6 +478,102 @@ export const sendUnreadChatDigestEmail = async (
   });
 };
 
+// ── Attendance assurance emails ─────────────────────────────────────────
+
+export const sendConfirmationRequestEmail = async (
+  env: Bindings,
+  { to, recipientName, eventTitle, eventDate, eventLocation, eventUrl, confirmUrl, declineUrl, isHost, isReminder, isFinal, deadline, unsubscribeUrl }: {
+    to: string; recipientName: string;
+    eventTitle: string; eventDate: string; eventLocation?: string; eventUrl: string;
+    confirmUrl: string; declineUrl: string;
+    isHost: boolean; isReminder: boolean; isFinal: boolean;
+    deadline: string; unsubscribeUrl?: string;
+  }
+) => {
+  if (!env.POSTMARK_TEMPLATE_CONFIRMATION_REQUEST) return;
+
+  const headingMap = {
+    initial: isHost ? "Confirm you\u2019re still hosting" : "Confirm your attendance",
+    reminder: isHost ? "Reminder: Confirm you\u2019re still hosting" : "Reminder: Confirm your attendance",
+    final: isHost ? "Final reminder: Confirm you\u2019re hosting" : "Final reminder: Confirm your attendance",
+  };
+  const stage = isFinal ? "final" : isReminder ? "reminder" : "initial";
+
+  const bodyHost = `Hey ${recipientName}, your plan is coming up and requires final confirmation. Please confirm you\u2019re still hosting so attendees know the plan is on.`;
+  const bodyAttendee = `Hey ${recipientName}, a plan you\u2019re attending requires final confirmation. Please confirm you\u2019re still coming so the host can plan ahead.`;
+
+  return sendPostmarkTemplateEmail(env, {
+    From: env.EMAIL_FROM, To: to,
+    TemplateId: env.POSTMARK_TEMPLATE_CONFIRMATION_REQUEST,
+    TemplateModel: {
+      productName: "NewChums",
+      heading: headingMap[stage],
+      bodyText: isHost ? bodyHost : bodyAttendee,
+      recipientName,
+      eventTitle,
+      eventDate,
+      eventLocation: eventLocation || "",
+      eventUrl,
+      confirmUrl,
+      declineUrl,
+      confirmLabel: isHost ? "I\u2019m still hosting" : "I\u2019m still coming",
+      declineLabel: isHost ? "Cancel this plan" : "I can\u2019t make it",
+      deadline,
+      isReminder: isReminder || isFinal ? "1" : "",
+      isFinal: isFinal ? "1" : "",
+      unsubscribeUrl: unsubscribeUrl || "",
+    },
+  });
+};
+
+export const sendPlanAtRiskEmail = async (
+  env: Bindings,
+  { to, hostName, eventTitle, eventUrl, confirmedCount, minRequired, unsubscribeUrl }: {
+    to: string; hostName: string;
+    eventTitle: string; eventUrl: string;
+    confirmedCount: number; minRequired: number;
+    unsubscribeUrl?: string;
+  }
+) => {
+  if (!env.POSTMARK_TEMPLATE_PLAN_AT_RISK) return;
+  return sendPostmarkTemplateEmail(env, {
+    From: env.EMAIL_FROM, To: to,
+    TemplateId: env.POSTMARK_TEMPLATE_PLAN_AT_RISK,
+    TemplateModel: {
+      productName: "NewChums",
+      heading: "Your plan may be at risk",
+      bodyText: `Hey ${hostName}, your plan hasn\u2019t reached the minimum confirmed attendance. ${confirmedCount} of ${minRequired} required attendees have confirmed. You can review the plan and decide whether to proceed or cancel.`,
+      hostName,
+      eventTitle,
+      eventUrl,
+      confirmedCount,
+      minRequired,
+      ctaUrl: eventUrl,
+      ctaText: "Review plan",
+      unsubscribeUrl: unsubscribeUrl || "",
+    },
+  });
+};
+
+export const sendPlanAutoCancelledEmail = async (
+  env: Bindings,
+  { to, recipientName, eventTitle, confirmedCount, minRequired }: {
+    to: string; recipientName: string;
+    eventTitle: string;
+    confirmedCount: number; minRequired: number;
+  }
+) => {
+  if (!env.POSTMARK_TEMPLATE_EVENT_CHANGED) return;
+  return sendEventChangedEmail(env, {
+    to,
+    recipientName,
+    eventTitle,
+    eventUrl: "https://newchums.com",
+    changeType: "canceled",
+    changes: [{ fieldName: "Reason", oldValue: `${confirmedCount} of ${minRequired} confirmed`, newValue: "Auto-cancelled \u2014 minimum attendance not met" }],
+  });
+};
+
 const CONTACT_EMAIL = "contact@newchums.com";
 
 export const sendContactFormEmail = async (

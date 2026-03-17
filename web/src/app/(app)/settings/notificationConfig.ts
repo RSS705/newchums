@@ -75,4 +75,9 @@ export const NOTIFICATION_TYPES: NotificationTypeConfig[] = [
     title: "Unread messages in your plans",
     description: "A daily email when you have unread chat messages in plans you\u2019re part of.",
   },
+  {
+    key: "attendance_confirmation",
+    title: "Attendance confirmation reminders",
+    description: "Reminders to confirm your attendance before plans that require it.",
+  },
 ];

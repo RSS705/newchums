@@ -26,6 +26,7 @@ export const VALID_KEYS = [
   "attendee_removed",
   "product_announcements",
   "unread_chat_digest",
+  "attendance_confirmation",
 ] as const;
 
 export type NotificationKey = (typeof VALID_KEYS)[number];
@@ -48,6 +49,7 @@ export const DEFAULT_PREFS: Record<NotificationKey, NotificationPrefItem> = {
   attendee_removed: { enabled: true },
   product_announcements: { enabled: true },
   unread_chat_digest: { enabled: true },
+  attendance_confirmation: { enabled: true },
 };
 
 /**

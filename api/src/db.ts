@@ -38,6 +38,10 @@ export type Bindings = {
   POSTMARK_TEMPLATE_EVENT_CHANGED?: string;
   /** Postmark template ID for daily unread-chat digest email (template 43975299) */
   POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST?: string;
+  /** Postmark template ID for attendance confirmation request emails */
+  POSTMARK_TEMPLATE_CONFIRMATION_REQUEST?: string;
+  /** Postmark template ID for plan-at-risk host notification */
+  POSTMARK_TEMPLATE_PLAN_AT_RISK?: string;
   SENTRY_DSN: string;
   APP_ENV?: string;
   ENVIRONMENT?: string;

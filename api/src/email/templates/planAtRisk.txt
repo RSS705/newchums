@@ -1,0 +1,22 @@
+{{heading}}
+
+{{bodyText}}
+
+---
+
+Plan: {{eventTitle}}
+
+Confirmed attendance: {{confirmedCount}} of {{minRequired}} required
+
+---
+
+Review the plan to see who confirmed and decide whether to proceed or cancel.
+
+{{ctaText}}: {{ctaUrl}}
+
+---
+
+You're receiving this because you're the host of a plan on NewChums that didn't reach its minimum confirmed attendance.
+{{#unsubscribeUrl}}Unsubscribe: {{.}}{{/unsubscribeUrl}}
+
+© {{year}} {{productName}}

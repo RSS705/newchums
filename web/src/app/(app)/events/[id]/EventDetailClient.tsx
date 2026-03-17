@@ -18,6 +18,8 @@ import Divider from "@mui/material/Divider";
 import FormControl from "@mui/material/FormControl";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import InputAdornment from "@mui/material/InputAdornment";
+import Select from "@mui/material/Select";
+import MenuItem from "@mui/material/MenuItem";
 import Switch from "@mui/material/Switch";
 import Radio from "@mui/material/Radio";
 import RadioGroup from "@mui/material/RadioGroup";
@@ -90,9 +92,18 @@ type EventDetail = {
   hasRsvp: boolean;
   guestInvite?: boolean;
   guestRsvpStatus?: string | null;
+  // Attendance assurance
+  minConfirmedAttendees: number | null;
+  fallbackPolicy: string | null;
+  confirmationWindowOpen: boolean;
+  confirmationCutoffAt: string | null;
+  confirmedCount: number;
+  pendingConfirmationCount: number;
+  myConfirmationStatus: string | null;
+  planViability: string | null;
 };
 
-type RsvpEntry = { userId: string; name: string; handle: string | null; status: string; note: string | null; avatarUrl?: string | null };
+type RsvpEntry = { userId: string; name: string; handle: string | null; status: string; note: string | null; avatarUrl?: string | null; confirmationStatus?: string | null };
 type AltTimeEntry = { id: string; userId: string; name: string; handle: string | null; suggestedAt: string; endsAt: string | null; note: string | null };
 type InviteEntry = { userId: string | null; email: string | null; name: string; handle?: string | null };
 type RemoveTarget =
@@ -179,6 +190,9 @@ export default function EventDetailClient() {
   const [rsvpDialogMessage, setRsvpDialogMessage] = useState("");
   // Tracks RSVP status set via email invite token (unauthenticated flow)
   const [emailRsvpStatus, setEmailRsvpStatus] = useState<string | null>(null);
+  // Attendance assurance
+  const [confirmSubmitting, setConfirmSubmitting] = useState(false);
+  const [emailConfirmResult, setEmailConfirmResult] = useState<string | null>(null);
   const [showAltTimeForm, setShowAltTimeForm] = useState(false);
   const [altStartDate, setAltStartDate] = useState<Dayjs | null>(null);
   const [altEndDate, setAltEndDate] = useState<Dayjs | null>(null);
@@ -269,6 +283,8 @@ export default function EventDetailClient() {
   const [editVisibility, setEditVisibility] = useState<"public" | "chums_only" | "invite_only">("public");
   const [editRequireReconfirmation, setEditRequireReconfirmation] = useState(false);
   const [editRequireApproval, setEditRequireApproval] = useState(false);
+  const [editMinConfirmed, setEditMinConfirmed] = useState("");
+  const [editFallbackPolicy, setEditFallbackPolicy] = useState<"notify_host" | "proceed" | "auto_cancel">("notify_host");
   const [editHobbies, setEditHobbies] = useState<HobbyInfo[]>([]);
   const [editHobbyInput, setEditHobbyInput] = useState("");
   const [editHobbySuggestions, setEditHobbySuggestions] = useState<HobbyInfo[]>([]);
@@ -332,20 +348,28 @@ export default function EventDetailClient() {
 
   // Auto-RSVP from email link (?rsvp=going&invite_token=xxx)
   const pendingRsvpRef = useRef<string | null>(null);
+  const pendingConfirmRef = useRef<{ action: string; token: string } | null>(null);
   useEffect(() => {
     const rsvpParam = searchParams.get("rsvp");
     const inviteTokenParam = searchParams.get("invite_token");
     const contextParam = searchParams.get("context");
+    const confirmParam = searchParams.get("confirm");
+    const confirmTokenParam = searchParams.get("confirm_token");
     if (inviteTokenParam) inviteTokenRef.current = inviteTokenParam;
     if (rsvpParam && VALID_RSVP_PARAMS.includes(rsvpParam as typeof VALID_RSVP_PARAMS[number])) {
       pendingRsvpRef.current = rsvpParam;
     }
+    if (confirmParam && confirmTokenParam && (confirmParam === "yes" || confirmParam === "no")) {
+      pendingConfirmRef.current = { action: confirmParam === "yes" ? "confirm" : "decline", token: confirmTokenParam };
+    }
     if (contextParam) setEmailContext(contextParam);
-    if (rsvpParam || inviteTokenParam || contextParam) {
+    if (rsvpParam || inviteTokenParam || contextParam || confirmParam || confirmTokenParam) {
       const url = new URL(window.location.href);
       url.searchParams.delete("rsvp");
       url.searchParams.delete("invite_token");
       url.searchParams.delete("context");
+      url.searchParams.delete("confirm");
+      url.searchParams.delete("confirm_token");
       window.history.replaceState({}, "", url.pathname + url.search);
     }
   }, [searchParams]);
@@ -394,6 +418,36 @@ export default function EventDetailClient() {
         }
       });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [event]);
+
+  // Auto-confirm from email link (?confirm=yes&confirm_token=xxx)
+  useEffect(() => {
+    if (!event || !pendingConfirmRef.current) return;
+    const { action, token } = pendingConfirmRef.current;
+    pendingConfirmRef.current = null;
+
+    (async () => {
+      setConfirmSubmitting(true);
+      try {
+        const res = await apiFetch(`/events/${eventId}/email-confirm`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token, action }),
+        });
+        const data = (await res.json()) as { ok: boolean; status?: string; error?: string; message?: string };
+        if (data.ok) {
+          setEmailConfirmResult(data.status ?? (action === "confirm" ? "confirmed" : "declined"));
+          toast.success(action === "confirm" ? "Attendance confirmed!" : "Response recorded");
+          refresh();
+        } else {
+          toast.error(data.message ?? "This link has expired or is invalid.");
+        }
+      } catch {
+        toast.error("Network error");
+      }
+      setConfirmSubmitting(false);
+    })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event]);
 
@@ -714,6 +768,28 @@ export default function EventDetailClient() {
       toast.error("Network error");
     }
     setRsvpSubmitting(false);
+  };
+
+  const handleConfirmAction = async (action: "confirm" | "decline") => {
+    setConfirmSubmitting(true);
+    try {
+      const res = await apiFetch(`/events/${eventId}/confirm`, {
+        auth: true,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const data = (await res.json()) as { ok: boolean; error?: string; message?: string };
+      if (data.ok) {
+        toast.success(action === "confirm" ? "Attendance confirmed!" : "Response recorded");
+        refresh();
+      } else {
+        toast.error(data.message ?? "Something went wrong");
+      }
+    } catch {
+      toast.error("Network error");
+    }
+    setConfirmSubmitting(false);
   };
 
   const handleGuestRsvp = async (status: string) => {
@@ -1054,6 +1130,8 @@ export default function EventDetailClient() {
     setEditVisibility((event.visibility as "public" | "chums_only" | "invite_only") ?? "public");
     setEditRequireReconfirmation(event.requireReconfirmation ?? false);
     setEditRequireApproval(event.requireApproval ?? false);
+    setEditMinConfirmed(event.minConfirmedAttendees != null ? String(event.minConfirmedAttendees) : "");
+    setEditFallbackPolicy((event.fallbackPolicy as "notify_host" | "proceed" | "auto_cancel") ?? "notify_host");
     const initialHobbies =
       event.hobbies?.length > 0
         ? event.hobbies
@@ -1086,6 +1164,8 @@ export default function EventDetailClient() {
           visibility: editVisibility,
           require_reconfirmation: editRequireReconfirmation,
           require_approval: editRequireApproval,
+          min_confirmed_attendees: editRequireReconfirmation && editMinConfirmed ? Number(editMinConfirmed) : null,
+          fallback_policy: editRequireReconfirmation ? editFallbackPolicy : "notify_host",
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         }),
       });
@@ -1311,14 +1391,40 @@ export default function EventDetailClient() {
               {event.maxSeats ? ` · ${event.maxSeats} seats` : ""}
             </Typography>
           </Stack>
-          {event.requireReconfirmation && (
+          {event.requireReconfirmation && !event.confirmationWindowOpen && (
             <Stack direction="row" spacing={1.5} alignItems="center">
               <NotificationsRoundedIcon sx={{ color: "text.secondary", fontSize: 22 }} />
               <Typography variant="body2" color="text.secondary">
-                {event.isHost
-                  ? "Attendees will be asked to reconfirm 24 hours before"
-                  : "You\u2019ll receive a reminder to reconfirm attendance 24 hours before"}
+                Final confirmation will be requested 24 hours before
               </Typography>
+            </Stack>
+          )}
+          {event.requireReconfirmation && event.confirmationWindowOpen && (
+            <Stack spacing={1.5}>
+              <Stack direction="row" spacing={1.5} alignItems="center">
+                <NotificationsRoundedIcon sx={{ color: "warning.main", fontSize: 22 }} />
+                <Stack spacing={0.25}>
+                  <Typography variant="body2" fontWeight={600}>
+                    {event.confirmedCount} confirmed
+                    {event.pendingConfirmationCount > 0 ? `, ${event.pendingConfirmationCount} pending` : ""}
+                    {event.minConfirmedAttendees ? ` · ${event.minConfirmedAttendees} required` : ""}
+                  </Typography>
+                  {event.confirmationCutoffAt && (
+                    <Typography variant="caption" color="text.secondary">
+                      Confirmation deadline: {new Date(event.confirmationCutoffAt).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                    </Typography>
+                  )}
+                </Stack>
+              </Stack>
+              {event.planViability && event.minConfirmedAttendees && (
+                <Chip
+                  size="small"
+                  label={event.planViability === "viable" ? "Viable" : event.planViability === "at_risk" ? "At risk" : "Below minimum"}
+                  color={event.planViability === "viable" ? "success" : event.planViability === "at_risk" ? "warning" : "error"}
+                  variant={event.planViability === "viable" ? "filled" : "outlined"}
+                  sx={{ alignSelf: "flex-start", fontWeight: 600, fontSize: "0.8125rem" }}
+                />
+              )}
             </Stack>
           )}
         </Stack>
@@ -1658,7 +1764,70 @@ export default function EventDetailClient() {
             </>
           ) : (
             <>
-              {viewerRsvpStatus ? (
+              {/* Confirmation UI when window is open */}
+              {event.confirmationWindowOpen && viewerRsvpStatus === "going" && (event.myConfirmationStatus === "pending" || event.myConfirmationStatus === "expired" || emailConfirmResult) ? (
+                <Stack spacing={2} sx={{ py: 1 }}>
+                  {emailConfirmResult === "confirmed" || event.myConfirmationStatus === "confirmed" ? (
+                    <Stack spacing={1.5} alignItems="center">
+                      <CheckCircleRoundedIcon sx={{ fontSize: 36, color: "success.main" }} />
+                      <Typography variant="h6" fontWeight={600}>You&apos;re confirmed for this plan</Typography>
+                    </Stack>
+                  ) : emailConfirmResult === "declined" || event.myConfirmationStatus === "declined" ? (
+                    <Stack spacing={1.5} alignItems="center">
+                      <InfoOutlinedIcon sx={{ fontSize: 36, color: "text.secondary" }} />
+                      <Typography variant="h6" fontWeight={600}>You&apos;ve indicated you can&apos;t make it</Typography>
+                    </Stack>
+                  ) : (
+                    <>
+                      <Stack spacing={1} sx={{ p: 2, bgcolor: "warning.50", borderRadius: 2, border: "1px solid", borderColor: "warning.200" }}>
+                        <Typography variant="subtitle1" fontWeight={700}>
+                          Final confirmation required
+                        </Typography>
+                        {event.confirmationCutoffAt && (
+                          <Typography variant="body2" color="text.secondary">
+                            Please confirm by {new Date(event.confirmationCutoffAt).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                          </Typography>
+                        )}
+                      </Stack>
+                      <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                        <AppButton
+                          onClick={() => handleConfirmAction("confirm")}
+                          disabled={confirmSubmitting}
+                          sx={{ flex: 1 }}
+                        >
+                          I&apos;m still coming
+                        </AppButton>
+                        <AppButton
+                          onClick={() => handleConfirmAction("decline")}
+                          disabled={confirmSubmitting}
+                          variant="outlined"
+                          color="inherit"
+                          sx={{ flex: 1 }}
+                        >
+                          I can&apos;t make it
+                        </AppButton>
+                      </Stack>
+                    </>
+                  )}
+                </Stack>
+              ) : event.confirmationWindowOpen && (event.myConfirmationStatus === "confirmed") ? (
+                <Stack spacing={1.5} sx={{ py: 1 }}>
+                  <Stack direction="row" alignItems="center" spacing={1}>
+                    <CheckCircleRoundedIcon sx={{ fontSize: 20, color: "success.main" }} />
+                    <Typography variant="h6" fontWeight={600}>You&apos;re confirmed</Typography>
+                  </Stack>
+                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
+                    Your attendance is confirmed. See you there!
+                  </Typography>
+                </Stack>
+              ) : event.confirmationWindowOpen && event.myConfirmationStatus === "declined" ? (
+                <Stack spacing={1.5} sx={{ py: 1 }}>
+                  <Stack direction="row" alignItems="center" spacing={1}>
+                    <InfoOutlinedIcon sx={{ fontSize: 20, color: "text.secondary" }} />
+                    <Typography variant="h6" fontWeight={600}>You&apos;ve indicated you can&apos;t make it</Typography>
+                  </Stack>
+                </Stack>
+              ) : viewerRsvpStatus ? (
                 <Stack spacing={1.5}>
                   <Stack direction="row" alignItems="center" spacing={1}>
                     {viewerRsvpStatus === "going" && <CheckCircleRoundedIcon sx={{ fontSize: 20, color: "success.main" }} />}
@@ -1736,6 +1905,61 @@ export default function EventDetailClient() {
                 </>
               )}
             </>
+          )}
+        </AppCard>
+      )}
+
+      {/* Host confirmation (when window is open) */}
+      {event.isHost && !isCanceled && event.confirmationWindowOpen && event.myConfirmationStatus && (
+        <AppCard>
+          {event.myConfirmationStatus === "confirmed" ? (
+            <Stack spacing={1.5} sx={{ py: 1 }}>
+              <Stack direction="row" alignItems="center" spacing={1}>
+                <CheckCircleRoundedIcon sx={{ fontSize: 20, color: "success.main" }} />
+                <Typography variant="h6" fontWeight={600}>You&apos;ve confirmed you&apos;re hosting</Typography>
+              </Stack>
+              <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
+                Your attendees can see this plan is still on.
+              </Typography>
+            </Stack>
+          ) : event.myConfirmationStatus === "declined" ? (
+            <Stack spacing={1.5} sx={{ py: 1 }}>
+              <Stack direction="row" alignItems="center" spacing={1}>
+                <InfoOutlinedIcon sx={{ fontSize: 20, color: "text.secondary" }} />
+                <Typography variant="h6" fontWeight={600}>You&apos;ve indicated you&apos;re not hosting</Typography>
+              </Stack>
+            </Stack>
+          ) : (
+            <Stack spacing={2} sx={{ py: 1 }}>
+              <Stack spacing={1} sx={{ p: 2, bgcolor: "warning.50", borderRadius: 2, border: "1px solid", borderColor: "warning.200" }}>
+                <Typography variant="subtitle1" fontWeight={700}>
+                  Confirm you&apos;re still hosting
+                </Typography>
+                {event.confirmationCutoffAt && (
+                  <Typography variant="body2" color="text.secondary">
+                    Please confirm by {new Date(event.confirmationCutoffAt).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                  </Typography>
+                )}
+              </Stack>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                <AppButton
+                  onClick={() => handleConfirmAction("confirm")}
+                  disabled={confirmSubmitting}
+                  sx={{ flex: 1 }}
+                >
+                  I&apos;m still hosting this
+                </AppButton>
+                <AppButton
+                  onClick={() => handleConfirmAction("decline")}
+                  disabled={confirmSubmitting}
+                  variant="outlined"
+                  color="inherit"
+                  sx={{ flex: 1 }}
+                >
+                  Cancel this plan
+                </AppButton>
+              </Stack>
+            </Stack>
           )}
         </AppCard>
       )}
@@ -2429,6 +2653,7 @@ export default function EventDetailClient() {
             {declinedCount > 0 ? `, ${declinedCount} can\u2019t make it` : ""}
             {reservedSeatCount > 0 ? `, ${reservedSeatCount} invited` : ""}
             {event.maxSeats ? ` · ${event.maxSeats} seats` : ""}
+            {event.confirmationWindowOpen && event.confirmedCount > 0 ? ` · ${event.confirmedCount} confirmed` : ""}
           </Typography>
           <Stack spacing={0}>
             {/* RSVP'd participants */}
@@ -2511,6 +2736,15 @@ export default function EventDetailClient() {
                         size="small"
                         variant="outlined"
                         sx={{ fontWeight: 500, fontSize: "0.8125rem", color: "text.secondary" }}
+                      />
+                    )}
+                    {event.confirmationWindowOpen && r.confirmationStatus && (
+                      <Chip
+                        label={r.confirmationStatus === "confirmed" ? "Confirmed" : r.confirmationStatus === "pending" ? "Pending" : r.confirmationStatus === "declined" ? "Declined" : "Missed deadline"}
+                        size="small"
+                        color={r.confirmationStatus === "confirmed" ? "success" : r.confirmationStatus === "pending" ? "warning" : "default"}
+                        variant={r.confirmationStatus === "confirmed" ? "filled" : "outlined"}
+                        sx={{ fontWeight: 500, fontSize: "0.6875rem" }}
                       />
                     )}
                     {event.isHost && !isCanceled && !isPast && r.userId !== event.hostUserId && (r.status === "going" || r.status === "maybe") && (
@@ -3055,14 +3289,52 @@ export default function EventDetailClient() {
                 }
                 label={
                   <Box>
-                    <Typography variant="body2" fontWeight={500}>Ask attendees to reconfirm before the plan</Typography>
+                    <Typography variant="body2" fontWeight={500}>Require final confirmation before the plan</Typography>
                     <Typography variant="caption" color="text.secondary">
-                      Attendees receive a reminder 24 hours before asking if they&apos;re still coming.
+                      Going attendees will be asked to confirm 24 hours before. This includes you.
                     </Typography>
                   </Box>
                 }
                 sx={{ alignItems: "flex-start", mt: 0.5 }}
               />
+              {editRequireReconfirmation && (
+                <Stack spacing={2} sx={{ mt: 1, pl: 2, borderLeft: "2px solid", borderColor: "divider" }}>
+                  <Box>
+                    <Typography variant="caption" fontWeight={600} sx={{ mb: 0.5, display: "block" }}>
+                      Minimum confirmed attendees (optional)
+                    </Typography>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      type="number"
+                      placeholder="e.g. 4 (including you)"
+                      value={editMinConfirmed}
+                      onChange={(e) => setEditMinConfirmed(e.target.value)}
+                      inputProps={{ min: 1, max: 500 }}
+                    />
+                    <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: "block" }}>
+                      You count toward this total.
+                    </Typography>
+                  </Box>
+                  {editMinConfirmed && Number(editMinConfirmed) >= 1 && (
+                    <Box>
+                      <Typography variant="caption" fontWeight={600} sx={{ mb: 0.5, display: "block" }}>
+                        If minimum isn&apos;t met
+                      </Typography>
+                      <Select
+                        fullWidth
+                        size="small"
+                        value={editFallbackPolicy}
+                        onChange={(e) => setEditFallbackPolicy(e.target.value as "notify_host" | "proceed" | "auto_cancel")}
+                      >
+                        <MenuItem value="notify_host">Notify me so I can decide</MenuItem>
+                        <MenuItem value="proceed">Proceed unless I cancel</MenuItem>
+                        <MenuItem value="auto_cancel">Auto-cancel the plan</MenuItem>
+                      </Select>
+                    </Box>
+                  )}
+                </Stack>
+              )}
             </Box>
             <Box>
               <FormControlLabel

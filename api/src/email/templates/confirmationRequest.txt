@@ -1,0 +1,32 @@
+{{heading}}
+
+{{bodyText}}
+
+---
+
+Plan: {{eventTitle}}
+When: {{eventDate}}
+{{#eventLocation}}Where: {{.}}
+{{/eventLocation}}
+Confirm by: {{deadline}}
+
+---
+
+Are you still in?
+
+{{confirmLabel}}: {{confirmUrl}}
+
+{{declineLabel}}: {{declineUrl}}
+
+---
+
+View full plan details: {{eventUrl}}
+
+Clicking a link above will confirm or decline your attendance. No login required.
+
+---
+
+You're receiving this because you RSVP'd to a plan on NewChums that requires final confirmation.
+{{#unsubscribeUrl}}Unsubscribe from confirmation emails: {{.}}{{/unsubscribeUrl}}
+
+© {{year}} {{productName}}

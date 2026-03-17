@@ -69,6 +69,8 @@ export default function CreateEventClient() {
   const [allowAltTimes, setAllowAltTimes] = useState(true);
   const [requireReconfirmation, setRequireReconfirmation] = useState(true);
   const [requireApproval, setRequireApproval] = useState(false);
+  const [minConfirmedAttendees, setMinConfirmedAttendees] = useState("");
+  const [fallbackPolicy, setFallbackPolicy] = useState<"notify_host" | "proceed" | "auto_cancel">("notify_host");
 
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -226,6 +228,8 @@ export default function CreateEventClient() {
       allow_alt_times: allowAltTimes,
       require_reconfirmation: requireReconfirmation,
       require_approval: requireApproval,
+      min_confirmed_attendees: requireReconfirmation && minConfirmedAttendees ? Number(minConfirmedAttendees) : null,
+      fallback_policy: requireReconfirmation ? fallbackPolicy : "notify_host",
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       status: "published",
     };
@@ -622,12 +626,49 @@ export default function CreateEventClient() {
                 onChange={(e) => setRequireReconfirmation(e.target.checked)}
               />
             }
-            label="Ask attendees to reconfirm before the plan"
+            label="Require final confirmation before the plan"
           />
           <Typography variant="caption" color="text.secondary" sx={{ mt: -1.5 }}>
-            24 hours before the plan starts, attendees will receive a reminder asking whether they&apos;re still coming.
-            This doesn&apos;t automatically cancel the plan or change anyone&apos;s RSVP.
+            Going attendees will be asked to confirm 24 hours before. This includes you as the host.
           </Typography>
+          {requireReconfirmation && (
+            <Stack spacing={2} sx={{ mt: 1, pl: 2, borderLeft: "2px solid", borderColor: "divider" }}>
+              <Box>
+                <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.625 }}>
+                  Minimum confirmed attendees (optional)
+                </Typography>
+                <TextField
+                  fullWidth
+                  size="small"
+                  type="number"
+                  placeholder="e.g. 4 (including you)"
+                  value={minConfirmedAttendees}
+                  onChange={(e) => setMinConfirmedAttendees(e.target.value)}
+                  inputProps={{ min: 1, max: 500 }}
+                />
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: "block" }}>
+                  Plan viability threshold. You count toward this total.
+                </Typography>
+              </Box>
+              {minConfirmedAttendees && Number(minConfirmedAttendees) >= 1 && (
+                <Box>
+                  <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.625 }}>
+                    If minimum isn&apos;t met
+                  </Typography>
+                  <Select
+                    fullWidth
+                    size="small"
+                    value={fallbackPolicy}
+                    onChange={(e) => setFallbackPolicy(e.target.value as "notify_host" | "proceed" | "auto_cancel")}
+                  >
+                    <MenuItem value="notify_host">Notify me so I can decide</MenuItem>
+                    <MenuItem value="proceed">Proceed unless I cancel</MenuItem>
+                    <MenuItem value="auto_cancel">Auto-cancel the plan</MenuItem>
+                  </Select>
+                </Box>
+              )}
+            </Stack>
+          )}
           <FormControlLabel
             control={
               <Switch
