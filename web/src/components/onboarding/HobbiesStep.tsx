@@ -95,6 +95,7 @@ export default function HobbiesStep({ value, onChange }: HobbiesStepProps) {
       <Autocomplete
         freeSolo
         multiple
+        disableClearable
         filterOptions={(x) => x}
         options={suggestions}
         sx={{
@@ -108,11 +109,14 @@ export default function HobbiesStep({ value, onChange }: HobbiesStepProps) {
         value={value}
         inputValue={inputValue}
         onInputChange={(_, v) => setInputValue(v)}
-        onChange={(_, newValue) => {
-          const filtered = (newValue ?? []).filter(Boolean);
-          const last = filtered[filtered.length - 1];
-          if (typeof last === "string") addInterest(last);
-          else onChange(filtered as InterestOption[]);
+        onChange={(_, newValue, reason) => {
+          if (reason === "clear") return;
+          const last = newValue[newValue.length - 1];
+          if (reason === "createOption" && typeof last === "string") {
+            addInterest(last);
+          } else if (reason === "selectOption" && last && typeof last !== "string") {
+            addInterest(last);
+          }
         }}
         getOptionLabel={(opt) => (typeof opt === "string" ? opt : opt.name)}
         isOptionEqualToValue={(opt, val) => {

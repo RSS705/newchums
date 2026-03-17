@@ -56,6 +56,28 @@ export default function LandingFooter() {
         </Stack>
       </Box>
       <Divider sx={{ my: 3 }} />
+      <Stack
+        direction="row"
+        spacing={2}
+        justifyContent="center"
+        sx={{ mb: 1.5 }}
+      >
+        {[
+          { href: "/terms", label: "Terms of Use" },
+          { href: "/privacy", label: "Privacy Policy" },
+        ].map((link) => (
+          <Typography
+            key={link.href}
+            component={Link}
+            href={link.href}
+            variant="caption"
+            color="text.secondary"
+            sx={{ textDecoration: "none", "&:hover": { color: "primary.main", textDecoration: "underline" } }}
+          >
+            {link.label}
+          </Typography>
+        ))}
+      </Stack>
       <Typography variant="body2" color="text.secondary" textAlign="center">
         © 2026 NewChums. All rights reserved.
       </Typography>

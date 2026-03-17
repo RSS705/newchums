@@ -485,6 +485,8 @@ app.post("/auth/signup", async (c) => {
       home_lat?: number;
       home_lng?: number;
       travel_radius_km?: number;
+      accepted_terms_version?: string;
+      accepted_privacy_version?: string;
     }>();
 
     const normalizedEmail = body.email?.trim().toLowerCase();
@@ -565,9 +567,14 @@ app.post("/auth/signup", async (c) => {
     }
 
     const passwordHash = hashSync(body.password, 10);
+    const acceptedTerms = body.accepted_terms_version?.trim() || null;
+    const acceptedPrivacy = body.accepted_privacy_version?.trim() || null;
+    const acceptedLegalAt = acceptedTerms || acceptedPrivacy ? new Date().toISOString() : null;
     const inserted = (await sql`
-      INSERT INTO users (email, name, username, username_norm, password_hash, date_of_birth, email_verified_at)
-      VALUES (${normalizedEmail}, ${normalizedName}, ${usernameDisplay}, ${usernameNorm}, ${passwordHash}, ${parsedDob}, NULL)
+      INSERT INTO users (email, name, username, username_norm, password_hash, date_of_birth, email_verified_at,
+                         accepted_terms_version, accepted_privacy_version, accepted_legal_at)
+      VALUES (${normalizedEmail}, ${normalizedName}, ${usernameDisplay}, ${usernameNorm}, ${passwordHash}, ${parsedDob}, NULL,
+              ${acceptedTerms}, ${acceptedPrivacy}, ${acceptedLegalAt})
       RETURNING id
     `) as { id: string }[];
     const newUserId = inserted[0]?.id;
@@ -749,6 +756,40 @@ app.post("/auth/password-reset/confirm", async (c) => {
     WHERE user_id = ${record.user_id} AND used_at IS NULL AND id != ${record.id}
   `;
   return c.json({ ok: true });
+});
+
+// ---- Record legal acceptance (Google OAuth users) ----
+app.post("/auth/record-legal-acceptance", async (c) => {
+  try {
+    const payload = await requireAuth(c);
+    if (!payload?.email || typeof payload.email !== "string") {
+      return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+    }
+
+    const body = await c.req.json<{
+      accepted_terms_version?: string;
+      accepted_privacy_version?: string;
+    }>();
+    const termsV = body.accepted_terms_version?.trim() || null;
+    const privacyV = body.accepted_privacy_version?.trim() || null;
+    if (!termsV && !privacyV) {
+      return c.json({ ok: false, error: "NO_VERSIONS" }, 400);
+    }
+
+    const sql = getSql(c.env);
+    const normalized = payload.email.trim().toLowerCase();
+    await sql`
+      UPDATE users
+      SET accepted_terms_version  = COALESCE(accepted_terms_version, ${termsV}),
+          accepted_privacy_version = COALESCE(accepted_privacy_version, ${privacyV}),
+          accepted_legal_at        = COALESCE(accepted_legal_at, NOW())
+      WHERE email = ${normalized}
+        AND accepted_legal_at IS NULL
+    `;
+    return c.json({ ok: true });
+  } catch {
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
 });
 
 // ---- Email verification (Credentials only) ----

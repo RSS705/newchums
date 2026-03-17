@@ -2,10 +2,15 @@
 
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import Box from "@mui/material/Box";
+import Checkbox from "@mui/material/Checkbox";
+import FormControlLabel from "@mui/material/FormControlLabel";
+import FormHelperText from "@mui/material/FormHelperText";
 import IconButton from "@mui/material/IconButton";
+import MuiLink from "@mui/material/Link";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { signIn } from "next-auth/react";
+import NextLink from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
@@ -42,6 +47,8 @@ export default function SignupClient() {
   const [emailError, setEmailError] = React.useState<string | null>(null);
   const [passwordError, setPasswordError] = React.useState<string | null>(null);
   const [confirmPasswordError, setConfirmPasswordError] = React.useState<string | null>(null);
+  const [legalAccepted, setLegalAccepted] = React.useState(false);
+  const [legalError, setLegalError] = React.useState<string | null>(null);
 
   // Step 2: Identity
   const [username, setUsername] = React.useState("");
@@ -87,6 +94,7 @@ export default function SignupClient() {
     setEmailError(null);
     setPasswordError(null);
     setConfirmPasswordError(null);
+    setLegalError(null);
 
     const trimmedEmail = email.trim().toLowerCase();
     if (!trimmedEmail) {
@@ -103,6 +111,10 @@ export default function SignupClient() {
     }
     if (confirmPassword !== password) {
       setConfirmPasswordError("Passwords do not match.");
+      return false;
+    }
+    if (!legalAccepted) {
+      setLegalError("Please agree to the Terms of Use and Privacy Policy to continue.");
       return false;
     }
     return true;
@@ -162,6 +174,8 @@ export default function SignupClient() {
         email: email.trim().toLowerCase(),
         date_of_birth: dateOfBirth.trim() || undefined,
         password,
+        accepted_terms_version: "2026-03-17",
+        accepted_privacy_version: "2026-03-17",
       };
 
       if (hobbies.length > 0) {
@@ -352,9 +366,17 @@ export default function SignupClient() {
                       />
                     }
                     onClick={() => {
+                      if (!legalAccepted) {
+                        setLegalError("Please agree to the Terms of Use and Privacy Policy to continue.");
+                        return;
+                      }
                       if (inviteToken) {
                         sessionStorage.setItem("nc_pending_invite", inviteToken);
                       }
+                      sessionStorage.setItem("nc_legal_accepted", JSON.stringify({
+                        terms: "2026-03-17",
+                        privacy: "2026-03-17",
+                      }));
                       signIn("google", { redirectTo: redirectTarget });
                     }}
                     sx={{
@@ -415,6 +437,39 @@ export default function SignupClient() {
                       error={Boolean(confirmPasswordError)}
                       inputProps={{ autoComplete: "new-password" }}
                     />
+                    <Box sx={{ mt: 2 }}>
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={legalAccepted}
+                            onChange={(e) => {
+                              setLegalAccepted(e.target.checked);
+                              if (e.target.checked) setLegalError(null);
+                            }}
+                            size="small"
+                            sx={{ alignSelf: "flex-start", mt: -0.5 }}
+                          />
+                        }
+                        label={
+                          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.5 }}>
+                            I agree to the{" "}
+                            <MuiLink component={NextLink} href="/terms" target="_blank" color="primary" underline="hover">
+                              Terms of Use
+                            </MuiLink>{" "}
+                            and acknowledge the{" "}
+                            <MuiLink component={NextLink} href="/privacy" target="_blank" color="primary" underline="hover">
+                              Privacy Policy
+                            </MuiLink>.
+                          </Typography>
+                        }
+                        sx={{ alignItems: "flex-start", mx: 0 }}
+                      />
+                      {legalError && (
+                        <FormHelperText error sx={{ ml: 4 }}>
+                          {legalError}
+                        </FormHelperText>
+                      )}
+                    </Box>
                     <AppButton type="submit" fullWidth size="large" sx={{ mt: 2 }}>
                       Continue
                     </AppButton>
