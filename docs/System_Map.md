@@ -1,6 +1,6 @@
 # System Map
 
-Last Updated: March 16, 2026
+Last Updated: March 17, 2026
 
 This document reflects the current production reality of NewChums.
 It is diagram-first: use this for boundaries, flows, and "how it connects."
@@ -46,7 +46,7 @@ flowchart TB
   API -->|"Avatar objects"| R2["R2 (avatars)<br/>newchums-media"]
   API -->|"WebSocket relay"| DO["Durable Objects<br/>(ChatRoom per plan)"]
   U -->|"WebSocket"| API
-  CRON["Cron Triggers<br/>(daily digest)"] -->|"scheduled"| API
+  CRON["Cron Triggers<br/>(hourly: attendance assurance + daily digest)"] -->|"scheduled"| API
 ```
 
 ---
@@ -71,7 +71,8 @@ The following flows run in the API worker; the web app calls the API via `NEXT_P
 
 | Flow | API endpoint(s) | Auth |
 |------|------------------|------|
-| Signup | `POST /auth/signup` | none |
+| Signup | `POST /auth/signup` (with legal acceptance) | none |
+| Legal acceptance (OAuth) | `POST /auth/record-legal-acceptance` | Bearer JWT |
 | Email verification | `POST /auth/email-verify/request`, `POST /auth/email-verify/confirm`, `GET /auth/email-verify/status` | none |
 | Password reset | `POST /auth/password-reset/request`, `POST /auth/password-reset/confirm` | none |
 | Email change | `POST /account/email-change/request`, `POST /account/email-change/confirm` | Bearer JWT |
@@ -90,7 +91,8 @@ The following flows run in the API worker; the web app calls the API via `NEXT_P
 | Chums | `GET /chums`, `GET /chums/search`, `GET /chums/check/:userId`, `POST /chums/:userId`, `DELETE /chums/:userId`, `PATCH /chums/:userId/note` | Bearer JWT |
 | Chum invites | `POST /chums/invite`, `POST /chums/invite/accept` | Bearer JWT |
 | Public Chums | `GET /public/users/:handle/chums` | none |
-| Events (plans) | `POST /events`, `GET /events/mine`, `GET /events/:id`, `GET /events/explore`, `PATCH /events/:id`, `POST /events/:id/rsvp`, `POST /events/:id/alt-time`, `POST /events/:id/cancel`, `POST /events/:id/invite` | Bearer JWT |
+| Events (plans) | `POST /events`, `GET /events/mine`, `GET /events/:id`, `GET /events/explore`, `PATCH /events/:id`, `POST /events/:id/rsvp`, `POST /events/:id/alt-time`, `POST /events/:id/cancel`, `POST /events/:id/invite`, `POST /events/:id/confirm`, `POST /events/:id/email-confirm` | Bearer JWT |
+| Attendance record | `GET /public/users/:userId/attendance-record` | none |
 | Plan chat | `GET /events/:id/chat`, `POST /events/:id/chat`, `POST /events/:id/chat/read`, `GET /events/:id/chat/ws` (WebSocket upgrade) | Bearer JWT |
 | Plan lock | `POST /events/:id/lock` | Bearer JWT (host only) |
 | Notifications | `GET /notifications` (includes `unreadChats`), `POST /notifications/read` | Bearer JWT |
@@ -140,8 +142,8 @@ sequenceDiagram
 Visit newchums.com → Homepage (LandingLayout)
 ├── Browse: How it Works, Science of Friendship, Safety Center
 ├── Contact form
-├── Sign up (multi-step: credentials → username/DOB → hobbies → location) → Email verification → Dashboard
-├── Sign up (Google OAuth) → Onboarding (username/DOB → hobbies → location) → Dashboard
+├── Sign up (multi-step: credentials + legal acceptance → username/DOB → hobbies → location) → Email verification → Dashboard
+├── Sign up (Google OAuth + legal acceptance) → Onboarding (username/DOB → hobbies → location) → Dashboard
 └── Sign in → Dashboard (Explore)
 ```
 
@@ -162,9 +164,7 @@ Sign in → Explore (event discovery feed)
 
 | Flow | What exists | What's missing |
 |------|------------|----------------|
-| Event detail | Context-aware RSVP, attendee list, cancel, alt-time suggestions, host edit dialog, participant chat (real-time via WebSocket), host lock/unlock, plan-change notifications | Public sharing page for non-users |
-| Attendance reconfirmation | Setting saved to DB, surfaced in create/edit/detail UI | 24-hour reminder email trigger (can reuse existing Cron infrastructure) |
-| Attendance record | Profile placeholder card (visual only) | Data engine, history tracking, scoring |
+| Event detail | Context-aware RSVP, attendee list, cancel, alt-time suggestions with best-start-times, host edit dialog, participant chat (real-time via WebSocket), host lock/unlock, attendance assurance confirmation, plan-change notifications | Public sharing page for non-users |
 
 ---
 
@@ -221,6 +221,8 @@ Wrangler config is code-managed so deploys do not wipe routes or override canoni
 | `/auth/verify` | Email verification landing |
 | `/auth/verify-pending` | Verification pending polling page |
 | `/u/[handle]` | Public profile (works logged-in or out) |
+| `/terms` | Terms of Use |
+| `/privacy` | Privacy Policy |
 
 ### Logged-in routes (AppShell)
 
@@ -264,5 +266,5 @@ flowchart TB
   R2["R2 (avatars)"] --> API
   API -->|"WebSocket relay"| DO["Durable Objects<br/>(ChatRoom)"]
   U -->|"WebSocket"| API
-  CRON["Cron Triggers<br/>(daily digest)"] -->|"scheduled"| API
+  CRON["Cron Triggers<br/>(hourly: attendance assurance + daily digest)"] -->|"scheduled"| API
 ```

@@ -233,9 +233,8 @@ export default function SafetyCenterContent({ isLoggedIn = false }: { isLoggedIn
           </Stack>
         </Stack>
 
-        {/* Hero image placeholder */}
+        {/* Hero image */}
         <Box
-          aria-hidden="true"
           sx={{
             mt: { xs: 5, sm: 7 },
             mx: "auto",
@@ -243,20 +242,18 @@ export default function SafetyCenterContent({ isLoggedIn = false }: { isLoggedIn
             borderRadius: 2,
             overflow: "hidden",
             width: "100%",
-            aspectRatio: "16 / 9",
-            background: (theme) =>
-              `linear-gradient(135deg, ${theme.palette.primary.light} 0%, ${theme.palette.grey[200]} 100%)`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
           }}
         >
-          <Stack alignItems="center" spacing={1.5} sx={{ opacity: 0.5 }}>
-            <PeopleRoundedIcon sx={{ fontSize: 56, color: "primary.main" }} />
-            <Typography variant="body2" color="text.secondary" fontWeight={500}>
-              Image placeholder, a welcoming outdoor gathering
-            </Typography>
-          </Stack>
+          <Box
+            component="img"
+            src="/images/safety-center/Jenga.jpg"
+            alt="Friends gathered around a table playing Jenga"
+            sx={{
+              display: "block",
+              width: "100%",
+              height: "auto",
+            }}
+          />
         </Box>
       </Box>
 

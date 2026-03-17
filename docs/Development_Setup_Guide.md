@@ -1,6 +1,6 @@
 # Development Setup Guide
 
-Last Updated: March 16, 2026
+Last Updated: March 17, 2026
 
 This document is the operational guide for running and deploying NewChums.
 For architectural invariants and contracts, see `docs/Technical_Specs.md`.
@@ -15,16 +15,17 @@ For product direction, terminology, and agent governance, see `AGENTS.md`.
 - **Workers:** Web = `newchums-web-dev` (production), API = `newchums-api`.
 - **Canonical host:** `https://newchums.com` (www → non-www redirect enforced before Auth.js).
 - **API migration:** All business logic is in the API worker — auth flows, profile, interests, Chums, Chum invites, events (plans), notifications, email unsubscribe, admin, avatar, contact form, scheduled tasks.
-- **Signup/Onboarding:** Multi-step wizard for both email/password (4 steps) and Google OAuth (3 steps). Collects credentials → username/DOB → hobbies (optional) → location/travel distance (optional). Shared `OnboardingProgress`, `StepTransition`, `HobbiesStep`, `LocationStep` components.
-- **Events (plans):** Full event creation, context-aware RSVP (going/maybe/can't make it), invite, alternate time suggestion, cancel, edit (host), request-to-join (host approval), host attendee removal. Visibility: invite_only, chums_only, public. Gradient banner presets + custom upload. Plan-change email notifications to attendees (edits, locks, cancellations). Per-plan participant chat with real-time WebSocket delivery via Cloudflare Durable Objects, unread chat indicators in bell and plan cards, daily unread-chat digest email. Host can lock/unlock plans.
+- **Signup/Onboarding:** Multi-step wizard for both email/password (4 steps) and Google OAuth (3 steps). Collects credentials + legal acceptance → username/DOB → hobbies (optional) → location/travel distance (optional). Required Terms of Use and Privacy Policy acceptance before signup. Shared `OnboardingProgress`, `StepTransition`, `HobbiesStep`, `LocationStep` components.
+- **Events (plans):** Full event creation, context-aware RSVP (going/maybe/can't make it), invite, alternate time suggestion (with best-start-times overlap display), cancel, edit (host), request-to-join (host approval), host attendee removal. Visibility: invite_only, chums_only, public. Gradient banner presets + custom upload. Plan-change email notifications to attendees (edits, locks, cancellations). Per-plan participant chat with real-time WebSocket delivery via Cloudflare Durable Objects, unread chat indicators in bell and plan cards, daily unread-chat digest email. Host can lock/unlock plans. Attendance assurance (host-configurable final confirmation, min confirmed attendees, fallback policies, cron-based reminders and cutoff processing).
 - **Explore page:** Personalized discovery feed (`/`). Uses `GET /events/explore` with hobby-based ranking, sort options (upcoming/newest), personalization toggle, location-aware ordering (Haversine), hobby filter, time-range chips, text search, session state persistence via `localStorage`.
 - **Your Plans:** Tabbed upcoming/past view with hosted and joined sections, unread chat indicators, real API data.
 - **Chums:** One-way saved-people feature with search, email invite flow, mutual indicators, privacy controls, public Chums on profiles, private per-chum notes, and birthday display.
-- **Notifications:** In-app bell with unread state for chum, event, and join-request notification types. Unread chat indicators derived from per-plan read tracking. 13 email notification types with per-type Settings toggles and tokenized email unsubscribe links.
-- **Scheduled tasks:** Cloudflare Cron Trigger (`0 14 * * *` UTC) runs daily unread-chat digest email.
+- **Notifications:** In-app bell with unread state for chum, event, and join-request notification types. Unread chat indicators derived from per-plan read tracking. 14 email notification types with per-type Settings toggles and tokenized email unsubscribe links.
+- **Scheduled tasks:** Cloudflare Cron Trigger (`0 * * * *` UTC, hourly) processes attendance assurance (confirmation requests, reminders, cutoff) and daily unread-chat digest email.
 - **Admin:** Interests moderation (default sort newest-first) + user account management (super_admin only).
-- **Profiles:** Edit profile page includes "Attendance record" placeholder card (visual-only; no scoring engine).
-- **Public site:** Homepage (updated copy, gradient event cards, screenshot placeholders), How it Works (updated copy, screenshot placeholders), Science of Friendship, Safety Center, Contact — all sharing `LandingLayout`.
+- **Profiles:** Edit profile page and public profile page include live Attendance Record section (follow-through rate, confirmation rate, plans attended, plans hosted, host completion rate).
+- **Legal:** Privacy Policy (`/privacy`) and Terms of Use (`/terms`) pages. Required legal acceptance checkbox on signup (credentials and OAuth). Acceptance metadata stored on users table.
+- **Public site:** Homepage (updated copy, gradient event cards, screenshot placeholders), How it Works (updated copy, screenshot placeholders), Science of Friendship, Safety Center, Contact — all sharing `LandingLayout`. Footer includes Terms of Use and Privacy Policy links.
 - **Build:** `cd web && npm run build` passes (Edge/OpenNext constraints apply).
 
 ---
@@ -99,6 +100,8 @@ Email / Postmark (required for email flows):
 Event email templates (active — set in `wrangler.toml` vars):
 - `POSTMARK_TEMPLATE_EVENT_CHANGED` (template 43971187 — plan changed/locked/canceled)
 - `POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST` (template 43975299 — daily unread chat digest)
+- `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST` (template 43984465 — attendance confirmation request/reminder)
+- `POSTMARK_TEMPLATE_PLAN_AT_RISK` (template 43984947 — plan at risk notification to host)
 
 Event email templates (scaffolded — sends noop if not set):
 - `POSTMARK_TEMPLATE_EVENT_INVITE`
@@ -244,6 +247,9 @@ psql "$DATABASE_URL" -f sql/034_host_attendee_removals.sql
 psql "$DATABASE_URL" -f sql/035_guest_rsvps.sql
 psql "$DATABASE_URL" -f sql/036_join_request_withdrawn.sql
 psql "$DATABASE_URL" -f sql/037_chat_digest_tracking.sql
+psql "$DATABASE_URL" -f sql/039_attendance_assurance.sql
+psql "$DATABASE_URL" -f sql/040_legal_acceptance.sql
+psql "$DATABASE_URL" -f sql/041_attendance_record.sql
 ```
 
 Notes:
@@ -268,6 +274,9 @@ Notes:
 - Migration `035_guest_rsvps.sql` adds guest RSVP support: makes `user_id` nullable on `event_rsvps`, adds `guest_email` and `guest_name` columns, and a partial unique index for guest RSVPs.
 - Migration `036_join_request_withdrawn.sql` supports the `join_request_withdrawn` notification type for tracking withdrawn join requests.
 - Migration `037_chat_digest_tracking.sql` adds `chat_digest_sent_at TIMESTAMPTZ NULL` to `user_profile` for tracking when the daily unread-chat digest email was last sent.
+- Migration `039_attendance_assurance.sql` adds attendance assurance columns to `events` (`min_confirmed_attendees`, `confirmation_window_hours`, `confirmation_cutoff_hours`, `fallback_policy`, `confirmation_sent_at`, `cutoff_processed_at`) and creates the `event_confirmations` table for final attendance confirmation tracking.
+- Migration `040_legal_acceptance.sql` adds `accepted_terms_version`, `accepted_privacy_version`, and `accepted_legal_at` columns to `users` for recording legal acceptance during signup.
+- Migration `041_attendance_record.sql` adds `committed_at TIMESTAMPTZ NULL` to `event_rsvps` for accurate follow-through tracking, backfills existing going RSVPs, and adds an index.
 
 ---
 
@@ -318,6 +327,8 @@ npm run deploy
 | Join request declined | Hardcoded template ID `43906703` | Active |
 | Plan changed/locked/canceled | `POSTMARK_TEMPLATE_EVENT_CHANGED` (43971187) | Active |
 | Unread chat digest (daily) | `POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST` (43975299) | Active |
+| Confirmation request | `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST` (43984465) | Active |
+| Plan at risk (host) | `POSTMARK_TEMPLATE_PLAN_AT_RISK` (43984947) | Active |
 
 ### Scaffolded templates (send noop if not configured)
 
@@ -362,6 +373,47 @@ Chunk XX — YYYY-MM-DD
 ## Session Log (Chunks)
 
 (Existing chunks should remain here. Add new chunks at the end.)
+
+---
+
+Chunk 15 — 2026-03-17
+- Goal: Attendance Assurance system, legal pages and signup acceptance, attendance record, safety center image, hobbies bug fix, "Find a better time" improvements, unread chat digest fix, documentation update.
+- Changes:
+  - **Attendance Assurance (full implementation):**
+    - DB migration 039 (`event_confirmations` table, attendance assurance columns on `events`).
+    - API: `POST /events/:id/confirm` (in-app), `POST /events/:id/email-confirm` (token-based), `processAttendanceAssurance` cron handler (initial sends, reminders at 12h/3h, cutoff processing). `POST /events` and `PATCH /events/:id` accept `min_confirmed_attendees` and `fallback_policy`. `GET /events/:id` returns confirmation state and viability.
+    - Cron changed from daily (`0 14 * * *`) to hourly (`0 * * * *`).
+    - New Postmark templates: Confirmation Request (43984465), Plan At Risk (43984947) — HTML and text versions.
+    - `CreateEventClient.tsx`: Attendance assurance config (switch, min attendees, fallback policy dropdown).
+    - `EventDetailClient.tsx`: Confirmation UI (confirm/decline buttons), viability info card, per-attendee confirmation status in "Who's in" section, email confirmation URL handling.
+    - `api/wrangler.toml`: Updated cron schedule and template IDs.
+  - **Event Changed email fix:** `PATCH /events/:id` now detects and includes attendance assurance field changes in the event-changed email. Created `eventChanged.txt` plain text template.
+  - **"Find a better time" improvements:**
+    - "Suggest a time" button indicates if user has already suggested times.
+    - Default date/time in suggestion form matches the host-set event date/time.
+    - Edit button scrolls user to the edit form.
+    - "Best fits" section renamed to "Best start times".
+    - Replaced pairwise overlap algorithm with sweep-line algorithm for maximal time overlaps.
+  - **In-app confirmation:** Added UI for logged-in users to confirm/decline directly on the plan details page during the confirmation window.
+  - **Unread chat digest email fix:** Refactored `sendUnreadChatDigestEmail` to pre-render plan cards as HTML/text strings to work around Postmark's Mustachio context-switching issue. Updated template. Created `unreadChatDigest.txt` plain text version.
+  - **Legal pages and signup legal acceptance:**
+    - DB migration 040 (`accepted_terms_version`, `accepted_privacy_version`, `accepted_legal_at` on `users`).
+    - New pages: `/terms` (TermsContent.tsx), `/privacy` (PrivacyContent.tsx) using shared `LegalPageContent` component.
+    - Footer updated with Terms of Use and Privacy Policy links.
+    - Signup: required legal acceptance checkbox with inline links. Both credentials and OAuth paths.
+    - API: `POST /auth/signup` accepts legal versions. New `POST /auth/record-legal-acceptance` endpoint for OAuth users.
+    - `AppShell.tsx`: records legal acceptance from `sessionStorage` after OAuth.
+  - **Hobbies step bug fix:** Refactored Autocomplete `onChange` handler to use `reason` parameter and route through `addInterest`. Added `disableClearable`.
+  - **Safety Center image:** Replaced placeholder with `Jenga.jpg`.
+  - **Attendance Record (full implementation):**
+    - DB migration 041 (`committed_at` on `event_rsvps` with backfill and index).
+    - API: `GET /public/users/:userId/attendance-record` computes 5 metrics. `POST /events/:id/rsvp` and host RSVP set `committed_at`. `GET /profile` returns `userId`.
+    - New component: `AttendanceRecordSection.tsx` — fetches metrics, handles loading/new-user states, renders metric grid.
+    - Replaced placeholder cards in `PublicProfileView.tsx` and `ProfileClient.tsx`.
+  - **Documentation:** Updated AGENTS.md, README.md, Technical_Specs.md (v13.0), System_Map.md, Development_Setup_Guide.md.
+- Verification: TypeScript passes (`npx tsc --noEmit`) in both web and api. Next.js build (`npm run build`) passes.
+- Deploy: Run migrations 039, 040, 041 against production DB. Deploy API first (new cron schedule, new endpoints, new template IDs), then web. Update Postmark templates 43984465, 43984947, 43975299, 43971187 with new HTML and text content from `api/src/email/templates/`.
+- Next Steps: —
 
 ---
 

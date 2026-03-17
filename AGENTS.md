@@ -1,6 +1,6 @@
 # NewChums Agent Governance
 
-Last Updated: March 16, 2026
+Last Updated: March 17, 2026
 
 This document defines how agents (AI or human) should operate within the NewChums repository.
 
@@ -69,7 +69,7 @@ Current production reality:
 - Domain live: newchums.com, www.newchums.com; canonical host enforced.
 - Durable Objects are used for real-time plan chat (WebSocket relay per plan).
 - R2 is used for media storage (avatars, banners).
-- Cron Triggers are active (daily unread-chat digest email at `0 14 * * *` UTC).
+- Cron Triggers are active (hourly at `0 * * * *` UTC — attendance assurance processing, and daily unread-chat digest at 2 PM UTC within the same handler).
 - Queues are planned but not yet implemented.
 
 ---
@@ -127,9 +127,9 @@ The following areas are partially implemented. Agents should polish and improve 
 |------|--------|----------|
 | **Explore page** (`/`, logged in) | Functional with personalized feed (hobby-based ranking, sort options, localStorage state persistence). | Improve polish, fix bugs, refine empty states. Do not invent the final discovery experience. |
 | **Event Details** (`/events/[id]`) | Detail view with context-aware RSVP, cancel, invite, banner, edit (host), participant chat (real-time via WebSocket), host lock, request-to-join, and plan-change notifications. No public event sharing page. | Fix issues, improve UI. Do not build public sharing without being asked. |
-| **Event email templates** | Most are live in Postmark (invite, join, maybe, leave, attendee removed, plan changed, join request received/approved/declined, unread chat digest). | Some placeholder env vars remain for templates not yet created (event updated, canceled, reminder standalone). |
-| **Attendance reconfirmation** | Setting saved and surfaced in UI. No email reminder logic yet. Migration 028. | Do not build auto-cancel or punitive logic. Hook reminder workflows via a cron/queue job when ready. |
-| **Attendance record / reliability** | Profile placeholder card is present. No scoring or data engine yet. | Do not build a scoring system without being explicitly asked. |
+| **Event email templates** | Most are live in Postmark (invite, join, maybe, leave, attendee removed, plan changed, join request received/approved/declined, unread chat digest, confirmation request, plan at risk). | Some placeholder env vars remain for templates not yet created (event reminder standalone). |
+| **Attendance assurance** | Fully implemented. Host-configurable confirmation window, reminders, cutoff processing, fallback policies (proceed/notify host/auto-cancel), in-app and email confirmation flows. Migrations 028, 039. Cron-based lifecycle. | Operational. Polish and enhance as needed. |
+| **Attendance record / reliability** | Implemented. Public profile section showing follow-through rate, confirmation rate, plans attended, plans hosted, host completion rate. Migration 041. | Foundation for future trust/reputation systems. Do not build Chum Score without being asked. |
 | **Recurring events** | Not implemented. Schema supports single-time events only. | Do not add recurring event logic. |
 | **Event chat** | Implemented. Per-plan group chat with real-time WebSocket delivery (Durable Objects), host lock, unread indicators in bell and plan cards, daily digest email. | Improve polish, add features (reactions, threads, attachments) only when asked. |
 

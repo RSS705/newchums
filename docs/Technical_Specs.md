@@ -1,7 +1,7 @@
 # Technical Specifications
 
-Last Updated: March 16, 2026
-Version: 12.0
+Last Updated: March 17, 2026
+Version: 13.0
 
 This document defines the authoritative technical architecture of NewChums.
 It describes **what exists today** and the structural commitments we are making.
@@ -66,7 +66,7 @@ NewChums helps people organize gatherings more easily around hobbies and shared 
 
 - **Durable Objects:** `ChatRoom` class bound as `CHAT_ROOM` in the API worker. Per-plan WebSocket relay for real-time chat. Uses the Hibernation API so idle connections consume no CPU. Configured via `[[durable_objects.bindings]]` and `[[migrations]]` in `api/wrangler.toml`.
 
-- **Cron Triggers:** `[triggers] crons = ["0 14 * * *"]` in `api/wrangler.toml`. Runs the daily unread-chat digest email handler at 2 PM UTC. The `scheduled` handler is integrated into the Sentry-wrapped export alongside `fetch`.
+- **Cron Triggers:** `[triggers] crons = ["0 * * * *"]` in `api/wrangler.toml`. Runs hourly. The `scheduled` handler processes attendance assurance (confirmation requests, reminders, cutoff processing) and daily unread-chat digest email (gated to run once per day at ~2 PM UTC via `chat_digest_sent_at` cooldown). Integrated into the Sentry-wrapped export alongside `fetch`.
 
 ### Not implemented
 
@@ -150,7 +150,7 @@ The following business logic lives in the API worker; the web app calls it via `
 
 ### Auth and account flows
 
-- `POST /auth/signup` — accepts optional `interest_slugs[]`, `home_city`, `home_lat`, `home_lng`, `travel_radius_km` for multi-step signup
+- `POST /auth/signup` — accepts optional `interest_slugs[]`, `home_city`, `home_lat`, `home_lng`, `travel_radius_km` for multi-step signup; accepts `accepted_terms_version`, `accepted_privacy_version` for legal acceptance recording
 - `POST /auth/password-reset/request`
 - `POST /auth/password-reset/confirm`
 - `POST /auth/email-verify/request`
@@ -162,6 +162,7 @@ The following business logic lives in the API worker; the web app calls it via `
 - `DELETE /account` (auth required) — hard delete account and all related data; credentials users must send `{ password }` in body
 - `GET /notification-preferences` (auth required) — returns persisted notification prefs
 - `PUT /notification-preferences` (auth required) — saves notification prefs (JSONB on user_profile)
+- `POST /auth/record-legal-acceptance` (auth required) — records legal acceptance for OAuth users post-authentication. Accepts `accepted_terms_version`, `accepted_privacy_version`. Only sets values if not already recorded (uses `COALESCE` to avoid overwriting).
 - `POST /email/unsubscribe` — verifies a signed JWT (containing `userId` and `prefKey`), disables the corresponding notification preference. Used by tokenized unsubscribe links in email footers.
 
 ### Notification preferences (Settings toggles)
@@ -185,6 +186,7 @@ Users manage notification preferences in **Settings** (`/settings`). Each notifi
 | `attendee_removed` | You were removed from a plan | Template 43923102 |
 | `product_announcements` | Product updates | — |
 | `unread_chat_digest` | Unread messages in your plans | `POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST` (template 43975299) |
+| `attendance_confirmation` | Attendance confirmation reminders | `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST` (template 43984465) |
 
 Defaults are applied at account creation (credentials signup, OAuth) and backfilled for existing users with missing keys. GET normalizes stored prefs and optionally persists backfilled values.
 
@@ -239,7 +241,8 @@ Users manage privacy preferences in **Settings** (`/settings`). Stored in the `u
 
 ### Profile, onboarding, and lookups
 
-- `GET /profile`, `PUT /profile` (auth required). Response includes `role`, `gender`, `profile_theme`, `is_hidden_chum_list`, `is_hidden_from_chum_lists`. `PUT /profile` validates `gender` (allowed: `male`, `female`, `other`, `prefer_not_to_say`) and `profile_theme` (allowed values defined in `web/src/lib/profileTheme.ts`). The `/profile` edit page includes an "Attendance record" placeholder card (visual-only; no scoring engine yet) to signal the future reliability feature.
+- `GET /profile`, `PUT /profile` (auth required). Response includes `role`, `gender`, `profile_theme`, `is_hidden_chum_list`, `is_hidden_from_chum_lists`, `userId`. `PUT /profile` validates `gender` (allowed: `male`, `female`, `other`, `prefer_not_to_say`) and `profile_theme` (allowed values defined in `web/src/lib/profileTheme.ts`). The `/profile` edit page includes the live Attendance Record section.
+- `GET /public/users/:userId/attendance-record` (public; no auth) — computes and returns five attendance reliability metrics for the specified user: follow-through rate, confirmation rate, plans attended, plans hosted, host completion rate, and member-since date. Used by the `AttendanceRecordSection` component on profile pages.
 - `GET /public/users/:handle` (public; no auth) — returns public profile by handle. Includes `gender` (suppressed if `prefer_not_to_say` or null), `profile_theme`, `is_hidden_chum_list`. Age computed from DOB server-side; DOB never exposed.
 - `GET /handles/available?handle=...` (auth required)
 - `POST /user/username` (auth required)
@@ -372,6 +375,7 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 | `newchums.event_alt_times` | Alternate date/time suggestions from attendees |
 | `newchums.event_chat_messages` | Per-plan chat messages — id, event_id, user_id, body, created_at. Indexed on `(event_id, created_at ASC)` |
 | `newchums.event_chat_reads` | Last-read tracking per user per plan — PK `(event_id, user_id)`, `last_read_at` timestamp |
+| `newchums.event_confirmations` | Final attendance confirmations (migration 039) — id, event_id, user_id, status (pending/confirmed/declined/expired), responded_at, reminder_count, last_reminder_at, created_at, updated_at. Unique constraint on `(event_id, user_id)`. |
 | `newchums.event_join_requests` | Join request records (migration 030) — id, event_id, user_id, status (pending/approved/declined), message, host_message, decided_at, created_at. Unique partial index on `(event_id, user_id) WHERE status = 'pending'` prevents duplicate active requests. |
 
 **Key fields on `events`:**
@@ -380,7 +384,10 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 - `location_type`: `in_person` | `online`
 - `allow_alt_times`: boolean — whether attendees can suggest alternate times
 - `interest_id`: FK to `interests` table (hobbies)
-- `require_reconfirmation`: boolean (migration 028) — when true, attendees will receive a 24-hour reminder to reconfirm attendance; does not auto-cancel or change RSVPs; reminder email logic is future work
+- `require_reconfirmation`: boolean (migration 028) — when true, enables the Attendance Assurance system; attendees receive confirmation requests 24 hours before the event
+- `min_confirmed_attendees`: integer (migration 039) — minimum confirmed count for plan viability (host counts toward total)
+- `fallback_policy`: text (migration 039) — what happens if minimum is not met at cutoff: `proceed`, `notify_host`, or `auto_cancel`
+- `confirmation_window_hours`, `confirmation_cutoff_hours`, `confirmation_sent_at`, `cutoff_processed_at`: attendance assurance lifecycle timestamps (migration 039)
 - `locked_at`: timestamptz nullable (migration 029) — when set, the plan is locked and no new participants can join; existing participants and host retain access
 - `require_approval`: boolean (migration 030) — when true, non-invited users must submit a join request that the host approves or declines before being added to the plan
 
@@ -390,7 +397,7 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 |-------|-------------|
 | `POST /events` | Create event. Validates title, starts_at, location_type, visibility. Accepts `invitees[]` array of `{ user_id?, email? }`, `require_reconfirmation` and `require_approval` booleans. Published events send invite notifications and emails. |
 | `GET /events/mine?filter=upcoming\|past` | List events the user hosts, is invited to, or has RSVP'd. Includes going/maybe counts, host info, RSVP status, `has_unread_chat` flag. Host name uses `@username` priority. |
-| `GET /events/:id` | Event detail with RSVP list, alternate time suggestions, and join requests. Includes `requireReconfirmation`, `lockedAt`, `requireApproval`, `isInvited`, `hasRsvp`. Join requests: full list for host, own request only for non-hosts. RSVP entries include `handle` for attendee profile links. Visibility enforcement: invite_only requires invite/RSVP, chums_only requires chum relationship or invite. |
+| `GET /events/:id` | Event detail with RSVP list, alternate time suggestions, join requests, and attendance assurance state. Includes `requireReconfirmation`, `lockedAt`, `requireApproval`, `isInvited`, `hasRsvp`, `confirmationWindowOpen`, `confirmationCutoffAt`, `confirmedCount`, `pendingConfirmationCount`, `myConfirmationStatus`, `planViability`, and per-RSVP `confirmationStatus`. Join requests: full list for host, own request only for non-hosts. RSVP entries include `handle` for attendee profile links. Visibility enforcement: invite_only requires invite/RSVP, chums_only requires chum relationship or invite. |
 | `PATCH /events/:id` | Edit event (host only). Accepts: `title`, `description`, `starts_at`, `max_seats`, `visibility`, `require_reconfirmation`, `require_approval`. Returns the updated event. |
 | `POST /events/:id/rsvp` | RSVP to an event — `{ status: "going"\|"maybe"\|"cant_make_it", note? }`. Capacity enforcement for going status. Locked plans reject new RSVPs (`EVENT_LOCKED` error) but allow existing participants to change status. Plans with `require_approval` reject non-invited users who have no existing RSVP (`APPROVAL_REQUIRED` error). Notifies host via in-app notification and email. UI: "Can't make it" button only shown when user is invited or has an existing RSVP; heading text is context-aware ("Can you make it?" for invited users, "Are you in?" otherwise). |
 | `POST /events/:id/alt-time` | Suggest alternate time — `{ suggested_at, note? }`. Only if event.allow_alt_times. Notifies host. |
@@ -402,6 +409,8 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 | `POST /events/:id/chat/read` | Mark chat as read. Upserts `last_read_at` in `event_chat_reads`. |
 | `GET /events/:id/chat/ws` | WebSocket upgrade endpoint. Authenticates via `?token=` query param (JWT), verifies chat access, then forwards to the ChatRoom Durable Object. Returns 101 on success. |
 | `POST /events/:id/lock` | Toggle plan lock (host only). Sets or clears `locked_at` on the event. Returns updated `lockedAt`. |
+| `POST /events/:id/confirm` | Confirm or decline attendance (auth required). Body: `{ action: "confirm" \| "decline" }`. Upserts `event_confirmations` record. Available when confirmation window is open. |
+| `POST /events/:id/email-confirm` | Token-based attendance confirmation from email links. Body: `{ token, action: "confirm" \| "decline" }`. Verifies signed JWT, updates confirmation status. |
 | `POST /events/:id/join-request` | Submit a join request (requires `require_approval` to be on). Body: `{ message? }`. Validates not-host, not-invited, not-already-RSVP'd, no duplicate pending request. Notifies host via in-app notification and email (template 43906440). |
 | `POST /events/:id/join-request/:requestId/approve` | Approve a join request (host only). Body: `{ message? }`. Checks seat capacity. Marks request approved, adds user as Going RSVP. Notifies requester via in-app notification and email (template 43906609). |
 | `POST /events/:id/join-request/:requestId/decline` | Decline a join request (host only). Body: `{ message? }`. Marks request declined. Notifies requester via in-app notification and email (template 43906703). |
@@ -441,7 +450,7 @@ Unread tracking:
 **Unread chat notifications:**
 
 - **Bell icon:** `GET /notifications` returns an `unreadChats` array derived from `event_chat_messages` and `event_chat_reads`. These are not persisted as notification rows; they are computed at query time. The bell UI renders them as separate entries above regular notifications.
-- **Daily email digest:** A Cloudflare Cron Trigger (`0 14 * * *` UTC) runs the `scheduled` handler, which queries for users with unread chat messages in plans they are part of (host or going RSVP). It checks the `unread_chat_digest` preference, enforces a 23-hour cooldown via `user_profile.chat_digest_sent_at` (migration 037), and sends via Postmark template 43975299. The email lists up to 10 plans with unread counts and direct links.
+- **Daily email digest:** The hourly Cron Trigger (`0 * * * *` UTC) includes the daily unread-chat digest handler, which queries for users with unread chat messages in plans they are part of (host or going RSVP). It checks the `unread_chat_digest` preference, enforces a 23-hour cooldown via `user_profile.chat_digest_sent_at` (migration 037), and sends via Postmark template 43975299. The email lists up to 10 plans with unread counts and direct links.
 
 **Plan lock (host-controlled):**
 
@@ -481,6 +490,8 @@ Hosts can enable `require_approval` on a plan, requiring non-invited users to su
 | Join request accepted | Template 43906609 | `join_request_accepted` |
 | Join request declined | Template 43906703 | `join_request_declined` |
 | Unread chat digest (daily) | `POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST` (43975299) | `unread_chat_digest` |
+| Confirmation request | `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST` (43984465) | `attendance_confirmation` |
+| Plan at risk (host) | `POSTMARK_TEMPLATE_PLAN_AT_RISK` (43984947) | — (always sent to host) |
 
 All emails with a notification preference toggle include a tokenized unsubscribe link in the footer. The unsubscribe endpoint (`POST /email/unsubscribe`) verifies a JWT containing the user ID and preference key, then disables that preference.
 
@@ -496,21 +507,45 @@ All emails with a notification preference toggle include a tokenized unsubscribe
 | Route | Component | Description |
 |-------|-----------|-------------|
 | `/` (logged in) | `DashboardHome` | Explore page — personalized discovery feed with search, time chips, sort options (upcoming / newest), personalization toggle, distance/hobby filters, location-aware ordering, session state persistence via `localStorage`, location nudge, contextual empty states |
-| `/events/create` | `CreateEventClient` | "Start a plan" form — title, description, hobby, seats, date/time, location (in-person/online), visibility, invite people, gradient banner preset picker with auto-suggestion, attendance reconfirmation toggle, publish |
+| `/events/create` | `CreateEventClient` | "Start a plan" form — title, description, hobby, seats, date/time, location (in-person/online), visibility, invite people, gradient banner preset picker with auto-suggestion, attendance assurance config (enable/disable, min attendees, fallback policy), publish |
 | `/plans` | `PlansPage` | Tabbed view (Upcoming / Past) with hosted/joined sections, real API data, empty states |
-| `/events/[id]` | `EventDetailClient` | Event detail — RSVP actions, alternate time suggestions, attendee list, participant chat (real-time via WebSocket), lock/unlock (host), reconfirmation notice, cancel (host), edit plan (host) |
+| `/events/[id]` | `EventDetailClient` | Event detail — RSVP actions, alternate time suggestions with best-start-times overlap display, attendee list with confirmation status, attendance assurance confirmation UI, participant chat (real-time via WebSocket), lock/unlock (host), cancel (host), edit plan (host) |
 
 **Banner system:** `web/src/lib/eventBanners.ts` defines `BANNER_PRESETS` (named gradient slugs with hobby keyword mapping). `getGradientForEventId` provides a deterministic fallback gradient for cards with no `banner_key`. `renderBannerPreset` renders a preset to a WebP `Blob` via canvas for upload. `suggestPreset` picks a preset based on hobby keywords.
 
-**Not yet implemented:** attendance reconfirmation email/reminder trigger (setting is saved but email and cron/queue are future work), recurring events, public event sharing page (for non-users).
+**Attendance Assurance (implemented):**
+
+The Attendance Assurance system is a two-stage commitment flow built on top of RSVP. When enabled by the host (`require_reconfirmation = true`), it opens a confirmation window 24 hours before the event and asks all "going" attendees (including the host) to confirm their attendance.
+
+- **Confirmation lifecycle:** `pending` → `confirmed` | `declined` | `expired`. Distinct from RSVP status — RSVP history is preserved.
+- **Host configuration:** min confirmed attendees (includes host), fallback policy (`proceed` / `notify_host` / `auto_cancel`).
+- **Cron processing (hourly):** Sends initial confirmation requests 24h before, follow-up reminders at 12h and 3h, processes cutoff 2h before event.
+- **Email flow:** Confirmation request emails with secure one-click confirm/decline links (JWT-based). Plan-at-risk emails to hosts when minimum not met.
+- **In-app confirmation:** Logged-in users can confirm/decline directly on the plan details page when the confirmation window is open.
+- **Viability display:** Plan details page shows real-time confirmation status, viability assessment, and per-attendee confirmation state in the "Who's in" section.
+- **RSVP integration:** Changing RSVP to "Can't make it" automatically sets confirmation to declined. Changing to "Going" during an open window creates a pending confirmation.
+
+**Attendance Record (implemented):**
+
+Public profile section showing five reliability metrics computed from real event and RSVP data:
+
+1. **Follow-through rate** — of committed plans that occurred, how many did the user attend
+2. **Confirmation rate** — of plans requiring confirmation, how often did the user respond
+3. **Plans attended** — count of completed plans attended
+4. **Plans hosted** — count of completed plans organized
+5. **Host completion rate** — of hosted plans, how many went ahead
+
+Uses `committed_at` on `event_rsvps` (migration 041) for accurate commitment tracking. New/low-history users see "Building history" treatment with underlying sample counts. Endpoint: `GET /public/users/:userId/attendance-record`.
+
+**Not yet implemented:** recurring events, public event sharing page (for non-users).
 
 ### Signup and onboarding
 
 Account creation is a multi-step wizard for both standard email/password and Google OAuth paths.
 
-**Standard signup (`/signup`):** 4-step flow — (1) email, password, confirm password → (2) username, date of birth → (3) hobbies (optional, skip available) → (4) location + travel distance (optional, skip available). All data is submitted in a single `POST /auth/signup` call, which now accepts optional `interest_slugs`, `home_city`, `home_lat`, `home_lng`, `travel_radius_km`.
+**Standard signup (`/signup`):** 4-step flow — (1) email, password, confirm password, legal acceptance checkbox → (2) username, date of birth → (3) hobbies (optional, skip available) → (4) location + travel distance (optional, skip available). Legal acceptance (Terms of Use and Privacy Policy) is required before proceeding. All data is submitted in a single `POST /auth/signup` call, which accepts optional `interest_slugs`, `home_city`, `home_lat`, `home_lng`, `travel_radius_km`, `accepted_terms_version`, `accepted_privacy_version`.
 
-**Google OAuth onboarding (`/onboarding/username`):** 3-step flow — (1) username, date of birth → (2) hobbies (optional) → (3) location + travel distance (optional). Username/DOB submitted via existing `POST /user/username` + `POST /user/date-of-birth`; hobbies and location submitted via `PUT /profile`.
+**Google OAuth onboarding (`/onboarding/username`):** 3-step flow — (1) username, date of birth → (2) hobbies (optional) → (3) location + travel distance (optional). Legal acceptance checkbox is required on the signup page before the OAuth redirect; acceptance data is stored in `sessionStorage` and recorded via `POST /auth/record-legal-acceptance` after authentication. Username/DOB submitted via existing `POST /user/username` + `POST /user/date-of-birth`; hobbies and location submitted via `PUT /profile`.
 
 Shared UI components: `OnboardingProgress` (step indicator + progress bar), `StepTransition` (animated slide transitions), `HobbiesStep` (interest search + chip selection), `LocationStep` (Places autocomplete + travel distance select). All live in `web/src/components/onboarding/`.
 
@@ -542,7 +577,7 @@ The public-facing site (visible to logged-out visitors) consists of four marketi
 | `LandingLayout` | `web/src/components/landing/LandingLayout.tsx` | Shared wrapper: fixed AppBar with `SiteHeader`, mobile drawer with auth-aware CTA + `MarketingNavSection`, `<main>` with `LandingContainer` (`Container maxWidth="lg"`, horizontal gutters `px: {xs:2, sm:3}`), footer with `LandingFooter`. |
 | `SiteHeader` | `web/src/components/layout/SiteHeader.tsx` | Header bar shared by both `LandingLayout` and `AppShell`. Logo (left), centered desktop nav links, right slot (Sign in or user controls). `HEADER_MIN_HEIGHT = { xs: 64, lg: 80 }`. |
 | `MarketingNavSection` | `web/src/components/layout/MarketingNavSection.tsx` | "Learn More" nav section listing `headerNavLinks` (How it Works, Science of Friendship, Safety Center). Used in both public and logged-in mobile drawers. |
-| `LandingFooter` | `web/src/components/landing/LandingFooter.tsx` | Logo + tagline, links to How it Works / Safety Center / Science of Friendship / Contact, copyright. |
+| `LandingFooter` | `web/src/components/landing/LandingFooter.tsx` | Logo + tagline, links to How it Works / Safety Center / Science of Friendship / Contact, legal links (Terms of Use, Privacy Policy), copyright. |
 | `SectionHeader` | `web/src/components/ui/SectionHeader.tsx` | Reusable heading with accent bar (left border on desktop, dynamic underline on mobile). `emphasis` and `accentColor` props. |
 
 ### Nav links
@@ -564,7 +599,9 @@ All pages live under `web/src/app/(public)/` and follow the same pattern: a thin
 | Homepage | `/` | `LandingPageContent.tsx` | Hero (organize and join hobby-based plans), examples section (mock plans + category filter), "why it helps" feature blocks, "social upside" benefit cards, CTA. Logged-in users see `DashboardHome` instead. |
 | How it Works | `/how-it-works` | `HowItWorksContent.tsx` | 6-step product walkthrough, "made for real plans" section with coordination mock panel, friends + new connections cards, discovery mock panel, trust/comfort section, CTA. |
 | Science of Friendship | `/science-of-friendship` | `ScienceOfFriendshipContent.tsx` | Research-backed trust page. Interactive friendship-engine diagram, timeline visualization, two-column research cards, CTA. |
-| Safety Center | `/safety-center` | `SafetyCenterContent.tsx` | Community guidance. Confidence checklist, gathering tips, respect/comfort cards, "if something feels off" section, reporting link, CTA. |
+| Safety Center | `/safety-center` | `SafetyCenterContent.tsx` | Community guidance. Confidence checklist, gathering tips, respect/comfort cards, "if something feels off" section, reporting link, CTA. Hero image (Jenga.jpg). |
+| Terms of Use | `/terms` | `TermsContent.tsx` | Legal terms of use. Rendered via shared `LegalPageContent` component. |
+| Privacy Policy | `/privacy` | `PrivacyContent.tsx` | Privacy policy. Rendered via shared `LegalPageContent` component. |
 
 ### Design system patterns (public pages)
 
@@ -661,6 +698,10 @@ Core tables include:
 - `newchums.host_attendee_removals` (migration 034) — tracks host-initiated attendee removals; columns: `event_id`, `host_user_id`, `removed_user_id`, `status_at_removal`, `created_at`
 - `newchums.event_rsvps` guest columns (migration 035) — `user_id` made nullable, added `guest_email TEXT NULL`, `guest_name TEXT NULL`, partial unique index on `(event_id, guest_email)` for guest rows
 - `newchums.user_profile.chat_digest_sent_at` (migration 037) — `TIMESTAMPTZ NULL`; tracks when the daily unread-chat digest email was last sent to each user, enforcing once-per-day sending
+- `newchums.events` attendance assurance columns (migration 039) — `min_confirmed_attendees INT NULL`, `confirmation_window_hours INT NOT NULL DEFAULT 24`, `confirmation_cutoff_hours INT NOT NULL DEFAULT 2`, `fallback_policy TEXT NOT NULL DEFAULT 'proceed'`, `confirmation_sent_at TIMESTAMPTZ NULL`, `cutoff_processed_at TIMESTAMPTZ NULL`
+- `newchums.event_confirmations` (migration 039) — final attendance confirmation records; columns: `id` (UUID PK), `event_id` (FK), `user_id` (FK), `status` (pending/confirmed/declined/expired), `responded_at`, `reminder_count`, `last_reminder_at`, `created_at`, `updated_at`; unique constraint on `(event_id, user_id)`
+- `newchums.users` legal acceptance columns (migration 040) — `accepted_terms_version TEXT NULL`, `accepted_privacy_version TEXT NULL`, `accepted_legal_at TIMESTAMPTZ NULL`
+- `newchums.event_rsvps.committed_at` (migration 041) — `TIMESTAMPTZ NULL`; records when a user first committed (RSVP'd going) for accurate follow-through tracking; backfilled from `created_at` for existing going RSVPs; indexed on `(user_id, committed_at)` where not null
 
 PostGIS is available for geo queries.
 
@@ -698,8 +739,8 @@ When sharing the same DB between local and production, set `NEXT_PUBLIC_AVATAR_B
 - Root worker `newchums-api` is the production API target
 - Secrets (via Wrangler/CF dashboard): `DATABASE_URL`, `NEXTAUTH_SECRET`, `POSTMARK_SERVER_TOKEN`
 - Durable Objects: `[[durable_objects.bindings]]` binds `CHAT_ROOM` → `ChatRoom` class; `[[migrations]]` tag `v1` with `new_classes = ["ChatRoom"]`
-- Cron Triggers: `[triggers] crons = ["0 14 * * *"]` — daily unread-chat digest at 2 PM UTC
-- Vars include `POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST`, `POSTMARK_TEMPLATE_EVENT_CHANGED`, and other template IDs
+- Cron Triggers: `[triggers] crons = ["0 * * * *"]` — hourly; processes attendance assurance and daily unread-chat digest
+- Vars include `POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST`, `POSTMARK_TEMPLATE_EVENT_CHANGED`, `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST`, `POSTMARK_TEMPLATE_PLAN_AT_RISK`, and other template IDs
 
 CORS is enforced via an explicit allowlist (newchums.com, www, localhost:3000) in API code.
 
@@ -726,7 +767,6 @@ cd web && npm run build
 
 - Web worker name suffix mismatch (`newchums-web-dev` is production).
 - Schema normalization/cleanup will be required before broader public launch.
-- Account deletion (`DELETE /account`) does not yet cascade to events, event_rsvps, event_invites, event_alt_times, event_chat_messages, event_chat_reads, event_join_requests, or host_attendee_removals — must be updated when those tables accumulate production data.
-- Attendance reconfirmation (`require_reconfirmation`) is stored and surfaced in UI, but the 24-hour reminder email and cron/queue trigger are not yet implemented. When ready, add a second Cron Trigger to query events starting within 24 hours where `require_reconfirmation = true` and send `POSTMARK_TEMPLATE_EVENT_REMINDER` to all "going" attendees.
+- Account deletion (`DELETE /account`) does not yet cascade to events, event_rsvps, event_invites, event_alt_times, event_chat_messages, event_chat_reads, event_join_requests, event_confirmations, or host_attendee_removals — must be updated when those tables accumulate production data.
 - `interest_id` on `events` is a legacy FK; `event_interests` is the canonical many-to-many source of truth. The legacy column should be dropped in a future migration once all queries are migrated.
-- Legacy scaffolded email env vars (`POSTMARK_TEMPLATE_EVENT_RSVP_UPDATE`) can be removed once confirmed unused.
+- Legacy scaffolded email env vars (`POSTMARK_TEMPLATE_EVENT_RSVP_UPDATE`, `POSTMARK_TEMPLATE_EVENT_REMINDER`) can be removed once confirmed unused.

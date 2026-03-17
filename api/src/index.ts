@@ -344,6 +344,111 @@ app.get("/public/users/:handle", async (c) => {
     );
   }
 });
+
+// ---- Attendance record (public) ----
+app.get("/public/users/:userId/attendance-record", async (c) => {
+  const targetUserId = c.req.param("userId")?.trim();
+  if (!targetUserId) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+
+  try {
+    const sql = getSql(c.env);
+    const now = new Date().toISOString();
+
+    // Follow-through rate (as attendee, not host):
+    // Denominator: past published non-canceled events where user committed (committed_at IS NOT NULL)
+    //              and user is NOT the host.
+    // Numerator: of those, where RSVP status is still "going."
+    const followThrough = (await sql`
+      SELECT
+        COUNT(*) FILTER (WHERE r.status = 'going')::int AS followed_through,
+        COUNT(*)::int AS total_committed
+      FROM newchums.event_rsvps r
+      JOIN newchums.events e ON e.id = r.event_id
+      WHERE r.user_id = ${targetUserId}
+        AND r.committed_at IS NOT NULL
+        AND e.host_user_id != ${targetUserId}
+        AND e.status != 'canceled'
+        AND e.starts_at < ${now}
+    `) as { followed_through: number; total_committed: number }[];
+
+    // Confirmation rate:
+    // Denominator: event_confirmations for past events.
+    // Numerator: those where the user responded (confirmed or declined).
+    const confirmation = (await sql`
+      SELECT
+        COUNT(*) FILTER (WHERE ec.status IN ('confirmed', 'declined'))::int AS responded,
+        COUNT(*)::int AS total_requested
+      FROM newchums.event_confirmations ec
+      JOIN newchums.events e ON e.id = ec.event_id
+      WHERE ec.user_id = ${targetUserId}
+        AND e.starts_at < ${now}
+    `) as { responded: number; total_requested: number }[];
+
+    // Plans attended: past non-canceled events where RSVP = 'going' and NOT the host.
+    const attended = (await sql`
+      SELECT COUNT(*)::int AS c
+      FROM newchums.event_rsvps r
+      JOIN newchums.events e ON e.id = r.event_id
+      WHERE r.user_id = ${targetUserId}
+        AND r.status = 'going'
+        AND e.host_user_id != ${targetUserId}
+        AND e.status != 'canceled'
+        AND e.starts_at < ${now}
+    `) as { c: number }[];
+
+    // Plans hosted: past non-canceled events where user IS the host.
+    const hosted = (await sql`
+      SELECT COUNT(*)::int AS c
+      FROM newchums.events e
+      WHERE e.host_user_id = ${targetUserId}
+        AND e.status != 'canceled'
+        AND e.starts_at < ${now}
+    `) as { c: number }[];
+
+    // Host completion rate:
+    // Denominator: past published events where user is host (published or canceled).
+    // Numerator: of those, where status is NOT canceled.
+    const hostCompletion = (await sql`
+      SELECT
+        COUNT(*) FILTER (WHERE e.status != 'canceled')::int AS completed,
+        COUNT(*)::int AS total_hosted
+      FROM newchums.events e
+      WHERE e.host_user_id = ${targetUserId}
+        AND e.status IN ('published', 'canceled')
+        AND e.starts_at < ${now}
+    `) as { completed: number; total_hosted: number }[];
+
+    // Member since (for context)
+    const memberSince = (await sql`
+      SELECT created_at FROM newchums.users WHERE id = ${targetUserId} LIMIT 1
+    `) as { created_at: string | Date }[];
+
+    return c.json({
+      ok: true,
+      record: {
+        followThrough: {
+          numerator: followThrough[0]?.followed_through ?? 0,
+          denominator: followThrough[0]?.total_committed ?? 0,
+        },
+        confirmationRate: {
+          numerator: confirmation[0]?.responded ?? 0,
+          denominator: confirmation[0]?.total_requested ?? 0,
+        },
+        plansAttended: attended[0]?.c ?? 0,
+        plansHosted: hosted[0]?.c ?? 0,
+        hostCompletion: {
+          numerator: hostCompletion[0]?.completed ?? 0,
+          denominator: hostCompletion[0]?.total_hosted ?? 0,
+        },
+        memberSince: memberSince[0]?.created_at ?? null,
+      },
+    });
+  } catch (err) {
+    console.error("[GET /public/users/:userId/attendance-record]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
 app.get("/health", (c) =>
   c.json({ ok: true, service: "api", ts: new Date().toISOString() }),
 );
@@ -1804,6 +1909,7 @@ app.get("/profile", async (c) => {
       return c.json({
         ok: true,
         profile: {
+          userId: appUserId,
           name: displayName,
           username: handle,
           email,
@@ -1833,6 +1939,7 @@ app.get("/profile", async (c) => {
     return c.json({
       ok: true,
       profile: {
+        userId: appUserId,
         name: displayName,
         username: handle,
         email,
@@ -4387,8 +4494,8 @@ app.post("/events", async (c) => {
 
     // Creator counts as attending: add host as RSVP "going" so they appear in participant counts and event details
     await sql`
-      INSERT INTO newchums.event_rsvps (event_id, user_id, status)
-      VALUES (${eventId}, ${userId}, 'going')
+      INSERT INTO newchums.event_rsvps (event_id, user_id, status, committed_at)
+      VALUES (${eventId}, ${userId}, 'going', NOW())
       ON CONFLICT (event_id, user_id) DO NOTHING
     `;
 
@@ -5154,10 +5261,12 @@ app.post("/events/:id/rsvp", async (c) => {
         return c.json({ ok: false, error: "EVENT_FULL", message: "This gathering is full" }, 409);
     }
 
+    const committedAt = status === "going" ? new Date().toISOString() : null;
     await sql`
-      INSERT INTO newchums.event_rsvps (event_id, user_id, status, note)
-      VALUES (${eventId}, ${userId}, ${status}, ${note})
-      ON CONFLICT (event_id, user_id) DO UPDATE SET status = ${status}, note = ${note}, updated_at = NOW()
+      INSERT INTO newchums.event_rsvps (event_id, user_id, status, note, committed_at)
+      VALUES (${eventId}, ${userId}, ${status}, ${note}, ${committedAt})
+      ON CONFLICT (event_id, user_id) DO UPDATE SET status = ${status}, note = ${note}, updated_at = NOW(),
+        committed_at = COALESCE(newchums.event_rsvps.committed_at, EXCLUDED.committed_at)
     `;
 
     // Sync confirmation state when RSVP changes during active confirmation window
@@ -5311,10 +5420,12 @@ app.post("/events/:id/email-rsvp", async (c) => {
           return c.json({ ok: false, error: "EVENT_FULL", message: "This plan is full" }, 409);
       }
 
+      const inviteCommittedAt = status === "going" ? new Date().toISOString() : null;
       await sql`
-        INSERT INTO newchums.event_rsvps (event_id, user_id, status)
-        VALUES (${eventId}, ${userId}, ${status})
-        ON CONFLICT (event_id, user_id) DO UPDATE SET status = ${status}, updated_at = NOW()
+        INSERT INTO newchums.event_rsvps (event_id, user_id, status, committed_at)
+        VALUES (${eventId}, ${userId}, ${status}, ${inviteCommittedAt})
+        ON CONFLICT (event_id, user_id) DO UPDATE SET status = ${status}, updated_at = NOW(),
+          committed_at = COALESCE(newchums.event_rsvps.committed_at, EXCLUDED.committed_at)
       `;
     }
 
