@@ -204,6 +204,7 @@ export default function EventDetailClient() {
   const [altDeleting, setAltDeleting] = useState<string | null>(null);
   const [promoteConfirmTime, setPromoteConfirmTime] = useState<string | null>(null);
   const [promoting, setPromoting] = useState(false);
+  const altTimeScrollRef = useRef<HTMLDivElement>(null);
 
   // Invite people state
   const [showInviteForm, setShowInviteForm] = useState(false);
@@ -1045,6 +1046,9 @@ export default function EventDetailClient() {
     setAltNote(entry.note ?? "");
     setAltEditingId(entry.id);
     setShowAltTimeForm(true);
+    requestAnimationFrame(() => {
+      altTimeScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+    });
   };
 
   const handlePromoteAltTime = async () => {
@@ -1765,7 +1769,7 @@ export default function EventDetailClient() {
           ) : (
             <>
               {/* Confirmation UI when window is open */}
-              {event.confirmationWindowOpen && viewerRsvpStatus === "going" && (event.myConfirmationStatus === "pending" || event.myConfirmationStatus === "expired" || emailConfirmResult) ? (
+              {event.confirmationWindowOpen && viewerRsvpStatus === "going" && !event.isHost && (event.myConfirmationStatus === "pending" || event.myConfirmationStatus === "expired" || event.myConfirmationStatus === null || emailConfirmResult) ? (
                 <Stack spacing={2} sx={{ py: 1 }}>
                   {emailConfirmResult === "confirmed" || event.myConfirmationStatus === "confirmed" ? (
                     <Stack spacing={1.5} alignItems="center">
@@ -1910,7 +1914,7 @@ export default function EventDetailClient() {
       )}
 
       {/* Host confirmation (when window is open) */}
-      {event.isHost && !isCanceled && event.confirmationWindowOpen && event.myConfirmationStatus && (
+      {event.isHost && !isCanceled && event.requireReconfirmation && event.confirmationWindowOpen && (
         <AppCard>
           {event.myConfirmationStatus === "confirmed" ? (
             <Stack spacing={1.5} sx={{ py: 1 }}>
@@ -2342,6 +2346,8 @@ export default function EventDetailClient() {
 
         const fmtTime = (d: Date) => d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 
+        const viewerHasSuggested = viewerUserId ? altTimes.some((e) => e.userId === viewerUserId) : false;
+
         const byDay = altTimes.reduce<Record<string, AltTimeEntry[]>>((acc, entry) => {
           const dayKey = new Date(entry.suggestedAt).toDateString();
           if (!acc[dayKey]) acc[dayKey] = [];
@@ -2353,54 +2359,50 @@ export default function EventDetailClient() {
           const ranged = entries.filter((e) => e.endsAt);
           if (ranged.length < 2) return [];
 
+          const entryById = new Map(entries.map((e) => [e.id, e]));
           const intervals = ranged.map((e) => ({
-            entry: e,
+            id: e.id,
             s: new Date(e.suggestedAt).getTime(),
             e: new Date(e.endsAt!).getTime(),
           }));
 
-          const windowMap = new Map<string, { startMs: number; endMs: number; entrySet: Set<string> }>();
+          const boundaries = new Set<number>();
+          for (const iv of intervals) { boundaries.add(iv.s); boundaries.add(iv.e); }
+          const sorted = [...boundaries].sort((a, b) => a - b);
 
-          for (let i = 0; i < intervals.length; i++) {
-            for (let j = i + 1; j < intervals.length; j++) {
-              const oStart = Math.max(intervals[i].s, intervals[j].s);
-              const oEnd = Math.min(intervals[i].e, intervals[j].e);
-              if (oStart >= oEnd) continue;
-              const key = `${oStart}-${oEnd}`;
-              const existing = windowMap.get(key);
-              if (existing) {
-                existing.entrySet.add(intervals[i].entry.id);
-                existing.entrySet.add(intervals[j].entry.id);
-              } else {
-                windowMap.set(key, {
-                  startMs: oStart,
-                  endMs: oEnd,
-                  entrySet: new Set([intervals[i].entry.id, intervals[j].entry.id]),
-                });
-              }
-            }
-          }
-
-          const entryById = new Map(entries.map((e) => [e.id, e]));
           const pointEntries = entries.filter((e) => !e.endsAt);
+          const raw: OverlapWindow[] = [];
 
-          const windows: OverlapWindow[] = [];
-          for (const w of windowMap.values()) {
+          for (let i = 0; i < sorted.length - 1; i++) {
+            const segStart = sorted[i];
+            const segEnd = sorted[i + 1];
+            const active = intervals.filter((iv) => iv.s <= segStart && iv.e >= segEnd);
+            if (active.length < 2) continue;
+            const entrySet = new Set(active.map((iv) => iv.id));
             for (const pt of pointEntries) {
               const ptMs = new Date(pt.suggestedAt).getTime();
-              if (ptMs >= w.startMs && ptMs < w.endMs) {
-                w.entrySet.add(pt.id);
-              }
+              if (ptMs >= segStart && ptMs < segEnd) entrySet.add(pt.id);
             }
-            windows.push({
-              startMs: w.startMs,
-              endMs: w.endMs,
-              entries: [...w.entrySet].map((id) => entryById.get(id)!).filter(Boolean),
+            raw.push({
+              startMs: segStart,
+              endMs: segEnd,
+              entries: [...entrySet].map((id) => entryById.get(id)!).filter(Boolean),
             });
           }
 
-          windows.sort((a, b) => b.entries.length - a.entries.length || a.startMs - b.startMs);
-          return windows;
+          const merged: OverlapWindow[] = [];
+          for (const w of raw) {
+            const prev = merged[merged.length - 1];
+            if (prev && prev.endMs === w.startMs && prev.entries.length === w.entries.length &&
+                prev.entries.every((e) => w.entries.some((we) => we.id === e.id))) {
+              prev.endMs = w.endMs;
+            } else {
+              merged.push({ ...w });
+            }
+          }
+
+          merged.sort((a, b) => b.entries.length - a.entries.length || a.startMs - b.startMs);
+          return merged;
         }
 
         const dayGroups = Object.entries(byDay)
@@ -2409,14 +2411,13 @@ export default function EventDetailClient() {
             entries.sort((a, b) => new Date(a.suggestedAt).getTime() - new Date(b.suggestedAt).getTime());
             return { dayKey, date: new Date(entries[0].suggestedAt), entries, overlaps };
           })
-          .sort((a, b) => {
-            const aMax = a.overlaps[0]?.entries.length ?? 0;
-            const bMax = b.overlaps[0]?.entries.length ?? 0;
-            if (bMax !== aMax) return bMax - aMax;
-            return a.date.getTime() - b.date.getTime();
-          });
+          .sort((a, b) => a.date.getTime() - b.date.getTime());
 
-        const globalBestOverlapCount = Math.max(0, ...dayGroups.flatMap((dg) => dg.overlaps.map((o) => o.entries.length)));
+        const allOverlaps = dayGroups
+          .flatMap((dg) => dg.overlaps.map((ov) => ({ ...ov, date: dg.date })))
+          .sort((a, b) => b.entries.length - a.entries.length || a.startMs - b.startMs);
+        const globalBestOverlapCount = allOverlaps.length > 0 ? allOverlaps[0].entries.length : 0;
+        const fmtDay = (d: Date) => d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 
         return (
           <AppCard>
@@ -2427,14 +2428,21 @@ export default function EventDetailClient() {
               Suggest a start time that works better for you, everyone in the plan can see them.
             </Typography>
 
-            <Box sx={{ maxHeight: 420, overflowY: "auto" }}>
+            <Box ref={altTimeScrollRef} sx={{ maxHeight: 420, overflowY: "auto" }}>
             {!showAltTimeForm ? (
               <Button
                 size="small"
-                onClick={() => { setAltEditingId(null); setShowAltTimeForm(true); }}
+                onClick={() => {
+                  setAltEditingId(null);
+                  if (!altStartDate && event) {
+                    setAltStartDate(dayjs(event.startsAt));
+                    setAltStartTime(dayjs(event.startsAt));
+                  }
+                  setShowAltTimeForm(true);
+                }}
                 sx={{ textTransform: "none", mb: altTimes.length > 0 ? 2 : 0 }}
               >
-                + Suggest a time
+                {viewerHasSuggested ? "+ Suggest another time" : "+ Suggest a time"}
               </Button>
             ) : (
               <Paper variant="outlined" sx={{ p: 2, mb: altTimes.length > 0 ? 2 : 0, borderRadius: 2 }}>
@@ -2509,6 +2517,49 @@ export default function EventDetailClient() {
               </Paper>
             )}
 
+            {allOverlaps.length > 0 && (
+              <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, mb: 1.5, borderColor: "primary.main", backgroundColor: "action.hover" }}>
+                <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1, color: "primary.main" }}>
+                  Best start times
+                </Typography>
+                <Stack spacing={0} divider={<Divider />}>
+                  {allOverlaps.map((ov, oi) => {
+                    const ovStart = fmtTime(new Date(ov.startMs));
+                    const ovEnd = fmtTime(new Date(ov.endMs));
+                    const isBest = ov.entries.length === globalBestOverlapCount && globalBestOverlapCount > 1;
+                    return (
+                      <Stack key={`ov-${oi}`} direction="row" alignItems="center" justifyContent="space-between" sx={{ py: 1 }}>
+                        <Box sx={{ minWidth: 0 }}>
+                          <Stack direction="row" alignItems="center" spacing={0.75} sx={{ flexWrap: "wrap" }}>
+                            <Typography variant="body2" fontWeight={600} color="primary.main">
+                              {fmtDay(ov.date)}, {ovStart} – {ovEnd}
+                            </Typography>
+                            <Chip
+                              label={`${ov.entries.length} overlap${isBest ? " — best fit" : ""}`}
+                              size="small"
+                              color={isBest ? "primary" : "default"}
+                              variant={isBest ? "filled" : "outlined"}
+                              sx={{ height: 22, fontSize: "0.75rem", fontWeight: 600 }}
+                            />
+                          </Stack>
+                          <Typography variant="caption" color="text.secondary">
+                            {ov.entries.map((e) => e.name).join(", ")}
+                          </Typography>
+                        </Box>
+                        {event.isHost && (
+                          <Tooltip title="Make official time" arrow>
+                            <IconButton size="small" onClick={() => setPromoteConfirmTime(new Date(ov.startMs).toISOString())} aria-label="Make official time">
+                              <AccessTimeRoundedIcon sx={{ fontSize: 16 }} />
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                      </Stack>
+                    );
+                  })}
+                </Stack>
+              </Paper>
+            )}
+
             {dayGroups.length > 0 && (
               <Stack spacing={1.5}>
                 {dayGroups.map((dg) => {
@@ -2521,35 +2572,6 @@ export default function EventDetailClient() {
                       </Typography>
 
                       <Stack spacing={0} divider={<Divider />}>
-                        {dg.overlaps.map((ov, oi) => {
-                          const ovStart = fmtTime(new Date(ov.startMs));
-                          const ovEnd = fmtTime(new Date(ov.endMs));
-                          const isBest = ov.entries.length === globalBestOverlapCount && globalBestOverlapCount > 1;
-                          return (
-                            <Stack key={`ov-${oi}`} direction="row" alignItems="center" justifyContent="space-between" sx={{ py: 1 }}>
-                              <Box sx={{ minWidth: 0 }}>
-                                <Stack direction="row" alignItems="center" spacing={0.75} sx={{ flexWrap: "wrap" }}>
-                                  <Typography variant="body2" fontWeight={600} color="primary.main">
-                                    {ovStart} – {ovEnd}
-                                  </Typography>
-                                  <Typography variant="caption" fontWeight={600} color="primary.main">
-                                    {ov.entries.length} people overlap{isBest ? " — best fit" : ""}
-                                  </Typography>
-                                </Stack>
-                                <Typography variant="caption" color="text.secondary">
-                                  {ov.entries.map((e) => e.name).join(", ")}
-                                </Typography>
-                              </Box>
-                              {event.isHost && (
-                                <Tooltip title="Make official time" arrow>
-                                  <IconButton size="small" onClick={() => setPromoteConfirmTime(new Date(ov.startMs).toISOString())} aria-label="Make official time">
-                                    <AccessTimeRoundedIcon sx={{ fontSize: 16 }} />
-                                  </IconButton>
-                                </Tooltip>
-                              )}
-                            </Stack>
-                          );
-                        })}
                         {dg.entries.map((entry) => {
                           const isOwn = entry.userId === viewerUserId;
                           const entryStart = fmtTime(new Date(entry.suggestedAt));

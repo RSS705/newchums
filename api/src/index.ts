@@ -5339,7 +5339,11 @@ app.post("/events/:id/confirm", async (c) => {
     return c.json({ ok: false, error: "INVALID_ACTION", message: "Action must be 'confirm' or 'decline'." }, 400);
 
   try {
-    const ev = (await sql`SELECT id, status, host_user_id FROM newchums.events WHERE id = ${eventId} AND status = 'published'`) as { id: string; status: string; host_user_id: string }[];
+    const ev = (await sql`
+      SELECT id, status, host_user_id, require_reconfirmation, starts_at,
+             confirmation_window_hours, confirmation_cutoff_hours
+      FROM newchums.events WHERE id = ${eventId} AND status = 'published'
+    `) as { id: string; status: string; host_user_id: string; require_reconfirmation: boolean; starts_at: string; confirmation_window_hours: number; confirmation_cutoff_hours: number }[];
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
 
     const newStatus = action === "confirm" ? "confirmed" : "declined";
@@ -5357,6 +5361,30 @@ app.post("/events/:id/confirm", async (c) => {
       if (existing.length > 0 && existing[0].status === newStatus) {
         return c.json({ ok: true, status: newStatus, alreadySet: true });
       }
+
+      if (ev[0].require_reconfirmation) {
+        const startsAtMs = new Date(ev[0].starts_at).getTime();
+        const windowHours = Number(ev[0].confirmation_window_hours) || 24;
+        const windowOpensAt = startsAtMs - windowHours * 60 * 60 * 1000;
+        const isWindowOpen = Date.now() >= windowOpensAt;
+
+        if (isWindowOpen) {
+          const isGoingOrHost = ev[0].host_user_id === userId || ((await sql`
+            SELECT status FROM newchums.event_rsvps WHERE event_id = ${eventId} AND user_id = ${userId}
+          `) as { status: string }[]).some((r) => r.status === "going");
+
+          if (isGoingOrHost) {
+            await sql`
+              INSERT INTO newchums.event_confirmations (event_id, user_id, status, responded_at)
+              VALUES (${eventId}, ${userId}, ${newStatus}, NOW())
+              ON CONFLICT (event_id, user_id) DO UPDATE
+              SET status = ${newStatus}, responded_at = NOW(), updated_at = NOW()
+            `;
+            return c.json({ ok: true, status: newStatus });
+          }
+        }
+      }
+
       return c.json({ ok: false, error: "NO_CONFIRMATION", message: "No pending confirmation found for this plan." }, 404);
     }
 
@@ -5710,9 +5738,10 @@ app.patch("/events/:id", async (c) => {
 
   try {
     const rows = (await sql`
-      SELECT id, host_user_id, status, title, description, starts_at, timezone, max_seats, visibility
+      SELECT id, host_user_id, status, title, description, starts_at, timezone, max_seats, visibility,
+             require_reconfirmation, min_confirmed_attendees, fallback_policy
       FROM newchums.events WHERE id = ${eventId}
-    `) as { id: string; host_user_id: string; status: string; title: string; description: string | null; starts_at: string; timezone: string | null; max_seats: number | null; visibility: string }[];
+    `) as { id: string; host_user_id: string; status: string; title: string; description: string | null; starts_at: string; timezone: string | null; max_seats: number | null; visibility: string; require_reconfirmation: boolean; min_confirmed_attendees: number | null; fallback_policy: string }[];
     if (rows.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     if (rows[0].host_user_id !== userId) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
     if (rows[0].status === "canceled") return c.json({ ok: false, error: "VALIDATION", message: "Cannot edit a canceled plan" }, 400);
@@ -5845,6 +5874,29 @@ app.patch("/events/:id", async (c) => {
         fieldName: "Visibility",
         oldValue: VIS_LABEL[before.visibility] ?? before.visibility,
         newValue: VIS_LABEL[visibility] ?? visibility,
+      });
+
+    const FALLBACK_LABEL: Record<string, string> = { proceed: "Proceed", notify_host: "Notify host", auto_cancel: "Auto-cancel" };
+
+    if (before.require_reconfirmation !== patchRequireReconfirmation)
+      changes.push({
+        fieldName: "Final confirmation",
+        oldValue: before.require_reconfirmation ? "Enabled" : "Disabled",
+        newValue: patchRequireReconfirmation ? "Enabled" : "Disabled",
+      });
+
+    if (patchRequireReconfirmation && (before.min_confirmed_attendees ?? null) !== patchMinConfirmed)
+      changes.push({
+        fieldName: "Minimum confirmed",
+        oldValue: before.min_confirmed_attendees != null ? `${before.min_confirmed_attendees} attendees` : "No minimum",
+        newValue: patchMinConfirmed != null ? `${patchMinConfirmed} attendees` : "No minimum",
+      });
+
+    if (patchRequireReconfirmation && (before.fallback_policy ?? "notify_host") !== patchFallbackPolicy)
+      changes.push({
+        fieldName: "If minimum not met",
+        oldValue: FALLBACK_LABEL[before.fallback_policy ?? "notify_host"] ?? before.fallback_policy ?? "Notify host",
+        newValue: FALLBACK_LABEL[patchFallbackPolicy] ?? patchFallbackPolicy,
       });
 
     console.log("[PATCH /events/:id] plan-change diff:", JSON.stringify({

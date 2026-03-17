@@ -1,0 +1,39 @@
+{{heading}}
+
+{{bodyText}}
+
+---
+
+{{statusLabel}}
+{{eventTitle}}
+
+{{#hasChanges}}
+What changed:
+
+{{#change1}}
+- {{.}}
+{{/change1}}
+{{#change2}}
+- {{.}}
+{{/change2}}
+{{#change3}}
+- {{.}}
+{{/change3}}
+{{#change4}}
+- {{.}}
+{{/change4}}
+{{#change5}}
+- {{.}}
+{{/change5}}
+{{/hasChanges}}
+
+---
+
+{{ctaText}}: {{ctaUrl}}
+
+---
+
+You're receiving this because you're attending a plan on NewChums.
+{{#unsubscribeUrl}}Unsubscribe from this email notification: {{.}}{{/unsubscribeUrl}}
+
+© {{productName}}
