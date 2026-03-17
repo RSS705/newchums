@@ -444,6 +444,37 @@ export type DigestPlanItem = {
   url: string;
 };
 
+function escapeHtml(str: string): string {
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+const FONT = "'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+
+function buildPlanCardHtml(title: string, unreadCount: number, url: string): string {
+  const label = `${unreadCount} unread ${unreadCount === 1 ? "message" : "messages"}`;
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 10px; border: 1px solid #E5E7EB; border-radius: 10px; overflow: hidden;">
+  <tr><td style="background-color: #E65B13; height: 3px; font-size: 0; line-height: 0;">&nbsp;</td></tr>
+  <tr><td style="padding: 16px 20px;">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+      <tr>
+        <td style="vertical-align: middle;">
+          <p style="margin: 0 0 4px 0; font-family: ${FONT}; font-size: 16px; font-weight: 700; color: #1F2937; line-height: 1.3;">${escapeHtml(title)}</p>
+          <p style="margin: 0; font-family: ${FONT}; font-size: 13px; color: #6B7280;">${label}</p>
+        </td>
+        <td style="vertical-align: middle; text-align: right; width: 80px;">
+          <a href="${escapeHtml(url)}" style="display: inline-block; background-color: #E65B13; color: #ffffff; font-family: ${FONT}; font-size: 13px; font-weight: 600; text-decoration: none; padding: 8px 16px; border-radius: 6px; line-height: 1;">View</a>
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+</table>`;
+}
+
+function buildPlanCardText(title: string, unreadCount: number, url: string): string {
+  const label = `${unreadCount} unread ${unreadCount === 1 ? "message" : "messages"}`;
+  return `- ${title} (${label})\n  ${url}`;
+}
+
 export const sendUnreadChatDigestEmail = async (
   env: Bindings,
   { to, recipientName, plans, unsubscribeUrl }: {
@@ -454,21 +485,18 @@ export const sendUnreadChatDigestEmail = async (
 ) => {
   if (!env.POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST) return;
 
-  // Flatten plans into top-level variables (Postmark Mustachio lacks array iteration)
+  const maxPlans = Math.min(plans.length, 5);
+  const planCardsHtml = plans.slice(0, maxPlans).map((p) => buildPlanCardHtml(p.title, p.unreadCount, p.url)).join("\n");
+  const planCardsText = plans.slice(0, maxPlans).map((p) => buildPlanCardText(p.title, p.unreadCount, p.url)).join("\n");
+
   const model: Record<string, string | number> = {
     productName: "NewChums",
     recipientName,
     planCount: plans.length,
+    planCards: planCardsHtml,
+    planCardsText,
     unsubscribeUrl: unsubscribeUrl || "",
   };
-  const maxPlans = Math.min(plans.length, 10);
-  for (let i = 0; i < maxPlans; i++) {
-    const p = plans[i];
-    model[`plan${i + 1}Title`] = p.title;
-    model[`plan${i + 1}Count`] = p.unreadCount;
-    model[`plan${i + 1}Url`] = p.url;
-    model[`plan${i + 1}Label`] = `${p.unreadCount} unread ${p.unreadCount === 1 ? "message" : "messages"}`;
-  }
 
   return sendPostmarkTemplateEmail(env, {
     From: env.EMAIL_FROM,
