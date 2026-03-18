@@ -343,7 +343,8 @@ export default function EventDetailClient() {
 
   // Persistent invite token — survives for the component lifecycle so guests
   // can re-RSVP and access invite-only events without auth.
-  const inviteTokenRef = useRef<string | null>(null);
+  // Initialized from URL so the first data fetch includes it.
+  const inviteTokenRef = useRef<string | null>(searchParams.get("invite_token"));
 
   // Email link context hint (?context=host_review or ?context=request_approved)
   const [emailContext, setEmailContext] = useState<string | null>(null);
@@ -2390,7 +2391,7 @@ export default function EventDetailClient() {
       )}
 
       {/* Find a better time — collaborative alternate scheduling */}
-      {event.allowAltTimes && !isCanceled && (event.isHost || viewerRsvpStatus === "going" || viewerRsvpStatus === "maybe" || event.isInvited || (isGuestInvite && (guestRsvpStatus === "going" || guestRsvpStatus === "maybe"))) && (() => {
+      {event.allowAltTimes && !isCanceled && (event.isHost || viewerRsvpStatus === "going" || viewerRsvpStatus === "maybe" || event.isInvited || isGuestInvite) && (() => {
         type OverlapWindow = { startMs: number; endMs: number; entries: AltTimeEntry[] };
 
         const fmtTime = (d: Date) => d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });

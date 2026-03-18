@@ -4924,6 +4924,36 @@ app.get("/events/:id", async (c) => {
     }
   }
 
+  // Adopt orphaned guest records: when a logged-in user views an event,
+  // migrate any guest RSVP / invite / alt-time rows that match their email.
+  if (userId && authPayload?.email) {
+    const userEmail = (authPayload.email as string).toLowerCase();
+    try {
+      // Claim guest RSVP (only if no user-based RSVP already exists)
+      await sql`
+        UPDATE newchums.event_rsvps
+        SET user_id = ${userId}, guest_email = NULL, guest_name = NULL
+        WHERE event_id = ${eventId} AND guest_email = ${userEmail} AND user_id IS NULL
+          AND NOT EXISTS (SELECT 1 FROM newchums.event_rsvps r2 WHERE r2.event_id = ${eventId} AND r2.user_id = ${userId})
+      `;
+      // Claim email-only invite
+      await sql`
+        UPDATE newchums.event_invites
+        SET user_id = ${userId}
+        WHERE event_id = ${eventId} AND LOWER(email) = ${userEmail} AND user_id IS NULL
+          AND NOT EXISTS (SELECT 1 FROM newchums.event_invites i2 WHERE i2.event_id = ${eventId} AND i2.user_id = ${userId})
+      `;
+      // Claim guest alt-time suggestions
+      await sql`
+        UPDATE newchums.event_alt_times
+        SET user_id = ${userId}, guest_email = NULL
+        WHERE event_id = ${eventId} AND guest_email = ${userEmail} AND user_id IS NULL
+      `;
+    } catch (adoptErr) {
+      console.error("[GET /events/:id] guest record adoption error (non-fatal):", adoptErr);
+    }
+  }
+
   try {
     const rows = (await sql`
       SELECT
@@ -5804,9 +5834,9 @@ app.post("/events/:id/guest-alt-time", async (c) => {
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     if (!ev[0].allow_alt_times) return c.json({ ok: false, error: "VALIDATION", message: "This plan does not accept alternate times" }, 400);
 
-    const guestRsvp = (await sql`SELECT status FROM newchums.event_rsvps WHERE event_id = ${eventId} AND guest_email = ${guestEmail} AND user_id IS NULL LIMIT 1`) as { status: string }[];
-    if (guestRsvp.length === 0 || (guestRsvp[0].status !== "going" && guestRsvp[0].status !== "maybe"))
-      return c.json({ ok: false, error: "FORBIDDEN", message: "You must RSVP before suggesting alternate times" }, 403);
+    const guestInvited = (await sql`SELECT 1 FROM newchums.event_invites WHERE event_id = ${eventId} AND email = ${guestEmail} LIMIT 1`) as unknown[];
+    if (guestInvited.length === 0)
+      return c.json({ ok: false, error: "FORBIDDEN", message: "You must be invited to suggest alternate times" }, 403);
 
     const guestAltCount = (await sql`SELECT COUNT(*)::int AS c FROM newchums.event_alt_times WHERE event_id = ${eventId} AND guest_email = ${guestEmail} AND user_id IS NULL`) as { c: number }[];
     if (guestAltCount[0].c >= 10)
