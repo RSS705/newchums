@@ -2762,7 +2762,7 @@ export default function EventDetailClient() {
                     )}
                     {event.confirmationWindowOpen && r.confirmationStatus && (
                       <Chip
-                        label={r.confirmationStatus === "confirmed" ? "Confirmed" : r.confirmationStatus === "pending" ? "Pending" : r.confirmationStatus === "declined" ? "Declined" : "Missed deadline"}
+                        label={r.confirmationStatus === "confirmed" ? "Confirmed" : r.confirmationStatus === "pending" ? "Pending confirmation" : r.confirmationStatus === "declined" ? "Declined" : "Missed deadline"}
                         size="small"
                         color={r.confirmationStatus === "confirmed" ? "success" : r.confirmationStatus === "pending" ? "warning" : "default"}
                         variant={r.confirmationStatus === "confirmed" ? "filled" : "outlined"}

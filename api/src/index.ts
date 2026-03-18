@@ -4758,7 +4758,7 @@ app.get("/events/explore", async (c) => {
 
     const hobbyMatchExpr = hasUserHobbies && personalizeEnabled
       ? sql`(SELECT COUNT(*)::int FROM newchums.event_interests ei4 JOIN newchums.interests ii4 ON ii4.id = ei4.interest_id WHERE ei4.event_id = e.id AND ii4.slug = ANY(${userHobbySlugs}))`
-      : sql`0`;
+      : sql`(0)::int`;
 
     const sortByNewest = sortParam === "newest";
 
@@ -7006,6 +7006,11 @@ async function processAttendanceAssurance(
           });
 
           await sql`
+            INSERT INTO newchums.notifications (user_id, type, entity_id, metadata)
+            VALUES (${att.user_id}, 'confirmation_requested', ${ev.id}, ${JSON.stringify({ eventTitle: ev.title })})
+          `;
+
+          await sql`
             UPDATE newchums.event_confirmations
             SET reminder_count = 1, last_reminder_at = NOW(), updated_at = NOW()
             WHERE event_id = ${ev.id} AND user_id = ${att.user_id}
@@ -7094,6 +7099,11 @@ async function processAttendanceAssurance(
             eventLocation, eventUrl, confirmUrl, declineUrl,
             isHost, isReminder: true, isFinal, deadline, unsubscribeUrl,
           });
+
+          await sql`
+            INSERT INTO newchums.notifications (user_id, type, entity_id, metadata)
+            VALUES (${att.user_id}, 'confirmation_requested', ${ev.id}, ${JSON.stringify({ eventTitle: ev.title })})
+          `;
 
           await sql`
             UPDATE newchums.event_confirmations

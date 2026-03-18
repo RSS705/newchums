@@ -1,6 +1,7 @@
 "use client";
 
 import ChatBubbleOutlineRoundedIcon from "@mui/icons-material/ChatBubbleOutlineRounded";
+import EventNoteRoundedIcon from "@mui/icons-material/EventNoteRounded";
 import NotificationsOutlinedIcon from "@mui/icons-material/NotificationsOutlined";
 import NotificationsRoundedIcon from "@mui/icons-material/NotificationsRounded";
 import Box from "@mui/material/Box";
@@ -151,6 +152,12 @@ function notificationText(n: AppNotification): {
           : formattedTime ? <>{" suggested "}<strong>{formattedTime}</strong>{" as an alternate time."}</> : " suggested an alternate time.",
       };
     }
+    case "confirmation_requested":
+      return {
+        actorLabel: "Confirm attendance",
+        actorHref: eventHref,
+        body: titleLink ? <>{" for "}{titleLink}</> : " for an upcoming plan.",
+      };
     default:
       return { actorLabel, actorHref, body: " did something." };
   }
@@ -202,9 +209,44 @@ function NotificationRow({
         />
       )}
 
-      {/* Actor avatar */}
+      {/* Actor avatar or event icon for system notifications */}
       <Box sx={{ flexShrink: 0 }}>
-        {actorHref ? (
+        {notification.type === "confirmation_requested" ? (
+          actorHref ? (
+            <Box
+              component={Link}
+              href={actorHref}
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 36,
+                height: 36,
+                borderRadius: "50%",
+                bgcolor: "primary.main",
+                color: "#fff",
+                textDecoration: "none",
+              }}
+            >
+              <EventNoteRoundedIcon sx={{ fontSize: 20 }} />
+            </Box>
+          ) : (
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 36,
+                height: 36,
+                borderRadius: "50%",
+                bgcolor: "primary.main",
+                color: "#fff",
+              }}
+            >
+              <EventNoteRoundedIcon sx={{ fontSize: 20 }} />
+            </Box>
+          )
+        ) : actorHref ? (
           <Box component={Link} href={actorHref} sx={{ display: "block", textDecoration: "none" }}>
             <UserAvatar
               src={avatarSrc}
