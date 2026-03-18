@@ -1,0 +1,37 @@
+You've been invited to a plan
+
+Hey {{recipientName}}, {{hostName}} invited you to join their plan on NewChums.
+
+---
+
+Plan: {{eventTitle}}
+When: {{eventDate}}
+{{#eventLocation}}Where: {{.}}
+{{/eventLocation}}Hosted by: {{hostName}}
+
+---
+
+{{#suggestTimeNote}}Note: {{.}}
+
+---
+
+{{/suggestTimeNote}}Can you make it?
+
+Going: {{goingUrl}}
+
+Maybe: {{maybeUrl}}
+
+Can't make it: {{cantMakeItUrl}}
+
+---
+
+View full plan details: {{eventUrl}}
+
+Clicking a link above will take you to the plan page and record your response.
+
+---
+
+You're receiving this because someone invited you to a plan on NewChums.
+{{#unsubscribeUrl}}Unsubscribe from invitation emails: {{.}}{{/unsubscribeUrl}}
+
+© {{productName}}

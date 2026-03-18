@@ -11,6 +11,7 @@ import { apiFetch } from "@/lib/apiClient";
 export default function VerifyClient() {
   const params = useSearchParams();
   const [status, setStatus] = React.useState<"loading" | "success" | "error">("loading");
+  const [verifiedEmail, setVerifiedEmail] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     const email = params.get("email");
@@ -27,7 +28,12 @@ export default function VerifyClient() {
     })
       .then(async (res) => {
         const data = (await res.json()) as { ok?: boolean; error?: string };
-        setStatus(res.ok && data.ok ? "success" : "error");
+        if (res.ok && data.ok) {
+          setVerifiedEmail(email);
+          setStatus("success");
+        } else {
+          setStatus("error");
+        }
       })
       .catch(() => setStatus("error"));
   }, [params]);
@@ -55,7 +61,11 @@ export default function VerifyClient() {
             <Typography variant="body1" color="text.secondary">
               Your email has been verified. You can close this tab and return to the app to sign in.
             </Typography>
-            <AppButton variant="contained" href="/login" fullWidth>
+            <AppButton
+              variant="contained"
+              href={verifiedEmail ? `/login?email=${encodeURIComponent(verifiedEmail)}` : "/login"}
+              fullWidth
+            >
               Continue to sign in
             </AppButton>
           </Stack>

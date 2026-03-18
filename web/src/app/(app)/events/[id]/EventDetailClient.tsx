@@ -76,6 +76,7 @@ type EventDetail = {
   visibility: string;
   status: string;
   allowAltTimes: boolean;
+  allowAttendeeInvites: boolean;
   requireReconfirmation: boolean;
   canceledAt: string | null;
   bannerKey: string | null;
@@ -715,6 +716,25 @@ export default function EventDetailClient() {
     setReserveSeatsToggling(false);
   };
 
+  const [attendeeInvitesToggling, setAttendeeInvitesToggling] = useState(false);
+
+  const handleToggleAttendeeInvites = async () => {
+    setAttendeeInvitesToggling(true);
+    try {
+      const res = await apiFetch(`/events/${eventId}/toggle-attendee-invites`, { auth: true, method: "POST" });
+      const data = (await res.json()) as { ok: boolean; allowAttendeeInvites: boolean };
+      if (data.ok) {
+        setEvent((prev) => prev ? { ...prev, allowAttendeeInvites: data.allowAttendeeInvites } : prev);
+        toast.success(data.allowAttendeeInvites ? "Going attendees can now invite others" : "Attendee invitations turned off");
+      }
+    } catch {
+      toast.error("Failed to update setting");
+    }
+    setAttendeeInvitesToggling(false);
+  };
+
+  const [suggestTime, setSuggestTime] = useState(false);
+
   const handleInvite = async (userId?: string, email?: string) => {
     setInviteSubmitting(true);
     setInvitingUserId(userId ?? null);
@@ -723,7 +743,10 @@ export default function EventDetailClient() {
         auth: true,
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ invitees: [{ user_id: userId ?? null, email: email ?? null }] }),
+        body: JSON.stringify({
+          invitees: [{ user_id: userId ?? null, email: email ?? null }],
+          suggest_time: suggestTime || undefined,
+        }),
       });
       const data = (await res.json()) as { ok: boolean; message?: string };
       if (data.ok) {
@@ -1968,12 +1991,12 @@ export default function EventDetailClient() {
         </AppCard>
       )}
 
-      {/* Invite people (host only, not canceled) — compact collapsible */}
-      {event.isHost && !isCanceled && (
+      {/* Invite people (host or Going attendees when allowed, not canceled) */}
+      {(event.isHost || (viewerRsvpStatus === "going" && event.allowAttendeeInvites)) && !isCanceled && (
         <AppCard>
           {!showInviteForm ? (
             <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1}>
-              <Typography variant="subtitle1" fontWeight={600}>
+              <Typography variant="h5" fontWeight={700} sx={{ fontSize: { xs: "1.25rem", sm: "1.375rem" } }}>
                 Invite people
               </Typography>
               <Stack direction="row" spacing={1}>
@@ -2000,7 +2023,7 @@ export default function EventDetailClient() {
           ) : (
             <Stack spacing={2}>
               <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1}>
-                <Typography variant="subtitle1" fontWeight={600}>
+                <Typography variant="h5" fontWeight={700} sx={{ fontSize: { xs: "1.25rem", sm: "1.375rem" } }}>
                   Invite people
                 </Typography>
                 <AppButton
@@ -2016,6 +2039,25 @@ export default function EventDetailClient() {
               <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.5 }}>
                 Search by name, @handle, or email. Invite emails are sent immediately.
               </Typography>
+
+              {event.allowAltTimes && (
+                <FormControlLabel
+                  control={
+                    <Switch
+                      size="small"
+                      checked={suggestTime}
+                      onChange={(e) => setSuggestTime(e.target.checked)}
+                    />
+                  }
+                  label={
+                    <Typography variant="body2" sx={{ fontSize: "0.8125rem" }}>
+                      Ask them to suggest a better time
+                    </Typography>
+                  }
+                  sx={{ ml: -0.25, mb: -0.5 }}
+                />
+              )}
+
               <TextField
                 fullWidth
                 size="medium"
@@ -2182,7 +2224,7 @@ export default function EventDetailClient() {
 
               <Button
                 size="small"
-                onClick={() => { setShowInviteForm(false); setInviteSearch(""); setSearchResults([]); setHasSearched(false); }}
+                onClick={() => { setShowInviteForm(false); setInviteSearch(""); setSearchResults([]); setHasSearched(false); setSuggestTime(false); }}
                 sx={{ alignSelf: "flex-start", textTransform: "none" }}
               >
                 Done inviting
@@ -2341,7 +2383,7 @@ export default function EventDetailClient() {
       )}
 
       {/* Find a better time — collaborative alternate scheduling */}
-      {event.allowAltTimes && !isCanceled && (event.isHost || event.hasRsvp || event.isInvited) && (() => {
+      {event.allowAltTimes && !isCanceled && (event.isHost || viewerRsvpStatus === "going" || viewerRsvpStatus === "maybe" || event.isInvited) && (() => {
         type OverlapWindow = { startMs: number; endMs: number; entries: AltTimeEntry[] };
 
         const fmtTime = (d: Date) => d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
@@ -2425,7 +2467,7 @@ export default function EventDetailClient() {
               Find a better time
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Suggest a start time that works better for you, everyone in the plan can see them.
+              Need a different start time? Suggest one that everyone in the plan can see.
             </Typography>
 
             <Box ref={altTimeScrollRef} sx={{ maxHeight: 420, overflowY: "auto" }}>
@@ -2635,9 +2677,7 @@ export default function EventDetailClient() {
             )}
 
             {altTimes.length === 0 && !showAltTimeForm && (
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                No times suggested yet. Be the first to suggest one.
-              </Typography>
+              <Box sx={{ height: 4 }} />
             )}
             </Box>
           </AppCard>
@@ -3063,6 +3103,24 @@ export default function EventDetailClient() {
               </Stack>
             </>
           )}
+
+          <Divider sx={{ my: 2 }} />
+          <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={2}>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography variant="subtitle2" fontWeight={600}>
+                Let Going attendees invite others
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem", lineHeight: 1.5, mt: 0.25 }}>
+                When enabled, people who RSVP as Going can invite their friends to this plan. All invites are tracked.
+              </Typography>
+            </Box>
+            <Switch
+              checked={event.allowAttendeeInvites}
+              onChange={handleToggleAttendeeInvites}
+              disabled={attendeeInvitesToggling}
+              size="small"
+            />
+          </Stack>
 
         </AppCard>
       )}

@@ -1,6 +1,6 @@
 # Development Setup Guide
 
-Last Updated: March 17, 2026
+Last Updated: March 18, 2026
 
 This document is the operational guide for running and deploying NewChums.
 For architectural invariants and contracts, see `docs/Technical_Specs.md`.
@@ -16,7 +16,7 @@ For product direction, terminology, and agent governance, see `AGENTS.md`.
 - **Canonical host:** `https://newchums.com` (www → non-www redirect enforced before Auth.js).
 - **API migration:** All business logic is in the API worker — auth flows, profile, interests, Chums, Chum invites, events (plans), notifications, email unsubscribe, admin, avatar, contact form, scheduled tasks.
 - **Signup/Onboarding:** Multi-step wizard for both email/password (4 steps) and Google OAuth (3 steps). Collects credentials + legal acceptance → username/DOB → hobbies (optional) → location/travel distance (optional). Required Terms of Use and Privacy Policy acceptance before signup. Shared `OnboardingProgress`, `StepTransition`, `HobbiesStep`, `LocationStep` components.
-- **Events (plans):** Full event creation, context-aware RSVP (going/maybe/can't make it), invite, alternate time suggestion (with best-start-times overlap display), cancel, edit (host), request-to-join (host approval), host attendee removal. Visibility: invite_only, chums_only, public. Gradient banner presets + custom upload. Plan-change email notifications to attendees (edits, locks, cancellations). Per-plan participant chat with real-time WebSocket delivery via Cloudflare Durable Objects, unread chat indicators in bell and plan cards, daily unread-chat digest email. Host can lock/unlock plans. Attendance assurance (host-configurable final confirmation, min confirmed attendees, fallback policies, cron-based reminders and cutoff processing).
+- **Events (plans):** Full event creation, context-aware RSVP (going/maybe/can't make it), invite, alternate time suggestion (with best-start-times overlap display), cancel, edit (host), request-to-join (host approval), host attendee removal. Visibility: invite_only, chums_only, public. Gradient banner presets + custom upload. Plan-change email notifications to attendees (edits, locks, cancellations). Per-plan participant chat with real-time WebSocket delivery via Cloudflare Durable Objects, unread chat indicators in bell and plan cards, daily unread-chat digest email. Host can lock/unlock plans. Attendance assurance (host-configurable final confirmation, min confirmed attendees, fallback policies, cron-based reminders and cutoff processing). Going attendees can invite others (host-controlled via `allow_attendee_invites`, on by default). Invites support optional "suggest a better time" mode when alt times are enabled.
 - **Explore page:** Personalized discovery feed (`/`). Uses `GET /events/explore` with hobby-based ranking, sort options (upcoming/newest), personalization toggle, location-aware ordering (Haversine), hobby filter, time-range chips, text search, session state persistence via `localStorage`.
 - **Your Plans:** Tabbed upcoming/past view with hosted and joined sections, unread chat indicators, real API data.
 - **Chums:** One-way saved-people feature with search, email invite flow, mutual indicators, privacy controls, public Chums on profiles, private per-chum notes, and birthday display.
@@ -250,6 +250,7 @@ psql "$DATABASE_URL" -f sql/037_chat_digest_tracking.sql
 psql "$DATABASE_URL" -f sql/039_attendance_assurance.sql
 psql "$DATABASE_URL" -f sql/040_legal_acceptance.sql
 psql "$DATABASE_URL" -f sql/041_attendance_record.sql
+psql "$DATABASE_URL" -f sql/042_allow_attendee_invites.sql
 ```
 
 Notes:
@@ -277,6 +278,7 @@ Notes:
 - Migration `039_attendance_assurance.sql` adds attendance assurance columns to `events` (`min_confirmed_attendees`, `confirmation_window_hours`, `confirmation_cutoff_hours`, `fallback_policy`, `confirmation_sent_at`, `cutoff_processed_at`) and creates the `event_confirmations` table for final attendance confirmation tracking.
 - Migration `040_legal_acceptance.sql` adds `accepted_terms_version`, `accepted_privacy_version`, and `accepted_legal_at` columns to `users` for recording legal acceptance during signup.
 - Migration `041_attendance_record.sql` adds `committed_at TIMESTAMPTZ NULL` to `event_rsvps` for accurate follow-through tracking, backfills existing going RSVPs, and adds an index.
+- Migration `042_allow_attendee_invites.sql` adds `allow_attendee_invites BOOLEAN NOT NULL DEFAULT true` to `newchums.events`. When true, Going attendees can invite others to the plan.
 
 ---
 
@@ -373,6 +375,29 @@ Chunk XX — YYYY-MM-DD
 ## Session Log (Chunks)
 
 (Existing chunks should remain here. Add new chunks at the end.)
+
+---
+
+Chunk 16 — 2026-03-18
+- Goal: Plan invite flow enhancements — attendee invites, suggest-time mode, visual consistency.
+- Changes:
+  - **DB migration 042** (`allow_attendee_invites BOOLEAN NOT NULL DEFAULT true` on `events`).
+  - **API:**
+    - `POST /events/:id/invite` — expanded from host-only to host + Going attendees (when `allow_attendee_invites` is true). Server-side permission enforcement: checks Going RSVP status. Accepts optional `suggest_time: true` flag; when enabled (and `allow_alt_times` is true on the event), appends a suggest-time note to the invite email. `invited_by` column already tracks the inviter. Inviter name used in email (not always the host).
+    - `POST /events/:id/toggle-attendee-invites` — new host-only toggle endpoint (mirrors `reserve-seats` pattern).
+    - `POST /events` and `PATCH /events/:id` — accept and store `allow_attendee_invites`. PATCH uses COALESCE to preserve existing value when not explicitly provided.
+  - **Email:** `sendEventInviteEmail` extended with optional `suggestTimeNote` parameter (added to Postmark template model).
+  - **Web — EventDetailClient.tsx:**
+    - "Invite people" header updated from `subtitle1`/600 to `h5`/700 with responsive font size — now matches "Find a better time" and "Join requests" sections.
+    - Invite section shown for Going attendees when `allowAttendeeInvites` is true (not just host).
+    - "Ask them to suggest a better time" toggle added to invite form (only visible when `allow_alt_times` is enabled on the plan).
+    - "Let Going attendees invite others" toggle added to Host actions card.
+    - `handleInvite` passes `suggest_time` flag to API.
+  - **Web — CreateEventClient.tsx:** Added "Let Going attendees invite others" toggle (default on).
+  - **Documentation:** Updated Technical_Specs.md (v13.1), Development_Setup_Guide.md.
+- Verification: `npm run build` passes cleanly.
+- Deploy: Run migration 042 against production DB. Deploy API first, then web. If using the suggest-time email feature, update the Postmark event invite template to conditionally render `{{#suggestTimeNote}}{{suggestTimeNote}}{{/suggestTimeNote}}`.
+- Next Steps: Update Postmark event invite template (ID in `POSTMARK_TEMPLATE_EVENT_INVITE`) to render the `suggestTimeNote` variable if set.
 
 ---
 

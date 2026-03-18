@@ -67,6 +67,7 @@ export default function CreateEventClient() {
 
   const [visibility, setVisibility] = useState<"public" | "chums_only" | "invite_only">("public");
   const [allowAltTimes, setAllowAltTimes] = useState(true);
+  const [allowAttendeeInvites, setAllowAttendeeInvites] = useState(true);
   const [requireReconfirmation, setRequireReconfirmation] = useState(true);
   const [requireApproval, setRequireApproval] = useState(false);
   const [minConfirmedAttendees, setMinConfirmedAttendees] = useState("");
@@ -226,6 +227,7 @@ export default function CreateEventClient() {
       max_seats: maxSeats ? Number(maxSeats) : null,
       visibility,
       allow_alt_times: allowAltTimes,
+      allow_attendee_invites: allowAttendeeInvites,
       require_reconfirmation: requireReconfirmation,
       require_approval: requireApproval,
       min_confirmed_attendees: requireReconfirmation && minConfirmedAttendees ? Number(minConfirmedAttendees) : null,
@@ -680,6 +682,19 @@ export default function CreateEventClient() {
           />
           <Typography variant="caption" color="text.secondary" sx={{ mt: -1.5 }}>
             People who are not directly invited will need to request to join, and you&apos;ll approve or decline each request.
+          </Typography>
+
+          <FormControlLabel
+            control={
+              <Switch
+                checked={allowAttendeeInvites}
+                onChange={(e) => setAllowAttendeeInvites(e.target.checked)}
+              />
+            }
+            label="Let Going attendees invite others"
+          />
+          <Typography variant="caption" color="text.secondary" sx={{ mt: -1.5 }}>
+            People who RSVP as Going can invite their friends to this plan. You can change this anytime.
           </Typography>
         </Stack>
       </AppCard>

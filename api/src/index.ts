@@ -4358,6 +4358,7 @@ app.post("/events", async (c) => {
     return c.json({ ok: false, error: "VALIDATION", message: "Seats must be between 1 and 500", field: "max_seats" }, 400);
 
   const allowAltTimes = body.allow_alt_times !== false;
+  const allowAttendeeInvites = body.allow_attendee_invites !== false;
   const requireReconfirmation = body.require_reconfirmation === true;
   const requireApproval = body.require_approval === true;
   const status = body.status === "draft" ? "draft" : "published";
@@ -4472,13 +4473,13 @@ app.post("/events", async (c) => {
         host_user_id, title, description, interest_id, starts_at,
         location_type, location_name, location_address, location_place_id, location_lat, location_lng,
         location_visibility, location_area, online_link,
-        max_seats, visibility, status, allow_alt_times, require_reconfirmation, require_approval, timezone,
+        max_seats, visibility, status, allow_alt_times, allow_attendee_invites, require_reconfirmation, require_approval, timezone,
         min_confirmed_attendees, fallback_policy
       ) VALUES (
         ${userId}, ${title}, ${description}, ${interestId}, ${startsDate.toISOString()},
         ${locationType}, ${locationName}, ${locationAddress}, ${locationPlaceId}, ${locationLat}, ${locationLng},
         ${locationVisibility}, ${locationArea}, ${onlineLink},
-        ${maxSeats}, ${visibility}, ${status}, ${allowAltTimes}, ${requireReconfirmation}, ${requireApproval}, ${timezone},
+        ${maxSeats}, ${visibility}, ${status}, ${allowAltTimes}, ${allowAttendeeInvites}, ${requireReconfirmation}, ${requireApproval}, ${timezone},
         ${minConfirmedAttendees}, ${fallbackPolicy}
       )
       RETURNING id, created_at
@@ -5116,6 +5117,7 @@ app.get("/events/:id", async (c) => {
         visibility: event.visibility,
         status: event.status,
         allowAltTimes: event.allow_alt_times,
+        allowAttendeeInvites: event.allow_attendee_invites !== false,
         requireReconfirmation: event.require_reconfirmation === true,
         canceledAt: event.canceled_at,
         createdAt: event.created_at,
@@ -5920,6 +5922,7 @@ app.patch("/events/:id", async (c) => {
 
     const patchRequireReconfirmation = body.require_reconfirmation === true;
     const patchRequireApproval = body.require_approval === true;
+    const patchAllowAttendeeInvites = body.allow_attendee_invites != null ? body.allow_attendee_invites !== false : undefined;
     const patchTimezone = body.timezone && typeof body.timezone === "string" ? body.timezone.trim().slice(0, 64) : null;
 
     // Attendance assurance fields
@@ -5982,6 +5985,7 @@ app.patch("/events/:id", async (c) => {
           visibility               = ${visibility},
           require_reconfirmation   = ${patchRequireReconfirmation},
           require_approval         = ${patchRequireApproval},
+          allow_attendee_invites   = COALESCE(${patchAllowAttendeeInvites ?? null}, allow_attendee_invites),
           timezone                 = COALESCE(${patchTimezone}, timezone),
           min_confirmed_attendees  = ${patchMinConfirmed},
           fallback_policy          = ${patchFallbackPolicy},
@@ -6245,7 +6249,7 @@ app.post("/events/:id/remove-invite", async (c) => {
   }
 });
 
-/** POST /events/:id/invite — add invitees to a published event */
+/** POST /events/:id/invite — add invitees to a published event (host or Going attendees) */
 app.post("/events/:id/invite", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -6259,10 +6263,19 @@ app.post("/events/:id/invite", async (c) => {
   try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
 
   try {
-    const ev = (await sql`SELECT id, host_user_id, title, starts_at, status, timezone, location_type, location_name, location_address, online_link FROM newchums.events WHERE id = ${eventId}`) as { id: string; host_user_id: string; title: string; starts_at: string; status: string; timezone: string; location_type: string; location_name: string | null; location_address: string | null; online_link: string | null }[];
+    const ev = (await sql`SELECT id, host_user_id, title, starts_at, status, timezone, location_type, location_name, location_address, online_link, allow_attendee_invites, allow_alt_times FROM newchums.events WHERE id = ${eventId}`) as { id: string; host_user_id: string; title: string; starts_at: string; status: string; timezone: string; location_type: string; location_name: string | null; location_address: string | null; online_link: string | null; allow_attendee_invites: boolean; allow_alt_times: boolean }[];
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-    if (ev[0].host_user_id !== userId) return c.json({ ok: false, error: "FORBIDDEN", message: "Only the host can invite" }, 403);
 
+    const isHost = ev[0].host_user_id === userId;
+    if (!isHost) {
+      if (!ev[0].allow_attendee_invites)
+        return c.json({ ok: false, error: "FORBIDDEN", message: "The host has disabled attendee invitations for this plan" }, 403);
+      const goingCheck = (await sql`SELECT 1 FROM newchums.event_rsvps WHERE event_id = ${eventId} AND user_id = ${userId} AND status = 'going' LIMIT 1`) as unknown[];
+      if (goingCheck.length === 0)
+        return c.json({ ok: false, error: "FORBIDDEN", message: "Only Going attendees can invite others to this plan" }, 403);
+    }
+
+    const suggestTime = body.suggest_time === true && ev[0].allow_alt_times;
     const inviteLocationDisplay = ev[0].location_type === "online"
       ? (ev[0].online_link || "Online")
       : buildLocationDisplay(ev[0].location_name, ev[0].location_address);
@@ -6270,8 +6283,11 @@ app.post("/events/:id/invite", async (c) => {
     const invitees = Array.isArray(body.invitees) ? (body.invitees as Array<{ user_id?: string; email?: string }>) : [];
     let added = 0;
 
-    const hostUser = (await sql`SELECT name, username FROM newchums.users WHERE id = ${userId}`) as { name: string | null; username: string | null }[];
-    const hostName = hostUser[0]?.name?.trim() || hostUser[0]?.username?.replace(/^@/, "") || "Someone";
+    const inviterUser = (await sql`SELECT name, username FROM newchums.users WHERE id = ${userId}`) as { name: string | null; username: string | null }[];
+    const inviterName = inviterUser[0]?.name?.trim() || inviterUser[0]?.username?.replace(/^@/, "") || "Someone";
+    const suggestTimeNote = suggestTime
+      ? `${inviterName} would also love your input on finding a better time for this plan. Once you join, you can suggest an alternative that works for you.`
+      : "";
 
     for (const inv of invitees.slice(0, 50)) {
       const invUserId = inv.user_id ? String(inv.user_id) : null;
@@ -6293,7 +6309,6 @@ app.post("/events/:id/invite", async (c) => {
               INSERT INTO newchums.notifications (user_id, type, actor_user_id, entity_id, metadata)
               VALUES (${invUserId}, 'event_invite', ${userId}, ${eventId}, ${JSON.stringify({ eventTitle: ev[0].title })})
             `;
-            // Respect the invitee's invitation email preference
             const invProfileRows = (await sql`SELECT notification_prefs FROM user_profile WHERE user_id = ${invUserId} LIMIT 1`) as { notification_prefs: unknown }[];
             const invPrefs = normalizeNotificationPrefs(invProfileRows[0]?.notification_prefs);
             if (invPrefs.items.event_invite?.enabled !== false) {
@@ -6305,13 +6320,14 @@ app.post("/events/:id/invite", async (c) => {
                   await sendEventInviteEmail(c.env, {
                     to: invUser[0].email,
                     recipientName: invUser[0].name?.trim() || "there",
-                    hostName,
+                    hostName: inviterName,
                     eventTitle: ev[0].title,
                     eventDate: formatEventDate(ev[0].starts_at, ev[0].timezone),
                     eventLocation: inviteLocationDisplay,
                     eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
                     inviteToken: iToken,
                     unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
+                    suggestTimeNote,
                   });
                 } catch { /* noop */ }
               }
@@ -6322,13 +6338,13 @@ app.post("/events/:id/invite", async (c) => {
               await sendEventInviteEmail(c.env, {
                 to: invEmail,
                 recipientName: "there",
-                hostName,
+                hostName: inviterName,
                 eventTitle: ev[0].title,
                 eventDate: formatEventDate(ev[0].starts_at, ev[0].timezone),
                 eventLocation: inviteLocationDisplay,
                 eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
                 inviteToken: iToken,
-                // No unsubscribeUrl for email-only guests — they have no account to update prefs on
+                suggestTimeNote,
               });
             } catch { /* noop */ }
           }
@@ -6619,6 +6635,31 @@ app.post("/events/:id/reserve-seats", async (c) => {
     return c.json({ ok: true, reserveSeats: newValue });
   } catch (err) {
     console.error("[POST /events/:id/reserve-seats]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /events/:id/toggle-attendee-invites — host toggles whether Going attendees can invite */
+app.post("/events/:id/toggle-attendee-invites", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+  const eventId = c.req.param("id");
+
+  try {
+    const ev = (await sql`SELECT id, host_user_id, allow_attendee_invites FROM newchums.events WHERE id = ${eventId}`) as { id: string; host_user_id: string; allow_attendee_invites: boolean }[];
+    if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    if (ev[0].host_user_id !== userId) return c.json({ ok: false, error: "FORBIDDEN", message: "Only the host can change this setting" }, 403);
+
+    const newValue = !ev[0].allow_attendee_invites;
+    await sql`UPDATE newchums.events SET allow_attendee_invites = ${newValue} WHERE id = ${eventId}`;
+
+    return c.json({ ok: true, allowAttendeeInvites: newValue });
+  } catch (err) {
+    console.error("[POST /events/:id/toggle-attendee-invites]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });

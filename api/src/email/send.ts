@@ -152,10 +152,10 @@ export const sendChumInviteEmail = async (
 
 export const sendEventInviteEmail = async (
   env: Bindings,
-  { to, recipientName, hostName, eventTitle, eventDate, eventLocation, eventUrl, inviteToken, unsubscribeUrl }: {
+  { to, recipientName, hostName, eventTitle, eventDate, eventLocation, eventUrl, inviteToken, unsubscribeUrl, suggestTimeNote }: {
     to: string; recipientName: string; hostName: string;
     eventTitle: string; eventDate: string; eventLocation?: string; eventUrl: string;
-    inviteToken?: string; unsubscribeUrl?: string;
+    inviteToken?: string; unsubscribeUrl?: string; suggestTimeNote?: string;
   }
 ) => {
   if (!env.POSTMARK_TEMPLATE_EVENT_INVITE) return;
@@ -172,6 +172,7 @@ export const sendEventInviteEmail = async (
       eventLocation: eventLocation || "",
       eventUrl: viewUrl, goingUrl, maybeUrl, cantMakeItUrl,
       unsubscribeUrl: unsubscribeUrl || "",
+      suggestTimeNote: suggestTimeNote || "",
     },
   });
 };

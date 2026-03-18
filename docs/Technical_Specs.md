@@ -1,7 +1,7 @@
 # Technical Specifications
 
-Last Updated: March 17, 2026
-Version: 13.0
+Last Updated: March 18, 2026
+Version: 13.1
 
 This document defines the authoritative technical architecture of NewChums.
 It describes **what exists today** and the structural commitments we are making.
@@ -383,6 +383,7 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 - `status`: `draft` | `published` | `canceled`
 - `location_type`: `in_person` | `online`
 - `allow_alt_times`: boolean — whether attendees can suggest alternate times
+- `allow_attendee_invites`: boolean (default true, migration 042) — when true, Going attendees can invite others to the plan; host can toggle at any time
 - `interest_id`: FK to `interests` table (hobbies)
 - `require_reconfirmation`: boolean (migration 028) — when true, enables the Attendance Assurance system; attendees receive confirmation requests 24 hours before the event
 - `min_confirmed_attendees`: integer (migration 039) — minimum confirmed count for plan viability (host counts toward total)
@@ -395,14 +396,15 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 
 | Route | Description |
 |-------|-------------|
-| `POST /events` | Create event. Validates title, starts_at, location_type, visibility. Accepts `invitees[]` array of `{ user_id?, email? }`, `require_reconfirmation` and `require_approval` booleans. Published events send invite notifications and emails. |
+| `POST /events` | Create event. Validates title, starts_at, location_type, visibility. Accepts `invitees[]` array of `{ user_id?, email? }`, `require_reconfirmation`, `require_approval`, and `allow_attendee_invites` (default true) booleans. Published events send invite notifications and emails. |
 | `GET /events/mine?filter=upcoming\|past` | List events the user hosts, is invited to, or has RSVP'd. Includes going/maybe counts, host info, RSVP status, `has_unread_chat` flag. Host name uses `@username` priority. |
 | `GET /events/:id` | Event detail with RSVP list, alternate time suggestions, join requests, and attendance assurance state. Includes `requireReconfirmation`, `lockedAt`, `requireApproval`, `isInvited`, `hasRsvp`, `confirmationWindowOpen`, `confirmationCutoffAt`, `confirmedCount`, `pendingConfirmationCount`, `myConfirmationStatus`, `planViability`, and per-RSVP `confirmationStatus`. Join requests: full list for host, own request only for non-hosts. RSVP entries include `handle` for attendee profile links. Visibility enforcement: invite_only requires invite/RSVP, chums_only requires chum relationship or invite. |
 | `PATCH /events/:id` | Edit event (host only). Accepts: `title`, `description`, `starts_at`, `max_seats`, `visibility`, `require_reconfirmation`, `require_approval`. Returns the updated event. |
 | `POST /events/:id/rsvp` | RSVP to an event — `{ status: "going"\|"maybe"\|"cant_make_it", note? }`. Capacity enforcement for going status. Locked plans reject new RSVPs (`EVENT_LOCKED` error) but allow existing participants to change status. Plans with `require_approval` reject non-invited users who have no existing RSVP (`APPROVAL_REQUIRED` error). Notifies host via in-app notification and email. UI: "Can't make it" button only shown when user is invited or has an existing RSVP; heading text is context-aware ("Can you make it?" for invited users, "Are you in?" otherwise). |
 | `POST /events/:id/alt-time` | Suggest alternate time — `{ suggested_at, note? }`. Only if event.allow_alt_times. Notifies host. |
 | `POST /events/:id/cancel` | Cancel event (host only). Notifies all attendees via in-app notification and email. |
-| `POST /events/:id/invite` | Add invitees to published event (host only). Sends notifications and invite emails. |
+| `POST /events/:id/invite` | Add invitees to published event. Host can always invite; Going attendees can invite when `allow_attendee_invites` is true. Accepts optional `suggest_time: true` to include a "suggest a better time" note in the invite email (only when `allow_alt_times` is enabled). `invited_by` column tracks who sent each invite. Sends notifications and invite emails with inviter's display name. |
+| `POST /events/:id/toggle-attendee-invites` | Toggle `allow_attendee_invites` (host only). Returns updated value. |
 | `GET /events/explore` | Personalized discovery feed for logged-in users. Supports: `lat`/`lng`/`radius_km` (location), `hobby` (slug), `time_range` (this_week/this_weekend/next_30/all), `q` (text search), `sort` (upcoming/newest), `personalize` (0/1 — hobby-based ranking boost). Applies visibility rules (public + chums_only for the user's chums). Distance computed via Haversine. Prioritizes host's own events, then hobby matches (when personalized), then distance/time. |
 | `GET /events/:id/chat` | Fetch chat messages and user's `lastReadAt` for a plan. Access: host or `going` RSVP only. |
 | `POST /events/:id/chat` | Send a chat message. Body: `{ body: string }`. Inserts into DB, then broadcasts to the ChatRoom Durable Object for real-time delivery. Access: host or `going` RSVP only. |
@@ -702,6 +704,7 @@ Core tables include:
 - `newchums.event_confirmations` (migration 039) — final attendance confirmation records; columns: `id` (UUID PK), `event_id` (FK), `user_id` (FK), `status` (pending/confirmed/declined/expired), `responded_at`, `reminder_count`, `last_reminder_at`, `created_at`, `updated_at`; unique constraint on `(event_id, user_id)`
 - `newchums.users` legal acceptance columns (migration 040) — `accepted_terms_version TEXT NULL`, `accepted_privacy_version TEXT NULL`, `accepted_legal_at TIMESTAMPTZ NULL`
 - `newchums.event_rsvps.committed_at` (migration 041) — `TIMESTAMPTZ NULL`; records when a user first committed (RSVP'd going) for accurate follow-through tracking; backfilled from `created_at` for existing going RSVPs; indexed on `(user_id, committed_at)` where not null
+- `newchums.events.allow_attendee_invites` (migration 042) — `BOOLEAN NOT NULL DEFAULT true`; when true, Going attendees can invite others to the plan; host can toggle at any time via `POST /events/:id/toggle-attendee-invites`
 
 PostGIS is available for geo queries.
 
