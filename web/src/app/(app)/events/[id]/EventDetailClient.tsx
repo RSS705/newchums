@@ -48,6 +48,7 @@ import PeopleOutlineRoundedIcon from "@mui/icons-material/PeopleOutlineRounded";
 import PersonAddRoundedIcon from "@mui/icons-material/PersonAddRounded";
 import PersonRemoveRoundedIcon from "@mui/icons-material/PersonRemoveRounded";
 import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
+import CancelRoundedIcon from "@mui/icons-material/CancelRounded";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import UserAvatar from "@/components/common/UserAvatar";
@@ -1392,6 +1393,29 @@ export default function EventDetailClient() {
           {event.isHost ? "You\u2019re hosting this" : `Hosted by ${event.hostName}`}
         </Typography>
       </Box>
+
+      {/* Canceled banner */}
+      {isCanceled && (
+        <Box sx={{
+          p: 2.5,
+          borderRadius: 2.5,
+          bgcolor: "error.main",
+          color: "common.white",
+          textAlign: "center",
+        }}>
+          <Stack spacing={0.75} alignItems="center">
+            <CancelRoundedIcon sx={{ fontSize: 36 }} />
+            <Typography variant="h6" fontWeight={700}>
+              This plan has been canceled
+            </Typography>
+            {event.canceledAt && (
+              <Typography variant="body2" sx={{ opacity: 0.85 }}>
+                Canceled on {new Date(event.canceledAt).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}
+              </Typography>
+            )}
+          </Stack>
+        </Box>
+      )}
 
       {/* Details card */}
       <AppCard>

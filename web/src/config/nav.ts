@@ -5,6 +5,7 @@ import PersonRoundedIcon from "@mui/icons-material/PersonRounded";
 import AddCircleRoundedIcon from "@mui/icons-material/AddCircleRounded";
 import StyleRoundedIcon from "@mui/icons-material/StyleRounded";
 import PeopleRoundedIcon from "@mui/icons-material/PeopleRounded";
+import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
 import type { SvgIconComponent } from "@mui/icons-material";
 
 export type NavItem = {
@@ -25,6 +26,7 @@ export const createEventHref = "/events/create";
 export const superAdminNavItems: NavItem[] = [
   { label: "Users", href: "/admin/chums", icon: PeopleRoundedIcon },
   { label: "Interests", href: "/admin/interests", icon: StyleRoundedIcon },
+  { label: "Plans", href: "/admin/plans", icon: CalendarMonthRoundedIcon },
 ];
 
 export const headerNavLinks = [

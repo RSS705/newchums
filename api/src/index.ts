@@ -31,6 +31,7 @@ import {
   sendConfirmationRequestEmail,
   sendPlanAtRiskEmail,
   sendPlanAutoCancelledEmail,
+  sendPlanRemovedByAdminEmail,
 } from "./email/send";
 import { canAccessInternalTestRoute, notFound } from "./internalAccess";
 import { nameToSlug, slugToName, validateInterestName } from "./interests";
@@ -3528,6 +3529,158 @@ app.post("/admin/users/:id/unsuspend", async (c) => {
   } catch (err) {
     console.error("[POST /admin/users/:id/unsuspend]", err);
     return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
+  }
+});
+
+// ─── Admin badge counts & mark-viewed ────────────────────────────────────────
+
+/** GET /admin/badge-counts — returns new-item counts since admin last viewed each section */
+app.get("/admin/badge-counts", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  const sql = getSql(c.env);
+  try {
+    const timestamps = (await sql`
+      SELECT section, last_viewed_at FROM newchums.admin_view_timestamps
+      WHERE admin_user_id = ${admin.id}
+    `) as { section: string; last_viewed_at: string }[];
+    const tsMap: Record<string, string> = {};
+    for (const t of timestamps) tsMap[t.section] = t.last_viewed_at;
+
+    const usersTs = tsMap["users"] ?? "1970-01-01T00:00:00Z";
+    const interestsTs = tsMap["interests"] ?? "1970-01-01T00:00:00Z";
+    const plansTs = tsMap["plans"] ?? "1970-01-01T00:00:00Z";
+
+    const counts = (await sql`
+      SELECT
+        (SELECT COUNT(*)::int FROM newchums.users WHERE created_at > ${usersTs}) AS new_users,
+        (SELECT COUNT(*)::int FROM newchums.interests WHERE created_at > ${interestsTs} AND is_deleted = false) AS new_interests,
+        (SELECT COUNT(*)::int FROM newchums.events WHERE created_at > ${plansTs} AND status != 'draft') AS new_plans
+    `) as { new_users: number; new_interests: number; new_plans: number }[];
+
+    return c.json({
+      ok: true,
+      users: counts[0].new_users,
+      interests: counts[0].new_interests,
+      plans: counts[0].new_plans,
+    });
+  } catch (err) {
+    console.error("[GET /admin/badge-counts]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /admin/mark-viewed — mark a section as viewed */
+app.post("/admin/mark-viewed", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+
+  const section = String(body.section ?? "");
+  if (!["users", "interests", "plans"].includes(section))
+    return c.json({ ok: false, error: "VALIDATION", message: "Invalid section" }, 400);
+
+  const sql = getSql(c.env);
+  try {
+    await sql`
+      INSERT INTO newchums.admin_view_timestamps (admin_user_id, section, last_viewed_at)
+      VALUES (${admin.id}, ${section}, NOW())
+      ON CONFLICT (admin_user_id, section) DO UPDATE SET last_viewed_at = NOW()
+    `;
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[POST /admin/mark-viewed]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** GET /admin/plans — list all plans for admin moderation */
+app.get("/admin/plans", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  const sql = getSql(c.env);
+  const q = c.req.query("q")?.trim();
+  const statusFilter = c.req.query("status") ?? "all";
+  const likePattern = q ? `%${q.toLowerCase()}%` : null;
+
+  try {
+    const rows = (await sql`
+      SELECT
+        e.id, e.title, e.starts_at, e.status, e.visibility,
+        e.host_user_id, e.created_at, e.canceled_at, e.max_seats,
+        e.location_type, e.location_name, e.location_address,
+        h.name AS host_name, h.username AS host_username, h.email AS host_email,
+        (SELECT COUNT(*)::int FROM newchums.event_rsvps er WHERE er.event_id = e.id AND er.status = 'going') AS going_count,
+        (SELECT COUNT(*)::int FROM newchums.event_rsvps er WHERE er.event_id = e.id AND er.status = 'maybe') AS maybe_count,
+        (SELECT COUNT(*)::int FROM newchums.event_rsvps er WHERE er.event_id = e.id) AS total_rsvps
+      FROM newchums.events e
+      LEFT JOIN newchums.users h ON h.id = e.host_user_id
+      WHERE e.status != 'draft'
+        ${likePattern ? sql`AND (LOWER(e.title) LIKE ${likePattern} OR LOWER(COALESCE(h.name, '')) LIKE ${likePattern} OR LOWER(COALESCE(h.email, '')) LIKE ${likePattern})` : sql``}
+        ${statusFilter === "published" ? sql`AND e.status = 'published' AND e.canceled_at IS NULL` : sql``}
+        ${statusFilter === "canceled" ? sql`AND e.status = 'canceled'` : sql``}
+        ${statusFilter === "upcoming" ? sql`AND e.status = 'published' AND e.canceled_at IS NULL AND e.starts_at >= NOW()` : sql``}
+        ${statusFilter === "past" ? sql`AND e.status = 'published' AND e.canceled_at IS NULL AND e.starts_at < NOW()` : sql``}
+      ORDER BY e.created_at DESC
+      LIMIT 200
+    `) as Array<{
+      id: string; title: string; starts_at: string; status: string; visibility: string;
+      host_user_id: string; created_at: string; canceled_at: string | null; max_seats: number | null;
+      location_type: string; location_name: string | null; location_address: string | null;
+      host_name: string | null; host_username: string | null; host_email: string | null;
+      going_count: number; maybe_count: number; total_rsvps: number;
+    }>;
+
+    return c.json({ ok: true, plans: rows });
+  } catch (err) {
+    console.error("[GET /admin/plans]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /admin/plans/:id/remove — admin hard-deletes an event and notifies the host */
+app.post("/admin/plans/:id/remove", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  const eventId = c.req.param("id");
+  let reason = "";
+  try { const body = await c.req.json<{ reason?: string }>(); reason = typeof body.reason === "string" ? body.reason.trim() : ""; } catch { /* no body is fine */ }
+
+  const sql = getSql(c.env);
+  try {
+    const ev = (await sql`
+      SELECT e.id, e.title, e.host_user_id, u.email AS host_email, u.name AS host_name, u.username AS host_username
+      FROM newchums.events e
+      JOIN newchums.users u ON u.id = e.host_user_id
+      WHERE e.id = ${eventId}
+    `) as { id: string; title: string; host_user_id: string; host_email: string; host_name: string | null; host_username: string | null }[];
+    if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+
+    const { title, host_email, host_name, host_username } = ev[0];
+
+    await sql`DELETE FROM newchums.events WHERE id = ${eventId}`;
+
+    const displayName = host_name || host_username?.replace(/^@/, "") || "there";
+    try {
+      await sendPlanRemovedByAdminEmail(c.env, {
+        to: host_email,
+        hostName: displayName,
+        eventTitle: title,
+        reason: reason || undefined,
+      });
+    } catch (emailErr) {
+      console.error("[POST /admin/plans/:id/remove] email error (non-fatal):", emailErr);
+    }
+
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[POST /admin/plans/:id/remove]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });
 

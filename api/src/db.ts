@@ -42,6 +42,8 @@ export type Bindings = {
   POSTMARK_TEMPLATE_CONFIRMATION_REQUEST?: string;
   /** Postmark template ID for plan-at-risk host notification */
   POSTMARK_TEMPLATE_PLAN_AT_RISK?: string;
+  /** Postmark template ID for admin plan removal notification (template 43998481) */
+  POSTMARK_TEMPLATE_PLAN_REMOVED?: string;
   SENTRY_DSN: string;
   APP_ENV?: string;
   ENVIRONMENT?: string;

@@ -8,6 +8,7 @@ import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
 import WavingHandRoundedIcon from "@mui/icons-material/WavingHandRounded";
 import {
   AppBar,
+  Badge,
   Box,
   Button,
   Container,
@@ -70,6 +71,7 @@ export default function AppShell({ children, user }: AppShellProps) {
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [accountMenuAnchor, setAccountMenuAnchor] = React.useState<null | HTMLElement>(null);
   const [navProfile, setNavProfile] = React.useState<NavProfile | null>(null);
+  const [adminBadges, setAdminBadges] = React.useState<Record<string, number>>({});
 
   React.useEffect(() => {
     if (!user) {
@@ -122,6 +124,26 @@ export default function AppShell({ children, user }: AppShellProps) {
       .catch(() => {});
     return () => { cancelled = true; };
   }, [user]);
+
+  // Fetch admin badge counts
+  const isSuperAdmin = navProfile?.role === "super_admin" || user?.role === "super_admin";
+  React.useEffect(() => {
+    if (!isSuperAdmin) return;
+    let cancelled = false;
+    apiFetch("/admin/badge-counts", { auth: true })
+      .then((res) => res.json())
+      .then((data: { ok?: boolean; users?: number; interests?: number; plans?: number }) => {
+        if (!cancelled && data.ok) {
+          setAdminBadges({
+            "/admin/chums": data.users ?? 0,
+            "/admin/interests": data.interests ?? 0,
+            "/admin/plans": data.plans ?? 0,
+          });
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [isSuperAdmin, navProfile]);
 
   // Unauthenticated shell: minimal header with logo + Sign in / Sign up, no sidebar
   if (!isAuthenticated) {
@@ -349,16 +371,29 @@ export default function AppShell({ children, user }: AppShellProps) {
             {superAdminNavItems.map((item) => {
               const Icon = item.icon;
               const active = isNavItemActive(pathname, item.href);
+              const badgeCount = adminBadges[item.href] ?? 0;
               return (
                 <ListItemButton
                   key={item.href}
                   component={Link}
                   href={item.href}
                   selected={active}
-                  onClick={() => setMobileOpen(false)}
+                  onClick={() => {
+                    setMobileOpen(false);
+                    if (badgeCount > 0) {
+                      const sectionMap: Record<string, string> = { "/admin/chums": "users", "/admin/interests": "interests", "/admin/plans": "plans" };
+                      const section = sectionMap[item.href];
+                      if (section) {
+                        apiFetch("/admin/mark-viewed", { auth: true, method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ section }) }).catch(() => {});
+                        setAdminBadges((prev) => ({ ...prev, [item.href]: 0 }));
+                      }
+                    }
+                  }}
                 >
                   <ListItemIcon sx={{ minWidth: 36 }}>
-                    <Icon sx={{ fontSize: 20, color: active ? "primary.main" : "text.secondary" }} />
+                    <Badge badgeContent={badgeCount} color="error" max={99} sx={{ "& .MuiBadge-badge": { fontSize: "0.625rem", height: 16, minWidth: 16 } }}>
+                      <Icon sx={{ fontSize: 20, color: active ? "primary.main" : "text.secondary" }} />
+                    </Badge>
                   </ListItemIcon>
                   <ListItemText
                     primary={item.label}

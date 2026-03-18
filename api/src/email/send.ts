@@ -603,6 +603,31 @@ export const sendPlanAutoCancelledEmail = async (
   });
 };
 
+// ── Admin plan removal notification ─────────────────────────────────────
+//   Postmark template 43998481.
+//   Model: productName, hostName, eventTitle, reason
+
+export const sendPlanRemovedByAdminEmail = async (
+  env: Bindings,
+  { to, hostName, eventTitle, reason }: {
+    to: string; hostName: string;
+    eventTitle: string; reason?: string;
+  }
+) => {
+  if (!env.POSTMARK_TEMPLATE_PLAN_REMOVED) return;
+  return sendPostmarkTemplateEmail(env, {
+    From: env.EMAIL_FROM,
+    To: to,
+    TemplateId: env.POSTMARK_TEMPLATE_PLAN_REMOVED,
+    TemplateModel: {
+      productName: "NewChums",
+      hostName,
+      eventTitle,
+      reason: reason || "",
+    },
+  });
+};
+
 const CONTACT_EMAIL = "contact@newchums.com";
 
 export const sendContactFormEmail = async (
