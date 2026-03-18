@@ -92,6 +92,7 @@ type EventDetail = {
   isInvited: boolean;
   hasRsvp: boolean;
   guestInvite?: boolean;
+  guestEmail?: string;
   guestRsvpStatus?: string | null;
   // Attendance assurance
   minConfirmedAttendees: number | null;
@@ -1253,6 +1254,7 @@ export default function EventDetailClient() {
     ? rsvps.filter((r) => r.status === "maybe" && invites.some((inv) => inv.userId === r.userId)).length
     : 0;
   const reservedSeatCount = event.reserveSeats ? pendingInvites.length + maybeInviteeCount : 0;
+  const isFull = event.maxSeats != null && (goingCount + reservedSeatCount) >= event.maxSeats;
 
   // Request-to-join derived state
   const userJoinRequest = !event.isHost && joinRequests.length > 0 ? joinRequests[0] : null;
@@ -1586,7 +1588,7 @@ export default function EventDetailClient() {
                   </Typography>
                   <Button
                     component={Link}
-                    href={`/signup?next=${encodeURIComponent(`/events/${eventId}`)}`}
+                    href={`/signup?next=${encodeURIComponent(`/events/${eventId}`)}${event.guestEmail ? `&email=${encodeURIComponent(event.guestEmail)}` : ""}`}
                     variant="text"
                     size="small"
                     sx={{ alignSelf: "center", textTransform: "none", fontWeight: 600 }}
@@ -1916,6 +1918,15 @@ export default function EventDetailClient() {
                   <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
                     {event.isInvited ? "Can you make it?" : "Are you in?"}
                   </Typography>
+                  {isFull && !event.lockedAt ? (
+                    <Stack direction="row" alignItems="center" spacing={1} sx={{ p: 1.5, bgcolor: "grey.100", borderRadius: 2 }}>
+                      <InfoOutlinedIcon sx={{ fontSize: 18, color: "text.secondary" }} />
+                      <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
+                        Sorry, this plan is full, no spots remaining!
+                      </Typography>
+                    </Stack>
+                  ) : (
+                  <>
                   {event.lockedAt && chatAccessible !== true && (
                     <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2, p: 1.5, bgcolor: "grey.100", borderRadius: 2 }}>
                       <LockRoundedIcon sx={{ fontSize: 18, color: "text.secondary" }} />
@@ -1939,8 +1950,10 @@ export default function EventDetailClient() {
                   </Stack>
                 </>
               )}
-            </>
-          )}
+                  </>
+                  )}
+                </>
+              )}
         </AppCard>
       )}
 
@@ -2406,8 +2419,10 @@ export default function EventDetailClient() {
         }, {});
 
         function computeOverlaps(entries: AltTimeEntry[]): OverlapWindow[] {
+          if (entries.length < 2) return [];
+
           const ranged = entries.filter((e) => e.endsAt);
-          if (ranged.length < 2) return [];
+          const pointEntries = entries.filter((e) => !e.endsAt);
 
           const entryById = new Map(entries.map((e) => [e.id, e]));
           const intervals = ranged.map((e) => ({
@@ -2416,23 +2431,26 @@ export default function EventDetailClient() {
             e: new Date(e.endsAt!).getTime(),
           }));
 
+          // Include point times as boundaries so a point falling inside a ranged
+          // window creates its own segment start, enabling overlap detection.
           const boundaries = new Set<number>();
           for (const iv of intervals) { boundaries.add(iv.s); boundaries.add(iv.e); }
+          for (const pt of pointEntries) { boundaries.add(new Date(pt.suggestedAt).getTime()); }
           const sorted = [...boundaries].sort((a, b) => a - b);
 
-          const pointEntries = entries.filter((e) => !e.endsAt);
           const raw: OverlapWindow[] = [];
 
           for (let i = 0; i < sorted.length - 1; i++) {
             const segStart = sorted[i];
             const segEnd = sorted[i + 1];
             const active = intervals.filter((iv) => iv.s <= segStart && iv.e >= segEnd);
-            if (active.length < 2) continue;
             const entrySet = new Set(active.map((iv) => iv.id));
             for (const pt of pointEntries) {
               const ptMs = new Date(pt.suggestedAt).getTime();
               if (ptMs >= segStart && ptMs < segEnd) entrySet.add(pt.id);
             }
+            // Need at least 2 distinct people for a meaningful overlap
+            if (entrySet.size < 2) continue;
             raw.push({
               startMs: segStart,
               endMs: segEnd,
@@ -2575,14 +2593,18 @@ export default function EventDetailClient() {
                 <Stack spacing={0} divider={<Divider />}>
                   {allOverlaps.map((ov, oi) => {
                     const ovStart = fmtTime(new Date(ov.startMs));
-                    const ovEnd = fmtTime(new Date(ov.endMs));
+                    // Only show end time when every entry in the overlap is a ranged suggestion.
+                    // A point entry (no endsAt) means that person only committed to a start time,
+                    // so the window end doesn't apply to them.
+                    const allRanged = ov.entries.every((e) => !!e.endsAt);
+                    const ovEnd = allRanged ? fmtTime(new Date(ov.endMs)) : null;
                     const isBest = ov.entries.length === globalBestOverlapCount && globalBestOverlapCount > 1;
                     return (
                       <Stack key={`ov-${oi}`} direction="row" alignItems="center" justifyContent="space-between" sx={{ py: 1 }}>
                         <Box sx={{ minWidth: 0 }}>
                           <Stack direction="row" alignItems="center" spacing={0.75} sx={{ flexWrap: "wrap" }}>
                             <Typography variant="body2" fontWeight={600} color="primary.main">
-                              {fmtDay(ov.date)}, {ovStart} – {ovEnd}
+                              {fmtDay(ov.date)}, {ovStart}{ovEnd ? ` – ${ovEnd}` : ""}
                             </Typography>
                             <Chip
                               label={`${ov.entries.length} overlap${isBest ? " — best fit" : ""}`}

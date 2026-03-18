@@ -5164,6 +5164,7 @@ app.get("/events/:id", async (c) => {
         isInvited,
         hasRsvp,
         guestInvite: tokenGuestEmail ? true : undefined,
+        guestEmail: tokenGuestEmail || undefined,
         guestRsvpStatus: tokenGuestEmail
           ? (rsvps.find((r) => !r.user_id && r.guest_email === tokenGuestEmail)?.status ?? null)
           : undefined,

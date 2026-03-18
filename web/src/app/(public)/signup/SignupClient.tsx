@@ -41,7 +41,7 @@ export default function SignupClient() {
   const [direction, setDirection] = React.useState<"forward" | "back">("forward");
 
   // Step 1: Account credentials
-  const [email, setEmail] = React.useState("");
+  const [email, setEmail] = React.useState(searchParams.get("email") ?? "");
   const [password, setPassword] = React.useState("");
   const [confirmPassword, setConfirmPassword] = React.useState("");
   const [emailError, setEmailError] = React.useState<string | null>(null);
