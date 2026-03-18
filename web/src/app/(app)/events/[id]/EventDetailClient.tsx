@@ -1019,6 +1019,7 @@ export default function EventDetailClient() {
         if (data.ok) { toast.success("Alternate time updated"); resetAltForm(); refresh(); }
         else toast.error(data.message ?? "Error");
       } else {
+        const useGuestEndpoint = !viewerUserId && !!inviteTokenRef.current;
         let created = 0;
         for (let i = 0; i < dayCount; i++) {
           const day = altStartDate.add(i, "day");
@@ -1026,11 +1027,17 @@ export default function EventDetailClient() {
           const endsAt = endH != null && endM != null
             ? day.hour(endH).minute(endM).second(0).millisecond(0).toISOString()
             : null;
-          const res = await apiFetch(`/events/${eventId}/alt-time`, {
-            auth: true, method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ suggested_at: suggestedAt, ends_at: endsAt, note: noteVal }),
-          });
+          const res = useGuestEndpoint
+            ? await apiFetch(`/events/${eventId}/guest-alt-time`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ invite_token: inviteTokenRef.current, suggested_at: suggestedAt, ends_at: endsAt, note: noteVal }),
+              })
+            : await apiFetch(`/events/${eventId}/alt-time`, {
+                auth: true, method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ suggested_at: suggestedAt, ends_at: endsAt, note: noteVal }),
+              });
           const data = (await res.json()) as { ok: boolean; message?: string };
           if (!data.ok) {
             toast.error(data.message ?? "Error");
@@ -2383,7 +2390,7 @@ export default function EventDetailClient() {
       )}
 
       {/* Find a better time — collaborative alternate scheduling */}
-      {event.allowAltTimes && !isCanceled && (event.isHost || viewerRsvpStatus === "going" || viewerRsvpStatus === "maybe" || event.isInvited) && (() => {
+      {event.allowAltTimes && !isCanceled && (event.isHost || viewerRsvpStatus === "going" || viewerRsvpStatus === "maybe" || event.isInvited || (isGuestInvite && (guestRsvpStatus === "going" || guestRsvpStatus === "maybe"))) && (() => {
         type OverlapWindow = { startMs: number; endMs: number; entries: AltTimeEntry[] };
 
         const fmtTime = (d: Date) => d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });

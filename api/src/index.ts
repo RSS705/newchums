@@ -4984,12 +4984,12 @@ app.get("/events/:id", async (c) => {
     `) as Array<{ status: string; note: string | null; user_id: string | null; guest_email: string | null; guest_name: string | null; name: string | null; username: string | null; avatar_key: string | null; avatar_updated_at: string | Date | null }>;
 
     const altTimes = (await sql`
-      SELECT eat.id, eat.suggested_at, eat.ends_at, eat.note, eat.user_id, u.name, u.username
+      SELECT eat.id, eat.suggested_at, eat.ends_at, eat.note, eat.user_id, eat.guest_email, u.name, u.username
       FROM newchums.event_alt_times eat
-      JOIN newchums.users u ON u.id = eat.user_id
+      LEFT JOIN newchums.users u ON u.id = eat.user_id
       WHERE eat.event_id = ${eventId}
       ORDER BY eat.created_at ASC
-    `) as Array<{ id: string; suggested_at: string; ends_at: string | null; note: string | null; user_id: string; name: string | null; username: string | null }>;
+    `) as Array<{ id: string; suggested_at: string; ends_at: string | null; note: string | null; user_id: string | null; guest_email: string | null; name: string | null; username: string | null }>;
 
     const eventHobbies = (await sql`
       SELECT ii.name, ii.slug
@@ -5162,10 +5162,11 @@ app.get("/events/:id", async (c) => {
       }),
       altTimes: altTimes.map((a) => {
         const aHandle = a.username?.replace(/^@/, "") ?? null;
+        const guestLabel = a.guest_email ? a.guest_email.split("@")[0] : null;
         return {
           id: a.id,
           userId: a.user_id,
-          name: a.name?.trim() || aHandle || "Someone",
+          name: a.name?.trim() || aHandle || guestLabel || "Someone",
           handle: aHandle ? `@${aHandle}` : null,
           suggestedAt: a.suggested_at,
           endsAt: a.ends_at,
@@ -5765,6 +5766,64 @@ app.post("/events/:id/alt-time", async (c) => {
   }
 });
 
+/** POST /events/:id/guest-alt-time — guest (invite-token) alternate time suggestion */
+app.post("/events/:id/guest-alt-time", async (c) => {
+  const eventId = c.req.param("id");
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+
+  const token = body.invite_token ? String(body.invite_token) : null;
+  if (!token) return c.json({ ok: false, error: "MISSING_TOKEN" }, 400);
+
+  const decoded = await verifyInviteToken(token, c.env.NEXTAUTH_SECRET);
+  if (!decoded || decoded.eventId !== eventId)
+    return c.json({ ok: false, error: "INVALID_TOKEN", message: "This link has expired or is invalid." }, 403);
+
+  const guestEmail = decoded.email?.toLowerCase() ?? null;
+  if (!guestEmail)
+    return c.json({ ok: false, error: "INVALID_TOKEN", message: "This invite link is invalid." }, 400);
+
+  const suggestedAt = body.suggested_at ? String(body.suggested_at) : null;
+  if (!suggestedAt) return c.json({ ok: false, error: "VALIDATION", message: "Start date/time is required", field: "suggested_at" }, 400);
+  const suggestedDate = new Date(suggestedAt);
+  if (isNaN(suggestedDate.getTime())) return c.json({ ok: false, error: "VALIDATION", message: "Invalid date/time", field: "suggested_at" }, 400);
+
+  let endsAtDate: Date | null = null;
+  if (body.ends_at) {
+    endsAtDate = new Date(String(body.ends_at));
+    if (isNaN(endsAtDate.getTime())) return c.json({ ok: false, error: "VALIDATION", message: "Invalid end date/time", field: "ends_at" }, 400);
+    if (endsAtDate.getTime() <= suggestedDate.getTime())
+      return c.json({ ok: false, error: "VALIDATION", message: "End time must be after start time", field: "ends_at" }, 400);
+  }
+
+  const note = body.note ? String(body.note).trim().slice(0, 500) : null;
+  const sql = getSql(c.env);
+
+  try {
+    const ev = (await sql`SELECT id, host_user_id, allow_alt_times, title FROM newchums.events WHERE id = ${eventId} AND status = 'published'`) as { id: string; host_user_id: string; allow_alt_times: boolean; title: string }[];
+    if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    if (!ev[0].allow_alt_times) return c.json({ ok: false, error: "VALIDATION", message: "This plan does not accept alternate times" }, 400);
+
+    const guestRsvp = (await sql`SELECT status FROM newchums.event_rsvps WHERE event_id = ${eventId} AND guest_email = ${guestEmail} AND user_id IS NULL LIMIT 1`) as { status: string }[];
+    if (guestRsvp.length === 0 || (guestRsvp[0].status !== "going" && guestRsvp[0].status !== "maybe"))
+      return c.json({ ok: false, error: "FORBIDDEN", message: "You must RSVP before suggesting alternate times" }, 403);
+
+    const guestAltCount = (await sql`SELECT COUNT(*)::int AS c FROM newchums.event_alt_times WHERE event_id = ${eventId} AND guest_email = ${guestEmail} AND user_id IS NULL`) as { c: number }[];
+    if (guestAltCount[0].c >= 10)
+      return c.json({ ok: false, error: "VALIDATION", message: "You can suggest up to 10 alternate times" }, 400);
+
+    await sql`
+      INSERT INTO newchums.event_alt_times (event_id, user_id, guest_email, suggested_at, ends_at, note)
+      VALUES (${eventId}, ${null}, ${guestEmail}, ${suggestedDate.toISOString()}, ${endsAtDate ? endsAtDate.toISOString() : null}, ${note})
+    `;
+
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[POST /events/:id/guest-alt-time]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
 /** POST /events/:id/promote-alt-time — host promotes an alternate time to official starts_at */
 app.post("/events/:id/promote-alt-time", async (c) => {
   const payload = await requireAuth(c);
@@ -6286,7 +6345,7 @@ app.post("/events/:id/invite", async (c) => {
     const inviterUser = (await sql`SELECT name, username FROM newchums.users WHERE id = ${userId}`) as { name: string | null; username: string | null }[];
     const inviterName = inviterUser[0]?.name?.trim() || inviterUser[0]?.username?.replace(/^@/, "") || "Someone";
     const suggestTimeNote = suggestTime
-      ? `${inviterName} would also love your input on finding a better time for this plan. Once you join, you can suggest an alternative that works for you.`
+      ? `${inviterName} would also like your input on finding a better time for this plan! Once you join, please suggest an alternative that works for you.`
       : "";
 
     for (const inv of invitees.slice(0, 50)) {

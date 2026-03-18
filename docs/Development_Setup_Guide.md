@@ -16,7 +16,7 @@ For product direction, terminology, and agent governance, see `AGENTS.md`.
 - **Canonical host:** `https://newchums.com` (www → non-www redirect enforced before Auth.js).
 - **API migration:** All business logic is in the API worker — auth flows, profile, interests, Chums, Chum invites, events (plans), notifications, email unsubscribe, admin, avatar, contact form, scheduled tasks.
 - **Signup/Onboarding:** Multi-step wizard for both email/password (4 steps) and Google OAuth (3 steps). Collects credentials + legal acceptance → username/DOB → hobbies (optional) → location/travel distance (optional). Required Terms of Use and Privacy Policy acceptance before signup. Shared `OnboardingProgress`, `StepTransition`, `HobbiesStep`, `LocationStep` components.
-- **Events (plans):** Full event creation, context-aware RSVP (going/maybe/can't make it), invite, alternate time suggestion (with best-start-times overlap display), cancel, edit (host), request-to-join (host approval), host attendee removal. Visibility: invite_only, chums_only, public. Gradient banner presets + custom upload. Plan-change email notifications to attendees (edits, locks, cancellations). Per-plan participant chat with real-time WebSocket delivery via Cloudflare Durable Objects, unread chat indicators in bell and plan cards, daily unread-chat digest email. Host can lock/unlock plans. Attendance assurance (host-configurable final confirmation, min confirmed attendees, fallback policies, cron-based reminders and cutoff processing). Going attendees can invite others (host-controlled via `allow_attendee_invites`, on by default). Invites support optional "suggest a better time" mode when alt times are enabled.
+- **Events (plans):** Full event creation, context-aware RSVP (going/maybe/can't make it), invite, alternate time suggestion (with best-start-times overlap display), cancel, edit (host), request-to-join (host approval), host attendee removal. Visibility: invite_only, chums_only, public. Gradient banner presets + custom upload. Plan-change email notifications to attendees (edits, locks, cancellations). Per-plan participant chat with real-time WebSocket delivery via Cloudflare Durable Objects, unread chat indicators in bell and plan cards, daily unread-chat digest email. Host can lock/unlock plans. Attendance assurance (host-configurable final confirmation, min confirmed attendees, fallback policies, cron-based reminders and cutoff processing). Going attendees can invite others (host-controlled via `allow_attendee_invites`, on by default). Invites support optional "suggest a better time" mode when alt times are enabled. Guest (unauthenticated) invitees can suggest alternate times from the public plan view via invite token.
 - **Explore page:** Personalized discovery feed (`/`). Uses `GET /events/explore` with hobby-based ranking, sort options (upcoming/newest), personalization toggle, location-aware ordering (Haversine), hobby filter, time-range chips, text search, session state persistence via `localStorage`.
 - **Your Plans:** Tabbed upcoming/past view with hosted and joined sections, unread chat indicators, real API data.
 - **Chums:** One-way saved-people feature with search, email invite flow, mutual indicators, privacy controls, public Chums on profiles, private per-chum notes, and birthday display.
@@ -251,6 +251,7 @@ psql "$DATABASE_URL" -f sql/039_attendance_assurance.sql
 psql "$DATABASE_URL" -f sql/040_legal_acceptance.sql
 psql "$DATABASE_URL" -f sql/041_attendance_record.sql
 psql "$DATABASE_URL" -f sql/042_allow_attendee_invites.sql
+psql "$DATABASE_URL" -f sql/043_guest_alt_times.sql
 ```
 
 Notes:
@@ -375,6 +376,22 @@ Chunk XX — YYYY-MM-DD
 ## Session Log (Chunks)
 
 (Existing chunks should remain here. Add new chunks at the end.)
+
+---
+
+Chunk 17 — 2026-03-18
+- Goal: Allow guest (unauthenticated) invitees to suggest alternate times from the public plan details view.
+- Changes:
+  - **DB migration 043** (`event_alt_times`: `user_id` made nullable, added `guest_email TEXT NULL`). Mirrors the `event_rsvps` guest pattern.
+  - **API:**
+    - `POST /events/:id/guest-alt-time` — new endpoint. No auth required; validates invite token, verifies guest has going/maybe RSVP, enforces 10-suggestion limit per guest email. Inserts with `user_id = NULL, guest_email`.
+    - `GET /events/:id` — alt-times query changed from `JOIN` to `LEFT JOIN newchums.users` so guest entries are included. Guest display name uses email prefix.
+  - **Web — EventDetailClient.tsx:**
+    - "Find a better time" section now visible for guest invitees (`isGuestInvite && (guestRsvpStatus === "going" || guestRsvpStatus === "maybe")`).
+    - `handleAltTimeSubmit` routes through `POST /events/:id/guest-alt-time` (with invite token) when viewer is unauthenticated; otherwise uses the existing authenticated endpoint.
+  - **Documentation:** Updated Technical_Specs.md (v13.2), Development_Setup_Guide.md.
+- Verification: `npm run build` passes cleanly.
+- Deploy: Run migration 043 against production DB before deploying API worker.
 
 ---
 
