@@ -276,7 +276,7 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
         ) : (
           <Button
             component={Link}
-            href="/login"
+            href="/login?next=/roadmap"
             variant="contained"
             color="primary"
             sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
