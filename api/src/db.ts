@@ -46,6 +46,8 @@ export type Bindings = {
   POSTMARK_TEMPLATE_PLAN_REMOVED?: string;
   /** Postmark template ID for roadmap/feedback update notifications */
   POSTMARK_TEMPLATE_ROADMAP_UPDATE?: string;
+  /** Postmark template ID for daily event-match digest email (template 44018889) */
+  POSTMARK_TEMPLATE_EVENT_MATCH_DIGEST?: string;
   SENTRY_DSN: string;
   APP_ENV?: string;
   ENVIRONMENT?: string;

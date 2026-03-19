@@ -507,6 +507,89 @@ export const sendUnreadChatDigestEmail = async (
   });
 };
 
+// ── Event match digest email ────────────────────────────────────────────
+
+export type EventMatchPlanItem = {
+  title: string;
+  description: string;
+  date: string;
+  location: string;
+  url: string;
+};
+
+function buildMatchPlanCardHtml(plan: EventMatchPlanItem): string {
+  const descSnippet = plan.description.length > 120
+    ? escapeHtml(plan.description.slice(0, 117)) + "..."
+    : escapeHtml(plan.description);
+
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 10px; border: 1px solid #E5E7EB; border-radius: 10px; overflow: hidden;">
+  <tr><td style="background-color: #E65B13; height: 3px; font-size: 0; line-height: 0;">&nbsp;</td></tr>
+  <tr><td style="padding: 16px 20px;">
+    <p style="margin: 0 0 6px 0; font-family: ${FONT}; font-size: 16px; font-weight: 700; color: #1F2937; line-height: 1.3;">${escapeHtml(plan.title)}</p>${
+    descSnippet ? `\n    <p style="margin: 0 0 8px 0; font-family: ${FONT}; font-size: 13px; color: #4B5563; line-height: 1.45;">${descSnippet}</p>` : ""
+  }
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+      <tr>
+        <td style="vertical-align: middle;">
+          <p style="margin: 0 0 2px 0; font-family: ${FONT}; font-size: 13px; color: #6B7280;">&#128197;&ensp;${escapeHtml(plan.date)}</p>${
+    plan.location ? `\n          <p style="margin: 0; font-family: ${FONT}; font-size: 13px; color: #6B7280;">&#128205;&ensp;${escapeHtml(plan.location)}</p>` : ""
+  }
+        </td>
+        <td style="vertical-align: middle; text-align: right; width: 100px;">
+          <a href="${escapeHtml(plan.url)}" style="display: inline-block; background-color: #E65B13; color: #ffffff; font-family: ${FONT}; font-size: 13px; font-weight: 600; text-decoration: none; padding: 8px 16px; border-radius: 6px; line-height: 1;">View Plan</a>
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+</table>`;
+}
+
+function buildMatchPlanCardText(plan: EventMatchPlanItem): string {
+  const descSnippet = plan.description.length > 120
+    ? plan.description.slice(0, 117) + "..."
+    : plan.description;
+  const lines = [`- ${plan.title}`];
+  if (descSnippet) lines.push(`  ${descSnippet}`);
+  lines.push(`  Date: ${plan.date}`);
+  if (plan.location) lines.push(`  Location: ${plan.location}`);
+  lines.push(`  ${plan.url}`);
+  return lines.join("\n");
+}
+
+export const sendEventMatchDigestEmail = async (
+  env: Bindings,
+  { to, recipientName, plans, unsubscribeUrl }: {
+    to: string; recipientName: string;
+    plans: EventMatchPlanItem[];
+    unsubscribeUrl?: string;
+  }
+) => {
+  if (!env.POSTMARK_TEMPLATE_EVENT_MATCH_DIGEST) return;
+
+  const maxPlans = Math.min(plans.length, 10);
+  const displayed = plans.slice(0, maxPlans);
+  const planCardsHtml = displayed.map((p) => buildMatchPlanCardHtml(p)).join("\n");
+  const planCardsText = displayed.map((p) => buildMatchPlanCardText(p)).join("\n\n");
+
+  const model: Record<string, string | number> = {
+    productName: "NewChums",
+    recipientName,
+    planCount: plans.length,
+    planNoun: plans.length === 1 ? "plan" : "plans",
+    planCards: planCardsHtml,
+    planCardsText,
+    exploreUrl: `${env.WEB_BASE_URL}/`,
+    unsubscribeUrl: unsubscribeUrl || "",
+  };
+
+  return sendPostmarkTemplateEmail(env, {
+    From: env.EMAIL_FROM,
+    To: to,
+    TemplateId: env.POSTMARK_TEMPLATE_EVENT_MATCH_DIGEST,
+    TemplateModel: model,
+  });
+};
+
 // ── Attendance assurance emails ─────────────────────────────────────────
 
 export const sendConfirmationRequestEmail = async (

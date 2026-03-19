@@ -27,6 +27,7 @@ import {
   sendPasswordResetEmail,
   sendRsvpConfirmationEmail,
   sendUnreadChatDigestEmail,
+  sendEventMatchDigestEmail,
   sendVerificationEmail,
   sendConfirmationRequestEmail,
   sendPlanAtRiskEmail,
@@ -8151,6 +8152,173 @@ async function processAttendanceAssurance(
   }
 }
 
+// ─── Event match digest ───────────────────────────────────────────────────────
+
+async function processEventMatchDigest(
+  sql: ReturnType<typeof getSql>,
+  env: Bindings,
+  ctx: ExecutionContext,
+) {
+  if (!env.POSTMARK_TEMPLATE_EVENT_MATCH_DIGEST) return;
+
+  const rows = (await sql`
+    WITH eligible_users AS (
+      SELECT
+        u.id AS user_id,
+        u.email,
+        u.name,
+        up.home_lat,
+        up.home_lng,
+        up.travel_radius_km,
+        up.notification_prefs,
+        up.event_digest_sent_at
+      FROM newchums.users u
+      JOIN newchums.user_profile up ON up.user_id = u.id
+      WHERE up.home_lat IS NOT NULL
+        AND up.home_lng IS NOT NULL
+        AND (up.event_digest_sent_at IS NULL OR up.event_digest_sent_at < NOW() - INTERVAL '23 hours')
+    ),
+    matching AS (
+      SELECT DISTINCT ON (eu.user_id, e.id)
+        eu.user_id,
+        eu.email,
+        eu.name,
+        eu.notification_prefs,
+        e.id AS event_id,
+        e.title AS event_title,
+        COALESCE(e.description, '') AS event_description,
+        e.starts_at,
+        e.location_name,
+        COALESCE(e.location_area, '') AS location_area,
+        e.timezone
+      FROM eligible_users eu
+      JOIN newchums.user_interests ui ON ui.user_id = eu.user_id
+      JOIN newchums.event_interests ei ON ei.interest_id = ui.interest_id
+      JOIN newchums.events e ON e.id = ei.event_id
+      WHERE e.status = 'published'
+        AND e.visibility = 'public'
+        AND e.location_type = 'in_person'
+        AND e.starts_at > NOW()
+        AND e.host_user_id != eu.user_id
+        AND e.location_lat IS NOT NULL
+        AND e.location_lng IS NOT NULL
+        AND e.created_at > COALESCE(eu.event_digest_sent_at, NOW() - INTERVAL '24 hours')
+        AND (e.max_seats IS NULL OR (SELECT COUNT(*)::int FROM newchums.event_rsvps er WHERE er.event_id = e.id AND er.status = 'going') < e.max_seats)
+        AND 6371 * acos(
+          LEAST(1.0, GREATEST(-1.0,
+            cos(radians(eu.home_lat)) * cos(radians(e.location_lat)) *
+            cos(radians(e.location_lng) - radians(eu.home_lng)) +
+            sin(radians(eu.home_lat)) * sin(radians(e.location_lat))
+          ))
+        ) <= COALESCE(eu.travel_radius_km, 200)
+    )
+    SELECT
+      m.user_id,
+      m.email,
+      m.name,
+      m.notification_prefs,
+      json_agg(json_build_object(
+        'eventId', m.event_id,
+        'title', m.event_title,
+        'description', m.event_description,
+        'startsAt', m.starts_at,
+        'locationName', m.location_name,
+        'locationArea', m.location_area,
+        'timezone', m.timezone
+      ) ORDER BY m.starts_at) AS plans
+    FROM matching m
+    GROUP BY m.user_id, m.email, m.name, m.notification_prefs
+  `) as {
+    user_id: string;
+    email: string;
+    name: string | null;
+    notification_prefs: unknown;
+    plans: {
+      eventId: string;
+      title: string;
+      description: string;
+      startsAt: string;
+      locationName: string | null;
+      locationArea: string;
+      timezone: string | null;
+    }[];
+  }[];
+
+  if (rows.length === 0) return;
+
+  const userIds: string[] = [];
+  const emailPromises: Promise<unknown>[] = [];
+
+  for (const row of rows) {
+    const prefs = normalizeNotificationPrefs(row.notification_prefs);
+    if (prefs.items.event_match?.enabled === false) continue;
+
+    const plans = (Array.isArray(row.plans) ? row.plans : []).slice(0, 10);
+    if (plans.length === 0) continue;
+
+    const recipientName = row.name?.trim() || "there";
+
+    let unsubscribeUrl = "";
+    try {
+      if (env.NEXTAUTH_SECRET) {
+        const token = await createUnsubscribeToken(env.NEXTAUTH_SECRET, row.user_id, "event_match");
+        unsubscribeUrl = `${env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(token)}`;
+      }
+    } catch { /* skip token on failure */ }
+
+    const formattedPlans = plans.map((p) => {
+      let dateStr: string;
+      try {
+        const dt = new Date(p.startsAt);
+        dateStr = dt.toLocaleDateString("en-US", {
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+          timeZone: p.timezone || undefined,
+        });
+      } catch {
+        const dt = new Date(p.startsAt);
+        dateStr = dt.toLocaleDateString("en-US", {
+          weekday: "short", month: "short", day: "numeric",
+          hour: "numeric", minute: "2-digit",
+        });
+      }
+
+      return {
+        title: p.title,
+        description: p.description,
+        date: dateStr,
+        location: p.locationName || p.locationArea || "",
+        url: `${env.WEB_BASE_URL}/events/${p.eventId}`,
+      };
+    });
+
+    emailPromises.push(
+      sendEventMatchDigestEmail(env, {
+        to: row.email,
+        recipientName,
+        plans: formattedPlans,
+        unsubscribeUrl,
+      }),
+    );
+    userIds.push(row.user_id);
+  }
+
+  if (userIds.length > 0) {
+    ctx.waitUntil(
+      Promise.allSettled(emailPromises).then(async () => {
+        await sql`
+          UPDATE newchums.user_profile
+          SET event_digest_sent_at = NOW()
+          WHERE user_id = ANY(${userIds}::uuid[])
+        `;
+      }),
+    );
+  }
+}
+
 // ─── Scheduled handler ────────────────────────────────────────────────────────
 
 async function handleScheduled(
@@ -8219,53 +8387,60 @@ async function handleScheduled(
     plans: { eventId: string; eventTitle: string; unreadCount: number }[];
   }[];
 
-  if (rows.length === 0) return;
+  if (rows.length > 0) {
+    const userIds: string[] = [];
+    const emailPromises: Promise<unknown>[] = [];
 
-  const userIds: string[] = [];
-  const emailPromises: Promise<unknown>[] = [];
+    for (const row of rows) {
+      const prefs = normalizeNotificationPrefs(row.notification_prefs);
+      if (prefs.items.unread_chat_digest?.enabled === false) continue;
 
-  for (const row of rows) {
-    const prefs = normalizeNotificationPrefs(row.notification_prefs);
-    if (prefs.items.unread_chat_digest?.enabled === false) continue;
+      const plans = (Array.isArray(row.plans) ? row.plans : []).slice(0, 10);
+      if (plans.length === 0) continue;
 
-    const plans = (Array.isArray(row.plans) ? row.plans : []).slice(0, 10);
-    if (plans.length === 0) continue;
+      const recipientName = row.name?.trim() || "there";
 
-    const recipientName = row.name?.trim() || "there";
+      let unsubscribeUrl = "";
+      try {
+        if (env.NEXTAUTH_SECRET) {
+          const token = await createUnsubscribeToken(env.NEXTAUTH_SECRET, row.user_id, "unread_chat_digest");
+          unsubscribeUrl = `${env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(token)}`;
+        }
+      } catch { /* skip token on failure */ }
 
-    let unsubscribeUrl = "";
-    try {
-      if (env.NEXTAUTH_SECRET) {
-        const token = await createUnsubscribeToken(env.NEXTAUTH_SECRET, row.user_id, "unread_chat_digest");
-        unsubscribeUrl = `${env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(token)}`;
-      }
-    } catch { /* skip token on failure */ }
+      emailPromises.push(
+        sendUnreadChatDigestEmail(env, {
+          to: row.email,
+          recipientName,
+          plans: plans.map((p) => ({
+            title: p.eventTitle,
+            unreadCount: p.unreadCount,
+            url: `${env.WEB_BASE_URL}/events/${p.eventId}`,
+          })),
+          unsubscribeUrl,
+        }),
+      );
+      userIds.push(row.user_id);
+    }
 
-    emailPromises.push(
-      sendUnreadChatDigestEmail(env, {
-        to: row.email,
-        recipientName,
-        plans: plans.map((p) => ({
-          title: p.eventTitle,
-          unreadCount: p.unreadCount,
-          url: `${env.WEB_BASE_URL}/events/${p.eventId}`,
-        })),
-        unsubscribeUrl,
-      }),
-    );
-    userIds.push(row.user_id);
+    if (userIds.length > 0) {
+      ctx.waitUntil(
+        Promise.allSettled(emailPromises).then(async () => {
+          await sql`
+            UPDATE newchums.user_profile
+            SET chat_digest_sent_at = NOW()
+            WHERE user_id = ANY(${userIds}::uuid[])
+          `;
+        }),
+      );
+    }
   }
 
-  if (userIds.length > 0) {
-    ctx.waitUntil(
-      Promise.allSettled(emailPromises).then(async () => {
-        await sql`
-          UPDATE newchums.user_profile
-          SET chat_digest_sent_at = NOW()
-          WHERE user_id = ANY(${userIds}::uuid[])
-        `;
-      }),
-    );
+  // Event match digest — daily personalized digest of new plans matching user hobbies + location
+  try {
+    await processEventMatchDigest(sql, env, ctx);
+  } catch (err) {
+    console.error("[scheduled] event match digest error:", err);
   }
 }
 
