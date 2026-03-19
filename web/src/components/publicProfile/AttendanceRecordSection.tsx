@@ -1,8 +1,6 @@
 "use client";
 
 import Box from "@mui/material/Box";
-import Chip from "@mui/material/Chip";
-import Divider from "@mui/material/Divider";
 import Skeleton from "@mui/material/Skeleton";
 import Stack from "@mui/material/Stack";
 import Tooltip from "@mui/material/Tooltip";
@@ -35,117 +33,105 @@ type AttendanceRecordSectionProps = {
 
 const MIN_SAMPLE_FOR_RATE = 3;
 
-function formatRate(r: RatioMetric): { display: string; isNew: boolean; tooltip: string } {
+function formatRate(r: RatioMetric): { display: string; isLimited: boolean; ratio: string } {
   if (r.denominator === 0) {
-    return { display: "—", isNew: true, tooltip: "No data yet" };
-  }
-  if (r.denominator < MIN_SAMPLE_FOR_RATE) {
-    const pct = Math.round((r.numerator / r.denominator) * 100);
-    return {
-      display: `${pct}%`,
-      isNew: true,
-      tooltip: `${r.numerator} of ${r.denominator}`,
-    };
+    return { display: "—", isLimited: false, ratio: "" };
   }
   const pct = Math.round((r.numerator / r.denominator) * 100);
-  return {
-    display: `${pct}%`,
-    isNew: false,
-    tooltip: `${r.numerator} of ${r.denominator}`,
-  };
+  const ratio = `${r.numerator} of ${r.denominator}`;
+  if (r.denominator < MIN_SAMPLE_FOR_RATE) {
+    return { display: `${pct}%`, isLimited: true, ratio };
+  }
+  return { display: `${pct}%`, isLimited: false, ratio };
 }
 
 type MetricCardProps = {
   icon: React.ReactNode;
   label: string;
   value: string;
-  subtitle?: string;
-  isNew?: boolean;
-  tooltip?: string;
-  accentColor?: string;
+  ratio?: string;
+  tooltipTitle?: string;
 };
 
-function MetricCard({ icon, label, value, subtitle, isNew, tooltip, accentColor = "primary.main" }: MetricCardProps) {
-  const content = (
+function MetricCard({ icon, label, value, ratio, tooltipTitle }: MetricCardProps) {
+  const isEmpty = value === "—";
+
+  const card = (
     <Box
       sx={{
-        flex: "1 1 0",
-        minWidth: 0,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
         textAlign: "center",
-        py: { xs: 2, sm: 2.5 },
-        px: 1.25,
+        py: { xs: 1.75, sm: 2.25 },
+        px: { xs: 0.75, sm: 1.25 },
+        borderRadius: 2,
+        bgcolor: (theme) =>
+          theme.palette.mode === "light" ? "grey.50" : "rgba(255,255,255,0.04)",
+        border: "1px solid",
+        borderColor: "divider",
+        gap: 0.5,
+        minWidth: 0,
       }}
     >
-      <Box sx={{ color: accentColor, mb: 1, display: "flex", justifyContent: "center" }}>
+      <Box
+        sx={{
+          color: isEmpty ? "text.disabled" : "primary.main",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          mb: 0.25,
+        }}
+      >
         {icon}
       </Box>
-      <Stack direction="row" spacing={0.75} alignItems="center" justifyContent="center">
-        <Typography
-          variant="h5"
-          fontWeight={900}
-          sx={{
-            fontSize: { xs: "1.5rem", sm: "1.75rem" },
-            lineHeight: 1.1,
-            letterSpacing: "-0.02em",
-            color: value === "—" ? "text.disabled" : "text.primary",
-          }}
-        >
-          {value}
-        </Typography>
-        {isNew && value !== "—" && (
-          <Chip
-            label="New"
-            size="small"
-            sx={{
-              height: 20,
-              fontSize: "0.6875rem",
-              fontWeight: 700,
-              bgcolor: (theme) => `${theme.palette.secondary.main}18`,
-              color: "secondary.dark",
-              border: "1px solid",
-              borderColor: (theme) => `${theme.palette.secondary.main}40`,
-            }}
-          />
-        )}
-      </Stack>
+
       <Typography
-        variant="body2"
-        color="text.secondary"
+        variant="h5"
+        fontWeight={800}
         sx={{
-          display: "block",
-          mt: 0.75,
-          fontWeight: 600,
-          fontSize: { xs: "0.8rem", sm: "0.85rem" },
-          lineHeight: 1.4,
+          fontSize: { xs: "1.375rem", sm: "1.625rem" },
+          lineHeight: 1,
+          letterSpacing: "-0.02em",
+          color: isEmpty ? "text.disabled" : "text.primary",
+        }}
+      >
+        {value}
+      </Typography>
+
+      {ratio && (
+        <Typography
+          variant="caption"
+          sx={{ fontSize: "0.6875rem", color: "text.disabled", lineHeight: 1.2 }}
+        >
+          {ratio}
+        </Typography>
+      )}
+
+      <Typography
+        variant="caption"
+        fontWeight={600}
+        color={isEmpty ? "text.disabled" : "text.secondary"}
+        sx={{
+          fontSize: { xs: "0.75rem", sm: "0.8125rem" },
+          lineHeight: 1.3,
+          mt: 0.25,
         }}
       >
         {label}
       </Typography>
-      {subtitle && (
-        <Typography
-          variant="caption"
-          sx={{
-            display: "block",
-            mt: 0.25,
-            fontSize: "0.7rem",
-            color: "text.disabled",
-            fontWeight: 500,
-          }}
-        >
-          {subtitle}
-        </Typography>
-      )}
     </Box>
   );
 
-  if (tooltip) {
+  if (tooltipTitle) {
     return (
-      <Tooltip title={tooltip} arrow placement="top" enterTouchDelay={0}>
-        {content}
+      <Tooltip title={tooltipTitle} arrow placement="top" enterTouchDelay={0}>
+        {card}
       </Tooltip>
     );
   }
-  return content;
+  return card;
 }
 
 export default function AttendanceRecordSection({ userId, isOwner }: AttendanceRecordSectionProps) {
@@ -172,20 +158,21 @@ export default function AttendanceRecordSection({ userId, isOwner }: AttendanceR
   const cr = record ? formatRate(record.confirmationRate) : null;
   const hc = record ? formatRate(record.hostCompletion) : null;
 
-  const totalActivity = record
-    ? record.plansAttended + record.plansHosted
-    : 0;
+  const hasHosting = record ? record.hostCompletion.denominator > 0 : false;
+  const rateCount = hasHosting ? 3 : 2;
+
+  const totalActivity = record ? record.plansAttended + record.plansHosted : 0;
   const isNewUser = totalActivity === 0 && !loading;
 
   return (
-    <AppCard sx={{ borderRadius: { xs: 2, sm: 2.5 }, overflow: "hidden" }}>
-      <Stack spacing={2}>
+    <AppCard sx={{ overflow: "hidden" }}>
+      <Stack spacing={2.5}>
         {/* Header */}
         <Stack direction="row" spacing={1.5} alignItems="center">
           <Box
             sx={{
-              width: 42,
-              height: 42,
+              width: 40,
+              height: 40,
               borderRadius: "50%",
               bgcolor: "primary.light",
               display: "flex",
@@ -194,143 +181,154 @@ export default function AttendanceRecordSection({ userId, isOwner }: AttendanceR
               flexShrink: 0,
             }}
           >
-            <EventAvailableRoundedIcon sx={{ fontSize: 22, color: "primary.main" }} />
+            <EventAvailableRoundedIcon sx={{ fontSize: 20, color: "primary.main" }} />
           </Box>
-          <Typography
-            variant="h6"
-            fontWeight={800}
-            sx={{ fontSize: { xs: "1.05rem", sm: "1.15rem" } }}
-          >
-            Attendance record
-          </Typography>
+          <Box>
+            <Typography
+              variant="h6"
+              fontWeight={700}
+              sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
+            >
+              Attendance record
+            </Typography>
+            <Typography
+              variant="caption"
+              color="text.disabled"
+              sx={{ fontSize: "0.6875rem" }}
+            >
+              Based on all-time activity
+            </Typography>
+          </Box>
         </Stack>
 
         {loading ? (
           <Stack spacing={1.5}>
-            <Skeleton variant="rounded" height={100} sx={{ borderRadius: 2 }} />
-            <Skeleton variant="rounded" height={60} sx={{ borderRadius: 2 }} />
+            <Box sx={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 1.25 }}>
+              {[0, 1, 2, 3].map((i) => (
+                <Skeleton key={i} variant="rounded" height={90} sx={{ borderRadius: 2 }} />
+              ))}
+            </Box>
+            <Box sx={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 1.25 }}>
+              {[0, 1].map((i) => (
+                <Skeleton key={i} variant="rounded" height={78} sx={{ borderRadius: 2 }} />
+              ))}
+            </Box>
           </Stack>
         ) : isNewUser ? (
-          /* New user — no plan history yet */
           <Box
             sx={{
               textAlign: "center",
-              py: { xs: 2, sm: 3 },
+              py: { xs: 2.5, sm: 3 },
               px: 2,
               bgcolor: (theme) =>
-                theme.palette.mode === "light" ? "grey.50" : "grey.900",
+                theme.palette.mode === "light" ? "grey.50" : "rgba(255,255,255,0.04)",
+              border: "1px solid",
+              borderColor: "divider",
               borderRadius: 2,
             }}
           >
-            <Chip
-              label="Building history"
-              size="small"
-              sx={{
-                mb: 1.5,
-                height: 24,
-                fontSize: "0.75rem",
-                fontWeight: 700,
-                bgcolor: (theme) => `${theme.palette.secondary.main}18`,
-                color: "secondary.dark",
-                border: "1px solid",
-                borderColor: (theme) => `${theme.palette.secondary.main}40`,
-              }}
-            />
             <Typography
               variant="body2"
               color="text.secondary"
-              sx={{ lineHeight: 1.65, maxWidth: 340, mx: "auto" }}
+              sx={{ lineHeight: 1.65, maxWidth: 300, mx: "auto" }}
             >
               {isOwner
-                ? "Your attendance record will grow as you join and host plans. Every plan you follow through on builds your history."
-                : "This person is new to NewChums. Their attendance record will grow as they join and host plans."}
+                ? "Your record will grow as you join and host plans."
+                : "No plan history to show yet."}
             </Typography>
           </Box>
         ) : (
-          /* Has history — show metrics */
-          <Stack spacing={2}>
-            {/* Rate metrics row */}
-            <Box
-              sx={{
-                display: "flex",
-                bgcolor: (theme) =>
-                  theme.palette.mode === "light" ? "grey.50" : "grey.900",
-                borderRadius: 2,
-                overflow: "hidden",
-              }}
-            >
-              <MetricCard
-                icon={<CheckCircleOutlineRoundedIcon sx={{ fontSize: 28 }} />}
-                label="Follow-through"
-                value={ft!.display}
-                subtitle={ft!.isNew || ft!.display === "—" ? undefined : `${record!.followThrough.numerator} of ${record!.followThrough.denominator}`}
-                isNew={ft!.isNew && ft!.display !== "—"}
-                tooltip={ft!.display === "—" ? "No plan commitments yet" : ft!.tooltip}
-              />
-              <Divider orientation="vertical" flexItem />
-              <MetricCard
-                icon={<ThumbUpAltRoundedIcon sx={{ fontSize: 28 }} />}
-                label="Confirmation"
-                value={cr!.display}
-                subtitle={cr!.isNew || cr!.display === "—" ? undefined : `${record!.confirmationRate.numerator} of ${record!.confirmationRate.denominator}`}
-                isNew={cr!.isNew && cr!.display !== "—"}
-                tooltip={cr!.display === "—" ? "No confirmation requests yet" : cr!.tooltip}
-              />
-              {record!.hostCompletion.denominator > 0 && (
-                <>
-                  <Divider orientation="vertical" flexItem />
+          <Stack spacing={2.5}>
+            {/* Reliability */}
+            <Box>
+              <Typography
+                variant="body2"
+                fontWeight={700}
+                color="text.secondary"
+                sx={{ fontSize: "0.75rem", letterSpacing: "0.04em", textTransform: "uppercase", mb: 1, display: "block" }}
+              >
+                Reliability
+              </Typography>
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: `repeat(${rateCount}, 1fr)`,
+                  gap: 1.25,
+                }}
+              >
+                <MetricCard
+                  icon={<CheckCircleOutlineRoundedIcon sx={{ fontSize: { xs: 22, sm: 26 } }} />}
+                  label="Shows up"
+                  value={ft!.display}
+                  ratio={ft!.ratio || undefined}
+                  tooltipTitle={
+                    ft!.display === "—"
+                      ? "No plan commitments yet"
+                      : `Attended ${record!.followThrough.numerator} of ${record!.followThrough.denominator} plans they committed to`
+                  }
+                />
+                <MetricCard
+                  icon={<ThumbUpAltRoundedIcon sx={{ fontSize: { xs: 22, sm: 26 } }} />}
+                  label="Responds"
+                  value={cr!.display}
+                  ratio={cr!.ratio || undefined}
+                  tooltipTitle={
+                    cr!.display === "—"
+                      ? "No pre-plan check-ins yet"
+                      : `Replied to ${record!.confirmationRate.numerator} of ${record!.confirmationRate.denominator} pre-plan attendance check-ins`
+                  }
+                />
+                {hasHosting && (
                   <MetricCard
-                    icon={<StarRoundedIcon sx={{ fontSize: 28 }} />}
-                    label="Host completion"
+                    icon={<StarRoundedIcon sx={{ fontSize: { xs: 22, sm: 26 } }} />}
+                    label="Plans ran"
                     value={hc!.display}
-                    subtitle={hc!.isNew || hc!.display === "—" ? undefined : `${record!.hostCompletion.numerator} of ${record!.hostCompletion.denominator}`}
-                    isNew={hc!.isNew && hc!.display !== "—"}
-                    tooltip={hc!.tooltip}
+                    ratio={hc!.ratio || undefined}
+                    tooltipTitle={`Successfully ran ${record!.hostCompletion.numerator} of ${record!.hostCompletion.denominator} hosted plans`}
                   />
-                </>
-              )}
+                )}
+              </Box>
             </Box>
 
-            {/* Count metrics row */}
-            <Box
-              sx={{
-                display: "flex",
-                bgcolor: (theme) =>
-                  theme.palette.mode === "light" ? "grey.50" : "grey.900",
-                borderRadius: 2,
-                overflow: "hidden",
-              }}
-            >
-              <MetricCard
-                icon={<GroupsRoundedIcon sx={{ fontSize: 28 }} />}
-                label="Plans attended"
-                value={String(record!.plansAttended)}
-                accentColor="primary.main"
-              />
-              <Divider orientation="vertical" flexItem />
-              <MetricCard
-                icon={<CampaignRoundedIcon sx={{ fontSize: 28 }} />}
-                label="Plans hosted"
-                value={String(record!.plansHosted)}
-                accentColor="primary.main"
-              />
+            {/* Activity */}
+            <Box>
+              <Typography
+                variant="body2"
+                fontWeight={700}
+                color="text.secondary"
+                sx={{ fontSize: "0.75rem", letterSpacing: "0.04em", textTransform: "uppercase", mb: 1, display: "block" }}
+              >
+                Activity
+              </Typography>
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(2, 1fr)",
+                  gap: 1.25,
+                }}
+              >
+                <MetricCard
+                  icon={<GroupsRoundedIcon sx={{ fontSize: { xs: 22, sm: 26 } }} />}
+                  label="Plans attended"
+                  value={String(record!.plansAttended)}
+                />
+                <MetricCard
+                  icon={<CampaignRoundedIcon sx={{ fontSize: { xs: 22, sm: 26 } }} />}
+                  label="Plans hosted"
+                  value={String(record!.plansHosted)}
+                />
+              </Box>
             </Box>
 
-            {/* Contextual helper text */}
             {totalActivity > 0 && totalActivity <= 5 && (
               <Typography
                 variant="caption"
-                color="text.secondary"
-                sx={{
-                  textAlign: "center",
-                  fontSize: "0.6875rem",
-                  lineHeight: 1.5,
-                  opacity: 0.85,
-                }}
+                color="text.disabled"
+                sx={{ textAlign: "center", fontSize: "0.6875rem", lineHeight: 1.5, display: "block" }}
               >
                 {isOwner
-                  ? "Your record is just getting started — keep joining and hosting plans to build your history."
-                  : "This record is still early — it becomes more meaningful with more plans."}
+                  ? "Your record becomes more meaningful as you attend and host more plans."
+                  : "This record becomes more meaningful with more plan history."}
               </Typography>
             )}
           </Stack>

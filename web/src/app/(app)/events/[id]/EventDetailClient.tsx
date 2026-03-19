@@ -106,11 +106,11 @@ type EventDetail = {
   planViability: string | null;
 };
 
-type RsvpEntry = { userId: string; name: string; handle: string | null; status: string; note: string | null; avatarUrl?: string | null; confirmationStatus?: string | null };
+type RsvpEntry = { userId: string; name: string; handle: string | null; status: string; note: string | null; avatarUrl?: string | null; confirmationStatus?: string | null; isGuest?: boolean; guestEmail?: string | null };
 type AltTimeEntry = { id: string; userId: string; name: string; handle: string | null; suggestedAt: string; endsAt: string | null; note: string | null };
 type InviteEntry = { userId: string | null; email: string | null; name: string; handle?: string | null };
 type RemoveTarget =
-  | { type: "rsvp"; userId: string; name: string }
+  | { type: "rsvp"; userId: string; name: string; guestEmail?: string | null }
   | { type: "invite"; userId: string | null; email: string | null; name: string };
 type SearchResult = { userId: string; displayName: string; handle: string | null; avatarUrl?: string | null };
 type ChatMessage = {
@@ -289,6 +289,8 @@ export default function EventDetailClient() {
   const [editRequireApproval, setEditRequireApproval] = useState(false);
   const [editMinConfirmed, setEditMinConfirmed] = useState("");
   const [editFallbackPolicy, setEditFallbackPolicy] = useState<"notify_host" | "proceed" | "auto_cancel">("notify_host");
+  const [editAllowAttendeeInvites, setEditAllowAttendeeInvites] = useState(true);
+  const [editReserveSeats, setEditReserveSeats] = useState(false);
   const [editHobbies, setEditHobbies] = useState<HobbyInfo[]>([]);
   const [editHobbyInput, setEditHobbyInput] = useState("");
   const [editHobbySuggestions, setEditHobbySuggestions] = useState<HobbyInfo[]>([]);
@@ -702,40 +704,6 @@ export default function EventDetailClient() {
     setLockToggling(false);
   };
 
-  const [reserveSeatsToggling, setReserveSeatsToggling] = useState(false);
-
-  const handleToggleReserveSeats = async () => {
-    setReserveSeatsToggling(true);
-    try {
-      const res = await apiFetch(`/events/${eventId}/reserve-seats`, { auth: true, method: "POST" });
-      const data = (await res.json()) as { ok: boolean; reserveSeats: boolean };
-      if (data.ok) {
-        setEvent((prev) => prev ? { ...prev, reserveSeats: data.reserveSeats } : prev);
-        toast.success(data.reserveSeats ? "Seats will be reserved for invites" : "Seat reservation turned off");
-      }
-    } catch {
-      toast.error("Failed to update setting");
-    }
-    setReserveSeatsToggling(false);
-  };
-
-  const [attendeeInvitesToggling, setAttendeeInvitesToggling] = useState(false);
-
-  const handleToggleAttendeeInvites = async () => {
-    setAttendeeInvitesToggling(true);
-    try {
-      const res = await apiFetch(`/events/${eventId}/toggle-attendee-invites`, { auth: true, method: "POST" });
-      const data = (await res.json()) as { ok: boolean; allowAttendeeInvites: boolean };
-      if (data.ok) {
-        setEvent((prev) => prev ? { ...prev, allowAttendeeInvites: data.allowAttendeeInvites } : prev);
-        toast.success(data.allowAttendeeInvites ? "Going attendees can now invite others" : "Attendee invitations turned off");
-      }
-    } catch {
-      toast.error("Failed to update setting");
-    }
-    setAttendeeInvitesToggling(false);
-  };
-
   const [suggestTime, setSuggestTime] = useState(false);
 
   const handleInvite = async (userId?: string, email?: string) => {
@@ -1126,7 +1094,9 @@ export default function EventDetailClient() {
       const endpoint = removeTarget.type === "invite" ? `/events/${eventId}/remove-invite` : `/events/${eventId}/remove-attendee`;
       const body = removeTarget.type === "invite"
         ? { user_id: removeTarget.userId, email: removeTarget.email, reason: removeReason.trim() || null }
-        : { user_id: removeTarget.userId, reason: removeReason.trim() || null };
+        : removeTarget.guestEmail
+          ? { guest_email: removeTarget.guestEmail, reason: removeReason.trim() || null }
+          : { user_id: removeTarget.userId, reason: removeReason.trim() || null };
       const res = await apiFetch(endpoint, {
         auth: true,
         method: "POST",
@@ -1167,6 +1137,8 @@ export default function EventDetailClient() {
     setEditVisibility((event.visibility as "public" | "chums_only" | "invite_only") ?? "public");
     setEditRequireReconfirmation(event.requireReconfirmation ?? false);
     setEditRequireApproval(event.requireApproval ?? false);
+    setEditAllowAttendeeInvites(event.allowAttendeeInvites !== false);
+    setEditReserveSeats(event.reserveSeats === true);
     setEditMinConfirmed(event.minConfirmedAttendees != null ? String(event.minConfirmedAttendees) : "");
     setEditFallbackPolicy((event.fallbackPolicy as "notify_host" | "proceed" | "auto_cancel") ?? "notify_host");
     const initialHobbies =
@@ -1198,9 +1170,11 @@ export default function EventDetailClient() {
           starts_at: startsAt,
           interest_items: editHobbies.map((h) => ({ slug: h.slug, name: h.name })),
           max_seats: editMaxSeats ? Number(editMaxSeats) : null,
+          reserve_seats: editMaxSeats ? editReserveSeats : false,
           visibility: editVisibility,
           require_reconfirmation: editRequireReconfirmation,
           require_approval: editRequireApproval,
+          allow_attendee_invites: editAllowAttendeeInvites,
           min_confirmed_attendees: editRequireReconfirmation && editMinConfirmed ? Number(editMinConfirmed) : null,
           fallback_policy: editRequireReconfirmation ? editFallbackPolicy : "notify_host",
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -2867,7 +2841,7 @@ export default function EventDetailClient() {
                       <Tooltip title="Remove from plan" arrow>
                         <IconButton
                           size="small"
-                          onClick={() => { setRemoveTarget({ type: "rsvp", userId: r.userId, name: r.name }); setRemoveReason(""); setRemoveDialogOpen(true); }}
+                          onClick={() => { setRemoveTarget({ type: "rsvp", userId: r.userId, name: r.name, guestEmail: r.guestEmail ?? null }); setRemoveReason(""); setRemoveDialogOpen(true); }}
                           sx={{ color: "text.disabled", "&:hover": { color: "error.main" } }}
                         >
                           <PersonRemoveRoundedIcon sx={{ fontSize: "1.125rem" }} />
@@ -3136,46 +3110,6 @@ export default function EventDetailClient() {
             Locking, canceling, or editing plan details (date, description, capacity, or visibility) will send an update email to attendees who are Going or Maybe.
           </Typography>
 
-          {event.maxSeats && (
-            <>
-              <Divider sx={{ my: 2 }} />
-              <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={2}>
-                <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Typography variant="subtitle2" fontWeight={600}>
-                    Reserve seats for invited people
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem", lineHeight: 1.5, mt: 0.25 }}>
-                    When enabled, invited guests hold a seat until they respond. Declined invites release the seat. Maybe keeps it reserved.
-                  </Typography>
-                </Box>
-                <Switch
-                  checked={event.reserveSeats}
-                  onChange={handleToggleReserveSeats}
-                  disabled={reserveSeatsToggling}
-                  size="small"
-                />
-              </Stack>
-            </>
-          )}
-
-          <Divider sx={{ my: 2 }} />
-          <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={2}>
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography variant="subtitle2" fontWeight={600}>
-                Let Going attendees invite others
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem", lineHeight: 1.5, mt: 0.25 }}>
-                When enabled, people who RSVP as Going can invite their friends to this plan. All invites are tracked.
-              </Typography>
-            </Box>
-            <Switch
-              checked={event.allowAttendeeInvites}
-              onChange={handleToggleAttendeeInvites}
-              disabled={attendeeInvitesToggling}
-              size="small"
-            />
-          </Stack>
-
         </AppCard>
       )}
 
@@ -3395,8 +3329,30 @@ export default function EventDetailClient() {
               value={editMaxSeats}
               onChange={(e) => setEditMaxSeats(e.target.value)}
               inputProps={{ min: 1 }}
-              helperText={null}
+              helperText="Include yourself in the count"
             />
+            {editMaxSeats && Number(editMaxSeats) >= 1 && (
+              <Box>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      size="small"
+                      checked={editReserveSeats}
+                      onChange={(e) => setEditReserveSeats(e.target.checked)}
+                    />
+                  }
+                  label={
+                    <Box>
+                      <Typography variant="body2" fontWeight={500}>Reserve seats for invited people</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Invited guests hold a seat until they respond. Declined invites release the seat. Maybe keeps it reserved.
+                      </Typography>
+                    </Box>
+                  }
+                  sx={{ alignItems: "flex-start", mt: 0.5 }}
+                />
+              </Box>
+            )}
             <Box>
               <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1 }}>
                 Who can see this?
@@ -3484,6 +3440,26 @@ export default function EventDetailClient() {
                     <Typography variant="body2" fontWeight={500}>Require approval before joining</Typography>
                     <Typography variant="caption" color="text.secondary">
                       People who are not directly invited will need to request to join.
+                    </Typography>
+                  </Box>
+                }
+                sx={{ alignItems: "flex-start", mt: 0.5 }}
+              />
+            </Box>
+            <Box>
+              <FormControlLabel
+                control={
+                  <Switch
+                    size="small"
+                    checked={editAllowAttendeeInvites}
+                    onChange={(e) => setEditAllowAttendeeInvites(e.target.checked)}
+                  />
+                }
+                label={
+                  <Box>
+                    <Typography variant="body2" fontWeight={500}>Let Going attendees invite others</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      People who RSVP as Going can invite their friends to this plan.
                     </Typography>
                   </Box>
                 }

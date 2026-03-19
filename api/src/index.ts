@@ -4512,6 +4512,7 @@ app.post("/events", async (c) => {
 
   const allowAltTimes = body.allow_alt_times !== false;
   const allowAttendeeInvites = body.allow_attendee_invites !== false;
+  const reserveSeats = body.reserve_seats === true;
   const requireReconfirmation = body.require_reconfirmation === true;
   const requireApproval = body.require_approval === true;
   const status = body.status === "draft" ? "draft" : "published";
@@ -4626,13 +4627,13 @@ app.post("/events", async (c) => {
         host_user_id, title, description, interest_id, starts_at,
         location_type, location_name, location_address, location_place_id, location_lat, location_lng,
         location_visibility, location_area, online_link,
-        max_seats, visibility, status, allow_alt_times, allow_attendee_invites, require_reconfirmation, require_approval, timezone,
+        max_seats, visibility, status, allow_alt_times, allow_attendee_invites, reserve_seats, require_reconfirmation, require_approval, timezone,
         min_confirmed_attendees, fallback_policy
       ) VALUES (
         ${userId}, ${title}, ${description}, ${interestId}, ${startsDate.toISOString()},
         ${locationType}, ${locationName}, ${locationAddress}, ${locationPlaceId}, ${locationLat}, ${locationLng},
         ${locationVisibility}, ${locationArea}, ${onlineLink},
-        ${maxSeats}, ${visibility}, ${status}, ${allowAltTimes}, ${allowAttendeeInvites}, ${requireReconfirmation}, ${requireApproval}, ${timezone},
+        ${maxSeats}, ${visibility}, ${status}, ${allowAltTimes}, ${allowAttendeeInvites}, ${reserveSeats}, ${requireReconfirmation}, ${requireApproval}, ${timezone},
         ${minConfirmedAttendees}, ${fallbackPolicy}
       )
       RETURNING id, created_at
@@ -5341,6 +5342,7 @@ app.get("/events/:id", async (c) => {
           note: r.note,
           avatarUrl: r.user_id ? buildAvatarUrl(r.user_id, r.avatar_key, r.avatar_updated_at, c.env.MEDIA_BUCKET) : null,
           isGuest: !r.user_id,
+          guestEmail: r.guest_email ?? null,
           confirmationStatus: r.user_id ? (confirmationByUserId.get(r.user_id) ?? null) : null,
         };
       }),
@@ -6166,6 +6168,7 @@ app.patch("/events/:id", async (c) => {
     const patchRequireReconfirmation = body.require_reconfirmation === true;
     const patchRequireApproval = body.require_approval === true;
     const patchAllowAttendeeInvites = body.allow_attendee_invites != null ? body.allow_attendee_invites !== false : undefined;
+    const patchReserveSeats = body.reserve_seats != null ? body.reserve_seats === true : undefined;
     const patchTimezone = body.timezone && typeof body.timezone === "string" ? body.timezone.trim().slice(0, 64) : null;
 
     // Attendance assurance fields
@@ -6229,6 +6232,7 @@ app.patch("/events/:id", async (c) => {
           require_reconfirmation   = ${patchRequireReconfirmation},
           require_approval         = ${patchRequireApproval},
           allow_attendee_invites   = COALESCE(${patchAllowAttendeeInvites ?? null}, allow_attendee_invites),
+          reserve_seats            = COALESCE(${patchReserveSeats ?? null}, reserve_seats),
           timezone                 = COALESCE(${patchTimezone}, timezone),
           min_confirmed_attendees  = ${patchMinConfirmed},
           fallback_policy          = ${patchFallbackPolicy},
@@ -6362,7 +6366,9 @@ app.post("/events/:id/remove-attendee", async (c) => {
   try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
 
   const targetUserId = body.user_id ? String(body.user_id) : null;
-  if (!targetUserId) return c.json({ ok: false, error: "VALIDATION", message: "user_id is required" }, 400);
+  const targetGuestEmail = body.guest_email ? String(body.guest_email).toLowerCase().trim() : null;
+  if (!targetUserId && !targetGuestEmail)
+    return c.json({ ok: false, error: "VALIDATION", message: "user_id or guest_email is required" }, 400);
   const reason = body.reason ? String(body.reason).trim().slice(0, 500) : null;
 
   try {
@@ -6376,9 +6382,20 @@ app.post("/events/:id/remove-attendee", async (c) => {
     if (new Date(event.starts_at) < new Date())
       return c.json({ ok: false, error: "VALIDATION", message: "Attendees cannot be removed from past events" }, 400);
 
-    if (targetUserId === userId)
+    if (targetUserId && targetUserId === userId)
       return c.json({ ok: false, error: "VALIDATION", message: "You cannot remove yourself from your own plan" }, 400);
 
+    // Guest RSVP removal (email-only, no account)
+    if (targetGuestEmail) {
+      const rsvpRows = (await sql`SELECT id, status FROM newchums.event_rsvps WHERE event_id = ${eventId} AND guest_email = ${targetGuestEmail} AND user_id IS NULL`) as { id: string; status: string }[];
+      if (rsvpRows.length === 0)
+        return c.json({ ok: false, error: "NOT_FOUND", message: "This person is not an attendee of this plan" }, 404);
+
+      await sql`DELETE FROM newchums.event_rsvps WHERE event_id = ${eventId} AND guest_email = ${targetGuestEmail} AND user_id IS NULL`;
+      return c.json({ ok: true });
+    }
+
+    // Registered user RSVP removal
     const rsvpRows = (await sql`SELECT id, status FROM newchums.event_rsvps WHERE event_id = ${eventId} AND user_id = ${targetUserId}`) as { id: string; status: string }[];
     if (rsvpRows.length === 0)
       return c.json({ ok: false, error: "NOT_FOUND", message: "This person is not an attendee of this plan" }, 404);

@@ -68,6 +68,7 @@ export default function CreateEventClient() {
   const [visibility, setVisibility] = useState<"public" | "chums_only" | "invite_only">("public");
   const [allowAltTimes, setAllowAltTimes] = useState(true);
   const [allowAttendeeInvites, setAllowAttendeeInvites] = useState(true);
+  const [reserveSeats, setReserveSeats] = useState(false);
   const [requireReconfirmation, setRequireReconfirmation] = useState(true);
   const [requireApproval, setRequireApproval] = useState(false);
   const [minConfirmedAttendees, setMinConfirmedAttendees] = useState("");
@@ -225,6 +226,7 @@ export default function CreateEventClient() {
       location_visibility: locationType === "in_person" ? locationVisibility : "exact_everyone",
       online_link: locationType === "online" ? onlineLink.trim() || null : null,
       max_seats: maxSeats ? Number(maxSeats) : null,
+      reserve_seats: maxSeats ? reserveSeats : false,
       visibility,
       allow_alt_times: allowAltTimes,
       allow_attendee_invites: allowAttendeeInvites,
@@ -556,6 +558,22 @@ export default function CreateEventClient() {
               sx={{ minWidth: { xs: "100%", sm: 260 } }}
             />
           </Stack>
+          {maxSeats && Number(maxSeats) >= 1 && (
+            <>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={reserveSeats}
+                    onChange={(e) => setReserveSeats(e.target.checked)}
+                  />
+                }
+                label="Reserve seats for invited people"
+              />
+              <Typography variant="caption" color="text.secondary" sx={{ mt: -1.5 }}>
+                Invited guests hold a seat until they respond. Declined invites release the seat. Maybe keeps it reserved.
+              </Typography>
+            </>
+          )}
         </Stack>
       </AppCard>
 
