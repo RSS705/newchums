@@ -628,6 +628,45 @@ export const sendPlanRemovedByAdminEmail = async (
   });
 };
 
+// ── Roadmap / feedback update notification ──────────────────────────────
+//   Model: productName, recipientName, itemTitle, itemUrl, updateType,
+//          statusLabel, adminNote, mergedIntoTitle, mergedIntoUrl, unsubscribeUrl
+
+export const sendRoadmapUpdateEmail = async (
+  env: Bindings,
+  { to, recipientName, itemTitle, itemUrl, updateType, statusLabel, adminNote, mergedIntoTitle, mergedIntoUrl, unsubscribeUrl }: {
+    to: string;
+    recipientName: string;
+    itemTitle: string;
+    itemUrl: string;
+    updateType: "status_change" | "merged";
+    statusLabel?: string;
+    adminNote?: string | null;
+    mergedIntoTitle?: string;
+    mergedIntoUrl?: string;
+    unsubscribeUrl: string;
+  }
+) => {
+  if (!env.POSTMARK_TEMPLATE_ROADMAP_UPDATE) return;
+  return sendPostmarkTemplateEmail(env, {
+    From: env.EMAIL_FROM,
+    To: to,
+    TemplateId: env.POSTMARK_TEMPLATE_ROADMAP_UPDATE,
+    TemplateModel: {
+      productName: "NewChums",
+      recipientName,
+      itemTitle,
+      itemUrl,
+      updateType,
+      statusLabel: statusLabel ?? "",
+      adminNote: adminNote ?? "",
+      mergedIntoTitle: mergedIntoTitle ?? "",
+      mergedIntoUrl: mergedIntoUrl ?? "",
+      unsubscribeUrl,
+    },
+  });
+};
+
 const CONTACT_EMAIL = "contact@newchums.com";
 
 export const sendContactFormEmail = async (

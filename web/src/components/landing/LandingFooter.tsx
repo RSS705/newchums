@@ -40,6 +40,7 @@ export default function LandingFooter() {
             { href: "/how-it-works", label: "How it Works" },
             { href: "/safety-center", label: "Safety Center" },
             { href: "/science-of-friendship", label: "Science of Friendship" },
+            { href: "/roadmap", label: "Community Roadmap" },
             { href: "/contact", label: "Contact" },
           ].map((link) => (
             <Typography

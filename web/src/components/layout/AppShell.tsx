@@ -6,6 +6,7 @@ import PersonRoundedIcon from "@mui/icons-material/PersonRounded";
 import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
 import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
 import WavingHandRoundedIcon from "@mui/icons-material/WavingHandRounded";
+import FeedbackRoundedIcon from "@mui/icons-material/FeedbackRounded";
 import {
   AppBar,
   Badge,
@@ -132,12 +133,13 @@ export default function AppShell({ children, user }: AppShellProps) {
     let cancelled = false;
     apiFetch("/admin/badge-counts", { auth: true })
       .then((res) => res.json())
-      .then((data: { ok?: boolean; users?: number; interests?: number; plans?: number }) => {
+      .then((data: { ok?: boolean; users?: number; interests?: number; plans?: number; roadmap?: number }) => {
         if (!cancelled && data.ok) {
           setAdminBadges({
             "/admin/chums": data.users ?? 0,
             "/admin/interests": data.interests ?? 0,
             "/admin/plans": data.plans ?? 0,
+            "/admin/roadmap": data.roadmap ?? 0,
           });
         }
       })
@@ -381,7 +383,7 @@ export default function AppShell({ children, user }: AppShellProps) {
                   onClick={() => {
                     setMobileOpen(false);
                     if (badgeCount > 0) {
-                      const sectionMap: Record<string, string> = { "/admin/chums": "users", "/admin/interests": "interests", "/admin/plans": "plans" };
+                      const sectionMap: Record<string, string> = { "/admin/chums": "users", "/admin/interests": "interests", "/admin/plans": "plans", "/admin/roadmap": "roadmap" };
                       const section = sectionMap[item.href];
                       if (section) {
                         apiFetch("/admin/mark-viewed", { auth: true, method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ section }) }).catch(() => {});
@@ -468,6 +470,17 @@ export default function AppShell({ children, user }: AppShellProps) {
                     <SettingsRoundedIcon fontSize="small" />
                   </ListItemIcon>
                   Settings
+                </MenuItem>
+                <MenuItem
+                  onClick={() => {
+                    setAccountMenuAnchor(null);
+                    router.push("/roadmap");
+                  }}
+                >
+                  <ListItemIcon>
+                    <FeedbackRoundedIcon fontSize="small" />
+                  </ListItemIcon>
+                  Feedback & Roadmap
                 </MenuItem>
                 <MenuItem
                   onClick={async () => {

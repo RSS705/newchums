@@ -44,6 +44,8 @@ export type Bindings = {
   POSTMARK_TEMPLATE_PLAN_AT_RISK?: string;
   /** Postmark template ID for admin plan removal notification (template 43998481) */
   POSTMARK_TEMPLATE_PLAN_REMOVED?: string;
+  /** Postmark template ID for roadmap/feedback update notifications */
+  POSTMARK_TEMPLATE_ROADMAP_UPDATE?: string;
   SENTRY_DSN: string;
   APP_ENV?: string;
   ENVIRONMENT?: string;

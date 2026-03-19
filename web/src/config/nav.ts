@@ -6,6 +6,8 @@ import AddCircleRoundedIcon from "@mui/icons-material/AddCircleRounded";
 import StyleRoundedIcon from "@mui/icons-material/StyleRounded";
 import PeopleRoundedIcon from "@mui/icons-material/PeopleRounded";
 import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
+import FeedbackRoundedIcon from "@mui/icons-material/FeedbackRounded";
+import MapRoundedIcon from "@mui/icons-material/MapRounded";
 import type { SvgIconComponent } from "@mui/icons-material";
 
 export type NavItem = {
@@ -19,6 +21,7 @@ export const appNavItems: NavItem[] = [
   { label: "Your Plans", href: "/plans", icon: EventNoteRoundedIcon },
   { label: "Your Chums", href: "/chum-groups", icon: GroupsRoundedIcon },
   { label: "Profile", href: "/profile", icon: PersonRoundedIcon },
+  { label: "Feedback", href: "/roadmap", icon: FeedbackRoundedIcon },
 ];
 
 export const createEventHref = "/events/create";
@@ -27,6 +30,7 @@ export const superAdminNavItems: NavItem[] = [
   { label: "Users", href: "/admin/chums", icon: PeopleRoundedIcon },
   { label: "Interests", href: "/admin/interests", icon: StyleRoundedIcon },
   { label: "Plans", href: "/admin/plans", icon: CalendarMonthRoundedIcon },
+  { label: "Roadmap", href: "/admin/roadmap", icon: MapRoundedIcon },
 ];
 
 export const headerNavLinks = [

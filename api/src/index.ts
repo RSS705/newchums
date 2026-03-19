@@ -32,6 +32,7 @@ import {
   sendPlanAtRiskEmail,
   sendPlanAutoCancelledEmail,
   sendPlanRemovedByAdminEmail,
+  sendRoadmapUpdateEmail,
 } from "./email/send";
 import { canAccessInternalTestRoute, notFound } from "./internalAccess";
 import { nameToSlug, slugToName, validateInterestName } from "./interests";
@@ -3551,19 +3552,22 @@ app.get("/admin/badge-counts", async (c) => {
     const usersTs = tsMap["users"] ?? "1970-01-01T00:00:00Z";
     const interestsTs = tsMap["interests"] ?? "1970-01-01T00:00:00Z";
     const plansTs = tsMap["plans"] ?? "1970-01-01T00:00:00Z";
+    const roadmapTs = tsMap["roadmap"] ?? "1970-01-01T00:00:00Z";
 
     const counts = (await sql`
       SELECT
         (SELECT COUNT(*)::int FROM newchums.users WHERE created_at > ${usersTs}) AS new_users,
         (SELECT COUNT(*)::int FROM newchums.interests WHERE created_at > ${interestsTs} AND is_deleted = false) AS new_interests,
-        (SELECT COUNT(*)::int FROM newchums.events WHERE created_at > ${plansTs} AND status != 'draft') AS new_plans
-    `) as { new_users: number; new_interests: number; new_plans: number }[];
+        (SELECT COUNT(*)::int FROM newchums.events WHERE created_at > ${plansTs} AND status != 'draft') AS new_plans,
+        (SELECT COUNT(*)::int FROM newchums.roadmap_items WHERE created_at > ${roadmapTs} AND is_removed = false) AS new_roadmap
+    `) as { new_users: number; new_interests: number; new_plans: number; new_roadmap: number }[];
 
     return c.json({
       ok: true,
       users: counts[0].new_users,
       interests: counts[0].new_interests,
       plans: counts[0].new_plans,
+      roadmap: counts[0].new_roadmap,
     });
   } catch (err) {
     console.error("[GET /admin/badge-counts]", err);
@@ -3580,7 +3584,7 @@ app.post("/admin/mark-viewed", async (c) => {
   try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
 
   const section = String(body.section ?? "");
-  if (!["users", "interests", "plans"].includes(section))
+  if (!["users", "interests", "plans", "roadmap"].includes(section))
     return c.json({ ok: false, error: "VALIDATION", message: "Invalid section" }, 400);
 
   const sql = getSql(c.env);
@@ -7225,6 +7229,654 @@ app.post("/events/:id/join-request/:requestId/withdraw", async (c) => {
     return c.json({ ok: true });
   } catch (err) {
     console.error("[POST /events/:id/join-request/:requestId/withdraw]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+// ─── Community Roadmap ────────────────────────────────────────────────────────
+
+const ROADMAP_STATUSES = ["received", "needs_clarification", "in_progress", "completed", "not_planned"] as const;
+const ROADMAP_CATEGORIES = ["feature_request", "bug", "general_feedback"] as const;
+const STATUS_LABELS: Record<string, string> = {
+  received: "Received",
+  needs_clarification: "Needs clarification",
+  in_progress: "In progress",
+  completed: "Completed",
+  not_planned: "Not planned",
+};
+
+/** GET /roadmap — public list, optionally includes viewer vote/follow state */
+app.get("/roadmap", async (c) => {
+  const sql = getSql(c.env);
+  const url = new URL(c.req.url);
+  const statusFilter = url.searchParams.get("status") || "active";
+  const category = url.searchParams.get("category") || "";
+  const sort = url.searchParams.get("sort") || "votes";
+  const search = url.searchParams.get("search") || "";
+  const limit = Math.min(Number(url.searchParams.get("limit")) || 20, 50);
+  const offset = Number(url.searchParams.get("offset")) || 0;
+
+  let viewerUserId: string | null = null;
+  try {
+    const payload = await requireAuth(c);
+    if (payload?.email) {
+      const u = (await sql`SELECT id FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string }[];
+      if (u.length > 0) viewerUserId = u[0].id;
+    }
+  } catch { /* unauthenticated is fine */ }
+
+  try {
+    let statusClause: string;
+    if (statusFilter === "completed") {
+      statusClause = `AND ri.status IN ('completed', 'not_planned')`;
+    } else if (statusFilter === "all") {
+      statusClause = "";
+    } else {
+      statusClause = `AND ri.status NOT IN ('completed', 'not_planned')`;
+    }
+
+    const categoryClause = category && ROADMAP_CATEGORIES.includes(category as typeof ROADMAP_CATEGORIES[number])
+      ? `AND ri.category = '${category}'`
+      : "";
+
+    const orderClause = sort === "newest" ? "ri.created_at DESC" : "ri.vote_count DESC, ri.created_at DESC";
+
+    const items = await sql`
+      SELECT ri.id, ri.title, ri.body, ri.category, ri.status, ri.vote_count,
+             ri.comment_count, ri.follower_count, ri.completed_at, ri.created_at,
+             ri.merged_into_item_id,
+             u.username AS author_username
+      FROM newchums.roadmap_items ri
+      JOIN newchums.users u ON u.id = ri.author_user_id
+      WHERE ri.is_removed = false
+        AND ri.merged_into_item_id IS NULL
+        ${statusFilter === "completed" ? sql`AND ri.status IN ('completed', 'not_planned')` : statusFilter === "all" ? sql`` : sql`AND ri.status NOT IN ('completed', 'not_planned')`}
+        ${category && ROADMAP_CATEGORIES.includes(category as typeof ROADMAP_CATEGORIES[number]) ? sql`AND ri.category = ${category}` : sql``}
+        ${search ? sql`AND ri.title ILIKE ${"%" + search + "%"}` : sql``}
+      ORDER BY ${sort === "newest" ? sql`ri.created_at DESC` : sql`ri.vote_count DESC, ri.created_at DESC`}
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+
+    let viewerVotes: Set<string> = new Set();
+    let viewerFollows: Set<string> = new Set();
+    if (viewerUserId && items.length > 0) {
+      const itemIds = (items as { id: string }[]).map((i) => i.id);
+      const votes = (await sql`SELECT item_id FROM newchums.roadmap_votes WHERE user_id = ${viewerUserId} AND item_id = ANY(${itemIds})`) as { item_id: string }[];
+      votes.forEach((v) => viewerVotes.add(v.item_id));
+      const follows = (await sql`SELECT item_id FROM newchums.roadmap_follows WHERE user_id = ${viewerUserId} AND item_id = ANY(${itemIds})`) as { item_id: string }[];
+      follows.forEach((f) => viewerFollows.add(f.item_id));
+    }
+
+    const total = (await sql`
+      SELECT COUNT(*)::int AS count FROM newchums.roadmap_items ri
+      WHERE ri.is_removed = false AND ri.merged_into_item_id IS NULL
+        ${statusFilter === "completed" ? sql`AND ri.status IN ('completed', 'not_planned')` : statusFilter === "all" ? sql`` : sql`AND ri.status NOT IN ('completed', 'not_planned')`}
+        ${category && ROADMAP_CATEGORIES.includes(category as typeof ROADMAP_CATEGORIES[number]) ? sql`AND ri.category = ${category}` : sql``}
+        ${search ? sql`AND ri.title ILIKE ${"%" + search + "%"}` : sql``}
+    `) as { count: number }[];
+
+    return c.json({
+      ok: true,
+      items: items.map((i: Record<string, unknown>) => ({
+        ...i,
+        body: i.body ? String(i.body).slice(0, 200) : null,
+        viewer_voted: viewerVotes.has(i.id as string),
+        viewer_following: viewerFollows.has(i.id as string),
+      })),
+      total: total[0].count,
+    });
+  } catch (err) {
+    console.error("[GET /roadmap]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** GET /roadmap/:id — single item detail with comments, admin notes, merge info */
+app.get("/roadmap/:id", async (c) => {
+  const sql = getSql(c.env);
+  const itemId = c.req.param("id");
+
+  let viewerUserId: string | null = null;
+  try {
+    const payload = await requireAuth(c);
+    if (payload?.email) {
+      const u = (await sql`SELECT id FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string }[];
+      if (u.length > 0) viewerUserId = u[0].id;
+    }
+  } catch { /* unauthenticated is fine */ }
+
+  try {
+    const items = (await sql`
+      SELECT ri.*, u.username AS author_username
+      FROM newchums.roadmap_items ri
+      JOIN newchums.users u ON u.id = ri.author_user_id
+      WHERE ri.id = ${itemId} AND ri.is_removed = false
+    `) as Record<string, unknown>[];
+
+    if (items.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    const item = items[0];
+
+    const comments = await sql`
+      SELECT rc.id, rc.body, rc.created_at, rc.is_removed,
+             u.username AS author_username
+      FROM newchums.roadmap_comments rc
+      JOIN newchums.users u ON u.id = rc.user_id
+      WHERE rc.item_id = ${itemId}
+      ORDER BY rc.created_at ASC
+    `;
+
+    const adminNotes = await sql`
+      SELECT ran.id, ran.body, ran.status_before, ran.status_after, ran.created_at,
+             u.username AS admin_username
+      FROM newchums.roadmap_admin_notes ran
+      JOIN newchums.users u ON u.id = ran.admin_user_id
+      WHERE ran.item_id = ${itemId}
+      ORDER BY ran.created_at ASC
+    `;
+
+    let mergedInto: { id: string; title: string } | null = null;
+    if (item.merged_into_item_id) {
+      const target = (await sql`SELECT id, title FROM newchums.roadmap_items WHERE id = ${item.merged_into_item_id}`) as { id: string; title: string }[];
+      if (target.length > 0) mergedInto = target[0];
+    }
+
+    let viewerVoted = false;
+    let viewerFollowing = false;
+    if (viewerUserId) {
+      const v = (await sql`SELECT 1 FROM newchums.roadmap_votes WHERE user_id = ${viewerUserId} AND item_id = ${itemId}`) as unknown[];
+      viewerVoted = v.length > 0;
+      const f = (await sql`SELECT 1 FROM newchums.roadmap_follows WHERE user_id = ${viewerUserId} AND item_id = ${itemId}`) as unknown[];
+      viewerFollowing = f.length > 0;
+    }
+
+    return c.json({
+      ok: true,
+      item: {
+        ...item,
+        viewer_voted: viewerVoted,
+        viewer_following: viewerFollowing,
+      },
+      comments: comments.filter((cm: Record<string, unknown>) => !cm.is_removed).map((cm: Record<string, unknown>) => ({
+        id: cm.id, body: cm.body, created_at: cm.created_at, author_username: cm.author_username,
+      })),
+      admin_notes: adminNotes,
+      merged_into: mergedInto,
+    });
+  } catch (err) {
+    console.error("[GET /roadmap/:id]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /roadmap — submit a new roadmap item (authenticated) */
+app.post("/roadmap", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email) return c.json({ ok: false, error: "AUTH_REQUIRED" }, 401);
+
+  const sql = getSql(c.env);
+  const users = (await sql`SELECT id, username FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string; username: string }[];
+  if (users.length === 0) return c.json({ ok: false, error: "AUTH_REQUIRED" }, 401);
+  const userId = users[0].id;
+
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+
+  const title = String(body.title ?? "").trim();
+  const description = String(body.body ?? "").trim();
+  const category = String(body.category ?? "feature_request");
+
+  if (!title || title.length > 200) return c.json({ ok: false, error: "VALIDATION", message: "Title is required (max 200 chars)" }, 400);
+  if (description.length > 5000) return c.json({ ok: false, error: "VALIDATION", message: "Description too long (max 5000 chars)" }, 400);
+  if (!ROADMAP_CATEGORIES.includes(category as typeof ROADMAP_CATEGORIES[number]))
+    return c.json({ ok: false, error: "VALIDATION", message: "Invalid category" }, 400);
+
+  const titleCheck = validateCleanText(title);
+  if (!titleCheck.ok) return c.json({ ok: false, error: "CONTENT_POLICY", message: titleCheck.reason }, 400);
+  if (description) {
+    const bodyCheck = validateCleanText(description);
+    if (!bodyCheck.ok) return c.json({ ok: false, error: "CONTENT_POLICY", message: bodyCheck.reason }, 400);
+  }
+
+  try {
+    const rows = (await sql`
+      INSERT INTO newchums.roadmap_items (author_user_id, category, title, body, vote_count, follower_count)
+      VALUES (${userId}, ${category}, ${title}, ${description || null}, 1, 1)
+      RETURNING id
+    `) as { id: string }[];
+
+    const itemId = rows[0].id;
+
+    // Auto-vote and auto-follow the submitter
+    await sql`INSERT INTO newchums.roadmap_votes (user_id, item_id) VALUES (${userId}, ${itemId})`;
+    await sql`INSERT INTO newchums.roadmap_follows (user_id, item_id) VALUES (${userId}, ${itemId})`;
+
+    return c.json({ ok: true, id: itemId });
+  } catch (err) {
+    console.error("[POST /roadmap]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /roadmap/:id/vote — toggle upvote */
+app.post("/roadmap/:id/vote", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email) return c.json({ ok: false, error: "AUTH_REQUIRED" }, 401);
+
+  const sql = getSql(c.env);
+  const users = (await sql`SELECT id FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string }[];
+  if (users.length === 0) return c.json({ ok: false, error: "AUTH_REQUIRED" }, 401);
+  const userId = users[0].id;
+  const itemId = c.req.param("id");
+
+  try {
+    const existing = (await sql`SELECT 1 FROM newchums.roadmap_votes WHERE user_id = ${userId} AND item_id = ${itemId}`) as unknown[];
+    if (existing.length > 0) {
+      await sql`DELETE FROM newchums.roadmap_votes WHERE user_id = ${userId} AND item_id = ${itemId}`;
+      await sql`UPDATE newchums.roadmap_items SET vote_count = GREATEST(0, vote_count - 1), updated_at = NOW() WHERE id = ${itemId}`;
+      const updated = (await sql`SELECT vote_count FROM newchums.roadmap_items WHERE id = ${itemId}`) as { vote_count: number }[];
+      return c.json({ ok: true, voted: false, vote_count: updated[0]?.vote_count ?? 0 });
+    } else {
+      await sql`INSERT INTO newchums.roadmap_votes (user_id, item_id) VALUES (${userId}, ${itemId})`;
+      await sql`UPDATE newchums.roadmap_items SET vote_count = vote_count + 1, updated_at = NOW() WHERE id = ${itemId}`;
+      const updated = (await sql`SELECT vote_count FROM newchums.roadmap_items WHERE id = ${itemId}`) as { vote_count: number }[];
+      return c.json({ ok: true, voted: true, vote_count: updated[0]?.vote_count ?? 0 });
+    }
+  } catch (err) {
+    console.error("[POST /roadmap/:id/vote]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /roadmap/:id/follow — toggle follow */
+app.post("/roadmap/:id/follow", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email) return c.json({ ok: false, error: "AUTH_REQUIRED" }, 401);
+
+  const sql = getSql(c.env);
+  const users = (await sql`SELECT id FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string }[];
+  if (users.length === 0) return c.json({ ok: false, error: "AUTH_REQUIRED" }, 401);
+  const userId = users[0].id;
+  const itemId = c.req.param("id");
+
+  try {
+    const existing = (await sql`SELECT 1 FROM newchums.roadmap_follows WHERE user_id = ${userId} AND item_id = ${itemId}`) as unknown[];
+    if (existing.length > 0) {
+      await sql`DELETE FROM newchums.roadmap_follows WHERE user_id = ${userId} AND item_id = ${itemId}`;
+      await sql`UPDATE newchums.roadmap_items SET follower_count = GREATEST(0, follower_count - 1), updated_at = NOW() WHERE id = ${itemId}`;
+      const updated = (await sql`SELECT follower_count FROM newchums.roadmap_items WHERE id = ${itemId}`) as { follower_count: number }[];
+      return c.json({ ok: true, following: false, follower_count: updated[0]?.follower_count ?? 0 });
+    } else {
+      await sql`INSERT INTO newchums.roadmap_follows (user_id, item_id) VALUES (${userId}, ${itemId})`;
+      await sql`UPDATE newchums.roadmap_items SET follower_count = follower_count + 1, updated_at = NOW() WHERE id = ${itemId}`;
+      const updated = (await sql`SELECT follower_count FROM newchums.roadmap_items WHERE id = ${itemId}`) as { follower_count: number }[];
+      return c.json({ ok: true, following: true, follower_count: updated[0]?.follower_count ?? 0 });
+    }
+  } catch (err) {
+    console.error("[POST /roadmap/:id/follow]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /roadmap/:id/comment — add a comment */
+app.post("/roadmap/:id/comment", async (c) => {
+  const authPayload = await requireAuth(c);
+  if (!authPayload?.email) return c.json({ ok: false, error: "AUTH_REQUIRED" }, 401);
+
+  const sql = getSql(c.env);
+  const users = (await sql`SELECT id, username FROM newchums.users WHERE email = ${authPayload.email} LIMIT 1`) as { id: string; username: string }[];
+  if (users.length === 0) return c.json({ ok: false, error: "AUTH_REQUIRED" }, 401);
+  const userId = users[0].id;
+
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+
+  const commentBody = String(body.body ?? "").trim();
+  if (!commentBody || commentBody.length > 2000) return c.json({ ok: false, error: "VALIDATION", message: "Comment is required (max 2000 chars)" }, 400);
+
+  const check = validateCleanText(commentBody);
+  if (!check.ok) return c.json({ ok: false, error: "CONTENT_POLICY", message: check.reason }, 400);
+
+  const itemId = c.req.param("id");
+
+  try {
+    const item = (await sql`SELECT id FROM newchums.roadmap_items WHERE id = ${itemId} AND is_removed = false`) as { id: string }[];
+    if (item.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+
+    const rows = (await sql`
+      INSERT INTO newchums.roadmap_comments (item_id, user_id, body)
+      VALUES (${itemId}, ${userId}, ${commentBody})
+      RETURNING id, created_at
+    `) as { id: string; created_at: string }[];
+
+    await sql`UPDATE newchums.roadmap_items SET comment_count = comment_count + 1, updated_at = NOW() WHERE id = ${itemId}`;
+
+    return c.json({
+      ok: true,
+      comment: { id: rows[0].id, body: commentBody, created_at: rows[0].created_at, author_username: users[0].username },
+    });
+  } catch (err) {
+    console.error("[POST /roadmap/:id/comment]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+// ─── Roadmap Admin endpoints ──────────────────────────────────────────────────
+
+/** Helper: send roadmap update emails to followers (non-blocking) */
+async function sendRoadmapNotifications(
+  sql: ReturnType<typeof getSql>,
+  env: Bindings,
+  itemId: string,
+  updateType: "status_change" | "merged",
+  opts: { statusLabel?: string; adminNote?: string | null; mergedIntoTitle?: string; mergedIntoId?: string },
+) {
+  try {
+    const item = (await sql`SELECT title FROM newchums.roadmap_items WHERE id = ${itemId}`) as { title: string }[];
+    if (item.length === 0) return;
+
+    const followers = (await sql`
+      SELECT rf.user_id, u.email, u.name, u.username, up.notification_prefs
+      FROM newchums.roadmap_follows rf
+      JOIN newchums.users u ON u.id = rf.user_id
+      LEFT JOIN newchums.user_profile up ON up.user_id = rf.user_id
+      WHERE rf.item_id = ${itemId}
+    `) as { user_id: string; email: string; name: string | null; username: string | null; notification_prefs: unknown }[];
+
+    for (const follower of followers) {
+      const prefs = normalizeNotificationPrefs(follower.notification_prefs);
+      if (!prefs.items.roadmap_updates?.enabled) continue;
+
+      const recipientName = follower.name?.trim() || follower.username?.replace(/^@/, "") || "there";
+      const unsubToken = await createUnsubscribeToken(env.NEXTAUTH_SECRET!, follower.user_id, "roadmap_updates");
+
+      await sendRoadmapUpdateEmail(env, {
+        to: follower.email,
+        recipientName,
+        itemTitle: item[0].title,
+        itemUrl: `${env.WEB_BASE_URL}/roadmap/${itemId}`,
+        updateType,
+        statusLabel: opts.statusLabel,
+        adminNote: opts.adminNote,
+        mergedIntoTitle: opts.mergedIntoTitle,
+        mergedIntoUrl: opts.mergedIntoId ? `${env.WEB_BASE_URL}/roadmap/${opts.mergedIntoId}` : undefined,
+        unsubscribeUrl: `${env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
+      });
+    }
+  } catch (err) {
+    console.error("[sendRoadmapNotifications]", err);
+  }
+}
+
+/** GET /admin/roadmap — list all items for moderation */
+app.get("/admin/roadmap", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  const sql = getSql(c.env);
+  const url = new URL(c.req.url);
+  const statusFilter = url.searchParams.get("status") || "";
+  const category = url.searchParams.get("category") || "";
+  const search = url.searchParams.get("search") || "";
+  const limit = Math.min(Number(url.searchParams.get("limit")) || 30, 100);
+  const offset = Number(url.searchParams.get("offset")) || 0;
+
+  try {
+    const items = await sql`
+      SELECT ri.*, u.username AS author_username, u.email AS author_email
+      FROM newchums.roadmap_items ri
+      JOIN newchums.users u ON u.id = ri.author_user_id
+      WHERE 1=1
+        ${statusFilter && ROADMAP_STATUSES.includes(statusFilter as typeof ROADMAP_STATUSES[number]) ? sql`AND ri.status = ${statusFilter}` : sql``}
+        ${category && ROADMAP_CATEGORIES.includes(category as typeof ROADMAP_CATEGORIES[number]) ? sql`AND ri.category = ${category}` : sql``}
+        ${search ? sql`AND ri.title ILIKE ${"%" + search + "%"}` : sql``}
+      ORDER BY ri.created_at DESC
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+
+    const total = (await sql`
+      SELECT COUNT(*)::int AS count FROM newchums.roadmap_items ri
+      WHERE 1=1
+        ${statusFilter && ROADMAP_STATUSES.includes(statusFilter as typeof ROADMAP_STATUSES[number]) ? sql`AND ri.status = ${statusFilter}` : sql``}
+        ${category && ROADMAP_CATEGORIES.includes(category as typeof ROADMAP_CATEGORIES[number]) ? sql`AND ri.category = ${category}` : sql``}
+        ${search ? sql`AND ri.title ILIKE ${"%" + search + "%"}` : sql``}
+    `) as { count: number }[];
+
+    return c.json({ ok: true, items, total: total[0].count });
+  } catch (err) {
+    console.error("[GET /admin/roadmap]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /admin/roadmap/:id/status — update status with optional note */
+app.post("/admin/roadmap/:id/status", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  const sql = getSql(c.env);
+  const itemId = c.req.param("id");
+
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+
+  const newStatus = String(body.status ?? "");
+  const note = String(body.note ?? "").trim();
+
+  if (!ROADMAP_STATUSES.includes(newStatus as typeof ROADMAP_STATUSES[number]))
+    return c.json({ ok: false, error: "VALIDATION", message: "Invalid status" }, 400);
+
+  try {
+    const current = (await sql`SELECT status FROM newchums.roadmap_items WHERE id = ${itemId}`) as { status: string }[];
+    if (current.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+
+    const oldStatus = current[0].status;
+    const completedAt = newStatus === "completed" ? sql`NOW()` : newStatus !== "completed" && oldStatus === "completed" ? sql`NULL` : sql`completed_at`;
+
+    await sql`
+      UPDATE newchums.roadmap_items
+      SET status = ${newStatus}, completed_at = ${newStatus === "completed" ? new Date().toISOString() : null}, updated_at = NOW()
+      WHERE id = ${itemId}
+    `;
+
+    if (note) {
+      await sql`
+        INSERT INTO newchums.roadmap_admin_notes (item_id, admin_user_id, body, status_before, status_after)
+        VALUES (${itemId}, ${admin.id}, ${note}, ${oldStatus}, ${newStatus})
+      `;
+    } else if (oldStatus !== newStatus) {
+      await sql`
+        INSERT INTO newchums.roadmap_admin_notes (item_id, admin_user_id, body, status_before, status_after)
+        VALUES (${itemId}, ${admin.id}, ${`Status changed to ${STATUS_LABELS[newStatus] ?? newStatus}`}, ${oldStatus}, ${newStatus})
+      `;
+    }
+
+    c.executionCtx.waitUntil(
+      sendRoadmapNotifications(sql, c.env, itemId, "status_change", {
+        statusLabel: STATUS_LABELS[newStatus] ?? newStatus,
+        adminNote: note || null,
+      })
+    );
+
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[POST /admin/roadmap/:id/status]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /admin/roadmap/:id/merge — merge item into target */
+app.post("/admin/roadmap/:id/merge", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  const sql = getSql(c.env);
+  const sourceId = c.req.param("id");
+
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+
+  const targetId = String(body.target_item_id ?? "");
+  if (!targetId) return c.json({ ok: false, error: "VALIDATION", message: "target_item_id required" }, 400);
+  if (sourceId === targetId) return c.json({ ok: false, error: "VALIDATION", message: "Cannot merge into itself" }, 400);
+
+  try {
+    const source = (await sql`SELECT id, title FROM newchums.roadmap_items WHERE id = ${sourceId} AND merged_into_item_id IS NULL`) as { id: string; title: string }[];
+    const target = (await sql`SELECT id, title FROM newchums.roadmap_items WHERE id = ${targetId} AND is_removed = false AND merged_into_item_id IS NULL`) as { id: string; title: string }[];
+
+    if (source.length === 0) return c.json({ ok: false, error: "NOT_FOUND", message: "Source item not found or already merged" }, 404);
+    if (target.length === 0) return c.json({ ok: false, error: "NOT_FOUND", message: "Target item not found" }, 404);
+
+    // Mark source as merged
+    await sql`UPDATE newchums.roadmap_items SET merged_into_item_id = ${targetId}, updated_at = NOW() WHERE id = ${sourceId}`;
+
+    // Transfer votes (skip duplicates)
+    await sql`
+      INSERT INTO newchums.roadmap_votes (user_id, item_id, created_at)
+      SELECT user_id, ${targetId}, NOW()
+      FROM newchums.roadmap_votes WHERE item_id = ${sourceId}
+      ON CONFLICT (user_id, item_id) DO NOTHING
+    `;
+
+    // Transfer follows (skip duplicates)
+    await sql`
+      INSERT INTO newchums.roadmap_follows (user_id, item_id, created_at)
+      SELECT user_id, ${targetId}, NOW()
+      FROM newchums.roadmap_follows WHERE item_id = ${sourceId}
+      ON CONFLICT (user_id, item_id) DO NOTHING
+    `;
+
+    // Recompute counts on target
+    await sql`
+      UPDATE newchums.roadmap_items SET
+        vote_count = (SELECT COUNT(*)::int FROM newchums.roadmap_votes WHERE item_id = ${targetId}),
+        follower_count = (SELECT COUNT(*)::int FROM newchums.roadmap_follows WHERE item_id = ${targetId}),
+        updated_at = NOW()
+      WHERE id = ${targetId}
+    `;
+
+    // Admin note on target
+    await sql`
+      INSERT INTO newchums.roadmap_admin_notes (item_id, admin_user_id, body, status_before, status_after)
+      VALUES (${targetId}, ${admin.id}, ${`A similar idea, "${source[0].title}", was combined with this one. Votes and followers have been transferred here.`}, NULL, NULL)
+    `;
+
+    c.executionCtx.waitUntil(
+      sendRoadmapNotifications(sql, c.env, sourceId, "merged", {
+        mergedIntoTitle: target[0].title,
+        mergedIntoId: targetId,
+      })
+    );
+
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[POST /admin/roadmap/:id/merge]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /admin/roadmap/:id/edit — edit item title, body, category */
+app.post("/admin/roadmap/:id/edit", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  const sql = getSql(c.env);
+  const itemId = c.req.param("id");
+
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+
+  const title = String(body.title ?? "").trim();
+  const description = body.body != null ? String(body.body).trim() : undefined;
+  const category = body.category ? String(body.category) : undefined;
+
+  if (!title || title.length > 200) return c.json({ ok: false, error: "VALIDATION", message: "Title is required (max 200 chars)" }, 400);
+  if (description !== undefined && description.length > 5000) return c.json({ ok: false, error: "VALIDATION", message: "Description too long (max 5000 chars)" }, 400);
+  if (category && !ROADMAP_CATEGORIES.includes(category as typeof ROADMAP_CATEGORIES[number]))
+    return c.json({ ok: false, error: "VALIDATION", message: "Invalid category" }, 400);
+
+  try {
+    const existing = (await sql`SELECT id FROM newchums.roadmap_items WHERE id = ${itemId}`) as { id: string }[];
+    if (existing.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+
+    await sql`
+      UPDATE newchums.roadmap_items
+      SET title = ${title},
+          body = ${description !== undefined ? (description || null) : sql`body`},
+          category = ${category ?? sql`category`},
+          updated_at = NOW()
+      WHERE id = ${itemId}
+    `;
+
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[POST /admin/roadmap/:id/edit]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /admin/roadmap/:id/remove — soft-remove item */
+app.post("/admin/roadmap/:id/remove", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  const sql = getSql(c.env);
+  const itemId = c.req.param("id");
+
+  let body: Record<string, unknown> = {};
+  try { body = await c.req.json(); } catch { /* no body is fine */ }
+
+  const reason = String(body.reason ?? "").trim();
+
+  try {
+    await sql`
+      UPDATE newchums.roadmap_items SET is_removed = true, removal_reason = ${reason || null}, updated_at = NOW()
+      WHERE id = ${itemId}
+    `;
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[POST /admin/roadmap/:id/remove]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /admin/roadmap/:id/restore — restore removed item */
+app.post("/admin/roadmap/:id/restore", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  const sql = getSql(c.env);
+  const itemId = c.req.param("id");
+
+  try {
+    await sql`
+      UPDATE newchums.roadmap_items SET is_removed = false, removal_reason = NULL, updated_at = NOW()
+      WHERE id = ${itemId}
+    `;
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[POST /admin/roadmap/:id/restore]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** DELETE /admin/roadmap/comments/:id — remove a comment */
+app.delete("/admin/roadmap/comments/:id", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  const sql = getSql(c.env);
+  const commentId = c.req.param("id");
+
+  try {
+    const comment = (await sql`SELECT item_id FROM newchums.roadmap_comments WHERE id = ${commentId}`) as { item_id: string }[];
+    if (comment.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+
+    await sql`UPDATE newchums.roadmap_comments SET is_removed = true WHERE id = ${commentId}`;
+    await sql`UPDATE newchums.roadmap_items SET comment_count = GREATEST(0, comment_count - 1), updated_at = NOW() WHERE id = ${comment[0].item_id}`;
+
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[DELETE /admin/roadmap/comments/:id]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });

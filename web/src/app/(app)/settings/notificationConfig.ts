@@ -80,4 +80,9 @@ export const NOTIFICATION_TYPES: NotificationTypeConfig[] = [
     title: "Attendance confirmation reminders",
     description: "Reminders to confirm your attendance before plans that require it.",
   },
+  {
+    key: "roadmap_updates",
+    title: "Roadmap updates",
+    description: "Updates on roadmap items you\u2019ve submitted or followed.",
+  },
 ];
