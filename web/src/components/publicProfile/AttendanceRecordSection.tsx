@@ -33,16 +33,16 @@ type AttendanceRecordSectionProps = {
 
 const MIN_SAMPLE_FOR_RATE = 3;
 
-function formatRate(r: RatioMetric): { display: string; isLimited: boolean; ratio: string } {
+function formatRate(r: RatioMetric): { display: string; isLimited: boolean; ratio: string; pct: number | null } {
   if (r.denominator === 0) {
-    return { display: "—", isLimited: false, ratio: "" };
+    return { display: "—", isLimited: false, ratio: "", pct: null };
   }
   const pct = Math.round((r.numerator / r.denominator) * 100);
   const ratio = `${r.numerator} of ${r.denominator}`;
   if (r.denominator < MIN_SAMPLE_FOR_RATE) {
-    return { display: `${pct}%`, isLimited: true, ratio };
+    return { display: `${pct}%`, isLimited: true, ratio, pct };
   }
-  return { display: `${pct}%`, isLimited: false, ratio };
+  return { display: `${pct}%`, isLimited: false, ratio, pct };
 }
 
 type MetricCardProps = {
@@ -75,17 +75,19 @@ function MetricCard({ icon, label, value, ratio, tooltipTitle }: MetricCardProps
         minWidth: 0,
       }}
     >
-      <Box
-        sx={{
-          color: isEmpty ? "text.disabled" : "primary.main",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          mb: 0.25,
-        }}
-      >
-        {icon}
-      </Box>
+      {icon && (
+        <Box
+          sx={{
+            color: isEmpty ? "text.disabled" : "primary.main",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            mb: 0.25,
+          }}
+        >
+          {icon}
+        </Box>
+      )}
 
       <Typography
         variant="h5"
@@ -257,7 +259,7 @@ export default function AttendanceRecordSection({ userId, isOwner }: AttendanceR
                 }}
               >
                 <MetricCard
-                  icon={<CheckCircleOutlineRoundedIcon sx={{ fontSize: { xs: 22, sm: 26 } }} />}
+                  icon={ft!.pct !== null && ft!.pct >= 80 ? <CheckCircleOutlineRoundedIcon sx={{ fontSize: { xs: 22, sm: 26 } }} /> : null}
                   label="Shows up"
                   value={ft!.display}
                   ratio={ft!.ratio || undefined}
@@ -268,7 +270,7 @@ export default function AttendanceRecordSection({ userId, isOwner }: AttendanceR
                   }
                 />
                 <MetricCard
-                  icon={<ThumbUpAltRoundedIcon sx={{ fontSize: { xs: 22, sm: 26 } }} />}
+                  icon={cr!.pct !== null && cr!.pct >= 80 ? <ThumbUpAltRoundedIcon sx={{ fontSize: { xs: 22, sm: 26 } }} /> : null}
                   label="Responds"
                   value={cr!.display}
                   ratio={cr!.ratio || undefined}
@@ -280,7 +282,7 @@ export default function AttendanceRecordSection({ userId, isOwner }: AttendanceR
                 />
                 {hasHosting && (
                   <MetricCard
-                    icon={<StarRoundedIcon sx={{ fontSize: { xs: 22, sm: 26 } }} />}
+                    icon={hc!.pct !== null && hc!.pct >= 50 ? <StarRoundedIcon sx={{ fontSize: { xs: 22, sm: 26 } }} /> : null}
                     label="Plans ran"
                     value={hc!.display}
                     ratio={hc!.ratio || undefined}
