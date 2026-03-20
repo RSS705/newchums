@@ -14,7 +14,7 @@ export const NOTIFICATION_TYPES: NotificationTypeConfig[] = [
     key: "event_match",
     title: "New plans matching my interests",
     description:
-      "Get notified when in-person plans match your hobbies and location (public plans, or Chums-only plans from hosts who have you on their Chum list).",
+      "Get notified when in-person plans match your hobbies and location (public plans, or Chums-only plans from hosts who have you in their connections).",
   },
   {
     key: "event_invite",

@@ -4092,7 +4092,8 @@ function buildAvatarUrl(
   return `/users/${userId}/avatar?v=${ts}`;
 }
 
-/** GET /chums — list all chums for the authenticated user (private). */
+/** GET /chums — list all contacts for the authenticated user (private).
+ *  Returns both On NewChums and Private Contact entries. */
 app.get("/chums", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string") {
@@ -4101,31 +4102,18 @@ app.get("/chums", async (c) => {
   try {
     const sql = getSql(c.env);
     const appUserId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
-    const rows = (await sql`
-      SELECT u.id, u.name, u.username, u.avatar_key, u.avatar_updated_at,
+
+    const onNcRows = (await sql`
+      SELECT uc.id AS contact_id, u.id, u.name, u.username, u.avatar_key, u.avatar_updated_at,
              u.date_of_birth, COALESCE(u.is_hidden_age, false) AS is_hidden_age,
-             uc.created_at AS chummed_at, uc.note,
-             EXISTS(
-               SELECT 1 FROM user_chums back
-               WHERE back.user_id = uc.chum_user_id AND back.chum_user_id = ${appUserId}
-             ) AS is_mutual
-      FROM user_chums uc
-      JOIN newchums.users u ON u.id = uc.chum_user_id
-      WHERE uc.user_id = ${appUserId}
+             uc.created_at AS saved_at, uc.note
+      FROM newchums.user_contacts uc
+      JOIN newchums.users u ON u.id = uc.linked_user_id
+      WHERE uc.user_id = ${appUserId} AND uc.type = 'on_newchums'
       ORDER BY uc.created_at DESC
-    `) as {
-      id: string;
-      name: string | null;
-      username: string | null;
-      avatar_key: string | null;
-      avatar_updated_at: string | Date | null;
-      date_of_birth: string | Date | null;
-      is_hidden_age: boolean;
-      chummed_at: string | Date;
-      note: string | null;
-      is_mutual: boolean;
-    }[];
-    const chums = rows.map((r) => {
+    `) as { contact_id: string; id: string; name: string | null; username: string | null; avatar_key: string | null; avatar_updated_at: string | Date | null; date_of_birth: string | Date | null; is_hidden_age: boolean; saved_at: string | Date; note: string | null }[];
+
+    const onNewChums = onNcRows.map((r) => {
       const uname = r.username?.replace(/^@/, "") ?? null;
       let birthday: { month: number; day: number } | null = null;
       if (!r.is_hidden_age && r.date_of_birth) {
@@ -4134,25 +4122,43 @@ app.get("/chums", async (c) => {
         if (parts.length >= 3) birthday = { month: parseInt(parts[1], 10), day: parseInt(parts[2], 10) };
       }
       return {
+        contactId: r.contact_id,
         userId: r.id,
+        type: "on_newchums" as const,
         displayName: r.name?.trim() || uname || "NewChums user",
         handle: uname ? `@${uname}` : null,
         avatarUrl: buildAvatarUrl(r.id, r.avatar_key, r.avatar_updated_at, c.env.MEDIA_BUCKET),
-        chummedAt: r.chummed_at,
-        isMutual: r.is_mutual === true,
+        savedAt: r.saved_at,
         note: r.note ?? null,
         birthday,
       };
     });
-    return c.json({ ok: true, chums });
+
+    const privateRows = (await sql`
+      SELECT id AS contact_id, contact_email, contact_name, note, created_at AS saved_at
+      FROM newchums.user_contacts
+      WHERE user_id = ${appUserId} AND type = 'private'
+      ORDER BY created_at DESC
+    `) as { contact_id: string; contact_email: string | null; contact_name: string | null; note: string | null; saved_at: string | Date }[];
+
+    const privateContacts = privateRows.map((r) => ({
+      contactId: r.contact_id,
+      type: "private" as const,
+      displayName: r.contact_name?.trim() || r.contact_email || "Private contact",
+      email: r.contact_email ?? null,
+      savedAt: r.saved_at,
+      note: r.note ?? null,
+    }));
+
+    return c.json({ ok: true, onNewChums, privateContacts });
   } catch (err) {
     console.error("[GET /chums]", err);
     return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
   }
 });
 
-/** PATCH /chums/:userId/note — save or clear the private note for a chum entry. */
-app.patch("/chums/:userId/note", async (c) => {
+/** PATCH /chums/:contactId/note — save or clear the private note for any contact entry. */
+app.patch("/chums/:contactId/note", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string") {
     return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
@@ -4160,30 +4166,30 @@ app.patch("/chums/:userId/note", async (c) => {
   try {
     const sql = getSql(c.env);
     const appUserId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
-    const targetId = c.req.param("userId");
+    const contactId = c.req.param("contactId");
     const body = await c.req.json().catch(() => ({})) as { note?: unknown };
     const rawNote = body.note != null ? String(body.note).trim() : null;
     const note = rawNote && rawNote.length > 0 ? rawNote.slice(0, 500) : null;
 
     const result = (await sql`
-      UPDATE newchums.user_chums SET note = ${note}
-      WHERE user_id = ${appUserId} AND chum_user_id = ${targetId}
+      UPDATE newchums.user_contacts SET note = ${note}
+      WHERE id = ${contactId} AND user_id = ${appUserId}
       RETURNING id
     `) as { id: string }[];
     if (result.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     return c.json({ ok: true });
   } catch (err) {
-    console.error("[PATCH /chums/:userId/note]", err);
+    console.error("[PATCH /chums/:contactId/note]", err);
     return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
   }
 });
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/** GET /chums/search?q= — search eligible users to add as a Chum.
+/** GET /chums/search?q= — search users to add as a connection or private contact.
  *  Excludes self and users with is_hidden_from_search = true.
  *  If q looks like an email, performs exact email lookup instead of name/handle search.
- *  Returns up to 10 results with isChummed; for email lookups also returns inviteEligible
+ *  Returns up to 10 results with isSaved; for email lookups also returns inviteEligible
  *  when the email doesn't belong to any eligible account. */
 app.get("/chums/search", async (c) => {
   const payload = await requireAuth(c);
@@ -4201,7 +4207,6 @@ app.get("/chums/search", async (c) => {
     // ── Email lookup path ──────────────────────────────────────────────────────
     if (EMAIL_RE.test(q)) {
       const emailNorm = q.toLowerCase();
-      // Never allow lookup of self
       if (emailNorm === payload.email.toLowerCase()) {
         return c.json({ ok: true, users: [], inviteEligible: false });
       }
@@ -4209,9 +4214,9 @@ app.get("/chums/search", async (c) => {
         SELECT u.id, u.name, u.username, u.avatar_key, u.avatar_updated_at,
                COALESCE(u.is_hidden_from_search, false) AS is_hidden,
                COALESCE(u.is_suspended, false) AS is_suspended,
-               (uc.chum_user_id IS NOT NULL) AS is_chummed
+               (uc.linked_user_id IS NOT NULL) AS is_saved
         FROM newchums.users u
-        LEFT JOIN user_chums uc ON uc.user_id = ${appUserId} AND uc.chum_user_id = u.id
+        LEFT JOIN newchums.user_contacts uc ON uc.user_id = ${appUserId} AND uc.linked_user_id = u.id AND uc.type = 'on_newchums'
         WHERE LOWER(u.email) = ${emailNorm}
         LIMIT 1
       `) as {
@@ -4222,13 +4227,10 @@ app.get("/chums/search", async (c) => {
         avatar_updated_at: string | Date | null;
         is_hidden: boolean;
         is_suspended: boolean;
-        is_chummed: boolean;
+        is_saved: boolean;
       }[];
       const match = rows[0];
-      // If the account exists but is hidden from search or suspended, treat as not found.
-      // This avoids confirming the existence of hidden accounts.
       if (!match || match.is_hidden || match.is_suspended) {
-        // Check whether a pending invite already exists (only if no eligible user found)
         const inviteRows = (await sql`
           SELECT 1 FROM newchums.chum_invites
           WHERE inviter_user_id = ${appUserId}
@@ -4238,7 +4240,14 @@ app.get("/chums/search", async (c) => {
           LIMIT 1
         `) as unknown[];
         const alreadyInvited = inviteRows.length > 0;
-        return c.json({ ok: true, users: [], inviteEligible: true, inviteeEmail: emailNorm, alreadyInvited });
+        // Check if already saved as private contact
+        const privateRows = (await sql`
+          SELECT 1 FROM newchums.user_contacts
+          WHERE user_id = ${appUserId} AND LOWER(contact_email) = ${emailNorm} AND type = 'private'
+          LIMIT 1
+        `) as unknown[];
+        const isPrivateContact = privateRows.length > 0;
+        return c.json({ ok: true, users: [], inviteEligible: true, inviteeEmail: emailNorm, alreadyInvited, isPrivateContact });
       }
       const muname = match.username?.replace(/^@/, "") ?? null;
       const users = [{
@@ -4246,7 +4255,7 @@ app.get("/chums/search", async (c) => {
         displayName: match.name?.trim() || muname || "NewChums user",
         handle: muname ? `@${muname}` : null,
         avatarUrl: buildAvatarUrl(match.id, match.avatar_key, match.avatar_updated_at, c.env.MEDIA_BUCKET),
-        isChummed: match.is_chummed === true,
+        isSaved: match.is_saved === true,
       }];
       return c.json({ ok: true, users, inviteEligible: false });
     }
@@ -4255,10 +4264,10 @@ app.get("/chums/search", async (c) => {
     const likePattern = `%${q.toLowerCase()}%`;
     const rows = (await sql`
       SELECT u.id, u.name, u.username, u.avatar_key, u.avatar_updated_at,
-             (uc.chum_user_id IS NOT NULL) AS is_chummed
+             (uc.linked_user_id IS NOT NULL) AS is_saved
       FROM newchums.users u
-      LEFT JOIN user_chums uc
-        ON uc.user_id = ${appUserId} AND uc.chum_user_id = u.id
+      LEFT JOIN newchums.user_contacts uc
+        ON uc.user_id = ${appUserId} AND uc.linked_user_id = u.id AND uc.type = 'on_newchums'
       WHERE u.id <> ${appUserId}
         AND u.username IS NOT NULL
         AND COALESCE(u.is_hidden_from_search, false) = false
@@ -4275,7 +4284,7 @@ app.get("/chums/search", async (c) => {
       username: string | null;
       avatar_key: string | null;
       avatar_updated_at: string | Date | null;
-      is_chummed: boolean;
+      is_saved: boolean;
     }[];
     const users = rows.map((r) => {
       const uname = r.username?.replace(/^@/, "") ?? null;
@@ -4284,7 +4293,7 @@ app.get("/chums/search", async (c) => {
         displayName: r.name?.trim() || uname || "NewChums user",
         handle: uname ? `@${uname}` : null,
         avatarUrl: buildAvatarUrl(r.id, r.avatar_key, r.avatar_updated_at, c.env.MEDIA_BUCKET),
-        isChummed: r.is_chummed === true,
+        isSaved: r.is_saved === true,
       };
     });
     return c.json({ ok: true, users, inviteEligible: false });
@@ -4294,7 +4303,7 @@ app.get("/chums/search", async (c) => {
   }
 });
 
-/** GET /chums/check/:userId — returns whether the authenticated user has this person as a Chum. */
+/** GET /chums/check/:userId — returns whether the authenticated user has this person saved. */
 app.get("/chums/check/:userId", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string") {
@@ -4306,25 +4315,81 @@ app.get("/chums/check/:userId", async (c) => {
     const sql = getSql(c.env);
     const appUserId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
     const rows = (await sql`
-      SELECT
-        EXISTS(SELECT 1 FROM user_chums WHERE user_id = ${appUserId} AND chum_user_id = ${targetId}) AS is_chummed,
-        EXISTS(SELECT 1 FROM user_chums WHERE user_id = ${targetId}  AND chum_user_id = ${appUserId}) AS they_chummed_me,
-        (SELECT COUNT(*)::int
-         FROM user_chums a
-         JOIN user_chums b ON a.chum_user_id = b.chum_user_id
-         WHERE a.user_id = ${appUserId} AND b.user_id = ${targetId}) AS shared_count
-    `) as { is_chummed: boolean; they_chummed_me: boolean; shared_count: number }[];
-    const row = rows[0];
-    const isChummed = row?.is_chummed === true;
-    const isMutual = isChummed && row?.they_chummed_me === true;
-    return c.json({ ok: true, isChummed, isMutual, sharedCount: row?.shared_count ?? 0 });
+      SELECT EXISTS(
+        SELECT 1 FROM newchums.user_contacts
+        WHERE user_id = ${appUserId} AND linked_user_id = ${targetId} AND type = 'on_newchums'
+      ) AS is_saved
+    `) as { is_saved: boolean }[];
+    return c.json({ ok: true, isSaved: rows[0]?.is_saved === true });
   } catch (err) {
     console.error("[GET /chums/check/:userId]", err);
     return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
   }
 });
 
-/** POST /chums/invite — send a Chum invite email to an address not yet on NewChums.
+/** POST /chums/private — add a private contact (off-platform person for planning).
+ *  If the email matches an existing user, auto-creates as on_newchums instead. */
+app.post("/chums/private", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+  const body = await c.req.json().catch(() => ({})) as { email?: unknown; name?: unknown; note?: unknown };
+  const contactEmail = typeof body.email === "string" ? body.email.toLowerCase().trim() : null;
+  const contactName = typeof body.name === "string" ? body.name.trim().slice(0, 200) : null;
+  const rawNote = body.note != null ? String(body.note).trim() : null;
+  const note = rawNote && rawNote.length > 0 ? rawNote.slice(0, 500) : null;
+
+  if (!contactEmail && !contactName) {
+    return c.json({ ok: false, error: { code: "NEED_EMAIL_OR_NAME", message: "Provide an email or name." } }, 400);
+  }
+  if (contactEmail && !EMAIL_RE.test(contactEmail)) {
+    return c.json({ ok: false, error: { code: "INVALID_EMAIL" } }, 400);
+  }
+  try {
+    const sql = getSql(c.env);
+    const appUserId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+
+    if (contactEmail && contactEmail === payload.email.toLowerCase()) {
+      return c.json({ ok: false, error: { code: "CANNOT_ADD_SELF" } }, 400);
+    }
+
+    // If email matches an existing user, auto-create as on_newchums
+    if (contactEmail) {
+      const existingRows = (await sql`
+        SELECT id FROM newchums.users
+        WHERE LOWER(email) = ${contactEmail}
+          AND COALESCE(is_suspended, false) = false
+        LIMIT 1
+      `) as { id: string }[];
+      if (existingRows.length > 0) {
+        const linkedId = existingRows[0].id;
+        if (linkedId === appUserId) {
+          return c.json({ ok: false, error: { code: "CANNOT_ADD_SELF" } }, 400);
+        }
+        await sql`
+          INSERT INTO newchums.user_contacts (user_id, type, linked_user_id, note)
+          VALUES (${appUserId}, 'on_newchums', ${linkedId}, ${note})
+          ON CONFLICT (user_id, linked_user_id) WHERE linked_user_id IS NOT NULL DO NOTHING
+        `;
+        return c.json({ ok: true, autoLinked: true, type: "on_newchums" });
+      }
+    }
+
+    await sql`
+      INSERT INTO newchums.user_contacts (user_id, type, contact_email, contact_name, note)
+      VALUES (${appUserId}, 'private', ${contactEmail}, ${contactName}, ${note})
+      ON CONFLICT DO NOTHING
+    `;
+    return c.json({ ok: true, type: "private" });
+  } catch (err) {
+    console.error("[POST /chums/private]", err);
+    return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
+  }
+});
+
+/** POST /chums/invite — send a NewChums invite email to an address not yet on NewChums.
+ *  Also creates a Private Contact entry for the invitee if one doesn't exist.
  *  Prevents duplicate pending invites. Rate limit: 10 invites per inviter per 24 h. */
 app.post("/chums/invite", async (c) => {
   const payload = await requireAuth(c);
@@ -4340,12 +4405,10 @@ app.post("/chums/invite", async (c) => {
     const sql = getSql(c.env);
     const appUserId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
 
-    // Can't invite yourself
     if (inviteeEmail === payload.email.toLowerCase()) {
       return c.json({ ok: false, error: { code: "CANNOT_INVITE_SELF" } }, 400);
     }
 
-    // If a user already exists at this email and is eligible, frontend should add directly
     const existingRows = (await sql`
       SELECT id FROM newchums.users
       WHERE LOWER(email) = ${inviteeEmail}
@@ -4357,7 +4420,6 @@ app.post("/chums/invite", async (c) => {
       return c.json({ ok: false, error: { code: "USER_ALREADY_EXISTS" } }, 409);
     }
 
-    // Prevent duplicate pending invite
     const pendingRows = (await sql`
       SELECT id FROM newchums.chum_invites
       WHERE inviter_user_id = ${appUserId}
@@ -4370,7 +4432,6 @@ app.post("/chums/invite", async (c) => {
       return c.json({ ok: true, alreadyPending: true });
     }
 
-    // Rate limit: max 10 invites per inviter in last 24 h
     const recentRows = (await sql`
       SELECT COUNT(*)::int AS cnt FROM newchums.chum_invites
       WHERE inviter_user_id = ${appUserId}
@@ -4380,7 +4441,6 @@ app.post("/chums/invite", async (c) => {
       return c.json({ ok: false, error: { code: "RATE_LIMITED", message: "You've sent too many invites today. Try again tomorrow." } }, 429);
     }
 
-    // Generate token, hash it, store hash only
     const { generateResetToken, hashResetToken } = await import("./resetTokens");
     const token = generateResetToken();
     const tokenHash = await hashResetToken(token);
@@ -4390,7 +4450,13 @@ app.post("/chums/invite", async (c) => {
       VALUES (${appUserId}, ${inviteeEmail}, ${tokenHash})
     `;
 
-    // Resolve inviter display name for the email
+    // Also create a Private Contact entry for the invitee if one doesn't exist
+    await sql`
+      INSERT INTO newchums.user_contacts (user_id, type, contact_email)
+      VALUES (${appUserId}, 'private', ${inviteeEmail})
+      ON CONFLICT DO NOTHING
+    `;
+
     const inviterRows = (await sql`
       SELECT name, username FROM newchums.users WHERE id = ${appUserId} LIMIT 1
     `) as { name: string | null; username: string | null }[];
@@ -4402,7 +4468,6 @@ app.post("/chums/invite", async (c) => {
 
     const inviteUrl = `${c.env.WEB_BASE_URL}/signup?invite=${encodeURIComponent(token)}`;
 
-    // Send email (non-fatal if it fails to avoid silent DB state / email mismatch)
     try {
       await sendChumInviteEmail(c.env, { to: inviteeEmail, inviterName, inviteUrl });
     } catch (emailErr) {
@@ -4417,8 +4482,8 @@ app.post("/chums/invite", async (c) => {
 });
 
 /** POST /chums/invite/accept — consume an invite token after account creation.
- *  Called by the web app immediately after successful signup when an invite token is present.
- *  Accepts the invite, marks it accepted, and creates mutual Chum links. */
+ *  Creates two independent on_newchums entries (inviter → new user, new user → inviter).
+ *  Also auto-links any Private Contacts matching the new user's email across all users. */
 app.post("/chums/invite/accept", async (c) => {
   const body = await c.req.json().catch(() => ({})) as { token?: unknown; email?: unknown };
   const token = typeof body.token === "string" ? body.token.trim() : "";
@@ -4431,7 +4496,6 @@ app.post("/chums/invite/accept", async (c) => {
     const { hashResetToken } = await import("./resetTokens");
     const tokenHash = await hashResetToken(token);
 
-    // Find valid pending invite
     const inviteRows = (await sql`
       SELECT id, inviter_user_id, invitee_email
       FROM newchums.chum_invites
@@ -4445,12 +4509,10 @@ app.post("/chums/invite/accept", async (c) => {
       return c.json({ ok: false, error: { code: "INVITE_NOT_FOUND" } }, 404);
     }
 
-    // Verify the signing-up email matches the invite
     if (invite.invitee_email !== newUserEmail) {
       return c.json({ ok: false, error: { code: "EMAIL_MISMATCH" } }, 400);
     }
 
-    // Look up the newly created user
     const newUserRows = (await sql`
       SELECT id FROM newchums.users WHERE LOWER(email) = ${newUserEmail} LIMIT 1
     `) as { id: string }[];
@@ -4461,32 +4523,39 @@ app.post("/chums/invite/accept", async (c) => {
 
     const inviterId = invite.inviter_user_id;
 
-    // Mark invite accepted
     await sql`
       UPDATE newchums.chum_invites
       SET status = 'accepted', accepted_at = NOW(), accepted_user_id = ${newUserId}
       WHERE id = ${invite.id}
     `;
 
-    // Create mutual Chum links (both directions), ignoring conflicts
+    // Create two independent on_newchums entries (no mutual indicator)
     await sql`
-      INSERT INTO user_chums (user_id, chum_user_id)
-      VALUES (${inviterId}, ${newUserId}), (${newUserId}, ${inviterId})
-      ON CONFLICT (user_id, chum_user_id) DO NOTHING
+      INSERT INTO newchums.user_contacts (user_id, type, linked_user_id)
+      VALUES (${inviterId}, 'on_newchums', ${newUserId}), (${newUserId}, 'on_newchums', ${inviterId})
+      ON CONFLICT (user_id, linked_user_id) WHERE linked_user_id IS NOT NULL DO NOTHING
     `;
 
-    // Create notifications for both sides
-    try {
-      await sql`
-        INSERT INTO newchums.notifications (user_id, type, actor_user_id)
-        VALUES
-          (${newUserId}, 'chum_added_you', ${inviterId}),
-          (${inviterId}, 'chum_added_you', ${newUserId})
-        ON CONFLICT DO NOTHING
-      `;
-    } catch {
-      // Non-fatal
-    }
+    // Auto-link: promote all Private Contacts matching this email across all users
+    await sql`
+      UPDATE newchums.user_contacts
+      SET type = 'on_newchums', linked_user_id = ${newUserId}
+      WHERE LOWER(contact_email) = ${newUserEmail}
+        AND type = 'private'
+        AND linked_user_id IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM newchums.user_contacts uc2
+          WHERE uc2.user_id = user_contacts.user_id
+            AND uc2.linked_user_id = ${newUserId}
+        )
+    `;
+    // Clean up any remaining private-contact duplicates
+    await sql`
+      DELETE FROM newchums.user_contacts
+      WHERE LOWER(contact_email) = ${newUserEmail}
+        AND type = 'private'
+        AND linked_user_id IS NULL
+    `;
 
     return c.json({ ok: true });
   } catch (err) {
@@ -4495,7 +4564,7 @@ app.post("/chums/invite/accept", async (c) => {
   }
 });
 
-/** POST /chums/:userId — add a user to the authenticated user's Chum list. */
+/** POST /chums/:userId — save an on-platform user to the authenticated user's connections. */
 app.post("/chums/:userId", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string") {
@@ -4507,7 +4576,7 @@ app.post("/chums/:userId", async (c) => {
     const sql = getSql(c.env);
     const appUserId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
     if (appUserId === targetId) {
-      return c.json({ ok: false, error: { code: "CANNOT_CHUM_SELF", message: "You cannot add yourself as a Chum." } }, 400);
+      return c.json({ ok: false, error: { code: "CANNOT_ADD_SELF", message: "You cannot add yourself." } }, 400);
     }
     const targetRows = (await sql`
       SELECT id FROM newchums.users WHERE id = ${targetId} LIMIT 1
@@ -4515,25 +4584,11 @@ app.post("/chums/:userId", async (c) => {
     if (targetRows.length === 0) {
       return c.json({ ok: false, error: { code: "USER_NOT_FOUND" } }, 404);
     }
-    const insertResult = (await sql`
-      INSERT INTO user_chums (user_id, chum_user_id)
-      VALUES (${appUserId}, ${targetId})
-      ON CONFLICT (user_id, chum_user_id) DO NOTHING
-      RETURNING id
-    `) as { id: string }[];
-    // Only create a notification when a new chum was actually added (not a duplicate).
-    // Removing and re-adding later creates a new notification because the conflict is gone.
-    // Must be awaited — Cloudflare Workers abandon unawaited promises when the response is sent.
-    if (insertResult.length > 0) {
-      try {
-        await sql`
-          INSERT INTO newchums.notifications (user_id, type, actor_user_id)
-          VALUES (${targetId}, 'chum_added_you', ${appUserId})
-        `;
-      } catch (notifErr) {
-        console.error("[POST /chums/:userId] notification insert failed (non-fatal):", notifErr);
-      }
-    }
+    await sql`
+      INSERT INTO newchums.user_contacts (user_id, type, linked_user_id)
+      VALUES (${appUserId}, 'on_newchums', ${targetId})
+      ON CONFLICT (user_id, linked_user_id) WHERE linked_user_id IS NOT NULL DO NOTHING
+    `;
     return c.json({ ok: true });
   } catch (err) {
     console.error("[POST /chums/:userId]", err);
@@ -4541,24 +4596,29 @@ app.post("/chums/:userId", async (c) => {
   }
 });
 
-/** DELETE /chums/:userId — remove a user from the authenticated user's Chum list. */
-app.delete("/chums/:userId", async (c) => {
+/** DELETE /chums/:id — remove a contact entry by contact ID or by linked user ID. */
+app.delete("/chums/:id", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string") {
     return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
   }
-  const targetId = c.req.param("userId");
-  if (!targetId) return c.json({ ok: false, error: "INVALID_ID" }, 400);
+  const id = c.req.param("id");
+  if (!id) return c.json({ ok: false, error: "INVALID_ID" }, 400);
   try {
     const sql = getSql(c.env);
     const appUserId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
-    await sql`
-      DELETE FROM user_chums
-      WHERE user_id = ${appUserId} AND chum_user_id = ${targetId}
-    `;
+    // Try by contact row ID first, then by linked_user_id (for profile-page remove)
+    const result = (await sql`
+      DELETE FROM newchums.user_contacts
+      WHERE user_id = ${appUserId} AND (id = ${id} OR linked_user_id = ${id})
+      RETURNING id
+    `) as { id: string }[];
+    if (result.length === 0) {
+      return c.json({ ok: true });
+    }
     return c.json({ ok: true });
   } catch (err) {
-    console.error("[DELETE /chums/:userId]", err);
+    console.error("[DELETE /chums/:id]", err);
     return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
   }
 });
@@ -4728,8 +4788,6 @@ app.get("/public/users/:handle/chums", async (c) => {
     if (owner.is_hidden_chum_list) {
       return c.json({ ok: true, chums: [], total: 0, hasMore: false, hidden: true });
     }
-    // Optional viewer auth: if logged in and not the owner, compute isMutualWithViewer per chum.
-    // When viewerId is null the EXISTS subquery safely returns false for all rows.
     let viewerId: string | null = null;
     try {
       const authPayload = await requireAuth(c);
@@ -4742,21 +4800,20 @@ app.get("/public/users/:handle/chums", async (c) => {
     }
     const countRows = (await sql`
       SELECT COUNT(*) AS total
-      FROM user_chums uc
-      JOIN newchums.users u ON u.id = uc.chum_user_id
+      FROM newchums.user_contacts uc
+      JOIN newchums.users u ON u.id = uc.linked_user_id
       WHERE uc.user_id = ${owner.id}
+        AND uc.type = 'on_newchums'
         AND COALESCE(u.is_hidden_from_chum_lists, false) = false
         AND u.username IS NOT NULL
     `) as { total: string }[];
     const total = parseInt(countRows[0]?.total ?? "0", 10);
     const rows = (await sql`
-      SELECT u.id, u.name, u.username, u.avatar_key, u.avatar_updated_at,
-        (EXISTS(SELECT 1 FROM user_chums v1 WHERE v1.user_id = ${viewerId} AND v1.chum_user_id = u.id)
-         AND EXISTS(SELECT 1 FROM user_chums v2 WHERE v2.user_id = u.id AND v2.chum_user_id = ${viewerId}))
-           AS is_mutual_with_viewer
-      FROM user_chums uc
-      JOIN newchums.users u ON u.id = uc.chum_user_id
+      SELECT u.id, u.name, u.username, u.avatar_key, u.avatar_updated_at
+      FROM newchums.user_contacts uc
+      JOIN newchums.users u ON u.id = uc.linked_user_id
       WHERE uc.user_id = ${owner.id}
+        AND uc.type = 'on_newchums'
         AND COALESCE(u.is_hidden_from_chum_lists, false) = false
         AND u.username IS NOT NULL
       ORDER BY uc.created_at DESC
@@ -4767,7 +4824,6 @@ app.get("/public/users/:handle/chums", async (c) => {
       username: string | null;
       avatar_key: string | null;
       avatar_updated_at: string | Date | null;
-      is_mutual_with_viewer: boolean;
     }[];
     const chums = rows.map((r) => {
       const uname = r.username?.replace(/^@/, "") ?? null;
@@ -4776,7 +4832,6 @@ app.get("/public/users/:handle/chums", async (c) => {
         displayName: r.name?.trim() || uname || "NewChums user",
         handle: uname ? `@${uname}` : null,
         avatarUrl: buildAvatarUrl(r.id, r.avatar_key, r.avatar_updated_at, c.env.MEDIA_BUCKET),
-        isMutualWithViewer: r.is_mutual_with_viewer === true,
       };
     });
     return c.json({ ok: true, chums, total, hasMore: offset + limit < total });
@@ -5292,8 +5347,8 @@ app.get("/events/explore", async (c) => {
   const hasLocation = lat !== null && lng !== null && !isNaN(lat) && !isNaN(lng);
 
   try {
-    const chumIds = (await sql`SELECT chum_user_id FROM newchums.user_chums WHERE user_id = ${userId}`) as { chum_user_id: string }[];
-    const chumIdList = chumIds.map((r) => r.chum_user_id);
+    const chumIds = (await sql`SELECT linked_user_id FROM newchums.user_contacts WHERE user_id = ${userId} AND type = 'on_newchums' AND linked_user_id IS NOT NULL`) as { linked_user_id: string }[];
+    const chumIdList = chumIds.map((r) => r.linked_user_id);
 
     const userHobbyRows = (await sql`
       SELECT ii.slug FROM newchums.user_interests ui
@@ -8713,7 +8768,7 @@ async function processEventMatchDigest(
           ) <= COALESCE(eu.travel_radius_km, 200)
         ORDER BY eu.user_id, e.id, e.starts_at
         UNION ALL
-        -- Chums-only: same hobby + radius rules as public, plus recipient on host's Chum list (user_chums.user_id = host, chum_user_id = recipient)
+        -- Chums-only: same hobby + radius rules as public, plus recipient in host's On NewChums contacts
         SELECT DISTINCT ON (eu.user_id, e.id)
           eu.user_id,
           eu.email,
@@ -8724,7 +8779,7 @@ async function processEventMatchDigest(
         JOIN newchums.user_interests ui ON ui.user_id = eu.user_id
         JOIN newchums.event_interests ei ON ei.interest_id = ui.interest_id
         JOIN newchums.events e ON e.id = ei.event_id
-        JOIN newchums.user_chums uc ON uc.user_id = e.host_user_id AND uc.chum_user_id = eu.user_id
+        JOIN newchums.user_contacts uc ON uc.user_id = e.host_user_id AND uc.linked_user_id = eu.user_id AND uc.type = 'on_newchums'
         WHERE e.visibility = 'chums_only'
           AND e.status = 'published'
           AND e.location_type = 'in_person'

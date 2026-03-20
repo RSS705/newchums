@@ -4,7 +4,6 @@ import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import CircularProgress from "@mui/material/CircularProgress";
 import Stack from "@mui/material/Stack";
-import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
 import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
@@ -21,7 +20,6 @@ type PublicChum = {
   displayName: string;
   handle: string | null;
   avatarUrl: string | null;
-  isMutualWithViewer?: boolean;
 };
 
 type FetchState =
@@ -31,7 +29,6 @@ type FetchState =
 
 type ProfileChumsSectionProps = {
   ownerHandle: string;
-  /** Pass true when the current viewer is logged in so mutual indicators can be fetched */
   viewerLoggedIn?: boolean;
 };
 
@@ -100,7 +97,7 @@ export default function ProfileChumsSection({ ownerHandle, viewerLoggedIn }: Pro
     <AppCard sx={{ borderRadius: { xs: 2, sm: 2.5 }, overflow: "hidden" }}>
       <Stack spacing={1.5}>
         <Typography variant="subtitle1" fontWeight={600} sx={{ fontSize: "0.9375rem" }}>
-          Chums
+          Connections
         </Typography>
 
         <Box
@@ -117,42 +114,12 @@ export default function ProfileChumsSection({ ownerHandle, viewerLoggedIn }: Pro
 
             const inner = (
               <Stack spacing={0.5} alignItems="center">
-                {/* Avatar with optional mutual badge */}
-                <Box sx={{ position: "relative", display: "inline-flex" }}>
-                  <UserAvatar
-                    src={chum.avatarUrl ? `${avatarBaseUrl}${chum.avatarUrl}` : null}
-                    name={chum.displayName}
-                    username={chum.handle}
-                    size={64}
-                  />
-                  {chum.isMutualWithViewer && (
-                    <Tooltip title="Mutual Chums" placement="top" arrow>
-                      <Box
-                        component="span"
-                        aria-label="Mutual Chums"
-                        sx={{
-                          position: "absolute",
-                          bottom: -2,
-                          right: -2,
-                          bgcolor: "background.paper",
-                          borderRadius: "50%",
-                          width: 20,
-                          height: 20,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          border: "1.5px solid",
-                          borderColor: "divider",
-                          boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
-                          fontSize: 11,
-                          lineHeight: 1,
-                        }}
-                      >
-                        🤝
-                      </Box>
-                    </Tooltip>
-                  )}
-                </Box>
+                <UserAvatar
+                  src={chum.avatarUrl ? `${avatarBaseUrl}${chum.avatarUrl}` : null}
+                  name={chum.displayName}
+                  username={chum.handle}
+                  size={64}
+                />
                 <Typography
                   variant="caption"
                   fontWeight={600}

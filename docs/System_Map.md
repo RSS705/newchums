@@ -138,7 +138,7 @@ sequenceDiagram
 
 ### Background digest emails (API `scheduled`)
 
-The hourly cron runs attendance assurance, then unread-chat digest (daily gate), then the **event match digest** (“new plans matching my interests”). Recipients need home location, travel radius, and the `event_match` preference. **Public** in-person plans require hobby overlap with the plan within travel radius (and the other digest gates). **Chums-only** in-person plans use the **same** hobby and distance rules; the recipient must also be on the **host’s** Chum list (`chum_user_id`). **Invite-only** plans are excluded.
+The hourly cron runs attendance assurance, then unread-chat digest (daily gate), then the **event match digest** (“new plans matching my interests”). Recipients need home location, travel radius, and the `event_match` preference. **Public** in-person plans require hobby overlap with the plan within travel radius (and the other digest gates). **Chums-only** in-person plans use the **same** hobby and distance rules; the recipient must also be on the **host’s** On NewChums connections (`user_contacts`, `type = 'on_newchums'`). **Invite-only** plans are excluded.
 
 ### Logged-out visitor flow
 

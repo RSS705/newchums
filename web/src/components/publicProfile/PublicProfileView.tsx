@@ -27,7 +27,7 @@ export type PublicProfileUser = {
 };
 
 export type ChumAction = {
-  isChummed: boolean;
+  isSaved: boolean;
   loading: boolean;
   onToggle: () => void;
 };
@@ -35,15 +35,8 @@ export type ChumAction = {
 export type PublicProfileViewProps = {
   user: PublicProfileUser;
   avatarBaseUrl: string;
-  /** When true, show preview subheader (this is how others see your profile; privacy in Settings) */
   isOwner?: boolean;
-  /** When present (viewer is logged in and not the owner), show Add/Remove Chum button. */
   chumAction?: ChumAction;
-  /** When true, both users have added each other — show mutual handshake icon */
-  isMutual?: boolean;
-  /** Number of Chums shared between viewer and profile owner (0 or undefined = hide) */
-  sharedCount?: number;
-  /** True when the current viewer is logged in (used to enable auth'd fetches in sub-sections) */
   viewerLoggedIn?: boolean;
 };
 
@@ -51,7 +44,7 @@ export type PublicProfileViewProps = {
  * Shared public profile view. Renders modular sections; easy to add future
  * sections (XP, badges, trust metrics, unlockables) as separate components.
  */
-export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAction, isMutual, sharedCount, viewerLoggedIn }: PublicProfileViewProps) {
+export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAction, viewerLoggedIn }: PublicProfileViewProps) {
   const cardBg = getProfileCardBg(user.profile_theme);
   const ownerHandleSlug = user.handle?.replace(/^@/, "") ?? null;
   return (
@@ -103,20 +96,19 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
               gender={user.gender}
               avatarUrl={user.avatarUrl}
               avatarBaseUrl={avatarBaseUrl}
-              isMutual={isMutual}
             />
           </Box>
           {chumAction && (
             <Box sx={{ flexShrink: 0, pt: 0.25 }}>
               <Button
-                variant={chumAction.isChummed ? "outlined" : "contained"}
+                variant={chumAction.isSaved ? "outlined" : "contained"}
                 size="small"
-                color={chumAction.isChummed ? "inherit" : "primary"}
+                color={chumAction.isSaved ? "inherit" : "primary"}
                 disabled={chumAction.loading}
                 onClick={chumAction.onToggle}
                 sx={{ fontSize: "0.8125rem", whiteSpace: "nowrap" }}
               >
-                {chumAction.isChummed ? "Remove from Chums" : "Add to Chums"}
+                {chumAction.isSaved ? "Remove" : "Save"}
               </Button>
             </Box>
           )}
@@ -143,22 +135,7 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
       {/* Attendance record */}
       <AttendanceRecordSection userId={user.userId} isOwner={isOwner} />
 
-      {/* Shared Chums count — subtle line below header for logged-in non-owners when > 0 */}
-      {!isOwner && sharedCount !== undefined && sharedCount > 0 && (
-        <Typography
-          variant="body2"
-          color="text.secondary"
-          sx={{
-            fontSize: "0.8125rem",
-            textAlign: { xs: "center", sm: "left" },
-            mt: { xs: -1.5, sm: -2 },
-          }}
-        >
-          You have {sharedCount} {sharedCount === 1 ? "Chum" : "Chums"} in common.
-        </Typography>
-      )}
-
-      {/* Public Chums section — self-contained card, hidden if owner toggled it off or list is empty */}
+      {/* Public connections section — self-contained card, hidden if owner toggled it off or list is empty */}
       {ownerHandleSlug && !user.is_hidden_chum_list && (
         <ProfileChumsSection ownerHandle={ownerHandleSlug} viewerLoggedIn={viewerLoggedIn} />
       )}

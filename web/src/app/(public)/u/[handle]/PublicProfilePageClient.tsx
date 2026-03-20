@@ -23,10 +23,8 @@ type FetchState =
 
 export default function PublicProfilePageClient({ handle, viewerHandle }: PublicProfilePageClientProps) {
   const [state, setState] = useState<FetchState>({ status: "loading" });
-  const [chummed, setChummed] = useState<boolean | null>(null);
+  const [saved, setSaved] = useState<boolean | null>(null);
   const [chumLoading, setChumLoading] = useState(false);
-  const [isMutual, setIsMutual] = useState(false);
-  const [sharedCount, setSharedCount] = useState<number | undefined>(undefined);
 
   const fetchProfile = useCallback(async () => {
     if (!handle?.trim()) {
@@ -59,22 +57,19 @@ export default function PublicProfilePageClient({ handle, viewerHandle }: Public
     fetchProfile();
   }, [fetchProfile]);
 
-  // Fetch chum status once the profile loads (only for logged-in non-owners)
   useEffect(() => {
     if (state.status !== "success") return;
     if (!viewerHandle) return;
     const profileHandleNorm = (state.user.handle ?? "").replace(/^@/, "").toLowerCase().trim();
     const viewerNorm = viewerHandle.replace(/^@/, "").toLowerCase().trim();
-    if (profileHandleNorm === viewerNorm) return; // own profile
+    if (profileHandleNorm === viewerNorm) return;
     const userId = state.user.userId;
     apiFetch(`/chums/check/${userId}`, { auth: true })
       .then((res) => res.json())
       .then((data: unknown) => {
-        const d = data as { ok?: boolean; isChummed?: boolean; isMutual?: boolean; sharedCount?: number };
+        const d = data as { ok?: boolean; isSaved?: boolean };
         if (d.ok) {
-          setChummed(d.isChummed ?? false);
-          setIsMutual(d.isMutual ?? false);
-          setSharedCount(d.sharedCount ?? 0);
+          setSaved(d.isSaved ?? false);
         }
       })
       .catch(() => {/* silently ignore */});
@@ -124,9 +119,9 @@ export default function PublicProfilePageClient({ handle, viewerHandle }: Public
   const isOwner = Boolean(viewerNorm && profileHandleNorm && profileHandleNorm === viewerNorm);
 
   const chumAction: ChumAction | undefined =
-    viewerHandle && !isOwner && chummed !== null
+    viewerHandle && !isOwner && saved !== null
       ? {
-          isChummed: chummed,
+          isSaved: saved,
           loading: chumLoading,
           onToggle: async () => {
             setChumLoading(true);
@@ -134,11 +129,11 @@ export default function PublicProfilePageClient({ handle, viewerHandle }: Public
               const userId = state.user.userId;
               const endpoint = `/chums/${userId}`;
               const res = await apiFetch(endpoint, {
-                method: chummed ? "DELETE" : "POST",
+                method: saved ? "DELETE" : "POST",
                 auth: true,
               });
               const data = (await res.json()) as { ok?: boolean };
-              if (data.ok) setChummed((prev) => !prev);
+              if (data.ok) setSaved((prev) => !prev);
             } catch {
               /* silently ignore */
             } finally {
@@ -154,8 +149,6 @@ export default function PublicProfilePageClient({ handle, viewerHandle }: Public
       avatarBaseUrl={getAvatarBaseUrl()}
       isOwner={isOwner}
       chumAction={chumAction}
-      isMutual={!isOwner && viewerHandle ? isMutual : undefined}
-      sharedCount={!isOwner && viewerHandle ? sharedCount : undefined}
       viewerLoggedIn={!!viewerHandle}
     />
   );

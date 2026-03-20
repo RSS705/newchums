@@ -35,7 +35,7 @@ NewChums helps people organize gatherings more easily around hobbies and shared 
 | **gathering** | Alternative to "event." Used in descriptions and copy where "plan" feels too rigid. |
 | **event** | Acceptable in technical/internal contexts and in API naming. Avoid as the primary user-facing word in new UI copy. |
 | **hobby** | User-facing term for interests. Aligned with the profile interests system. |
-| **chum** | NewChums term for a saved person (one-way relationship, no approval flow). |
+| **chum** | NewChums term for a saved person. Now part of a two-part connection model: **On NewChums** (on-platform users) and **Private Contacts** (off-platform people tracked for planning). One-way, no mutual indicator, no approval flow. Adding does not notify the other person. Private Contacts auto-promote to On NewChums when the contact creates an account with a matching email. |
 
 Internal code may use `event`, `PlanEvent`, `EventCard`, etc. — this is fine. The distinction is between code identifiers and user-visible strings.
 

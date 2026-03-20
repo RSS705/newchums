@@ -49,7 +49,7 @@ export default function AdminSystemLogicClient() {
         </Bullet>
         <Bullet>
           <strong>Chums only:</strong> On Explore (and similar lists), someone signed in sees the plan if <strong>they are the host</strong> or{" "}
-          <strong>the host is on their Chum list</strong> (someone they&rsquo;ve saved). Strangers who don&rsquo;t have that relationship to the host
+          <strong>they are in the host&rsquo;s On NewChums connections</strong>. Strangers who don&rsquo;t have that relationship to the host
           won&rsquo;t see it there the way they would a public plan.
         </Bullet>
         <Bullet>
@@ -65,8 +65,7 @@ export default function AdminSystemLogicClient() {
           a plan screen <strong>does not</strong> send invitees in that request, so <strong>no invite emails are sent</strong> from this flow today.
         </Bullet>
         <Bullet>
-          Choosing <strong>Chums only</strong> does <strong>not</strong> email every person on the host&rsquo;s Chum list—there is no mass &ldquo;notify all
-          Chums&rdquo; step tied to visibility.
+          Choosing <strong>Chums only</strong> does <strong>not</strong> email every person in the host&rsquo;s connections—there is no mass notify step tied to visibility.
         </Bullet>
 
         <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
@@ -77,7 +76,7 @@ export default function AdminSystemLogicClient() {
           qualify—see <strong>Digest emails</strong> below (it&rsquo;s not instant when you hit Publish).
         </Bullet>
         <Bullet>
-          A <strong>Chums only</strong> plan can appear in that same digest for people the host has on their <strong>Chum list</strong> who also{" "}
+          A <strong>Chums only</strong> plan can appear in that same digest for people in the host&rsquo;s <strong>On NewChums</strong> connections who also{" "}
           <strong>share a hobby</strong> with the plan and meet the same <strong>location / radius</strong> rules as public plans (see{" "}
           <strong>Digest emails</strong> below). <strong>Invite only</strong> plans never appear in this digest.
         </Bullet>
@@ -168,13 +167,12 @@ export default function AdminSystemLogicClient() {
         </Bullet>
         <Bullet>
           <strong>Path B — Chums-only plans:</strong> Same hobby, distance, timing, capacity, and other rules as <strong>Path A</strong>, and the plan is{" "}
-          <strong>Chums only</strong> instead of public. Additionally, the host must have <strong>you</strong> on <strong>their</strong> Chum list. Example:
-          Robert creates a Chums-only plan about board games; Mike is on Robert&rsquo;s Chum list and has that hobby in range; Sarah is not on Robert&rsquo;s
-          list—Mike can see it in the digest, Sarah won&rsquo;t (for this plan).
+          <strong>Chums only</strong> instead of public. Additionally, the host must have <strong>you</strong> in their <strong>On NewChums</strong> connections. Example:
+          Robert creates a Chums-only plan about board games; Mike is in Robert&rsquo;s On NewChums connections and has that hobby in range; Sarah is not—Mike can see it in the digest, Sarah won&rsquo;t (for this plan).
         </Bullet>
         <Bullet>
           <strong>Who does <em>not</em> get this:</strong> <strong>Invite only</strong> plans never appear. <strong>Online-only</strong> plans don&rsquo;t
-          either. <strong>Chums-only</strong> plans don&rsquo;t appear for people who aren&rsquo;t on the host&rsquo;s Chum list, or who don&rsquo;t share a hobby
+          either. <strong>Chums-only</strong> plans don&rsquo;t appear for people who aren&rsquo;t in the host&rsquo;s On NewChums connections, or who don&rsquo;t share a hobby
           with the plan, or who are outside the usual radius / other Path A rules.
         </Bullet>
         <Bullet>
@@ -208,6 +206,71 @@ export default function AdminSystemLogicClient() {
         </Bullet>
         <Bullet>
           <strong>Not available for:</strong> Chums-only or Invite-only plans. Those require an account or an invite link.
+        </Bullet>
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Connections and contacts" subtitle="How On NewChums and Private Contacts work">
+        <Typography variant="body2" fontWeight={600} sx={{ mt: 0.5, mb: 0.5 }}>
+          On NewChums
+        </Typography>
+        <Bullet>
+          People who have <strong>NewChums accounts</strong>. Visible as part of your connections on your <strong>public profile</strong> (unless hidden in Settings).
+        </Bullet>
+        <Bullet>
+          Used for <strong>Chums-only plan visibility</strong> and <strong>digest emails</strong>. If a host creates a Chums-only plan, only people in their On NewChums connections who also meet the hobby/distance rules will see it.
+        </Bullet>
+        <Bullet>
+          <strong>One-way:</strong> Adding someone does <strong>not</strong> notify them or add you to their list. There is no mutual indicator.
+        </Bullet>
+
+        <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
+          Private Contacts
+        </Typography>
+        <Bullet>
+          People without NewChums accounts (or people you track privately for planning). <strong>Only visible to you.</strong>
+        </Bullet>
+        <Bullet>
+          Useful for <strong>planning and invites</strong>. Never shown on your public profile or anyone else&rsquo;s.
+        </Bullet>
+        <Bullet>
+          You can add a private contact by <strong>email and/or name</strong>, with an optional <strong>private note</strong>.
+        </Bullet>
+
+        <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
+          Auto-linking
+        </Typography>
+        <Bullet>
+          When a Private Contact later creates a NewChums account with the <strong>matching email</strong>, they automatically move to your <strong>On NewChums</strong> section. Notes are preserved.
+        </Bullet>
+
+        <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
+          Adding and searching
+        </Typography>
+        <Bullet>
+          <strong>Search</strong> finds existing users (add to On NewChums) or, for emails not found, offers <strong>Add as Private Contact</strong> and/or <strong>Invite to NewChums</strong>.
+        </Bullet>
+        <Bullet>
+          No notification is sent when you add someone to On NewChums.
+        </Bullet>
+
+        <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
+          Inviting
+        </Typography>
+        <Bullet>
+          Sends an email invite. When the person signs up through the invite link, <strong>both users</strong> get each other as independent <strong>On NewChums</strong> connections.
+        </Bullet>
+        <Bullet>
+          Sending an invite also creates a <strong>Private Contact</strong> entry for the invitee (if one doesn&rsquo;t exist), which auto-links when they join.
+        </Bullet>
+
+        <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
+          What changed from the old model
+        </Typography>
+        <Bullet>
+          The old &ldquo;mutual Chums&rdquo; behavior has been <strong>removed</strong>. Adding someone is one-way, private, and does not imply reciprocity or friendship.
+        </Bullet>
+        <Bullet>
+          Private Contacts are a new concept for tracking off-platform people you plan with.
         </Bullet>
       </CollapsibleSection>
 

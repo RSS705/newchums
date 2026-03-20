@@ -348,7 +348,7 @@ export default function SettingsClient() {
           </Box>
           <PrivacyToggleRow
             title="Hide me from NewChums search and discovery"
-            description="Your profile won't appear in Chum searches or discovery features, and others won't be able to add you through search. If you join a plan, attendees can still view your profile."
+            description="Your profile won't appear in searches or discovery features, and others won't be able to add you through search. If you join a plan, attendees can still view your profile."
             enabled={isHiddenFromSearch}
             onToggle={setPrivacyHiddenFromSearch}
             showDivider={false}
@@ -371,16 +371,16 @@ export default function SettingsClient() {
             disabled={privacyLoading}
           />
           <PrivacyToggleRow
-            title="Hide my Chums from my public profile"
-            description="The Chums section won't appear on your public profile."
+            title="Hide my connections from my public profile"
+            description="The Connections section won't appear on your public profile."
             enabled={isHiddenChumList}
             onToggle={setPrivacyHiddenChumList}
             showDivider={true}
             disabled={privacyLoading}
           />
           <PrivacyToggleRow
-            title="Hide me from appearing on other people's profile Chum lists"
-            description="You won't appear in the Chums section on other people's profiles, but you'll still show on their private Chum list."
+            title="Hide me from appearing on other people's connection lists"
+            description="You won't appear in the Connections section on other people's profiles, but you'll still appear on their private contacts list."
             enabled={isHiddenFromChumLists}
             onToggle={setPrivacyHiddenFromChumLists}
             showDivider={true}

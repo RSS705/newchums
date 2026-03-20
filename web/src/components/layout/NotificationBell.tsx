@@ -100,7 +100,7 @@ function notificationText(n: AppNotification): {
 
   switch (n.type) {
     case "chum_added_you":
-      return { actorLabel, actorHref, body: " added you to their Chums list. 🎉" };
+      return { actorLabel, actorHref, body: " saved you to their connections." };
     case "event_rsvp":
       return {
         actorLabel,

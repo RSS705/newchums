@@ -1,7 +1,7 @@
 # Technical Specifications
 
 Last Updated: March 19, 2026
-Version: 13.3
+Version: 14.0
 
 This document defines the authoritative technical architecture of NewChums.
 It describes **what exists today** and the structural commitments we are making.
@@ -196,7 +196,7 @@ Users manage notification preferences in **Settings** (`/settings`). Each notifi
 
 Defaults are applied at account creation (credentials signup, OAuth) and backfilled for existing users with missing keys. GET normalizes stored prefs and optionally persists backfilled values.
 
-**Event match digest (batch):** The hourly `scheduled` handler runs `processEventMatchDigest` after the unread-chat digest block. Recipients must have `event_match` enabled, a home location, and meet the same in-person / future / not-full / travel-radius / “new since last digest” gates as for public plans. **Public** plans require at least one overlapping hobby between the user and the plan. **Chums-only** plans use the **same** hobby overlap and distance rules; additionally the recipient must appear on the **host’s** Chum list (`user_chums`: host `user_id`, recipient `chum_user_id`). **Invite-only** plans are excluded.
+**Event match digest (batch):** The hourly `scheduled` handler runs `processEventMatchDigest` after the unread-chat digest block. Recipients must have `event_match` enabled, a home location, and meet the same in-person / future / not-full / travel-radius / “new since last digest” gates as for public plans. **Public** plans require at least one overlapping hobby between the user and the plan. **Chums-only** plans use the **same** hobby overlap and distance rules; additionally the recipient must appear on the **host’s** On NewChums connections (`user_contacts`: host `user_id`, recipient `linked_user_id`, `type = 'on_newchums'`). **Invite-only** plans are excluded.
 
 Each RSVP status has a dedicated host notification email, each gated on its own preference toggle. Each email includes a tokenized unsubscribe link that toggles the corresponding preference. Migration 033 removes the obsolete `event_reminders` key and `frequency` fields from existing JSONB data.
 
@@ -264,8 +264,8 @@ Users manage privacy preferences in **Settings** (`/settings`). Stored in the `u
 | `is_hidden_from_search` | Hide me from NewChums search and discovery | Enforced in `GET /chums/search` — users with this ON are excluded from both name/handle search AND exact email lookup in the Chum flow. Also blocks invite eligibility for their email (treated as "not found"). |
 | `is_hidden_from_external_indexing` | Hide my profile from search engines | Public profile page emits `robots: noindex, nofollow`. |
 | `is_hidden_age` | Hide my age | Age field is not shown on the public profile. |
-| `is_hidden_chum_list` | Hide my Chums from my public profile | When ON, the Chums section is not rendered on the user's public profile. Private Chum lists are unaffected. |
-| `is_hidden_from_chum_lists` | Hide me from appearing on other people's profile Chum lists | When ON, the user is excluded from `GET /public/users/:handle/chums` responses. They still appear on private Chum lists of users who have already added them. |
+| `is_hidden_chum_list` | Hide my connections from my public profile | When ON, the Connections section is not rendered on the user's public profile. Private contact lists are unaffected. |
+| `is_hidden_from_chum_lists` | Hide me from appearing on other people's connection lists | When ON, the user is excluded from `GET /public/users/:handle/chums` responses. They still appear on private contact lists of users who have already added them. |
 
 **Implementation notes:** UI: `web/src/app/(app)/settings/PrivacyToggleRow.tsx`, `SettingsClient.tsx`. API: `GET /profile` and `PUT /profile` in `api/src/index.ts`. Schema: migrations 013 (`is_hidden_from_search`, `is_hidden_from_external_indexing`), 014 (`is_hidden_age`), 020 (`is_hidden_chum_list`, `is_hidden_from_chum_lists`).
 
@@ -323,21 +323,22 @@ One-way saved-people feature. No approval flow, no mutual-state requirement.
 
 | Route | Description |
 |-------|-------------|
-| `GET /chums` | Returns the authenticated user's full private Chum list. Includes `note` (private note) and `birthday` (month/day, from DOB if not `is_hidden_age`). Ordered by most recently added. |
-| `PATCH /chums/:userId/note` | Update the private note for a specific Chum. Body: `{ note: string \| null }`. Persisted on `newchums.user_chums.note`. Visible only to the authenticated user. |
-| `GET /chums/search?q=` | Search for users to add. If `q` is a valid email, performs exact email lookup (returns single result or invite eligibility); otherwise searches by name/handle. Excludes self and hidden-from-search users in both modes. Min 2 chars. Returns up to 10 results with `isChummed`, and for email mode also `inviteEligible`, `inviteeEmail`, `alreadyInvited`. |
-| `GET /chums/check/:userId` | Returns `{ isChummed, isMutual, sharedCount }` for a specific user. Used by the public profile page. |
-| `POST /chums/:userId` | Add a user to Chum list. Idempotent (`ON CONFLICT DO NOTHING`). Cannot chum self. Creates `chum_added_you` notification for the recipient. |
-| `DELETE /chums/:userId` | Remove a user from Chum list. |
-| `POST /chums/invite` | Send a Chum invite email to an address not yet on NewChums. Prevents duplicate pending invites. Rate limit: 10 per inviter per 24 h. Uses Postmark template `43805532`. |
-| `POST /chums/invite/accept` | Consume an invite token during signup. Called with `{ token, email }`. Verifies invite, creates mutual Chum links in both directions, creates `chum_added_you` notifications for both users. |
-| `GET /public/users/:handle/chums` | Public-facing paginated Chum list for a profile. No auth required. Respects: owner's `is_hidden_chum_list` (if ON, returns `{ hidden: true }`) and each listed Chum's `is_hidden_from_chum_lists` (filters them out). Query params: `offset`, `limit` (max 20, default 8). |
+| `GET /chums` | Returns the authenticated user's contacts split by type: `onNewChums` (on-platform connections with avatar, handle, birthday, note) and `privateContacts` (off-platform entries with email, name, note). Ordered by most recently added. |
+| `PATCH /chums/:contactId/note` | Update the private note for any contact entry (On NewChums or Private Contact). Body: `{ note: string \| null }`. Persisted on `newchums.user_contacts.note`. Visible only to the authenticated user. |
+| `GET /chums/search?q=` | Search for users to add. If `q` is a valid email, performs exact email lookup (returns single result or invite eligibility); otherwise searches by name/handle. Excludes self and hidden-from-search users. Min 2 chars. Returns up to 10 results with `isSaved`, and for email mode also `inviteEligible`, `inviteeEmail`, `alreadyInvited`, `isPrivateContact`. |
+| `GET /chums/check/:userId` | Returns `{ isSaved: boolean }` for a specific user. Used by the public profile page. |
+| `POST /chums/:userId` | Save an on-platform user to the authenticated user's On NewChums connections. Idempotent (`ON CONFLICT DO NOTHING`). Cannot add self. No notification sent. |
+| `POST /chums/private` | Add a Private Contact. Body: `{ email?, name?, note? }`. If email matches an existing user, auto-creates as `on_newchums` instead. |
+| `DELETE /chums/:id` | Remove a contact entry by contact row ID or linked user ID. Works for both On NewChums and Private Contact entries. |
+| `POST /chums/invite` | Send an invite email to an address not yet on NewChums. Also creates a Private Contact entry for the invitee if one doesn't exist. Prevents duplicate pending invites. Rate limit: 10 per inviter per 24 h. Uses Postmark template `43805532`. |
+| `POST /chums/invite/accept` | Consume an invite token during signup. Called with `{ token, email }`. Verifies invite, creates two independent `on_newchums` entries (inviter → new user, new user → inviter). Also auto-links any Private Contacts matching the new user's email across all users. No mutual indicator. |
+| `GET /public/users/:handle/chums` | Public-facing paginated connections list for a profile. No auth required. Only shows `on_newchums` entries. Respects: owner's `is_hidden_chum_list` (if ON, returns `{ hidden: true }`) and each listed connection's `is_hidden_from_chum_lists` (filters them out). Query params: `offset`, `limit` (max 20, default 8). |
 
 **Privacy rules:**
-- `is_hidden_from_search = true` → user excluded from `GET /chums/search` results AND from exact email lookup (treated as "not found"). Invite eligibility is also blocked for their email.
-- Users already on a private Chum list remain there even if they later enable `is_hidden_from_search`.
-- `is_hidden_chum_list = true` → Chums section hidden on that user's public profile (enforced in both the API response and the web component).
-- `is_hidden_from_chum_lists = true` → user excluded from all `GET /public/users/:handle/chums` responses, but remains on private Chum lists.
+- `is_hidden_from_search = true` → user excluded from `GET /chums/search` results AND from exact email lookup (treated as "not found"). Invite eligibility is still offered for their email.
+- Users already saved as a contact remain there even if they later enable `is_hidden_from_search`.
+- `is_hidden_chum_list = true` → Connections section hidden on that user's public profile (enforced in both the API response and the web component).
+- `is_hidden_from_chum_lists = true` → user excluded from all `GET /public/users/:handle/chums` responses, but remains on private contact lists.
 
 **Invite flow details:**
 - `POST /chums/invite` and `POST /chums/invite/accept` must be registered **before** `POST /chums/:userId` in the Hono route table. Hono matches routes in registration order; registering them after the parameterised route causes "invite" to be interpreted as a `:userId`, resulting in a UUID parse error.
@@ -355,9 +356,9 @@ One-way saved-people feature. No approval flow, no mutual-state requirement.
 **Display name fallback:** All Chum-related API responses use `displayName: name?.trim() || username (without @) || "NewChums user"`. Users without a set display name show their username instead of the generic fallback.
 
 **Web:**
-- `/chum-groups` — "Your Chums" page. Single search input auto-detects email input (mail icon shown); name/handle search otherwise. For email lookups with no eligible account found, an invite CTA is shown inline. Confirmation dialog before sending invite; "already sent" state for duplicate attempts. Private Chum list below with Remove action. Mutual Chums shown with 🤝 emoji. Each Chum row displays birthday (month/day, if not `is_hidden_age`) and supports inline private note editing (pencil icon, `PATCH /chums/:userId/note`).
-- `/u/[handle]` — "Add to Chums" / "Remove from Chums" button in the profile header card (top-right). Shown for logged-in viewers who are not the profile owner. Chum status fetched via `GET /chums/check/:userId` after profile loads.
-- Public Chums section renders below the hobbies card when the profile owner's `is_hidden_chum_list = false` and they have at least one public-visible Chum. Paginated (8 per page, prev/next). Section is entirely absent (no empty card) when the list is empty.
+- `/chum-groups` — "Connections" page. Two-section layout: **On NewChums** (on-platform connections with avatar, handle, birthday, note) and **Private Contacts** (off-platform contacts with email/name, note). Unified search/add flow at top: search finds existing users (save to On NewChums) or offers "Add as private contact" / "Invite to NewChums" for unrecognized emails. Add Private Contact dialog for manual entry. Each contact row supports inline private note editing (pencil icon, `PATCH /chums/:contactId/note`). No mutual indicator.
+- `/u/[handle]` — "Save" / "Remove" button in the profile header card (top-right). Shown for logged-in viewers who are not the profile owner. Connection status fetched via `GET /chums/check/:userId` after profile loads.
+- Public Connections section renders below the hobbies card when the profile owner's `is_hidden_chum_list = false` and they have at least one public-visible connection. Paginated (8 per page, prev/next). Section is entirely absent (no empty card) when the list is empty.
 
 ### In-app notifications
 
@@ -717,7 +718,8 @@ Core tables include:
 - `users.gender` (TEXT NULL, migration 018) — allowed values: `male`, `female`, `other`, `prefer_not_to_say`; suppressed on public profile if `prefer_not_to_say` or null
 - `users.profile_theme` (TEXT NULL, migration 019) — controls accent color of the identity card on the public profile; allowed values: 16 curated palette keys defined in `web/src/lib/profileTheme.ts`
 - `users.is_hidden_chum_list`, `users.is_hidden_from_chum_lists` (boolean, migration 020) — Chums privacy toggles; both default false
-- `newchums.user_chums` (migration 021) — one-way Chum relationships; columns: `id`, `user_id`, `chum_user_id`, `created_at`; unique constraint on `(user_id, chum_user_id)`; self-chum prevented by CHECK constraint; indexed on both FKs
+- `newchums.user_chums` (migration 021) — **legacy**, replaced by `user_contacts` (migration 048). Retained temporarily as a safety net. One-way Chum relationships; columns: `id`, `user_id`, `chum_user_id`, `created_at`; unique constraint on `(user_id, chum_user_id)`.
+- `newchums.user_contacts` (migration 048) — two-part connection model replacing `user_chums`. Columns: `id` (UUID PK), `user_id` (FK), `type` (`'on_newchums'` or `'private'`), `linked_user_id` (FK, required for `on_newchums`), `contact_email`, `contact_name`, `note`, `created_at`. Unique indexes: `(user_id, linked_user_id)` WHERE linked; `(user_id, LOWER(contact_email))` WHERE private+unlinked. Auto-linking index on `LOWER(contact_email)` for promoting private contacts when they create accounts.
 - `newchums.notifications` (migration 022) — general notifications table; columns: `id`, `user_id`, `type`, `actor_user_id`, `entity_id`, `metadata` (JSONB), `read_at`, `created_at`; indexed for unread queries
 - `newchums.chum_invites` (migration 023) — invite records for emails not yet on NewChums; columns: `id`, `inviter_user_id`, `invitee_email`, `token_hash`, `status` (`pending`/`accepted`/`expired`), `expires_at` (30 days), `accepted_at`, `accepted_user_id`, `created_at`; unique index on `token_hash`; indexed on `(invitee_email, status)` and `inviter_user_id`
 - `newchums.events` (migration 024) — core event entity; columns include `host_user_id`, `title`, `description`, `interest_id` (legacy FK, being superseded by event_interests), `starts_at`, `location_type`, `location_name`, `location_address`, `location_lat`, `location_lng`, `online_link`, `max_seats`, `visibility`, `status`, `allow_alt_times`, `banner_key`, `require_reconfirmation` (migration 028), `locked_at` (migration 029), `created_at`, `updated_at`
@@ -725,7 +727,7 @@ Core tables include:
 - `newchums.event_invites` (migration 024) — invite records supporting both user_id and email invitees
 - `newchums.event_rsvps` (migration 024) — RSVP responses; one per user per event; status: `going`, `maybe`, `cant_make_it`
 - `newchums.event_alt_times` (migration 024) — alternate time suggestions from attendees
-- `newchums.user_chums.note` (migration 027) — `TEXT NULL` column on `user_chums` for private per-chum notes; visible only to the user who added them
+- `newchums.user_chums.note` (migration 027) — **legacy**, notes are now on `user_contacts.note`. `TEXT NULL` column on `user_chums` for private per-chum notes.
 - `newchums.events.require_reconfirmation` (migration 028) — `BOOLEAN NOT NULL DEFAULT FALSE` on `events`; when true, signals that attendees should receive a 24-hour reconfirmation reminder (email/cron trigger is future work)
 - `newchums.event_chat_messages` (migration 029) — per-plan chat messages; columns: `id` (UUID PK), `event_id` (FK), `user_id` (FK), `body` (TEXT NOT NULL), `created_at`; indexed on `(event_id, created_at ASC)`
 - `newchums.event_chat_reads` (migration 029) — last-read tracking; columns: `event_id`, `user_id`, `last_read_at`; PK `(event_id, user_id)`
