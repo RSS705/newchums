@@ -6657,6 +6657,7 @@ app.patch("/events/:id", async (c) => {
     const patchRequireReconfirmation = body.require_reconfirmation === true;
     const patchRequireApproval = body.require_approval === true;
     const patchAllowAttendeeInvites = body.allow_attendee_invites != null ? body.allow_attendee_invites !== false : undefined;
+    const patchAllowAltTimes = body.allow_alt_times != null ? body.allow_alt_times === true : undefined;
     const patchReserveSeats = body.reserve_seats != null ? body.reserve_seats === true : undefined;
     const patchTimezone = body.timezone && typeof body.timezone === "string" ? body.timezone.trim().slice(0, 64) : null;
 
@@ -6721,6 +6722,7 @@ app.patch("/events/:id", async (c) => {
           require_reconfirmation   = ${patchRequireReconfirmation},
           require_approval         = ${patchRequireApproval},
           allow_attendee_invites   = COALESCE(${patchAllowAttendeeInvites ?? null}, allow_attendee_invites),
+          allow_alt_times          = COALESCE(${patchAllowAltTimes ?? null}, allow_alt_times),
           reserve_seats            = COALESCE(${patchReserveSeats ?? null}, reserve_seats),
           timezone                 = COALESCE(${patchTimezone}, timezone),
           min_confirmed_attendees  = ${patchMinConfirmed},

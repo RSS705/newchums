@@ -336,6 +336,7 @@ export default function EventDetailClient() {
   const [editMinConfirmed, setEditMinConfirmed] = useState("");
   const [editFallbackPolicy, setEditFallbackPolicy] = useState<"notify_host" | "proceed" | "auto_cancel">("notify_host");
   const [editAllowAttendeeInvites, setEditAllowAttendeeInvites] = useState(true);
+  const [editAllowAltTimes, setEditAllowAltTimes] = useState(false);
   const [editReserveSeats, setEditReserveSeats] = useState(false);
   const [editHobbies, setEditHobbies] = useState<HobbyInfo[]>([]);
   const [editHobbyInput, setEditHobbyInput] = useState("");
@@ -1135,7 +1136,8 @@ export default function EventDetailClient() {
         if (data.ok) { toast.success("Alternate time updated"); resetAltForm(); refresh(); }
         else toast.error(data.message ?? "Error");
       } else {
-        const useGuestEndpoint = !viewerUserId && !!inviteTokenRef.current;
+        const guestToken = inviteTokenRef.current ?? participationTokenRef.current;
+        const useGuestEndpoint = !viewerUserId && !!guestToken;
         let created = 0;
         for (let i = 0; i < dayCount; i++) {
           const day = altStartDate.add(i, "day");
@@ -1143,11 +1145,14 @@ export default function EventDetailClient() {
           const endsAt = endH != null && endM != null
             ? day.hour(endH).minute(endM).second(0).millisecond(0).toISOString()
             : null;
+          const tokenBody = inviteTokenRef.current
+            ? { invite_token: inviteTokenRef.current }
+            : { participation_token: participationTokenRef.current };
           const res = useGuestEndpoint
             ? await apiFetch(`/events/${eventId}/guest-alt-time`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ invite_token: inviteTokenRef.current, suggested_at: suggestedAt, ends_at: endsAt, note: noteVal }),
+                body: JSON.stringify({ ...tokenBody, suggested_at: suggestedAt, ends_at: endsAt, note: noteVal }),
               })
             : await apiFetch(`/events/${eventId}/alt-time`, {
                 auth: true, method: "POST",
@@ -1283,6 +1288,7 @@ export default function EventDetailClient() {
     setEditRequireReconfirmation(event.requireReconfirmation ?? false);
     setEditRequireApproval(event.requireApproval ?? false);
     setEditAllowAttendeeInvites(event.allowAttendeeInvites !== false);
+    setEditAllowAltTimes(event.allowAltTimes ?? false);
     setEditReserveSeats(event.reserveSeats === true);
     setEditMinConfirmed(event.minConfirmedAttendees != null ? String(event.minConfirmedAttendees) : "");
     setEditFallbackPolicy((event.fallbackPolicy as "notify_host" | "proceed" | "auto_cancel") ?? "notify_host");
@@ -1320,6 +1326,7 @@ export default function EventDetailClient() {
           require_reconfirmation: editRequireReconfirmation,
           require_approval: editRequireApproval,
           allow_attendee_invites: editAllowAttendeeInvites,
+          allow_alt_times: editAllowAltTimes,
           min_confirmed_attendees: editRequireReconfirmation && editMinConfirmed ? Number(editMinConfirmed) : null,
           fallback_policy: editRequireReconfirmation ? editFallbackPolicy : "notify_host",
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -1988,11 +1995,18 @@ export default function EventDetailClient() {
                       {pubSubmitting ? "Sending…" : "Send verification code"}
                     </AppButton>
                   </Stack>
-                  <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: "block", textAlign: "center" }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: "block", textAlign: "center", lineHeight: 1.6 }}>
                     Already have an account?{" "}
                     <Link href={`/login?next=${encodeURIComponent(`/events/${eventId}`)}`} style={{ color: "inherit", fontWeight: 600 }}>
                       Sign in
                     </Link>
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: "block", textAlign: "center", lineHeight: 1.6 }}>
+                    Or{" "}
+                    <Link href={`/signup?next=${encodeURIComponent(`/events/${eventId}`)}`} style={{ color: "inherit", fontWeight: 600 }}>
+                      create an account
+                    </Link>
+                    {" "}for full access to chat, notifications, and more.
                   </Typography>
                 </>
               ) : pubStep === "code" ? (
@@ -2019,13 +2033,24 @@ export default function EventDetailClient() {
                     <AppButton onClick={handlePubConfirmCode} disabled={pubSubmitting || pubCode.length !== 6}>
                       {pubSubmitting ? "Verifying…" : "Verify"}
                     </AppButton>
-                    <Button
-                      size="small"
+                    <Typography
+                      variant="caption"
+                      component="button"
                       onClick={() => { setPubStep("email"); setPubCode(""); setPubChallenge(null); setPubError(null); }}
-                      sx={{ textTransform: "none", fontSize: "0.8125rem", color: "text.secondary", alignSelf: "center" }}
+                      sx={{
+                        background: "none",
+                        border: "none",
+                        padding: 0,
+                        cursor: "pointer",
+                        color: "text.secondary",
+                        textDecoration: "underline",
+                        textUnderlineOffset: "3px",
+                        alignSelf: "center",
+                        "&:hover": { color: "text.primary" },
+                      }}
                     >
                       Use a different email
-                    </Button>
+                    </Typography>
                   </Stack>
                 </>
               ) : (
@@ -2684,7 +2709,7 @@ export default function EventDetailClient() {
       )}
 
       {/* Find a better time — collaborative alternate scheduling */}
-      {event.allowAltTimes && !isCanceled && (event.isHost || viewerRsvpStatus === "going" || viewerRsvpStatus === "maybe" || event.isInvited || isGuestInvite) && (() => {
+      {event.allowAltTimes && !isCanceled && (event.isHost || viewerRsvpStatus === "going" || viewerRsvpStatus === "maybe" || event.isInvited || isGuestInvite || !!participationTokenRef.current) && (() => {
         type OverlapWindow = { startMs: number; endMs: number; entries: AltTimeEntry[] };
 
         const fmtTime = (d: Date) => d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
@@ -3794,6 +3819,26 @@ export default function EventDetailClient() {
                     <Typography variant="body2" fontWeight={500}>Let Going attendees invite others</Typography>
                     <Typography variant="caption" color="text.secondary">
                       People who RSVP as Going can invite their friends to this plan.
+                    </Typography>
+                  </Box>
+                }
+                sx={{ alignItems: "flex-start", mt: 0.5 }}
+              />
+            </Box>
+            <Box>
+              <FormControlLabel
+                control={
+                  <Switch
+                    size="small"
+                    checked={editAllowAltTimes}
+                    onChange={(e) => setEditAllowAltTimes(e.target.checked)}
+                  />
+                }
+                label={
+                  <Box>
+                    <Typography variant="body2" fontWeight={500}>Let people suggest alternate times</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Attendees and invitees can propose different dates or times.
                     </Typography>
                   </Box>
                 }
