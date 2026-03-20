@@ -1,11 +1,13 @@
 # Development Setup Guide
 
-Last Updated: March 18, 2026
+Last Updated: March 19, 2026
 
 This document is the operational guide for running and deploying NewChums.
 For architectural invariants and contracts, see `docs/Technical_Specs.md`.
 For diagrams and flows, see `docs/System_Map.md`.
 For product direction, terminology, and agent governance, see `AGENTS.md`.
+
+**System Logic (super admin):** The web app exposes a **System Logic** tab (`/admin/system-logic`) with short, user-facing explanations of how plans, emails, and digests work. When you change behavior that affects those flows, **review and update that page in the same change set** so it stays accurate. Style: key logic, plain language, concise — see `AGENTS.md` (System Logic section).
 
 ---
 

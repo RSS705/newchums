@@ -9,6 +9,7 @@ import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
 import FeedbackRoundedIcon from "@mui/icons-material/FeedbackRounded";
 import MapRoundedIcon from "@mui/icons-material/MapRounded";
 import BarChartRoundedIcon from "@mui/icons-material/BarChartRounded";
+import IntegrationInstructionsRoundedIcon from "@mui/icons-material/IntegrationInstructionsRounded";
 import type { SvgIconComponent } from "@mui/icons-material";
 
 export type NavItem = {
@@ -29,6 +30,7 @@ export const createEventHref = "/events/create";
 
 export const superAdminNavItems: NavItem[] = [
   { label: "KPIs", href: "/admin/kpis", icon: BarChartRoundedIcon },
+  { label: "System Logic", href: "/admin/system-logic", icon: IntegrationInstructionsRoundedIcon },
   { label: "Users", href: "/admin/chums", icon: PeopleRoundedIcon },
   { label: "Interests", href: "/admin/interests", icon: StyleRoundedIcon },
   { label: "Plans", href: "/admin/plans", icon: CalendarMonthRoundedIcon },

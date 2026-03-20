@@ -67,12 +67,14 @@ Users → Cloudflare Edge → Web Worker (Next.js via OpenNext) → API Worker (
 
 | Document | Purpose |
 |----------|---------|
-| `AGENTS.md` | Agent governance — architectural rules, product direction, terminology, UI governance, design tone. **Read this first.** |
+| `AGENTS.md` | Agent governance — architectural rules, product direction, terminology, UI governance, design tone. **Read this first.** Includes maintenance rules for the Super Admin **System Logic** tab (`/admin/system-logic`). |
 | `docs/Technical_Specs.md` | Authoritative technical spec — stack, invariants, endpoints, schemas, implemented vs planned. |
 | `docs/System_Map.md` | Diagrams, production architecture, core flows, system boundaries. |
 | `docs/Development_Setup_Guide.md` | Operational guide — local setup, env vars, migrations, deployment, session log. |
 | `docs/Future_Ideas_Reference.md` | Strategic idea bank (Robert only). Agents may read for context but must not treat contents as requirements or modify the file. |
 | `docs/Gitignored_Assets_and_Restore.md` | Guide for restoring gitignored files on a fresh clone. |
+
+**In-app:** Super Admin **System Logic** — plain-language behavior notes for operators; **review and update with each relevant product change** (same standards as `AGENTS.md`).
 
 ---
 

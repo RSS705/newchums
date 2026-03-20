@@ -173,7 +173,7 @@ Users manage notification preferences in **Settings** (`/settings`). Each notifi
 
 | Key | UI title | Postmark template |
 |-----|----------|-------------------|
-| `event_match` | New plans matching my interests | — (not yet wired) |
+| `event_match` | New plans matching my interests | `POSTMARK_TEMPLATE_EVENT_MATCH_DIGEST` (template 44018889) |
 | `event_invite` | Someone invited you to a plan | `POSTMARK_TEMPLATE_RSVP` |
 | `join_request_received` | Someone requested to join your plan | Template 43906440 |
 | `join_request_accepted` | Your join request was accepted | Template 43906609 |
@@ -189,6 +189,8 @@ Users manage notification preferences in **Settings** (`/settings`). Each notifi
 | `attendance_confirmation` | Attendance confirmation reminders | `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST` (template 43984465) |
 
 Defaults are applied at account creation (credentials signup, OAuth) and backfilled for existing users with missing keys. GET normalizes stored prefs and optionally persists backfilled values.
+
+**Event match digest (batch):** The hourly `scheduled` handler runs `processEventMatchDigest` after the unread-chat digest block. Recipients must have `event_match` enabled, a home location, and meet the same in-person / future / not-full / travel-radius / “new since last digest” gates as for public plans. **Public** plans require at least one overlapping hobby between the user and the plan. **Chums-only** plans use the **same** hobby overlap and distance rules; additionally the recipient must appear on the **host’s** Chum list (`user_chums`: host `user_id`, recipient `chum_user_id`). **Invite-only** plans are excluded.
 
 Each RSVP status has a dedicated host notification email, each gated on its own preference toggle. Each email includes a tokenized unsubscribe link that toggles the corresponding preference. Migration 033 removes the obsolete `event_reminders` key and `frequency` fields from existing JSONB data.
 

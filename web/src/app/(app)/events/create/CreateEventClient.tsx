@@ -137,8 +137,10 @@ export default function CreateEventClient() {
     if (item.name.length > 50) { toast.error("Hobby must be 50 characters or less"); return; }
     const check = validateCleanText(item.name, "hobby");
     if (!check.ok) { toast.error(check.reason ?? "That hobby name isn't allowed."); return; }
-    if (selectedHobbies.some((i) => isDuplicate(i, item))) return;
-    setSelectedHobbies((prev) => [...prev, item]);
+    setSelectedHobbies((prev) => {
+      if (prev.some((i) => isDuplicate(i, item))) return prev;
+      return [...prev, item];
+    });
   };
 
   const handleBannerCropComplete = useCallback((_: Area, croppedAreaPx: Area) => {
@@ -484,8 +486,15 @@ export default function CreateEventClient() {
             onChange={(_, newValue) => {
               const filtered = (newValue ?? []).filter(Boolean);
               const last = filtered[filtered.length - 1];
-              if (typeof last === "string") addHobby(last);
-              else setSelectedHobbies(filtered as HobbyOption[]);
+              if (typeof last === "string") {
+                addHobby(last);
+                return;
+              }
+              // MUI freeSolo can fire onChange with [] during Enter before the value settles — don't wipe chips while typing.
+              if (filtered.length === 0 && selectedHobbies.length > 0 && hobbyInputValue.trim() !== "") {
+                return;
+              }
+              setSelectedHobbies(filtered as HobbyOption[]);
             }}
             getOptionLabel={(opt) => (typeof opt === "string" ? opt : opt.name)}
             isOptionEqualToValue={(opt, val) => {
@@ -513,6 +522,17 @@ export default function CreateEventClient() {
                   error={!!errors.hobby}
                   helperText={errors.hobby ?? "Link this plan to hobbies so the right people can find it"}
                   onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      const trimmed = hobbyInputValue.trim();
+                      if (!trimmed) return;
+                      const input = e.target as HTMLInputElement;
+                      if (input.getAttribute("aria-activedescendant")) return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      addHobby(trimmed);
+                      setHobbyInputValue("");
+                      return;
+                    }
                     if (e.key === "Backspace" && !hobbyInputValue) {
                       e.preventDefault();
                       e.stopPropagation();
@@ -833,9 +853,14 @@ export default function CreateEventClient() {
       {/* Visibility */}
       <AppCard>
         <Stack spacing={2}>
-          <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
-            Who can see this?
-          </Typography>
+          <Box>
+            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
+              Who can see this?
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              Controls who can find this plan and who may get notified about it, in the app or by email.
+            </Typography>
+          </Box>
 
           <RadioGroup
             value={visibility}

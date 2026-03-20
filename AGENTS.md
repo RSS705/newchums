@@ -1,6 +1,6 @@
 # NewChums Agent Governance
 
-Last Updated: March 17, 2026
+Last Updated: March 19, 2026
 
 This document defines how agents (AI or human) should operate within the NewChums repository.
 
@@ -116,6 +116,13 @@ If architectural invariants change, update both:
 - System_Map.md
 
 in the same change set.
+
+### Super Admin — System Logic (`/admin/system-logic`)
+
+The **System Logic** tab is a concise, human-readable map of how plans, emails, and digests behave. It is **not** a substitute for `Technical_Specs.md`.
+
+- **Review cadence:** Any change that affects user-visible flows (notifications, emails, RSVP, visibility, digests, etc.) should include a **review of this page** in the **same change set**. Update it when behavior changes so it stays accurate.
+- **Writing style:** Key logic only; plain language; short bullets. No API dumps, table names, or low-level schema in this UI—those belong in repo docs.
 
 ---
 

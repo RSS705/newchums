@@ -54,7 +54,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import UserAvatar from "@/components/common/UserAvatar";
 import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
 import { apiFetch, clearAuthTokenCache, getAuthToken, getAvatarBaseUrl, getChatWebSocketUrl, getMediaApiBaseUrl } from "@/lib/apiClient";
-import { nameToSlug } from "@/lib/interestUtils";
+import { isDuplicate, nameToSlug } from "@/lib/interestUtils";
 
 type HobbyInfo = { name: string; slug: string };
 
@@ -297,6 +297,19 @@ export default function EventDetailClient() {
   const [editHobbySuggestions, setEditHobbySuggestions] = useState<HobbyInfo[]>([]);
   const [editHobbyLoading, setEditHobbyLoading] = useState(false);
   const [editSubmitting, setEditSubmitting] = useState(false);
+
+  /** Commits free-text hobby; uses functional updates so rapid Enter + MUI onChange races don't drop chips. */
+  const appendEditHobbyFromInput = useCallback((raw: string) => {
+    const name = raw.trim().replace(/\s+/g, " ");
+    if (!name) return;
+    const slug = nameToSlug(name);
+    if (!slug) return;
+    const item: HobbyInfo = { name, slug };
+    setEditHobbies((prev) => {
+      if (prev.some((h) => isDuplicate(h, item))) return prev;
+      return [...prev, item];
+    });
+  }, []);
 
   const applyEventData = useCallback((data: {
     ok: boolean;
@@ -3311,17 +3324,16 @@ export default function EventDetailClient() {
                 inputValue={editHobbyInput}
                 onInputChange={(_, v) => setEditHobbyInput(v)}
                 onChange={(_, newValue) => {
-                  const last = (newValue ?? []).length > 0 ? newValue[(newValue ?? []).length - 1] : null;
-                  if (last && typeof last === "string") {
-                    const name = last.trim().replace(/\s+/g, " ");
-                    if (!name) return;
-                    const slug = nameToSlug(name);
-                    if (slug && !editHobbies.some((h) => h.slug === slug)) {
-                      setEditHobbies((prev) => [...prev, { name, slug }]);
-                    }
-                  } else {
-                    setEditHobbies((newValue ?? []) as HobbyInfo[]);
+                  const filtered = (newValue ?? []).filter(Boolean);
+                  const last = filtered[filtered.length - 1];
+                  if (typeof last === "string") {
+                    appendEditHobbyFromInput(last);
+                    return;
                   }
+                  if (filtered.length === 0 && editHobbies.length > 0 && editHobbyInput.trim() !== "") {
+                    return;
+                  }
+                  setEditHobbies(filtered as HobbyInfo[]);
                 }}
                 getOptionLabel={(opt) => (typeof opt === "string" ? opt : opt.name)}
                 isOptionEqualToValue={(opt, val) => {
@@ -3338,6 +3350,17 @@ export default function EventDetailClient() {
                     fullWidth
                     label={undefined}
                     onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        const trimmed = editHobbyInput.trim();
+                        if (!trimmed) return;
+                        const input = e.target as HTMLInputElement;
+                        if (input.getAttribute("aria-activedescendant")) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        appendEditHobbyFromInput(trimmed);
+                        setEditHobbyInput("");
+                        return;
+                      }
                       if (e.key === "Backspace" && !editHobbyInput) {
                         e.preventDefault();
                         e.stopPropagation();
@@ -3395,8 +3418,11 @@ export default function EventDetailClient() {
               </Box>
             )}
             <Box>
-              <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1 }}>
+              <Typography variant="subtitle1" fontWeight={600}>
                 Who can see this?
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 1 }}>
+                Controls who can find this plan and who may get notified about it, in the app or by email.
               </Typography>
               <FormControl component="fieldset">
                 <RadioGroup

@@ -8529,26 +8529,68 @@ async function processEventMatchDigest(
           INNER JOIN newchums.event_invites ei ON ei.event_id = er.event_id AND ei.user_id = er.user_id
           WHERE er.event_id = e.id AND er.status = 'maybe'
         ) AS maybe_invitee_count
-      FROM eligible_users eu
-      JOIN newchums.user_interests ui ON ui.user_id = eu.user_id
-      JOIN newchums.event_interests ei ON ei.interest_id = ui.interest_id
-      JOIN newchums.events e ON e.id = ei.event_id
-      WHERE e.status = 'published'
-        AND e.visibility = 'public'
-        AND e.location_type = 'in_person'
-        AND e.starts_at > NOW()
-        AND e.host_user_id != eu.user_id
-        AND e.location_lat IS NOT NULL
-        AND e.location_lng IS NOT NULL
-        AND e.created_at > COALESCE(eu.event_digest_sent_at, NOW() - INTERVAL '24 hours')
-        AND (e.max_seats IS NULL OR (SELECT COUNT(*)::int FROM newchums.event_rsvps er WHERE er.event_id = e.id AND er.status = 'going') < e.max_seats)
-        AND 6371 * acos(
-          LEAST(1.0, GREATEST(-1.0,
-            cos(radians(eu.home_lat)) * cos(radians(e.location_lat)) *
-            cos(radians(e.location_lng) - radians(eu.home_lng)) +
-            sin(radians(eu.home_lat)) * sin(radians(e.location_lat))
-          ))
-        ) <= COALESCE(eu.travel_radius_km, 200)
+      FROM (
+        -- Public plans: shared hobby + in travel radius
+        SELECT DISTINCT ON (eu.user_id, e.id)
+          eu.user_id,
+          eu.email,
+          eu.name,
+          eu.notification_prefs,
+          e.id AS event_id
+        FROM eligible_users eu
+        JOIN newchums.user_interests ui ON ui.user_id = eu.user_id
+        JOIN newchums.event_interests ei ON ei.interest_id = ui.interest_id
+        JOIN newchums.events e ON e.id = ei.event_id
+        WHERE e.status = 'published'
+          AND e.visibility = 'public'
+          AND e.location_type = 'in_person'
+          AND e.starts_at > NOW()
+          AND e.host_user_id != eu.user_id
+          AND e.location_lat IS NOT NULL
+          AND e.location_lng IS NOT NULL
+          AND e.created_at > COALESCE(eu.event_digest_sent_at, NOW() - INTERVAL '24 hours')
+          AND (e.max_seats IS NULL OR (SELECT COUNT(*)::int FROM newchums.event_rsvps er WHERE er.event_id = e.id AND er.status = 'going') < e.max_seats)
+          AND 6371 * acos(
+            LEAST(1.0, GREATEST(-1.0,
+              cos(radians(eu.home_lat)) * cos(radians(e.location_lat)) *
+              cos(radians(e.location_lng) - radians(eu.home_lng)) +
+              sin(radians(eu.home_lat)) * sin(radians(e.location_lat))
+            ))
+          ) <= COALESCE(eu.travel_radius_km, 200)
+        ORDER BY eu.user_id, e.id, e.starts_at
+        UNION ALL
+        -- Chums-only: same hobby + radius rules as public, plus recipient on host's Chum list (user_chums.user_id = host, chum_user_id = recipient)
+        SELECT DISTINCT ON (eu.user_id, e.id)
+          eu.user_id,
+          eu.email,
+          eu.name,
+          eu.notification_prefs,
+          e.id AS event_id
+        FROM eligible_users eu
+        JOIN newchums.user_interests ui ON ui.user_id = eu.user_id
+        JOIN newchums.event_interests ei ON ei.interest_id = ui.interest_id
+        JOIN newchums.events e ON e.id = ei.event_id
+        JOIN newchums.user_chums uc ON uc.user_id = e.host_user_id AND uc.chum_user_id = eu.user_id
+        WHERE e.visibility = 'chums_only'
+          AND e.status = 'published'
+          AND e.location_type = 'in_person'
+          AND e.starts_at > NOW()
+          AND e.host_user_id != eu.user_id
+          AND e.location_lat IS NOT NULL
+          AND e.location_lng IS NOT NULL
+          AND e.created_at > COALESCE(eu.event_digest_sent_at, NOW() - INTERVAL '24 hours')
+          AND (e.max_seats IS NULL OR (SELECT COUNT(*)::int FROM newchums.event_rsvps er WHERE er.event_id = e.id AND er.status = 'going') < e.max_seats)
+          AND 6371 * acos(
+            LEAST(1.0, GREATEST(-1.0,
+              cos(radians(eu.home_lat)) * cos(radians(e.location_lat)) *
+              cos(radians(e.location_lng) - radians(eu.home_lng)) +
+              sin(radians(eu.home_lat)) * sin(radians(e.location_lat))
+            ))
+          ) <= COALESCE(eu.travel_radius_km, 200)
+        ORDER BY eu.user_id, e.id, e.starts_at
+      ) AS mid
+      JOIN eligible_users eu ON eu.user_id = mid.user_id
+      JOIN newchums.events e ON e.id = mid.event_id
       ORDER BY eu.user_id, e.id, e.starts_at
     )
     SELECT
@@ -8804,7 +8846,7 @@ async function handleScheduled(
     }
   }
 
-  // Event match digest — daily personalized digest of new plans matching user hobbies + location
+  // Event match digest — public + chums_only plans: hobby overlap, radius, same gates; chums_only also requires recipient on host's Chum list
   try {
     await processEventMatchDigest(sql, env, ctx);
   } catch (err) {
