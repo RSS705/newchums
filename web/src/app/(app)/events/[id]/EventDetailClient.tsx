@@ -1923,7 +1923,6 @@ export default function EventDetailClient() {
               ) : null}
             </>
           ) : isAuthenticated === false ? (
-            event.visibility === "public" ? (
               pubRsvpStatus ? (
                 <>
                   <Stack spacing={1.5} alignItems="center" sx={{ py: 1 }}>
@@ -2076,34 +2075,6 @@ export default function EventDetailClient() {
                   </Typography>
                 </>
               )
-            ) : (
-              <>
-                <Typography variant="h6" fontWeight={600} sx={{ mb: 1 }}>
-                  Interested in this plan?
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.6 }}>
-                  Sign in or create a NewChums account to RSVP and join the conversation.
-                </Typography>
-                <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
-                  <Button
-                    component={Link}
-                    href={`/login?next=${encodeURIComponent(`/events/${eventId}`)}`}
-                    variant="contained"
-                    sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
-                  >
-                    Sign in
-                  </Button>
-                  <Button
-                    component={Link}
-                    href={`/signup?next=${encodeURIComponent(`/events/${eventId}`)}`}
-                    variant="outlined"
-                    sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5 }}
-                  >
-                    Create an account
-                  </Button>
-                </Stack>
-              </>
-            )
           ) : (
             <>
               {/* Confirmation UI when window is open */}

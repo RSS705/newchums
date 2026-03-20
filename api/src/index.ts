@@ -5535,20 +5535,8 @@ app.get("/events/:id", async (c) => {
 
     if (event.status === "draft" && !isHost) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
 
-    if (event.visibility === "invite_only" && !isHost && !tokenGrantsAccess) {
-      if (!userId) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-      const invite = (await sql`SELECT id FROM newchums.event_invites WHERE event_id = ${eventId} AND user_id = ${userId}`) as { id: string }[];
-      const rsvp = (await sql`SELECT id FROM newchums.event_rsvps WHERE event_id = ${eventId} AND user_id = ${userId}`) as { id: string }[];
-      if (invite.length === 0 && rsvp.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-    }
-
-    if (event.visibility === "chums_only" && !isHost && !tokenGrantsAccess) {
-      if (!userId) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-      const isChum = (await sql`SELECT id FROM newchums.user_chums WHERE user_id = ${event.host_user_id} AND chum_user_id = ${userId}`) as { id: string }[];
-      const invite = (await sql`SELECT id FROM newchums.event_invites WHERE event_id = ${eventId} AND user_id = ${userId}`) as { id: string }[];
-      const rsvp = (await sql`SELECT id FROM newchums.event_rsvps WHERE event_id = ${eventId} AND user_id = ${userId}`) as { id: string }[];
-      if (isChum.length === 0 && invite.length === 0 && rsvp.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-    }
+    // Visibility controls discoverability (explore feed, digests), not direct URL access.
+    // Anyone with the plan URL can view it. Draft plans remain host-only (above).
 
     const rsvps = (await sql`
       SELECT er.status, er.note, er.user_id, er.guest_email, er.guest_name,
@@ -5936,9 +5924,6 @@ app.post("/events/:id/email-rsvp", async (c) => {
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     const event = ev[0];
 
-    if (isPublicRsvp && event.visibility !== "public")
-      return c.json({ ok: false, error: "VALIDATION", message: "This plan is not public" }, 400);
-
     let userId: string | null = decoded.userId ?? null;
     const guestEmail = decoded.email?.toLowerCase() ?? null;
     if (!userId && guestEmail) {
@@ -6080,7 +6065,6 @@ app.post("/events/:id/public-rsvp/request-code", async (c) => {
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     const event = ev[0];
     if (event.status !== "published") return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-    if (event.visibility !== "public") return c.json({ ok: false, error: "VALIDATION", message: "This plan is not public" }, 400);
 
     const existingUser = (await sql`SELECT id FROM newchums.users WHERE email = ${rawEmail} LIMIT 1`) as { id: string }[];
     if (existingUser.length > 0) return c.json({ ok: true, existing_account: true });
