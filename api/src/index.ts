@@ -241,13 +241,18 @@ app.use("*", async (c, next) => {
   try {
     const sql = getSql(c.env);
     const rows = (await sql`
-      SELECT is_suspended FROM users WHERE email = ${payload.email} LIMIT 1
-    `) as { is_suspended: boolean }[];
+      SELECT is_suspended, last_active_at FROM users WHERE email = ${payload.email} LIMIT 1
+    `) as { is_suspended: boolean; last_active_at: string | null }[];
     if (rows[0]?.is_suspended === true) {
       return c.json(
         { ok: false, error: { code: "USER_SUSPENDED", message: "Your account has been suspended." } },
         403,
       );
+    }
+    // Throttled activity tracking — at most once per hour per user
+    const lastActive = rows[0]?.last_active_at ? new Date(rows[0].last_active_at).getTime() : 0;
+    if (Date.now() - lastActive > 3_600_000) {
+      sql`UPDATE newchums.users SET last_active_at = NOW() WHERE email = ${payload.email}`.catch(() => {});
     }
   } catch {
     // If DB lookup fails, allow the request through — individual routes will fail safely.
@@ -3702,6 +3707,262 @@ app.post("/admin/plans/:id/remove", async (c) => {
     return c.json({ ok: true });
   } catch (err) {
     console.error("[POST /admin/plans/:id/remove]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+// ─── GET /admin/kpis ─────────────────────────────────────────────────────────
+
+app.get("/admin/kpis", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  const sql = getSql(c.env);
+  const rawDays = c.req.query("days");
+  const wantAll = rawDays === "0" || rawDays === "all";
+  let rangeDays: number;
+  let startDateIso: string;
+
+  if (wantAll) {
+    const [earliest] = (await sql`SELECT MIN(created_at) AS earliest FROM newchums.users`) as Array<{ earliest: string | null }>;
+    const earliestMs = earliest?.earliest ? new Date(earliest.earliest).getTime() : Date.now();
+    rangeDays = Math.max(7, Math.ceil((Date.now() - earliestMs) / 86_400_000));
+    startDateIso = earliest?.earliest ? new Date(earliestMs).toISOString() : new Date().toISOString();
+  } else {
+    rangeDays = Math.max(Number(rawDays) || 90, 7);
+    startDateIso = new Date(Date.now() - rangeDays * 86_400_000).toISOString();
+  }
+
+  // Auto-select granularity based on range length
+  const growthGranularity = rangeDays <= 90 ? "day" : rangeDays <= 365 ? "week" : "month";
+  const sampleInterval = rangeDays <= 90 ? "7 days" : rangeDays <= 365 ? "14 days" : "30 days";
+
+  try {
+    // ── Growth: signups + cumulative (adaptive granularity via DATE_TRUNC) ──
+    const signupRows = (await sql`
+      WITH bucketed AS (
+        SELECT DATE(DATE_TRUNC(${growthGranularity}, created_at)) AS d, COUNT(*)::int AS cnt
+        FROM newchums.users
+        WHERE created_at >= ${startDateIso}::timestamptz
+        GROUP BY 1
+        ORDER BY d
+      ),
+      base AS (
+        SELECT COUNT(*)::int AS cnt
+        FROM newchums.users
+        WHERE created_at < ${startDateIso}::timestamptz
+      )
+      SELECT d AS date, bucketed.cnt AS count,
+             (SELECT cnt FROM base) + SUM(bucketed.cnt) OVER (ORDER BY d) AS cumulative
+      FROM bucketed
+      ORDER BY d
+    `) as Array<{ date: string; count: number; cumulative: number }>;
+
+    // ── Growth: plans created (adaptive granularity) ──
+    const planRows = (await sql`
+      SELECT DATE(DATE_TRUNC(${growthGranularity}, created_at)) AS date, COUNT(*)::int AS count
+      FROM newchums.events
+      WHERE status IN ('published', 'canceled')
+        AND created_at >= ${startDateIso}::timestamptz
+      GROUP BY 1
+      ORDER BY date
+    `) as Array<{ date: string; count: number }>;
+
+    // ── Participation (current snapshot) ──
+    const [partRow] = (await sql`
+      WITH total AS (
+        SELECT COUNT(*)::int AS cnt FROM newchums.users
+      ),
+      participants AS (
+        SELECT user_id, COUNT(DISTINCT plan_id)::int AS plan_count FROM (
+          SELECT host_user_id AS user_id, id AS plan_id
+          FROM newchums.events WHERE status IN ('published', 'canceled')
+          UNION ALL
+          SELECT er.user_id, er.event_id AS plan_id
+          FROM newchums.event_rsvps er
+          WHERE er.user_id IS NOT NULL AND er.status = 'going'
+        ) t
+        GROUP BY user_id
+      ),
+      hosts AS (
+        SELECT COUNT(DISTINCT host_user_id)::int AS cnt
+        FROM newchums.events WHERE status IN ('published', 'canceled')
+      )
+      SELECT
+        (SELECT cnt FROM total) AS total_users,
+        COUNT(*)::int AS participated_one,
+        COUNT(*) FILTER (WHERE plan_count >= 2)::int AS participated_two,
+        (SELECT cnt FROM hosts) AS hosted_one
+      FROM participants
+    `) as Array<{
+      total_users: number;
+      participated_one: number;
+      participated_two: number;
+      hosted_one: number;
+    }>;
+
+    // ── Participation over time (adaptive sample interval) ──
+    const partSeries = (await sql`
+      SELECT
+        d::date AS date,
+        (SELECT COUNT(*) FROM newchums.users WHERE created_at < d + INTERVAL '1 day')::int AS total_users,
+        (SELECT COUNT(DISTINCT user_id) FROM (
+          SELECT host_user_id AS user_id FROM newchums.events
+            WHERE status IN ('published', 'canceled') AND created_at < d + INTERVAL '1 day'
+          UNION
+          SELECT user_id FROM newchums.event_rsvps
+            WHERE user_id IS NOT NULL AND status = 'going' AND created_at < d + INTERVAL '1 day'
+        ) t)::int AS participated_one,
+        (SELECT COUNT(*) FROM (
+          SELECT user_id FROM (
+            SELECT host_user_id AS user_id, id AS plan_id FROM newchums.events
+              WHERE status IN ('published', 'canceled') AND created_at < d + INTERVAL '1 day'
+            UNION ALL
+            SELECT user_id, event_id AS plan_id FROM newchums.event_rsvps
+              WHERE user_id IS NOT NULL AND status = 'going' AND created_at < d + INTERVAL '1 day'
+          ) t GROUP BY user_id HAVING COUNT(DISTINCT plan_id) >= 2
+        ) t2)::int AS participated_two,
+        (SELECT COUNT(DISTINCT host_user_id) FROM newchums.events
+          WHERE status IN ('published', 'canceled') AND created_at < d + INTERVAL '1 day')::int AS hosted_one
+      FROM generate_series(
+        ${startDateIso}::date,
+        NOW()::date,
+        ${sampleInterval}::interval
+      ) d
+      ORDER BY d
+    `) as Array<{ date: string; total_users: number; participated_one: number; participated_two: number; hosted_one: number }>;
+
+    // ── Activity (current snapshot) ──
+    const [actRow] = (await sql`
+      SELECT
+        COUNT(*)::int AS total_users,
+        COUNT(*) FILTER (WHERE last_active_at >= NOW() - INTERVAL '7 days')::int  AS active_7d,
+        COUNT(*) FILTER (WHERE last_active_at >= NOW() - INTERVAL '30 days')::int AS active_30d
+      FROM newchums.users
+    `) as Array<{ total_users: number; active_7d: number; active_30d: number }>;
+
+    // ── Activity over time (adaptive sample interval) ──
+    const actSeries = (await sql`
+      SELECT
+        d::date AS date,
+        (SELECT COUNT(*) FROM newchums.users WHERE created_at < d + INTERVAL '1 day')::int AS total_users,
+        (SELECT COUNT(*) FROM newchums.users
+          WHERE last_active_at >= d - INTERVAL '29 days' AND last_active_at < d + INTERVAL '1 day')::int AS active_30d,
+        (SELECT COUNT(*) FROM newchums.users
+          WHERE last_active_at >= d - INTERVAL '6 days' AND last_active_at < d + INTERVAL '1 day')::int AS active_7d
+      FROM generate_series(
+        ${startDateIso}::date,
+        NOW()::date,
+        ${sampleInterval}::interval
+      ) d
+      ORDER BY d
+    `) as Array<{ date: string; total_users: number; active_30d: number; active_7d: number }>;
+
+    // ── Plan health (current snapshot) ──
+    const [healthRow] = (await sql`
+      SELECT
+        COUNT(*) FILTER (WHERE starts_at < NOW() AND status = 'published' AND canceled_at IS NULL)::int  AS completed,
+        COUNT(*) FILTER (WHERE status = 'canceled' OR canceled_at IS NOT NULL)::int                       AS canceled,
+        COUNT(*) FILTER (WHERE starts_at < NOW())::int                                                    AS total_past,
+        COUNT(*)::int                                                                                     AS total_all
+      FROM newchums.events
+      WHERE status IN ('published', 'canceled')
+    `) as Array<{ completed: number; canceled: number; total_past: number; total_all: number }>;
+
+    // ── Average fill rate (only capped plans that already started) ──
+    const [fillRow] = (await sql`
+      SELECT
+        COUNT(*)::int AS plan_count,
+        ROUND(AVG(LEAST(1.0, going::numeric / max_seats)), 4) AS avg_fill
+      FROM (
+        SELECT e.id, e.max_seats,
+               COUNT(*) FILTER (WHERE er.status = 'going')::int AS going
+        FROM newchums.events e
+        LEFT JOIN newchums.event_rsvps er ON er.event_id = e.id AND er.user_id IS NOT NULL
+        WHERE e.max_seats IS NOT NULL AND e.max_seats > 0
+          AND e.status IN ('published', 'canceled')
+          AND e.starts_at < NOW()
+        GROUP BY e.id, e.max_seats
+      ) t
+    `) as Array<{ plan_count: number; avg_fill: number | null }>;
+
+    // ── Plan health over time (adaptive sample interval) ──
+    const healthSeries = (await sql`
+      SELECT
+        d::date AS date,
+        (SELECT COUNT(*) FROM newchums.events
+          WHERE status IN ('published', 'canceled') AND starts_at < d + INTERVAL '1 day')::int AS total_past,
+        (SELECT COUNT(*) FROM newchums.events
+          WHERE status = 'published' AND canceled_at IS NULL AND starts_at < d + INTERVAL '1 day')::int AS completed,
+        (SELECT COUNT(*) FROM newchums.events
+          WHERE (status = 'canceled' OR canceled_at IS NOT NULL) AND created_at < d + INTERVAL '1 day')::int AS canceled,
+        (SELECT COUNT(*) FROM newchums.events
+          WHERE status IN ('published', 'canceled') AND created_at < d + INTERVAL '1 day')::int AS total_at_date
+      FROM generate_series(
+        ${startDateIso}::date,
+        NOW()::date,
+        ${sampleInterval}::interval
+      ) d
+      ORDER BY d
+    `) as Array<{ date: string; total_past: number; completed: number; canceled: number; total_at_date: number }>;
+
+    const totalPast = healthRow.total_past || 0;
+    const totalAll = healthRow.total_all || 0;
+
+    const safePct = (n: number, d: number) => d > 0 ? Math.round((n / d) * 10000) / 10000 : null;
+
+    return c.json({
+      ok: true,
+      data: {
+        rangeDays,
+        granularity: growthGranularity,
+        growth: {
+          totalUsers: (partRow.total_users ?? 0) as number,
+          dailySignups: signupRows.map((r) => ({ date: r.date, count: Number(r.count) })),
+          cumulativeUsers: signupRows.map((r) => ({ date: r.date, count: Number(r.cumulative) })),
+          dailyPlans: planRows.map((r) => ({ date: r.date, count: Number(r.count) })),
+        },
+        participation: {
+          totalUsers: Number(partRow.total_users ?? 0),
+          participatedOne: Number(partRow.participated_one ?? 0),
+          participatedTwo: Number(partRow.participated_two ?? 0),
+          hostedOne: Number(partRow.hosted_one ?? 0),
+          series: partSeries.map((r) => ({
+            date: r.date,
+            participatedOnePct: safePct(Number(r.participated_one), Number(r.total_users)),
+            participatedTwoPct: safePct(Number(r.participated_two), Math.max(Number(r.participated_one), 1)),
+            hostedOnePct: safePct(Number(r.hosted_one), Number(r.total_users)),
+          })),
+        },
+        activity: {
+          totalUsers: Number(actRow.total_users ?? 0),
+          active7d: Number(actRow.active_7d ?? 0),
+          active30d: Number(actRow.active_30d ?? 0),
+          series: actSeries.map((r) => ({
+            date: r.date,
+            active30dPct: safePct(Number(r.active_30d), Number(r.total_users)),
+            active7dPct: safePct(Number(r.active_7d), Number(r.total_users)),
+          })),
+        },
+        planHealth: {
+          completed: Number(healthRow.completed ?? 0),
+          canceled: Number(healthRow.canceled ?? 0),
+          totalPast,
+          totalAll,
+          completionRate: totalPast > 0 ? Number((healthRow.completed / totalPast).toFixed(4)) : null,
+          cancellationRate: totalAll > 0 ? Number((healthRow.canceled / totalAll).toFixed(4)) : null,
+          avgFillRate: fillRow.avg_fill != null ? Number(fillRow.avg_fill) : null,
+          fillRatePlanCount: Number(fillRow.plan_count ?? 0),
+          series: healthSeries.map((r) => ({
+            date: r.date,
+            completionPct: safePct(Number(r.completed), Math.max(Number(r.total_past), 1)),
+            cancellationPct: safePct(Number(r.canceled), Math.max(Number(r.total_at_date), 1)),
+          })),
+        },
+      },
+    });
+  } catch (err) {
+    console.error("[GET /admin/kpis]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });
