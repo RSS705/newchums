@@ -17,6 +17,7 @@ import Typography from "@mui/material/Typography";
 import CakeOutlinedIcon from "@mui/icons-material/CakeOutlined";
 import EditNoteRoundedIcon from "@mui/icons-material/EditNoteRounded";
 import MailOutlineRoundedIcon from "@mui/icons-material/MailOutlineRounded";
+import PersonAddAltRoundedIcon from "@mui/icons-material/PersonAddAltRounded";
 import PersonOutlineRoundedIcon from "@mui/icons-material/PersonOutlineRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import Link from "next/link";
@@ -995,20 +996,19 @@ export default function ChumsClient() {
       {/* Private Contacts Section */}
       <AppCard>
         <Stack spacing={2.5}>
-          <Box sx={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 1 }}>
-            <Box>
-              <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>Private Contacts</Typography>
-              <Typography color="text.secondary" variant="body2" sx={{ mt: 0.5, lineHeight: 1.6 }}>
-                Only visible to you. Useful for planning and invites. If they join NewChums, they&apos;ll automatically appear in your On NewChums section.
-              </Typography>
-            </Box>
+          <Box>
+            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>Private Contacts</Typography>
+            <Typography color="text.secondary" variant="body2" sx={{ mt: 0.5, lineHeight: 1.6 }}>
+              Only visible to you. Useful for planning and invites. If they join NewChums, they&apos;ll automatically appear in your On NewChums section.
+            </Typography>
             <Button
-              variant="outlined"
-              size="small"
+              variant="contained"
+              size="medium"
+              startIcon={<PersonAddAltRoundedIcon />}
               onClick={() => { setAddPrivateEmail(""); setAddPrivateOpen(true); }}
-              sx={{ flexShrink: 0, fontSize: "0.8125rem", whiteSpace: "nowrap", mt: { xs: 1, sm: 0 } }}
+              sx={{ mt: 2 }}
             >
-              Add contact
+              Add a private contact
             </Button>
           </Box>
 
