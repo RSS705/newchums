@@ -40,6 +40,7 @@ import LinkRoundedIcon from "@mui/icons-material/LinkRounded";
 import LockOpenRoundedIcon from "@mui/icons-material/LockOpenRounded";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import LockRoundedIcon from "@mui/icons-material/LockRounded";
+import EmailRoundedIcon from "@mui/icons-material/EmailRounded";
 import MailOutlineRoundedIcon from "@mui/icons-material/MailOutlineRounded";
 import NotificationsRoundedIcon from "@mui/icons-material/NotificationsRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
@@ -269,6 +270,50 @@ export default function EventDetailClient() {
     getAuthToken().then((t) => setIsAuthenticated(!!t));
   }, []);
 
+  // ── Public RSVP (share-link visitors) ──────────────────────────────────
+  type PubStep = "email" | "code" | "rsvp";
+  const [pubStep, setPubStep] = useState<PubStep>("email");
+  const [pubEmail, setPubEmail] = useState("");
+  const [pubName, setPubName] = useState("");
+  const [pubChallenge, setPubChallenge] = useState<string | null>(null);
+  const [pubCode, setPubCode] = useState("");
+  const [pubSubmitting, setPubSubmitting] = useState(false);
+  const [pubError, setPubError] = useState<string | null>(null);
+  const participationTokenRef = useRef<string | null>(null);
+  const [pubRsvpStatus, setPubRsvpStatus] = useState<string | null>(null);
+
+  // Cross-event email pre-fill from any prior public RSVP localStorage entry
+  useEffect(() => {
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key?.startsWith("nc_pub_")) {
+          const raw = localStorage.getItem(key);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed.email) { setPubEmail(parsed.email); break; }
+          }
+        }
+      }
+    } catch { /* localStorage unavailable */ }
+  }, []);
+
+  // Restore participation token for this event from localStorage
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(`nc_pub_${eventId}`);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed.token) {
+          participationTokenRef.current = parsed.token;
+          if (parsed.email) setPubEmail(parsed.email);
+          if (parsed.status) setPubRsvpStatus(parsed.status);
+          setPubStep("rsvp");
+        }
+      }
+    } catch { /* noop */ }
+  }, [eventId]);
+
   // Join request state
   const [joinRequests, setJoinRequests] = useState<JoinRequest[]>([]);
   const [joinRequestMessage, setJoinRequestMessage] = useState("");
@@ -331,7 +376,9 @@ export default function EventDetailClient() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const tokenSuffix = inviteTokenRef.current ? `?invite_token=${encodeURIComponent(inviteTokenRef.current)}` : "";
+      const tok = inviteTokenRef.current ?? participationTokenRef.current;
+      const tokenKey = inviteTokenRef.current ? "invite_token" : "participation_token";
+      const tokenSuffix = tok ? `?${tokenKey}=${encodeURIComponent(tok)}` : "";
       const res = await apiFetch(`/events/${eventId}${tokenSuffix}`, { auth: true });
       if (!res.ok) {
         setError("Plan not found");
@@ -348,7 +395,9 @@ export default function EventDetailClient() {
 
   const refresh = useCallback(async () => {
     try {
-      const tokenSuffix = inviteTokenRef.current ? `?invite_token=${encodeURIComponent(inviteTokenRef.current)}` : "";
+      const tok = inviteTokenRef.current ?? participationTokenRef.current;
+      const tokenKey = inviteTokenRef.current ? "invite_token" : "participation_token";
+      const tokenSuffix = tok ? `?${tokenKey}=${encodeURIComponent(tok)}` : "";
       const res = await apiFetch(`/events/${eventId}${tokenSuffix}`, { auth: true });
       if (res.ok) {
         const data = await res.json();
@@ -823,6 +872,87 @@ export default function EventDetailClient() {
       toast.error("Network error");
     }
     setRsvpSubmitting(false);
+  };
+
+  // ── Public RSVP handlers ────────────────────────────────────────────────
+  const handlePubRequestCode = async () => {
+    const email = pubEmail.trim().toLowerCase();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setPubError("Please enter a valid email address");
+      return;
+    }
+    setPubSubmitting(true);
+    setPubError(null);
+    try {
+      const res = await apiFetch(`/events/${eventId}/public-rsvp/request-code`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = (await res.json()) as { ok: boolean; challenge?: string; existing_account?: boolean; error?: string; message?: string };
+      if (!data.ok) { setPubError(data.message ?? "Something went wrong"); setPubSubmitting(false); return; }
+      if (data.existing_account) {
+        setPubError("An account with this email already exists. Please sign in instead.");
+        setPubSubmitting(false);
+        return;
+      }
+      setPubChallenge(data.challenge ?? null);
+      setPubStep("code");
+    } catch {
+      setPubError("Network error. Please try again.");
+    }
+    setPubSubmitting(false);
+  };
+
+  const handlePubConfirmCode = async () => {
+    const code = pubCode.trim();
+    if (!code || code.length !== 6) { setPubError("Please enter the 6-digit code"); return; }
+    setPubSubmitting(true);
+    setPubError(null);
+    try {
+      const res = await apiFetch(`/events/${eventId}/public-rsvp/confirm-code`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ challenge: pubChallenge, code, name: pubName.trim() || undefined }),
+      });
+      const data = (await res.json()) as { ok: boolean; token?: string; email?: string; error?: string; message?: string };
+      if (!data.ok) { setPubError(data.message ?? "Incorrect or expired code"); setPubSubmitting(false); return; }
+      participationTokenRef.current = data.token ?? null;
+      try {
+        localStorage.setItem(`nc_pub_${eventId}`, JSON.stringify({ token: data.token, email: data.email }));
+      } catch { /* noop */ }
+      setPubStep("rsvp");
+    } catch {
+      setPubError("Network error. Please try again.");
+    }
+    setPubSubmitting(false);
+  };
+
+  const handlePubRsvp = async (status: string) => {
+    if (!participationTokenRef.current) return;
+    setPubSubmitting(true);
+    setPubError(null);
+    try {
+      const res = await apiFetch(`/events/${eventId}/email-rsvp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ participation_token: participationTokenRef.current, status, guest_name: pubName.trim() || undefined }),
+      });
+      const data = (await res.json()) as { ok: boolean; error?: string; message?: string };
+      if (data.ok) {
+        setPubRsvpStatus(status);
+        try {
+          localStorage.setItem(`nc_pub_${eventId}`, JSON.stringify({ token: participationTokenRef.current, email: pubEmail, status }));
+        } catch { /* noop */ }
+        toast.success(status === "going" ? "You\u2019re going!" : status === "maybe" ? "Marked as maybe" : "Response recorded");
+        refresh();
+      } else {
+        setPubError(data.message ?? "Something went wrong");
+      }
+    } catch {
+      setPubError("Network error. Please try again.");
+    }
+    setPubSubmitting(false);
   };
 
   const openRsvpDialog = (status: string) => {
@@ -1786,32 +1916,169 @@ export default function EventDetailClient() {
               ) : null}
             </>
           ) : isAuthenticated === false ? (
-            <>
-              <Typography variant="h6" fontWeight={600} sx={{ mb: 1 }}>
-                Interested in this plan?
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.6 }}>
-                Sign in or create a NewChums account to RSVP and join the conversation.
-              </Typography>
-              <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
-                <Button
-                  component={Link}
-                  href={`/login?next=${encodeURIComponent(`/events/${eventId}`)}`}
-                  variant="contained"
-                  sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
-                >
-                  Sign in
-                </Button>
-                <Button
-                  component={Link}
-                  href={`/signup?next=${encodeURIComponent(`/events/${eventId}`)}`}
-                  variant="outlined"
-                  sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5 }}
-                >
-                  Create an account
-                </Button>
-              </Stack>
-            </>
+            event.visibility === "public" ? (
+              pubRsvpStatus ? (
+                <>
+                  <Stack spacing={1.5} alignItems="center" sx={{ py: 1 }}>
+                    <CheckCircleRoundedIcon sx={{ fontSize: 36, color: "success.main" }} />
+                    <Typography variant="h6" fontWeight={600}>
+                      {pubRsvpStatus === "going" ? "You\u2019re going!" : pubRsvpStatus === "maybe" ? "Marked as maybe" : "Response recorded"}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center", lineHeight: 1.6 }}>
+                      {pubRsvpStatus === "going"
+                        ? "You\u2019ll get updates about this plan via email."
+                        : pubRsvpStatus === "maybe"
+                          ? "We\u2019ll keep you posted if anything changes."
+                          : "Thanks for letting the host know."}
+                    </Typography>
+                  </Stack>
+                  <Divider sx={{ my: 1.5 }} />
+                  <Stack direction={{ xs: "column", sm: "row" }} spacing={1} justifyContent="center">
+                    {pubRsvpStatus !== "going" && (
+                      <AppButton size="small" onClick={() => handlePubRsvp("going")} disabled={pubSubmitting}>Going</AppButton>
+                    )}
+                    {pubRsvpStatus !== "maybe" && (
+                      <AppButton size="small" variant="outlined" onClick={() => handlePubRsvp("maybe")} disabled={pubSubmitting}>Maybe</AppButton>
+                    )}
+                    {pubRsvpStatus !== "cant_make_it" && (
+                      <AppButton size="small" variant="outlined" color="inherit" onClick={() => handlePubRsvp("cant_make_it")} disabled={pubSubmitting}>Can&apos;t make it</AppButton>
+                    )}
+                  </Stack>
+                  <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: "block", textAlign: "center" }}>
+                    Have an account?{" "}
+                    <Link href={`/login?next=${encodeURIComponent(`/events/${eventId}`)}`} style={{ color: "inherit", fontWeight: 600 }}>
+                      Sign in
+                    </Link>{" "}
+                    to join the conversation.
+                  </Typography>
+                </>
+              ) : pubStep === "email" ? (
+                <>
+                  <Typography variant="h6" fontWeight={600} sx={{ mb: 0.5 }}>
+                    Interested in this plan?
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.6 }}>
+                    Enter your email to RSVP. We&apos;ll send a quick verification code.
+                  </Typography>
+                  <Stack spacing={1.5}>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      type="email"
+                      placeholder="Your email"
+                      value={pubEmail}
+                      onChange={(e) => { setPubEmail(e.target.value); setPubError(null); }}
+                      disabled={pubSubmitting}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handlePubRequestCode(); } }}
+                      sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
+                      InputProps={{ startAdornment: <InputAdornment position="start"><EmailRoundedIcon sx={{ fontSize: 18, color: "text.disabled" }} /></InputAdornment> }}
+                    />
+                    <TextField
+                      fullWidth
+                      size="small"
+                      placeholder="Your name (optional)"
+                      value={pubName}
+                      onChange={(e) => setPubName(e.target.value.slice(0, 100))}
+                      disabled={pubSubmitting}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handlePubRequestCode(); } }}
+                      sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
+                    />
+                    {pubError && <Typography variant="body2" color="error" sx={{ fontSize: "0.8125rem" }}>{pubError}</Typography>}
+                    <AppButton onClick={handlePubRequestCode} disabled={pubSubmitting || !pubEmail.trim()}>
+                      {pubSubmitting ? "Sending…" : "Send verification code"}
+                    </AppButton>
+                  </Stack>
+                  <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: "block", textAlign: "center" }}>
+                    Already have an account?{" "}
+                    <Link href={`/login?next=${encodeURIComponent(`/events/${eventId}`)}`} style={{ color: "inherit", fontWeight: 600 }}>
+                      Sign in
+                    </Link>
+                  </Typography>
+                </>
+              ) : pubStep === "code" ? (
+                <>
+                  <Typography variant="h6" fontWeight={600} sx={{ mb: 0.5 }}>
+                    Check your email
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.6 }}>
+                    We sent a 6-digit code to <strong>{pubEmail}</strong>.
+                  </Typography>
+                  <Stack spacing={1.5}>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      placeholder="Enter 6-digit code"
+                      value={pubCode}
+                      onChange={(e) => { setPubCode(e.target.value.replace(/\D/g, "").slice(0, 6)); setPubError(null); }}
+                      disabled={pubSubmitting}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handlePubConfirmCode(); } }}
+                      inputProps={{ inputMode: "numeric", maxLength: 6, style: { letterSpacing: "0.25em", fontWeight: 600, textAlign: "center", fontSize: "1.25rem" } }}
+                      sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
+                    />
+                    {pubError && <Typography variant="body2" color="error" sx={{ fontSize: "0.8125rem" }}>{pubError}</Typography>}
+                    <AppButton onClick={handlePubConfirmCode} disabled={pubSubmitting || pubCode.length !== 6}>
+                      {pubSubmitting ? "Verifying…" : "Verify"}
+                    </AppButton>
+                    <Button
+                      size="small"
+                      onClick={() => { setPubStep("email"); setPubCode(""); setPubChallenge(null); setPubError(null); }}
+                      sx={{ textTransform: "none", fontSize: "0.8125rem", color: "text.secondary", alignSelf: "center" }}
+                    >
+                      Use a different email
+                    </Button>
+                  </Stack>
+                </>
+              ) : (
+                <>
+                  <Typography variant="h6" fontWeight={600} sx={{ mb: 0.5 }}>
+                    You&apos;re verified
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.6 }}>
+                    RSVP to let the host know you&apos;re interested.
+                  </Typography>
+                  {pubError && <Typography variant="body2" color="error" sx={{ fontSize: "0.8125rem", mb: 1 }}>{pubError}</Typography>}
+                  <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                    <AppButton onClick={() => handlePubRsvp("going")} disabled={pubSubmitting} sx={{ flex: 1 }}>Going</AppButton>
+                    <AppButton onClick={() => handlePubRsvp("maybe")} disabled={pubSubmitting} variant="outlined" sx={{ flex: 1 }}>Maybe</AppButton>
+                    <AppButton onClick={() => handlePubRsvp("cant_make_it")} disabled={pubSubmitting} variant="outlined" color="inherit" sx={{ flex: 1 }}>Can&apos;t make it</AppButton>
+                  </Stack>
+                  <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: "block", textAlign: "center" }}>
+                    Have an account?{" "}
+                    <Link href={`/login?next=${encodeURIComponent(`/events/${eventId}`)}`} style={{ color: "inherit", fontWeight: 600 }}>
+                      Sign in
+                    </Link>{" "}
+                    to join the conversation.
+                  </Typography>
+                </>
+              )
+            ) : (
+              <>
+                <Typography variant="h6" fontWeight={600} sx={{ mb: 1 }}>
+                  Interested in this plan?
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.6 }}>
+                  Sign in or create a NewChums account to RSVP and join the conversation.
+                </Typography>
+                <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                  <Button
+                    component={Link}
+                    href={`/login?next=${encodeURIComponent(`/events/${eventId}`)}`}
+                    variant="contained"
+                    sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
+                  >
+                    Sign in
+                  </Button>
+                  <Button
+                    component={Link}
+                    href={`/signup?next=${encodeURIComponent(`/events/${eventId}`)}`}
+                    variant="outlined"
+                    sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5 }}
+                  >
+                    Create an account
+                  </Button>
+                </Stack>
+              </>
+            )
           ) : (
             <>
               {/* Confirmation UI when window is open */}

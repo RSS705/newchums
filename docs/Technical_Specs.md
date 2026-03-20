@@ -1,7 +1,7 @@
 # Technical Specifications
 
-Last Updated: March 18, 2026
-Version: 13.2
+Last Updated: March 19, 2026
+Version: 13.3
 
 This document defines the authoritative technical architecture of NewChums.
 It describes **what exists today** and the structural commitments we are making.
@@ -188,6 +188,12 @@ Users manage notification preferences in **Settings** (`/settings`). Each notifi
 | `unread_chat_digest` | Unread messages in your plans | `POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST` (template 43975299) |
 | `attendance_confirmation` | Attendance confirmation reminders | `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST` (template 43984465) |
 
+**Non-preference transactional emails (no toggle):**
+
+| Purpose | Postmark template |
+|---------|-------------------|
+| Guest verification code (public RSVP) | `POSTMARK_TEMPLATE_GUEST_VERIFY` (template 44041128) |
+
 Defaults are applied at account creation (credentials signup, OAuth) and backfilled for existing users with missing keys. GET normalizes stored prefs and optionally persists backfilled values.
 
 **Event match digest (batch):** The hourly `scheduled` handler runs `processEventMatchDigest` after the unread-chat digest block. Recipients must have `event_match` enabled, a home location, and meet the same in-person / future / not-full / travel-radius / “new since last digest” gates as for public plans. **Public** plans require at least one overlapping hobby between the user and the plan. **Chums-only** plans use the **same** hobby overlap and distance rules; additionally the recipient must appear on the **host’s** Chum list (`user_chums`: host `user_id`, recipient `chum_user_id`). **Invite-only** plans are excluded.
@@ -209,12 +215,34 @@ The `host_attendee_removals` table tracks: `event_id`, `host_user_id`, `removed_
 When a host invites someone by email who does not have a NewChums account, that person can still RSVP and view the plan without signing up. The flow works via the invite token (JWT, 30-day expiry) embedded in the invite email.
 
 **How it works:**
-- `POST /events/:id/email-rsvp` — when the invite token's email has no matching user account, a guest RSVP is created with `user_id = NULL` and `guest_email` set. The guest can change their RSVP by clicking different links from the email or using the on-page RSVP buttons.
-- `GET /events/:id` — accepts an optional `invite_token` query param. A valid token grants access to invite-only and chums-only events, and the response includes `guestInvite: true` and `guestRsvpStatus` so the frontend can render appropriate UI.
+- `POST /events/:id/email-rsvp` — accepts `invite_token` (invite flow) or `participation_token` (public RSVP flow). When the token's email has no matching user account, a guest RSVP is created with `user_id = NULL` and `guest_email` set. The guest can change their RSVP using on-page buttons. Public RSVP tokens are only accepted for public-visibility events and skip the invite-record check.
+- `GET /events/:id` — accepts an optional `invite_token` or `participation_token` query param. A valid token grants read access (invite tokens additionally grant access to invite-only and chums-only events). The response includes `guestInvite: true` and `guestRsvpStatus` so the frontend can render appropriate UI.
 - The invite email's "View plan" link includes the invite token, so guests can revisit the plan page from the email at any time during the 30-day token window.
 - Guest RSVPs appear in the attendee list with their email as the display name and no avatar.
 - Migration 035 adds `guest_email TEXT NULL` and `guest_name TEXT NULL` to `event_rsvps` and makes `user_id` nullable, with a partial unique index on `(event_id, guest_email)` for guest rows.
 - Host notification emails are sent for guest RSVPs the same way as for registered users.
+
+### Public plan participation (share-link RSVP without account)
+
+Visitors without an account can RSVP to **public** plans via a share link. The flow uses email verification to establish identity without requiring full account creation.
+
+**How it works:**
+1. `POST /events/:id/public-rsvp/request-code` — visitor submits their email. If the email belongs to an existing account, the response returns `{ existing_account: true }` and the frontend prompts sign-in. Otherwise, a 6-digit code is emailed and a **challenge token** (JWT, 10-minute expiry, HMAC-signed code digest) is returned.
+2. `POST /events/:id/public-rsvp/confirm-code` — visitor submits the code + challenge token. On success, a **participation token** is issued (JWT, 30-day expiry, purpose `public_rsvp`) containing `eventId`, `email`, and optional `name`.
+3. `POST /events/:id/email-rsvp` — accepts `{ participation_token, status, guest_name? }` in addition to the existing `invite_token` flow. Creates or updates a guest RSVP (`user_id = NULL`, `guest_email` set) the same way as email-invite guests.
+4. `GET /events/:id` — accepts `participation_token` query param (same as `invite_token`). Grants read access and returns guest RSVP status.
+5. `POST /events/:id/guest-alt-time` — accepts `participation_token` (requires existing RSVP rather than invite record).
+
+**Security:**
+- Challenge token uses HMAC digest so the 6-digit code cannot be extracted from the JWT.
+- 10-minute expiry + Cloudflare infrastructure-level rate limiting make brute force impractical (no server-side state needed).
+- Participation token mirrors invite token structure but with purpose `public_rsvp`; only accepted for public-visibility events.
+
+**Account linking:** When a user later creates an account with the same email and views the plan (`GET /events/:id`), orphaned guest records (RSVPs, invites, alt-times) are automatically adopted — same mechanism used for email-invite guests.
+
+**Cross-event email pre-fill:** The frontend stores participation tokens in `localStorage` as `nc_pub_{eventId}`. When visiting a new public plan, any existing `nc_pub_*` entry provides email pre-fill (a new verification code is still required).
+
+**Email template:** Postmark template 44041128 (`POSTMARK_TEMPLATE_GUEST_VERIFY`). Variables: `code`, `planTitle`, `productName`.
 
 ### Account deletion
 
@@ -406,7 +434,7 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 | `PATCH /events/:id` | Edit event (host only). Accepts: `title`, `description`, `starts_at`, `max_seats`, `visibility`, `require_reconfirmation`, `require_approval`. Returns the updated event. |
 | `POST /events/:id/rsvp` | RSVP to an event — `{ status: "going"\|"maybe"\|"cant_make_it", note? }`. Capacity enforcement for going status. Locked plans reject new RSVPs (`EVENT_LOCKED` error) but allow existing participants to change status. Plans with `require_approval` reject non-invited users who have no existing RSVP (`APPROVAL_REQUIRED` error). Notifies host via in-app notification and email. UI: "Can't make it" button only shown when user is invited or has an existing RSVP; heading text is context-aware ("Can you make it?" for invited users, "Are you in?" otherwise). |
 | `POST /events/:id/alt-time` | Suggest alternate time — `{ suggested_at, note? }`. Only if event.allow_alt_times. Notifies host. Auth required. |
-| `POST /events/:id/guest-alt-time` | Guest alternate time suggestion via invite token — `{ invite_token, suggested_at, ends_at?, note? }`. No auth required. Validates invite token, checks guest has going/maybe RSVP, enforces 10-suggestion limit per guest. Stores with `user_id = NULL, guest_email = ...` (migration 043). |
+| `POST /events/:id/guest-alt-time` | Guest alternate time suggestion via invite token or participation token — `{ invite_token|participation_token, suggested_at, ends_at?, note? }`. No auth required. Validates token; invite tokens require an invite record, participation tokens require an existing RSVP. Enforces 10-suggestion limit per guest. Stores with `user_id = NULL, guest_email = ...` (migration 043). |
 | `POST /events/:id/cancel` | Cancel event (host only). Notifies all attendees via in-app notification and email. |
 | `POST /events/:id/invite` | Add invitees to published event. Host can always invite; Going attendees can invite when `allow_attendee_invites` is true. Accepts optional `suggest_time: true` to include a "suggest a better time" note in the invite email (only when `allow_alt_times` is enabled). `invited_by` column tracks who sent each invite. Sends notifications and invite emails with inviter's display name. |
 | `POST /events/:id/toggle-attendee-invites` | Toggle `allow_attendee_invites` (host only). Returns updated value. |
@@ -421,6 +449,8 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 | `POST /events/:id/join-request` | Submit a join request (requires `require_approval` to be on). Body: `{ message? }`. Validates not-host, not-invited, not-already-RSVP'd, no duplicate pending request. Notifies host via in-app notification and email (template 43906440). |
 | `POST /events/:id/join-request/:requestId/approve` | Approve a join request (host only). Body: `{ message? }`. Checks seat capacity. Marks request approved, adds user as Going RSVP. Notifies requester via in-app notification and email (template 43906609). |
 | `POST /events/:id/join-request/:requestId/decline` | Decline a join request (host only). Body: `{ message? }`. Marks request declined. Notifies requester via in-app notification and email (template 43906703). |
+| `POST /events/:id/public-rsvp/request-code` | Public plan share-link verification. Body: `{ email }`. If email belongs to existing account, returns `{ existing_account: true }`. Otherwise sends 6-digit code via Postmark template 44041128 and returns `{ challenge }` (JWT, 10-min expiry). Public plans only. |
+| `POST /events/:id/public-rsvp/confirm-code` | Verify the 6-digit code. Body: `{ challenge, code, name? }`. On success returns `{ token }` — a participation token (JWT, 30-day expiry, purpose `public_rsvp`). |
 
 **Important: Hono route ordering** — `GET /events/explore` must be registered **before** `GET /events/:id` in the route table. Otherwise, Hono interprets "explore" as a UUID `:id`, resulting in a database error.
 

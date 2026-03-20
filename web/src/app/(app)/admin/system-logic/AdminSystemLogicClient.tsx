@@ -183,6 +183,34 @@ export default function AdminSystemLogicClient() {
         </Bullet>
       </CollapsibleSection>
 
+      <CollapsibleSection title="Public plan participation (share link)" subtitle="How visitors without an account can RSVP to public plans">
+        <Bullet>
+          <strong>Who it&rsquo;s for:</strong> Someone without a NewChums account visits a <strong>public</strong> plan via a share link.
+        </Bullet>
+        <Bullet>
+          <strong>Flow:</strong> They enter their <strong>email</strong> (and optionally their name). We send a <strong>6-digit verification code</strong> to that
+          email. After entering the code, they can <strong>RSVP</strong> (Going / Maybe / Can&rsquo;t make it).
+        </Bullet>
+        <Bullet>
+          <strong>If the email already has an account:</strong> We prompt them to <strong>sign in</strong> instead of sending a code.
+        </Bullet>
+        <Bullet>
+          <strong>Identity:</strong> The visitor gets a signed <strong>participation token</strong> (valid 30 days) stored in their browser. This token is tied to
+          their verified email and the specific plan. It works the same way an invite token works for invited guests.
+        </Bullet>
+        <Bullet>
+          <strong>Account linking:</strong> If they later create a NewChums account with the same email, their RSVP and any alternate-time suggestions are
+          automatically linked to their new account the next time they view the plan.
+        </Bullet>
+        <Bullet>
+          <strong>Cross-plan convenience:</strong> If they&rsquo;ve verified on one public plan, their email is pre-filled when they visit another public plan (a
+          new code is still required).
+        </Bullet>
+        <Bullet>
+          <strong>Not available for:</strong> Chums-only or Invite-only plans. Those require an account or an invite link.
+        </Bullet>
+      </CollapsibleSection>
+
       <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, bgcolor: "action.hover", mt: 3 }}>
         <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.6 }}>
           Want endpoints, database names, or the exact email templates? That lives in the repo docs (e.g. Technical_Specs) — this page is just the friendly

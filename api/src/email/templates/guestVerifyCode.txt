@@ -1,0 +1,17 @@
+Your verification code
+
+Enter this code on the plan page to RSVP to {{planTitle}}.
+
+Your code: {{code}}
+
+This code expires in 10 minutes.
+
+---
+
+If you didn't request this code, you can safely ignore this email.
+
+---
+
+This is an automated message from NewChums (https://newchums.com).
+
+© {{productName}}

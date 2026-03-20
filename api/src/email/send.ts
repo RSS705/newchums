@@ -618,6 +618,25 @@ export const sendEventMatchDigestEmail = async (
   });
 };
 
+// ── Guest verification code email ────────────────────────────────────────
+
+export const sendGuestVerifyCodeEmail = async (
+  env: Bindings,
+  { to, code, planTitle }: { to: string; code: string; planTitle: string },
+) => {
+  if (!env.POSTMARK_TEMPLATE_GUEST_VERIFY) return;
+  return sendPostmarkTemplateEmail(env, {
+    From: env.EMAIL_FROM,
+    To: to,
+    TemplateId: env.POSTMARK_TEMPLATE_GUEST_VERIFY,
+    TemplateModel: {
+      productName: "NewChums",
+      code,
+      planTitle,
+    },
+  });
+};
+
 // ── Attendance assurance emails ─────────────────────────────────────────
 
 export const sendConfirmationRequestEmail = async (

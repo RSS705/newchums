@@ -29,6 +29,7 @@ import {
   sendUnreadChatDigestEmail,
   sendEventMatchDigestEmail,
   formatEventMatchSeatLine,
+  sendGuestVerifyCodeEmail,
   sendVerificationEmail,
   sendConfirmationRequestEmail,
   sendPlanAtRiskEmail,
@@ -1599,6 +1600,93 @@ async function verifyInviteToken(
   } catch {
     return null;
   }
+}
+
+// Public RSVP participation tokens — issued after email verification via 6-digit code.
+// Structurally similar to invite tokens but with purpose "public_rsvp".
+// Valid for 30 days (same as invite tokens).
+
+const CHALLENGE_TOKEN_EXPIRY_SECONDS = 10 * 60; // 10 minutes
+
+async function hmacDigest(secret: string, message: string): Promise<string> {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const sig = await crypto.subtle.sign("HMAC", key, enc.encode(message));
+  return btoa(String.fromCharCode(...new Uint8Array(sig)));
+}
+
+async function createChallengeToken(
+  secret: string,
+  payload: { email: string; eventId: string; code: string },
+): Promise<string> {
+  const digest = await hmacDigest(secret, `${payload.email}|${payload.eventId}|${payload.code}`);
+  const exp = Math.floor(Date.now() / 1000) + CHALLENGE_TOKEN_EXPIRY_SECONDS;
+  return new SignJWT({ em: payload.email, eid: payload.eventId, d: digest, purpose: "guest_challenge" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setExpirationTime(exp)
+    .sign(new TextEncoder().encode(secret));
+}
+
+async function verifyChallengeToken(
+  token: string,
+  secret: string,
+  submittedCode: string,
+): Promise<{ email: string; eventId: string } | null> {
+  try {
+    const { payload } = await jwtVerify(token, new TextEncoder().encode(secret));
+    if (payload.purpose !== "guest_challenge") return null;
+    const email = payload.em as string | undefined;
+    const eventId = payload.eid as string | undefined;
+    const storedDigest = payload.d as string | undefined;
+    if (!email || !eventId || !storedDigest) return null;
+    const expectedDigest = await hmacDigest(secret, `${email}|${eventId}|${submittedCode}`);
+    if (storedDigest !== expectedDigest) return null;
+    return { email, eventId };
+  } catch {
+    return null;
+  }
+}
+
+async function createParticipationToken(
+  secret: string,
+  payload: { eventId: string; email: string; name?: string },
+): Promise<string> {
+  const exp = Math.floor(Date.now() / 1000) + INVITE_TOKEN_EXPIRY_SECONDS;
+  return new SignJWT({
+    eid: payload.eventId,
+    em: payload.email,
+    nm: payload.name ?? undefined,
+    purpose: "public_rsvp",
+  })
+    .setProtectedHeader({ alg: "HS256" })
+    .setExpirationTime(exp)
+    .sign(new TextEncoder().encode(secret));
+}
+
+/** Verify a token with purpose "invite_rsvp" or "public_rsvp". */
+function verifyParticipationOrInviteToken(
+  token: string,
+  secret: string,
+): Promise<{ eventId: string; userId?: string; email?: string; purpose: string; name?: string } | null> {
+  return jwtVerify(token, new TextEncoder().encode(secret))
+    .then(({ payload }) => {
+      const purpose = payload.purpose as string | undefined;
+      if (purpose !== "invite_rsvp" && purpose !== "public_rsvp") return null;
+      const eventId = payload.eid as string | undefined;
+      if (!eventId) return null;
+      return {
+        eventId,
+        userId: payload.uid as string | undefined,
+        email: payload.em as string | undefined,
+        purpose,
+        name: payload.nm as string | undefined,
+      };
+    })
+    .catch(() => null);
+}
+
+function generateSixDigitCode(): string {
+  return String(Math.floor(100000 + Math.random() * 900000));
 }
 
 // Unsubscribe tokens — allow one-click email preference opt-out without requiring login.
@@ -5370,12 +5458,12 @@ app.get("/events/:id", async (c) => {
     userId = await ensureAppUserId(sql, authPayload.email, (authPayload as { name?: string | null }).name);
   }
 
-  // Token-based access for email invite recipients (may not have an account)
-  const inviteTokenParam = c.req.query("invite_token") ?? null;
+  // Token-based access for email invite recipients OR public RSVP participants (may not have an account)
+  const inviteTokenParam = c.req.query("invite_token") ?? c.req.query("participation_token") ?? null;
   let tokenGuestEmail: string | null = null;
   let tokenGrantsAccess = false;
   if (inviteTokenParam) {
-    const decoded = await verifyInviteToken(inviteTokenParam, c.env.NEXTAUTH_SECRET);
+    const decoded = await verifyParticipationOrInviteToken(inviteTokenParam, c.env.NEXTAUTH_SECRET);
     if (decoded && decoded.eventId === eventId) {
       tokenGrantsAccess = true;
       if (!userId && decoded.email) tokenGuestEmail = decoded.email.toLowerCase();
@@ -5823,30 +5911,34 @@ app.post("/events/:id/rsvp", async (c) => {
   }
 });
 
-/** POST /events/:id/email-rsvp — RSVP via signed invite token (no login required) */
+/** POST /events/:id/email-rsvp — RSVP via signed invite token or public participation token (no login required) */
 app.post("/events/:id/email-rsvp", async (c) => {
   const eventId = c.req.param("id");
   let body: Record<string, unknown>;
   try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
 
-  const token = body.invite_token ? String(body.invite_token) : null;
+  const token = body.invite_token ? String(body.invite_token) : body.participation_token ? String(body.participation_token) : null;
+  const guestName = body.guest_name ? String(body.guest_name).trim().slice(0, 100) : null;
   const status = body.status ? String(body.status) : null;
   if (!token) return c.json({ ok: false, error: "MISSING_TOKEN" }, 400);
   if (!status || !VALID_RSVP_STATUS.includes(status as typeof VALID_RSVP_STATUS[number]))
     return c.json({ ok: false, error: "INVALID_STATUS" }, 400);
 
-  const decoded = await verifyInviteToken(token, c.env.NEXTAUTH_SECRET);
+  const decoded = await verifyParticipationOrInviteToken(token, c.env.NEXTAUTH_SECRET);
   if (!decoded || decoded.eventId !== eventId)
     return c.json({ ok: false, error: "INVALID_TOKEN", message: "This link has expired or is invalid." }, 403);
 
+  const isPublicRsvp = decoded.purpose === "public_rsvp";
   const sql = getSql(c.env);
 
   try {
-    const ev = (await sql`SELECT id, host_user_id, status, max_seats, title, locked_at, require_approval, reserve_seats FROM newchums.events WHERE id = ${eventId} AND status = 'published'`) as { id: string; host_user_id: string; status: string; max_seats: number | null; title: string; locked_at: string | null; require_approval: boolean; reserve_seats: boolean }[];
+    const ev = (await sql`SELECT id, host_user_id, status, max_seats, title, locked_at, require_approval, reserve_seats, visibility FROM newchums.events WHERE id = ${eventId} AND status = 'published'`) as { id: string; host_user_id: string; status: string; max_seats: number | null; title: string; locked_at: string | null; require_approval: boolean; reserve_seats: boolean; visibility: string }[];
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     const event = ev[0];
 
-    // Resolve the invitee to a userId (may be null for email-only invitees without an account)
+    if (isPublicRsvp && event.visibility !== "public")
+      return c.json({ ok: false, error: "VALIDATION", message: "This plan is not public" }, 400);
+
     let userId: string | null = decoded.userId ?? null;
     const guestEmail = decoded.email?.toLowerCase() ?? null;
     if (!userId && guestEmail) {
@@ -5862,12 +5954,14 @@ app.post("/events/:id/email-rsvp", async (c) => {
     if (userId && event.host_user_id === userId)
       return c.json({ ok: false, error: "VALIDATION", message: "Hosts cannot RSVP to their own plan" }, 400);
 
-    // Verify invitee is actually invited
-    const invited = userId
-      ? (await sql`SELECT 1 FROM newchums.event_invites WHERE event_id = ${eventId} AND user_id = ${userId} LIMIT 1`) as unknown[]
-      : (await sql`SELECT 1 FROM newchums.event_invites WHERE event_id = ${eventId} AND email = ${guestEmail} LIMIT 1`) as unknown[];
-    if (invited.length === 0)
-      return c.json({ ok: false, error: "NOT_INVITED", message: "This invite link is no longer valid." }, 403);
+    // For invite tokens, verify invitee is actually invited; public_rsvp tokens skip this check
+    if (!isPublicRsvp) {
+      const invited = userId
+        ? (await sql`SELECT 1 FROM newchums.event_invites WHERE event_id = ${eventId} AND user_id = ${userId} LIMIT 1`) as unknown[]
+        : (await sql`SELECT 1 FROM newchums.event_invites WHERE event_id = ${eventId} AND email = ${guestEmail} LIMIT 1`) as unknown[];
+      if (invited.length === 0)
+        return c.json({ ok: false, error: "NOT_INVITED", message: "This invite link is no longer valid." }, 403);
+    }
 
     if (isGuest) {
       // Guest RSVP path — no user account
@@ -5882,10 +5976,11 @@ app.post("/events/:id/email-rsvp", async (c) => {
           return c.json({ ok: false, error: "EVENT_FULL", message: "This plan is full" }, 409);
       }
 
+      const resolvedGuestName = guestName || decoded.name || guestEmail;
       if (existingGuest.length > 0) {
-        await sql`UPDATE newchums.event_rsvps SET status = ${status}, updated_at = NOW() WHERE event_id = ${eventId} AND guest_email = ${guestEmail} AND user_id IS NULL`;
+        await sql`UPDATE newchums.event_rsvps SET status = ${status}, guest_name = COALESCE(${guestName}, guest_name), updated_at = NOW() WHERE event_id = ${eventId} AND guest_email = ${guestEmail} AND user_id IS NULL`;
       } else {
-        await sql`INSERT INTO newchums.event_rsvps (event_id, user_id, guest_email, guest_name, status) VALUES (${eventId}, ${null}, ${guestEmail}, ${guestEmail}, ${status})`;
+        await sql`INSERT INTO newchums.event_rsvps (event_id, user_id, guest_email, guest_name, status) VALUES (${eventId}, ${null}, ${guestEmail}, ${resolvedGuestName}, ${status})`;
       }
     } else {
       // Registered user RSVP path
@@ -5962,6 +6057,71 @@ app.post("/events/:id/email-rsvp", async (c) => {
     return c.json({ ok: true, status, isGuest });
   } catch (err) {
     console.error("[POST /events/:id/email-rsvp]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+// ─── Public RSVP (share-link visitors) ────────────────────────────────────────
+
+/** POST /events/:id/public-rsvp/request-code — send a 6-digit verification code to the visitor's email */
+app.post("/events/:id/public-rsvp/request-code", async (c) => {
+  const eventId = c.req.param("id");
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+
+  const rawEmail = body.email ? String(body.email).trim().toLowerCase() : null;
+  if (!rawEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail))
+    return c.json({ ok: false, error: "VALIDATION", message: "Please enter a valid email address" }, 400);
+
+  const sql = getSql(c.env);
+
+  try {
+    const ev = (await sql`SELECT id, title, status, visibility FROM newchums.events WHERE id = ${eventId}`) as { id: string; title: string; status: string; visibility: string }[];
+    if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    const event = ev[0];
+    if (event.status !== "published") return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    if (event.visibility !== "public") return c.json({ ok: false, error: "VALIDATION", message: "This plan is not public" }, 400);
+
+    const existingUser = (await sql`SELECT id FROM newchums.users WHERE email = ${rawEmail} LIMIT 1`) as { id: string }[];
+    if (existingUser.length > 0) return c.json({ ok: true, existing_account: true });
+
+    const code = generateSixDigitCode();
+    const challenge = await createChallengeToken(c.env.NEXTAUTH_SECRET!, { email: rawEmail, eventId, code });
+
+    await sendGuestVerifyCodeEmail(c.env, { to: rawEmail, code, planTitle: event.title });
+
+    return c.json({ ok: true, challenge });
+  } catch (err) {
+    console.error("[POST /events/:id/public-rsvp/request-code]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /events/:id/public-rsvp/confirm-code — verify the 6-digit code and issue a participation token */
+app.post("/events/:id/public-rsvp/confirm-code", async (c) => {
+  const eventId = c.req.param("id");
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+
+  const challenge = body.challenge ? String(body.challenge) : null;
+  const code = body.code ? String(body.code).trim() : null;
+  const name = body.name ? String(body.name).trim().slice(0, 100) : undefined;
+  if (!challenge || !code) return c.json({ ok: false, error: "VALIDATION", message: "Challenge and code are required" }, 400);
+
+  try {
+    const verified = await verifyChallengeToken(challenge, c.env.NEXTAUTH_SECRET!, code);
+    if (!verified || verified.eventId !== eventId)
+      return c.json({ ok: false, error: "INVALID_CODE", message: "Incorrect or expired code. Please try again." }, 403);
+
+    const token = await createParticipationToken(c.env.NEXTAUTH_SECRET!, {
+      eventId,
+      email: verified.email,
+      name,
+    });
+
+    return c.json({ ok: true, token, email: verified.email });
+  } catch (err) {
+    console.error("[POST /events/:id/public-rsvp/confirm-code]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });
@@ -6261,19 +6421,20 @@ app.post("/events/:id/alt-time", async (c) => {
   }
 });
 
-/** POST /events/:id/guest-alt-time — guest (invite-token) alternate time suggestion */
+/** POST /events/:id/guest-alt-time — guest (invite-token or participation token) alternate time suggestion */
 app.post("/events/:id/guest-alt-time", async (c) => {
   const eventId = c.req.param("id");
   let body: Record<string, unknown>;
   try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
 
-  const token = body.invite_token ? String(body.invite_token) : null;
+  const token = body.invite_token ? String(body.invite_token) : body.participation_token ? String(body.participation_token) : null;
   if (!token) return c.json({ ok: false, error: "MISSING_TOKEN" }, 400);
 
-  const decoded = await verifyInviteToken(token, c.env.NEXTAUTH_SECRET);
+  const decoded = await verifyParticipationOrInviteToken(token, c.env.NEXTAUTH_SECRET);
   if (!decoded || decoded.eventId !== eventId)
     return c.json({ ok: false, error: "INVALID_TOKEN", message: "This link has expired or is invalid." }, 403);
 
+  const isPublicRsvp = decoded.purpose === "public_rsvp";
   const guestEmail = decoded.email?.toLowerCase() ?? null;
   if (!guestEmail)
     return c.json({ ok: false, error: "INVALID_TOKEN", message: "This invite link is invalid." }, 400);
@@ -6299,9 +6460,16 @@ app.post("/events/:id/guest-alt-time", async (c) => {
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     if (!ev[0].allow_alt_times) return c.json({ ok: false, error: "VALIDATION", message: "This plan does not accept alternate times" }, 400);
 
-    const guestInvited = (await sql`SELECT 1 FROM newchums.event_invites WHERE event_id = ${eventId} AND email = ${guestEmail} LIMIT 1`) as unknown[];
-    if (guestInvited.length === 0)
-      return c.json({ ok: false, error: "FORBIDDEN", message: "You must be invited to suggest alternate times" }, 403);
+    // For invite tokens, verify invitee is invited; public RSVP tokens need an existing RSVP instead
+    if (isPublicRsvp) {
+      const hasRsvp = (await sql`SELECT 1 FROM newchums.event_rsvps WHERE event_id = ${eventId} AND guest_email = ${guestEmail} AND user_id IS NULL LIMIT 1`) as unknown[];
+      if (hasRsvp.length === 0)
+        return c.json({ ok: false, error: "FORBIDDEN", message: "You must RSVP before suggesting alternate times" }, 403);
+    } else {
+      const guestInvited = (await sql`SELECT 1 FROM newchums.event_invites WHERE event_id = ${eventId} AND email = ${guestEmail} LIMIT 1`) as unknown[];
+      if (guestInvited.length === 0)
+        return c.json({ ok: false, error: "FORBIDDEN", message: "You must be invited to suggest alternate times" }, 403);
+    }
 
     const guestAltCount = (await sql`SELECT COUNT(*)::int AS c FROM newchums.event_alt_times WHERE event_id = ${eventId} AND guest_email = ${guestEmail} AND user_id IS NULL`) as { c: number }[];
     if (guestAltCount[0].c >= 10)

@@ -48,6 +48,8 @@ export type Bindings = {
   POSTMARK_TEMPLATE_ROADMAP_UPDATE?: string;
   /** Postmark template ID for daily event-match digest email (template 44018889) */
   POSTMARK_TEMPLATE_EVENT_MATCH_DIGEST?: string;
+  /** Postmark template ID for public RSVP email verification code (template 44041128) */
+  POSTMARK_TEMPLATE_GUEST_VERIFY?: string;
   SENTRY_DSN: string;
   APP_ENV?: string;
   ENVIRONMENT?: string;
