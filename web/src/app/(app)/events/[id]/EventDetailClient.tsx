@@ -261,6 +261,7 @@ export default function EventDetailClient() {
 
   // Lock state
   const [lockToggling, setLockToggling] = useState(false);
+  const [lockDialogOpen, setLockDialogOpen] = useState(false);
 
   // Auth detection for logged-out user handling
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
@@ -689,7 +690,7 @@ export default function EventDetailClient() {
     setChatSending(false);
   };
 
-  const handleToggleLock = async () => {
+  const performLockToggle = async () => {
     setLockToggling(true);
     try {
       const res = await apiFetch(`/events/${eventId}/lock`, { auth: true, method: "POST" });
@@ -697,6 +698,7 @@ export default function EventDetailClient() {
       if (data.ok) {
         setEvent((prev) => prev ? { ...prev, lockedAt: data.locked ? new Date().toISOString() : null } : prev);
         toast.success(data.locked ? "Plan locked" : "Plan unlocked");
+        setLockDialogOpen(false);
       }
     } catch {
       toast.error("Failed to update lock status");
@@ -3086,7 +3088,13 @@ export default function EventDetailClient() {
             <Button
               variant="outlined"
               startIcon={event.lockedAt ? <LockOpenRoundedIcon /> : <LockRoundedIcon />}
-              onClick={handleToggleLock}
+              onClick={() => {
+                if (event.lockedAt) {
+                  void performLockToggle();
+                } else {
+                  setLockDialogOpen(true);
+                }
+              }}
               disabled={lockToggling}
               sx={{ textTransform: "none" }}
             >
@@ -3101,17 +3109,50 @@ export default function EventDetailClient() {
               Cancel this plan
             </Button>
           </Stack>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 2, fontSize: "0.8125rem", lineHeight: 1.6 }}>
-            {event.lockedAt
-              ? "This plan is locked \u2014 no new people can join. Existing participants still have full access. Unlock to allow new people in again."
-              : "Locking this plan prevents anyone new from joining. People who\u2019ve already joined keep their access and can still use the chat."}
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 1, fontSize: "0.8125rem", lineHeight: 1.6 }}>
-            Locking, canceling, or editing plan details (date, description, capacity, or visibility) will send an update email to attendees who are Going or Maybe.
-          </Typography>
-
         </AppCard>
       )}
+
+      {/* Lock plan confirmation (locking only; unlock stays one-click) */}
+      <Dialog
+        open={lockDialogOpen}
+        onClose={() => !lockToggling && setLockDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 700, pb: 1 }}>Lock this plan?</DialogTitle>
+        <DialogContent>
+          <Stack spacing={1.5} sx={{ pt: 0.5 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.65 }}>
+              Locking this plan prevents anyone new from joining.
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.65 }}>
+              People who have already joined will keep access and can still use the chat.
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.65 }}>
+              Attendees marked Going or Maybe will receive an update email.
+            </Typography>
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
+          <Button
+            variant="text"
+            color="inherit"
+            onClick={() => setLockDialogOpen(false)}
+            disabled={lockToggling}
+          >
+            Not now
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => void performLockToggle()}
+            disabled={lockToggling}
+            startIcon={lockToggling ? <CircularProgress size={14} color="inherit" /> : <LockRoundedIcon />}
+            sx={{ textTransform: "none" }}
+          >
+            {lockToggling ? "Locking\u2026" : "Lock plan"}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Cancel confirmation dialog */}
       <Dialog
@@ -3466,6 +3507,9 @@ export default function EventDetailClient() {
                 sx={{ alignItems: "flex-start", mt: 0.5 }}
               />
             </Box>
+            <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem", lineHeight: 1.65, pt: 0.5 }}>
+              Saving changes to this plan (such as date, description, capacity, or visibility) will send an update email to attendees who are Going or Maybe.
+            </Typography>
           </Stack>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>

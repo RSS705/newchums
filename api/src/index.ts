@@ -28,6 +28,7 @@ import {
   sendRsvpConfirmationEmail,
   sendUnreadChatDigestEmail,
   sendEventMatchDigestEmail,
+  formatEventMatchSeatLine,
   sendVerificationEmail,
   sendConfirmationRequestEmail,
   sendPlanAtRiskEmail,
@@ -1658,6 +1659,22 @@ async function verifyConfirmationToken(
   } catch {
     return null;
   }
+}
+
+/** Marks unread attendance-request bell notifications for this user+plan as read. Idempotent; safe if none exist or already read. */
+async function markConfirmationRequestedNotificationsRead(
+  sql: ReturnType<typeof getSql>,
+  userId: string,
+  eventId: string,
+): Promise<void> {
+  await sql`
+    UPDATE newchums.notifications
+    SET read_at = NOW()
+    WHERE user_id = ${userId}
+      AND type = 'confirmation_requested'
+      AND entity_id = ${eventId}
+      AND read_at IS NULL
+  `;
 }
 
 app.get("/handles/available", async (c) => {
@@ -4440,6 +4457,27 @@ function buildLocationDisplay(name: string | null, address: string | null): stri
   return `${n}, ${a}`;
 }
 
+/** Location line for event-match digest emails — aligns with GET /events/:id display rules (non-host). */
+function formatEventMatchDigestLocation(p: {
+  locationName: string | null;
+  locationAddress: string | null;
+  locationArea: string;
+  locationVisibility: string | null;
+  recipientHasRsvp: boolean;
+}): string {
+  const locVis = p.locationVisibility ?? "exact_everyone";
+  const canShowExactLocation =
+    locVis === "exact_everyone" ||
+    (locVis === "exact_joined_only" && p.recipientHasRsvp);
+  const locArea =
+    (p.locationArea && p.locationArea.trim()) || deriveApproxArea(p.locationAddress);
+  const approxAreaText = locArea || "General area";
+  if (canShowExactLocation) {
+    return buildLocationDisplay(p.locationName, p.locationAddress);
+  }
+  return approxAreaText;
+}
+
 /**
  * Derive an approximate area description from a full address suitable for
  * display when the exact venue must remain hidden. Strips the street number
@@ -5705,6 +5743,7 @@ app.post("/events/:id/confirm", async (c) => {
     if (updated.length === 0) {
       const existing = (await sql`SELECT status FROM newchums.event_confirmations WHERE event_id = ${eventId} AND user_id = ${userId}`) as { status: string }[];
       if (existing.length > 0 && existing[0].status === newStatus) {
+        await markConfirmationRequestedNotificationsRead(sql, userId, eventId);
         return c.json({ ok: true, status: newStatus, alreadySet: true });
       }
 
@@ -5726,6 +5765,7 @@ app.post("/events/:id/confirm", async (c) => {
               ON CONFLICT (event_id, user_id) DO UPDATE
               SET status = ${newStatus}, responded_at = NOW(), updated_at = NOW()
             `;
+            await markConfirmationRequestedNotificationsRead(sql, userId, eventId);
             return c.json({ ok: true, status: newStatus });
           }
         }
@@ -5737,6 +5777,7 @@ app.post("/events/:id/confirm", async (c) => {
     // If host declines, that's effectively a cancel intent — but don't auto-cancel here.
     // The host can use the cancel flow separately.
 
+    await markConfirmationRequestedNotificationsRead(sql, userId, eventId);
     return c.json({ ok: true, status: newStatus });
   } catch (err) {
     console.error("[POST /events/:id/confirm]", err);
@@ -5779,11 +5820,13 @@ app.post("/events/:id/email-confirm", async (c) => {
     if (updated.length === 0) {
       const existing = (await sql`SELECT status FROM newchums.event_confirmations WHERE event_id = ${eventId} AND user_id = ${decoded.userId}`) as { status: string }[];
       if (existing.length > 0 && existing[0].status === newStatus) {
+        await markConfirmationRequestedNotificationsRead(sql, decoded.userId, eventId);
         return c.json({ ok: true, status: newStatus, alreadySet: true });
       }
       return c.json({ ok: false, error: "NO_CONFIRMATION", message: "No pending confirmation found." }, 404);
     }
 
+    await markConfirmationRequestedNotificationsRead(sql, decoded.userId, eventId);
     return c.json({ ok: true, status: newStatus });
   } catch (err) {
     console.error("[POST /events/:id/email-confirm]", err);
@@ -6084,6 +6127,18 @@ async function notifyAttendeesPlanChanged(
   if (!env.POSTMARK_TEMPLATE_EVENT_CHANGED || !env.NEXTAUTH_SECRET) return;
   const eventUrl = `${env.WEB_BASE_URL}/events/${eventId}`;
 
+  const hostRows = (await sql`
+    SELECT username, name FROM newchums.users WHERE id = ${hostUserId} LIMIT 1
+  `) as { username: string | null; name: string | null }[];
+  const host = hostRows[0];
+  const hostUsernameSlug = host?.username?.replace(/^@/, "").trim() || null;
+  const hostNameTrimmed = host?.name?.trim() || null;
+  const notificationMetadata = {
+    eventTitle,
+    ...(hostUsernameSlug ? { hostUsername: hostUsernameSlug } : {}),
+    ...(hostNameTrimmed ? { hostName: hostNameTrimmed } : {}),
+  };
+
   const attendees = (await sql`
     SELECT u.id, u.email, u.name, u.username
     FROM newchums.event_rsvps er
@@ -6101,7 +6156,7 @@ async function notifyAttendeesPlanChanged(
     try {
       await sql`
         INSERT INTO newchums.notifications (user_id, type, actor_user_id, entity_id, metadata)
-        VALUES (${att.id}, ${notifType}, ${hostUserId}, ${eventId}, ${JSON.stringify({ eventTitle })})
+        VALUES (${att.id}, ${notifType}, ${hostUserId}, ${eventId}, ${JSON.stringify(notificationMetadata)})
       `;
 
       const profileRows = (await sql`
@@ -8189,8 +8244,30 @@ async function processEventMatchDigest(
         COALESCE(e.description, '') AS event_description,
         e.starts_at,
         e.location_name,
+        e.location_address,
+        e.location_visibility,
         COALESCE(e.location_area, '') AS location_area,
-        e.timezone
+        e.timezone,
+        e.max_seats,
+        e.reserve_seats,
+        EXISTS (
+          SELECT 1 FROM newchums.event_rsvps er_rec
+          WHERE er_rec.event_id = e.id AND er_rec.user_id = eu.user_id
+        ) AS recipient_has_rsvp,
+        (SELECT COUNT(*)::int FROM newchums.event_rsvps er_g WHERE er_g.event_id = e.id AND er_g.status = 'going') AS going_count,
+        (
+          SELECT COUNT(*)::int FROM newchums.event_invites ei
+          WHERE ei.event_id = e.id AND ei.user_id IS NOT NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM newchums.event_rsvps er2
+              WHERE er2.event_id = ei.event_id AND er2.user_id = ei.user_id
+            )
+        ) AS pending_invite_no_rsvp_count,
+        (
+          SELECT COUNT(*)::int FROM newchums.event_rsvps er
+          INNER JOIN newchums.event_invites ei ON ei.event_id = er.event_id AND ei.user_id = er.user_id
+          WHERE er.event_id = e.id AND er.status = 'maybe'
+        ) AS maybe_invitee_count
       FROM eligible_users eu
       JOIN newchums.user_interests ui ON ui.user_id = eu.user_id
       JOIN newchums.event_interests ei ON ei.interest_id = ui.interest_id
@@ -8211,6 +8288,7 @@ async function processEventMatchDigest(
             sin(radians(eu.home_lat)) * sin(radians(e.location_lat))
           ))
         ) <= COALESCE(eu.travel_radius_km, 200)
+      ORDER BY eu.user_id, e.id, e.starts_at
     )
     SELECT
       m.user_id,
@@ -8223,8 +8301,16 @@ async function processEventMatchDigest(
         'description', m.event_description,
         'startsAt', m.starts_at,
         'locationName', m.location_name,
+        'locationAddress', m.location_address,
+        'locationVisibility', m.location_visibility,
         'locationArea', m.location_area,
-        'timezone', m.timezone
+        'recipientHasRsvp', m.recipient_has_rsvp,
+        'timezone', m.timezone,
+        'maxSeats', m.max_seats,
+        'reserveSeats', m.reserve_seats,
+        'goingCount', m.going_count,
+        'pendingInviteNoRsvpCount', m.pending_invite_no_rsvp_count,
+        'maybeInviteeCount', m.maybe_invitee_count
       ) ORDER BY m.starts_at) AS plans
     FROM matching m
     GROUP BY m.user_id, m.email, m.name, m.notification_prefs
@@ -8239,8 +8325,16 @@ async function processEventMatchDigest(
       description: string;
       startsAt: string;
       locationName: string | null;
+      locationAddress: string | null;
+      locationVisibility: string | null;
       locationArea: string;
+      recipientHasRsvp: boolean;
       timezone: string | null;
+      maxSeats: number | null;
+      reserveSeats: boolean;
+      goingCount: number;
+      pendingInviteNoRsvpCount: number;
+      maybeInviteeCount: number;
     }[];
   }[];
 
@@ -8290,7 +8384,20 @@ async function processEventMatchDigest(
         title: p.title,
         description: p.description,
         date: dateStr,
-        location: p.locationName || p.locationArea || "",
+        location: formatEventMatchDigestLocation({
+          locationName: p.locationName,
+          locationAddress: p.locationAddress,
+          locationArea: p.locationArea ?? "",
+          locationVisibility: p.locationVisibility,
+          recipientHasRsvp: p.recipientHasRsvp === true,
+        }),
+        seatLine: formatEventMatchSeatLine({
+          maxSeats: p.maxSeats,
+          goingCount: Number(p.goingCount ?? 0) || 0,
+          reserveSeats: p.reserveSeats === true,
+          pendingInviteNoRsvpCount: Number(p.pendingInviteNoRsvpCount ?? 0) || 0,
+          maybeInviteeCount: Number(p.maybeInviteeCount ?? 0) || 0,
+        }),
         url: `${env.WEB_BASE_URL}/events/${p.eventId}`,
       };
     });

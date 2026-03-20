@@ -56,14 +56,32 @@ function formatRelativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+/** Plan-change notifications (and similar) include hostUsername/hostName in metadata; JOIN may also supply actor. Prefer @handle, then display name, never bare "Someone" when we have a name. */
+function resolveActorLabel(n: AppNotification): { actorLabel: string; actorHref: string | null } {
+  const metaHandle =
+    typeof n.metadata?.hostUsername === "string" && n.metadata.hostUsername.trim().length > 0
+      ? n.metadata.hostUsername.replace(/^@/, "").trim()
+      : null;
+  const metaName =
+    typeof n.metadata?.hostName === "string" && n.metadata.hostName.trim().length > 0
+      ? n.metadata.hostName.trim()
+      : null;
+
+  const handleSlug = n.actorHandle ? n.actorHandle.replace(/^@/, "").trim() : metaHandle;
+  const actorHref = handleSlug ? `/u/${handleSlug}` : null;
+  const actorLabel = handleSlug
+    ? `@${handleSlug}`
+    : n.actorDisplayName?.trim() || metaName || "Someone";
+
+  return { actorLabel, actorHref };
+}
+
 function notificationText(n: AppNotification): {
   actorLabel: string;
   actorHref: string | null;
   body: React.ReactNode;
 } {
-  const handleSlug = n.actorHandle ? n.actorHandle.replace(/^@/, "") : null;
-  const actorLabel = handleSlug ? `@${handleSlug}` : "Someone";
-  const actorHref = handleSlug ? `/u/${handleSlug}` : null;
+  const { actorLabel, actorHref } = resolveActorLabel(n);
 
   const eventTitle = n.metadata?.eventTitle as string | undefined;
   const eventId = n.entityId;

@@ -514,8 +514,32 @@ export type EventMatchPlanItem = {
   description: string;
   date: string;
   location: string;
+  /** Pre-rendered seat summary (aligned with plan detail capacity: going + reserved holds vs max_seats). */
+  seatLine: string;
   url: string;
 };
+
+/** Matches plan detail / EventCard occupancy: going RSVPs plus reserved holds when reserve_seats is on. */
+export function formatEventMatchSeatLine(params: {
+  maxSeats: number | null | undefined;
+  goingCount: number;
+  reserveSeats: boolean;
+  pendingInviteNoRsvpCount: number;
+  maybeInviteeCount: number;
+}): string {
+  const maxRaw = params.maxSeats;
+  const maxSeats = maxRaw != null && Number.isFinite(Number(maxRaw)) ? Math.floor(Number(maxRaw)) : null;
+  if (maxSeats == null || maxSeats < 1) return "No seat limit";
+
+  const going = Math.max(0, Math.floor(params.goingCount));
+  const reserved = params.reserveSeats
+    ? Math.max(0, Math.floor(params.pendingInviteNoRsvpCount)) + Math.max(0, Math.floor(params.maybeInviteeCount))
+    : 0;
+  const occupied = going + reserved;
+  const remaining = maxSeats - occupied;
+  if (remaining <= 0) return "This plan is full";
+  return `${remaining} of ${maxSeats} seats remain`;
+}
 
 function buildMatchPlanCardHtml(plan: EventMatchPlanItem): string {
   const descSnippet = plan.description.length > 120
@@ -530,12 +554,15 @@ function buildMatchPlanCardHtml(plan: EventMatchPlanItem): string {
   }
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
       <tr>
-        <td style="vertical-align: middle;">
+        <td style="vertical-align: top;">
           <p style="margin: 0 0 2px 0; font-family: ${FONT}; font-size: 13px; color: #6B7280;">&#128197;&ensp;${escapeHtml(plan.date)}</p>${
-    plan.location ? `\n          <p style="margin: 0; font-family: ${FONT}; font-size: 13px; color: #6B7280;">&#128205;&ensp;${escapeHtml(plan.location)}</p>` : ""
+    plan.location ? `\n          <p style="margin: 0 0 2px 0; font-family: ${FONT}; font-size: 13px; color: #6B7280;">&#128205;&ensp;${escapeHtml(plan.location)}</p>` : ""
   }
+          <p style="margin: 0; font-family: ${FONT}; font-size: 13px; color: #6B7280;">${escapeHtml(plan.seatLine)}</p>
         </td>
-        <td style="vertical-align: middle; text-align: right; width: 100px;">
+      </tr>
+      <tr>
+        <td style="padding-top: 12px; vertical-align: top;">
           <a href="${escapeHtml(plan.url)}" style="display: inline-block; background-color: #E65B13; color: #ffffff; font-family: ${FONT}; font-size: 13px; font-weight: 600; text-decoration: none; padding: 8px 16px; border-radius: 6px; line-height: 1;">View Plan</a>
         </td>
       </tr>
@@ -552,6 +579,7 @@ function buildMatchPlanCardText(plan: EventMatchPlanItem): string {
   if (descSnippet) lines.push(`  ${descSnippet}`);
   lines.push(`  Date: ${plan.date}`);
   if (plan.location) lines.push(`  Location: ${plan.location}`);
+  lines.push(`  ${plan.seatLine}`);
   lines.push(`  ${plan.url}`);
   return lines.join("\n");
 }

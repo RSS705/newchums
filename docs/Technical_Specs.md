@@ -335,6 +335,8 @@ General notifications table (`newchums.notifications`, migration 022) designed f
 
 **Schema:** `id`, `user_id` (recipient), `type`, `actor_user_id` (nullable), `entity_id` (nullable, for future entity links), `metadata` (JSONB, nullable), `read_at` (null = unread), `created_at`. Indexed on `(user_id, created_at DESC)` and a partial index for unread rows.
 
+For `event_updated`, `event_locked`, and `event_canceled`, `metadata` includes `eventTitle` plus `hostUsername` (handle slug) and `hostName` (display name) from the host at send time, so the bell can show `@handle` (or a name fallback) even when the actor join alone would be ambiguous.
+
 **Supported types:**
 
 | Type | Trigger | Recipient |
@@ -412,8 +414,8 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 | `POST /events/:id/chat/read` | Mark chat as read. Upserts `last_read_at` in `event_chat_reads`. |
 | `GET /events/:id/chat/ws` | WebSocket upgrade endpoint. Authenticates via `?token=` query param (JWT), verifies chat access, then forwards to the ChatRoom Durable Object. Returns 101 on success. |
 | `POST /events/:id/lock` | Toggle plan lock (host only). Sets or clears `locked_at` on the event. Returns updated `lockedAt`. |
-| `POST /events/:id/confirm` | Confirm or decline attendance (auth required). Body: `{ action: "confirm" \| "decline" }`. Upserts `event_confirmations` record. Available when confirmation window is open. |
-| `POST /events/:id/email-confirm` | Token-based attendance confirmation from email links. Body: `{ token, action: "confirm" \| "decline" }`. Verifies signed JWT, updates confirmation status. |
+| `POST /events/:id/confirm` | Confirm or decline attendance (auth required). Body: `{ action: "confirm" \| "decline" }`. Upserts `event_confirmations` record. Available when confirmation window is open. On success, marks unread `confirmation_requested` bell notifications for that user and plan as read. |
+| `POST /events/:id/email-confirm` | Token-based attendance confirmation from email links. Body: `{ token, action: "confirm" \| "decline" }`. Verifies signed JWT, updates confirmation status. On success, marks unread `confirmation_requested` bell notifications for that user and plan as read (idempotent). |
 | `POST /events/:id/join-request` | Submit a join request (requires `require_approval` to be on). Body: `{ message? }`. Validates not-host, not-invited, not-already-RSVP'd, no duplicate pending request. Notifies host via in-app notification and email (template 43906440). |
 | `POST /events/:id/join-request/:requestId/approve` | Approve a join request (host only). Body: `{ message? }`. Checks seat capacity. Marks request approved, adds user as Going RSVP. Notifies requester via in-app notification and email (template 43906609). |
 | `POST /events/:id/join-request/:requestId/decline` | Decline a join request (host only). Body: `{ message? }`. Marks request declined. Notifies requester via in-app notification and email (template 43906703). |
