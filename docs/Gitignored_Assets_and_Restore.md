@@ -19,7 +19,7 @@ After `git clone` on a fresh machine:
 3. **API env:** `cp api/.dev.vars.example api/.dev.vars` then fill values
 4. **template_reference:** Restore if doing UI work (SOURCE TBD — see Decision needed)
 5. **_vendor:** Restore only if used (SOURCE TBD — see Decision needed)
-6. **Verify:** Run `node scripts/check-env.mjs` (requires web/.env.example and api/.dev.vars.example). If web/.env.example is missing, manually confirm web/.env.local and api/.dev.vars exist with required keys.
+6. **Verify:** Run `node scripts/check-env.mjs` (expects `web/.env.local` and `api/.dev.vars` filled from `web/.env.example` and `api/.dev.vars.example`).
 
 ---
 
