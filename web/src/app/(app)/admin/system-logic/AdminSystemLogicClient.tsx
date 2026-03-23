@@ -41,11 +41,12 @@ export default function AdminSystemLogicClient() {
           Who can see this? (visibility)
         </Typography>
         <Bullet>
-          This only controls <strong>who can discover and open</strong> the plan in the app (Explore, direct links, opening the plan page). It is{" "}
-          <strong>not</strong> wired to &ldquo;email everyone in this audience.&rdquo;
+          This controls <strong>discoverability</strong> (Explore feed, digests), <strong>not</strong> direct URL access.
+          Anyone with a direct link can view a published plan (public preview for non-logged-in visitors, full detail for logged-in users).
+          It is <strong>not</strong> wired to &ldquo;email everyone in this audience.&rdquo;
         </Bullet>
         <Bullet>
-          <strong>Public:</strong> Anyone signed in can discover it (e.g. Explore) subject to the usual filters; opening the plan follows normal rules.
+          <strong>Public:</strong> Anyone signed in can discover it (e.g. Explore) subject to the usual filters. Non-logged-in visitors with the direct link see a limited preview.
         </Bullet>
         <Bullet>
           <strong>Chums only:</strong> On Explore (and similar lists), someone signed in sees the plan if <strong>they are the host</strong> or{" "}
@@ -53,8 +54,8 @@ export default function AdminSystemLogicClient() {
           won&rsquo;t see it there the way they would a public plan.
         </Bullet>
         <Bullet>
-          <strong>Invite only:</strong> The plan stays hidden unless someone has access through an <strong>invite</strong> (or similar token flow). It is
-          not shown like a public listing.
+          <strong>Invite only:</strong> The plan stays hidden from Explore and digests. Access is through an <strong>invite</strong> (or similar token flow).
+          A direct link still works but non-logged-in visitors see only a limited preview.
         </Bullet>
 
         <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
@@ -181,9 +182,15 @@ export default function AdminSystemLogicClient() {
         </Bullet>
       </CollapsibleSection>
 
-      <CollapsibleSection title="Public plan participation (share link)" subtitle="How visitors without an account can RSVP to public plans">
+      <CollapsibleSection title="Plan sharing and guest participation" subtitle="How share links and public access work">
         <Bullet>
-          <strong>Who it&rsquo;s for:</strong> Someone without a NewChums account visits a <strong>public</strong> plan via a share link.
+          <strong>Plain URL vs share link:</strong> A <strong>plain URL</strong> (<code>/events/[id]</code>) shows a <strong>public preview</strong> only &mdash;
+          basic plan info, approximate location, attendee counts, and a sign-in prompt. No RSVP flow is available.
+          The <strong>Copy Link</strong> button produces a <strong>share link</strong> (<code>/events/[id]?share_token=xxx</code>) that grants guest access.
+        </Bullet>
+        <Bullet>
+          <strong>Who it&rsquo;s for:</strong> Someone without a NewChums account who receives a plan&rsquo;s <strong>share link</strong> (from Copy Link) or
+          an <strong>invite email</strong>.
         </Bullet>
         <Bullet>
           <strong>Flow:</strong> They enter their <strong>email</strong> (and optionally their name). We send a <strong>6-digit verification code</strong> to that
@@ -201,11 +208,12 @@ export default function AdminSystemLogicClient() {
           automatically linked to their new account the next time they view the plan.
         </Bullet>
         <Bullet>
-          <strong>Cross-plan convenience:</strong> If they&rsquo;ve verified on one public plan, their email is pre-filled when they visit another public plan (a
+          <strong>Cross-plan convenience:</strong> If they&rsquo;ve verified on one plan, their email is pre-filled when they visit another plan via share link (a
           new code is still required).
         </Bullet>
         <Bullet>
-          <strong>Not available for:</strong> Chums-only or Invite-only plans. Those require an account or an invite link.
+          <strong>Share links work for any plan:</strong> Share links carry a signed token, so they work for <strong>public</strong>, <strong>chums-only</strong>,
+          and <strong>invite-only</strong> plans alike. Without a share or invite token, non-public plans show only the public preview.
         </Bullet>
       </CollapsibleSection>
 

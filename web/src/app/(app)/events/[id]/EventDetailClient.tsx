@@ -96,6 +96,8 @@ type EventDetail = {
   guestInvite?: boolean;
   guestEmail?: string;
   guestRsvpStatus?: string | null;
+  goingCount?: number;
+  maybeCount?: number;
   // Attendance assurance
   minConfirmedAttendees: number | null;
   fallbackPolicy: string | null;
@@ -136,6 +138,8 @@ type JoinRequest = {
   handle: string | null;
   avatarUrl: string | null;
 };
+
+type PlanAccessState = "public" | "invite" | "authenticated" | "attending";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const WS_RECONNECT_BASE = 2_000;
@@ -181,6 +185,7 @@ export default function EventDetailClient() {
   const eventId = params.id as string;
 
   const [event, setEvent] = useState<EventDetail | null>(null);
+  const [accessState, setAccessState] = useState<PlanAccessState>("public");
   const [rsvps, setRsvps] = useState<RsvpEntry[]>([]);
   const [altTimes, setAltTimes] = useState<AltTimeEntry[]>([]);
   const [invites, setInvites] = useState<InviteEntry[]>([]);
@@ -238,14 +243,18 @@ export default function EventDetailClient() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
-  // Copy link
+  // Share token from API response — used by Copy Link to build share-access URLs
+  const [shareToken, setShareToken] = useState<string | null>(null);
+
+  // Copy link — builds a share URL with the share token so recipients get
+  // guest access (not just the public preview).
   const handleCopyLink = useCallback(async () => {
-    const url = window.location.href;
+    const base = `${window.location.origin}/events/${eventId}`;
+    const url = shareToken ? `${base}?share_token=${encodeURIComponent(shareToken)}` : base;
     try {
       if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(url);
       } else {
-        // Fallback for environments without Clipboard API
         const el = document.createElement("textarea");
         el.value = url;
         el.style.cssText = "position:fixed;top:-9999px;left:-9999px";
@@ -258,7 +267,7 @@ export default function EventDetailClient() {
     } catch {
       toast.error("Could not copy link — please copy it from your browser's address bar");
     }
-  }, [toast]);
+  }, [eventId, shareToken, toast]);
 
   // Lock state
   const [lockToggling, setLockToggling] = useState(false);
@@ -359,6 +368,8 @@ export default function EventDetailClient() {
 
   const applyEventData = useCallback((data: {
     ok: boolean;
+    accessState?: PlanAccessState;
+    shareToken?: string;
     viewerUserId?: string | null;
     event: EventDetail;
     rsvps: RsvpEntry[];
@@ -367,6 +378,8 @@ export default function EventDetailClient() {
     joinRequests: JoinRequest[];
   }) => {
     setEvent(data.event);
+    if (data.accessState) setAccessState(data.accessState);
+    if (data.shareToken) setShareToken(data.shareToken);
     setRsvps(data.rsvps);
     setAltTimes(data.altTimes);
     setInvites(data.invites ?? []);
@@ -374,13 +387,17 @@ export default function EventDetailClient() {
     if (data.viewerUserId) setViewerUserId(data.viewerUserId);
   }, []);
 
+  const buildTokenSuffix = useCallback(() => {
+    const tok = inviteTokenRef.current ?? participationTokenRef.current ?? shareTokenRef.current;
+    if (!tok) return "";
+    const key = inviteTokenRef.current ? "invite_token" : participationTokenRef.current ? "participation_token" : "share_token";
+    return `?${key}=${encodeURIComponent(tok)}`;
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const tok = inviteTokenRef.current ?? participationTokenRef.current;
-      const tokenKey = inviteTokenRef.current ? "invite_token" : "participation_token";
-      const tokenSuffix = tok ? `?${tokenKey}=${encodeURIComponent(tok)}` : "";
-      const res = await apiFetch(`/events/${eventId}${tokenSuffix}`, { auth: true });
+      const res = await apiFetch(`/events/${eventId}${buildTokenSuffix()}`, { auth: true });
       if (!res.ok) {
         setError("Plan not found");
         setLoading(false);
@@ -392,20 +409,17 @@ export default function EventDetailClient() {
       setError("Failed to load plan");
     }
     setLoading(false);
-  }, [eventId, applyEventData]);
+  }, [eventId, applyEventData, buildTokenSuffix]);
 
   const refresh = useCallback(async () => {
     try {
-      const tok = inviteTokenRef.current ?? participationTokenRef.current;
-      const tokenKey = inviteTokenRef.current ? "invite_token" : "participation_token";
-      const tokenSuffix = tok ? `?${tokenKey}=${encodeURIComponent(tok)}` : "";
-      const res = await apiFetch(`/events/${eventId}${tokenSuffix}`, { auth: true });
+      const res = await apiFetch(`/events/${eventId}${buildTokenSuffix()}`, { auth: true });
       if (res.ok) {
         const data = await res.json();
         applyEventData(data);
       }
     } catch { /* silent */ }
-  }, [eventId, applyEventData]);
+  }, [eventId, applyEventData, buildTokenSuffix]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -413,6 +427,9 @@ export default function EventDetailClient() {
   // can re-RSVP and access invite-only events without auth.
   // Initialized from URL so the first data fetch includes it.
   const inviteTokenRef = useRef<string | null>(searchParams.get("invite_token"));
+
+  // Share token — from Copy Link share URLs. Grants guest access without an invite.
+  const shareTokenRef = useRef<string | null>(searchParams.get("share_token"));
 
   // Email link context hint (?context=host_review or ?context=request_approved)
   const [emailContext, setEmailContext] = useState<string | null>(null);
@@ -423,10 +440,12 @@ export default function EventDetailClient() {
   useEffect(() => {
     const rsvpParam = searchParams.get("rsvp");
     const inviteTokenParam = searchParams.get("invite_token");
+    const shareTokenParam = searchParams.get("share_token");
     const contextParam = searchParams.get("context");
     const confirmParam = searchParams.get("confirm");
     const confirmTokenParam = searchParams.get("confirm_token");
     if (inviteTokenParam) inviteTokenRef.current = inviteTokenParam;
+    if (shareTokenParam) shareTokenRef.current = shareTokenParam;
     if (rsvpParam && VALID_RSVP_PARAMS.includes(rsvpParam as typeof VALID_RSVP_PARAMS[number])) {
       pendingRsvpRef.current = rsvpParam;
     }
@@ -434,10 +453,11 @@ export default function EventDetailClient() {
       pendingConfirmRef.current = { action: confirmParam === "yes" ? "confirm" : "decline", token: confirmTokenParam };
     }
     if (contextParam) setEmailContext(contextParam);
-    if (rsvpParam || inviteTokenParam || contextParam || confirmParam || confirmTokenParam) {
+    if (rsvpParam || inviteTokenParam || shareTokenParam || contextParam || confirmParam || confirmTokenParam) {
       const url = new URL(window.location.href);
       url.searchParams.delete("rsvp");
       url.searchParams.delete("invite_token");
+      url.searchParams.delete("share_token");
       url.searchParams.delete("context");
       url.searchParams.delete("confirm");
       url.searchParams.delete("confirm_token");
@@ -885,10 +905,12 @@ export default function EventDetailClient() {
     setPubSubmitting(true);
     setPubError(null);
     try {
+      const reqBody: Record<string, string> = { email };
+      if (shareTokenRef.current) reqBody.share_token = shareTokenRef.current;
       const res = await apiFetch(`/events/${eventId}/public-rsvp/request-code`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify(reqBody),
       });
       const data = (await res.json()) as { ok: boolean; challenge?: string; existing_account?: boolean; error?: string; message?: string };
       if (!data.ok) { setPubError(data.message ?? "Something went wrong"); setPubSubmitting(false); return; }
@@ -1362,6 +1384,134 @@ export default function EventDetailClient() {
         <Button onClick={() => router.push("/plans")} startIcon={<ArrowBackRoundedIcon />}>
           Back to Your Plans
         </Button>
+      </Stack>
+    );
+  }
+
+  // --- Public access view ---
+  // Limited preview for anonymous visitors with no invite/participation token.
+  if (accessState === "public") {
+    const pubGoingCount = event.goingCount ?? 0;
+    const pubMaybeCount = event.maybeCount ?? 0;
+    const pubIsCanceled = event.status === "canceled";
+    const pubIsPast = new Date(event.startsAt) < new Date();
+    const pubBannerUrl = event.bannerKey
+      ? `${getMediaApiBaseUrl()}/events/${event.id}/banner?v=${Date.now()}`
+      : null;
+    const pubHobbies = event.hobbies?.length > 0
+      ? event.hobbies
+      : event.hobby ? [{ name: event.hobby, slug: event.hobbySlug ?? "" }] : [];
+
+    const pubLocationDisplay =
+      event.locationDisplay ??
+      (event.locationType === "online" ? "Online" : "TBD");
+
+    return (
+      <Stack spacing={{ xs: 3, sm: 4 }}>
+        {pubBannerUrl && (
+          <Box sx={{ width: "100%", height: { xs: 160, sm: 220 }, borderRadius: 3, overflow: "hidden", bgcolor: "grey.100" }}>
+            <Box component="img" src={pubBannerUrl} alt={`${event.title} banner`} sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          </Box>
+        )}
+
+        <Box>
+          {pubHobbies.length > 0 && (
+            <Stack direction="row" alignItems="center" flexWrap="wrap" useFlexGap sx={{ mb: 1, gap: 0.75 }}>
+              {pubHobbies.map((h) => (
+                <Chip key={h.slug} label={h.name} size="small" variant="outlined" sx={{ borderRadius: 2, fontWeight: 500, fontSize: "0.8rem" }} />
+              ))}
+            </Stack>
+          )}
+          <Typography variant="h4" fontWeight={700} sx={{ mb: 0.5 }}>
+            {event.title}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Hosted by {event.hostName}
+          </Typography>
+        </Box>
+
+        {pubIsCanceled && (
+          <Paper variant="outlined" sx={{ p: 2, borderColor: "error.main", borderRadius: 2.5, bgcolor: "error.50" }}>
+            <Typography variant="subtitle2" color="error.main" fontWeight={600}>
+              This plan has been canceled
+            </Typography>
+          </Paper>
+        )}
+
+        <AppCard>
+          <Stack spacing={2}>
+            <Stack direction="row" spacing={1.5} alignItems="center">
+              <AccessTimeRoundedIcon sx={{ color: "text.secondary", fontSize: 20 }} />
+              <Typography variant="body1">{formatDateTime(event.startsAt)}</Typography>
+            </Stack>
+            {event.locationType === "in_person" && (
+              <Stack direction="row" spacing={1.5} alignItems="center">
+                <PlaceRoundedIcon sx={{ color: "text.secondary", fontSize: 20 }} />
+                <Box>
+                  <Typography variant="body1">{pubLocationDisplay}</Typography>
+                  {event.locationArea && (
+                    <Typography variant="caption" color="text.secondary">
+                      Approximate area shown — sign in to see exact address
+                    </Typography>
+                  )}
+                </Box>
+              </Stack>
+            )}
+            {event.locationType === "online" && (
+              <Stack direction="row" spacing={1.5} alignItems="center">
+                <LinkRoundedIcon sx={{ color: "text.secondary", fontSize: 20 }} />
+                <Typography variant="body1">Online</Typography>
+              </Stack>
+            )}
+            <Stack direction="row" spacing={1.5} alignItems="center">
+              <PeopleOutlineRoundedIcon sx={{ color: "text.secondary", fontSize: 20 }} />
+              <Typography variant="body1">
+                {pubGoingCount} going{pubMaybeCount > 0 ? ` · ${pubMaybeCount} maybe` : ""}
+                {event.maxSeats != null ? ` · ${event.maxSeats} max` : ""}
+              </Typography>
+            </Stack>
+          </Stack>
+        </AppCard>
+
+        {event.description && (
+          <AppCard>
+            <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>About this plan</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: "pre-line", lineHeight: 1.7 }}>
+              {event.description}
+            </Typography>
+          </AppCard>
+        )}
+
+        {!pubIsCanceled && !pubIsPast && (
+          <AppCard>
+            <Stack spacing={2} sx={{ py: 1 }}>
+              <Typography variant="h6" fontWeight={600}>
+                Interested in this plan?
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+                Sign in or create a free account to RSVP, chat with attendees, and get updates.
+              </Typography>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                <Button
+                  component={Link}
+                  href={`/login?next=${encodeURIComponent(`/events/${eventId}`)}`}
+                  variant="contained"
+                  sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
+                >
+                  Sign in
+                </Button>
+                <Button
+                  component={Link}
+                  href={`/signup?next=${encodeURIComponent(`/events/${eventId}`)}`}
+                  variant="outlined"
+                  sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5 }}
+                >
+                  Create an account
+                </Button>
+              </Stack>
+            </Stack>
+          </AppCard>
+        )}
       </Stack>
     );
   }

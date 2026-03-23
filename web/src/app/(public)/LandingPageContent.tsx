@@ -26,6 +26,7 @@ import EventAvailableRoundedIcon from "@mui/icons-material/EventAvailableRounded
 import MailOutlineRoundedIcon from "@mui/icons-material/MailOutlineRounded";
 import ThumbUpAltRoundedIcon from "@mui/icons-material/ThumbUpAltRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
+import PublicExploreFeed from "@/components/landing/PublicExploreFeed";
 
 /**
  * Full public homepage content for logged-out visitors.
@@ -416,6 +417,9 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
 
         </Grid>
       </Box>
+
+      {/* ── Section 1.1: Public Explore Feed ── */}
+      {!isLoggedIn && <PublicExploreFeed />}
 
       {/* ── Section 1.5: Brand / Positioning ── */}
       <Box

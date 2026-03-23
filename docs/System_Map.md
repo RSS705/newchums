@@ -91,7 +91,7 @@ The following flows run in the API worker; the web app calls the API via `NEXT_P
 | Chums | `GET /chums`, `GET /chums/search`, `GET /chums/check/:userId`, `POST /chums/:userId`, `DELETE /chums/:userId`, `PATCH /chums/:userId/note` | Bearer JWT |
 | Chum invites | `POST /chums/invite`, `POST /chums/invite/accept` | Bearer JWT |
 | Public Chums | `GET /public/users/:handle/chums` | none |
-| Events (plans) | `POST /events`, `GET /events/mine`, `GET /events/:id`, `GET /events/explore`, `PATCH /events/:id`, `POST /events/:id/rsvp`, `POST /events/:id/alt-time`, `POST /events/:id/cancel`, `POST /events/:id/invite`, `POST /events/:id/confirm`, `POST /events/:id/email-confirm` | Bearer JWT |
+| Events (plans) | `POST /events`, `GET /events/mine`, `GET /events/:id` (optional auth — returns `accessState` + `shareToken`), `GET /events/explore` (auth), `GET /events/explore/public` (no auth), `PATCH /events/:id`, `POST /events/:id/rsvp`, `POST /events/:id/alt-time`, `POST /events/:id/cancel`, `POST /events/:id/invite`, `POST /events/:id/confirm`, `POST /events/:id/email-confirm` | Bearer JWT (detail: optional; accepts `invite_token` / `participation_token` / `share_token`); explore/public: no auth |
 | Attendance record | `GET /public/users/:userId/attendance-record` | none |
 | Plan chat | `GET /events/:id/chat`, `POST /events/:id/chat`, `POST /events/:id/chat/read`, `GET /events/:id/chat/ws` (WebSocket upgrade) | Bearer JWT |
 | Plan lock | `POST /events/:id/lock` | Bearer JWT (host only) |
@@ -144,6 +144,8 @@ The hourly cron runs attendance assurance, then unread-chat digest (daily gate),
 
 ```
 Visit newchums.com → Homepage (LandingLayout)
+├── Public Explore feed — browse real public plans (search, time filter, pagination)
+│   └── Click plan → Public plan details (limited preview, no RSVP)
 ├── Browse: How it Works, Science of Friendship, Safety Center
 ├── Contact form
 ├── Sign up (multi-step: credentials + legal acceptance → username/DOB → hobbies → location) → Email verification → Dashboard
@@ -164,11 +166,29 @@ Sign in → Explore (event discovery feed)
 └── Notifications (bell) → View / mark read
 ```
 
-### Incomplete flows (partially built)
+### Plan access state flow
 
-| Flow | What exists | What's missing |
-|------|------------|----------------|
-| Event detail | Context-aware RSVP, attendee list, cancel, alt-time suggestions with best-start-times, host edit dialog, participant chat (real-time via WebSocket), host lock/unlock, attendance assurance confirmation, plan-change notifications | Public sharing page for non-users |
+Every `GET /events/:id` request resolves to one of four access states based on the viewer's identity and context:
+
+```
+Visit /events/[id]
+├── No auth, no token → accessState: "public"
+│   └── Limited preview (title, description, date, hobby, host, counts, approximate location)
+│       └── CTA: Sign in / Create account
+│       └── No email RSVP flow
+├── ?share_token=xxx (Copy Link) → accessState: "invite"
+│   └── Full detail + email RSVP flow (email verification → participation token → RSVP)
+├── ?invite_token=xxx (invite email) → accessState: "invite"
+│   └── Full detail + guest RSVP buttons
+├── ?participation_token=xxx (returning guest) → accessState: "invite"
+│   └── Full detail + existing guest RSVP state
+├── Logged in, not attending → accessState: "authenticated"
+│   └── Full detail, can RSVP or request to join
+└── Logged in + host or RSVP → accessState: "attending"
+    └── Full detail + chat, host controls, exact location
+```
+
+**Share link flow:** Copy Link → generates `/events/[id]?share_token=xxx` → recipient opens link → API validates token → `accessState: "invite"` → email RSVP flow available. Without a valid token, plain `/events/[id]` shows public preview only.
 
 ---
 
@@ -213,7 +233,7 @@ Wrangler config is code-managed so deploys do not wipe routes or override canoni
 
 | Route | Purpose |
 |-------|---------|
-| `/` (logged out) | Homepage — hero, discovery section, feature blocks, CTA |
+| `/` (logged out) | Homepage — hero, public Explore feed (real public plans via `/events/explore/public`), brand positioning, feature blocks, CTA |
 | `/how-it-works` | How it works |
 | `/science-of-friendship` | Research-backed trust page |
 | `/safety-center` | Community safety guidance |
@@ -225,6 +245,7 @@ Wrangler config is code-managed so deploys do not wipe routes or override canoni
 | `/auth/verify` | Email verification landing |
 | `/auth/verify-pending` | Verification pending polling page |
 | `/u/[handle]` | Public profile (works logged-in or out) |
+| `/events/[id]` (logged out) | Plan detail — public preview with limited info and sign-in CTA |
 | `/terms` | Terms of Use |
 | `/privacy` | Privacy Policy |
 
@@ -235,7 +256,7 @@ Wrangler config is code-managed so deploys do not wipe routes or override canoni
 | `/` (logged in) | Explore — event discovery feed |
 | `/events/create` | Start a plan (create event) |
 | `/plans` | Your Plans — upcoming / past tabs |
-| `/events/[id]` | Event detail — RSVP, attendees, chat, lock, cancel |
+| `/events/[id]` | Event detail — full experience with RSVP, attendees, chat, lock, cancel (access state: authenticated/attending) |
 | `/chum-groups` | Your Chums — search, invite, list |
 | `/profile` | Edit profile |
 | `/settings` | Notifications, privacy, account |

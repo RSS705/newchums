@@ -431,7 +431,7 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 |-------|-------------|
 | `POST /events` | Create event. Validates title, starts_at, location_type, visibility. Accepts `invitees[]` array of `{ user_id?, email? }`, `require_reconfirmation`, `require_approval`, and `allow_attendee_invites` (default true) booleans. Published events send invite notifications and emails. |
 | `GET /events/mine?filter=upcoming\|past` | List events the user hosts, is invited to, or has RSVP'd. Includes going/maybe counts, host info, RSVP status, `has_unread_chat` flag. Host name uses `@username` priority. |
-| `GET /events/:id` | Event detail with RSVP list, alternate time suggestions, join requests, and attendance assurance state. Includes `requireReconfirmation`, `lockedAt`, `requireApproval`, `isInvited`, `hasRsvp`, `confirmationWindowOpen`, `confirmationCutoffAt`, `confirmedCount`, `pendingConfirmationCount`, `myConfirmationStatus`, `planViability`, and per-RSVP `confirmationStatus`. Join requests: full list for host, own request only for non-hosts. RSVP entries include `handle` for attendee profile links. Visibility enforcement: invite_only requires invite/RSVP, chums_only requires chum relationship or invite. |
+| `GET /events/:id` | Event detail with RSVP list, alternate time suggestions, join requests, and attendance assurance state. Optional auth. Accepts query params: `invite_token`, `participation_token`, `share_token`. Returns `accessState` (`public` \| `invite` \| `authenticated` \| `attending`) and `shareToken` (for non-public states). Public access returns limited preview (counts only, no individual RSVPs). Full response includes `requireReconfirmation`, `lockedAt`, `requireApproval`, `isInvited`, `hasRsvp`, `confirmationWindowOpen`, `confirmationCutoffAt`, `confirmedCount`, `pendingConfirmationCount`, `myConfirmationStatus`, `planViability`, and per-RSVP `confirmationStatus`. Join requests: full list for host, own request only for non-hosts. |
 | `PATCH /events/:id` | Edit event (host only). Accepts: `title`, `description`, `starts_at`, `max_seats`, `visibility`, `require_reconfirmation`, `require_approval`. Returns the updated event. |
 | `POST /events/:id/rsvp` | RSVP to an event — `{ status: "going"\|"maybe"\|"cant_make_it", note? }`. Capacity enforcement for going status. Locked plans reject new RSVPs (`EVENT_LOCKED` error) but allow existing participants to change status. Plans with `require_approval` reject non-invited users who have no existing RSVP (`APPROVAL_REQUIRED` error). Notifies host via in-app notification and email. UI: "Can't make it" button only shown when user is invited or has an existing RSVP; heading text is context-aware ("Can you make it?" for invited users, "Are you in?" otherwise). |
 | `POST /events/:id/alt-time` | Suggest alternate time — `{ suggested_at, note? }`. Only if event.allow_alt_times. Notifies host. Auth required. |
@@ -439,6 +439,7 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 | `POST /events/:id/cancel` | Cancel event (host only). Notifies all attendees via in-app notification and email. |
 | `POST /events/:id/invite` | Add invitees to published event. Host can always invite; Going attendees can invite when `allow_attendee_invites` is true. Accepts optional `suggest_time: true` to include a "suggest a better time" note in the invite email (only when `allow_alt_times` is enabled). `invited_by` column tracks who sent each invite. Sends notifications and invite emails with inviter's display name. |
 | `POST /events/:id/toggle-attendee-invites` | Toggle `allow_attendee_invites` (host only). Returns updated value. |
+| `GET /events/explore/public` | Public discovery feed for anonymous visitors. No authentication required. Only returns `visibility = 'public'` events. Privacy-safe: approximate location only (`location_area`), no exact addresses, no online links, no user-specific fields (`isHost` always false, `myRsvpStatus` always null, no `distanceKm`). Supports: `time_range`, `q` (text search), `sort` (upcoming/newest), `limit`/`offset`. |
 | `GET /events/explore` | Personalized discovery feed for logged-in users. Supports: `lat`/`lng`/`radius_km` (location), `hobby` (slug), `time_range` (this_week/this_weekend/next_30/all), `q` (text search), `sort` (upcoming/newest), `personalize` (0/1 — hobby-based ranking boost). Applies visibility rules (public + chums_only for the user's chums). Distance computed via Haversine. Prioritizes host's own events, then hobby matches (when personalized), then distance/time. |
 | `GET /events/:id/chat` | Fetch chat messages and user's `lastReadAt` for a plan. Access: host or `going` RSVP only. |
 | `POST /events/:id/chat` | Send a chat message. Body: `{ body: string }`. Inserts into DB, then broadcasts to the ChatRoom Durable Object for real-time delivery. Access: host or `going` RSVP only. |
@@ -450,15 +451,54 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 | `POST /events/:id/join-request` | Submit a join request (requires `require_approval` to be on). Body: `{ message? }`. Validates not-host, not-invited, not-already-RSVP'd, no duplicate pending request. Notifies host via in-app notification and email (template 43906440). |
 | `POST /events/:id/join-request/:requestId/approve` | Approve a join request (host only). Body: `{ message? }`. Checks seat capacity. Marks request approved, adds user as Going RSVP. Notifies requester via in-app notification and email (template 43906609). |
 | `POST /events/:id/join-request/:requestId/decline` | Decline a join request (host only). Body: `{ message? }`. Marks request declined. Notifies requester via in-app notification and email (template 43906703). |
-| `POST /events/:id/public-rsvp/request-code` | Public plan share-link verification. Body: `{ email }`. If email belongs to existing account, returns `{ existing_account: true }`. Otherwise sends 6-digit code via Postmark template 44041128 and returns `{ challenge }` (JWT, 10-min expiry). Public plans only. |
+| `POST /events/:id/public-rsvp/request-code` | Share-link email verification. Body: `{ email, share_token? }`. If email belongs to existing account, returns `{ existing_account: true }`. Otherwise sends 6-digit code via Postmark template 44041128 and returns `{ challenge }` (JWT, 10-min expiry). Without a valid `share_token`, requires the plan to have public visibility; with a valid share token, works for any published plan. |
 | `POST /events/:id/public-rsvp/confirm-code` | Verify the 6-digit code. Body: `{ challenge, code, name? }`. On success returns `{ token }` — a participation token (JWT, 30-day expiry, purpose `public_rsvp`). |
 
-**Important: Hono route ordering** — `GET /events/explore` must be registered **before** `GET /events/:id` in the route table. Otherwise, Hono interprets "explore" as a UUID `:id`, resulting in a database error.
+**Important: Hono route ordering** — `GET /events/explore/public` and `GET /events/explore` must be registered **before** `GET /events/:id` in the route table. Otherwise, Hono interprets "explore" as a UUID `:id`, resulting in a database error.
 
 **Visibility enforcement:**
-- `invite_only`: only host, invited users, and RSVP'd users can view
-- `chums_only`: host, their chums, invited users, and RSVP'd users can view
-- `public`: any authenticated user can view
+- Visibility controls **discoverability** (explore feed, digests), **not** direct URL access.
+- Anyone with the plan URL can view published plans (draft plans remain host-only).
+- `invite_only`: excluded from explore feed and digests
+- `chums_only`: shown in explore/digests only to the host's chums
+- `public`: shown in explore feed and digests to all eligible users
+
+**Plan Access States:**
+
+Every request to `GET /events/:id` resolves to one of four access states. The access state determines what data is returned and how the frontend renders the experience. The API includes `accessState` in every response.
+
+| State | Condition | Data scope |
+|-------|-----------|------------|
+| **`attending`** | Logged in + host or has RSVP | Full detail: RSVPs, invites, alt-times, join requests, chat access, exact location (per `location_visibility`), attendance assurance, host controls |
+| **`authenticated`** | Logged in, not attending | Full detail minus host-only controls. Own join request only. Can RSVP or request to join. |
+| **`invite`** | Valid `invite_token`, `participation_token`, or `share_token`, not logged in | Full detail with guest hints (`guestInvite`, `guestEmail`, `guestRsvpStatus`). Guest RSVP via email verification flow. |
+| **`public`** | No auth, no token | Limited preview: title, description, date, hobby, host name, location (approximate only), attendee counts (going/maybe, no individual RSVPs). No RSVP flow. CTA to sign in or create account. |
+
+**Precedence:** `attending` > `authenticated` > `invite` > `public`. A logged-in user with an invite token who is already attending resolves to `attending`.
+
+**Share tokens (plan-level access links):**
+
+Share tokens are plan-level JWTs (`purpose: "share"`) that grant guest access to a plan's full detail view and the email RSVP flow. Unlike invite tokens, share tokens are not user-specific and have no expiry.
+
+- Generated server-side via `createShareToken(eventId, secret)`.
+- Included in `GET /events/:id` responses for non-public access states as `shareToken`.
+- The **Copy Link** button builds the share URL as `/events/[id]?share_token=xxx`.
+- The `share_token` query param is verified by `verifyParticipationOrInviteToken` (same verifier as invite/participation tokens).
+- The `public-rsvp/request-code` endpoint accepts an optional `share_token` body param to allow the email RSVP flow on non-public-visibility plans.
+
+**URL distinction (public vs share):**
+- Plain URL `/events/[id]` → `accessState: "public"` → limited preview, no RSVP.
+- Share URL `/events/[id]?share_token=xxx` → `accessState: "invite"` → full detail with guest RSVP.
+- Invite URL `/events/[id]?invite_token=xxx` → `accessState: "invite"` → full detail with guest RSVP.
+
+**Public access data restrictions:**
+- Individual RSVP entries are not returned (only aggregate counts)
+- Location is always approximate (no exact address, name, or coordinates)
+- Online links are not exposed
+- Invite list, join requests, and alt-time suggestions are empty
+- Attendance assurance fields are zeroed/null
+- `createdAt` timestamp is omitted
+- No `shareToken` is included (prevents share-link bootstrapping from public access)
 
 **Plan chat (real-time):**
 
@@ -544,6 +584,7 @@ All emails with a notification preference toggle include a tokenized unsubscribe
 
 | Route | Component | Description |
 |-------|-----------|-------------|
+| `/` (logged out) | `LandingPageContent` + `PublicExploreFeed` | Landing page with hero, brand positioning, features — includes an embedded public Explore feed showing real public plans via `GET /events/explore/public`. Search and time filtering. Signup/login CTAs. Clicking a plan navigates to the public plan details view. |
 | `/` (logged in) | `DashboardHome` | Explore page — personalized discovery feed with search, time chips, sort options (upcoming / newest), personalization toggle, distance/hobby filters, location-aware ordering, session state persistence via `localStorage`, location nudge, contextual empty states |
 | `/events/create` | `CreateEventClient` | "Start a plan" form — title, description, hobby, seats, date/time, location (in-person/online), visibility, invite people, gradient banner preset picker with auto-suggestion, attendance assurance config (enable/disable, min attendees, fallback policy), publish |
 | `/plans` | `PlansPage` | Tabbed view (Upcoming / Past) with hosted/joined sections, real API data, empty states |
@@ -575,7 +616,7 @@ Public profile section showing five reliability metrics computed from real event
 
 Uses `committed_at` on `event_rsvps` (migration 041) for accurate commitment tracking. New/low-history users see "Building history" treatment with underlying sample counts. Endpoint: `GET /public/users/:userId/attendance-record`.
 
-**Not yet implemented:** recurring events, public event sharing page (for non-users).
+**Not yet implemented:** recurring events.
 
 ### Signup and onboarding
 

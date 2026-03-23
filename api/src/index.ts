@@ -1663,7 +1663,7 @@ async function createParticipationToken(
     .sign(new TextEncoder().encode(secret));
 }
 
-/** Verify a token with purpose "invite_rsvp" or "public_rsvp". */
+/** Verify a token with purpose "invite_rsvp", "public_rsvp", or "share". */
 function verifyParticipationOrInviteToken(
   token: string,
   secret: string,
@@ -1671,7 +1671,7 @@ function verifyParticipationOrInviteToken(
   return jwtVerify(token, new TextEncoder().encode(secret))
     .then(({ payload }) => {
       const purpose = payload.purpose as string | undefined;
-      if (purpose !== "invite_rsvp" && purpose !== "public_rsvp") return null;
+      if (purpose !== "invite_rsvp" && purpose !== "public_rsvp" && purpose !== "share") return null;
       const eventId = payload.eid as string | undefined;
       if (!eventId) return null;
       return {
@@ -1683,6 +1683,16 @@ function verifyParticipationOrInviteToken(
       };
     })
     .catch(() => null);
+}
+
+// Share tokens — plan-level tokens for Copy Link / share URLs.
+// Not user-specific; anyone with the token can view the full plan detail
+// and use the public RSVP flow. Deterministic per event (no expiry).
+async function createShareToken(eventId: string, secret: string): Promise<string> {
+  return new SignJWT({ eid: eventId, purpose: "share" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .sign(new TextEncoder().encode(secret));
 }
 
 function generateSixDigitCode(): string {
@@ -5305,6 +5315,121 @@ app.get("/events/mine", async (c) => {
   }
 });
 
+/** GET /events/explore/public — public event discovery feed for anonymous visitors.
+ *  No auth required. Only returns public-visibility events with privacy-safe data. */
+app.get("/events/explore/public", async (c) => {
+  const sql = getSql(c.env);
+
+  const hobbySlug = c.req.query("hobby") ?? null;
+  const search = c.req.query("q")?.trim() ?? null;
+  const pageLimit = Math.min(Math.max(Number(c.req.query("limit") ?? 12), 1), 50);
+  const pageOffset = Math.max(Number(c.req.query("offset") ?? 0), 0);
+  const sortParam = c.req.query("sort") ?? "upcoming";
+
+  const timeRange = c.req.query("time_range") ?? "all";
+  const now = new Date();
+  let dateEnd: Date | null = null;
+  if (timeRange === "this_week") {
+    dateEnd = new Date(now);
+    dateEnd.setDate(dateEnd.getDate() + (7 - dateEnd.getDay()));
+    dateEnd.setHours(23, 59, 59, 999);
+  } else if (timeRange === "this_weekend") {
+    dateEnd = new Date(now);
+    const dayOfWeek = dateEnd.getDay();
+    const daysToSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
+    dateEnd.setDate(dateEnd.getDate() + daysToSunday);
+    dateEnd.setHours(23, 59, 59, 999);
+  } else if (timeRange === "next_30") {
+    dateEnd = new Date(now);
+    dateEnd.setDate(dateEnd.getDate() + 30);
+  }
+
+  const sortByNewest = sortParam === "newest";
+  const orderClause = sortByNewest
+    ? sql`e.created_at DESC, e.starts_at ASC`
+    : sql`e.starts_at ASC`;
+
+  try {
+    const rows = (await sql`
+      SELECT
+        e.id, e.title, e.description, e.starts_at, e.location_type,
+        e.location_area, e.online_link,
+        e.max_seats, e.visibility, e.status, e.banner_key,
+        COALESCE(
+          (SELECT json_agg(json_build_object('name', ii.name, 'slug', ii.slug))
+           FROM newchums.event_interests ei2
+           JOIN newchums.interests ii ON ii.id = ei2.interest_id
+           WHERE ei2.event_id = e.id AND ii.is_deleted = false),
+          '[]'::json
+        ) AS hobbies,
+        i.name AS interest_name, i.slug AS interest_slug,
+        h.name AS host_name, h.username AS host_username,
+        (SELECT COUNT(*)::int FROM newchums.event_rsvps er WHERE er.event_id = e.id AND er.status = 'going') AS going_count,
+        (SELECT COUNT(*)::int FROM newchums.event_rsvps er WHERE er.event_id = e.id AND er.status = 'maybe') AS maybe_count
+      FROM newchums.events e
+      LEFT JOIN newchums.interests i ON i.id = e.interest_id
+      LEFT JOIN newchums.users h ON h.id = e.host_user_id
+      WHERE e.status = 'published'
+        AND e.starts_at >= ${now.toISOString()}
+        AND e.visibility = 'public'
+        ${hobbySlug ? sql`AND EXISTS (SELECT 1 FROM newchums.event_interests ei3 JOIN newchums.interests ii3 ON ii3.id = ei3.interest_id WHERE ei3.event_id = e.id AND ii3.slug = ${hobbySlug})` : sql``}
+        ${search ? sql`AND (e.title ILIKE ${"%" + search + "%"} OR e.description ILIKE ${"%" + search + "%"})` : sql``}
+        ${dateEnd ? sql`AND e.starts_at <= ${dateEnd.toISOString()}` : sql``}
+      ORDER BY ${orderClause}
+      LIMIT ${pageLimit + 1} OFFSET ${pageOffset}
+    `) as Array<{
+      id: string; title: string; description: string | null; starts_at: string;
+      location_type: string; location_area: string | null; online_link: string | null;
+      max_seats: number | null; visibility: string; status: string; banner_key: string | null;
+      hobbies: Array<{ name: string; slug: string }> | string;
+      interest_name: string | null; interest_slug: string | null;
+      host_name: string | null; host_username: string | null;
+      going_count: number; maybe_count: number;
+    }>;
+
+    const allMapped = rows.map((r) => {
+      const parsedHobbies = typeof r.hobbies === "string" ? JSON.parse(r.hobbies) : (r.hobbies ?? []);
+      const hobbyList = Array.isArray(parsedHobbies) && parsedHobbies.length > 0
+        ? parsedHobbies as Array<{ name: string; slug: string }>
+        : r.interest_name ? [{ name: r.interest_name, slug: r.interest_slug ?? "" }] : [];
+      const locationDisplay =
+        r.location_type === "online" ? "Online"
+          : r.location_area || "General area";
+      return {
+        id: r.id,
+        title: r.title,
+        description: r.description,
+        startsAt: r.starts_at,
+        locationType: r.location_type,
+        locationDisplay,
+        locationName: null,
+        locationAddress: null,
+        onlineLink: null,
+        maxSeats: r.max_seats,
+        visibility: r.visibility,
+        status: r.status,
+        hobby: hobbyList[0]?.name ?? null,
+        hobbySlug: hobbyList[0]?.slug ?? null,
+        hobbies: hobbyList,
+        hostName: (() => { const u = r.host_username?.replace(/^@/, ""); return u ? `@${u}` : (r.host_name?.trim() || "Someone"); })(),
+        isHost: false,
+        myRsvpStatus: null,
+        goingCount: r.going_count,
+        maybeCount: r.maybe_count,
+        distanceKm: null,
+        bannerKey: r.banner_key ?? null,
+      };
+    });
+
+    const hasMore = allMapped.length > pageLimit;
+    const events = allMapped.slice(0, pageLimit);
+    return c.json({ ok: true, events, hasMore });
+  } catch (err) {
+    console.error("[GET /events/explore/public]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
 /** GET /events/explore — discoverable events for the logged-in user.
  *  MUST be registered before /events/:id to prevent "explore" being parsed as a UUID. */
 app.get("/events/explore", async (c) => {
@@ -5513,8 +5638,8 @@ app.get("/events/:id", async (c) => {
     userId = await ensureAppUserId(sql, authPayload.email, (authPayload as { name?: string | null }).name);
   }
 
-  // Token-based access for email invite recipients OR public RSVP participants (may not have an account)
-  const inviteTokenParam = c.req.query("invite_token") ?? c.req.query("participation_token") ?? null;
+  // Token-based access for email invite recipients, public RSVP participants, or share-link visitors
+  const inviteTokenParam = c.req.query("invite_token") ?? c.req.query("participation_token") ?? c.req.query("share_token") ?? null;
   let tokenGuestEmail: string | null = null;
   let tokenGrantsAccess = false;
   if (inviteTokenParam) {
@@ -5593,6 +5718,96 @@ app.get("/events/:id", async (c) => {
     // Visibility controls discoverability (explore feed, digests), not direct URL access.
     // Anyone with the plan URL can view it. Draft plans remain host-only (above).
 
+    // Hobbies — needed by both public and non-public response paths
+    const eventHobbies = (await sql`
+      SELECT ii.name, ii.slug
+      FROM newchums.event_interests ei2
+      JOIN newchums.interests ii ON ii.id = ei2.interest_id
+      WHERE ei2.event_id = ${eventId} AND ii.is_deleted = false
+      ORDER BY ei2.created_at ASC
+    `) as Array<{ name: string; slug: string }>;
+
+    const hobbyList = eventHobbies.length > 0
+      ? eventHobbies
+      : (event as Record<string, unknown>).interest_name
+        ? [{ name: (event as Record<string, unknown>).interest_name as string, slug: ((event as Record<string, unknown>).interest_slug as string) ?? "" }]
+        : [];
+
+    // --- Plan Access State ---
+    // Determines the viewer's access level for data scoping and frontend rendering.
+    const accessState: "public" | "invite" | "authenticated" | "attending" =
+      userId && (isHost || hasRsvp) ? "attending"
+        : userId ? "authenticated"
+          : tokenGrantsAccess ? "invite"
+            : "public";
+
+    // Public access: return a limited payload — basic plan info, attendee counts,
+    // approximate location only. No individual RSVPs, invites, alt-times, or join requests.
+    if (accessState === "public") {
+      const goingCount = ((await sql`SELECT COUNT(*) AS c FROM newchums.event_rsvps WHERE event_id = ${eventId} AND status = 'going'`) as Array<{ c: string }>)[0]?.c ?? "0";
+      const maybeCount = ((await sql`SELECT COUNT(*) AS c FROM newchums.event_rsvps WHERE event_id = ${eventId} AND status = 'maybe'`) as Array<{ c: string }>)[0]?.c ?? "0";
+
+      const pubLocArea = locArea || "General area";
+      const pubLocationDisplay =
+        event.location_type === "online" ? "Online"
+          : pubLocArea;
+
+      return c.json({
+        ok: true,
+        accessState: "public" as const,
+        viewerUserId: null,
+        event: {
+          id: event.id,
+          title: event.title,
+          description: event.description,
+          startsAt: event.starts_at,
+          locationType: event.location_type,
+          locationDisplay: pubLocationDisplay,
+          locationVisibility: locVis,
+          locationExact: false,
+          locationArea: event.location_type === "online" ? null : pubLocArea,
+          locationName: null,
+          locationAddress: null,
+          locationLat: null,
+          locationLng: null,
+          onlineLink: null,
+          maxSeats: event.max_seats,
+          visibility: event.visibility,
+          status: event.status,
+          allowAltTimes: event.allow_alt_times,
+          allowAttendeeInvites: false,
+          requireReconfirmation: false,
+          canceledAt: event.canceled_at,
+          bannerKey: event.banner_key ?? null,
+          hobby: hobbyList[0]?.name ?? null,
+          hobbySlug: hobbyList[0]?.slug ?? null,
+          hobbies: hobbyList,
+          hostName: (() => { const u = ((event as Record<string, unknown>).host_username as string)?.replace(/^@/, ""); return u ? `@${u}` : (((event as Record<string, unknown>).host_name as string)?.trim() || "Someone"); })(),
+          hostUserId: event.host_user_id,
+          isHost: false,
+          lockedAt: event.locked_at ?? null,
+          requireApproval: event.require_approval === true,
+          reserveSeats: false,
+          isInvited: false,
+          hasRsvp: false,
+          goingCount: Number(goingCount),
+          maybeCount: Number(maybeCount),
+          minConfirmedAttendees: null,
+          fallbackPolicy: null,
+          confirmationWindowOpen: false,
+          confirmationCutoffAt: null,
+          confirmedCount: 0,
+          pendingConfirmationCount: 0,
+          myConfirmationStatus: null,
+          planViability: null,
+        },
+        rsvps: [],
+        altTimes: [],
+        invites: [],
+        joinRequests: [],
+      });
+    }
+
     const rsvps = (await sql`
       SELECT er.status, er.note, er.user_id, er.guest_email, er.guest_name,
              u.name, u.username, u.avatar_key, u.avatar_updated_at
@@ -5609,20 +5824,6 @@ app.get("/events/:id", async (c) => {
       WHERE eat.event_id = ${eventId}
       ORDER BY eat.created_at ASC
     `) as Array<{ id: string; suggested_at: string; ends_at: string | null; note: string | null; user_id: string | null; guest_email: string | null; name: string | null; username: string | null }>;
-
-    const eventHobbies = (await sql`
-      SELECT ii.name, ii.slug
-      FROM newchums.event_interests ei2
-      JOIN newchums.interests ii ON ii.id = ei2.interest_id
-      WHERE ei2.event_id = ${eventId} AND ii.is_deleted = false
-      ORDER BY ei2.created_at ASC
-    `) as Array<{ name: string; slug: string }>;
-
-    const hobbyList = eventHobbies.length > 0
-      ? eventHobbies
-      : (event as Record<string, unknown>).interest_name
-        ? [{ name: (event as Record<string, unknown>).interest_name as string, slug: ((event as Record<string, unknown>).interest_slug as string) ?? "" }]
-        : [];
 
     const invites = (await sql`
       SELECT ei.user_id, ei.email, u.name, u.username
@@ -5714,8 +5915,14 @@ app.get("/events/:id", async (c) => {
     // Build confirmation lookup for enriching rsvps
     const confirmationByUserId = new Map(confirmations.map((c) => [c.user_id, c.status]));
 
+    // Generate a share token so the "Copy link" button produces URLs with access context.
+    // Only generated for non-public access states; public visitors don't get share tokens.
+    const shareToken = await createShareToken(eventId, c.env.NEXTAUTH_SECRET!);
+
     return c.json({
       ok: true,
+      accessState,
+      shareToken,
       viewerUserId: userId ?? null,
       event: {
         id: event.id,
@@ -6113,6 +6320,15 @@ app.post("/events/:id/public-rsvp/request-code", async (c) => {
   if (!rawEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail))
     return c.json({ ok: false, error: "VALIDATION", message: "Please enter a valid email address" }, 400);
 
+  // Validate share token if provided — allows the public RSVP flow for
+  // non-public-visibility plans when the user has a valid share link.
+  const shareTokenParam = typeof body.share_token === "string" ? body.share_token : null;
+  let hasShareAccess = false;
+  if (shareTokenParam) {
+    const decoded = await verifyParticipationOrInviteToken(shareTokenParam, c.env.NEXTAUTH_SECRET);
+    if (decoded && decoded.eventId === eventId) hasShareAccess = true;
+  }
+
   const sql = getSql(c.env);
 
   try {
@@ -6120,6 +6336,10 @@ app.post("/events/:id/public-rsvp/request-code", async (c) => {
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     const event = ev[0];
     if (event.status !== "published") return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+
+    // Without a valid share token, require the plan to have public visibility
+    if (!hasShareAccess && event.visibility !== "public")
+      return c.json({ ok: false, error: "NOT_FOUND" }, 404);
 
     const existingUser = (await sql`SELECT id FROM newchums.users WHERE email = ${rawEmail} LIMIT 1`) as { id: string }[];
     if (existingUser.length > 0) return c.json({ ok: true, existing_account: true });
