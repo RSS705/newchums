@@ -282,6 +282,51 @@ export default function AdminSystemLogicClient() {
         </Bullet>
       </CollapsibleSection>
 
+      <CollapsibleSection title="Post-plan feedback" subtitle="How attendees leave feedback after a plan ends">
+        <Typography variant="subtitle2" fontWeight={600} gutterBottom>
+          When does it appear?
+        </Typography>
+        <Bullet>
+          After a plan&rsquo;s start time has passed, a <strong>&ldquo;How did it go?&rdquo;</strong> section appears on the plan detail page for participants (host + going RSVPs).
+        </Bullet>
+        <Bullet>
+          A <strong>reminder email</strong> is sent ~3 hours after the plan start time (via the hourly cron). One email per plan, tracked by <code>feedback_email_sent_at</code>.
+        </Bullet>
+
+        <Typography variant="subtitle2" fontWeight={600} sx={{ mt: 2 }} gutterBottom>
+          What do users rate?
+        </Typography>
+        <Bullet>
+          For each attendee (excluding yourself): <strong>Reliability</strong>, <strong>Sociability</strong>, <strong>Presentation</strong>, <strong>Match Quality</strong> — each on a 3-point scale (Agree / Maybe / Disagree).
+        </Bullet>
+        <Bullet>
+          If the attendee is the host, an extra prompt: <strong>Hosting Skills</strong> (&ldquo;I&rsquo;d join their plans again&rdquo;).
+        </Bullet>
+        <Bullet>
+          All prompts are <strong>optional</strong>. Users can answer as many or as few as they like.
+        </Bullet>
+
+        <Typography variant="subtitle2" fontWeight={600} sx={{ mt: 2 }} gutterBottom>
+          Separate from normal feedback
+        </Typography>
+        <Bullet>
+          <strong>Attendance issues</strong> (no-show, cancelled too late, arrived very late) — reported separately via a dialog. This affects the <strong>reliability</strong> metric more directly.
+        </Bullet>
+        <Bullet>
+          <strong>Conduct / safety concerns</strong> (harassment, aggressive behavior, boundary issues, etc.) — reported separately via a dedicated dialog. These are confidential and treated distinctly from normal scoring.
+        </Bullet>
+
+        <Typography variant="subtitle2" fontWeight={600} sx={{ mt: 2 }} gutterBottom>
+          Privacy
+        </Typography>
+        <Bullet>
+          All feedback is <strong>private</strong>. Users never see individual ratings others have given them.
+        </Bullet>
+        <Bullet>
+          Hidden metrics (stored in <code>user_metrics</code>) aggregate feedback over time. These are <strong>not</strong> visible to users yet.
+        </Bullet>
+      </CollapsibleSection>
+
       <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, bgcolor: "action.hover", mt: 3 }}>
         <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.6 }}>
           Want endpoints, database names, or the exact email templates? That lives in the repo docs (e.g. Technical_Specs) — this page is just the friendly

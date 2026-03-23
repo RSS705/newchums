@@ -50,6 +50,8 @@ export type Bindings = {
   POSTMARK_TEMPLATE_EVENT_MATCH_DIGEST?: string;
   /** Postmark template ID for public RSVP email verification code (template 44041128) */
   POSTMARK_TEMPLATE_GUEST_VERIFY?: string;
+  /** Postmark template ID for post-plan feedback reminder (template 44091936) */
+  POSTMARK_TEMPLATE_PLAN_FEEDBACK?: string;
   SENTRY_DSN: string;
   APP_ENV?: string;
   ENVIRONMENT?: string;

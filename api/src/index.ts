@@ -36,6 +36,7 @@ import {
   sendPlanAutoCancelledEmail,
   sendPlanRemovedByAdminEmail,
   sendRoadmapUpdateEmail,
+  sendPlanFeedbackEmail,
 } from "./email/send";
 import { canAccessInternalTestRoute, notFound } from "./internalAccess";
 import { nameToSlug, slugToName, validateInterestName } from "./interests";
@@ -7979,6 +7980,219 @@ app.post("/events/:id/join-request/:requestId/withdraw", async (c) => {
   }
 });
 
+// ─── Plan Feedback ────────────────────────────────────────────────────────────
+
+const FEEDBACK_PROMPTS = ["reliability", "sociability", "presentation", "match_quality", "hosting_skills"] as const;
+const FEEDBACK_RESPONSES = ["agree", "maybe", "disagree"] as const;
+const ATTENDANCE_ISSUE_TYPES = ["no_show", "late_cancel", "very_late"] as const;
+const CONDUCT_REASONS = ["rude_aggressive", "harassment", "boundary_issue", "discriminatory", "unsafe_intoxicated", "disruptive", "property_damage", "other"] as const;
+
+/** GET /events/:id/feedback — existing feedback by this user for this plan + eligible attendees */
+app.get("/events/:id/feedback", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+  const eventId = c.req.param("id");
+
+  try {
+    const ev = (await sql`
+      SELECT host_user_id, starts_at, status FROM newchums.events WHERE id = ${eventId}
+    `) as { host_user_id: string; starts_at: string; status: string }[];
+    if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    if (new Date(ev[0].starts_at) > new Date())
+      return c.json({ ok: false, error: "NOT_PAST" }, 400);
+
+    const isHost = ev[0].host_user_id === userId;
+    const hasRsvp = (await sql`
+      SELECT 1 FROM newchums.event_rsvps WHERE event_id = ${eventId} AND user_id = ${userId} LIMIT 1
+    `).length > 0;
+    if (!isHost && !hasRsvp)
+      return c.json({ ok: false, error: "NOT_PARTICIPANT" }, 403);
+
+    const attendees = (await sql`
+      SELECT u.id, u.name, u.username
+      FROM newchums.event_rsvps er
+      JOIN newchums.users u ON u.id = er.user_id
+      WHERE er.event_id = ${eventId} AND er.status IN ('going', 'maybe')
+      UNION
+      SELECT u.id, u.name, u.username
+      FROM newchums.events e
+      JOIN newchums.users u ON u.id = e.host_user_id
+      WHERE e.id = ${eventId}
+    `) as { id: string; name: string | null; username: string | null }[];
+
+    const otherAttendees = attendees
+      .filter((a) => a.id !== userId)
+      .map((a) => ({
+        userId: a.id,
+        displayName: a.username ? `@${a.username.replace(/^@/, "")}` : (a.name?.trim() || "Someone"),
+        isHost: a.id === ev[0].host_user_id,
+      }));
+
+    const existing = (await sql`
+      SELECT reviewee_user_id, prompt, response
+      FROM newchums.plan_feedback
+      WHERE plan_id = ${eventId} AND reviewer_user_id = ${userId}
+    `) as { reviewee_user_id: string; prompt: string; response: string }[];
+
+    const existingIssues = (await sql`
+      SELECT reported_user_id, issue_type
+      FROM newchums.attendance_issues
+      WHERE plan_id = ${eventId} AND reporter_user_id = ${userId}
+    `) as { reported_user_id: string; issue_type: string }[];
+
+    return c.json({
+      ok: true,
+      attendees: otherAttendees,
+      feedback: existing,
+      attendanceIssues: existingIssues,
+    });
+  } catch (err) {
+    console.error("[GET /events/:id/feedback]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /events/:id/feedback — submit feedback for attendees */
+app.post("/events/:id/feedback", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+  const eventId = c.req.param("id");
+
+  const body = await c.req.json<{
+    entries: Array<{
+      revieweeUserId: string;
+      prompt: string;
+      response: string;
+    }>;
+  }>();
+
+  if (!Array.isArray(body.entries) || body.entries.length === 0)
+    return c.json({ ok: false, error: "EMPTY_ENTRIES" }, 400);
+
+  for (const entry of body.entries) {
+    if (!FEEDBACK_PROMPTS.includes(entry.prompt as typeof FEEDBACK_PROMPTS[number]))
+      return c.json({ ok: false, error: "INVALID_PROMPT", prompt: entry.prompt }, 400);
+    if (!FEEDBACK_RESPONSES.includes(entry.response as typeof FEEDBACK_RESPONSES[number]))
+      return c.json({ ok: false, error: "INVALID_RESPONSE", response: entry.response }, 400);
+    if (entry.revieweeUserId === userId)
+      return c.json({ ok: false, error: "CANNOT_RATE_SELF" }, 400);
+  }
+
+  try {
+    const ev = (await sql`
+      SELECT host_user_id, starts_at FROM newchums.events WHERE id = ${eventId}
+    `) as { host_user_id: string; starts_at: string }[];
+    if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    if (new Date(ev[0].starts_at) > new Date())
+      return c.json({ ok: false, error: "NOT_PAST" }, 400);
+
+    for (const entry of body.entries) {
+      if (entry.prompt === "hosting_skills" && entry.revieweeUserId !== ev[0].host_user_id)
+        return c.json({ ok: false, error: "HOSTING_SKILLS_HOST_ONLY" }, 400);
+
+      await sql`
+        INSERT INTO newchums.plan_feedback (plan_id, reviewer_user_id, reviewee_user_id, prompt, response)
+        VALUES (${eventId}, ${userId}, ${entry.revieweeUserId}, ${entry.prompt}, ${entry.response})
+        ON CONFLICT (plan_id, reviewer_user_id, reviewee_user_id, prompt)
+        DO UPDATE SET response = EXCLUDED.response, created_at = NOW()
+      `;
+    }
+
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[POST /events/:id/feedback]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /events/:id/attendance-issue — report an attendance issue */
+app.post("/events/:id/attendance-issue", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+  const eventId = c.req.param("id");
+
+  const body = await c.req.json<{
+    reportedUserId: string;
+    issueType: string;
+  }>();
+
+  if (!ATTENDANCE_ISSUE_TYPES.includes(body.issueType as typeof ATTENDANCE_ISSUE_TYPES[number]))
+    return c.json({ ok: false, error: "INVALID_ISSUE_TYPE" }, 400);
+  if (body.reportedUserId === userId)
+    return c.json({ ok: false, error: "CANNOT_REPORT_SELF" }, 400);
+
+  try {
+    const ev = (await sql`
+      SELECT starts_at FROM newchums.events WHERE id = ${eventId}
+    `) as { starts_at: string }[];
+    if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    if (new Date(ev[0].starts_at) > new Date())
+      return c.json({ ok: false, error: "NOT_PAST" }, 400);
+
+    await sql`
+      INSERT INTO newchums.attendance_issues (plan_id, reporter_user_id, reported_user_id, issue_type)
+      VALUES (${eventId}, ${userId}, ${body.reportedUserId}, ${body.issueType})
+      ON CONFLICT (plan_id, reporter_user_id, reported_user_id, issue_type) DO NOTHING
+    `;
+
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[POST /events/:id/attendance-issue]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /events/:id/conduct-report — report a conduct / safety concern */
+app.post("/events/:id/conduct-report", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+  const eventId = c.req.param("id");
+
+  const body = await c.req.json<{
+    reportedUserId: string;
+    reason: string;
+    details?: string;
+  }>();
+
+  if (!CONDUCT_REASONS.includes(body.reason as typeof CONDUCT_REASONS[number]))
+    return c.json({ ok: false, error: "INVALID_REASON" }, 400);
+  if (body.reportedUserId === userId)
+    return c.json({ ok: false, error: "CANNOT_REPORT_SELF" }, 400);
+
+  try {
+    const ev = (await sql`
+      SELECT starts_at FROM newchums.events WHERE id = ${eventId}
+    `) as { starts_at: string }[];
+    if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+
+    await sql`
+      INSERT INTO newchums.conduct_reports (plan_id, reporter_user_id, reported_user_id, reason, details)
+      VALUES (${eventId}, ${userId}, ${body.reportedUserId}, ${body.reason}, ${body.details ?? null})
+    `;
+
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[POST /events/:id/conduct-report]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
 // ─── Community Roadmap ────────────────────────────────────────────────────────
 
 const ROADMAP_STATUSES = ["received", "needs_clarification", "in_progress", "completed", "not_planned"] as const;
@@ -9158,6 +9372,74 @@ async function processEventMatchDigest(
   }
 }
 
+// ─── Post-plan feedback email ─────────────────────────────────────────────────
+
+async function processPlanFeedbackEmails(
+  sql: ReturnType<typeof getSql>,
+  env: Bindings,
+  ctx: ExecutionContext,
+) {
+  if (!env.POSTMARK_TEMPLATE_PLAN_FEEDBACK) return;
+
+  // Find published plans that ended 3+ hours ago but haven't had feedback emails sent
+  const plans = (await sql`
+    SELECT e.id, e.title, e.host_user_id
+    FROM newchums.events e
+    WHERE e.status = 'published'
+      AND e.starts_at <= NOW() - INTERVAL '3 hours'
+      AND e.feedback_email_sent_at IS NULL
+    ORDER BY e.starts_at ASC
+    LIMIT 20
+  `) as { id: string; title: string; host_user_id: string }[];
+
+  if (plans.length === 0) return;
+
+  for (const plan of plans) {
+    const recipients = (await sql`
+      SELECT u.id, u.email, u.name
+      FROM newchums.event_rsvps er
+      JOIN newchums.users u ON u.id = er.user_id
+      WHERE er.event_id = ${plan.id} AND er.status = 'going'
+      UNION
+      SELECT u.id, u.email, u.name
+      FROM newchums.users u
+      WHERE u.id = ${plan.host_user_id}
+    `) as { id: string; email: string; name: string | null }[];
+
+    const emailPromises: Promise<unknown>[] = [];
+    for (const r of recipients) {
+      const recipientName = r.name?.trim() || "there";
+      let unsubscribeUrl = "";
+      try {
+        if (env.NEXTAUTH_SECRET) {
+          const token = await createUnsubscribeToken(env.NEXTAUTH_SECRET, r.id, "plan_feedback");
+          unsubscribeUrl = `${env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(token)}`;
+        }
+      } catch { /* skip token on failure */ }
+
+      emailPromises.push(
+        sendPlanFeedbackEmail(env, {
+          to: r.email,
+          recipientName,
+          planTitle: plan.title,
+          planUrl: `${env.WEB_BASE_URL}/events/${plan.id}`,
+          unsubscribeUrl,
+        }),
+      );
+    }
+
+    ctx.waitUntil(
+      Promise.allSettled(emailPromises).then(async () => {
+        await sql`
+          UPDATE newchums.events
+          SET feedback_email_sent_at = NOW()
+          WHERE id = ${plan.id}
+        `;
+      }),
+    );
+  }
+}
+
 // ─── Scheduled handler ────────────────────────────────────────────────────────
 
 async function handleScheduled(
@@ -9280,6 +9562,13 @@ async function handleScheduled(
     await processEventMatchDigest(sql, env, ctx);
   } catch (err) {
     console.error("[scheduled] event match digest error:", err);
+  }
+
+  // Post-plan feedback reminder emails
+  try {
+    await processPlanFeedbackEmails(sql, env, ctx);
+  } catch (err) {
+    console.error("[scheduled] plan feedback email error:", err);
   }
 }
 

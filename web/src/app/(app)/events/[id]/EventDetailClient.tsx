@@ -50,12 +50,14 @@ import PersonAddRoundedIcon from "@mui/icons-material/PersonAddRounded";
 import PersonRemoveRoundedIcon from "@mui/icons-material/PersonRemoveRounded";
 import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
 import CancelRoundedIcon from "@mui/icons-material/CancelRounded";
+import HistoryRoundedIcon from "@mui/icons-material/HistoryRounded";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import UserAvatar from "@/components/common/UserAvatar";
 import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
 import { apiFetch, clearAuthTokenCache, getAuthToken, getAvatarBaseUrl, getChatWebSocketUrl, getMediaApiBaseUrl } from "@/lib/apiClient";
 import { isDuplicate, nameToSlug } from "@/lib/interestUtils";
+import PlanFeedback from "@/components/events/PlanFeedback";
 
 type HobbyInfo = { name: string; slug: string };
 
@@ -1521,6 +1523,7 @@ export default function EventDetailClient() {
   const declinedCount = rsvps.filter((r) => r.status === "cant_make_it").length;
   const isCanceled = event.status === "canceled";
   const isPast = new Date(event.startsAt) < new Date();
+  const isEditLocked = new Date(event.startsAt).getTime() + 60 * 60 * 1000 < Date.now();
 
   // Invitees who haven't RSVP'd yet (shown with "Invited" status in Who's in)
   const rsvpUserIds = new Set(rsvps.map((r) => r.userId));
@@ -1661,12 +1664,23 @@ export default function EventDetailClient() {
             </Tooltip>
           )}
           {isCanceled && <Chip label="Canceled" size="small" color="error" />}
+          {isPast && !isCanceled && (
+            <Chip
+              icon={<HistoryRoundedIcon sx={{ fontSize: "0.875rem !important" }} />}
+              label="Past plan"
+              size="small"
+              variant="outlined"
+              sx={{ fontWeight: 600, fontSize: "0.75rem", borderColor: "grey.400", color: "text.secondary" }}
+            />
+          )}
         </Stack>
-        <Typography component="h1" variant="h4" fontWeight={700} sx={{ mb: 0.75 }}>
+        <Typography component="h1" variant="h4" fontWeight={700} sx={{ mb: 0.75, ...(isPast && !isCanceled ? { color: "text.secondary" } : {}) }}>
           {event.title}
         </Typography>
         <Typography variant="body1" color="text.secondary">
-          {event.isHost ? "You\u2019re hosting this" : `Hosted by ${event.hostName}`}
+          {event.isHost
+            ? (isPast ? "You hosted this" : "You\u2019re hosting this")
+            : `Hosted by ${event.hostName}`}
         </Typography>
       </Box>
 
@@ -1691,6 +1705,11 @@ export default function EventDetailClient() {
             )}
           </Stack>
         </Box>
+      )}
+
+      {/* Post-plan feedback — shown prominently for past attended plans */}
+      {isPast && !isCanceled && accessState === "attending" && (
+        <PlanFeedback eventId={event.id} />
       )}
 
       {/* Details card */}
@@ -2438,8 +2457,8 @@ export default function EventDetailClient() {
         </AppCard>
       )}
 
-      {/* Invite people (host or Going attendees when allowed, not canceled) */}
-      {(event.isHost || (viewerRsvpStatus === "going" && event.allowAttendeeInvites)) && !isCanceled && (
+      {/* Invite people (host or Going attendees when allowed, not canceled, not past) */}
+      {(event.isHost || (viewerRsvpStatus === "going" && event.allowAttendeeInvites)) && !isCanceled && !isPast && (
         <AppCard>
           {!showInviteForm ? (
             <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1}>
@@ -2829,8 +2848,8 @@ export default function EventDetailClient() {
         </AppCard>
       )}
 
-      {/* Find a better time — collaborative alternate scheduling */}
-      {event.allowAltTimes && !isCanceled && (event.isHost || viewerRsvpStatus === "going" || viewerRsvpStatus === "maybe" || event.isInvited || isGuestInvite || !!participationTokenRef.current) && (() => {
+      {/* Find a better time — collaborative alternate scheduling (hidden for past plans) */}
+      {event.allowAltTimes && !isCanceled && !isPast && (event.isHost || viewerRsvpStatus === "going" || viewerRsvpStatus === "maybe" || event.isInvited || isGuestInvite || !!participationTokenRef.current) && (() => {
         type OverlapWindow = { startMs: number; endMs: number; entries: AltTimeEntry[] };
 
         const fmtTime = (d: Date) => d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
@@ -3502,11 +3521,17 @@ export default function EventDetailClient() {
       {/* Host actions */}
       {event.isHost && !isCanceled && (
         <AppCard>
+          {isEditLocked && (
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+              Editing is locked because this plan has already happened.
+            </Typography>
+          )}
           <Stack direction={{ xs: "column", sm: "row" }} spacing={2} flexWrap="wrap">
             <Button
               variant="outlined"
               startIcon={<EditRoundedIcon />}
               onClick={openEditDialog}
+              disabled={isEditLocked}
               sx={{ textTransform: "none" }}
             >
               Edit plan
@@ -3521,7 +3546,7 @@ export default function EventDetailClient() {
                   setLockDialogOpen(true);
                 }
               }}
-              disabled={lockToggling}
+              disabled={lockToggling || isEditLocked}
               sx={{ textTransform: "none" }}
             >
               {lockToggling ? "Updating…" : event.lockedAt ? "Unlock plan" : "Lock plan"}
@@ -3530,6 +3555,7 @@ export default function EventDetailClient() {
               variant="outlined"
               color="error"
               onClick={() => setCancelDialogOpen(true)}
+              disabled={isEditLocked}
               sx={{ textTransform: "none" }}
             >
               Cancel this plan

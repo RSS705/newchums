@@ -1,0 +1,14 @@
+How did it go?
+
+Hey {{recipientName}}, your plan "{{planTitle}}" has wrapped up. Take a moment to leave quick feedback — it helps NewChums improve your future matches.
+
+Leave feedback: {{planUrl}}
+
+It only takes a few seconds. Your feedback is private and helps everyone have better experiences.
+
+---
+
+This is an automated message from NewChums.
+{{#unsubscribeUrl}}Unsubscribe from feedback reminders: {{unsubscribeUrl}}{{/unsubscribeUrl}}
+
+© {{productName}}

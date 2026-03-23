@@ -92,6 +92,7 @@ The following flows run in the API worker; the web app calls the API via `NEXT_P
 | Chum invites | `POST /chums/invite`, `POST /chums/invite/accept` | Bearer JWT |
 | Public Chums | `GET /public/users/:handle/chums` | none |
 | Events (plans) | `POST /events`, `GET /events/mine`, `GET /events/:id` (optional auth — returns `accessState` + `shareToken`), `GET /events/explore` (auth), `GET /events/explore/public` (no auth), `PATCH /events/:id`, `POST /events/:id/rsvp`, `POST /events/:id/alt-time`, `POST /events/:id/cancel`, `POST /events/:id/invite`, `POST /events/:id/confirm`, `POST /events/:id/email-confirm` | Bearer JWT (detail: optional; accepts `invite_token` / `participation_token` / `share_token`); explore/public: no auth |
+| Plan feedback | `GET /events/:id/feedback`, `POST /events/:id/feedback`, `POST /events/:id/attendance-issue`, `POST /events/:id/conduct-report` | Bearer JWT |
 | Attendance record | `GET /public/users/:userId/attendance-record` | none |
 | Plan chat | `GET /events/:id/chat`, `POST /events/:id/chat`, `POST /events/:id/chat/read`, `GET /events/:id/chat/ws` (WebSocket upgrade) | Bearer JWT |
 | Plan lock | `POST /events/:id/lock` | Bearer JWT (host only) |
@@ -160,6 +161,7 @@ Sign in → Explore (event discovery feed)
 ├── Start a plan → Create event form → Publish → Your Plans
 ├── Explore → Browse events → RSVP / Suggest alt time
 ├── Your Plans → Upcoming / Past tabs → Event detail
+│   └── Past plan → Post-plan feedback (rate attendees, report issues/concerns)
 ├── Your Chums → Search / Add / Remove / Invite by email
 ├── Profile → Edit → Public profile (/u/handle)
 ├── Settings → Notifications / Privacy / Email / Password / Delete account
@@ -256,7 +258,7 @@ Wrangler config is code-managed so deploys do not wipe routes or override canoni
 | `/` (logged in) | Explore — event discovery feed |
 | `/events/create` | Start a plan (create event) |
 | `/plans` | Your Plans — upcoming / past tabs |
-| `/events/[id]` | Event detail — full experience with RSVP, attendees, chat, lock, cancel (access state: authenticated/attending) |
+| `/events/[id]` | Event detail — full experience with RSVP, attendees, chat, lock, cancel (access state: authenticated/attending). Past plans show post-plan feedback section. |
 | `/chum-groups` | Your Chums — search, invite, list |
 | `/profile` | Edit profile |
 | `/settings` | Notifications, privacy, account |

@@ -836,3 +836,34 @@ export const sendContactFormEmail = async (
     ReplyTo: params.email,
   });
 };
+
+export const sendPlanFeedbackEmail = async (
+  env: Bindings,
+  {
+    to,
+    recipientName,
+    planTitle,
+    planUrl,
+    unsubscribeUrl,
+  }: {
+    to: string;
+    recipientName: string;
+    planTitle: string;
+    planUrl: string;
+    unsubscribeUrl: string;
+  }
+) => {
+  if (!env.POSTMARK_TEMPLATE_PLAN_FEEDBACK) return;
+  return sendPostmarkTemplateEmail(env, {
+    From: env.EMAIL_FROM,
+    To: to,
+    TemplateId: env.POSTMARK_TEMPLATE_PLAN_FEEDBACK,
+    TemplateModel: {
+      productName: "NewChums",
+      recipientName,
+      planTitle,
+      planUrl,
+      unsubscribeUrl,
+    },
+  });
+};

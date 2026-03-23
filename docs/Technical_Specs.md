@@ -66,7 +66,7 @@ NewChums helps people organize gatherings more easily around hobbies and shared 
 
 - **Durable Objects:** `ChatRoom` class bound as `CHAT_ROOM` in the API worker. Per-plan WebSocket relay for real-time chat. Uses the Hibernation API so idle connections consume no CPU. Configured via `[[durable_objects.bindings]]` and `[[migrations]]` in `api/wrangler.toml`.
 
-- **Cron Triggers:** `[triggers] crons = ["0 * * * *"]` in `api/wrangler.toml`. Runs hourly. The `scheduled` handler processes attendance assurance (confirmation requests, reminders, cutoff processing) and daily unread-chat digest email (gated to run once per day at ~2 PM UTC via `chat_digest_sent_at` cooldown). Integrated into the Sentry-wrapped export alongside `fetch`.
+- **Cron Triggers:** `[triggers] crons = ["0 * * * *"]` in `api/wrangler.toml`. Runs hourly. The `scheduled` handler processes attendance assurance (confirmation requests, reminders, cutoff processing), daily unread-chat digest email (gated to run once per day at ~2 PM UTC via `chat_digest_sent_at` cooldown), event match digest, and post-plan feedback reminder emails (sent ~3h after plan start, tracked via `events.feedback_email_sent_at`). Integrated into the Sentry-wrapped export alongside `fetch`.
 
 ### Not implemented
 
@@ -187,6 +187,7 @@ Users manage notification preferences in **Settings** (`/settings`). Each notifi
 | `product_announcements` | Product updates | — |
 | `unread_chat_digest` | Unread messages in your plans | `POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST` (template 43975299) |
 | `attendance_confirmation` | Attendance confirmation reminders | `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST` (template 43984465) |
+| `plan_feedback` | Post-plan feedback reminders | `POSTMARK_TEMPLATE_PLAN_FEEDBACK` (template 44091936) |
 
 **Non-preference transactional emails (no toggle):**
 
@@ -451,6 +452,10 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 | `POST /events/:id/join-request` | Submit a join request (requires `require_approval` to be on). Body: `{ message? }`. Validates not-host, not-invited, not-already-RSVP'd, no duplicate pending request. Notifies host via in-app notification and email (template 43906440). |
 | `POST /events/:id/join-request/:requestId/approve` | Approve a join request (host only). Body: `{ message? }`. Checks seat capacity. Marks request approved, adds user as Going RSVP. Notifies requester via in-app notification and email (template 43906609). |
 | `POST /events/:id/join-request/:requestId/decline` | Decline a join request (host only). Body: `{ message? }`. Marks request declined. Notifies requester via in-app notification and email (template 43906703). |
+| `GET /events/:id/feedback` | Existing feedback by this user for this plan + eligible attendees. Auth required; plan must be past. |
+| `POST /events/:id/feedback` | Submit/update feedback. Body: `{ entries: [{ revieweeUserId, prompt, response }] }`. Prompts: reliability, sociability, presentation, match_quality, hosting_skills (host-only). Responses: agree, maybe, disagree. Upserts on conflict. |
+| `POST /events/:id/attendance-issue` | Report attendance issue. Body: `{ reportedUserId, issueType }`. Types: no_show, late_cancel, very_late. One report per type per pair per plan. |
+| `POST /events/:id/conduct-report` | Report conduct/safety concern. Body: `{ reportedUserId, reason, details? }`. Reasons: rude_aggressive, harassment, boundary_issue, discriminatory, unsafe_intoxicated, disruptive, property_damage, other. |
 | `POST /events/:id/public-rsvp/request-code` | Share-link email verification. Body: `{ email, share_token? }`. If email belongs to existing account, returns `{ existing_account: true }`. Otherwise sends 6-digit code via Postmark template 44041128 and returns `{ challenge }` (JWT, 10-min expiry). Without a valid `share_token`, requires the plan to have public visibility; with a valid share token, works for any published plan. |
 | `POST /events/:id/public-rsvp/confirm-code` | Verify the 6-digit code. Body: `{ challenge, code, name? }`. On success returns `{ token }` — a participation token (JWT, 30-day expiry, purpose `public_rsvp`). |
 
@@ -615,6 +620,58 @@ Public profile section showing five reliability metrics computed from real event
 5. **Host completion rate** — of hosted plans, how many went ahead
 
 Uses `committed_at` on `event_rsvps` (migration 041) for accurate commitment tracking. New/low-history users see "Building history" treatment with underlying sample counts. Endpoint: `GET /public/users/:userId/attendance-record`.
+
+**Plan Feedback / Matching Quality System (implemented — Phase 1):**
+
+Post-plan feedback allows attendees and hosts to leave lightweight, optional feedback about each other after a plan has passed. This is the foundation for a future chum preferences / compatibility system.
+
+*Hidden Metrics (per user, stored in `user_metrics`):*
+
+| Metric | Definition | Weighting guidance |
+|--------|-----------|-------------------|
+| **Reliability** | Can this person be counted on to follow through? | Moves quickly — no-shows and very late cancellations matter immediately; positive follow-through recovers more slowly. |
+| **Sociability** | Does this person make social interaction comfortable and enjoyable? | Moves gradually — subjective, relies on repeated signals. |
+| **Presentation** | Does this person show up with basic hygiene and in-person consideration? | Moves cautiously but firmly — sensitive area, but repeated negative signals should matter. |
+| **Hosting Skills** | Does this person run plans that respect people's time and create a good experience? | Only moves from hosted-plan feedback. |
+| **Match Quality** | Was this a good match for the reviewer personally? | Per-pair signal, not an absolute score. |
+
+All metrics use a 0–100 scale, starting at 50 (neutral). `signal_count` tracks how many feedback signals contributed.
+
+*Feedback prompts (3-point scale: Agree / Maybe / Disagree):*
+
+- Followed through reliably → Reliability
+- I'd spend time with them again → Sociability
+- Showed personal care → Presentation
+- Good match for me → Match Quality
+- I'd join their plans again → Hosting Skills (host-only prompt)
+
+*Separate layers (not part of normal feedback):*
+
+- **Attendance issues** — structured reports: no-show, cancelled too late, arrived very late. Stored in `attendance_issues`.
+- **Conduct / Safety reports** — structured reasons: rude/aggressive, harassment, boundary issue, discriminatory, unsafe/intoxicated, disruptive, property damage, other. Stored in `conduct_reports`. Treated separately from normal scoring; serious issues may require moderation/review behavior later.
+
+*API endpoints:*
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /events/:id/feedback` | Existing feedback by this user + eligible attendees list |
+| `POST /events/:id/feedback` | Submit/update feedback entries (batch) |
+| `POST /events/:id/attendance-issue` | Report attendance problem |
+| `POST /events/:id/conduct-report` | Report conduct/safety concern |
+
+*Email:* Post-plan feedback reminder email sent ~3 hours after plan start time via the hourly cron handler. Uses Postmark template 44091936. One email per plan (tracked via `events.feedback_email_sent_at`). Sent to host + going RSVPs.
+
+*UI:* Collapsible "How did it go?" section appears on the plan detail page for past, non-canceled plans where the viewer is a participant. Compact per-person cards with toggle-button feedback prompts. Attendance issues and conduct reports use separate dialogs.
+
+*Future direction (documented, not implemented):*
+
+- Users will have **chum preferences** defining minimum acceptable metric thresholds.
+- Plans may inherit default chum preference strictness from the creator.
+- Plan creators may override strictness per-plan.
+- By default the platform remains broadly open; over time users set firm boundaries for who they are matched with.
+- Metric aggregation/update logic (applying feedback responses to `user_metrics` scores) is not yet implemented — Phase 1 captures the data foundation.
+
+*Schema (migration 049):* `plan_feedback`, `attendance_issues`, `conduct_reports`, `user_metrics` tables + `events.feedback_email_sent_at` column.
 
 **Not yet implemented:** recurring events.
 
@@ -784,6 +841,11 @@ Core tables include:
 - `newchums.event_rsvps.committed_at` (migration 041) — `TIMESTAMPTZ NULL`; records when a user first committed (RSVP'd going) for accurate follow-through tracking; backfilled from `created_at` for existing going RSVPs; indexed on `(user_id, committed_at)` where not null
 - `newchums.events.allow_attendee_invites` (migration 042) — `BOOLEAN NOT NULL DEFAULT true`; when true, Going attendees can invite others to the plan; host can toggle at any time via `POST /events/:id/toggle-attendee-invites`
 - `newchums.event_alt_times` guest support (migration 043) — `user_id` made nullable, added `guest_email TEXT NULL`; mirrors event_rsvps guest pattern; allows unauthenticated invitees to suggest alternate times via invite token
+- `newchums.plan_feedback` (migration 049) — per-attendee feedback responses. Columns: `id` (UUID PK), `plan_id` (FK), `reviewer_user_id` (FK), `reviewee_user_id` (FK), `prompt` (reliability/sociability/presentation/match_quality/hosting_skills), `response` (agree/maybe/disagree), `created_at`. Unique on `(plan_id, reviewer_user_id, reviewee_user_id, prompt)`.
+- `newchums.attendance_issues` (migration 049) — structured attendance problem reports. Columns: `id` (UUID PK), `plan_id` (FK), `reporter_user_id` (FK), `reported_user_id` (FK), `issue_type` (no_show/late_cancel/very_late), `created_at`. Unique on `(plan_id, reporter_user_id, reported_user_id, issue_type)`.
+- `newchums.conduct_reports` (migration 049) — safety/behavioral concern reports. Columns: `id` (UUID PK), `plan_id` (FK), `reporter_user_id` (FK), `reported_user_id` (FK), `reason`, `details` (TEXT NULL), `created_at`.
+- `newchums.user_metrics` (migration 049) — aggregated hidden quality scores. Composite PK `(user_id, metric)`. Columns: `score` (NUMERIC(5,2), default 50.00), `signal_count` (INT, default 0), `updated_at`.
+- `newchums.events.feedback_email_sent_at` (migration 049) — `TIMESTAMPTZ NULL`; tracks when feedback reminder email was sent for a plan.
 
 PostGIS is available for geo queries.
 
@@ -821,8 +883,8 @@ When sharing the same DB between local and production, set `NEXT_PUBLIC_AVATAR_B
 - Root worker `newchums-api` is the production API target
 - Secrets (via Wrangler/CF dashboard): `DATABASE_URL`, `NEXTAUTH_SECRET`, `POSTMARK_SERVER_TOKEN`
 - Durable Objects: `[[durable_objects.bindings]]` binds `CHAT_ROOM` → `ChatRoom` class; `[[migrations]]` tag `v1` with `new_classes = ["ChatRoom"]`
-- Cron Triggers: `[triggers] crons = ["0 * * * *"]` — hourly; processes attendance assurance and daily unread-chat digest
-- Vars include `POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST`, `POSTMARK_TEMPLATE_EVENT_CHANGED`, `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST`, `POSTMARK_TEMPLATE_PLAN_AT_RISK`, and other template IDs
+- Cron Triggers: `[triggers] crons = ["0 * * * *"]` — hourly; processes attendance assurance, daily unread-chat digest, event match digest, and post-plan feedback emails
+- Vars include `POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST`, `POSTMARK_TEMPLATE_EVENT_CHANGED`, `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST`, `POSTMARK_TEMPLATE_PLAN_AT_RISK`, `POSTMARK_TEMPLATE_PLAN_FEEDBACK`, and other template IDs
 
 CORS is enforced via an explicit allowlist (newchums.com, www, localhost:3000) in API code.
 
