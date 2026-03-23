@@ -621,9 +621,9 @@ Public profile section showing five reliability metrics computed from real event
 
 Uses `committed_at` on `event_rsvps` (migration 041) for accurate commitment tracking. New/low-history users see "Building history" treatment with underlying sample counts. Endpoint: `GET /public/users/:userId/attendance-record`.
 
-**Plan Feedback / Matching Quality System (implemented — Phase 1):**
+**Plan Feedback / Matching Quality System (implemented — Phase 1 + Phase 2):**
 
-Post-plan feedback allows attendees and hosts to leave lightweight, optional feedback about each other after a plan has passed. This is the foundation for a future chum preferences / compatibility system.
+Post-plan feedback allows attendees and hosts to leave lightweight, optional feedback about each other after a plan has passed. Feedback signals feed hidden per-user metric scores that power the chum preferences matching system.
 
 *Hidden Metrics (per user, stored in `user_metrics`):*
 
@@ -635,43 +635,79 @@ Post-plan feedback allows attendees and hosts to leave lightweight, optional fee
 | **Hosting Skills** | Does this person run plans that respect people's time and create a good experience? | Only moves from hosted-plan feedback. |
 | **Match Quality** | Was this a good match for the reviewer personally? | Per-pair signal, not an absolute score. |
 
-All metrics use a 0–100 scale, starting at 50 (neutral). `signal_count` tracks how many feedback signals contributed.
+All metrics use a 0–100 scale, starting at 50.00 (neutral baseline). `signal_count` tracks how many feedback signals contributed.
 
-*Feedback prompts (3-point scale: Agree / Maybe / Disagree):*
+*Scoring model (implemented):*
 
-- Followed through reliably → Reliability
-- I'd spend time with them again → Sociability
-- Showed personal care → Presentation
-- Good match for me → Match Quality
-- I'd join their plans again → Hosting Skills (host-only prompt)
+- **Baseline:** 50.00 for every metric, 0 signals.
+- **Feedback movement:** Each feedback signal nudges the score toward a target using weighted averaging. "Yes" (agree) targets 80, "Somewhat" (maybe) targets 50, "No" (disagree) targets 20. Nudge = (target − current) / (signal_count + 5). This ensures early signals have a larger effect while later signals converge toward the running average.
+- **Attendance penalties (Reliability only):** No-show = −8 direct penalty, Late cancel = −5, Very late = −3. These are immediate penalties, not averaged.
+- **Hosting Skills:** Only moves from the `hosting_skills` prompt on plans the user hosted.
+- **Conduct / Safety:** Tracked separately from metric scoring. Does not affect scores.
+
+*Tolerance thresholds (chum preference levels):*
+
+| Level | Threshold | Meaning |
+|-------|-----------|---------|
+| **Open to anyone** | None | No filtering on that metric. |
+| **Preferred** | Score ≥ 35 | Tolerates mild negative average. Meaningfully filters consistently poor signals. |
+| **Important** | Score ≥ 45 | Only tolerates small negative average. Filters moderate negatives. |
+| **Required** | Score ≥ 55 | Firm minimum. Requires near-baseline or positive record. |
+
+*Feedback prompts (3-point scale: Yes / Somewhat / No):*
+
+- Showed up and followed through reliably → Reliability
+- I'd spend time with this person again → Sociability
+- This person showed basic personal care for an in-person gathering → Presentation
+- This was a good match for me → Match Quality
+- Ran a well-organized plan → Hosting Skills (host-only prompt)
 
 *Separate layers (not part of normal feedback):*
 
-- **Attendance issues** — structured reports: no-show, cancelled too late, arrived very late. Stored in `attendance_issues`.
+- **Attendance issues** — structured reports: no-show, cancelled too late, arrived very late. Stored in `attendance_issues`. Immediately penalizes Reliability score.
 - **Conduct / Safety reports** — structured reasons: rude/aggressive, harassment, boundary issue, discriminatory, unsafe/intoxicated, disruptive, property damage, other. Stored in `conduct_reports`. Treated separately from normal scoring; serious issues may require moderation/review behavior later.
+
+*Chum Preferences (user-facing, implemented):*
+
+Users configure matching preferences in their profile ("Your chum preferences" section, below Hobbies, above Attendance record). Settings:
+- **Master toggle:** "Use chum preferences" (default: on)
+- **Per-metric levels:** Reliability, Sociability, Personal care, Hosting quality — each set to Open to anyone / Preferred / Important / Required.
+- Defaults: Reliability = Preferred, all others = Open to anyone.
+- Saved in `chum_preferences` table (upsert on change, auto-saves).
+
+*Browsing vs. inbound matching behavior:*
+- A user's chum preferences filter who gets matched **into their plans** and who appears in their **digest / recommendations**.
+- A user's chum preferences do **not** block them from browsing and opening plans themselves. If someone in a plan doesn't meet their preferences, the plan details will surface a compatibility note so the user can decide for themselves.
 
 *API endpoints:*
 
 | Endpoint | Purpose |
 |----------|---------|
 | `GET /events/:id/feedback` | Existing feedback by this user + eligible attendees list |
-| `POST /events/:id/feedback` | Submit/update feedback entries (batch) |
-| `POST /events/:id/attendance-issue` | Report attendance problem |
+| `POST /events/:id/feedback` | Submit/update feedback entries (batch); updates `user_metrics` |
+| `POST /events/:id/attendance-issue` | Report attendance problem; penalizes Reliability |
 | `POST /events/:id/conduct-report` | Report conduct/safety concern |
+| `GET /chum-preferences` | Current user's preference settings |
+| `PUT /chum-preferences` | Save preference settings (upsert) |
+| `GET /admin/users/:id/diagnostics` | Super-admin: per-user metric scores, preferences, feedback history, attendance/conduct summaries |
 
 *Email:* Post-plan feedback reminder email sent ~3 hours after plan start time via the hourly cron handler. Uses Postmark template 44091936. One email per plan (tracked via `events.feedback_email_sent_at`). Sent to host + going RSVPs.
 
-*UI:* Collapsible "How did it go?" section appears on the plan detail page for past, non-canceled plans where the viewer is a participant. Compact per-person cards with toggle-button feedback prompts. Attendance issues and conduct reports use separate dialogs.
+*UI:* Carousel-style "How did it go?" section appears on the plan detail page for past, non-canceled plans where the viewer is a participant. One-person-at-a-time stepper with progress dots, per-person feedback prompts, contextual attendance issue reporting, and separate conduct report dialog.
 
-*Future direction (documented, not implemented):*
+*Admin diagnostics (super-admin only):*
+- Per-user diagnostics view at `/admin/chums/[id]` (linked from "Inspect" icon on admin Users table).
+- Shows: hidden metric scores with progress bars, chum preference settings, attendance issue summary, conduct report summary, anonymized aggregated feedback table, recent feedback timeline (plan titles and reporter identity per row), and score derivation reference.
+- Reporter identities are never shown in admin views to protect feedback privacy.
 
-- Users will have **chum preferences** defining minimum acceptable metric thresholds.
-- Plans may inherit default chum preference strictness from the creator.
-- Plan creators may override strictness per-plan.
-- By default the platform remains broadly open; over time users set firm boundaries for who they are matched with.
-- Metric aggregation/update logic (applying feedback responses to `user_metrics` scores) is not yet implemented — Phase 1 captures the data foundation.
+*Future direction (documented, not yet implemented):*
 
-*Schema (migration 049):* `plan_feedback`, `attendance_issues`, `conduct_reports`, `user_metrics` tables + `events.feedback_email_sent_at` column.
+- New plans may inherit the creator's chum preferences by default.
+- Plan creators may later override these defaults per plan.
+- These are user-level defaults, not permanent hard locks on every plan.
+- Compatibility notes on plan detail pages when browsing plans with participants who don't meet preferences (UX designed, wiring planned).
+
+*Schema:* Migration 049: `plan_feedback`, `attendance_issues`, `conduct_reports`, `user_metrics` tables + `events.feedback_email_sent_at` column. Migration 050: `chum_preferences` table.
 
 **Not yet implemented:** recurring events.
 

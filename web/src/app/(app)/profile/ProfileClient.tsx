@@ -32,6 +32,7 @@ import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
 import { isDuplicate, nameToSlug, slugToName } from "@/lib/interestUtils";
 import { loadGooglePlacesScript } from "@/lib/loadGooglePlaces";
 import AttendanceRecordSection from "@/components/publicProfile/AttendanceRecordSection";
+import ChumPreferencesSection from "@/components/profile/ChumPreferencesSection";
 
 type InterestOption = { id?: string; name: string; slug: string };
 const GENDER_OPTIONS = [
@@ -949,6 +950,9 @@ export default function ProfileClient() {
           )}
         </Stack>
       </AppCard>
+
+      {/* Chum preferences */}
+      <ChumPreferencesSection />
 
       {/* Attendance record */}
       {profile?.userId && (

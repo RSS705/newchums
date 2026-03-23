@@ -327,6 +327,79 @@ export default function AdminSystemLogicClient() {
         </Bullet>
       </CollapsibleSection>
 
+      <CollapsibleSection title="Chum preferences and matching quality" subtitle="How NewChums evaluates people for plan matching and recommendations">
+        <Typography variant="subtitle2" fontWeight={600} gutterBottom>
+          What are chum preferences?
+        </Typography>
+        <Bullet>
+          Each user can set <strong>matching preferences</strong> in their profile. These control who gets matched into their plans and who appears in their recommendations.
+        </Bullet>
+        <Bullet>
+          Preferences are <strong>not visible</strong> to other users. They affect inbound matching only (who gets matched <em>to your plans</em>), not whether you can browse plans yourself.
+        </Bullet>
+
+        <Typography variant="subtitle2" fontWeight={600} sx={{ mt: 2 }} gutterBottom>
+          The four metrics
+        </Typography>
+        <Bullet>
+          <strong>Reliability</strong> &mdash; Can this person be counted on to follow through? Moves quickly: no-shows and very late cancellations penalize immediately. Positive follow-through recovers more slowly.
+        </Bullet>
+        <Bullet>
+          <strong>Sociability</strong> &mdash; Is this person enjoyable and easy to spend time with? Moves gradually; more subjective, relies on repeated signals.
+        </Bullet>
+        <Bullet>
+          <strong>Personal Care (Presentation)</strong> &mdash; Does this person show basic in-person consideration? Moves cautiously but firmly; repeated negative signals matter.
+        </Bullet>
+        <Bullet>
+          <strong>Hosting Skills</strong> &mdash; Does this person run well-organized plans? Only moves from feedback on plans they <em>hosted</em>.
+        </Bullet>
+        <Bullet>
+          <strong>Conduct / Safety</strong> is tracked <em>separately</em> from these metrics. Serious behavioral issues do not lower normal metric scores &mdash; they may require moderation, warnings, or account action.
+        </Bullet>
+
+        <Typography variant="subtitle2" fontWeight={600} sx={{ mt: 2 }} gutterBottom>
+          Hidden scoring model
+        </Typography>
+        <Bullet>
+          Every metric starts at a <strong>baseline of 50.00</strong> with 0 signals. This is a neutral, unrated state.
+        </Bullet>
+        <Bullet>
+          Feedback nudges the score toward a target using <strong>weighted averaging</strong>: &ldquo;Yes&rdquo; targets 80, &ldquo;Somewhat&rdquo; targets 50, &ldquo;No&rdquo; targets 20. Early signals have a larger effect; later signals converge. Formula: nudge = (target &minus; current) &divide; (signal_count + 5).
+        </Bullet>
+        <Bullet>
+          <strong>Attendance issues</strong> apply direct penalties to Reliability: No-show = &minus;8, Late cancel = &minus;5, Very late = &minus;3.
+        </Bullet>
+        <Bullet>
+          Scores are <strong>never exposed</strong> to normal users. Super admins can inspect them via the User Diagnostics view.
+        </Bullet>
+
+        <Typography variant="subtitle2" fontWeight={600} sx={{ mt: 2 }} gutterBottom>
+          Tolerance levels (what each setting means)
+        </Typography>
+        <Bullet>
+          <strong>Open to anyone:</strong> No filtering on that metric. Everyone passes.
+        </Bullet>
+        <Bullet>
+          <strong>Preferred:</strong> Score must be &ge; 35. Tolerates a mild negative average. Meaningfully filters consistently poor signals, but is forgiving.
+        </Bullet>
+        <Bullet>
+          <strong>Important:</strong> Score must be &ge; 45. Only tolerates a small negative average. Filters out moderately poor signals.
+        </Bullet>
+        <Bullet>
+          <strong>Required:</strong> Score must be &ge; 55. Firm minimum standard. Requires a near-baseline or positive record. Users with even a moderate negative average are filtered.
+        </Bullet>
+
+        <Typography variant="subtitle2" fontWeight={600} sx={{ mt: 2 }} gutterBottom>
+          Browsing vs. inbound matching
+        </Typography>
+        <Bullet>
+          My preferences filter who gets matched <strong>into my plans</strong> and who appears in my <strong>digest / recommendations</strong>.
+        </Bullet>
+        <Bullet>
+          My preferences do <strong>not</strong> block me from browsing and opening plans myself. If someone in a plan doesn&rsquo;t meet my preferences, the plan details will surface a <strong>compatibility note</strong> so I can decide for myself.
+        </Bullet>
+      </CollapsibleSection>
+
       <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, bgcolor: "action.hover", mt: 3 }}>
         <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.6 }}>
           Want endpoints, database names, or the exact email templates? That lives in the repo docs (e.g. Technical_Specs) — this page is just the friendly

@@ -27,6 +27,8 @@ import Typography from "@mui/material/Typography";
 import BlockIcon from "@mui/icons-material/Block";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import SearchIcon from "@mui/icons-material/Search";
+import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
+import NextLink from "next/link";
 import { AppButton, useToast } from "@/components/ui";
 import { apiFetch } from "@/lib/apiClient";
 
@@ -329,27 +331,38 @@ export default function AdminChumsClient() {
                       />
                     </TableCell>
                     <TableCell align="right">
-                      {row.is_suspended ? (
-                        <Tooltip title="Unsuspend account">
+                      <Stack direction="row" spacing={0.5} justifyContent="flex-end">
+                        <Tooltip title="Inspect user metrics">
                           <IconButton
                             size="small"
-                            color="success"
-                            onClick={() => openConfirm(row, "unsuspend")}
+                            component={NextLink}
+                            href={`/admin/chums/${row.id}`}
                           >
-                            <CheckCircleOutlineIcon fontSize="small" />
+                            <VisibilityRoundedIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
-                      ) : (
-                        <Tooltip title="Suspend account">
-                          <IconButton
-                            size="small"
-                            color="error"
-                            onClick={() => openConfirm(row, "suspend")}
-                          >
-                            <BlockIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                      )}
+                        {row.is_suspended ? (
+                          <Tooltip title="Unsuspend account">
+                            <IconButton
+                              size="small"
+                              color="success"
+                              onClick={() => openConfirm(row, "unsuspend")}
+                            >
+                              <CheckCircleOutlineIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        ) : (
+                          <Tooltip title="Suspend account">
+                            <IconButton
+                              size="small"
+                              color="error"
+                              onClick={() => openConfirm(row, "suspend")}
+                            >
+                              <BlockIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                      </Stack>
                     </TableCell>
                   </TableRow>
                 ))

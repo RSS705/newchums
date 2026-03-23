@@ -29,6 +29,10 @@ type AttendanceRecord = {
 type AttendanceRecordSectionProps = {
   userId: string;
   isOwner?: boolean;
+  /** Display name (used for non-public profile title when not owner). */
+  displayName?: string;
+  /** `profile` = edit profile page (can show "Your stats" when owner). `public` = public profile URL. */
+  variant?: "profile" | "public";
 };
 
 const MIN_SAMPLE_FOR_RATE = 3;
@@ -136,7 +140,24 @@ function MetricCard({ icon, label, value, ratio, tooltipTitle }: MetricCardProps
   return card;
 }
 
-export default function AttendanceRecordSection({ userId, isOwner }: AttendanceRecordSectionProps) {
+function statsSectionTitle({
+  variant,
+  isOwner,
+  displayName,
+}: {
+  variant: "profile" | "public";
+  isOwner?: boolean;
+  displayName?: string;
+}): string {
+  const name = displayName?.trim();
+  if (variant === "public") {
+    return "Chum Stats";
+  }
+  if (isOwner) return "Your stats";
+  return name ? `${name} stats` : "Stats";
+}
+
+export default function AttendanceRecordSection({ userId, isOwner, displayName, variant = "profile" }: AttendanceRecordSectionProps) {
   const [record, setRecord] = useState<AttendanceRecord | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -191,7 +212,7 @@ export default function AttendanceRecordSection({ userId, isOwner }: AttendanceR
               fontWeight={700}
               sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
             >
-              Attendance record
+              {statsSectionTitle({ variant, isOwner, displayName })}
             </Typography>
             <Typography
               variant="caption"

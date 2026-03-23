@@ -757,6 +757,27 @@ export default function ChumsClient() {
     searchDebounceRef.current = setTimeout(() => doSearch(value), 300);
   };
 
+  /** Reset Find and add people (search field, results, email invite row). */
+  const clearFindAndAddArea = useCallback(() => {
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+      searchDebounceRef.current = null;
+    }
+    setSearchQuery("");
+    setSearchResults([]);
+    setHasSearched(false);
+    setInviteEligible(false);
+    setInviteeEmail("");
+    setAlreadyInvited(false);
+    setIsPrivateContact(false);
+    setSearchLoading(false);
+  }, []);
+
+  const handlePrivateContactAdded = useCallback(() => {
+    clearFindAndAddArea();
+    void fetchContacts();
+  }, [clearFindAndAddArea, fetchContacts]);
+
   const handleAddOnNewChums = async (userId: string) => {
     setActionLoading((prev) => new Set(prev).add(userId));
     try {
@@ -859,7 +880,7 @@ export default function ChumsClient() {
           <Box>
             <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>Find and add people</Typography>
             <Typography color="text.secondary" variant="body2" sx={{ mt: 0.5, lineHeight: 1.6 }}>
-              Search by name, @handle, or email. If someone isn&apos;t on NewChums, you can add them as a private contact or send an invite.
+              Search by name, @handle, or email.
             </Typography>
           </Box>
           <TextField
@@ -999,7 +1020,7 @@ export default function ChumsClient() {
           <Box>
             <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>Private Contacts</Typography>
             <Typography color="text.secondary" variant="body2" sx={{ mt: 0.5, lineHeight: 1.6 }}>
-              Only visible to you. Useful for planning and invites. If they join NewChums, they&apos;ll automatically appear in your On NewChums section.
+              Only visible to you. Useful for planning and invites.
             </Typography>
             <Button
               variant="contained"
@@ -1055,7 +1076,7 @@ export default function ChumsClient() {
         open={addPrivateOpen}
         initialEmail={addPrivateEmail}
         onClose={() => setAddPrivateOpen(false)}
-        onAdded={fetchContacts}
+        onAdded={handlePrivateContactAdded}
       />
     </Stack>
   );

@@ -3655,6 +3655,151 @@ app.post("/admin/users/:id/unsuspend", async (c) => {
   }
 });
 
+// ─── Admin user diagnostics (chum metrics / feedback inspection) ─────────────
+
+/** GET /admin/users/:id/diagnostics — super-admin-only per-user metric diagnostics */
+app.get("/admin/users/:id/diagnostics", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  const userId = c.req.param("id");
+  const sql = getSql(c.env);
+
+  try {
+    const userRows = (await sql`
+      SELECT id, email, username, name, created_at, role, is_suspended
+      FROM users WHERE id = ${userId} LIMIT 1
+    `) as { id: string; email: string; username: string | null; name: string | null; created_at: string; role: string | null; is_suspended: boolean }[];
+    if (userRows.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    const user = userRows[0];
+
+    const metrics = (await sql`
+      SELECT metric, score, signal_count, updated_at
+      FROM newchums.user_metrics
+      WHERE user_id = ${userId}
+      ORDER BY metric
+    `) as { metric: string; score: string; signal_count: number; updated_at: string }[];
+
+    const preferences = (await sql`
+      SELECT enabled, reliability_level, sociability_level, presentation_level, hosting_level, updated_at
+      FROM newchums.chum_preferences
+      WHERE user_id = ${userId}
+      LIMIT 1
+    `) as { enabled: boolean; reliability_level: string; sociability_level: string; presentation_level: string; hosting_level: string; updated_at: string }[];
+
+    const attendanceIssues = (await sql`
+      SELECT issue_type, COUNT(*)::int AS count
+      FROM newchums.attendance_issues
+      WHERE reported_user_id = ${userId}
+      GROUP BY issue_type
+      ORDER BY issue_type
+    `) as { issue_type: string; count: number }[];
+
+    const conductReports = (await sql`
+      SELECT reason, COUNT(*)::int AS count
+      FROM newchums.conduct_reports
+      WHERE reported_user_id = ${userId}
+      GROUP BY reason
+      ORDER BY reason
+    `) as { reason: string; count: number }[];
+
+    // Feedback received (anonymized — no reporter identity)
+    const feedbackReceived = (await sql`
+      SELECT prompt, response, COUNT(*)::int AS count
+      FROM newchums.plan_feedback
+      WHERE reviewee_user_id = ${userId}
+      GROUP BY prompt, response
+      ORDER BY prompt, response
+    `) as { prompt: string; response: string; count: number }[];
+
+    // Recent feedback timeline (includes reviewer identity for super-admin diagnostics)
+    const recentFeedback = (await sql`
+      SELECT
+        pf.prompt,
+        pf.response,
+        pf.created_at,
+        e.title AS plan_title,
+        e.starts_at AS plan_date,
+        ru.id AS reviewer_user_id,
+        ru.name AS reviewer_name,
+        ru.username AS reviewer_username
+      FROM newchums.plan_feedback pf
+      JOIN newchums.events e ON e.id = pf.plan_id
+      JOIN newchums.users ru ON ru.id = pf.reviewer_user_id
+      WHERE pf.reviewee_user_id = ${userId}
+      ORDER BY pf.created_at DESC
+      LIMIT 50
+    `) as {
+      prompt: string;
+      response: string;
+      created_at: string;
+      plan_title: string;
+      plan_date: string;
+      reviewer_user_id: string;
+      reviewer_name: string | null;
+      reviewer_username: string | null;
+    }[];
+
+    // Plans attended count for context
+    const planStats = (await sql`
+      SELECT
+        (SELECT COUNT(*)::int FROM newchums.event_rsvps WHERE user_id = ${userId} AND status = 'going') AS plans_going,
+        (SELECT COUNT(*)::int FROM newchums.events WHERE host_user_id = ${userId}) AS plans_hosted
+    `) as { plans_going: number; plans_hosted: number }[];
+
+    return c.json({
+      ok: true,
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        name: user.name,
+        createdAt: user.created_at,
+        role: user.role,
+        isSuspended: user.is_suspended,
+      },
+      metrics: metrics.map((m) => ({
+        metric: m.metric,
+        score: parseFloat(m.score),
+        signalCount: m.signal_count,
+        updatedAt: m.updated_at,
+      })),
+      preferences: preferences.length > 0
+        ? {
+            enabled: preferences[0].enabled,
+            reliability: preferences[0].reliability_level,
+            sociability: preferences[0].sociability_level,
+            presentation: preferences[0].presentation_level,
+            hosting: preferences[0].hosting_level,
+            updatedAt: preferences[0].updated_at,
+          }
+        : null,
+      attendanceIssues,
+      conductReports,
+      feedbackReceived,
+      recentFeedback: recentFeedback.map((f) => {
+        const reporterLabel =
+          (f.reviewer_name && f.reviewer_name.trim()) ||
+          (f.reviewer_username && `@${f.reviewer_username.replace(/^@/, "")}`) ||
+          "Unknown user";
+        return {
+          prompt: f.prompt,
+          response: f.response,
+          createdAt: f.created_at,
+          planTitle: f.plan_title,
+          planDate: f.plan_date,
+          reviewerUserId: f.reviewer_user_id,
+          reporterLabel,
+        };
+      }),
+      planStats: planStats[0] ?? { plans_going: 0, plans_hosted: 0 },
+    });
+  } catch (err) {
+    console.error("[GET /admin/users/:id/diagnostics]", err);
+    return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
+  }
+});
+
 // ─── Admin badge counts & mark-viewed ────────────────────────────────────────
 
 /** GET /admin/badge-counts — returns new-item counts since admin last viewed each section */
@@ -7987,6 +8132,69 @@ const FEEDBACK_RESPONSES = ["agree", "maybe", "disagree"] as const;
 const ATTENDANCE_ISSUE_TYPES = ["no_show", "late_cancel", "very_late"] as const;
 const CONDUCT_REASONS = ["rude_aggressive", "harassment", "boundary_issue", "discriminatory", "unsafe_intoxicated", "disruptive", "property_damage", "other"] as const;
 
+const FEEDBACK_RESPONSE_TARGETS: Record<string, number> = { agree: 80, maybe: 50, disagree: 20 };
+const ATTENDANCE_PENALTIES: Record<string, number> = { no_show: -8, late_cancel: -5, very_late: -3 };
+const METRIC_BASELINE = 50;
+
+async function nudgeUserMetric(sql: ReturnType<typeof getSql>, userId: string, metric: string, response: string) {
+  const target = FEEDBACK_RESPONSE_TARGETS[response];
+  if (target === undefined) return;
+
+  const rows = (await sql`
+    SELECT score, signal_count FROM newchums.user_metrics
+    WHERE user_id = ${userId} AND metric = ${metric}
+  `) as { score: string; signal_count: number }[];
+
+  let currentScore = METRIC_BASELINE;
+  let signalCount = 0;
+  if (rows.length > 0) {
+    currentScore = parseFloat(rows[0].score);
+    signalCount = rows[0].signal_count;
+  }
+
+  const nudge = (target - currentScore) / (signalCount + 5);
+  const newScore = Math.max(0, Math.min(100, currentScore + nudge));
+  const newSignalCount = signalCount + 1;
+
+  await sql`
+    INSERT INTO newchums.user_metrics (user_id, metric, score, signal_count, updated_at)
+    VALUES (${userId}, ${metric}, ${newScore.toFixed(2)}, ${newSignalCount}, NOW())
+    ON CONFLICT (user_id, metric) DO UPDATE SET
+      score = ${newScore.toFixed(2)},
+      signal_count = ${newSignalCount},
+      updated_at = NOW()
+  `;
+}
+
+async function penalizeReliability(sql: ReturnType<typeof getSql>, userId: string, issueType: string) {
+  const penalty = ATTENDANCE_PENALTIES[issueType];
+  if (penalty === undefined) return;
+
+  const rows = (await sql`
+    SELECT score, signal_count FROM newchums.user_metrics
+    WHERE user_id = ${userId} AND metric = 'reliability'
+  `) as { score: string; signal_count: number }[];
+
+  let currentScore = METRIC_BASELINE;
+  let signalCount = 0;
+  if (rows.length > 0) {
+    currentScore = parseFloat(rows[0].score);
+    signalCount = rows[0].signal_count;
+  }
+
+  const newScore = Math.max(0, Math.min(100, currentScore + penalty));
+  const newSignalCount = signalCount + 1;
+
+  await sql`
+    INSERT INTO newchums.user_metrics (user_id, metric, score, signal_count, updated_at)
+    VALUES (${userId}, 'reliability', ${newScore.toFixed(2)}, ${newSignalCount}, NOW())
+    ON CONFLICT (user_id, metric) DO UPDATE SET
+      score = ${newScore.toFixed(2)},
+      signal_count = ${newSignalCount},
+      updated_at = NOW()
+  `;
+}
+
 /** GET /events/:id/feedback — existing feedback by this user for this plan + eligible attendees */
 app.get("/events/:id/feedback", async (c) => {
   const payload = await requireAuth(c);
@@ -8104,6 +8312,8 @@ app.post("/events/:id/feedback", async (c) => {
         ON CONFLICT (plan_id, reviewer_user_id, reviewee_user_id, prompt)
         DO UPDATE SET response = EXCLUDED.response, created_at = NOW()
       `;
+
+      await nudgeUserMetric(sql, entry.revieweeUserId, entry.prompt, entry.response);
     }
 
     return c.json({ ok: true });
@@ -8141,11 +8351,16 @@ app.post("/events/:id/attendance-issue", async (c) => {
     if (new Date(ev[0].starts_at) > new Date())
       return c.json({ ok: false, error: "NOT_PAST" }, 400);
 
-    await sql`
+    const inserted = await sql`
       INSERT INTO newchums.attendance_issues (plan_id, reporter_user_id, reported_user_id, issue_type)
       VALUES (${eventId}, ${userId}, ${body.reportedUserId}, ${body.issueType})
       ON CONFLICT (plan_id, reporter_user_id, reported_user_id, issue_type) DO NOTHING
+      RETURNING id
     `;
+
+    if (inserted.length > 0) {
+      await penalizeReliability(sql, body.reportedUserId, body.issueType);
+    }
 
     return c.json({ ok: true });
   } catch (err) {
@@ -8189,6 +8404,111 @@ app.post("/events/:id/conduct-report", async (c) => {
     return c.json({ ok: true });
   } catch (err) {
     console.error("[POST /events/:id/conduct-report]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+// ─── Chum Preferences ────────────────────────────────────────────────────────
+
+const PREF_LEVELS = ["open", "preferred", "important", "required"] as const;
+type PrefLevel = typeof PREF_LEVELS[number];
+
+/** GET /chum-preferences — get current user's chum preference settings */
+app.get("/chum-preferences", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+
+  try {
+    const rows = (await sql`
+      SELECT enabled, reliability_level, sociability_level, presentation_level, hosting_level, updated_at
+      FROM newchums.chum_preferences
+      WHERE user_id = ${userId}
+      LIMIT 1
+    `) as {
+      enabled: boolean;
+      reliability_level: string;
+      sociability_level: string;
+      presentation_level: string;
+      hosting_level: string;
+      updated_at: string;
+    }[];
+
+    if (rows.length === 0) {
+      return c.json({
+        ok: true,
+        preferences: {
+          enabled: true,
+          reliability: "preferred",
+          sociability: "open",
+          presentation: "open",
+          hosting: "open",
+        },
+      });
+    }
+
+    const r = rows[0];
+    return c.json({
+      ok: true,
+      preferences: {
+        enabled: r.enabled,
+        reliability: r.reliability_level,
+        sociability: r.sociability_level,
+        presentation: r.presentation_level,
+        hosting: r.hosting_level,
+      },
+    });
+  } catch (err) {
+    console.error("[GET /chum-preferences]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** PUT /chum-preferences — save current user's chum preference settings */
+app.put("/chum-preferences", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+
+  const body = await c.req.json<{
+    enabled?: boolean;
+    reliability?: string;
+    sociability?: string;
+    presentation?: string;
+    hosting?: string;
+  }>();
+
+  const enabled = typeof body.enabled === "boolean" ? body.enabled : true;
+  const reliability = (PREF_LEVELS.includes(body.reliability as PrefLevel) ? body.reliability : "preferred") as PrefLevel;
+  const sociability = (PREF_LEVELS.includes(body.sociability as PrefLevel) ? body.sociability : "open") as PrefLevel;
+  const presentation = (PREF_LEVELS.includes(body.presentation as PrefLevel) ? body.presentation : "open") as PrefLevel;
+  const hosting = (PREF_LEVELS.includes(body.hosting as PrefLevel) ? body.hosting : "open") as PrefLevel;
+
+  try {
+    await sql`
+      INSERT INTO newchums.chum_preferences (user_id, enabled, reliability_level, sociability_level, presentation_level, hosting_level, updated_at)
+      VALUES (${userId}, ${enabled}, ${reliability}, ${sociability}, ${presentation}, ${hosting}, NOW())
+      ON CONFLICT (user_id) DO UPDATE SET
+        enabled = ${enabled},
+        reliability_level = ${reliability},
+        sociability_level = ${sociability},
+        presentation_level = ${presentation},
+        hosting_level = ${hosting},
+        updated_at = NOW()
+    `;
+
+    return c.json({
+      ok: true,
+      preferences: { enabled, reliability, sociability, presentation, hosting },
+    });
+  } catch (err) {
+    console.error("[PUT /chum-preferences]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });

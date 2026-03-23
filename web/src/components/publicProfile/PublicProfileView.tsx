@@ -106,9 +106,15 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
                 color={chumAction.isSaved ? "inherit" : "primary"}
                 disabled={chumAction.loading}
                 onClick={chumAction.onToggle}
-                sx={{ fontSize: "0.8125rem", whiteSpace: "nowrap" }}
+                sx={{
+                  fontSize: "0.8125rem",
+                  lineHeight: 1.25,
+                  textAlign: "center",
+                  maxWidth: { xs: 168, sm: "none" },
+                  whiteSpace: { xs: "normal", sm: "nowrap" },
+                }}
               >
-                {chumAction.isSaved ? "Remove" : "Save"}
+                {chumAction.isSaved ? "Remove Chum Connection" : "Save"}
               </Button>
             </Box>
           )}
@@ -132,8 +138,13 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
         </AppCard>
       )}
 
-      {/* Attendance record */}
-      <AttendanceRecordSection userId={user.userId} isOwner={isOwner} />
+      {/* Stats */}
+      <AttendanceRecordSection
+        userId={user.userId}
+        isOwner={isOwner}
+        displayName={user.displayName}
+        variant="public"
+      />
 
       {/* Public connections section — self-contained card, hidden if owner toggled it off or list is empty */}
       {ownerHandleSlug && !user.is_hidden_chum_list && (

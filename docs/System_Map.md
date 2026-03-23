@@ -92,7 +92,8 @@ The following flows run in the API worker; the web app calls the API via `NEXT_P
 | Chum invites | `POST /chums/invite`, `POST /chums/invite/accept` | Bearer JWT |
 | Public Chums | `GET /public/users/:handle/chums` | none |
 | Events (plans) | `POST /events`, `GET /events/mine`, `GET /events/:id` (optional auth — returns `accessState` + `shareToken`), `GET /events/explore` (auth), `GET /events/explore/public` (no auth), `PATCH /events/:id`, `POST /events/:id/rsvp`, `POST /events/:id/alt-time`, `POST /events/:id/cancel`, `POST /events/:id/invite`, `POST /events/:id/confirm`, `POST /events/:id/email-confirm` | Bearer JWT (detail: optional; accepts `invite_token` / `participation_token` / `share_token`); explore/public: no auth |
-| Plan feedback | `GET /events/:id/feedback`, `POST /events/:id/feedback`, `POST /events/:id/attendance-issue`, `POST /events/:id/conduct-report` | Bearer JWT |
+| Plan feedback | `GET /events/:id/feedback`, `POST /events/:id/feedback` (updates `user_metrics`), `POST /events/:id/attendance-issue` (penalizes reliability), `POST /events/:id/conduct-report` | Bearer JWT |
+| Chum preferences | `GET /chum-preferences`, `PUT /chum-preferences` | Bearer JWT |
 | Attendance record | `GET /public/users/:userId/attendance-record` | none |
 | Plan chat | `GET /events/:id/chat`, `POST /events/:id/chat`, `POST /events/:id/chat/read`, `GET /events/:id/chat/ws` (WebSocket upgrade) | Bearer JWT |
 | Plan lock | `POST /events/:id/lock` | Bearer JWT (host only) |
@@ -100,7 +101,7 @@ The following flows run in the API worker; the web app calls the API via `NEXT_P
 | Email unsubscribe | `POST /email/unsubscribe` | Signed JWT token |
 | Contact form | `POST /contact` | none (Turnstile for logged-out) |
 | Admin — interests | `GET /admin/interests`, `PATCH /admin/interests/:id`, `DELETE /admin/interests/:id`, `POST /admin/interests/:id/restore`, `POST /admin/interests/merge` | Bearer JWT + `super_admin` role |
-| Admin — users | `GET /admin/users`, `POST /admin/users/:id/suspend`, `POST /admin/users/:id/unsuspend` | Bearer JWT + `super_admin` role |
+| Admin — users | `GET /admin/users`, `POST /admin/users/:id/suspend`, `POST /admin/users/:id/unsuspend`, `GET /admin/users/:id/diagnostics` | Bearer JWT + `super_admin` role |
 | Diagnostics | `GET /health`, `GET /health/env` | none |
 
 ### Content safety
@@ -163,7 +164,7 @@ Sign in → Explore (event discovery feed)
 ├── Your Plans → Upcoming / Past tabs → Event detail
 │   └── Past plan → Post-plan feedback (rate attendees, report issues/concerns)
 ├── Your Chums → Search / Add / Remove / Invite by email
-├── Profile → Edit → Public profile (/u/handle)
+├── Profile → Edit → Chum preferences → Public profile (/u/handle)
 ├── Settings → Notifications / Privacy / Email / Password / Delete account
 └── Notifications (bell) → View / mark read
 ```
@@ -264,6 +265,7 @@ Wrangler config is code-managed so deploys do not wipe routes or override canoni
 | `/settings` | Notifications, privacy, account |
 | `/admin/interests` | Interests moderation (super_admin) |
 | `/admin/chums` | User management (super_admin) |
+| `/admin/chums/[id]` | User diagnostics — metric scores, preferences, feedback, issues (super_admin) |
 | `/unsubscribe` | Email notification unsubscribe (public, token-based) |
 
 ---
