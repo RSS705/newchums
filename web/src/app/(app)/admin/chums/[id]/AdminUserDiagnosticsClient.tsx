@@ -55,6 +55,13 @@ type PrefData = { enabled: boolean; reliability: string; sociability: string; pr
 type UserInfo = { id: string; email: string; username: string | null; name: string | null; createdAt: string; role: string | null; isSuspended: boolean };
 type PlanStats = { plans_going: number; plans_hosted: number };
 
+type ObjectivesData = {
+  tutorialOff: boolean;
+  nextStepKey: string | null;
+  completed: Array<{ key: string; title: string; completedAt: string | null }>;
+  incomplete: Array<{ key: string; title: string }>;
+};
+
 type DiagnosticsData = {
   user: UserInfo;
   metrics: MetricRow[];
@@ -64,6 +71,7 @@ type DiagnosticsData = {
   feedbackReceived: FeedbackAgg[];
   recentFeedback: RecentFeedback[];
   planStats: PlanStats;
+  objectives?: ObjectivesData;
 };
 
 const METRIC_LABELS: Record<string, string> = {
@@ -665,6 +673,73 @@ export default function AdminUserDiagnosticsClient() {
           <Typography variant="body2" color="text.secondary">No feedback received yet.</Typography>
         )}
       </Paper>
+
+      {/* Objectives / Nudge Progress */}
+      {data.objectives && (
+        <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}>
+          <SectionTitle>Objectives Progress</SectionTitle>
+          <Stack spacing={1.5}>
+            <Stack direction="row" spacing={2} flexWrap="wrap">
+              <Chip
+                label={`Tutorial tips: ${data.objectives.tutorialOff ? "OFF" : "ON"}`}
+                size="small"
+                color={data.objectives.tutorialOff ? "default" : "primary"}
+                variant="outlined"
+              />
+              <Chip
+                label={`${data.objectives.completed.length} of ${data.objectives.completed.length + data.objectives.incomplete.length} completed`}
+                size="small"
+                variant="outlined"
+              />
+              {data.objectives.nextStepKey && !data.objectives.tutorialOff && (
+                <Chip
+                  label={`Next step: ${data.objectives.nextStepKey}`}
+                  size="small"
+                  color="primary"
+                  variant="filled"
+                />
+              )}
+            </Stack>
+
+            {data.objectives.completed.length > 0 && (
+              <Box>
+                <Typography variant="body2" fontWeight={600} sx={{ mb: 0.5 }}>
+                  Completed
+                </Typography>
+                <Stack spacing={0.5}>
+                  {data.objectives.completed.map((o) => (
+                    <Stack key={o.key} direction="row" spacing={1} alignItems="center">
+                      <CheckRoundedIcon sx={{ fontSize: 16, color: "success.main" }} />
+                      <Typography variant="body2">{o.title}</Typography>
+                      {o.completedAt && (
+                        <Typography variant="caption" color="text.disabled">
+                          {formatDate(o.completedAt)}
+                        </Typography>
+                      )}
+                    </Stack>
+                  ))}
+                </Stack>
+              </Box>
+            )}
+
+            {data.objectives.incomplete.length > 0 && (
+              <Box>
+                <Typography variant="body2" fontWeight={600} sx={{ mb: 0.5 }}>
+                  Not yet completed
+                </Typography>
+                <Stack spacing={0.5}>
+                  {data.objectives.incomplete.map((o) => (
+                    <Stack key={o.key} direction="row" spacing={1} alignItems="center">
+                      <Box sx={{ width: 16, height: 16, borderRadius: "50%", border: "2px solid", borderColor: "grey.300", flexShrink: 0 }} />
+                      <Typography variant="body2" color="text.secondary">{o.title}</Typography>
+                    </Stack>
+                  ))}
+                </Stack>
+              </Box>
+            )}
+          </Stack>
+        </Paper>
+      )}
 
       <Divider />
 

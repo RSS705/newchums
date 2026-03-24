@@ -466,6 +466,69 @@ export default function AdminSystemLogicClient() {
         </Bullet>
       </CollapsibleSection>
 
+      <CollapsibleSection
+        title="Objectives &amp; next-best-step nudges"
+        subtitle="How NewChums guides users through onboarding and early retention."
+      >
+        <Typography variant="body2" fontWeight={600}>
+          How it works
+        </Typography>
+        <Bullet>
+          NewChums uses a <strong>next-best-step objective system</strong> to guide new users through onboarding and early product engagement.
+        </Bullet>
+        <Bullet>
+          A single nudge appears above the page content on every logged-in view, showing the user their most relevant next action.
+        </Bullet>
+        <Bullet>
+          The system is <strong>sequence-aware</strong>: objectives have a defined order and the nudge advances automatically as the user completes earlier steps.
+        </Bullet>
+        <Bullet>
+          Objectives are evaluated in real time based on actual product data (profile fields, RSVPs, contacts, chat messages, feedback).
+        </Bullet>
+
+        <Bullet>
+          The nudge does <strong>not</strong> appear on super admin pages.
+        </Bullet>
+
+        <Typography variant="body2" fontWeight={600} sx={{ mt: 1 }}>
+          Current objective sequence
+        </Typography>
+        <Bullet>Add your name &rarr; Add hobbies &rarr; Set location &rarr; Set travel distance &rarr; Write a bio &rarr; Add a profile picture &rarr; Join a plan &rarr; Attend a plan &rarr; Say hello in chat &rarr; Give feedback &rarr; Create a plan &rarr; Add a chum</Bullet>
+
+        <Typography variant="body2" fontWeight={600} sx={{ mt: 1 }}>
+          User control
+        </Typography>
+        <Bullet>
+          Users can <strong>dismiss</strong> the nudge for the current session (X button) or <strong>permanently turn off</strong> tutorial tips (&ldquo;Turn off tips&rdquo; link on the nudge).
+        </Bullet>
+        <Bullet>
+          Users can <strong>re-enable</strong> tutorial tips from <strong>Settings &rarr; Tips &amp; guidance</strong>.
+        </Bullet>
+        <Bullet>
+          The permanent opt-out is stored on the user record (<code style={{ fontSize: "0.85em" }}>tutorial_nudges_off</code>) and is respected globally.
+        </Bullet>
+
+        <Typography variant="body2" fontWeight={600} sx={{ mt: 1 }}>
+          Admin visibility
+        </Typography>
+        <Bullet>
+          <strong>User Diagnostics:</strong> Shows completed/incomplete objectives, tutorial on/off state, and current next step for any user.
+        </Bullet>
+        <Bullet>
+          <strong>KPI tab:</strong> Shows engagement rate (% of users who completed &ge;1 objective), average completion depth, opt-out count, and a per-objective completion funnel for drop-off analysis.
+        </Bullet>
+
+        <Typography variant="body2" fontWeight={600} sx={{ mt: 1 }}>
+          Architecture note
+        </Typography>
+        <Bullet>
+          Completions are recorded durably in <code style={{ fontSize: "0.85em" }}>user_objective_completions</code> for analytics, but the source of truth for each objective is always the live product data (e.g., &ldquo;has hobbies&rdquo; = rows exist in <code style={{ fontSize: "0.85em" }}>user_interests</code>).
+        </Bullet>
+        <Bullet>
+          The objective catalog is defined in code (<code style={{ fontSize: "0.85em" }}>api/src/objectives.ts</code>) and can be extended with new objectives without schema changes.
+        </Bullet>
+      </CollapsibleSection>
+
       <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, bgcolor: "action.hover", mt: 3 }}>
         <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.6 }}>
           Want endpoints, database names, or the exact email templates? That lives in the repo docs (e.g. Technical_Specs) — this page is just the friendly

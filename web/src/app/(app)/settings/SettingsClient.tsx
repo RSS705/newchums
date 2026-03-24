@@ -44,6 +44,7 @@ export default function SettingsClient() {
   const [isHiddenAge, setIsHiddenAge] = useState(false);
   const [isHiddenChumList, setIsHiddenChumList] = useState(false);
   const [isHiddenFromChumLists, setIsHiddenFromChumLists] = useState(false);
+  const [tutorialNudgesOff, setTutorialNudgesOff] = useState(false);
   const [privacyLoading, setPrivacyLoading] = useState(false);
   const privacySaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toast = useToast();
@@ -62,6 +63,7 @@ export default function SettingsClient() {
         setIsHiddenAge(data.profile.is_hidden_age ?? false);
         setIsHiddenChumList(data.profile.is_hidden_chum_list ?? false);
         setIsHiddenFromChumLists(data.profile.is_hidden_from_chum_lists ?? false);
+        setTutorialNudgesOff(data.profile.tutorial_nudges_off ?? false);
       }
     } finally {
       setLoading(false);
@@ -385,6 +387,36 @@ export default function SettingsClient() {
             onToggle={setPrivacyHiddenFromChumLists}
             showDivider={true}
             disabled={privacyLoading}
+          />
+        </Stack>
+      </AppCard>
+
+      {/* Tips & guidance */}
+      <AppCard>
+        <Stack spacing={2.5}>
+          <Box>
+            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>Tips &amp; guidance</Typography>
+            <Typography color="text.secondary" variant="body2" sx={{ mt: 0.75, lineHeight: 1.6 }}>
+              Control whether NewChums shows you helpful next-step tips as you use the product.
+            </Typography>
+          </Box>
+          <PrivacyToggleRow
+            title="Turn off tutorial tips"
+            description="When enabled, NewChums will not show next-step guidance tips across the app. You can re-enable them at any time."
+            enabled={tutorialNudgesOff}
+            onToggle={async (off) => {
+              setTutorialNudgesOff(off);
+              try {
+                await apiFetch("/objectives/tutorial-off", {
+                  method: "PUT",
+                  auth: true,
+                  body: JSON.stringify({ off }),
+                });
+              } catch {
+                setTutorialNudgesOff(!off);
+              }
+            }}
+            showDivider={false}
           />
         </Stack>
       </AppCard>

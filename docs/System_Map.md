@@ -84,6 +84,7 @@ The following flows run in the API worker; the web app calls the API via `NEXT_P
 | Profile | `GET /profile` (includes `role`), `PUT /profile` | Bearer JWT |
 | Public profile | `GET /public/users/:handle` | optional Bearer JWT (auth-aware: logged-out viewers see username only, no name/age/gender) |
 | Handle availability | `GET /handles/available?handle=...` | Bearer JWT |
+| Objectives / nudge | `GET /objectives/next`, `PUT /objectives/tutorial-off` | Bearer JWT |
 | Onboarding | `POST /user/username`, `POST /user/date-of-birth` | Bearer JWT |
 | Avatar upload | `POST /media/init` → PUT to uploadUrl → `POST /media/finalize` | Bearer JWT |
 | Avatar remove | `DELETE /profile/avatar` | Bearer JWT |
@@ -168,7 +169,8 @@ Sign in → Explore (event discovery feed)
 ├── Your Chums → Search / Add / Remove / Invite by email
 ├── Profile → Edit → Chum preferences → Public profile (/u/handle)
 ├── Settings → Notifications / Privacy / Email / Password / Delete account
-└── Notifications (bell) → View / mark read
+├── Notifications (bell) → View / mark read
+└── Next-step nudge (above page content, all views) → contextual objective → dismiss / turn off
 ```
 
 ### Plan access state flow

@@ -785,9 +785,44 @@ Users configure matching preferences in their profile ("Your chum preferences" s
 
 - New plans may inherit the creator's chum preferences by default (the override infrastructure now supports this).
 
-*Schema:* Migration 049: `plan_feedback`, `attendance_issues`, `conduct_reports`, `user_metrics` tables + `events.feedback_email_sent_at` column. Migration 050: `chum_preferences` table. Migration 051: `events.pref_overrides` JSONB column. Migration 052: attendance trust columns on `attendance_issues`. Migration 053: `status` column on `conduct_reports`.
+*Schema:* Migration 049: `plan_feedback`, `attendance_issues`, `conduct_reports`, `user_metrics` tables + `events.feedback_email_sent_at` column. Migration 050: `chum_preferences` table. Migration 051: `events.pref_overrides` JSONB column. Migration 052: attendance trust columns on `attendance_issues`. Migration 053: `status` column on `conduct_reports`. Migration 054: `user_objective_completions` table + `users.tutorial_nudges_off` column.
 
 **Not yet implemented:** recurring events.
+
+### Objectives / next-best-step nudge system
+
+A durable objectives framework that guides users through onboarding and early retention via a single contextual "next best step" nudge.
+
+**Architecture:**
+
+- **Objective catalog** defined in code (`api/src/objectives.ts`): 12 objectives across 4 categories (profile, plans, social, engagement), each with a durable key, title, description, sequence, and action URL.
+- **Completion evaluation** runs in real time against live product data (profile fields, RSVPs, contacts, chat messages, feedback) — not cached state.
+- **Completion records** stored durably in `user_objective_completions` for analytics and admin visibility; auto-recorded when evaluated.
+- **User opt-out** via `users.tutorial_nudges_off` boolean; controllable directly from the nudge and from Settings → Tips & guidance.
+
+**Objective sequence:** add_display_name → add_hobbies → set_location → set_travel_distance → add_bio → add_avatar → join_first_plan → attend_first_plan → send_first_message → give_first_feedback → create_first_plan → add_first_chum.
+
+**API endpoints:**
+
+| Endpoint | Auth | Description |
+|----------|------|-------------|
+| `GET /objectives/next` | Bearer JWT | Returns the next best step, progress counts, and tutorial-off state |
+| `PUT /objectives/tutorial-off` | Bearer JWT | Permanently enable/disable tutorial nudges |
+| `GET /admin/objectives/kpi` | Super admin | Aggregate engagement rate, avg completion depth, opt-out count, per-objective funnel |
+| `GET /profile` | Bearer JWT | Now includes `tutorial_nudges_off` in the profile response |
+
+**Frontend:** `NextStepNudge` component (`web/src/components/objectives/NextStepNudge.tsx`) renders in AppShell above page content for authenticated non-admin views. Shows progress bar, current objective, action button, dismiss (session), and permanent turn-off link. Suppressed on `/admin/*` routes.
+
+**Admin surfaces:**
+- User Diagnostics: completed/incomplete objectives, tutorial state, current next step.
+- KPI tab: engagement rate, avg completion depth, opt-out count, completion funnel table.
+- System Logic tab: abbreviated explanation.
+
+**Settings:** Users can re-enable tutorial tips via Settings → Tips & guidance toggle. This controls the `users.tutorial_nudges_off` flag via `PUT /objectives/tutorial-off`.
+
+*Schema:* Migration 054: `user_objective_completions` table (user_id + objective_key unique, completed_at), `users.tutorial_nudges_off` boolean.
+
+**Extensibility:** The catalog can be extended by adding entries to `OBJECTIVES` in `api/src/objectives.ts`. Future gamification layers (XP, badges, rewards) can be layered on top of the completion records without schema changes. The objective definition type can be extended with reward fields when needed.
 
 ### Signup and onboarding
 
@@ -960,6 +995,8 @@ Core tables include:
 - `newchums.conduct_reports` (migration 049, extended 053) — safety/behavioral concern reports. Columns: `id` (UUID PK), `plan_id` (FK), `reporter_user_id` (FK), `reported_user_id` (FK), `reason`, `details` (TEXT NULL), `status` (new/reviewed/closed, migration 053), `created_at`.
 - `newchums.user_metrics` (migration 049) — aggregated hidden quality scores. Composite PK `(user_id, metric)`. Columns: `score` (NUMERIC(5,2), default 50.00), `signal_count` (INT, default 0), `updated_at`.
 - `newchums.events.feedback_email_sent_at` (migration 049) — `TIMESTAMPTZ NULL`; tracks when feedback reminder email was sent for a plan.
+- `newchums.user_objective_completions` (migration 054) — tracks per-user objective completion. Columns: `id` (UUID PK), `user_id` (FK), `objective_key` (TEXT), `completed_at` (TIMESTAMPTZ). Unique constraint on `(user_id, objective_key)`.
+- `newchums.users.tutorial_nudges_off` (migration 054) — `BOOLEAN NOT NULL DEFAULT false`; when true, tutorial nudges are permanently suppressed for the user.
 
 PostGIS is available for geo queries.
 

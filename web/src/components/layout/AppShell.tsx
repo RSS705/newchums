@@ -7,6 +7,7 @@ import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
 import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
 import WavingHandRoundedIcon from "@mui/icons-material/WavingHandRounded";
 import FeedbackRoundedIcon from "@mui/icons-material/FeedbackRounded";
+import NextStepNudge from "@/components/objectives/NextStepNudge";
 import {
   AppBar,
   Badge,
@@ -577,6 +578,7 @@ export default function AppShell({ children, user }: AppShellProps) {
 
               {/* Page content */}
               <Box sx={{ minWidth: 0 }}>
+                {isAuthenticated && <NextStepNudge />}
                 {children}
               </Box>
             </Box>

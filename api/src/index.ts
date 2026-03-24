@@ -6,6 +6,7 @@ import { isAtLeast18, parseDateOnly } from "./ageValidation";
 import { SignJWT, jwtVerify } from "jose";
 import { getBearerToken, verifyAuthToken } from "./auth";
 import { DATABASE_URL_HINT, type Bindings, getSql } from "./db";
+import { evaluateObjectives, OBJECTIVES } from "./objectives";
 import {
   sendAttendeeRemovedEmail,
   sendChumInviteEmail,
@@ -1981,7 +1982,8 @@ app.get("/profile", async (c) => {
         COALESCE(is_hidden_from_external_indexing, false) AS is_hidden_from_external_indexing,
         COALESCE(is_hidden_age, false) AS is_hidden_age,
         COALESCE(is_hidden_chum_list, false) AS is_hidden_chum_list,
-        COALESCE(is_hidden_from_chum_lists, false) AS is_hidden_from_chum_lists
+        COALESCE(is_hidden_from_chum_lists, false) AS is_hidden_from_chum_lists,
+        COALESCE(tutorial_nudges_off, false) AS tutorial_nudges_off
       FROM newchums.users WHERE id = ${appUserId} LIMIT 1
     `) as Array<{
       name: string | null;
@@ -1999,6 +2001,7 @@ app.get("/profile", async (c) => {
       is_hidden_age: boolean;
       is_hidden_chum_list: boolean;
       is_hidden_from_chum_lists: boolean;
+      tutorial_nudges_off: boolean;
     }>;
     const userInfo = userRows[0];
     const profileRows = (await sql`
@@ -2047,6 +2050,7 @@ app.get("/profile", async (c) => {
     const isHiddenAge = userInfo?.is_hidden_age ?? false;
     const isHiddenChumList = userInfo?.is_hidden_chum_list ?? false;
     const isHiddenFromChumLists = userInfo?.is_hidden_from_chum_lists ?? false;
+    const tutorialNudgesOff = userInfo?.tutorial_nudges_off ?? false;
     const role = userInfo?.role ?? null;
     const gender = userInfo?.gender ?? null;
     const profileTheme = userInfo?.profile_theme ?? null;
@@ -2078,6 +2082,7 @@ app.get("/profile", async (c) => {
           is_hidden_age: isHiddenAge,
           is_hidden_chum_list: isHiddenChumList,
           is_hidden_from_chum_lists: isHiddenFromChumLists,
+          tutorial_nudges_off: tutorialNudgesOff,
           role,
         },
       });
@@ -2108,6 +2113,7 @@ app.get("/profile", async (c) => {
         is_hidden_age: isHiddenAge,
         is_hidden_chum_list: isHiddenChumList,
         is_hidden_from_chum_lists: isHiddenFromChumLists,
+        tutorial_nudges_off: tutorialNudgesOff,
         role,
       },
     });
@@ -3795,6 +3801,21 @@ app.get("/admin/users/:id/diagnostics", async (c) => {
         (SELECT COUNT(*)::int FROM newchums.events WHERE host_user_id = ${userId}) AS plans_hosted
     `) as { plans_going: number; plans_hosted: number }[];
 
+    const objectivesResult = await evaluateObjectives(sql, userId);
+    const objectivesData = {
+      tutorialOff: objectivesResult.tutorialOff,
+      nextStepKey: objectivesResult.nextStep?.key ?? null,
+      completed: objectivesResult.objectives.filter((o) => o.completed).map((o) => ({
+        key: o.key,
+        title: o.title,
+        completedAt: o.completedAt,
+      })),
+      incomplete: objectivesResult.objectives.filter((o) => !o.completed).map((o) => ({
+        key: o.key,
+        title: o.title,
+      })),
+    };
+
     return c.json({
       ok: true,
       user: {
@@ -3856,6 +3877,7 @@ app.get("/admin/users/:id/diagnostics", async (c) => {
         };
       }),
       planStats: planStats[0] ?? { plans_going: 0, plans_hosted: 0 },
+      objectives: objectivesData,
     });
   } catch (err) {
     console.error("[GET /admin/users/:id/diagnostics]", err);
@@ -4462,6 +4484,119 @@ app.get("/admin/kpis", async (c) => {
     });
   } catch (err) {
     console.error("[GET /admin/kpis]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+// ---- Objectives / nudge framework ----
+
+/** GET /objectives/next — returns the next best step for the authenticated user */
+app.get("/objectives/next", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  try {
+    const sql = getSql(c.env);
+    const userRows = (await sql`
+      SELECT id FROM newchums.users WHERE email = ${payload.email} LIMIT 1
+    `) as { id: string }[];
+    if (!userRows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+
+    const { objectives, nextStep, tutorialOff } = await evaluateObjectives(sql, userRows[0].id);
+    const completedCount = objectives.filter((o) => o.completed).length;
+    const totalCount = objectives.length;
+
+    return c.json({
+      ok: true,
+      tutorialOff,
+      nextStep: tutorialOff ? null : nextStep,
+      progress: { completed: completedCount, total: totalCount },
+    });
+  } catch (err) {
+    console.error("[GET /objectives/next]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** PUT /objectives/tutorial-off — permanently turn off tutorial nudges */
+app.put("/objectives/tutorial-off", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  try {
+    const sql = getSql(c.env);
+    const body = (await c.req.json()) as { off?: boolean };
+    const off = body.off !== false;
+    await sql`
+      UPDATE newchums.users SET tutorial_nudges_off = ${off} WHERE email = ${payload.email}
+    `;
+    return c.json({ ok: true, tutorialOff: off });
+  } catch (err) {
+    console.error("[PUT /objectives/tutorial-off]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** GET /admin/objectives/kpi — aggregate objective completion metrics (super admin) */
+app.get("/admin/objectives/kpi", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  try {
+    const sql = getSql(c.env);
+
+    // 1. Engagement rate: % of users who completed at least 1 objective
+    const engagementRows = (await sql`
+      SELECT
+        (SELECT COUNT(*)::int FROM newchums.users) AS total_users,
+        (SELECT COUNT(DISTINCT user_id)::int FROM newchums.user_objective_completions) AS engaged_users,
+        (SELECT COUNT(*)::int FROM newchums.users WHERE tutorial_nudges_off = true) AS opted_out
+    `) as { total_users: number; engaged_users: number; opted_out: number }[];
+    const { total_users, engaged_users, opted_out } = engagementRows[0] ?? { total_users: 0, engaged_users: 0, opted_out: 0 };
+
+    // 2. Average completion depth: avg objectives completed per engaged user
+    const depthRows = (await sql`
+      SELECT COALESCE(AVG(cnt), 0)::numeric(5,2) AS avg_depth
+      FROM (
+        SELECT COUNT(*) AS cnt
+        FROM newchums.user_objective_completions
+        GROUP BY user_id
+      ) sub
+    `) as { avg_depth: number }[];
+
+    // 3. Per-objective completion funnel (for drop-off analysis)
+    const funnelRows = (await sql`
+      SELECT
+        oc.objective_key,
+        COUNT(*)::int AS completed_count
+      FROM newchums.user_objective_completions oc
+      GROUP BY oc.objective_key
+      ORDER BY completed_count DESC
+    `) as { objective_key: string; completed_count: number }[];
+
+    const funnel = OBJECTIVES.map((obj) => {
+      const row = funnelRows.find((r) => r.objective_key === obj.key);
+      return {
+        key: obj.key,
+        title: obj.title,
+        sequence: obj.sequence,
+        completedCount: row?.completed_count ?? 0,
+        completionRate: total_users > 0
+          ? Math.round(((row?.completed_count ?? 0) / total_users) * 1000) / 10
+          : 0,
+      };
+    }).sort((a, b) => a.sequence - b.sequence);
+
+    return c.json({
+      ok: true,
+      kpi: {
+        totalUsers: total_users,
+        engagedUsers: engaged_users,
+        engagementRate: total_users > 0 ? Math.round((engaged_users / total_users) * 1000) / 10 : 0,
+        avgCompletionDepth: Number(depthRows[0]?.avg_depth ?? 0),
+        optedOut: opted_out,
+        funnel,
+      },
+    });
+  } catch (err) {
+    console.error("[GET /admin/objectives/kpi]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });

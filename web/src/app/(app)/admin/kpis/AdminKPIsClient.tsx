@@ -9,6 +9,12 @@ import Grid from "@mui/material/Grid";
 import IconButton from "@mui/material/IconButton";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
+import Table from "@mui/material/Table";
+import TableBody from "@mui/material/TableBody";
+import TableCell from "@mui/material/TableCell";
+import TableContainer from "@mui/material/TableContainer";
+import TableHead from "@mui/material/TableHead";
+import TableRow from "@mui/material/TableRow";
 import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import Tooltip from "@mui/material/Tooltip";
@@ -30,6 +36,17 @@ import {
 import { apiFetch } from "@/lib/apiClient";
 
 // ── Types ────────────────────────────────────────────────────────────────────
+
+type ObjectiveFunnelItem = { key: string; title: string; sequence: number; completedCount: number; completionRate: number };
+
+type ObjectivesKPI = {
+  totalUsers: number;
+  engagedUsers: number;
+  engagementRate: number;
+  avgCompletionDepth: number;
+  optedOut: number;
+  funnel: ObjectiveFunnelItem[];
+};
 
 type TimePoint = { date: string; count: number };
 
@@ -365,6 +382,7 @@ function DefinitionsPanel() {
 
 export default function AdminKPIsClient() {
   const [data, setData] = useState<KPIData | null>(null);
+  const [objKpi, setObjKpi] = useState<ObjectivesKPI | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [range, setRange] = useState<RangeKey>("90");
@@ -373,11 +391,19 @@ export default function AdminKPIsClient() {
     setLoading(true);
     setError(null);
     try {
-      const res = await apiFetch(`/admin/kpis?days=${days}`, { auth: true });
-      if (!res.ok) throw new Error("Failed to load KPIs");
-      const json = (await res.json()) as { ok: boolean; data: KPIData };
+      const [kpiRes, objRes] = await Promise.all([
+        apiFetch(`/admin/kpis?days=${days}`, { auth: true }),
+        apiFetch("/admin/objectives/kpi", { auth: true }),
+      ]);
+      if (!kpiRes.ok) throw new Error("Failed to load KPIs");
+      const json = (await kpiRes.json()) as { ok: boolean; data: KPIData };
       if (!json.ok) throw new Error("Failed to load KPIs");
       setData(json.data);
+
+      if (objRes.ok) {
+        const objJson = (await objRes.json()) as { ok: boolean; kpi: ObjectivesKPI };
+        if (objJson.ok) setObjKpi(objJson.kpi);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     }
@@ -698,6 +724,75 @@ export default function AdminKPIsClient() {
                   this metric is omitted until capped plans reach their start time.
                 </Typography>
               </Paper>
+            )}
+
+            {/* ── 5. Objectives / Nudge ── */}
+            {objKpi && (
+              <>
+                <SectionTitle>Objectives &amp; onboarding</SectionTitle>
+                <SectionSubtitle>
+                  How users are progressing through the next-best-step tutorial system.
+                </SectionSubtitle>
+
+                <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 2.5 }} flexWrap="wrap">
+                  <StatCard
+                    label="Engagement rate"
+                    value={`${objKpi.engagementRate}%`}
+                    sub={`${objKpi.engagedUsers} of ${objKpi.totalUsers} users completed \u22651 objective`}
+                    tooltip="Percentage of all users who have completed at least one objective."
+                    color={BRAND}
+                  />
+                  <StatCard
+                    label="Avg completion depth"
+                    value={String(objKpi.avgCompletionDepth)}
+                    sub={`of ${objKpi.funnel.length} total objectives`}
+                    tooltip="Average number of objectives completed per engaged user."
+                    color={BLUE}
+                  />
+                  <StatCard
+                    label="Opted out"
+                    value={String(objKpi.optedOut)}
+                    sub={objKpi.totalUsers > 0 ? `${((objKpi.optedOut / objKpi.totalUsers) * 100).toFixed(1)}% of users` : ""}
+                    tooltip="Users who permanently turned off tutorial tips."
+                    color={GREY}
+                  />
+                </Stack>
+
+                {/* Funnel table */}
+                <Paper variant="outlined" sx={{ borderRadius: 3, overflow: "hidden", mb: 5 }}>
+                  <Box sx={{ px: 2.5, py: 1.5 }}>
+                    <Typography variant="subtitle2" fontWeight={700}>
+                      Objective completion funnel
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Drop-off analysis — ordered by sequence. Look for steep drops between adjacent steps.
+                    </Typography>
+                  </Box>
+                  <Divider />
+                  <TableContainer>
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell sx={{ fontWeight: 700 }}>#</TableCell>
+                          <TableCell sx={{ fontWeight: 700 }}>Objective</TableCell>
+                          <TableCell sx={{ fontWeight: 700 }} align="right">Completed</TableCell>
+                          <TableCell sx={{ fontWeight: 700 }} align="right">% of users</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {objKpi.funnel.map((f, i) => (
+                          <TableRow key={f.key}>
+                            <TableCell>{i + 1}</TableCell>
+                            <TableCell>{f.title}</TableCell>
+                            <TableCell align="right">{f.completedCount}</TableCell>
+                            <TableCell align="right">{f.completionRate}%</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </Paper>
+              </>
             )}
 
             <Box sx={{ mt: 5 }}>
