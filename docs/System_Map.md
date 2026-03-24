@@ -142,6 +142,8 @@ sequenceDiagram
 
 The hourly cron runs attendance assurance, then unread-chat digest (daily gate), then the **event match digest** (“new plans matching my interests”). Recipients need home location, travel radius, and the `event_match` preference. **Public** in-person plans require hobby overlap with the plan within travel radius (and the other digest gates). **Chums-only** in-person plans use the **same** hobby and distance rules; the recipient must also be on the **host’s** On NewChums connections (`user_contacts`, `type = 'on_newchums'`). **Invite-only** plans are excluded.
 
+After the SQL selects candidate (recipient, plan) pairs, **chum preference filtering** applies two checks: (1) the host's metrics must meet the recipient's chum preference thresholds, and (2) the recipient's metrics must meet the host's thresholds. Both must pass for a plan to appear in a digest. **Plan-level preference overrides** (`pref_overrides` JSONB on events) are respected: `{ "disabled": true }` bypasses all host preference checks for that plan; `{ "disabled_metrics": [...] }` bypasses specific metrics only. The **Explore feed** also enforces the host's chum preferences as a hard filter (respecting plan-level overrides in SQL); the viewer's own preferences produce informational compatibility notes but do not hide plans.
+
 ### Logged-out visitor flow
 
 ```

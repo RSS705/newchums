@@ -95,6 +95,9 @@ export default function PlanFeedback({ eventId }: PlanFeedbackProps) {
   const [conductSubmitting, setConductSubmitting] = useState(false);
   const [conductDone, setConductDone] = useState(false);
 
+  const [issuesAgainstMe, setIssuesAgainstMe] = useState<{ id: string; issueType: string; status: string }[]>([]);
+  const [disputing, setDisputing] = useState(false);
+
   const avatarBase = getAvatarBaseUrl();
 
   const load = useCallback(async () => {
@@ -105,6 +108,7 @@ export default function PlanFeedback({ eventId }: PlanFeedbackProps) {
         attendees: Attendee[];
         feedback: { reviewee_user_id: string; prompt: string; response: string }[];
         attendanceIssues: { reported_user_id: string; issue_type: string }[];
+        issuesAgainstMe?: { id: string; issueType: string; status: string }[];
       };
       setAttendees(data.attendees);
 
@@ -120,6 +124,10 @@ export default function PlanFeedback({ eventId }: PlanFeedbackProps) {
 
       if (data.attendanceIssues.length > 0) {
         setReportedIssues(new Set(data.attendanceIssues.map((i) => `${i.reported_user_id}:${i.issue_type}`)));
+      }
+
+      if (data.issuesAgainstMe && data.issuesAgainstMe.length > 0) {
+        setIssuesAgainstMe(data.issuesAgainstMe);
       }
     } catch { /* silent */ }
     setLoading(false);
@@ -193,8 +201,24 @@ export default function PlanFeedback({ eventId }: PlanFeedbackProps) {
     setConductSubmitting(false);
   };
 
+  const handleDispute = async () => {
+    setDisputing(true);
+    try {
+      const res = await apiFetch(`/events/${eventId}/attendance-dispute`, {
+        auth: true,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (res.ok) {
+        setIssuesAgainstMe((prev) => prev.map((i) => i.status === "active" ? { ...i, status: "disputed" } : i));
+      }
+    } catch { /* silent */ }
+    setDisputing(false);
+  };
+
   if (loading) return null;
-  if (attendees.length === 0) return null;
+  if (attendees.length === 0 && issuesAgainstMe.length === 0) return null;
 
   const hasAnyFeedback = Object.values(feedback).some((prompts) =>
     Object.values(prompts).some((v) => v != null),
@@ -278,6 +302,42 @@ export default function PlanFeedback({ eventId }: PlanFeedbackProps) {
 
         <Collapse in={expanded}>
           <Box sx={{ px: { xs: 2, sm: 2.5 }, pt: { xs: 1.5, sm: 2 }, pb: { xs: 2, sm: 2.5 } }}>
+            {/* Dispute banner for attendance issues against the current user */}
+            {issuesAgainstMe.length > 0 && (
+              <Box sx={{
+                mb: 2,
+                p: 2,
+                borderRadius: 2,
+                bgcolor: issuesAgainstMe.every((i) => i.status === "disputed") ? "#f0f4f8" : "#fef3c7",
+                border: "1px solid",
+                borderColor: issuesAgainstMe.every((i) => i.status === "disputed") ? "grey.300" : "#fbbf24",
+              }}>
+                <Typography variant="body2" fontWeight={600} sx={{ mb: 0.5 }}>
+                  {issuesAgainstMe.every((i) => i.status === "disputed")
+                    ? "You disputed an attendance concern on this plan"
+                    : "An attendance concern was raised about you for this plan"
+                  }
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                  {issuesAgainstMe.every((i) => i.status === "disputed")
+                    ? "Your dispute has been recorded. A moderator may review if needed."
+                    : "If you believe this is inaccurate, you can dispute it. Your dispute is private and the reporter will not be notified."
+                  }
+                </Typography>
+                {issuesAgainstMe.some((i) => i.status === "active") && (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={handleDispute}
+                    disabled={disputing}
+                    sx={{ textTransform: "none", fontWeight: 600 }}
+                  >
+                    {disputing ? "Disputing\u2026" : "Dispute this concern"}
+                  </Button>
+                )}
+              </Box>
+            )}
+
             {!submitted && (
               <Typography variant="body1" color="text.secondary" sx={{ mb: 2, lineHeight: 1.6 }}>
                 Everything is optional and private. Tap to rate each person, it only takes a moment.

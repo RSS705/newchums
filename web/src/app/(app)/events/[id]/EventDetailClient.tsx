@@ -179,6 +179,13 @@ function visibilityLabel(v: string): string {
 
 const VALID_RSVP_PARAMS = ["going", "maybe", "cant_make_it"] as const;
 
+const PREF_NOTE_LABELS: Record<string, string> = {
+  reliability: "reliability",
+  sociability: "sociability",
+  presentation: "personal care",
+  hosting_skills: "hosting quality",
+};
+
 export default function EventDetailClient() {
   const params = useParams();
   const router = useRouter();
@@ -192,6 +199,7 @@ export default function EventDetailClient() {
   const [altTimes, setAltTimes] = useState<AltTimeEntry[]>([]);
   const [invites, setInvites] = useState<InviteEntry[]>([]);
   const [viewerUserId, setViewerUserId] = useState<string | null>(null);
+  const [prefNote, setPrefNote] = useState<string[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -334,44 +342,12 @@ export default function EventDetailClient() {
   const [approveDeclineLoading, setApproveDeclineLoading] = useState<string | null>(null);
   const [hostResponseMessage, setHostResponseMessage] = useState<Record<string, string>>({});
 
-  // Edit dialog
-  const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [editTitle, setEditTitle] = useState("");
-  const [editDescription, setEditDescription] = useState("");
-  const [editDate, setEditDate] = useState<Dayjs | null>(null);
-  const [editTime, setEditTime] = useState<Dayjs | null>(null);
-  const [editMaxSeats, setEditMaxSeats] = useState("");
-  const [editVisibility, setEditVisibility] = useState<"public" | "chums_only" | "invite_only">("public");
-  const [editRequireReconfirmation, setEditRequireReconfirmation] = useState(false);
-  const [editRequireApproval, setEditRequireApproval] = useState(false);
-  const [editMinConfirmed, setEditMinConfirmed] = useState("");
-  const [editFallbackPolicy, setEditFallbackPolicy] = useState<"notify_host" | "proceed" | "auto_cancel">("notify_host");
-  const [editAllowAttendeeInvites, setEditAllowAttendeeInvites] = useState(true);
-  const [editAllowAltTimes, setEditAllowAltTimes] = useState(false);
-  const [editReserveSeats, setEditReserveSeats] = useState(false);
-  const [editHobbies, setEditHobbies] = useState<HobbyInfo[]>([]);
-  const [editHobbyInput, setEditHobbyInput] = useState("");
-  const [editHobbySuggestions, setEditHobbySuggestions] = useState<HobbyInfo[]>([]);
-  const [editHobbyLoading, setEditHobbyLoading] = useState(false);
-  const [editSubmitting, setEditSubmitting] = useState(false);
-
-  /** Commits free-text hobby; uses functional updates so rapid Enter + MUI onChange races don't drop chips. */
-  const appendEditHobbyFromInput = useCallback((raw: string) => {
-    const name = raw.trim().replace(/\s+/g, " ");
-    if (!name) return;
-    const slug = nameToSlug(name);
-    if (!slug) return;
-    const item: HobbyInfo = { name, slug };
-    setEditHobbies((prev) => {
-      if (prev.some((h) => isDuplicate(h, item))) return prev;
-      return [...prev, item];
-    });
-  }, []);
 
   const applyEventData = useCallback((data: {
     ok: boolean;
     accessState?: PlanAccessState;
     shareToken?: string;
+    prefNote?: string[] | null;
     viewerUserId?: string | null;
     event: EventDetail;
     rsvps: RsvpEntry[];
@@ -382,6 +358,7 @@ export default function EventDetailClient() {
     setEvent(data.event);
     if (data.accessState) setAccessState(data.accessState);
     if (data.shareToken) setShareToken(data.shareToken);
+    setPrefNote(data.prefNote ?? null);
     setRsvps(data.rsvps);
     setAltTimes(data.altTimes);
     setInvites(data.invites ?? []);
@@ -568,21 +545,6 @@ export default function EventDetailClient() {
     }, 300);
     return () => clearTimeout(timer);
   }, [inviteSearch, showInviteForm]);
-
-  // Edit dialog hobby search
-  useEffect(() => {
-    if (!editDialogOpen || !editHobbyInput.trim()) { setEditHobbySuggestions([]); return; }
-    const timer = setTimeout(async () => {
-      setEditHobbyLoading(true);
-      try {
-        const res = await apiFetch(`/interests?q=${encodeURIComponent(editHobbyInput)}`);
-        const data = (await res.json()) as { ok: boolean; interests?: HobbyInfo[] };
-        setEditHobbySuggestions(data.ok && data.interests ? data.interests : []);
-      } catch { setEditHobbySuggestions([]); }
-      finally { setEditHobbyLoading(false); }
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [editHobbyInput, editDialogOpen]);
 
   // --- Chat helpers ---
   const [chatAccessible, setChatAccessible] = useState<boolean | null>(null);
@@ -1300,77 +1262,6 @@ export default function EventDetailClient() {
     }
   };
 
-  const openEditDialog = () => {
-    if (!event) return;
-    const d = dayjs(event.startsAt);
-    setEditTitle(event.title);
-    setEditDescription(event.description ?? "");
-    setEditDate(d);
-    setEditTime(d);
-    setEditMaxSeats(event.maxSeats != null ? String(event.maxSeats) : "");
-    setEditVisibility((event.visibility as "public" | "chums_only" | "invite_only") ?? "public");
-    setEditRequireReconfirmation(event.requireReconfirmation ?? false);
-    setEditRequireApproval(event.requireApproval ?? false);
-    setEditAllowAttendeeInvites(event.allowAttendeeInvites !== false);
-    setEditAllowAltTimes(event.allowAltTimes ?? false);
-    setEditReserveSeats(event.reserveSeats === true);
-    setEditMinConfirmed(event.minConfirmedAttendees != null ? String(event.minConfirmedAttendees) : "");
-    setEditFallbackPolicy((event.fallbackPolicy as "notify_host" | "proceed" | "auto_cancel") ?? "notify_host");
-    const initialHobbies =
-      event.hobbies?.length > 0
-        ? event.hobbies
-        : event.hobby
-          ? [{ name: event.hobby, slug: event.hobbySlug ?? "" }]
-          : [];
-    setEditHobbies(initialHobbies);
-    setEditHobbyInput("");
-    setEditHobbySuggestions([]);
-    setEditDialogOpen(true);
-  };
-
-  const handleEditSubmit = async () => {
-    if (!editTitle.trim()) { toast.error("Title is required"); return; }
-    if (!editDate?.isValid() || !editTime?.isValid()) { toast.error("Date and time are required"); return; }
-    if (editHobbies.length === 0) { toast.error("At least one hobby is required"); return; }
-    const startsAt = editDate.hour(editTime.hour()).minute(editTime.minute()).second(0).toISOString();
-    setEditSubmitting(true);
-    try {
-      const res = await apiFetch(`/events/${eventId}`, {
-        auth: true,
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: editTitle.trim(),
-          description: editDescription.trim() || null,
-          starts_at: startsAt,
-          interest_items: editHobbies.map((h) => ({ slug: h.slug, name: h.name })),
-          max_seats: editMaxSeats ? Number(editMaxSeats) : null,
-          reserve_seats: editMaxSeats ? editReserveSeats : false,
-          visibility: editVisibility,
-          require_reconfirmation: editRequireReconfirmation,
-          require_approval: editRequireApproval,
-          allow_attendee_invites: editAllowAttendeeInvites,
-          allow_alt_times: editAllowAltTimes,
-          min_confirmed_attendees: editRequireReconfirmation && editMinConfirmed ? Number(editMinConfirmed) : null,
-          fallback_policy: editRequireReconfirmation ? editFallbackPolicy : "notify_host",
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        }),
-      });
-      const data = (await res.json()) as { ok: boolean; message?: string };
-      if (data.ok) {
-        setEditDialogOpen(false);
-        toast.success("Plan updated");
-        refresh();
-      } else {
-        toast.error(data.message ?? "Couldn't save changes");
-      }
-    } catch {
-      toast.error("Network error");
-    } finally {
-      setEditSubmitting(false);
-    }
-  };
-
   if (loading) {
     return (
       <Box sx={{ display: "flex", justifyContent: "center", py: 10 }}>
@@ -1704,6 +1595,31 @@ export default function EventDetailClient() {
               </Typography>
             )}
           </Stack>
+        </Box>
+      )}
+
+      {/* Compatibility note — shown when the host doesn't fully meet viewer's chum preferences */}
+      {prefNote && prefNote.length > 0 && !event.isHost && (
+        <Box
+          sx={{
+            p: 2,
+            borderRadius: 2.5,
+            border: "1px solid",
+            borderColor: "warning.light",
+            bgcolor: "rgba(255, 167, 38, 0.06)",
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 1.5,
+          }}
+        >
+          <InfoOutlinedIcon sx={{ color: "warning.main", mt: "2px", fontSize: 20, flexShrink: 0 }} />
+          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+            Based on your preferences, this plan may not fully match your expectations
+            {prefNote.length === 1
+              ? ` for ${PREF_NOTE_LABELS[prefNote[0]] ?? prefNote[0]}`
+              : ` for ${prefNote.map((m) => PREF_NOTE_LABELS[m] ?? m).join(" and ")}`
+            }. You can still join — this is just a heads-up.
+          </Typography>
         </Box>
       )}
 
@@ -3530,7 +3446,7 @@ export default function EventDetailClient() {
             <Button
               variant="outlined"
               startIcon={<EditRoundedIcon />}
-              onClick={openEditDialog}
+              onClick={() => router.push(`/events/${eventId}/edit`)}
               disabled={isEditLocked}
               sx={{ textTransform: "none" }}
             >
@@ -3698,324 +3614,6 @@ export default function EventDetailClient() {
         </DialogActions>
       </Dialog>
 
-      {/* Edit plan dialog */}
-      <Dialog
-        open={editDialogOpen}
-        onClose={() => !editSubmitting && setEditDialogOpen(false)}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle sx={{ fontWeight: 700, pb: 0 }}>Edit plan</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2.5} sx={{ pt: 2 }}>
-            <AppTextField
-              label="Title"
-              value={editTitle}
-              onChange={(e) => setEditTitle(e.target.value)}
-              inputProps={{ maxLength: 200 }}
-              helperText={null}
-            />
-            <AppTextField
-              label="Description"
-              value={editDescription}
-              onChange={(e) => setEditDescription(e.target.value)}
-              multiline
-              minRows={3}
-              maxRows={6}
-              inputProps={{ maxLength: 2000 }}
-              helperText={null}
-            />
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-              <Box sx={{ flex: 1 }}>
-                <Typography variant="subtitle1" fontWeight={600} sx={{ display: "block", mb: 0.625 }}>
-                  Date
-                </Typography>
-                <DatePicker
-                  value={editDate}
-                  onChange={setEditDate}
-                  slotProps={{ textField: { fullWidth: true, size: "medium" } }}
-                />
-              </Box>
-              <Box sx={{ flex: 1 }}>
-                <Typography variant="subtitle1" fontWeight={600} sx={{ display: "block", mb: 0.625 }}>
-                  Time
-                </Typography>
-                <TimePicker
-                  value={editTime}
-                  onChange={setEditTime}
-                  format="h:mm A"
-                  slotProps={{ field: { shouldRespectLeadingZeros: true } as Record<string, unknown>, textField: { fullWidth: true, size: "medium" } }}
-                />
-              </Box>
-            </Stack>
-
-            {/* Hobby selector */}
-            <Box>
-              <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 0.625 }}>
-                Hobbies
-              </Typography>
-              <Autocomplete
-                freeSolo
-                multiple
-                filterOptions={(x) => x}
-                options={editHobbySuggestions}
-                value={editHobbies}
-                inputValue={editHobbyInput}
-                onInputChange={(_, v) => setEditHobbyInput(v)}
-                onChange={(_, newValue) => {
-                  const filtered = (newValue ?? []).filter(Boolean);
-                  const last = filtered[filtered.length - 1];
-                  if (typeof last === "string") {
-                    appendEditHobbyFromInput(last);
-                    return;
-                  }
-                  if (filtered.length === 0 && editHobbies.length > 0 && editHobbyInput.trim() !== "") {
-                    return;
-                  }
-                  setEditHobbies(filtered as HobbyInfo[]);
-                }}
-                getOptionLabel={(opt) => (typeof opt === "string" ? opt : opt.name)}
-                isOptionEqualToValue={(opt, val) => {
-                  if (typeof opt === "string" || typeof val === "string") return false;
-                  return opt.slug === val.slug;
-                }}
-                loading={editHobbyLoading}
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    placeholder="Type to search or add..."
-                    variant="outlined"
-                    size="medium"
-                    fullWidth
-                    label={undefined}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        const trimmed = editHobbyInput.trim();
-                        if (!trimmed) return;
-                        const input = e.target as HTMLInputElement;
-                        if (input.getAttribute("aria-activedescendant")) return;
-                        e.preventDefault();
-                        e.stopPropagation();
-                        appendEditHobbyFromInput(trimmed);
-                        setEditHobbyInput("");
-                        return;
-                      }
-                      if (e.key === "Backspace" && !editHobbyInput) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                      }
-                    }}
-                  />
-                )}
-                renderTags={() => null}
-              />
-              {editHobbies.length > 0 && (
-                <Stack direction="row" flexWrap="wrap" gap={1} useFlexGap sx={{ mt: 1 }}>
-                  {editHobbies.map((h) => (
-                    <Chip
-                      key={h.slug}
-                      label={h.name}
-                      size="small"
-                      color="primary"
-                      variant="filled"
-                      onDelete={() => setEditHobbies((prev) => prev.filter((i) => i.slug !== h.slug))}
-                      sx={{ fontWeight: 600, fontSize: "0.8125rem" }}
-                    />
-                  ))}
-                </Stack>
-              )}
-            </Box>
-
-            <AppTextField
-              label="Max seats (optional)"
-              type="number"
-              value={editMaxSeats}
-              onChange={(e) => setEditMaxSeats(e.target.value)}
-              inputProps={{ min: 1 }}
-              helperText="Include yourself in the count"
-            />
-            {editMaxSeats && Number(editMaxSeats) >= 1 && (
-              <Box>
-                <FormControlLabel
-                  control={
-                    <Switch
-                      size="small"
-                      checked={editReserveSeats}
-                      onChange={(e) => setEditReserveSeats(e.target.checked)}
-                    />
-                  }
-                  label={
-                    <Box>
-                      <Typography variant="body2" fontWeight={500}>Reserve seats for invited people</Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        Invited guests hold a seat until they respond. Declined invites release the seat. Maybe keeps it reserved.
-                      </Typography>
-                    </Box>
-                  }
-                  sx={{ alignItems: "flex-start", mt: 0.5 }}
-                />
-              </Box>
-            )}
-            <Box>
-              <Typography variant="subtitle1" fontWeight={600}>
-                Who can see this?
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 1 }}>
-                Controls who can find this plan and who may get notified about it, in the app or by email.
-              </Typography>
-              <FormControl component="fieldset">
-                <RadioGroup
-                  value={editVisibility}
-                  onChange={(e) => setEditVisibility(e.target.value as typeof editVisibility)}
-                >
-                  <FormControlLabel value="public" control={<Radio size="small" />} label="Public" />
-                  <FormControlLabel value="chums_only" control={<Radio size="small" />} label="Chums only" />
-                  <FormControlLabel value="invite_only" control={<Radio size="small" />} label="Invite only" />
-                </RadioGroup>
-              </FormControl>
-            </Box>
-            <Box>
-              <FormControlLabel
-                control={
-                  <Switch
-                    size="small"
-                    checked={editRequireReconfirmation}
-                    onChange={(e) => setEditRequireReconfirmation(e.target.checked)}
-                  />
-                }
-                label={
-                  <Box>
-                    <Typography variant="body2" fontWeight={500}>Require final confirmation before the plan</Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Going attendees will be asked to confirm 24 hours before. This includes you.
-                    </Typography>
-                  </Box>
-                }
-                sx={{ alignItems: "flex-start", mt: 0.5 }}
-              />
-              {editRequireReconfirmation && (
-                <Stack spacing={2} sx={{ mt: 1, pl: 2, borderLeft: "2px solid", borderColor: "divider" }}>
-                  <Box>
-                    <Typography variant="caption" fontWeight={600} sx={{ mb: 0.5, display: "block" }}>
-                      Minimum confirmed attendees (optional)
-                    </Typography>
-                    <TextField
-                      fullWidth
-                      size="small"
-                      type="number"
-                      placeholder="e.g. 4 (including you)"
-                      value={editMinConfirmed}
-                      onChange={(e) => setEditMinConfirmed(e.target.value)}
-                      inputProps={{ min: 1, max: 500 }}
-                    />
-                    <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: "block" }}>
-                      You count toward this total.
-                    </Typography>
-                  </Box>
-                  {editMinConfirmed && Number(editMinConfirmed) >= 1 && (
-                    <Box>
-                      <Typography variant="caption" fontWeight={600} sx={{ mb: 0.5, display: "block" }}>
-                        If minimum isn&apos;t met
-                      </Typography>
-                      <Select
-                        fullWidth
-                        size="small"
-                        value={editFallbackPolicy}
-                        onChange={(e) => setEditFallbackPolicy(e.target.value as "notify_host" | "proceed" | "auto_cancel")}
-                      >
-                        <MenuItem value="notify_host">Notify me so I can decide</MenuItem>
-                        <MenuItem value="proceed">Proceed unless I cancel</MenuItem>
-                        <MenuItem value="auto_cancel">Auto-cancel the plan</MenuItem>
-                      </Select>
-                    </Box>
-                  )}
-                </Stack>
-              )}
-            </Box>
-            <Box>
-              <FormControlLabel
-                control={
-                  <Switch
-                    size="small"
-                    checked={editRequireApproval}
-                    onChange={(e) => setEditRequireApproval(e.target.checked)}
-                  />
-                }
-                label={
-                  <Box>
-                    <Typography variant="body2" fontWeight={500}>Require approval before joining</Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      People who are not directly invited will need to request to join.
-                    </Typography>
-                  </Box>
-                }
-                sx={{ alignItems: "flex-start", mt: 0.5 }}
-              />
-            </Box>
-            <Box>
-              <FormControlLabel
-                control={
-                  <Switch
-                    size="small"
-                    checked={editAllowAttendeeInvites}
-                    onChange={(e) => setEditAllowAttendeeInvites(e.target.checked)}
-                  />
-                }
-                label={
-                  <Box>
-                    <Typography variant="body2" fontWeight={500}>Let Going attendees invite others</Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      People who RSVP as Going can invite their friends to this plan.
-                    </Typography>
-                  </Box>
-                }
-                sx={{ alignItems: "flex-start", mt: 0.5 }}
-              />
-            </Box>
-            <Box>
-              <FormControlLabel
-                control={
-                  <Switch
-                    size="small"
-                    checked={editAllowAltTimes}
-                    onChange={(e) => setEditAllowAltTimes(e.target.checked)}
-                  />
-                }
-                label={
-                  <Box>
-                    <Typography variant="body2" fontWeight={500}>Let people suggest alternate times</Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Attendees and invitees can propose different dates or times.
-                    </Typography>
-                  </Box>
-                }
-                sx={{ alignItems: "flex-start", mt: 0.5 }}
-              />
-            </Box>
-            <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem", lineHeight: 1.65, pt: 0.5 }}>
-              Saving changes to this plan (such as date, description, capacity, or visibility) will send an update email to attendees who are Going or Maybe.
-            </Typography>
-          </Stack>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
-          <Button
-            variant="text"
-            color="inherit"
-            onClick={() => setEditDialogOpen(false)}
-            disabled={editSubmitting}
-          >
-            Cancel
-          </Button>
-          <Button
-            variant="contained"
-            onClick={handleEditSubmit}
-            disabled={editSubmitting}
-            startIcon={editSubmitting ? <CircularProgress size={14} color="inherit" /> : undefined}
-          >
-            {editSubmitting ? "Saving…" : "Save changes"}
-          </Button>
-        </DialogActions>
-      </Dialog>
 
       {/* RSVP confirmation dialog */}
       <Dialog open={rsvpDialogOpen} onClose={() => setRsvpDialogOpen(false)} maxWidth="sm" fullWidth>

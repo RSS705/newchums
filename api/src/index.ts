@@ -3688,12 +3688,38 @@ app.get("/admin/users/:id/diagnostics", async (c) => {
     `) as { enabled: boolean; reliability_level: string; sociability_level: string; presentation_level: string; hosting_level: string; updated_at: string }[];
 
     const attendanceIssues = (await sql`
-      SELECT issue_type, COUNT(*)::int AS count
-      FROM newchums.attendance_issues
-      WHERE reported_user_id = ${userId}
-      GROUP BY issue_type
-      ORDER BY issue_type
-    `) as { issue_type: string; count: number }[];
+      SELECT
+        ai.id,
+        ai.plan_id,
+        ai.issue_type,
+        ai.is_host_report,
+        ai.confidence,
+        ai.applied_penalty,
+        ai.status,
+        ai.created_at,
+        ai.reporter_user_id,
+        e.title AS plan_title,
+        ru.name AS reporter_name,
+        ru.username AS reporter_username
+      FROM newchums.attendance_issues ai
+      LEFT JOIN newchums.events e ON e.id = ai.plan_id
+      LEFT JOIN newchums.users ru ON ru.id = ai.reporter_user_id
+      WHERE ai.reported_user_id = ${userId}
+      ORDER BY ai.created_at DESC
+    `) as {
+      id: string;
+      plan_id: string;
+      issue_type: string;
+      is_host_report: boolean;
+      confidence: string;
+      applied_penalty: string;
+      status: string;
+      created_at: string;
+      reporter_user_id: string;
+      plan_title: string | null;
+      reporter_name: string | null;
+      reporter_username: string | null;
+    }[];
 
     const conductReports = (await sql`
       SELECT reason, COUNT(*)::int AS count
@@ -3774,7 +3800,22 @@ app.get("/admin/users/:id/diagnostics", async (c) => {
             updatedAt: preferences[0].updated_at,
           }
         : null,
-      attendanceIssues,
+      attendanceIssues: attendanceIssues.map((ai) => ({
+        id: ai.id,
+        planId: ai.plan_id,
+        planTitle: ai.plan_title,
+        issueType: ai.issue_type,
+        isHostReport: ai.is_host_report,
+        confidence: parseFloat(ai.confidence),
+        appliedPenalty: parseFloat(ai.applied_penalty),
+        status: ai.status,
+        createdAt: ai.created_at,
+        reporterUserId: ai.reporter_user_id,
+        reporterLabel:
+          (ai.reporter_name && ai.reporter_name.trim()) ||
+          (ai.reporter_username && `@${ai.reporter_username.replace(/^@/, "")}`) ||
+          "Unknown user",
+      })),
       conductReports,
       feedbackReceived,
       recentFeedback: recentFeedback.map((f) => {
@@ -3797,6 +3838,90 @@ app.get("/admin/users/:id/diagnostics", async (c) => {
   } catch (err) {
     console.error("[GET /admin/users/:id/diagnostics]", err);
     return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
+  }
+});
+
+/** PUT /admin/users/:id/metrics — super-admin-only: manually set a user's hidden metric score */
+app.put("/admin/users/:id/metrics", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  const userId = c.req.param("id");
+  const sql = getSql(c.env);
+
+  const body = await c.req.json<{ metric?: string; score?: number; signalCount?: number }>();
+  const { metric, score, signalCount } = body;
+
+  const validMetrics = ["reliability", "sociability", "presentation", "hosting_skills", "match_quality"];
+  if (!metric || !validMetrics.includes(metric)) {
+    return c.json({ ok: false, error: "INVALID_METRIC" }, 400);
+  }
+  if (typeof score !== "number" || score < 0 || score > 100) {
+    return c.json({ ok: false, error: "INVALID_SCORE" }, 400);
+  }
+
+  const sc = typeof signalCount === "number" && signalCount >= 0 ? Math.floor(signalCount) : undefined;
+
+  try {
+    const userCheck = (await sql`SELECT id FROM newchums.users WHERE id = ${userId}`) as { id: string }[];
+    if (userCheck.length === 0) return c.json({ ok: false, error: "USER_NOT_FOUND" }, 404);
+
+    if (sc !== undefined) {
+      await sql`
+        INSERT INTO newchums.user_metrics (user_id, metric, score, signal_count, updated_at)
+        VALUES (${userId}, ${metric}, ${score.toFixed(2)}, ${sc}, NOW())
+        ON CONFLICT (user_id, metric) DO UPDATE SET
+          score = ${score.toFixed(2)},
+          signal_count = ${sc},
+          updated_at = NOW()
+      `;
+    } else {
+      await sql`
+        INSERT INTO newchums.user_metrics (user_id, metric, score, signal_count, updated_at)
+        VALUES (${userId}, ${metric}, ${score.toFixed(2)}, 0, NOW())
+        ON CONFLICT (user_id, metric) DO UPDATE SET
+          score = ${score.toFixed(2)},
+          updated_at = NOW()
+      `;
+    }
+
+    console.log(`[PUT /admin/users/:id/metrics] admin=${admin.email} set ${metric}=${score.toFixed(2)} for user=${userId}`);
+
+    return c.json({ ok: true, metric, score: parseFloat(score.toFixed(2)) });
+  } catch (err) {
+    console.error("[PUT /admin/users/:id/metrics]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** PUT /admin/attendance-issues/:id/status — super-admin: dismiss or confirm an attendance issue */
+app.put("/admin/attendance-issues/:id/status", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  const sql = getSql(c.env);
+  const issueId = c.req.param("id");
+  const body = await c.req.json<{ status: string }>();
+
+  if (!["dismissed", "confirmed"].includes(body.status))
+    return c.json({ ok: false, error: "INVALID_STATUS" }, 400);
+
+  try {
+    const existing = (await sql`
+      SELECT id, status FROM newchums.attendance_issues WHERE id = ${issueId}
+    `) as { id: string; status: string }[];
+    if (existing.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    if (existing[0].status === body.status)
+      return c.json({ ok: true, status: body.status });
+
+    const newConfidence = body.status === "dismissed" ? 0 : 1.0;
+    await adjustReliabilityPenalty(sql, issueId, newConfidence, body.status);
+
+    console.log(`[PUT /admin/attendance-issues/:id/status] admin=${admin.email} set issue=${issueId} to ${body.status}`);
+    return c.json({ ok: true, status: body.status });
+  } catch (err) {
+    console.error("[PUT /admin/attendance-issues/:id/status]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });
 
@@ -5120,6 +5245,7 @@ app.post("/events", async (c) => {
   const requireApproval = body.require_approval === true;
   const status = body.status === "draft" ? "draft" : "published";
   const timezone = body.timezone && typeof body.timezone === "string" ? body.timezone.trim().slice(0, 64) : "UTC";
+  const prefOverrides = parsePrefOverrides(body.pref_overrides ?? null);
 
   // Attendance assurance fields
   const minConfirmedAttendees = requireReconfirmation && body.min_confirmed_attendees != null
@@ -5231,13 +5357,13 @@ app.post("/events", async (c) => {
         location_type, location_name, location_address, location_place_id, location_lat, location_lng,
         location_visibility, location_area, online_link,
         max_seats, visibility, status, allow_alt_times, allow_attendee_invites, reserve_seats, require_reconfirmation, require_approval, timezone,
-        min_confirmed_attendees, fallback_policy
+        min_confirmed_attendees, fallback_policy, pref_overrides
       ) VALUES (
         ${userId}, ${title}, ${description}, ${interestId}, ${startsDate.toISOString()},
         ${locationType}, ${locationName}, ${locationAddress}, ${locationPlaceId}, ${locationLat}, ${locationLng},
         ${locationVisibility}, ${locationArea}, ${onlineLink},
         ${maxSeats}, ${visibility}, ${status}, ${allowAltTimes}, ${allowAttendeeInvites}, ${reserveSeats}, ${requireReconfirmation}, ${requireApproval}, ${timezone},
-        ${minConfirmedAttendees}, ${fallbackPolicy}
+        ${minConfirmedAttendees}, ${fallbackPolicy}, ${prefOverrides ? JSON.stringify(prefOverrides) : null}
       )
       RETURNING id, created_at
     `) as { id: string; created_at: string }[];
@@ -5629,6 +5755,17 @@ app.get("/events/explore", async (c) => {
     const userHobbySlugs = userHobbyRows.map((r) => r.slug);
     const hasUserHobbies = userHobbySlugs.length > 0;
 
+    // Pre-fetch viewer's metrics for host→viewer chum preference filtering
+    const viewerMetricRows = (await sql`
+      SELECT metric, score FROM newchums.user_metrics WHERE user_id = ${userId}
+    `) as { metric: string; score: string }[];
+    const viewerReliability = parseFloat(viewerMetricRows.find((r) => r.metric === "reliability")?.score ?? String(METRIC_BASELINE));
+    const viewerSociability = parseFloat(viewerMetricRows.find((r) => r.metric === "sociability")?.score ?? String(METRIC_BASELINE));
+    const viewerPresentation = parseFloat(viewerMetricRows.find((r) => r.metric === "presentation")?.score ?? String(METRIC_BASELINE));
+
+    // Pre-fetch viewer's chum preferences for viewer→host compatibility notes
+    const viewerPrefs = await loadChumPrefsForUser(sql, userId);
+
     const hobbyMatchExpr = hasUserHobbies && personalizeEnabled
       ? sql`(SELECT COUNT(*)::int FROM newchums.event_interests ei4 JOIN newchums.interests ii4 ON ii4.id = ei4.interest_id WHERE ei4.event_id = e.id AND ii4.slug = ANY(${userHobbySlugs}))`
       : sql`(0)::int`;
@@ -5689,6 +5826,7 @@ app.get("/events/explore", async (c) => {
       LEFT JOIN newchums.interests i ON i.id = e.interest_id
       LEFT JOIN newchums.users h ON h.id = e.host_user_id
       LEFT JOIN newchums.event_rsvps r ON r.event_id = e.id AND r.user_id = ${userId}
+      LEFT JOIN newchums.chum_preferences hp ON hp.user_id = e.host_user_id
       WHERE e.status = 'published'
         AND e.starts_at >= ${now.toISOString()}
         AND e.visibility != 'invite_only'
@@ -5698,6 +5836,22 @@ app.get("/events/explore", async (c) => {
             e.host_user_id = ${userId}
             OR e.host_user_id = ANY(${chumIdList.length > 0 ? chumIdList : ["00000000-0000-0000-0000-000000000000"]})
           ))
+        )
+        AND (
+          e.host_user_id = ${userId}
+          OR COALESCE(hp.enabled, true) = false
+          OR (e.pref_overrides IS NOT NULL AND (e.pref_overrides->>'disabled')::boolean = true)
+          OR (
+            (COALESCE(hp.reliability_level, 'preferred') = 'open'
+              OR (e.pref_overrides IS NOT NULL AND e.pref_overrides->'disabled_metrics' ? 'reliability')
+              OR ${viewerReliability} >= CASE COALESCE(hp.reliability_level, 'preferred') WHEN 'preferred' THEN 35 WHEN 'important' THEN 45 WHEN 'required' THEN 55 ELSE 0 END)
+            AND (COALESCE(hp.sociability_level, 'open') = 'open'
+              OR (e.pref_overrides IS NOT NULL AND e.pref_overrides->'disabled_metrics' ? 'sociability')
+              OR ${viewerSociability} >= CASE COALESCE(hp.sociability_level, 'open') WHEN 'preferred' THEN 35 WHEN 'important' THEN 45 WHEN 'required' THEN 55 ELSE 0 END)
+            AND (COALESCE(hp.presentation_level, 'open') = 'open'
+              OR (e.pref_overrides IS NOT NULL AND e.pref_overrides->'disabled_metrics' ? 'presentation')
+              OR ${viewerPresentation} >= CASE COALESCE(hp.presentation_level, 'open') WHEN 'preferred' THEN 35 WHEN 'important' THEN 45 WHEN 'required' THEN 55 ELSE 0 END)
+          )
         )
         ${hobbySlug ? sql`AND EXISTS (SELECT 1 FROM newchums.event_interests ei3 JOIN newchums.interests ii3 ON ii3.id = ei3.interest_id WHERE ei3.event_id = e.id AND ii3.slug = ${hobbySlug})` : sql``}
         ${search ? sql`AND (e.title ILIKE ${"%" + search + "%"} OR e.description ILIKE ${"%" + search + "%"})` : sql``}
@@ -5720,6 +5874,10 @@ app.get("/events/explore", async (c) => {
       distance_km: number | null;
     }>;
 
+    // Batch-load host metrics for viewer→host compatibility notes
+    const hostIds = [...new Set(rows.filter((r) => !r.is_host).map((r) => r.host_user_id))];
+    const hostMetricsMap = await batchLoadMetrics(sql, hostIds);
+
     const allMapped = rows.map((r) => {
       const parsedHobbies = typeof r.hobbies === "string" ? JSON.parse(r.hobbies) : (r.hobbies ?? []);
       const hobbyList = Array.isArray(parsedHobbies) && parsedHobbies.length > 0
@@ -5738,6 +5896,15 @@ app.get("/events/explore", async (c) => {
           : canShowExact
             ? buildLocationDisplay(r.location_name, r.location_address)
             : (r.location_area || "General area");
+
+      // Viewer→host compatibility: does the host meet the viewer's chum preferences?
+      let prefNote: string[] | null = null;
+      if (!r.is_host && viewerPrefs) {
+        const hMetrics = hostMetricsMap.get(r.host_user_id) ?? {};
+        const compat = evaluateChumPreferences(viewerPrefs, hMetrics, true);
+        if (!compat.passes) prefNote = compat.failedMetrics;
+      }
+
       return {
         id: r.id,
         title: r.title,
@@ -5761,6 +5928,7 @@ app.get("/events/explore", async (c) => {
         maybeCount: r.maybe_count,
         distanceKm: r.distance_km !== null ? Math.round(r.distance_km * 10) / 10 : null,
         bannerKey: r.banner_key ?? null,
+        prefNote,
       };
     });
 
@@ -6065,10 +6233,25 @@ app.get("/events/:id", async (c) => {
     // Only generated for non-public access states; public visitors don't get share tokens.
     const shareToken = await createShareToken(eventId, c.env.NEXTAUTH_SECRET!);
 
+    // Chum preference compatibility note for the viewer.
+    // Checks if the host's metrics meet the viewer's preferences (informational, not blocking).
+    let prefNote: string[] | null = null;
+    if (userId && !isHost) {
+      const [vPrefs, hMetrics] = await Promise.all([
+        loadChumPrefsForUser(sql, userId),
+        loadMetricsForUser(sql, event.host_user_id as string),
+      ]);
+      if (vPrefs) {
+        const compat = evaluateChumPreferences(vPrefs, hMetrics, true);
+        if (!compat.passes) prefNote = compat.failedMetrics;
+      }
+    }
+
     return c.json({
       ok: true,
       accessState,
       shareToken,
+      prefNote,
       viewerUserId: userId ?? null,
       event: {
         id: event.id,
@@ -6119,6 +6302,7 @@ app.get("/events/:id", async (c) => {
         pendingConfirmationCount,
         myConfirmationStatus,
         planViability,
+        prefOverrides: isHost ? (event.pref_overrides ?? null) : undefined,
       },
       rsvps: rsvps.map((r) => {
         const rHandle = r.username?.replace(/^@/, "") ?? null;
@@ -7065,6 +7249,7 @@ app.patch("/events/:id", async (c) => {
     const patchAllowAltTimes = body.allow_alt_times != null ? body.allow_alt_times === true : undefined;
     const patchReserveSeats = body.reserve_seats != null ? body.reserve_seats === true : undefined;
     const patchTimezone = body.timezone && typeof body.timezone === "string" ? body.timezone.trim().slice(0, 64) : null;
+    const patchPrefOverrides = "pref_overrides" in body ? parsePrefOverrides(body.pref_overrides ?? null) : undefined;
 
     // Attendance assurance fields
     const patchMinConfirmed = patchRequireReconfirmation && body.min_confirmed_attendees != null
@@ -7132,6 +7317,7 @@ app.patch("/events/:id", async (c) => {
           timezone                 = COALESCE(${patchTimezone}, timezone),
           min_confirmed_attendees  = ${patchMinConfirmed},
           fallback_policy          = ${patchFallbackPolicy},
+          pref_overrides           = CASE WHEN ${patchPrefOverrides !== undefined} THEN ${patchPrefOverrides !== undefined ? (patchPrefOverrides ? JSON.stringify(patchPrefOverrides) : null) : null}::jsonb ELSE pref_overrides END,
           updated_at               = NOW()
       WHERE id = ${eventId}
     `;
@@ -8133,7 +8319,7 @@ const ATTENDANCE_ISSUE_TYPES = ["no_show", "late_cancel", "very_late"] as const;
 const CONDUCT_REASONS = ["rude_aggressive", "harassment", "boundary_issue", "discriminatory", "unsafe_intoxicated", "disruptive", "property_damage", "other"] as const;
 
 const FEEDBACK_RESPONSE_TARGETS: Record<string, number> = { agree: 80, maybe: 50, disagree: 20 };
-const ATTENDANCE_PENALTIES: Record<string, number> = { no_show: -8, late_cancel: -5, very_late: -3 };
+const ATTENDANCE_PENALTIES: Record<string, number> = { no_show: -10, late_cancel: -5, very_late: -8 };
 const METRIC_BASELINE = 50;
 
 async function nudgeUserMetric(sql: ReturnType<typeof getSql>, userId: string, metric: string, response: string) {
@@ -8166,9 +8352,15 @@ async function nudgeUserMetric(sql: ReturnType<typeof getSql>, userId: string, m
   `;
 }
 
-async function penalizeReliability(sql: ReturnType<typeof getSql>, userId: string, issueType: string) {
-  const penalty = ATTENDANCE_PENALTIES[issueType];
-  if (penalty === undefined) return;
+async function penalizeReliability(
+  sql: ReturnType<typeof getSql>,
+  userId: string,
+  issueType: string,
+  confidence: number,
+): Promise<number> {
+  const rawPenalty = ATTENDANCE_PENALTIES[issueType];
+  if (rawPenalty === undefined) return 0;
+  const effectivePenalty = rawPenalty * confidence;
 
   const rows = (await sql`
     SELECT score, signal_count FROM newchums.user_metrics
@@ -8182,7 +8374,7 @@ async function penalizeReliability(sql: ReturnType<typeof getSql>, userId: strin
     signalCount = rows[0].signal_count;
   }
 
-  const newScore = Math.max(0, Math.min(100, currentScore + penalty));
+  const newScore = Math.max(0, Math.min(100, currentScore + effectivePenalty));
   const newSignalCount = signalCount + 1;
 
   await sql`
@@ -8192,6 +8384,45 @@ async function penalizeReliability(sql: ReturnType<typeof getSql>, userId: strin
       score = ${newScore.toFixed(2)},
       signal_count = ${newSignalCount},
       updated_at = NOW()
+  `;
+  return effectivePenalty;
+}
+
+async function adjustReliabilityPenalty(
+  sql: ReturnType<typeof getSql>,
+  issueId: string,
+  newConfidence: number,
+  newStatus: string,
+) {
+  const issueRows = (await sql`
+    SELECT id, reported_user_id, issue_type, confidence, applied_penalty, status
+    FROM newchums.attendance_issues WHERE id = ${issueId}
+  `) as { id: string; reported_user_id: string; issue_type: string; confidence: string; applied_penalty: string; status: string }[];
+  if (issueRows.length === 0) return;
+  const issue = issueRows[0];
+
+  const rawPenalty = ATTENDANCE_PENALTIES[issue.issue_type] ?? 0;
+  const oldApplied = parseFloat(issue.applied_penalty);
+  const newApplied = rawPenalty * newConfidence;
+  const diff = newApplied - oldApplied;
+
+  if (Math.abs(diff) > 0.001) {
+    const metricRows = (await sql`
+      SELECT score FROM newchums.user_metrics
+      WHERE user_id = ${issue.reported_user_id} AND metric = 'reliability'
+    `) as { score: string }[];
+    const currentScore = metricRows.length > 0 ? parseFloat(metricRows[0].score) : METRIC_BASELINE;
+    const adjusted = Math.max(0, Math.min(100, currentScore + diff));
+    await sql`
+      UPDATE newchums.user_metrics SET score = ${adjusted.toFixed(2)}, updated_at = NOW()
+      WHERE user_id = ${issue.reported_user_id} AND metric = 'reliability'
+    `;
+  }
+
+  await sql`
+    UPDATE newchums.attendance_issues
+    SET confidence = ${newConfidence.toFixed(2)}, applied_penalty = ${newApplied.toFixed(2)}, status = ${newStatus}
+    WHERE id = ${issueId}
   `;
 }
 
@@ -8252,11 +8483,22 @@ app.get("/events/:id/feedback", async (c) => {
       WHERE plan_id = ${eventId} AND reporter_user_id = ${userId}
     `) as { reported_user_id: string; issue_type: string }[];
 
+    const issuesAgainstMe = (await sql`
+      SELECT id, issue_type, status
+      FROM newchums.attendance_issues
+      WHERE plan_id = ${eventId} AND reported_user_id = ${userId}
+    `) as { id: string; issue_type: string; status: string }[];
+
     return c.json({
       ok: true,
       attendees: otherAttendees,
       feedback: existing,
       attendanceIssues: existingIssues,
+      issuesAgainstMe: issuesAgainstMe.map((i) => ({
+        id: i.id,
+        issueType: i.issue_type,
+        status: i.status,
+      })),
     });
   } catch (err) {
     console.error("[GET /events/:id/feedback]", err);
@@ -8345,26 +8587,83 @@ app.post("/events/:id/attendance-issue", async (c) => {
 
   try {
     const ev = (await sql`
-      SELECT starts_at FROM newchums.events WHERE id = ${eventId}
-    `) as { starts_at: string }[];
+      SELECT starts_at, host_user_id FROM newchums.events WHERE id = ${eventId}
+    `) as { starts_at: string; host_user_id: string }[];
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     if (new Date(ev[0].starts_at) > new Date())
       return c.json({ ok: false, error: "NOT_PAST" }, 400);
 
-    const inserted = await sql`
-      INSERT INTO newchums.attendance_issues (plan_id, reporter_user_id, reported_user_id, issue_type)
-      VALUES (${eventId}, ${userId}, ${body.reportedUserId}, ${body.issueType})
+    const isHostReport = ev[0].host_user_id === userId;
+
+    // Check for corroboration: other reporters for the same person + issue type on this plan
+    const priorReports = (await sql`
+      SELECT id, confidence FROM newchums.attendance_issues
+      WHERE plan_id = ${eventId} AND reported_user_id = ${body.reportedUserId}
+        AND issue_type = ${body.issueType} AND reporter_user_id != ${userId}
+        AND status != 'dismissed'
+    `) as { id: string; confidence: string }[];
+    const corroborated = priorReports.length > 0;
+
+    const confidence = isHostReport ? 1.0 : (corroborated ? 1.0 : 0.75);
+
+    const inserted = (await sql`
+      INSERT INTO newchums.attendance_issues (plan_id, reporter_user_id, reported_user_id, issue_type, is_host_report, confidence, status)
+      VALUES (${eventId}, ${userId}, ${body.reportedUserId}, ${body.issueType}, ${isHostReport}, ${confidence.toFixed(2)}, 'active')
       ON CONFLICT (plan_id, reporter_user_id, reported_user_id, issue_type) DO NOTHING
       RETURNING id
-    `;
+    `) as { id: string }[];
 
     if (inserted.length > 0) {
-      await penalizeReliability(sql, body.reportedUserId, body.issueType);
+      const appliedPenalty = await penalizeReliability(sql, body.reportedUserId, body.issueType, confidence);
+      await sql`
+        UPDATE newchums.attendance_issues SET applied_penalty = ${appliedPenalty.toFixed(2)}
+        WHERE id = ${inserted[0].id}
+      `;
+
+      // Corroboration: boost prior uncorroborated non-host reports to full confidence
+      if (corroborated) {
+        for (const prior of priorReports) {
+          if (parseFloat(prior.confidence) < 1.0) {
+            await adjustReliabilityPenalty(sql, prior.id, 1.0, "active");
+          }
+        }
+      }
     }
 
     return c.json({ ok: true });
   } catch (err) {
     console.error("[POST /events/:id/attendance-issue]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /events/:id/attendance-dispute — user disputes attendance issues on this plan */
+app.post("/events/:id/attendance-dispute", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+  const eventId = c.req.param("id");
+
+  try {
+    const issues = (await sql`
+      SELECT id, status FROM newchums.attendance_issues
+      WHERE plan_id = ${eventId} AND reported_user_id = ${userId}
+        AND status IN ('active')
+    `) as { id: string; status: string }[];
+
+    if (issues.length === 0)
+      return c.json({ ok: false, error: "NO_ACTIVE_ISSUES" }, 404);
+
+    for (const issue of issues) {
+      await adjustReliabilityPenalty(sql, issue.id, 0.5, "disputed");
+    }
+
+    return c.json({ ok: true, disputedCount: issues.length });
+  } catch (err) {
+    console.error("[POST /events/:id/attendance-dispute]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });
@@ -8412,6 +8711,161 @@ app.post("/events/:id/conduct-report", async (c) => {
 
 const PREF_LEVELS = ["open", "preferred", "important", "required"] as const;
 type PrefLevel = typeof PREF_LEVELS[number];
+
+// ── Chum preference matching helpers ──────────────────────────────────────────
+
+const PREF_THRESHOLDS: Record<string, number> = {
+  open: 0,
+  preferred: 35,
+  important: 45,
+  required: 55,
+};
+
+type ChumPrefsRow = {
+  enabled: boolean;
+  reliability_level: string;
+  sociability_level: string;
+  presentation_level: string;
+  hosting_level: string;
+};
+
+const DEFAULT_CHUM_PREFS: ChumPrefsRow = {
+  enabled: true,
+  reliability_level: "preferred",
+  sociability_level: "open",
+  presentation_level: "open",
+  hosting_level: "open",
+};
+
+type UserMetricsMap = Record<string, number>;
+
+/**
+ * Evaluate whether a target user passes a checker's chum preferences.
+ * @param checkerPrefs  Preferences of the person doing the filtering (null = use defaults)
+ * @param targetMetrics Metric scores of the person being evaluated
+ * @param includeHosting If true, also evaluate hosting_skills metric
+ * @returns passes (all thresholds met) and which metrics failed
+ */
+function evaluateChumPreferences(
+  checkerPrefs: ChumPrefsRow | null,
+  targetMetrics: UserMetricsMap,
+  includeHosting: boolean = false,
+): { passes: boolean; failedMetrics: string[] } {
+  const prefs = checkerPrefs ?? DEFAULT_CHUM_PREFS;
+  if (!prefs.enabled) return { passes: true, failedMetrics: [] };
+
+  const checks: [string, string][] = [
+    ["reliability", prefs.reliability_level],
+    ["sociability", prefs.sociability_level],
+    ["presentation", prefs.presentation_level],
+  ];
+  if (includeHosting) {
+    checks.push(["hosting_skills", prefs.hosting_level]);
+  }
+
+  const failedMetrics: string[] = [];
+  for (const [metric, level] of checks) {
+    const threshold = PREF_THRESHOLDS[level] ?? 0;
+    if (threshold === 0) continue;
+    const score = targetMetrics[metric] ?? METRIC_BASELINE;
+    if (score < threshold) failedMetrics.push(metric);
+  }
+
+  return { passes: failedMetrics.length === 0, failedMetrics };
+}
+
+type PrefOverrides = { disabled?: boolean; disabled_metrics?: string[] } | null;
+
+function parsePrefOverrides(raw: unknown): PrefOverrides {
+  if (!raw || typeof raw !== "object") return null;
+  const obj = raw as Record<string, unknown>;
+  if (obj.disabled === true) return { disabled: true };
+  if (Array.isArray(obj.disabled_metrics) && obj.disabled_metrics.length > 0) {
+    const valid = ["reliability", "sociability", "presentation", "hosting_skills"];
+    const filtered = (obj.disabled_metrics as unknown[]).filter((m) => typeof m === "string" && valid.includes(m)) as string[];
+    return filtered.length > 0 ? { disabled_metrics: filtered } : null;
+  }
+  return null;
+}
+
+function resolveEffectiveHostPrefs(
+  globalPrefs: ChumPrefsRow | null,
+  planOverrides: PrefOverrides,
+): ChumPrefsRow | null {
+  const prefs = globalPrefs ?? DEFAULT_CHUM_PREFS;
+  if (!prefs.enabled) return globalPrefs;
+  if (!planOverrides) return globalPrefs;
+
+  if (planOverrides.disabled === true) {
+    return { ...prefs, enabled: false };
+  }
+
+  const dm = planOverrides.disabled_metrics;
+  if (Array.isArray(dm) && dm.length > 0) {
+    return {
+      ...prefs,
+      reliability_level: dm.includes("reliability") ? "open" : prefs.reliability_level,
+      sociability_level: dm.includes("sociability") ? "open" : prefs.sociability_level,
+      presentation_level: dm.includes("presentation") ? "open" : prefs.presentation_level,
+      hosting_level: dm.includes("hosting_skills") ? "open" : prefs.hosting_level,
+    };
+  }
+
+  return globalPrefs;
+}
+
+async function loadChumPrefsForUser(
+  sql: ReturnType<typeof getSql>,
+  userId: string,
+): Promise<ChumPrefsRow | null> {
+  const rows = (await sql`
+    SELECT enabled, reliability_level, sociability_level, presentation_level, hosting_level
+    FROM newchums.chum_preferences WHERE user_id = ${userId} LIMIT 1
+  `) as ChumPrefsRow[];
+  return rows.length > 0 ? rows[0] : null;
+}
+
+async function loadMetricsForUser(
+  sql: ReturnType<typeof getSql>,
+  userId: string,
+): Promise<UserMetricsMap> {
+  const rows = (await sql`
+    SELECT metric, score FROM newchums.user_metrics WHERE user_id = ${userId}
+  `) as { metric: string; score: string }[];
+  const m: UserMetricsMap = {};
+  for (const r of rows) m[r.metric] = parseFloat(r.score);
+  return m;
+}
+
+async function batchLoadChumPrefs(
+  sql: ReturnType<typeof getSql>,
+  userIds: string[],
+): Promise<Map<string, ChumPrefsRow>> {
+  if (userIds.length === 0) return new Map();
+  const rows = (await sql`
+    SELECT user_id, enabled, reliability_level, sociability_level, presentation_level, hosting_level
+    FROM newchums.chum_preferences WHERE user_id = ANY(${userIds}::uuid[])
+  `) as (ChumPrefsRow & { user_id: string })[];
+  const map = new Map<string, ChumPrefsRow>();
+  for (const r of rows) map.set(r.user_id, r);
+  return map;
+}
+
+async function batchLoadMetrics(
+  sql: ReturnType<typeof getSql>,
+  userIds: string[],
+): Promise<Map<string, UserMetricsMap>> {
+  if (userIds.length === 0) return new Map();
+  const rows = (await sql`
+    SELECT user_id, metric, score FROM newchums.user_metrics WHERE user_id = ANY(${userIds}::uuid[])
+  `) as { user_id: string; metric: string; score: string }[];
+  const map = new Map<string, UserMetricsMap>();
+  for (const r of rows) {
+    if (!map.has(r.user_id)) map.set(r.user_id, {});
+    map.get(r.user_id)![r.metric] = parseFloat(r.score);
+  }
+  return map;
+}
 
 /** GET /chum-preferences — get current user's chum preference settings */
 app.get("/chum-preferences", async (c) => {
@@ -9464,6 +9918,7 @@ async function processEventMatchDigest(
         eu.name,
         eu.notification_prefs,
         e.id AS event_id,
+        e.host_user_id,
         e.title AS event_title,
         COALESCE(e.description, '') AS event_description,
         e.starts_at,
@@ -9563,6 +10018,7 @@ async function processEventMatchDigest(
       m.notification_prefs,
       json_agg(json_build_object(
         'eventId', m.event_id,
+        'hostUserId', m.host_user_id,
         'title', m.event_title,
         'description', m.event_description,
         'startsAt', m.starts_at,
@@ -9576,7 +10032,8 @@ async function processEventMatchDigest(
         'reserveSeats', m.reserve_seats,
         'goingCount', m.going_count,
         'pendingInviteNoRsvpCount', m.pending_invite_no_rsvp_count,
-        'maybeInviteeCount', m.maybe_invitee_count
+        'maybeInviteeCount', m.maybe_invitee_count,
+        'prefOverrides', e.pref_overrides
       ) ORDER BY m.starts_at) AS plans
     FROM matching m
     GROUP BY m.user_id, m.email, m.name, m.notification_prefs
@@ -9587,6 +10044,7 @@ async function processEventMatchDigest(
     notification_prefs: unknown;
     plans: {
       eventId: string;
+      hostUserId: string;
       title: string;
       description: string;
       startsAt: string;
@@ -9601,10 +10059,26 @@ async function processEventMatchDigest(
       goingCount: number;
       pendingInviteNoRsvpCount: number;
       maybeInviteeCount: number;
+      prefOverrides: unknown;
     }[];
   }[];
 
   if (rows.length === 0) return;
+
+  // ── Chum preference filtering for digest ────────────────────────────────────
+  // Two-directional check:
+  //   1. Viewer's prefs on host: does the host's metrics meet the recipient's thresholds?
+  //   2. Host's prefs on viewer: does the recipient's metrics meet the host's thresholds?
+  // Both must pass for a plan to be included in the digest.
+
+  const allRecipientIds = rows.map((r) => r.user_id);
+  const allHostIds = [...new Set(rows.flatMap((r) => (Array.isArray(r.plans) ? r.plans : []).map((p) => p.hostUserId)))];
+  const allInvolvedIds = [...new Set([...allRecipientIds, ...allHostIds])];
+
+  const [prefsByUser, metricsByUser] = await Promise.all([
+    batchLoadChumPrefs(sql, allInvolvedIds),
+    batchLoadMetrics(sql, allInvolvedIds),
+  ]);
 
   const userIds: string[] = [];
   const emailPromises: Promise<unknown>[] = [];
@@ -9613,7 +10087,30 @@ async function processEventMatchDigest(
     const prefs = normalizeNotificationPrefs(row.notification_prefs);
     if (prefs.items.event_match?.enabled === false) continue;
 
-    const plans = (Array.isArray(row.plans) ? row.plans : []).slice(0, 10);
+    let candidatePlans = Array.isArray(row.plans) ? row.plans : [];
+
+    const recipientPrefs = prefsByUser.get(row.user_id) ?? null;
+    const recipientMetrics = metricsByUser.get(row.user_id) ?? {};
+
+    candidatePlans = candidatePlans.filter((p) => {
+      const hostMetrics = metricsByUser.get(p.hostUserId) ?? {};
+      const hostGlobalPrefs = prefsByUser.get(p.hostUserId) ?? null;
+
+      // 1. Does the host pass the recipient's preferences? (includeHosting = true)
+      const viewerCheck = evaluateChumPreferences(recipientPrefs, hostMetrics, true);
+      if (!viewerCheck.passes) return false;
+
+      // 2. Does the recipient pass the host's preferences? (includeHosting = false)
+      // Resolve plan-level overrides before evaluating
+      const planOverrides = parsePrefOverrides(p.prefOverrides);
+      const effectiveHostPrefs = resolveEffectiveHostPrefs(hostGlobalPrefs, planOverrides);
+      const hostCheck = evaluateChumPreferences(effectiveHostPrefs, recipientMetrics, false);
+      if (!hostCheck.passes) return false;
+
+      return true;
+    });
+
+    const plans = candidatePlans.slice(0, 10);
     if (plans.length === 0) continue;
 
     const recipientName = row.name?.trim() || "there";

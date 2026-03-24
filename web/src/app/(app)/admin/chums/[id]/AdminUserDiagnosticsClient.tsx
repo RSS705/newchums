@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import Divider from "@mui/material/Divider";
@@ -14,8 +15,12 @@ import TableCell from "@mui/material/TableCell";
 import TableContainer from "@mui/material/TableContainer";
 import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
+import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
+import EditRoundedIcon from "@mui/icons-material/EditRounded";
+import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
+import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import IconButton from "@mui/material/IconButton";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -32,7 +37,19 @@ type RecentFeedback = {
   reviewerUserId?: string;
   reporterLabel?: string;
 };
-type AttendanceIssue = { issue_type: string; count: number };
+type AttendanceIssue = {
+  id: string;
+  planId: string;
+  planTitle: string | null;
+  issueType: string;
+  isHostReport: boolean;
+  confidence: number;
+  appliedPenalty: number;
+  status: string;
+  createdAt: string;
+  reporterUserId: string;
+  reporterLabel: string;
+};
 type ConductReport = { reason: string; count: number };
 type PrefData = { enabled: boolean; reliability: string; sociability: string; presentation: string; hosting: string; updatedAt: string } | null;
 type UserInfo = { id: string; email: string; username: string | null; name: string | null; createdAt: string; role: string | null; isSuspended: boolean };
@@ -106,6 +123,118 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
     <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem", mb: 1.5 }}>
       {children}
     </Typography>
+  );
+}
+
+function EditableMetricRow({
+  metricKey,
+  metricRow,
+  userId,
+  onSaved,
+}: {
+  metricKey: string;
+  metricRow: MetricRow | null;
+  userId: string;
+  onSaved: (updated: { score: number }) => void;
+}) {
+  const score = metricRow?.score ?? 50;
+  const signals = metricRow?.signalCount ?? 0;
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(String(score));
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleEdit = () => {
+    setDraft(score.toFixed(2));
+    setSaveError(null);
+    setEditing(true);
+    setTimeout(() => inputRef.current?.select(), 50);
+  };
+
+  const handleCancel = () => {
+    setEditing(false);
+    setSaveError(null);
+  };
+
+  const handleSave = async () => {
+    const val = parseFloat(draft);
+    if (isNaN(val) || val < 0 || val > 100) {
+      setSaveError("Score must be 0–100");
+      return;
+    }
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const res = await apiFetch(`/admin/users/${userId}/metrics`, {
+        auth: true,
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ metric: metricKey, score: val }),
+      });
+      if (res.ok) {
+        onSaved({ score: val });
+        setEditing(false);
+      } else {
+        const json = await res.json().catch(() => ({}));
+        setSaveError((json as { error?: string }).error ?? "Failed to save");
+      }
+    } catch {
+      setSaveError("Network error");
+    }
+    setSaving(false);
+  };
+
+  return (
+    <Box>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
+        <Typography variant="body2" fontWeight={600}>
+          {METRIC_LABELS[metricKey] ?? metricKey}
+        </Typography>
+        {editing ? (
+          <Stack direction="row" alignItems="center" spacing={0.5}>
+            <TextField
+              inputRef={inputRef}
+              size="small"
+              type="number"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") { e.preventDefault(); void handleSave(); }
+                if (e.key === "Escape") handleCancel();
+              }}
+              inputProps={{ min: 0, max: 100, step: 0.01, style: { fontFamily: "monospace", fontSize: "0.8125rem", width: 72, textAlign: "right", padding: "4px 8px" } }}
+              disabled={saving}
+              error={!!saveError}
+            />
+            <IconButton size="small" onClick={() => void handleSave()} disabled={saving} color="success">
+              <CheckRoundedIcon sx={{ fontSize: 18 }} />
+            </IconButton>
+            <IconButton size="small" onClick={handleCancel} disabled={saving}>
+              <CloseRoundedIcon sx={{ fontSize: 18 }} />
+            </IconButton>
+            {saveError && (
+              <Typography variant="caption" color="error" sx={{ ml: 0.5 }}>{saveError}</Typography>
+            )}
+          </Stack>
+        ) : (
+          <Stack direction="row" alignItems="center" spacing={0.5}>
+            <Typography variant="body2" color="text.secondary" sx={{ fontFamily: "monospace", fontSize: "0.8125rem" }}>
+              {score.toFixed(2)} &middot; {signals} signal{signals !== 1 ? "s" : ""}
+            </Typography>
+            <IconButton size="small" onClick={handleEdit} sx={{ ml: 0.25, p: 0.25 }}>
+              <EditRoundedIcon sx={{ fontSize: 15, color: "text.secondary" }} />
+            </IconButton>
+          </Stack>
+        )}
+      </Stack>
+      <LinearProgress
+        variant="determinate"
+        value={Math.min(100, Math.max(0, editing ? (parseFloat(draft) || 0) : score))}
+        color={scoreColor(editing ? (parseFloat(draft) || 0) : score)}
+        sx={{ height: 8, borderRadius: 4 }}
+      />
+    </Box>
   );
 }
 
@@ -203,31 +332,35 @@ export default function AdminUserDiagnosticsClient() {
         <SectionTitle>Hidden Metric Scores</SectionTitle>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.5 }}>
           Baseline is 50.00. Scores move based on feedback signals. Scores are never exposed to normal users.
+          Click the edit icon to adjust a score manually.
         </Typography>
         <Stack spacing={2}>
-          {allMetrics.map((key) => {
-            const m = metricMap[key];
-            const score = m?.score ?? 50;
-            const signals = m?.signalCount ?? 0;
-            return (
-              <Box key={key}>
-                <Stack direction="row" justifyContent="space-between" alignItems="baseline" sx={{ mb: 0.5 }}>
-                  <Typography variant="body2" fontWeight={600}>
-                    {METRIC_LABELS[key] ?? key}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ fontFamily: "monospace", fontSize: "0.8125rem" }}>
-                    {score.toFixed(2)} &middot; {signals} signal{signals !== 1 ? "s" : ""}
-                  </Typography>
-                </Stack>
-                <LinearProgress
-                  variant="determinate"
-                  value={Math.min(100, Math.max(0, score))}
-                  color={scoreColor(score)}
-                  sx={{ height: 8, borderRadius: 4 }}
-                />
-              </Box>
-            );
-          })}
+          {allMetrics.map((key) => (
+            <EditableMetricRow
+              key={key}
+              metricKey={key}
+              metricRow={metricMap[key] ?? null}
+              userId={userId}
+              onSaved={(updated) => {
+                setData((prev) => {
+                  if (!prev) return prev;
+                  const existing = prev.metrics.find((m) => m.metric === key);
+                  if (existing) {
+                    return {
+                      ...prev,
+                      metrics: prev.metrics.map((m) =>
+                        m.metric === key ? { ...m, score: updated.score, updatedAt: new Date().toISOString() } : m,
+                      ),
+                    };
+                  }
+                  return {
+                    ...prev,
+                    metrics: [...prev.metrics, { metric: key, score: updated.score, signalCount: 0, updatedAt: new Date().toISOString() }],
+                  };
+                });
+              }}
+            />
+          ))}
         </Stack>
       </Paper>
 
@@ -265,15 +398,141 @@ export default function AdminUserDiagnosticsClient() {
       {/* Attendance Issues */}
       <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}>
         <SectionTitle>Attendance Issue Reports (received)</SectionTitle>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.5 }}>
+          Detailed per-issue view with confidence, status, and admin controls. Reporter identity is shown for admin use only.
+        </Typography>
         {attendanceIssues.length > 0 ? (
-          <Stack spacing={1}>
-            {attendanceIssues.map((a) => (
-              <Stack key={a.issue_type} direction="row" justifyContent="space-between">
-                <Typography variant="body2">{ISSUE_LABELS[a.issue_type] ?? a.issue_type}</Typography>
-                <Chip label={a.count} size="small" color={a.issue_type === "no_show" ? "error" : "warning"} />
-              </Stack>
-            ))}
-          </Stack>
+          <TableContainer sx={{ maxHeight: 400 }}>
+            <Table size="small" stickyHeader>
+              <TableHead>
+                <TableRow sx={{ bgcolor: "grey.50" }}>
+                  <TableCell sx={{ fontWeight: 600 }}>Date</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Plan</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Type</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Reporter</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Host?</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 600 }}>Confidence</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 600 }}>Penalty</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Actions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {attendanceIssues.map((ai) => (
+                  <TableRow
+                    key={ai.id}
+                    sx={{
+                      bgcolor: ai.status === "dismissed" ? "#fafafa" : ai.status === "disputed" ? "#fffbeb" : ai.status === "confirmed" ? "#f0fdf4" : undefined,
+                      opacity: ai.status === "dismissed" ? 0.6 : 1,
+                    }}
+                  >
+                    <TableCell>
+                      <Typography variant="caption" color="text.secondary">{formatDate(ai.createdAt)}</Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" sx={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {ai.planTitle ?? "—"}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2">{ISSUE_LABELS[ai.issueType] ?? ai.issueType}</Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" sx={{ maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {ai.reporterLabel}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      {ai.isHostReport ? <Chip label="Host" size="small" color="info" variant="outlined" sx={{ fontSize: "0.7rem" }} /> : "—"}
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography variant="body2" sx={{ fontFamily: "monospace", fontSize: "0.8125rem" }}>
+                        {ai.confidence.toFixed(2)}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography variant="body2" sx={{ fontFamily: "monospace", fontSize: "0.8125rem", color: "error.main" }}>
+                        {ai.appliedPenalty.toFixed(2)}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        label={ai.status}
+                        size="small"
+                        variant="outlined"
+                        color={ai.status === "dismissed" ? "default" : ai.status === "confirmed" ? "success" : ai.status === "disputed" ? "warning" : "info"}
+                        sx={{ fontSize: "0.7rem", textTransform: "capitalize" }}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      {ai.status !== "dismissed" && ai.status !== "confirmed" && (
+                        <Stack direction="row" spacing={0.5}>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            color="error"
+                            sx={{ textTransform: "none", fontSize: "0.7rem", py: 0.25, px: 1, minWidth: 0 }}
+                            onClick={async () => {
+                              try {
+                                const res = await apiFetch(`/admin/attendance-issues/${ai.id}/status`, {
+                                  auth: true,
+                                  method: "PUT",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ status: "dismissed" }),
+                                });
+                                if (res.ok) {
+                                  setData((prev) => {
+                                    if (!prev) return prev;
+                                    return {
+                                      ...prev,
+                                      attendanceIssues: prev.attendanceIssues.map((x) =>
+                                        x.id === ai.id ? { ...x, status: "dismissed", confidence: 0, appliedPenalty: 0 } : x,
+                                      ),
+                                    };
+                                  });
+                                }
+                              } catch { /* silent */ }
+                            }}
+                          >
+                            Dismiss
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            color="success"
+                            sx={{ textTransform: "none", fontSize: "0.7rem", py: 0.25, px: 1, minWidth: 0 }}
+                            onClick={async () => {
+                              try {
+                                const res = await apiFetch(`/admin/attendance-issues/${ai.id}/status`, {
+                                  auth: true,
+                                  method: "PUT",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ status: "confirmed" }),
+                                });
+                                if (res.ok) {
+                                  setData((prev) => {
+                                    if (!prev) return prev;
+                                    return {
+                                      ...prev,
+                                      attendanceIssues: prev.attendanceIssues.map((x) =>
+                                        x.id === ai.id ? { ...x, status: "confirmed", confidence: 1.0 } : x,
+                                      ),
+                                    };
+                                  });
+                                }
+                              } catch { /* silent */ }
+                            }}
+                          >
+                            Confirm
+                          </Button>
+                        </Stack>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
         ) : (
           <Typography variant="body2" color="text.secondary">No attendance issues reported against this user.</Typography>
         )}
@@ -422,7 +681,8 @@ export default function AdminUserDiagnosticsClient() {
             The nudge size = (target &minus; current) &divide; (signal_count + 5), ensuring early signals have larger effect and later ones converge.
           </Typography>
           <Typography variant="body2" sx={{ lineHeight: 1.6 }}>
-            <strong>Attendance issues (Reliability):</strong> No-show = &minus;8 immediate penalty, Late cancel = &minus;5, Very late = &minus;3. These are direct penalties, not averaged.
+            <strong>Attendance issues (Reliability):</strong> Raw penalties: No-show = &minus;10, Very late = &minus;8, Late cancel = &minus;5.
+            Effective penalty = raw &times; confidence (host reports: 1.0, uncorroborated non-host: 0.75, disputed: 0.5, dismissed: 0, confirmed/corroborated: 1.0).
           </Typography>
           <Typography variant="body2" sx={{ lineHeight: 1.6 }}>
             <strong>Hosting Skills:</strong> Only moves from feedback on plans the user hosted (the &ldquo;hosting_skills&rdquo; prompt).

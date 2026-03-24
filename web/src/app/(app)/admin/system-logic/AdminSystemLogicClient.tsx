@@ -367,10 +367,41 @@ export default function AdminSystemLogicClient() {
           Feedback nudges the score toward a target using <strong>weighted averaging</strong>: &ldquo;Yes&rdquo; targets 80, &ldquo;Somewhat&rdquo; targets 50, &ldquo;No&rdquo; targets 20. Early signals have a larger effect; later signals converge. Formula: nudge = (target &minus; current) &divide; (signal_count + 5).
         </Bullet>
         <Bullet>
-          <strong>Attendance issues</strong> apply direct penalties to Reliability: No-show = &minus;8, Late cancel = &minus;5, Very late = &minus;3.
+          <strong>Attendance issues</strong> apply direct penalties to Reliability (raw values): No-show = &minus;10, Very late = &minus;8, Late cancel = &minus;5. The effective penalty is <strong>raw &times; confidence</strong> (see trust model below).
         </Bullet>
         <Bullet>
           Scores are <strong>never exposed</strong> to normal users. Super admins can inspect them via the User Diagnostics view.
+        </Bullet>
+
+        <Typography variant="subtitle2" fontWeight={600} sx={{ mt: 2 }} gutterBottom>
+          Attendance trust and confidence model
+        </Typography>
+        <Bullet>
+          Attendance issue reports carry a <strong>confidence level</strong> (0.00&ndash;1.00) that multiplies the raw penalty. This reduces the impact of potentially false or unverified reports.
+        </Bullet>
+        <Bullet>
+          <strong>Host reports:</strong> confidence = 1.0 (full trust). The host has the strongest knowledge of who attended.
+        </Bullet>
+        <Bullet>
+          <strong>Non-host uncorroborated:</strong> confidence = 0.75. A single attendee&rsquo;s report is meaningful but not definitive. A single false report at 0.75 causes limited damage (e.g. no-show: &minus;7.5, still above Preferred threshold).
+        </Bullet>
+        <Bullet>
+          <strong>Corroborated:</strong> When 2+ independent reporters agree (same plan, person, and issue type), all reports are boosted to confidence 1.0. Prior lower-confidence reports are retroactively adjusted.
+        </Bullet>
+        <Bullet>
+          <strong>Disputed by user:</strong> confidence drops to 0.5. The user can privately dispute active attendance issues on a plan. The reporter is <em>not</em> notified. A disputed no-show only applies &minus;5 instead of &minus;10.
+        </Bullet>
+        <Bullet>
+          <strong>Dismissed by admin:</strong> confidence = 0. The penalty is fully reversed. Use when a report is clearly false or malicious.
+        </Bullet>
+        <Bullet>
+          <strong>Confirmed by admin:</strong> confidence = 1.0. Full penalty applied. Use when admin verifies the report is accurate.
+        </Bullet>
+        <Bullet>
+          <strong>Product rule:</strong> 2 no-shows from baseline (50 &minus; 20 = 30) or 1 no-show + 1 very late (50 &minus; 18 = 32) will drop a user below the <strong>Preferred</strong> threshold (&ge; 35), assuming no offsetting positive reliability feedback.
+        </Bullet>
+        <Bullet>
+          Users can <strong>dispute</strong> attendance concerns from the plan feedback view. Disputes are private and do not reveal reporter identity. Super admins can <strong>dismiss</strong> or <strong>confirm</strong> issues from the User Diagnostics view.
         </Bullet>
 
         <Typography variant="subtitle2" fontWeight={600} sx={{ mt: 2 }} gutterBottom>
@@ -397,6 +428,41 @@ export default function AdminSystemLogicClient() {
         </Bullet>
         <Bullet>
           My preferences do <strong>not</strong> block me from browsing and opening plans myself. If someone in a plan doesn&rsquo;t meet my preferences, the plan details will surface a <strong>compatibility note</strong> so I can decide for myself.
+        </Bullet>
+
+        <Typography variant="subtitle2" fontWeight={600} sx={{ mt: 2 }} gutterBottom>
+          Where chum preferences are enforced
+        </Typography>
+        <Bullet>
+          <strong>Event match digest:</strong> Two-directional hard filter. Plans are excluded if the host fails the recipient&rsquo;s thresholds <em>or</em> the recipient fails the host&rsquo;s thresholds. Both must pass for a plan to appear in someone&rsquo;s digest.
+        </Bullet>
+        <Bullet>
+          <strong>Explore feed:</strong> The host&rsquo;s preferences are enforced as a <strong>hard filter</strong> in the query &mdash; if the host doesn&rsquo;t want the viewer matched to their plan, it won&rsquo;t appear. The viewer&rsquo;s own preferences produce a <strong>soft compatibility note</strong> on the plan card and details page, but plans are not hidden.
+        </Bullet>
+        <Bullet>
+          <strong>Plan details:</strong> When viewing a plan you didn&rsquo;t create, a compatibility note appears if the host doesn&rsquo;t fully meet your preferences. This is informational &mdash; it never blocks access to the plan.
+        </Bullet>
+        <Bullet>
+          <strong>Disabled preferences:</strong> If a user has chum preferences turned off (or never configured), all checks pass. No filtering or notes are applied.
+        </Bullet>
+
+        <Typography variant="subtitle2" fontWeight={600} sx={{ mt: 2 }} gutterBottom>
+          Plan-level preference overrides
+        </Typography>
+        <Bullet>
+          When creating or editing a plan, the host can <strong>override their profile chum preferences</strong> for that specific plan only.
+        </Bullet>
+        <Bullet>
+          <strong>Disable all:</strong> Turns off all chum preference filtering for that plan. Anyone can be matched regardless of the host&rsquo;s profile preferences.
+        </Bullet>
+        <Bullet>
+          <strong>Disable specific metrics:</strong> The host can disable individual metrics (e.g. skip Sociability filtering). The remaining metrics still apply using the host&rsquo;s profile defaults.
+        </Bullet>
+        <Bullet>
+          Overrides affect <strong>outbound matching only</strong> (who sees the plan in digest and explore). Viewer-side compatibility notes are <strong>not</strong> suppressed &mdash; viewers still see informational warnings based on their own preferences.
+        </Bullet>
+        <Bullet>
+          Plans with no overrides behave exactly as before &mdash; the host&rsquo;s profile preferences apply in full.
         </Bullet>
       </CollapsibleSection>
 

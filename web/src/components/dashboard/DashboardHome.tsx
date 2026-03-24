@@ -92,7 +92,6 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [profileLoaded, setProfileLoaded] = useState(false);
 
   const [searchText, setSearchText] = useState("");
   const [timeRange, setTimeRange] = useState("all");
@@ -103,86 +102,38 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
   const [sort, setSort] = useState("upcoming");
   const [personalizeEnabled, setPersonalizeEnabled] = useState(true);
 
+  const filtersRef = useRef({
+    profile: null as ProfileData | null,
+    searchText: "",
+    timeRange: "all",
+    radiusKm: 200,
+    selectedHobby: null as HobbyOption | null,
+    sort: "upcoming",
+    personalizeEnabled: true,
+  });
+  const readyRef = useRef(false);
   const initializedRef = useRef(false);
+  const filterDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    const loadProfile = async () => {
-      try {
-        const res = await apiFetch("/profile", { auth: true });
-        if (res.ok) {
-          const data = (await res.json()) as { profile: ProfileData };
-          const p = data.profile;
-          setProfile(p);
-
-          const saved = loadExploreState();
-          if (saved) {
-            if (saved.searchText) setSearchText(saved.searchText);
-            if (saved.timeRange) setTimeRange(saved.timeRange);
-            if (saved.radiusKm != null) setRadiusKm(saved.radiusKm);
-            if (saved.sort) setSort(saved.sort);
-            if (saved.personalize === false) setPersonalizeEnabled(false);
-          } else {
-            if (p.travel_radius_km) setRadiusKm(p.travel_radius_km);
-          }
-          initializedRef.current = true;
-        }
-      } catch { /* ignore */ }
-      setProfileLoaded(true);
-    };
-    const loadHobbies = async () => {
-      try {
-        const res = await apiFetch("/interests");
-        if (res.ok) {
-          const data = (await res.json()) as { interests: HobbyOption[] };
-          const sorted = (data.interests ?? []).slice().sort((a, b) => a.name.localeCompare(b.name));
-          setHobbyOptions(sorted);
-        }
-      } catch { /* ignore */ }
-    };
-    loadProfile();
-    loadHobbies();
-  }, []);
-
-  // Restore saved hobby filter once hobbyOptions are loaded
-  useEffect(() => {
-    if (hobbyOptions.length === 0) return;
-    const saved = loadExploreState();
-    if (saved?.selectedHobbySlug) {
-      const match = hobbyOptions.find((h) => h.slug === saved.selectedHobbySlug);
-      if (match) setSelectedHobby(match);
-    }
-  }, [hobbyOptions]);
-
-  // Persist explore state to localStorage on change
-  useEffect(() => {
-    if (!initializedRef.current) return;
-    saveExploreState({
-      searchText: searchText || undefined,
-      timeRange,
-      radiusKm,
-      selectedHobbySlug: selectedHobby?.slug ?? null,
-      sort,
-      personalize: personalizeEnabled,
-    });
-  }, [searchText, timeRange, radiusKm, selectedHobby, sort, personalizeEnabled]);
-
+  // Stable fetch — reads filter values from ref so its identity never changes.
   const fetchEvents = useCallback(async (pageOffset: number, append: boolean) => {
     const PAGE_SIZE = 12;
-    if (!profileLoaded) return;
+    const f = filtersRef.current;
+
     if (append) setLoadingMore(true);
     else setLoading(true);
 
     const params = new URLSearchParams();
-    if (profile?.home_lat != null && profile?.home_lng != null) {
-      params.set("lat", String(profile.home_lat));
-      params.set("lng", String(profile.home_lng));
-      params.set("radius_km", String(radiusKm));
+    if (f.profile?.home_lat != null && f.profile?.home_lng != null) {
+      params.set("lat", String(f.profile.home_lat));
+      params.set("lng", String(f.profile.home_lng));
+      params.set("radius_km", String(f.radiusKm));
     }
-    if (selectedHobby) params.set("hobby", selectedHobby.slug);
-    if (timeRange !== "all") params.set("time_range", timeRange);
-    if (searchText.trim()) params.set("q", searchText.trim());
-    if (sort !== "upcoming") params.set("sort", sort);
-    if (!personalizeEnabled) params.set("personalize", "0");
+    if (f.selectedHobby) params.set("hobby", f.selectedHobby.slug);
+    if (f.timeRange !== "all") params.set("time_range", f.timeRange);
+    if (f.searchText.trim()) params.set("q", f.searchText.trim());
+    if (f.sort !== "upcoming") params.set("sort", f.sort);
+    if (!f.personalizeEnabled) params.set("personalize", "0");
     params.set("offset", String(pageOffset));
     params.set("limit", String(PAGE_SIZE));
 
@@ -198,13 +149,84 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
         setHasMore(data.hasMore ?? false);
       }
     } catch { /* ignore */ }
+
     if (append) setLoadingMore(false);
     else setLoading(false);
-  }, [profileLoaded, profile, radiusKm, selectedHobby, timeRange, searchText, sort, personalizeEnabled]);
+  }, []);
 
-  useEffect(() => { fetchEvents(0, false); }, [fetchEvents]);
+  // Load profile + interests in parallel, restore all saved state, then fetch once.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [profileRes, interestsRes] = await Promise.allSettled([
+        apiFetch("/profile", { auth: true }),
+        apiFetch("/interests"),
+      ]);
+      if (cancelled) return;
 
-  const handleLoadMore = () => { fetchEvents(allEvents.length, true); };
+      let p: ProfileData | null = null;
+      let hobbies: HobbyOption[] = [];
+
+      if (profileRes.status === "fulfilled" && profileRes.value.ok) {
+        const d = (await profileRes.value.json()) as { profile: ProfileData };
+        p = d.profile;
+      }
+      if (interestsRes.status === "fulfilled" && interestsRes.value.ok) {
+        const d = (await interestsRes.value.json()) as { interests: HobbyOption[] };
+        hobbies = (d.interests ?? []).slice().sort((a, b) => a.name.localeCompare(b.name));
+      }
+      if (cancelled) return;
+
+      const saved = loadExploreState();
+      const st = saved?.searchText ?? "";
+      const tr = saved?.timeRange ?? "all";
+      const rk = saved?.radiusKm ?? p?.travel_radius_km ?? 200;
+      const s = saved?.sort ?? "upcoming";
+      const pe = saved?.personalize !== false;
+      const sh = saved?.selectedHobbySlug
+        ? (hobbies.find((h) => h.slug === saved.selectedHobbySlug) ?? null)
+        : null;
+
+      filtersRef.current = { profile: p, searchText: st, timeRange: tr, radiusKm: rk, selectedHobby: sh, sort: s, personalizeEnabled: pe };
+
+      setProfile(p);
+      setHobbyOptions(hobbies);
+      setSearchText(st);
+      setTimeRange(tr);
+      setRadiusKm(rk);
+      setSelectedHobby(sh);
+      setSort(s);
+      setPersonalizeEnabled(pe);
+
+      readyRef.current = true;
+      initializedRef.current = true;
+
+      await fetchEvents(0, false);
+    })();
+    return () => { cancelled = true; };
+  }, [fetchEvents]);
+
+  // Re-fetch when the user changes filters (skipped during init).
+  useEffect(() => {
+    if (!readyRef.current) return;
+    filtersRef.current = { ...filtersRef.current, searchText, timeRange, radiusKm, selectedHobby, sort, personalizeEnabled };
+    saveExploreState({
+      searchText: searchText || undefined,
+      timeRange,
+      radiusKm,
+      selectedHobbySlug: selectedHobby?.slug ?? null,
+      sort,
+      personalize: personalizeEnabled,
+    });
+    if (filterDebounceRef.current) clearTimeout(filterDebounceRef.current);
+    filterDebounceRef.current = setTimeout(() => { void fetchEvents(0, false); }, 150);
+    return () => { if (filterDebounceRef.current) clearTimeout(filterDebounceRef.current); };
+  }, [searchText, timeRange, radiusKm, selectedHobby, sort, personalizeEnabled, fetchEvents]);
+
+  const handleLoadMore = () => {
+    filtersRef.current = { ...filtersRef.current, searchText, timeRange, radiusKm, selectedHobby, sort, personalizeEnabled };
+    void fetchEvents(allEvents.length, true);
+  };
 
   const hasLocation = profile?.home_lat != null && profile?.home_lng != null;
   const hasHobbies = (profile?.interest_items?.length ?? 0) > 0;
@@ -425,7 +447,7 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
       </Paper>
 
       {/* ── Location nudge ──────────────────────────────────────────── */}
-      {profileLoaded && !hasLocation && (
+      {profile !== null && !hasLocation && (
         <Paper
           variant="outlined"
           sx={{
@@ -463,7 +485,7 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
       )}
 
       {/* ── Event feed ──────────────────────────────────────────────── */}
-      {loading ? (
+      {loading && allEvents.length === 0 ? (
         <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}>
           <CircularProgress />
         </Box>

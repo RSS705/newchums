@@ -199,6 +199,11 @@ Defaults are applied at account creation (credentials signup, OAuth) and backfil
 
 **Event match digest (batch):** The hourly `scheduled` handler runs `processEventMatchDigest` after the unread-chat digest block. Recipients must have `event_match` enabled, a home location, and meet the same in-person / future / not-full / travel-radius / “new since last digest” gates as for public plans. **Public** plans require at least one overlapping hobby between the user and the plan. **Chums-only** plans use the **same** hobby overlap and distance rules; additionally the recipient must appear on the **host’s** On NewChums connections (`user_contacts`: host `user_id`, recipient `linked_user_id`, `type = 'on_newchums'`). **Invite-only** plans are excluded.
 
+**Chum preference filtering (digest, implemented):** After the SQL query selects candidate (recipient, plan) pairs, a two-directional chum preference check runs before emails are sent:
+1. **Viewer→host:** Does the host's metrics meet the recipient's chum preference thresholds (including hosting quality)? If not, the plan is excluded from this recipient's digest.
+2. **Host→viewer:** Does the recipient's metrics meet the host's chum preference thresholds? If not, the plan is excluded (the host doesn't want this person matched to their plan).
+Both checks use the centralized `evaluateChumPreferences` helper with `PREF_THRESHOLDS` (open=0, preferred≥35, important≥45, required≥55) against `user_metrics` scores (baseline 50). Users with preferences disabled or at "open" for all metrics pass all checks. If all plans for a user are filtered out, no digest email is sent for that user. **Plan-level overrides** are respected: if a plan has `pref_overrides` set, `resolveEffectiveHostPrefs` merges them with the host's global preferences before the host→viewer check (e.g. fully disabled or specific metrics bypassed).
+
 Each RSVP status has a dedicated host notification email, each gated on its own preference toggle. Each email includes a tokenized unsubscribe link that toggles the corresponding preference. Migration 033 removes the obsolete `event_reminders` key and `frequency` fields from existing JSONB data.
 
 ### Host attendee removal
@@ -641,7 +646,7 @@ All metrics use a 0–100 scale, starting at 50.00 (neutral baseline). `signal_c
 
 - **Baseline:** 50.00 for every metric, 0 signals.
 - **Feedback movement:** Each feedback signal nudges the score toward a target using weighted averaging. "Yes" (agree) targets 80, "Somewhat" (maybe) targets 50, "No" (disagree) targets 20. Nudge = (target − current) / (signal_count + 5). This ensures early signals have a larger effect while later signals converge toward the running average.
-- **Attendance penalties (Reliability only):** No-show = −8 direct penalty, Late cancel = −5, Very late = −3. These are immediate penalties, not averaged.
+- **Attendance penalties (Reliability only):** Raw penalties: No-show = −10, Very late = −8, Late cancel = −5. Effective penalty = raw × confidence (see trust model below). These are immediate penalties, not averaged.
 - **Hosting Skills:** Only moves from the `hosting_skills` prompt on plans the user hosted.
 - **Conduct / Safety:** Tracked separately from metric scoring. Does not affect scores.
 
@@ -664,8 +669,40 @@ All metrics use a 0–100 scale, starting at 50.00 (neutral baseline). `signal_c
 
 *Separate layers (not part of normal feedback):*
 
-- **Attendance issues** — structured reports: no-show, cancelled too late, arrived very late. Stored in `attendance_issues`. Immediately penalizes Reliability score.
+- **Attendance issues** — structured reports: no-show, cancelled too late, arrived very late. Stored in `attendance_issues`. Immediately penalizes Reliability score (modulated by confidence).
 - **Conduct / Safety reports** — structured reasons: rude/aggressive, harassment, boundary issue, discriminatory, unsafe/intoxicated, disruptive, property damage, other. Stored in `conduct_reports`. Treated separately from normal scoring; serious issues may require moderation/review behavior later.
+
+*Attendance Trust Model (migration 052):*
+
+The `attendance_issues` table has additional trust columns:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `is_host_report` | boolean | Whether the reporter was the plan host |
+| `confidence` | numeric(3,2) | 0.00–1.00 multiplier applied to raw penalty |
+| `applied_penalty` | numeric(5,2) | Actual score deduction stored for clean reversal |
+| `status` | text | `active` / `disputed` / `dismissed` / `confirmed` |
+
+Confidence rules:
+
+| Reporter | Corroborated? | Confidence |
+|----------|---------------|------------|
+| Host | — | 1.0 |
+| Non-host | No | 0.75 |
+| Non-host | Yes (2+ independent reporters, same plan/person/type) | 1.0 |
+| Any | Disputed by user | 0.5 |
+| Any | Dismissed by admin | 0 (penalty fully reversed) |
+| Any | Confirmed by admin | 1.0 |
+
+Product rule: 2 no-shows (50 − 20 = 30) or 1 no-show + 1 very-late (50 − 18 = 32) drops below Preferred (≥ 35), absent offsetting positive feedback.
+
+Dispute mechanism:
+- Users can dispute active attendance issues via `POST /events/:id/attendance-dispute`. All active issues on that plan against the user are set to `disputed` (confidence 0.5) and the reliability score is adjusted.
+- Reporter identity is **never** revealed to the disputed user.
+- Super admins can dismiss (confidence 0) or confirm (confidence 1.0) issues via `PUT /admin/attendance-issues/:id/status`.
+
+Corroboration:
+- When a new attendance report arrives and prior reports exist for the same plan/person/type from different reporters, all are boosted to confidence 1.0. Prior lower-confidence reports have their penalties retroactively adjusted.
 
 *Chum Preferences (user-facing, implemented):*
 
@@ -675,9 +712,12 @@ Users configure matching preferences in their profile ("Your chum preferences" s
 - Defaults: Reliability = Preferred, all others = Open to anyone.
 - Saved in `chum_preferences` table (upsert on change, auto-saves).
 
-*Browsing vs. inbound matching behavior:*
+*Browsing vs. inbound matching behavior (implemented):*
 - A user's chum preferences filter who gets matched **into their plans** and who appears in their **digest / recommendations**.
-- A user's chum preferences do **not** block them from browsing and opening plans themselves. If someone in a plan doesn't meet their preferences, the plan details will surface a compatibility note so the user can decide for themselves.
+- **Digest:** Both directions are hard-filtered. Plans whose host fails the recipient's preferences (including hosting quality) are excluded. Plans where the recipient fails the host's preferences are also excluded.
+- **Explore feed:** The host's preferences are enforced as a hard filter in the SQL query (if the host has preferences that the viewer doesn't meet, the plan is excluded). Plan-level `pref_overrides` are respected inline in the SQL: `{ "disabled": true }` bypasses all host preference checks; `disabled_metrics` bypasses specific metric checks. The viewer's own preferences produce a soft **compatibility note** (`prefNote` in the API response) — plans are not hidden from the viewer, but the frontend can indicate a mismatch.
+- **Plan details:** When a logged-in user views a plan they didn't create, `GET /events/:id` evaluates the viewer's chum preferences against the host's metrics (including hosting quality) and returns a `prefNote` array of failed metrics. The frontend displays an informational banner: "Based on your preferences, this plan may not fully match your expectations for [metric(s)]." This does **not** block access — it informs.
+- A user's chum preferences do **not** block them from browsing and opening plans themselves.
 
 *API endpoints:*
 
@@ -685,8 +725,10 @@ Users configure matching preferences in their profile ("Your chum preferences" s
 |----------|---------|
 | `GET /events/:id/feedback` | Existing feedback by this user + eligible attendees list |
 | `POST /events/:id/feedback` | Submit/update feedback entries (batch); updates `user_metrics` |
-| `POST /events/:id/attendance-issue` | Report attendance problem; penalizes Reliability |
+| `POST /events/:id/attendance-issue` | Report attendance problem; penalizes Reliability (with confidence model) |
+| `POST /events/:id/attendance-dispute` | Dispute active attendance issues filed against the current user on this plan |
 | `POST /events/:id/conduct-report` | Report conduct/safety concern |
+| `PUT /admin/attendance-issues/:id/status` | Super-admin: dismiss or confirm an attendance issue |
 | `GET /chum-preferences` | Current user's preference settings |
 | `PUT /chum-preferences` | Save preference settings (upsert) |
 | `GET /admin/users/:id/diagnostics` | Super-admin: per-user metric scores, preferences, feedback history, attendance/conduct summaries |
@@ -700,14 +742,23 @@ Users configure matching preferences in their profile ("Your chum preferences" s
 - Shows: hidden metric scores with progress bars, chum preference settings, attendance issue summary, conduct report summary, anonymized aggregated feedback table, recent feedback timeline (plan titles and reporter identity per row), and score derivation reference.
 - Reporter identities are never shown in admin views to protect feedback privacy.
 
+*Plan-level chum preference overrides (implemented):*
+
+- Hosts can override their default chum preferences for a specific plan when creating or editing it.
+- Overrides are stored as a JSONB column `pref_overrides` on `events` (migration 051).
+- `{ "disabled": true }` disables all chum preference filtering for that plan.
+- `{ "disabled_metrics": ["sociability", ...] }` disables specific metrics only; remaining metrics use the host's profile defaults.
+- `NULL` means no override (use host's global preferences as-is).
+- Overrides affect **outbound** matching only (digest + explore hard filters on the host's side). Viewer-side compatibility notes are not suppressed.
+- The create and edit plan forms expose this as a collapsible "Matching preferences for this plan" section, visible only when the host has chum preferences enabled.
+- `resolveEffectiveHostPrefs(globalPrefs, planOverrides)` merges overrides with global prefs before evaluation. `parsePrefOverrides(raw)` validates the JSONB shape.
+- The edit plan form has moved from an embedded Dialog in EventDetailClient to a dedicated page at `/events/[id]/edit`.
+
 *Future direction (documented, not yet implemented):*
 
-- New plans may inherit the creator's chum preferences by default.
-- Plan creators may later override these defaults per plan.
-- These are user-level defaults, not permanent hard locks on every plan.
-- Compatibility notes on plan detail pages when browsing plans with participants who don't meet preferences (UX designed, wiring planned).
+- New plans may inherit the creator's chum preferences by default (the override infrastructure now supports this).
 
-*Schema:* Migration 049: `plan_feedback`, `attendance_issues`, `conduct_reports`, `user_metrics` tables + `events.feedback_email_sent_at` column. Migration 050: `chum_preferences` table.
+*Schema:* Migration 049: `plan_feedback`, `attendance_issues`, `conduct_reports`, `user_metrics` tables + `events.feedback_email_sent_at` column. Migration 050: `chum_preferences` table. Migration 051: `events.pref_overrides` JSONB column.
 
 **Not yet implemented:** recurring events.
 

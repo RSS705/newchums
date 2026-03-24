@@ -5,6 +5,7 @@ import Autocomplete from "@mui/material/Autocomplete";
 import Box from "@mui/material/Box";
 import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
+import Collapse from "@mui/material/Collapse";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
@@ -23,6 +24,7 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import AddPhotoAlternateRoundedIcon from "@mui/icons-material/AddPhotoAlternateRounded";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
+import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { TimePicker } from "@mui/x-date-pickers/TimePicker";
 import dayjs, { type Dayjs } from "dayjs";
@@ -77,6 +79,12 @@ export default function CreateEventClient() {
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // Chum preference overrides
+  const [prefOverridesOpen, setPrefOverridesOpen] = useState(false);
+  const [prefDisableAll, setPrefDisableAll] = useState(false);
+  const [prefDisabledMetrics, setPrefDisabledMetrics] = useState<Record<string, boolean>>({});
+  const [hostHasPrefs, setHostHasPrefs] = useState(false);
+
   // Hobby search
   const [suggestions, setSuggestions] = useState<HobbyOption[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
@@ -98,6 +106,21 @@ export default function CreateEventClient() {
 
   useEffect(() => {
     loadGooglePlacesScript().catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const res = await apiFetch("/chum-preferences", { auth: true });
+        const data = await res.json();
+        if (!cancelled && data.ok) {
+          setHostHasPrefs(data.preferences?.enabled !== false);
+        }
+      } catch { /* non-fatal */ }
+    };
+    void check();
+    return () => { cancelled = true; };
   }, []);
 
   const fetchSuggestions = useCallback(async (q: string) => {
@@ -203,6 +226,13 @@ export default function CreateEventClient() {
     return Object.keys(errs).length === 0;
   };
 
+  const buildPrefOverrides = (): { disabled?: boolean; disabled_metrics?: string[] } | null => {
+    if (prefDisableAll) return { disabled: true };
+    const dm = Object.entries(prefDisabledMetrics).filter(([, v]) => v).map(([k]) => k);
+    if (dm.length > 0) return { disabled_metrics: dm };
+    return null;
+  };
+
   const handleSubmit = async () => {
     if (!validate()) return;
     setSubmitting(true);
@@ -238,6 +268,7 @@ export default function CreateEventClient() {
       fallback_policy: requireReconfirmation ? fallbackPolicy : "notify_host",
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       status: "published",
+      pref_overrides: buildPrefOverrides(),
     };
 
     try {
@@ -908,6 +939,86 @@ export default function CreateEventClient() {
           </RadioGroup>
         </Stack>
       </AppCard>
+
+      {/* Matching preferences override */}
+      {hostHasPrefs && (
+        <AppCard>
+          <Stack spacing={1.5}>
+            <Box
+              onClick={() => setPrefOverridesOpen((v) => !v)}
+              sx={{ display: "flex", alignItems: "center", cursor: "pointer", userSelect: "none" }}
+            >
+              <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem", flex: 1 }}>
+                Matching preferences for this plan
+              </Typography>
+              <ExpandMoreRoundedIcon
+                sx={{
+                  transform: prefOverridesOpen ? "rotate(180deg)" : "rotate(0deg)",
+                  transition: "transform 0.2s",
+                  color: "text.secondary",
+                }}
+              />
+            </Box>
+
+            <Collapse in={prefOverridesOpen}>
+              <Stack spacing={2} sx={{ pt: 1 }}>
+                <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+                  Your profile chum preferences are used by default when matching people to your plans.
+                  You can relax those rules for this plan only, without changing your profile settings.
+                </Typography>
+
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={prefDisableAll}
+                      onChange={(e) => {
+                        setPrefDisableAll(e.target.checked);
+                        if (e.target.checked) setPrefDisabledMetrics({});
+                      }}
+                    />
+                  }
+                  label={
+                    <Box>
+                      <Typography variant="body2" fontWeight={500}>Disable all preference filtering for this plan</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Anyone can be matched to this plan regardless of your chum preferences.
+                      </Typography>
+                    </Box>
+                  }
+                  sx={{ alignItems: "flex-start" }}
+                />
+
+                {!prefDisableAll && (
+                  <Stack spacing={1} sx={{ pl: 0.5 }}>
+                    <Typography variant="body2" fontWeight={600} sx={{ mb: 0.5 }}>
+                      Or disable specific metrics for this plan:
+                    </Typography>
+                    {(["reliability", "sociability", "presentation"] as const).map((metric) => (
+                      <FormControlLabel
+                        key={metric}
+                        control={
+                          <Switch
+                            size="small"
+                            checked={!!prefDisabledMetrics[metric]}
+                            onChange={(e) =>
+                              setPrefDisabledMetrics((prev) => ({ ...prev, [metric]: e.target.checked }))
+                            }
+                          />
+                        }
+                        label={
+                          <Typography variant="body2">
+                            Skip <strong>{{ reliability: "Reliability", sociability: "Sociability", presentation: "Personal care" }[metric]}</strong> filtering
+                          </Typography>
+                        }
+                      />
+                    ))}
+                  </Stack>
+                )}
+              </Stack>
+            </Collapse>
+          </Stack>
+        </AppCard>
+      )}
 
       {/* Submit */}
       <Stack
