@@ -71,8 +71,9 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
               <Typography
                 component={Link}
                 href="/settings#privacy"
+                variant="inherit"
                 sx={{
-                  color: "inherit",
+                  color: "primary.main",
                   fontWeight: 500,
                   textDecoration: "none",
                   "&:hover": { textDecoration: "underline" },

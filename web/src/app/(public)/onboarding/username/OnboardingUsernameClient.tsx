@@ -93,6 +93,19 @@ export default function OnboardingUsernameClient() {
       setDateOfBirthError("Date of birth is required.");
       return false;
     }
+    const dob = dayjs(trimmedDob);
+    if (!dob.isValid()) {
+      setDateOfBirthError("Please enter a valid date (YYYY-MM-DD).");
+      return false;
+    }
+    if (dob.isAfter(dayjs())) {
+      setDateOfBirthError("Date cannot be in the future.");
+      return false;
+    }
+    if (dayjs().diff(dob, "year") < 18) {
+      setDateOfBirthError("NewChums is currently available to people 18 and older.");
+      return false;
+    }
     return true;
   };
 

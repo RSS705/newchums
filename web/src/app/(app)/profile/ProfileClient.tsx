@@ -19,7 +19,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Cropper, { type Area } from "react-easy-crop";
-import { apiFetch, getAvatarBaseUrl, getMediaApiBaseUrl } from "@/lib/apiClient";
+import { apiFetch, getApiBaseUrl, getAvatarBaseUrl } from "@/lib/apiClient";
 import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
 import DistanceSelect from "@/components/common/DistanceSelect";
 import NCDatePicker from "@/components/fields/NCDatePicker";
@@ -117,11 +117,13 @@ export default function ProfileClient() {
       const res = await apiFetch(`/interests?q=${encodeURIComponent(term)}`);
       const data = await res.json();
       if (data.ok && data.interests) {
-        const opts = data.interests.map((r: { id?: string; name: string; slug: string }) => ({
-          id: r.id,
-          name: r.name,
-          slug: r.slug,
-        }));
+        const seen = new Set<string>();
+        const opts: InterestOption[] = [];
+        for (const r of data.interests as { id?: string; name: string; slug: string }[]) {
+          if (seen.has(r.slug)) continue;
+          seen.add(r.slug);
+          opts.push({ id: r.id, name: r.name, slug: r.slug });
+        }
         setSuggestions(opts);
       } else {
         setSuggestions([]);
@@ -146,28 +148,31 @@ export default function ProfileClient() {
     else setSuggestions([]);
   }, [inputValue, debouncedFetch]);
 
-  const checkHandleAvailable = useCallback(async (h: string) => {
+  const checkHandleAvailable = useCallback(async (h: string): Promise<"idle" | "available" | "unavailable"> => {
     const trimmed = h.trim();
     if (!trimmed || trimmed.length < 3) {
       setHandleStatus("idle");
       setHandleError(null);
-      return;
+      return "idle";
     }
     if (!HANDLE_REGEX.test(trimmed) || trimmed.toLowerCase().startsWith("_") || trimmed.toLowerCase().endsWith("_")) {
       setHandleStatus("unavailable");
       setHandleError("Use 3–20 letters, numbers, or underscores; no leading/trailing underscore.");
-      return;
+      return "unavailable";
     }
     setHandleStatus("checking");
     setHandleError(null);
     try {
       const res = await apiFetch(`/handles/available?handle=${encodeURIComponent(trimmed)}`, { auth: true });
       const data = (await res.json()) as { available?: boolean };
-      setHandleStatus(data.available ? "available" : "unavailable");
+      const result = data.available ? "available" as const : "unavailable" as const;
+      setHandleStatus(result);
       setHandleError(data.available ? null : "This handle is already taken.");
+      return result;
     } catch {
       setHandleStatus("idle");
       setHandleError(null);
+      return "idle";
     }
   }, []);
 
@@ -295,7 +300,6 @@ export default function ProfileClient() {
       try {
         const initRes = await apiFetch("/media/init", {
           auth: true,
-          baseUrl: getMediaApiBaseUrl(),
           method: "POST",
           body: JSON.stringify({
             purpose: "avatar",
@@ -311,10 +315,13 @@ export default function ProfileClient() {
           error?: string;
         };
         if (!initData.ok || !initData.uploadToken || !initData.uploadUrl) {
-          toast.error(initData.error ?? "Failed to prepare upload");
+          const msg = initData.error === "UNAUTHORIZED"
+            ? "Session expired. Please refresh and try again."
+            : initData.error ?? "Failed to prepare upload";
+          toast.error(msg);
           return;
         }
-        const uploadUrl = `${getMediaApiBaseUrl()}${initData.uploadUrl}`;
+        const uploadUrl = `${getApiBaseUrl()}${initData.uploadUrl}`;
         const uploadRes = await fetch(uploadUrl, {
           method: "PUT",
           body: fileOrBlob,
@@ -328,7 +335,6 @@ export default function ProfileClient() {
         }
         const finalizeRes = await apiFetch("/media/finalize", {
           auth: true,
-          baseUrl: getMediaApiBaseUrl(),
           method: "POST",
           body: JSON.stringify({ objectKey: initData.objectKey, purpose: "avatar" }),
         });
@@ -338,7 +344,10 @@ export default function ProfileClient() {
           error?: string;
         };
         if (!finalizeData.ok || !finalizeData.avatarUrl) {
-          toast.error(finalizeData.error ?? "Failed to save avatar");
+          const msg = finalizeData.error === "UNAUTHORIZED"
+            ? "Session expired. Please refresh and try again."
+            : finalizeData.error ?? "Failed to save avatar";
+          toast.error(msg);
           return;
         }
         setProfile((p) => (p ? { ...p, avatar_url: finalizeData.avatarUrl! } : p));
@@ -366,7 +375,6 @@ export default function ProfileClient() {
     try {
       const res = await apiFetch("/profile/avatar", {
         auth: true,
-        baseUrl: getMediaApiBaseUrl(),
         method: "DELETE",
       });
       const data = (await res.json()) as { ok?: boolean; error?: string };
@@ -430,8 +438,12 @@ export default function ProfileClient() {
         toast.error("Please choose an available handle.");
         return;
       }
-      if (handleStatus === "checking") {
-        return;
+      if (handleStatus === "checking" || handleStatus === "idle") {
+        const result = await checkHandleAvailable(handleTrimmed);
+        if (result !== "available") {
+          if (result === "unavailable") toast.error("Please choose an available handle.");
+          return;
+        }
       }
     }
     const prevHandle = (profile?.username ?? "").replace(/^@/, "");
@@ -441,8 +453,11 @@ export default function ProfileClient() {
       return;
     }
     if (handleChanged && handleStatus !== "available" && handleTrimmed !== prevHandle) {
-      toast.error("Please choose an available handle.");
-      return;
+      const result = await checkHandleAvailable(handleTrimmed);
+      if (result !== "available") {
+        if (result === "unavailable") toast.error("Please choose an available handle.");
+        return;
+      }
     }
     if (bio.length > MAX_BIO_LENGTH) {
       toast.error(`Bio must be ${MAX_BIO_LENGTH} characters or less`);
@@ -830,6 +845,14 @@ export default function ProfileClient() {
             multiple
             filterOptions={(x) => x}
             options={suggestions}
+            renderOption={(props, option) => {
+              const { key: _key, ...rest } = props as React.HTMLAttributes<HTMLLIElement> & { key: string };
+              return (
+                <li key={typeof option === "string" ? option : (option.id ?? option.slug)} {...rest}>
+                  {typeof option === "string" ? option : option.name}
+                </li>
+              );
+            }}
             sx={{
               "& .MuiOutlinedInput-root": { alignItems: "center" },
               "& .MuiInputBase-input": {

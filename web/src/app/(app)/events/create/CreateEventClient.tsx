@@ -32,7 +32,7 @@ import Cropper, { type Area } from "react-easy-crop";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
 import PlacesAutocompleteInput from "@/components/common/PlacesAutocompleteInput";
-import { apiFetch, getMediaApiBaseUrl } from "@/lib/apiClient";
+import { apiFetch, getApiBaseUrl } from "@/lib/apiClient";
 import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
 import { loadGooglePlacesScript } from "@/lib/loadGooglePlaces";
 import { isDuplicate, nameToSlug } from "@/lib/interestUtils";
@@ -137,9 +137,14 @@ export default function CreateEventClient() {
       const res = await apiFetch(`/interests?q=${encodeURIComponent(term)}`);
       const data = await res.json();
       if (data.ok && data.interests) {
-        setSuggestions(data.interests.map((r: { id?: string; name: string; slug: string }) => ({
-          id: r.id, name: r.name, slug: r.slug,
-        })));
+        const seen = new Set<string>();
+        const deduped: HobbyOption[] = [];
+        for (const r of data.interests as { id?: string; name: string; slug: string }[]) {
+          if (seen.has(r.slug)) continue;
+          seen.add(r.slug);
+          deduped.push({ id: r.id, name: r.name, slug: r.slug });
+        }
+        setSuggestions(deduped);
       } else {
         setSuggestions([]);
       }
@@ -292,7 +297,6 @@ export default function CreateEventClient() {
           try {
             const bInitRes = await apiFetch("/media/init", {
               auth: true,
-              baseUrl: getMediaApiBaseUrl(),
               method: "POST",
               body: JSON.stringify({
                 purpose: "event_banner",
@@ -302,7 +306,7 @@ export default function CreateEventClient() {
             });
             const bInitData = (await bInitRes.json()) as { ok?: boolean; uploadToken?: string; objectKey?: string; uploadUrl?: string };
             if (bInitData.ok && bInitData.uploadToken && bInitData.uploadUrl && bInitData.objectKey) {
-              const uploadUrl = `${getMediaApiBaseUrl()}${bInitData.uploadUrl}`;
+              const uploadUrl = `${getApiBaseUrl()}${bInitData.uploadUrl}`;
               const uploadRes = await fetch(uploadUrl, {
                 method: "PUT",
                 body: bannerFile,
@@ -312,7 +316,6 @@ export default function CreateEventClient() {
               if (uploadRes.ok) {
                 await apiFetch("/media/finalize", {
                   auth: true,
-                  baseUrl: getMediaApiBaseUrl(),
                   method: "POST",
                   body: JSON.stringify({
                     objectKey: bInitData.objectKey,
@@ -519,6 +522,14 @@ export default function CreateEventClient() {
             multiple
             filterOptions={(x) => x}
             options={suggestions}
+            renderOption={(props, option) => {
+              const { key: _key, ...rest } = props as React.HTMLAttributes<HTMLLIElement> & { key: string };
+              return (
+                <li key={typeof option === "string" ? option : (option.id ?? option.slug)} {...rest}>
+                  {typeof option === "string" ? option : option.name}
+                </li>
+              );
+            }}
             value={selectedHobbies}
             inputValue={hobbyInputValue}
             onInputChange={(_, v) => setHobbyInputValue(v)}

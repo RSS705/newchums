@@ -44,6 +44,10 @@ export type PlanEvent = {
 type EventCardProps = {
   event: PlanEvent;
   isPast?: boolean;
+  /** Example/sample card on marketing surfaces: no RSVP row, links to signup unless overridden */
+  isExample?: boolean;
+  /** When set, the whole card links here (e.g. /signup). Example cards default to signup when omitted. */
+  hrefOverride?: string;
 };
 
 function formatDateTime(iso: string): string {
@@ -82,7 +86,12 @@ function rsvpColor(s: string | null): string {
   return "text.secondary";
 }
 
-export default function EventCard({ event, isPast = false }: EventCardProps) {
+export default function EventCard({
+  event,
+  isPast = false,
+  isExample = false,
+  hrefOverride,
+}: EventCardProps) {
   const isCanceled = event.status === "canceled";
   const hobbies = event.hobbies?.length
     ? event.hobbies
@@ -104,6 +113,9 @@ export default function EventCard({ event, isPast = false }: EventCardProps) {
     ? `${getMediaApiBaseUrl()}/events/${event.id}/banner`
     : null;
   const fallbackGradient = getGradientForEventId(event.id);
+
+  const cardHref =
+    hrefOverride ?? (isExample ? "/signup" : `/events/${event.id}`);
 
   return (
     <Card
@@ -129,7 +141,7 @@ export default function EventCard({ event, isPast = false }: EventCardProps) {
     >
       <CardActionArea
         component={Link}
-        href={`/events/${event.id}`}
+        href={cardHref}
         sx={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "stretch", minHeight: 0 }}
       >
         {/* Banner — uploaded photo or deterministic gradient fallback */}
@@ -225,7 +237,16 @@ export default function EventCard({ event, isPast = false }: EventCardProps) {
               ) : (
                 <PlaceRoundedIcon sx={{ fontSize: 16, color: isPast ? "text.disabled" : "primary.main", opacity: 0.85 }} />
               )}
-              <Typography variant="body2" color="text.secondary" noWrap sx={{ flex: 1, fontSize: "0.8125rem" }}>
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                noWrap={!isExample}
+                sx={{
+                  flex: 1,
+                  fontSize: "0.8125rem",
+                  ...(isExample ? { whiteSpace: "normal", lineHeight: 1.45 } : {}),
+                }}
+              >
                 {locationDisplay}
               </Typography>
               {event.distanceKm != null && (
@@ -246,7 +267,7 @@ export default function EventCard({ event, isPast = false }: EventCardProps) {
           </Stack>
 
           {/* RSVP status (for non-hosts) */}
-          {!event.isHost && (
+          {!event.isHost && !isExample && (
             <Box sx={{ mt: 1.75, pt: 1.25, borderTop: "1px solid", borderColor: "grey.200" }}>
               <Typography variant="body2" sx={{ color: rsvpColor(event.myRsvpStatus), fontWeight: 600, fontSize: "0.8125rem" }}>
                 {rsvpLabel(event.myRsvpStatus)}

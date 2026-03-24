@@ -38,13 +38,14 @@ export default function HobbiesStep({ value, onChange }: HobbiesStepProps) {
       const res = await apiFetch(`/interests?q=${encodeURIComponent(term)}`);
       const data = await res.json();
       if (data.ok && data.interests) {
-        setSuggestions(
-          data.interests.map((r: { id?: string; name: string; slug: string }) => ({
-            id: r.id,
-            name: r.name,
-            slug: r.slug,
-          })),
-        );
+        const seen = new Set<string>();
+        const deduped: InterestOption[] = [];
+        for (const r of data.interests as { id?: string; name: string; slug: string }[]) {
+          if (seen.has(r.slug)) continue;
+          seen.add(r.slug);
+          deduped.push({ id: r.id, name: r.name, slug: r.slug });
+        }
+        setSuggestions(deduped);
       } else {
         setSuggestions([]);
       }
@@ -98,6 +99,14 @@ export default function HobbiesStep({ value, onChange }: HobbiesStepProps) {
         disableClearable
         filterOptions={(x) => x}
         options={suggestions}
+        renderOption={(props, option) => {
+          const { key: _key, ...rest } = props as React.HTMLAttributes<HTMLLIElement> & { key: string };
+          return (
+            <li key={typeof option === "string" ? option : (option.id ?? option.slug)} {...rest}>
+              {typeof option === "string" ? option : option.name}
+            </li>
+          );
+        }}
         sx={{
           "& .MuiOutlinedInput-root": { alignItems: "center" },
           "& .MuiInputBase-input": {

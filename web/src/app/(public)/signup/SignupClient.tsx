@@ -150,12 +150,45 @@ export default function SignupClient() {
       setDateOfBirthError("Date of birth is required.");
       return false;
     }
+    const dob = dayjs(dateOfBirth.trim());
+    if (!dob.isValid()) {
+      setDateOfBirthError("Please enter a valid date (YYYY-MM-DD).");
+      return false;
+    }
+    if (dob.isAfter(dayjs())) {
+      setDateOfBirthError("Date cannot be in the future.");
+      return false;
+    }
+    if (dayjs().diff(dob, "year") < 18) {
+      setDateOfBirthError("NewChums is currently available to people 18 and older.");
+      return false;
+    }
     return true;
   };
 
-  const handleStep1Next = (e: React.FormEvent) => {
+  const [checkingEmail, setCheckingEmail] = React.useState(false);
+
+  const handleStep1Next = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (validateStep1()) goForward();
+    if (!validateStep1()) return;
+
+    const trimmedEmail = email.trim().toLowerCase();
+    setCheckingEmail(true);
+    try {
+      const res = await apiFetch(
+        `/auth/email-verify/status?email=${encodeURIComponent(trimmedEmail)}`,
+      );
+      const data = (await res.json()) as { exists?: boolean };
+      if (data.exists) {
+        setEmailError("An account already exists for this email. Try logging in instead.");
+        return;
+      }
+    } catch {
+      // Network error — let the user proceed; the server will catch duplicates at signup
+    } finally {
+      setCheckingEmail(false);
+    }
+    goForward();
   };
 
   const handleStep2Next = (e: React.FormEvent) => {
@@ -470,8 +503,8 @@ export default function SignupClient() {
                         </FormHelperText>
                       )}
                     </Box>
-                    <AppButton type="submit" fullWidth size="large" sx={{ mt: 2 }}>
-                      Continue
+                    <AppButton type="submit" fullWidth size="large" disabled={checkingEmail} sx={{ mt: 2 }}>
+                      {checkingEmail ? "Checking…" : "Continue"}
                     </AppButton>
                   </AuthDividerForm>
                 </>

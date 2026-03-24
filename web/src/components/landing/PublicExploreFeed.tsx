@@ -15,6 +15,7 @@ import Link from "next/link";
 import EventCard from "@/components/events/EventCard";
 import type { PlanEvent } from "@/components/events/EventCard";
 import { apiFetch } from "@/lib/apiClient";
+import { getSamplePublicExplorePlans } from "@/lib/publicExploreSamplePlans";
 
 const PAGE_SIZE = 12;
 
@@ -30,6 +31,8 @@ export default function PublicExploreFeed() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
+  /** null until first fetch completes; true = HTTP 200 with parsed body */
+  const [fetchSucceeded, setFetchSucceeded] = useState<boolean | null>(null);
   const [timeRange, setTimeRange] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [searchDebounced, setSearchDebounced] = useState("");
@@ -53,8 +56,13 @@ export default function PublicExploreFeed() {
         const data = (await res.json()) as { events: PlanEvent[]; hasMore: boolean };
         setEvents((prev) => append ? [...prev, ...data.events] : data.events);
         setHasMore(data.hasMore);
+        setFetchSucceeded(true);
+      } else {
+        setFetchSucceeded(false);
       }
-    } catch { /* silent */ }
+    } catch {
+      setFetchSucceeded(false);
+    }
     setLoading(false);
     setLoadingMore(false);
   }, [timeRange, searchDebounced]);
@@ -66,6 +74,15 @@ export default function PublicExploreFeed() {
   const handleLoadMore = () => {
     if (!loadingMore && hasMore) fetchEvents(events.length, true);
   };
+
+  /** Curated examples only when the default feed is empty and the request succeeded (not on search/filter or API error). */
+  const showSampleFallback =
+    fetchSucceeded === true &&
+    events.length === 0 &&
+    !searchDebounced &&
+    timeRange === "all";
+
+  const displayEvents = showSampleFallback ? getSamplePublicExplorePlans() : events;
 
   return (
     <Box component="section" sx={{ py: { xs: 5, sm: 7, md: 9 } }}>
@@ -85,62 +102,99 @@ export default function PublicExploreFeed() {
           See what people are organizing
         </Typography>
         <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 560, lineHeight: 1.7 }}>
-          Browse real upcoming plans from the NewChums community. Sign up to RSVP, chat with attendees, and create your own.
+          {showSampleFallback ? (
+            <>
+              Here are examples of the kinds of plans people run on NewChums. When real public plans are live,
+              they&apos;ll show here. Sign up to RSVP, join the chat, and host your own.
+            </>
+          ) : (
+            <>
+              Browse real upcoming plans from the NewChums community. Sign up to RSVP, chat with attendees, and create your own.
+            </>
+          )}
         </Typography>
+        {showSampleFallback && (
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ display: "block", maxWidth: 520, lineHeight: 1.65, letterSpacing: "0.01em" }}
+          >
+            Sample plans for illustration, hosts and times are fictional.
+          </Typography>
+        )}
       </Stack>
 
-      {/* Filter bar */}
-      <Stack
-        direction="row"
-        alignItems="center"
-        flexWrap="wrap"
-        useFlexGap
-        sx={{ gap: 1, mb: { xs: 3, sm: 3.5 } }}
-      >
-        <TextField
-          size="small"
-          placeholder="Search plans..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          slotProps={{
-            input: {
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchRoundedIcon sx={{ fontSize: 18, color: "text.disabled" }} />
-                </InputAdornment>
-              ),
-            },
-          }}
-          sx={{
-            width: { xs: "100%", sm: 220 },
-            "& .MuiOutlinedInput-root": { borderRadius: 2.5 },
-          }}
-        />
-        {TIME_CHIPS.map((tc) => (
-          <Chip
-            key={tc.value}
-            label={tc.label}
+      {/* Filter bar — hidden while showing sample fallback so filters don’t imply the examples respond to search */}
+      {!showSampleFallback && (
+        <Stack
+          direction="row"
+          alignItems="center"
+          flexWrap="wrap"
+          useFlexGap
+          sx={{ gap: 1, mb: { xs: 3, sm: 3.5 } }}
+        >
+          <TextField
             size="small"
-            variant={timeRange === tc.value ? "filled" : "outlined"}
-            onClick={() => setTimeRange(tc.value)}
+            placeholder="Search plans..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            slotProps={{
+              input: {
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchRoundedIcon sx={{ fontSize: 18, color: "text.disabled" }} />
+                  </InputAdornment>
+                ),
+              },
+            }}
             sx={{
-              fontWeight: 600,
-              fontSize: "0.78rem",
-              borderRadius: 2,
-              ...(timeRange === tc.value
-                ? { bgcolor: "primary.main", color: "primary.contrastText" }
-                : {}),
+              width: { xs: "100%", sm: 220 },
+              "& .MuiOutlinedInput-root": { borderRadius: 2.5 },
             }}
           />
-        ))}
-      </Stack>
+          {TIME_CHIPS.map((tc) => (
+            <Chip
+              key={tc.value}
+              label={tc.label}
+              size="small"
+              variant={timeRange === tc.value ? "filled" : "outlined"}
+              onClick={() => setTimeRange(tc.value)}
+              sx={{
+                fontWeight: 600,
+                fontSize: "0.78rem",
+                borderRadius: 2,
+                ...(timeRange === tc.value
+                  ? { bgcolor: "primary.main", color: "primary.contrastText" }
+                  : {}),
+              }}
+            />
+          ))}
+        </Stack>
+      )}
 
       {/* Event grid */}
       {loading ? (
         <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
           <CircularProgress size={32} />
         </Box>
-      ) : events.length === 0 ? (
+      ) : fetchSucceeded === false ? (
+        <Stack spacing={2} alignItems="center" sx={{ py: 6 }}>
+          <Typography variant="h6" color="text.secondary" fontWeight={500}>
+            Couldn&apos;t load plans right now
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center", maxWidth: 400 }}>
+            Refresh the page in a moment, or sign up to explore from your account.
+          </Typography>
+          <Button
+            component={Link}
+            href="/signup"
+            variant="contained"
+            sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, mt: 1 }}
+          >
+            Create an account
+          </Button>
+        </Stack>
+      ) : events.length === 0 && !showSampleFallback ? (
         <Stack spacing={2} alignItems="center" sx={{ py: 6 }}>
           <Typography variant="h6" color="text.secondary" fontWeight={500}>
             {searchDebounced ? "No plans match your search" : "No public plans right now"}
@@ -160,15 +214,29 @@ export default function PublicExploreFeed() {
       ) : (
         <>
           <Grid container spacing={{ xs: 2, sm: 2.5 }}>
-            {events.map((ev) => (
+            {displayEvents.map((ev) => (
               <Grid key={ev.id} size={{ xs: 12, sm: 6, md: 4 }}>
-                <EventCard event={ev} />
+                <EventCard event={ev} isExample={showSampleFallback} />
               </Grid>
             ))}
           </Grid>
 
           <Stack direction="row" justifyContent="center" sx={{ mt: 4 }}>
-            {hasMore ? (
+            {showSampleFallback ? (
+              <Stack spacing={1.5} alignItems="center">
+                <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center", maxWidth: 440 }}>
+                  Create a free account to host or join real plans, get hobby-based recommendations, and use plan chat.
+                </Typography>
+                <Button
+                  component={Link}
+                  href="/signup"
+                  variant="contained"
+                  sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5 }}
+                >
+                  Create an account
+                </Button>
+              </Stack>
+            ) : hasMore ? (
               <Button
                 onClick={handleLoadMore}
                 disabled={loadingMore}

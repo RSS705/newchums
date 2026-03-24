@@ -27,9 +27,9 @@ export function getPalette(mode: PaletteMode): PaletteOptions {
       contrastText: "#ffffff",
     },
     success: {
-      main: "#13DEB9",
-      light: "#E6FFFA",
-      dark: "#02b3a9",
+      main: "#059669",
+      light: "#ECFDF5",
+      dark: "#047857",
       contrastText: "#ffffff",
     },
     info: {
@@ -95,9 +95,9 @@ export function getPalette(mode: PaletteMode): PaletteOptions {
       contrastText: "#ffffff",
     },
     success: {
-      main: "#13DEB9",
+      main: "#10B981",
       light: "#1B3C48",
-      dark: "#02b3a9",
+      dark: "#059669",
       contrastText: "#ffffff",
     },
     info: {

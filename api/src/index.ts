@@ -1025,7 +1025,7 @@ app.post("/auth/email-verify/confirm", async (c) => {
 app.get("/auth/email-verify/status", async (c) => {
   const email = c.req.query("email")?.trim().toLowerCase();
   if (!email) {
-    return c.json({ verified: false });
+    return c.json({ verified: false, exists: false });
   }
 
   const sql = getSql(c.env);
@@ -1033,9 +1033,9 @@ app.get("/auth/email-verify/status", async (c) => {
     SELECT email_verified_at FROM users WHERE email = ${email} LIMIT 1
   `) as { email_verified_at: string | null }[];
   if (rows.length === 0) {
-    return c.json({ verified: false });
+    return c.json({ verified: false, exists: false });
   }
-  return c.json({ verified: !!rows[0].email_verified_at });
+  return c.json({ verified: !!rows[0].email_verified_at, exists: true });
 });
 
 app.post("/auth/email-verify/mark-oauth", async (c) => {

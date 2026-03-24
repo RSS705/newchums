@@ -23,17 +23,12 @@ export const getApiBaseUrl = () => {
 };
 
 /**
- * Canonical base URL for avatar images. Use this for avatar img src so both local and prod
- * resolve avatars from the same origin (production API + R2), enabling cross-env consistency
- * when sharing the same DB.
- * Falls back to NEXT_PUBLIC_API_BASE_URL if not set.
+ * Base URL for reading avatar/banner images.
+ * Uses the same API base as all other operations so uploads and reads
+ * always target the same R2 bucket. In production the value is identical
+ * to NEXT_PUBLIC_API_BASE_URL anyway.
  */
-export const getAvatarBaseUrl = () => {
-  const base =
-    process.env.NEXT_PUBLIC_AVATAR_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL;
-  if (!base) throw new Error("NEXT_PUBLIC_AVATAR_BASE_URL or NEXT_PUBLIC_API_BASE_URL is not set");
-  return base.replace(/\/$/, "");
-};
+export const getAvatarBaseUrl = () => getApiBaseUrl();
 
 let cachedToken: string | null = null;
 /** Unix ms at which the cached token should be considered expired (1-min buffer baked in). */
@@ -88,10 +83,10 @@ export type ApiFetchOptions = RequestInit & {
 };
 
 /**
- * Base URL for media/avatar operations. When set, use for init/upload/finalize so both
- * local and prod write to the same R2, enabling cross-env consistency when sharing DB.
+ * Base URL for media operations (init, upload, finalize).
+ * Always the same as the API base so auth tokens are valid.
  */
-export const getMediaApiBaseUrl = () => getAvatarBaseUrl();
+export const getMediaApiBaseUrl = () => getApiBaseUrl();
 
 export function getChatWebSocketUrl(eventId: string, token: string): string {
   const base = getApiBaseUrl().replace(/^http/, "ws");

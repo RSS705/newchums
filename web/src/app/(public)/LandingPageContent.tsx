@@ -30,7 +30,7 @@ import PublicExploreFeed from "@/components/landing/PublicExploreFeed";
 
 /**
  * Full public homepage content for logged-out visitors.
- * Sections: Hero → Examples (plans) → Why It Helps → Social Upside → CTA
+ * Sections: Hero → Brand positioning → Public Explore → Why It Helps → … → CTA
  *
  * Messaging hierarchy: (1) organize and join hobby-based plans around what you enjoy,
  * (2) clear details and easy follow-through, (3) social upside via shared interests.
@@ -418,9 +418,6 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
         </Grid>
       </Box>
 
-      {/* ── Section 1.1: Public Explore Feed ── */}
-      {!isLoggedIn && <PublicExploreFeed />}
-
       {/* ── Section 1.5: Brand / Positioning ── */}
       <Box
         component="section"
@@ -618,6 +615,9 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
           </Stack>
         </Box>
       </Box>
+
+      {/* ── Section 1.1: Public Explore Feed ── */}
+      {!isLoggedIn && <PublicExploreFeed />}
 
       {/* ── Section: How Does It Work? ── */}
       <Box

@@ -162,9 +162,14 @@ export default function EditEventClient() {
       const res = await apiFetch(`/interests?q=${encodeURIComponent(term)}`);
       const data = await res.json();
       if (data.ok && data.interests) {
-        setHobbySuggestions(data.interests.map((r: { id?: string; name: string; slug: string }) => ({
-          id: r.id, name: r.name, slug: r.slug,
-        })));
+        const seen = new Set<string>();
+        const deduped: HobbyInfo[] = [];
+        for (const r of data.interests as { id?: string; name: string; slug: string }[]) {
+          if (seen.has(r.slug)) continue;
+          seen.add(r.slug);
+          deduped.push({ id: r.id, name: r.name, slug: r.slug });
+        }
+        setHobbySuggestions(deduped);
       } else {
         setHobbySuggestions([]);
       }
@@ -319,6 +324,14 @@ export default function EditEventClient() {
             multiple
             filterOptions={(x) => x}
             options={hobbySuggestions}
+            renderOption={(props, option) => {
+              const { key: _key, ...rest } = props as React.HTMLAttributes<HTMLLIElement> & { key: string };
+              return (
+                <li key={typeof option === "string" ? option : (option.id ?? option.slug)} {...rest}>
+                  {typeof option === "string" ? option : option.name}
+                </li>
+              );
+            }}
             value={hobbies}
             inputValue={hobbyInput}
             onInputChange={(_, v) => setHobbyInput(v)}
