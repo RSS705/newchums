@@ -35,7 +35,7 @@ NewChums helps people organize gatherings more easily around hobbies and shared 
 | Database | Neon PostgreSQL | PostGIS available |
 | Auth | Auth.js (JWT sessions) | Google OAuth + Credentials |
 | Email | Postmark | Transactional |
-| Analytics | Plausible | Production |
+| Analytics | Google Analytics (gtag.js) | Production |
 | Error tracking | Sentry | Web + API |
 | Logging | Axiom | API |
 | Real-time | Cloudflare Durable Objects | WebSocket relay for plan chat (Hibernation API) |
@@ -81,7 +81,7 @@ NewChums helps people organize gatherings more easily around hobbies and shared 
 2. Business logic belongs in the API Worker.
 3. The Web Worker handles rendering and auth orchestration.
 4. Avoid introducing new API logic in Next.js route handlers.
-5. Observability (Sentry/Axiom/Plausible) remains enabled.
+5. Observability (Sentry/Axiom/Google Analytics) remains enabled.
 6. Structural UI changes occur at theme/layout level, not per-page styling patches.
 7. Canonical host is non-www; www redirects before Auth.js.
 
@@ -1015,7 +1015,7 @@ When sharing the same DB between local and production, set `NEXT_PUBLIC_AVATAR_B
 
 - Sentry: frontend + API error tracking
 - Axiom: API request logs
-- Plausible: production analytics
+- Google Analytics (gtag.js, measurement ID `G-MN49WWXHDJ`): production analytics — loaded via Next.js `<Script>` in root layout, production only
 
 ---
 

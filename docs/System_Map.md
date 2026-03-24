@@ -41,7 +41,7 @@ flowchart TB
   W -->|"Frontend errors"| SENTRY_FE["Sentry<br/>(Frontend)"]
   API -->|"API errors"| SENTRY_BE["Sentry<br/>(Backend)"]
   API -->|"Logs"| AX["Axiom<br/>(Logs)"]
-  W -->|"Analytics"| PLAUS["Plausible<br/>(Analytics)"]
+  W -->|"Analytics"| GA["Google Analytics<br/>(gtag.js)"]
 
   API -->|"Avatar objects"| R2["R2 (avatars)<br/>newchums-media"]
   API -->|"WebSocket relay"| DO["Durable Objects<br/>(ChatRoom per plan)"]
@@ -294,7 +294,7 @@ flowchart TB
   W --> SENTRY_FE["Sentry FE"]
   API --> SENTRY_BE["Sentry BE"]
   API --> AX["Axiom Logs"]
-  W --> PLAUS["Plausible"]
+  W --> GA["Google Analytics"]
 
   R2["R2 (avatars)"] --> API
   API -->|"WebSocket relay"| DO["Durable Objects<br/>(ChatRoom)"]

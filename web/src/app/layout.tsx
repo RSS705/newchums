@@ -32,8 +32,7 @@ export const metadata: Metadata = {
   },
 };
 
-const plausibleDomain =
-  process.env.NEXT_PUBLIC_PLAUSIBLE_DOMAIN ?? "newchums.com";
+const GA_MEASUREMENT_ID = "G-MN49WWXHDJ";
 
 export default function RootLayout({
   children,
@@ -44,11 +43,20 @@ export default function RootLayout({
     <html lang="en">
       <head>
         {process.env.NODE_ENV === "production" ? (
-          <Script
-            src="https://plausible.io/js/script.js"
-            data-domain={plausibleDomain}
-            strategy="afterInteractive"
-          />
+          <>
+            <Script
+              src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`}
+              strategy="afterInteractive"
+            />
+            <Script id="gtag-init" strategy="afterInteractive">
+              {`
+                window.dataLayer = window.dataLayer || [];
+                function gtag(){dataLayer.push(arguments);}
+                gtag('js', new Date());
+                gtag('config', '${GA_MEASUREMENT_ID}');
+              `}
+            </Script>
+          </>
         ) : null}
       </head>
       <body className={`${plusJakarta.variable} ${honk.variable} ${gabarito.variable}`}>

@@ -48,7 +48,7 @@ Users → Cloudflare Edge → Web Worker (Next.js via OpenNext) → API Worker (
 | Real-time | Cloudflare Durable Objects | WebSocket relay for plan chat (ChatRoom, Hibernation API) |
 | Scheduled tasks | Cloudflare Cron Triggers | Hourly attendance assurance processing + daily unread-chat digest email |
 | Storage | Cloudflare R2 | Avatar and banner media |
-| Observability | Sentry + Axiom + Plausible | Error tracking, API logs, analytics |
+| Observability | Sentry + Axiom + Google Analytics | Error tracking, API logs, analytics |
 
 **Key rule:** Business logic belongs in the API Worker. The Web Worker handles rendering and auth. Do not introduce new business logic in Next.js route handlers.
 
