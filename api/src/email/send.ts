@@ -867,3 +867,56 @@ export const sendPlanFeedbackEmail = async (
     },
   });
 };
+
+export const sendConcernReportAlert = async (
+  env: Bindings,
+  {
+    reporterName,
+    reporterEmail,
+    reportedName,
+    reportedEmail,
+    planTitle,
+    concernReason,
+    details,
+    submittedAt,
+    reportUrl,
+    reporterProfileUrl,
+    reportedProfileUrl,
+    planUrl,
+  }: {
+    reporterName: string;
+    reporterEmail: string;
+    reportedName: string;
+    reportedEmail: string;
+    planTitle: string;
+    concernReason: string;
+    details: string;
+    submittedAt: string;
+    reportUrl: string;
+    reporterProfileUrl: string;
+    reportedProfileUrl: string;
+    planUrl: string;
+  }
+) => {
+  if (!env.POSTMARK_TEMPLATE_CONCERN_REPORT) return;
+  return sendPostmarkTemplateEmail(env, {
+    From: env.EMAIL_FROM,
+    To: "contact@newchums.com",
+    TemplateId: env.POSTMARK_TEMPLATE_CONCERN_REPORT,
+    TemplateModel: {
+      productName: "NewChums",
+      reporterName,
+      reporterEmail,
+      reportedName,
+      reportedEmail,
+      planTitle,
+      concernReason,
+      details,
+      submittedAt,
+      reportUrl,
+      reporterProfileUrl,
+      reportedProfileUrl,
+      planUrl,
+    },
+  });
+};

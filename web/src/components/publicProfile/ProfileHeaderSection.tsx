@@ -18,6 +18,7 @@ export type ProfileHeaderSectionProps = {
   gender: string | null;
   avatarUrl: string | null;
   avatarBaseUrl: string;
+  viewerLoggedIn?: boolean;
 };
 
 export default function ProfileHeaderSection({
@@ -27,11 +28,18 @@ export default function ProfileHeaderSection({
   gender,
   avatarUrl,
   avatarBaseUrl,
+  viewerLoggedIn,
 }: ProfileHeaderSectionProps) {
+  const handleDisplay = handle ? (handle.startsWith("@") ? handle : `@${handle}`) : null;
+  const loggedOut = viewerLoggedIn === false;
+
+  // For logged-out viewers: show handle as the primary identity, skip redundant display name
+  const primaryName = loggedOut && handleDisplay ? handleDisplay : displayName;
+  const showHandleLine = !loggedOut && handleDisplay;
+
   const ageText = age != null ? `${age} years old` : null;
   const genderText = gender && gender !== "prefer_not_to_say" ? (GENDER_DISPLAY[gender] ?? null) : null;
   const identityText = [ageText, genderText].filter(Boolean).join(" • ") || null;
-  const handleDisplay = handle ? (handle.startsWith("@") ? handle : `@${handle}`) : null;
 
   return (
     <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ xs: "center", sm: "flex-start" }}>
@@ -51,9 +59,9 @@ export default function ProfileHeaderSection({
             letterSpacing: "-0.02em",
           }}
         >
-          {displayName}
+          {primaryName}
         </Typography>
-        {handleDisplay && (
+        {showHandleLine && (
           <Typography color="text.secondary" sx={{ fontSize: "0.9375rem", mt: 0.25 }}>
             {handleDisplay}
           </Typography>

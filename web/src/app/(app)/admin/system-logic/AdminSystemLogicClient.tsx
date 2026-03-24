@@ -313,7 +313,7 @@ export default function AdminSystemLogicClient() {
           <strong>Attendance issues</strong> (no-show, cancelled too late, arrived very late) — reported separately via a dialog. This affects the <strong>reliability</strong> metric more directly.
         </Bullet>
         <Bullet>
-          <strong>Conduct / safety concerns</strong> (harassment, aggressive behavior, boundary issues, etc.) — reported separately via a dedicated dialog. These are confidential and treated distinctly from normal scoring.
+          <strong>Conduct / safety concerns</strong> (harassment, aggressive behavior, boundary issues, etc.) — reported separately via a dedicated dialog. These are confidential and treated distinctly from normal scoring. Submissions trigger an <strong>immediate email alert</strong> to the admin team and appear in the <strong>Safety</strong> admin tab for review.
         </Bullet>
 
         <Typography variant="subtitle2" fontWeight={600} sx={{ mt: 2 }} gutterBottom>
@@ -354,7 +354,7 @@ export default function AdminSystemLogicClient() {
           <strong>Hosting Skills</strong> &mdash; Does this person run well-organized plans? Only moves from feedback on plans they <em>hosted</em>.
         </Bullet>
         <Bullet>
-          <strong>Conduct / Safety</strong> is tracked <em>separately</em> from these metrics. Serious behavioral issues do not lower normal metric scores &mdash; they may require moderation, warnings, or account action.
+          <strong>Conduct / Safety</strong> is tracked <em>separately</em> from these metrics. Serious behavioral issues do not lower normal metric scores &mdash; they may require moderation, warnings, or account action. Each concern report is emailed to the admin team immediately on submission and appears in the Safety admin tab with status tracking (new &rarr; reviewed &rarr; closed).
         </Bullet>
 
         <Typography variant="subtitle2" fontWeight={600} sx={{ mt: 2 }} gutterBottom>

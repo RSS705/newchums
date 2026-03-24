@@ -82,7 +82,7 @@ The following flows run in the API worker; the web app calls the API via `NEXT_P
 | Privacy prefs | `GET /profile`, `PUT /profile` (privacy columns) | Bearer JWT |
 | Interests | `GET /interests` (active only; excludes soft-deleted) | none |
 | Profile | `GET /profile` (includes `role`), `PUT /profile` | Bearer JWT |
-| Public profile | `GET /public/users/:handle` | none |
+| Public profile | `GET /public/users/:handle` | optional Bearer JWT (auth-aware: logged-out viewers see username only, no name/age/gender) |
 | Handle availability | `GET /handles/available?handle=...` | Bearer JWT |
 | Onboarding | `POST /user/username`, `POST /user/date-of-birth` | Bearer JWT |
 | Avatar upload | `POST /media/init` → PUT to uploadUrl → `POST /media/finalize` | Bearer JWT |
@@ -249,7 +249,7 @@ Wrangler config is code-managed so deploys do not wipe routes or override canoni
 | `/reset-password` | Set new password |
 | `/auth/verify` | Email verification landing |
 | `/auth/verify-pending` | Verification pending polling page |
-| `/u/[handle]` | Public profile (works logged-in or out) |
+| `/u/[handle]` | Public profile (works logged-in or out; logged-out viewers see reduced info: username only, no name/age/reliability) |
 | `/events/[id]` (logged out) | Plan detail — public preview with limited info and sign-in CTA |
 | `/terms` | Terms of Use |
 | `/privacy` | Privacy Policy |

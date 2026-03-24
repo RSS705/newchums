@@ -33,6 +33,8 @@ type AttendanceRecordSectionProps = {
   displayName?: string;
   /** `profile` = edit profile page (can show "Your stats" when owner). `public` = public profile URL. */
   variant?: "profile" | "public";
+  /** Whether the current viewer is logged in. When false, reliability metrics are hidden. */
+  viewerLoggedIn?: boolean;
 };
 
 const MIN_SAMPLE_FOR_RATE = 3;
@@ -157,17 +159,19 @@ function statsSectionTitle({
   return name ? `${name} stats` : "Stats";
 }
 
-export default function AttendanceRecordSection({ userId, isOwner, displayName, variant = "profile" }: AttendanceRecordSectionProps) {
+export default function AttendanceRecordSection({ userId, isOwner, displayName, variant = "profile", viewerLoggedIn }: AttendanceRecordSectionProps) {
   const [record, setRecord] = useState<AttendanceRecord | null>(null);
+  const [reliabilityHidden, setReliabilityHidden] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
-    apiFetch(`/public/users/${userId}/attendance-record`, { auth: false })
+    apiFetch(`/public/users/${userId}/attendance-record`, { auth: viewerLoggedIn !== false })
       .then((res) => res.json())
-      .then((data: { ok?: boolean; record?: AttendanceRecord }) => {
+      .then((data: { ok?: boolean; record?: AttendanceRecord & { reliabilityHidden?: boolean } }) => {
         if (!cancelled && data.ok && data.record) {
           setRecord(data.record);
+          if (data.record.reliabilityHidden) setReliabilityHidden(true);
         }
       })
       .catch(() => {})
@@ -175,7 +179,7 @@ export default function AttendanceRecordSection({ userId, isOwner, displayName, 
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [userId]);
+  }, [userId, viewerLoggedIn]);
 
   const ft = record ? formatRate(record.followThrough) : null;
   const cr = record ? formatRate(record.confirmationRate) : null;
@@ -262,7 +266,8 @@ export default function AttendanceRecordSection({ userId, isOwner, displayName, 
           </Box>
         ) : (
           <Stack spacing={2.5}>
-            {/* Reliability */}
+            {/* Reliability — hidden from logged-out viewers */}
+            {!reliabilityHidden && (
             <Box>
               <Typography
                 variant="body2"
@@ -312,6 +317,7 @@ export default function AttendanceRecordSection({ userId, isOwner, displayName, 
                 )}
               </Box>
             </Box>
+            )}
 
             {/* Activity */}
             <Box>

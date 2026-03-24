@@ -96,6 +96,7 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
               gender={user.gender}
               avatarUrl={user.avatarUrl}
               avatarBaseUrl={avatarBaseUrl}
+              viewerLoggedIn={viewerLoggedIn}
             />
           </Box>
           {chumAction && (
@@ -144,11 +145,52 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
         isOwner={isOwner}
         displayName={user.displayName}
         variant="public"
+        viewerLoggedIn={viewerLoggedIn}
       />
 
       {/* Public connections section — self-contained card, hidden if owner toggled it off or list is empty */}
       {ownerHandleSlug && !user.is_hidden_chum_list && (
         <ProfileChumsSection ownerHandle={ownerHandleSlug} viewerLoggedIn={viewerLoggedIn} />
+      )}
+
+      {/* Sign-in / sign-up CTA for logged-out viewers */}
+      {!viewerLoggedIn && (
+        <AppCard
+          sx={{
+            borderRadius: { xs: 2, sm: 2.5 },
+            overflow: "hidden",
+            textAlign: "center",
+            py: { xs: 3, sm: 4 },
+            px: { xs: 2.5, sm: 4 },
+          }}
+        >
+          <Stack spacing={1.5} alignItems="center">
+            <Typography variant="subtitle1" fontWeight={700} sx={{ fontSize: { xs: "1rem", sm: "1.0625rem" } }}>
+              Want to see the full profile?
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 380, lineHeight: 1.6 }}>
+              Sign in to view complete profiles, connect with people, and start planning real-world gatherings.
+            </Typography>
+            <Stack direction="row" spacing={1.5} sx={{ mt: 0.5 }}>
+              <Button
+                component={Link}
+                href="/login"
+                variant="outlined"
+                sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3 }}
+              >
+                Sign in
+              </Button>
+              <Button
+                component={Link}
+                href="/signup"
+                variant="contained"
+                sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3 }}
+              >
+                Create an account
+              </Button>
+            </Stack>
+          </Stack>
+        </AppCard>
       )}
 
       {/* TODO: Future sections — XP, badges, trust metrics, unlockables — add as separate components. */}

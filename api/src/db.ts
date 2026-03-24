@@ -52,6 +52,8 @@ export type Bindings = {
   POSTMARK_TEMPLATE_GUEST_VERIFY?: string;
   /** Postmark template ID for post-plan feedback reminder (template 44091936) */
   POSTMARK_TEMPLATE_PLAN_FEEDBACK?: string;
+  /** Postmark template ID for concern report admin alert (template 44107767) */
+  POSTMARK_TEMPLATE_CONCERN_REPORT?: string;
   SENTRY_DSN: string;
   APP_ENV?: string;
   ENVIRONMENT?: string;

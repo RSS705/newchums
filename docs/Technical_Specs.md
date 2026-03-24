@@ -269,17 +269,36 @@ Users manage privacy preferences in **Settings** (`/settings`). Stored in the `u
 |--------|----------|-------------|
 | `is_hidden_from_search` | Hide me from NewChums search and discovery | Enforced in `GET /chums/search` — users with this ON are excluded from both name/handle search AND exact email lookup in the Chum flow. Also blocks invite eligibility for their email (treated as "not found"). |
 | `is_hidden_from_external_indexing` | Hide my profile from search engines | Public profile page emits `robots: noindex, nofollow`. |
-| `is_hidden_age` | Hide my age | Age field is not shown on the public profile. |
+| `is_hidden_age` | Hide my age | Age field is not shown on the public profile (even for logged-in viewers). |
 | `is_hidden_chum_list` | Hide my connections from my public profile | When ON, the Connections section is not rendered on the user's public profile. Private contact lists are unaffected. |
 | `is_hidden_from_chum_lists` | Hide me from appearing on other people's connection lists | When ON, the user is excluded from `GET /public/users/:handle/chums` responses. They still appear on private contact lists of users who have already added them. |
 
 **Implementation notes:** UI: `web/src/app/(app)/settings/PrivacyToggleRow.tsx`, `SettingsClient.tsx`. API: `GET /profile` and `PUT /profile` in `api/src/index.ts`. Schema: migrations 013 (`is_hidden_from_search`, `is_hidden_from_external_indexing`), 014 (`is_hidden_age`), 020 (`is_hidden_chum_list`, `is_hidden_from_chum_lists`).
 
+**Logged-out viewer privacy rules:**
+
+Public profiles (`/u/[handle]`) are viewable by anyone, but logged-out visitors see a privacy-reduced version:
+
+| Field | Logged-in viewer | Logged-out viewer |
+|-------|-----------------|-------------------|
+| Display name (real name) | Shown | Hidden — username shown instead |
+| Username / handle | Shown | Shown (primary identity) |
+| Age | Shown (unless `is_hidden_age`) | Hidden |
+| Gender | Shown (unless `prefer_not_to_say`) | Hidden |
+| Avatar | Shown | Shown |
+| Bio | Shown | Shown |
+| Hobbies | Shown | Shown |
+| Chum Stats — Reliability | Shown | Hidden |
+| Chum Stats — Activity | Shown | Shown |
+| Connections | Shown | Shown |
+
+Enforced at both API level (endpoints return redacted data when no bearer token is present) and UI level (components receive `viewerLoggedIn` prop). The `ProfileHeaderSection` renders the `@handle` as the primary heading for logged-out viewers to avoid redundancy.
+
 ### Profile, onboarding, and lookups
 
 - `GET /profile`, `PUT /profile` (auth required). Response includes `role`, `gender`, `profile_theme`, `is_hidden_chum_list`, `is_hidden_from_chum_lists`, `userId`. `PUT /profile` validates `gender` (allowed: `male`, `female`, `other`, `prefer_not_to_say`) and `profile_theme` (allowed values defined in `web/src/lib/profileTheme.ts`). The `/profile` edit page includes the live Attendance Record section.
-- `GET /public/users/:userId/attendance-record` (public; no auth) — computes and returns five attendance reliability metrics for the specified user: follow-through rate, confirmation rate, plans attended, plans hosted, host completion rate, and member-since date. Used by the `AttendanceRecordSection` component on profile pages.
-- `GET /public/users/:handle` (public; no auth) — returns public profile by handle. Includes `gender` (suppressed if `prefer_not_to_say` or null), `profile_theme`, `is_hidden_chum_list`. Age computed from DOB server-side; DOB never exposed.
+- `GET /public/users/:userId/attendance-record` (public) — computes and returns attendance metrics for the specified user. **Auth-aware:** when a valid bearer token is present, returns all five metrics (follow-through rate, confirmation rate, plans attended, plans hosted, host completion rate) plus member-since date. When unauthenticated, returns only activity metrics (plans attended, plans hosted) and member-since date; reliability metrics (follow-through, confirmation, host completion) are zeroed out and a `reliabilityHidden: true` flag is included. Used by the `AttendanceRecordSection` component on profile pages.
+- `GET /public/users/:handle` (public) — returns public profile by handle. **Auth-aware:** when a valid bearer token is present, returns full profile including `displayName` (real name), `age`, and `gender`. When unauthenticated, `displayName` falls back to the username only, `age` is null, and `gender` is null. Always includes `profile_theme`, `is_hidden_chum_list`, `bio`, `hobbies`, `avatarUrl`. Age computed from DOB server-side; DOB never exposed.
 - `GET /handles/available?handle=...` (auth required)
 - `POST /user/username` (auth required)
 - `POST /user/date-of-birth` (auth required)
@@ -581,7 +600,13 @@ Hosts can enable `require_approval` on a plan, requiring non-invited users to su
 | Confirmation request | `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST` (43984465) | `attendance_confirmation` |
 | Plan at risk (host) | `POSTMARK_TEMPLATE_PLAN_AT_RISK` (43984947) | — (always sent to host) |
 
+| Concern report admin alert | `POSTMARK_TEMPLATE_CONCERN_REPORT` (44107767) | — (internal admin alert, always sent to contact@newchums.com) |
+
 All emails with a notification preference toggle include a tokenized unsubscribe link in the footer. The unsubscribe endpoint (`POST /email/unsubscribe`) verifies a JWT containing the user ID and preference key, then disables that preference.
+
+**Postmark email template source files:**
+
+HTML and plain text versions of Postmark email templates are stored in `api/src/email/templates/`. When creating or updating a Postmark template, the source content should be maintained in this directory alongside the existing templates. Each template has an `.html` file and a `.txt` file (e.g. `concernReportAlert.html`, `concernReportAlert.txt`). These files are the canonical source for what gets pasted into Postmark — they are not compiled or deployed automatically.
 
 **Remaining scaffolded templates (noop if template ID not configured):**
 
@@ -670,7 +695,7 @@ All metrics use a 0–100 scale, starting at 50.00 (neutral baseline). `signal_c
 *Separate layers (not part of normal feedback):*
 
 - **Attendance issues** — structured reports: no-show, cancelled too late, arrived very late. Stored in `attendance_issues`. Immediately penalizes Reliability score (modulated by confidence).
-- **Conduct / Safety reports** — structured reasons: rude/aggressive, harassment, boundary issue, discriminatory, unsafe/intoxicated, disruptive, property damage, other. Stored in `conduct_reports`. Treated separately from normal scoring; serious issues may require moderation/review behavior later.
+- **Conduct / Safety reports** — structured reasons: rude/aggressive, harassment, boundary issue, discriminatory, unsafe/intoxicated, disruptive, property damage, other. Stored in `conduct_reports` (with `status`: new/reviewed/closed per migration 053). Treated separately from normal scoring. Each submission triggers an immediate email alert (Postmark template 44107767) to contact@newchums.com and appears in the admin Safety tab for review.
 
 *Attendance Trust Model (migration 052):*
 
@@ -727,8 +752,10 @@ Users configure matching preferences in their profile ("Your chum preferences" s
 | `POST /events/:id/feedback` | Submit/update feedback entries (batch); updates `user_metrics` |
 | `POST /events/:id/attendance-issue` | Report attendance problem; penalizes Reliability (with confidence model) |
 | `POST /events/:id/attendance-dispute` | Dispute active attendance issues filed against the current user on this plan |
-| `POST /events/:id/conduct-report` | Report conduct/safety concern |
+| `POST /events/:id/conduct-report` | Report conduct/safety concern; triggers admin email alert |
 | `PUT /admin/attendance-issues/:id/status` | Super-admin: dismiss or confirm an attendance issue |
+| `GET /admin/concern-reports` | Super-admin: list all concern/conduct reports with user and plan details |
+| `PUT /admin/concern-reports/:id/status` | Super-admin: update concern report status (new/reviewed/closed) |
 | `GET /chum-preferences` | Current user's preference settings |
 | `PUT /chum-preferences` | Save preference settings (upsert) |
 | `GET /admin/users/:id/diagnostics` | Super-admin: per-user metric scores, preferences, feedback history, attendance/conduct summaries |
@@ -758,7 +785,7 @@ Users configure matching preferences in their profile ("Your chum preferences" s
 
 - New plans may inherit the creator's chum preferences by default (the override infrastructure now supports this).
 
-*Schema:* Migration 049: `plan_feedback`, `attendance_issues`, `conduct_reports`, `user_metrics` tables + `events.feedback_email_sent_at` column. Migration 050: `chum_preferences` table. Migration 051: `events.pref_overrides` JSONB column.
+*Schema:* Migration 049: `plan_feedback`, `attendance_issues`, `conduct_reports`, `user_metrics` tables + `events.feedback_email_sent_at` column. Migration 050: `chum_preferences` table. Migration 051: `events.pref_overrides` JSONB column. Migration 052: attendance trust columns on `attendance_issues`. Migration 053: `status` column on `conduct_reports`.
 
 **Not yet implemented:** recurring events.
 
@@ -930,7 +957,7 @@ Core tables include:
 - `newchums.event_alt_times` guest support (migration 043) — `user_id` made nullable, added `guest_email TEXT NULL`; mirrors event_rsvps guest pattern; allows unauthenticated invitees to suggest alternate times via invite token
 - `newchums.plan_feedback` (migration 049) — per-attendee feedback responses. Columns: `id` (UUID PK), `plan_id` (FK), `reviewer_user_id` (FK), `reviewee_user_id` (FK), `prompt` (reliability/sociability/presentation/match_quality/hosting_skills), `response` (agree/maybe/disagree), `created_at`. Unique on `(plan_id, reviewer_user_id, reviewee_user_id, prompt)`.
 - `newchums.attendance_issues` (migration 049) — structured attendance problem reports. Columns: `id` (UUID PK), `plan_id` (FK), `reporter_user_id` (FK), `reported_user_id` (FK), `issue_type` (no_show/late_cancel/very_late), `created_at`. Unique on `(plan_id, reporter_user_id, reported_user_id, issue_type)`.
-- `newchums.conduct_reports` (migration 049) — safety/behavioral concern reports. Columns: `id` (UUID PK), `plan_id` (FK), `reporter_user_id` (FK), `reported_user_id` (FK), `reason`, `details` (TEXT NULL), `created_at`.
+- `newchums.conduct_reports` (migration 049, extended 053) — safety/behavioral concern reports. Columns: `id` (UUID PK), `plan_id` (FK), `reporter_user_id` (FK), `reported_user_id` (FK), `reason`, `details` (TEXT NULL), `status` (new/reviewed/closed, migration 053), `created_at`.
 - `newchums.user_metrics` (migration 049) — aggregated hidden quality scores. Composite PK `(user_id, metric)`. Columns: `score` (NUMERIC(5,2), default 50.00), `signal_count` (INT, default 0), `updated_at`.
 - `newchums.events.feedback_email_sent_at` (migration 049) — `TIMESTAMPTZ NULL`; tracks when feedback reminder email was sent for a plan.
 

@@ -34,7 +34,7 @@ export default function PublicProfilePageClient({ handle, viewerHandle }: Public
     setState({ status: "loading" });
     try {
       const handleNorm = handle.trim().replace(/^@/, "").toLowerCase();
-      const res = await apiFetch(`/public/users/${encodeURIComponent(handleNorm)}`, { auth: false });
+      const res = await apiFetch(`/public/users/${encodeURIComponent(handleNorm)}`, { auth: !!viewerHandle });
       const data = (await res.json()) as {
         ok?: boolean;
         error?: string;
@@ -51,7 +51,7 @@ export default function PublicProfilePageClient({ handle, viewerHandle }: Public
     } catch {
       setState({ status: "error", message: "Failed to load profile." });
     }
-  }, [handle]);
+  }, [handle, viewerHandle]);
 
   useEffect(() => {
     fetchProfile();

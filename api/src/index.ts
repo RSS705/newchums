@@ -37,6 +37,7 @@ import {
   sendPlanRemovedByAdminEmail,
   sendRoadmapUpdateEmail,
   sendPlanFeedbackEmail,
+  sendConcernReportAlert,
 } from "./email/send";
 import { canAccessInternalTestRoute, notFound } from "./internalAccess";
 import { nameToSlug, slugToName, validateInterestName } from "./interests";
@@ -273,6 +274,11 @@ app.get("/public/users/:handle", async (c) => {
     return c.json({ ok: false, error: "NOT_FOUND", message: "Profile not found" }, 404);
   }
   const handleNorm = handleParam.toLowerCase().trim();
+
+  // Determine if the viewer is authenticated
+  const authPayload = await requireAuth(c);
+  const viewerAuthenticated = !!authPayload?.email;
+
   try {
     const sql = getSql(c.env);
     const userRows = (await sql`
@@ -318,8 +324,6 @@ app.get("/public/users/:handle", async (c) => {
         ? user.date_of_birth
         : (user.date_of_birth as Date).toISOString().slice(0, 10)
       : null;
-    const age =
-      user.is_hidden_age === true ? null : computeAge(dobStr);
     const avatarKey = user.avatar_key ?? null;
     const avatarUpdatedAt = user.avatar_updated_at;
     const avatarUrl =
@@ -327,18 +331,26 @@ app.get("/public/users/:handle", async (c) => {
         ? `/users/${user.id}/avatar?v=${avatarUpdatedAt ? new Date(avatarUpdatedAt as Date).getTime() : 0}`
         : null;
     const rawUsername = (user.username ?? "").trim().replace(/^@/, "");
-    const displayName = user.name?.trim() || rawUsername || "NewChums user";
-    const handle = (user.username ?? "").trim();
+    const handleStr = (user.username ?? "").trim();
     const publicGender =
       user.gender && user.gender !== "prefer_not_to_say" ? user.gender : null;
+
+    // Logged-out viewers: username only, no real name, no age
+    const displayName = viewerAuthenticated
+      ? (user.name?.trim() || rawUsername || "NewChums user")
+      : (rawUsername || "NewChums user");
+    const age = viewerAuthenticated
+      ? (user.is_hidden_age === true ? null : computeAge(dobStr))
+      : null;
+
     return c.json({
       ok: true,
       user: {
         userId: user.id,
         displayName,
-        handle: handle ? (handle.startsWith("@") ? handle : `@${handle}`) : null,
+        handle: handleStr ? (handleStr.startsWith("@") ? handleStr : `@${handleStr}`) : null,
         age,
-        gender: publicGender,
+        gender: viewerAuthenticated ? publicGender : null,
         profile_theme: user.profile_theme ?? null,
         bio: profile?.bio ?? null,
         hobbies: interestRows.map((r) => r.name),
@@ -361,39 +373,13 @@ app.get("/public/users/:userId/attendance-record", async (c) => {
   const targetUserId = c.req.param("userId")?.trim();
   if (!targetUserId) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
 
+  const authPayload = await requireAuth(c);
+  const viewerAuthenticated = !!authPayload?.email;
+
   try {
     const sql = getSql(c.env);
     const now = new Date().toISOString();
-
-    // Follow-through rate (as attendee, not host):
-    // Denominator: past published non-canceled events where user committed (committed_at IS NOT NULL)
-    //              and user is NOT the host.
-    // Numerator: of those, where RSVP status is still "going."
-    const followThrough = (await sql`
-      SELECT
-        COUNT(*) FILTER (WHERE r.status = 'going')::int AS followed_through,
-        COUNT(*)::int AS total_committed
-      FROM newchums.event_rsvps r
-      JOIN newchums.events e ON e.id = r.event_id
-      WHERE r.user_id = ${targetUserId}
-        AND r.committed_at IS NOT NULL
-        AND e.host_user_id != ${targetUserId}
-        AND e.status != 'canceled'
-        AND e.starts_at < ${now}
-    `) as { followed_through: number; total_committed: number }[];
-
-    // Confirmation rate:
-    // Denominator: event_confirmations for past events.
-    // Numerator: those where the user responded (confirmed or declined).
-    const confirmation = (await sql`
-      SELECT
-        COUNT(*) FILTER (WHERE ec.status IN ('confirmed', 'declined'))::int AS responded,
-        COUNT(*)::int AS total_requested
-      FROM newchums.event_confirmations ec
-      JOIN newchums.events e ON e.id = ec.event_id
-      WHERE ec.user_id = ${targetUserId}
-        AND e.starts_at < ${now}
-    `) as { responded: number; total_requested: number }[];
+    const zeroRatio = { numerator: 0, denominator: 0 };
 
     // Plans attended: past non-canceled events where RSVP = 'going' and NOT the host.
     const attended = (await sql`
@@ -416,9 +402,50 @@ app.get("/public/users/:userId/attendance-record", async (c) => {
         AND e.starts_at < ${now}
     `) as { c: number }[];
 
-    // Host completion rate:
-    // Denominator: past published events where user is host (published or canceled).
-    // Numerator: of those, where status is NOT canceled.
+    // Member since (for context)
+    const memberSince = (await sql`
+      SELECT created_at FROM newchums.users WHERE id = ${targetUserId} LIMIT 1
+    `) as { created_at: string | Date }[];
+
+    // Reliability metrics are only returned for authenticated viewers
+    if (!viewerAuthenticated) {
+      return c.json({
+        ok: true,
+        record: {
+          followThrough: zeroRatio,
+          confirmationRate: zeroRatio,
+          plansAttended: attended[0]?.c ?? 0,
+          plansHosted: hosted[0]?.c ?? 0,
+          hostCompletion: zeroRatio,
+          memberSince: memberSince[0]?.created_at ?? null,
+          reliabilityHidden: true,
+        },
+      });
+    }
+
+    const followThrough = (await sql`
+      SELECT
+        COUNT(*) FILTER (WHERE r.status = 'going')::int AS followed_through,
+        COUNT(*)::int AS total_committed
+      FROM newchums.event_rsvps r
+      JOIN newchums.events e ON e.id = r.event_id
+      WHERE r.user_id = ${targetUserId}
+        AND r.committed_at IS NOT NULL
+        AND e.host_user_id != ${targetUserId}
+        AND e.status != 'canceled'
+        AND e.starts_at < ${now}
+    `) as { followed_through: number; total_committed: number }[];
+
+    const confirmation = (await sql`
+      SELECT
+        COUNT(*) FILTER (WHERE ec.status IN ('confirmed', 'declined'))::int AS responded,
+        COUNT(*)::int AS total_requested
+      FROM newchums.event_confirmations ec
+      JOIN newchums.events e ON e.id = ec.event_id
+      WHERE ec.user_id = ${targetUserId}
+        AND e.starts_at < ${now}
+    `) as { responded: number; total_requested: number }[];
+
     const hostCompletion = (await sql`
       SELECT
         COUNT(*) FILTER (WHERE e.status != 'canceled')::int AS completed,
@@ -428,11 +455,6 @@ app.get("/public/users/:userId/attendance-record", async (c) => {
         AND e.status IN ('published', 'canceled')
         AND e.starts_at < ${now}
     `) as { completed: number; total_hosted: number }[];
-
-    // Member since (for context)
-    const memberSince = (await sql`
-      SELECT created_at FROM newchums.users WHERE id = ${targetUserId} LIMIT 1
-    `) as { created_at: string | Date }[];
 
     return c.json({
       ok: true,
@@ -3921,6 +3943,114 @@ app.put("/admin/attendance-issues/:id/status", async (c) => {
     return c.json({ ok: true, status: body.status });
   } catch (err) {
     console.error("[PUT /admin/attendance-issues/:id/status]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+// ─── Admin concern reports ───────────────────────────────────────────────────
+
+/** GET /admin/concern-reports — list all concern/conduct reports */
+app.get("/admin/concern-reports", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  const sql = getSql(c.env);
+  try {
+    const reports = (await sql`
+      SELECT
+        cr.id,
+        cr.plan_id,
+        cr.reason,
+        cr.details,
+        cr.status,
+        cr.created_at,
+        e.title AS plan_title,
+        reporter.id AS reporter_id,
+        reporter.name AS reporter_name,
+        reporter.username AS reporter_username,
+        reporter.email AS reporter_email,
+        reported.id AS reported_id,
+        reported.name AS reported_name,
+        reported.username AS reported_username,
+        reported.email AS reported_email
+      FROM newchums.conduct_reports cr
+      LEFT JOIN newchums.events e ON e.id = cr.plan_id
+      LEFT JOIN newchums.users reporter ON reporter.id = cr.reporter_user_id
+      LEFT JOIN newchums.users reported ON reported.id = cr.reported_user_id
+      ORDER BY cr.created_at DESC
+      LIMIT 200
+    `) as {
+      id: string;
+      plan_id: string;
+      reason: string;
+      details: string | null;
+      status: string;
+      created_at: string;
+      plan_title: string | null;
+      reporter_id: string;
+      reporter_name: string | null;
+      reporter_username: string | null;
+      reporter_email: string;
+      reported_id: string;
+      reported_name: string | null;
+      reported_username: string | null;
+      reported_email: string;
+    }[];
+
+    return c.json({
+      ok: true,
+      reports: reports.map((r) => ({
+        id: r.id,
+        planId: r.plan_id,
+        planTitle: r.plan_title,
+        reason: r.reason,
+        details: r.details,
+        status: r.status,
+        createdAt: r.created_at,
+        reporter: {
+          id: r.reporter_id,
+          name: r.reporter_name,
+          username: r.reporter_username,
+          email: r.reporter_email,
+        },
+        reported: {
+          id: r.reported_id,
+          name: r.reported_name,
+          username: r.reported_username,
+          email: r.reported_email,
+        },
+      })),
+    });
+  } catch (err) {
+    console.error("[GET /admin/concern-reports]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** PUT /admin/concern-reports/:id/status — update concern report status */
+app.put("/admin/concern-reports/:id/status", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  const sql = getSql(c.env);
+  const reportId = c.req.param("id");
+  const body = await c.req.json<{ status: string }>();
+
+  if (!["new", "reviewed", "closed"].includes(body.status))
+    return c.json({ ok: false, error: "INVALID_STATUS" }, 400);
+
+  try {
+    const result = (await sql`
+      UPDATE newchums.conduct_reports SET status = ${body.status}
+      WHERE id = ${reportId}
+      RETURNING id
+    `) as { id: string }[];
+    if (result.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+
+    console.log(`[PUT /admin/concern-reports/:id/status] admin=${admin.email} set report=${reportId} to ${body.status}`);
+    return c.json({ ok: true, status: body.status });
+  } catch (err) {
+    console.error("[PUT /admin/concern-reports/:id/status]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });
@@ -8668,6 +8798,17 @@ app.post("/events/:id/attendance-dispute", async (c) => {
   }
 });
 
+const CONDUCT_REASON_LABELS: Record<string, string> = {
+  rude_aggressive: "Rude or aggressive behavior",
+  harassment: "Harassment or inappropriate comments",
+  boundary_issue: "Boundary issue",
+  discriminatory: "Discriminatory behavior",
+  unsafe_intoxicated: "Unsafe or intoxicated behavior",
+  disruptive: "Disruptive behavior",
+  property_damage: "Damage to property/items",
+  other: "Other",
+};
+
 /** POST /events/:id/conduct-report — report a conduct / safety concern */
 app.post("/events/:id/conduct-report", async (c) => {
   const payload = await requireAuth(c);
@@ -8691,14 +8832,44 @@ app.post("/events/:id/conduct-report", async (c) => {
 
   try {
     const ev = (await sql`
-      SELECT starts_at FROM newchums.events WHERE id = ${eventId}
-    `) as { starts_at: string }[];
+      SELECT starts_at, title FROM newchums.events WHERE id = ${eventId}
+    `) as { starts_at: string; title: string }[];
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
 
-    await sql`
+    const inserted = (await sql`
       INSERT INTO newchums.conduct_reports (plan_id, reporter_user_id, reported_user_id, reason, details)
       VALUES (${eventId}, ${userId}, ${body.reportedUserId}, ${body.reason}, ${body.details ?? null})
-    `;
+      RETURNING id, created_at
+    `) as { id: string; created_at: string }[];
+
+    // Send admin alert email (fire-and-forget — do not block the response)
+    try {
+      const [reporterRows, reportedRows] = await Promise.all([
+        sql`SELECT name, email, username FROM newchums.users WHERE id = ${userId} LIMIT 1` as Promise<{ name: string | null; email: string; username: string | null }[]>,
+        sql`SELECT name, email, username FROM newchums.users WHERE id = ${body.reportedUserId} LIMIT 1` as Promise<{ name: string | null; email: string; username: string | null }[]>,
+      ]);
+      const reporter = reporterRows[0];
+      const reported = reportedRows[0];
+      const reportId = inserted[0]?.id ?? "";
+      const baseUrl = c.env.WEB_BASE_URL || "https://newchums.com";
+
+      await sendConcernReportAlert(c.env, {
+        reporterName: reporter?.name?.trim() || reporter?.username || reporter?.email || "Unknown",
+        reporterEmail: reporter?.email || "unknown",
+        reportedName: reported?.name?.trim() || reported?.username || reported?.email || "Unknown",
+        reportedEmail: reported?.email || "unknown",
+        planTitle: ev[0].title || "Untitled plan",
+        concernReason: CONDUCT_REASON_LABELS[body.reason] ?? body.reason,
+        details: body.details?.trim() || "(none provided)",
+        submittedAt: inserted[0]?.created_at ? new Date(inserted[0].created_at).toUTCString() : new Date().toUTCString(),
+        reportUrl: `${baseUrl}/admin/safety`,
+        reporterProfileUrl: `${baseUrl}/admin/chums/${userId}`,
+        reportedProfileUrl: `${baseUrl}/admin/chums/${body.reportedUserId}`,
+        planUrl: `${baseUrl}/events/${eventId}`,
+      });
+    } catch (emailErr) {
+      console.error("[POST /events/:id/conduct-report] alert email failed (report saved):", emailErr);
+    }
 
     return c.json({ ok: true });
   } catch (err) {
