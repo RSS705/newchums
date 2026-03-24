@@ -29,7 +29,7 @@ import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { TimePicker } from "@mui/x-date-pickers/TimePicker";
 import dayjs, { type Dayjs } from "dayjs";
 import Cropper, { type Area } from "react-easy-crop";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
 import PlacesAutocompleteInput from "@/components/common/PlacesAutocompleteInput";
 import { apiFetch, getMediaApiBaseUrl } from "@/lib/apiClient";
@@ -47,6 +47,7 @@ const MAX_BANNER_OUTPUT_BYTES = 400 * 1024;       // 400KB — compressed output
 
 export default function CreateEventClient() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const toast = useToast();
 
   const [title, setTitle] = useState("");
@@ -84,6 +85,11 @@ export default function CreateEventClient() {
   const [prefDisableAll, setPrefDisableAll] = useState(false);
   const [prefDisabledMetrics, setPrefDisabledMetrics] = useState<Record<string, boolean>>({});
   const [hostHasPrefs, setHostHasPrefs] = useState(false);
+
+  // Community association
+  const [communityId, setCommunityId] = useState<string | null>(searchParams.get("community_id"));
+  const [communityName, setCommunityName] = useState<string | null>(searchParams.get("community_name"));
+  const [hideFromExplore, setHideFromExplore] = useState(false);
 
   // Hobby search
   const [suggestions, setSuggestions] = useState<HobbyOption[]>([]);
@@ -269,6 +275,8 @@ export default function CreateEventClient() {
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       status: "published",
       pref_overrides: buildPrefOverrides(),
+      community_id: communityId || null,
+      hide_from_explore: hideFromExplore,
     };
 
     try {
@@ -1016,6 +1024,23 @@ export default function CreateEventClient() {
                 )}
               </Stack>
             </Collapse>
+          </Stack>
+        </AppCard>
+      )}
+
+      {/* Community association */}
+      {communityId && communityName && (
+        <AppCard>
+          <Stack spacing={1.5}>
+            <Typography variant="subtitle1" fontWeight={700}>Community</Typography>
+            <Typography variant="body2" color="text.secondary">
+              This plan will be linked to <strong>{communityName}</strong>.
+            </Typography>
+            <FormControlLabel
+              control={<Switch checked={hideFromExplore} onChange={(e) => setHideFromExplore(e.target.checked)} size="small" />}
+              label="Hide from public Explore feed"
+              slotProps={{ typography: { variant: "body2", color: "text.secondary" } }}
+            />
           </Stack>
         </AppCard>
       )}

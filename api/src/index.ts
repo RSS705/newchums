@@ -39,6 +39,9 @@ import {
   sendRoadmapUpdateEmail,
   sendPlanFeedbackEmail,
   sendConcernReportAlert,
+  sendCommunityJoinRequestEmail,
+  sendCommunityJoinApprovedEmail,
+  sendCommunityJoinDeclinedEmail,
 } from "./email/send";
 import { canAccessInternalTestRoute, notFound } from "./internalAccess";
 import { nameToSlug, slugToName, validateInterestName } from "./interests";
@@ -5391,6 +5394,654 @@ app.get("/public/users/:handle/chums", async (c) => {
 // EVENTS (plans)
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// ─── Communities ─────────────────────────────────────────────────────────────
+
+const VALID_COMMUNITY_VISIBILITY = ["public", "private"] as const;
+const VALID_COMMUNITY_JOIN_MODE = ["open", "approval_required"] as const;
+const COMMUNITY_SLUG_RE = /^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$/;
+
+/** POST /communities — create a community */
+app.post("/communities", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+
+  const name = String(body.name ?? "").trim();
+  if (!name || name.length > 100) return c.json({ ok: false, error: "VALIDATION", message: "Name is required (max 100 chars)", field: "name" }, 400);
+  const nameCheck = validateCleanText(name, "title");
+  if (!nameCheck.ok) return c.json({ ok: false, error: "INAPPROPRIATE_TEXT", field: "name" }, 400);
+
+  const slug = String(body.slug ?? "").trim().toLowerCase();
+  if (!COMMUNITY_SLUG_RE.test(slug)) return c.json({ ok: false, error: "VALIDATION", message: "Handle must be 3-50 chars, lowercase letters/numbers/hyphens", field: "slug" }, 400);
+  const slugCheck = validateCleanText(slug, "username");
+  if (!slugCheck.ok) return c.json({ ok: false, error: "INAPPROPRIATE_TEXT", field: "slug" }, 400);
+
+  const description = body.description ? String(body.description).trim().slice(0, 2000) : null;
+  const visibility = String(body.visibility ?? "public");
+  if (!VALID_COMMUNITY_VISIBILITY.includes(visibility as typeof VALID_COMMUNITY_VISIBILITY[number]))
+    return c.json({ ok: false, error: "VALIDATION", message: "Invalid visibility", field: "visibility" }, 400);
+  const joinMode = String(body.join_mode ?? "open");
+  if (!VALID_COMMUNITY_JOIN_MODE.includes(joinMode as typeof VALID_COMMUNITY_JOIN_MODE[number]))
+    return c.json({ ok: false, error: "VALIDATION", message: "Invalid join mode", field: "join_mode" }, 400);
+  const chatEnabled = body.chat_enabled !== false;
+  const locationName = body.location_name ? String(body.location_name).trim().slice(0, 200) : null;
+  const locationAddress = body.location_address ? String(body.location_address).trim().slice(0, 500) : null;
+  const locationLat = body.location_lat != null ? Number(body.location_lat) : null;
+  const locationLng = body.location_lng != null ? Number(body.location_lng) : null;
+
+  try {
+    const existing = (await sql`SELECT id FROM newchums.communities WHERE slug = ${slug}`) as { id: string }[];
+    if (existing.length > 0) return c.json({ ok: false, error: "SLUG_TAKEN", message: "That handle is already taken" }, 409);
+
+    const rows = (await sql`
+      INSERT INTO newchums.communities (name, slug, description, visibility, join_mode, chat_enabled, location_name, location_address, location_lat, location_lng, owner_user_id)
+      VALUES (${name}, ${slug}, ${description}, ${visibility}, ${joinMode}, ${chatEnabled}, ${locationName}, ${locationAddress}, ${locationLat}, ${locationLng}, ${userId})
+      RETURNING id, slug, created_at
+    `) as { id: string; slug: string; created_at: string }[];
+    const community = rows[0];
+
+    await sql`INSERT INTO newchums.community_members (community_id, user_id, role, status) VALUES (${community.id}, ${userId}, 'owner', 'active')`;
+
+    return c.json({ ok: true, community: { id: community.id, slug: community.slug, created_at: community.created_at } }, 201);
+  } catch (err) {
+    console.error("[POST /communities]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** GET /communities — list/search communities */
+app.get("/communities", async (c) => {
+  const payload = await requireAuth(c);
+  const sql = getSql(c.env);
+  const search = c.req.query("q")?.trim() ?? null;
+  const mine = c.req.query("mine") === "1";
+  const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 20), 1), 50);
+  const offset = Math.max(Number(c.req.query("offset") ?? 0), 0);
+
+  let userId: string | null = null;
+  let isSuperAdmin = false;
+  if (payload?.email) {
+    const userRows = (await sql`SELECT id, role FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string; role: string | null }[];
+    if (userRows[0]) { userId = userRows[0].id; isSuperAdmin = userRows[0].role === "super_admin"; }
+  }
+
+  try {
+    let communities;
+    if (mine && userId) {
+      communities = (await sql`
+        SELECT c.id, c.slug, c.name, c.description, c.visibility, c.join_mode, c.avatar_key, c.banner_key,
+          c.location_name, c.owner_user_id, c.created_at,
+          (SELECT COUNT(*)::int FROM newchums.community_members cm WHERE cm.community_id = c.id AND cm.status = 'active') AS member_count,
+          'member' AS viewer_role
+        FROM newchums.communities c
+        JOIN newchums.community_members cm ON cm.community_id = c.id AND cm.user_id = ${userId} AND cm.status = 'active'
+        ORDER BY c.name ASC LIMIT ${limit} OFFSET ${offset}
+      `) as Record<string, unknown>[];
+    } else {
+      const q = search ? `%${search}%` : null;
+      communities = (await sql`
+        SELECT c.id, c.slug, c.name, c.description, c.visibility, c.join_mode, c.avatar_key, c.banner_key,
+          c.location_name, c.owner_user_id, c.created_at,
+          (SELECT COUNT(*)::int FROM newchums.community_members cm WHERE cm.community_id = c.id AND cm.status = 'active') AS member_count
+        FROM newchums.communities c
+        WHERE (${isSuperAdmin}::boolean OR c.visibility = 'public')
+          AND (${q}::text IS NULL OR c.name ILIKE ${q} OR c.slug ILIKE ${q})
+        ORDER BY c.created_at DESC LIMIT ${limit} OFFSET ${offset}
+      `) as Record<string, unknown>[];
+    }
+
+    return c.json({ ok: true, communities });
+  } catch (err) {
+    console.error("[GET /communities]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** GET /communities/slug-available — check slug availability */
+app.get("/communities/slug-available", async (c) => {
+  const slug = (c.req.query("slug") ?? "").trim().toLowerCase();
+  if (!COMMUNITY_SLUG_RE.test(slug)) return c.json({ ok: true, available: false });
+  const sql = getSql(c.env);
+  const rows = (await sql`SELECT 1 FROM newchums.communities WHERE slug = ${slug} LIMIT 1`) as unknown[];
+  return c.json({ ok: true, available: rows.length === 0 });
+});
+
+/** GET /communities/:slug — community detail */
+app.get("/communities/:slug", async (c) => {
+  const slug = c.req.param("slug");
+  const payload = await requireAuth(c);
+  const sql = getSql(c.env);
+
+  let userId: string | null = null;
+  let isSuperAdmin = false;
+  if (payload?.email) {
+    const userRows = (await sql`SELECT id, role FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string; role: string | null }[];
+    if (userRows[0]) { userId = userRows[0].id; isSuperAdmin = userRows[0].role === "super_admin"; }
+  }
+
+  try {
+    const rows = (await sql`
+      SELECT c.*, ou.name AS owner_name, ou.username AS owner_username, ou.avatar_key AS owner_avatar_key, ou.avatar_updated_at AS owner_avatar_updated_at,
+        (SELECT COUNT(*)::int FROM newchums.community_members cm WHERE cm.community_id = c.id AND cm.status = 'active') AS member_count
+      FROM newchums.communities c
+      JOIN newchums.users ou ON ou.id = c.owner_user_id
+      WHERE c.slug = ${slug} LIMIT 1
+    `) as Record<string, unknown>[];
+    if (!rows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    const community = rows[0];
+
+    if (community.visibility === "private" && !isSuperAdmin) {
+      if (!userId) return c.json({ ok: false, error: "PRIVATE_COMMUNITY" }, 403);
+      const memberRows = (await sql`
+        SELECT 1 FROM newchums.community_members WHERE community_id = ${community.id} AND user_id = ${userId} AND status = 'active' LIMIT 1
+      `) as unknown[];
+      if (memberRows.length === 0) {
+        const pendingRows = (await sql`
+          SELECT 1 FROM newchums.community_join_requests WHERE community_id = ${community.id} AND user_id = ${userId} AND status = 'pending' LIMIT 1
+        `) as unknown[];
+        return c.json({
+          ok: true,
+          community: { id: community.id, slug: community.slug, name: community.name, visibility: community.visibility, join_mode: community.join_mode, member_count: community.member_count },
+          viewerMembership: null,
+          viewerPendingRequest: pendingRows.length > 0,
+          restricted: true,
+        });
+      }
+    }
+
+    let viewerMembership: { role: string; status: string } | null = null;
+    let viewerPendingRequest = false;
+    if (userId) {
+      const memberRows = (await sql`
+        SELECT role, status FROM newchums.community_members WHERE community_id = ${community.id} AND user_id = ${userId} AND status = 'active' LIMIT 1
+      `) as { role: string; status: string }[];
+      if (memberRows[0]) viewerMembership = memberRows[0];
+      else {
+        const pendingRows = (await sql`SELECT 1 FROM newchums.community_join_requests WHERE community_id = ${community.id} AND user_id = ${userId} AND status = 'pending' LIMIT 1`) as unknown[];
+        viewerPendingRequest = pendingRows.length > 0;
+      }
+    }
+
+    const ownerAvatarUrl = buildAvatarUrl(String(community.owner_user_id), community.owner_avatar_key as string | null, community.owner_avatar_updated_at as string | null, c.env.MEDIA_BUCKET);
+    const isOwnerOrAdmin = isSuperAdmin || (viewerMembership?.role === "owner");
+
+    let pendingRequests: unknown[] = [];
+    if (isOwnerOrAdmin && community.join_mode === "approval_required") {
+      pendingRequests = (await sql`
+        SELECT cjr.id, cjr.user_id, cjr.created_at, u.name, u.username, u.avatar_key, u.avatar_updated_at
+        FROM newchums.community_join_requests cjr
+        JOIN newchums.users u ON u.id = cjr.user_id
+        WHERE cjr.community_id = ${community.id} AND cjr.status = 'pending'
+        ORDER BY cjr.created_at ASC
+      `) as unknown[];
+    }
+
+    let shareToken: string | null = null;
+    if (community.visibility === "private" && (isOwnerOrAdmin) && c.env.NEXTAUTH_SECRET) {
+      shareToken = await new SignJWT({ cid: String(community.id), purpose: "community_share" })
+        .setProtectedHeader({ alg: "HS256" })
+        .setIssuedAt()
+        .sign(new TextEncoder().encode(c.env.NEXTAUTH_SECRET));
+    }
+
+    return c.json({
+      ok: true,
+      community: {
+        ...community,
+        owner_avatar_url: ownerAvatarUrl,
+      },
+      viewerMembership,
+      viewerPendingRequest,
+      pendingRequests: isOwnerOrAdmin ? pendingRequests : undefined,
+      shareToken,
+      restricted: false,
+    });
+  } catch (err) {
+    console.error("[GET /communities/:slug]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** PATCH /communities/:slug — update community (owner or super admin) */
+app.patch("/communities/:slug", async (c) => {
+  const slug = c.req.param("slug");
+  const payload = await requireAuth(c);
+  if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const sql = getSql(c.env);
+  const userRows = (await sql`SELECT id, role FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string; role: string | null }[];
+  if (!userRows[0]) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const userId = userRows[0].id;
+  const isSuperAdmin = userRows[0].role === "super_admin";
+
+  const communityRows = (await sql`SELECT id, owner_user_id FROM newchums.communities WHERE slug = ${slug} LIMIT 1`) as { id: string; owner_user_id: string }[];
+  if (!communityRows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+  const community = communityRows[0];
+  if (community.owner_user_id !== userId && !isSuperAdmin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+
+  try {
+    const updates: string[] = [];
+    const vals: unknown[] = [];
+
+    if (body.name !== undefined) {
+      const n = String(body.name).trim();
+      if (!n || n.length > 100) return c.json({ ok: false, error: "VALIDATION", message: "Name is required (max 100)", field: "name" }, 400);
+      const nc = validateCleanText(n, "title");
+      if (!nc.ok) return c.json({ ok: false, error: "INAPPROPRIATE_TEXT", field: "name" }, 400);
+      updates.push("name"); vals.push(n);
+    }
+    if (body.description !== undefined) { updates.push("description"); vals.push(body.description ? String(body.description).trim().slice(0, 2000) : null); }
+    if (body.visibility !== undefined) {
+      if (!VALID_COMMUNITY_VISIBILITY.includes(String(body.visibility) as typeof VALID_COMMUNITY_VISIBILITY[number]))
+        return c.json({ ok: false, error: "VALIDATION", message: "Invalid visibility" }, 400);
+      updates.push("visibility"); vals.push(String(body.visibility));
+    }
+    if (body.join_mode !== undefined) {
+      if (!VALID_COMMUNITY_JOIN_MODE.includes(String(body.join_mode) as typeof VALID_COMMUNITY_JOIN_MODE[number]))
+        return c.json({ ok: false, error: "VALIDATION", message: "Invalid join mode" }, 400);
+      updates.push("join_mode"); vals.push(String(body.join_mode));
+    }
+    if (body.chat_enabled !== undefined) { updates.push("chat_enabled"); vals.push(body.chat_enabled !== false); }
+    if (body.location_name !== undefined) { updates.push("location_name"); vals.push(body.location_name ? String(body.location_name).trim().slice(0, 200) : null); }
+    if (body.location_address !== undefined) { updates.push("location_address"); vals.push(body.location_address ? String(body.location_address).trim().slice(0, 500) : null); }
+    if (body.location_lat !== undefined) { updates.push("location_lat"); vals.push(body.location_lat != null ? Number(body.location_lat) : null); }
+    if (body.location_lng !== undefined) { updates.push("location_lng"); vals.push(body.location_lng != null ? Number(body.location_lng) : null); }
+
+    if (updates.length === 0) return c.json({ ok: true });
+
+    const fieldMap = Object.fromEntries(updates.map((col, i) => [col, vals[i]]));
+    const cid = community.id;
+    if (fieldMap.name !== undefined) await sql`UPDATE newchums.communities SET name = ${fieldMap.name as string}, updated_at = now() WHERE id = ${cid}`;
+    if (fieldMap.description !== undefined) await sql`UPDATE newchums.communities SET description = ${fieldMap.description as string | null}, updated_at = now() WHERE id = ${cid}`;
+    if (fieldMap.visibility !== undefined) await sql`UPDATE newchums.communities SET visibility = ${fieldMap.visibility as string}, updated_at = now() WHERE id = ${cid}`;
+    if (fieldMap.join_mode !== undefined) await sql`UPDATE newchums.communities SET join_mode = ${fieldMap.join_mode as string}, updated_at = now() WHERE id = ${cid}`;
+    if (fieldMap.chat_enabled !== undefined) await sql`UPDATE newchums.communities SET chat_enabled = ${fieldMap.chat_enabled as boolean}, updated_at = now() WHERE id = ${cid}`;
+    if (fieldMap.location_name !== undefined) await sql`UPDATE newchums.communities SET location_name = ${fieldMap.location_name as string | null}, updated_at = now() WHERE id = ${cid}`;
+    if (fieldMap.location_address !== undefined) await sql`UPDATE newchums.communities SET location_address = ${fieldMap.location_address as string | null}, updated_at = now() WHERE id = ${cid}`;
+    if (fieldMap.location_lat !== undefined) await sql`UPDATE newchums.communities SET location_lat = ${fieldMap.location_lat as number | null}, updated_at = now() WHERE id = ${cid}`;
+    if (fieldMap.location_lng !== undefined) await sql`UPDATE newchums.communities SET location_lng = ${fieldMap.location_lng as number | null}, updated_at = now() WHERE id = ${cid}`;
+
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[PATCH /communities/:slug]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** DELETE /communities/:slug — remove community (owner or super admin) */
+app.delete("/communities/:slug", async (c) => {
+  const slug = c.req.param("slug");
+  const payload = await requireAuth(c);
+  if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const sql = getSql(c.env);
+  const userRows = (await sql`SELECT id, role FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string; role: string | null }[];
+  if (!userRows[0]) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const isSuperAdmin = userRows[0].role === "super_admin";
+
+  const communityRows = (await sql`SELECT id, owner_user_id FROM newchums.communities WHERE slug = ${slug} LIMIT 1`) as { id: string; owner_user_id: string }[];
+  if (!communityRows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+  if (communityRows[0].owner_user_id !== userRows[0].id && !isSuperAdmin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  try {
+    await sql`DELETE FROM newchums.communities WHERE id = ${communityRows[0].id}`;
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[DELETE /communities/:slug]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+// ─── Community membership ───────────────────────────────────────────────────
+
+/** POST /communities/:id/join — join or request to join */
+app.post("/communities/:id/join", async (c) => {
+  const communityId = c.req.param("id");
+  const payload = await requireAuth(c);
+  if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+
+  try {
+    const communityRows = (await sql`SELECT id, join_mode, visibility, owner_user_id, name FROM newchums.communities WHERE id = ${communityId} LIMIT 1`) as { id: string; join_mode: string; visibility: string; owner_user_id: string; name: string }[];
+    if (!communityRows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    const community = communityRows[0];
+
+    const existingMember = (await sql`
+      SELECT 1 FROM newchums.community_members WHERE community_id = ${communityId} AND user_id = ${userId} AND status = 'active' LIMIT 1
+    `) as unknown[];
+    if (existingMember.length > 0) return c.json({ ok: true, status: "already_member" });
+
+    if (community.join_mode === "approval_required") {
+      const existingReq = (await sql`
+        SELECT 1 FROM newchums.community_join_requests WHERE community_id = ${communityId} AND user_id = ${userId} AND status = 'pending' LIMIT 1
+      `) as unknown[];
+      if (existingReq.length > 0) return c.json({ ok: true, status: "already_pending" });
+
+      await sql`INSERT INTO newchums.community_join_requests (community_id, user_id) VALUES (${communityId}, ${userId})`;
+
+      // Notify owner
+      const ownerRows = (await sql`SELECT email, name FROM newchums.users WHERE id = ${community.owner_user_id} LIMIT 1`) as { email: string; name: string | null }[];
+      const requesterRows = (await sql`SELECT name, username FROM newchums.users WHERE id = ${userId} LIMIT 1`) as { name: string | null; username: string | null }[];
+      if (ownerRows[0] && c.env.POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST) {
+        c.executionCtx.waitUntil(sendCommunityJoinRequestEmail(c.env, {
+          to: ownerRows[0].email,
+          ownerName: ownerRows[0].name || "there",
+          requesterName: requesterRows[0]?.name || requesterRows[0]?.username || "Someone",
+          communityName: community.name,
+          communityUrl: `${c.env.WEB_BASE_URL}/communities/${communityRows[0].id}`,
+        }));
+      }
+
+      return c.json({ ok: true, status: "pending" });
+    }
+
+    // Open join
+    await sql`
+      INSERT INTO newchums.community_members (community_id, user_id, role, status) VALUES (${communityId}, ${userId}, 'member', 'active')
+      ON CONFLICT (community_id, user_id) DO UPDATE SET status = 'active', role = 'member'
+    `;
+    return c.json({ ok: true, status: "joined" });
+  } catch (err) {
+    console.error("[POST /communities/:id/join]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /communities/:id/leave — leave community */
+app.post("/communities/:id/leave", async (c) => {
+  const communityId = c.req.param("id");
+  const payload = await requireAuth(c);
+  if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+
+  try {
+    const communityRows = (await sql`SELECT owner_user_id FROM newchums.communities WHERE id = ${communityId} LIMIT 1`) as { owner_user_id: string }[];
+    if (!communityRows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    if (communityRows[0].owner_user_id === userId) return c.json({ ok: false, error: "OWNER_CANNOT_LEAVE", message: "Transfer ownership before leaving" }, 400);
+
+    await sql`DELETE FROM newchums.community_members WHERE community_id = ${communityId} AND user_id = ${userId}`;
+    // Also withdraw any pending requests
+    await sql`UPDATE newchums.community_join_requests SET status = 'withdrawn' WHERE community_id = ${communityId} AND user_id = ${userId} AND status = 'pending'`;
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[POST /communities/:id/leave]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** GET /communities/:id/members — list members */
+app.get("/communities/:id/members", async (c) => {
+  const communityId = c.req.param("id");
+  const payload = await requireAuth(c);
+  const sql = getSql(c.env);
+  const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 50), 1), 100);
+  const offset = Math.max(Number(c.req.query("offset") ?? 0), 0);
+
+  let userId: string | null = null;
+  let isSuperAdmin = false;
+  if (payload?.email) {
+    const userRows = (await sql`SELECT id, role FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string; role: string | null }[];
+    if (userRows[0]) { userId = userRows[0].id; isSuperAdmin = userRows[0].role === "super_admin"; }
+  }
+
+  try {
+    const communityRows = (await sql`SELECT id, visibility FROM newchums.communities WHERE id = ${communityId} LIMIT 1`) as { id: string; visibility: string }[];
+    if (!communityRows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+
+    if (communityRows[0].visibility === "private" && !isSuperAdmin) {
+      if (!userId) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+      const memberCheck = (await sql`SELECT 1 FROM newchums.community_members WHERE community_id = ${communityId} AND user_id = ${userId} AND status = 'active' LIMIT 1`) as unknown[];
+      if (memberCheck.length === 0) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+    }
+
+    const members = (await sql`
+      SELECT cm.id, cm.user_id, cm.role, cm.created_at, u.name, u.username, u.avatar_key, u.avatar_updated_at
+      FROM newchums.community_members cm
+      JOIN newchums.users u ON u.id = cm.user_id
+      WHERE cm.community_id = ${communityId} AND cm.status = 'active'
+      ORDER BY cm.role = 'owner' DESC, cm.created_at ASC
+      LIMIT ${limit} OFFSET ${offset}
+    `) as Record<string, unknown>[];
+
+    const membersWithAvatars = members.map((m) => ({
+      ...m,
+      avatar_url: buildAvatarUrl(String(m.user_id), m.avatar_key as string | null, m.avatar_updated_at as string | null, c.env.MEDIA_BUCKET),
+    }));
+
+    return c.json({ ok: true, members: membersWithAvatars });
+  } catch (err) {
+    console.error("[GET /communities/:id/members]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /communities/:id/members/:userId/remove — remove member (owner/super admin) */
+app.post("/communities/:id/members/:userId/remove", async (c) => {
+  const communityId = c.req.param("id");
+  const targetUserId = c.req.param("userId");
+  const payload = await requireAuth(c);
+  if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const sql = getSql(c.env);
+  const userRows = (await sql`SELECT id, role FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string; role: string | null }[];
+  if (!userRows[0]) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const isSuperAdmin = userRows[0].role === "super_admin";
+
+  try {
+    const communityRows = (await sql`SELECT id, owner_user_id FROM newchums.communities WHERE id = ${communityId} LIMIT 1`) as { id: string; owner_user_id: string }[];
+    if (!communityRows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    if (communityRows[0].owner_user_id !== userRows[0].id && !isSuperAdmin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+    if (targetUserId === communityRows[0].owner_user_id) return c.json({ ok: false, error: "CANNOT_REMOVE_OWNER" }, 400);
+
+    await sql`UPDATE newchums.community_members SET status = 'removed' WHERE community_id = ${communityId} AND user_id = ${targetUserId}`;
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[POST /communities/:id/members/:userId/remove]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** PUT /communities/:id/join-requests/:requestId — approve or decline */
+app.put("/communities/:id/join-requests/:requestId", async (c) => {
+  const communityId = c.req.param("id");
+  const requestId = c.req.param("requestId");
+  const payload = await requireAuth(c);
+  if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const sql = getSql(c.env);
+  const userRows = (await sql`SELECT id, role FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string; role: string | null }[];
+  if (!userRows[0]) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const isSuperAdmin = userRows[0].role === "super_admin";
+
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+  const action = String(body.action ?? "");
+  if (action !== "approve" && action !== "decline") return c.json({ ok: false, error: "VALIDATION", message: "action must be 'approve' or 'decline'" }, 400);
+
+  try {
+    const communityRows = (await sql`SELECT id, owner_user_id, name, slug FROM newchums.communities WHERE id = ${communityId} LIMIT 1`) as { id: string; owner_user_id: string; name: string; slug: string }[];
+    if (!communityRows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    if (communityRows[0].owner_user_id !== userRows[0].id && !isSuperAdmin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+    const reqRows = (await sql`
+      SELECT id, user_id, status FROM newchums.community_join_requests WHERE id = ${requestId} AND community_id = ${communityId} LIMIT 1
+    `) as { id: string; user_id: string; status: string }[];
+    if (!reqRows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    if (reqRows[0].status !== "pending") return c.json({ ok: false, error: "ALREADY_PROCESSED" }, 409);
+
+    const newStatus = action === "approve" ? "approved" : "declined";
+    await sql`UPDATE newchums.community_join_requests SET status = ${newStatus}, reviewed_by_user_id = ${userRows[0].id}, reviewed_at = now() WHERE id = ${requestId}`;
+
+    if (action === "approve") {
+      await sql`
+        INSERT INTO newchums.community_members (community_id, user_id, role, status) VALUES (${communityId}, ${reqRows[0].user_id}, 'member', 'active')
+        ON CONFLICT (community_id, user_id) DO UPDATE SET status = 'active', role = 'member'
+      `;
+    }
+
+    // Send email notification to the requester
+    const requesterRows = (await sql`SELECT email, name FROM newchums.users WHERE id = ${reqRows[0].user_id} LIMIT 1`) as { email: string; name: string | null }[];
+    if (requesterRows[0]) {
+      const community = communityRows[0];
+      if (action === "approve" && c.env.POSTMARK_TEMPLATE_COMMUNITY_JOIN_APPROVED) {
+        c.executionCtx.waitUntil(sendCommunityJoinApprovedEmail(c.env, {
+          to: requesterRows[0].email,
+          userName: requesterRows[0].name || "there",
+          communityName: community.name,
+          communityUrl: `${c.env.WEB_BASE_URL}/communities/${community.slug}`,
+        }));
+      } else if (action === "decline" && c.env.POSTMARK_TEMPLATE_COMMUNITY_JOIN_DECLINED) {
+        c.executionCtx.waitUntil(sendCommunityJoinDeclinedEmail(c.env, {
+          to: requesterRows[0].email,
+          userName: requesterRows[0].name || "there",
+          communityName: community.name,
+        }));
+      }
+    }
+
+    return c.json({ ok: true, status: newStatus });
+  } catch (err) {
+    console.error("[PUT /communities/:id/join-requests/:requestId]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** GET /communities/:id/join-requests — list pending requests (owner/super admin) */
+app.get("/communities/:id/join-requests", async (c) => {
+  const communityId = c.req.param("id");
+  const payload = await requireAuth(c);
+  if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const sql = getSql(c.env);
+  const userRows = (await sql`SELECT id, role FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string; role: string | null }[];
+  if (!userRows[0]) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const isSuperAdmin = userRows[0].role === "super_admin";
+
+  try {
+    const communityRows = (await sql`SELECT id, owner_user_id FROM newchums.communities WHERE id = ${communityId} LIMIT 1`) as { id: string; owner_user_id: string }[];
+    if (!communityRows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    if (communityRows[0].owner_user_id !== userRows[0].id && !isSuperAdmin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+    const requests = (await sql`
+      SELECT cjr.id, cjr.user_id, cjr.created_at, u.name, u.username, u.avatar_key, u.avatar_updated_at
+      FROM newchums.community_join_requests cjr
+      JOIN newchums.users u ON u.id = cjr.user_id
+      WHERE cjr.community_id = ${communityId} AND cjr.status = 'pending'
+      ORDER BY cjr.created_at ASC
+    `) as Record<string, unknown>[];
+
+    return c.json({ ok: true, requests });
+  } catch (err) {
+    console.error("[GET /communities/:id/join-requests]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** GET /communities/:id/events — community plan feed */
+app.get("/communities/:id/events", async (c) => {
+  const communityId = c.req.param("id");
+  const payload = await requireAuth(c);
+  const sql = getSql(c.env);
+  const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 12), 1), 50);
+  const offset = Math.max(Number(c.req.query("offset") ?? 0), 0);
+
+  let userId: string | null = null;
+  let isSuperAdmin = false;
+  if (payload?.email) {
+    const userRows = (await sql`SELECT id, role FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string; role: string | null }[];
+    if (userRows[0]) { userId = userRows[0].id; isSuperAdmin = userRows[0].role === "super_admin"; }
+  }
+
+  try {
+    const communityRows = (await sql`SELECT id, visibility FROM newchums.communities WHERE id = ${communityId} LIMIT 1`) as { id: string; visibility: string }[];
+    if (!communityRows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+
+    if (communityRows[0].visibility === "private" && !isSuperAdmin) {
+      if (!userId) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+      const memberCheck = (await sql`SELECT 1 FROM newchums.community_members WHERE community_id = ${communityId} AND user_id = ${userId} AND status = 'active' LIMIT 1`) as unknown[];
+      if (memberCheck.length === 0) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+    }
+
+    const events = (await sql`
+      SELECT e.id, e.title, e.description, e.starts_at, e.timezone, e.location_type, e.location_name, e.location_area,
+        e.visibility, e.status, e.max_seats, e.banner_key, e.host_user_id, e.created_at,
+        u.name AS host_name, u.username AS host_username, u.avatar_key AS host_avatar_key, u.avatar_updated_at AS host_avatar_updated_at,
+        (SELECT COUNT(*)::int FROM newchums.event_rsvps r WHERE r.event_id = e.id AND r.status = 'going') AS going_count,
+        (SELECT string_agg(i.name, ', ') FROM newchums.event_interests ei JOIN newchums.interests i ON i.id = ei.interest_id WHERE ei.event_id = e.id) AS hobby_names
+      FROM newchums.events e
+      JOIN newchums.users u ON u.id = e.host_user_id
+      WHERE e.community_id = ${communityId} AND e.status = 'published' AND e.starts_at > now() - interval '24 hours'
+      ORDER BY e.starts_at ASC
+      LIMIT ${limit} OFFSET ${offset}
+    `) as Record<string, unknown>[];
+
+    const eventsWithAvatars = events.map((ev) => ({
+      ...ev,
+      host_avatar_url: buildAvatarUrl(String(ev.host_user_id), ev.host_avatar_key as string | null, ev.host_avatar_updated_at as string | null, c.env.MEDIA_BUCKET),
+    }));
+
+    return c.json({ ok: true, events: eventsWithAvatars });
+  } catch (err) {
+    console.error("[GET /communities/:id/events]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+// ─── Admin communities ──────────────────────────────────────────────────────
+
+/** GET /admin/communities — list all communities (super admin) */
+app.get("/admin/communities", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  const sql = getSql(c.env);
+  const search = c.req.query("q")?.trim() ?? null;
+  const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 50), 1), 100);
+  const offset = Math.max(Number(c.req.query("offset") ?? 0), 0);
+
+  try {
+    const q = search ? `%${search}%` : null;
+    const communities = (await sql`
+      SELECT c.id, c.slug, c.name, c.visibility, c.join_mode, c.chat_enabled, c.owner_user_id, c.created_at,
+        ou.name AS owner_name, ou.username AS owner_username, ou.email AS owner_email,
+        (SELECT COUNT(*)::int FROM newchums.community_members cm WHERE cm.community_id = c.id AND cm.status = 'active') AS member_count,
+        (SELECT COUNT(*)::int FROM newchums.events e WHERE e.community_id = c.id) AS plan_count
+      FROM newchums.communities c
+      JOIN newchums.users ou ON ou.id = c.owner_user_id
+      WHERE (${q}::text IS NULL OR c.name ILIKE ${q} OR c.slug ILIKE ${q} OR ou.name ILIKE ${q} OR ou.email ILIKE ${q})
+      ORDER BY c.created_at DESC LIMIT ${limit} OFFSET ${offset}
+    `) as Record<string, unknown>[];
+
+    return c.json({ ok: true, communities });
+  } catch (err) {
+    console.error("[GET /admin/communities]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /admin/communities/:id/remove — admin removes a community */
+app.post("/admin/communities/:id/remove", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  const communityId = c.req.param("id");
+  const sql = getSql(c.env);
+
+  try {
+    const rows = (await sql`SELECT id FROM newchums.communities WHERE id = ${communityId} LIMIT 1`) as { id: string }[];
+    if (!rows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    await sql`DELETE FROM newchums.communities WHERE id = ${communityId}`;
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[POST /admin/communities/:id/remove]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+// ─── Events ─────────────────────────────────────────────────────────────────
+
 const VALID_VISIBILITY = ["invite_only", "chums_only", "public"] as const;
 const VALID_LOCATION_TYPE = ["in_person", "online"] as const;
 const VALID_LOCATION_VISIBILITY = ["exact_everyone", "exact_joined_only", "approximate_only"] as const;
@@ -5511,6 +6162,8 @@ app.post("/events", async (c) => {
   const status = body.status === "draft" ? "draft" : "published";
   const timezone = body.timezone && typeof body.timezone === "string" ? body.timezone.trim().slice(0, 64) : "UTC";
   const prefOverrides = parsePrefOverrides(body.pref_overrides ?? null);
+  const communityId = body.community_id ? String(body.community_id) : null;
+  const hideFromExplore = body.hide_from_explore === true;
 
   // Attendance assurance fields
   const minConfirmedAttendees = requireReconfirmation && body.min_confirmed_attendees != null
@@ -5537,6 +6190,16 @@ app.post("/events", async (c) => {
     locationArea = deriveApproxArea(locationAddress);
   }
   const onlineLink = body.online_link ? String(body.online_link).trim().slice(0, 500) : null;
+
+  // Validate community_id if provided
+  if (communityId) {
+    try {
+      const cmRows = (await sql`
+        SELECT 1 FROM newchums.community_members WHERE community_id = ${communityId} AND user_id = ${userId} AND status = 'active' LIMIT 1
+      `) as unknown[];
+      if (cmRows.length === 0) return c.json({ ok: false, error: "VALIDATION", message: "You must be a member of the community", field: "community_id" }, 400);
+    } catch { /* community validation failure is non-fatal — will fail at INSERT FK */ }
+  }
 
   try {
     // --- Resolve interests (look up existing or create new) ---
@@ -5622,13 +6285,13 @@ app.post("/events", async (c) => {
         location_type, location_name, location_address, location_place_id, location_lat, location_lng,
         location_visibility, location_area, online_link,
         max_seats, visibility, status, allow_alt_times, allow_attendee_invites, reserve_seats, require_reconfirmation, require_approval, timezone,
-        min_confirmed_attendees, fallback_policy, pref_overrides
+        min_confirmed_attendees, fallback_policy, pref_overrides, community_id, hide_from_explore
       ) VALUES (
         ${userId}, ${title}, ${description}, ${interestId}, ${startsDate.toISOString()},
         ${locationType}, ${locationName}, ${locationAddress}, ${locationPlaceId}, ${locationLat}, ${locationLng},
         ${locationVisibility}, ${locationArea}, ${onlineLink},
         ${maxSeats}, ${visibility}, ${status}, ${allowAltTimes}, ${allowAttendeeInvites}, ${reserveSeats}, ${requireReconfirmation}, ${requireApproval}, ${timezone},
-        ${minConfirmedAttendees}, ${fallbackPolicy}, ${prefOverrides ? JSON.stringify(prefOverrides) : null}
+        ${minConfirmedAttendees}, ${fallbackPolicy}, ${prefOverrides ? JSON.stringify(prefOverrides) : null}, ${communityId}, ${hideFromExplore}
       )
       RETURNING id, created_at
     `) as { id: string; created_at: string }[];
@@ -5909,6 +6572,7 @@ app.get("/events/explore/public", async (c) => {
       WHERE e.status = 'published'
         AND e.starts_at >= ${now.toISOString()}
         AND e.visibility = 'public'
+        AND COALESCE(e.hide_from_explore, false) = false
         ${hobbySlug ? sql`AND EXISTS (SELECT 1 FROM newchums.event_interests ei3 JOIN newchums.interests ii3 ON ii3.id = ei3.interest_id WHERE ei3.event_id = e.id AND ii3.slug = ${hobbySlug})` : sql``}
         ${search ? sql`AND (e.title ILIKE ${"%" + search + "%"} OR e.description ILIKE ${"%" + search + "%"})` : sql``}
         ${dateEnd ? sql`AND e.starts_at <= ${dateEnd.toISOString()}` : sql``}
@@ -6094,6 +6758,7 @@ app.get("/events/explore", async (c) => {
       LEFT JOIN newchums.chum_preferences hp ON hp.user_id = e.host_user_id
       WHERE e.status = 'published'
         AND e.starts_at >= ${now.toISOString()}
+        AND COALESCE(e.hide_from_explore, false) = false
         AND e.visibility != 'invite_only'
         AND (
           e.visibility = 'public'
@@ -6312,6 +6977,13 @@ app.get("/events/:id", async (c) => {
         ? [{ name: (event as Record<string, unknown>).interest_name as string, slug: ((event as Record<string, unknown>).interest_slug as string) ?? "" }]
         : [];
 
+    // Community info (if plan belongs to a community)
+    let communityInfo: { id: string; slug: string; name: string } | null = null;
+    if (event.community_id) {
+      const cmRows = (await sql`SELECT id, slug, name FROM newchums.communities WHERE id = ${event.community_id} LIMIT 1`) as { id: string; slug: string; name: string }[];
+      if (cmRows[0]) communityInfo = cmRows[0];
+    }
+
     // --- Plan Access State ---
     // Determines the viewer's access level for data scoping and frontend rendering.
     const accessState: "public" | "invite" | "authenticated" | "attending" =
@@ -6379,6 +7051,8 @@ app.get("/events/:id", async (c) => {
           pendingConfirmationCount: 0,
           myConfirmationStatus: null,
           planViability: null,
+          community: communityInfo,
+          hideFromExplore: false,
         },
         rsvps: [],
         altTimes: [],
@@ -6568,6 +7242,8 @@ app.get("/events/:id", async (c) => {
         myConfirmationStatus,
         planViability,
         prefOverrides: isHost ? (event.pref_overrides ?? null) : undefined,
+        community: communityInfo,
+        hideFromExplore: isHost ? (event.hide_from_explore === true) : undefined,
       },
       rsvps: rsvps.map((r) => {
         const rHandle = r.username?.replace(/^@/, "") ?? null;
@@ -7515,6 +8191,8 @@ app.patch("/events/:id", async (c) => {
     const patchReserveSeats = body.reserve_seats != null ? body.reserve_seats === true : undefined;
     const patchTimezone = body.timezone && typeof body.timezone === "string" ? body.timezone.trim().slice(0, 64) : null;
     const patchPrefOverrides = "pref_overrides" in body ? parsePrefOverrides(body.pref_overrides ?? null) : undefined;
+    const patchCommunityId = "community_id" in body ? (body.community_id ? String(body.community_id) : null) : undefined;
+    const patchHideFromExplore = "hide_from_explore" in body ? body.hide_from_explore === true : undefined;
 
     // Attendance assurance fields
     const patchMinConfirmed = patchRequireReconfirmation && body.min_confirmed_attendees != null
@@ -7583,6 +8261,8 @@ app.patch("/events/:id", async (c) => {
           min_confirmed_attendees  = ${patchMinConfirmed},
           fallback_policy          = ${patchFallbackPolicy},
           pref_overrides           = CASE WHEN ${patchPrefOverrides !== undefined} THEN ${patchPrefOverrides !== undefined ? (patchPrefOverrides ? JSON.stringify(patchPrefOverrides) : null) : null}::jsonb ELSE pref_overrides END,
+          community_id             = CASE WHEN ${patchCommunityId !== undefined} THEN ${patchCommunityId !== undefined ? patchCommunityId : null}::uuid ELSE community_id END,
+          hide_from_explore        = CASE WHEN ${patchHideFromExplore !== undefined} THEN ${patchHideFromExplore !== undefined ? patchHideFromExplore : false} ELSE hide_from_explore END,
           updated_at               = NOW()
       WHERE id = ${eventId}
     `;

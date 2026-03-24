@@ -1,7 +1,7 @@
 # Technical Specifications
 
-Last Updated: March 19, 2026
-Version: 14.0
+Last Updated: March 24, 2026
+Version: 15.0
 
 This document defines the authoritative technical architecture of NewChums.
 It describes **what exists today** and the structural commitments we are making.
@@ -844,6 +844,78 @@ Shared UI components: `OnboardingProgress` (step indicator + progress bar), `Ste
 - `DELETE /profile/avatar` (auth required)
 - `GET /users/:userId/avatar` (public; cacheable)
 
+### Communities
+
+Community pages where users can join, browse, and create plans together.
+
+**Schema (migration 055):**
+
+| Table | Purpose |
+|-------|---------|
+| `newchums.communities` | Core community entity — name, slug, description, avatar_key, banner_key, visibility (`public` / `private`), join_mode (`open` / `approval_required`), chat_enabled (boolean, deferred), location fields, owner_user_id, timestamps |
+| `newchums.community_members` | Membership records — community_id, user_id, role (`owner` / `member`), status (`active` / `pending` / `removed`). Unique on `(community_id, user_id)`. |
+| `newchums.community_join_requests` | Join request records — community_id, user_id, status (`pending` / `approved` / `declined` / `withdrawn`), reviewed_by_user_id, timestamps. Unique partial index on `(community_id, user_id) WHERE status = 'pending'`. |
+
+**Events table additions (migration 055):**
+- `community_id UUID NULL` FK → `communities(id)` ON DELETE SET NULL — associates a plan with 0 or 1 community.
+- `hide_from_explore BOOLEAN NOT NULL DEFAULT false` — when true, the plan is hidden from the general Explore feed (still visible in the community's own plan feed).
+
+**API endpoints (auth required unless noted):**
+
+| Route | Description |
+|-------|-------------|
+| `POST /communities` | Create a community. Validates name, slug (3–50 chars, lowercase alphanumeric + hyphens), visibility, join_mode. Creator becomes owner + member. |
+| `GET /communities` | List communities. Query params: `filter=mine` (user's communities), `q` (search). Returns member_count. |
+| `GET /communities/slug-available` | Check slug availability. |
+| `GET /communities/:slug` | Community detail. Returns full community info, member_count, viewer's membership role/status, pending join request status. Private communities return limited info to non-members. Owner/admin sees pending join requests. Private communities include a share token (JWT, purpose `community_share`). |
+| `PATCH /communities/:slug` | Update community (owner or super admin). Accepts: name, description, visibility, join_mode, chat_enabled, location fields. |
+| `DELETE /communities/:slug` | Remove community (owner or super admin). Cascades to members, join requests; events have `community_id` set to NULL. |
+| `POST /communities/:id/join` | Join (open) or request to join (approval_required). Idempotent. Sends join-request email to owner when approval is required. |
+| `POST /communities/:id/leave` | Leave community. Owner cannot leave (must transfer ownership first). Also withdraws any pending join request. |
+| `GET /communities/:id/members` | List active members. Private communities restrict to members + super admin. |
+| `POST /communities/:id/members/:userId/remove` | Remove a member (owner or super admin). Cannot remove owner. |
+| `PUT /communities/:id/join-requests/:requestId` | Approve or decline a join request (owner or super admin). On approve, adds user as active member. Sends approved/declined email to requester. |
+| `GET /communities/:id/join-requests` | List pending join requests (owner or super admin). |
+| `GET /communities/:id/events` | Community plan feed. Returns published plans belonging to this community. Private communities restrict to members + super admin. Supports `limit`/`offset`. |
+
+**Admin endpoints (super_admin only):**
+
+| Route | Description |
+|-------|-------------|
+| `GET /admin/communities` | List all communities with member_count and plan_count. Supports `q` search. |
+| `POST /admin/communities/:id/remove` | Admin delete a community. |
+
+**Plan creation/edit integration:**
+- `POST /events` accepts optional `community_id` and `hide_from_explore`. Validates that the user is an active member of the community.
+- `PATCH /events/:id` accepts `community_id` (set or clear) and `hide_from_explore`.
+- `GET /events/:id` includes `community` info (`id`, `slug`, `name`) when the plan belongs to a community.
+
+**Email templates (Postmark template IDs pending):**
+
+| Email | Env var | Trigger |
+|-------|---------|---------|
+| Community join request (to owner) | `POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST` | User requests to join an approval_required community |
+| Community join approved (to requester) | `POSTMARK_TEMPLATE_COMMUNITY_JOIN_APPROVED` | Owner approves a join request |
+| Community join declined (to requester) | `POSTMARK_TEMPLATE_COMMUNITY_JOIN_DECLINED` | Owner declines a join request |
+
+Template source files: `api/src/email/templates/communityJoinRequest.*`, `communityJoinApproved.*`, `communityJoinDeclined.*`.
+
+**Share tokens (private communities):**
+
+Private communities generate a share token (JWT, purpose `community_share`) returned in `GET /communities/:slug` responses for owners and super admins. The token grants non-members a way to view and request to join the community via a share link.
+
+**Community chat:** The schema includes a `chat_enabled` column on `communities`, but community-level chat is **deferred** to a later pass. No chat implementation exists for communities.
+
+**Web pages:**
+
+| Route | Component | Description |
+|-------|-----------|-------------|
+| `/communities` | `CommunitiesListClient` | Browse and search communities; "my communities" filter |
+| `/communities/create` | `CreateCommunityClient` | Create a new community |
+| `/communities/[slug]` | `CommunityDetailClient` | Community detail — info, members, community plans feed, join/leave, join-request management (owner) |
+| `/communities/[slug]/edit` | `EditCommunityClient` | Edit community settings (owner) |
+| `/admin/communities` | `AdminCommunitiesClient` | Super admin community management — list, search, remove |
+
 ### Diagnostics
 
 - `GET /health`
@@ -997,6 +1069,11 @@ Core tables include:
 - `newchums.events.feedback_email_sent_at` (migration 049) — `TIMESTAMPTZ NULL`; tracks when feedback reminder email was sent for a plan.
 - `newchums.user_objective_completions` (migration 054) — tracks per-user objective completion. Columns: `id` (UUID PK), `user_id` (FK), `objective_key` (TEXT), `completed_at` (TIMESTAMPTZ). Unique constraint on `(user_id, objective_key)`.
 - `newchums.users.tutorial_nudges_off` (migration 054) — `BOOLEAN NOT NULL DEFAULT false`; when true, tutorial nudges are permanently suppressed for the user.
+- `newchums.communities` (migration 055) — community entity. Columns: `id` (UUID PK), `slug` (TEXT UNIQUE), `name`, `description`, `avatar_key`, `banner_key`, `visibility` (public/private), `join_mode` (open/approval_required), `chat_enabled` (boolean, default true — deferred), `location_name`, `location_address`, `location_lat`, `location_lng`, `owner_user_id` (FK), `created_at`, `updated_at`. Indexed on `slug` (unique) and `owner_user_id`.
+- `newchums.community_members` (migration 055) — membership records. Columns: `id` (UUID PK), `community_id` (FK, CASCADE), `user_id` (FK, CASCADE), `role` (owner/member), `status` (active/pending/removed), `created_at`. Unique on `(community_id, user_id)`. Indexed on `user_id`.
+- `newchums.community_join_requests` (migration 055) — join request records. Columns: `id` (UUID PK), `community_id` (FK, CASCADE), `user_id` (FK, CASCADE), `status` (pending/approved/declined/withdrawn), `reviewed_by_user_id` (FK), `created_at`, `reviewed_at`. Unique partial index on `(community_id, user_id) WHERE status = 'pending'`.
+- `newchums.events.community_id` (migration 055) — `UUID NULL` FK → `communities(id)` ON DELETE SET NULL. Associates a plan with 0 or 1 community. Indexed where not null.
+- `newchums.events.hide_from_explore` (migration 055) — `BOOLEAN NOT NULL DEFAULT false`. When true, the plan is hidden from the general Explore feed but visible in the community's plan feed.
 
 PostGIS is available for geo queries.
 
@@ -1035,7 +1112,7 @@ When sharing the same DB between local and production, set `NEXT_PUBLIC_AVATAR_B
 - Secrets (via Wrangler/CF dashboard): `DATABASE_URL`, `NEXTAUTH_SECRET`, `POSTMARK_SERVER_TOKEN`
 - Durable Objects: `[[durable_objects.bindings]]` binds `CHAT_ROOM` → `ChatRoom` class; `[[migrations]]` tag `v1` with `new_classes = ["ChatRoom"]`
 - Cron Triggers: `[triggers] crons = ["0 * * * *"]` — hourly; processes attendance assurance, daily unread-chat digest, event match digest, and post-plan feedback emails
-- Vars include `POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST`, `POSTMARK_TEMPLATE_EVENT_CHANGED`, `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST`, `POSTMARK_TEMPLATE_PLAN_AT_RISK`, `POSTMARK_TEMPLATE_PLAN_FEEDBACK`, and other template IDs
+- Vars include `POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST`, `POSTMARK_TEMPLATE_EVENT_CHANGED`, `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST`, `POSTMARK_TEMPLATE_PLAN_AT_RISK`, `POSTMARK_TEMPLATE_PLAN_FEEDBACK`, `POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST`, `POSTMARK_TEMPLATE_COMMUNITY_JOIN_APPROVED`, `POSTMARK_TEMPLATE_COMMUNITY_JOIN_DECLINED`, and other template IDs
 
 CORS is enforced via an explicit allowlist (newchums.com, www, localhost:3000) in API code.
 

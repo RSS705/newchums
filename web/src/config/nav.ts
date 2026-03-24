@@ -7,6 +7,7 @@ import StyleRoundedIcon from "@mui/icons-material/StyleRounded";
 import PeopleRoundedIcon from "@mui/icons-material/PeopleRounded";
 import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
 import FeedbackRoundedIcon from "@mui/icons-material/FeedbackRounded";
+import ForumRoundedIcon from "@mui/icons-material/ForumRounded";
 import MapRoundedIcon from "@mui/icons-material/MapRounded";
 import BarChartRoundedIcon from "@mui/icons-material/BarChartRounded";
 import IntegrationInstructionsRoundedIcon from "@mui/icons-material/IntegrationInstructionsRounded";
@@ -22,6 +23,7 @@ export type NavItem = {
 export const appNavItems: NavItem[] = [
   { label: "Explore", href: "/", icon: ExploreRoundedIcon },
   { label: "Your Plans", href: "/plans", icon: EventNoteRoundedIcon },
+  { label: "Communities", href: "/communities", icon: ForumRoundedIcon },
   { label: "Connections", href: "/chum-groups", icon: GroupsRoundedIcon },
   { label: "Profile", href: "/profile", icon: PersonRoundedIcon },
   { label: "Feedback", href: "/roadmap", icon: FeedbackRoundedIcon },
@@ -36,6 +38,7 @@ export const superAdminNavItems: NavItem[] = [
   { label: "Safety", href: "/admin/safety", icon: ShieldRoundedIcon },
   { label: "Interests", href: "/admin/interests", icon: StyleRoundedIcon },
   { label: "Plans", href: "/admin/plans", icon: CalendarMonthRoundedIcon },
+  { label: "Communities", href: "/admin/communities", icon: ForumRoundedIcon },
   { label: "Roadmap", href: "/admin/roadmap", icon: MapRoundedIcon },
 ];
 

@@ -109,6 +109,8 @@ type EventDetail = {
   pendingConfirmationCount: number;
   myConfirmationStatus: string | null;
   planViability: string | null;
+  community?: { id: string; slug: string; name: string } | null;
+  hideFromExplore?: boolean;
 };
 
 type RsvpEntry = { userId: string; name: string; handle: string | null; status: string; note: string | null; avatarUrl?: string | null; confirmationStatus?: string | null; isGuest?: boolean; guestEmail?: string | null };
@@ -1321,6 +1323,15 @@ export default function EventDetailClient() {
           <Typography variant="body2" color="text.secondary">
             Hosted by {event.hostName}
           </Typography>
+          {event.community && (
+            <Chip
+              label={event.community.name}
+              size="small"
+              variant="outlined"
+              sx={{ mt: 0.5, cursor: "pointer" }}
+              onClick={() => router.push(`/communities/${event.community!.slug}`)}
+            />
+          )}
         </Box>
 
         {pubIsCanceled && (
@@ -1573,6 +1584,15 @@ export default function EventDetailClient() {
             ? (isPast ? "You hosted this" : "You\u2019re hosting this")
             : `Hosted by ${event.hostName}`}
         </Typography>
+        {event.community && (
+          <Chip
+            label={event.community.name}
+            size="small"
+            variant="outlined"
+            sx={{ mt: 0.5, cursor: "pointer" }}
+            onClick={() => router.push(`/communities/${event.community!.slug}`)}
+          />
+        )}
       </Box>
 
       {/* Canceled banner */}

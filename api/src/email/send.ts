@@ -920,3 +920,47 @@ export const sendConcernReportAlert = async (
     },
   });
 };
+
+// ── Community join request notifications ─────────────────────────────────
+
+export const sendCommunityJoinRequestEmail = async (
+  env: Bindings,
+  { to, ownerName, requesterName, communityName, communityUrl }: {
+    to: string; ownerName: string; requesterName: string; communityName: string; communityUrl: string;
+  }
+) => {
+  if (!env.POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST) return;
+  return sendPostmarkTemplateEmail(env, {
+    From: env.EMAIL_FROM, To: to,
+    TemplateId: env.POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST,
+    TemplateModel: { productName: "NewChums", ownerName, requesterName, communityName, communityUrl },
+  });
+};
+
+export const sendCommunityJoinApprovedEmail = async (
+  env: Bindings,
+  { to, userName, communityName, communityUrl }: {
+    to: string; userName: string; communityName: string; communityUrl: string;
+  }
+) => {
+  if (!env.POSTMARK_TEMPLATE_COMMUNITY_JOIN_APPROVED) return;
+  return sendPostmarkTemplateEmail(env, {
+    From: env.EMAIL_FROM, To: to,
+    TemplateId: env.POSTMARK_TEMPLATE_COMMUNITY_JOIN_APPROVED,
+    TemplateModel: { productName: "NewChums", userName, communityName, communityUrl },
+  });
+};
+
+export const sendCommunityJoinDeclinedEmail = async (
+  env: Bindings,
+  { to, userName, communityName }: {
+    to: string; userName: string; communityName: string;
+  }
+) => {
+  if (!env.POSTMARK_TEMPLATE_COMMUNITY_JOIN_DECLINED) return;
+  return sendPostmarkTemplateEmail(env, {
+    From: env.EMAIL_FROM, To: to,
+    TemplateId: env.POSTMARK_TEMPLATE_COMMUNITY_JOIN_DECLINED,
+    TemplateModel: { productName: "NewChums", userName, communityName },
+  });
+};

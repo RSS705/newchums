@@ -1,6 +1,6 @@
 # System Map
 
-Last Updated: March 17, 2026
+Last Updated: March 24, 2026
 
 This document reflects the current production reality of NewChums.
 It is diagram-first: use this for boundaries, flows, and "how it connects."
@@ -47,6 +47,18 @@ flowchart TB
   API -->|"WebSocket relay"| DO["Durable Objects<br/>(ChatRoom per plan)"]
   U -->|"WebSocket"| API
   CRON["Cron Triggers<br/>(hourly: attendance assurance + daily digest)"] -->|"scheduled"| API
+
+  subgraph "Community Features"
+    COMM_PAGES["Community Pages<br/>/communities/*"]
+    COMM_API["Community API<br/>/communities/*, /admin/communities/*"]
+    COMM_TABLES["communities, community_members,<br/>community_join_requests"]
+  end
+
+  W --> COMM_PAGES
+  COMM_PAGES -->|"API calls"| API
+  API --> COMM_API
+  COMM_API -->|"SQL"| DB
+  DB --- COMM_TABLES
 ```
 
 ---
@@ -103,6 +115,8 @@ The following flows run in the API worker; the web app calls the API via `NEXT_P
 | Contact form | `POST /contact` | none (Turnstile for logged-out) |
 | Admin — interests | `GET /admin/interests`, `PATCH /admin/interests/:id`, `DELETE /admin/interests/:id`, `POST /admin/interests/:id/restore`, `POST /admin/interests/merge` | Bearer JWT + `super_admin` role |
 | Admin — users | `GET /admin/users`, `POST /admin/users/:id/suspend`, `POST /admin/users/:id/unsuspend`, `GET /admin/users/:id/diagnostics` | Bearer JWT + `super_admin` role |
+| Communities | `POST /communities`, `GET /communities`, `GET /communities/slug-available`, `GET /communities/:slug`, `PATCH /communities/:slug`, `DELETE /communities/:slug`, `POST /communities/:id/join`, `POST /communities/:id/leave`, `GET /communities/:id/members`, `POST /communities/:id/members/:userId/remove`, `PUT /communities/:id/join-requests/:requestId`, `GET /communities/:id/join-requests`, `GET /communities/:id/events` | Bearer JWT |
+| Admin — communities | `GET /admin/communities`, `POST /admin/communities/:id/remove` | Bearer JWT + `super_admin` role |
 | Diagnostics | `GET /health`, `GET /health/env` | none |
 
 ### Content safety
@@ -167,6 +181,7 @@ Sign in → Explore (event discovery feed)
 ├── Your Plans → Upcoming / Past tabs → Event detail
 │   └── Past plan → Post-plan feedback (rate attendees, report issues/concerns)
 ├── Your Chums → Search / Add / Remove / Invite by email
+├── Communities → Browse / Create / Join / Community plans feed
 ├── Profile → Edit → Chum preferences → Public profile (/u/handle)
 ├── Settings → Notifications / Privacy / Email / Password / Delete account
 ├── Notifications (bell) → View / mark read
@@ -270,6 +285,11 @@ Wrangler config is code-managed so deploys do not wipe routes or override canoni
 | `/admin/interests` | Interests moderation (super_admin) |
 | `/admin/chums` | User management (super_admin) |
 | `/admin/chums/[id]` | User diagnostics — metric scores, preferences, feedback, issues (super_admin) |
+| `/admin/communities` | Community management — list, search, remove (super_admin) |
+| `/communities` | Browse and search communities |
+| `/communities/create` | Create a new community |
+| `/communities/[slug]` | Community detail — info, members, plan feed, join/leave, join-request management |
+| `/communities/[slug]/edit` | Edit community settings (owner) |
 | `/unsubscribe` | Email notification unsubscribe (public, token-based) |
 
 ---
@@ -300,4 +320,6 @@ flowchart TB
   API -->|"WebSocket relay"| DO["Durable Objects<br/>(ChatRoom)"]
   U -->|"WebSocket"| API
   CRON["Cron Triggers<br/>(hourly: attendance assurance + daily digest)"] -->|"scheduled"| API
+
+  API -->|"Community CRUD<br/>+ membership"| DB
 ```

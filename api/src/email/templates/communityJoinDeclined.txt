@@ -1,0 +1,13 @@
+Join request update
+
+Hey {{userName}},
+
+Unfortunately your request to join "{{communityName}}" was not approved at this time.
+
+Don't worry — there are plenty of other communities and plans to explore on NewChums.
+
+Explore NewChums: https://newchums.com
+
+---
+You're receiving this because you requested to join a community on NewChums (https://newchums.com).
+© {{productName}}

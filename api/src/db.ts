@@ -54,6 +54,12 @@ export type Bindings = {
   POSTMARK_TEMPLATE_PLAN_FEEDBACK?: string;
   /** Postmark template ID for concern report admin alert (template 44107767) */
   POSTMARK_TEMPLATE_CONCERN_REPORT?: string;
+  /** Postmark template ID for community join request notification to owner (template 44111064) */
+  POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST?: string;
+  /** Postmark template ID for community join approved notification (template 44111212) */
+  POSTMARK_TEMPLATE_COMMUNITY_JOIN_APPROVED?: string;
+  /** Postmark template ID for community join declined notification (template 44111205) */
+  POSTMARK_TEMPLATE_COMMUNITY_JOIN_DECLINED?: string;
   SENTRY_DSN: string;
   APP_ENV?: string;
   ENVIRONMENT?: string;

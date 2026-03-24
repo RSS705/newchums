@@ -1,0 +1,13 @@
+New community join request
+
+Hey {{ownerName}},
+
+{{requesterName}} wants to join your community "{{communityName}}".
+
+Review this request: {{communityUrl}}
+
+You can approve or decline from the community page.
+
+---
+You're receiving this because you own a community on NewChums (https://newchums.com).
+© {{productName}}

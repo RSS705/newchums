@@ -529,6 +529,87 @@ export default function AdminSystemLogicClient() {
         </Bullet>
       </CollapsibleSection>
 
+      <CollapsibleSection title="Communities" subtitle="Dedicated pages where users can join, share plans, and organize around a shared group">
+        <Typography variant="body2" fontWeight={600} sx={{ mt: 0.5, mb: 0.5 }}>
+          What is a community?
+        </Typography>
+        <Bullet>
+          A community is a <strong>group page</strong> on NewChums. Members can browse and create plans within the community. Think of it as a shared space for
+          a recurring group &mdash; a running club, a neighborhood board game crew, a book club.
+        </Bullet>
+        <Bullet>
+          Every community has a <strong>unique handle</strong> (slug), a name, optional description, and optional location.
+        </Bullet>
+        <Bullet>
+          The person who creates it is the <strong>owner</strong>. Super admins can also manage any community.
+        </Bullet>
+
+        <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
+          Visibility
+        </Typography>
+        <Bullet>
+          <strong>Public:</strong> Anyone can find the community, see its members and plans, and join (or request to join).
+        </Bullet>
+        <Bullet>
+          <strong>Private:</strong> Only members (and super admins) can see the member list and community plans. Non-members who visit the page see limited
+          info &mdash; name, visibility, join mode, and member count &mdash; plus the option to request to join. Private communities have a <strong>share link</strong> the
+          owner can send to people, which lets them view the community and request to join.
+        </Bullet>
+
+        <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
+          Joining
+        </Typography>
+        <Bullet>
+          <strong>Open:</strong> Anyone can join instantly. No approval needed.
+        </Bullet>
+        <Bullet>
+          <strong>Approval required:</strong> The user submits a join request. The owner sees pending requests and can approve or decline them. The requester
+          gets an email when their request is approved or declined (once Postmark templates are configured).
+        </Bullet>
+        <Bullet>
+          The owner also gets an email when someone requests to join (once the template is configured).
+        </Bullet>
+        <Bullet>
+          The owner <strong>cannot leave</strong> their own community &mdash; they must transfer ownership first (not yet implemented as a UI action).
+        </Bullet>
+
+        <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
+          Plans and communities
+        </Typography>
+        <Bullet>
+          A plan can belong to <strong>zero or one</strong> community. When creating or editing a plan, you can associate it with a community you&rsquo;re a
+          member of.
+        </Bullet>
+        <Bullet>
+          Community plans appear in the <strong>community&rsquo;s plan feed</strong> on the community page.
+        </Bullet>
+        <Bullet>
+          Community plans can optionally be <strong>hidden from Explore</strong> (<code style={{ fontSize: "0.85em" }}>hide_from_explore</code>). When hidden,
+          they still show up in the community&rsquo;s own plan feed but are excluded from the general Explore page and digests.
+        </Bullet>
+
+        <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
+          Roles
+        </Typography>
+        <Bullet>
+          <strong>Owner:</strong> Full control &mdash; edit community settings, approve/decline join requests, remove members, delete the community.
+        </Bullet>
+        <Bullet>
+          <strong>Member:</strong> Can view the community, see other members, browse and create plans within it, and leave.
+        </Bullet>
+        <Bullet>
+          <strong>Super admin:</strong> Can do everything an owner can across all communities, plus list and remove communities from the admin panel.
+        </Bullet>
+
+        <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
+          Community chat
+        </Typography>
+        <Bullet>
+          <strong>Deferred.</strong> The schema has a <code style={{ fontSize: "0.85em" }}>chat_enabled</code> column but there is no community-level chat
+          implementation yet. Plan-level chat (per-plan group chat) still works normally for plans within a community.
+        </Bullet>
+      </CollapsibleSection>
+
       <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, bgcolor: "action.hover", mt: 3 }}>
         <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.6 }}>
           Want endpoints, database names, or the exact email templates? That lives in the repo docs (e.g. Technical_Specs) — this page is just the friendly

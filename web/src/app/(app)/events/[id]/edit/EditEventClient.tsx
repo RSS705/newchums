@@ -76,6 +76,11 @@ export default function EditEventClient() {
   const [prefDisabledMetrics, setPrefDisabledMetrics] = useState<Record<string, boolean>>({});
   const [hostHasPrefs, setHostHasPrefs] = useState(false);
 
+  // Community association
+  const [communityId, setCommunityId] = useState<string | null>(null);
+  const [communityName, setCommunityName] = useState<string | null>(null);
+  const [hideFromExplore, setHideFromExplore] = useState(false);
+
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -109,6 +114,13 @@ export default function EditEventClient() {
           ? ev.hobbies
           : ev.hobby ? [{ name: ev.hobby, slug: ev.hobbySlug ?? "" }] : [];
         setHobbies(h);
+
+        // Community association
+        if (ev.community) {
+          setCommunityId(ev.community.id);
+          setCommunityName(ev.community.name);
+        }
+        if (ev.hideFromExplore !== undefined) setHideFromExplore(ev.hideFromExplore === true);
 
         // Load pref overrides
         const po: PrefOverrides = ev.prefOverrides ?? null;
@@ -219,6 +231,8 @@ export default function EditEventClient() {
           fallback_policy: requireReconfirmation ? fallbackPolicy : "notify_host",
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           pref_overrides: buildPrefOverrides(),
+          community_id: communityId || null,
+          hide_from_explore: hideFromExplore,
         }),
       });
       const data = (await res.json()) as { ok: boolean; message?: string };
@@ -628,6 +642,23 @@ export default function EditEventClient() {
       </Typography>
 
       {/* Actions */}
+      {/* Community association */}
+      {communityId && communityName && (
+        <AppCard>
+          <Stack spacing={1.5}>
+            <Typography variant="subtitle1" fontWeight={700}>Community</Typography>
+            <Typography variant="body2" color="text.secondary">
+              This plan is linked to <strong>{communityName}</strong>.
+            </Typography>
+            <FormControlLabel
+              control={<Switch checked={hideFromExplore} onChange={(e) => setHideFromExplore(e.target.checked)} size="small" />}
+              label="Hide from public Explore feed"
+              slotProps={{ typography: { variant: "body2", color: "text.secondary" } }}
+            />
+          </Stack>
+        </AppCard>
+      )}
+
       <Stack
         direction={{ xs: "column-reverse", sm: "row" }}
         spacing={2}
