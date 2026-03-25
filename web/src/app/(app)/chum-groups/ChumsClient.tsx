@@ -2,6 +2,7 @@
 
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
@@ -17,12 +18,12 @@ import Typography from "@mui/material/Typography";
 import CakeOutlinedIcon from "@mui/icons-material/CakeOutlined";
 import EditNoteRoundedIcon from "@mui/icons-material/EditNoteRounded";
 import MailOutlineRoundedIcon from "@mui/icons-material/MailOutlineRounded";
-import PersonAddAltRoundedIcon from "@mui/icons-material/PersonAddAltRounded";
 import PersonOutlineRoundedIcon from "@mui/icons-material/PersonOutlineRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
+import { notifyObjectivesChanged } from "@/components/objectives/NextStepNudge";
 import { AppCard, useToast } from "@/components/ui";
 import UserAvatar from "@/components/common/UserAvatar";
 
@@ -321,11 +322,16 @@ function PrivateContactRow({
           >
             {contact.displayName}
           </Typography>
-          {contact.email && contact.displayName !== contact.email && (
-            <Typography variant="body2" color="text.secondary" sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {contact.email}
-            </Typography>
-          )}
+          <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap">
+            {contact.email && contact.displayName !== contact.email && (
+              <Typography variant="body2" color="text.secondary" sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {contact.email}
+              </Typography>
+            )}
+            <Tooltip title="Only visible to you. Not on NewChums yet." placement="top" arrow enterTouchDelay={0}>
+              <Chip label="Private" size="small" variant="outlined" sx={{ fontSize: "0.6875rem", height: 20, fontWeight: 500, color: "text.secondary", borderColor: "divider", cursor: "help" }} />
+            </Tooltip>
+          </Stack>
         </Box>
 
         <Tooltip title={contact.note ? "Edit note" : "Add private note"} placement="top" arrow>
@@ -475,7 +481,7 @@ function SearchResultRow({
         <Box sx={{ flexShrink: 0 }}>
           {isSaved ? (
             <Button variant="outlined" size="small" color="inherit" disabled sx={{ fontSize: "0.8125rem", whiteSpace: "nowrap" }}>
-              Saved
+              Added
             </Button>
           ) : (
             <Button
@@ -485,7 +491,7 @@ function SearchResultRow({
               onClick={() => onAdd(user.userId)}
               sx={{ fontSize: "0.8125rem", whiteSpace: "nowrap" }}
             >
-              {actionLoading ? <CircularProgress size={14} color="inherit" sx={{ mx: 1 }} /> : "Save"}
+              {actionLoading ? <CircularProgress size={14} color="inherit" sx={{ mx: 1 }} /> : "Add"}
             </Button>
           )}
         </Box>
@@ -607,6 +613,7 @@ function AddPrivateContactDialog({
       } else {
         toast.success("Private contact added.");
       }
+      notifyObjectivesChanged();
       onAdded();
       onClose();
     } catch {
@@ -797,10 +804,11 @@ export default function ChumsClient() {
           birthday: null,
         }, ...prev]);
       }
-      setSearchResults((prev) => prev.map((u) => u.userId === userId ? { ...u, isSaved: true } : u));
-      toast.success(`${added?.displayName ?? "User"} saved to On NewChums.`);
+      clearFindAndAddArea();
+      toast.success("Chum saved");
+      notifyObjectivesChanged();
     } catch {
-      toast.error("Couldn't save connection. Please try again.");
+      toast.error("Couldn't add contact. Please try again.");
     } finally {
       setActionLoading((prev) => { const next = new Set(prev); next.delete(userId); return next; });
     }
@@ -814,7 +822,7 @@ export default function ChumsClient() {
       if (!data.ok) throw new Error();
       setOnNewChums((prev) => prev.filter((c) => c.contactId !== contactId));
       setPrivateContacts((prev) => prev.filter((c) => c.contactId !== contactId));
-      toast.success("Contact removed.");
+      toast.success("Chum removed");
     } catch {
       toast.error("Couldn't remove contact. Please try again.");
     } finally {
@@ -974,13 +982,13 @@ export default function ChumsClient() {
         </Stack>
       </AppCard>
 
-      {/* On NewChums Section */}
+      {/* Chum List */}
       <AppCard>
         <Stack spacing={2.5}>
           <Box>
-            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>On NewChums</Typography>
+            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>Your chum list</Typography>
             <Typography color="text.secondary" variant="body2" sx={{ mt: 0.5, lineHeight: 1.6 }}>
-              People with NewChums accounts. Visible as part of your connections on your profile.
+              People you&apos;ve saved. Private contacts are only visible to you.
             </Typography>
           </Box>
 
@@ -988,13 +996,13 @@ export default function ChumsClient() {
             <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
               <CircularProgress size={28} />
             </Box>
-          ) : onNewChums.length === 0 ? (
+          ) : onNewChums.length === 0 && privateContacts.length === 0 ? (
             <Box sx={{ py: 5, textAlign: "center" }}>
               <Typography variant="body1" color="text.secondary" sx={{ mb: 0.5 }}>
-                No connections yet
+                No chums yet
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-                Use the search above to find people you know on NewChums.
+                Use the search above to find and add people.
               </Typography>
             </Box>
           ) : (
@@ -1009,45 +1017,6 @@ export default function ChumsClient() {
                   onNoteChange={handleNoteChange}
                 />
               ))}
-            </Stack>
-          )}
-        </Stack>
-      </AppCard>
-
-      {/* Private Contacts Section */}
-      <AppCard>
-        <Stack spacing={2.5}>
-          <Box>
-            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>Private Contacts</Typography>
-            <Typography color="text.secondary" variant="body2" sx={{ mt: 0.5, lineHeight: 1.6 }}>
-              Only visible to you. Useful for planning and invites.
-            </Typography>
-            <Button
-              variant="contained"
-              size="medium"
-              startIcon={<PersonAddAltRoundedIcon />}
-              onClick={() => { setAddPrivateEmail(""); setAddPrivateOpen(true); }}
-              sx={{ mt: 2 }}
-            >
-              Add a private contact
-            </Button>
-          </Box>
-
-          {loading ? (
-            <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
-              <CircularProgress size={28} />
-            </Box>
-          ) : privateContacts.length === 0 ? (
-            <Box sx={{ py: 5, textAlign: "center" }}>
-              <Typography variant="body1" color="text.secondary" sx={{ mb: 0.5 }}>
-                No private contacts yet
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-                Add people you plan with who aren&apos;t on NewChums yet, or search by email above.
-              </Typography>
-            </Box>
-          ) : (
-            <Stack divider={<Divider />}>
               {privateContacts.map((contact) => (
                 <PrivateContactRow
                   key={contact.contactId}

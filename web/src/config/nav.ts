@@ -24,9 +24,9 @@ export const appNavItems: NavItem[] = [
   { label: "Explore", href: "/", icon: ExploreRoundedIcon },
   { label: "Your Plans", href: "/plans", icon: EventNoteRoundedIcon },
   { label: "Communities", href: "/communities", icon: ForumRoundedIcon },
-  { label: "Connections", href: "/chum-groups", icon: GroupsRoundedIcon },
+  { label: "Your Chums", href: "/chum-groups", icon: GroupsRoundedIcon },
   { label: "Profile", href: "/profile", icon: PersonRoundedIcon },
-  { label: "Feedback", href: "/roadmap", icon: FeedbackRoundedIcon },
+  { label: "Give Feedback", href: "/roadmap", icon: FeedbackRoundedIcon },
 ];
 
 export const createEventHref = "/events/create";

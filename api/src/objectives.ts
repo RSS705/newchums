@@ -185,7 +185,7 @@ export async function evaluateObjectives(
         FROM newchums.user_profile p WHERE p.user_id = u.id
       )                                                                    AS has_location,
       (
-        SELECT p.travel_radius_km IS NOT NULL AND p.travel_radius_km != 200
+        SELECT p.travel_radius_km IS NOT NULL
         FROM newchums.user_profile p WHERE p.user_id = u.id
       )                                                                    AS has_travel_distance,
       (

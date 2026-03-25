@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Autocomplete from "@mui/material/Autocomplete";
 import Box from "@mui/material/Box";
 import Chip from "@mui/material/Chip";
@@ -68,6 +68,7 @@ export default function EditEventClient() {
   const [hobbies, setHobbies] = useState<HobbyInfo[]>([]);
   const [hobbyInput, setHobbyInput] = useState("");
   const [hobbySuggestions, setHobbySuggestions] = useState<HobbyInfo[]>([]);
+  const hobbyJustAddedRef = useRef(false);
   const [hobbyLoading, setHobbyLoading] = useState(false);
 
   // Chum preference overrides
@@ -200,6 +201,9 @@ export default function EditEventClient() {
       if (prev.some((i) => isDuplicate(i, item))) return prev;
       return [...prev, item];
     });
+    hobbyJustAddedRef.current = true;
+    setHobbyInput("");
+    setHobbySuggestions([]);
   };
 
   const buildPrefOverrides = (): PrefOverrides => {
@@ -334,12 +338,26 @@ export default function EditEventClient() {
             }}
             value={hobbies}
             inputValue={hobbyInput}
-            onInputChange={(_, v) => setHobbyInput(v)}
+            onInputChange={(_, v, reason) => {
+              if (hobbyJustAddedRef.current) {
+                hobbyJustAddedRef.current = false;
+                setHobbyInput("");
+                return;
+              }
+              if (reason === "reset") {
+                setHobbyInput("");
+                return;
+              }
+              setHobbyInput(v);
+            }}
             onChange={(_, newValue) => {
               const filtered = (newValue ?? []).filter(Boolean);
               const last = filtered[filtered.length - 1];
               if (typeof last === "string") { addHobby(last); return; }
-              if (filtered.length === 0 && hobbies.length > 0 && hobbyInput.trim() !== "") return;
+              if (typeof last === "object" && last && filtered.length > hobbies.length) {
+                addHobby(last);
+                return;
+              }
               setHobbies(filtered as HobbyInfo[]);
             }}
             getOptionLabel={(opt) => (typeof opt === "string" ? opt : opt.name)}
@@ -369,7 +387,6 @@ export default function EditEventClient() {
                       e.preventDefault();
                       e.stopPropagation();
                       addHobby(trimmed);
-                      setHobbyInput("");
                       return;
                     }
                     if (e.key === "Backspace" && !hobbyInput) {

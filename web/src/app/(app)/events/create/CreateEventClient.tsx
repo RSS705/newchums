@@ -34,6 +34,7 @@ import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
 import PlacesAutocompleteInput from "@/components/common/PlacesAutocompleteInput";
 import { apiFetch, getApiBaseUrl } from "@/lib/apiClient";
 import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
+import { notifyObjectivesChanged } from "@/components/objectives/NextStepNudge";
 import { loadGooglePlacesScript } from "@/lib/loadGooglePlaces";
 import { isDuplicate, nameToSlug } from "@/lib/interestUtils";
 import { validateCleanText } from "@/lib/contentSafety";
@@ -95,6 +96,7 @@ export default function CreateEventClient() {
   const [suggestions, setSuggestions] = useState<HobbyOption[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [hobbyInputValue, setHobbyInputValue] = useState("");
+  const hobbyJustAddedRef = useRef(false);
 
   // Banner image
   const [bannerFile, setBannerFile] = useState<File | null>(null);
@@ -175,6 +177,9 @@ export default function CreateEventClient() {
       if (prev.some((i) => isDuplicate(i, item))) return prev;
       return [...prev, item];
     });
+    hobbyJustAddedRef.current = true;
+    setHobbyInputValue("");
+    setSuggestions([]);
   };
 
   const handleBannerCropComplete = useCallback((_: Area, croppedAreaPx: Area) => {
@@ -328,6 +333,7 @@ export default function CreateEventClient() {
           } catch { /* banner upload failure is non-fatal */ }
         }
         toast.success("Plan created!");
+        notifyObjectivesChanged();
         router.push(`/events/${data.event.id}`);
       } else {
         if (data.field) {
@@ -532,7 +538,18 @@ export default function CreateEventClient() {
             }}
             value={selectedHobbies}
             inputValue={hobbyInputValue}
-            onInputChange={(_, v) => setHobbyInputValue(v)}
+            onInputChange={(_, v, reason) => {
+              if (hobbyJustAddedRef.current) {
+                hobbyJustAddedRef.current = false;
+                setHobbyInputValue("");
+                return;
+              }
+              if (reason === "reset") {
+                setHobbyInputValue("");
+                return;
+              }
+              setHobbyInputValue(v);
+            }}
             onChange={(_, newValue) => {
               const filtered = (newValue ?? []).filter(Boolean);
               const last = filtered[filtered.length - 1];
@@ -540,8 +557,8 @@ export default function CreateEventClient() {
                 addHobby(last);
                 return;
               }
-              // MUI freeSolo can fire onChange with [] during Enter before the value settles — don't wipe chips while typing.
-              if (filtered.length === 0 && selectedHobbies.length > 0 && hobbyInputValue.trim() !== "") {
+              if (typeof last === "object" && last && filtered.length > selectedHobbies.length) {
+                addHobby(last);
                 return;
               }
               setSelectedHobbies(filtered as HobbyOption[]);
@@ -580,7 +597,6 @@ export default function CreateEventClient() {
                       e.preventDefault();
                       e.stopPropagation();
                       addHobby(trimmed);
-                      setHobbyInputValue("");
                       return;
                     }
                     if (e.key === "Backspace" && !hobbyInputValue) {

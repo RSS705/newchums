@@ -31,6 +31,7 @@ import { validateCleanText } from "@/lib/contentSafety";
 import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
 import { isDuplicate, nameToSlug, slugToName } from "@/lib/interestUtils";
 import { loadGooglePlacesScript } from "@/lib/loadGooglePlaces";
+import { notifyObjectivesChanged } from "@/components/objectives/NextStepNudge";
 import AttendanceRecordSection from "@/components/publicProfile/AttendanceRecordSection";
 import ChumPreferencesSection from "@/components/profile/ChumPreferencesSection";
 
@@ -94,12 +95,13 @@ export default function ProfileClient() {
   const [homeAddress, setHomeAddress] = useState("");
   const [homeLat, setHomeLat] = useState<number | null>(null);
   const [homeLng, setHomeLng] = useState<number | null>(null);
-  const [travelRadiusKm, setTravelRadiusKm] = useState(25);
+  const [travelRadiusKm, setTravelRadiusKm] = useState(200);
   const [interestItems, setInterestItems] = useState<InterestOption[]>([]);
 
   const [suggestions, setSuggestions] = useState<InterestOption[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [inputValue, setInputValue] = useState("");
+  const hobbyJustAddedRef = useRef(false);
   const [showAllChips, setShowAllChips] = useState(false);
 
   const toast = useToast();
@@ -200,8 +202,8 @@ export default function ProfileClient() {
     debouncedCheckHandle(handle);
   }, [handle, profile?.username, debouncedCheckHandle]);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
+  const fetchData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const profileRes = await apiFetch("/profile", { auth: true });
       const profileData = await profileRes.json();
@@ -218,7 +220,7 @@ export default function ProfileClient() {
         setHomeAddress(p.home_city ?? "");
         setHomeLat(p.home_lat ?? null);
         setHomeLng(p.home_lng ?? null);
-        setTravelRadiusKm(p.travel_radius_km ?? 25);
+        setTravelRadiusKm(p.travel_radius_km ?? 200);
         const raw = p.interest_items ?? (p.interest_slugs ?? []).map((s: string) => ({ slug: s, name: slugToName(s) }));
         const items = raw.map((x: { slug: string; name: string }) => ({
           name: x.name || slugToName(x.slug),
@@ -229,7 +231,7 @@ export default function ProfileClient() {
         setHandleError(null);
       }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
@@ -237,13 +239,11 @@ export default function ProfileClient() {
     fetchData();
   }, [fetchData]);
 
-  // Re-fetch profile data when the user returns to a previously idle tab.
-  // The tab may have been idle long enough for the auth token to expire, and
-  // the profile fields would otherwise remain blank until a manual page reload.
+  // Silently re-fetch profile data when the user returns to a previously idle tab.
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
-        fetchData();
+        fetchData(true);
       }
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
@@ -354,6 +354,7 @@ export default function ProfileClient() {
         setAvatarDialogOpen(false);
         setCropImageSrc(null);
         toast.success("Avatar updated");
+        notifyObjectivesChanged();
         router.refresh();
       } catch {
         toast.error("Upload failed");
@@ -539,6 +540,7 @@ export default function ProfileClient() {
       setHandleError(null);
       setProfile(data.profile);
       fetchData();
+      notifyObjectivesChanged();
       router.refresh();
     } finally {
       setSaving(false);
@@ -572,6 +574,9 @@ export default function ProfileClient() {
     const already = interestItems.some((i) => isDuplicate(i, item));
     if (already) return;
     setInterestItems((prev) => [...prev, item]);
+    hobbyJustAddedRef.current = true;
+    setInputValue("");
+    setSuggestions([]);
   };
 
   const handleForUrl = handle.trim().replace(/^@/, "");
@@ -863,12 +868,30 @@ export default function ProfileClient() {
             }}
             value={interestItems}
             inputValue={inputValue}
-            onInputChange={(_, v) => setInputValue(v)}
+            onInputChange={(_, v, reason) => {
+              if (hobbyJustAddedRef.current) {
+                hobbyJustAddedRef.current = false;
+                setInputValue("");
+                return;
+              }
+              if (reason === "reset") {
+                setInputValue("");
+                return;
+              }
+              setInputValue(v);
+            }}
             onChange={(_, newValue) => {
               const filtered = (newValue ?? []).filter(Boolean);
               const last = filtered[filtered.length - 1];
-              if (typeof last === "string") addInterest(last);
-              else setInterestItems(filtered as InterestOption[]);
+              if (typeof last === "string") {
+                addInterest(last);
+                return;
+              }
+              if (typeof last === "object" && last && filtered.length > interestItems.length) {
+                addInterest(last);
+                return;
+              }
+              setInterestItems(filtered as InterestOption[]);
             }}
             getOptionLabel={(opt) => (typeof opt === "string" ? opt : opt.name)}
             isOptionEqualToValue={(opt, val) => {
@@ -898,9 +921,16 @@ export default function ProfileClient() {
                   size="medium"
                   variant="outlined"
                   onKeyDown={(e) => {
-                    // Prevent MUI Autocomplete from removing the last chip on Backspace
-                    // when the input is empty. stopPropagation is required because MUI's
-                    // internal keydown listener still fires after preventDefault alone.
+                    if (e.key === "Enter") {
+                      const trimmed = inputValue.trim();
+                      if (!trimmed) return;
+                      const input = e.target as HTMLInputElement;
+                      if (input.getAttribute("aria-activedescendant")) return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      addInterest(trimmed);
+                      return;
+                    }
                     if (e.key === "Backspace" && !inputValue) {
                       e.preventDefault();
                       e.stopPropagation();

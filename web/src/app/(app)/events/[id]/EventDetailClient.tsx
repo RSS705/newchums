@@ -27,6 +27,7 @@ import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
+import MuiLink from "@mui/material/Link";
 import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
@@ -50,6 +51,7 @@ import PersonAddRoundedIcon from "@mui/icons-material/PersonAddRounded";
 import PersonRemoveRoundedIcon from "@mui/icons-material/PersonRemoveRounded";
 import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
 import CancelRoundedIcon from "@mui/icons-material/CancelRounded";
+import FlagRoundedIcon from "@mui/icons-material/FlagRounded";
 import HistoryRoundedIcon from "@mui/icons-material/HistoryRounded";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
@@ -57,7 +59,16 @@ import UserAvatar from "@/components/common/UserAvatar";
 import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
 import { apiFetch, clearAuthTokenCache, getAuthToken, getAvatarBaseUrl, getChatWebSocketUrl, getMediaApiBaseUrl } from "@/lib/apiClient";
 import { isDuplicate, nameToSlug } from "@/lib/interestUtils";
+import { notifyObjectivesChanged } from "@/components/objectives/NextStepNudge";
 import PlanFeedback from "@/components/events/PlanFeedback";
+
+/** Meeting URLs pasted without a scheme should still open in the browser. */
+function normalizeMeetingLinkHref(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+}
 
 type HobbyInfo = { name: string; slug: string };
 
@@ -113,7 +124,7 @@ type EventDetail = {
   hideFromExplore?: boolean;
 };
 
-type RsvpEntry = { userId: string; name: string; handle: string | null; status: string; note: string | null; avatarUrl?: string | null; confirmationStatus?: string | null; isGuest?: boolean; guestEmail?: string | null };
+type RsvpEntry = { userId: string; name: string; handle: string | null; status: string; note: string | null; avatarUrl?: string | null; confirmationStatus?: string | null; isGuest?: boolean; guestEmail?: string | null; prefNotes?: string[] | null };
 type AltTimeEntry = { id: string; userId: string; name: string; handle: string | null; suggestedAt: string; endsAt: string | null; note: string | null };
 type InviteEntry = { userId: string | null; email: string | null; name: string; handle?: string | null };
 type RemoveTarget =
@@ -724,6 +735,7 @@ export default function EventDetailClient() {
       const data = (await res.json()) as { ok: boolean; message?: ChatMessage };
       if (data.ok) {
         setChatInput("");
+        notifyObjectivesChanged();
         // Message will arrive via WebSocket broadcast.
         // If WebSocket is disconnected, append locally as fallback.
         if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
@@ -806,6 +818,7 @@ export default function EventDetailClient() {
       const data = (await res.json()) as { ok: boolean; error?: string; message?: string; status?: string };
       if (data.ok) {
         toast.success(status === "going" ? "You're going!" : status === "maybe" ? "Marked as maybe" : "Response recorded");
+        notifyObjectivesChanged();
         refresh();
       } else {
         toast.error(data.message ?? "Something went wrong");
@@ -916,6 +929,19 @@ export default function EventDetailClient() {
     }
     setPubSubmitting(false);
   };
+
+  // Auto-submit when the 6th digit is entered
+  const pubAutoSubmitRef = useRef(false);
+  useEffect(() => {
+    if (pubCode.length === 6 && pubStep === "code" && !pubSubmitting) {
+      if (pubAutoSubmitRef.current) return;
+      pubAutoSubmitRef.current = true;
+      handlePubConfirmCode();
+    } else {
+      pubAutoSubmitRef.current = false;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pubCode]);
 
   const handlePubRsvp = async (status: string) => {
     if (!participationTokenRef.current) return;
@@ -1299,7 +1325,7 @@ export default function EventDetailClient() {
 
     const pubLocationDisplay =
       event.locationDisplay ??
-      (event.locationType === "online" ? "Online" : "TBD");
+      (event.locationType === "online" ? event.onlineLink || "Online" : "TBD");
 
     return (
       <Stack spacing={{ xs: 3, sm: 4 }}>
@@ -1364,7 +1390,19 @@ export default function EventDetailClient() {
             {event.locationType === "online" && (
               <Stack direction="row" spacing={1.5} alignItems="center">
                 <LinkRoundedIcon sx={{ color: "text.secondary", fontSize: 20 }} />
-                <Typography variant="body1">Online</Typography>
+                {event.onlineLink?.trim() ? (
+                  <MuiLink
+                    href={normalizeMeetingLinkHref(event.onlineLink)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    variant="body1"
+                    sx={{ wordBreak: "break-word" }}
+                  >
+                    {pubLocationDisplay}
+                  </MuiLink>
+                ) : (
+                  <Typography variant="body1">{pubLocationDisplay}</Typography>
+                )}
               </Stack>
             )}
             <Stack direction="row" spacing={1.5} alignItems="center">
@@ -1634,11 +1672,11 @@ export default function EventDetailClient() {
         >
           <InfoOutlinedIcon sx={{ color: "warning.main", mt: "2px", fontSize: 20, flexShrink: 0 }} />
           <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-            Based on your preferences, this plan may not fully match your expectations
+            Based on your chum preferences, this plan may not fully match your expectations
             {prefNote.length === 1
               ? ` for ${PREF_NOTE_LABELS[prefNote[0]] ?? prefNote[0]}`
               : ` for ${prefNote.map((m) => PREF_NOTE_LABELS[m] ?? m).join(" and ")}`
-            }. You can still join — this is just a heads-up.
+            }. You can still join, this is just a heads-up.
           </Typography>
         </Box>
       )}
@@ -1664,7 +1702,19 @@ export default function EventDetailClient() {
               <PlaceRoundedIcon sx={{ color: "primary.main", mt: "2px" }} />
             )}
             <Stack spacing={0.4}>
-              <Typography variant="body1">{locationDisplay}</Typography>
+              {event.locationType === "online" && event.onlineLink?.trim() ? (
+                <MuiLink
+                  href={normalizeMeetingLinkHref(event.onlineLink)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  variant="body1"
+                  sx={{ wordBreak: "break-word" }}
+                >
+                  {locationDisplay}
+                </MuiLink>
+              ) : (
+                <Typography variant="body1">{locationDisplay}</Typography>
+              )}
               {locationHint && (
                 <Stack direction="row" spacing={0.5} alignItems="center">
                   <InfoOutlinedIcon sx={{ fontSize: 14, color: "text.secondary" }} />
@@ -1684,11 +1734,18 @@ export default function EventDetailClient() {
             </Typography>
           </Stack>
           {event.requireReconfirmation && !event.confirmationWindowOpen && (
-            <Stack direction="row" spacing={1.5} alignItems="center">
-              <NotificationsRoundedIcon sx={{ color: "text.secondary", fontSize: 22 }} />
-              <Typography variant="body2" color="text.secondary">
-                Final confirmation will be requested 24 hours before
-              </Typography>
+            <Stack direction="row" spacing={1.5} alignItems="flex-start">
+              <NotificationsRoundedIcon sx={{ color: "text.secondary", fontSize: 22, mt: "1px" }} />
+              <Stack spacing={0.25}>
+                <Typography variant="body2" color="text.secondary">
+                  Final confirmation will be requested 24 hours before
+                </Typography>
+                {event.fallbackPolicy === "auto_cancel" && event.minConfirmedAttendees && (
+                  <Typography variant="caption" color="text.secondary">
+                    This plan will be auto-canceled 2 hours before it starts if fewer than {event.minConfirmedAttendees} {event.minConfirmedAttendees === 1 ? "attendee confirms" : "attendees confirm"}
+                  </Typography>
+                )}
+              </Stack>
             </Stack>
           )}
           {event.requireReconfirmation && event.confirmationWindowOpen && (
@@ -1709,13 +1766,20 @@ export default function EventDetailClient() {
                 </Stack>
               </Stack>
               {event.planViability && event.minConfirmedAttendees && (
-                <Chip
-                  size="small"
-                  label={event.planViability === "viable" ? "Viable" : event.planViability === "at_risk" ? "At risk" : "Below minimum"}
-                  color={event.planViability === "viable" ? "success" : event.planViability === "at_risk" ? "warning" : "error"}
-                  variant={event.planViability === "viable" ? "filled" : "outlined"}
-                  sx={{ alignSelf: "flex-start", fontWeight: 600, fontSize: "0.8125rem" }}
-                />
+                <Stack spacing={0.5} sx={{ alignItems: "flex-start" }}>
+                  <Chip
+                    size="small"
+                    label={event.planViability === "viable" ? "Viable" : event.planViability === "at_risk" ? "At risk" : "Below minimum"}
+                    color={event.planViability === "viable" ? "success" : event.planViability === "at_risk" ? "warning" : "error"}
+                    variant={event.planViability === "viable" ? "filled" : "outlined"}
+                    sx={{ fontWeight: 600, fontSize: "0.8125rem" }}
+                  />
+                  {event.fallbackPolicy === "auto_cancel" && (
+                    <Typography variant="caption" color="text.secondary">
+                      This plan will be auto-canceled if fewer than {event.minConfirmedAttendees} {event.minConfirmedAttendees === 1 ? "attendee confirms" : "attendees confirm"} by the deadline
+                    </Typography>
+                  )}
+                </Stack>
               )}
             </Stack>
           )}
@@ -1814,7 +1878,7 @@ export default function EventDetailClient() {
                 Sign in
               </Button>
             </Stack>
-          ) : (isGuestInvite && guestRsvpStatus) || (emailRsvpStatus && !isGuestInvite) ? (
+          ) : !pubRsvpStatus && ((isGuestInvite && guestRsvpStatus) || (emailRsvpStatus && !isGuestInvite)) ? (
             <Stack spacing={2} sx={{ py: 1 }}>
               <Stack spacing={1.5} alignItems="center">
                 <CheckCircleRoundedIcon sx={{ fontSize: 36, color: "success.main" }} />
@@ -1824,32 +1888,36 @@ export default function EventDetailClient() {
               </Stack>
               {isGuestInvite && inviteTokenRef.current ? (
                 <>
-                  <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center" }}>
-                    Want to change your response?
+                  <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center", lineHeight: 1.6 }}>
+                    {(guestRsvpStatus ?? emailRsvpStatus) === "going"
+                      ? "You\u2019ll get updates about this plan via email."
+                      : (guestRsvpStatus ?? emailRsvpStatus) === "maybe"
+                        ? "We\u2019ll keep you posted if anything changes."
+                        : "Thanks for letting the host know."}
                   </Typography>
-                  <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                  <Divider sx={{ my: 0.5 }} />
+                  <Stack direction={{ xs: "column", sm: "row" }} spacing={1} justifyContent="center">
                     {guestRsvpStatus !== "going" && (
-                      <AppButton onClick={() => handleGuestRsvp("going")} disabled={rsvpSubmitting} sx={{ flex: 1 }}>Going</AppButton>
+                      <AppButton size="small" onClick={() => handleGuestRsvp("going")} disabled={rsvpSubmitting}>Going</AppButton>
                     )}
                     {guestRsvpStatus !== "maybe" && (
-                      <AppButton onClick={() => handleGuestRsvp("maybe")} disabled={rsvpSubmitting} variant="outlined" sx={{ flex: 1 }}>Maybe</AppButton>
+                      <AppButton size="small" variant="outlined" onClick={() => handleGuestRsvp("maybe")} disabled={rsvpSubmitting}>Maybe</AppButton>
                     )}
                     {guestRsvpStatus !== "cant_make_it" && (
-                      <AppButton onClick={() => handleGuestRsvp("cant_make_it")} disabled={rsvpSubmitting} variant="outlined" color="inherit" sx={{ flex: 1 }}>Can&apos;t make it</AppButton>
+                      <AppButton size="small" variant="outlined" color="inherit" onClick={() => handleGuestRsvp("cant_make_it")} disabled={rsvpSubmitting}>Can&apos;t make it</AppButton>
                     )}
                   </Stack>
-                  <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center", fontSize: "0.8125rem" }}>
-                    Create a free account for the full experience — chat, updates, and more.
+                  <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: "block", textAlign: "center" }}>
+                    Have an account?{" "}
+                    <Link href={`/login?next=${encodeURIComponent(`/events/${eventId}`)}`} style={{ color: "inherit", fontWeight: 600 }}>
+                      Sign in
+                    </Link>{" "}
+                    for the full experience, or{" "}
+                    <Link href={`/signup?next=${encodeURIComponent(`/events/${eventId}`)}${event.guestEmail ? `&email=${encodeURIComponent(event.guestEmail)}` : ""}`} style={{ color: "inherit", fontWeight: 600 }}>
+                      sign up
+                    </Link>{" "}
+                    for free.
                   </Typography>
-                  <Button
-                    component={Link}
-                    href={`/signup?next=${encodeURIComponent(`/events/${eventId}`)}${event.guestEmail ? `&email=${encodeURIComponent(event.guestEmail)}` : ""}`}
-                    variant="text"
-                    size="small"
-                    sx={{ alignSelf: "center", textTransform: "none", fontWeight: 600 }}
-                  >
-                    Sign up for NewChums
-                  </Button>
                 </>
               ) : (
                 <>
@@ -2785,7 +2853,8 @@ export default function EventDetailClient() {
       )}
 
       {/* Find a better time — collaborative alternate scheduling (hidden for past plans) */}
-      {event.allowAltTimes && !isCanceled && !isPast && (event.isHost || viewerRsvpStatus === "going" || viewerRsvpStatus === "maybe" || event.isInvited || isGuestInvite || !!participationTokenRef.current) && (() => {
+      {event.allowAltTimes && !isCanceled && !isPast && (() => {
+        const canSuggest = event.isHost || viewerRsvpStatus === "going" || viewerRsvpStatus === "maybe" || event.isInvited || isGuestInvite || !!participationTokenRef.current;
         type OverlapWindow = { startMs: number; endMs: number; entries: AltTimeEntry[] };
 
         const fmtTime = (d: Date) => d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
@@ -2874,11 +2943,15 @@ export default function EventDetailClient() {
               Find a better time
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Need a different start time? Suggest one that everyone in the plan can see.
+              {canSuggest
+                ? "The host is open to alternative times for this plan. Suggest one below and everyone in the plan can see it."
+                : "The host is open to alternative times for this plan. Join to suggest your own."}
             </Typography>
 
             <Box ref={altTimeScrollRef} sx={{ maxHeight: 420, overflowY: "auto" }}>
-            {!showAltTimeForm ? (
+            {!canSuggest ? (
+              altTimes.length === 0 ? <Box sx={{ height: 4 }} /> : null
+            ) : !showAltTimeForm ? (
               <Button
                 size="small"
                 onClick={() => {
@@ -3087,7 +3160,7 @@ export default function EventDetailClient() {
               </Stack>
             )}
 
-            {altTimes.length === 0 && !showAltTimeForm && (
+            {altTimes.length === 0 && !showAltTimeForm && canSuggest && (
               <Box sx={{ height: 4 }} />
             )}
             </Box>
@@ -3182,6 +3255,16 @@ export default function EventDetailClient() {
                     </Typography>
                   )}
                   <Stack direction="row" alignItems="center" spacing={0.5} sx={{ flexShrink: 0 }}>
+                    {r.prefNotes && r.prefNotes.length > 0 && (
+                      <Tooltip
+                        title={`This attendee does not match your ${r.prefNotes.map((m) => PREF_NOTE_LABELS[m] ?? m).join(" or ")} chum preferences`}
+                        arrow
+                        placement="top"
+                        enterTouchDelay={0}
+                      >
+                        <FlagRoundedIcon sx={{ fontSize: 16, color: "warning.main", cursor: "help" }} />
+                      </Tooltip>
+                    )}
                     {r.status === "going" ? (
                       <Chip
                         icon={<CheckCircleRoundedIcon sx={{ fontSize: "1rem !important" }} />}
@@ -3376,7 +3459,7 @@ export default function EventDetailClient() {
             ) : chatMessages.length === 0 ? (
               <Box sx={{ textAlign: "center", py: 6, px: 2 }}>
                 <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-                  No messages yet. Say something to get the conversation going.
+                  No messages yet. This is your big moment to say hi!
                 </Typography>
               </Box>
             ) : (

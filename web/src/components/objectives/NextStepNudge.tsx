@@ -31,6 +31,14 @@ type NudgeResponse = {
 const DISMISS_KEY = "nc_nudge_dismissed_session";
 const CACHE_STEP_KEY = "nc_nudge_step";
 const CACHE_PROGRESS_KEY = "nc_nudge_progress";
+const OBJECTIVES_CHANGED_EVENT = "nc:objectives-changed";
+
+/** Dispatch from any component after an action that may complete an objective. */
+export function notifyObjectivesChanged() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(OBJECTIVES_CHANGED_EVENT));
+  }
+}
 
 function readCache(): { step: NextStepData | null; progress: { completed: number; total: number } | null } {
   if (typeof window === "undefined") return { step: null, progress: null };
@@ -105,6 +113,12 @@ export default function NextStepNudge() {
     if (fetchedRef.current) return;
     fetchedRef.current = true;
     load();
+  }, [load]);
+
+  useEffect(() => {
+    const handleChanged = () => { load(); };
+    window.addEventListener(OBJECTIVES_CHANGED_EVENT, handleChanged);
+    return () => window.removeEventListener(OBJECTIVES_CHANGED_EVENT, handleChanged);
   }, [load]);
 
   const handleDismiss = useCallback(() => {

@@ -733,7 +733,7 @@ app.post("/auth/signup", async (c) => {
       const profileRadius =
         body.travel_radius_km != null && Number.isFinite(body.travel_radius_km)
           ? body.travel_radius_km
-          : 200;
+          : null;
 
       if (hasLocation) {
         await sql`
@@ -1715,11 +1715,25 @@ function verifyParticipationOrInviteToken(
 // Share tokens — plan-level tokens for Copy Link / share URLs.
 // Not user-specific; anyone with the token can view the full plan detail
 // and use the public RSVP flow. Deterministic per event (no expiry).
+// Uses a short HMAC instead of a full JWT to keep share URLs compact.
 async function createShareToken(eventId: string, secret: string): Promise<string> {
-  return new SignJWT({ eid: eventId, purpose: "share" })
-    .setProtectedHeader({ alg: "HS256" })
-    .setIssuedAt()
-    .sign(new TextEncoder().encode(secret));
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`share:${eventId}`));
+  const bytes = new Uint8Array(sig);
+  let binary = "";
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "").slice(0, 16);
+}
+
+async function verifyShareToken(token: string, eventId: string, secret: string): Promise<boolean> {
+  const expected = await createShareToken(eventId, secret);
+  return token === expected;
 }
 
 function generateSixDigitCode(): string {
@@ -1905,7 +1919,7 @@ app.put("/notification-preferences", async (c) => {
     if (updated.length === 0) {
       await sql`
         INSERT INTO user_profile (user_id, home_city, home_lat, home_lng, home_location, travel_radius_km, email_chat_digest, email_new_events, bio, notification_prefs)
-        VALUES (${appUserId}, NULL, NULL, NULL, NULL, 200, true, true, NULL, ${prefsJson}::jsonb)
+        VALUES (${appUserId}, NULL, NULL, NULL, NULL, NULL, true, true, NULL, ${prefsJson}::jsonb)
         ON CONFLICT (user_id) DO UPDATE SET notification_prefs = EXCLUDED.notification_prefs
       `;
     }
@@ -2073,7 +2087,7 @@ app.get("/profile", async (c) => {
           home_city: null,
           home_lat: null,
           home_lng: null,
-          travel_radius_km: 200,
+          travel_radius_km: null,
           interest_slugs: [] as string[],
           interest_items: [] as { slug: string; name: string }[],
           email_chat_digest: true,
@@ -2262,11 +2276,12 @@ app.put("/profile", async (c) => {
     const travel_radius_km =
       "travel_radius_km" in body && body.travel_radius_km != null
         ? Number(body.travel_radius_km)
-        : (existing?.travel_radius_km ?? 200);
+        : (existing?.travel_radius_km ?? null);
     if (
-      !Number.isFinite(travel_radius_km) ||
+      travel_radius_km != null &&
+      (!Number.isFinite(travel_radius_km) ||
       travel_radius_km < 1 ||
-      travel_radius_km > 200
+      travel_radius_km > 200)
     ) {
       return c.json(
         {
@@ -6673,9 +6688,6 @@ app.get("/events/explore", async (c) => {
   const hasLocation = lat !== null && lng !== null && !isNaN(lat) && !isNaN(lng);
 
   try {
-    const chumIds = (await sql`SELECT linked_user_id FROM newchums.user_contacts WHERE user_id = ${userId} AND type = 'on_newchums' AND linked_user_id IS NOT NULL`) as { linked_user_id: string }[];
-    const chumIdList = chumIds.map((r) => r.linked_user_id);
-
     const userHobbyRows = (await sql`
       SELECT ii.slug FROM newchums.user_interests ui
       JOIN newchums.interests ii ON ii.id = ui.interest_id
@@ -6764,7 +6776,12 @@ app.get("/events/explore", async (c) => {
           e.visibility = 'public'
           OR (e.visibility = 'chums_only' AND (
             e.host_user_id = ${userId}
-            OR e.host_user_id = ANY(${chumIdList.length > 0 ? chumIdList : ["00000000-0000-0000-0000-000000000000"]})
+            OR EXISTS (
+              SELECT 1 FROM newchums.user_contacts uc_vis
+              WHERE uc_vis.user_id = e.host_user_id
+                AND uc_vis.linked_user_id = ${userId}
+                AND uc_vis.type = 'on_newchums'
+            )
           ))
         )
         AND (
@@ -6883,7 +6900,8 @@ app.get("/events/:id", async (c) => {
   }
 
   // Token-based access for email invite recipients, public RSVP participants, or share-link visitors
-  const inviteTokenParam = c.req.query("invite_token") ?? c.req.query("participation_token") ?? c.req.query("share_token") ?? null;
+  const inviteTokenParam = c.req.query("invite_token") ?? c.req.query("participation_token") ?? null;
+  const shareTokenParam = c.req.query("share_token") ?? null;
   let tokenGuestEmail: string | null = null;
   let tokenGrantsAccess = false;
   if (inviteTokenParam) {
@@ -6891,6 +6909,17 @@ app.get("/events/:id", async (c) => {
     if (decoded && decoded.eventId === eventId) {
       tokenGrantsAccess = true;
       if (!userId && decoded.email) tokenGuestEmail = decoded.email.toLowerCase();
+    }
+  } else if (shareTokenParam) {
+    // Try short HMAC token first, then fall back to legacy JWT
+    if (await verifyShareToken(shareTokenParam, eventId, c.env.NEXTAUTH_SECRET)) {
+      tokenGrantsAccess = true;
+    } else {
+      const decoded = await verifyParticipationOrInviteToken(shareTokenParam, c.env.NEXTAUTH_SECRET);
+      if (decoded && decoded.eventId === eventId) {
+        tokenGrantsAccess = true;
+        if (!userId && decoded.email) tokenGuestEmail = decoded.email.toLowerCase();
+      }
     }
   }
 
@@ -7172,17 +7201,29 @@ app.get("/events/:id", async (c) => {
     // Only generated for non-public access states; public visitors don't get share tokens.
     const shareToken = await createShareToken(eventId, c.env.NEXTAUTH_SECRET!);
 
-    // Chum preference compatibility note for the viewer.
-    // Checks if the host's metrics meet the viewer's preferences (informational, not blocking).
+    // Chum preference compatibility notes for the viewer.
+    // Checks host and each attendee against the viewer's preferences (informational, not blocking).
     let prefNote: string[] | null = null;
+    const attendeePrefNotes = new Map<string, string[]>();
     if (userId && !isHost) {
-      const [vPrefs, hMetrics] = await Promise.all([
+      const attendeeUserIds = rsvps
+        .filter((r) => r.user_id && r.user_id !== userId)
+        .map((r) => r.user_id as string);
+      const allUserIds = [event.host_user_id as string, ...attendeeUserIds.filter((id) => id !== event.host_user_id)];
+      const [vPrefs, metricsMap] = await Promise.all([
         loadChumPrefsForUser(sql, userId),
-        loadMetricsForUser(sql, event.host_user_id as string),
+        batchLoadMetrics(sql, allUserIds),
       ]);
       if (vPrefs) {
-        const compat = evaluateChumPreferences(vPrefs, hMetrics, true);
-        if (!compat.passes) prefNote = compat.failedMetrics;
+        const hMetrics = metricsMap.get(event.host_user_id as string) ?? {};
+        const hostCompat = evaluateChumPreferences(vPrefs, hMetrics, true);
+        if (!hostCompat.passes) prefNote = hostCompat.failedMetrics;
+        for (const uid of attendeeUserIds) {
+          const m = metricsMap.get(uid) ?? {};
+          const isHostUser = uid === event.host_user_id;
+          const compat = evaluateChumPreferences(vPrefs, m, isHostUser);
+          if (!compat.passes) attendeePrefNotes.set(uid, compat.failedMetrics);
+        }
       }
     }
 
@@ -7247,6 +7288,7 @@ app.get("/events/:id", async (c) => {
       },
       rsvps: rsvps.map((r) => {
         const rHandle = r.username?.replace(/^@/, "") ?? null;
+        const rPrefNotes = r.user_id ? (attendeePrefNotes.get(r.user_id) ?? null) : null;
         return {
           userId: r.user_id ?? r.guest_email ?? "guest",
           name: r.name?.trim() || rHandle || r.guest_name || r.guest_email || "Someone",
@@ -7257,6 +7299,7 @@ app.get("/events/:id", async (c) => {
           isGuest: !r.user_id,
           guestEmail: r.guest_email ?? null,
           confirmationStatus: r.user_id ? (confirmationByUserId.get(r.user_id) ?? null) : null,
+          ...(rPrefNotes ? { prefNotes: rPrefNotes } : {}),
         };
       }),
       altTimes: altTimes.map((a) => {
@@ -7596,8 +7639,12 @@ app.post("/events/:id/public-rsvp/request-code", async (c) => {
   const shareTokenParam = typeof body.share_token === "string" ? body.share_token : null;
   let hasShareAccess = false;
   if (shareTokenParam) {
-    const decoded = await verifyParticipationOrInviteToken(shareTokenParam, c.env.NEXTAUTH_SECRET);
-    if (decoded && decoded.eventId === eventId) hasShareAccess = true;
+    if (await verifyShareToken(shareTokenParam, eventId, c.env.NEXTAUTH_SECRET)) {
+      hasShareAccess = true;
+    } else {
+      const decoded = await verifyParticipationOrInviteToken(shareTokenParam, c.env.NEXTAUTH_SECRET);
+      if (decoded && decoded.eventId === eventId) hasShareAccess = true;
+    }
   }
 
   const sql = getSql(c.env);
