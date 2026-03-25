@@ -29,8 +29,42 @@ import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
+import { apiFetch, getAvatarBaseUrl, getImageFallbackBaseUrl } from "@/lib/apiClient";
 import AppTextField from "@/components/ui/AppTextField";
+
+function AttachmentImage({ itemId }: { itemId: string }) {
+  const primarySrc = `${getAvatarBaseUrl()}/roadmap/${itemId}/attachment`;
+  const [src, setSrc] = React.useState(primarySrc);
+  const [failed, setFailed] = React.useState(false);
+
+  if (failed) return null;
+
+  return (
+    <Box sx={{ mb: 3 }}>
+      <Box
+        component="a"
+        href={src}
+        target="_blank"
+        rel="noopener noreferrer"
+        sx={{ display: "inline-block" }}
+      >
+        <Box
+          component="img"
+          src={src}
+          alt="Attachment"
+          onError={() => {
+            if (src === primarySrc) {
+              const fb = getImageFallbackBaseUrl();
+              if (fb) { setSrc(`${fb}/roadmap/${itemId}/attachment`); return; }
+            }
+            setFailed(true);
+          }}
+          sx={{ maxWidth: "100%", maxHeight: 400, borderRadius: 1.5, border: "1px solid", borderColor: "divider", cursor: "pointer" }}
+        />
+      </Box>
+    </Box>
+  );
+}
 
 const STATUS_LABELS: Record<string, string> = {
   received: "Received",
@@ -418,22 +452,7 @@ export default function RoadmapItemClient({ itemId, isLoggedIn }: Props) {
           )}
 
           {item.attachment_key && (
-            <Box sx={{ mb: 3 }}>
-              <Box
-                component="a"
-                href={`${getAvatarBaseUrl()}/roadmap/${item.id}/attachment`}
-                target="_blank"
-                rel="noopener noreferrer"
-                sx={{ display: "inline-block" }}
-              >
-                <Box
-                  component="img"
-                  src={`${getAvatarBaseUrl()}/roadmap/${item.id}/attachment`}
-                  alt="Attachment"
-                  sx={{ maxWidth: "100%", maxHeight: 400, borderRadius: 1.5, border: "1px solid", borderColor: "divider", cursor: "pointer" }}
-                />
-              </Box>
-            </Box>
+            <AttachmentImage itemId={item.id} />
           )}
         </>
       )}

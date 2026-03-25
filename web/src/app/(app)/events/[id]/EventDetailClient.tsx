@@ -57,7 +57,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import UserAvatar from "@/components/common/UserAvatar";
 import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
-import { apiFetch, clearAuthTokenCache, getAuthToken, getAvatarBaseUrl, getChatWebSocketUrl } from "@/lib/apiClient";
+import { apiFetch, clearAuthTokenCache, getAuthToken, getAvatarBaseUrl, getImageFallbackBaseUrl, getChatWebSocketUrl } from "@/lib/apiClient";
 import { isDuplicate, nameToSlug } from "@/lib/interestUtils";
 import { notifyObjectivesChanged } from "@/components/objectives/NextStepNudge";
 import PlanFeedback from "@/components/events/PlanFeedback";
@@ -91,6 +91,7 @@ type EventDetail = {
   visibility: string;
   status: string;
   allowAltTimes: boolean;
+  altTimesMode?: string;
   allowAttendeeInvites: boolean;
   requireReconfirmation: boolean;
   canceledAt: string | null;
@@ -270,6 +271,14 @@ export default function EventDetailClient() {
   const [shareToken, setShareToken] = useState<string | null>(null);
 
   const [bannerFailed, setBannerFailed] = useState(false);
+  const [bannerUseFallback, setBannerUseFallback] = useState(false);
+  const handleBannerError = useCallback(() => {
+    if (!bannerUseFallback && getImageFallbackBaseUrl()) {
+      setBannerUseFallback(true);
+    } else {
+      setBannerFailed(true);
+    }
+  }, [bannerUseFallback]);
 
   // Copy link — builds a share URL with the share token so recipients get
   // guest access (not just the public preview).
@@ -1149,7 +1158,7 @@ export default function EventDetailClient() {
           body: JSON.stringify({ suggested_at: suggestedAt, ends_at: endsAt, note: noteVal }),
         });
         const data = (await res.json()) as { ok: boolean; message?: string };
-        if (data.ok) { toast.success("Alternate time updated"); resetAltForm(); refresh(); }
+        if (data.ok) { toast.success(event?.altTimesMode === "availability" ? "Availability updated" : "Alternate time updated"); resetAltForm(); refresh(); }
         else toast.error(data.message ?? "Error");
       } else {
         const guestToken = inviteTokenRef.current ?? participationTokenRef.current;
@@ -1183,7 +1192,8 @@ export default function EventDetailClient() {
           created++;
         }
         if (created > 0) {
-          toast.success(created === 1 ? "Alternate time added" : `${created} alternate times added`);
+          const addedLabel = event?.altTimesMode === "availability" ? "Availability" : "Alternate time";
+          toast.success(created === 1 ? `${addedLabel} added` : `${created} ${addedLabel.toLowerCase()}${created > 1 ? " entries" : ""} added`);
           resetAltForm();
           refresh();
         }
@@ -1199,7 +1209,7 @@ export default function EventDetailClient() {
     try {
       const res = await apiFetch(`/events/${eventId}/alt-time/${id}`, { auth: true, method: "DELETE" });
       const data = (await res.json()) as { ok: boolean };
-      if (data.ok) { toast.success("Alternate time removed"); refresh(); }
+      if (data.ok) { toast.success(event?.altTimesMode === "availability" ? "Availability removed" : "Alternate time removed"); refresh(); }
       else toast.error("Could not remove");
     } catch { toast.error("Network error"); }
     setAltDeleting(null);
@@ -1318,8 +1328,9 @@ export default function EventDetailClient() {
     const pubMaybeCount = event.maybeCount ?? 0;
     const pubIsCanceled = event.status === "canceled";
     const pubIsPast = new Date(event.startsAt) < new Date();
+    const pubBannerBase = bannerUseFallback ? (getImageFallbackBaseUrl() ?? getAvatarBaseUrl()) : getAvatarBaseUrl();
     const pubBannerSrc = event.bannerKey
-      ? `${getAvatarBaseUrl()}/events/${event.id}/banner?v=${Date.now()}`
+      ? `${pubBannerBase}/events/${event.id}/banner?v=${Date.now()}`
       : null;
     const pubBannerUrl = pubBannerSrc && !bannerFailed ? pubBannerSrc : null;
     const pubHobbies = event.hobbies?.length > 0
@@ -1334,7 +1345,7 @@ export default function EventDetailClient() {
       <Stack spacing={{ xs: 3, sm: 4 }}>
         {pubBannerUrl && (
           <Box sx={{ width: "100%", height: { xs: 160, sm: 220 }, borderRadius: 3, overflow: "hidden", bgcolor: "grey.100" }}>
-            <Box component="img" src={pubBannerUrl} alt={`${event.title} banner`} onError={() => setBannerFailed(true)} sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            <Box component="img" src={pubBannerUrl} alt={`${event.title} banner`} onError={handleBannerError} sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
           </Box>
         )}
 
@@ -1540,8 +1551,9 @@ export default function EventDetailClient() {
   const mapsLinkQuery = isLocationApprox ? approxQuery.trim() : mapQuery;
   const mapsLinkLabel = isLocationApprox ? "View area in Google Maps" : "Open in Google Maps";
 
+  const mainBannerBase = bannerUseFallback ? (getImageFallbackBaseUrl() ?? getAvatarBaseUrl()) : getAvatarBaseUrl();
   const bannerSrc = event.bannerKey
-    ? `${getAvatarBaseUrl()}/events/${event.id}/banner?v=${Date.now()}`
+    ? `${mainBannerBase}/events/${event.id}/banner?v=${Date.now()}`
     : null;
   const bannerUrl = bannerSrc && !bannerFailed ? bannerSrc : null;
 
@@ -1568,7 +1580,7 @@ export default function EventDetailClient() {
             component="img"
             src={bannerUrl}
             alt={`${event.title} banner`}
-            onError={() => setBannerFailed(true)}
+            onError={handleBannerError}
             sx={{ width: "100%", height: "100%", objectFit: "cover" }}
           />
         </Box>
@@ -2526,7 +2538,7 @@ export default function EventDetailClient() {
                   }
                   label={
                     <Typography variant="body2" sx={{ fontSize: "0.8125rem" }}>
-                      Ask them to suggest a better time
+                      {event.altTimesMode === "availability" ? "Ask them to share their availability" : "Ask them to suggest a better time"}
                     </Typography>
                   }
                   sx={{ ml: -0.25, mb: -0.5 }}
@@ -2857,9 +2869,10 @@ export default function EventDetailClient() {
         </AppCard>
       )}
 
-      {/* Find a better time — collaborative alternate scheduling (hidden for past plans) */}
+      {/* Scheduling section — collaborative alternate scheduling (hidden for past plans) */}
       {event.allowAltTimes && !isCanceled && !isPast && (() => {
         const canSuggest = event.isHost || viewerRsvpStatus === "going" || viewerRsvpStatus === "maybe" || event.isInvited || isGuestInvite || !!participationTokenRef.current;
+        const isAvailMode = event.altTimesMode === "availability";
         type OverlapWindow = { startMs: number; endMs: number; entries: AltTimeEntry[] };
 
         const fmtTime = (d: Date) => d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
@@ -2945,12 +2958,16 @@ export default function EventDetailClient() {
         return (
           <AppCard>
             <Typography variant="h5" fontWeight={700} sx={{ mb: 0.5, fontSize: { xs: "1.25rem", sm: "1.375rem" } }}>
-              Find a better time
+              {isAvailMode ? "Share your availability" : "Suggest a different time"}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              {canSuggest
-                ? "The host is open to alternative times for this plan. Suggest one below and everyone in the plan can see it."
-                : "The host is open to alternative times for this plan. Join to suggest your own."}
+              {isAvailMode
+                ? (canSuggest
+                    ? "The host wants to find a time that works for everyone. Share when you're available and the best overlap will be highlighted."
+                    : "The host wants to find a time that works for everyone. Join to share your availability.")
+                : (canSuggest
+                    ? "The host is open to alternative times for this plan. Suggest one below and everyone in the plan can see it."
+                    : "The host is open to alternative times for this plan. Join to suggest your own.")}
             </Typography>
 
             <Box ref={altTimeScrollRef} sx={{ maxHeight: 420, overflowY: "auto" }}>
@@ -2969,12 +2986,16 @@ export default function EventDetailClient() {
                 }}
                 sx={{ textTransform: "none", mb: altTimes.length > 0 ? 2 : 0 }}
               >
-                {viewerHasSuggested ? "+ Suggest another time" : "+ Suggest a time"}
+                {isAvailMode
+                  ? (viewerHasSuggested ? "+ Add more availability" : "+ Add your availability")
+                  : (viewerHasSuggested ? "+ Suggest another time" : "+ Suggest a time")}
               </Button>
             ) : (
               <Paper variant="outlined" sx={{ p: 2, mb: altTimes.length > 0 ? 2 : 0, borderRadius: 2 }}>
                 <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1.5 }}>
-                  {altEditingId ? "Edit your suggested time" : "Suggest a start time"}
+                  {altEditingId
+                    ? (isAvailMode ? "Edit your availability" : "Edit your suggested time")
+                    : (isAvailMode ? "When are you available?" : "Suggest a different start time")}
                 </Typography>
                 <Stack spacing={2}>
                   <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
@@ -3023,7 +3044,7 @@ export default function EventDetailClient() {
                     </Box>
                     <Box sx={{ flex: 1 }}>
                       <Typography variant="subtitle1" fontWeight={600} sx={{ display: "block", mb: 0.625 }}>
-                        End time (optional)
+                        Through (optional)
                       </Typography>
                       <TimePicker
                         value={altEndTime}
@@ -3033,7 +3054,7 @@ export default function EventDetailClient() {
                       />
                     </Box>
                   </Stack>
-                  <AppTextField label="Note (optional)" placeholder="e.g. Friday works better for me" value={altNote} onChange={(e) => setAltNote(e.target.value)} />
+                  <AppTextField label="Note (optional)" placeholder={isAvailMode ? "e.g. Available most of the afternoon" : "e.g. Friday works better for me"} value={altNote} onChange={(e) => setAltNote(e.target.value)} />
                   <Stack direction="row" spacing={1}>
                     <AppButton size="small" onClick={handleAltTimeSubmit} disabled={altSubmitting}>
                       {altSubmitting ? "Saving…" : altEditingId ? "Save" : "Add"}
@@ -3047,7 +3068,7 @@ export default function EventDetailClient() {
             {allOverlaps.length > 0 && (
               <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, mb: 1.5, borderColor: "primary.main", backgroundColor: "action.hover" }}>
                 <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1, color: "primary.main" }}>
-                  Best start times
+                  {isAvailMode ? "Best overlap" : "Best start times"}
                 </Typography>
                 <Stack spacing={0} divider={<Divider />}>
                   {allOverlaps.map((ov, oi) => {

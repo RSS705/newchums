@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "",
   "scripts": {
-    "dev": "wrangler dev --local",
+    "dev": "wrangler dev --remote",
     "deploy": "wrangler deploy --env=\"\"",
     "deploy:production": "wrangler deploy --env production"
   },

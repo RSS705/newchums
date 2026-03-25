@@ -29,7 +29,7 @@ import dayjs, { type Dayjs } from "dayjs";
 import Cropper, { type Area } from "react-easy-crop";
 import { useParams, useRouter } from "next/navigation";
 import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
-import { apiFetch, getApiBaseUrl, getAvatarBaseUrl } from "@/lib/apiClient";
+import { apiFetch, getApiBaseUrl, getAvatarBaseUrl, getImageFallbackBaseUrl } from "@/lib/apiClient";
 import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
 import { isDuplicate, nameToSlug } from "@/lib/interestUtils";
 import { validateCleanText } from "@/lib/contentSafety";
@@ -70,6 +70,7 @@ export default function EditEventClient() {
   const [maxSeats, setMaxSeats] = useState("");
   const [visibility, setVisibility] = useState<"public" | "chums_only" | "invite_only">("public");
   const [allowAltTimes, setAllowAltTimes] = useState(true);
+  const [altTimesMode, setAltTimesMode] = useState<"suggest" | "availability">("suggest");
   const [allowAttendeeInvites, setAllowAttendeeInvites] = useState(true);
   const [reserveSeats, setReserveSeats] = useState(false);
   const [requireReconfirmation, setRequireReconfirmation] = useState(false);
@@ -132,6 +133,7 @@ export default function EditEventClient() {
         setRequireApproval(ev.requireApproval ?? false);
         setAllowAttendeeInvites(ev.allowAttendeeInvites !== false);
         setAllowAltTimes(ev.allowAltTimes ?? false);
+        setAltTimesMode(ev.altTimesMode === "availability" ? "availability" : "suggest");
         setReserveSeats(ev.reserveSeats === true);
         setMinConfirmed(ev.minConfirmedAttendees != null ? String(ev.minConfirmedAttendees) : "");
         setFallbackPolicy(ev.fallbackPolicy ?? "notify_host");
@@ -149,7 +151,8 @@ export default function EditEventClient() {
 
         if (ev.bannerKey) {
           setExistingBannerKey(ev.bannerKey);
-          setBannerPreview(`${getAvatarBaseUrl()}/events/${ev.id}/banner?v=${Date.now()}`);
+          const ts = Date.now();
+          setBannerPreview(`${getAvatarBaseUrl()}/events/${ev.id}/banner?v=${ts}`);
         }
 
         // Load pref overrides
@@ -285,6 +288,7 @@ export default function EditEventClient() {
           require_approval: requireApproval,
           allow_attendee_invites: allowAttendeeInvites,
           allow_alt_times: allowAltTimes,
+          alt_times_mode: allowAltTimes ? altTimesMode : "suggest",
           min_confirmed_attendees: requireReconfirmation && minConfirmed ? Number(minConfirmed) : null,
           fallback_policy: requireReconfirmation ? fallbackPolicy : "notify_host",
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -424,6 +428,16 @@ export default function EditEventClient() {
                 component="img"
                 src={bannerPreview}
                 alt="Banner preview"
+                onError={() => {
+                  if (bannerPreview.startsWith(getAvatarBaseUrl())) {
+                    const fb = getImageFallbackBaseUrl();
+                    if (fb) {
+                      setBannerPreview(bannerPreview.replace(getAvatarBaseUrl(), fb));
+                      return;
+                    }
+                  }
+                  setBannerPreview(null);
+                }}
                 sx={{ width: "100%", height: "100%", objectFit: "cover" }}
               />
             ) : (
@@ -753,6 +767,36 @@ export default function EditEventClient() {
             }
             sx={{ alignItems: "flex-start", mt: 0.5 }}
           />
+          {allowAltTimes && (
+            <RadioGroup
+              value={altTimesMode}
+              onChange={(e) => setAltTimesMode(e.target.value as "suggest" | "availability")}
+              sx={{ ml: 4, mt: -0.5 }}
+            >
+              <FormControlLabel
+                value="suggest"
+                control={<Radio size="small" />}
+                label={
+                  <Box>
+                    <Typography variant="body2" fontWeight={500}>Suggest another time if needed</Typography>
+                    <Typography variant="caption" color="text.secondary">Attendees can propose a different time if this one doesn&apos;t work.</Typography>
+                  </Box>
+                }
+                sx={{ alignItems: "flex-start", mb: 0.5 }}
+              />
+              <FormControlLabel
+                value="availability"
+                control={<Radio size="small" />}
+                label={
+                  <Box>
+                    <Typography variant="body2" fontWeight={500}>Share your availability</Typography>
+                    <Typography variant="caption" color="text.secondary">Attendees share when they&apos;re free so you can pick the best time together.</Typography>
+                  </Box>
+                }
+                sx={{ alignItems: "flex-start" }}
+              />
+            </RadioGroup>
+          )}
         </Stack>
       </AppCard>
 

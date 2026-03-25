@@ -206,6 +206,37 @@ Both checks use the centralized `evaluateChumPreferences` helper with `PREF_THRE
 
 Each RSVP status has a dedicated host notification email, each gated on its own preference toggle. Each email includes a tokenized unsubscribe link that toggles the corresponding preference. Migration 033 removes the obsolete `event_reminders` key and `frequency` fields from existing JSONB data.
 
+### Postmark email templates (Mustachio)
+
+Postmark uses **Mustachio** (a Mustache variant) for template rendering. Key rules for conditional sections:
+
+**Empty strings are truthy.** In Mustachio, `""` is treated as truthy inside `{{#variable}}` blocks. This means `{{#someField}}...{{/someField}}` will render even when `someField` is `""`. To hide a conditional section when there is no value, pass `null` (not `""`) from the API code.
+
+**Correct pattern for optional content blocks:**
+- API code: pass the raw value (`null` when absent, the string when present). Do **not** coerce with `|| ""`.
+- Template: use `{{#variable}}` as the section guard and `{{.}}` to render the value inside the block.
+- Reference implementation: template 43906440 (`joinRequestToHost.html`), which conditionally shows a requester message.
+
+```
+// API (correct)
+TemplateModel: { hostMessage }          // null when empty
+
+// API (WRONG - will render the section with empty content)
+TemplateModel: { hostMessage: hostMessage || "" }
+
+// Template (correct)
+{{#hostMessage}}
+  <p>"{{.}}"</p>
+{{/hostMessage}}
+
+// Template (also works but less canonical inside a section)
+{{#hostMessage}}
+  <p>"{{hostMessage}}"</p>
+{{/hostMessage}}
+```
+
+Local HTML copies of all Postmark templates are stored in `api/src/email/templates/` for reference. When updating a template, update both the local file and the Postmark dashboard.
+
 ### Host attendee removal
 
 Hosts can remove attendees with status "going" or "maybe" from their plans via `POST /events/:id/remove-attendee`. The endpoint requires authentication and verifies the caller is the plan host. It:
@@ -441,6 +472,7 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 - `status`: `draft` | `published` | `canceled`
 - `location_type`: `in_person` | `online`
 - `allow_alt_times`: boolean — whether attendees can suggest alternate times
+- `alt_times_mode`: `'suggest'` | `'availability'` (default `'suggest'`, migration 057) — host-controlled presentation mode for the scheduling feature. `'suggest'` frames it as "suggest another time if needed" (original behavior). `'availability'` frames it as "share your availability" for collaborative scheduling. Both modes use the same underlying `event_alt_times` engine; only the attendee-facing copy differs.
 - `allow_attendee_invites`: boolean (default true, migration 042) — when true, Going attendees can invite others to the plan; host can toggle at any time
 - `interest_id`: FK to `interests` table (hobbies)
 - `require_reconfirmation`: boolean (migration 028) — when true, enables the Attendance Assurance system; attendees receive confirmation requests 24 hours before the event
@@ -1074,6 +1106,8 @@ Core tables include:
 - `newchums.community_join_requests` (migration 055) — join request records. Columns: `id` (UUID PK), `community_id` (FK, CASCADE), `user_id` (FK, CASCADE), `status` (pending/approved/declined/withdrawn), `reviewed_by_user_id` (FK), `created_at`, `reviewed_at`. Unique partial index on `(community_id, user_id) WHERE status = 'pending'`.
 - `newchums.events.community_id` (migration 055) — `UUID NULL` FK → `communities(id)` ON DELETE SET NULL. Associates a plan with 0 or 1 community. Indexed where not null.
 - `newchums.events.hide_from_explore` (migration 055) — `BOOLEAN NOT NULL DEFAULT false`. When true, the plan is hidden from the general Explore feed but visible in the community's plan feed.
+- `newchums.roadmap_items.attachment_key` (migration 056) — `TEXT NULL`. Stores R2 object key for optional roadmap item attachments.
+- `newchums.events.alt_times_mode` (migration 057) — `TEXT NOT NULL DEFAULT 'suggest'`. Host-controlled presentation mode for the alternate times feature: `'suggest'` (default, current behavior) or `'availability'` (collaborative scheduling framing). Same underlying `event_alt_times` engine; only attendee-facing copy differs.
 
 PostGIS is available for geo queries.
 

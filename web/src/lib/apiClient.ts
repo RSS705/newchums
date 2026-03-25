@@ -23,21 +23,27 @@ export const getApiBaseUrl = () => {
 };
 
 /**
- * Base URL for reading avatar/banner images from R2.
- *
- * Prefers NEXT_PUBLIC_AVATAR_BASE_URL so that local dev (which shares the
- * production DB but has its own miniflare R2) can read images that were
- * uploaded through the production site.  In production both env vars
- * resolve to the same origin, so the distinction is invisible.
- *
- * Authenticated write operations (media init/upload/finalize) must use
- * getApiBaseUrl() / getMediaApiBaseUrl() instead, so that auth tokens
- * are validated by the same worker that issued them.
+ * Primary base URL for reading avatar/banner images from R2.
+ * Uses the local API so images uploaded locally are immediately visible.
  */
-export const getAvatarBaseUrl = () => {
-  const explicit = process.env.NEXT_PUBLIC_AVATAR_BASE_URL;
-  if (explicit) return explicit.replace(/\/$/, "");
-  return getApiBaseUrl();
+export const getAvatarBaseUrl = () => getApiBaseUrl();
+
+/**
+ * Secondary base URL for reading images, used as an `onError` fallback.
+ * Returns NEXT_PUBLIC_AVATAR_BASE_URL when it differs from the primary API
+ * base (i.e. local dev pointing at a production R2 bucket for images that
+ * were uploaded through the production site). Returns null in production
+ * where both values are identical.
+ */
+export const getImageFallbackBaseUrl = (): string | null => {
+  const explicit = process.env.NEXT_PUBLIC_AVATAR_BASE_URL?.replace(/\/$/, "");
+  if (!explicit) return null;
+  try {
+    const primary = getApiBaseUrl();
+    return explicit !== primary ? explicit : null;
+  } catch {
+    return explicit;
+  }
 };
 
 let cachedToken: string | null = null;

@@ -413,7 +413,7 @@ export const sendJoinRequestApprovedEmail = async (
   env: Bindings,
   { to, recipientName, hostName, eventTitle, hostMessage, eventUrl, unsubscribeUrl }: {
     to: string; recipientName: string; hostName: string;
-    eventTitle: string; hostMessage: string; eventUrl: string; unsubscribeUrl?: string;
+    eventTitle: string; hostMessage: string | null; eventUrl: string; unsubscribeUrl?: string;
   }
 ) => {
   return sendPostmarkTemplateEmail(env, {
@@ -427,7 +427,7 @@ export const sendJoinRequestDeclinedEmail = async (
   env: Bindings,
   { to, recipientName, hostName, eventTitle, hostMessage, eventUrl, unsubscribeUrl }: {
     to: string; recipientName: string; hostName: string;
-    eventTitle: string; hostMessage: string; eventUrl: string; unsubscribeUrl?: string;
+    eventTitle: string; hostMessage: string | null; eventUrl: string; unsubscribeUrl?: string;
   }
 ) => {
   return sendPostmarkTemplateEmail(env, {

@@ -71,6 +71,7 @@ export default function CreateEventClient() {
 
   const [visibility, setVisibility] = useState<"public" | "chums_only" | "invite_only">("public");
   const [allowAltTimes, setAllowAltTimes] = useState(true);
+  const [altTimesMode, setAltTimesMode] = useState<"suggest" | "availability">("suggest");
   const [allowAttendeeInvites, setAllowAttendeeInvites] = useState(true);
   const [reserveSeats, setReserveSeats] = useState(false);
   const [requireReconfirmation, setRequireReconfirmation] = useState(true);
@@ -277,6 +278,7 @@ export default function CreateEventClient() {
       reserve_seats: maxSeats ? reserveSeats : false,
       visibility,
       allow_alt_times: allowAltTimes,
+      alt_times_mode: allowAltTimes ? altTimesMode : "suggest",
       allow_attendee_invites: allowAttendeeInvites,
       require_reconfirmation: requireReconfirmation,
       require_approval: requireApproval,
@@ -721,9 +723,36 @@ export default function CreateEventClient() {
             }
             label="Let people suggest alternate times"
           />
-          <Typography variant="caption" color="text.secondary" sx={{ mt: -1.5 }}>
-            Invitees can propose a different date or time if this one doesn&apos;t work for them.
-          </Typography>
+          {allowAltTimes && (
+            <RadioGroup
+              value={altTimesMode}
+              onChange={(e) => setAltTimesMode(e.target.value as "suggest" | "availability")}
+              sx={{ ml: 4, mt: -0.5 }}
+            >
+              <FormControlLabel
+                value="suggest"
+                control={<Radio size="small" />}
+                label={
+                  <Box>
+                    <Typography variant="body2" fontWeight={500}>Suggest another time if needed</Typography>
+                    <Typography variant="caption" color="text.secondary">Attendees can propose a different time if this one doesn&apos;t work.</Typography>
+                  </Box>
+                }
+                sx={{ alignItems: "flex-start", mb: 0.5 }}
+              />
+              <FormControlLabel
+                value="availability"
+                control={<Radio size="small" />}
+                label={
+                  <Box>
+                    <Typography variant="body2" fontWeight={500}>Share your availability</Typography>
+                    <Typography variant="caption" color="text.secondary">Attendees share when they&apos;re free so you can pick the best time together.</Typography>
+                  </Box>
+                }
+                sx={{ alignItems: "flex-start" }}
+              />
+            </RadioGroup>
+          )}
 
           <FormControlLabel
             control={

@@ -13,7 +13,7 @@ import LinkRoundedIcon from "@mui/icons-material/LinkRounded";
 import PeopleOutlineRoundedIcon from "@mui/icons-material/PeopleOutlineRounded";
 import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
 import Link from "next/link";
-import { getAvatarBaseUrl } from "@/lib/apiClient";
+import { getAvatarBaseUrl, getImageFallbackBaseUrl } from "@/lib/apiClient";
 import { getGradientForEventId } from "@/lib/eventBanners";
 
 export type PlanEvent = {
@@ -110,11 +110,24 @@ export default function EventCard({
         ? `${event.goingCount} going`
         : "No responses yet";
 
-  const bannerSrc = event.bannerKey
+  const primaryBannerUrl = event.bannerKey
     ? `${getAvatarBaseUrl()}/events/${event.id}/banner`
     : null;
+  const fallbackBannerUrl = React.useMemo(() => {
+    if (!event.bannerKey) return null;
+    const fb = getImageFallbackBaseUrl();
+    return fb ? `${fb}/events/${event.id}/banner` : null;
+  }, [event.bannerKey, event.id]);
+  const [bannerSrc, setBannerSrc] = React.useState(primaryBannerUrl);
   const [bannerFailed, setBannerFailed] = React.useState(false);
   const bannerUrl = bannerSrc && !bannerFailed ? bannerSrc : null;
+  const handleBannerError = React.useCallback(() => {
+    if (bannerSrc === primaryBannerUrl && fallbackBannerUrl) {
+      setBannerSrc(fallbackBannerUrl);
+    } else {
+      setBannerFailed(true);
+    }
+  }, [bannerSrc, primaryBannerUrl, fallbackBannerUrl]);
   const fallbackGradient = getGradientForEventId(event.id);
 
   const cardHref =
@@ -164,7 +177,7 @@ export default function EventCard({
               component="img"
               src={bannerUrl}
               alt=""
-              onError={() => setBannerFailed(true)}
+              onError={handleBannerError}
               sx={{
                 width: "100%",
                 height: "100%",

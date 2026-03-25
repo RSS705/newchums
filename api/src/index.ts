@@ -6186,6 +6186,7 @@ app.post("/events", async (c) => {
     return c.json({ ok: false, error: "VALIDATION", message: "Seats must be between 1 and 500", field: "max_seats" }, 400);
 
   const allowAltTimes = body.allow_alt_times !== false;
+  const altTimesMode = body.alt_times_mode === "availability" ? "availability" : "suggest";
   const allowAttendeeInvites = body.allow_attendee_invites !== false;
   const reserveSeats = body.reserve_seats === true;
   const requireReconfirmation = body.require_reconfirmation === true;
@@ -6315,13 +6316,13 @@ app.post("/events", async (c) => {
         host_user_id, title, description, interest_id, starts_at,
         location_type, location_name, location_address, location_place_id, location_lat, location_lng,
         location_visibility, location_area, online_link,
-        max_seats, visibility, status, allow_alt_times, allow_attendee_invites, reserve_seats, require_reconfirmation, require_approval, timezone,
+        max_seats, visibility, status, allow_alt_times, alt_times_mode, allow_attendee_invites, reserve_seats, require_reconfirmation, require_approval, timezone,
         min_confirmed_attendees, fallback_policy, pref_overrides, community_id, hide_from_explore
       ) VALUES (
         ${userId}, ${title}, ${description}, ${interestId}, ${startsDate.toISOString()},
         ${locationType}, ${locationName}, ${locationAddress}, ${locationPlaceId}, ${locationLat}, ${locationLng},
         ${locationVisibility}, ${locationArea}, ${onlineLink},
-        ${maxSeats}, ${visibility}, ${status}, ${allowAltTimes}, ${allowAttendeeInvites}, ${reserveSeats}, ${requireReconfirmation}, ${requireApproval}, ${timezone},
+        ${maxSeats}, ${visibility}, ${status}, ${allowAltTimes}, ${altTimesMode}, ${allowAttendeeInvites}, ${reserveSeats}, ${requireReconfirmation}, ${requireApproval}, ${timezone},
         ${minConfirmedAttendees}, ${fallbackPolicy}, ${prefOverrides ? JSON.stringify(prefOverrides) : null}, ${communityId}, ${hideFromExplore}
       )
       RETURNING id, created_at
@@ -7071,6 +7072,7 @@ app.get("/events/:id", async (c) => {
           visibility: event.visibility,
           status: event.status,
           allowAltTimes: event.allow_alt_times,
+          altTimesMode: event.alt_times_mode ?? "suggest",
           allowAttendeeInvites: false,
           requireReconfirmation: false,
           canceledAt: event.canceled_at,
@@ -7268,6 +7270,7 @@ app.get("/events/:id", async (c) => {
         visibility: event.visibility,
         status: event.status,
         allowAltTimes: event.allow_alt_times,
+        altTimesMode: event.alt_times_mode ?? "suggest",
         allowAttendeeInvites: event.allow_attendee_invites !== false,
         requireReconfirmation: event.require_reconfirmation === true,
         canceledAt: event.canceled_at,
@@ -8251,6 +8254,7 @@ app.patch("/events/:id", async (c) => {
     const patchRequireApproval = body.require_approval === true;
     const patchAllowAttendeeInvites = body.allow_attendee_invites != null ? body.allow_attendee_invites !== false : undefined;
     const patchAllowAltTimes = body.allow_alt_times != null ? body.allow_alt_times === true : undefined;
+    const patchAltTimesMode = body.alt_times_mode === "suggest" || body.alt_times_mode === "availability" ? body.alt_times_mode : undefined;
     const patchReserveSeats = body.reserve_seats != null ? body.reserve_seats === true : undefined;
     const patchTimezone = body.timezone && typeof body.timezone === "string" ? body.timezone.trim().slice(0, 64) : null;
     const patchPrefOverrides = "pref_overrides" in body ? parsePrefOverrides(body.pref_overrides ?? null) : undefined;
@@ -8320,6 +8324,7 @@ app.patch("/events/:id", async (c) => {
           require_approval         = ${patchRequireApproval},
           allow_attendee_invites   = COALESCE(${patchAllowAttendeeInvites ?? null}, allow_attendee_invites),
           allow_alt_times          = COALESCE(${patchAllowAltTimes ?? null}, allow_alt_times),
+          alt_times_mode           = COALESCE(${patchAltTimesMode ?? null}, alt_times_mode),
           reserve_seats            = COALESCE(${patchReserveSeats ?? null}, reserve_seats),
           timezone                 = COALESCE(${patchTimezone}, timezone),
           min_confirmed_attendees  = ${patchMinConfirmed},
@@ -9185,7 +9190,7 @@ app.post("/events/:id/join-request/:requestId/approve", async (c) => {
             recipientName: requesterUser[0].name?.trim() || requesterUser[0].username?.replace(/^@/, "") || "there",
             hostName,
             eventTitle: ev[0].title,
-            hostMessage: hostMessage || "",
+            hostMessage,
             eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}?context=request_approved`,
             unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
           }).catch(() => {})
@@ -9260,7 +9265,7 @@ app.post("/events/:id/join-request/:requestId/decline", async (c) => {
             recipientName: requesterUser[0].name?.trim() || requesterUser[0].username?.replace(/^@/, "") || "there",
             hostName,
             eventTitle: ev[0].title,
-            hostMessage: hostMessage || "",
+            hostMessage,
             eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
             unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
           }).catch(() => {})

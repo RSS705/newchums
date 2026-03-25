@@ -3,6 +3,7 @@
 import * as React from "react";
 import Avatar from "@mui/material/Avatar";
 import type { SxProps, Theme } from "@mui/material/styles";
+import { getAvatarBaseUrl, getImageFallbackBaseUrl } from "@/lib/apiClient";
 
 /** Avatar initials use NewChums golden accent for consistent, on-brand fallback. */
 const AVATAR_INITIALS_COLORS = { bg: "#F4B400", text: "#1a1a1a" } as const;
@@ -40,10 +41,29 @@ export default function UserAvatar({
   sx = {},
 }: UserAvatarProps) {
   const [imgError, setImgError] = React.useState(false);
-  const effectiveSrc = src && !imgError ? src : null;
+  const [triedFallback, setTriedFallback] = React.useState(false);
+  const [currentSrc, setCurrentSrc] = React.useState(src);
+
   React.useEffect(() => {
     setImgError(false);
+    setTriedFallback(false);
+    setCurrentSrc(src);
   }, [src]);
+
+  const handleImgError = React.useCallback(() => {
+    if (!triedFallback && currentSrc) {
+      const fb = getImageFallbackBaseUrl();
+      const primary = getAvatarBaseUrl();
+      if (fb && currentSrc.startsWith(primary)) {
+        setCurrentSrc(currentSrc.replace(primary, fb));
+        setTriedFallback(true);
+        return;
+      }
+    }
+    setImgError(true);
+  }, [triedFallback, currentSrc]);
+
+  const effectiveSrc = currentSrc && !imgError ? currentSrc : null;
 
   const initial = getInitial(name, username);
   const colors = AVATAR_INITIALS_COLORS;
@@ -61,7 +81,7 @@ export default function UserAvatar({
   return (
     <Avatar
       src={effectiveSrc ?? undefined}
-      imgProps={{ onError: () => setImgError(true) }}
+      imgProps={{ onError: handleImgError }}
       sx={{
         width: sizeNum,
         height: sizeNum,
