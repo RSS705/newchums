@@ -13,6 +13,7 @@ import {
   Badge,
   Box,
   Button,
+  Chip,
   Container,
   Divider,
   Drawer,
@@ -312,7 +313,14 @@ export default function AppShell({ children, user }: AppShellProps) {
                 <Icon sx={{ fontSize: 22, color: active ? "primary.main" : "text.secondary" }} />
               </ListItemIcon>
               <ListItemText
-                primary={item.label}
+                primary={
+                  item.tag ? (
+                    <Stack direction="row" alignItems="center" spacing={0.75}>
+                      <span>{item.label}</span>
+                      <Chip label={item.tag} size="small" variant="outlined" color="info" sx={{ height: 20, fontSize: "0.6875rem", fontWeight: 600, cursor: "inherit" }} />
+                    </Stack>
+                  ) : item.label
+                }
                 primaryTypographyProps={{
                   fontWeight: active ? 600 : 500,
                   fontSize: "0.9375rem",

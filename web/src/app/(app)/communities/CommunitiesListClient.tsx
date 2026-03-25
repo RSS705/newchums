@@ -6,11 +6,12 @@ import {
   Box, Typography, Stack, TextField, InputAdornment, Chip, Avatar,
   CircularProgress, Button, ToggleButtonGroup, ToggleButton,
 } from "@mui/material";
+import AddCircleRoundedIcon from "@mui/icons-material/AddCircleRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
-import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import PeopleRoundedIcon from "@mui/icons-material/PeopleRounded";
 import LockRoundedIcon from "@mui/icons-material/LockRounded";
 import PublicRoundedIcon from "@mui/icons-material/PublicRounded";
+import Link from "next/link";
 import { AppCard } from "@/components/ui";
 import { apiFetch } from "@/lib/apiClient";
 
@@ -53,20 +54,51 @@ export default function CommunitiesListClient() {
   }, [fetchCommunities]);
 
   return (
-    <Box sx={{ maxWidth: 800, mx: "auto", px: { xs: 2, sm: 3 }, py: 3 }}>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 3 }}>
-        <Typography variant="h5" fontWeight={700}>Communities</Typography>
+    <Stack spacing={{ xs: 3, sm: 4 }}>
+      {/* Header */}
+      <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" alignItems={{ sm: "flex-start" }} spacing={2}>
+        <Box>
+          <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
+            <Typography
+              component="h1"
+              sx={{
+                fontSize: { xs: "1.75rem", sm: "2rem" },
+                fontWeight: 700,
+                lineHeight: 1.25,
+                letterSpacing: "-0.02em",
+              }}
+            >
+              Communities
+            </Typography>
+            <Chip label="Beta" size="small" variant="outlined" color="info" sx={{ height: 22, fontSize: "0.75rem", fontWeight: 600 }} />
+          </Stack>
+          <Typography variant="body1" color="text.secondary" sx={{ fontSize: { xs: "0.875rem", sm: "0.9375rem" } }}>
+            Find groups of people who share your interests, or start your own.
+          </Typography>
+        </Box>
         <Button
+          component={Link}
+          href="/communities/create"
           variant="contained"
-          startIcon={<AddRoundedIcon />}
-          onClick={() => router.push("/communities/create")}
-          sx={{ borderRadius: 2, textTransform: "none" }}
+          startIcon={<AddCircleRoundedIcon />}
+          sx={{
+            borderRadius: 2.5,
+            textTransform: "none",
+            fontWeight: 600,
+            fontSize: "0.9375rem",
+            px: 3,
+            py: 1.25,
+            boxShadow: "none",
+            whiteSpace: "nowrap",
+            "&:hover": { boxShadow: "none", opacity: 0.92 },
+          }}
         >
-          Create
+          Create a community
         </Button>
       </Stack>
 
-      <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ sm: "center" }} sx={{ mb: 3 }}>
+      {/* Search + filter */}
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ sm: "center" }}>
         <TextField
           size="small"
           placeholder="Search communities..."
@@ -92,27 +124,47 @@ export default function CommunitiesListClient() {
         </ToggleButtonGroup>
       </Stack>
 
+      {/* Content */}
       {loading && communities.length === 0 ? (
         <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
           <CircularProgress size={32} />
         </Box>
       ) : communities.length === 0 ? (
         <AppCard>
-          <Stack spacing={1.5} alignItems="center" sx={{ py: 4 }}>
-            <PeopleRoundedIcon sx={{ fontSize: 48, color: "text.disabled" }} />
-            <Typography variant="body1" color="text.secondary">
-              {view === "mine" ? "You haven't joined any communities yet." : "No communities found."}
-            </Typography>
-            {view === "mine" && (
+          <Stack spacing={2} alignItems="center" sx={{ py: { xs: 5, sm: 6 } }}>
+            <PeopleRoundedIcon sx={{ fontSize: 56, color: "text.disabled", opacity: 0.5 }} />
+            <Box sx={{ textAlign: "center" }}>
+              <Typography variant="h6" fontWeight={600} sx={{ mb: 0.5 }}>
+                {view === "mine" ? "You haven't joined any communities yet" : "No communities found"}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {view === "mine"
+                  ? "Browse what's available or start your own community."
+                  : search.trim()
+                    ? "Try a different search or create a new community."
+                    : "Be the first to create a community and bring people together."}
+              </Typography>
+            </Box>
+            <Stack direction="row" spacing={1.5} sx={{ mt: 1 }}>
+              {view === "mine" && (
+                <Button
+                  variant="outlined"
+                  onClick={() => setView("all")}
+                  sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
+                >
+                  Browse communities
+                </Button>
+              )}
               <Button
-                variant="outlined"
-                size="small"
-                onClick={() => setView("all")}
-                sx={{ textTransform: "none", mt: 1 }}
+                component={Link}
+                href="/communities/create"
+                variant="contained"
+                startIcon={<AddCircleRoundedIcon />}
+                sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3 }}
               >
-                Browse communities
+                Create a community
               </Button>
-            )}
+            </Stack>
           </Stack>
         </AppCard>
       ) : (
@@ -122,8 +174,8 @@ export default function CommunitiesListClient() {
               key={c.id}
               sx={{
                 cursor: "pointer",
-                transition: "box-shadow 0.15s",
-                "&:hover": { boxShadow: "0 2px 12px rgba(0,0,0,0.08)" },
+                transition: "box-shadow 0.15s, transform 0.15s",
+                "&:hover": { boxShadow: "0 4px 16px rgba(0,0,0,0.08)", transform: "translateY(-1px)" },
               }}
               onClick={() => router.push(`/communities/${c.slug}`)}
             >
@@ -139,7 +191,7 @@ export default function CommunitiesListClient() {
                 </Avatar>
                 <Box sx={{ flex: 1, minWidth: 0 }}>
                   <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.25 }}>
-                    <Typography variant="subtitle1" fontWeight={700} noWrap>
+                    <Typography fontWeight={700} sx={{ fontSize: "1.0625rem", lineHeight: 1.35 }} noWrap>
                       {c.name}
                     </Typography>
                     {c.visibility === "private" ? (
@@ -153,7 +205,7 @@ export default function CommunitiesListClient() {
                       {c.description}
                     </Typography>
                   )}
-                  <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                  <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
                     <Chip
                       icon={<PeopleRoundedIcon sx={{ fontSize: "14px !important" }} />}
                       label={`${c.member_count} member${c.member_count !== 1 ? "s" : ""}`}
@@ -173,6 +225,6 @@ export default function CommunitiesListClient() {
           ))}
         </Stack>
       )}
-    </Box>
+    </Stack>
   );
 }

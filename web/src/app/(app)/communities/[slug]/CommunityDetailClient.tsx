@@ -12,10 +12,12 @@ import PeopleRoundedIcon from "@mui/icons-material/PeopleRounded";
 import LockRoundedIcon from "@mui/icons-material/LockRounded";
 import PublicRoundedIcon from "@mui/icons-material/PublicRounded";
 import EventNoteRoundedIcon from "@mui/icons-material/EventNoteRounded";
+import AddCircleRoundedIcon from "@mui/icons-material/AddCircleRounded";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import HourglassEmptyRoundedIcon from "@mui/icons-material/HourglassEmptyRounded";
+import Link from "next/link";
 import { AppCard, useToast } from "@/components/ui";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 
@@ -225,34 +227,52 @@ export default function CommunityDetailClient() {
 
   if (restricted) {
     return (
-      <Box sx={{ maxWidth: 600, mx: "auto", px: { xs: 2, sm: 3 }, py: 4 }}>
+      <Stack spacing={{ xs: 3, sm: 4 }}>
         <AppCard>
-          <Stack spacing={2} alignItems="center" sx={{ py: 3 }}>
-            <LockRoundedIcon sx={{ fontSize: 48, color: "text.disabled" }} />
-            <Typography variant="h6" fontWeight={700}>{community.name}</Typography>
-            <Typography color="text.secondary">This is a private community.</Typography>
+          <Stack spacing={2.5} alignItems="center" sx={{ py: { xs: 4, sm: 5 } }}>
+            <Avatar
+              sx={{
+                width: 72, height: 72,
+                bgcolor: "primary.main", color: "primary.contrastText",
+                fontWeight: 700, fontSize: "1.75rem",
+              }}
+            >
+              {community.name.charAt(0).toUpperCase()}
+            </Avatar>
+            <Box sx={{ textAlign: "center" }}>
+              <Typography
+                component="h1"
+                sx={{ fontSize: { xs: "1.5rem", sm: "1.75rem" }, fontWeight: 700, lineHeight: 1.25, letterSpacing: "-0.02em", mb: 0.5 }}
+              >
+                {community.name}
+              </Typography>
+              <Typography variant="body1" color="text.secondary">
+                This is a private community. Join to see plans and members.
+              </Typography>
+            </Box>
             <Chip icon={<PeopleRoundedIcon sx={{ fontSize: "14px !important" }} />} label={`${community.member_count} member${community.member_count !== 1 ? "s" : ""}`} size="small" variant="outlined" />
             {viewerPendingRequest ? (
               <Chip icon={<HourglassEmptyRoundedIcon />} label="Request pending" color="warning" variant="outlined" />
-            ) : community.join_mode === "approval_required" ? (
-              <Button variant="contained" onClick={handleJoin} disabled={joining} sx={{ textTransform: "none" }}>
-                {joining ? <CircularProgress size={20} color="inherit" /> : "Request to join"}
-              </Button>
             ) : (
-              <Button variant="contained" onClick={handleJoin} disabled={joining} sx={{ textTransform: "none" }}>
-                {joining ? <CircularProgress size={20} color="inherit" /> : "Join community"}
+              <Button
+                variant="contained"
+                onClick={handleJoin}
+                disabled={joining}
+                sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, py: 1, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
+              >
+                {joining ? <CircularProgress size={20} color="inherit" /> : community.join_mode === "approval_required" ? "Request to join" : "Join community"}
               </Button>
             )}
           </Stack>
         </AppCard>
-      </Box>
+      </Stack>
     );
   }
 
   return (
-    <Box sx={{ maxWidth: 800, mx: "auto", px: { xs: 2, sm: 3 }, py: 3 }}>
-      {/* Header */}
-      <AppCard sx={{ mb: 3 }}>
+    <Stack spacing={{ xs: 3, sm: 4 }}>
+      {/* Header card */}
+      <AppCard>
         <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ sm: "flex-start" }}>
           <Avatar
             sx={{
@@ -265,7 +285,13 @@ export default function CommunityDetailClient() {
           </Avatar>
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
-              <Typography variant="h5" fontWeight={700} noWrap>{community.name}</Typography>
+              <Typography
+                component="h1"
+                sx={{ fontSize: { xs: "1.5rem", sm: "1.75rem" }, fontWeight: 700, lineHeight: 1.25, letterSpacing: "-0.02em" }}
+                noWrap
+              >
+                {community.name}
+              </Typography>
               {community.visibility === "private" ? (
                 <Tooltip title="Private community"><LockRoundedIcon sx={{ fontSize: 18, color: "text.secondary" }} /></Tooltip>
               ) : (
@@ -273,11 +299,11 @@ export default function CommunityDetailClient() {
               )}
             </Stack>
             {community.description && (
-              <Typography variant="body1" color="text.secondary" sx={{ mb: 1.5, whiteSpace: "pre-wrap" }}>
+              <Typography variant="body1" color="text.secondary" sx={{ mb: 1.5, whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
                 {community.description}
               </Typography>
             )}
-            <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center">
+            <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center" useFlexGap>
               <Chip
                 icon={<PeopleRoundedIcon sx={{ fontSize: "14px !important" }} />}
                 label={`${community.member_count} member${community.member_count !== 1 ? "s" : ""}`}
@@ -307,9 +333,14 @@ export default function CommunityDetailClient() {
 
         <Divider sx={{ my: 2 }} />
 
-        <Stack direction="row" spacing={1.5} alignItems="center">
+        <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap>
           {!isMember && !viewerPendingRequest && (
-            <Button variant="contained" size="small" onClick={handleJoin} disabled={joining} sx={{ textTransform: "none" }}>
+            <Button
+              variant="contained"
+              onClick={handleJoin}
+              disabled={joining}
+              sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
+            >
               {joining ? <CircularProgress size={18} color="inherit" /> : community.join_mode === "approval_required" ? "Request to join" : "Join community"}
             </Button>
           )}
@@ -317,18 +348,19 @@ export default function CommunityDetailClient() {
             <Chip icon={<HourglassEmptyRoundedIcon />} label="Request pending" color="warning" variant="outlined" size="small" />
           )}
           {isMember && !isOwner && (
-            <Button variant="outlined" size="small" onClick={handleLeave} disabled={leaving} sx={{ textTransform: "none", color: "text.secondary", borderColor: "divider" }}>
+            <Button variant="outlined" size="small" onClick={handleLeave} disabled={leaving} sx={{ textTransform: "none", fontWeight: 600, color: "text.secondary", borderColor: "divider", borderRadius: 2 }}>
               {leaving ? <CircularProgress size={18} color="inherit" /> : "Leave community"}
             </Button>
           )}
           {isMember && (
             <Button
-              variant="outlined" size="small"
-              startIcon={<AddRoundedIcon />}
-              onClick={() => router.push(`/events/create?community_id=${community.id}&community_name=${encodeURIComponent(community.name)}`)}
-              sx={{ textTransform: "none" }}
+              component={Link}
+              href={`/events/create?community_id=${community.id}&community_name=${encodeURIComponent(community.name)}`}
+              variant="contained"
+              startIcon={<AddCircleRoundedIcon />}
+              sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
             >
-              Create a plan
+              Start a plan
             </Button>
           )}
         </Stack>
@@ -336,8 +368,8 @@ export default function CommunityDetailClient() {
 
       {/* Pending join requests (owner only) */}
       {isOwner && pendingRequests.length > 0 && (
-        <AppCard sx={{ mb: 3 }}>
-          <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 2 }}>
+        <AppCard>
+          <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem", mb: 2 }}>
             Pending join requests ({pendingRequests.length})
           </Typography>
           <Stack spacing={1.5}>
@@ -367,109 +399,129 @@ export default function CommunityDetailClient() {
       )}
 
       {/* Tabs */}
-      <Tabs value={tabIndex} onChange={(_, v) => setTabIndex(v)} sx={{ mb: 2 }}>
-        <Tab label="Plans" icon={<EventNoteRoundedIcon sx={{ fontSize: 18 }} />} iconPosition="start" sx={{ textTransform: "none", minHeight: 48 }} />
-        <Tab label="Members" icon={<PeopleRoundedIcon sx={{ fontSize: 18 }} />} iconPosition="start" sx={{ textTransform: "none", minHeight: 48 }} />
-      </Tabs>
+      <Box>
+        <Tabs value={tabIndex} onChange={(_, v) => setTabIndex(v)} sx={{ mb: 2.5 }}>
+          <Tab label="Plans" icon={<EventNoteRoundedIcon sx={{ fontSize: 18 }} />} iconPosition="start" sx={{ textTransform: "none", minHeight: 48, fontWeight: 600 }} />
+          <Tab label="Members" icon={<PeopleRoundedIcon sx={{ fontSize: 18 }} />} iconPosition="start" sx={{ textTransform: "none", minHeight: 48, fontWeight: 600 }} />
+        </Tabs>
 
-      {/* Plans tab */}
-      {tabIndex === 0 && (
-        <>
-          {eventsLoading && events.length === 0 ? (
-            <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}><CircularProgress size={28} /></Box>
-          ) : events.length === 0 ? (
-            <AppCard>
-              <Stack spacing={1.5} alignItems="center" sx={{ py: 4 }}>
-                <EventNoteRoundedIcon sx={{ fontSize: 48, color: "text.disabled" }} />
-                <Typography color="text.secondary">No upcoming plans in this community yet.</Typography>
-                {isMember && (
-                  <Button
-                    variant="outlined" size="small" startIcon={<AddRoundedIcon />}
-                    onClick={() => router.push(`/events/create?community_id=${community.id}&community_name=${encodeURIComponent(community.name)}`)}
-                    sx={{ textTransform: "none", mt: 1 }}
+        {/* Plans tab */}
+        {tabIndex === 0 && (
+          <>
+            {eventsLoading && events.length === 0 ? (
+              <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}><CircularProgress size={28} /></Box>
+            ) : events.length === 0 ? (
+              <AppCard>
+                <Stack spacing={2} alignItems="center" sx={{ py: { xs: 5, sm: 6 } }}>
+                  <EventNoteRoundedIcon sx={{ fontSize: 56, color: "text.disabled", opacity: 0.5 }} />
+                  <Box sx={{ textAlign: "center" }}>
+                    <Typography variant="h6" fontWeight={600} sx={{ mb: 0.5 }}>
+                      No upcoming plans yet
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {isMember
+                        ? "Be the first to organize something for this community."
+                        : "Plans from this community will appear here."}
+                    </Typography>
+                  </Box>
+                  {isMember && (
+                    <Button
+                      component={Link}
+                      href={`/events/create?community_id=${community.id}&community_name=${encodeURIComponent(community.name)}`}
+                      variant="contained"
+                      startIcon={<AddCircleRoundedIcon />}
+                      sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, mt: 1, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
+                    >
+                      Start the first plan
+                    </Button>
+                  )}
+                </Stack>
+              </AppCard>
+            ) : (
+              <Stack spacing={2}>
+                {events.map((ev) => (
+                  <AppCard
+                    key={ev.id}
+                    sx={{ cursor: "pointer", transition: "box-shadow 0.15s, transform 0.15s", "&:hover": { boxShadow: "0 4px 16px rgba(0,0,0,0.08)", transform: "translateY(-1px)" } }}
+                    onClick={() => router.push(`/events/${ev.id}`)}
                   >
-                    Create the first plan
-                  </Button>
-                )}
-              </Stack>
-            </AppCard>
-          ) : (
-            <Stack spacing={2}>
-              {events.map((ev) => (
-                <AppCard
-                  key={ev.id}
-                  sx={{ cursor: "pointer", transition: "box-shadow 0.15s", "&:hover": { boxShadow: "0 2px 12px rgba(0,0,0,0.08)" } }}
-                  onClick={() => router.push(`/events/${ev.id}`)}
-                >
-                  <Stack spacing={0.75}>
-                    <Typography variant="subtitle1" fontWeight={700}>{ev.title}</Typography>
-                    <Stack direction="row" spacing={1.5} flexWrap="wrap" alignItems="center">
-                      <Typography variant="body2" color="text.secondary">
-                        {new Date(ev.starts_at).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
-                      </Typography>
-                      {ev.location_name && (
-                        <Typography variant="body2" color="text.secondary">{ev.location_name}</Typography>
-                      )}
-                      <Chip label={`${ev.going_count} going`} size="small" variant="outlined" />
-                    </Stack>
-                    {ev.host_name && (
-                      <Typography variant="caption" color="text.secondary">
-                        Hosted by {ev.host_name || `@${ev.host_username}`}
-                      </Typography>
-                    )}
-                  </Stack>
-                </AppCard>
-              ))}
-            </Stack>
-          )}
-        </>
-      )}
-
-      {/* Members tab */}
-      {tabIndex === 1 && (
-        <>
-          {membersLoading && members.length === 0 ? (
-            <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}><CircularProgress size={28} /></Box>
-          ) : (
-            <Stack spacing={1.5}>
-              {members.map((m) => {
-                const handle = m.username?.replace(/^@/, "") ?? null;
-                return (
-                  <AppCard key={m.id}>
-                    <Stack direction="row" alignItems="center" spacing={2}>
-                      <Avatar
-                        src={m.avatar_url ? `${getAvatarBaseUrl()}${m.avatar_url}` : undefined}
-                        sx={{ width: 40, height: 40, bgcolor: "grey.300", fontSize: "0.9rem" }}
-                      >
-                        {(m.name || m.username || "?").charAt(0).toUpperCase()}
-                      </Avatar>
-                      <Box
-                        sx={{ flex: 1, minWidth: 0, cursor: "pointer" }}
-                        onClick={() => router.push(`/users/${handle || m.user_id}`)}
-                      >
-                        <Typography variant="body2" fontWeight={600} noWrap>{m.name || m.username || "Unknown"}</Typography>
-                        {handle && <Typography variant="caption" color="text.secondary">@{handle}</Typography>}
-                      </Box>
-                      {m.role === "owner" && (
-                        <Chip label="Owner" size="small" color="primary" variant="outlined" />
-                      )}
-                      {isOwner && m.role !== "owner" && (
-                        <Button
-                          size="small" variant="outlined" color="error"
-                          onClick={(e) => { e.stopPropagation(); handleRemoveMember(m.user_id); }}
-                          sx={{ textTransform: "none", fontSize: "0.75rem" }}
-                        >
-                          Remove
-                        </Button>
+                    <Stack spacing={0.75}>
+                      <Typography fontWeight={700} sx={{ fontSize: "1.0625rem", lineHeight: 1.35 }}>{ev.title}</Typography>
+                      <Stack direction="row" spacing={1.5} flexWrap="wrap" alignItems="center" useFlexGap>
+                        <Typography variant="body2" color="text.secondary">
+                          {new Date(ev.starts_at).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                        </Typography>
+                        {ev.location_name && (
+                          <Typography variant="body2" color="text.secondary">{ev.location_name}</Typography>
+                        )}
+                        <Chip label={`${ev.going_count} going`} size="small" variant="outlined" />
+                      </Stack>
+                      {ev.host_name && (
+                        <Typography variant="caption" color="text.secondary">
+                          Hosted by {ev.host_name || `@${ev.host_username}`}
+                        </Typography>
                       )}
                     </Stack>
                   </AppCard>
-                );
-              })}
-            </Stack>
-          )}
-        </>
-      )}
-    </Box>
+                ))}
+              </Stack>
+            )}
+          </>
+        )}
+
+        {/* Members tab */}
+        {tabIndex === 1 && (
+          <>
+            {membersLoading && members.length === 0 ? (
+              <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}><CircularProgress size={28} /></Box>
+            ) : members.length === 0 ? (
+              <AppCard>
+                <Stack spacing={2} alignItems="center" sx={{ py: { xs: 5, sm: 6 } }}>
+                  <PeopleRoundedIcon sx={{ fontSize: 56, color: "text.disabled", opacity: 0.5 }} />
+                  <Typography variant="body1" color="text.secondary">No members to show.</Typography>
+                </Stack>
+              </AppCard>
+            ) : (
+              <Stack spacing={1.5}>
+                {members.map((m) => {
+                  const handle = m.username?.replace(/^@/, "") ?? null;
+                  return (
+                    <AppCard key={m.id} sx={{ transition: "box-shadow 0.15s", "&:hover": { boxShadow: "0 2px 12px rgba(0,0,0,0.06)" } }}>
+                      <Stack direction="row" alignItems="center" spacing={2}>
+                        <Avatar
+                          src={m.avatar_url ? `${getAvatarBaseUrl()}${m.avatar_url}` : undefined}
+                          sx={{ width: 40, height: 40, bgcolor: "grey.300", fontSize: "0.9rem" }}
+                        >
+                          {(m.name || m.username || "?").charAt(0).toUpperCase()}
+                        </Avatar>
+                        <Box
+                          sx={{ flex: 1, minWidth: 0, cursor: "pointer" }}
+                          onClick={() => router.push(`/users/${handle || m.user_id}`)}
+                        >
+                          <Typography variant="body2" fontWeight={600} noWrap>{m.name || m.username || "Unknown"}</Typography>
+                          {handle && <Typography variant="caption" color="text.secondary">@{handle}</Typography>}
+                        </Box>
+                        {m.role === "owner" && (
+                          <Chip label="Owner" size="small" color="primary" variant="outlined" />
+                        )}
+                        {isOwner && m.role !== "owner" && (
+                          <Button
+                            size="small" variant="outlined" color="error"
+                            onClick={(e) => { e.stopPropagation(); handleRemoveMember(m.user_id); }}
+                            sx={{ textTransform: "none", fontSize: "0.75rem", borderRadius: 1.5 }}
+                          >
+                            Remove
+                          </Button>
+                        )}
+                      </Stack>
+                    </AppCard>
+                  );
+                })}
+              </Stack>
+            )}
+          </>
+        )}
+      </Box>
+    </Stack>
   );
 }

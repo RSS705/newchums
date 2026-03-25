@@ -18,12 +18,14 @@ export type NavItem = {
   label: string;
   href: string;
   icon: SvgIconComponent;
+  /** Small inline tag rendered next to the label (e.g. "Beta"). */
+  tag?: string;
 };
 
 export const appNavItems: NavItem[] = [
   { label: "Explore", href: "/", icon: ExploreRoundedIcon },
   { label: "Your Plans", href: "/plans", icon: EventNoteRoundedIcon },
-  { label: "Communities", href: "/communities", icon: ForumRoundedIcon },
+  { label: "Communities", href: "/communities", icon: ForumRoundedIcon, tag: "Beta" },
   { label: "Your Chums", href: "/chum-groups", icon: GroupsRoundedIcon },
   { label: "Profile", href: "/profile", icon: PersonRoundedIcon },
   { label: "Give Feedback", href: "/roadmap", icon: FeedbackRoundedIcon },

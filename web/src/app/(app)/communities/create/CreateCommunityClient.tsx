@@ -3,10 +3,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Box, Typography, Stack, Switch, FormControlLabel, CircularProgress,
-  RadioGroup, Radio, FormControl,
+  Box, Typography, Stack, CircularProgress,
+  RadioGroup, Radio, FormControlLabel, FormControl,
 } from "@mui/material";
 import { AppCard, AppButton, AppTextField, useToast } from "@/components/ui";
+import PlacesAutocompleteInput from "@/components/common/PlacesAutocompleteInput";
 import { apiFetch } from "@/lib/apiClient";
 
 function slugify(text: string): string {
@@ -79,112 +80,200 @@ export default function CreateCommunityClient() {
   };
 
   return (
-    <Box sx={{ maxWidth: 600, mx: "auto", px: { xs: 2, sm: 3 }, py: 3 }}>
-      <Typography variant="h5" fontWeight={700} sx={{ mb: 3 }}>
-        Create a community
-      </Typography>
+    <Stack spacing={{ xs: 3, sm: 4 }}>
+      {/* Header */}
+      <Box>
+        <Typography
+          component="h1"
+          sx={{
+            fontSize: { xs: "1.75rem", sm: "2rem" },
+            fontWeight: 700,
+            lineHeight: 1.25,
+            letterSpacing: "-0.02em",
+            mb: 0.75,
+          }}
+        >
+          Create a community
+        </Typography>
+        <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+          Bring people together around a shared interest or location. You can always update the details later.
+        </Typography>
+      </Box>
 
-      <Stack spacing={3}>
-        <AppCard>
-          <Stack spacing={2.5}>
-            <AppTextField
-              label="Community name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Board Game Nights Toronto"
-              inputProps={{ maxLength: 100 }}
-            />
+      {/* Basics */}
+      <AppCard>
+        <Stack spacing={2.5}>
+          <Box>
+            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
+              Basics
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              Give your community a name and a short description.
+            </Typography>
+          </Box>
 
-            <Box>
-              <AppTextField
-                label="Handle"
-                value={slug}
-                onChange={(e) => { setSlugManual(true); setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "")); }}
-                placeholder="board-game-nights-toronto"
-                helperText={
-                  slug.length >= 3
-                    ? slugAvailable === true ? "Available"
-                    : slugAvailable === false ? "Already taken"
-                    : "Checking..."
-                    : "At least 3 characters. Letters, numbers, and hyphens."
-                }
-                inputProps={{ maxLength: 50 }}
-              />
-            </Box>
+          <AppTextField
+            label="Community name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Board Game Nights Toronto"
+            inputProps={{ maxLength: 100 }}
+          />
 
-            <AppTextField
-              label="Description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="What's this community about?"
-              multiline
-              minRows={3}
-              inputProps={{ maxLength: 2000 }}
-            />
-          </Stack>
-        </AppCard>
+          <AppTextField
+            label="Handle"
+            value={slug}
+            onChange={(e) => { setSlugManual(true); setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "")); }}
+            placeholder="board-game-nights-toronto"
+            helperText={
+              slug.length >= 3
+                ? slugAvailable === true ? "Available"
+                : slugAvailable === false ? "Already taken"
+                : "Checking..."
+                : "At least 3 characters. Letters, numbers, and hyphens."
+            }
+            inputProps={{ maxLength: 50 }}
+          />
 
-        <AppCard>
-          <Stack spacing={2.5}>
-            <Typography variant="subtitle1" fontWeight={700}>Visibility</Typography>
+          <AppTextField
+            label="Description"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="What's this community about?"
+            multiline
+            minRows={3}
+            inputProps={{ maxLength: 2000 }}
+          />
+        </Stack>
+      </AppCard>
+
+      {/* Visibility & joining */}
+      <AppCard>
+        <Stack spacing={2.5}>
+          <Box>
+            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
+              Visibility and joining
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              Control who can find and join your community.
+            </Typography>
+          </Box>
+
+          <Box>
+            <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 0.625 }}>Visibility</Typography>
             <FormControl>
               <RadioGroup value={visibility} onChange={(e) => setVisibility(e.target.value as "public" | "private")}>
-                <FormControlLabel value="public" control={<Radio size="small" />} label="Public — anyone can find and view this community" />
-                <FormControlLabel value="private" control={<Radio size="small" />} label="Private — only members can see content" />
+                <FormControlLabel
+                  value="public"
+                  control={<Radio size="small" />}
+                  label={
+                    <Box>
+                      <Typography variant="body2" fontWeight={500}>Public</Typography>
+                      <Typography variant="caption" color="text.secondary">Anyone can find and view this community.</Typography>
+                    </Box>
+                  }
+                  sx={{ alignItems: "flex-start", mb: 0.5 }}
+                />
+                <FormControlLabel
+                  value="private"
+                  control={<Radio size="small" />}
+                  label={
+                    <Box>
+                      <Typography variant="body2" fontWeight={500}>Private</Typography>
+                      <Typography variant="caption" color="text.secondary">Only members can see content. Others see the name and description.</Typography>
+                    </Box>
+                  }
+                  sx={{ alignItems: "flex-start" }}
+                />
               </RadioGroup>
             </FormControl>
-          </Stack>
-        </AppCard>
+          </Box>
 
-        <AppCard>
-          <Stack spacing={2.5}>
-            <Typography variant="subtitle1" fontWeight={700}>Joining</Typography>
+          <Box>
+            <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 0.625 }}>Joining</Typography>
             <FormControl>
               <RadioGroup value={joinMode} onChange={(e) => setJoinMode(e.target.value as "open" | "approval_required")}>
-                <FormControlLabel value="open" control={<Radio size="small" />} label="Open — anyone can join" />
-                <FormControlLabel value="approval_required" control={<Radio size="small" />} label="Approval required — you review each request" />
+                <FormControlLabel
+                  value="open"
+                  control={<Radio size="small" />}
+                  label={
+                    <Box>
+                      <Typography variant="body2" fontWeight={500}>Open</Typography>
+                      <Typography variant="caption" color="text.secondary">Anyone can join immediately.</Typography>
+                    </Box>
+                  }
+                  sx={{ alignItems: "flex-start", mb: 0.5 }}
+                />
+                <FormControlLabel
+                  value="approval_required"
+                  control={<Radio size="small" />}
+                  label={
+                    <Box>
+                      <Typography variant="body2" fontWeight={500}>Approval required</Typography>
+                      <Typography variant="caption" color="text.secondary">You review each request before they can join.</Typography>
+                    </Box>
+                  }
+                  sx={{ alignItems: "flex-start" }}
+                />
               </RadioGroup>
             </FormControl>
-          </Stack>
-        </AppCard>
+          </Box>
+        </Stack>
+      </AppCard>
 
-        <AppCard>
-          <Stack spacing={2.5}>
-            <Typography variant="subtitle1" fontWeight={700}>Location (optional)</Typography>
-            <Typography variant="body2" color="text.secondary">
-              If your community has a physical home base (a store, venue, or regular meeting spot), add it here.
+      {/* Location */}
+      <AppCard>
+        <Stack spacing={2.5}>
+          <Box>
+            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
+              Location (optional)
             </Typography>
-            <AppTextField
-              label="Location name"
-              value={locationName}
-              onChange={(e) => setLocationName(e.target.value)}
-              placeholder="The Game Library"
-              inputProps={{ maxLength: 200 }}
-            />
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              If your community has a physical home base, like a store, venue, or regular meeting spot, add it here.
+            </Typography>
+          </Box>
+
+          <PlacesAutocompleteInput
+            value={locationName}
+            onChange={(v) => {
+              setLocationName(v);
+              if (!v.trim()) setLocationAddress("");
+            }}
+            onPlaceSelect={(result) => {
+              setLocationName(result.name || result.formattedAddress);
+              setLocationAddress(result.formattedAddress);
+            }}
+            label="Venue or address"
+            placeholder="Search for a place or enter a name"
+            helperText="Start typing to search venues, parks, stores, or addresses"
+            placeTypes={["establishment", "geocode"]}
+            inputId="places-autocomplete-community-create"
+          />
+          {locationAddress && (
             <AppTextField
               label="Address"
               value={locationAddress}
               onChange={(e) => setLocationAddress(e.target.value)}
-              placeholder="123 Main St, Toronto, ON"
               inputProps={{ maxLength: 500 }}
             />
-          </Stack>
-        </AppCard>
-
-        <Stack direction="row" spacing={2} justifyContent="flex-end">
-          <AppButton variant="outlined" onClick={() => router.back()} sx={{ textTransform: "none" }}>
-            Cancel
-          </AppButton>
-          <AppButton
-            variant="contained"
-            onClick={handleSubmit}
-            disabled={saving || !name.trim() || slug.length < 3 || slugAvailable === false}
-            sx={{ textTransform: "none", minWidth: 140 }}
-          >
-            {saving ? <CircularProgress size={20} color="inherit" /> : "Create community"}
-          </AppButton>
+          )}
         </Stack>
+      </AppCard>
+
+      {/* Actions */}
+      <Stack direction="row" spacing={2} justifyContent="flex-end">
+        <AppButton variant="outlined" onClick={() => router.back()} sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}>
+          Cancel
+        </AppButton>
+        <AppButton
+          variant="contained"
+          onClick={handleSubmit}
+          disabled={saving || !name.trim() || slug.length < 3 || slugAvailable === false}
+          sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, minWidth: 160, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
+        >
+          {saving ? <CircularProgress size={20} color="inherit" /> : "Create community"}
+        </AppButton>
       </Stack>
-    </Box>
+    </Stack>
   );
 }
