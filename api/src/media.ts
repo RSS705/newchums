@@ -8,9 +8,10 @@ import { SignJWT, jwtVerify } from "jose";
 export const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 export const MAX_AVATAR_BYTES = 2 * 1024 * 1024; // 2MB
 export const MAX_EVENT_BANNER_BYTES = 400 * 1024; // 400KB
+export const MAX_ROADMAP_ATTACHMENT_BYTES = 5 * 1024 * 1024; // 5MB
 
-export type MediaPurpose = "avatar" | "event_banner";
-const ALLOWED_PURPOSES: MediaPurpose[] = ["avatar", "event_banner"];
+export type MediaPurpose = "avatar" | "event_banner" | "roadmap_attachment";
+const ALLOWED_PURPOSES: MediaPurpose[] = ["avatar", "event_banner", "roadmap_attachment"];
 
 export type UploadTokenPayload = {
   userId: string;
@@ -39,9 +40,10 @@ export function validateMediaInit(
   if (!ALLOWED_IMAGE_TYPES.includes(contentType as (typeof ALLOWED_IMAGE_TYPES)[number])) {
     return { ok: false, error: "Allowed types: JPEG, PNG, WebP" };
   }
-  const maxBytes = purpose === "event_banner" ? MAX_EVENT_BANNER_BYTES : MAX_AVATAR_BYTES;
+  const maxBytes = purpose === "roadmap_attachment" ? MAX_ROADMAP_ATTACHMENT_BYTES : purpose === "event_banner" ? MAX_EVENT_BANNER_BYTES : MAX_AVATAR_BYTES;
   if (contentLength > maxBytes) {
-    return { ok: false, error: purpose === "event_banner" ? "Banner must be 400KB or less" : "Avatar must be 2MB or less" };
+    const msg = purpose === "roadmap_attachment" ? "Attachment must be 5MB or less" : purpose === "event_banner" ? "Banner must be 400KB or less" : "Avatar must be 2MB or less";
+    return { ok: false, error: msg };
   }
   if (contentLength <= 0) {
     return { ok: false, error: "Invalid file size" };
@@ -57,6 +59,9 @@ export function buildObjectKey(userId: string, purpose: MediaPurpose, contentTyp
   }
   if (purpose === "event_banner") {
     return `event_banners/${userId}/${ts}.${ext}`;
+  }
+  if (purpose === "roadmap_attachment") {
+    return `roadmap_attachments/${userId}/${ts}.${ext}`;
   }
   return `${purpose}s/${userId}/${ts}.${ext}`;
 }

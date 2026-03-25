@@ -6,23 +6,31 @@ import Box from "@mui/material/Box";
 import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import Collapse from "@mui/material/Collapse";
+import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogTitle from "@mui/material/DialogTitle";
 import FormControl from "@mui/material/FormControl";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import MenuItem from "@mui/material/MenuItem";
 import Radio from "@mui/material/Radio";
 import RadioGroup from "@mui/material/RadioGroup";
 import Select from "@mui/material/Select";
+import Slider from "@mui/material/Slider";
 import Stack from "@mui/material/Stack";
 import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
+import AddPhotoAlternateRoundedIcon from "@mui/icons-material/AddPhotoAlternateRounded";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { TimePicker } from "@mui/x-date-pickers/TimePicker";
 import dayjs, { type Dayjs } from "dayjs";
+import Cropper, { type Area } from "react-easy-crop";
 import { useParams, useRouter } from "next/navigation";
 import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetch, getApiBaseUrl, getAvatarBaseUrl } from "@/lib/apiClient";
+import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
 import { isDuplicate, nameToSlug } from "@/lib/interestUtils";
 import { validateCleanText } from "@/lib/contentSafety";
 
@@ -41,6 +49,10 @@ const PREF_METRIC_LABELS: Record<string, string> = {
 };
 
 const PREF_METRICS = ["reliability", "sociability", "presentation"] as const;
+
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const MAX_BANNER_INPUT_BYTES = 20 * 1024 * 1024;
+const MAX_BANNER_OUTPUT_BYTES = 400 * 1024;
 
 export default function EditEventClient() {
   const params = useParams();
@@ -82,6 +94,18 @@ export default function EditEventClient() {
   const [communityName, setCommunityName] = useState<string | null>(null);
   const [hideFromExplore, setHideFromExplore] = useState(false);
 
+  // Banner image
+  const [bannerFile, setBannerFile] = useState<File | null>(null);
+  const [bannerPreview, setBannerPreview] = useState<string | null>(null);
+  const [existingBannerKey, setExistingBannerKey] = useState<string | null>(null);
+  const [bannerRemoved, setBannerRemoved] = useState(false);
+  const [bannerCropSrc, setBannerCropSrc] = useState<string | null>(null);
+  const [bannerCropZoom, setBannerCropZoom] = useState(1);
+  const [bannerCropPosition, setBannerCropPosition] = useState({ x: 0, y: 0 });
+  const [bannerCroppedArea, setBannerCroppedArea] = useState<Area | null>(null);
+  const [bannerDialogOpen, setBannerDialogOpen] = useState(false);
+  const bannerInputRef = useRef<HTMLInputElement>(null);
+
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -122,6 +146,11 @@ export default function EditEventClient() {
           setCommunityName(ev.community.name);
         }
         if (ev.hideFromExplore !== undefined) setHideFromExplore(ev.hideFromExplore === true);
+
+        if (ev.bannerKey) {
+          setExistingBannerKey(ev.bannerKey);
+          setBannerPreview(`${getAvatarBaseUrl()}/events/${ev.id}/banner?v=${Date.now()}`);
+        }
 
         // Load pref overrides
         const po: PrefOverrides = ev.prefOverrides ?? null;
@@ -213,6 +242,26 @@ export default function EditEventClient() {
     return null;
   };
 
+  const handleBannerCropComplete = useCallback((_: Area, croppedAreaPx: Area) => {
+    setBannerCroppedArea(croppedAreaPx);
+  }, []);
+
+  const handleBannerCropSave = useCallback(async () => {
+    if (!bannerCropSrc || !bannerCroppedArea) return;
+    try {
+      const blob = await getCroppedImg(bannerCropSrc, bannerCroppedArea as PixelCrop, 1200, 400, MAX_BANNER_OUTPUT_BYTES);
+      URL.revokeObjectURL(bannerCropSrc);
+      setBannerCropSrc(null);
+      const file = new File([blob], "banner.webp", { type: blob.type || "image/webp" });
+      setBannerFile(file);
+      setBannerPreview(URL.createObjectURL(file));
+      setBannerRemoved(false);
+      setBannerDialogOpen(false);
+    } catch {
+      toast.error("Failed to process image");
+    }
+  }, [bannerCropSrc, bannerCroppedArea, toast]);
+
   const handleSubmit = async () => {
     if (!title.trim()) { toast.error("Title is required"); return; }
     if (!dateValue?.isValid() || !timeValue?.isValid()) { toast.error("Date and time are required"); return; }
@@ -246,6 +295,49 @@ export default function EditEventClient() {
       });
       const data = (await res.json()) as { ok: boolean; message?: string };
       if (data.ok) {
+        if (bannerFile) {
+          try {
+            const bInitRes = await apiFetch("/media/init", {
+              auth: true,
+              method: "POST",
+              body: JSON.stringify({
+                purpose: "event_banner",
+                contentType: bannerFile.type || "image/webp",
+                contentLength: bannerFile.size,
+              }),
+            });
+            const bInitData = (await bInitRes.json()) as { ok?: boolean; uploadUrl?: string; objectKey?: string };
+            if (bInitData.ok && bInitData.uploadUrl && bInitData.objectKey) {
+              const uploadUrl = `${getApiBaseUrl()}${bInitData.uploadUrl}`;
+              const uploadRes = await fetch(uploadUrl, {
+                method: "PUT",
+                body: bannerFile,
+                headers: { "Content-Type": bannerFile.type || "image/webp" },
+                credentials: "omit",
+              });
+              if (uploadRes.ok) {
+                await apiFetch("/media/finalize", {
+                  auth: true,
+                  method: "POST",
+                  body: JSON.stringify({
+                    objectKey: bInitData.objectKey,
+                    purpose: "event_banner",
+                    eventId,
+                  }),
+                });
+              }
+            }
+          } catch { /* banner upload failure is non-fatal */ }
+        } else if (bannerRemoved && existingBannerKey) {
+          try {
+            await apiFetch(`/events/${eventId}`, {
+              auth: true,
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ banner_key: null }),
+            });
+          } catch { /* non-fatal */ }
+        }
         toast.success("Plan updated");
         router.push(`/events/${eventId}`);
       } else {
@@ -295,6 +387,85 @@ export default function EditEventClient() {
           Update the details for this plan. Changes will notify attendees who are Going or Maybe.
         </Typography>
       </Box>
+
+      {/* Banner image */}
+      <AppCard>
+        <Stack spacing={2}>
+          <Box>
+            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
+              Banner image
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              Upload a custom photo for this plan.
+            </Typography>
+          </Box>
+
+          <Box
+            onClick={() => bannerInputRef.current?.click()}
+            sx={{
+              width: "100%",
+              height: { xs: 140, sm: 180 },
+              borderRadius: 2.5,
+              border: "2px dashed",
+              borderColor: bannerPreview ? "transparent" : "grey.300",
+              bgcolor: bannerPreview ? "transparent" : "grey.50",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              overflow: "hidden",
+              position: "relative",
+              transition: "border-color 0.2s",
+              "&:hover": { borderColor: bannerPreview ? "transparent" : "primary.main" },
+            }}
+          >
+            {bannerPreview ? (
+              <Box
+                component="img"
+                src={bannerPreview}
+                alt="Banner preview"
+                sx={{ width: "100%", height: "100%", objectFit: "cover" }}
+              />
+            ) : (
+              <Stack alignItems="center" spacing={0.75}>
+                <AddPhotoAlternateRoundedIcon sx={{ fontSize: 36, color: "text.disabled" }} />
+                <Typography variant="body2" color="text.secondary">
+                  Upload a photo
+                </Typography>
+              </Stack>
+            )}
+          </Box>
+          <Stack direction="row" spacing={1} flexWrap="wrap">
+            {bannerPreview && (
+              <AppButton
+                variant="outlined"
+                size="small"
+                onClick={() => bannerInputRef.current?.click()}
+              >
+                Change photo
+              </AppButton>
+            )}
+            {bannerPreview && (
+              <AppButton
+                variant="text"
+                size="small"
+                color="error"
+                onClick={() => {
+                  setBannerFile(null);
+                  if (bannerPreview && !bannerPreview.startsWith("http")) URL.revokeObjectURL(bannerPreview);
+                  setBannerPreview(null);
+                  setBannerRemoved(true);
+                }}
+              >
+                Remove
+              </AppButton>
+            )}
+          </Stack>
+          <Typography variant="caption" color="text.secondary">
+            JPEG, PNG, or WebP up to 20 MB — we&apos;ll compress it automatically.
+          </Typography>
+        </Stack>
+      </AppCard>
 
       {/* Basic details */}
       <AppCard>
@@ -712,6 +883,103 @@ export default function EditEventClient() {
           {submitting ? <CircularProgress size={22} color="inherit" /> : "Save changes"}
         </AppButton>
       </Stack>
+
+      {/* Hidden file input for banner */}
+      <input
+        ref={bannerInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        style={{ display: "none" }}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+            toast.error("Please use JPEG, PNG, or WebP.");
+            return;
+          }
+          if (file.size > MAX_BANNER_INPUT_BYTES) {
+            toast.error("Image must be 20MB or less.");
+            return;
+          }
+          if (bannerPreview && !bannerPreview.startsWith("http")) URL.revokeObjectURL(bannerPreview);
+          const url = URL.createObjectURL(file);
+          setBannerCropSrc(url);
+          setBannerCropZoom(1);
+          setBannerCropPosition({ x: 0, y: 0 });
+          setBannerCroppedArea(null);
+          setBannerDialogOpen(true);
+          if (bannerInputRef.current) bannerInputRef.current.value = "";
+        }}
+      />
+
+      {/* Banner crop dialog */}
+      <Dialog
+        open={bannerDialogOpen}
+        onClose={() => {
+          if (bannerCropSrc) URL.revokeObjectURL(bannerCropSrc);
+          setBannerCropSrc(null);
+          setBannerDialogOpen(false);
+        }}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: { m: { xs: 2, sm: 3 }, maxHeight: { xs: "calc(100dvh - 32px)", sm: "calc(100dvh - 48px)" } },
+        }}
+      >
+        <DialogTitle>Crop banner image</DialogTitle>
+        <DialogContent sx={{ px: { xs: 2, sm: 3 } }}>
+          {bannerCropSrc && (
+            <Stack spacing={2} sx={{ pt: 1 }}>
+              <Box sx={{ position: "relative", height: 280 }}>
+                <Cropper
+                  image={bannerCropSrc}
+                  crop={bannerCropPosition}
+                  zoom={bannerCropZoom}
+                  aspect={3}
+                  onCropChange={setBannerCropPosition}
+                  onZoomChange={setBannerCropZoom}
+                  onCropComplete={handleBannerCropComplete}
+                />
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary" gutterBottom>
+                  Zoom
+                </Typography>
+                <Slider
+                  value={bannerCropZoom}
+                  min={1}
+                  max={3}
+                  step={0.1}
+                  valueLabelDisplay="auto"
+                  onChange={(_, v) => setBannerCropZoom(Number(v))}
+                />
+              </Box>
+              <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center" }}>
+                Drag to reposition, use the slider to zoom.
+              </Typography>
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: { xs: 2, sm: 3 }, pb: 2 }}>
+          <AppButton
+            variant="outlined"
+            onClick={() => {
+              if (bannerCropSrc) URL.revokeObjectURL(bannerCropSrc);
+              setBannerCropSrc(null);
+              setBannerDialogOpen(false);
+            }}
+          >
+            Cancel
+          </AppButton>
+          <AppButton
+            variant="contained"
+            disabled={!bannerCroppedArea}
+            onClick={handleBannerCropSave}
+          >
+            Use this crop
+          </AppButton>
+        </DialogActions>
+      </Dialog>
     </Stack>
   );
 }

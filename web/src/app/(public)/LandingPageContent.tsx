@@ -21,7 +21,7 @@ import NotificationsActiveRoundedIcon from "@mui/icons-material/NotificationsAct
 import VerifiedUserRoundedIcon from "@mui/icons-material/VerifiedUserRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import ChatRoundedIcon from "@mui/icons-material/ChatRounded";
-import EmojiEventsRoundedIcon from "@mui/icons-material/EmojiEventsRounded";
+
 import EventAvailableRoundedIcon from "@mui/icons-material/EventAvailableRounded";
 import MailOutlineRoundedIcon from "@mui/icons-material/MailOutlineRounded";
 import ThumbUpAltRoundedIcon from "@mui/icons-material/ThumbUpAltRounded";
@@ -241,16 +241,6 @@ const FEATURES: {
     body: (
       <>
         After the plan, attendees share <Box component="span" sx={{ color: "#0e7490", fontWeight: 600 }}>feedback</Box>. NewChums remembers your preferences and avoids notifying people about your plans who aren&apos;t a good fit, and flags potential mismatches in other people&apos;s plans.
-      </>
-    ),
-  },
-  {
-    Icon: EmojiEventsRoundedIcon,
-    accentColor: "#b45309",
-    title: "Earn Chum Points",
-    body: (
-      <>
-        Hosts and attendees earn <Box component="span" sx={{ color: "#b45309", fontWeight: 600 }}>Chum Points</Box> for successful plans, building a reputation as a solid chum who can be relied on.
       </>
     ),
   },

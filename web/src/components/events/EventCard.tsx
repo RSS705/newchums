@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import Box from "@mui/material/Box";
 import Card from "@mui/material/Card";
 import CardActionArea from "@mui/material/CardActionArea";
@@ -12,7 +13,7 @@ import LinkRoundedIcon from "@mui/icons-material/LinkRounded";
 import PeopleOutlineRoundedIcon from "@mui/icons-material/PeopleOutlineRounded";
 import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
 import Link from "next/link";
-import { getMediaApiBaseUrl } from "@/lib/apiClient";
+import { getAvatarBaseUrl } from "@/lib/apiClient";
 import { getGradientForEventId } from "@/lib/eventBanners";
 
 export type PlanEvent = {
@@ -109,9 +110,11 @@ export default function EventCard({
         ? `${event.goingCount} going`
         : "No responses yet";
 
-  const bannerUrl = event.bannerKey
-    ? `${getMediaApiBaseUrl()}/events/${event.id}/banner`
+  const bannerSrc = event.bannerKey
+    ? `${getAvatarBaseUrl()}/events/${event.id}/banner`
     : null;
+  const [bannerFailed, setBannerFailed] = React.useState(false);
+  const bannerUrl = bannerSrc && !bannerFailed ? bannerSrc : null;
   const fallbackGradient = getGradientForEventId(event.id);
 
   const cardHref =
@@ -161,6 +164,7 @@ export default function EventCard({
               component="img"
               src={bannerUrl}
               alt=""
+              onError={() => setBannerFailed(true)}
               sx={{
                 width: "100%",
                 height: "100%",

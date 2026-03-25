@@ -62,6 +62,7 @@ import {
 import {
   MAX_AVATAR_BYTES,
   MAX_EVENT_BANNER_BYTES,
+  MAX_ROADMAP_ATTACHMENT_BYTES,
   buildObjectKey,
   createUploadToken,
   validateMediaInit,
@@ -2591,7 +2592,7 @@ app.post("/media/init", async (c) => {
       contentType?: string;
       contentLength?: number;
     };
-    const purpose = (body.purpose ?? "avatar") as "avatar" | "event_banner";
+    const purpose = (body.purpose ?? "avatar") as "avatar" | "event_banner" | "roadmap_attachment";
     const contentType = (body.contentType ?? "").trim().toLowerCase();
     const contentLength = typeof body.contentLength === "number" ? body.contentLength : 0;
 
@@ -2622,7 +2623,7 @@ app.post("/media/init", async (c) => {
       c.env.NEXTAUTH_SECRET,
     );
 
-    const maxBytes = purpose === "event_banner" ? MAX_EVENT_BANNER_BYTES : MAX_AVATAR_BYTES;
+    const maxBytes = purpose === "roadmap_attachment" ? MAX_ROADMAP_ATTACHMENT_BYTES : purpose === "event_banner" ? MAX_EVENT_BANNER_BYTES : MAX_AVATAR_BYTES;
     return c.json({
       ok: true,
       uploadToken,
@@ -2682,7 +2683,7 @@ app.post("/media/finalize", async (c) => {
   try {
     const body = (await c.req.json()) as { objectKey?: string; purpose?: string; eventId?: string };
     const objectKey = (body.objectKey ?? "").trim();
-    const purpose = (body.purpose ?? "avatar") as "avatar" | "event_banner";
+    const purpose = (body.purpose ?? "avatar") as "avatar" | "event_banner" | "roadmap_attachment";
 
     const sql = getSql(c.env);
     const appUserId = await ensureAppUserId(
@@ -2690,6 +2691,18 @@ app.post("/media/finalize", async (c) => {
       payload.email,
       (payload as { name?: string | null }).name,
     );
+
+    if (purpose === "roadmap_attachment") {
+      const expectedPrefix = `roadmap_attachments/${appUserId}/`;
+      if (!objectKey.startsWith(expectedPrefix)) {
+        return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+      }
+      const obj = await c.env.MEDIA_BUCKET.head(objectKey);
+      if (!obj) {
+        return c.json({ ok: false, error: "OBJECT_NOT_FOUND" }, 404);
+      }
+      return c.json({ ok: true, objectKey });
+    }
 
     if (purpose === "event_banner") {
       const expectedPrefix = `event_banners/${appUserId}/`;
@@ -2796,6 +2809,7 @@ app.get("/users/:userId/avatar", async (c) => {
 app.get("/events/:eventId/banner", async (c) => {
   const eventId = c.req.param("eventId");
   if (!eventId || !c.env.MEDIA_BUCKET) {
+    console.warn(`[GET /events/${eventId}/banner] missing eventId or MEDIA_BUCKET binding`);
     return c.notFound();
   }
   try {
@@ -2809,6 +2823,7 @@ app.get("/events/:eventId/banner", async (c) => {
     }
     const obj = await c.env.MEDIA_BUCKET.get(bannerKey);
     if (!obj) {
+      console.warn(`[GET /events/${eventId}/banner] R2 object not found for key: ${bannerKey}`);
       return c.notFound();
     }
     const body = obj.body;
@@ -2817,7 +2832,8 @@ app.get("/events/:eventId/banner", async (c) => {
     headers.set("Content-Type", ct);
     headers.set("Cache-Control", "public, max-age=86400");
     return new Response(body, { headers, status: 200 });
-  } catch {
+  } catch (err) {
+    console.error(`[GET /events/${eventId}/banner]`, err);
     return c.notFound();
   }
 });
@@ -8240,6 +8256,7 @@ app.patch("/events/:id", async (c) => {
     const patchPrefOverrides = "pref_overrides" in body ? parsePrefOverrides(body.pref_overrides ?? null) : undefined;
     const patchCommunityId = "community_id" in body ? (body.community_id ? String(body.community_id) : null) : undefined;
     const patchHideFromExplore = "hide_from_explore" in body ? body.hide_from_explore === true : undefined;
+    const patchBannerKey = "banner_key" in body ? (body.banner_key === null ? null : undefined) : undefined;
 
     // Attendance assurance fields
     const patchMinConfirmed = patchRequireReconfirmation && body.min_confirmed_attendees != null
@@ -8310,6 +8327,7 @@ app.patch("/events/:id", async (c) => {
           pref_overrides           = CASE WHEN ${patchPrefOverrides !== undefined} THEN ${patchPrefOverrides !== undefined ? (patchPrefOverrides ? JSON.stringify(patchPrefOverrides) : null) : null}::jsonb ELSE pref_overrides END,
           community_id             = CASE WHEN ${patchCommunityId !== undefined} THEN ${patchCommunityId !== undefined ? patchCommunityId : null}::uuid ELSE community_id END,
           hide_from_explore        = CASE WHEN ${patchHideFromExplore !== undefined} THEN ${patchHideFromExplore !== undefined ? patchHideFromExplore : false} ELSE hide_from_explore END,
+          banner_key               = CASE WHEN ${patchBannerKey !== undefined} THEN ${patchBannerKey !== undefined ? patchBannerKey : null} ELSE banner_key END,
           updated_at               = NOW()
       WHERE id = ${eventId}
     `;
@@ -10156,12 +10174,15 @@ app.get("/roadmap/:id", async (c) => {
       viewerFollowing = f.length > 0;
     }
 
+    const viewerIsAuthor = viewerUserId !== null && item.author_user_id === viewerUserId;
+
     return c.json({
       ok: true,
       item: {
         ...item,
         viewer_voted: viewerVoted,
         viewer_following: viewerFollowing,
+        viewer_is_author: viewerIsAuthor,
       },
       comments: comments.filter((cm: Record<string, unknown>) => !cm.is_removed).map((cm: Record<string, unknown>) => ({
         id: cm.id, body: cm.body, created_at: cm.created_at, author_username: cm.author_username,
@@ -10191,6 +10212,9 @@ app.post("/roadmap", async (c) => {
   const title = String(body.title ?? "").trim();
   const description = String(body.body ?? "").trim();
   const category = String(body.category ?? "feature_request");
+  const attachmentKey = typeof body.attachment_key === "string" && body.attachment_key.startsWith("roadmap_attachments/")
+    ? body.attachment_key.trim()
+    : null;
 
   if (!title || title.length > 200) return c.json({ ok: false, error: "VALIDATION", message: "Title is required (max 200 chars)" }, 400);
   if (description.length > 5000) return c.json({ ok: false, error: "VALIDATION", message: "Description too long (max 5000 chars)" }, 400);
@@ -10206,8 +10230,8 @@ app.post("/roadmap", async (c) => {
 
   try {
     const rows = (await sql`
-      INSERT INTO newchums.roadmap_items (author_user_id, category, title, body, vote_count, follower_count)
-      VALUES (${userId}, ${category}, ${title}, ${description || null}, 1, 1)
+      INSERT INTO newchums.roadmap_items (author_user_id, category, title, body, attachment_key, vote_count, follower_count)
+      VALUES (${userId}, ${category}, ${title}, ${description || null}, ${attachmentKey}, 1, 1)
       RETURNING id
     `) as { id: string }[];
 
@@ -10284,6 +10308,89 @@ app.post("/roadmap/:id/follow", async (c) => {
   }
 });
 
+/** PUT /roadmap/:id — edit a roadmap item (author only) */
+app.put("/roadmap/:id", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email) return c.json({ ok: false, error: "AUTH_REQUIRED" }, 401);
+
+  const sql = getSql(c.env);
+  const itemId = c.req.param("id");
+  const users = (await sql`SELECT id FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string }[];
+  if (users.length === 0) return c.json({ ok: false, error: "AUTH_REQUIRED" }, 401);
+  const userId = users[0].id;
+
+  const existing = (await sql`SELECT author_user_id, status FROM newchums.roadmap_items WHERE id = ${itemId} AND is_removed = false`) as { author_user_id: string; status: string }[];
+  if (existing.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+  if (existing[0].author_user_id !== userId) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+
+  const title = typeof body.title === "string" ? body.title.trim() : undefined;
+  const description = typeof body.body === "string" ? body.body.trim() : undefined;
+  const category = typeof body.category === "string" ? body.category : undefined;
+
+  if (title !== undefined && (!title || title.length > 200)) return c.json({ ok: false, error: "VALIDATION", message: "Title is required (max 200 chars)" }, 400);
+  if (description !== undefined && description.length > 5000) return c.json({ ok: false, error: "VALIDATION", message: "Description too long (max 5000 chars)" }, 400);
+  if (category !== undefined && !ROADMAP_CATEGORIES.includes(category as typeof ROADMAP_CATEGORIES[number]))
+    return c.json({ ok: false, error: "VALIDATION", message: "Invalid category" }, 400);
+
+  if (title !== undefined) {
+    const titleCheck = validateCleanText(title);
+    if (!titleCheck.ok) return c.json({ ok: false, error: "CONTENT_POLICY", message: titleCheck.reason }, 400);
+  }
+  if (description) {
+    const bodyCheck = validateCleanText(description);
+    if (!bodyCheck.ok) return c.json({ ok: false, error: "CONTENT_POLICY", message: bodyCheck.reason }, 400);
+  }
+
+  try {
+    const sets: string[] = [];
+    if (title !== undefined) sets.push("title");
+    if (description !== undefined) sets.push("body");
+    if (category !== undefined) sets.push("category");
+    if (sets.length === 0) return c.json({ ok: false, error: "VALIDATION", message: "Nothing to update" }, 400);
+
+    await sql`
+      UPDATE newchums.roadmap_items SET
+        ${title !== undefined ? sql`title = ${title},` : sql``}
+        ${description !== undefined ? sql`body = ${description || null},` : sql``}
+        ${category !== undefined ? sql`category = ${category},` : sql``}
+        updated_at = NOW()
+      WHERE id = ${itemId}
+    `;
+
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[PUT /roadmap/:id]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** DELETE /roadmap/:id — soft-delete a roadmap item (author only) */
+app.delete("/roadmap/:id", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email) return c.json({ ok: false, error: "AUTH_REQUIRED" }, 401);
+
+  const sql = getSql(c.env);
+  const itemId = c.req.param("id");
+  const users = (await sql`SELECT id FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string }[];
+  if (users.length === 0) return c.json({ ok: false, error: "AUTH_REQUIRED" }, 401);
+  const userId = users[0].id;
+
+  const existing = (await sql`SELECT author_user_id FROM newchums.roadmap_items WHERE id = ${itemId} AND is_removed = false`) as { author_user_id: string }[];
+  if (existing.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+  if (existing[0].author_user_id !== userId) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  try {
+    await sql`UPDATE newchums.roadmap_items SET is_removed = true, updated_at = NOW() WHERE id = ${itemId}`;
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[DELETE /roadmap/:id]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
 /** POST /roadmap/:id/comment — add a comment */
 app.post("/roadmap/:id/comment", async (c) => {
   const authPayload = await requireAuth(c);
@@ -10323,6 +10430,26 @@ app.post("/roadmap/:id/comment", async (c) => {
     });
   } catch (err) {
     console.error("[POST /roadmap/:id/comment]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** GET /roadmap/:id/attachment — serve the attachment image from R2 */
+app.get("/roadmap/:id/attachment", async (c) => {
+  if (!c.env.MEDIA_BUCKET) return c.json({ ok: false, error: "MEDIA_NOT_CONFIGURED" }, 503);
+  const itemId = c.req.param("id");
+  const sql = getSql(c.env);
+  try {
+    const rows = (await sql`SELECT attachment_key FROM newchums.roadmap_items WHERE id = ${itemId} AND is_removed = false`) as { attachment_key: string | null }[];
+    if (rows.length === 0 || !rows[0].attachment_key) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    const obj = await c.env.MEDIA_BUCKET.get(rows[0].attachment_key);
+    if (!obj) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    const headers = new Headers();
+    headers.set("Content-Type", obj.httpMetadata?.contentType ?? "image/jpeg");
+    headers.set("Cache-Control", "public, max-age=31536000, immutable");
+    return new Response(obj.body, { headers });
+  } catch (err) {
+    console.error("[GET /roadmap/:id/attachment]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });

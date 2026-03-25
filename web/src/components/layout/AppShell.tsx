@@ -481,7 +481,7 @@ export default function AppShell({ children, user }: AppShellProps) {
                   <ListItemIcon>
                     <FeedbackRoundedIcon fontSize="small" />
                   </ListItemIcon>
-                  Give Feedback & Roadmap
+                  Give Feedback
                 </MenuItem>
                 <MenuItem
                   onClick={async () => {

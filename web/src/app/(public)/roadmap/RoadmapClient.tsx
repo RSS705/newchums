@@ -34,8 +34,10 @@ import NotificationsActiveRoundedIcon from "@mui/icons-material/NotificationsAct
 import NotificationsNoneRoundedIcon from "@mui/icons-material/NotificationsNoneRounded";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetch, getApiBaseUrl } from "@/lib/apiClient";
 import AppTextField from "@/components/ui/AppTextField";
+import AttachFileRoundedIcon from "@mui/icons-material/AttachFileRounded";
+import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 
 type RoadmapItem = {
   id: string;
@@ -145,6 +147,9 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
   const [submitFollow, setSubmitFollow] = React.useState(true);
   const [submitting, setSubmitting] = React.useState(false);
   const [submitError, setSubmitError] = React.useState("");
+  const [submitFile, setSubmitFile] = React.useState<File | null>(null);
+  const [submitFilePreview, setSubmitFilePreview] = React.useState<string | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const statusFilter = tab === 0 ? "active" : "completed";
 
@@ -218,15 +223,83 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
     } catch { /* noop */ }
   };
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const allowed = ["image/jpeg", "image/png", "image/webp"];
+    if (!allowed.includes(file.type)) {
+      setSubmitError("Only JPEG, PNG, or WebP images are allowed.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setSubmitError("Attachment must be 5 MB or less.");
+      return;
+    }
+    setSubmitError("");
+    setSubmitFile(file);
+    setSubmitFilePreview(URL.createObjectURL(file));
+  };
+
+  const clearFile = () => {
+    if (submitFilePreview) URL.revokeObjectURL(submitFilePreview);
+    setSubmitFile(null);
+    setSubmitFilePreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
   const handleSubmit = async () => {
     setSubmitError("");
     setSubmitting(true);
     try {
+      let attachmentKey: string | null = null;
+
+      if (submitFile) {
+        const initRes = await apiFetch("/media/init", {
+          auth: true,
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ purpose: "roadmap_attachment", contentType: submitFile.type, contentLength: submitFile.size }),
+        });
+        const initData = await initRes.json();
+        if (!initData.ok) {
+          setSubmitError(initData.error ?? "Failed to start upload.");
+          setSubmitting(false);
+          return;
+        }
+
+        const uploadUrl = `${getApiBaseUrl()}${initData.uploadUrl}`;
+        const upRes = await fetch(uploadUrl, { method: "PUT", headers: { "Content-Type": submitFile.type }, body: submitFile });
+        if (!upRes.ok) {
+          setSubmitError("File upload failed. Please try again.");
+          setSubmitting(false);
+          return;
+        }
+
+        const finRes = await apiFetch("/media/finalize", {
+          auth: true,
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ objectKey: initData.objectKey, purpose: "roadmap_attachment" }),
+        });
+        const finData = await finRes.json();
+        if (!finData.ok) {
+          setSubmitError(finData.error ?? "Failed to finalize upload.");
+          setSubmitting(false);
+          return;
+        }
+        attachmentKey = finData.objectKey;
+      }
+
       const res = await apiFetch("/roadmap", {
         auth: true,
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: submitTitle.trim(), body: submitBody.trim(), category: submitCategory }),
+        body: JSON.stringify({
+          title: submitTitle.trim(),
+          body: submitBody.trim(),
+          category: submitCategory,
+          ...(attachmentKey ? { attachment_key: attachmentKey } : {}),
+        }),
       });
       const data = await res.json();
       if (data.ok) {
@@ -238,6 +311,7 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
         setSubmitBody("");
         setSubmitCategory("feature_request");
         setSubmitFollow(true);
+        clearFile();
         fetchItems(false);
       } else {
         setSubmitError(data.message || "Something went wrong. Please try again.");
@@ -271,7 +345,7 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
             onClick={() => setSubmitOpen(true)}
             sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
           >
-            Submit an idea
+            Submit feedback
           </Button>
         ) : (
           <Button
@@ -281,7 +355,7 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
             color="primary"
             sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
           >
-            Sign in to submit ideas and vote
+            Sign in to submit feedback and vote
           </Button>
         )}
       </Box>
@@ -529,10 +603,10 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
         fullWidth
         PaperProps={{ sx: { borderRadius: 3 } }}
       >
-        <DialogTitle sx={{ fontWeight: 700, pb: 0.5 }}>Submit an idea</DialogTitle>
+        <DialogTitle sx={{ fontWeight: 700, pb: 0.5 }}>Submit feedback</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
-            Even small suggestions are welcome, every idea helps us improve NewChums.
+            Bug reports, feature requests, and suggestions are all welcome.
           </Typography>
 
           <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
@@ -552,7 +626,7 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
             label="Title"
             value={submitTitle}
             onChange={(e) => setSubmitTitle(e.target.value)}
-            placeholder="A short summary of your idea"
+            placeholder="A short summary"
             fullWidth
             inputProps={{ maxLength: 200 }}
             sx={{ mb: 2 }}
@@ -569,6 +643,46 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
             inputProps={{ maxLength: 5000 }}
             sx={{ mb: 1.5 }}
           />
+
+          <Box sx={{ mb: 1.5 }}>
+            <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.5 }}>
+              Attach a screenshot (optional)
+            </Typography>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              style={{ display: "none" }}
+              onChange={handleFileSelect}
+            />
+            {submitFile && submitFilePreview ? (
+              <Box sx={{ position: "relative", display: "inline-block" }}>
+                <Box
+                  component="img"
+                  src={submitFilePreview}
+                  alt="Attachment preview"
+                  sx={{ maxWidth: "100%", maxHeight: 160, borderRadius: 1.5, border: "1px solid", borderColor: "divider" }}
+                />
+                <IconButton
+                  size="small"
+                  onClick={clearFile}
+                  sx={{ position: "absolute", top: 4, right: 4, bgcolor: "background.paper", boxShadow: 1, "&:hover": { bgcolor: "background.paper" } }}
+                >
+                  <CloseRoundedIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              </Box>
+            ) : (
+              <Button
+                size="small"
+                startIcon={<AttachFileRoundedIcon />}
+                onClick={() => fileInputRef.current?.click()}
+                sx={{ textTransform: "none" }}
+              >
+                Choose file
+              </Button>
+            )}
+          </Box>
+
           <FormControlLabel
             control={
               <Checkbox
@@ -579,7 +693,7 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
             }
             label={
               <Typography variant="body2" color="text.secondary">
-                Follow this idea and receive email updates when addressed
+                Follow this and receive email updates when addressed
               </Typography>
             }
           />

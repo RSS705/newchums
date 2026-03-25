@@ -7,7 +7,14 @@ import {
   Button,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Divider,
+  FormControlLabel,
+  Radio,
+  RadioGroup,
   Skeleton,
   Stack,
   Tooltip,
@@ -18,8 +25,11 @@ import ThumbUpOutlinedIcon from "@mui/icons-material/ThumbUpOutlined";
 import NotificationsActiveRoundedIcon from "@mui/icons-material/NotificationsActiveRounded";
 import NotificationsNoneRoundedIcon from "@mui/icons-material/NotificationsNoneRounded";
 import MergeRoundedIcon from "@mui/icons-material/MergeRounded";
+import EditRoundedIcon from "@mui/icons-material/EditRounded";
+import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import Link from "next/link";
-import { apiFetch } from "@/lib/apiClient";
+import { useRouter } from "next/navigation";
+import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import AppTextField from "@/components/ui/AppTextField";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -58,6 +68,8 @@ type ItemDetail = {
   author_username: string;
   viewer_voted: boolean;
   viewer_following: boolean;
+  viewer_is_author: boolean;
+  attachment_key: string | null;
 };
 
 type Comment = {
@@ -98,6 +110,7 @@ function formatDate(dateStr: string): string {
 type Props = { itemId: string; isLoggedIn: boolean };
 
 export default function RoadmapItemClient({ itemId, isLoggedIn }: Props) {
+  const router = useRouter();
   const [item, setItem] = React.useState<ItemDetail | null>(null);
   const [comments, setComments] = React.useState<Comment[]>([]);
   const [adminNotes, setAdminNotes] = React.useState<AdminNote[]>([]);
@@ -108,6 +121,16 @@ export default function RoadmapItemClient({ itemId, isLoggedIn }: Props) {
   const [commentBody, setCommentBody] = React.useState("");
   const [submittingComment, setSubmittingComment] = React.useState(false);
   const [commentError, setCommentError] = React.useState("");
+
+  const [editing, setEditing] = React.useState(false);
+  const [editTitle, setEditTitle] = React.useState("");
+  const [editBody, setEditBody] = React.useState("");
+  const [editCategory, setEditCategory] = React.useState("feature_request");
+  const [saving, setSaving] = React.useState(false);
+  const [editError, setEditError] = React.useState("");
+
+  const [deleteOpen, setDeleteOpen] = React.useState(false);
+  const [deleting, setDeleting] = React.useState(false);
 
   const fetchItem = React.useCallback(async () => {
     setLoading(true);
@@ -179,6 +202,57 @@ export default function RoadmapItemClient({ itemId, isLoggedIn }: Props) {
     setSubmittingComment(false);
   };
 
+  const startEditing = () => {
+    if (!item) return;
+    setEditTitle(item.title);
+    setEditBody(item.body ?? "");
+    setEditCategory(item.category);
+    setEditError("");
+    setEditing(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editTitle.trim()) return;
+    setEditError("");
+    setSaving(true);
+    try {
+      const res = await apiFetch(`/roadmap/${itemId}`, {
+        auth: true,
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: editTitle.trim(), body: editBody.trim(), category: editCategory }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setEditing(false);
+        fetchItem();
+      } else {
+        setEditError(data.message || "Could not save changes.");
+      }
+    } catch {
+      setEditError("Something went wrong. Please try again.");
+    }
+    setSaving(false);
+  };
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      const res = await apiFetch(`/roadmap/${itemId}`, { auth: true, method: "DELETE" });
+      const data = await res.json();
+      if (data.ok) {
+        router.push("/roadmap");
+      } else {
+        setDeleteOpen(false);
+        setError(data.message || "Could not remove this item.");
+      }
+    } catch {
+      setDeleteOpen(false);
+      setError("Something went wrong. Please try again.");
+    }
+    setDeleting(false);
+  };
+
   if (loading) {
     return (
       <Box>
@@ -243,23 +317,125 @@ export default function RoadmapItemClient({ itemId, isLoggedIn }: Props) {
         {item.title}
       </Typography>
 
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        Submitted by{" "}
-        <Typography
-          component={Link}
-          href={`/u/${item.author_username}`}
-          variant="body2"
-          sx={{ textDecoration: "none", "&:hover": { textDecoration: "underline", color: "primary.main" } }}
-        >
-          @{item.author_username}
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
+        <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>
+          Submitted by{" "}
+          <Typography
+            component={Link}
+            href={`/u/${item.author_username}`}
+            variant="body2"
+            sx={{ textDecoration: "none", "&:hover": { textDecoration: "underline", color: "primary.main" } }}
+          >
+            @{item.author_username}
+          </Typography>
+          {" "}&middot; {formatDate(item.created_at)}
         </Typography>
-        {" "}&middot; {formatDate(item.created_at)}
-      </Typography>
+        {item.viewer_is_author && !editing && (
+          <>
+            <Button
+              size="small"
+              startIcon={<EditRoundedIcon />}
+              onClick={startEditing}
+              sx={{ textTransform: "none", fontWeight: 600 }}
+            >
+              Edit
+            </Button>
+            <Button
+              size="small"
+              color="error"
+              startIcon={<DeleteOutlineRoundedIcon />}
+              onClick={() => setDeleteOpen(true)}
+              sx={{ textTransform: "none", fontWeight: 600 }}
+            >
+              Remove
+            </Button>
+          </>
+        )}
+      </Stack>
 
-      {item.body && (
-        <Typography variant="body1" sx={{ mb: 3, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
-          {item.body}
-        </Typography>
+      {editing ? (
+        <Box sx={{ mb: 3 }}>
+          <AppTextField
+            label="Title"
+            value={editTitle}
+            onChange={(e) => setEditTitle(e.target.value)}
+            fullWidth
+            inputProps={{ maxLength: 200 }}
+            sx={{ mb: 2 }}
+          />
+          <AppTextField
+            label="Description (optional)"
+            value={editBody}
+            onChange={(e) => setEditBody(e.target.value)}
+            fullWidth
+            multiline
+            minRows={3}
+            maxRows={8}
+            inputProps={{ maxLength: 5000 }}
+            sx={{ mb: 2 }}
+          />
+          <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
+            Category
+          </Typography>
+          <RadioGroup
+            value={editCategory}
+            onChange={(e) => setEditCategory(e.target.value)}
+            sx={{ mb: 2 }}
+          >
+            <FormControlLabel value="feature_request" control={<Radio size="small" />} label="Feature request" />
+            <FormControlLabel value="bug" control={<Radio size="small" />} label="Bug / issue" />
+            <FormControlLabel value="general_feedback" control={<Radio size="small" />} label="General feedback" />
+          </RadioGroup>
+          {editError && (
+            <Typography variant="body2" color="error" sx={{ mb: 1.5 }}>
+              {editError}
+            </Typography>
+          )}
+          <Stack direction="row" spacing={1}>
+            <Button
+              variant="contained"
+              onClick={handleSaveEdit}
+              disabled={saving || !editTitle.trim()}
+              sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
+            >
+              {saving ? <CircularProgress size={20} /> : "Save changes"}
+            </Button>
+            <Button
+              onClick={() => setEditing(false)}
+              disabled={saving}
+              sx={{ textTransform: "none" }}
+            >
+              Cancel
+            </Button>
+          </Stack>
+        </Box>
+      ) : (
+        <>
+          {item.body && (
+            <Typography variant="body1" sx={{ mb: 3, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
+              {item.body}
+            </Typography>
+          )}
+
+          {item.attachment_key && (
+            <Box sx={{ mb: 3 }}>
+              <Box
+                component="a"
+                href={`${getAvatarBaseUrl()}/roadmap/${item.id}/attachment`}
+                target="_blank"
+                rel="noopener noreferrer"
+                sx={{ display: "inline-block" }}
+              >
+                <Box
+                  component="img"
+                  src={`${getAvatarBaseUrl()}/roadmap/${item.id}/attachment`}
+                  alt="Attachment"
+                  sx={{ maxWidth: "100%", maxHeight: 400, borderRadius: 1.5, border: "1px solid", borderColor: "divider", cursor: "pointer" }}
+                />
+              </Box>
+            </Box>
+          )}
+        </>
       )}
 
       {/* Actions */}
@@ -436,6 +612,36 @@ export default function RoadmapItemClient({ itemId, isLoggedIn }: Props) {
           </Button>
         </Box>
       )}
+
+      {/* Delete confirmation dialog */}
+      <Dialog
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle sx={{ fontWeight: 700 }}>Remove this feedback?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            This will permanently remove your submission from the roadmap. Any votes, comments, and follows will also be lost.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button onClick={() => setDeleteOpen(false)} disabled={deleting} sx={{ textTransform: "none" }}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={handleDelete}
+            disabled={deleting}
+            sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
+          >
+            {deleting ? <CircularProgress size={20} /> : "Remove"}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

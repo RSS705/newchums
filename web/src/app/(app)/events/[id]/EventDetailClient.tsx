@@ -57,7 +57,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import UserAvatar from "@/components/common/UserAvatar";
 import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
-import { apiFetch, clearAuthTokenCache, getAuthToken, getAvatarBaseUrl, getChatWebSocketUrl, getMediaApiBaseUrl } from "@/lib/apiClient";
+import { apiFetch, clearAuthTokenCache, getAuthToken, getAvatarBaseUrl, getChatWebSocketUrl } from "@/lib/apiClient";
 import { isDuplicate, nameToSlug } from "@/lib/interestUtils";
 import { notifyObjectivesChanged } from "@/components/objectives/NextStepNudge";
 import PlanFeedback from "@/components/events/PlanFeedback";
@@ -268,6 +268,8 @@ export default function EventDetailClient() {
 
   // Share token from API response — used by Copy Link to build share-access URLs
   const [shareToken, setShareToken] = useState<string | null>(null);
+
+  const [bannerFailed, setBannerFailed] = useState(false);
 
   // Copy link — builds a share URL with the share token so recipients get
   // guest access (not just the public preview).
@@ -1316,9 +1318,10 @@ export default function EventDetailClient() {
     const pubMaybeCount = event.maybeCount ?? 0;
     const pubIsCanceled = event.status === "canceled";
     const pubIsPast = new Date(event.startsAt) < new Date();
-    const pubBannerUrl = event.bannerKey
-      ? `${getMediaApiBaseUrl()}/events/${event.id}/banner?v=${Date.now()}`
+    const pubBannerSrc = event.bannerKey
+      ? `${getAvatarBaseUrl()}/events/${event.id}/banner?v=${Date.now()}`
       : null;
+    const pubBannerUrl = pubBannerSrc && !bannerFailed ? pubBannerSrc : null;
     const pubHobbies = event.hobbies?.length > 0
       ? event.hobbies
       : event.hobby ? [{ name: event.hobby, slug: event.hobbySlug ?? "" }] : [];
@@ -1331,7 +1334,7 @@ export default function EventDetailClient() {
       <Stack spacing={{ xs: 3, sm: 4 }}>
         {pubBannerUrl && (
           <Box sx={{ width: "100%", height: { xs: 160, sm: 220 }, borderRadius: 3, overflow: "hidden", bgcolor: "grey.100" }}>
-            <Box component="img" src={pubBannerUrl} alt={`${event.title} banner`} sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            <Box component="img" src={pubBannerUrl} alt={`${event.title} banner`} onError={() => setBannerFailed(true)} sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
           </Box>
         )}
 
@@ -1537,9 +1540,10 @@ export default function EventDetailClient() {
   const mapsLinkQuery = isLocationApprox ? approxQuery.trim() : mapQuery;
   const mapsLinkLabel = isLocationApprox ? "View area in Google Maps" : "Open in Google Maps";
 
-  const bannerUrl = event.bannerKey
-    ? `${getMediaApiBaseUrl()}/events/${event.id}/banner?v=${Date.now()}`
+  const bannerSrc = event.bannerKey
+    ? `${getAvatarBaseUrl()}/events/${event.id}/banner?v=${Date.now()}`
     : null;
+  const bannerUrl = bannerSrc && !bannerFailed ? bannerSrc : null;
 
   const hobbies = event.hobbies?.length > 0
     ? event.hobbies
@@ -1564,6 +1568,7 @@ export default function EventDetailClient() {
             component="img"
             src={bannerUrl}
             alt={`${event.title} banner`}
+            onError={() => setBannerFailed(true)}
             sx={{ width: "100%", height: "100%", objectFit: "cover" }}
           />
         </Box>
@@ -3204,11 +3209,8 @@ export default function EventDetailClient() {
           <Stack spacing={0}>
             {/* RSVP'd participants */}
             {rsvps.map((r) => (
-              <Stack
+              <Box
                 key={r.userId}
-                direction="row"
-                alignItems="center"
-                spacing={2}
                 sx={{
                   py: 1.75,
                   borderBottom: "1px solid",
@@ -3216,44 +3218,46 @@ export default function EventDetailClient() {
                   "&:last-child": { borderBottom: pendingInvites.length > 0 ? undefined : "none" },
                 }}
               >
-                <UserAvatar
-                  src={r.avatarUrl ? `${avatarBaseUrl}${r.avatarUrl}` : null}
-                  name={r.name}
-                  size={44}
-                  sx={{ flexShrink: 0 }}
-                />
-                <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ flex: 1, minWidth: 0 }}>
-                  {r.handle ? (
-                    <Box sx={{ minWidth: 0 }}>
-                      <Typography
-                        component={Link}
-                        href={`/u/${r.handle.replace(/^@/, "")}`}
-                        variant="body1"
-                        fontWeight={600}
-                        sx={{
-                          fontSize: "1rem",
-                          color: "text.primary",
-                          textDecoration: "none",
-                          display: "block",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                          "&:hover": { textDecoration: "underline" },
-                        }}
-                      >
-                        {r.handle}
-                      </Typography>
-                      {r.name && r.name !== r.handle.replace(/^@/, "") && (
-                        <Typography variant="caption" color="text.secondary" sx={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {r.name}
+                <Stack direction="row" alignItems="center" spacing={2}>
+                  <UserAvatar
+                    src={r.avatarUrl ? `${avatarBaseUrl}${r.avatarUrl}` : null}
+                    name={r.name}
+                    size={44}
+                    sx={{ flexShrink: 0 }}
+                  />
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    {r.handle ? (
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography
+                          component={Link}
+                          href={`/u/${r.handle.replace(/^@/, "")}`}
+                          variant="body1"
+                          fontWeight={600}
+                          sx={{
+                            fontSize: "1rem",
+                            color: "text.primary",
+                            textDecoration: "none",
+                            display: "block",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            "&:hover": { textDecoration: "underline" },
+                          }}
+                        >
+                          {r.handle}
                         </Typography>
-                      )}
-                    </Box>
-                  ) : (
-                    <Typography variant="body1" fontWeight={600} sx={{ fontSize: "1rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {r.name}
-                    </Typography>
-                  )}
+                        {r.name && r.name !== r.handle.replace(/^@/, "") && (
+                          <Typography variant="caption" color="text.secondary" sx={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {r.name}
+                          </Typography>
+                        )}
+                      </Box>
+                    ) : (
+                      <Typography variant="body1" fontWeight={600} sx={{ fontSize: "1rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {r.name}
+                      </Typography>
+                    )}
+                  </Box>
                   <Stack direction="row" alignItems="center" spacing={0.5} sx={{ flexShrink: 0 }}>
                     {r.prefNotes && r.prefNotes.length > 0 && (
                       <Tooltip
@@ -3331,7 +3335,7 @@ export default function EventDetailClient() {
                     &ldquo;{r.note}&rdquo;
                   </Typography>
                 )}
-              </Stack>
+              </Box>
             ))}
 
             {/* Pending invites (awaiting response) */}

@@ -23,12 +23,22 @@ export const getApiBaseUrl = () => {
 };
 
 /**
- * Base URL for reading avatar/banner images.
- * Uses the same API base as all other operations so uploads and reads
- * always target the same R2 bucket. In production the value is identical
- * to NEXT_PUBLIC_API_BASE_URL anyway.
+ * Base URL for reading avatar/banner images from R2.
+ *
+ * Prefers NEXT_PUBLIC_AVATAR_BASE_URL so that local dev (which shares the
+ * production DB but has its own miniflare R2) can read images that were
+ * uploaded through the production site.  In production both env vars
+ * resolve to the same origin, so the distinction is invisible.
+ *
+ * Authenticated write operations (media init/upload/finalize) must use
+ * getApiBaseUrl() / getMediaApiBaseUrl() instead, so that auth tokens
+ * are validated by the same worker that issued them.
  */
-export const getAvatarBaseUrl = () => getApiBaseUrl();
+export const getAvatarBaseUrl = () => {
+  const explicit = process.env.NEXT_PUBLIC_AVATAR_BASE_URL;
+  if (explicit) return explicit.replace(/\/$/, "");
+  return getApiBaseUrl();
+};
 
 let cachedToken: string | null = null;
 /** Unix ms at which the cached token should be considered expired (1-min buffer baked in). */
