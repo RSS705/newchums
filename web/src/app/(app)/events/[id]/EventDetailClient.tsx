@@ -2738,9 +2738,6 @@ export default function EventDetailClient() {
               />
             )}
           </Stack>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5, lineHeight: 1.5 }}>
-            People requesting to join your plan. Approved requests are automatically added as Going.
-          </Typography>
           <Stack spacing={0}>
             {joinRequests.map((jr) => (
               <Box
