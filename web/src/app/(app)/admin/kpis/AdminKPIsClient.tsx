@@ -435,6 +435,7 @@ export default function AdminKPIsClient() {
           onChange={(_, v) => { if (v) setRange(v as RangeKey); }}
           size="small"
           sx={{
+            flexWrap: "wrap",
             "& .MuiToggleButton-root": {
               textTransform: "none",
               fontWeight: 600,

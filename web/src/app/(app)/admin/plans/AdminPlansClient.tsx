@@ -250,7 +250,7 @@ export default function AdminPlansClient() {
           <Table size="small">
             <TableHead>
               <TableRow sx={{ "& th": { fontWeight: 700, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: 0.5, color: "text.secondary", bgcolor: "grey.50" } }}>
-                <TableCell>
+                <TableCell sx={{ display: { xs: "none", md: "table-cell" } }}>
                   <TableSortLabel active={sortField === "created_at"} direction={sortField === "created_at" ? sortDir : "desc"} onClick={() => handleSort("created_at")}>
                     Created
                   </TableSortLabel>
@@ -260,31 +260,31 @@ export default function AdminPlansClient() {
                     Title
                   </TableSortLabel>
                 </TableCell>
-                <TableCell>
+                <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>
                   <TableSortLabel active={sortField === "host_name"} direction={sortField === "host_name" ? sortDir : "asc"} onClick={() => handleSort("host_name")}>
                     Host
                   </TableSortLabel>
                 </TableCell>
-                <TableCell>
+                <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>
                   <TableSortLabel active={sortField === "starts_at"} direction={sortField === "starts_at" ? sortDir : "desc"} onClick={() => handleSort("starts_at")}>
                     Date/Time
                   </TableSortLabel>
                 </TableCell>
                 <TableCell>Status</TableCell>
-                <TableCell>Visibility</TableCell>
-                <TableCell align="right">
+                <TableCell sx={{ display: { xs: "none", md: "table-cell" } }}>Visibility</TableCell>
+                <TableCell sx={{ display: { xs: "none", md: "table-cell" } }} align="right">
                   <TableSortLabel active={sortField === "going_count"} direction={sortField === "going_count" ? sortDir : "desc"} onClick={() => handleSort("going_count")}>
                     Attendance
                   </TableSortLabel>
                 </TableCell>
-                <TableCell>Location</TableCell>
+                <TableCell sx={{ display: { xs: "none", md: "table-cell" } }}>Location</TableCell>
                 <TableCell align="center">Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {sorted.map((plan) => (
                 <TableRow key={plan.id} hover sx={{ "&:last-child td": { borderBottom: 0 } }}>
-                  <TableCell sx={{ whiteSpace: "nowrap", fontSize: "0.8125rem" }}>
+                  <TableCell sx={{ whiteSpace: "nowrap", fontSize: "0.8125rem", display: { xs: "none", md: "table-cell" } }}>
                     {formatDate(plan.created_at)}
                   </TableCell>
                   <TableCell sx={{ maxWidth: 240 }}>
@@ -294,7 +294,7 @@ export default function AdminPlansClient() {
                       </Typography>
                     </NextLink>
                   </TableCell>
-                  <TableCell sx={{ fontSize: "0.8125rem" }}>
+                  <TableCell sx={{ fontSize: "0.8125rem", display: { xs: "none", sm: "table-cell" } }}>
                     <Box>
                       <Typography variant="body2" noWrap>
                         {plan.host_name || plan.host_username?.replace(/^@/, "") || "—"}
@@ -304,7 +304,7 @@ export default function AdminPlansClient() {
                       </Typography>
                     </Box>
                   </TableCell>
-                  <TableCell sx={{ whiteSpace: "nowrap", fontSize: "0.8125rem" }}>
+                  <TableCell sx={{ whiteSpace: "nowrap", fontSize: "0.8125rem", display: { xs: "none", sm: "table-cell" } }}>
                     {formatDateTime(plan.starts_at)}
                   </TableCell>
                   <TableCell>
@@ -316,7 +316,7 @@ export default function AdminPlansClient() {
                       sx={{ fontWeight: 600, fontSize: "0.6875rem" }}
                     />
                   </TableCell>
-                  <TableCell>
+                  <TableCell sx={{ display: { xs: "none", md: "table-cell" } }}>
                     <Chip
                       label={visibilityLabel(plan.visibility)}
                       size="small"
@@ -324,7 +324,7 @@ export default function AdminPlansClient() {
                       sx={{ fontSize: "0.6875rem" }}
                     />
                   </TableCell>
-                  <TableCell align="right" sx={{ whiteSpace: "nowrap", fontSize: "0.8125rem" }}>
+                  <TableCell align="right" sx={{ whiteSpace: "nowrap", fontSize: "0.8125rem", display: { xs: "none", md: "table-cell" } }}>
                     <Typography variant="body2" component="span" fontWeight={600}>{plan.going_count}</Typography>
                     <Typography variant="body2" component="span" color="text.secondary"> going</Typography>
                     {plan.maybe_count > 0 && (
@@ -334,7 +334,7 @@ export default function AdminPlansClient() {
                       <Typography variant="caption" component="span" color="text.disabled"> / {plan.max_seats}</Typography>
                     )}
                   </TableCell>
-                  <TableCell sx={{ fontSize: "0.8125rem", maxWidth: 160 }}>
+                  <TableCell sx={{ fontSize: "0.8125rem", maxWidth: 160, display: { xs: "none", md: "table-cell" } }}>
                     <Typography variant="body2" noWrap color="text.secondary">
                       {plan.location_type === "online"
                         ? "Online"

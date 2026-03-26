@@ -192,7 +192,7 @@ export default function AdminCommunitiesClient() {
           <Table size="small">
             <TableHead>
               <TableRow sx={{ "& th": { fontWeight: 700, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: 0.5, color: "text.secondary", bgcolor: "grey.50" } }}>
-                <TableCell>
+                <TableCell sx={{ display: { xs: "none", md: "table-cell" } }}>
                   <TableSortLabel active={sortField === "created_at"} direction={sortField === "created_at" ? sortDir : "desc"} onClick={() => handleSort("created_at")}>
                     Created
                   </TableSortLabel>
@@ -202,10 +202,10 @@ export default function AdminCommunitiesClient() {
                     Name
                   </TableSortLabel>
                 </TableCell>
-                <TableCell>Slug</TableCell>
+                <TableCell sx={{ display: { xs: "none", md: "table-cell" } }}>Slug</TableCell>
                 <TableCell>Status</TableCell>
-                <TableCell>Visibility</TableCell>
-                <TableCell>Join mode</TableCell>
+                <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>Visibility</TableCell>
+                <TableCell sx={{ display: { xs: "none", md: "table-cell" } }}>Join mode</TableCell>
                 <TableCell align="right">
                   <TableSortLabel active={sortField === "member_count"} direction={sortField === "member_count" ? sortDir : "desc"} onClick={() => handleSort("member_count")}>
                     Members
@@ -216,7 +216,7 @@ export default function AdminCommunitiesClient() {
                     Plans
                   </TableSortLabel>
                 </TableCell>
-                <TableCell>Owner</TableCell>
+                <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>Owner</TableCell>
                 <TableCell align="center">Actions</TableCell>
               </TableRow>
             </TableHead>
@@ -230,7 +230,7 @@ export default function AdminCommunitiesClient() {
                     "&:last-child td": { borderBottom: 0 },
                   }}
                 >
-                  <TableCell sx={{ whiteSpace: "nowrap", fontSize: "0.8125rem" }}>
+                  <TableCell sx={{ whiteSpace: "nowrap", fontSize: "0.8125rem", display: { xs: "none", md: "table-cell" } }}>
                     {formatDate(c.created_at)}
                   </TableCell>
                   <TableCell sx={{ maxWidth: 200 }}>
@@ -240,7 +240,7 @@ export default function AdminCommunitiesClient() {
                       </Typography>
                     </NextLink>
                   </TableCell>
-                  <TableCell>
+                  <TableCell sx={{ display: { xs: "none", md: "table-cell" } }}>
                     <Typography variant="body2" color="text.secondary" noWrap sx={{ maxWidth: 140, fontFamily: "monospace", fontSize: "0.8125rem" }}>
                       {c.slug}
                     </Typography>
@@ -254,14 +254,14 @@ export default function AdminCommunitiesClient() {
                       sx={{ fontWeight: 600, fontSize: "0.6875rem" }}
                     />
                   </TableCell>
-                  <TableCell>
+                  <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>
                     {c.visibility === "private" ? (
                       <Chip icon={<LockRoundedIcon sx={{ fontSize: "12px !important" }} />} label="Private" size="small" variant="outlined" sx={{ fontSize: "0.6875rem" }} />
                     ) : (
                       <Chip label="Public" size="small" variant="outlined" sx={{ fontSize: "0.6875rem" }} />
                     )}
                   </TableCell>
-                  <TableCell>
+                  <TableCell sx={{ display: { xs: "none", md: "table-cell" } }}>
                     <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
                       {c.join_mode === "approval_required" ? "Approval" : "Open"}
                     </Typography>
@@ -272,7 +272,7 @@ export default function AdminCommunitiesClient() {
                   <TableCell align="right">
                     <Typography variant="body2" fontWeight={600}>{c.plan_count}</Typography>
                   </TableCell>
-                  <TableCell sx={{ fontSize: "0.8125rem" }}>
+                  <TableCell sx={{ fontSize: "0.8125rem", display: { xs: "none", sm: "table-cell" } }}>
                     <Box>
                       <Typography variant="body2" noWrap sx={{ maxWidth: 140 }}>
                         {c.owner_name || c.owner_username?.replace(/^@/, "") || "—"}

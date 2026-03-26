@@ -228,7 +228,10 @@ export function getComponents(theme: Theme): Theme["components"] {
     MuiCardHeader: {
       styleOverrides: {
         root: {
-          padding: "16px 24px",
+          padding: "14px 16px",
+          [`@media (min-width:${theme.breakpoints.values.sm}px)`]: {
+            padding: "16px 24px",
+          },
         },
         title: {
           fontSize: "1.125rem",
@@ -238,9 +241,15 @@ export function getComponents(theme: Theme): Theme["components"] {
     MuiCardContent: {
       styleOverrides: {
         root: {
-          padding: "24px 28px",
+          padding: "20px 16px",
           "&:last-child": {
-            paddingBottom: "28px",
+            paddingBottom: "20px",
+          },
+          [`@media (min-width:${theme.breakpoints.values.sm}px)`]: {
+            padding: "24px 28px",
+            "&:last-child": {
+              paddingBottom: "28px",
+            },
           },
         },
       },
@@ -320,24 +329,33 @@ export function getComponents(theme: Theme): Theme["components"] {
     MuiDialogTitle: {
       styleOverrides: {
         root: {
-          padding: theme.spacing(3, 3, 1.5),
+          padding: theme.spacing(2.5, 2, 1),
           fontWeight: 700,
           fontSize: "1.25rem",
+          [`@media (min-width:${theme.breakpoints.values.sm}px)`]: {
+            padding: theme.spacing(3, 3, 1.5),
+          },
         },
       },
     },
     MuiDialogContent: {
       styleOverrides: {
         root: {
-          padding: theme.spacing(1.5, 3),
+          padding: theme.spacing(1.5, 2),
+          [`@media (min-width:${theme.breakpoints.values.sm}px)`]: {
+            padding: theme.spacing(1.5, 3),
+          },
         },
       },
     },
     MuiDialogActions: {
       styleOverrides: {
         root: {
-          padding: theme.spacing(1.5, 3, 3),
+          padding: theme.spacing(1.5, 2, 2),
           gap: theme.spacing(1),
+          [`@media (min-width:${theme.breakpoints.values.sm}px)`]: {
+            padding: theme.spacing(1.5, 3, 3),
+          },
         },
       },
     },
@@ -477,8 +495,17 @@ export function getComponents(theme: Theme): Theme["components"] {
         root: {
           textTransform: "none",
           fontWeight: 600,
-          fontSize: "0.9375rem",
-          minHeight: 44,
+          fontSize: "0.8125rem",
+          minHeight: 40,
+          minWidth: 0,
+          paddingLeft: 12,
+          paddingRight: 12,
+          [`@media (min-width:${theme.breakpoints.values.sm}px)`]: {
+            fontSize: "0.9375rem",
+            minHeight: 44,
+            paddingLeft: 16,
+            paddingRight: 16,
+          },
         },
       },
     },

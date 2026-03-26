@@ -540,7 +540,8 @@ export default function NotificationBell() {
         PaperProps={{
           elevation: 3,
           sx: {
-            width: { xs: 320, sm: 360 },
+            width: { xs: "calc(100vw - 24px)", sm: 360 },
+            maxWidth: 400,
             maxHeight: 460,
             display: "flex",
             flexDirection: "column",

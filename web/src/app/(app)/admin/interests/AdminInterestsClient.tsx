@@ -354,8 +354,8 @@ export default function AdminInterestsClient() {
                     Interest
                   </TableSortLabel>
                 </TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Slug</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Category</TableCell>
+                <TableCell sx={{ fontWeight: 600, display: { xs: "none", md: "table-cell" } }}>Slug</TableCell>
+                <TableCell sx={{ fontWeight: 600, display: { xs: "none", sm: "table-cell" } }}>Category</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>
                   <TableSortLabel
                     active={sortBy === "created_at"}
@@ -365,7 +365,7 @@ export default function AdminInterestsClient() {
                     Created
                   </TableSortLabel>
                 </TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Added By</TableCell>
+                <TableCell sx={{ fontWeight: 600, display: { xs: "none", md: "table-cell" } }}>Added By</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
                 <TableCell sx={{ fontWeight: 600 }} align="right">
                   Actions
@@ -401,7 +401,7 @@ export default function AdminInterestsClient() {
                         {row.name}
                       </Typography>
                     </TableCell>
-                    <TableCell>
+                    <TableCell sx={{ display: { xs: "none", md: "table-cell" } }}>
                       <Typography
                         variant="body2"
                         color="text.secondary"
@@ -410,7 +410,7 @@ export default function AdminInterestsClient() {
                         {row.slug}
                       </Typography>
                     </TableCell>
-                    <TableCell>
+                    <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>
                       <Typography variant="body2" color="text.secondary">
                         {row.category || "—"}
                       </Typography>
@@ -420,7 +420,7 @@ export default function AdminInterestsClient() {
                         {formatDate(row.created_at)}
                       </Typography>
                     </TableCell>
-                    <TableCell>
+                    <TableCell sx={{ display: { xs: "none", md: "table-cell" } }}>
                       <Typography variant="body2" color="text.secondary">
                         {row.username ?? (row.created_by_user_id ? "Unknown" : "System")}
                       </Typography>

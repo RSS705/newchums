@@ -2486,7 +2486,7 @@ export default function EventDetailClient() {
               <Typography variant="h5" fontWeight={700} sx={{ fontSize: { xs: "1.25rem", sm: "1.375rem" } }}>
                 Invite people
               </Typography>
-              <Stack direction="row" spacing={1}>
+              <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
                 <AppButton
                   size="small"
                   variant="outlined"
@@ -3204,7 +3204,7 @@ export default function EventDetailClient() {
             Going and Maybe attendees will be notified.
           </Typography>
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
+        <DialogActions sx={{ px: { xs: 2, sm: 3 }, pb: { xs: 2, sm: 2.5 }, gap: 1 }}>
           <Button variant="text" color="inherit" onClick={() => setPromoteConfirmTime(null)} disabled={promoting}>
             Cancel
           </Button>
@@ -3279,7 +3279,7 @@ export default function EventDetailClient() {
                       </Typography>
                     )}
                   </Box>
-                  <Stack direction="row" alignItems="center" spacing={0.5} sx={{ flexShrink: 0 }}>
+                  <Stack direction="row" alignItems="center" spacing={0.5} useFlexGap flexWrap="wrap" sx={{ flexShrink: 1, justifyContent: "flex-end" }}>
                     {r.prefNotes && r.prefNotes.length > 0 && (
                       <Tooltip
                         title={`This attendee does not match your ${r.prefNotes.map((m) => PREF_NOTE_LABELS[m] ?? m).join(" or ")} chum preferences`}
@@ -3414,7 +3414,7 @@ export default function EventDetailClient() {
                         {inv.name || inv.email}
                       </Typography>
                     )}
-                    <Stack direction="row" alignItems="center" spacing={0.5} sx={{ flexShrink: 0 }}>
+                    <Stack direction="row" alignItems="center" spacing={0.5} useFlexGap flexWrap="wrap" sx={{ flexShrink: 1, justifyContent: "flex-end" }}>
                       <Chip
                         icon={<MailOutlineRoundedIcon sx={{ fontSize: "0.875rem !important" }} />}
                         label={event.reserveSeats ? "Invited \u00b7 Seat held" : "Invited"}
@@ -3629,7 +3629,7 @@ export default function EventDetailClient() {
             </Typography>
           </Stack>
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
+        <DialogActions sx={{ px: { xs: 2, sm: 3 }, pb: { xs: 2, sm: 2.5 }, gap: 1 }}>
           <Button
             variant="text"
             color="inherit"
@@ -3663,7 +3663,7 @@ export default function EventDetailClient() {
             This will mark the plan as canceled and notify anyone who has responded. This action cannot be undone.
           </Typography>
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
+        <DialogActions sx={{ px: { xs: 2, sm: 3 }, pb: { xs: 2, sm: 2.5 }, gap: 1 }}>
           <Button
             variant="text"
             color="inherit"
@@ -3721,7 +3721,7 @@ export default function EventDetailClient() {
             Removing someone is completely your call as a host, just use it thoughtfully.
           </Typography>
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
+        <DialogActions sx={{ px: { xs: 2, sm: 3 }, pb: { xs: 2, sm: 2.5 }, gap: 1 }}>
           <Button
             variant="text"
             color="inherit"
@@ -3764,7 +3764,7 @@ export default function EventDetailClient() {
             helperText={`${rsvpDialogMessage.length}/500`}
           />
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
+        <DialogActions sx={{ px: { xs: 2, sm: 3 }, pb: { xs: 2, sm: 2.5 }, gap: 1 }}>
           <Button variant="text" color="inherit" onClick={() => setRsvpDialogOpen(false)}>
             Cancel
           </Button>

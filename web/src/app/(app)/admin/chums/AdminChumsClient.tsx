@@ -217,7 +217,7 @@ export default function AdminChumsClient() {
                     theme.palette.mode === "light" ? "grey.50" : "grey.900",
                 }}
               >
-                <TableCell sx={{ fontWeight: 600 }}>
+                <TableCell sx={{ fontWeight: 600, display: { xs: "none", md: "table-cell" } }}>
                   <TableSortLabel
                     active={sortBy === "created_at"}
                     direction={sortBy === "created_at" ? sortDir : "desc"}
@@ -235,7 +235,7 @@ export default function AdminChumsClient() {
                     Handle
                   </TableSortLabel>
                 </TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>
+                <TableCell sx={{ fontWeight: 600, display: { xs: "none", sm: "table-cell" } }}>
                   <TableSortLabel
                     active={sortBy === "name"}
                     direction={sortBy === "name" ? sortDir : "asc"}
@@ -244,7 +244,7 @@ export default function AdminChumsClient() {
                     Name
                   </TableSortLabel>
                 </TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>
+                <TableCell sx={{ fontWeight: 600, display: { xs: "none", md: "table-cell" } }}>
                   <TableSortLabel
                     active={sortBy === "email"}
                     direction={sortBy === "email" ? sortDir : "asc"}
@@ -283,7 +283,7 @@ export default function AdminChumsClient() {
                       "&:hover": { backgroundColor: "action.hover" },
                     }}
                   >
-                    <TableCell>
+                    <TableCell sx={{ display: { xs: "none", md: "table-cell" } }}>
                       <Typography variant="body2" color="text.secondary">
                         {formatDate(row.created_at)}
                       </Typography>
@@ -307,12 +307,12 @@ export default function AdminChumsClient() {
                         </Typography>
                       )}
                     </TableCell>
-                    <TableCell>
+                    <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>
                       <Typography variant="body2">
                         {row.name ?? "—"}
                       </Typography>
                     </TableCell>
-                    <TableCell>
+                    <TableCell sx={{ display: { xs: "none", md: "table-cell" } }}>
                       <Typography
                         variant="body2"
                         color="text.secondary"
