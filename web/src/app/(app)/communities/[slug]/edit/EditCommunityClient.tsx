@@ -1,14 +1,18 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
-  Box, Typography, Stack, CircularProgress,
+  Box, Typography, Stack, CircularProgress, Avatar,
   RadioGroup, Radio, FormControlLabel, FormControl,
+  Dialog, DialogTitle, DialogContent, DialogActions, Button, Slider,
 } from "@mui/material";
+import PhotoCameraRoundedIcon from "@mui/icons-material/PhotoCameraRounded";
+import Cropper, { type Area } from "react-easy-crop";
 import { AppCard, AppButton, AppTextField, useToast } from "@/components/ui";
 import PlacesAutocompleteInput from "@/components/common/PlacesAutocompleteInput";
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetch, getApiBaseUrl, getAvatarBaseUrl } from "@/lib/apiClient";
+import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
 
 export default function EditCommunityClient() {
   const params = useParams();
@@ -18,6 +22,8 @@ export default function EditCommunityClient() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [communityId, setCommunityId] = useState<string | null>(null);
+  const [isOwner, setIsOwner] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [visibility, setVisibility] = useState<"public" | "private">("public");
@@ -25,18 +31,35 @@ export default function EditCommunityClient() {
   const [locationName, setLocationName] = useState("");
   const [locationAddress, setLocationAddress] = useState("");
 
+  const [existingAvatarKey, setExistingAvatarKey] = useState<string | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [cropDialogOpen, setCropDialogOpen] = useState(false);
+  const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
+  const [cropPosition, setCropPosition] = useState({ x: 0, y: 0 });
+  const [cropZoom, setCropZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
+  const [logoBlob, setLogoBlob] = useState<Blob | null>(null);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [closing, setClosing] = useState(false);
+  const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
+
   const fetchCommunity = useCallback(async () => {
     try {
       const res = await apiFetch(`/communities/${slug}`, { auth: true });
       const data = await res.json();
       if (data.ok && data.community) {
         const c = data.community;
+        setCommunityId(c.id);
         setName(c.name || "");
         setDescription(c.description || "");
         setVisibility(c.visibility || "public");
         setJoinMode(c.join_mode || "open");
         setLocationName(c.location_name || "");
         setLocationAddress(c.location_address || "");
+        setExistingAvatarKey(c.avatar_key ?? null);
+        setIsOwner(data.viewerMembership?.role === "owner");
       }
     } catch { /* noop */ }
     setLoading(false);
@@ -44,10 +67,73 @@ export default function EditCommunityClient() {
 
   useEffect(() => { fetchCommunity(); }, [fetchCommunity]);
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      toast.error("Please use JPEG, PNG, or WebP.");
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setCropImageSrc(url);
+    setCropDialogOpen(true);
+    setCropPosition({ x: 0, y: 0 });
+    setCropZoom(1);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleCropComplete = useCallback((_: Area, croppedAreaPx: Area) => {
+    setCroppedAreaPixels(croppedAreaPx);
+  }, []);
+
+  const handleCropSave = async () => {
+    if (!cropImageSrc || !croppedAreaPixels) return;
+    try {
+      const blob = await getCroppedImg(cropImageSrc, croppedAreaPixels as PixelCrop);
+      URL.revokeObjectURL(cropImageSrc);
+      setCropImageSrc(null);
+      setCropDialogOpen(false);
+      setLogoBlob(blob);
+      setLogoPreview(URL.createObjectURL(blob));
+    } catch {
+      toast.error("Failed to process image");
+    }
+  };
+
+  const uploadLogo = async () => {
+    if (!logoBlob || !communityId) return;
+    setLogoUploading(true);
+    const contentType = logoBlob.type || "image/webp";
+    try {
+      const initRes = await apiFetch("/media/init", {
+        auth: true, method: "POST",
+        body: JSON.stringify({ purpose: "community_avatar", contentType, contentLength: logoBlob.size }),
+      });
+      const initData = await initRes.json() as { ok?: boolean; uploadUrl?: string; objectKey?: string };
+      if (!initData.ok || !initData.uploadUrl || !initData.objectKey) { toast.error("Upload failed"); return; }
+      const uploadUrl = `${getApiBaseUrl()}${initData.uploadUrl}`;
+      const uploadRes = await fetch(uploadUrl, { method: "PUT", body: logoBlob, headers: { "Content-Type": contentType }, credentials: "omit" });
+      if (!uploadRes.ok) { toast.error("Upload failed"); return; }
+      const finalizeRes = await apiFetch("/media/finalize", {
+        auth: true, method: "POST",
+        body: JSON.stringify({ objectKey: initData.objectKey, purpose: "community_avatar", communityId }),
+      });
+      const finalizeData = await finalizeRes.json() as { ok?: boolean };
+      if (finalizeData.ok) {
+        setExistingAvatarKey(initData.objectKey!);
+        setLogoBlob(null);
+        toast.success("Logo updated");
+      }
+    } catch { toast.error("Upload failed"); }
+    setLogoUploading(false);
+  };
+
   const handleSave = async () => {
     if (!name.trim()) { toast.error("Name is required"); return; }
     setSaving(true);
     try {
+      if (logoBlob) await uploadLogo();
+
       const res = await apiFetch(`/communities/${slug}`, {
         auth: true, method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -70,6 +156,25 @@ export default function EditCommunityClient() {
     } catch { toast.error("Something went wrong"); }
     setSaving(false);
   };
+
+  const handleClose = async () => {
+    setClosing(true);
+    try {
+      const res = await apiFetch(`/communities/${slug}/close`, { auth: true, method: "POST" });
+      const data = await res.json();
+      if (data.ok) {
+        toast.success("Community closed");
+        router.push("/communities");
+      } else {
+        toast.error(data.message || "Could not close community");
+      }
+    } catch { toast.error("Something went wrong"); }
+    setClosing(false);
+    setCloseConfirmOpen(false);
+  };
+
+  const avatarSrc = logoPreview
+    ?? (existingAvatarKey && communityId ? `${getAvatarBaseUrl()}/communities/${communityId}/avatar?v=${Date.now()}` : undefined);
 
   if (loading) {
     return (
@@ -109,6 +214,52 @@ export default function EditCommunityClient() {
             </Typography>
           </Box>
 
+          {/* Logo */}
+          <Box>
+            <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 0.625 }}>Logo</Typography>
+            {avatarSrc ? (
+              <Stack direction="row" alignItems="center" spacing={2}>
+                <Avatar
+                  variant="rounded"
+                  src={avatarSrc}
+                  sx={{ width: 64, height: 64, borderRadius: 2.5 }}
+                />
+                <Button
+                  variant="outlined" size="small"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={logoUploading}
+                  sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, borderColor: "divider", color: "text.secondary" }}
+                >
+                  {logoUploading ? <CircularProgress size={18} /> : "Change"}
+                </Button>
+              </Stack>
+            ) : (
+              <Box
+                onClick={() => { if (!logoUploading) fileInputRef.current?.click(); }}
+                sx={{
+                  width: 96, height: 96, borderRadius: 2.5,
+                  border: "2px dashed", borderColor: "grey.300",
+                  display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 0.5,
+                  cursor: logoUploading ? "default" : "pointer",
+                  transition: "border-color 0.15s, background-color 0.15s",
+                  "&:hover": logoUploading ? {} : { borderColor: "primary.main", bgcolor: "action.hover" },
+                }}
+              >
+                {logoUploading ? (
+                  <CircularProgress size={24} />
+                ) : (
+                  <>
+                    <PhotoCameraRoundedIcon sx={{ fontSize: 24, color: "text.disabled" }} />
+                    <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
+                      Upload
+                    </Typography>
+                  </>
+                )}
+              </Box>
+            )}
+            <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={handleFileSelect} />
+          </Box>
+
           <AppTextField
             label="Community name"
             value={name}
@@ -123,6 +274,37 @@ export default function EditCommunityClient() {
             minRows={3}
             inputProps={{ maxLength: 2000 }}
           />
+
+          {/* Location (inside Basics) */}
+          <Box>
+            <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 0.625 }}>Location (optional)</Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+              If your community has a regular meeting spot, add it here.
+            </Typography>
+            <PlacesAutocompleteInput
+              value={locationName}
+              onChange={(v) => {
+                setLocationName(v);
+                if (!v.trim()) setLocationAddress("");
+              }}
+              onPlaceSelect={(result) => {
+                setLocationName(result.name || result.formattedAddress);
+                setLocationAddress(result.formattedAddress);
+              }}
+              placeholder="Search for a place or enter a name"
+              placeTypes={["establishment", "geocode"]}
+              inputId="places-autocomplete-community-edit"
+            />
+            {locationAddress && (
+              <AppTextField
+                label="Address"
+                value={locationAddress}
+                onChange={(e) => setLocationAddress(e.target.value)}
+                inputProps={{ maxLength: 500 }}
+                sx={{ mt: 1.5 }}
+              />
+            )}
+          </Box>
         </Stack>
       </AppCard>
 
@@ -197,44 +379,28 @@ export default function EditCommunityClient() {
         </Stack>
       </AppCard>
 
-      {/* Location */}
-      <AppCard>
-        <Stack spacing={2.5}>
-          <Box>
-            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
-              Location (optional)
+      {/* Close community (owner only) */}
+      {isOwner && (
+        <AppCard>
+          <Stack spacing={1.5}>
+            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem", color: "error.main" }}>
+              Close community
             </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              If your community has a physical home base, like a store, venue, or regular meeting spot, add it here.
+            <Typography variant="body2" color="text.secondary">
+              Closing this community hides it from listings and removes it from linked plans. Members can still see that it existed. This cannot be undone.
             </Typography>
-          </Box>
-
-          <PlacesAutocompleteInput
-            value={locationName}
-            onChange={(v) => {
-              setLocationName(v);
-              if (!v.trim()) setLocationAddress("");
-            }}
-            onPlaceSelect={(result) => {
-              setLocationName(result.name || result.formattedAddress);
-              setLocationAddress(result.formattedAddress);
-            }}
-            label="Venue or address"
-            placeholder="Search for a place or enter a name"
-            helperText="Start typing to search venues, parks, stores, or addresses"
-            placeTypes={["establishment", "geocode"]}
-            inputId="places-autocomplete-community-edit"
-          />
-          {locationAddress && (
-            <AppTextField
-              label="Address"
-              value={locationAddress}
-              onChange={(e) => setLocationAddress(e.target.value)}
-              inputProps={{ maxLength: 500 }}
-            />
-          )}
-        </Stack>
-      </AppCard>
+            <Box>
+              <Button
+                variant="outlined" color="error" size="small"
+                onClick={() => setCloseConfirmOpen(true)}
+                sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
+              >
+                Close this community
+              </Button>
+            </Box>
+          </Stack>
+        </AppCard>
+      )}
 
       {/* Actions */}
       <Stack direction="row" spacing={2} justifyContent="flex-end">
@@ -250,6 +416,55 @@ export default function EditCommunityClient() {
           {saving ? <CircularProgress size={20} color="inherit" /> : "Save changes"}
         </AppButton>
       </Stack>
+
+      {/* Crop dialog */}
+      <Dialog open={cropDialogOpen} onClose={() => { if (cropImageSrc) URL.revokeObjectURL(cropImageSrc); setCropImageSrc(null); setCropDialogOpen(false); }} maxWidth="sm" fullWidth>
+        <DialogTitle>Crop logo</DialogTitle>
+        <DialogContent sx={{ px: { xs: 2, sm: 3 } }}>
+          {cropImageSrc && (
+            <Stack spacing={2} sx={{ pt: 1 }}>
+              <Box sx={{ position: "relative", height: 320 }}>
+                <Cropper
+                  image={cropImageSrc}
+                  crop={cropPosition}
+                  zoom={cropZoom}
+                  aspect={1}
+                  cropShape="rect"
+                  onCropChange={setCropPosition}
+                  onZoomChange={setCropZoom}
+                  onCropComplete={handleCropComplete}
+                />
+              </Box>
+              <Stack direction="row" spacing={2} alignItems="center">
+                <Typography variant="caption" color="text.secondary" sx={{ minWidth: 40 }}>Zoom</Typography>
+                <Slider value={cropZoom} min={1} max={3} step={0.1} onChange={(_, v) => setCropZoom(v as number)} sx={{ flex: 1 }} />
+              </Stack>
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: { xs: 2, sm: 3 }, pb: 2 }}>
+          <Button onClick={() => { if (cropImageSrc) URL.revokeObjectURL(cropImageSrc); setCropImageSrc(null); setCropDialogOpen(false); }} sx={{ textTransform: "none" }}>Cancel</Button>
+          <Button variant="contained" onClick={handleCropSave} sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}>
+            Save
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Close confirmation */}
+      <Dialog open={closeConfirmOpen} onClose={() => setCloseConfirmOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Close community?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            This will hide <strong>{name}</strong> from all listings and remove it from any linked plans. This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setCloseConfirmOpen(false)} sx={{ textTransform: "none" }}>Cancel</Button>
+          <Button variant="contained" color="error" onClick={handleClose} disabled={closing} sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}>
+            {closing ? <CircularProgress size={18} color="inherit" /> : "Close community"}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Stack>
   );
 }

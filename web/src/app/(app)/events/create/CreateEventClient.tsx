@@ -1094,9 +1094,12 @@ export default function CreateEventClient() {
             </Typography>
             <FormControlLabel
               control={<Switch checked={hideFromExplore} onChange={(e) => setHideFromExplore(e.target.checked)} size="small" />}
-              label="Hide from public Explore feed"
-              slotProps={{ typography: { variant: "body2", color: "text.secondary" } }}
+              label="Members only"
+              slotProps={{ typography: { variant: "body2" } }}
             />
+            <Typography variant="caption" color="text.secondary" sx={{ mt: -0.5 }}>
+              When on, this plan only appears in the community feed and to members in their Explore. Others won&#39;t see it.
+            </Typography>
           </Stack>
         </AppCard>
       )}

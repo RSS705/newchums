@@ -1,14 +1,18 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Box, Typography, Stack, CircularProgress,
+  Box, Typography, Stack, CircularProgress, Avatar,
   RadioGroup, Radio, FormControlLabel, FormControl,
+  Dialog, DialogTitle, DialogContent, DialogActions, Button, Slider,
 } from "@mui/material";
+import PhotoCameraRoundedIcon from "@mui/icons-material/PhotoCameraRounded";
+import Cropper, { type Area } from "react-easy-crop";
 import { AppCard, AppButton, AppTextField, useToast } from "@/components/ui";
 import PlacesAutocompleteInput from "@/components/common/PlacesAutocompleteInput";
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetch, getApiBaseUrl } from "@/lib/apiClient";
+import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
 
 function slugify(text: string): string {
   return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 50);
@@ -28,6 +32,15 @@ export default function CreateCommunityClient() {
   const [locationAddress, setLocationAddress] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [cropDialogOpen, setCropDialogOpen] = useState(false);
+  const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
+  const [cropPosition, setCropPosition] = useState({ x: 0, y: 0 });
+  const [cropZoom, setCropZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
+  const [logoBlob, setLogoBlob] = useState<Blob | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     if (!slugManual) setSlug(slugify(name));
   }, [name, slugManual]);
@@ -45,6 +58,59 @@ export default function CreateCommunityClient() {
     const timer = setTimeout(() => { if (slug.length >= 3) checkSlug(slug); }, 400);
     return () => clearTimeout(timer);
   }, [slug, checkSlug]);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      toast.error("Please use JPEG, PNG, or WebP.");
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setCropImageSrc(url);
+    setCropDialogOpen(true);
+    setCropPosition({ x: 0, y: 0 });
+    setCropZoom(1);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleCropComplete = useCallback((_: Area, croppedAreaPx: Area) => {
+    setCroppedAreaPixels(croppedAreaPx);
+  }, []);
+
+  const handleCropSave = async () => {
+    if (!cropImageSrc || !croppedAreaPixels) return;
+    try {
+      const blob = await getCroppedImg(cropImageSrc, croppedAreaPixels as PixelCrop);
+      URL.revokeObjectURL(cropImageSrc);
+      setCropImageSrc(null);
+      setCropDialogOpen(false);
+      setLogoBlob(blob);
+      setLogoPreview(URL.createObjectURL(blob));
+    } catch {
+      toast.error("Failed to process image");
+    }
+  };
+
+  const uploadCommunityLogo = async (communityId: string) => {
+    if (!logoBlob) return;
+    const contentType = logoBlob.type || "image/webp";
+    try {
+      const initRes = await apiFetch("/media/init", {
+        auth: true, method: "POST",
+        body: JSON.stringify({ purpose: "community_avatar", contentType, contentLength: logoBlob.size }),
+      });
+      const initData = await initRes.json() as { ok?: boolean; uploadToken?: string; objectKey?: string; uploadUrl?: string };
+      if (!initData.ok || !initData.uploadUrl || !initData.objectKey) return;
+      const uploadUrl = `${getApiBaseUrl()}${initData.uploadUrl}`;
+      const uploadRes = await fetch(uploadUrl, { method: "PUT", body: logoBlob, headers: { "Content-Type": contentType }, credentials: "omit" });
+      if (!uploadRes.ok) return;
+      await apiFetch("/media/finalize", {
+        auth: true, method: "POST",
+        body: JSON.stringify({ objectKey: initData.objectKey, purpose: "community_avatar", communityId }),
+      });
+    } catch { /* best-effort */ }
+  };
 
   const handleSubmit = async () => {
     if (!name.trim()) { toast.error("Name is required"); return; }
@@ -68,6 +134,9 @@ export default function CreateCommunityClient() {
       });
       const data = await res.json();
       if (data.ok) {
+        if (logoBlob && data.community?.id) {
+          await uploadCommunityLogo(data.community.id);
+        }
         toast.success("Community created!");
         router.push(`/communities/${data.community.slug}`);
       } else {
@@ -108,8 +177,52 @@ export default function CreateCommunityClient() {
               Basics
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              Give your community a name and a short description.
+              Give your community a name, logo, and a short description.
             </Typography>
+          </Box>
+
+          {/* Logo */}
+          <Box>
+            <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 0.625 }}>Logo (optional)</Typography>
+            {logoPreview ? (
+              <Stack direction="row" alignItems="center" spacing={2}>
+                <Avatar
+                  variant="rounded"
+                  src={logoPreview}
+                  sx={{ width: 64, height: 64, borderRadius: 2.5 }}
+                />
+                <Stack spacing={0.5}>
+                  <Button variant="outlined" size="small" onClick={() => fileInputRef.current?.click()} sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, borderColor: "divider", color: "text.secondary" }}>
+                    Change
+                  </Button>
+                  <Button
+                    size="small"
+                    onClick={() => { setLogoPreview(null); setLogoBlob(null); }}
+                    sx={{ textTransform: "none", fontSize: "0.75rem", color: "text.disabled", p: 0, minWidth: 0, "&:hover": { color: "error.main", bgcolor: "transparent" } }}
+                  >
+                    Remove
+                  </Button>
+                </Stack>
+              </Stack>
+            ) : (
+              <Box
+                onClick={() => fileInputRef.current?.click()}
+                sx={{
+                  width: 96, height: 96, borderRadius: 2.5,
+                  border: "2px dashed", borderColor: "grey.300",
+                  display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 0.5,
+                  cursor: "pointer",
+                  transition: "border-color 0.15s, background-color 0.15s",
+                  "&:hover": { borderColor: "primary.main", bgcolor: "action.hover" },
+                }}
+              >
+                <PhotoCameraRoundedIcon sx={{ fontSize: 24, color: "text.disabled" }} />
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
+                  Upload
+                </Typography>
+              </Box>
+            )}
+            <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={handleFileSelect} />
           </Box>
 
           <AppTextField
@@ -144,6 +257,37 @@ export default function CreateCommunityClient() {
             minRows={3}
             inputProps={{ maxLength: 2000 }}
           />
+
+          {/* Location (inside Basics) */}
+          <Box>
+            <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 0.625 }}>Location (optional)</Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+              If your community has a regular meeting spot, add it here.
+            </Typography>
+            <PlacesAutocompleteInput
+              value={locationName}
+              onChange={(v) => {
+                setLocationName(v);
+                if (!v.trim()) setLocationAddress("");
+              }}
+              onPlaceSelect={(result) => {
+                setLocationName(result.name || result.formattedAddress);
+                setLocationAddress(result.formattedAddress);
+              }}
+              placeholder="Search for a place or enter a name"
+              placeTypes={["establishment", "geocode"]}
+              inputId="places-autocomplete-community-create"
+            />
+            {locationAddress && (
+              <AppTextField
+                label="Address"
+                value={locationAddress}
+                onChange={(e) => setLocationAddress(e.target.value)}
+                inputProps={{ maxLength: 500 }}
+                sx={{ mt: 1.5 }}
+              />
+            )}
+          </Box>
         </Stack>
       </AppCard>
 
@@ -221,45 +365,6 @@ export default function CreateCommunityClient() {
         </Stack>
       </AppCard>
 
-      {/* Location */}
-      <AppCard>
-        <Stack spacing={2.5}>
-          <Box>
-            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
-              Location (optional)
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              If your community has a physical home base, like a store, venue, or regular meeting spot, add it here.
-            </Typography>
-          </Box>
-
-          <PlacesAutocompleteInput
-            value={locationName}
-            onChange={(v) => {
-              setLocationName(v);
-              if (!v.trim()) setLocationAddress("");
-            }}
-            onPlaceSelect={(result) => {
-              setLocationName(result.name || result.formattedAddress);
-              setLocationAddress(result.formattedAddress);
-            }}
-            label="Venue or address"
-            placeholder="Search for a place or enter a name"
-            helperText="Start typing to search venues, parks, stores, or addresses"
-            placeTypes={["establishment", "geocode"]}
-            inputId="places-autocomplete-community-create"
-          />
-          {locationAddress && (
-            <AppTextField
-              label="Address"
-              value={locationAddress}
-              onChange={(e) => setLocationAddress(e.target.value)}
-              inputProps={{ maxLength: 500 }}
-            />
-          )}
-        </Stack>
-      </AppCard>
-
       {/* Actions */}
       <Stack direction="row" spacing={2} justifyContent="flex-end">
         <AppButton variant="outlined" onClick={() => router.back()} sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}>
@@ -274,6 +379,39 @@ export default function CreateCommunityClient() {
           {saving ? <CircularProgress size={20} color="inherit" /> : "Create community"}
         </AppButton>
       </Stack>
+
+      {/* Crop dialog */}
+      <Dialog open={cropDialogOpen} onClose={() => { if (cropImageSrc) URL.revokeObjectURL(cropImageSrc); setCropImageSrc(null); setCropDialogOpen(false); }} maxWidth="sm" fullWidth>
+        <DialogTitle>Crop logo</DialogTitle>
+        <DialogContent sx={{ px: { xs: 2, sm: 3 } }}>
+          {cropImageSrc && (
+            <Stack spacing={2} sx={{ pt: 1 }}>
+              <Box sx={{ position: "relative", height: 320 }}>
+                <Cropper
+                  image={cropImageSrc}
+                  crop={cropPosition}
+                  zoom={cropZoom}
+                  aspect={1}
+                  cropShape="rect"
+                  onCropChange={setCropPosition}
+                  onZoomChange={setCropZoom}
+                  onCropComplete={handleCropComplete}
+                />
+              </Box>
+              <Stack direction="row" spacing={2} alignItems="center">
+                <Typography variant="caption" color="text.secondary" sx={{ minWidth: 40 }}>Zoom</Typography>
+                <Slider value={cropZoom} min={1} max={3} step={0.1} onChange={(_, v) => setCropZoom(v as number)} sx={{ flex: 1 }} />
+              </Stack>
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: { xs: 2, sm: 3 }, pb: 2 }}>
+          <Button onClick={() => { if (cropImageSrc) URL.revokeObjectURL(cropImageSrc); setCropImageSrc(null); setCropDialogOpen(false); }} sx={{ textTransform: "none" }}>Cancel</Button>
+          <Button variant="contained" onClick={handleCropSave} sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}>
+            Save
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Stack>
   );
 }

@@ -13,7 +13,7 @@ import LockRoundedIcon from "@mui/icons-material/LockRounded";
 import PublicRoundedIcon from "@mui/icons-material/PublicRounded";
 import Link from "next/link";
 import { AppCard } from "@/components/ui";
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 
 type Community = {
   id: string;
@@ -22,6 +22,7 @@ type Community = {
   description: string | null;
   visibility: string;
   join_mode: string;
+  avatar_key: string | null;
   member_count: number;
   location_name: string | null;
   owner_user_id: string;
@@ -181,8 +182,11 @@ export default function CommunitiesListClient() {
             >
               <Stack direction="row" spacing={2} alignItems="flex-start">
                 <Avatar
+                  variant="rounded"
+                  src={c.avatar_key ? `${getAvatarBaseUrl()}/communities/${c.id}/avatar` : undefined}
                   sx={{
                     width: 48, height: 48,
+                    borderRadius: 2,
                     bgcolor: "primary.main", color: "primary.contrastText",
                     fontWeight: 700, fontSize: "1.1rem",
                   }}
@@ -206,14 +210,16 @@ export default function CommunitiesListClient() {
                     </Typography>
                   )}
                   <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-                    <Chip
-                      icon={<PeopleRoundedIcon sx={{ fontSize: "14px !important" }} />}
-                      label={`${c.member_count} member${c.member_count !== 1 ? "s" : ""}`}
-                      size="small"
-                      variant="outlined"
-                    />
+                    <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, fontSize: "0.8125rem" }}>
+                      {c.member_count} {c.member_count === 1 ? "member" : "members"}
+                    </Typography>
                     {c.location_name && (
-                      <Chip label={c.location_name} size="small" variant="outlined" />
+                      <>
+                        <Typography variant="body2" color="text.disabled">·</Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
+                          {c.location_name}
+                        </Typography>
+                      </>
                     )}
                     {c.join_mode === "approval_required" && (
                       <Chip label="Approval required" size="small" color="warning" variant="outlined" />

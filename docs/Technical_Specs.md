@@ -880,11 +880,11 @@ Shared UI components: `OnboardingProgress` (step indicator + progress bar), `Ste
 
 Community pages where users can join, browse, and create plans together.
 
-**Schema (migration 055):**
+**Schema (migration 055, extended by 059):**
 
 | Table | Purpose |
 |-------|---------|
-| `newchums.communities` | Core community entity — name, slug, description, avatar_key, banner_key, visibility (`public` / `private`), join_mode (`open` / `approval_required`), chat_enabled (boolean, deferred), location fields, owner_user_id, timestamps |
+| `newchums.communities` | Core community entity — name, slug, description, avatar_key, banner_key, visibility (`public` / `private`), join_mode (`open` / `approval_required`), chat_enabled (boolean, deferred), location fields, owner_user_id, `status` (`active` / `closed`, default `active`, migration 059), timestamps |
 | `newchums.community_members` | Membership records — community_id, user_id, role (`owner` / `member`), status (`active` / `pending` / `removed`). Unique on `(community_id, user_id)`. |
 | `newchums.community_join_requests` | Join request records — community_id, user_id, status (`pending` / `approved` / `declined` / `withdrawn`), reviewed_by_user_id, timestamps. Unique partial index on `(community_id, user_id) WHERE status = 'pending'`. |
 
@@ -900,8 +900,9 @@ Community pages where users can join, browse, and create plans together.
 | `GET /communities` | List communities. Query params: `filter=mine` (user's communities), `q` (search). Returns member_count. |
 | `GET /communities/slug-available` | Check slug availability. |
 | `GET /communities/:slug` | Community detail. Returns full community info, member_count, viewer's membership role/status, pending join request status. Private communities return limited info to non-members. Owner/admin sees pending join requests. Private communities include a share token (JWT, purpose `community_share`). |
-| `PATCH /communities/:slug` | Update community (owner or super admin). Accepts: name, description, visibility, join_mode, chat_enabled, location fields. |
-| `DELETE /communities/:slug` | Remove community (owner or super admin). Cascades to members, join requests; events have `community_id` set to NULL. |
+| `PATCH /communities/:slug` | Update community (owner or super admin). Accepts: name, description, visibility, join_mode, chat_enabled, location fields, avatar_key. |
+| `POST /communities/:slug/close` | Soft-close a community (owner or super admin). Sets `status = 'closed'`, nullifies `community_id` on linked events. Community data is preserved but hidden from listings. Irreversible. Migration 059 adds the `status` column. |
+| `DELETE /communities/:slug` | Hard-delete community (owner or super admin). Cascades to members, join requests; events have `community_id` set to NULL. |
 | `POST /communities/:id/join` | Join (open) or request to join (approval_required). Idempotent. Sends join-request email to owner when approval is required. |
 | `POST /communities/:id/leave` | Leave community. Owner cannot leave (must transfer ownership first). Also withdraws any pending join request. |
 | `GET /communities/:id/members` | List active members. Private communities restrict to members + super admin. |
@@ -921,6 +922,10 @@ Community pages where users can join, browse, and create plans together.
 - `POST /events` accepts optional `community_id` and `hide_from_explore`. Validates that the user is an active member of the community.
 - `PATCH /events/:id` accepts `community_id` (set or clear) and `hide_from_explore`.
 - `GET /events/:id` includes `community` info (`id`, `slug`, `name`) when the plan belongs to a community.
+- `GET /events/explore` includes community attribution (`community` object) on plans that belong to a community. Plans with `hide_from_explore = true` are still visible to members of the associated community.
+
+**Community avatar upload:**
+Uses the shared media upload pipeline (`POST /media/init` → `PUT /upload/:token` → `POST /media/finalize`) with purpose `community_avatar`. Object key pattern: `community_avatars/{userId}/{timestamp}.{ext}`. Finalize requires community ownership or super admin. Served via `GET /communities/:communityId/avatar`.
 
 **Email templates (Postmark template IDs pending):**
 

@@ -2029,7 +2029,7 @@ app.get("/profile", async (c) => {
       home_city: string | null;
       home_lat: number | null;
       home_lng: number | null;
-      travel_radius_km: number;
+      travel_radius_km: number | null;
       email_chat_digest: boolean;
       email_new_events: boolean;
       bio?: string | null;
@@ -2268,7 +2268,7 @@ app.put("/profile", async (c) => {
       home_city: string | null;
       home_lat: number | null;
       home_lng: number | null;
-      travel_radius_km: number;
+      travel_radius_km: number | null;
       email_chat_digest: boolean;
       email_new_events: boolean;
       bio?: string | null;
@@ -2514,7 +2514,7 @@ app.put("/profile", async (c) => {
       home_city: string | null;
       home_lat: number | null;
       home_lng: number | null;
-      travel_radius_km: number;
+      travel_radius_km: number | null;
       email_chat_digest: boolean;
       email_new_events: boolean;
       bio?: string | null;
@@ -2681,9 +2681,9 @@ app.post("/media/finalize", async (c) => {
     return c.json({ ok: false, error: "MEDIA_NOT_CONFIGURED" }, 503);
   }
   try {
-    const body = (await c.req.json()) as { objectKey?: string; purpose?: string; eventId?: string };
+    const body = (await c.req.json()) as { objectKey?: string; purpose?: string; eventId?: string; communityId?: string };
     const objectKey = (body.objectKey ?? "").trim();
-    const purpose = (body.purpose ?? "avatar") as "avatar" | "event_banner" | "roadmap_attachment";
+    const purpose = (body.purpose ?? "avatar") as "avatar" | "event_banner" | "roadmap_attachment" | "community_avatar";
 
     const sql = getSql(c.env);
     const appUserId = await ensureAppUserId(
@@ -2723,6 +2723,27 @@ app.post("/media/finalize", async (c) => {
       }
       await sql`UPDATE newchums.events SET banner_key = ${objectKey} WHERE id = ${eventId}`;
       return c.json({ ok: true, bannerUrl: `/events/${eventId}/banner?v=${Date.now()}` });
+    }
+
+    if (purpose === "community_avatar") {
+      const expectedPrefix = `community_avatars/${appUserId}/`;
+      if (!objectKey.startsWith(expectedPrefix)) {
+        return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+      }
+      const communityId = body.communityId?.trim();
+      if (!communityId) {
+        return c.json({ ok: false, error: "MISSING_COMMUNITY_ID" }, 400);
+      }
+      const obj = await c.env.MEDIA_BUCKET.head(objectKey);
+      if (!obj) {
+        return c.json({ ok: false, error: "OBJECT_NOT_FOUND" }, 404);
+      }
+      const cm = (await sql`SELECT id, owner_user_id FROM newchums.communities WHERE id = ${communityId}`) as { id: string; owner_user_id: string }[];
+      if (cm.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+      const isSuperAdmin = ((await sql`SELECT role FROM newchums.users WHERE id = ${appUserId} LIMIT 1`) as { role: string | null }[])[0]?.role === "super_admin";
+      if (cm[0].owner_user_id !== appUserId && !isSuperAdmin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+      await sql`UPDATE newchums.communities SET avatar_key = ${objectKey}, updated_at = now() WHERE id = ${communityId}`;
+      return c.json({ ok: true, avatarUrl: `/communities/${communityId}/avatar?v=${Date.now()}` });
     }
 
     if (!objectKey.startsWith("avatars/")) {
@@ -2834,6 +2855,25 @@ app.get("/events/:eventId/banner", async (c) => {
     return new Response(body, { headers, status: 200 });
   } catch (err) {
     console.error(`[GET /events/${eventId}/banner]`, err);
+    return c.notFound();
+  }
+});
+
+app.get("/communities/:communityId/avatar", async (c) => {
+  const communityId = c.req.param("communityId");
+  if (!communityId || !c.env.MEDIA_BUCKET) return c.notFound();
+  try {
+    const sql = getSql(c.env);
+    const rows = (await sql`SELECT avatar_key FROM newchums.communities WHERE id = ${communityId} LIMIT 1`) as { avatar_key: string | null }[];
+    const avatarKey = rows[0]?.avatar_key ?? null;
+    if (!avatarKey) return c.notFound();
+    const obj = await c.env.MEDIA_BUCKET.get(avatarKey);
+    if (!obj) return c.notFound();
+    const headers = new Headers();
+    headers.set("Content-Type", obj.httpMetadata?.contentType ?? "image/jpeg");
+    headers.set("Cache-Control", "public, max-age=86400");
+    return new Response(obj.body, { headers, status: 200 });
+  } catch {
     return c.notFound();
   }
 });
@@ -5510,6 +5550,7 @@ app.get("/communities", async (c) => {
           'member' AS viewer_role
         FROM newchums.communities c
         JOIN newchums.community_members cm ON cm.community_id = c.id AND cm.user_id = ${userId} AND cm.status = 'active'
+        WHERE COALESCE(c.status, 'active') = 'active'
         ORDER BY c.name ASC LIMIT ${limit} OFFSET ${offset}
       `) as Record<string, unknown>[];
     } else {
@@ -5520,6 +5561,7 @@ app.get("/communities", async (c) => {
           (SELECT COUNT(*)::int FROM newchums.community_members cm WHERE cm.community_id = c.id AND cm.status = 'active') AS member_count
         FROM newchums.communities c
         WHERE (${isSuperAdmin}::boolean OR c.visibility = 'public')
+          AND COALESCE(c.status, 'active') = 'active'
           AND (${q}::text IS NULL OR c.name ILIKE ${q} OR c.slug ILIKE ${q})
         ORDER BY c.created_at DESC LIMIT ${limit} OFFSET ${offset}
       `) as Record<string, unknown>[];
@@ -5564,6 +5606,16 @@ app.get("/communities/:slug", async (c) => {
     `) as Record<string, unknown>[];
     if (!rows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     const community = rows[0];
+
+    if (community.status === "closed" && !isSuperAdmin) {
+      return c.json({
+        ok: true,
+        community: { id: community.id, slug: community.slug, name: community.name, status: "closed" },
+        viewerMembership: null,
+        viewerPendingRequest: false,
+        restricted: true,
+      });
+    }
 
     if (community.visibility === "private" && !isSuperAdmin) {
       if (!userId) return c.json({ ok: false, error: "PRIVATE_COMMUNITY" }, 403);
@@ -5683,6 +5735,7 @@ app.patch("/communities/:slug", async (c) => {
     if (body.location_address !== undefined) { updates.push("location_address"); vals.push(body.location_address ? String(body.location_address).trim().slice(0, 500) : null); }
     if (body.location_lat !== undefined) { updates.push("location_lat"); vals.push(body.location_lat != null ? Number(body.location_lat) : null); }
     if (body.location_lng !== undefined) { updates.push("location_lng"); vals.push(body.location_lng != null ? Number(body.location_lng) : null); }
+    if (body.avatar_key !== undefined) { updates.push("avatar_key"); vals.push(body.avatar_key ? String(body.avatar_key) : null); }
 
     if (updates.length === 0) return c.json({ ok: true });
 
@@ -5697,10 +5750,37 @@ app.patch("/communities/:slug", async (c) => {
     if (fieldMap.location_address !== undefined) await sql`UPDATE newchums.communities SET location_address = ${fieldMap.location_address as string | null}, updated_at = now() WHERE id = ${cid}`;
     if (fieldMap.location_lat !== undefined) await sql`UPDATE newchums.communities SET location_lat = ${fieldMap.location_lat as number | null}, updated_at = now() WHERE id = ${cid}`;
     if (fieldMap.location_lng !== undefined) await sql`UPDATE newchums.communities SET location_lng = ${fieldMap.location_lng as number | null}, updated_at = now() WHERE id = ${cid}`;
+    if (fieldMap.avatar_key !== undefined) await sql`UPDATE newchums.communities SET avatar_key = ${fieldMap.avatar_key as string | null}, updated_at = now() WHERE id = ${cid}`;
 
     return c.json({ ok: true });
   } catch (err) {
     console.error("[PATCH /communities/:slug]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /communities/:slug/close — soft-close a community (owner or super admin) */
+app.post("/communities/:slug/close", async (c) => {
+  const slug = c.req.param("slug");
+  const payload = await requireAuth(c);
+  if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const sql = getSql(c.env);
+  const userRows = (await sql`SELECT id, role FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string; role: string | null }[];
+  if (!userRows[0]) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const isSuperAdmin = userRows[0].role === "super_admin";
+
+  const communityRows = (await sql`SELECT id, owner_user_id, status FROM newchums.communities WHERE slug = ${slug} LIMIT 1`) as { id: string; owner_user_id: string; status: string }[];
+  if (!communityRows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+  if (communityRows[0].owner_user_id !== userRows[0].id && !isSuperAdmin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  if (communityRows[0].status === "closed") return c.json({ ok: true, already: true });
+
+  const cid = communityRows[0].id;
+  try {
+    await sql`UPDATE newchums.communities SET status = 'closed', updated_at = now() WHERE id = ${cid}`;
+    await sql`UPDATE newchums.events SET community_id = NULL WHERE community_id = ${cid}`;
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[POST /communities/:slug/close]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });
@@ -5823,7 +5903,7 @@ app.get("/communities/:id/members", async (c) => {
   }
 
   try {
-    const communityRows = (await sql`SELECT id, visibility FROM newchums.communities WHERE id = ${communityId} LIMIT 1`) as { id: string; visibility: string }[];
+    const communityRows = (await sql`SELECT id, visibility, COALESCE(status, 'active') AS status FROM newchums.communities WHERE id = ${communityId} LIMIT 1`) as { id: string; visibility: string; status: string }[];
     if (!communityRows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
 
     if (communityRows[0].visibility === "private" && !isSuperAdmin) {
@@ -5988,8 +6068,9 @@ app.get("/communities/:id/events", async (c) => {
   }
 
   try {
-    const communityRows = (await sql`SELECT id, visibility FROM newchums.communities WHERE id = ${communityId} LIMIT 1`) as { id: string; visibility: string }[];
+    const communityRows = (await sql`SELECT id, slug, name, visibility, COALESCE(status, 'active') AS status FROM newchums.communities WHERE id = ${communityId} LIMIT 1`) as { id: string; slug: string; name: string; visibility: string; status: string }[];
     if (!communityRows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    if (communityRows[0].status === "closed" && !isSuperAdmin) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
 
     if (communityRows[0].visibility === "private" && !isSuperAdmin) {
       if (!userId) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
@@ -5997,14 +6078,28 @@ app.get("/communities/:id/events", async (c) => {
       if (memberCheck.length === 0) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
     }
 
+    const communityInfo = { id: communityRows[0].id, slug: communityRows[0].slug, name: communityRows[0].name };
+
     const events = (await sql`
       SELECT e.id, e.title, e.description, e.starts_at, e.timezone, e.location_type, e.location_name, e.location_area,
-        e.visibility, e.status, e.max_seats, e.banner_key, e.host_user_id, e.created_at,
+        e.location_address, e.location_visibility, e.online_link, e.location_lat, e.location_lng,
+        e.visibility, e.status, e.max_seats, e.banner_key, e.host_user_id, e.created_at, e.allow_alt_times,
         u.name AS host_name, u.username AS host_username, u.avatar_key AS host_avatar_key, u.avatar_updated_at AS host_avatar_updated_at,
         (SELECT COUNT(*)::int FROM newchums.event_rsvps r WHERE r.event_id = e.id AND r.status = 'going') AS going_count,
-        (SELECT string_agg(i.name, ', ') FROM newchums.event_interests ei JOIN newchums.interests i ON i.id = ei.interest_id WHERE ei.event_id = e.id) AS hobby_names
+        (SELECT COUNT(*)::int FROM newchums.event_rsvps r WHERE r.event_id = e.id AND r.status = 'maybe') AS maybe_count,
+        (SELECT string_agg(i.name, ', ') FROM newchums.event_interests ei JOIN newchums.interests i ON i.id = ei.interest_id WHERE ei.event_id = e.id) AS hobby_names,
+        COALESCE(
+          (SELECT json_agg(json_build_object('name', ii.name, 'slug', ii.slug))
+           FROM newchums.event_interests ei2
+           JOIN newchums.interests ii ON ii.id = ei2.interest_id
+           WHERE ei2.event_id = e.id AND ii.is_deleted = false),
+          '[]'::json
+        ) AS hobbies,
+        CASE WHEN e.host_user_id = ${userId} THEN true ELSE false END AS is_host,
+        r_viewer.status AS my_rsvp_status
       FROM newchums.events e
       JOIN newchums.users u ON u.id = e.host_user_id
+      LEFT JOIN newchums.event_rsvps r_viewer ON r_viewer.event_id = e.id AND r_viewer.user_id = ${userId}
       WHERE e.community_id = ${communityId} AND e.status = 'published' AND e.starts_at > now() - interval '24 hours'
       ORDER BY e.starts_at ASC
       LIMIT ${limit} OFFSET ${offset}
@@ -6013,6 +6108,7 @@ app.get("/communities/:id/events", async (c) => {
     const eventsWithAvatars = events.map((ev) => ({
       ...ev,
       host_avatar_url: buildAvatarUrl(String(ev.host_user_id), ev.host_avatar_key as string | null, ev.host_avatar_updated_at as string | null, c.env.MEDIA_BUCKET),
+      community: communityInfo,
     }));
 
     return c.json({ ok: true, events: eventsWithAvatars });
@@ -6779,15 +6875,25 @@ app.get("/events/explore", async (c) => {
               ))
             )
           ELSE NULL
-        END AS distance_km
+        END AS distance_km,
+        cm_community.id AS community_id,
+        cm_community.slug AS community_slug,
+        cm_community.name AS community_name
       FROM newchums.events e
       LEFT JOIN newchums.interests i ON i.id = e.interest_id
       LEFT JOIN newchums.users h ON h.id = e.host_user_id
       LEFT JOIN newchums.event_rsvps r ON r.event_id = e.id AND r.user_id = ${userId}
       LEFT JOIN newchums.chum_preferences hp ON hp.user_id = e.host_user_id
+      LEFT JOIN newchums.communities cm_community ON cm_community.id = e.community_id AND COALESCE(cm_community.status, 'active') = 'active'
       WHERE e.status = 'published'
         AND e.starts_at >= ${now.toISOString()}
-        AND COALESCE(e.hide_from_explore, false) = false
+        AND (
+          COALESCE(e.hide_from_explore, false) = false
+          OR (e.community_id IS NOT NULL AND EXISTS (
+            SELECT 1 FROM newchums.community_members cm_viewer
+            WHERE cm_viewer.community_id = e.community_id AND cm_viewer.user_id = ${userId} AND cm_viewer.status = 'active'
+          ))
+        )
         AND e.visibility != 'invite_only'
         AND (
           e.visibility = 'public'
@@ -6836,6 +6942,7 @@ app.get("/events/explore", async (c) => {
       my_rsvp_status: string | null;
       going_count: number; maybe_count: number; is_host: boolean;
       distance_km: number | null;
+      community_id: string | null; community_slug: string | null; community_name: string | null;
     }>;
 
     // Batch-load host metrics for viewer→host compatibility notes
@@ -6893,6 +7000,7 @@ app.get("/events/explore", async (c) => {
         distanceKm: r.distance_km !== null ? Math.round(r.distance_km * 10) / 10 : null,
         bannerKey: r.banner_key ?? null,
         prefNote,
+        community: r.community_id ? { id: r.community_id, slug: r.community_slug!, name: r.community_name! } : null,
       };
     });
 

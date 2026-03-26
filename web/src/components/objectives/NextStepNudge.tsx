@@ -10,7 +10,6 @@ import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
 import CheckCircleOutlineRoundedIcon from "@mui/icons-material/CheckCircleOutlineRounded";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { apiFetch } from "@/lib/apiClient";
 
 type NextStepData = {
@@ -70,14 +69,11 @@ function clearCache() {
 }
 
 export default function NextStepNudge() {
-  const pathname = usePathname();
   const [step, setStep] = useState<NextStepData | null>(null);
   const [progress, setProgress] = useState<{ completed: number; total: number } | null>(null);
   const [hidden, setHidden] = useState(true);
   const [turningOff, setTurningOff] = useState(false);
   const fetchedRef = useRef(false);
-
-  const isAdminPage = pathname?.startsWith("/admin");
 
   useLayoutEffect(() => {
     const cached = readCache();
@@ -145,7 +141,7 @@ export default function NextStepNudge() {
     setHidden(true);
   }, []);
 
-  if (isAdminPage || hidden || !step) return null;
+  if (hidden || !step) return null;
 
   const progressPct =
     progress && progress.total > 0

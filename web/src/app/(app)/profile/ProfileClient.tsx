@@ -31,7 +31,7 @@ import { validateCleanText } from "@/lib/contentSafety";
 import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
 import { isDuplicate, nameToSlug, slugToName } from "@/lib/interestUtils";
 import { loadGooglePlacesScript } from "@/lib/loadGooglePlaces";
-import { notifyObjectivesChanged } from "@/components/objectives/NextStepNudge";
+import NextStepNudge, { notifyObjectivesChanged } from "@/components/objectives/NextStepNudge";
 import AttendanceRecordSection from "@/components/publicProfile/AttendanceRecordSection";
 import ChumPreferencesSection from "@/components/profile/ChumPreferencesSection";
 
@@ -584,6 +584,7 @@ export default function ProfileClient() {
 
   return (
     <Stack spacing={{ xs: 3, sm: 4 }}>
+      <NextStepNudge />
       <Box
         sx={{
           display: "flex",

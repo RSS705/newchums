@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   Box, Typography, Stack, Button, Chip, Avatar, CircularProgress,
-  Divider, IconButton, Tooltip, Tab, Tabs,
+  Divider, IconButton, Tooltip, Tab, Tabs, Grid,
 } from "@mui/material";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import ShareRoundedIcon from "@mui/icons-material/ShareRounded";
@@ -13,12 +13,13 @@ import LockRoundedIcon from "@mui/icons-material/LockRounded";
 import PublicRoundedIcon from "@mui/icons-material/PublicRounded";
 import EventNoteRoundedIcon from "@mui/icons-material/EventNoteRounded";
 import AddCircleRoundedIcon from "@mui/icons-material/AddCircleRounded";
-import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import HourglassEmptyRoundedIcon from "@mui/icons-material/HourglassEmptyRounded";
+import BlockRoundedIcon from "@mui/icons-material/BlockRounded";
 import Link from "next/link";
 import { AppCard, useToast } from "@/components/ui";
+import EventCard, { type PlanEvent } from "@/components/events/EventCard";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 
 type CommunityData = {
@@ -31,12 +32,14 @@ type CommunityData = {
   chat_enabled: boolean;
   location_name: string | null;
   location_address: string | null;
+  avatar_key: string | null;
   owner_user_id: string;
   owner_name: string | null;
   owner_username: string | null;
   owner_avatar_url: string | null;
   member_count: number;
   created_at: string;
+  status?: string;
 };
 
 type Member = {
@@ -49,21 +52,7 @@ type Member = {
   created_at: string;
 };
 
-type PlanEvent = {
-  id: string;
-  title: string;
-  description: string | null;
-  starts_at: string;
-  timezone?: string;
-  location_type: string;
-  location_name: string | null;
-  location_area: string | null;
-  host_name: string | null;
-  host_username: string | null;
-  host_avatar_url: string | null;
-  going_count: number;
-  hobby_names: string | null;
-};
+type ApiEvent = Record<string, unknown>;
 
 type JoinRequest = {
   id: string;
@@ -94,18 +83,61 @@ export default function CommunityDetailClient() {
   const [membersLoading, setMembersLoading] = useState(false);
   const [joining, setJoining] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  const [isClosed, setIsClosed] = useState(false);
+
+  const mapApiEvent = useCallback((ev: ApiEvent): PlanEvent => {
+    const hostUsername = (ev.host_username as string)?.replace(/^@/, "");
+    const hostName = hostUsername ? `@${hostUsername}` : ((ev.host_name as string) || "Someone");
+    const hobbiesRaw = ev.hobbies;
+    const hobbies: Array<{ name: string; slug: string }> = typeof hobbiesRaw === "string"
+      ? JSON.parse(hobbiesRaw)
+      : Array.isArray(hobbiesRaw) ? hobbiesRaw : [];
+    const locationType = String(ev.location_type ?? "in_person");
+    const locationDisplay = locationType === "online"
+      ? ((ev.online_link as string) || "Online")
+      : ((ev.location_name as string) || (ev.location_address as string) || (ev.location_area as string) || "TBD");
+    return {
+      id: String(ev.id),
+      title: String(ev.title ?? ""),
+      description: (ev.description as string) ?? null,
+      startsAt: String(ev.starts_at ?? ""),
+      locationType,
+      locationDisplay,
+      locationName: (ev.location_name as string) ?? null,
+      locationAddress: (ev.location_address as string) ?? null,
+      onlineLink: (ev.online_link as string) ?? null,
+      maxSeats: ev.max_seats != null ? Number(ev.max_seats) : null,
+      visibility: String(ev.visibility ?? "public"),
+      status: String(ev.status ?? "published"),
+      hobby: hobbies[0]?.name ?? (ev.hobby_names as string)?.split(", ")[0] ?? null,
+      hobbySlug: hobbies[0]?.slug ?? null,
+      hobbies,
+      hostName,
+      isHost: ev.is_host === true,
+      myRsvpStatus: (ev.my_rsvp_status as string) ?? null,
+      goingCount: Number(ev.going_count ?? 0),
+      maybeCount: Number(ev.maybe_count ?? 0),
+      bannerKey: (ev.banner_key as string) ?? null,
+      community: (ev.community as { id: string; slug: string; name: string }) ?? null,
+    };
+  }, []);
 
   const fetchCommunity = useCallback(async () => {
     try {
       const res = await apiFetch(`/communities/${slug}`, { auth: true });
       const data = await res.json();
       if (data.ok) {
-        setCommunity(data.community);
-        setViewerMembership(data.viewerMembership);
-        setViewerPendingRequest(data.viewerPendingRequest ?? false);
-        setRestricted(data.restricted ?? false);
-        setShareToken(data.shareToken ?? null);
-        setPendingRequests(data.pendingRequests ?? []);
+        if (data.community?.status === "closed") {
+          setCommunity(data.community);
+          setIsClosed(true);
+        } else {
+          setCommunity(data.community);
+          setViewerMembership(data.viewerMembership);
+          setViewerPendingRequest(data.viewerPendingRequest ?? false);
+          setRestricted(data.restricted ?? false);
+          setShareToken(data.shareToken ?? null);
+          setPendingRequests(data.pendingRequests ?? []);
+        }
       }
     } catch { /* noop */ }
     setLoading(false);
@@ -117,10 +149,10 @@ export default function CommunityDetailClient() {
     try {
       const res = await apiFetch(`/communities/${community.id}/events`, { auth: true });
       const data = await res.json();
-      if (data.ok) setEvents(data.events);
+      if (data.ok) setEvents((data.events as ApiEvent[]).map(mapApiEvent));
     } catch { /* noop */ }
     setEventsLoading(false);
-  }, [community]);
+  }, [community, mapApiEvent]);
 
   const fetchMembers = useCallback(async () => {
     if (!community) return;
@@ -222,6 +254,37 @@ export default function CommunityDetailClient() {
     );
   }
 
+  if (isClosed) {
+    return (
+      <Stack spacing={{ xs: 3, sm: 4 }}>
+        <AppCard>
+          <Stack spacing={2.5} alignItems="center" sx={{ py: { xs: 4, sm: 5 } }}>
+            <BlockRoundedIcon sx={{ fontSize: 56, color: "text.disabled", opacity: 0.5 }} />
+            <Box sx={{ textAlign: "center" }}>
+              <Typography
+                component="h1"
+                sx={{ fontSize: { xs: "1.5rem", sm: "1.75rem" }, fontWeight: 700, lineHeight: 1.25, letterSpacing: "-0.02em", mb: 0.5 }}
+              >
+                {community.name}
+              </Typography>
+              <Typography variant="body1" color="text.secondary">
+                This community has been closed by its owner.
+              </Typography>
+            </Box>
+            <Button
+              component={Link}
+              href="/communities"
+              variant="outlined"
+              sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, borderColor: "divider", color: "text.secondary" }}
+            >
+              Browse communities
+            </Button>
+          </Stack>
+        </AppCard>
+      </Stack>
+    );
+  }
+
   const isOwner = viewerMembership?.role === "owner";
   const isMember = !!viewerMembership;
 
@@ -231,8 +294,11 @@ export default function CommunityDetailClient() {
         <AppCard>
           <Stack spacing={2.5} alignItems="center" sx={{ py: { xs: 4, sm: 5 } }}>
             <Avatar
+              variant="rounded"
+              src={community.avatar_key ? `${getAvatarBaseUrl()}/communities/${community.id}/avatar` : undefined}
               sx={{
                 width: 72, height: 72,
+                borderRadius: 2.5,
                 bgcolor: "primary.main", color: "primary.contrastText",
                 fontWeight: 700, fontSize: "1.75rem",
               }}
@@ -273,10 +339,13 @@ export default function CommunityDetailClient() {
     <Stack spacing={{ xs: 3, sm: 4 }}>
       {/* Header card */}
       <AppCard>
-        <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ sm: "flex-start" }}>
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={2.5} alignItems={{ sm: "flex-start" }}>
           <Avatar
+            variant="rounded"
+            src={community.avatar_key ? `${getAvatarBaseUrl()}/communities/${community.id}/avatar` : undefined}
             sx={{
               width: 64, height: 64,
+              borderRadius: 2.5,
               bgcolor: "primary.main", color: "primary.contrastText",
               fontWeight: 700, fontSize: "1.5rem",
             }}
@@ -304,20 +373,23 @@ export default function CommunityDetailClient() {
               </Typography>
             )}
             <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center" useFlexGap>
-              <Chip
-                icon={<PeopleRoundedIcon sx={{ fontSize: "14px !important" }} />}
-                label={`${community.member_count} member${community.member_count !== 1 ? "s" : ""}`}
-                size="small" variant="outlined"
-              />
+              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, fontSize: "0.8125rem" }}>
+                {community.member_count} {community.member_count === 1 ? "member" : "members"}
+              </Typography>
               {community.location_name && (
-                <Chip label={community.location_name} size="small" variant="outlined" />
+                <>
+                  <Typography variant="body2" color="text.disabled">·</Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
+                    {community.location_name}
+                  </Typography>
+                </>
               )}
               {community.join_mode === "approval_required" && (
-                <Chip label="Approval required" size="small" color="warning" variant="outlined" />
+                <Chip label="Approval required" size="small" color="warning" variant="outlined" sx={{ ml: 0.5 }} />
               )}
             </Stack>
           </Box>
-          <Stack direction="row" spacing={0.5}>
+          <Stack direction="row" spacing={0.5} sx={{ flexShrink: 0 }}>
             <Tooltip title="Share">
               <IconButton onClick={handleShare} size="small"><ShareRoundedIcon /></IconButton>
             </Tooltip>
@@ -347,11 +419,6 @@ export default function CommunityDetailClient() {
           {viewerPendingRequest && !isMember && (
             <Chip icon={<HourglassEmptyRoundedIcon />} label="Request pending" color="warning" variant="outlined" size="small" />
           )}
-          {isMember && !isOwner && (
-            <Button variant="outlined" size="small" onClick={handleLeave} disabled={leaving} sx={{ textTransform: "none", fontWeight: 600, color: "text.secondary", borderColor: "divider", borderRadius: 2 }}>
-              {leaving ? <CircularProgress size={18} color="inherit" /> : "Leave community"}
-            </Button>
-          )}
           {isMember && (
             <Button
               component={Link}
@@ -361,6 +428,14 @@ export default function CommunityDetailClient() {
               sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
             >
               Start a plan
+            </Button>
+          )}
+          {isMember && !isOwner && (
+            <Button
+              variant="text" size="small" onClick={handleLeave} disabled={leaving}
+              sx={{ textTransform: "none", fontWeight: 500, color: "text.secondary", fontSize: "0.8125rem", ml: "auto !important" }}
+            >
+              {leaving ? <CircularProgress size={16} color="inherit" /> : "Leave community"}
             </Button>
           )}
         </Stack>
@@ -438,33 +513,13 @@ export default function CommunityDetailClient() {
                 </Stack>
               </AppCard>
             ) : (
-              <Stack spacing={2}>
+              <Grid container spacing={2.5}>
                 {events.map((ev) => (
-                  <AppCard
-                    key={ev.id}
-                    sx={{ cursor: "pointer", transition: "box-shadow 0.15s, transform 0.15s", "&:hover": { boxShadow: "0 4px 16px rgba(0,0,0,0.08)", transform: "translateY(-1px)" } }}
-                    onClick={() => router.push(`/events/${ev.id}`)}
-                  >
-                    <Stack spacing={0.75}>
-                      <Typography fontWeight={700} sx={{ fontSize: "1.0625rem", lineHeight: 1.35 }}>{ev.title}</Typography>
-                      <Stack direction="row" spacing={1.5} flexWrap="wrap" alignItems="center" useFlexGap>
-                        <Typography variant="body2" color="text.secondary">
-                          {new Date(ev.starts_at).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
-                        </Typography>
-                        {ev.location_name && (
-                          <Typography variant="body2" color="text.secondary">{ev.location_name}</Typography>
-                        )}
-                        <Chip label={`${ev.going_count} going`} size="small" variant="outlined" />
-                      </Stack>
-                      {ev.host_name && (
-                        <Typography variant="caption" color="text.secondary">
-                          Hosted by {ev.host_name || `@${ev.host_username}`}
-                        </Typography>
-                      )}
-                    </Stack>
-                  </AppCard>
+                  <Grid size={{ xs: 12, sm: 6, md: 4 }} key={ev.id}>
+                    <EventCard event={ev} />
+                  </Grid>
                 ))}
-              </Stack>
+              </Grid>
             )}
           </>
         )}
@@ -495,8 +550,8 @@ export default function CommunityDetailClient() {
                           {(m.name || m.username || "?").charAt(0).toUpperCase()}
                         </Avatar>
                         <Box
-                          sx={{ flex: 1, minWidth: 0, cursor: "pointer" }}
-                          onClick={() => router.push(`/users/${handle || m.user_id}`)}
+                          sx={{ flex: 1, minWidth: 0, cursor: handle ? "pointer" : "default" }}
+                          onClick={() => { if (handle) router.push(`/u/${handle}`); }}
                         >
                           <Typography variant="body2" fontWeight={600} noWrap>{m.name || m.username || "Unknown"}</Typography>
                           {handle && <Typography variant="caption" color="text.secondary">@{handle}</Typography>}

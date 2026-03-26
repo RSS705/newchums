@@ -12,6 +12,7 @@ import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
 import LinkRoundedIcon from "@mui/icons-material/LinkRounded";
 import PeopleOutlineRoundedIcon from "@mui/icons-material/PeopleOutlineRounded";
 import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
+import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
 import Link from "next/link";
 import { getAvatarBaseUrl, getImageFallbackBaseUrl } from "@/lib/apiClient";
 import { getGradientForEventId } from "@/lib/eventBanners";
@@ -40,6 +41,7 @@ export type PlanEvent = {
   distanceKm?: number | null;
   bannerKey?: string | null;
   hasUnreadChat?: boolean;
+  community?: { id: string; slug: string; name: string } | null;
 };
 
 type EventCardProps = {
@@ -236,9 +238,19 @@ export default function EventCard({
           </Stack>
 
           {/* Host */}
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.75, fontSize: "0.8125rem" }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: event.community ? 0.5 : 1.75, fontSize: "0.8125rem" }}>
             {event.isHost ? "Hosted by you" : `Hosted by ${event.hostName}`}
           </Typography>
+
+          {/* Community attribution */}
+          {event.community && (
+            <Stack direction="row" alignItems="center" spacing={0.5} sx={{ mb: 1.75 }}>
+              <GroupsRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
+              <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.75rem" }}>
+                {event.community.name}
+              </Typography>
+            </Stack>
+          )}
 
           {/* Meta */}
           <Stack spacing={0.75}>
