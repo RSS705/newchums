@@ -120,6 +120,7 @@ export default function CommunityDetailClient() {
       maybeCount: Number(ev.maybe_count ?? 0),
       bannerKey: (ev.banner_key as string) ?? null,
       community: (ev.community as { id: string; slug: string; name: string }) ?? null,
+      hasPrefMismatch: ev.hasPrefMismatch === true,
     };
   }, []);
 

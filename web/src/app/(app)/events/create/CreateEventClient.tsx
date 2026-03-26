@@ -1,9 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Autocomplete from "@mui/material/Autocomplete";
 import Box from "@mui/material/Box";
-import Chip from "@mui/material/Chip";
+
 import CircularProgress from "@mui/material/CircularProgress";
 import Collapse from "@mui/material/Collapse";
 import Dialog from "@mui/material/Dialog";
@@ -39,11 +38,8 @@ import { apiFetch, getApiBaseUrl } from "@/lib/apiClient";
 import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
 import { notifyObjectivesChanged } from "@/components/objectives/NextStepNudge";
 import { loadGooglePlacesScript } from "@/lib/loadGooglePlaces";
-import { isDuplicate, nameToSlug } from "@/lib/interestUtils";
-import { validateCleanText } from "@/lib/contentSafety";
 import { BANNER_PRESETS, renderBannerPreset, suggestPreset } from "@/lib/eventBanners";
-
-type HobbyOption = { id?: string; name: string; slug: string };
+import HobbyPickerField, { type HobbyOption } from "@/components/common/HobbyPickerField";
 
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_BANNER_INPUT_BYTES = 20 * 1024 * 1024; // 20MB — raw file limit before compression
@@ -96,13 +92,6 @@ export default function CreateEventClient() {
   const [communityName, setCommunityName] = useState<string | null>(searchParams.get("community_name"));
   const [hideFromExplore, setHideFromExplore] = useState(false);
 
-  // Hobby search
-  const [suggestions, setSuggestions] = useState<HobbyOption[]>([]);
-  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
-  const [hobbyInputValue, setHobbyInputValue] = useState("");
-  const hobbyJustAddedRef = useRef(false);
-  const hobbyDebounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-
   // Banner image
   const [bannerFile, setBannerFile] = useState<File | null>(null);
   const [bannerPreview, setBannerPreview] = useState<string | null>(null);
@@ -135,57 +124,6 @@ export default function CreateEventClient() {
     void check();
     return () => { cancelled = true; };
   }, []);
-
-  const fetchSuggestions = useCallback(async (q: string) => {
-    const term = q.trim();
-    if (!term) { setSuggestions([]); return; }
-    setSuggestionsLoading(true);
-    try {
-      const res = await apiFetch(`/interests?q=${encodeURIComponent(term)}`);
-      const data = await res.json();
-      if (data.ok && data.interests) {
-        const seen = new Set<string>();
-        const deduped: HobbyOption[] = [];
-        for (const r of data.interests as { id?: string; name: string; slug: string }[]) {
-          if (seen.has(r.slug)) continue;
-          seen.add(r.slug);
-          deduped.push({ id: r.id, name: r.name, slug: r.slug });
-        }
-        setSuggestions(deduped);
-      } else {
-        setSuggestions([]);
-      }
-    } catch { setSuggestions([]); }
-    finally { setSuggestionsLoading(false); }
-  }, []);
-
-  const debouncedFetch = useMemo(() => {
-    return (q: string) => { clearTimeout(hobbyDebounceRef.current); hobbyDebounceRef.current = setTimeout(() => fetchSuggestions(q), 250); };
-  }, [fetchSuggestions]);
-
-  useEffect(() => {
-    if (hobbyInputValue) debouncedFetch(hobbyInputValue);
-    else setSuggestions([]);
-  }, [hobbyInputValue, debouncedFetch]);
-
-  const addHobby = (option: HobbyOption | string) => {
-    const item: HobbyOption =
-      typeof option === "string"
-        ? { name: option.trim().replace(/\s+/g, " "), slug: nameToSlug(option) }
-        : option;
-    if (!item.name?.trim() || !item.slug) return;
-    if (item.name.length > 50) { toast.error("Hobby must be 50 characters or less"); return; }
-    const check = validateCleanText(item.name, "hobby");
-    if (!check.ok) { toast.error(check.reason ?? "That hobby name isn't allowed."); return; }
-    setSelectedHobbies((prev) => {
-      if (prev.some((i) => isDuplicate(i, item))) return prev;
-      return [...prev, item];
-    });
-    hobbyJustAddedRef.current = true;
-    clearTimeout(hobbyDebounceRef.current);
-    setHobbyInputValue("");
-    setSuggestions([]);
-  };
 
   const handleBannerCropComplete = useCallback((_: Area, croppedAreaPx: Area) => {
     setBannerCroppedArea(croppedAreaPx);
@@ -354,10 +292,6 @@ export default function CreateEventClient() {
     setSubmitting(false);
   };
 
-  const sortedHobbies = useMemo(
-    () => [...selectedHobbies].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })),
-    [selectedHobbies],
-  );
 
   return (
     <Stack spacing={{ xs: 3, sm: 4 }}>
@@ -527,122 +461,12 @@ export default function CreateEventClient() {
             inputProps={{ maxLength: 2000 }}
           />
 
-          {/* Multi-hobby selector (mirrors profile pattern) */}
-          <Autocomplete
-            freeSolo
-            multiple
-            filterOptions={(x) => x}
-            options={suggestions}
-            renderOption={(props, option) => {
-              const { key: _key, ...rest } = props as React.HTMLAttributes<HTMLLIElement> & { key: string };
-              return (
-                <li key={typeof option === "string" ? option : (option.id ?? option.slug)} {...rest}>
-                  {typeof option === "string" ? option : option.name}
-                </li>
-              );
-            }}
+          <HobbyPickerField
             value={selectedHobbies}
-            inputValue={hobbyInputValue}
-            onInputChange={(_, v, reason) => {
-              if (hobbyJustAddedRef.current) {
-                hobbyJustAddedRef.current = false;
-                setHobbyInputValue("");
-                return;
-              }
-              if (reason === "reset") {
-                setHobbyInputValue("");
-                return;
-              }
-              setHobbyInputValue(v);
-            }}
-            onChange={(_, newValue) => {
-              const filtered = (newValue ?? []).filter(Boolean);
-              const last = filtered[filtered.length - 1];
-              if (typeof last === "string") {
-                addHobby(last);
-                return;
-              }
-              if (typeof last === "object" && last && filtered.length > selectedHobbies.length) {
-                addHobby(last);
-                return;
-              }
-              setSelectedHobbies(filtered as HobbyOption[]);
-            }}
-            getOptionLabel={(opt) => (typeof opt === "string" ? opt : opt.name)}
-            isOptionEqualToValue={(opt, val) => {
-              if (!opt || !val) return false;
-              if (typeof opt === "string" || typeof val === "string") return false;
-              return opt.slug === val.slug;
-            }}
-            loading={suggestionsLoading}
-            renderInput={(params) => {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const origKeyDown = (params.inputProps as any)?.onKeyDown as ((e: React.KeyboardEvent) => void) | undefined;
-              return (
-                <Box sx={{ width: "100%" }}>
-                  <Typography
-                    variant="subtitle1"
-                    fontWeight={600}
-                    sx={{ display: "block", mb: 0.625, color: errors.hobby ? "error.main" : "inherit" }}
-                  >
-                    Hobbies
-                  </Typography>
-                  <TextField
-                    {...params}
-                    placeholder="Type to search or create..."
-                    variant="outlined"
-                    size="medium"
-                    fullWidth
-                    label={undefined}
-                    error={!!errors.hobby}
-                    helperText={errors.hobby || undefined}
-                    inputProps={{
-                      ...params.inputProps,
-                      onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => {
-                        if (e.key === "Enter") {
-                          const trimmed = hobbyInputValue.trim();
-                          if (trimmed && !e.currentTarget.getAttribute("aria-activedescendant")) {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            addHobby(trimmed);
-                            return;
-                          }
-                        }
-                        if (e.key === "Backspace" && !hobbyInputValue) {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          return;
-                        }
-                        origKeyDown?.(e);
-                      },
-                    }}
-                  />
-                </Box>
-              );
-            }}
-            renderTags={() => null}
+            onChange={setSelectedHobbies}
+            error={errors.hobby}
+            onReject={(msg) => toast.error(msg)}
           />
-          {selectedHobbies.length > 0 && (
-            <Stack direction="row" flexWrap="wrap" gap={1.5} useFlexGap>
-              {sortedHobbies.map((item) => (
-                <Chip
-                  key={item.slug}
-                  label={item.name}
-                  size="medium"
-                  color="primary"
-                  variant="filled"
-                  onDelete={() => setSelectedHobbies((prev) => prev.filter((i) => i.slug !== item.slug))}
-                  sx={{
-                    height: 34,
-                    fontSize: "0.875rem",
-                    fontWeight: 600,
-                    "& .MuiChip-label": { px: 1.5, py: 0.5 },
-                    "& .MuiChip-deleteIcon": { fontSize: "1.125rem", "&:hover": { color: "primary.dark" } },
-                  }}
-                />
-              ))}
-            </Stack>
-          )}
 
           <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="flex-start">
             <AppTextField
@@ -737,7 +561,6 @@ export default function CreateEventClient() {
                 <Switch
                   checked={altTimesMode === "availability"}
                   onChange={(e) => setAltTimesMode(e.target.checked ? "availability" : "suggest")}
-                  size="small"
                 />
               }
               label="Request attendees share their availability"

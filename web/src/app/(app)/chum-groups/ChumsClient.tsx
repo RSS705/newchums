@@ -789,12 +789,12 @@ export default function ChumsClient() {
     setActionLoading((prev) => new Set(prev).add(userId));
     try {
       const res = await apiFetch(`/chums/${userId}`, { method: "POST", auth: true });
-      const data = await res.json() as { ok?: boolean };
+      const data = await res.json() as { ok?: boolean; contactId?: string };
       if (!data.ok) throw new Error();
       const added = searchResults.find((u) => u.userId === userId);
       if (added) {
         setOnNewChums((prev) => [{
-          contactId: `temp-${userId}`,
+          contactId: data.contactId ?? `temp-${userId}`,
           userId: added.userId,
           type: "on_newchums",
           displayName: added.displayName,

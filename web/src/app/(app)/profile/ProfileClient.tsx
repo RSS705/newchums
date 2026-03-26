@@ -1,8 +1,6 @@
 "use client";
 
-import Autocomplete from "@mui/material/Autocomplete";
 import Box from "@mui/material/Box";
-import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
@@ -29,13 +27,13 @@ import { TRAVEL_RADIUS_OPTIONS } from "@/config/travelRadius";
 import { PROFILE_THEME_KEYS, PROFILE_THEMES, type ProfileThemeKey } from "@/lib/profileTheme";
 import { validateCleanText } from "@/lib/contentSafety";
 import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
-import { isDuplicate, nameToSlug, slugToName } from "@/lib/interestUtils";
+import { slugToName } from "@/lib/interestUtils";
+import HobbyPickerField, { type HobbyOption } from "@/components/common/HobbyPickerField";
 import { loadGooglePlacesScript } from "@/lib/loadGooglePlaces";
 import NextStepNudge, { notifyObjectivesChanged } from "@/components/objectives/NextStepNudge";
 import AttendanceRecordSection from "@/components/publicProfile/AttendanceRecordSection";
 import ChumPreferencesSection from "@/components/profile/ChumPreferencesSection";
 
-type InterestOption = { id?: string; name: string; slug: string };
 const GENDER_OPTIONS = [
   { value: "", label: "Not specified" },
   { value: "male", label: "Male" },
@@ -63,12 +61,10 @@ type Profile = {
   email_new_events: boolean;
 };
 
-const MAX_INTEREST_LENGTH = 50;
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024; // 2MB
 const ALLOWED_AVATAR_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_DISPLAY_NAME_LENGTH = 100;
 const MAX_BIO_LENGTH = 500;
-const CHIPS_COLLAPSED_COUNT = 12;
 const HANDLE_REGEX = /^[A-Za-z0-9_]{3,20}$/;
 
 export default function ProfileClient() {
@@ -96,59 +92,11 @@ export default function ProfileClient() {
   const [homeLat, setHomeLat] = useState<number | null>(null);
   const [homeLng, setHomeLng] = useState<number | null>(null);
   const [travelRadiusKm, setTravelRadiusKm] = useState(200);
-  const [interestItems, setInterestItems] = useState<InterestOption[]>([]);
-
-  const [suggestions, setSuggestions] = useState<InterestOption[]>([]);
-  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
-  const [inputValue, setInputValue] = useState("");
-  const hobbyJustAddedRef = useRef(false);
-  const [showAllChips, setShowAllChips] = useState(false);
+  const [interestItems, setInterestItems] = useState<HobbyOption[]>([]);
 
   const toast = useToast();
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const fetchSuggestions = useCallback(async (q: string) => {
-    const term = q.trim();
-    if (!term) {
-      setSuggestions([]);
-      return;
-    }
-    setSuggestionsLoading(true);
-    try {
-      const res = await apiFetch(`/interests?q=${encodeURIComponent(term)}`);
-      const data = await res.json();
-      if (data.ok && data.interests) {
-        const seen = new Set<string>();
-        const opts: InterestOption[] = [];
-        for (const r of data.interests as { id?: string; name: string; slug: string }[]) {
-          if (seen.has(r.slug)) continue;
-          seen.add(r.slug);
-          opts.push({ id: r.id, name: r.name, slug: r.slug });
-        }
-        setSuggestions(opts);
-      } else {
-        setSuggestions([]);
-      }
-    } catch {
-      setSuggestions([]);
-    } finally {
-      setSuggestionsLoading(false);
-    }
-  }, []);
-
-  const debouncedFetch = useMemo(() => {
-    let t: ReturnType<typeof setTimeout>;
-    return (q: string) => {
-      clearTimeout(t);
-      t = setTimeout(() => fetchSuggestions(q), 250);
-    };
-  }, [fetchSuggestions]);
-
-  useEffect(() => {
-    if (inputValue) debouncedFetch(inputValue);
-    else setSuggestions([]);
-  }, [inputValue, debouncedFetch]);
 
   const checkHandleAvailable = useCallback(async (h: string): Promise<"idle" | "available" | "unavailable"> => {
     const trimmed = h.trim();
@@ -259,10 +207,7 @@ export default function ProfileClient() {
     [interestItems],
   );
 
-  const sortedInterestItems = useMemo(
-    () => [...interestItems].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })),
-    [interestItems],
-  );
+
 
   const isDirty = useCallback(() => {
     if (!profile) return true;
@@ -555,30 +500,6 @@ export default function ProfileClient() {
     );
   }
 
-  const addInterest = (option: InterestOption | string) => {
-    const item: InterestOption =
-      typeof option === "string"
-        // We intentionally preserve user-provided casing; do not auto-title-case.
-        ? { name: option.trim().replace(/\s+/g, " "), slug: nameToSlug(option) }
-        : option;
-    if (!item.name?.trim() || !item.slug) return;
-    if (item.name.length > MAX_INTEREST_LENGTH) {
-      toast.error(`Hobby must be ${MAX_INTEREST_LENGTH} characters or less`);
-      return;
-    }
-    const hobbyCheck = validateCleanText(item.name, "hobby");
-    if (!hobbyCheck.ok) {
-      toast.error(hobbyCheck.reason ?? "That hobby name isn't allowed. Try a different wording.");
-      return;
-    }
-    const already = interestItems.some((i) => isDuplicate(i, item));
-    if (already) return;
-    setInterestItems((prev) => [...prev, item]);
-    hobbyJustAddedRef.current = true;
-    setInputValue("");
-    setSuggestions([]);
-  };
-
   const handleForUrl = handle.trim().replace(/^@/, "");
   const canViewPublic = handleForUrl.length >= 3 && HANDLE_REGEX.test(handleForUrl);
 
@@ -843,158 +764,14 @@ export default function ProfileClient() {
               Hobbies shape which plans appear in your feed and how you're matched with gatherings.
             </Typography>
           </Box>
-          <Autocomplete
-            freeSolo
-            multiple
-            filterOptions={(x) => x}
-            options={suggestions}
-            renderOption={(props, option) => {
-              const { key: _key, ...rest } = props as React.HTMLAttributes<HTMLLIElement> & { key: string };
-              return (
-                <li key={typeof option === "string" ? option : (option.id ?? option.slug)} {...rest}>
-                  {typeof option === "string" ? option : option.name}
-                </li>
-              );
-            }}
-            sx={{
-              "& .MuiOutlinedInput-root": { alignItems: "center" },
-              "& .MuiInputBase-input": {
-                paddingTop: 14,
-                paddingBottom: 14,
-                lineHeight: 1.4375,
-              },
-            }}
+          <HobbyPickerField
             value={interestItems}
-            inputValue={inputValue}
-            onInputChange={(_, v, reason) => {
-              if (hobbyJustAddedRef.current) {
-                hobbyJustAddedRef.current = false;
-                setInputValue("");
-                return;
-              }
-              if (reason === "reset") {
-                setInputValue("");
-                return;
-              }
-              setInputValue(v);
-            }}
-            onChange={(_, newValue) => {
-              const filtered = (newValue ?? []).filter(Boolean);
-              const last = filtered[filtered.length - 1];
-              if (typeof last === "string") {
-                addInterest(last);
-                return;
-              }
-              if (typeof last === "object" && last && filtered.length > interestItems.length) {
-                addInterest(last);
-                return;
-              }
-              setInterestItems(filtered as InterestOption[]);
-            }}
-            getOptionLabel={(opt) => (typeof opt === "string" ? opt : opt.name)}
-            isOptionEqualToValue={(opt, val) => {
-              // MUI may call this with undefined/null during freeSolo keyboard transitions
-              // (Sentry: Cannot read properties of undefined reading 'slug')
-              if (!opt || !val) return false;
-              if (typeof opt === "string" || typeof val === "string") return false;
-              return opt.slug === val.slug;
-            }}
-            loading={suggestionsLoading}
-            renderInput={(params) => (
-              <Box>
-                <Typography
-                  component="label"
-                  htmlFor={params.id}
-                  variant="subtitle1"
-                  fontWeight={600}
-                  sx={{ display: "block", mb: 0.625, cursor: "text" }}
-                >
-                  Add hobbies
-                </Typography>
-                <TextField
-                  {...params}
-                  label={undefined}
-                  placeholder="Type to search or create..."
-                  fullWidth
-                  size="medium"
-                  variant="outlined"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      const trimmed = inputValue.trim();
-                      if (!trimmed) return;
-                      const input = e.target as HTMLInputElement;
-                      if (input.getAttribute("aria-activedescendant")) return;
-                      e.preventDefault();
-                      e.stopPropagation();
-                      addInterest(trimmed);
-                      return;
-                    }
-                    if (e.key === "Backspace" && !inputValue) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                    }
-                  }}
-                />
-              </Box>
-            )}
-            renderTags={() => null}
+            onChange={setInterestItems}
+            label="Add hobbies"
+            onReject={(msg) => toast.error(msg)}
+            collapsedCount={12}
           />
-          {interestItems.length > 0 ? (
-            <Stack spacing={1}>
-              <Stack direction="row" alignItems="center" flexWrap="wrap" gap={0.5}>
-                <Typography variant="caption" color="text.secondary" sx={{ opacity: 0.9 }}>
-                  {interestItems.length} {interestItems.length === 1 ? "hobby" : "hobbies"} selected
-                </Typography>
-                {interestItems.length > CHIPS_COLLAPSED_COUNT && (
-                  <Typography
-                    component="button"
-                    type="button"
-                    variant="body2"
-                    onClick={() => setShowAllChips((v) => !v)}
-                    sx={{
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      color: "primary.main",
-                      textDecoration: "underline",
-                      "&:hover": { color: "primary.dark" },
-                    }}
-                  >
-                    {showAllChips ? "Show fewer" : `Show all (${interestItems.length})`}
-                  </Typography>
-                )}
-              </Stack>
-              <Stack direction="row" flexWrap="wrap" gap={1.5} useFlexGap sx={{ py: 0.75 }}>
-                {(showAllChips ? sortedInterestItems : sortedInterestItems.slice(0, CHIPS_COLLAPSED_COUNT)).map(
-                  (item) => (
-                    <Chip
-                      key={item.slug}
-                      label={item.name}
-                      size="medium"
-                      color="primary"
-                      variant="filled"
-                      onDelete={() =>
-                        setInterestItems((prev) => prev.filter((i) => i.slug !== item.slug))
-                      }
-                      sx={{
-                        height: 34,
-                        fontSize: "0.875rem",
-                        fontWeight: 600,
-                        "& .MuiChip-label": {
-                          px: 1.5,
-                          py: 0.5,
-                        },
-                        "& .MuiChip-deleteIcon": {
-                          fontSize: "1.125rem",
-                          "&:hover": { color: "primary.dark" },
-                        },
-                      }}
-                    />
-                  )
-                )}
-              </Stack>
-            </Stack>
-          ) : (
+          {interestItems.length === 0 && (
             <Typography variant="body2" color="text.secondary" sx={{ opacity: 0.85 }}>
               The more specific you are, the easier it is for others to find you.
             </Typography>

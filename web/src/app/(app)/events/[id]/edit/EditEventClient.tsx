@@ -1,9 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Autocomplete from "@mui/material/Autocomplete";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Box from "@mui/material/Box";
-import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import Collapse from "@mui/material/Collapse";
 import Dialog from "@mui/material/Dialog";
@@ -34,10 +32,7 @@ import { useParams, useRouter } from "next/navigation";
 import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
 import { apiFetch, getApiBaseUrl, getAvatarBaseUrl, getImageFallbackBaseUrl } from "@/lib/apiClient";
 import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
-import { isDuplicate, nameToSlug } from "@/lib/interestUtils";
-import { validateCleanText } from "@/lib/contentSafety";
-
-type HobbyInfo = { name: string; slug: string; id?: string };
+import HobbyPickerField, { type HobbyOption } from "@/components/common/HobbyPickerField";
 
 type PrefOverrides = {
   disabled?: boolean;
@@ -81,12 +76,7 @@ export default function EditEventClient() {
   const [minConfirmed, setMinConfirmed] = useState("");
   const [fallbackPolicy, setFallbackPolicy] = useState<"notify_host" | "proceed" | "auto_cancel">("notify_host");
 
-  const [hobbies, setHobbies] = useState<HobbyInfo[]>([]);
-  const [hobbyInput, setHobbyInput] = useState("");
-  const [hobbySuggestions, setHobbySuggestions] = useState<HobbyInfo[]>([]);
-  const hobbyJustAddedRef = useRef(false);
-  const hobbyDebounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const [hobbyLoading, setHobbyLoading] = useState(false);
+  const [hobbies, setHobbies] = useState<HobbyOption[]>([]);
 
   // Chum preference overrides
   const [prefOverridesOpen, setPrefOverridesOpen] = useState(false);
@@ -190,57 +180,6 @@ export default function EditEventClient() {
     void load();
     return () => { cancelled = true; };
   }, [eventId]);
-
-  const fetchSuggestions = useCallback(async (q: string) => {
-    const term = q.trim();
-    if (!term) { setHobbySuggestions([]); return; }
-    setHobbyLoading(true);
-    try {
-      const res = await apiFetch(`/interests?q=${encodeURIComponent(term)}`);
-      const data = await res.json();
-      if (data.ok && data.interests) {
-        const seen = new Set<string>();
-        const deduped: HobbyInfo[] = [];
-        for (const r of data.interests as { id?: string; name: string; slug: string }[]) {
-          if (seen.has(r.slug)) continue;
-          seen.add(r.slug);
-          deduped.push({ id: r.id, name: r.name, slug: r.slug });
-        }
-        setHobbySuggestions(deduped);
-      } else {
-        setHobbySuggestions([]);
-      }
-    } catch { setHobbySuggestions([]); }
-    finally { setHobbyLoading(false); }
-  }, []);
-
-  const debouncedFetch = useMemo(() => {
-    return (q: string) => { clearTimeout(hobbyDebounceRef.current); hobbyDebounceRef.current = setTimeout(() => fetchSuggestions(q), 250); };
-  }, [fetchSuggestions]);
-
-  useEffect(() => {
-    if (hobbyInput) debouncedFetch(hobbyInput);
-    else setHobbySuggestions([]);
-  }, [hobbyInput, debouncedFetch]);
-
-  const addHobby = (option: HobbyInfo | string) => {
-    const item: HobbyInfo =
-      typeof option === "string"
-        ? { name: option.trim().replace(/\s+/g, " "), slug: nameToSlug(option) }
-        : option;
-    if (!item.name?.trim() || !item.slug) return;
-    if (item.name.length > 50) { toast.error("Hobby must be 50 characters or less"); return; }
-    const check = validateCleanText(item.name, "hobby");
-    if (!check.ok) { toast.error(check.reason ?? "That hobby name isn't allowed."); return; }
-    setHobbies((prev) => {
-      if (prev.some((i) => isDuplicate(i, item))) return prev;
-      return [...prev, item];
-    });
-    hobbyJustAddedRef.current = true;
-    clearTimeout(hobbyDebounceRef.current);
-    setHobbyInput("");
-    setHobbySuggestions([]);
-  };
 
   const buildPrefOverrides = (): PrefOverrides => {
     if (prefDisableAll) return { disabled: true };
@@ -511,106 +450,11 @@ export default function EditEventClient() {
             helperText={null}
           />
 
-          {/* Hobby selector */}
-          <Autocomplete
-            freeSolo
-            multiple
-            filterOptions={(x) => x}
-            options={hobbySuggestions}
-            renderOption={(props, option) => {
-              const { key: _key, ...rest } = props as React.HTMLAttributes<HTMLLIElement> & { key: string };
-              return (
-                <li key={typeof option === "string" ? option : (option.id ?? option.slug)} {...rest}>
-                  {typeof option === "string" ? option : option.name}
-                </li>
-              );
-            }}
+          <HobbyPickerField
             value={hobbies}
-            inputValue={hobbyInput}
-            onInputChange={(_, v, reason) => {
-              if (hobbyJustAddedRef.current) {
-                hobbyJustAddedRef.current = false;
-                setHobbyInput("");
-                return;
-              }
-              if (reason === "reset") {
-                setHobbyInput("");
-                return;
-              }
-              setHobbyInput(v);
-            }}
-            onChange={(_, newValue) => {
-              const filtered = (newValue ?? []).filter(Boolean);
-              const last = filtered[filtered.length - 1];
-              if (typeof last === "string") { addHobby(last); return; }
-              if (typeof last === "object" && last && filtered.length > hobbies.length) {
-                addHobby(last);
-                return;
-              }
-              setHobbies(filtered as HobbyInfo[]);
-            }}
-            getOptionLabel={(opt) => (typeof opt === "string" ? opt : opt.name)}
-            isOptionEqualToValue={(opt, val) => {
-              if (typeof opt === "string" || typeof val === "string") return false;
-              return opt.slug === val.slug;
-            }}
-            loading={hobbyLoading}
-            renderInput={(params) => {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const origKeyDown = (params.inputProps as any)?.onKeyDown as ((e: React.KeyboardEvent) => void) | undefined;
-              return (
-                <Box sx={{ width: "100%" }}>
-                  <Typography variant="subtitle1" fontWeight={600} sx={{ display: "block", mb: 0.625 }}>
-                    Hobbies
-                  </Typography>
-                  <TextField
-                    {...params}
-                    placeholder="Type to search or add..."
-                    variant="outlined"
-                    size="medium"
-                    fullWidth
-                    label={undefined}
-                    inputProps={{
-                      ...params.inputProps,
-                      onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => {
-                        if (e.key === "Enter") {
-                          const trimmed = hobbyInput.trim();
-                          if (trimmed && !e.currentTarget.getAttribute("aria-activedescendant")) {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            addHobby(trimmed);
-                            return;
-                          }
-                        }
-                        if (e.key === "Backspace" && !hobbyInput) {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          return;
-                        }
-                        origKeyDown?.(e);
-                      },
-                    }}
-                  />
-                </Box>
-              );
-            }}
-            renderTags={() => null}
+            onChange={setHobbies}
+            onReject={(msg) => toast.error(msg)}
           />
-          {hobbies.length > 0 && (
-            <Stack direction="row" flexWrap="wrap" gap={1} useFlexGap>
-              {hobbies.map((h) => (
-                <Chip
-                  key={h.slug}
-                  label={h.name}
-                  size="small"
-                  color="primary"
-                  variant="filled"
-                  onDelete={() => setHobbies((prev) => prev.filter((i) => i.slug !== h.slug))}
-                  sx={{ fontWeight: 600, fontSize: "0.8125rem" }}
-                />
-              ))}
-            </Stack>
-          )}
 
           <AppTextField
             label="Max seats (optional)"

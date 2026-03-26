@@ -4777,7 +4777,9 @@ app.get("/chums", async (c) => {
   }
 });
 
-/** PATCH /chums/:contactId/note — save or clear the private note for any contact entry. */
+/** PATCH /chums/:contactId/note — save or clear the private note for any contact entry.
+ *  Accepts a real contact UUID or a "temp-{userId}" style ID (optimistic frontend ID)
+ *  and falls back to linked_user_id lookup when needed. */
 app.patch("/chums/:contactId/note", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string") {
@@ -4791,15 +4793,35 @@ app.patch("/chums/:contactId/note", async (c) => {
     const rawNote = body.note != null ? String(body.note).trim() : null;
     const note = rawNote && rawNote.length > 0 ? rawNote.slice(0, 500) : null;
 
-    const result = (await sql`
-      UPDATE newchums.user_contacts SET note = ${note}
-      WHERE id = ${contactId} AND user_id = ${appUserId}
-      RETURNING id
-    `) as { id: string }[];
-    if (result.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-    return c.json({ ok: true });
+    // Handle temp-{userId} IDs from optimistic frontend updates by extracting the linked user ID
+    const tempPrefix = "temp-";
+    const linkedUserId = contactId.startsWith(tempPrefix) ? contactId.slice(tempPrefix.length) : null;
+
+    let result: { id: string }[];
+    if (linkedUserId) {
+      // Resolve via linked_user_id for temp-* optimistic IDs
+      result = (await sql`
+        UPDATE newchums.user_contacts SET note = ${note}
+        WHERE linked_user_id = ${linkedUserId} AND user_id = ${appUserId}
+        RETURNING id
+      `) as { id: string }[];
+    } else {
+      // Primary path: resolve by contact row UUID, with linked_user_id fallback
+      result = (await sql`
+        UPDATE newchums.user_contacts SET note = ${note}
+        WHERE (id = ${contactId} OR linked_user_id = ${contactId}) AND user_id = ${appUserId}
+        RETURNING id
+      `) as { id: string }[];
+    }
+
+    if (result.length === 0) {
+      console.warn(`[PATCH /chums/:contactId/note] Contact not found: contactId=${contactId}, userId=${appUserId}`);
+      return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    }
+    return c.json({ ok: true, contactId: result[0].id });
   } catch (err) {
-    console.error("[PATCH /chums/:contactId/note]", err);
+    console.error(`[PATCH /chums/:contactId/note] contactId=${c.req.param("contactId")}`, err);
+    Sentry.captureException(err);
     return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
   }
 });
@@ -5204,19 +5226,21 @@ app.post("/chums/:userId", async (c) => {
     if (targetRows.length === 0) {
       return c.json({ ok: false, error: { code: "USER_NOT_FOUND" } }, 404);
     }
-    await sql`
+    const insertResult = (await sql`
       INSERT INTO newchums.user_contacts (user_id, type, linked_user_id)
       VALUES (${appUserId}, 'on_newchums', ${targetId})
-      ON CONFLICT (user_id, linked_user_id) WHERE linked_user_id IS NOT NULL DO NOTHING
-    `;
-    return c.json({ ok: true });
+      ON CONFLICT (user_id, linked_user_id) WHERE linked_user_id IS NOT NULL
+        DO UPDATE SET linked_user_id = EXCLUDED.linked_user_id
+      RETURNING id
+    `) as { id: string }[];
+    return c.json({ ok: true, contactId: insertResult[0]?.id ?? null });
   } catch (err) {
     console.error("[POST /chums/:userId]", err);
     return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
   }
 });
 
-/** DELETE /chums/:id — remove a contact entry by contact ID or by linked user ID. */
+/** DELETE /chums/:id — remove a contact entry by contact ID, linked user ID, or temp-{userId}. */
 app.delete("/chums/:id", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string") {
@@ -5227,10 +5251,15 @@ app.delete("/chums/:id", async (c) => {
   try {
     const sql = getSql(c.env);
     const appUserId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
-    // Try by contact row ID first, then by linked_user_id (for profile-page remove)
+
+    // Handle temp-{userId} IDs from optimistic frontend updates
+    const tempPrefix = "temp-";
+    const resolvedId = id.startsWith(tempPrefix) ? id.slice(tempPrefix.length) : id;
+
+    // Try by contact row ID first, then by linked_user_id (for profile-page remove or temp IDs)
     const result = (await sql`
       DELETE FROM newchums.user_contacts
-      WHERE user_id = ${appUserId} AND (id = ${id} OR linked_user_id = ${id})
+      WHERE user_id = ${appUserId} AND (id = ${resolvedId} OR linked_user_id = ${resolvedId})
       RETURNING id
     `) as { id: string }[];
     if (result.length === 0) {
@@ -5239,6 +5268,7 @@ app.delete("/chums/:id", async (c) => {
     return c.json({ ok: true });
   } catch (err) {
     console.error("[DELETE /chums/:id]", err);
+    Sentry.captureException(err);
     return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
   }
 });
@@ -6105,11 +6135,64 @@ app.get("/communities/:id/events", async (c) => {
       LIMIT ${limit} OFFSET ${offset}
     `) as Record<string, unknown>[];
 
-    const eventsWithAvatars = events.map((ev) => ({
-      ...ev,
-      host_avatar_url: buildAvatarUrl(String(ev.host_user_id), ev.host_avatar_key as string | null, ev.host_avatar_updated_at as string | null, c.env.MEDIA_BUCKET),
-      community: communityInfo,
-    }));
+    // Chum-preference mismatch indicator for feed cards
+    let viewerPrefs: ChumPrefsRow | null = null;
+    let allMetrics = new Map<string, UserMetricsMap>();
+    const attendeeIdsByEvent = new Map<string, string[]>();
+
+    if (userId) {
+      viewerPrefs = await loadChumPrefsForUser(sql, userId);
+
+      if (viewerPrefs && (viewerPrefs.enabled !== false)) {
+        // Gather host + attendee IDs
+        const nonHostEventIds = events.filter((ev) => String(ev.host_user_id) !== userId).map((ev) => String(ev.id));
+        const hostIds = [...new Set(events.filter((ev) => String(ev.host_user_id) !== userId).map((ev) => String(ev.host_user_id)))];
+
+        const attendeeRsvpRows = nonHostEventIds.length > 0 ? (await sql`
+          SELECT er.event_id, er.user_id FROM newchums.event_rsvps er
+          WHERE er.event_id = ANY(${nonHostEventIds}::uuid[]) AND er.status IN ('going', 'maybe')
+        `) as { event_id: string; user_id: string }[] : [];
+
+        const allUserIds = new Set(hostIds);
+        for (const ar of attendeeRsvpRows) {
+          if (ar.user_id === userId) continue;
+          if (!attendeeIdsByEvent.has(ar.event_id)) attendeeIdsByEvent.set(ar.event_id, []);
+          attendeeIdsByEvent.get(ar.event_id)!.push(ar.user_id);
+          allUserIds.add(ar.user_id);
+        }
+        allMetrics = await batchLoadMetrics(sql, [...allUserIds]);
+      }
+    }
+
+    const eventsWithAvatars = events.map((ev) => {
+      const isHost = String(ev.host_user_id) === userId;
+      let hasPrefMismatch = false;
+
+      if (!isHost && viewerPrefs && viewerPrefs.enabled !== false) {
+        // Check host
+        const hMetrics = allMetrics.get(String(ev.host_user_id)) ?? {};
+        const hostCompat = evaluateChumPreferences(viewerPrefs, hMetrics, true);
+        if (!hostCompat.passes) hasPrefMismatch = true;
+
+        // Check attendees
+        if (!hasPrefMismatch) {
+          const attendees = attendeeIdsByEvent.get(String(ev.id)) ?? [];
+          for (const uid of attendees) {
+            const m = allMetrics.get(uid) ?? {};
+            const isHostUser = uid === String(ev.host_user_id);
+            const ac = evaluateChumPreferences(viewerPrefs, m, isHostUser);
+            if (!ac.passes) { hasPrefMismatch = true; break; }
+          }
+        }
+      }
+
+      return {
+        ...ev,
+        host_avatar_url: buildAvatarUrl(String(ev.host_user_id), ev.host_avatar_key as string | null, ev.host_avatar_updated_at as string | null, c.env.MEDIA_BUCKET),
+        community: communityInfo,
+        hasPrefMismatch,
+      };
+    });
 
     return c.json({ ok: true, events: eventsWithAvatars });
   } catch (err) {
@@ -6950,6 +7033,26 @@ app.get("/events/explore", async (c) => {
     const hostIds = [...new Set(rows.filter((r) => !r.is_host).map((r) => r.host_user_id))];
     const hostMetricsMap = await batchLoadMetrics(sql, hostIds);
 
+    // Batch-load attendee user IDs + metrics for viewer→attendee pref mismatch indicator
+    const eventIds = rows.filter((r) => !r.is_host).map((r) => r.id);
+    const attendeeRsvpRows = eventIds.length > 0 ? (await sql`
+      SELECT er.event_id, er.user_id FROM newchums.event_rsvps er
+      WHERE er.event_id = ANY(${eventIds}::uuid[]) AND er.status IN ('going', 'maybe')
+    `) as { event_id: string; user_id: string }[] : [];
+    const attendeeIdsByEvent = new Map<string, string[]>();
+    const allAttendeeIds = new Set<string>();
+    for (const ar of attendeeRsvpRows) {
+      if (ar.user_id === userId) continue; // skip viewer
+      if (!attendeeIdsByEvent.has(ar.event_id)) attendeeIdsByEvent.set(ar.event_id, []);
+      attendeeIdsByEvent.get(ar.event_id)!.push(ar.user_id);
+      allAttendeeIds.add(ar.user_id);
+    }
+    // Remove IDs already in hostMetricsMap to avoid re-fetching
+    const extraAttendeeIds = [...allAttendeeIds].filter((id) => !hostMetricsMap.has(id));
+    const attendeeMetricsMap = await batchLoadMetrics(sql, extraAttendeeIds);
+    // Merge into a single lookup
+    const allMetrics = new Map([...hostMetricsMap, ...attendeeMetricsMap]);
+
     const allMapped = rows.map((r) => {
       const parsedHobbies = typeof r.hobbies === "string" ? JSON.parse(r.hobbies) : (r.hobbies ?? []);
       const hobbyList = Array.isArray(parsedHobbies) && parsedHobbies.length > 0
@@ -6971,10 +7074,22 @@ app.get("/events/explore", async (c) => {
 
       // Viewer→host compatibility: does the host meet the viewer's chum preferences?
       let prefNote: string[] | null = null;
+      let hasPrefMismatch = false;
       if (!r.is_host && viewerPrefs) {
-        const hMetrics = hostMetricsMap.get(r.host_user_id) ?? {};
+        const hMetrics = allMetrics.get(r.host_user_id) ?? {};
         const compat = evaluateChumPreferences(viewerPrefs, hMetrics, true);
-        if (!compat.passes) prefNote = compat.failedMetrics;
+        if (!compat.passes) { prefNote = compat.failedMetrics; hasPrefMismatch = true; }
+
+        // Also check attendees for the card-level mismatch indicator
+        if (!hasPrefMismatch) {
+          const attendees = attendeeIdsByEvent.get(r.id) ?? [];
+          for (const uid of attendees) {
+            const m = allMetrics.get(uid) ?? {};
+            const isHostUser = uid === r.host_user_id;
+            const ac = evaluateChumPreferences(viewerPrefs, m, isHostUser);
+            if (!ac.passes) { hasPrefMismatch = true; break; }
+          }
+        }
       }
 
       return {
@@ -7001,6 +7116,7 @@ app.get("/events/explore", async (c) => {
         distanceKm: r.distance_km !== null ? Math.round(r.distance_km * 10) / 10 : null,
         bannerKey: r.banner_key ?? null,
         prefNote,
+        hasPrefMismatch,
         community: r.community_id ? { id: r.community_id, slug: r.community_slug!, name: r.community_name! } : null,
       };
     });

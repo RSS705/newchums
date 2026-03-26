@@ -13,6 +13,8 @@ import LinkRoundedIcon from "@mui/icons-material/LinkRounded";
 import PeopleOutlineRoundedIcon from "@mui/icons-material/PeopleOutlineRounded";
 import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
 import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
+import FlagRoundedIcon from "@mui/icons-material/FlagRounded";
+import Tooltip from "@mui/material/Tooltip";
 import Link from "next/link";
 import { getAvatarBaseUrl, getImageFallbackBaseUrl } from "@/lib/apiClient";
 import { getGradientForEventId } from "@/lib/eventBanners";
@@ -42,6 +44,7 @@ export type PlanEvent = {
   bannerKey?: string | null;
   hasUnreadChat?: boolean;
   community?: { id: string; slug: string; name: string } | null;
+  hasPrefMismatch?: boolean;
 };
 
 type EventCardProps = {
@@ -295,9 +298,27 @@ export default function EventCard({
             </Stack>
             <Stack direction="row" alignItems="center" spacing={1}>
               <PeopleOutlineRoundedIcon sx={{ fontSize: 16, color: "text.disabled", opacity: 0.85 }} />
-              <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
+              <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem", flex: 1 }}>
                 {attendeeSummary}
               </Typography>
+              {event.hasPrefMismatch && !isPast && !isExample && (
+                <Tooltip
+                  title="Some people in this plan may not fully match your chum preferences"
+                  arrow
+                  placement="top"
+                  enterTouchDelay={0}
+                >
+                  <FlagRoundedIcon
+                    sx={{
+                      fontSize: 15,
+                      color: "warning.main",
+                      opacity: 0.85,
+                      cursor: "help",
+                      flexShrink: 0,
+                    }}
+                  />
+                </Tooltip>
+              )}
             </Stack>
           </Stack>
 
