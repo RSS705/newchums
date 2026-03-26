@@ -16,7 +16,7 @@ export default function ProfileHobbiesSection({ hobbies }: ProfileHobbiesSection
 
   return (
     <Stack spacing={1}>
-      <Typography variant="subtitle1" fontWeight={600} sx={{ fontSize: "0.9375rem" }}>
+      <Typography variant="h6" fontWeight={700} sx={{ fontSize: { xs: "1.0625rem", sm: "1.125rem" } }}>
         Hobbies
       </Typography>
       <Box

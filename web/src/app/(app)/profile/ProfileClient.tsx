@@ -713,7 +713,6 @@ export default function ProfileClient() {
                 label="Gender"
                 value={gender}
                 onChange={(e) => setGender(e.target.value)}
-                helperText="Optional. Visible on your public profile."
               >
                 {GENDER_OPTIONS.map((opt) => (
                   <MenuItem key={opt.value} value={opt.value}>
@@ -727,7 +726,6 @@ export default function ProfileClient() {
                 value={dateOfBirth}
                 onChange={(v) => setDateOfBirth(v)}
                 maxDate={dayjs()}
-                helperText="You must be 18+ to use NewChums."
                 noTopMargin
               />
               <AppTextField
@@ -747,7 +745,6 @@ export default function ProfileClient() {
                 label="Profile accent"
                 value={profileTheme}
                 onChange={(e) => setProfileTheme(e.target.value)}
-                helperText="Choose a color accent for your public profile."
               >
                 {PROFILE_THEME_KEYS.map((key: ProfileThemeKey) => {
                   const { label, color } = PROFILE_THEMES[key];
@@ -801,7 +798,7 @@ export default function ProfileClient() {
               Location
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, lineHeight: 1.5 }}>
-              Helps us show plans and gatherings near you.
+              Your location is used to surface nearby plans and match you with local gatherings.
             </Typography>
           </Box>
           <PlacesAutocompleteInput
@@ -843,7 +840,7 @@ export default function ProfileClient() {
               Hobbies
             </Typography>
             <Typography color="text.secondary" variant="body2" sx={{ mt: 0.5, lineHeight: 1.5 }}>
-              Add hobbies you enjoy so people can find gatherings around shared interests.
+              Hobbies shape which plans appear in your feed and how you're matched with gatherings.
             </Typography>
           </Box>
           <Autocomplete

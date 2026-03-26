@@ -6133,6 +6133,7 @@ app.get("/admin/communities", async (c) => {
     const q = search ? `%${search}%` : null;
     const communities = (await sql`
       SELECT c.id, c.slug, c.name, c.visibility, c.join_mode, c.chat_enabled, c.owner_user_id, c.created_at,
+        COALESCE(c.status, 'active') AS status, c.location_name,
         ou.name AS owner_name, ou.username AS owner_username, ou.email AS owner_email,
         (SELECT COUNT(*)::int FROM newchums.community_members cm WHERE cm.community_id = c.id AND cm.status = 'active') AS member_count,
         (SELECT COUNT(*)::int FROM newchums.events e WHERE e.community_id = c.id) AS plan_count

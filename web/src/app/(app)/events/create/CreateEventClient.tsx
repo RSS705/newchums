@@ -25,6 +25,9 @@ import Typography from "@mui/material/Typography";
 import AddPhotoAlternateRoundedIcon from "@mui/icons-material/AddPhotoAlternateRounded";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
+import HelpOutlineRoundedIcon from "@mui/icons-material/HelpOutlineRounded";
+import IconButton from "@mui/material/IconButton";
+import Tooltip from "@mui/material/Tooltip";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { TimePicker } from "@mui/x-date-pickers/TimePicker";
 import dayjs, { type Dayjs } from "dayjs";
@@ -98,6 +101,7 @@ export default function CreateEventClient() {
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [hobbyInputValue, setHobbyInputValue] = useState("");
   const hobbyJustAddedRef = useRef(false);
+  const hobbyDebounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Banner image
   const [bannerFile, setBannerFile] = useState<File | null>(null);
@@ -156,8 +160,7 @@ export default function CreateEventClient() {
   }, []);
 
   const debouncedFetch = useMemo(() => {
-    let t: ReturnType<typeof setTimeout>;
-    return (q: string) => { clearTimeout(t); t = setTimeout(() => fetchSuggestions(q), 250); };
+    return (q: string) => { clearTimeout(hobbyDebounceRef.current); hobbyDebounceRef.current = setTimeout(() => fetchSuggestions(q), 250); };
   }, [fetchSuggestions]);
 
   useEffect(() => {
@@ -179,6 +182,7 @@ export default function CreateEventClient() {
       return [...prev, item];
     });
     hobbyJustAddedRef.current = true;
+    clearTimeout(hobbyDebounceRef.current);
     setHobbyInputValue("");
     setSuggestions([]);
   };
@@ -508,7 +512,7 @@ export default function CreateEventClient() {
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             error={!!errors.title}
-            helperText={errors.title ?? "Give it a name people will recognise"}
+            helperText={errors.title || undefined}
             inputProps={{ maxLength: 200 }}
           />
 
@@ -521,7 +525,6 @@ export default function CreateEventClient() {
             minRows={3}
             maxRows={6}
             inputProps={{ maxLength: 2000 }}
-            helperText="Optional, but a short description helps people decide to join"
           />
 
           {/* Multi-hobby selector (mirrors profile pattern) */}
@@ -572,43 +575,51 @@ export default function CreateEventClient() {
               return opt.slug === val.slug;
             }}
             loading={suggestionsLoading}
-            renderInput={(params) => (
-              <Box sx={{ width: "100%" }}>
-                <Typography
-                  variant="subtitle1"
-                  fontWeight={600}
-                  sx={{ display: "block", mb: 0.625, color: errors.hobby ? "error.main" : "inherit" }}
-                >
-                  Hobbies
-                </Typography>
-                <TextField
-                  {...params}
-                  placeholder="Type to search or create..."
-                  variant="outlined"
-                  size="medium"
-                  fullWidth
-                  label={undefined}
-                  error={!!errors.hobby}
-                  helperText={errors.hobby ?? "Link this plan to hobbies so the right people can find it"}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      const trimmed = hobbyInputValue.trim();
-                      if (!trimmed) return;
-                      const input = e.target as HTMLInputElement;
-                      if (input.getAttribute("aria-activedescendant")) return;
-                      e.preventDefault();
-                      e.stopPropagation();
-                      addHobby(trimmed);
-                      return;
-                    }
-                    if (e.key === "Backspace" && !hobbyInputValue) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                    }
-                  }}
-                />
-              </Box>
-            )}
+            renderInput={(params) => {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const origKeyDown = (params.inputProps as any)?.onKeyDown as ((e: React.KeyboardEvent) => void) | undefined;
+              return (
+                <Box sx={{ width: "100%" }}>
+                  <Typography
+                    variant="subtitle1"
+                    fontWeight={600}
+                    sx={{ display: "block", mb: 0.625, color: errors.hobby ? "error.main" : "inherit" }}
+                  >
+                    Hobbies
+                  </Typography>
+                  <TextField
+                    {...params}
+                    placeholder="Type to search or create..."
+                    variant="outlined"
+                    size="medium"
+                    fullWidth
+                    label={undefined}
+                    error={!!errors.hobby}
+                    helperText={errors.hobby || undefined}
+                    inputProps={{
+                      ...params.inputProps,
+                      onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => {
+                        if (e.key === "Enter") {
+                          const trimmed = hobbyInputValue.trim();
+                          if (trimmed && !e.currentTarget.getAttribute("aria-activedescendant")) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            addHobby(trimmed);
+                            return;
+                          }
+                        }
+                        if (e.key === "Backspace" && !hobbyInputValue) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          return;
+                        }
+                        origKeyDown?.(e);
+                      },
+                    }}
+                  />
+                </Box>
+              );
+            }}
             renderTags={() => null}
           />
           {selectedHobbies.length > 0 && (
@@ -657,9 +668,6 @@ export default function CreateEventClient() {
                 }
                 label="Reserve seats for invited people"
               />
-              <Typography variant="caption" color="text.secondary" sx={{ mt: -1.5 }}>
-                Invited guests hold a seat until they respond. Declined invites release the seat. Maybe keeps it reserved.
-              </Typography>
             </>
           )}
         </Stack>
@@ -724,111 +732,18 @@ export default function CreateEventClient() {
             label="Let people suggest alternate times"
           />
           {allowAltTimes && (
-            <RadioGroup
-              value={altTimesMode}
-              onChange={(e) => setAltTimesMode(e.target.value as "suggest" | "availability")}
-              sx={{ ml: 4, mt: -0.5 }}
-            >
-              <FormControlLabel
-                value="suggest"
-                control={<Radio size="small" />}
-                label={
-                  <Box>
-                    <Typography variant="body2" fontWeight={500}>Suggest another time if needed</Typography>
-                    <Typography variant="caption" color="text.secondary">Attendees can propose a different time if this one doesn&apos;t work.</Typography>
-                  </Box>
-                }
-                sx={{ alignItems: "flex-start", mb: 0.5 }}
-              />
-              <FormControlLabel
-                value="availability"
-                control={<Radio size="small" />}
-                label={
-                  <Box>
-                    <Typography variant="body2" fontWeight={500}>Share your availability</Typography>
-                    <Typography variant="caption" color="text.secondary">Attendees share when they&apos;re free so you can pick the best time together.</Typography>
-                  </Box>
-                }
-                sx={{ alignItems: "flex-start" }}
-              />
-            </RadioGroup>
-          )}
-
-          <FormControlLabel
-            control={
-              <Switch
-                checked={requireReconfirmation}
-                onChange={(e) => setRequireReconfirmation(e.target.checked)}
-              />
-            }
-            label="Require final confirmation before the plan"
-          />
-          <Typography variant="caption" color="text.secondary" sx={{ mt: -1.5 }}>
-            Going attendees will be asked to confirm 24 hours before. This includes you as the host.
-          </Typography>
-          {requireReconfirmation && (
-            <Stack spacing={2} sx={{ mt: 1, pl: 2, borderLeft: "2px solid", borderColor: "divider" }}>
-              <Box>
-                <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.625 }}>
-                  Minimum confirmed attendees (optional)
-                </Typography>
-                <TextField
-                  fullWidth
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={altTimesMode === "availability"}
+                  onChange={(e) => setAltTimesMode(e.target.checked ? "availability" : "suggest")}
                   size="small"
-                  type="number"
-                  placeholder="e.g. 4 (including you)"
-                  value={minConfirmedAttendees}
-                  onChange={(e) => setMinConfirmedAttendees(e.target.value)}
-                  inputProps={{ min: 1, max: 500 }}
                 />
-                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: "block" }}>
-                  Plan viability threshold. You count toward this total.
-                </Typography>
-              </Box>
-              {minConfirmedAttendees && Number(minConfirmedAttendees) >= 1 && (
-                <Box>
-                  <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.625 }}>
-                    If minimum isn&apos;t met
-                  </Typography>
-                  <Select
-                    fullWidth
-                    size="small"
-                    value={fallbackPolicy}
-                    onChange={(e) => setFallbackPolicy(e.target.value as "notify_host" | "proceed" | "auto_cancel")}
-                  >
-                    <MenuItem value="notify_host">Notify me so I can decide</MenuItem>
-                    <MenuItem value="proceed">Proceed unless I cancel</MenuItem>
-                    <MenuItem value="auto_cancel">Auto-cancel the plan</MenuItem>
-                  </Select>
-                </Box>
-              )}
-            </Stack>
+              }
+              label="Request attendees share their availability"
+              sx={{ ml: 3.5 }}
+            />
           )}
-          <FormControlLabel
-            control={
-              <Switch
-                checked={requireApproval}
-                onChange={(e) => setRequireApproval(e.target.checked)}
-              />
-            }
-            label="Require approval before joining"
-          />
-          <Typography variant="caption" color="text.secondary" sx={{ mt: -1.5 }}>
-            People who are not directly invited will need to request to join, and you&apos;ll approve or decline each request.
-          </Typography>
-
-          <FormControlLabel
-            control={
-              <Switch
-                checked={allowAttendeeInvites}
-                onChange={(e) => setAllowAttendeeInvites(e.target.checked)}
-              />
-            }
-            label="Let Going attendees invite others"
-          />
-          <Typography variant="caption" color="text.secondary" sx={{ mt: -1.5 }}>
-            People who RSVP as Going can invite their friends to this plan. You can change this anytime.
-          </Typography>
         </Stack>
       </AppCard>
 
@@ -872,7 +787,7 @@ export default function CreateEventClient() {
                 }}
                 label="Venue or address"
                 placeholder="Search for a place or enter an address"
-                helperText={errors.location ?? "Start typing to search venues, parks, cafes, or addresses"}
+                helperText={errors.location || undefined}
                 error={!!errors.location}
                 placeTypes={["establishment", "geocode"]}
                 inputId="places-autocomplete-event"
@@ -1004,6 +919,99 @@ export default function CreateEventClient() {
         </Stack>
       </AppCard>
 
+      {/* Extra options */}
+      <AppCard>
+        <Stack spacing={2.5}>
+          <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
+            Extra options
+          </Typography>
+
+          <Stack direction="row" alignItems="center" spacing={0.5}>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={requireReconfirmation}
+                  onChange={(e) => setRequireReconfirmation(e.target.checked)}
+                />
+              }
+              label="Require final confirmation before the plan"
+              sx={{ mr: 0 }}
+            />
+            <Tooltip title="Going attendees will be asked to confirm 24 hours before. This includes you as the host." arrow placement="top" enterTouchDelay={0}>
+              <IconButton size="small" sx={{ p: 0.25, color: "text.disabled" }}>
+                <HelpOutlineRoundedIcon sx={{ fontSize: 16 }} />
+              </IconButton>
+            </Tooltip>
+          </Stack>
+          {requireReconfirmation && (
+            <Stack spacing={2} sx={{ mt: 1, pl: 2, borderLeft: "2px solid", borderColor: "divider" }}>
+              <Box>
+                <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.625 }}>
+                  Minimum confirmed attendees (optional)
+                </Typography>
+                <TextField
+                  fullWidth
+                  size="small"
+                  type="number"
+                  placeholder="e.g. 4 (including you)"
+                  value={minConfirmedAttendees}
+                  onChange={(e) => setMinConfirmedAttendees(e.target.value)}
+                  inputProps={{ min: 1, max: 500 }}
+                />
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: "block" }}>
+                  Plan viability threshold. You count toward this total.
+                </Typography>
+              </Box>
+              {minConfirmedAttendees && Number(minConfirmedAttendees) >= 1 && (
+                <Box>
+                  <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.625 }}>
+                    If minimum isn&apos;t met
+                  </Typography>
+                  <Select
+                    fullWidth
+                    size="small"
+                    value={fallbackPolicy}
+                    onChange={(e) => setFallbackPolicy(e.target.value as "notify_host" | "proceed" | "auto_cancel")}
+                  >
+                    <MenuItem value="notify_host">Notify me so I can decide</MenuItem>
+                    <MenuItem value="proceed">Proceed unless I cancel</MenuItem>
+                    <MenuItem value="auto_cancel">Auto-cancel the plan</MenuItem>
+                  </Select>
+                </Box>
+              )}
+            </Stack>
+          )}
+
+          <Stack direction="row" alignItems="center" spacing={0.5}>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={requireApproval}
+                  onChange={(e) => setRequireApproval(e.target.checked)}
+                />
+              }
+              label="Require approval before joining"
+              sx={{ mr: 0 }}
+            />
+            <Tooltip title="People who are not directly invited will need to request to join, and you'll approve or decline each request." arrow placement="top" enterTouchDelay={0}>
+              <IconButton size="small" sx={{ p: 0.25, color: "text.disabled" }}>
+                <HelpOutlineRoundedIcon sx={{ fontSize: 16 }} />
+              </IconButton>
+            </Tooltip>
+          </Stack>
+
+          <FormControlLabel
+            control={
+              <Switch
+                checked={allowAttendeeInvites}
+                onChange={(e) => setAllowAttendeeInvites(e.target.checked)}
+              />
+            }
+            label="Let Going attendees invite others"
+          />
+        </Stack>
+      </AppCard>
+
       {/* Matching preferences override */}
       {hostHasPrefs && (
         <AppCard>
@@ -1041,15 +1049,8 @@ export default function CreateEventClient() {
                       }}
                     />
                   }
-                  label={
-                    <Box>
-                      <Typography variant="body2" fontWeight={500}>Disable all preference filtering for this plan</Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        Anyone can be matched to this plan regardless of your chum preferences.
-                      </Typography>
-                    </Box>
-                  }
-                  sx={{ alignItems: "flex-start" }}
+                  label="Disable all preference filtering for this plan"
+                  sx={{ alignItems: "center" }}
                 />
 
                 {!prefDisableAll && (

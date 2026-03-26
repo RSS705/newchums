@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   Box, Typography, Stack, Button, Chip, Avatar, CircularProgress,
@@ -84,6 +84,7 @@ export default function CommunityDetailClient() {
   const [joining, setJoining] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [isClosed, setIsClosed] = useState(false);
+  const [viewerHobbyItems, setViewerHobbyItems] = useState<{ slug: string }[]>([]);
 
   const mapApiEvent = useCallback((ev: ApiEvent): PlanEvent => {
     const hostUsername = (ev.host_username as string)?.replace(/^@/, "");
@@ -166,6 +167,23 @@ export default function CommunityDetailClient() {
   }, [community]);
 
   useEffect(() => { fetchCommunity(); }, [fetchCommunity]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await apiFetch("/profile", { auth: true });
+        if (res.ok) {
+          const d = await res.json();
+          setViewerHobbyItems(d.profile?.interest_items ?? []);
+        }
+      } catch { /* noop */ }
+    })();
+  }, []);
+
+  const viewerHobbySlugs = useMemo(() => {
+    if (!viewerHobbyItems.length) return undefined;
+    return new Set(viewerHobbyItems.map((i) => i.slug));
+  }, [viewerHobbyItems]);
 
   useEffect(() => {
     if (!community || restricted) return;
@@ -516,7 +534,7 @@ export default function CommunityDetailClient() {
               <Grid container spacing={2.5}>
                 {events.map((ev) => (
                   <Grid size={{ xs: 12, sm: 6, md: 4 }} key={ev.id}>
-                    <EventCard event={ev} />
+                    <EventCard event={ev} viewerHobbySlugs={viewerHobbySlugs} />
                   </Grid>
                 ))}
               </Grid>

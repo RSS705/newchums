@@ -51,6 +51,8 @@ type EventCardProps = {
   isExample?: boolean;
   /** When set, the whole card links here (e.g. /signup). Example cards default to signup when omitted. */
   hrefOverride?: string;
+  /** Viewer's hobby slugs — matching hobby chips get a subtle highlight */
+  viewerHobbySlugs?: ReadonlySet<string>;
 };
 
 function formatDateTime(iso: string): string {
@@ -94,6 +96,7 @@ export default function EventCard({
   isPast = false,
   isExample = false,
   hrefOverride,
+  viewerHobbySlugs,
 }: EventCardProps) {
   const isCanceled = event.status === "canceled";
   const hobbies = event.hobbies?.length
@@ -193,19 +196,22 @@ export default function EventCard({
           {/* Top row: hobby chip + visibility */}
           <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5 }}>
             <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-              {hobbies.map((h) => (
-                <Chip
-                  key={h.slug}
-                  label={h.name}
-                  size="small"
-                  sx={{
-                    bgcolor: isPast ? "grey.200" : "primary.light",
-                    color: isPast ? "text.secondary" : "primary.dark",
-                    fontWeight: 600,
-                    fontSize: "0.6875rem",
-                  }}
-                />
-              ))}
+              {hobbies.map((h) => {
+                const isMatch = !isPast && viewerHobbySlugs?.has(h.slug);
+                return (
+                  <Chip
+                    key={h.slug}
+                    label={h.name}
+                    size="small"
+                    sx={{
+                      bgcolor: isPast ? "grey.200" : isMatch ? "primary.main" : "primary.light",
+                      color: isPast ? "text.secondary" : isMatch ? "primary.contrastText" : "primary.dark",
+                      fontWeight: 600,
+                      fontSize: "0.6875rem",
+                    }}
+                  />
+                );
+              })}
               {isCanceled && (
                 <Chip
                   label="Canceled"

@@ -231,6 +231,12 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
   const hasLocation = profile?.home_lat != null && profile?.home_lng != null;
   const hasHobbies = (profile?.interest_items?.length ?? 0) > 0;
 
+  const viewerHobbySlugs = useMemo(() => {
+    const items = profile?.interest_items;
+    if (!items?.length) return undefined;
+    return new Set(items.map((i) => i.slug));
+  }, [profile?.interest_items]);
+
   const defaultRadiusKm = profile?.travel_radius_km ?? 200;
   const isFiltered =
     searchText.trim() !== "" ||
@@ -494,7 +500,7 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
           <Grid container spacing={2}>
             {allEvents.map((event) => (
               <Grid key={event.id} size={{ xs: 12, sm: 6, md: 4 }} sx={{ display: "flex" }}>
-                <EventCard event={event} />
+                <EventCard event={event} viewerHobbySlugs={viewerHobbySlugs} />
               </Grid>
             ))}
           </Grid>

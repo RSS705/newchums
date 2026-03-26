@@ -158,16 +158,11 @@ export default function ChumPreferencesSection() {
             />
           }
           label={
-            <Box>
-              <Typography variant="body1" fontWeight={600}>
-                Use chum preferences
-              </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.4, mt: 0.25 }}>
-                When turned on, NewChums uses these preferences as your default matching rules.
-              </Typography>
-            </Box>
+            <Typography variant="body1" fontWeight={600}>
+              Use chum preferences
+            </Typography>
           }
-          sx={{ alignItems: "flex-start", ml: 0, "& .MuiSwitch-root": { mt: 0.25 } }}
+          sx={{ alignItems: "center", ml: 0 }}
         />
 
         <Stack spacing={2} sx={{ opacity: prefs.enabled ? 1 : 0.5, pointerEvents: prefs.enabled ? "auto" : "none", transition: "opacity 0.2s" }}>

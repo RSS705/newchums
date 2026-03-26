@@ -23,6 +23,9 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import AddPhotoAlternateRoundedIcon from "@mui/icons-material/AddPhotoAlternateRounded";
+import HelpOutlineRoundedIcon from "@mui/icons-material/HelpOutlineRounded";
+import IconButton from "@mui/material/IconButton";
+import Tooltip from "@mui/material/Tooltip";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { TimePicker } from "@mui/x-date-pickers/TimePicker";
 import dayjs, { type Dayjs } from "dayjs";
@@ -82,6 +85,7 @@ export default function EditEventClient() {
   const [hobbyInput, setHobbyInput] = useState("");
   const [hobbySuggestions, setHobbySuggestions] = useState<HobbyInfo[]>([]);
   const hobbyJustAddedRef = useRef(false);
+  const hobbyDebounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const [hobbyLoading, setHobbyLoading] = useState(false);
 
   // Chum preference overrides
@@ -211,8 +215,7 @@ export default function EditEventClient() {
   }, []);
 
   const debouncedFetch = useMemo(() => {
-    let t: ReturnType<typeof setTimeout>;
-    return (q: string) => { clearTimeout(t); t = setTimeout(() => fetchSuggestions(q), 250); };
+    return (q: string) => { clearTimeout(hobbyDebounceRef.current); hobbyDebounceRef.current = setTimeout(() => fetchSuggestions(q), 250); };
   }, [fetchSuggestions]);
 
   useEffect(() => {
@@ -234,6 +237,7 @@ export default function EditEventClient() {
       return [...prev, item];
     });
     hobbyJustAddedRef.current = true;
+    clearTimeout(hobbyDebounceRef.current);
     setHobbyInput("");
     setHobbySuggestions([]);
   };
@@ -551,37 +555,45 @@ export default function EditEventClient() {
               return opt.slug === val.slug;
             }}
             loading={hobbyLoading}
-            renderInput={(params) => (
-              <Box sx={{ width: "100%" }}>
-                <Typography variant="subtitle1" fontWeight={600} sx={{ display: "block", mb: 0.625 }}>
-                  Hobbies
-                </Typography>
-                <TextField
-                  {...params}
-                  placeholder="Type to search or add..."
-                  variant="outlined"
-                  size="medium"
-                  fullWidth
-                  label={undefined}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      const trimmed = hobbyInput.trim();
-                      if (!trimmed) return;
-                      const input = e.target as HTMLInputElement;
-                      if (input.getAttribute("aria-activedescendant")) return;
-                      e.preventDefault();
-                      e.stopPropagation();
-                      addHobby(trimmed);
-                      return;
-                    }
-                    if (e.key === "Backspace" && !hobbyInput) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                    }
-                  }}
-                />
-              </Box>
-            )}
+            renderInput={(params) => {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const origKeyDown = (params.inputProps as any)?.onKeyDown as ((e: React.KeyboardEvent) => void) | undefined;
+              return (
+                <Box sx={{ width: "100%" }}>
+                  <Typography variant="subtitle1" fontWeight={600} sx={{ display: "block", mb: 0.625 }}>
+                    Hobbies
+                  </Typography>
+                  <TextField
+                    {...params}
+                    placeholder="Type to search or add..."
+                    variant="outlined"
+                    size="medium"
+                    fullWidth
+                    label={undefined}
+                    inputProps={{
+                      ...params.inputProps,
+                      onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => {
+                        if (e.key === "Enter") {
+                          const trimmed = hobbyInput.trim();
+                          if (trimmed && !e.currentTarget.getAttribute("aria-activedescendant")) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            addHobby(trimmed);
+                            return;
+                          }
+                        }
+                        if (e.key === "Backspace" && !hobbyInput) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          return;
+                        }
+                        origKeyDown?.(e);
+                      },
+                    }}
+                  />
+                </Box>
+              );
+            }}
             renderTags={() => null}
           />
           {hobbies.length > 0 && (
@@ -617,15 +629,8 @@ export default function EditEventClient() {
                   onChange={(e) => setReserveSeats(e.target.checked)}
                 />
               }
-              label={
-                <Box>
-                  <Typography variant="body2" fontWeight={500}>Reserve seats for invited people</Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    Invited guests hold a seat until they respond. Declined invites release the seat.
-                  </Typography>
-                </Box>
-              }
-              sx={{ alignItems: "flex-start", mt: 0.5 }}
+              label={<Typography variant="body2" fontWeight={500}>Reserve seats for invited people</Typography>}
+              sx={{ alignItems: "center", mt: 0.5 }}
             />
           )}
         </Stack>
@@ -660,45 +665,71 @@ export default function EditEventClient() {
               />
             </Box>
           </Stack>
+          <FormControlLabel
+            control={<Switch size="small" checked={allowAltTimes} onChange={(e) => setAllowAltTimes(e.target.checked)} />}
+            label={<Typography variant="body2" fontWeight={500}>Let people suggest alternate times</Typography>}
+            sx={{ alignItems: "center", mt: 0.5 }}
+          />
+          {allowAltTimes && (
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small"
+                  checked={altTimesMode === "availability"}
+                  onChange={(e) => setAltTimesMode(e.target.checked ? "availability" : "suggest")}
+                />
+              }
+              label={<Typography variant="body2" fontWeight={500}>Request attendees share their availability</Typography>}
+              sx={{ ml: 3.5 }}
+            />
+          )}
         </Stack>
       </AppCard>
 
-      {/* Settings */}
+      {/* Visibility */}
+      <AppCard>
+        <Stack spacing={2}>
+          <Box>
+            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
+              Who can see this?
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              Controls who can find this plan and who may get notified about it.
+            </Typography>
+          </Box>
+
+          <FormControl component="fieldset">
+            <RadioGroup
+              value={visibility}
+              onChange={(e) => setVisibility(e.target.value as typeof visibility)}
+            >
+              <FormControlLabel value="public" control={<Radio size="small" />} label="Public" />
+              <FormControlLabel value="chums_only" control={<Radio size="small" />} label="Chums only" />
+              <FormControlLabel value="invite_only" control={<Radio size="small" />} label="Invite only" />
+            </RadioGroup>
+          </FormControl>
+        </Stack>
+      </AppCard>
+
+      {/* Extra options */}
       <AppCard>
         <Stack spacing={2}>
           <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
-            Settings
+            Extra options
           </Typography>
 
-          <Box>
-            <Typography variant="subtitle1" fontWeight={600}>
-              Who can see this?
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 1 }}>
-              Controls who can find this plan and who may get notified about it.
-            </Typography>
-            <FormControl component="fieldset">
-              <RadioGroup
-                value={visibility}
-                onChange={(e) => setVisibility(e.target.value as typeof visibility)}
-              >
-                <FormControlLabel value="public" control={<Radio size="small" />} label="Public" />
-                <FormControlLabel value="chums_only" control={<Radio size="small" />} label="Chums only" />
-                <FormControlLabel value="invite_only" control={<Radio size="small" />} label="Invite only" />
-              </RadioGroup>
-            </FormControl>
-          </Box>
-
-          <FormControlLabel
-            control={<Switch size="small" checked={requireReconfirmation} onChange={(e) => setRequireReconfirmation(e.target.checked)} />}
-            label={
-              <Box>
-                <Typography variant="body2" fontWeight={500}>Require final confirmation before the plan</Typography>
-                <Typography variant="caption" color="text.secondary">Going attendees will be asked to confirm 24 hours before. This includes you.</Typography>
-              </Box>
-            }
-            sx={{ alignItems: "flex-start", mt: 0.5 }}
-          />
+          <Stack direction="row" alignItems="center" spacing={0.5}>
+            <FormControlLabel
+              control={<Switch size="small" checked={requireReconfirmation} onChange={(e) => setRequireReconfirmation(e.target.checked)} />}
+              label={<Typography variant="body2" fontWeight={500}>Require final confirmation before the plan</Typography>}
+              sx={{ alignItems: "center", mt: 0.5, mr: 0 }}
+            />
+            <Tooltip title="Going attendees will be asked to confirm 24 hours before. This includes you as the host." arrow placement="top" enterTouchDelay={0}>
+              <IconButton size="small" sx={{ p: 0.25, color: "text.disabled", mt: 0.5 }}>
+                <HelpOutlineRoundedIcon sx={{ fontSize: 16 }} />
+              </IconButton>
+            </Tooltip>
+          </Stack>
           {requireReconfirmation && (
             <Stack spacing={2} sx={{ mt: 1, pl: 2, borderLeft: "2px solid", borderColor: "divider" }}>
               <Box>
@@ -735,68 +766,24 @@ export default function EditEventClient() {
             </Stack>
           )}
 
-          <FormControlLabel
-            control={<Switch size="small" checked={requireApproval} onChange={(e) => setRequireApproval(e.target.checked)} />}
-            label={
-              <Box>
-                <Typography variant="body2" fontWeight={500}>Require approval before joining</Typography>
-                <Typography variant="caption" color="text.secondary">People who are not directly invited will need to request to join.</Typography>
-              </Box>
-            }
-            sx={{ alignItems: "flex-start", mt: 0.5 }}
-          />
+          <Stack direction="row" alignItems="center" spacing={0.5}>
+            <FormControlLabel
+              control={<Switch size="small" checked={requireApproval} onChange={(e) => setRequireApproval(e.target.checked)} />}
+              label={<Typography variant="body2" fontWeight={500}>Require approval before joining</Typography>}
+              sx={{ alignItems: "center", mt: 0.5, mr: 0 }}
+            />
+            <Tooltip title="People who are not directly invited will need to request to join, and you'll approve or decline each request." arrow placement="top" enterTouchDelay={0}>
+              <IconButton size="small" sx={{ p: 0.25, color: "text.disabled", mt: 0.5 }}>
+                <HelpOutlineRoundedIcon sx={{ fontSize: 16 }} />
+              </IconButton>
+            </Tooltip>
+          </Stack>
 
           <FormControlLabel
             control={<Switch size="small" checked={allowAttendeeInvites} onChange={(e) => setAllowAttendeeInvites(e.target.checked)} />}
-            label={
-              <Box>
-                <Typography variant="body2" fontWeight={500}>Let Going attendees invite others</Typography>
-                <Typography variant="caption" color="text.secondary">People who RSVP as Going can invite their friends to this plan.</Typography>
-              </Box>
-            }
-            sx={{ alignItems: "flex-start", mt: 0.5 }}
+            label={<Typography variant="body2" fontWeight={500}>Let Going attendees invite others</Typography>}
+            sx={{ alignItems: "center", mt: 0.5 }}
           />
-
-          <FormControlLabel
-            control={<Switch size="small" checked={allowAltTimes} onChange={(e) => setAllowAltTimes(e.target.checked)} />}
-            label={
-              <Box>
-                <Typography variant="body2" fontWeight={500}>Let people suggest alternate times</Typography>
-                <Typography variant="caption" color="text.secondary">Attendees and invitees can propose different dates or times.</Typography>
-              </Box>
-            }
-            sx={{ alignItems: "flex-start", mt: 0.5 }}
-          />
-          {allowAltTimes && (
-            <RadioGroup
-              value={altTimesMode}
-              onChange={(e) => setAltTimesMode(e.target.value as "suggest" | "availability")}
-              sx={{ ml: 4, mt: -0.5 }}
-            >
-              <FormControlLabel
-                value="suggest"
-                control={<Radio size="small" />}
-                label={
-                  <Box>
-                    <Typography variant="body2" fontWeight={500}>Suggest another time if needed</Typography>
-                    <Typography variant="caption" color="text.secondary">Attendees can propose a different time if this one doesn&apos;t work.</Typography>
-                  </Box>
-                }
-                sx={{ alignItems: "flex-start", mb: 0.5 }}
-              />
-              <FormControlLabel
-                value="availability"
-                control={<Radio size="small" />}
-                label={
-                  <Box>
-                    <Typography variant="body2" fontWeight={500}>Share your availability</Typography>
-                    <Typography variant="caption" color="text.secondary">Attendees share when they&apos;re free so you can pick the best time together.</Typography>
-                  </Box>
-                }
-                sx={{ alignItems: "flex-start" }}
-              />
-            </RadioGroup>
-          )}
         </Stack>
       </AppCard>
 
@@ -838,15 +825,8 @@ export default function EditEventClient() {
                       }}
                     />
                   }
-                  label={
-                    <Box>
-                      <Typography variant="body2" fontWeight={500}>Disable all preference filtering for this plan</Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        Anyone can be matched to this plan regardless of your chum preferences.
-                      </Typography>
-                    </Box>
-                  }
-                  sx={{ alignItems: "flex-start" }}
+                  label={<Typography variant="body2" fontWeight={500}>Disable all preference filtering for this plan</Typography>}
+                  sx={{ alignItems: "center" }}
                 />
 
                 {!prefDisableAll && (

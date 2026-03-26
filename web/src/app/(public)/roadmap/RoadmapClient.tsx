@@ -635,7 +635,7 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
             label="Description (optional)"
             value={submitBody}
             onChange={(e) => setSubmitBody(e.target.value)}
-            placeholder="Add more detail if you'd like"
+            placeholder="The more detail the better!"
             fullWidth
             multiline
             minRows={3}

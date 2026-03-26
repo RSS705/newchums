@@ -41,7 +41,7 @@ const MIN_SAMPLE_FOR_RATE = 3;
 
 function formatRate(r: RatioMetric): { display: string; isLimited: boolean; ratio: string; pct: number | null } {
   if (r.denominator === 0) {
-    return { display: "—", isLimited: false, ratio: "", pct: null };
+    return { display: "100%", isLimited: true, ratio: "0 of 0", pct: 100 };
   }
   const pct = Math.round((r.numerator / r.denominator) * 100);
   const ratio = `${r.numerator} of ${r.denominator}`;
@@ -189,7 +189,6 @@ export default function AttendanceRecordSection({ userId, isOwner, displayName, 
   const rateCount = hasHosting ? 3 : 2;
 
   const totalActivity = record ? record.plansAttended + record.plansHosted : 0;
-  const isNewUser = totalActivity === 0 && !loading;
 
   return (
     <AppCard sx={{ overflow: "hidden" }}>
@@ -241,29 +240,6 @@ export default function AttendanceRecordSection({ userId, isOwner, displayName, 
               ))}
             </Box>
           </Stack>
-        ) : isNewUser ? (
-          <Box
-            sx={{
-              textAlign: "center",
-              py: { xs: 2.5, sm: 3 },
-              px: 2,
-              bgcolor: (theme) =>
-                theme.palette.mode === "light" ? "grey.50" : "rgba(255,255,255,0.04)",
-              border: "1px solid",
-              borderColor: "divider",
-              borderRadius: 2,
-            }}
-          >
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              sx={{ lineHeight: 1.65, maxWidth: 300, mx: "auto" }}
-            >
-              {isOwner
-                ? "Your record will grow as you join and host plans."
-                : "No plan history to show yet."}
-            </Typography>
-          </Box>
         ) : (
           <Stack spacing={2.5}>
             {/* Reliability — hidden from logged-out viewers */}
@@ -349,15 +325,15 @@ export default function AttendanceRecordSection({ userId, isOwner, displayName, 
               </Box>
             </Box>
 
-            {totalActivity > 0 && totalActivity <= 5 && (
+            {totalActivity <= 5 && (
               <Typography
                 variant="caption"
                 color="text.disabled"
                 sx={{ textAlign: "center", fontSize: "0.6875rem", lineHeight: 1.5, display: "block" }}
               >
                 {isOwner
-                  ? "Your record becomes more meaningful as you attend and host more plans."
-                  : "This record becomes more meaningful with more plan history."}
+                  ? "These stats grow as you join and host plans."
+                  : "Stats grow with more plan history."}
               </Typography>
             )}
           </Stack>

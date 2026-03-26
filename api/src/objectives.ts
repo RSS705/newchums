@@ -42,7 +42,7 @@ export type ObjectiveStatus = {
 //   1. Core identity (name)
 //   2. Discovery setup (hobbies → location → travel distance)
 //   3. Profile depth (bio → avatar)
-//   4. Activation (join → attend → chat → feedback → create → connect)
+//   4. Activation (join → attend → chat → create → connect → feedback)
 
 export const OBJECTIVES: ObjectiveDefinition[] = [
   {
@@ -127,20 +127,11 @@ export const OBJECTIVES: ObjectiveDefinition[] = [
     actionLabel: "Your plans",
   },
   {
-    key: "give_first_feedback",
-    title: "Give feedback after a plan",
-    description: "Quick feedback helps NewChums improve your future matches.",
-    category: "engagement",
-    sequence: 100,
-    actionUrl: "/your-plans",
-    actionLabel: "Your plans",
-  },
-  {
     key: "create_first_plan",
     title: "Create your first plan",
     description: "Organize a gathering around something you enjoy.",
     category: "plans",
-    sequence: 110,
+    sequence: 100,
     actionUrl: "/events/create",
     actionLabel: "Create a plan",
   },
@@ -149,9 +140,18 @@ export const OBJECTIVES: ObjectiveDefinition[] = [
     title: "Add your first chum",
     description: "Save someone to your connections so you can plan together easily.",
     category: "social",
-    sequence: 120,
+    sequence: 110,
     actionUrl: "/chum-groups",
     actionLabel: "Find people",
+  },
+  {
+    key: "give_first_feedback",
+    title: "Give feedback after a plan",
+    description: "Quick feedback helps NewChums improve your future matches.",
+    category: "engagement",
+    sequence: 120,
+    actionUrl: "/your-plans",
+    actionLabel: "Your plans",
   },
 ];
 

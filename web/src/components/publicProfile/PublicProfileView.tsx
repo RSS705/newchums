@@ -126,7 +126,7 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
       {user.bio && user.bio.trim() && (
         <AppCard sx={{ borderRadius: { xs: 2, sm: 2.5 }, overflow: "hidden" }}>
           <Stack spacing={1}>
-            <Typography variant="subtitle1" fontWeight={600} sx={{ fontSize: "0.9375rem" }}>
+            <Typography variant="h6" fontWeight={700} sx={{ fontSize: { xs: "1.0625rem", sm: "1.125rem" } }}>
               About
             </Typography>
             <ProfileBioSection bio={user.bio} />
