@@ -52,8 +52,8 @@ export default function PlansPage() {
   const isPast = tab === 1;
   // Active (non-canceled) events for the current tab
   const activeList = (isPast ? past : upcoming).filter((e) => e.status !== "canceled");
-  // Canceled upcoming events live in their own collapsed section
-  const canceledUpcoming = upcoming.filter((e) => e.status === "canceled");
+  // Canceled events live in their own collapsed section on each tab
+  const canceledList = (isPast ? past : upcoming).filter((e) => e.status === "canceled");
   const hosted = activeList.filter((e) => e.isHost);
   const joined = activeList.filter((e) => !e.isHost);
 
@@ -99,7 +99,7 @@ export default function PlansPage() {
       <Box sx={{ borderBottom: 1, borderColor: "divider" }}>
         <Tabs
           value={tab}
-          onChange={(_, v) => setTab(v)}
+          onChange={(_, v) => { setTab(v); setCanceledOpen(false); }}
           textColor="primary"
           indicatorColor="primary"
         >
@@ -191,8 +191,8 @@ export default function PlansPage() {
             </Box>
           )}
 
-          {/* Canceled upcoming plans — collapsed by default */}
-          {!isPast && canceledUpcoming.length > 0 && (
+          {/* Canceled plans — collapsed by default, shown on both tabs */}
+          {canceledList.length > 0 && (
             <Box>
               <Divider sx={{ mb: 2 }} />
               <Box
@@ -216,16 +216,16 @@ export default function PlansPage() {
                   "&:hover": { color: "text.secondary" },
                 }}
               >
-                Canceled plans ({canceledUpcoming.length})
+                Canceled plans ({canceledList.length})
                 {canceledOpen
                   ? <ExpandLessRoundedIcon sx={{ fontSize: 16 }} />
                   : <ExpandMoreRoundedIcon sx={{ fontSize: 16 }} />}
               </Box>
               <Collapse in={canceledOpen} unmountOnExit>
                 <Grid container spacing={2}>
-                  {canceledUpcoming.map((event) => (
+                  {canceledList.map((event) => (
                     <Grid key={event.id} size={{ xs: 12, sm: 6, md: 4 }} sx={{ display: "flex" }}>
-                      <EventCard event={event} />
+                      <EventCard event={event} isPast={isPast} />
                     </Grid>
                   ))}
                 </Grid>

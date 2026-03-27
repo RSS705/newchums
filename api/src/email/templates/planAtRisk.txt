@@ -5,14 +5,19 @@
 ---
 
 Plan: {{eventTitle}}
-
-Confirmed attendance: {{confirmedCount}} of {{minRequired}} required
+{{#eventDate}}
+When: {{.}}
+{{/eventDate}}
+{{#eventLocation}}
+Where: {{.}}
+{{/eventLocation}}
+Confirmed: {{confirmedCount}} of {{minRequired}} required
 
 ---
 
-Review the plan to see who confirmed and decide whether to proceed or cancel.
-
 {{ctaText}}: {{ctaUrl}}
+
+If you take no action, the plan will proceed as scheduled.
 
 ---
 

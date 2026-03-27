@@ -6622,7 +6622,7 @@ app.get("/events/mine", async (c) => {
         e.id, e.title, e.description, e.starts_at, e.location_type,
         e.location_name, e.location_address, e.location_visibility, e.location_area, e.online_link,
         e.max_seats, e.visibility, e.status, e.allow_alt_times,
-        e.host_user_id, e.created_at, e.canceled_at, e.banner_key,
+        e.host_user_id, e.created_at, e.canceled_at, e.cancellation_reason, e.banner_key,
         COALESCE(
           (SELECT json_agg(json_build_object('name', ii.name, 'slug', ii.slug))
            FROM newchums.event_interests ei2
@@ -6666,7 +6666,7 @@ app.get("/events/mine", async (c) => {
       location_visibility: string | null; location_area: string | null; online_link: string | null;
       max_seats: number | null; visibility: string;
       status: string; allow_alt_times: boolean; host_user_id: string;
-      created_at: string; canceled_at: string | null; banner_key: string | null;
+      created_at: string; canceled_at: string | null; cancellation_reason: string | null; banner_key: string | null;
       hobbies: Array<{ name: string; slug: string }> | string;
       interest_name: string | null; interest_slug: string | null;
       host_name: string | null; host_username: string | null;
@@ -6708,6 +6708,7 @@ app.get("/events/mine", async (c) => {
         status: r.status,
         allowAltTimes: r.allow_alt_times,
         canceledAt: r.canceled_at,
+        cancellationReason: r.cancellation_reason,
         createdAt: r.created_at,
         hobby: hobbyList[0]?.name ?? null,
         hobbySlug: hobbyList[0]?.slug ?? null,
@@ -7303,6 +7304,7 @@ app.get("/events/:id", async (c) => {
           allowAttendeeInvites: false,
           requireReconfirmation: false,
           canceledAt: event.canceled_at,
+          cancellationReason: (event as Record<string, unknown>).cancellation_reason ?? null,
           bannerKey: event.banner_key ?? null,
           hobby: hobbyList[0]?.name ?? null,
           hobbySlug: hobbyList[0]?.slug ?? null,
@@ -7501,6 +7503,7 @@ app.get("/events/:id", async (c) => {
         allowAttendeeInvites: event.allow_attendee_invites !== false,
         requireReconfirmation: event.require_reconfirmation === true,
         canceledAt: event.canceled_at,
+        cancellationReason: (event as Record<string, unknown>).cancellation_reason ?? null,
         createdAt: event.created_at,
         bannerKey: event.banner_key ?? null,
         hobby: hobbyList[0]?.name ?? null,
@@ -8663,7 +8666,7 @@ app.post("/events/:id/cancel", async (c) => {
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     if (ev[0].host_user_id !== userId) return c.json({ ok: false, error: "FORBIDDEN", message: "Only the host can cancel" }, 403);
 
-    await sql`UPDATE newchums.events SET status = 'canceled', canceled_at = NOW(), updated_at = NOW() WHERE id = ${eventId}`;
+    await sql`UPDATE newchums.events SET status = 'canceled', canceled_at = NOW(), cancellation_reason = 'host_canceled', updated_at = NOW() WHERE id = ${eventId}`;
 
     c.executionCtx.waitUntil(
       notifyAttendeesPlanChanged(sql, c.env, eventId, userId, ev[0].title, "canceled"),
@@ -11242,7 +11245,8 @@ async function processAttendanceAssurance(
   // Phase 3: Process cutoffs — expire pending confirmations and evaluate viability
   const eventsAtCutoff = (await sql`
     SELECT e.id, e.host_user_id, e.title, e.starts_at, e.timezone,
-           e.confirmation_cutoff_hours, e.min_confirmed_attendees, e.fallback_policy
+           e.confirmation_cutoff_hours, e.min_confirmed_attendees, e.fallback_policy,
+           e.location_type, e.location_name, e.location_address, e.online_link
     FROM newchums.events e
     WHERE e.require_reconfirmation = true
       AND e.status = 'published'
@@ -11254,6 +11258,8 @@ async function processAttendanceAssurance(
     id: string; host_user_id: string; title: string; starts_at: string;
     timezone: string | null; confirmation_cutoff_hours: number;
     min_confirmed_attendees: number | null; fallback_policy: string;
+    location_type: string; location_name: string | null;
+    location_address: string | null; online_link: string | null;
   }>;
 
   for (const ev of eventsAtCutoff) {
@@ -11279,7 +11285,7 @@ async function processAttendanceAssurance(
 
       if (ev.fallback_policy === "auto_cancel") {
         await sql`
-          UPDATE newchums.events SET status = 'canceled', canceled_at = NOW(), updated_at = NOW()
+          UPDATE newchums.events SET status = 'canceled', canceled_at = NOW(), cancellation_reason = 'min_attendees_not_met', updated_at = NOW()
           WHERE id = ${ev.id}
         `;
         const attendees = (await sql`
@@ -11303,10 +11309,14 @@ async function processAttendanceAssurance(
         if (hostUser.length > 0) {
           try {
             const hostName = hostUser[0].name?.trim() || hostUser[0].username?.replace(/^@/, "") || "there";
+            const tz = ev.timezone || "UTC";
+            const eventDate = formatEventDate(ev.starts_at, tz);
+            const eventLocation = ev.location_type === "online" ? (ev.online_link || "Online") : [ev.location_name, ev.location_address].filter(Boolean).join(", ") || "";
             const unsubToken = await createUnsubscribeToken(env.NEXTAUTH_SECRET, ev.host_user_id, "attendance_confirmation");
             await sendPlanAtRiskEmail(env, {
               to: hostUser[0].email, hostName, eventTitle: ev.title,
               eventUrl: `${env.WEB_BASE_URL}/events/${ev.id}`,
+              eventDate, eventLocation,
               confirmedCount, minRequired,
               unsubscribeUrl: `${env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
             });
@@ -11692,6 +11702,39 @@ async function processPlanFeedbackEmails(
   }
 }
 
+// ─── Auto-cancel plans with no attendees ─────────────────────────────────────
+
+async function cancelNoAttendeePlans(sql: ReturnType<typeof getSql>) {
+  // Find published plans that have started (within the last 2 hours to avoid
+  // retroactively cancelling old plans) where the host is the only participant
+  // — i.e. no one else RSVP'd "going".
+  const abandoned = (await sql`
+    SELECT e.id
+    FROM newchums.events e
+    WHERE e.status = 'published'
+      AND e.starts_at <= NOW()
+      AND e.starts_at > NOW() - INTERVAL '2 hours'
+      AND NOT EXISTS (
+        SELECT 1 FROM newchums.event_rsvps er
+        WHERE er.event_id = e.id
+          AND er.user_id != e.host_user_id
+          AND er.status = 'going'
+      )
+  `) as { id: string }[];
+
+  for (const ev of abandoned) {
+    try {
+      await sql`
+        UPDATE newchums.events
+        SET status = 'canceled', canceled_at = NOW(), cancellation_reason = 'no_attendees', updated_at = NOW()
+        WHERE id = ${ev.id} AND status = 'published'
+      `;
+    } catch (err) {
+      console.error("[cancelNoAttendeePlans]", ev.id, err);
+    }
+  }
+}
+
 // ─── Scheduled handler ────────────────────────────────────────────────────────
 
 async function handleScheduled(
@@ -11706,6 +11749,13 @@ async function handleScheduled(
     await processAttendanceAssurance(sql, env, ctx);
   } catch (err) {
     console.error("[scheduled] attendance assurance error:", err);
+  }
+
+  // Auto-cancel plans where no one else joined and the event time has arrived
+  try {
+    await cancelNoAttendeePlans(sql);
+  } catch (err) {
+    console.error("[scheduled] no-attendee cancel error:", err);
   }
 
   // Find users with unread chat messages that arrived since their last digest

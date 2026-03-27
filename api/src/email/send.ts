@@ -687,9 +687,10 @@ export const sendConfirmationRequestEmail = async (
 
 export const sendPlanAtRiskEmail = async (
   env: Bindings,
-  { to, hostName, eventTitle, eventUrl, confirmedCount, minRequired, unsubscribeUrl }: {
+  { to, hostName, eventTitle, eventUrl, eventDate, eventLocation, confirmedCount, minRequired, unsubscribeUrl }: {
     to: string; hostName: string;
     eventTitle: string; eventUrl: string;
+    eventDate?: string; eventLocation?: string;
     confirmedCount: number; minRequired: number;
     unsubscribeUrl?: string;
   }
@@ -700,16 +701,19 @@ export const sendPlanAtRiskEmail = async (
     TemplateId: env.POSTMARK_TEMPLATE_PLAN_AT_RISK,
     TemplateModel: {
       productName: "NewChums",
-      heading: "Your plan may be at risk",
-      bodyText: `Hey ${hostName}, your plan hasn\u2019t reached the minimum confirmed attendance. ${confirmedCount} of ${minRequired} required attendees have confirmed. You can review the plan and decide whether to proceed or cancel.`,
+      heading: `${confirmedCount} of ${minRequired} attendees confirmed`,
+      bodyText: `Hey ${hostName}, your plan didn\u2019t reach its minimum of ${minRequired} confirmed attendees \u2014 only ${confirmedCount} confirmed. Please review and decide whether to proceed or cancel. If you do nothing, the plan will go ahead as scheduled.`,
       hostName,
       eventTitle,
       eventUrl,
+      eventDate: eventDate || "",
+      eventLocation: eventLocation || "",
       confirmedCount,
       minRequired,
       ctaUrl: eventUrl,
-      ctaText: "Review plan",
+      ctaText: "Review and decide",
       unsubscribeUrl: unsubscribeUrl || "",
+      year: new Date().getFullYear(),
     },
   });
 };
