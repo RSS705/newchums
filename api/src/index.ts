@@ -8382,6 +8382,17 @@ async function notifyAttendeesPlanChanged(
   if (!env.POSTMARK_TEMPLATE_EVENT_CHANGED || !env.NEXTAUTH_SECRET) return;
   const eventUrl = `${env.WEB_BASE_URL}/events/${eventId}`;
 
+  // Fetch event details for date/location display in the email
+  const evRows = (await sql`
+    SELECT starts_at, timezone, location_type, location_name, location_address, online_link
+    FROM newchums.events WHERE id = ${eventId} LIMIT 1
+  `) as { starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; online_link: string | null }[];
+  const ev = evRows[0];
+  const eventDate = ev ? formatEventDate(ev.starts_at, ev.timezone || "UTC") : "";
+  const eventLocation = ev
+    ? ev.location_type === "online" ? (ev.online_link || "Online") : [ev.location_name, ev.location_address].filter(Boolean).join(", ") || ""
+    : "";
+
   const hostRows = (await sql`
     SELECT username, name FROM newchums.users WHERE id = ${hostUserId} LIMIT 1
   `) as { username: string | null; name: string | null }[];
@@ -8431,6 +8442,8 @@ async function notifyAttendeesPlanChanged(
         eventUrl,
         changeType,
         changes,
+        eventDate,
+        eventLocation,
         unsubscribeUrl,
       });
     } catch { /* noop — never let email failure break the host's action */ }
@@ -11289,18 +11302,25 @@ async function processAttendanceAssurance(
           WHERE id = ${ev.id}
         `;
         const attendees = (await sql`
-          SELECT u.email, u.name, u.username
+          SELECT u.id AS user_id, u.email, u.name, u.username
           FROM newchums.event_rsvps er
           JOIN newchums.users u ON u.id = er.user_id
           WHERE er.event_id = ${ev.id} AND er.status IN ('going', 'maybe')
-        `) as Array<{ email: string; name: string | null; username: string | null }>;
+        `) as Array<{ user_id: string; email: string; name: string | null; username: string | null }>;
+
+        const tz = ev.timezone || "UTC";
+        const cancelEventDate = formatEventDate(ev.starts_at, tz);
+        const cancelEventLocation = ev.location_type === "online" ? (ev.online_link || "Online") : [ev.location_name, ev.location_address].filter(Boolean).join(", ") || "";
 
         for (const att of attendees) {
           try {
             const recipientName = att.name?.trim() || att.username?.replace(/^@/, "") || "there";
+            const unsubToken = await createUnsubscribeToken(env.NEXTAUTH_SECRET, att.user_id, "event_changed_canceled");
             await sendPlanAutoCancelledEmail(env, {
               to: att.email, recipientName, eventTitle: ev.title,
               confirmedCount, minRequired,
+              eventDate: cancelEventDate, eventLocation: cancelEventLocation,
+              unsubscribeUrl: `${env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
             });
           } catch { /* noop */ }
         }
@@ -11645,18 +11665,24 @@ async function processPlanFeedbackEmails(
 
   // Find published plans that ended 3+ hours ago but haven't had feedback emails sent
   const plans = (await sql`
-    SELECT e.id, e.title, e.host_user_id
+    SELECT e.id, e.title, e.host_user_id,
+           e.starts_at, e.timezone,
+           e.location_type, e.location_name, e.location_address, e.online_link
     FROM newchums.events e
     WHERE e.status = 'published'
       AND e.starts_at <= NOW() - INTERVAL '3 hours'
       AND e.feedback_email_sent_at IS NULL
     ORDER BY e.starts_at ASC
     LIMIT 20
-  `) as { id: string; title: string; host_user_id: string }[];
+  `) as { id: string; title: string; host_user_id: string; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; online_link: string | null }[];
 
   if (plans.length === 0) return;
 
   for (const plan of plans) {
+    const tz = plan.timezone || "UTC";
+    const planDate = formatEventDate(plan.starts_at, tz);
+    const planLocation = plan.location_type === "online" ? (plan.online_link || "Online") : [plan.location_name, plan.location_address].filter(Boolean).join(", ") || "";
+
     const recipients = (await sql`
       SELECT u.id, u.email, u.name
       FROM newchums.event_rsvps er
@@ -11685,6 +11711,8 @@ async function processPlanFeedbackEmails(
           recipientName,
           planTitle: plan.title,
           planUrl: `${env.WEB_BASE_URL}/events/${plan.id}`,
+          planDate,
+          planLocation,
           unsubscribeUrl,
         }),
       );

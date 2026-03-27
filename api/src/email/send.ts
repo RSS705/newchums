@@ -211,11 +211,12 @@ function formatChange(c: PlanChangeItem): string {
 
 export const sendEventChangedEmail = async (
   env: Bindings,
-  { to, recipientName, eventTitle, eventUrl, changeType, changes, unsubscribeUrl }: {
+  { to, recipientName, eventTitle, eventUrl, changeType, changes, eventDate, eventLocation, unsubscribeUrl }: {
     to: string; recipientName: string;
     eventTitle: string; eventUrl: string;
     changeType: "updated" | "locked" | "canceled";
     changes?: PlanChangeItem[];
+    eventDate?: string; eventLocation?: string;
     unsubscribeUrl?: string;
   }
 ) => {
@@ -252,6 +253,8 @@ export const sendEventChangedEmail = async (
       statusLabel: statusMap[changeType],
       statusColor: changeType === "canceled" ? "#6B7280" : "#E65B13",
       eventTitle,
+      eventDate: eventDate || "",
+      eventLocation: eventLocation || "",
       ctaUrl:      changeType === "canceled" ? "https://newchums.com" : eventUrl,
       ctaText:     ctaMap[changeType],
       change1: changes?.[0] ? formatChange(changes[0]) : "",
@@ -261,6 +264,7 @@ export const sendEventChangedEmail = async (
       change5: changes?.[4] ? formatChange(changes[4]) : "",
       hasChanges: changes && changes.length > 0 ? "1" : "",
       unsubscribeUrl: unsubscribeUrl || "",
+      year: new Date().getFullYear(),
     },
   });
 };
@@ -720,20 +724,42 @@ export const sendPlanAtRiskEmail = async (
 
 export const sendPlanAutoCancelledEmail = async (
   env: Bindings,
-  { to, recipientName, eventTitle, confirmedCount, minRequired }: {
+  { to, recipientName, eventTitle, confirmedCount, minRequired, eventDate, eventLocation, unsubscribeUrl }: {
     to: string; recipientName: string;
     eventTitle: string;
     confirmedCount: number; minRequired: number;
+    eventDate?: string; eventLocation?: string;
+    unsubscribeUrl?: string;
   }
 ) => {
+  // Use dedicated template if available, otherwise fall back to the generic eventChanged template
+  if (env.POSTMARK_TEMPLATE_PLAN_AUTO_CANCELLED) {
+    return sendPostmarkTemplateEmail(env, {
+      From: env.EMAIL_FROM, To: to,
+      TemplateId: env.POSTMARK_TEMPLATE_PLAN_AUTO_CANCELLED,
+      TemplateModel: {
+        productName: "NewChums",
+        heading: "A plan you were attending has been cancelled",
+        bodyText: `Hey ${recipientName}, unfortunately "${eventTitle}" didn\u2019t reach its minimum of ${minRequired} confirmed attendees \u2014 only ${confirmedCount} confirmed \u2014 so it\u2019s been automatically cancelled.`,
+        eventTitle,
+        eventDate: eventDate || "",
+        eventLocation: eventLocation || "",
+        reasonText: `Only ${confirmedCount} of ${minRequired} required attendees confirmed`,
+        ctaUrl: "https://newchums.com",
+        ctaText: "Browse other plans",
+        unsubscribeUrl: unsubscribeUrl || "",
+        year: new Date().getFullYear(),
+      },
+    });
+  }
+  // Fallback: use generic event-changed template
   if (!env.POSTMARK_TEMPLATE_EVENT_CHANGED) return;
   return sendEventChangedEmail(env, {
-    to,
-    recipientName,
-    eventTitle,
+    to, recipientName, eventTitle,
     eventUrl: "https://newchums.com",
     changeType: "canceled",
     changes: [{ fieldName: "Reason", oldValue: `${confirmedCount} of ${minRequired} confirmed`, newValue: "Auto-cancelled \u2014 minimum attendance not met" }],
+    unsubscribeUrl,
   });
 };
 
@@ -843,17 +869,10 @@ export const sendContactFormEmail = async (
 
 export const sendPlanFeedbackEmail = async (
   env: Bindings,
-  {
-    to,
-    recipientName,
-    planTitle,
-    planUrl,
-    unsubscribeUrl,
-  }: {
-    to: string;
-    recipientName: string;
-    planTitle: string;
-    planUrl: string;
+  { to, recipientName, planTitle, planUrl, planDate, planLocation, unsubscribeUrl }: {
+    to: string; recipientName: string;
+    planTitle: string; planUrl: string;
+    planDate?: string; planLocation?: string;
     unsubscribeUrl: string;
   }
 ) => {
@@ -864,10 +883,17 @@ export const sendPlanFeedbackEmail = async (
     TemplateId: env.POSTMARK_TEMPLATE_PLAN_FEEDBACK,
     TemplateModel: {
       productName: "NewChums",
+      heading: "How did it go?",
+      bodyText: `Hey ${recipientName}, "${planTitle}" has wrapped up! Take a quick moment to share how it went \u2014 it helps NewChums match you with better plans in the future.`,
       recipientName,
       planTitle,
       planUrl,
+      planDate: planDate || "",
+      planLocation: planLocation || "",
+      ctaUrl: planUrl,
+      ctaText: "Share how it went",
       unsubscribeUrl,
+      year: new Date().getFullYear(),
     },
   });
 };

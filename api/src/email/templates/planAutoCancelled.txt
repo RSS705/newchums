@@ -1,0 +1,27 @@
+{{heading}}
+
+{{bodyText}}
+
+---
+
+Cancelled: {{eventTitle}}
+{{#eventDate}}
+When: {{.}}
+{{/eventDate}}
+{{#eventLocation}}
+Where: {{.}}
+{{/eventLocation}}
+Why: {{reasonText}}
+
+---
+
+No action needed on your end. We hope to see you at the next one.
+
+{{ctaText}}: {{ctaUrl}}
+
+---
+
+You're receiving this because you were attending a plan on NewChums.
+{{#unsubscribeUrl}}Unsubscribe: {{.}}{{/unsubscribeUrl}}
+
+© {{year}} {{productName}}

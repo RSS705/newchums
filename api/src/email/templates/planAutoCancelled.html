@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
-  <title>How did your plan go?</title>
+  <title>A plan has been cancelled</title>
   <!--[if mso]>
   <noscript>
     <xml>
@@ -63,21 +63,21 @@
 
               <!-- Plan card -->
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 24px; border: 1px solid #E5E7EB; border-radius: 12px; overflow: hidden;">
-                <!-- Orange top accent -->
+                <!-- Gray top accent for cancelled -->
                 <tr>
-                  <td style="background-color: #E65B13; height: 4px; font-size: 0; line-height: 0;">&nbsp;</td>
+                  <td style="background-color: #6B7280; height: 4px; font-size: 0; line-height: 0;">&nbsp;</td>
                 </tr>
                 <tr>
                   <td style="padding: 20px 24px;">
-                    <p style="margin: 0 0 4px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 11px; font-weight: 600; color: #E65B13; text-transform: uppercase; letter-spacing: 0.8px;">
-                      Plan
+                    <p style="margin: 0 0 4px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 11px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.8px;">
+                      Cancelled
                     </p>
                     <p style="margin: 0 0 16px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 18px; font-weight: 700; color: #1F2937; line-height: 1.35;">
-                      {{planTitle}}
+                      {{eventTitle}}
                     </p>
 
                     <!-- Date row -->
-                    {{#planDate}}
+                    {{#eventDate}}
                     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color: #F9FAFB; border-radius: 8px;">
                       <tr>
                         <td style="padding: 14px 16px;">
@@ -90,10 +90,10 @@
                         </td>
                       </tr>
                     </table>
-                    {{/planDate}}
+                    {{/eventDate}}
 
                     <!-- Location row -->
-                    {{#planLocation}}
+                    {{#eventLocation}}
                     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top: 10px; background-color: #F9FAFB; border-radius: 8px;">
                       <tr>
                         <td style="padding: 14px 16px;">
@@ -106,17 +106,36 @@
                         </td>
                       </tr>
                     </table>
-                    {{/planLocation}}
+                    {{/eventLocation}}
+
+                    <!-- Reason row -->
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top: 10px; background-color: #F3F4F6; border-radius: 8px;">
+                      <tr>
+                        <td style="padding: 14px 16px;">
+                          <p style="margin: 0 0 2px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 11px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.5px;">
+                            Why
+                          </p>
+                          <p style="margin: 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 14px; font-weight: 600; color: #4B5563; line-height: 1.4;">
+                            {{reasonText}}
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
                   </td>
                 </tr>
               </table>
 
+              <!-- Reassurance note -->
+              <p style="margin: 0 0 20px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 13px; color: #9CA3AF; line-height: 1.5; text-align: center;">
+                No action needed on your end. We hope to see you at the next one.
+              </p>
+
               <!-- CTA button -->
-              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 8px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 24px;">
                 <tr>
                   <td align="center">
                     <!--[if mso]>
-                    <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{ctaUrl}}" style="height:44px;v-text-anchor:middle;width:240px;" arcsize="18%" strokecolor="#C44D10" fillcolor="#E65B13">
+                    <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{ctaUrl}}" style="height:44px;v-text-anchor:middle;width:220px;" arcsize="18%" strokecolor="#C44D10" fillcolor="#E65B13">
                       <w:anchorlock/>
                       <center style="color:#ffffff;font-family:'Segoe UI',sans-serif;font-size:14px;font-weight:bold;">{{ctaText}}</center>
                     </v:roundrect>
@@ -130,11 +149,6 @@
                 </tr>
               </table>
 
-              <!-- Encouragement note -->
-              <p style="margin: 0 0 20px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 13px; color: #9CA3AF; line-height: 1.5; text-align: center;">
-                It only takes a few seconds and helps NewChums find better matches for you.
-              </p>
-
             </td>
           </tr>
 
@@ -146,8 +160,8 @@
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                 <tr>
                   <td style="font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 12px; color: #9CA3AF; line-height: 1.5;">
-                    You&rsquo;re receiving this because you attended a plan on <a href="https://newchums.com" style="color: #E65B13; text-decoration: none;">NewChums</a>.
-                    {{#unsubscribeUrl}}&ensp;&middot;&ensp;<a href="{{unsubscribeUrl}}" style="color: #9CA3AF; text-decoration: underline; font-size: 12px;">Unsubscribe</a>{{/unsubscribeUrl}}
+                    You&rsquo;re receiving this because you were attending a plan on <a href="https://newchums.com" style="color: #E65B13; text-decoration: none;">NewChums</a>.
+                    {{#unsubscribeUrl}}&ensp;&middot;&ensp;<a href="{{.}}" style="color: #9CA3AF; text-decoration: underline; font-size: 12px;">Unsubscribe</a>{{/unsubscribeUrl}}
                   </td>
                 </tr>
                 <tr>

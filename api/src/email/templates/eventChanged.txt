@@ -6,6 +6,12 @@
 
 {{statusLabel}}
 {{eventTitle}}
+{{#eventDate}}
+When: {{.}}
+{{/eventDate}}
+{{#eventLocation}}
+Where: {{.}}
+{{/eventLocation}}
 
 {{#hasChanges}}
 What changed:
@@ -34,6 +40,6 @@ What changed:
 ---
 
 You're receiving this because you're attending a plan on NewChums.
-{{#unsubscribeUrl}}Unsubscribe from this email notification: {{.}}{{/unsubscribeUrl}}
+{{#unsubscribeUrl}}Unsubscribe: {{.}}{{/unsubscribeUrl}}
 
-© {{productName}}
+© {{year}} {{productName}}
