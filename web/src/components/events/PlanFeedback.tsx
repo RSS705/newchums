@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import Collapse from "@mui/material/Collapse";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
@@ -21,8 +20,6 @@ import Typography from "@mui/material/Typography";
 import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
 import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
 import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
-import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
-import ExpandLessRoundedIcon from "@mui/icons-material/ExpandLessRounded";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 
@@ -78,7 +75,9 @@ export default function PlanFeedback({ eventId }: PlanFeedbackProps) {
   const [loading, setLoading] = useState(true);
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [expanded, setExpanded] = useState(true);
+  const [dismissed, setDismissed] = useState(false);
+  const [dismissDialogOpen, setDismissDialogOpen] = useState(false);
+  const [dismissing, setDismissing] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
 
   const [issueDialogOpen, setIssueDialogOpen] = useState(false);
@@ -105,11 +104,13 @@ export default function PlanFeedback({ eventId }: PlanFeedbackProps) {
       const res = await apiFetch(`/events/${eventId}/feedback`, { auth: true });
       if (!res.ok) { setLoading(false); return; }
       const data = await res.json() as {
+        dismissed?: boolean;
         attendees: Attendee[];
         feedback: { reviewee_user_id: string; prompt: string; response: string }[];
         attendanceIssues: { reported_user_id: string; issue_type: string }[];
         issuesAgainstMe?: { id: string; issueType: string; status: string }[];
       };
+      if (data.dismissed) { setDismissed(true); setLoading(false); return; }
       setAttendees(data.attendees);
 
       if (data.feedback.length > 0) {
@@ -217,7 +218,23 @@ export default function PlanFeedback({ eventId }: PlanFeedbackProps) {
     setDisputing(false);
   };
 
+  const handleDismiss = async () => {
+    setDismissing(true);
+    try {
+      const res = await apiFetch(`/events/${eventId}/feedback/dismiss`, {
+        auth: true,
+        method: "POST",
+      });
+      if (res.ok) {
+        setDismissed(true);
+        setDismissDialogOpen(false);
+      }
+    } catch { /* silent */ }
+    setDismissing(false);
+  };
+
   if (loading) return null;
+  if (dismissed) return null;
   if (attendees.length === 0 && issuesAgainstMe.length === 0) return null;
 
   const hasAnyFeedback = Object.values(feedback).some((prompts) =>
@@ -250,17 +267,13 @@ export default function PlanFeedback({ eventId }: PlanFeedbackProps) {
       >
         {/* Header */}
         <Box
-          onClick={() => setExpanded((p) => !p)}
           sx={{
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
             px: { xs: 2, sm: 2.5 },
             py: { xs: 1.75, sm: 2 },
-            cursor: "pointer",
             bgcolor: submitted ? "#f0fdf4" : "#fffbeb",
-            "&:hover": { bgcolor: submitted ? "#dcfce7" : "#fef3c7" },
-            transition: "background-color 0.15s",
           }}
         >
           <Stack direction="row" alignItems="center" spacing={1.5}>
@@ -294,14 +307,9 @@ export default function PlanFeedback({ eventId }: PlanFeedbackProps) {
               )}
             </Box>
           </Stack>
-          {expanded
-            ? <ExpandLessRoundedIcon sx={{ color: "text.secondary", flexShrink: 0 }} />
-            : <ExpandMoreRoundedIcon sx={{ color: "text.secondary", flexShrink: 0 }} />
-          }
         </Box>
 
-        <Collapse in={expanded}>
-          <Box sx={{ px: { xs: 2, sm: 2.5 }, pt: { xs: 1.5, sm: 2 }, pb: { xs: 2, sm: 2.5 } }}>
+        <Box sx={{ px: { xs: 2, sm: 2.5 }, pt: { xs: 1.5, sm: 2 }, pb: { xs: 2, sm: 2.5 } }}>
             {/* Dispute banner for attendance issues against the current user */}
             {issuesAgainstMe.length > 0 && (
               <Box sx={{
@@ -339,7 +347,7 @@ export default function PlanFeedback({ eventId }: PlanFeedbackProps) {
             )}
 
             {!submitted && (
-              <Typography variant="body1" color="text.secondary" sx={{ mb: 2, lineHeight: 1.6 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.5, fontSize: "0.8125rem" }}>
                 Everything is optional and private. Tap to rate each person, it only takes a moment.
               </Typography>
             )}
@@ -443,26 +451,42 @@ export default function PlanFeedback({ eventId }: PlanFeedbackProps) {
               </Box>
             </Stack>
 
-            {/* Conduct report */}
-            <Divider sx={{ my: 2.5 }} />
-            <Button
-              size="small"
-              variant="outlined"
-              onClick={() => { setConductDialogOpen(true); setConductDone(false); setConductReason(""); setConductDetails(""); }}
-              sx={{
-                textTransform: "none",
-                fontWeight: 600,
-                fontSize: "0.875rem",
-                borderRadius: 2,
-                borderColor: "grey.300",
-                color: "text.secondary",
-                "&:hover": { borderColor: "error.main", color: "error.main", bgcolor: "#fef2f2" },
-              }}
-            >
-              Report a safety or conduct concern
-            </Button>
+            {/* Conduct report & dismiss */}
+            <Divider sx={{ my: 2 }} />
+            <Stack direction="row" alignItems="center" justifyContent="space-between" flexWrap="wrap" spacing={1}>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => { setConductDialogOpen(true); setConductDone(false); setConductReason(""); setConductDetails(""); }}
+                sx={{
+                  textTransform: "none",
+                  fontWeight: 600,
+                  fontSize: "0.875rem",
+                  borderRadius: 2,
+                  borderColor: "grey.300",
+                  color: "text.secondary",
+                  "&:hover": { borderColor: "error.main", color: "error.main", bgcolor: "#fef2f2" },
+                }}
+              >
+                Report a safety or conduct concern
+              </Button>
+              <Button
+                size="small"
+                color="inherit"
+                onClick={() => setDismissDialogOpen(true)}
+                sx={{
+                  textTransform: "none",
+                  fontWeight: 500,
+                  fontSize: "0.8125rem",
+                  color: "text.disabled",
+                  bgcolor: "transparent",
+                  "&:hover": { color: "text.secondary", bgcolor: "action.hover" },
+                }}
+              >
+                {submitted ? "Hide" : "I don\u2019t want to leave feedback"}
+              </Button>
+            </Stack>
           </Box>
-        </Collapse>
       </Paper>
 
       {/* Attendance issue dialog */}
@@ -631,6 +655,43 @@ export default function PlanFeedback({ eventId }: PlanFeedbackProps) {
           )}
         </DialogActions>
       </Dialog>
+
+      {/* Dismiss confirmation dialog */}
+      <Dialog
+        open={dismissDialogOpen}
+        onClose={() => setDismissDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle sx={{ fontWeight: 700, fontSize: "1.0625rem", pb: 0.5 }}>
+          {submitted ? "Hide feedback for this plan?" : "Skip feedback for this plan?"}
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+            {submitted
+              ? "Your feedback has been saved. This will permanently hide this section from your view."
+              : "This will permanently hide the feedback section for this plan. You won\u2019t be able to leave feedback later."}
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button onClick={() => setDismissDialogOpen(false)} sx={{ textTransform: "none", fontWeight: 600 }}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleDismiss}
+            disabled={dismissing}
+            variant="contained"
+            sx={{
+              textTransform: "none",
+              fontWeight: 600,
+              borderRadius: 2,
+            }}
+          >
+            {dismissing ? "Hiding..." : submitted ? "Yes, hide" : "Yes, skip feedback"}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </>
   );
 }
@@ -655,57 +716,49 @@ function PersonFeedbackCard({
   const prompts = PROMPTS.filter((p) => !p.hostOnly || attendee.isHost);
 
   return (
-    <Paper
-      variant="outlined"
-      sx={{
-        borderRadius: 2.5,
-        overflow: "hidden",
-        borderColor: "grey.200",
-      }}
-    >
+    <Box>
       {/* Person header */}
       <Stack
         direction="row"
         alignItems="center"
-        spacing={1.5}
-        sx={{ px: 2, py: 1.5, bgcolor: "grey.50" }}
+        spacing={1.25}
+        sx={{ mb: 2 }}
       >
         <Avatar
           src={`${avatarBase}/users/${attendee.userId}/avatar`}
-          sx={{ width: 40, height: 40, fontSize: "1rem" }}
+          sx={{ width: 32, height: 32, fontSize: "0.875rem" }}
         >
           {attendee.displayName[0]?.toUpperCase()}
         </Avatar>
-        <Box sx={{ minWidth: 0, flex: 1 }}>
-          <Typography fontWeight={700} sx={{ fontSize: "1.0625rem", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {attendee.displayName}
+        <Typography fontWeight={700} sx={{ fontSize: "0.9375rem", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
+          {attendee.displayName}
+        </Typography>
+        {attendee.isHost && (
+          <Typography variant="caption" sx={{ color: "primary.main", fontWeight: 600, fontSize: "0.75rem", flexShrink: 0 }}>
+            Host
           </Typography>
-          {attendee.isHost && (
-            <Typography variant="caption" sx={{ color: "primary.main", fontWeight: 600, fontSize: "0.75rem" }}>
-              Host
-            </Typography>
-          )}
-        </Box>
+        )}
       </Stack>
 
       {/* Prompt rows */}
-      <Stack divider={<Divider />}>
+      <Stack spacing={1.75}>
         {prompts.map((p) => {
           const current = responses[p.key] ?? null;
           return (
-            <Box key={p.key} sx={{ px: 2, py: 1.5 }}>
+            <Box key={p.key}>
               <Typography
-                variant="body1"
+                variant="body2"
                 sx={{
-                  color: "text.primary",
+                  color: "text.secondary",
                   fontWeight: 500,
-                  mb: 1,
-                  lineHeight: 1.5,
+                  mb: 0.75,
+                  lineHeight: 1.4,
+                  fontSize: "0.9375rem",
                 }}
               >
                 {p.label}
               </Typography>
-              <Stack direction="row" spacing={1}>
+              <Stack direction="row" spacing={0.75}>
                 {RESPONSE_OPTIONS.map((opt) => {
                   const isSelected = current === opt.value;
                   return (
@@ -720,21 +773,21 @@ function PersonFeedbackCard({
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
-                        py: { xs: 0.875, sm: 0.75 },
+                        py: 0.625,
                         px: 1,
                         borderRadius: 1.5,
-                        border: "1.5px solid",
-                        borderColor: isSelected ? "transparent" : "grey.300",
+                        border: "1px solid",
+                        borderColor: isSelected ? "transparent" : "grey.200",
                         bgcolor: isSelected ? opt.selectedBg : "transparent",
-                        color: isSelected ? opt.selectedColor : "text.secondary",
+                        color: isSelected ? opt.selectedColor : "text.disabled",
                         fontWeight: isSelected ? 700 : 500,
-                        fontSize: "0.875rem",
+                        fontSize: "0.8125rem",
                         cursor: "pointer",
                         transition: "all 0.12s ease",
                         userSelect: "none",
                         "&:hover": {
                           bgcolor: isSelected ? opt.selectedBg : opt.hoverBg,
-                          borderColor: isSelected ? "transparent" : "grey.400",
+                          borderColor: isSelected ? "transparent" : "grey.300",
                         },
                       }}
                     >
@@ -749,19 +802,11 @@ function PersonFeedbackCard({
       </Stack>
 
       {/* Per-person attendance issue prompt */}
-      <Box
-        sx={{
-          px: 2,
-          py: 1.5,
-          bgcolor: hasReportedIssue ? "#f0fdf4" : "#fffbeb",
-          borderTop: "1px solid",
-          borderColor: "grey.200",
-        }}
-      >
+      <Box sx={{ mt: 2 }}>
         {hasReportedIssue ? (
-          <Stack direction="row" alignItems="center" spacing={1}>
-            <CheckCircleRoundedIcon sx={{ fontSize: 18, color: "success.main" }} />
-            <Typography variant="body2" sx={{ color: "success.dark", fontWeight: 600 }}>
+          <Stack direction="row" alignItems="center" spacing={0.75}>
+            <CheckCircleRoundedIcon sx={{ fontSize: 16, color: "success.main" }} />
+            <Typography variant="caption" sx={{ color: "success.dark", fontWeight: 600 }}>
               Attendance issue reported
             </Typography>
           </Stack>
@@ -769,21 +814,21 @@ function PersonFeedbackCard({
           <Stack
             direction="row"
             alignItems="center"
-            spacing={1}
+            spacing={0.75}
             onClick={onReportIssue}
             sx={{ cursor: "pointer", "&:hover .issue-text": { textDecoration: "underline" } }}
           >
-            <InfoOutlinedIcon sx={{ fontSize: 18, color: "text.secondary" }} />
+            <InfoOutlinedIcon sx={{ fontSize: 16, color: "text.secondary" }} />
             <Typography
               className="issue-text"
               variant="body2"
-              sx={{ color: "text.secondary", fontWeight: 500 }}
+              sx={{ color: "text.secondary", fontWeight: 500, fontSize: "0.8125rem" }}
             >
               Let us know if this person didn&apos;t show up or arrived very late
             </Typography>
           </Stack>
         )}
       </Box>
-    </Paper>
+    </Box>
   );
 }

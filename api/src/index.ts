@@ -8950,7 +8950,7 @@ async function checkChatAccess(
   userId: string,
 ): Promise<{ allowed: boolean; event?: Record<string, unknown>; reason?: string }> {
   const ev = (await sql`
-    SELECT id, host_user_id, status FROM newchums.events WHERE id = ${eventId}
+    SELECT id, host_user_id, status, starts_at FROM newchums.events WHERE id = ${eventId}
   `) as Array<Record<string, unknown>>;
   if (ev.length === 0) return { allowed: false, reason: "NOT_FOUND" };
   const event = ev[0];
@@ -9088,6 +9088,17 @@ app.post("/events/:id/chat", async (c) => {
     if (!access.allowed) {
       const status = access.reason === "NOT_FOUND" ? 404 : 403;
       return c.json({ ok: false, error: access.reason }, status);
+    }
+
+    // Reject messages if the plan's chat lock window (3 days after event start) has passed
+    if (access.event) {
+      const startsAt = access.event.starts_at as string | null;
+      if (startsAt) {
+        const lockAt = new Date(startsAt).getTime() + 3 * 24 * 60 * 60 * 1000;
+        if (Date.now() >= lockAt) {
+          return c.json({ ok: false, error: "CHAT_LOCKED", message: "Chat is locked for this plan" }, 403);
+        }
+      }
     }
 
     const inserted = (await sql`
@@ -9678,6 +9689,15 @@ app.get("/events/:id/feedback", async (c) => {
   const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
   const eventId = c.req.param("id");
 
+  // Check dismissal early — if the table doesn't exist yet, silently skip
+  try {
+    const dismissedRows = await sql`
+      SELECT 1 FROM newchums.plan_feedback_dismissals
+      WHERE plan_id = ${eventId} AND user_id = ${userId} LIMIT 1
+    `;
+    if (dismissedRows.length > 0) return c.json({ ok: true, dismissed: true, attendees: [], feedback: [], attendanceIssues: [], issuesAgainstMe: [] });
+  } catch { /* table may not exist yet */ }
+
   try {
     const ev = (await sql`
       SELECT host_user_id, starts_at, status FROM newchums.events WHERE id = ${eventId}
@@ -9803,6 +9823,29 @@ app.post("/events/:id/feedback", async (c) => {
     return c.json({ ok: true });
   } catch (err) {
     console.error("[POST /events/:id/feedback]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /events/:id/feedback/dismiss — permanently dismiss the feedback prompt for this plan */
+app.post("/events/:id/feedback/dismiss", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+  const eventId = c.req.param("id");
+
+  try {
+    await sql`
+      INSERT INTO newchums.plan_feedback_dismissals (plan_id, user_id)
+      VALUES (${eventId}, ${userId})
+      ON CONFLICT DO NOTHING
+    `;
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[POST /events/:id/feedback/dismiss]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });

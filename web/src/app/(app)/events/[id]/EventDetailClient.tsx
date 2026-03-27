@@ -1478,6 +1478,8 @@ export default function EventDetailClient() {
   const isCanceled = event.status === "canceled";
   const isPast = new Date(event.startsAt) < new Date();
   const isEditLocked = new Date(event.startsAt).getTime() + 60 * 60 * 1000 < Date.now();
+  const chatLockDate = new Date(new Date(event.startsAt).getTime() + 3 * 24 * 60 * 60 * 1000);
+  const isChatLocked = isPast && Date.now() >= chatLockDate.getTime();
 
   // Invitees who haven't RSVP'd yet (shown with "Invited" status in Who's in)
   const rsvpUserIds = new Set(rsvps.map((r) => r.userId));
@@ -2442,6 +2444,16 @@ export default function EventDetailClient() {
                 <InfoOutlinedIcon sx={{ fontSize: 20, color: "text.secondary" }} />
                 <Typography variant="h6" fontWeight={600}>You&apos;ve indicated you&apos;re not hosting</Typography>
               </Stack>
+            </Stack>
+          ) : isPast ? (
+            <Stack spacing={1.5} sx={{ py: 1 }}>
+              <Stack direction="row" alignItems="center" spacing={1}>
+                <InfoOutlinedIcon sx={{ fontSize: 20, color: "warning.main" }} />
+                <Typography variant="h6" fontWeight={600}>Hosting was not confirmed</Typography>
+              </Stack>
+              <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
+                This plan has already happened and hosting was not confirmed beforehand.
+              </Typography>
             </Stack>
           ) : (
             <Stack spacing={2} sx={{ py: 1 }}>
@@ -3457,9 +3469,17 @@ export default function EventDetailClient() {
               />
             )}
           </Stack>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.5, fontSize: "0.8125rem" }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: isPast && !isChatLocked ? 0.5 : 2, lineHeight: 1.5, fontSize: "0.8125rem" }}>
             Visible to current participants only. Be thoughtful about what you share.
           </Typography>
+          {isPast && !isChatLocked && (
+            <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mb: 2 }}>
+              <AccessTimeRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
+              <Typography variant="caption" color="text.disabled">
+                Chat locks on {chatLockDate.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}.
+              </Typography>
+            </Stack>
+          )}
 
           {/* Message list */}
           <Box
@@ -3528,34 +3548,43 @@ export default function EventDetailClient() {
             )}
           </Box>
 
-          {/* Composer */}
-          <Stack direction="row" spacing={1} alignItems="flex-end">
-            <TextField
-              fullWidth
-              size="small"
-              placeholder="Write a message…"
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value.slice(0, 2000))}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSendChat();
-                }
-              }}
-              multiline
-              maxRows={4}
-              disabled={chatSending}
-              sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
-            />
-            <IconButton
-              color="primary"
-              onClick={handleSendChat}
-              disabled={chatSending || !chatInput.trim()}
-              sx={{ flexShrink: 0 }}
-            >
-              {chatSending ? <CircularProgress size={20} /> : <SendRoundedIcon />}
-            </IconButton>
-          </Stack>
+          {/* Composer / lock notice */}
+          {isChatLocked ? (
+            <Stack direction="row" alignItems="center" spacing={1} sx={{ p: 1.5, bgcolor: "action.hover", borderRadius: 2 }}>
+              <LockRoundedIcon sx={{ fontSize: 18, color: "text.secondary" }} />
+              <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
+                This chat was locked 3 days after the plan took place.
+              </Typography>
+            </Stack>
+          ) : (
+            <Stack direction="row" spacing={1} alignItems="flex-end">
+                <TextField
+                  fullWidth
+                  size="small"
+                  placeholder="Write a message…"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value.slice(0, 2000))}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendChat();
+                    }
+                  }}
+                  multiline
+                  maxRows={4}
+                  disabled={chatSending}
+                  sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
+                />
+                <IconButton
+                  color="primary"
+                  onClick={handleSendChat}
+                  disabled={chatSending || !chatInput.trim()}
+                  sx={{ flexShrink: 0 }}
+                >
+                  {chatSending ? <CircularProgress size={20} /> : <SendRoundedIcon />}
+                </IconButton>
+              </Stack>
+          )}
         </AppCard>
       )}
 
