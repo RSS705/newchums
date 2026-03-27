@@ -35,6 +35,7 @@ import { apiFetch } from "@/lib/apiClient";
 type UserRow = {
   id: string;
   created_at: string | null;
+  last_active_at: string | null;
   email: string;
   username: string | null;
   name: string | null;
@@ -286,6 +287,9 @@ export default function AdminChumsClient() {
                     <TableCell sx={{ display: { xs: "none", md: "table-cell" } }}>
                       <Typography variant="body2" color="text.secondary">
                         {formatDate(row.created_at)}
+                      </Typography>
+                      <Typography variant="caption" color="text.disabled">
+                        Last login: {formatDate(row.last_active_at)}
                       </Typography>
                     </TableCell>
                     <TableCell>

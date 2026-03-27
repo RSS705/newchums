@@ -69,8 +69,7 @@ export default function CreateEventClient() {
   const [onlineLink, setOnlineLink] = useState("");
 
   const [visibility, setVisibility] = useState<"public" | "chums_only" | "invite_only">("public");
-  const [allowAltTimes, setAllowAltTimes] = useState(true);
-  const [altTimesMode, setAltTimesMode] = useState<"suggest" | "availability">("suggest");
+  const [schedulingMode, setSchedulingMode] = useState<"off" | "suggest" | "availability">("suggest");
   const [allowAttendeeInvites, setAllowAttendeeInvites] = useState(true);
   const [reserveSeats, setReserveSeats] = useState(false);
   const [requireReconfirmation, setRequireReconfirmation] = useState(true);
@@ -219,8 +218,8 @@ export default function CreateEventClient() {
       max_seats: maxSeats ? Number(maxSeats) : null,
       reserve_seats: maxSeats ? reserveSeats : false,
       visibility,
-      allow_alt_times: allowAltTimes,
-      alt_times_mode: allowAltTimes ? altTimesMode : "suggest",
+      allow_alt_times: schedulingMode !== "off",
+      alt_times_mode: schedulingMode === "availability" ? "availability" : "suggest",
       allow_attendee_invites: allowAttendeeInvites,
       require_reconfirmation: requireReconfirmation,
       require_approval: requireApproval,
@@ -546,27 +545,25 @@ export default function CreateEventClient() {
             </Box>
           </Stack>
 
-          <FormControlLabel
-            control={
-              <Switch
-                checked={allowAltTimes}
-                onChange={(e) => setAllowAltTimes(e.target.checked)}
-              />
-            }
-            label="Let people suggest alternate times"
-          />
-          {allowAltTimes && (
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={altTimesMode === "availability"}
-                  onChange={(e) => setAltTimesMode(e.target.checked ? "availability" : "suggest")}
-                />
-              }
-              label="Request attendees share their availability"
-              sx={{ ml: 3.5 }}
-            />
-          )}
+          <Box>
+            <Typography variant="subtitle1" fontWeight={600} sx={{ display: "block", mb: 0.625 }}>
+              Alternate times
+            </Typography>
+            <RadioGroup
+              value={schedulingMode}
+              onChange={(e) => setSchedulingMode(e.target.value as "off" | "suggest" | "availability")}
+            >
+              <FormControlLabel value="suggest" control={<Radio />} label="Allow suggestions" />
+              <Typography variant="caption" color="text.secondary" sx={{ ml: 4, mt: -0.5, mb: 0.5 }}>
+                People can suggest other times if the listed time doesn't work.
+              </Typography>
+              <FormControlLabel value="availability" control={<Radio />} label="Request availability" />
+              <Typography variant="caption" color="text.secondary" sx={{ ml: 4, mt: -0.5, mb: 0.5 }}>
+                Ask attendees to share when they're free so you can find the best time.
+              </Typography>
+              <FormControlLabel value="off" control={<Radio />} label="Off" />
+            </RadioGroup>
+          </Box>
         </Stack>
       </AppCard>
 

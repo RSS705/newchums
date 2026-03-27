@@ -3629,6 +3629,7 @@ app.post("/admin/interests/:id/restore", async (c) => {
 type AdminUserRow = {
   id: string;
   created_at: string | null;
+  last_active_at: string | null;
   email: string;
   username: string | null;
   name: string | null;
@@ -3648,7 +3649,7 @@ app.get("/admin/users", async (c) => {
 
     const rows = likePattern
       ? ((await sql`
-          SELECT id, created_at, email, username, name, role, is_suspended, suspended_at
+          SELECT id, created_at, last_active_at, email, username, name, role, is_suspended, suspended_at
           FROM users
           WHERE
             LOWER(email) LIKE ${likePattern}
@@ -3658,7 +3659,7 @@ app.get("/admin/users", async (c) => {
           ORDER BY created_at DESC NULLS LAST
         `) as AdminUserRow[])
       : ((await sql`
-          SELECT id, created_at, email, username, name, role, is_suspended, suspended_at
+          SELECT id, created_at, last_active_at, email, username, name, role, is_suspended, suspended_at
           FROM users
           ORDER BY created_at DESC NULLS LAST
         `) as AdminUserRow[]);
@@ -3769,9 +3770,9 @@ app.get("/admin/users/:id/diagnostics", async (c) => {
 
   try {
     const userRows = (await sql`
-      SELECT id, email, username, name, created_at, role, is_suspended
+      SELECT id, email, username, name, created_at, last_active_at, role, is_suspended
       FROM users WHERE id = ${userId} LIMIT 1
-    `) as { id: string; email: string; username: string | null; name: string | null; created_at: string; role: string | null; is_suspended: boolean }[];
+    `) as { id: string; email: string; username: string | null; name: string | null; created_at: string; last_active_at: string | null; role: string | null; is_suspended: boolean }[];
     if (userRows.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     const user = userRows[0];
 
@@ -3898,6 +3899,7 @@ app.get("/admin/users/:id/diagnostics", async (c) => {
         username: user.username,
         name: user.name,
         createdAt: user.created_at,
+        lastActiveAt: user.last_active_at,
         role: user.role,
         isSuspended: user.is_suspended,
       },

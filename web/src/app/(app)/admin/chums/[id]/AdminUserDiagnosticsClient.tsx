@@ -52,7 +52,7 @@ type AttendanceIssue = {
 };
 type ConductReport = { reason: string; count: number };
 type PrefData = { enabled: boolean; reliability: string; sociability: string; presentation: string; hosting: string; updatedAt: string } | null;
-type UserInfo = { id: string; email: string; username: string | null; name: string | null; createdAt: string; role: string | null; isSuspended: boolean };
+type UserInfo = { id: string; email: string; username: string | null; name: string | null; createdAt: string; lastActiveAt: string | null; role: string | null; isSuspended: boolean };
 type PlanStats = { plans_going: number; plans_hosted: number };
 
 type ObjectivesData = {
@@ -331,6 +331,10 @@ export default function AdminUserDiagnosticsClient() {
           <Box>
             <Typography variant="caption" color="text.secondary">Joined</Typography>
             <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1rem" }}>{formatDate(user.createdAt)}</Typography>
+          </Box>
+          <Box>
+            <Typography variant="caption" color="text.secondary">Last login</Typography>
+            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1rem" }}>{formatDate(user.lastActiveAt)}</Typography>
           </Box>
         </Stack>
       </Paper>

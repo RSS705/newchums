@@ -67,8 +67,7 @@ export default function EditEventClient() {
   const [timeValue, setTimeValue] = useState<Dayjs | null>(null);
   const [maxSeats, setMaxSeats] = useState("");
   const [visibility, setVisibility] = useState<"public" | "chums_only" | "invite_only">("public");
-  const [allowAltTimes, setAllowAltTimes] = useState(true);
-  const [altTimesMode, setAltTimesMode] = useState<"suggest" | "availability">("suggest");
+  const [schedulingMode, setSchedulingMode] = useState<"off" | "suggest" | "availability">("suggest");
   const [allowAttendeeInvites, setAllowAttendeeInvites] = useState(true);
   const [reserveSeats, setReserveSeats] = useState(false);
   const [requireReconfirmation, setRequireReconfirmation] = useState(false);
@@ -126,8 +125,11 @@ export default function EditEventClient() {
         setRequireReconfirmation(ev.requireReconfirmation ?? false);
         setRequireApproval(ev.requireApproval ?? false);
         setAllowAttendeeInvites(ev.allowAttendeeInvites !== false);
-        setAllowAltTimes(ev.allowAltTimes ?? false);
-        setAltTimesMode(ev.altTimesMode === "availability" ? "availability" : "suggest");
+        setSchedulingMode(
+          !(ev.allowAltTimes ?? false) ? "off"
+          : ev.altTimesMode === "availability" ? "availability"
+          : "suggest"
+        );
         setReserveSeats(ev.reserveSeats === true);
         setMinConfirmed(ev.minConfirmedAttendees != null ? String(ev.minConfirmedAttendees) : "");
         setFallbackPolicy(ev.fallbackPolicy ?? "notify_host");
@@ -230,8 +232,8 @@ export default function EditEventClient() {
           require_reconfirmation: requireReconfirmation,
           require_approval: requireApproval,
           allow_attendee_invites: allowAttendeeInvites,
-          allow_alt_times: allowAltTimes,
-          alt_times_mode: allowAltTimes ? altTimesMode : "suggest",
+          allow_alt_times: schedulingMode !== "off",
+          alt_times_mode: schedulingMode === "availability" ? "availability" : "suggest",
           min_confirmed_attendees: requireReconfirmation && minConfirmed ? Number(minConfirmed) : null,
           fallback_policy: requireReconfirmation ? fallbackPolicy : "notify_host",
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -509,24 +511,25 @@ export default function EditEventClient() {
               />
             </Box>
           </Stack>
-          <FormControlLabel
-            control={<Switch size="small" checked={allowAltTimes} onChange={(e) => setAllowAltTimes(e.target.checked)} />}
-            label={<Typography variant="body2" fontWeight={500}>Let people suggest alternate times</Typography>}
-            sx={{ alignItems: "center", mt: 0.5 }}
-          />
-          {allowAltTimes && (
-            <FormControlLabel
-              control={
-                <Switch
-                  size="small"
-                  checked={altTimesMode === "availability"}
-                  onChange={(e) => setAltTimesMode(e.target.checked ? "availability" : "suggest")}
-                />
-              }
-              label={<Typography variant="body2" fontWeight={500}>Request attendees share their availability</Typography>}
-              sx={{ ml: 3.5 }}
-            />
-          )}
+          <Box>
+            <Typography variant="body2" fontWeight={600} sx={{ display: "block", mb: 0.625 }}>
+              Alternate times
+            </Typography>
+            <RadioGroup
+              value={schedulingMode}
+              onChange={(e) => setSchedulingMode(e.target.value as "off" | "suggest" | "availability")}
+            >
+              <FormControlLabel value="suggest" control={<Radio size="small" />} label={<Typography variant="body2" fontWeight={500}>Allow suggestions</Typography>} />
+              <Typography variant="caption" color="text.secondary" sx={{ ml: 4, mt: -0.5, mb: 0.5 }}>
+                People can suggest other times if the listed time doesn't work.
+              </Typography>
+              <FormControlLabel value="availability" control={<Radio size="small" />} label={<Typography variant="body2" fontWeight={500}>Request availability</Typography>} />
+              <Typography variant="caption" color="text.secondary" sx={{ ml: 4, mt: -0.5, mb: 0.5 }}>
+                Ask attendees to share when they're free so you can find the best time.
+              </Typography>
+              <FormControlLabel value="off" control={<Radio size="small" />} label={<Typography variant="body2" fontWeight={500}>Off</Typography>} />
+            </RadioGroup>
+          </Box>
         </Stack>
       </AppCard>
 
