@@ -410,7 +410,9 @@ export default function EventDetailClient() {
         const parsed = JSON.parse(stored);
         if (parsed.token) inviteTokenRef.current = parsed.token;
       }
-    } catch { /* noop */ }
+    } catch {
+      /* noop */
+    }
   }, [eventId]);
 
   // Join request state
@@ -472,7 +474,11 @@ export default function EventDetailClient() {
       // If the API returned "public" despite having an invite token, the token is expired/invalid
       if (data.accessState === "public" && inviteTokenRef.current) {
         inviteTokenRef.current = null;
-        try { localStorage.removeItem(`nc_inv_${eventId}`); } catch { /* noop */ }
+        try {
+          localStorage.removeItem(`nc_inv_${eventId}`);
+        } catch {
+          /* noop */
+        }
       }
       applyEventData(data);
     } catch {
@@ -520,7 +526,11 @@ export default function EventDetailClient() {
     const confirmTokenParam = searchParams.get("confirm_token");
     if (inviteTokenParam) {
       inviteTokenRef.current = inviteTokenParam;
-      try { localStorage.setItem(`nc_inv_${eventId}`, JSON.stringify({ token: inviteTokenParam })); } catch { /* noop */ }
+      try {
+        localStorage.setItem(`nc_inv_${eventId}`, JSON.stringify({ token: inviteTokenParam }));
+      } catch {
+        /* noop */
+      }
     }
     if (shareTokenParam) shareTokenRef.current = shareTokenParam;
     if (rsvpParam && VALID_RSVP_PARAMS.includes(rsvpParam as (typeof VALID_RSVP_PARAMS)[number])) {
@@ -1820,14 +1830,17 @@ export default function EventDetailClient() {
   const guestRsvpStatus = emailRsvpStatus ?? event.guestRsvpStatus ?? null;
 
   // Show request-to-join CTA instead of RSVP buttons when approval is required,
-  // user is not the host, not invited, has no existing RSVP, and hasn't just RSVP'd via email token
+  // user is not the host, not invited, has no existing RSVP, and hasn't just RSVP'd via email token.
+  // Share-link visitors skip this — they use the public RSVP flow (email verification) instead.
   const showRequestToJoin =
     event.requireApproval &&
     !event.isHost &&
     !event.isInvited &&
     !event.hasRsvp &&
     !emailRsvpStatus &&
-    !isGuestInvite;
+    !isGuestInvite &&
+    !shareTokenRef.current &&
+    !participationTokenRef.current;
 
   const viewerRsvp = viewerUserId ? rsvps.find((r) => r.userId === viewerUserId) : null;
   const viewerRsvpStatus = viewerRsvp?.status ?? null;
@@ -1954,9 +1967,11 @@ export default function EventDetailClient() {
           )}
           {event.requireApproval && !isCanceled && (
             <Tooltip
-              title={isGuestInvite
-                ? "This plan requires approval, but you\u2019re invited \u2014 no approval needed."
-                : "The host must approve each person before they can join this plan."}
+              title={
+                isGuestInvite
+                  ? "This plan requires approval, but you\u2019re invited \u2014 no approval needed."
+                  : "The host must approve each person before they can join this plan."
+              }
               placement="top"
               arrow
             >
@@ -2125,7 +2140,9 @@ export default function EventDetailClient() {
             <Typography variant="body1">
               {goingCount} going{maybeCount > 0 ? `, ${maybeCount} maybe` : ""}
               {reservedSeatCount > 0 ? `, ${reservedSeatCount} reserved` : ""}
-              {event.maxSeats ? ` · ${event.maxSeats} seats` : ""}
+              {event.maxSeats
+                ? ` · ${Math.max(0, event.maxSeats - goingCount - reservedSeatCount)} seat${event.maxSeats - goingCount - reservedSeatCount === 1 ? "" : "s"} remaining`
+                : ""}
             </Typography>
           </Stack>
           {event.requireReconfirmation && !event.confirmationWindowOpen && (
@@ -3960,11 +3977,11 @@ export default function EventDetailClient() {
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                 {isAvailMode
                   ? canSuggest
-                    ? "The host wants to find a time that works for everyone. Share when you're available and the best overlap will be highlighted."
-                    : "The host wants to find a time that works for everyone. Join to share your availability."
+                    ? "The host wants to find a start time that works for everyone. Share when you're available and the best overlap will be highlighted."
+                    : "The host wants to find a start time that works for everyone. Join to share your availability."
                   : canSuggest
-                    ? "The host is open to alternative times for this plan. Suggest one below and everyone in the plan can see it."
-                    : "The host is open to alternative times for this plan. Join to suggest your own."}
+                    ? "The host is open to alternative start times for this plan. Suggest one below and everyone in the plan can see it."
+                    : "The host is open to alternative start times for this plan. Join to suggest your own."}
               </Typography>
 
               <Box ref={altTimeScrollRef} sx={{ maxHeight: 420, overflowY: "auto" }}>
@@ -4384,7 +4401,9 @@ export default function EventDetailClient() {
             {goingCount} going{maybeCount > 0 ? `, ${maybeCount} maybe` : ""}
             {declinedCount > 0 ? `, ${declinedCount} can\u2019t make it` : ""}
             {reservedSeatCount > 0 ? `, ${reservedSeatCount} invited` : ""}
-            {event.maxSeats ? ` · ${event.maxSeats} seats` : ""}
+            {event.maxSeats
+              ? ` · ${Math.max(0, event.maxSeats - goingCount - reservedSeatCount)} seat${event.maxSeats - goingCount - reservedSeatCount === 1 ? "" : "s"} remaining`
+              : ""}
             {event.confirmationWindowOpen && event.confirmedCount > 0
               ? ` · ${event.confirmedCount} confirmed`
               : ""}

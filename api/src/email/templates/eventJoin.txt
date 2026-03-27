@@ -1,0 +1,29 @@
+Someone is going to your plan
+
+Hey {{hostName}}, great news — someone just confirmed they're attending!
+
+---
+
+Plan: {{eventTitle}}
+{{#eventDate}}
+When: {{.}}
+{{/eventDate}}
+{{#eventLocation}}
+Where: {{.}}
+{{/eventLocation}}
+Going: {{attendeeName}}
+{{#attendeeMessage}}
+
+Their message: "{{.}}"
+{{/attendeeMessage}}
+
+---
+
+View your plan: {{eventUrl}}
+
+---
+
+You're receiving this because you host a plan on NewChums.
+{{#unsubscribeUrl}}Unsubscribe: {{.}}{{/unsubscribeUrl}}
+
+© {{year}} {{productName}}

@@ -1,0 +1,31 @@
+Heads up about a plan change
+
+Hey {{recipientName}}, the host of this plan has removed you from the attendee list. This can happen for a variety of reasons — no hard feelings.
+
+---
+
+Plan: {{eventTitle}}
+{{#eventDate}}
+When: {{.}}
+{{/eventDate}}
+{{#eventLocation}}
+Where: {{.}}
+{{/eventLocation}}
+Hosted by: {{hostName}}
+{{#removalReason}}
+
+Reason from the host: "{{.}}"
+{{/removalReason}}
+
+---
+
+Browse plans: https://newchums.com
+
+There are plenty of other plans to join. We hope to see you at the next one!
+
+---
+
+You're receiving this because you were part of a plan on NewChums.
+{{#unsubscribeUrl}}Unsubscribe: {{.}}{{/unsubscribeUrl}}
+
+© {{year}} {{productName}}

@@ -173,6 +173,7 @@ export const sendEventInviteEmail = async (
       eventUrl: viewUrl, goingUrl, maybeUrl, cantMakeItUrl,
       unsubscribeUrl: unsubscribeUrl || "",
       suggestTimeNote: suggestTimeNote || "",
+      year: new Date().getFullYear(),
     },
   });
 };
@@ -321,6 +322,7 @@ export const sendEventRsvpUpdateEmail = async (
 type HostRsvpEmailParams = {
   to: string; hostName: string; attendeeName: string;
   eventTitle: string; eventUrl: string; attendeeMessage?: string | null;
+  eventDate?: string; eventLocation?: string;
   unsubscribeUrl?: string;
 };
 
@@ -334,8 +336,10 @@ export const sendEventJoinEmail = async (
     TemplateModel: {
       productName: "NewChums", hostName: params.hostName, attendeeName: params.attendeeName,
       eventTitle: params.eventTitle, eventUrl: params.eventUrl,
+      eventDate: params.eventDate || "", eventLocation: params.eventLocation || "",
       attendeeMessage: params.attendeeMessage || "",
       unsubscribeUrl: params.unsubscribeUrl || "",
+      year: new Date().getFullYear(),
     },
   });
 };
@@ -350,8 +354,10 @@ export const sendEventLeaveEmail = async (
     TemplateModel: {
       productName: "NewChums", hostName: params.hostName, attendeeName: params.attendeeName,
       eventTitle: params.eventTitle, eventUrl: params.eventUrl,
+      eventDate: params.eventDate || "", eventLocation: params.eventLocation || "",
       attendeeMessage: params.attendeeMessage || "",
       unsubscribeUrl: params.unsubscribeUrl || "",
+      year: new Date().getFullYear(),
     },
   });
 };
@@ -366,8 +372,10 @@ export const sendEventMaybeEmail = async (
     TemplateModel: {
       productName: "NewChums", hostName: params.hostName, attendeeName: params.attendeeName,
       eventTitle: params.eventTitle, eventUrl: params.eventUrl,
+      eventDate: params.eventDate || "", eventLocation: params.eventLocation || "",
       attendeeMessage: params.attendeeMessage || "",
       unsubscribeUrl: params.unsubscribeUrl || "",
+      year: new Date().getFullYear(),
     },
   });
 };
@@ -378,16 +386,23 @@ export const sendEventMaybeEmail = async (
 
 export const sendAttendeeRemovedEmail = async (
   env: Bindings,
-  { to, recipientName, hostName, eventTitle, eventUrl, removalReason, unsubscribeUrl }: {
+  { to, recipientName, hostName, eventTitle, eventUrl, eventDate, eventLocation, removalReason, unsubscribeUrl }: {
     to: string; recipientName: string; hostName: string;
-    eventTitle: string; eventUrl: string; removalReason?: string | null; unsubscribeUrl?: string;
+    eventTitle: string; eventUrl: string;
+    eventDate?: string; eventLocation?: string;
+    removalReason?: string | null; unsubscribeUrl?: string;
   }
 ) => {
   if (!env.POSTMARK_TEMPLATE_ATTENDEE_REMOVED) return;
   return sendPostmarkTemplateEmail(env, {
     From: env.EMAIL_FROM, To: to,
     TemplateId: env.POSTMARK_TEMPLATE_ATTENDEE_REMOVED,
-    TemplateModel: { productName: "NewChums", recipientName, hostName, eventTitle, eventUrl, removalReason: removalReason || "", unsubscribeUrl: unsubscribeUrl || "" },
+    TemplateModel: {
+      productName: "NewChums", recipientName, hostName, eventTitle, eventUrl,
+      eventDate: eventDate || "", eventLocation: eventLocation || "",
+      removalReason: removalReason || "", unsubscribeUrl: unsubscribeUrl || "",
+      year: new Date().getFullYear(),
+    },
   });
 };
 
@@ -401,43 +416,58 @@ export const sendAttendeeRemovedEmail = async (
 
 export const sendJoinRequestEmail = async (
   env: Bindings,
-  { to, hostName, requesterName, eventTitle, requestMessage, eventUrl, unsubscribeUrl }: {
+  { to, hostName, requesterName, eventTitle, requestMessage, eventUrl, eventDate, eventLocation, unsubscribeUrl }: {
     to: string; hostName: string; requesterName: string;
-    eventTitle: string; requestMessage: string; eventUrl: string; unsubscribeUrl?: string;
+    eventTitle: string; requestMessage: string; eventUrl: string;
+    eventDate?: string; eventLocation?: string; unsubscribeUrl?: string;
   }
 ) => {
   return sendPostmarkTemplateEmail(env, {
     From: env.EMAIL_FROM, To: to,
     TemplateId: "43906440",
-    TemplateModel: { productName: "NewChums", hostName, requesterName, eventTitle, requestMessage, eventUrl, unsubscribeUrl: unsubscribeUrl || "" },
+    TemplateModel: {
+      productName: "NewChums", hostName, requesterName, eventTitle, requestMessage, eventUrl,
+      eventDate: eventDate || "", eventLocation: eventLocation || "",
+      unsubscribeUrl: unsubscribeUrl || "", year: new Date().getFullYear(),
+    },
   });
 };
 
 export const sendJoinRequestApprovedEmail = async (
   env: Bindings,
-  { to, recipientName, hostName, eventTitle, hostMessage, eventUrl, unsubscribeUrl }: {
+  { to, recipientName, hostName, eventTitle, hostMessage, eventUrl, eventDate, eventLocation, unsubscribeUrl }: {
     to: string; recipientName: string; hostName: string;
-    eventTitle: string; hostMessage: string | null; eventUrl: string; unsubscribeUrl?: string;
+    eventTitle: string; hostMessage: string | null; eventUrl: string;
+    eventDate?: string; eventLocation?: string; unsubscribeUrl?: string;
   }
 ) => {
   return sendPostmarkTemplateEmail(env, {
     From: env.EMAIL_FROM, To: to,
     TemplateId: "43906609",
-    TemplateModel: { productName: "NewChums", recipientName, hostName, eventTitle, hostMessage, eventUrl, unsubscribeUrl: unsubscribeUrl || "" },
+    TemplateModel: {
+      productName: "NewChums", recipientName, hostName, eventTitle, hostMessage, eventUrl,
+      eventDate: eventDate || "", eventLocation: eventLocation || "",
+      unsubscribeUrl: unsubscribeUrl || "", year: new Date().getFullYear(),
+    },
   });
 };
 
 export const sendJoinRequestDeclinedEmail = async (
   env: Bindings,
-  { to, recipientName, hostName, eventTitle, hostMessage, eventUrl, unsubscribeUrl }: {
+  { to, recipientName, hostName, eventTitle, hostMessage, eventUrl, eventDate, eventLocation, unsubscribeUrl }: {
     to: string; recipientName: string; hostName: string;
-    eventTitle: string; hostMessage: string | null; eventUrl: string; unsubscribeUrl?: string;
+    eventTitle: string; hostMessage: string | null; eventUrl: string;
+    eventDate?: string; eventLocation?: string; unsubscribeUrl?: string;
   }
 ) => {
   return sendPostmarkTemplateEmail(env, {
     From: env.EMAIL_FROM, To: to,
     TemplateId: "43906703",
-    TemplateModel: { productName: "NewChums", recipientName, hostName, eventTitle, hostMessage, eventUrl, unsubscribeUrl: unsubscribeUrl || "" },
+    TemplateModel: {
+      productName: "NewChums", recipientName, hostName, eventTitle, hostMessage, eventUrl,
+      eventDate: eventDate || "", eventLocation: eventLocation || "",
+      unsubscribeUrl: unsubscribeUrl || "", year: new Date().getFullYear(),
+    },
   });
 };
 

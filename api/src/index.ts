@@ -763,6 +763,13 @@ app.post("/auth/signup", async (c) => {
           `;
         }
       }
+
+      // Adopt orphaned guest records (RSVPs, invites, alt-times) for this email
+      try {
+        await sql`UPDATE newchums.event_rsvps SET user_id = ${newUserId}, guest_email = NULL, guest_name = NULL WHERE guest_email = ${normalizedEmail} AND user_id IS NULL`;
+        await sql`UPDATE newchums.event_invites SET user_id = ${newUserId} WHERE LOWER(email) = ${normalizedEmail} AND user_id IS NULL AND NOT EXISTS (SELECT 1 FROM newchums.event_invites i2 WHERE i2.event_id = event_invites.event_id AND i2.user_id = ${newUserId})`;
+        await sql`UPDATE newchums.event_alt_times SET user_id = ${newUserId}, guest_email = NULL WHERE guest_email = ${normalizedEmail} AND user_id IS NULL`;
+      } catch { /* non-fatal */ }
     }
     return c.json({ ok: true }, 201);
   } catch (err) {
@@ -6980,8 +6987,11 @@ app.get("/events/explore", async (c) => {
             SELECT 1 FROM newchums.community_members cm_viewer
             WHERE cm_viewer.community_id = e.community_id AND cm_viewer.user_id = ${userId} AND cm_viewer.status = 'active'
           ))
+          OR EXISTS (SELECT 1 FROM newchums.event_rsvps er_hid WHERE er_hid.event_id = e.id AND er_hid.user_id = ${userId})
         )
-        AND e.visibility != 'invite_only'
+        AND (e.visibility != 'invite_only'
+          OR EXISTS (SELECT 1 FROM newchums.event_rsvps er_inv WHERE er_inv.event_id = e.id AND er_inv.user_id = ${userId})
+        )
         AND (
           e.visibility = 'public'
           OR (e.visibility = 'chums_only' AND (
@@ -6992,10 +7002,15 @@ app.get("/events/explore", async (c) => {
                 AND uc_vis.linked_user_id = ${userId}
                 AND uc_vis.type = 'on_newchums'
             )
+            OR EXISTS (
+              SELECT 1 FROM newchums.event_rsvps er_vis
+              WHERE er_vis.event_id = e.id AND er_vis.user_id = ${userId}
+            )
           ))
         )
         AND (
           e.host_user_id = ${userId}
+          OR EXISTS (SELECT 1 FROM newchums.event_rsvps er_pref WHERE er_pref.event_id = e.id AND er_pref.user_id = ${userId})
           OR COALESCE(hp.enabled, true) = false
           OR (e.pref_overrides IS NOT NULL AND (e.pref_overrides->>'disabled')::boolean = true)
           OR (
@@ -7155,7 +7170,16 @@ app.get("/events/:id", async (c) => {
     if (decoded && decoded.eventId === eventId) {
       tokenGrantsAccess = true;
       tokenPurpose = decoded.purpose ?? null;
-      if (!userId && decoded.email) tokenGuestEmail = decoded.email.toLowerCase();
+      if (!userId) {
+        if (decoded.email) {
+          tokenGuestEmail = decoded.email.toLowerCase();
+        } else if (decoded.userId) {
+          // Invite token for a registered user opened while not logged in —
+          // resolve their email so the guest-invite path can identify them.
+          const tokenUserRows = (await sql`SELECT email FROM newchums.users WHERE id = ${decoded.userId} LIMIT 1`) as { email: string }[];
+          if (tokenUserRows[0]) tokenGuestEmail = tokenUserRows[0].email.toLowerCase();
+        }
+      }
     }
   } else if (shareTokenParam) {
     // Try short HMAC token first, then fall back to legacy JWT
@@ -7620,7 +7644,7 @@ app.post("/events/:id/rsvp", async (c) => {
   const note = body.note ? String(body.note).trim().slice(0, 500) : null;
 
   try {
-    const ev = (await sql`SELECT id, host_user_id, visibility, status, max_seats, title, locked_at, require_approval, reserve_seats, require_reconfirmation, confirmation_sent_at FROM newchums.events WHERE id = ${eventId} AND status = 'published'`) as { id: string; host_user_id: string; visibility: string; status: string; max_seats: number | null; title: string; locked_at: string | null; require_approval: boolean; reserve_seats: boolean; require_reconfirmation: boolean; confirmation_sent_at: string | null }[];
+    const ev = (await sql`SELECT id, host_user_id, visibility, status, max_seats, title, locked_at, require_approval, reserve_seats, require_reconfirmation, confirmation_sent_at, starts_at, timezone, location_type, location_name, location_address, online_link FROM newchums.events WHERE id = ${eventId} AND status = 'published'`) as { id: string; host_user_id: string; visibility: string; status: string; max_seats: number | null; title: string; locked_at: string | null; require_approval: boolean; reserve_seats: boolean; require_reconfirmation: boolean; confirmation_sent_at: string | null; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; online_link: string | null }[];
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     const event = ev[0];
 
@@ -7705,7 +7729,9 @@ app.post("/events/:id/rsvp", async (c) => {
         const hostName = hostUser[0].name?.trim() || hostUser[0].username?.replace(/^@/, "") || "there";
         const attendeeName = attendeeUser[0]?.name?.trim() || attendeeUser[0]?.username?.replace(/^@/, "") || "Someone";
         const eventUrl = `${c.env.WEB_BASE_URL}/events/${eventId}`;
-        const baseEmailArgs = { to: hostUser[0].email, hostName, attendeeName, eventTitle: event.title, eventUrl, attendeeMessage: note };
+        const rsvpEventDate = formatEventDate(event.starts_at, event.timezone || "UTC");
+        const rsvpEventLocation = event.location_type === "online" ? (event.online_link || "Online") : [event.location_name, event.location_address].filter(Boolean).join(", ") || "";
+        const baseEmailArgs = { to: hostUser[0].email, hostName, attendeeName, eventTitle: event.title, eventUrl, attendeeMessage: note, eventDate: rsvpEventDate, eventLocation: rsvpEventLocation };
 
         if (status === "going" && hostPrefs.items.host_join?.enabled !== false) {
           const unsubToken = await createUnsubscribeToken(c.env.NEXTAUTH_SECRET, event.host_user_id, "host_join");
@@ -7750,7 +7776,7 @@ app.post("/events/:id/email-rsvp", async (c) => {
   const sql = getSql(c.env);
 
   try {
-    const ev = (await sql`SELECT id, host_user_id, status, max_seats, title, locked_at, require_approval, reserve_seats, visibility FROM newchums.events WHERE id = ${eventId} AND status = 'published'`) as { id: string; host_user_id: string; status: string; max_seats: number | null; title: string; locked_at: string | null; require_approval: boolean; reserve_seats: boolean; visibility: string }[];
+    const ev = (await sql`SELECT id, host_user_id, status, max_seats, title, locked_at, require_approval, reserve_seats, visibility, starts_at, timezone, location_type, location_name, location_address, online_link FROM newchums.events WHERE id = ${eventId} AND status = 'published'`) as { id: string; host_user_id: string; status: string; max_seats: number | null; title: string; locked_at: string | null; require_approval: boolean; reserve_seats: boolean; visibility: string; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; online_link: string | null }[];
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     const event = ev[0];
 
@@ -7855,7 +7881,9 @@ app.post("/events/:id/email-rsvp", async (c) => {
         const hostPrefs = normalizeNotificationPrefs(hostProfileRows[0]?.notification_prefs);
         const hostName = hostUser[0].name?.trim() || hostUser[0].username?.replace(/^@/, "") || "there";
         const eventUrl = `${c.env.WEB_BASE_URL}/events/${eventId}`;
-        const emailArgs = { to: hostUser[0].email, hostName, attendeeName, eventTitle: event.title, eventUrl };
+        const emailRsvpDate = formatEventDate(event.starts_at, event.timezone || "UTC");
+        const emailRsvpLocation = event.location_type === "online" ? (event.online_link || "Online") : [event.location_name, event.location_address].filter(Boolean).join(", ") || "";
+        const emailArgs = { to: hostUser[0].email, hostName, attendeeName, eventTitle: event.title, eventUrl, eventDate: emailRsvpDate, eventLocation: emailRsvpLocation };
 
         if (status === "going" && hostPrefs.items.host_join?.enabled !== false) {
           await sendEventJoinEmail(c.env, emailArgs);
@@ -8717,7 +8745,7 @@ app.post("/events/:id/remove-attendee", async (c) => {
   const reason = body.reason ? String(body.reason).trim().slice(0, 500) : null;
 
   try {
-    const ev = (await sql`SELECT id, host_user_id, title, status, starts_at FROM newchums.events WHERE id = ${eventId}`) as { id: string; host_user_id: string; title: string; status: string; starts_at: string }[];
+    const ev = (await sql`SELECT id, host_user_id, title, status, starts_at, timezone, location_type, location_name, location_address, online_link FROM newchums.events WHERE id = ${eventId}`) as { id: string; host_user_id: string; title: string; status: string; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; online_link: string | null }[];
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     const event = ev[0];
 
@@ -8769,6 +8797,8 @@ app.post("/events/:id/remove-attendee", async (c) => {
             hostName: hostUser[0]?.name?.trim() || hostUser[0]?.username?.replace(/^@/, "") || "the host",
             eventTitle: event.title,
             eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
+            eventDate: formatEventDate(event.starts_at, event.timezone || "UTC"),
+            eventLocation: event.location_type === "online" ? (event.online_link || "Online") : [event.location_name, event.location_address].filter(Boolean).join(", ") || "",
             removalReason: reason,
             unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
           });
@@ -8840,6 +8870,8 @@ app.post("/events/:id/remove-invite", async (c) => {
             hostName: hostUser[0]?.name?.trim() || hostUser[0]?.username?.replace(/^@/, "") || "the host",
             eventTitle: event.title,
             eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
+            eventDate: formatEventDate(event.starts_at, event.timezone || "UTC"),
+            eventLocation: event.location_type === "online" ? (event.online_link || "Online") : [event.location_name, event.location_address].filter(Boolean).join(", ") || "",
             removalReason: reason,
             unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
           });
@@ -9299,9 +9331,9 @@ app.post("/events/:id/join-request", async (c) => {
 
   try {
     const ev = (await sql`
-      SELECT id, host_user_id, title, status, require_approval, locked_at, max_seats
+      SELECT id, host_user_id, title, status, require_approval, locked_at, max_seats, starts_at, timezone, location_type, location_name, location_address, online_link
       FROM newchums.events WHERE id = ${eventId}
-    `) as { id: string; host_user_id: string; title: string; status: string; require_approval: boolean; locked_at: string | null; max_seats: number | null }[];
+    `) as { id: string; host_user_id: string; title: string; status: string; require_approval: boolean; locked_at: string | null; max_seats: number | null; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; online_link: string | null }[];
     if (ev.length === 0 || ev[0].status !== "published")
       return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     const event = ev[0];
@@ -9362,6 +9394,8 @@ app.post("/events/:id/join-request", async (c) => {
             eventTitle: event.title,
             requestMessage: message || "",
             eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}?context=host_review`,
+            eventDate: formatEventDate(event.starts_at, event.timezone || "UTC"),
+            eventLocation: event.location_type === "online" ? (event.online_link || "Online") : [event.location_name, event.location_address].filter(Boolean).join(", ") || "",
             unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
           }).catch(() => {})
         );
@@ -9392,8 +9426,8 @@ app.post("/events/:id/join-request/:requestId/approve", async (c) => {
 
   try {
     const ev = (await sql`
-      SELECT id, host_user_id, title, max_seats FROM newchums.events WHERE id = ${eventId} AND status = 'published'
-    `) as { id: string; host_user_id: string; title: string; max_seats: number | null }[];
+      SELECT id, host_user_id, title, max_seats, starts_at, timezone, location_type, location_name, location_address, online_link FROM newchums.events WHERE id = ${eventId} AND status = 'published'
+    `) as { id: string; host_user_id: string; title: string; max_seats: number | null; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; online_link: string | null }[];
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     if (ev[0].host_user_id !== userId) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
 
@@ -9451,6 +9485,8 @@ app.post("/events/:id/join-request/:requestId/approve", async (c) => {
             eventTitle: ev[0].title,
             hostMessage,
             eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}?context=request_approved`,
+            eventDate: formatEventDate(ev[0].starts_at, ev[0].timezone || "UTC"),
+            eventLocation: ev[0].location_type === "online" ? (ev[0].online_link || "Online") : [ev[0].location_name, ev[0].location_address].filter(Boolean).join(", ") || "",
             unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
           }).catch(() => {})
         );
@@ -9481,8 +9517,8 @@ app.post("/events/:id/join-request/:requestId/decline", async (c) => {
 
   try {
     const ev = (await sql`
-      SELECT id, host_user_id, title FROM newchums.events WHERE id = ${eventId} AND status = 'published'
-    `) as { id: string; host_user_id: string; title: string }[];
+      SELECT id, host_user_id, title, starts_at, timezone, location_type, location_name, location_address, online_link FROM newchums.events WHERE id = ${eventId} AND status = 'published'
+    `) as { id: string; host_user_id: string; title: string; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; online_link: string | null }[];
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     if (ev[0].host_user_id !== userId) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
 
@@ -9526,6 +9562,8 @@ app.post("/events/:id/join-request/:requestId/decline", async (c) => {
             eventTitle: ev[0].title,
             hostMessage,
             eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
+            eventDate: formatEventDate(ev[0].starts_at, ev[0].timezone || "UTC"),
+            eventLocation: ev[0].location_type === "online" ? (ev[0].online_link || "Online") : [ev[0].location_name, ev[0].location_address].filter(Boolean).join(", ") || "",
             unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
           }).catch(() => {})
         );

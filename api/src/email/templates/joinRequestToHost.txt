@@ -1,0 +1,31 @@
+New join request
+
+Hey {{hostName}}, someone wants to join your plan.
+
+---
+
+Plan: {{eventTitle}}
+{{#eventDate}}
+When: {{.}}
+{{/eventDate}}
+{{#eventLocation}}
+Where: {{.}}
+{{/eventLocation}}
+Requested by: {{requesterName}}
+{{#requestMessage}}
+
+Their message: "{{.}}"
+{{/requestMessage}}
+
+---
+
+Review request: {{eventUrl}}
+
+You can approve or decline this request from the plan details page.
+
+---
+
+You're receiving this because you host a plan on NewChums.
+{{#unsubscribeUrl}}Unsubscribe: {{.}}{{/unsubscribeUrl}}
+
+© {{year}} {{productName}}

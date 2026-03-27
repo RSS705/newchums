@@ -2,13 +2,22 @@ You're in!
 
 Hey {{recipientName}}, great news, {{hostName}} approved your request to join their plan. You've been added as Going.
 
+---
+
 Plan: {{eventTitle}}
-
+{{#eventDate}}
+When: {{.}}
+{{/eventDate}}
+{{#eventLocation}}
+Where: {{.}}
+{{/eventLocation}}
 {{#hostMessage}}
-Message from the host:
-"{{.}}"
 
+Message from the host: "{{.}}"
 {{/hostMessage}}
+
+---
+
 View plan details: {{eventUrl}}
 
 Check the plan details page for time, location, and chat.
@@ -16,8 +25,6 @@ Check the plan details page for time, location, and chat.
 ---
 
 You're receiving this because you requested to join a plan on NewChums.
-{{#unsubscribeUrl}}
-Unsubscribe from this email notification: {{.}}
-{{/unsubscribeUrl}}
+{{#unsubscribeUrl}}Unsubscribe: {{.}}{{/unsubscribeUrl}}
 
-(c) {{productName}}
+© {{year}} {{productName}}

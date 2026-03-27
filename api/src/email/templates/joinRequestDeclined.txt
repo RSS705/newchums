@@ -2,13 +2,22 @@ Update on your request
 
 Hey {{recipientName}}, unfortunately {{hostName}} wasn't able to accept your request to join this time.
 
+---
+
 Plan: {{eventTitle}}
-
+{{#eventDate}}
+When: {{.}}
+{{/eventDate}}
+{{#eventLocation}}
+Where: {{.}}
+{{/eventLocation}}
 {{#hostMessage}}
-Message from the host:
-"{{.}}"
 
+Message from the host: "{{.}}"
 {{/hostMessage}}
+
+---
+
 Explore other plans: https://newchums.com
 
 There are plenty of other plans to discover. Keep exploring!
@@ -16,8 +25,6 @@ There are plenty of other plans to discover. Keep exploring!
 ---
 
 You're receiving this because you requested to join a plan on NewChums.
-{{#unsubscribeUrl}}
-Unsubscribe from this email notification: {{.}}
-{{/unsubscribeUrl}}
+{{#unsubscribeUrl}}Unsubscribe: {{.}}{{/unsubscribeUrl}}
 
-(c) {{productName}}
+© {{year}} {{productName}}
