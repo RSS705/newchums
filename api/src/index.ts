@@ -7007,6 +7007,10 @@ app.get("/events/explore", async (c) => {
               WHERE er_vis.event_id = e.id AND er_vis.user_id = ${userId}
             )
           ))
+          OR (e.visibility = 'invite_only' AND EXISTS (
+            SELECT 1 FROM newchums.event_rsvps er_inv2
+            WHERE er_inv2.event_id = e.id AND er_inv2.user_id = ${userId}
+          ))
         )
         AND (
           e.host_user_id = ${userId}
