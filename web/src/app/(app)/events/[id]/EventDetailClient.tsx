@@ -153,6 +153,7 @@ type AltTimeEntry = {
   suggestedAt: string;
   endsAt: string | null;
   note: string | null;
+  guestEmail?: string | null;
 };
 type InviteEntry = {
   userId: string | null;
@@ -401,6 +402,17 @@ export default function EventDetailClient() {
     }
   }, [eventId]);
 
+  // Restore invite token for this event from localStorage (survives page reloads)
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(`nc_inv_${eventId}`);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed.token) inviteTokenRef.current = parsed.token;
+      }
+    } catch { /* noop */ }
+  }, [eventId]);
+
   // Join request state
   const [joinRequests, setJoinRequests] = useState<JoinRequest[]>([]);
   const [joinRequestMessage, setJoinRequestMessage] = useState("");
@@ -457,6 +469,11 @@ export default function EventDetailClient() {
         return;
       }
       const data = await res.json();
+      // If the API returned "public" despite having an invite token, the token is expired/invalid
+      if (data.accessState === "public" && inviteTokenRef.current) {
+        inviteTokenRef.current = null;
+        try { localStorage.removeItem(`nc_inv_${eventId}`); } catch { /* noop */ }
+      }
       applyEventData(data);
     } catch {
       setError("Failed to load plan");
@@ -501,7 +518,10 @@ export default function EventDetailClient() {
     const contextParam = searchParams.get("context");
     const confirmParam = searchParams.get("confirm");
     const confirmTokenParam = searchParams.get("confirm_token");
-    if (inviteTokenParam) inviteTokenRef.current = inviteTokenParam;
+    if (inviteTokenParam) {
+      inviteTokenRef.current = inviteTokenParam;
+      try { localStorage.setItem(`nc_inv_${eventId}`, JSON.stringify({ token: inviteTokenParam })); } catch { /* noop */ }
+    }
     if (shareTokenParam) shareTokenRef.current = shareTokenParam;
     if (rsvpParam && VALID_RSVP_PARAMS.includes(rsvpParam as (typeof VALID_RSVP_PARAMS)[number])) {
       pendingRsvpRef.current = rsvpParam;
@@ -1734,7 +1754,9 @@ export default function EventDetailClient() {
                 Interested in this plan?
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-                Sign in or create a free account to RSVP, chat with attendees, and get updates.
+                {event.requireApproval
+                  ? "Sign in or create a free account to request to join this plan."
+                  : "Sign in or create a free account to RSVP, chat with attendees, and get updates."}
               </Typography>
               <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
                 <Button
@@ -1932,7 +1954,9 @@ export default function EventDetailClient() {
           )}
           {event.requireApproval && !isCanceled && (
             <Tooltip
-              title="The host must approve each person before they can join this plan."
+              title={isGuestInvite
+                ? "This plan requires approval, but you\u2019re invited \u2014 no approval needed."
+                : "The host must approve each person before they can join this plan."}
               placement="top"
               arrow
             >
@@ -3339,7 +3363,7 @@ export default function EventDetailClient() {
                     onClick={() => setShowInviteForm(true)}
                     sx={{ textTransform: "none" }}
                   >
-                    Add
+                    Send invite
                   </AppButton>
                 </Stack>
               </Stack>
@@ -3832,7 +3856,9 @@ export default function EventDetailClient() {
 
           const viewerHasSuggested = viewerUserId
             ? altTimes.some((e) => e.userId === viewerUserId)
-            : false;
+            : event.guestEmail
+              ? altTimes.some((e) => e.guestEmail === event.guestEmail)
+              : false;
 
           const byDay = altTimes.reduce<Record<string, AltTimeEntry[]>>((acc, entry) => {
             const dayKey = new Date(entry.suggestedAt).toDateString();

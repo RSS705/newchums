@@ -281,6 +281,40 @@ Visitors without an account can RSVP to **public** plans via a share link. The f
 
 **Email template:** Postmark template 44041128 (`POSTMARK_TEMPLATE_GUEST_VERIFY`). Variables: `code`, `planTitle`, `productName`.
 
+### Plan details viewer/access state model
+
+The `GET /events/:id` endpoint returns an `accessState` field that determines how the frontend renders the plan details page. There are four states:
+
+| State | Condition | Experience |
+|-------|-----------|------------|
+| `"public"` | No auth, no valid token | Limited preview: title, date, approximate location, attendance counts. CTA to sign in. |
+| `"invite"` | No auth, valid invite/participation/share token | Full plan details with RSVP buttons, availability tools, attendee list. |
+| `"authenticated"` | Logged in, not host, no RSVP | Full plan details with RSVP buttons. |
+| `"attending"` | Logged in, is host or has RSVP | Full plan details with host/attendee controls. |
+
+**Token types and persistence:**
+
+| Token | Purpose | Created when | Expiry | Stored in |
+|-------|---------|--------------|--------|-----------|
+| `invite_token` | `invite_rsvp` | Host invites someone | 30 days | `localStorage` as `nc_inv_{eventId}` |
+| `participation_token` | `public_rsvp` | Guest completes email verification | 30 days | `localStorage` as `nc_pub_{eventId}` |
+| `share_token` | Share link access | Deterministic HMAC per event | None | URL only (deterministic) |
+
+Invite and participation tokens are persisted in `localStorage` so that page reloads do not degrade the viewer's access state. When a token-backed API call returns `accessState: "public"` (indicating the token is expired/invalid), the localStorage entry is cleared.
+
+**Approval-required plans and invited guests:**
+- Invited guests (via `invite_token`) bypass the host-approval requirement. They can RSVP directly.
+- The frontend gates this via `isGuestInvite` (true when the API returns `guestInvite: true`).
+- The API also returns `isInvited: true` for token-based guest invitees (not just authenticated users).
+- The "Approval required" tooltip adjusts for invited guests to say "no approval needed."
+
+**Availability/alternate times for invited guests:**
+- Invited guests can suggest alternate times via `POST /events/:id/guest-alt-time` using their invite token.
+- Invite-token guests do not need to RSVP first to suggest times (unlike participation-token guests, who must RSVP first).
+- The `canSuggest` check includes `isGuestInvite` and `participationTokenRef`, ensuring the form renders for all token-backed viewers.
+
+> **Agent guidance:** Invite-token-backed viewers must be treated as a distinct state. Do not assume all non-authenticated viewers are generic public visitors. Any change to public plan details rendering should verify behavior across all four access states.
+
 ### Account deletion
 
 - **Endpoint:** `DELETE /account` (auth required).

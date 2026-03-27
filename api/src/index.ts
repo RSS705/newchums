@@ -7149,10 +7149,12 @@ app.get("/events/:id", async (c) => {
   const shareTokenParam = c.req.query("share_token") ?? null;
   let tokenGuestEmail: string | null = null;
   let tokenGrantsAccess = false;
+  let tokenPurpose: string | null = null;
   if (inviteTokenParam) {
     const decoded = await verifyParticipationOrInviteToken(inviteTokenParam, c.env.NEXTAUTH_SECRET);
     if (decoded && decoded.eventId === eventId) {
       tokenGrantsAccess = true;
+      tokenPurpose = decoded.purpose ?? null;
       if (!userId && decoded.email) tokenGuestEmail = decoded.email.toLowerCase();
     }
   } else if (shareTokenParam) {
@@ -7396,7 +7398,9 @@ app.get("/events/:id", async (c) => {
     // Check if current viewer is invited (needed by frontend for request-to-join gating)
     const isInvited = userId
       ? ((await sql`SELECT 1 FROM newchums.event_invites WHERE event_id = ${eventId} AND user_id = ${userId} LIMIT 1`) as unknown[]).length > 0
-      : false;
+      : (tokenGuestEmail && tokenPurpose === "invite_rsvp")
+        ? ((await sql`SELECT 1 FROM newchums.event_invites WHERE event_id = ${eventId} AND LOWER(email) = ${tokenGuestEmail} LIMIT 1`) as unknown[]).length > 0
+        : false;
 
     // Attendance assurance — confirmation state
     const requiresConfirmation = event.require_reconfirmation === true;
@@ -7562,6 +7566,7 @@ app.get("/events/:id", async (c) => {
           suggestedAt: a.suggested_at,
           endsAt: a.ends_at,
           note: a.note,
+          guestEmail: a.guest_email ?? null,
         };
       }),
       invites: invites.map((inv) => {
