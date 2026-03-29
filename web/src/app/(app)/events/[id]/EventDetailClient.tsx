@@ -735,7 +735,10 @@ export default function EventDetailClient() {
 
   // --- Chat helpers ---
   const [chatAccessible, setChatAccessible] = useState<boolean | null>(null);
-  const chatEligible = !!event && event.status !== "canceled" && (event.isHost || event.hasRsvp);
+  // Chat access: host or "going" RSVP only (API rejects maybe/cant_make_it)
+  const chatEligible = !!event && event.status !== "canceled" && (
+    event.isHost || (viewerUserId ? rsvps.some((r) => r.userId === viewerUserId && r.status === "going") : false)
+  );
   const wsRef = useRef<WebSocket | null>(null);
 
   const markChatRead = useCallback(async () => {

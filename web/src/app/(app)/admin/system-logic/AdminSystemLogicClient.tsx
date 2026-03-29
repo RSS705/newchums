@@ -131,6 +131,36 @@ export default function AdminSystemLogicClient() {
         </Bullet>
       </CollapsibleSection>
 
+      <CollapsibleSection title="Plan chat" subtitle="Who can use the group chat on a plan">
+        <Bullet>
+          <strong>Who can chat:</strong> The <strong>host</strong> and attendees with RSVP status <strong>Going</strong>.
+          People who RSVP&rsquo;d <strong>Maybe</strong> or <strong>Can&rsquo;t make it</strong> cannot access the chat.
+        </Bullet>
+        <Bullet>
+          <strong>Auto-lock:</strong> Chat automatically locks <strong>3 days</strong> after the plan&rsquo;s start time. Messages can still be
+          read but no new messages can be sent.
+        </Bullet>
+        <Bullet>
+          <strong>Canceled plans:</strong> Chat is hidden for canceled plans.
+        </Bullet>
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Plan auto-cancellation" subtitle="When plans are automatically canceled by the system">
+        <Bullet>
+          <strong>No attendees:</strong> If a published plan&rsquo;s start time passes and the host is the <strong>only Going
+          attendee</strong>, the plan is automatically canceled with reason &ldquo;no_attendees.&rdquo; No email is sent &mdash;
+          this is a silent cleanup for plans that effectively never happened.
+        </Bullet>
+        <Bullet>
+          <strong>Minimum not met (auto-cancel policy):</strong> If a plan has <strong>attendance confirmation</strong> enabled
+          with fallback policy <strong>auto-cancel</strong>, and the confirmed count is below the minimum at cutoff time, the plan
+          is canceled and all Going/Maybe attendees are notified by email.
+        </Bullet>
+        <Bullet>
+          <strong>Host cancellation:</strong> The host can cancel at any time from the plan page. All Going/Maybe attendees are notified.
+        </Bullet>
+      </CollapsibleSection>
+
       <CollapsibleSection title="Digest emails" subtitle="Background emails that batch things up—not the same as instant invites or edit notices">
         <Bullet>
           These run on a <strong>schedule in the background</strong> (same kind of timer that handles other housekeeping). They&rsquo;re not sent the
