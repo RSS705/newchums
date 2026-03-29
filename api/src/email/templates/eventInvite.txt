@@ -2,7 +2,9 @@ You've been invited to a plan
 
 Hey {{recipientName}}, {{hostName}} invited you to join their plan on NewChums.
 
----
+{{#customMessage}}Personal note: "{{.}}"
+
+{{/customMessage}}---
 
 Plan: {{eventTitle}}
 When: {{eventDate}}
@@ -34,4 +36,4 @@ Clicking a link above will take you to the plan page and record your response.
 You're receiving this because someone invited you to a plan on NewChums.
 {{#unsubscribeUrl}}Unsubscribe from invitation emails: {{.}}{{/unsubscribeUrl}}
 
-© {{productName}}
+© {{year}} {{productName}}

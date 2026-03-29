@@ -10,4 +10,4 @@ Explore NewChums: https://newchums.com
 
 ---
 You're receiving this because you requested to join a community on NewChums (https://newchums.com).
-© {{productName}}
+© {{year}} {{productName}}

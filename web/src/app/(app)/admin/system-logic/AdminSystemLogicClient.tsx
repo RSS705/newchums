@@ -180,6 +180,20 @@ export default function AdminSystemLogicClient() {
           <strong>Cooldown:</strong> We won&rsquo;t send you another round of the <em>same</em> digest type until about <strong>a day</strong> after the
           last one (each type tracks separately).
         </Bullet>
+
+        <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
+          Post-plan feedback email
+        </Typography>
+        <Bullet>
+          <strong>Who it&rsquo;s for:</strong> All <strong>going</strong> attendees and the <strong>host</strong>, for plans that ended <strong>3+ hours ago</strong>.
+        </Bullet>
+        <Bullet>
+          <strong>What triggers it:</strong> The hourly cron job finds published plans that ended 3+ hours ago and haven&rsquo;t had feedback emails sent yet.
+          Sent once per plan, up to 20 plans per run.
+        </Bullet>
+        <Bullet>
+          <strong>Extra gates:</strong> <strong>Feedback requests</strong> must be on in notification settings. Each email includes an unsubscribe link.
+        </Bullet>
       </CollapsibleSection>
 
       <CollapsibleSection title="Plan sharing and guest participation" subtitle="How share links and public access work">
@@ -214,6 +228,48 @@ export default function AdminSystemLogicClient() {
         <Bullet>
           <strong>Share links work for any plan:</strong> Share links carry a signed token, so they work for <strong>public</strong>, <strong>chums-only</strong>,
           and <strong>invite-only</strong> plans alike. Without a share or invite token, non-public plans show only the public preview.
+        </Bullet>
+        <Bullet>
+          <strong>Share link modal:</strong> The first time a user clicks <strong>Share plan link</strong>, a modal explains what
+          recipients can do (view, RSVP, share availability). A &ldquo;Don&rsquo;t show this again&rdquo; checkbox persists
+          the dismissal to the database (<code>share_link_modal_dismissed</code>). After dismissal, only a toast is shown.
+        </Bullet>
+        <Bullet>
+          <strong>Custom invite messages:</strong> When sending an invite, the inviter can include an optional personal note
+          (up to 500 characters). This appears in the invite email as a quoted message between the greeting and plan details.
+        </Bullet>
+        <Bullet>
+          <strong>Time flexibility in invites:</strong> When a plan has alt-times enabled, the invite email
+          <strong>automatically</strong> includes a note asking the recipient to share availability or suggest a time
+          (depending on the plan&rsquo;s alt-times mode). There is no manual toggle &mdash; it&rsquo;s determined by the
+          plan settings.
+        </Bullet>
+        <Bullet>
+          <strong>Availability deadline:</strong> When a plan uses <strong>Request availability</strong> mode, the host can
+          optionally set a deadline by which attendees should submit their availability. Shown in create/edit forms, plan details,
+          and invite emails. Must be before the plan start time. Automatically cleared when the mode changes away from availability.
+          Adding, changing, or removing the deadline triggers the normal plan-updated attendee notification.
+        </Bullet>
+        <Bullet>
+          <strong>Quick availability confirm:</strong> In <strong>Request availability</strong> mode, attendees see a
+          prominent &ldquo;This time works for me&rdquo; button to confirm the proposed plan time with one click. This creates
+          a standard availability entry matching the plan&rsquo;s start time (with note &ldquo;Proposed time works&rdquo;),
+          so it participates normally in overlap calculations. Works for both logged-in users and guest invitees.
+        </Bullet>
+        <Bullet>
+          <strong>Group response summary:</strong> In <strong>Request availability</strong> mode, a concise summary shows
+          which Going/Maybe attendees have responded and who is still pending. Responded attendees show a green check chip;
+          pending attendees show a dashed outline chip. Visible to all plan attendees.
+        </Bullet>
+        <Bullet>
+          <strong>Email deep-linking:</strong> Email CTAs that target a specific section of the plan page (e.g. feedback,
+          chat) include a <code>?section=</code> query param. The plan page scrolls to that section after loading.
+          If the section requires authentication and the user is logged out, a sign-in prompt is shown instead,
+          preserving the deep-link destination through the login flow.
+        </Bullet>
+        <Bullet>
+          <strong>Self-invite prevention:</strong> A user cannot invite their own email address. The invite form shows an inline
+          warning, and the API rejects the request with a <code>SELF_INVITE</code> error.
         </Bullet>
       </CollapsibleSection>
 

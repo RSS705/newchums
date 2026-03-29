@@ -10,4 +10,4 @@ You can now see plans, members, and everything the community has to offer.
 
 ---
 You're receiving this because you requested to join a community on NewChums (https://newchums.com).
-© {{productName}}
+© {{year}} {{productName}}

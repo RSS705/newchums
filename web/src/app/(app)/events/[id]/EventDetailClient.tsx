@@ -20,7 +20,7 @@ import FormControlLabel from "@mui/material/FormControlLabel";
 import InputAdornment from "@mui/material/InputAdornment";
 import Select from "@mui/material/Select";
 import MenuItem from "@mui/material/MenuItem";
-import Switch from "@mui/material/Switch";
+import Checkbox from "@mui/material/Checkbox";
 import Radio from "@mui/material/Radio";
 import RadioGroup from "@mui/material/RadioGroup";
 import Stack from "@mui/material/Stack";
@@ -99,6 +99,7 @@ type EventDetail = {
   status: string;
   allowAltTimes: boolean;
   altTimesMode?: string;
+  availabilityDeadlineAt?: string | null;
   allowAttendeeInvites: boolean;
   requireReconfirmation: boolean;
   canceledAt: string | null;
@@ -251,6 +252,7 @@ export default function EventDetailClient() {
   const [altTimes, setAltTimes] = useState<AltTimeEntry[]>([]);
   const [invites, setInvites] = useState<InviteEntry[]>([]);
   const [viewerUserId, setViewerUserId] = useState<string | null>(null);
+  const [viewerEmail, setViewerEmail] = useState<string | null>(null);
   const [prefNote, setPrefNote] = useState<string[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -307,6 +309,9 @@ export default function EventDetailClient() {
 
   // Share token from API response — used by Copy Link to build share-access URLs
   const [shareToken, setShareToken] = useState<string | null>(null);
+  const [shareLinkModalDismissed, setShareLinkModalDismissed] = useState(false);
+  const [shareLinkModalOpen, setShareLinkModalOpen] = useState(false);
+  const [shareLinkDontShowAgain, setShareLinkDontShowAgain] = useState(false);
 
   const [bannerFailed, setBannerFailed] = useState(false);
   const [bannerUseFallback, setBannerUseFallback] = useState(false);
@@ -335,11 +340,26 @@ export default function EventDetailClient() {
         document.execCommand("copy");
         document.body.removeChild(el);
       }
-      toast.success("Link copied to clipboard");
+      if (shareLinkModalDismissed) {
+        toast.success("Link copied to clipboard");
+      } else {
+        setShareLinkModalOpen(true);
+      }
     } catch {
       toast.error("Could not copy link — please copy it from your browser's address bar");
     }
-  }, [eventId, shareToken, toast]);
+  }, [eventId, shareToken, toast, shareLinkModalDismissed]);
+
+  const handleShareLinkModalClose = useCallback(async () => {
+    setShareLinkModalOpen(false);
+    if (shareLinkDontShowAgain) {
+      setShareLinkModalDismissed(true);
+      try {
+        await apiFetch("/share-link-modal-dismiss", { auth: true, method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
+      } catch { /* non-critical */ }
+    }
+    setShareLinkDontShowAgain(false);
+  }, [shareLinkDontShowAgain]);
 
   // Lock state
   const [lockToggling, setLockToggling] = useState(false);
@@ -431,6 +451,8 @@ export default function EventDetailClient() {
       shareToken?: string;
       prefNote?: string[] | null;
       viewerUserId?: string | null;
+      viewerEmail?: string | null;
+      shareLinkModalDismissed?: boolean;
       event: EventDetail;
       rsvps: RsvpEntry[];
       altTimes: AltTimeEntry[];
@@ -446,6 +468,8 @@ export default function EventDetailClient() {
       setInvites(data.invites ?? []);
       setJoinRequests(data.joinRequests ?? []);
       if (data.viewerUserId) setViewerUserId(data.viewerUserId);
+      if (data.viewerEmail) setViewerEmail(data.viewerEmail);
+      if (data.shareLinkModalDismissed != null) setShareLinkModalDismissed(data.shareLinkModalDismissed);
     },
     []
   );
@@ -514,6 +538,9 @@ export default function EventDetailClient() {
   // Email link context hint (?context=host_review or ?context=request_approved)
   const [emailContext, setEmailContext] = useState<string | null>(null);
 
+  // Deep-link to a section from email CTAs (?section=feedback|chat|availability|attendees)
+  const pendingSectionRef = useRef<string | null>(null);
+
   // Auto-RSVP from email link (?rsvp=going&invite_token=xxx)
   const pendingRsvpRef = useRef<string | null>(null);
   const pendingConfirmRef = useRef<{ action: string; token: string } | null>(null);
@@ -524,6 +551,7 @@ export default function EventDetailClient() {
     const contextParam = searchParams.get("context");
     const confirmParam = searchParams.get("confirm");
     const confirmTokenParam = searchParams.get("confirm_token");
+    const sectionParam = searchParams.get("section");
     if (inviteTokenParam) {
       inviteTokenRef.current = inviteTokenParam;
       try {
@@ -543,13 +571,15 @@ export default function EventDetailClient() {
       };
     }
     if (contextParam) setEmailContext(contextParam);
+    if (sectionParam) pendingSectionRef.current = sectionParam;
     if (
       rsvpParam ||
       inviteTokenParam ||
       shareTokenParam ||
       contextParam ||
       confirmParam ||
-      confirmTokenParam
+      confirmTokenParam ||
+      sectionParam
     ) {
       const url = new URL(window.location.href);
       url.searchParams.delete("rsvp");
@@ -558,9 +588,30 @@ export default function EventDetailClient() {
       url.searchParams.delete("context");
       url.searchParams.delete("confirm");
       url.searchParams.delete("confirm_token");
+      url.searchParams.delete("section");
       window.history.replaceState({}, "", url.pathname + url.search);
     }
   }, [searchParams]);
+
+  // Section deep-linking: scroll or show login nudge
+  const AUTH_REQUIRED_SECTIONS = ["feedback", "chat"];
+  const [sectionLoginNudge, setSectionLoginNudge] = useState<string | null>(null);
+  useEffect(() => {
+    if (!event || !pendingSectionRef.current) return;
+    const section = pendingSectionRef.current;
+    pendingSectionRef.current = null;
+    if (AUTH_REQUIRED_SECTIONS.includes(section) && isAuthenticated === false) {
+      setSectionLoginNudge(section);
+      return;
+    }
+    const sectionId = `plan-section-${section}`;
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 150);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [event, isAuthenticated]);
 
   useEffect(() => {
     if (!event || !pendingRsvpRef.current) return;
@@ -907,7 +958,7 @@ export default function EventDetailClient() {
     setLockToggling(false);
   };
 
-  const [suggestTime, setSuggestTime] = useState(false);
+  const [inviteMessage, setInviteMessage] = useState("");
 
   const handleInvite = async (userId?: string, email?: string) => {
     setInviteSubmitting(true);
@@ -919,13 +970,14 @@ export default function EventDetailClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           invitees: [{ user_id: userId ?? null, email: email ?? null }],
-          suggest_time: suggestTime || undefined,
+          message: inviteMessage || undefined,
         }),
       });
       const data = (await res.json()) as { ok: boolean; message?: string };
       if (data.ok) {
         toast.success("Invite sent!");
         setInviteSearch("");
+        setInviteMessage("");
         setSearchResults([]);
         setHasSearched(false);
         // Update the invited list locally without a full page reload
@@ -1320,6 +1372,42 @@ export default function EventDetailClient() {
       toast.error("Network error");
     }
     setApproveDeclineLoading(null);
+  };
+
+  const [quickConfirming, setQuickConfirming] = useState(false);
+
+  const handleQuickConfirm = async () => {
+    if (!event) return;
+    setQuickConfirming(true);
+    try {
+      const guestToken = inviteTokenRef.current ?? participationTokenRef.current;
+      const useGuestEndpoint = !viewerUserId && !!guestToken;
+      const tokenBody = inviteTokenRef.current
+        ? { invite_token: inviteTokenRef.current }
+        : { participation_token: participationTokenRef.current };
+      const res = useGuestEndpoint
+        ? await apiFetch(`/events/${eventId}/guest-alt-time`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...tokenBody, suggested_at: event.startsAt, note: "Proposed time works" }),
+          })
+        : await apiFetch(`/events/${eventId}/alt-time`, {
+            auth: true,
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ suggested_at: event.startsAt, note: "Proposed time works" }),
+          });
+      const data = (await res.json()) as { ok: boolean; message?: string };
+      if (data.ok) {
+        toast.success("Response recorded!");
+        refresh();
+      } else {
+        toast.error(data.message ?? "Error");
+      }
+    } catch {
+      toast.error("Network error");
+    }
+    setQuickConfirming(false);
   };
 
   const resetAltForm = () => {
@@ -1911,6 +1999,29 @@ export default function EventDetailClient() {
 
   return (
     <Stack spacing={{ xs: 3, sm: 4 }}>
+      {/* Login nudge for email deep-links that require authentication */}
+      {sectionLoginNudge && (
+        <Paper
+          variant="outlined"
+          sx={{ p: 2, borderRadius: 2, borderColor: "primary.light", bgcolor: "action.hover" }}
+        >
+          <Typography variant="body2" sx={{ mb: 1 }}>
+            {sectionLoginNudge === "feedback"
+              ? "Sign in to share how it went."
+              : sectionLoginNudge === "chat"
+                ? "Sign in to view plan chat."
+                : "Sign in to continue."}
+          </Typography>
+          <Button
+            variant="contained"
+            size="small"
+            onClick={() => router.push(`/login?next=${encodeURIComponent(`/events/${eventId}?section=${sectionLoginNudge}`)}`)}
+            sx={{ textTransform: "none" }}
+          >
+            Sign in
+          </Button>
+        </Paper>
+      )}
       {/* Banner */}
       {bannerUrl && (
         <Box
@@ -2094,7 +2205,11 @@ export default function EventDetailClient() {
       )}
 
       {/* Post-plan feedback — shown prominently for past attended plans */}
-      {isPast && !isCanceled && accessState === "attending" && <PlanFeedback eventId={event.id} />}
+      {isPast && !isCanceled && accessState === "attending" && (
+        <Box id="plan-section-feedback">
+          <PlanFeedback eventId={event.id} />
+        </Box>
+      )}
 
       {/* Details card */}
       <AppCard>
@@ -3414,25 +3529,20 @@ export default function EventDetailClient() {
                   Search by name, @handle, or email. Invite emails are sent immediately.
                 </Typography>
 
-                {event.allowAltTimes && (
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        size="small"
-                        checked={suggestTime}
-                        onChange={(e) => setSuggestTime(e.target.checked)}
-                      />
-                    }
-                    label={
-                      <Typography variant="body2" sx={{ fontSize: "0.8125rem" }}>
-                        {event.altTimesMode === "availability"
-                          ? "Ask them to share their availability"
-                          : "Ask them to suggest a better time"}
-                      </Typography>
-                    }
-                    sx={{ ml: -0.25, mb: -0.5 }}
-                  />
-                )}
+                <TextField
+                  fullWidth
+                  size="small"
+                  multiline
+                  minRows={2}
+                  maxRows={4}
+                  placeholder="Add a personal note (optional)"
+                  value={inviteMessage}
+                  onChange={(e) => {
+                    if (e.target.value.length <= 500) setInviteMessage(e.target.value);
+                  }}
+                  helperText={inviteMessage.length > 0 ? `${inviteMessage.length}/500` : undefined}
+                  sx={{ "& .MuiFormHelperText-root": { textAlign: "right" } }}
+                />
 
                 <TextField
                   fullWidth
@@ -3443,6 +3553,7 @@ export default function EventDetailClient() {
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && EMAIL_RE.test(inviteSearch.trim())) {
                       e.preventDefault();
+                      if (viewerEmail && inviteSearch.trim().toLowerCase() === viewerEmail) return;
                       handleInvite(undefined, inviteSearch.trim().toLowerCase());
                     }
                   }}
@@ -3565,10 +3676,19 @@ export default function EventDetailClient() {
                   </Stack>
                 )}
 
+                {EMAIL_RE.test(inviteSearch.trim()) &&
+                  viewerEmail &&
+                  inviteSearch.trim().toLowerCase() === viewerEmail && (
+                    <Typography variant="body2" color="warning.main" sx={{ py: 1 }}>
+                      That&rsquo;s your own email address
+                    </Typography>
+                  )}
+
                 {hasSearched &&
                   EMAIL_RE.test(inviteSearch.trim()) &&
                   searchResults.length === 0 &&
-                  !searching && (
+                  !searching &&
+                  !(viewerEmail && inviteSearch.trim().toLowerCase() === viewerEmail) && (
                     <Box
                       sx={{
                         display: "flex",
@@ -3625,7 +3745,7 @@ export default function EventDetailClient() {
                     setInviteSearch("");
                     setSearchResults([]);
                     setHasSearched(false);
-                    setSuggestTime(false);
+                    setInviteMessage("");
                   }}
                   sx={{ alignSelf: "flex-start", textTransform: "none" }}
                 >
@@ -3854,6 +3974,7 @@ export default function EventDetailClient() {
       )}
 
       {/* Scheduling section — collaborative alternate scheduling (hidden for past plans) */}
+      {event.allowAltTimes && <Box id="plan-section-availability" />}
       {event.allowAltTimes &&
         !isCanceled &&
         !isPast &&
@@ -3965,6 +4086,19 @@ export default function EventDetailClient() {
           const fmtDay = (d: Date) =>
             d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 
+          // --- Group response summary ---
+          // Derive who has responded: collect unique user IDs and guest emails from altTimes
+          const respondedUserIds = new Set(altTimes.filter((e) => e.userId).map((e) => e.userId));
+          const respondedGuestEmails = new Set(altTimes.filter((e) => e.guestEmail).map((e) => e.guestEmail!));
+          // Participants = going + maybe RSVPs (the people who should respond)
+          const participants = rsvps.filter((r) => r.status === "going" || r.status === "maybe");
+          const respondedParticipants = participants.filter((p) =>
+            p.isGuest ? (p.guestEmail ? respondedGuestEmails.has(p.guestEmail) : false) : respondedUserIds.has(p.userId)
+          );
+          const pendingParticipants = participants.filter((p) =>
+            p.isGuest ? (p.guestEmail ? !respondedGuestEmails.has(p.guestEmail) : true) : !respondedUserIds.has(p.userId)
+          );
+
           return (
             <AppCard>
               <Typography
@@ -3974,43 +4108,156 @@ export default function EventDetailClient() {
               >
                 {isAvailMode ? "Share your availability" : "Suggest a different time"}
               </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: isAvailMode && canSuggest ? 1.5 : 2 }}>
                 {isAvailMode
                   ? canSuggest
-                    ? "The host wants to find a start time that works for everyone. Share when you're available and the best overlap will be highlighted."
+                    ? "The host wants to find a time that works for everyone. Confirm the proposed time or share other times you're free."
                     : "The host wants to find a start time that works for everyone. Join to share your availability."
                   : canSuggest
                     ? "The host is open to alternative start times for this plan. Suggest one below and everyone in the plan can see it."
                     : "The host is open to alternative start times for this plan. Join to suggest your own."}
               </Typography>
 
+              {isAvailMode && event.availabilityDeadlineAt && (
+                <Typography
+                  variant="body2"
+                  sx={{
+                    mb: 1.5,
+                    px: 1.5,
+                    py: 1,
+                    borderRadius: 1.5,
+                    bgcolor: "warning.50",
+                    border: "1px solid",
+                    borderColor: "warning.200",
+                    color: "warning.dark",
+                    fontSize: "0.8125rem",
+                  }}
+                >
+                  Please share your availability by{" "}
+                  <strong>
+                    {new Date(event.availabilityDeadlineAt).toLocaleString(undefined, {
+                      weekday: "short",
+                      month: "short",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}
+                  </strong>
+                </Typography>
+              )}
+
+              {/* --- Your response status + quick actions (availability mode only) --- */}
+              {isAvailMode && canSuggest && (
+                <Paper
+                  variant="outlined"
+                  sx={{
+                    p: 2,
+                    mb: 2,
+                    borderRadius: 2,
+                    borderColor: viewerHasSuggested ? "success.light" : "warning.light",
+                    bgcolor: viewerHasSuggested ? "success.50" : "warning.50",
+                  }}
+                >
+                  <Stack spacing={1.5}>
+                    <Stack direction="row" alignItems="center" spacing={1}>
+                      {viewerHasSuggested ? (
+                        <CheckCircleRoundedIcon sx={{ fontSize: 20, color: "success.main" }} />
+                      ) : (
+                        <Box sx={{ width: 20, height: 20, borderRadius: "50%", border: "2px solid", borderColor: "warning.main", flexShrink: 0 }} />
+                      )}
+                      <Typography variant="body2" fontWeight={600}>
+                        {viewerHasSuggested ? "You've shared your availability" : "You haven't responded yet"}
+                      </Typography>
+                    </Stack>
+                    <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap" }}>
+                      {!viewerHasSuggested && (
+                        <Button
+                          variant="contained"
+                          size="small"
+                          color="success"
+                          disabled={quickConfirming}
+                          onClick={handleQuickConfirm}
+                          startIcon={<CheckCircleRoundedIcon sx={{ fontSize: 16 }} />}
+                          sx={{ textTransform: "none", fontWeight: 600 }}
+                        >
+                          {quickConfirming ? "Saving\u2026" : "This time works for me"}
+                        </Button>
+                      )}
+                      <Button
+                        size="small"
+                        variant={viewerHasSuggested ? "outlined" : "text"}
+                        onClick={() => {
+                          setAltEditingId(null);
+                          if (!altStartDate && event) {
+                            setAltStartDate(dayjs(event.startsAt));
+                            setAltStartTime(dayjs(event.startsAt));
+                          }
+                          setShowAltTimeForm(true);
+                        }}
+                        sx={{ textTransform: "none" }}
+                      >
+                        {viewerHasSuggested ? "+ Add more availability" : "Share other times"}
+                      </Button>
+                    </Stack>
+                  </Stack>
+                </Paper>
+              )}
+
+              {/* --- Quick confirm for suggest mode (non-availability) --- */}
+              {!isAvailMode && canSuggest && !showAltTimeForm && (
+                <Button
+                  size="small"
+                  onClick={() => {
+                    setAltEditingId(null);
+                    if (!altStartDate && event) {
+                      setAltStartDate(dayjs(event.startsAt));
+                      setAltStartTime(dayjs(event.startsAt));
+                    }
+                    setShowAltTimeForm(true);
+                  }}
+                  sx={{ textTransform: "none", mb: altTimes.length > 0 ? 2 : 0 }}
+                >
+                  {viewerHasSuggested ? "+ Suggest another time" : "+ Suggest a time"}
+                </Button>
+              )}
+
+              {/* --- Group response summary (availability mode, visible to all attendees) --- */}
+              {isAvailMode && participants.length > 0 && (
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.75, fontSize: "0.8125rem" }}>
+                    Responses ({respondedParticipants.length}/{participants.length})
+                  </Typography>
+                  <Stack direction="row" spacing={0.5} sx={{ flexWrap: "wrap", gap: 0.5 }}>
+                    {respondedParticipants.map((p) => (
+                      <Chip
+                        key={p.userId}
+                        label={p.name.split(" ")[0]}
+                        size="small"
+                        icon={<CheckCircleRoundedIcon sx={{ fontSize: "1rem !important" }} />}
+                        color="success"
+                        variant="outlined"
+                        sx={{ height: 26, fontSize: "0.75rem" }}
+                      />
+                    ))}
+                    {pendingParticipants.map((p) => (
+                      <Chip
+                        key={p.userId}
+                        label={p.name.split(" ")[0]}
+                        size="small"
+                        variant="outlined"
+                        sx={{ height: 26, fontSize: "0.75rem", opacity: 0.6, borderStyle: "dashed" }}
+                      />
+                    ))}
+                  </Stack>
+                </Box>
+              )}
+
               <Box ref={altTimeScrollRef} sx={{ maxHeight: 420, overflowY: "auto" }}>
-                {!canSuggest ? (
-                  altTimes.length === 0 ? (
-                    <Box sx={{ height: 4 }} />
-                  ) : null
-                ) : !showAltTimeForm ? (
-                  <Button
-                    size="small"
-                    onClick={() => {
-                      setAltEditingId(null);
-                      if (!altStartDate && event) {
-                        setAltStartDate(dayjs(event.startsAt));
-                        setAltStartTime(dayjs(event.startsAt));
-                      }
-                      setShowAltTimeForm(true);
-                    }}
-                    sx={{ textTransform: "none", mb: altTimes.length > 0 ? 2 : 0 }}
-                  >
-                    {isAvailMode
-                      ? viewerHasSuggested
-                        ? "+ Add more availability"
-                        : "+ Add your availability"
-                      : viewerHasSuggested
-                        ? "+ Suggest another time"
-                        : "+ Suggest a time"}
-                  </Button>
-                ) : (
+                {/* --- Non-suggest-mode empty state --- */}
+                {!canSuggest && altTimes.length === 0 && <Box sx={{ height: 4 }} />}
+
+                {/* --- Availability form (shared by both modes) --- */}
+                {showAltTimeForm && (
                   <Paper
                     variant="outlined"
                     sx={{ p: 2, mb: altTimes.length > 0 ? 2 : 0, borderRadius: 2 }}
@@ -4140,7 +4387,7 @@ export default function EventDetailClient() {
                           onClick={handleAltTimeSubmit}
                           disabled={altSubmitting}
                         >
-                          {altSubmitting ? "Saving…" : altEditingId ? "Save" : "Add"}
+                          {altSubmitting ? "Saving\u2026" : altEditingId ? "Save" : "Add"}
                         </AppButton>
                         <Button size="small" onClick={resetAltForm} sx={{ textTransform: "none" }}>
                           Cancel
@@ -4150,6 +4397,7 @@ export default function EventDetailClient() {
                   </Paper>
                 )}
 
+                {/* --- Best overlap --- */}
                 {allOverlaps.length > 0 && (
                   <Paper
                     variant="outlined"
@@ -4171,9 +4419,6 @@ export default function EventDetailClient() {
                     <Stack spacing={0} divider={<Divider />}>
                       {allOverlaps.map((ov, oi) => {
                         const ovStart = fmtTime(new Date(ov.startMs));
-                        // Only show end time when every entry in the overlap is a ranged suggestion.
-                        // A point entry (no endsAt) means that person only committed to a start time,
-                        // so the window end doesn't apply to them.
                         const allRanged = ov.entries.every((e) => !!e.endsAt);
                         const ovEnd = allRanged ? fmtTime(new Date(ov.endMs)) : null;
                         const isBest =
@@ -4196,10 +4441,10 @@ export default function EventDetailClient() {
                               >
                                 <Typography variant="body2" fontWeight={600} color="primary.main">
                                   {fmtDay(ov.date)}, {ovStart}
-                                  {ovEnd ? ` – ${ovEnd}` : ""}
+                                  {ovEnd ? ` \u2013 ${ovEnd}` : ""}
                                 </Typography>
                                 <Chip
-                                  label={`${ov.entries.length} overlap${isBest ? " — best fit" : ""}`}
+                                  label={`${ov.entries.length} overlap${isBest ? " \u2014 best fit" : ""}`}
                                   size="small"
                                   color={isBest ? "primary" : "default"}
                                   variant={isBest ? "filled" : "outlined"}
@@ -4230,6 +4475,7 @@ export default function EventDetailClient() {
                   </Paper>
                 )}
 
+                {/* --- Day-grouped entries --- */}
                 {dayGroups.length > 0 && (
                   <Stack spacing={1.5}>
                     {dayGroups.map((dg) => {
@@ -4273,7 +4519,7 @@ export default function EventDetailClient() {
                                     >
                                       <Typography variant="body2" color="text.primary">
                                         {entryStart}
-                                        {entryEnd ? ` – ${entryEnd}` : ""}
+                                        {entryEnd ? ` \u2013 ${entryEnd}` : ""}
                                       </Typography>
                                       <Typography variant="body2" color="text.disabled">
                                         &middot;
@@ -4348,10 +4594,6 @@ export default function EventDetailClient() {
                     })}
                   </Stack>
                 )}
-
-                {altTimes.length === 0 && !showAltTimeForm && canSuggest && (
-                  <Box sx={{ height: 4 }} />
-                )}
               </Box>
             </AppCard>
           );
@@ -4388,6 +4630,7 @@ export default function EventDetailClient() {
       </Dialog>
 
       {/* Who's in — combined RSVP + invite status */}
+      <Box id="plan-section-attendees" />
       {(rsvps.length > 0 || pendingInvites.length > 0) && (
         <AppCard>
           <Typography
@@ -4714,6 +4957,9 @@ export default function EventDetailClient() {
       )}
 
       {/* Plan Chat */}
+      {chatAccessible === true && !isCanceled && (
+        <Box id="plan-section-chat" />
+      )}
       {chatAccessible === true && !isCanceled && (
         <AppCard>
           <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
@@ -5131,6 +5377,45 @@ export default function EventDetailClient() {
               : rsvpDialogStatus === "maybe"
                 ? "Maybe"
                 : "Can\u2019t make it"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Share link first-use info modal */}
+      <Dialog open={shareLinkModalOpen} onClose={handleShareLinkModalClose} fullWidth maxWidth="xs">
+        <DialogTitle sx={{ fontWeight: 700 }}>Link copied!</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ mb: 1 }}>
+            Paste this link to share the plan. Anyone with it can:
+          </Typography>
+          <Box component="ul" sx={{ pl: 2.5, mb: 2, "& li": { mb: 0.5 } }}>
+            <Typography component="li" variant="body2">View the full plan details</Typography>
+            <Typography component="li" variant="body2">RSVP (Going, Maybe, or Can&rsquo;t make it)</Typography>
+            {event?.allowAltTimes && (
+              <Typography component="li" variant="body2">
+                {event.altTimesMode === "availability"
+                  ? "Share their availability"
+                  : "Suggest an alternative time"}
+              </Typography>
+            )}
+          </Box>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+            Recipients don&rsquo;t need a NewChums account to respond.
+          </Typography>
+          <FormControlLabel
+            control={
+              <Checkbox
+                size="small"
+                checked={shareLinkDontShowAgain}
+                onChange={(e) => setShareLinkDontShowAgain(e.target.checked)}
+              />
+            }
+            label={<Typography variant="body2">Don&rsquo;t show this again</Typography>}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleShareLinkModalClose} variant="contained" size="small">
+            Got it
           </Button>
         </DialogActions>
       </Dialog>

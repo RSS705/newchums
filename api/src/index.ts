@@ -4618,6 +4618,22 @@ app.put("/objectives/tutorial-off", async (c) => {
   }
 });
 
+/** PUT /share-link-modal-dismiss — permanently dismiss the share-link first-use info modal */
+app.put("/share-link-modal-dismiss", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  try {
+    const sql = getSql(c.env);
+    await sql`
+      UPDATE newchums.users SET share_link_modal_dismissed = true WHERE email = ${payload.email}
+    `;
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[PUT /share-link-modal-dismiss]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
 /** GET /admin/objectives/kpi — aggregate objective completion metrics (super admin) */
 app.get("/admin/objectives/kpi", async (c) => {
   const admin = await requireSuperAdmin(c);
@@ -6376,6 +6392,15 @@ app.post("/events", async (c) => {
 
   const allowAltTimes = body.allow_alt_times !== false;
   const altTimesMode = body.alt_times_mode === "availability" ? "availability" : "suggest";
+  let availabilityDeadlineAt: string | null = null;
+  if (altTimesMode === "availability" && body.availability_deadline_at) {
+    const dl = new Date(String(body.availability_deadline_at));
+    if (!isNaN(dl.getTime())) {
+      if (dl.getTime() >= startsDate.getTime())
+        return c.json({ ok: false, error: "VALIDATION", message: "Availability deadline must be before the plan start time", field: "availability_deadline_at" }, 400);
+      availabilityDeadlineAt = dl.toISOString();
+    }
+  }
   const allowAttendeeInvites = body.allow_attendee_invites !== false;
   const reserveSeats = body.reserve_seats === true;
   const requireReconfirmation = body.require_reconfirmation === true;
@@ -6505,13 +6530,13 @@ app.post("/events", async (c) => {
         host_user_id, title, description, interest_id, starts_at,
         location_type, location_name, location_address, location_place_id, location_lat, location_lng,
         location_visibility, location_area, online_link,
-        max_seats, visibility, status, allow_alt_times, alt_times_mode, allow_attendee_invites, reserve_seats, require_reconfirmation, require_approval, timezone,
+        max_seats, visibility, status, allow_alt_times, alt_times_mode, availability_deadline_at, allow_attendee_invites, reserve_seats, require_reconfirmation, require_approval, timezone,
         min_confirmed_attendees, fallback_policy, pref_overrides, community_id, hide_from_explore
       ) VALUES (
         ${userId}, ${title}, ${description}, ${interestId}, ${startsDate.toISOString()},
         ${locationType}, ${locationName}, ${locationAddress}, ${locationPlaceId}, ${locationLat}, ${locationLng},
         ${locationVisibility}, ${locationArea}, ${onlineLink},
-        ${maxSeats}, ${visibility}, ${status}, ${allowAltTimes}, ${altTimesMode}, ${allowAttendeeInvites}, ${reserveSeats}, ${requireReconfirmation}, ${requireApproval}, ${timezone},
+        ${maxSeats}, ${visibility}, ${status}, ${allowAltTimes}, ${altTimesMode}, ${availabilityDeadlineAt}, ${allowAttendeeInvites}, ${reserveSeats}, ${requireReconfirmation}, ${requireApproval}, ${timezone},
         ${minConfirmedAttendees}, ${fallbackPolicy}, ${prefOverrides ? JSON.stringify(prefOverrides) : null}, ${communityId}, ${hideFromExplore}
       )
       RETURNING id, created_at
@@ -7163,6 +7188,13 @@ app.get("/events/:id", async (c) => {
     userId = await ensureAppUserId(sql, authPayload.email, (authPayload as { name?: string | null }).name);
   }
 
+  // Fetch share-link modal dismissed flag for authenticated users
+  let shareLinkModalDismissed = false;
+  if (userId) {
+    const flagRows = (await sql`SELECT share_link_modal_dismissed FROM newchums.users WHERE id = ${userId} LIMIT 1`) as { share_link_modal_dismissed: boolean }[];
+    shareLinkModalDismissed = flagRows[0]?.share_link_modal_dismissed ?? false;
+  }
+
   // Token-based access for email invite recipients, public RSVP participants, or share-link visitors
   const inviteTokenParam = c.req.query("invite_token") ?? c.req.query("participation_token") ?? null;
   const shareTokenParam = c.req.query("share_token") ?? null;
@@ -7311,6 +7343,8 @@ app.get("/events/:id", async (c) => {
         ok: true,
         accessState: "public" as const,
         viewerUserId: null,
+        viewerEmail: null,
+        shareLinkModalDismissed: false,
         event: {
           id: event.id,
           title: event.title,
@@ -7331,6 +7365,7 @@ app.get("/events/:id", async (c) => {
           status: event.status,
           allowAltTimes: event.allow_alt_times,
           altTimesMode: event.alt_times_mode ?? "suggest",
+          availabilityDeadlineAt: (event.alt_times_mode === "availability" ? event.availability_deadline_at : null) ?? null,
           allowAttendeeInvites: false,
           requireReconfirmation: false,
           canceledAt: event.canceled_at,
@@ -7512,6 +7547,8 @@ app.get("/events/:id", async (c) => {
       shareToken,
       prefNote,
       viewerUserId: userId ?? null,
+      viewerEmail: authPayload?.email ? (authPayload.email as string).toLowerCase() : null,
+      shareLinkModalDismissed,
       event: {
         id: event.id,
         title: event.title,
@@ -7532,6 +7569,7 @@ app.get("/events/:id", async (c) => {
         status: event.status,
         allowAltTimes: event.allow_alt_times,
         altTimesMode: event.alt_times_mode ?? "suggest",
+        availabilityDeadlineAt: (event.alt_times_mode === "availability" ? event.availability_deadline_at : null) ?? null,
         allowAttendeeInvites: event.allow_attendee_invites !== false,
         requireReconfirmation: event.require_reconfirmation === true,
         canceledAt: event.canceled_at,
@@ -8503,9 +8541,9 @@ app.patch("/events/:id", async (c) => {
   try {
     const rows = (await sql`
       SELECT id, host_user_id, status, title, description, starts_at, timezone, max_seats, visibility,
-             require_reconfirmation, min_confirmed_attendees, fallback_policy
+             require_reconfirmation, min_confirmed_attendees, fallback_policy, alt_times_mode, availability_deadline_at
       FROM newchums.events WHERE id = ${eventId}
-    `) as { id: string; host_user_id: string; status: string; title: string; description: string | null; starts_at: string; timezone: string | null; max_seats: number | null; visibility: string; require_reconfirmation: boolean; min_confirmed_attendees: number | null; fallback_policy: string }[];
+    `) as { id: string; host_user_id: string; status: string; title: string; description: string | null; starts_at: string; timezone: string | null; max_seats: number | null; visibility: string; require_reconfirmation: boolean; min_confirmed_attendees: number | null; fallback_policy: string; alt_times_mode: string | null; availability_deadline_at: string | null }[];
     if (rows.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     if (rows[0].host_user_id !== userId) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
     if (rows[0].status === "canceled") return c.json({ ok: false, error: "VALIDATION", message: "Cannot edit a canceled plan" }, 400);
@@ -8535,6 +8573,24 @@ app.patch("/events/:id", async (c) => {
     const patchAllowAttendeeInvites = body.allow_attendee_invites != null ? body.allow_attendee_invites !== false : undefined;
     const patchAllowAltTimes = body.allow_alt_times != null ? body.allow_alt_times === true : undefined;
     const patchAltTimesMode = body.alt_times_mode === "suggest" || body.alt_times_mode === "availability" ? body.alt_times_mode : undefined;
+    // Availability deadline: only meaningful when mode is "availability"
+    const effectiveAltTimesMode = patchAltTimesMode ?? rows[0].alt_times_mode ?? "suggest";
+    let patchAvailabilityDeadlineAt: string | null | undefined = undefined;
+    if (effectiveAltTimesMode === "availability" && "availability_deadline_at" in body) {
+      if (body.availability_deadline_at) {
+        const dl = new Date(String(body.availability_deadline_at));
+        if (!isNaN(dl.getTime())) {
+          if (dl.getTime() >= startsAt.getTime())
+            return c.json({ ok: false, error: "VALIDATION", message: "Availability deadline must be before the plan start time", field: "availability_deadline_at" }, 400);
+          patchAvailabilityDeadlineAt = dl.toISOString();
+        }
+      } else {
+        patchAvailabilityDeadlineAt = null; // explicitly cleared
+      }
+    } else if (effectiveAltTimesMode !== "availability") {
+      // Clear deadline when mode is not availability
+      patchAvailabilityDeadlineAt = null;
+    }
     const patchReserveSeats = body.reserve_seats != null ? body.reserve_seats === true : undefined;
     const patchTimezone = body.timezone && typeof body.timezone === "string" ? body.timezone.trim().slice(0, 64) : null;
     const patchPrefOverrides = "pref_overrides" in body ? parsePrefOverrides(body.pref_overrides ?? null) : undefined;
@@ -8605,6 +8661,7 @@ app.patch("/events/:id", async (c) => {
           allow_attendee_invites   = COALESCE(${patchAllowAttendeeInvites ?? null}, allow_attendee_invites),
           allow_alt_times          = COALESCE(${patchAllowAltTimes ?? null}, allow_alt_times),
           alt_times_mode           = COALESCE(${patchAltTimesMode ?? null}, alt_times_mode),
+          availability_deadline_at = CASE WHEN ${patchAvailabilityDeadlineAt !== undefined} THEN ${patchAvailabilityDeadlineAt !== undefined ? patchAvailabilityDeadlineAt : null}::timestamptz ELSE availability_deadline_at END,
           reserve_seats            = COALESCE(${patchReserveSeats ?? null}, reserve_seats),
           timezone                 = COALESCE(${patchTimezone}, timezone),
           min_confirmed_attendees  = ${patchMinConfirmed},
@@ -8678,6 +8735,21 @@ app.patch("/events/:id", async (c) => {
         oldValue: FALLBACK_LABEL[before.fallback_policy ?? "notify_host"] ?? before.fallback_policy ?? "Notify host",
         newValue: FALLBACK_LABEL[patchFallbackPolicy] ?? patchFallbackPolicy,
       });
+
+    // Availability deadline change detection
+    if (patchAvailabilityDeadlineAt !== undefined) {
+      const oldDl = before.availability_deadline_at;
+      const newDl = patchAvailabilityDeadlineAt;
+      const oldDlTime = oldDl ? new Date(oldDl).getTime() : null;
+      const newDlTime = newDl ? new Date(newDl).getTime() : null;
+      if (oldDlTime !== newDlTime) {
+        changes.push({
+          fieldName: "Availability deadline",
+          oldValue: oldDl ? formatEventDate(oldDl, effectiveTz) : "None",
+          newValue: newDl ? formatEventDate(newDl, effectiveTz) : "None",
+        });
+      }
+    }
 
     console.log("[PATCH /events/:id] plan-change diff:", JSON.stringify({
       changesCount: changes.length,
@@ -8904,7 +8976,7 @@ app.post("/events/:id/invite", async (c) => {
   try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
 
   try {
-    const ev = (await sql`SELECT id, host_user_id, title, starts_at, status, timezone, location_type, location_name, location_address, online_link, allow_attendee_invites, allow_alt_times FROM newchums.events WHERE id = ${eventId}`) as { id: string; host_user_id: string; title: string; starts_at: string; status: string; timezone: string; location_type: string; location_name: string | null; location_address: string | null; online_link: string | null; allow_attendee_invites: boolean; allow_alt_times: boolean }[];
+    const ev = (await sql`SELECT id, host_user_id, title, starts_at, status, timezone, location_type, location_name, location_address, online_link, allow_attendee_invites, allow_alt_times, alt_times_mode, availability_deadline_at FROM newchums.events WHERE id = ${eventId}`) as { id: string; host_user_id: string; title: string; starts_at: string; status: string; timezone: string; location_type: string; location_name: string | null; location_address: string | null; online_link: string | null; allow_attendee_invites: boolean; allow_alt_times: boolean; alt_times_mode: string | null; availability_deadline_at: string | null }[];
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
 
     const isHost = ev[0].host_user_id === userId;
@@ -8916,24 +8988,39 @@ app.post("/events/:id/invite", async (c) => {
         return c.json({ ok: false, error: "FORBIDDEN", message: "Only Going attendees can invite others to this plan" }, 403);
     }
 
-    const suggestTime = body.suggest_time === true && ev[0].allow_alt_times;
     const inviteLocationDisplay = ev[0].location_type === "online"
       ? (ev[0].online_link || "Online")
       : buildLocationDisplay(ev[0].location_name, ev[0].location_address);
 
     const invitees = Array.isArray(body.invitees) ? (body.invitees as Array<{ user_id?: string; email?: string }>) : [];
+    const customMessage = typeof body.message === "string" ? body.message.slice(0, 500).trim() : "";
     let added = 0;
 
     const inviterUser = (await sql`SELECT name, username FROM newchums.users WHERE id = ${userId}`) as { name: string | null; username: string | null }[];
     const inviterName = inviterUser[0]?.name?.trim() || inviterUser[0]?.username?.replace(/^@/, "") || "Someone";
-    const suggestTimeNote = suggestTime
-      ? `${inviterName} would also like your input on finding a better time for this plan! Once you join, please suggest an alternative that works for you.`
-      : "";
+
+    let suggestTimeNote = "";
+    if (ev[0].allow_alt_times) {
+      if ((ev[0].alt_times_mode ?? "suggest") === "availability") {
+        const dlNote = ev[0].availability_deadline_at
+          ? ` Please share your availability by ${formatEventDate(ev[0].availability_deadline_at, ev[0].timezone)}.`
+          : "";
+        suggestTimeNote = `${inviterName} would also like you to share your availability for this plan! Once you join, please let them know when you're free.${dlNote}`;
+      } else {
+        suggestTimeNote = `${inviterName} would also like your input on finding a better time for this plan! Once you join, please suggest an alternative that works for you.`;
+      }
+    }
 
     for (const inv of invitees.slice(0, 50)) {
       const invUserId = inv.user_id ? String(inv.user_id) : null;
       const invEmail = inv.email ? String(inv.email).trim().toLowerCase() : null;
       if (!invUserId && !invEmail) continue;
+
+      // Self-invite guard
+      if (invEmail && invEmail === payload.email.toLowerCase())
+        return c.json({ ok: false, error: "SELF_INVITE", message: "You can't invite yourself" }, 400);
+      if (invUserId && invUserId === userId)
+        return c.json({ ok: false, error: "SELF_INVITE", message: "You can't invite yourself" }, 400);
 
       const result = (await sql`
         INSERT INTO newchums.event_invites (event_id, user_id, email, invited_by)
@@ -8969,6 +9056,7 @@ app.post("/events/:id/invite", async (c) => {
                     inviteToken: iToken,
                     unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
                     suggestTimeNote,
+                    customMessage,
                   });
                 } catch { /* noop */ }
               }
@@ -8986,6 +9074,7 @@ app.post("/events/:id/invite", async (c) => {
                 eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
                 inviteToken: iToken,
                 suggestTimeNote,
+                customMessage,
               });
             } catch { /* noop */ }
           }
@@ -11548,6 +11637,7 @@ async function processEventMatchDigest(
         'prefOverrides', e.pref_overrides
       ) ORDER BY m.starts_at) AS plans
     FROM matching m
+    JOIN newchums.events e ON e.id = m.event_id
     GROUP BY m.user_id, m.email, m.name, m.notification_prefs
   `) as {
     user_id: string;
@@ -11575,7 +11665,10 @@ async function processEventMatchDigest(
     }[];
   }[];
 
-  if (rows.length === 0) return;
+  if (rows.length === 0) {
+    console.log("[event-match-digest] eligible=0 (no matching user+plan pairs found)");
+    return;
+  }
 
   // ── Chum preference filtering for digest ────────────────────────────────────
   // Two-directional check:
@@ -11594,10 +11687,13 @@ async function processEventMatchDigest(
 
   const userIds: string[] = [];
   const emailPromises: Promise<unknown>[] = [];
+  let matchSkippedPref = 0;
+  let matchSkippedEmpty = 0;
+  let matchQueued = 0;
 
   for (const row of rows) {
     const prefs = normalizeNotificationPrefs(row.notification_prefs);
-    if (prefs.items.event_match?.enabled === false) continue;
+    if (prefs.items.event_match?.enabled === false) { matchSkippedPref++; continue; }
 
     let candidatePlans = Array.isArray(row.plans) ? row.plans : [];
 
@@ -11623,7 +11719,7 @@ async function processEventMatchDigest(
     });
 
     const plans = candidatePlans.slice(0, 10);
-    if (plans.length === 0) continue;
+    if (plans.length === 0) { matchSkippedEmpty++; continue; }
 
     const recipientName = row.name?.trim() || "there";
 
@@ -11686,11 +11782,14 @@ async function processEventMatchDigest(
       }),
     );
     userIds.push(row.user_id);
+    matchQueued++;
   }
 
   if (userIds.length > 0) {
     ctx.waitUntil(
-      Promise.allSettled(emailPromises).then(async () => {
+      Promise.allSettled(emailPromises).then(async (results) => {
+        const failed = results.filter((r) => r.status === "rejected").length;
+        if (failed > 0) console.error(`[event-match-digest] ${failed}/${results.length} email sends failed`);
         await sql`
           UPDATE newchums.user_profile
           SET event_digest_sent_at = NOW()
@@ -11699,6 +11798,8 @@ async function processEventMatchDigest(
       }),
     );
   }
+
+  console.log(`[event-match-digest] eligible=${rows.length} skippedPref=${matchSkippedPref} skippedEmpty=${matchSkippedEmpty} queued=${matchQueued}`);
 }
 
 // ─── Post-plan feedback email ─────────────────────────────────────────────────
@@ -11725,29 +11826,39 @@ async function processPlanFeedbackEmails(
 
   if (plans.length === 0) return;
 
+  let fbTotal = 0;
+  let fbSkippedPref = 0;
+  let fbQueued = 0;
+
   for (const plan of plans) {
     const tz = plan.timezone || "UTC";
     const planDate = formatEventDate(plan.starts_at, tz);
     const planLocation = plan.location_type === "online" ? (plan.online_link || "Online") : [plan.location_name, plan.location_address].filter(Boolean).join(", ") || "";
 
     const recipients = (await sql`
-      SELECT u.id, u.email, u.name
+      SELECT u.id, u.email, u.name, up.notification_prefs
       FROM newchums.event_rsvps er
       JOIN newchums.users u ON u.id = er.user_id
+      LEFT JOIN newchums.user_profile up ON up.user_id = u.id
       WHERE er.event_id = ${plan.id} AND er.status = 'going'
       UNION
-      SELECT u.id, u.email, u.name
+      SELECT u.id, u.email, u.name, up.notification_prefs
       FROM newchums.users u
+      LEFT JOIN newchums.user_profile up ON up.user_id = u.id
       WHERE u.id = ${plan.host_user_id}
-    `) as { id: string; email: string; name: string | null }[];
+    `) as { id: string; email: string; name: string | null; notification_prefs: unknown }[];
 
     const emailPromises: Promise<unknown>[] = [];
     for (const r of recipients) {
+      fbTotal++;
+      const prefs = normalizeNotificationPrefs(r.notification_prefs);
+      if (prefs.items.feedback_requests?.enabled === false) { fbSkippedPref++; continue; }
+
       const recipientName = r.name?.trim() || "there";
       let unsubscribeUrl = "";
       try {
         if (env.NEXTAUTH_SECRET) {
-          const token = await createUnsubscribeToken(env.NEXTAUTH_SECRET, r.id, "plan_feedback");
+          const token = await createUnsubscribeToken(env.NEXTAUTH_SECRET, r.id, "feedback_requests");
           unsubscribeUrl = `${env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(token)}`;
         }
       } catch { /* skip token on failure */ }
@@ -11757,16 +11868,19 @@ async function processPlanFeedbackEmails(
           to: r.email,
           recipientName,
           planTitle: plan.title,
-          planUrl: `${env.WEB_BASE_URL}/events/${plan.id}`,
+          planUrl: `${env.WEB_BASE_URL}/events/${plan.id}?section=feedback`,
           planDate,
           planLocation,
           unsubscribeUrl,
         }),
       );
+      fbQueued++;
     }
 
     ctx.waitUntil(
-      Promise.allSettled(emailPromises).then(async () => {
+      Promise.allSettled(emailPromises).then(async (results) => {
+        const failed = results.filter((r) => r.status === "rejected").length;
+        if (failed > 0) console.error(`[plan-feedback] ${failed}/${results.length} email sends failed for plan ${plan.id}`);
         await sql`
           UPDATE newchums.events
           SET feedback_email_sent_at = NOW()
@@ -11775,6 +11889,8 @@ async function processPlanFeedbackEmails(
       }),
     );
   }
+
+  console.log(`[plan-feedback] plans=${plans.length} recipients=${fbTotal} skippedPref=${fbSkippedPref} queued=${fbQueued}`);
 }
 
 // ─── Auto-cancel plans with no attendees ─────────────────────────────────────
@@ -11833,108 +11949,121 @@ async function handleScheduled(
     console.error("[scheduled] no-attendee cancel error:", err);
   }
 
-  // Find users with unread chat messages that arrived since their last digest
-  const rows = (await sql`
-    WITH participant AS (
-      SELECT er.user_id, er.event_id
-      FROM newchums.event_rsvps er WHERE er.status = 'going'
-      UNION
-      SELECT e.host_user_id AS user_id, e.id AS event_id
-      FROM newchums.events e WHERE e.status != 'canceled'
-    ),
-    unread AS (
+  // Unread chat digest
+  try {
+    const chatRows = (await sql`
+      WITH participant AS (
+        SELECT er.user_id, er.event_id
+        FROM newchums.event_rsvps er WHERE er.status = 'going'
+        UNION
+        SELECT e.host_user_id AS user_id, e.id AS event_id
+        FROM newchums.events e WHERE e.status != 'canceled'
+      ),
+      unread AS (
+        SELECT
+          p.user_id,
+          p.event_id,
+          e.title AS event_title,
+          COUNT(cm.id)::int AS unread_count
+        FROM participant p
+        JOIN newchums.event_chat_messages cm
+          ON cm.event_id = p.event_id
+          AND cm.user_id != p.user_id
+        JOIN newchums.events e
+          ON e.id = p.event_id AND e.status != 'canceled'
+        LEFT JOIN newchums.event_chat_reads cr
+          ON cr.event_id = p.event_id AND cr.user_id = p.user_id
+        LEFT JOIN newchums.user_profile up
+          ON up.user_id = p.user_id
+        WHERE cm.created_at > COALESCE(cr.last_read_at, '1970-01-01'::timestamptz)
+          AND cm.created_at > COALESCE(up.chat_digest_sent_at, '1970-01-01'::timestamptz)
+        GROUP BY p.user_id, p.event_id, e.title
+      )
       SELECT
-        p.user_id,
-        p.event_id,
-        e.title AS event_title,
-        COUNT(cm.id)::int AS unread_count
-      FROM participant p
-      JOIN newchums.event_chat_messages cm
-        ON cm.event_id = p.event_id
-        AND cm.user_id != p.user_id
-      JOIN newchums.events e
-        ON e.id = p.event_id AND e.status != 'canceled'
-      LEFT JOIN newchums.event_chat_reads cr
-        ON cr.event_id = p.event_id AND cr.user_id = p.user_id
-      LEFT JOIN newchums.user_profile up
-        ON up.user_id = p.user_id
-      WHERE cm.created_at > COALESCE(cr.last_read_at, '1970-01-01'::timestamptz)
-        AND cm.created_at > COALESCE(up.chat_digest_sent_at, '1970-01-01'::timestamptz)
-      GROUP BY p.user_id, p.event_id, e.title
-    )
-    SELECT
-      u.id AS user_id,
-      u.email,
-      u.name,
-      up.notification_prefs,
-      json_agg(json_build_object(
-        'eventId', unread.event_id,
-        'eventTitle', unread.event_title,
-        'unreadCount', unread.unread_count
-      ) ORDER BY unread.unread_count DESC) AS plans
-    FROM unread
-    JOIN newchums.users u ON u.id = unread.user_id
-    LEFT JOIN newchums.user_profile up ON up.user_id = u.id
-    WHERE (up.chat_digest_sent_at IS NULL OR up.chat_digest_sent_at < NOW() - INTERVAL '23 hours')
-    GROUP BY u.id, u.email, u.name, up.notification_prefs
-  `) as {
-    user_id: string;
-    email: string;
-    name: string | null;
-    notification_prefs: unknown;
-    plans: { eventId: string; eventTitle: string; unreadCount: number }[];
-  }[];
+        u.id AS user_id,
+        u.email,
+        u.name,
+        up.notification_prefs,
+        json_agg(json_build_object(
+          'eventId', unread.event_id,
+          'eventTitle', unread.event_title,
+          'unreadCount', unread.unread_count
+        ) ORDER BY unread.unread_count DESC) AS plans
+      FROM unread
+      JOIN newchums.users u ON u.id = unread.user_id
+      LEFT JOIN newchums.user_profile up ON up.user_id = u.id
+      WHERE (up.chat_digest_sent_at IS NULL OR up.chat_digest_sent_at < NOW() - INTERVAL '23 hours')
+      GROUP BY u.id, u.email, u.name, up.notification_prefs
+    `) as {
+      user_id: string;
+      email: string;
+      name: string | null;
+      notification_prefs: unknown;
+      plans: { eventId: string; eventTitle: string; unreadCount: number }[];
+    }[];
 
-  if (rows.length > 0) {
-    const userIds: string[] = [];
-    const emailPromises: Promise<unknown>[] = [];
+    let chatSkippedPref = 0;
+    let chatSkippedEmpty = 0;
+    let chatQueued = 0;
 
-    for (const row of rows) {
-      const prefs = normalizeNotificationPrefs(row.notification_prefs);
-      if (prefs.items.unread_chat_digest?.enabled === false) continue;
+    if (chatRows.length > 0) {
+      const userIds: string[] = [];
+      const emailPromises: Promise<unknown>[] = [];
 
-      const plans = (Array.isArray(row.plans) ? row.plans : []).slice(0, 10);
-      if (plans.length === 0) continue;
+      for (const row of chatRows) {
+        const prefs = normalizeNotificationPrefs(row.notification_prefs);
+        if (prefs.items.unread_chat_digest?.enabled === false) { chatSkippedPref++; continue; }
 
-      const recipientName = row.name?.trim() || "there";
+        const plans = (Array.isArray(row.plans) ? row.plans : []).slice(0, 10);
+        if (plans.length === 0) { chatSkippedEmpty++; continue; }
 
-      let unsubscribeUrl = "";
-      try {
-        if (env.NEXTAUTH_SECRET) {
-          const token = await createUnsubscribeToken(env.NEXTAUTH_SECRET, row.user_id, "unread_chat_digest");
-          unsubscribeUrl = `${env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(token)}`;
-        }
-      } catch { /* skip token on failure */ }
+        const recipientName = row.name?.trim() || "there";
 
-      emailPromises.push(
-        sendUnreadChatDigestEmail(env, {
-          to: row.email,
-          recipientName,
-          plans: plans.map((p) => ({
-            title: p.eventTitle,
-            unreadCount: p.unreadCount,
-            url: `${env.WEB_BASE_URL}/events/${p.eventId}`,
-          })),
-          unsubscribeUrl,
-        }),
-      );
-      userIds.push(row.user_id);
+        let unsubscribeUrl = "";
+        try {
+          if (env.NEXTAUTH_SECRET) {
+            const token = await createUnsubscribeToken(env.NEXTAUTH_SECRET, row.user_id, "unread_chat_digest");
+            unsubscribeUrl = `${env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(token)}`;
+          }
+        } catch { /* skip token on failure */ }
+
+        emailPromises.push(
+          sendUnreadChatDigestEmail(env, {
+            to: row.email,
+            recipientName,
+            plans: plans.map((p) => ({
+              title: p.eventTitle,
+              unreadCount: p.unreadCount,
+              url: `${env.WEB_BASE_URL}/events/${p.eventId}?section=chat`,
+            })),
+            unsubscribeUrl,
+          }),
+        );
+        userIds.push(row.user_id);
+        chatQueued++;
+      }
+
+      if (userIds.length > 0) {
+        ctx.waitUntil(
+          Promise.allSettled(emailPromises).then(async (results) => {
+            const failed = results.filter((r) => r.status === "rejected").length;
+            if (failed > 0) console.error(`[chat-digest] ${failed}/${results.length} email sends failed`);
+            await sql`
+              UPDATE newchums.user_profile
+              SET chat_digest_sent_at = NOW()
+              WHERE user_id = ANY(${userIds}::uuid[])
+            `;
+          }),
+        );
+      }
     }
 
-    if (userIds.length > 0) {
-      ctx.waitUntil(
-        Promise.allSettled(emailPromises).then(async () => {
-          await sql`
-            UPDATE newchums.user_profile
-            SET chat_digest_sent_at = NOW()
-            WHERE user_id = ANY(${userIds}::uuid[])
-          `;
-        }),
-      );
-    }
+    console.log(`[chat-digest] eligible=${chatRows.length} skippedPref=${chatSkippedPref} skippedEmpty=${chatSkippedEmpty} queued=${chatQueued}`);
+  } catch (err) {
+    console.error("[scheduled] chat digest error:", err);
   }
 
-  // Event match digest — public + chums_only plans: hobby overlap, radius, same gates; chums_only also requires recipient on host's Chum list
+  // Event match digest
   try {
     await processEventMatchDigest(sql, env, ctx);
   } catch (err) {

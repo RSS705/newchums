@@ -21,6 +21,6 @@ It only takes a few seconds and helps NewChums find better matches for you.
 ---
 
 You're receiving this because you attended a plan on NewChums.
-{{#unsubscribeUrl}}Unsubscribe: {{unsubscribeUrl}}{{/unsubscribeUrl}}
+{{#unsubscribeUrl}}Unsubscribe: {{.}}{{/unsubscribeUrl}}
 
 © {{year}} {{productName}}

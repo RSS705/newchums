@@ -1,0 +1,17 @@
+Your email is being changed
+
+Hey {{name}}, we wanted to let you know that a request was made to change the email address on your NewChums account.
+
+New email: {{newEmail}}
+
+Once the new email is confirmed, all future NewChums emails will be sent there instead of this address.
+
+---
+
+If you didn't request this change, please contact us at contact@newchums.com immediately.
+
+---
+
+This is an automated security notice from NewChums (https://newchums.com).
+
+© {{year}} {{productName}}

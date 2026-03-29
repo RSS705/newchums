@@ -313,6 +313,11 @@ Invite and participation tokens are persisted in `localStorage` so that page rel
 - Invite-token guests do not need to RSVP first to suggest times (unlike participation-token guests, who must RSVP first).
 - The `canSuggest` check includes `isGuestInvite` and `participationTokenRef`, ensuring the form renders for all token-backed viewers.
 
+**Email deep-linking (`?section=` query param):**
+- Email CTAs can include `?section=feedback`, `?section=chat`, `?section=availability`, or `?section=attendees` to scroll the plan page to a specific section.
+- The param is extracted on load, cleaned from the URL, and triggers `scrollIntoView` on a corresponding `id="plan-section-{name}"` anchor after event data renders.
+- If the section requires authentication (feedback, chat) and the user is logged out, a sign-in prompt is shown with a login redirect that preserves the section param.
+
 > **Agent guidance:** Invite-token-backed viewers must be treated as a distinct state. Do not assume all non-authenticated viewers are generic public visitors. Any change to public plan details rendering should verify behavior across all four access states.
 
 ### Account deletion
@@ -520,15 +525,16 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 
 | Route | Description |
 |-------|-------------|
-| `POST /events` | Create event. Validates title, starts_at, location_type, visibility. Accepts `invitees[]` array of `{ user_id?, email? }`, `require_reconfirmation`, `require_approval`, and `allow_attendee_invites` (default true) booleans. Published events send invite notifications and emails. |
+| `POST /events` | Create event. Validates title, starts_at, location_type, visibility. Accepts `invitees[]` array of `{ user_id?, email? }`, `require_reconfirmation`, `require_approval`, and `allow_attendee_invites` (default true) booleans. Optional `availability_deadline_at` (TIMESTAMPTZ, must be before `starts_at`) when `alt_times_mode = 'availability'`. Published events send invite notifications and emails. |
 | `GET /events/mine?filter=upcoming\|past` | List events the user hosts, is invited to, or has RSVP'd. Includes going/maybe counts, host info, RSVP status, `has_unread_chat` flag. Host name uses `@username` priority. |
 | `GET /events/:id` | Event detail with RSVP list, alternate time suggestions, join requests, and attendance assurance state. Optional auth. Accepts query params: `invite_token`, `participation_token`, `share_token`. Returns `accessState` (`public` \| `invite` \| `authenticated` \| `attending`) and `shareToken` (for non-public states). Public access returns limited preview (counts only, no individual RSVPs). Full response includes `requireReconfirmation`, `lockedAt`, `requireApproval`, `isInvited`, `hasRsvp`, `confirmationWindowOpen`, `confirmationCutoffAt`, `confirmedCount`, `pendingConfirmationCount`, `myConfirmationStatus`, `planViability`, and per-RSVP `confirmationStatus`. Join requests: full list for host, own request only for non-hosts. |
-| `PATCH /events/:id` | Edit event (host only). Accepts: `title`, `description`, `starts_at`, `max_seats`, `visibility`, `require_reconfirmation`, `require_approval`. Returns the updated event. |
+| `PATCH /events/:id` | Edit event (host only). Accepts: `title`, `description`, `starts_at`, `max_seats`, `visibility`, `require_reconfirmation`, `require_approval`, `availability_deadline_at`. Sends plan-changed notifications to Going/Maybe attendees when meaningful fields change (includes availability deadline add/change/remove). Automatically clears `availability_deadline_at` when mode switches away from availability. |
 | `POST /events/:id/rsvp` | RSVP to an event — `{ status: "going"\|"maybe"\|"cant_make_it", note? }`. Capacity enforcement for going status. Locked plans reject new RSVPs (`EVENT_LOCKED` error) but allow existing participants to change status. Plans with `require_approval` reject non-invited users who have no existing RSVP (`APPROVAL_REQUIRED` error). Notifies host via in-app notification and email. UI: "Can't make it" button only shown when user is invited or has an existing RSVP; heading text is context-aware ("Can you make it?" for invited users, "Are you in?" otherwise). |
 | `POST /events/:id/alt-time` | Suggest alternate time — `{ suggested_at, note? }`. Only if event.allow_alt_times. Notifies host. Auth required. |
 | `POST /events/:id/guest-alt-time` | Guest alternate time suggestion via invite token or participation token — `{ invite_token|participation_token, suggested_at, ends_at?, note? }`. No auth required. Validates token; invite tokens require an invite record, participation tokens require an existing RSVP. Enforces 10-suggestion limit per guest. Stores with `user_id = NULL, guest_email = ...` (migration 043). |
 | `POST /events/:id/cancel` | Cancel event (host only). Notifies all attendees via in-app notification and email. |
-| `POST /events/:id/invite` | Add invitees to published event. Host can always invite; Going attendees can invite when `allow_attendee_invites` is true. Accepts optional `suggest_time: true` to include a "suggest a better time" note in the invite email (only when `allow_alt_times` is enabled). `invited_by` column tracks who sent each invite. Sends notifications and invite emails with inviter's display name. |
+| `POST /events/:id/invite` | Add invitees to published event. Host can always invite; Going attendees can invite when `allow_attendee_invites` is true. Automatically includes a time-flexibility note in the invite email when `allow_alt_times` is enabled (wording varies by `alt_times_mode`: availability or suggest). Accepts optional `message` (string, max 500 chars) for a personal note included in the invite email. Rejects self-invites (invitee email matches inviter email) with `SELF_INVITE` error. `invited_by` column tracks who sent each invite. Sends notifications and invite emails with inviter's display name. |
+| `PUT /share-link-modal-dismiss` | Permanently dismiss the share-link first-use info modal for the authenticated user. Sets `share_link_modal_dismissed = true` on the user record. |
 | `POST /events/:id/toggle-attendee-invites` | Toggle `allow_attendee_invites` (host only). Returns updated value. |
 | `GET /events/explore/public` | Public discovery feed for anonymous visitors. No authentication required. Only returns `visibility = 'public'` events. Privacy-safe: approximate location only (`location_area`), no exact addresses, no online links, no user-specific fields (`isHost` always false, `myRsvpStatus` always null, no `distanceKm`). Supports: `time_range`, `q` (text search), `sort` (upcoming/newest), `limit`/`offset`. |
 | `GET /events/explore` | Personalized discovery feed for logged-in users. Supports: `lat`/`lng`/`radius_km` (location), `hobby` (slug), `time_range` (this_week/this_weekend/next_30/all), `q` (text search), `sort` (upcoming/newest), `personalize` (0/1 — hobby-based ranking boost). Applies visibility rules (public + chums_only for the user's chums). Distance computed via Haversine. Prioritizes host's own events, then hobby matches (when personalized), then distance/time. |
@@ -826,7 +832,7 @@ Users configure matching preferences in their profile ("Your chum preferences" s
 | `PUT /chum-preferences` | Save preference settings (upsert) |
 | `GET /admin/users/:id/diagnostics` | Super-admin: per-user metric scores, preferences, feedback history, attendance/conduct summaries |
 
-*Email:* Post-plan feedback reminder email sent ~3 hours after plan start time via the hourly cron handler. Uses Postmark template 44091936. One email per plan (tracked via `events.feedback_email_sent_at`). Sent to host + going RSVPs.
+*Email:* Post-plan feedback reminder email sent ~3 hours after plan start time via the hourly cron handler. Uses Postmark template 44091936. One email per plan (tracked via `events.feedback_email_sent_at`). Sent to host + going RSVPs. Gated on the `feedback_requests` notification preference (users can unsubscribe). Each email includes a one-click unsubscribe link keyed to `feedback_requests`.
 
 *UI:* Carousel-style "How did it go?" section appears on the plan detail page for past, non-canceled plans where the viewer is a participant. One-person-at-a-time stepper with progress dots, per-person feedback prompts, contextual attendance issue reporting, and separate conduct report dialog.
 
@@ -1147,6 +1153,8 @@ Core tables include:
 - `newchums.events.hide_from_explore` (migration 055) — `BOOLEAN NOT NULL DEFAULT false`. When true, the plan is hidden from the general Explore feed but visible in the community's plan feed.
 - `newchums.roadmap_items.attachment_key` (migration 056) — `TEXT NULL`. Stores R2 object key for optional roadmap item attachments.
 - `newchums.events.alt_times_mode` (migration 057) — `TEXT NOT NULL DEFAULT 'suggest'`. Host-controlled presentation mode for the alternate times feature: `'suggest'` (default, current behavior) or `'availability'` (collaborative scheduling framing). Same underlying `event_alt_times` engine; only attendee-facing copy differs.
+- `newchums.users.share_link_modal_dismissed` (migration 062) — `BOOLEAN NOT NULL DEFAULT false`; when true, the share-link first-use info modal is permanently dismissed for the user.
+- `newchums.events.availability_deadline_at` (migration 063) — `TIMESTAMPTZ NULL`. Optional deadline by which attendees should submit their availability when the plan uses "Request availability" mode (`alt_times_mode = 'availability'`). Must be before `starts_at`. Automatically cleared when the plan's mode changes away from availability.
 
 PostGIS is available for geo queries.
 

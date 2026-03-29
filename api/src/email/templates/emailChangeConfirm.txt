@@ -1,0 +1,15 @@
+Confirm your new email
+
+Hey {{name}}, you requested to change the email address on your NewChums account. Please confirm this new email by visiting the link below.
+
+Confirm new email: {{confirmUrl}}
+
+---
+
+If you didn't request this change, you can safely ignore this email. Your email address won't be updated.
+
+---
+
+This is an automated message from NewChums (https://newchums.com).
+
+© {{year}} {{productName}}

@@ -68,6 +68,8 @@ export default function EditEventClient() {
   const [maxSeats, setMaxSeats] = useState("");
   const [visibility, setVisibility] = useState<"public" | "chums_only" | "invite_only">("public");
   const [schedulingMode, setSchedulingMode] = useState<"off" | "suggest" | "availability">("suggest");
+  const [deadlineDate, setDeadlineDate] = useState<Dayjs | null>(null);
+  const [deadlineTime, setDeadlineTime] = useState<Dayjs | null>(null);
   const [allowAttendeeInvites, setAllowAttendeeInvites] = useState(true);
   const [reserveSeats, setReserveSeats] = useState(false);
   const [requireReconfirmation, setRequireReconfirmation] = useState(false);
@@ -130,6 +132,11 @@ export default function EditEventClient() {
           : ev.altTimesMode === "availability" ? "availability"
           : "suggest"
         );
+        if (ev.availabilityDeadlineAt) {
+          const dl = dayjs(ev.availabilityDeadlineAt);
+          setDeadlineDate(dl);
+          setDeadlineTime(dl);
+        }
         setReserveSeats(ev.reserveSeats === true);
         setMinConfirmed(ev.minConfirmedAttendees != null ? String(ev.minConfirmedAttendees) : "");
         setFallbackPolicy(ev.fallbackPolicy ?? "notify_host");
@@ -234,6 +241,9 @@ export default function EditEventClient() {
           allow_attendee_invites: allowAttendeeInvites,
           allow_alt_times: schedulingMode !== "off",
           alt_times_mode: schedulingMode === "availability" ? "availability" : "suggest",
+          availability_deadline_at: schedulingMode === "availability" && deadlineDate?.isValid() && deadlineTime?.isValid()
+            ? deadlineDate.hour(deadlineTime.hour()).minute(deadlineTime.minute()).second(0).toISOString()
+            : null,
           min_confirmed_attendees: requireReconfirmation && minConfirmed ? Number(minConfirmed) : null,
           fallback_policy: requireReconfirmation ? fallbackPolicy : "notify_host",
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -517,7 +527,11 @@ export default function EditEventClient() {
             </Typography>
             <RadioGroup
               value={schedulingMode}
-              onChange={(e) => setSchedulingMode(e.target.value as "off" | "suggest" | "availability")}
+              onChange={(e) => {
+                const mode = e.target.value as "off" | "suggest" | "availability";
+                setSchedulingMode(mode);
+                if (mode !== "availability") { setDeadlineDate(null); setDeadlineTime(null); }
+              }}
             >
               <FormControlLabel value="suggest" control={<Radio size="small" />} label={<Typography variant="body2" fontWeight={500}>Allow suggestions</Typography>} />
               <Typography variant="caption" color="text.secondary" sx={{ ml: 4, mt: -0.5, mb: 0.5 }}>
@@ -527,6 +541,26 @@ export default function EditEventClient() {
               <Typography variant="caption" color="text.secondary" sx={{ ml: 4, mt: -0.5, mb: 0.5 }}>
                 Ask attendees to share when they're free so you can find the best time.
               </Typography>
+              {schedulingMode === "availability" && (
+                <Box sx={{ ml: 4, mb: 1 }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.75 }}>
+                    Availability needed by (optional)
+                  </Typography>
+                  <Stack direction="row" spacing={1.5}>
+                    <DatePicker
+                      value={deadlineDate}
+                      onChange={setDeadlineDate}
+                      slotProps={{ textField: { size: "small", placeholder: "Date", sx: { flex: 1 } } }}
+                    />
+                    <TimePicker
+                      value={deadlineTime}
+                      onChange={setDeadlineTime}
+                      format="h:mm A"
+                      slotProps={{ textField: { size: "small", placeholder: "Time", sx: { flex: 1 } } }}
+                    />
+                  </Stack>
+                </Box>
+              )}
               <FormControlLabel value="off" control={<Radio size="small" />} label={<Typography variant="body2" fontWeight={500}>Off</Typography>} />
             </RadioGroup>
           </Box>

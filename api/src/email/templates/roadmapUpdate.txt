@@ -25,4 +25,4 @@ View on Roadmap: {{itemUrl}}
 You're receiving this because you follow this item on the NewChums Community Roadmap.
 {{#unsubscribeUrl}}Unsubscribe: {{.}}{{/unsubscribeUrl}}
 
-© 2026 {{productName}}
+© {{year}} {{productName}}

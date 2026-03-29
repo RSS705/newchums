@@ -70,6 +70,8 @@ export default function CreateEventClient() {
 
   const [visibility, setVisibility] = useState<"public" | "chums_only" | "invite_only">("public");
   const [schedulingMode, setSchedulingMode] = useState<"off" | "suggest" | "availability">("suggest");
+  const [deadlineDate, setDeadlineDate] = useState<Dayjs | null>(null);
+  const [deadlineTime, setDeadlineTime] = useState<Dayjs | null>(null);
   const [allowAttendeeInvites, setAllowAttendeeInvites] = useState(true);
   const [reserveSeats, setReserveSeats] = useState(false);
   const [requireReconfirmation, setRequireReconfirmation] = useState(true);
@@ -220,6 +222,9 @@ export default function CreateEventClient() {
       visibility,
       allow_alt_times: schedulingMode !== "off",
       alt_times_mode: schedulingMode === "availability" ? "availability" : "suggest",
+      availability_deadline_at: schedulingMode === "availability" && deadlineDate?.isValid() && deadlineTime?.isValid()
+        ? deadlineDate.hour(deadlineTime.hour()).minute(deadlineTime.minute()).second(0).toISOString()
+        : null,
       allow_attendee_invites: allowAttendeeInvites,
       require_reconfirmation: requireReconfirmation,
       require_approval: requireApproval,
@@ -551,7 +556,11 @@ export default function CreateEventClient() {
             </Typography>
             <RadioGroup
               value={schedulingMode}
-              onChange={(e) => setSchedulingMode(e.target.value as "off" | "suggest" | "availability")}
+              onChange={(e) => {
+                const mode = e.target.value as "off" | "suggest" | "availability";
+                setSchedulingMode(mode);
+                if (mode !== "availability") { setDeadlineDate(null); setDeadlineTime(null); }
+              }}
             >
               <FormControlLabel value="suggest" control={<Radio />} label="Allow suggestions" />
               <Typography variant="caption" color="text.secondary" sx={{ ml: 4, mt: -0.5, mb: 0.5 }}>
@@ -561,6 +570,27 @@ export default function CreateEventClient() {
               <Typography variant="caption" color="text.secondary" sx={{ ml: 4, mt: -0.5, mb: 0.5 }}>
                 Ask attendees to share when they're free so you can find the best time.
               </Typography>
+              {schedulingMode === "availability" && (
+                <Box sx={{ ml: 4, mb: 1 }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.75 }}>
+                    Availability needed by (optional)
+                  </Typography>
+                  <Stack direction="row" spacing={1.5}>
+                    <DatePicker
+                      value={deadlineDate}
+                      onChange={setDeadlineDate}
+                      minDate={dayjs()}
+                      slotProps={{ textField: { size: "small", placeholder: "Date", sx: { flex: 1 } } }}
+                    />
+                    <TimePicker
+                      value={deadlineTime}
+                      onChange={setDeadlineTime}
+                      format="h:mm A"
+                      slotProps={{ textField: { size: "small", placeholder: "Time", sx: { flex: 1 } } }}
+                    />
+                  </Stack>
+                </Box>
+              )}
               <FormControlLabel value="off" control={<Radio />} label="Off" />
             </RadioGroup>
           </Box>

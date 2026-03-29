@@ -23,4 +23,4 @@ Review our Terms of Use: https://newchums.com/terms
 
 You're receiving this because you hosted a plan on NewChums.
 
-© {{productName}}
+© {{year}} {{productName}}

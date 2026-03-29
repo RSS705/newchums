@@ -14,4 +14,4 @@ If you didn't request this code, you can safely ignore this email.
 
 This is an automated message from NewChums (https://newchums.com).
 
-© {{productName}}
+© {{year}} {{productName}}

@@ -15,4 +15,4 @@ Click a link above to open the plan and read your messages.
 You're receiving this because you have unread chat messages in plans on NewChums.
 {{#unsubscribeUrl}}Unsubscribe from this email notification: {{.}}{{/unsubscribeUrl}}
 
-© {{productName}}
+© {{year}} {{productName}}
