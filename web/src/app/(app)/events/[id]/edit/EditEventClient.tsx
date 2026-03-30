@@ -32,7 +32,9 @@ import { useParams, useRouter } from "next/navigation";
 import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
 import { apiFetch, getApiBaseUrl, getAvatarBaseUrl, getImageFallbackBaseUrl } from "@/lib/apiClient";
 import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
+import ListItemText from "@mui/material/ListItemText";
 import HobbyPickerField, { type HobbyOption } from "@/components/common/HobbyPickerField";
+import PlacesAutocompleteInput from "@/components/common/PlacesAutocompleteInput";
 
 type PrefOverrides = {
   disabled?: boolean;
@@ -78,6 +80,17 @@ export default function EditEventClient() {
   const [fallbackPolicy, setFallbackPolicy] = useState<"notify_host" | "proceed" | "auto_cancel">("notify_host");
 
   const [hobbies, setHobbies] = useState<HobbyOption[]>([]);
+
+  // Location
+  const [locationType, setLocationType] = useState<"in_person" | "online">("in_person");
+  const [locationName, setLocationName] = useState("");
+  const [locationAddress, setLocationAddress] = useState("");
+  const [locationPlaceId, setLocationPlaceId] = useState<string | null>(null);
+  const [locationLat, setLocationLat] = useState<number | null>(null);
+  const [locationLng, setLocationLng] = useState<number | null>(null);
+  const [locationArea, setLocationArea] = useState<string | null>(null);
+  const [locationVisibility, setLocationVisibility] = useState<"exact_everyone" | "exact_joined_only" | "approximate_only">("exact_everyone");
+  const [onlineLink, setOnlineLink] = useState("");
 
   // Chum preference overrides
   const [prefOverridesOpen, setPrefOverridesOpen] = useState(false);
@@ -140,6 +153,17 @@ export default function EditEventClient() {
         setReserveSeats(ev.reserveSeats === true);
         setMinConfirmed(ev.minConfirmedAttendees != null ? String(ev.minConfirmedAttendees) : "");
         setFallbackPolicy(ev.fallbackPolicy ?? "notify_host");
+
+        // Location
+        setLocationType(ev.locationType === "online" ? "online" : "in_person");
+        setLocationName(ev.locationName ?? "");
+        setLocationAddress(ev.locationAddress ?? "");
+        setLocationLat(ev.locationLat ?? null);
+        setLocationLng(ev.locationLng ?? null);
+        setLocationArea(ev.locationArea ?? null);
+        setLocationVisibility(ev.locationVisibility ?? "exact_everyone");
+        setOnlineLink(ev.onlineLink ?? "");
+
         const h = ev.hobbies?.length > 0
           ? ev.hobbies
           : ev.hobby ? [{ name: ev.hobby, slug: ev.hobbySlug ?? "" }] : [];
@@ -250,6 +274,15 @@ export default function EditEventClient() {
           pref_overrides: buildPrefOverrides(),
           community_id: communityId || null,
           hide_from_explore: hideFromExplore,
+          location_type: locationType,
+          location_name: locationName.trim() || null,
+          location_address: locationAddress.trim() || null,
+          location_place_id: locationPlaceId,
+          location_lat: locationLat,
+          location_lng: locationLng,
+          location_area: locationType === "in_person" ? (locationArea?.trim() || null) : null,
+          location_visibility: locationType === "in_person" ? locationVisibility : "exact_everyone",
+          online_link: locationType === "online" ? onlineLink.trim() || null : null,
         }),
       });
       const data = (await res.json()) as { ok: boolean; message?: string };
@@ -564,6 +597,117 @@ export default function EditEventClient() {
               <FormControlLabel value="off" control={<Radio size="small" />} label={<Typography variant="body2" fontWeight={500}>Off</Typography>} />
             </RadioGroup>
           </Box>
+        </Stack>
+      </AppCard>
+
+      {/* Location */}
+      <AppCard>
+        <Stack spacing={2.5}>
+          <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
+            Where?
+          </Typography>
+
+          <RadioGroup
+            row
+            value={locationType}
+            onChange={(e) => setLocationType(e.target.value as "in_person" | "online")}
+          >
+            <FormControlLabel value="in_person" control={<Radio />} label="In person" />
+            <FormControlLabel value="online" control={<Radio />} label="Online" />
+          </RadioGroup>
+
+          {locationType === "in_person" ? (
+            <>
+              <PlacesAutocompleteInput
+                value={locationName}
+                onChange={(v) => {
+                  setLocationName(v);
+                  if (!v.trim()) {
+                    setLocationAddress("");
+                    setLocationPlaceId(null);
+                    setLocationLat(null);
+                    setLocationLng(null);
+                    setLocationArea(null);
+                  }
+                }}
+                onPlaceSelect={(result) => {
+                  setLocationName(result.name || result.formattedAddress);
+                  setLocationAddress(result.formattedAddress);
+                  setLocationPlaceId(result.placeId);
+                  setLocationLat(result.lat);
+                  setLocationLng(result.lng);
+                  setLocationArea(result.area ?? null);
+                }}
+                label="Venue or address"
+                placeholder="Search for a place or enter an address"
+                placeTypes={["establishment", "geocode"]}
+                inputId="places-autocomplete-edit-event"
+              />
+              <FormControl fullWidth size="medium" sx={{ minWidth: 200 }}>
+                <Typography
+                  component="label"
+                  htmlFor="edit-location-visibility-select"
+                  variant="subtitle1"
+                  fontWeight={600}
+                  sx={{ display: "block", mb: 0.625 }}
+                >
+                  Who can see the exact location?
+                </Typography>
+                <Select
+                  id="edit-location-visibility-select"
+                  value={locationVisibility}
+                  onChange={(e) => setLocationVisibility(e.target.value as typeof locationVisibility)}
+                  variant="outlined"
+                  displayEmpty={false}
+                  renderValue={(v) => {
+                    const labels: Record<typeof locationVisibility, string> = {
+                      exact_everyone: "Everyone",
+                      exact_joined_only: "Only people who join",
+                      approximate_only: "General area only",
+                    };
+                    return labels[v];
+                  }}
+                  MenuProps={{
+                    PaperProps: { sx: { minWidth: 320 } },
+                  }}
+                  sx={{ "& .MuiSelect-select": { py: 1.25 } }}
+                >
+                  <MenuItem value="exact_everyone">
+                    <ListItemText
+                      primary="Everyone"
+                      secondary="The full venue or address is shown wherever the plan appears"
+                      primaryTypographyProps={{ fontWeight: 500 }}
+                      secondaryTypographyProps={{ variant: "caption" }}
+                    />
+                  </MenuItem>
+                  <MenuItem value="exact_joined_only">
+                    <ListItemText
+                      primary="Only people who join"
+                      secondary="Others see only the general area until they respond (going or maybe)"
+                      primaryTypographyProps={{ fontWeight: 500 }}
+                      secondaryTypographyProps={{ variant: "caption" }}
+                    />
+                  </MenuItem>
+                  <MenuItem value="approximate_only">
+                    <ListItemText
+                      primary="General area only"
+                      secondary="The exact venue is never shown; everyone sees only the broader area"
+                      primaryTypographyProps={{ fontWeight: 500 }}
+                      secondaryTypographyProps={{ variant: "caption" }}
+                    />
+                  </MenuItem>
+                </Select>
+              </FormControl>
+            </>
+          ) : (
+            <AppTextField
+              label="Online link or details"
+              placeholder="e.g. Zoom link, Discord server"
+              value={onlineLink}
+              onChange={(e) => setOnlineLink(e.target.value)}
+              helperText="Share a link or instructions for joining online"
+            />
+          )}
         </Stack>
       </AppCard>
 

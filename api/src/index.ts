@@ -8541,9 +8541,11 @@ app.patch("/events/:id", async (c) => {
   try {
     const rows = (await sql`
       SELECT id, host_user_id, status, title, description, starts_at, timezone, max_seats, visibility,
-             require_reconfirmation, min_confirmed_attendees, fallback_policy, alt_times_mode, availability_deadline_at
+             require_reconfirmation, min_confirmed_attendees, fallback_policy, alt_times_mode, availability_deadline_at,
+             location_type, location_name, location_address, location_place_id, location_lat, location_lng,
+             location_visibility, location_area, online_link
       FROM newchums.events WHERE id = ${eventId}
-    `) as { id: string; host_user_id: string; status: string; title: string; description: string | null; starts_at: string; timezone: string | null; max_seats: number | null; visibility: string; require_reconfirmation: boolean; min_confirmed_attendees: number | null; fallback_policy: string; alt_times_mode: string | null; availability_deadline_at: string | null }[];
+    `) as { id: string; host_user_id: string; status: string; title: string; description: string | null; starts_at: string; timezone: string | null; max_seats: number | null; visibility: string; require_reconfirmation: boolean; min_confirmed_attendees: number | null; fallback_policy: string; alt_times_mode: string | null; availability_deadline_at: string | null; location_type: string; location_name: string | null; location_address: string | null; location_place_id: string | null; location_lat: number | null; location_lng: number | null; location_visibility: string; location_area: string | null; online_link: string | null }[];
     if (rows.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     if (rows[0].host_user_id !== userId) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
     if (rows[0].status === "canceled") return c.json({ ok: false, error: "VALIDATION", message: "Cannot edit a canceled plan" }, 400);
@@ -8592,6 +8594,40 @@ app.patch("/events/:id", async (c) => {
       patchAvailabilityDeadlineAt = null;
     }
     const patchReserveSeats = body.reserve_seats != null ? body.reserve_seats === true : undefined;
+
+    // Location fields (optional — only processed if location_type is present in the body)
+    const hasLocationUpdate = "location_type" in body;
+    let patchLocationType: string | undefined;
+    let patchLocationName: string | null | undefined;
+    let patchLocationAddress: string | null | undefined;
+    let patchLocationPlaceId: string | null | undefined;
+    let patchLocationLat: number | null | undefined;
+    let patchLocationLng: number | null | undefined;
+    let patchLocationVisibility: string | undefined;
+    let patchLocationArea: string | null | undefined;
+    let patchOnlineLink: string | null | undefined;
+    if (hasLocationUpdate) {
+      const lt = String(body.location_type ?? "in_person");
+      if (!VALID_LOCATION_TYPE.includes(lt as typeof VALID_LOCATION_TYPE[number]))
+        return c.json({ ok: false, error: "VALIDATION", message: "Invalid location type", field: "location_type" }, 400);
+      patchLocationType = lt;
+      patchLocationName = body.location_name ? String(body.location_name).trim().slice(0, 200) : null;
+      patchLocationAddress = body.location_address ? String(body.location_address).trim().slice(0, 500) : null;
+      patchLocationPlaceId = body.location_place_id ? String(body.location_place_id) : null;
+      patchLocationLat = body.location_lat != null ? Number(body.location_lat) : null;
+      patchLocationLng = body.location_lng != null ? Number(body.location_lng) : null;
+      patchLocationVisibility = lt === "in_person"
+        ? (VALID_LOCATION_VISIBILITY.includes(String(body.location_visibility ?? "exact_everyone") as typeof VALID_LOCATION_VISIBILITY[number])
+            ? String(body.location_visibility)
+            : "exact_everyone")
+        : "exact_everyone";
+      patchLocationArea = body.location_area ? String(body.location_area).trim().slice(0, 200) : null;
+      if (!patchLocationArea && (patchLocationVisibility === "approximate_only" || patchLocationVisibility === "exact_joined_only") && patchLocationAddress) {
+        patchLocationArea = deriveApproxArea(patchLocationAddress);
+      }
+      patchOnlineLink = lt === "online" ? (body.online_link ? String(body.online_link).trim().slice(0, 500) : null) : null;
+    }
+
     const patchTimezone = body.timezone && typeof body.timezone === "string" ? body.timezone.trim().slice(0, 64) : null;
     const patchPrefOverrides = "pref_overrides" in body ? parsePrefOverrides(body.pref_overrides ?? null) : undefined;
     const patchCommunityId = "community_id" in body ? (body.community_id ? String(body.community_id) : null) : undefined;
@@ -8670,6 +8706,15 @@ app.patch("/events/:id", async (c) => {
           community_id             = CASE WHEN ${patchCommunityId !== undefined} THEN ${patchCommunityId !== undefined ? patchCommunityId : null}::uuid ELSE community_id END,
           hide_from_explore        = CASE WHEN ${patchHideFromExplore !== undefined} THEN ${patchHideFromExplore !== undefined ? patchHideFromExplore : false} ELSE hide_from_explore END,
           banner_key               = CASE WHEN ${patchBannerKey !== undefined} THEN ${patchBannerKey !== undefined ? patchBannerKey : null} ELSE banner_key END,
+          location_type            = CASE WHEN ${hasLocationUpdate} THEN ${patchLocationType ?? null} ELSE location_type END,
+          location_name            = CASE WHEN ${hasLocationUpdate} THEN ${patchLocationName ?? null} ELSE location_name END,
+          location_address         = CASE WHEN ${hasLocationUpdate} THEN ${patchLocationAddress ?? null} ELSE location_address END,
+          location_place_id        = CASE WHEN ${hasLocationUpdate} THEN ${patchLocationPlaceId ?? null} ELSE location_place_id END,
+          location_lat             = CASE WHEN ${hasLocationUpdate} THEN ${patchLocationLat ?? null} ELSE location_lat END,
+          location_lng             = CASE WHEN ${hasLocationUpdate} THEN ${patchLocationLng ?? null} ELSE location_lng END,
+          location_visibility      = CASE WHEN ${hasLocationUpdate} THEN ${patchLocationVisibility ?? null} ELSE location_visibility END,
+          location_area            = CASE WHEN ${hasLocationUpdate} THEN ${patchLocationArea ?? null} ELSE location_area END,
+          online_link              = CASE WHEN ${hasLocationUpdate} THEN ${patchOnlineLink ?? null} ELSE online_link END,
           updated_at               = NOW()
       WHERE id = ${eventId}
     `;
@@ -8749,6 +8794,30 @@ app.patch("/events/:id", async (c) => {
           newValue: newDl ? formatEventDate(newDl, effectiveTz) : "None",
         });
       }
+    }
+
+    // Location change detection
+    if (hasLocationUpdate) {
+      const LOC_TYPE_LABEL: Record<string, string> = { in_person: "In person", online: "Online" };
+      if (before.location_type !== patchLocationType)
+        changes.push({
+          fieldName: "Location type",
+          oldValue: LOC_TYPE_LABEL[before.location_type] ?? before.location_type,
+          newValue: LOC_TYPE_LABEL[patchLocationType!] ?? patchLocationType!,
+        });
+
+      const oldLocDisplay = before.location_type === "online"
+        ? (before.online_link || "Online")
+        : buildLocationDisplay(before.location_name, before.location_address);
+      const newLocDisplay = patchLocationType === "online"
+        ? (patchOnlineLink || "Online")
+        : buildLocationDisplay(patchLocationName ?? null, patchLocationAddress ?? null);
+      if (oldLocDisplay !== newLocDisplay)
+        changes.push({
+          fieldName: "Location",
+          oldValue: oldLocDisplay || "Not set",
+          newValue: newLocDisplay || "Not set",
+        });
     }
 
     console.log("[PATCH /events/:id] plan-change diff:", JSON.stringify({

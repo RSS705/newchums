@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
@@ -29,7 +29,9 @@ const TIME_CHIPS = [
 export default function PublicExploreFeed() {
   const [events, setEvents] = useState<PlanEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filtering, setFiltering] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const initialLoadDone = useRef(false);
   const [hasMore, setHasMore] = useState(false);
   /** null until first fetch completes; true = HTTP 200 with parsed body */
   const [fetchSucceeded, setFetchSucceeded] = useState<boolean | null>(null);
@@ -38,13 +40,23 @@ export default function PublicExploreFeed() {
   const [searchDebounced, setSearchDebounced] = useState("");
 
   useEffect(() => {
-    const t = setTimeout(() => setSearchDebounced(search.trim()), 350);
+    const trimmed = search.trim();
+    const t = setTimeout(() => {
+      setSearchDebounced((prev) => {
+        if (prev === trimmed) return prev;
+        if (initialLoadDone.current) setFiltering(true);
+        return trimmed;
+      });
+    }, 350);
     return () => clearTimeout(t);
   }, [search]);
 
   const fetchEvents = useCallback(async (offset: number, append: boolean) => {
-    if (offset === 0) setLoading(true);
-    else setLoadingMore(true);
+    if (offset === 0) {
+      if (!initialLoadDone.current) setLoading(true);
+    } else {
+      setLoadingMore(true);
+    }
     try {
       const params = new URLSearchParams();
       params.set("limit", String(PAGE_SIZE));
@@ -63,7 +75,9 @@ export default function PublicExploreFeed() {
     } catch {
       setFetchSucceeded(false);
     }
+    initialLoadDone.current = true;
     setLoading(false);
+    setFiltering(false);
     setLoadingMore(false);
   }, [timeRange, searchDebounced]);
 
@@ -80,7 +94,8 @@ export default function PublicExploreFeed() {
     fetchSucceeded === true &&
     events.length === 0 &&
     !searchDebounced &&
-    timeRange === "all";
+    timeRange === "all" &&
+    !filtering;
 
   const displayEvents = showSampleFallback ? getSamplePublicExplorePlans() : events;
 
@@ -158,7 +173,7 @@ export default function PublicExploreFeed() {
               label={tc.label}
               size="small"
               variant={timeRange === tc.value ? "filled" : "outlined"}
-              onClick={() => setTimeRange(tc.value)}
+              onClick={() => { setTimeRange(tc.value); if (initialLoadDone.current) setFiltering(true); }}
               sx={{
                 fontWeight: 600,
                 fontSize: "0.78rem",
@@ -213,7 +228,15 @@ export default function PublicExploreFeed() {
         </Stack>
       ) : (
         <>
-          <Grid container spacing={{ xs: 2, sm: 2.5 }}>
+          <Grid
+            container
+            spacing={{ xs: 2, sm: 2.5 }}
+            sx={{
+              opacity: filtering ? 0.5 : 1,
+              transition: "opacity 0.15s ease",
+              pointerEvents: filtering ? "none" : "auto",
+            }}
+          >
             {displayEvents.map((ev) => (
               <Grid key={ev.id} size={{ xs: 12, sm: 6, md: 4 }}>
                 <EventCard event={ev} isExample={showSampleFallback} />
