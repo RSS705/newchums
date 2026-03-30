@@ -608,7 +608,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
         </Box>
       </Box>
 
-      {/* ── Section: NewChums Features ── */}
+      {/* ── Section A: Organize with confidence ── */}
       <Box
         component="section"
         id="features"
@@ -620,7 +620,6 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
             theme.palette.mode === "light" ? "#F6F7F9" : "grey.900",
           position: "relative",
           overflow: "hidden",
-          // Organic blob accents — four shapes placed to guide the eye between cards
           "& .features-blob": {
             position: "absolute",
             borderRadius: "50%",
@@ -632,8 +631,6 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
         {/* Background blobs */}
         <Box className="features-blob" sx={{ width: { xs: 300, md: 440 }, height: { xs: 300, md: 440 }, top: { xs: "-4%", md: "-2%" }, left: { xs: "-14%", md: "-8%" }, background: "radial-gradient(circle, rgba(252,236,195,0.45) 0%, transparent 65%)" }} />
         <Box className="features-blob" sx={{ width: { xs: 260, md: 380 }, height: { xs: 260, md: 380 }, top: { xs: "35%", md: "30%" }, right: { xs: "-16%", md: "-6%" }, background: "radial-gradient(circle, rgba(230,91,19,0.03) 0%, transparent 65%)" }} />
-        <Box className="features-blob" sx={{ width: { xs: 280, md: 400 }, height: { xs: 280, md: 400 }, bottom: { xs: "20%", md: "18%" }, left: { xs: "-10%", md: "5%" }, background: "radial-gradient(circle, rgba(21,101,192,0.025) 0%, transparent 65%)" }} />
-        <Box className="features-blob" sx={{ width: { xs: 320, md: 480 }, height: { xs: 320, md: 480 }, bottom: { xs: "-6%", md: "-4%" }, right: { xs: "-12%", md: "-4%" }, background: "radial-gradient(circle, rgba(252,236,195,0.35) 0%, transparent 65%)" }} />
 
         <Box maxWidth={1100} mx="auto" sx={{ position: "relative", zIndex: 1 }}>
           {/* Section heading */}
@@ -649,7 +646,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                 mb: 2,
               }}
             >
-              Built for plans that actually happen
+              The tools you need
             </Typography>
             <Typography
               variant="h5"
@@ -658,215 +655,281 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                 fontSize: { xs: "1.05rem", sm: "1.15rem", md: "1.25rem" },
                 lineHeight: 1.6,
                 color: "text.secondary",
-                maxWidth: 520,
+                maxWidth: 540,
                 mx: "auto",
               }}
             >
-              Thoughtful tools that take the friction out of getting people together.
+              Let NewChums find the best time for your plans, and control who sees what.
             </Typography>
           </Box>
 
-          {/* Top row — 2 featured cards */}
-          <Grid container spacing={{ xs: 2.5, sm: 3 }}>
+          {/* 2 featured cards — subgrid aligns text/image rows */}
+          <Box
+            sx={{
+              display: "grid",
+              gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
+              gridAutoRows: "auto 1fr",
+              gap: { xs: 2.5, sm: 3 },
+            }}
+          >
             {FEATURES_TOP.map(({ accentColor, Icon, title, body, placeholder, imageSrc }) => (
-              <Grid key={title} size={{ xs: 12, md: 6 }}>
-                <Box
-                  sx={{
-                    height: "100%",
-                    backgroundColor: (theme) =>
-                      theme.palette.mode === "light"
-                        ? "rgba(255,255,255,0.72)"
-                        : "background.paper",
-                    backdropFilter: { md: "blur(12px)" },
-                    WebkitBackdropFilter: { md: "blur(12px)" },
-                    borderRadius: 3.5,
-                    overflow: "hidden",
+              <Box
+                key={title}
+                sx={{
+                  display: "grid",
+                  gridRow: { md: "span 2" },
+                  gridTemplateRows: { md: "subgrid" },
+                  backgroundColor: (theme) =>
+                    theme.palette.mode === "light"
+                      ? "rgba(255,255,255,0.72)"
+                      : "background.paper",
+                  backdropFilter: { md: "blur(12px)" },
+                  WebkitBackdropFilter: { md: "blur(12px)" },
+                  borderRadius: 3.5,
+                  overflow: "hidden",
+                  boxShadow: (theme) =>
+                    theme.palette.mode === "light"
+                      ? "0 1px 2px rgba(0,0,0,0.03), 0 8px 40px rgba(0,0,0,0.06)"
+                      : "none",
+                  border: "1px solid",
+                  borderColor: (theme) =>
+                    theme.palette.mode === "light"
+                      ? "rgba(255,255,255,0.20)"
+                      : "divider",
+                  transition: "transform 0.25s ease, box-shadow 0.25s ease",
+                  "&:hover": {
+                    transform: { md: "translateY(-3px)" },
                     boxShadow: (theme) =>
                       theme.palette.mode === "light"
-                        ? "0 1px 2px rgba(0,0,0,0.03), 0 8px 40px rgba(0,0,0,0.06)"
+                        ? "0 2px 4px rgba(0,0,0,0.04), 0 16px 56px rgba(0,0,0,0.09)"
                         : "none",
-                    border: "1px solid",
-                    borderColor: (theme) =>
-                      theme.palette.mode === "light"
-                        ? "rgba(255,255,255,0.20)"
-                        : "divider",
-                    display: "flex",
-                    flexDirection: "column",
-                    transition: "transform 0.25s ease, box-shadow 0.25s ease",
-                    "&:hover": {
-                      transform: { md: "translateY(-3px)" },
-                      boxShadow: (theme) =>
-                        theme.palette.mode === "light"
-                          ? "0 2px 4px rgba(0,0,0,0.04), 0 16px 56px rgba(0,0,0,0.09)"
-                          : "none",
-                    },
-                  }}
-                >
-                  {/* Image */}
-                  <Box
+                  },
+                }}
+              >
+                {/* Text */}
+                <Box sx={{ pt: { xs: 2.5, sm: 3, md: 3.5 }, px: { xs: 2.5, sm: 3, md: 3.5 }, pb: { xs: 1.5, sm: 1.5, md: 2 } }}>
+                  <Typography
+                    variant="h6"
+                    component="h3"
+                    fontWeight={700}
                     sx={{
-                      position: "relative",
-                      ...(!imageSrc && { aspectRatio: "3 / 2" }),
-                      background: imageSrc
-                        ? undefined
-                        : (theme) =>
-                            `linear-gradient(135deg, ${accentColor}06 0%, ${theme.palette.grey[100]} 100%)`,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      borderBottom: "1px solid",
-                      borderColor: (theme) =>
-                        theme.palette.mode === "light" ? "rgba(0,0,0,0.04)" : "divider",
+                      mb: 0.75,
+                      fontSize: { xs: "1.05rem", sm: "1.15rem", md: "1.2rem" },
+                      lineHeight: 1.3,
+                      letterSpacing: "-0.01em",
+                      color: accentColor,
                     }}
                   >
-                    {imageSrc ? (
-                      <Image
-                        src={imageSrc}
-                        alt={title}
-                        width={1200}
-                        height={800}
-                        sizes="(max-width: 960px) 100vw, 50vw"
-                        style={{ width: "100%", height: "auto", display: "block" }}
-                      />
-                    ) : (
-                      <Stack alignItems="center" spacing={1} sx={{ opacity: 0.3 }}>
-                        <Icon sx={{ fontSize: 36, color: accentColor }} />
-                        <Typography variant="caption" color="text.secondary" fontWeight={500}>
-                          {placeholder}
-                        </Typography>
-                      </Stack>
-                    )}
-                  </Box>
-
-                  {/* Text */}
-                  <Box sx={{ p: { xs: 2.5, sm: 3, md: 3.5 }, flex: 1 }}>
-                    <Typography
-                      variant="h6"
-                      component="h3"
-                      fontWeight={700}
-                      sx={{
-                        mb: 0.75,
-                        fontSize: { xs: "1.05rem", sm: "1.15rem", md: "1.2rem" },
-                        lineHeight: 1.3,
-                        letterSpacing: "-0.01em",
-                        color: accentColor,
-                      }}
-                    >
-                      {title}
-                    </Typography>
-                    <Typography
-                      variant="body2"
-                      color="text.secondary"
-                      sx={{ lineHeight: 1.7, fontSize: { xs: "0.9rem", sm: "0.95rem" } }}
-                    >
-                      {body}
-                    </Typography>
-                  </Box>
+                    {title}
+                  </Typography>
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ lineHeight: 1.7, fontSize: { xs: "0.9rem", sm: "0.95rem" } }}
+                  >
+                    {body}
+                  </Typography>
                 </Box>
-              </Grid>
-            ))}
-          </Grid>
 
-          {/* Bottom row — 3 cards */}
-          <Grid container spacing={{ xs: 2.5, sm: 3 }} sx={{ mt: { xs: 1, sm: 2, md: 3 } }}>
+                {/* Image */}
+                <Box
+                  sx={{
+                    position: "relative",
+                    ...(!imageSrc && { aspectRatio: "3 / 2" }),
+                    background: imageSrc
+                      ? undefined
+                      : (theme) =>
+                          `linear-gradient(135deg, ${accentColor}06 0%, ${theme.palette.grey[100]} 100%)`,
+                    display: "flex",
+                    alignItems: "flex-start",
+                    justifyContent: "center",
+                    borderTop: "1px solid",
+                    borderColor: (theme) =>
+                      theme.palette.mode === "light" ? "rgba(0,0,0,0.04)" : "divider",
+                  }}
+                >
+                  {imageSrc ? (
+                    <Image
+                      src={imageSrc}
+                      alt={title}
+                      width={1200}
+                      height={800}
+                      sizes="(max-width: 960px) 100vw, 50vw"
+                      style={{ width: "100%", height: "auto", display: "block" }}
+                    />
+                  ) : (
+                    <Stack alignItems="center" spacing={1} sx={{ opacity: 0.3, pt: 4 }}>
+                      <Icon sx={{ fontSize: 36, color: accentColor }} />
+                      <Typography variant="caption" color="text.secondary" fontWeight={500}>
+                        {placeholder}
+                      </Typography>
+                    </Stack>
+                  )}
+                </Box>
+              </Box>
+            ))}
+          </Box>
+        </Box>
+      </Box>
+
+      {/* ── Section B: Stay in the loop ── */}
+      <Box
+        component="section"
+        sx={{
+          py: { xs: 7, sm: 10, md: 12 },
+          mx: { xs: -2, sm: -3 },
+          px: { xs: 2, sm: 3 },
+          position: "relative",
+          overflow: "hidden",
+          "& .loop-blob": {
+            position: "absolute",
+            borderRadius: "50%",
+            pointerEvents: "none",
+            filter: "blur(1px)",
+          },
+        }}
+      >
+        {/* Background blobs */}
+        <Box className="loop-blob" sx={{ width: { xs: 280, md: 400 }, height: { xs: 280, md: 400 }, top: { xs: "10%", md: "8%" }, left: { xs: "-10%", md: "5%" }, background: "radial-gradient(circle, rgba(21,101,192,0.025) 0%, transparent 65%)" }} />
+        <Box className="loop-blob" sx={{ width: { xs: 320, md: 480 }, height: { xs: 320, md: 480 }, bottom: { xs: "-6%", md: "-4%" }, right: { xs: "-12%", md: "-4%" }, background: "radial-gradient(circle, rgba(252,236,195,0.30) 0%, transparent 65%)" }} />
+
+        <Box maxWidth={1100} mx="auto" sx={{ position: "relative", zIndex: 1 }}>
+          {/* Section heading */}
+          <Box sx={{ textAlign: "center", mb: { xs: 4, sm: 5, md: 6 } }}>
+            <Typography
+              component="h2"
+              variant="h2"
+              fontWeight={800}
+              sx={{
+                fontSize: { xs: "1.85rem", sm: "2.5rem", md: "3rem" },
+                lineHeight: 1.1,
+                letterSpacing: "-0.03em",
+                mb: 2,
+              }}
+            >
+              Easier communication
+            </Typography>
+            <Typography
+              variant="h5"
+              fontWeight={500}
+              sx={{
+                fontSize: { xs: "1.05rem", sm: "1.15rem", md: "1.25rem" },
+                lineHeight: 1.6,
+                color: "text.secondary",
+                maxWidth: 540,
+                mx: "auto",
+              }}
+            >
+              Chat, automated reminders, 24-hour confirmation requests, and easy inviting all in one place.
+            </Typography>
+          </Box>
+
+          {/* 3 cards — subgrid aligns text/image rows */}
+          <Box
+            sx={{
+              display: "grid",
+              gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr", md: "1fr 1fr 1fr" },
+              gridAutoRows: "auto 1fr",
+              gap: { xs: 2.5, sm: 3 },
+            }}
+          >
             {FEATURES_BOTTOM.map(({ accentColor, Icon, title, body, placeholder, imageSrc }) => (
-              <Grid key={title} size={{ xs: 12, sm: 6, md: 4 }}>
-                <Box
-                  sx={{
-                    height: "100%",
-                    backgroundColor: (theme) =>
-                      theme.palette.mode === "light"
-                        ? "rgba(255,255,255,0.72)"
-                        : "background.paper",
-                    backdropFilter: { md: "blur(12px)" },
-                    WebkitBackdropFilter: { md: "blur(12px)" },
-                    borderRadius: 3.5,
-                    overflow: "hidden",
+              <Box
+                key={title}
+                sx={{
+                  display: "grid",
+                  gridRow: { sm: "span 2" },
+                  gridTemplateRows: { sm: "subgrid" },
+                  backgroundColor: (theme) =>
+                    theme.palette.mode === "light"
+                      ? "rgba(255,255,255,0.72)"
+                      : "background.paper",
+                  backdropFilter: { md: "blur(12px)" },
+                  WebkitBackdropFilter: { md: "blur(12px)" },
+                  borderRadius: 3.5,
+                  overflow: "hidden",
+                  boxShadow: (theme) =>
+                    theme.palette.mode === "light"
+                      ? "0 1px 2px rgba(0,0,0,0.03), 0 8px 40px rgba(0,0,0,0.06)"
+                      : "none",
+                  border: "1px solid",
+                  borderColor: (theme) =>
+                    theme.palette.mode === "light"
+                      ? "rgba(0,0,0,0.06)"
+                      : "divider",
+                  transition: "transform 0.25s ease, box-shadow 0.25s ease",
+                  "&:hover": {
+                    transform: { md: "translateY(-3px)" },
                     boxShadow: (theme) =>
                       theme.palette.mode === "light"
-                        ? "0 1px 2px rgba(0,0,0,0.03), 0 8px 40px rgba(0,0,0,0.06)"
+                        ? "0 2px 4px rgba(0,0,0,0.04), 0 16px 56px rgba(0,0,0,0.09)"
                         : "none",
-                    border: "1px solid",
-                    borderColor: (theme) =>
-                      theme.palette.mode === "light"
-                        ? "rgba(255,255,255,0.20)"
-                        : "divider",
-                    display: "flex",
-                    flexDirection: "column",
-                    transition: "transform 0.25s ease, box-shadow 0.25s ease",
-                    "&:hover": {
-                      transform: { md: "translateY(-3px)" },
-                      boxShadow: (theme) =>
-                        theme.palette.mode === "light"
-                          ? "0 2px 4px rgba(0,0,0,0.04), 0 16px 56px rgba(0,0,0,0.09)"
-                          : "none",
-                    },
-                  }}
-                >
-                  {/* Image */}
-                  <Box
+                  },
+                }}
+              >
+                {/* Text */}
+                <Box sx={{ pt: { xs: 2.5, sm: 3, md: 3.5 }, px: { xs: 2.5, sm: 3, md: 3.5 }, pb: { xs: 1.5, sm: 1.5, md: 2 } }}>
+                  <Typography
+                    variant="h6"
+                    component="h3"
+                    fontWeight={700}
                     sx={{
-                      position: "relative",
-                      ...(!imageSrc && { aspectRatio: "3 / 2" }),
-                      background: imageSrc
-                        ? undefined
-                        : (theme) =>
-                            `linear-gradient(135deg, ${accentColor}06 0%, ${theme.palette.grey[100]} 100%)`,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      borderBottom: "1px solid",
-                      borderColor: (theme) =>
-                        theme.palette.mode === "light" ? "rgba(0,0,0,0.04)" : "divider",
+                      mb: 0.75,
+                      fontSize: { xs: "1.05rem", sm: "1.15rem", md: "1.2rem" },
+                      lineHeight: 1.3,
+                      letterSpacing: "-0.01em",
+                      color: accentColor,
                     }}
                   >
-                    {imageSrc ? (
-                      <Image
-                        src={imageSrc}
-                        alt={title}
-                        width={1200}
-                        height={800}
-                        sizes="(max-width: 600px) 100vw, (max-width: 960px) 50vw, 33vw"
-                        style={{ width: "100%", height: "auto", display: "block" }}
-                      />
-                    ) : (
-                      <Stack alignItems="center" spacing={1} sx={{ opacity: 0.3 }}>
-                        <Icon sx={{ fontSize: 36, color: accentColor }} />
-                        <Typography variant="caption" color="text.secondary" fontWeight={500}>
-                          {placeholder}
-                        </Typography>
-                      </Stack>
-                    )}
-                  </Box>
-
-                  {/* Text */}
-                  <Box sx={{ p: { xs: 2.5, sm: 2.5, md: 3 }, flex: 1 }}>
-                    <Typography
-                      variant="h6"
-                      component="h3"
-                      fontWeight={700}
-                      sx={{
-                        mb: 0.75,
-                        fontSize: { xs: "1.05rem", sm: "1.0625rem" },
-                        lineHeight: 1.3,
-                        letterSpacing: "-0.01em",
-                        color: accentColor,
-                      }}
-                    >
-                      {title}
-                    </Typography>
-                    <Typography
-                      variant="body2"
-                      color="text.secondary"
-                      sx={{ lineHeight: 1.7, fontSize: { xs: "0.9rem", sm: "0.9rem" } }}
-                    >
-                      {body}
-                    </Typography>
-                  </Box>
+                    {title}
+                  </Typography>
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ lineHeight: 1.7, fontSize: { xs: "0.9rem", sm: "0.95rem" } }}
+                  >
+                    {body}
+                  </Typography>
                 </Box>
-              </Grid>
+
+                {/* Image */}
+                <Box
+                  sx={{
+                    position: "relative",
+                    ...(!imageSrc && { aspectRatio: "3 / 2" }),
+                    background: imageSrc
+                      ? undefined
+                      : (theme) =>
+                          `linear-gradient(135deg, ${accentColor}06 0%, ${theme.palette.grey[100]} 100%)`,
+                    display: "flex",
+                    alignItems: "flex-start",
+                    justifyContent: "center",
+                    borderTop: "1px solid",
+                    borderColor: (theme) =>
+                      theme.palette.mode === "light" ? "rgba(0,0,0,0.04)" : "divider",
+                  }}
+                >
+                  {imageSrc ? (
+                    <Image
+                      src={imageSrc}
+                      alt={title}
+                      width={1200}
+                      height={800}
+                      sizes="(max-width: 600px) 100vw, (max-width: 960px) 50vw, 33vw"
+                      style={{ width: "100%", height: "auto", display: "block" }}
+                    />
+                  ) : (
+                    <Stack alignItems="center" spacing={1} sx={{ opacity: 0.3, pt: 4 }}>
+                      <Icon sx={{ fontSize: 36, color: accentColor }} />
+                      <Typography variant="caption" color="text.secondary" fontWeight={500}>
+                        {placeholder}
+                      </Typography>
+                    </Stack>
+                  )}
+                </Box>
+              </Box>
             ))}
-          </Grid>
+          </Box>
         </Box>
       </Box>
 
