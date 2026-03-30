@@ -21,7 +21,6 @@ import ChatRoundedIcon from "@mui/icons-material/ChatRounded";
 
 import EventAvailableRoundedIcon from "@mui/icons-material/EventAvailableRounded";
 import MailOutlineRoundedIcon from "@mui/icons-material/MailOutlineRounded";
-import ThumbUpAltRoundedIcon from "@mui/icons-material/ThumbUpAltRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 import PublicExploreFeed from "@/components/landing/PublicExploreFeed";
 
@@ -141,65 +140,57 @@ const WHY_THIS_WORKS_CARDS: {
   },
 ];
 
-// ── "NewChums Features" section ──────────────────────────────────────────────
-const FEATURES: {
-  Icon: typeof VisibilityRoundedIcon;
+// ── "Features" section — curated highlight cards ────────────────────────────
+const FEATURES_TOP: {
   accentColor: string;
+  Icon: typeof VisibilityRoundedIcon;
   title: string;
   body: string | ReactNode;
+  placeholder: string;
+  imageSrc?: string;
 }[] = [
   {
-    Icon: VisibilityRoundedIcon,
-    accentColor: "#1565c0",
-    title: "Create public or private plans",
-    body: "Create a plan for just your friend group, open it to others nearby, or use a mix of both.",
-  },
-  {
-    Icon: MailOutlineRoundedIcon,
     accentColor: "#E65B13",
-    title: "Invite friends easily",
-    body: (
-      <>
-        Send invites directly, and your chums receive an{" "}
-        <Box component="span" sx={{ color: "#E65B13", fontWeight: 600 }}>
-          email notification
-        </Box>{" "}
-        so they know you&apos;re planning something.
-      </>
-    ),
+    Icon: CalendarMonthRoundedIcon,
+    title: "Smarter scheduling",
+    body: (<>Let attendees suggest better times, or <Box component="span" sx={{ fontWeight: 700 }}>request everyone&apos;s availability</Box> and let the system find the best fit. Reminders and confirmations go out automatically.</>),
+    placeholder: "Screenshot — Availability / scheduling",
+    imageSrc: "/images/home/feature-scheduling.png",
   },
   {
-    Icon: EventAvailableRoundedIcon,
-    accentColor: "#2e7d32",
-    title: "RSVP tools",
-    body: "Attendees can confirm whether they can make it, and if you allow it, suggest a better time that works for everyone.",
+    accentColor: "#1565c0",
+    Icon: VisibilityRoundedIcon,
+    title: "Privacy on your terms",
+    body: "Plans can be public, chums-only, or invite-only. Location can be exact, approximate, or hidden until someone joins. You decide who sees what.",
+    placeholder: "Screenshot — Privacy controls",
+    imageSrc: "/images/home/feature-privacy.png",
   },
+];
+
+const FEATURES_BOTTOM: typeof FEATURES_TOP = [
   {
-    Icon: ChatRoundedIcon,
     accentColor: "#7c3aed",
-    title: "Built-in plan chat",
-    body: "Use the plan details page to share updates, coordinate details, or just say hi before meeting up.",
+    Icon: ChatRoundedIcon,
+    title: "Plan chat and updates",
+    body: "Every plan has a built-in chat for quick hellos, coordination, and last-minute details. No separate group chat required.",
+    placeholder: "Screenshot — Plan chat",
+    imageSrc: "/images/home/feature-chat.png",
   },
   {
-    Icon: NotificationsActiveRoundedIcon,
-    accentColor: "#c2410c",
-    title: "Automatic reminder nudges",
-    body: "Everyone gets an email reminder 24 hours before the plan. No excuses for no-shows and no last-minute confusion.",
+    accentColor: "#2e7d32",
+    Icon: EventAvailableRoundedIcon,
+    title: "Know who\u2019s actually coming",
+    body: (<>24-hour reminders, <Box component="span" sx={{ fontWeight: 700 }}>final confirmations</Box>, and minimum-attendee thresholds so you never show up to an empty table.</>),
+    placeholder: "Screenshot — Confirmations",
+    imageSrc: "/images/home/feature-confirmations.png",
   },
   {
-    Icon: ThumbUpAltRoundedIcon,
     accentColor: "#0e7490",
-    title: "Feedback that improves future matches",
-    body: (
-      <>
-        After the plan, attendees share{" "}
-        <Box component="span" sx={{ color: "#0e7490", fontWeight: 600 }}>
-          feedback
-        </Box>
-        . NewChums remembers your preferences and avoids notifying people about your plans who
-        aren&apos;t a good fit, and flags potential mismatches in other people&apos;s plans.
-      </>
-    ),
+    Icon: MailOutlineRoundedIcon,
+    title: "Flexible invites and discovery",
+    body: (<>Invite people by name or email, <Box component="span" sx={{ fontWeight: 700 }}>share a link</Box>, or let nearby people with matching hobbies discover your plan. Daily digests surface plans you&apos;d actually enjoy.</>),
+    placeholder: "Screenshot — Invites / discovery",
+    imageSrc: "/images/home/feature-invites.png",
   },
 ];
 
@@ -370,24 +361,47 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
         component="section"
         id="how-it-works"
         sx={{
-          py: { xs: 7, sm: 9, md: 11 },
+          py: { xs: 6, sm: 8, md: 9 },
           mx: { xs: -2, sm: -3 },
           px: { xs: 2, sm: 3 },
           backgroundColor: (theme) => (theme.palette.mode === "light" ? "#FCECC3" : "grey.900"),
+          position: "relative",
+          overflow: "hidden",
+          // Subtle radial accents to fill background
+          "&::before, &::after": {
+            content: '""',
+            position: "absolute",
+            borderRadius: "50%",
+            pointerEvents: "none",
+          },
+          "&::before": {
+            width: { xs: 300, md: 500 },
+            height: { xs: 300, md: 500 },
+            top: { xs: -80, md: -120 },
+            right: { xs: -100, md: -140 },
+            background: "radial-gradient(circle, rgba(230,91,19,0.07) 0%, transparent 70%)",
+          },
+          "&::after": {
+            width: { xs: 350, md: 600 },
+            height: { xs: 350, md: 600 },
+            bottom: { xs: -100, md: -180 },
+            left: { xs: -120, md: -200 },
+            background: "radial-gradient(circle, rgba(21,101,192,0.06) 0%, transparent 70%)",
+          },
         }}
       >
-        <Box maxWidth={1100} mx="auto">
+        <Box maxWidth={1100} mx="auto" sx={{ position: "relative", zIndex: 1 }}>
           {/* Section heading */}
-          <Box sx={{ textAlign: "center", mb: { xs: 5, sm: 7 } }}>
+          <Box sx={{ textAlign: "center", mb: { xs: 4, sm: 5, md: 6 } }}>
             <Typography
               component="h2"
               variant="h2"
               fontWeight={800}
               sx={{
-                fontSize: { xs: "1.85rem", sm: "2.5rem", md: "2.75rem" },
-                lineHeight: 1.15,
-                letterSpacing: "-0.025em",
-                mb: 2,
+                fontSize: { xs: "1.85rem", sm: "2.5rem", md: "3rem" },
+                lineHeight: 1.1,
+                letterSpacing: "-0.03em",
+                mb: 2.5,
               }}
             >
               How it works
@@ -396,7 +410,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
               variant="h5"
               fontWeight={500}
               sx={{
-                fontSize: { xs: "1.05rem", sm: "1.2rem" },
+                fontSize: { xs: "1.05rem", sm: "1.2rem", md: "1.3rem" },
                 lineHeight: 1.6,
                 color: "text.secondary",
                 maxWidth: 480,
@@ -408,137 +422,184 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
           </Box>
 
           {/* Steps — alternating image / text rows */}
-          <Stack spacing={{ xs: 5, sm: 8, md: 10 }}>
+          <Stack spacing={{ xs: 4, sm: 6, md: 0 }} sx={{ position: "relative" }}>
+            {/* Vertical connector line — desktop only */}
+            <Box
+              aria-hidden="true"
+              sx={{
+                display: { xs: "none", md: "block" },
+                position: "absolute",
+                left: "50%",
+                top: 40,
+                bottom: 40,
+                width: 0,
+                borderLeft: "2px dashed",
+                borderColor: "rgba(230,91,19,0.18)",
+                transform: "translateX(-1px)",
+                zIndex: 0,
+              }}
+            />
+
             {HOW_IT_WORKS_STEPS.map(
               ({ step, accentColor, Icon, title, body, placeholder, imageSrc }, idx) => {
                 const imageOnRight = idx % 2 !== 0;
                 return (
-                  <Grid
+                  <Box
                     key={step}
-                    container
-                    spacing={{ xs: 2, sm: 4, md: 6 }}
-                    alignItems="center"
+                    sx={{
+                      position: "relative",
+                      zIndex: 1,
+                      py: { xs: 0, md: 3 },
+                    }}
                   >
-                    {/* Text column — always first on mobile */}
                     <Grid
-                      size={{ xs: 12, md: 5 }}
-                      sx={{ order: { xs: 0, md: imageOnRight ? 0 : 0 } }}
+                      container
+                      spacing={{ xs: 2, sm: 4, md: 6 }}
+                      alignItems="center"
                     >
-                      <Stack direction={{ xs: "row", md: "column" }} spacing={{ xs: 1.5, md: 2 }} alignItems={{ xs: "flex-start", md: "stretch" }}>
+                      {/* Text column — always first on mobile */}
+                      <Grid
+                        size={{ xs: 12, md: 5 }}
+                        sx={{ order: { xs: 0, md: 0 } }}
+                      >
+                        <Stack direction={{ xs: "row", md: "column" }} spacing={{ xs: 1.5, md: 2 }} alignItems={{ xs: "flex-start", md: "stretch" }}>
+                          {/* Step badge */}
+                          <Box
+                            sx={{
+                              width: { xs: 38, md: 52 },
+                              height: { xs: 38, md: 52 },
+                              borderRadius: "50%",
+                              bgcolor: accentColor,
+                              color: "#fff",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontWeight: 800,
+                              fontSize: { xs: "0.9rem", md: "1.1rem" },
+                              flexShrink: 0,
+                              mt: { xs: 0.25, md: 0 },
+                              boxShadow: `0 4px 14px ${accentColor}40`,
+                            }}
+                          >
+                            {step}
+                          </Box>
+                          <Box>
+                            <Typography
+                              variant="h4"
+                              component="h3"
+                              fontWeight={800}
+                              sx={{
+                                fontSize: { xs: "1.15rem", sm: "1.5rem", md: "1.75rem" },
+                                lineHeight: 1.2,
+                                letterSpacing: "-0.025em",
+                              }}
+                            >
+                              {title}
+                            </Typography>
+                            <Typography
+                              variant="body1"
+                              color="text.secondary"
+                              sx={{
+                                lineHeight: 1.75,
+                                maxWidth: { md: 380 },
+                                mt: { xs: 0.5, md: 1.5 },
+                                fontSize: { xs: "0.95rem", md: "1.05rem" },
+                              }}
+                            >
+                              {body}
+                            </Typography>
+                          </Box>
+                        </Stack>
+                      </Grid>
+
+                      {/* Image column — below text on mobile, alternates on desktop */}
+                      <Grid
+                        size={{ xs: 12, md: 7 }}
+                        sx={{ order: { xs: 1, md: imageOnRight ? -1 : 1 } }}
+                      >
                         <Box
                           sx={{
-                            width: { xs: 36, md: 44 },
-                            height: { xs: 36, md: 44 },
-                            borderRadius: "50%",
-                            bgcolor: `${accentColor}28`,
-                            color: accentColor,
+                            borderRadius: { xs: 2.5, md: 3.5 },
+                            overflow: "hidden",
+                            ...(!imageSrc && { aspectRatio: "3 / 2" }),
+                            position: "relative",
+                            background: imageSrc
+                              ? "background.paper"
+                              : (theme) =>
+                                  `linear-gradient(135deg, ${accentColor}0A 0%, ${theme.palette.grey[100]} 100%)`,
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
-                            fontWeight: 800,
-                            fontSize: { xs: "0.9rem", md: "1.05rem" },
-                            flexShrink: 0,
-                            mt: { xs: 0.25, md: 0 },
+                            boxShadow: (theme) =>
+                              theme.palette.mode === "light"
+                                ? `0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06)`
+                                : "none",
+                            border: "1px solid",
+                            borderColor: (theme) =>
+                              theme.palette.mode === "light"
+                                ? "rgba(0,0,0,0.06)"
+                                : "divider",
+                            bgcolor: imageSrc ? "background.paper" : undefined,
+                            transition: "transform 0.25s ease, box-shadow 0.25s ease",
+                            "&:hover": {
+                              transform: { md: "translateY(-3px)" },
+                              boxShadow: (theme) =>
+                                theme.palette.mode === "light"
+                                  ? `0 12px 40px rgba(0,0,0,0.15), 0 4px 12px rgba(0,0,0,0.08)`
+                                  : "none",
+                            },
                           }}
                         >
-                          {step}
+                          {imageSrc ? (
+                            <Image
+                              src={imageSrc}
+                              alt={title}
+                              width={1200}
+                              height={800}
+                              sizes="(max-width: 960px) 100vw, 60vw"
+                              style={{ width: "100%", height: "auto", display: "block" }}
+                            />
+                          ) : (
+                            <Stack alignItems="center" spacing={1} sx={{ opacity: 0.35 }}>
+                              <Icon sx={{ fontSize: 40, color: accentColor }} />
+                              <Typography
+                                variant="body2"
+                                color="text.secondary"
+                                fontWeight={500}
+                              >
+                                {placeholder}
+                              </Typography>
+                            </Stack>
+                          )}
                         </Box>
-                        <Box>
-                          <Typography
-                            variant="h4"
-                            component="h3"
-                            fontWeight={700}
-                            sx={{
-                              fontSize: { xs: "1.15rem", sm: "1.5rem", md: "1.65rem" },
-                              lineHeight: 1.25,
-                              letterSpacing: "-0.02em",
-                            }}
-                          >
-                            {title}
-                          </Typography>
-                          <Typography
-                            variant="body1"
-                            color="text.secondary"
-                            sx={{ lineHeight: 1.7, maxWidth: { md: 400 }, mt: { xs: 0.5, md: 1 }, fontSize: { xs: "0.95rem", md: "1rem" } }}
-                          >
-                            {body}
-                          </Typography>
-                        </Box>
-                      </Stack>
+                      </Grid>
                     </Grid>
-
-                    {/* Image column — below text on mobile, alternates on desktop */}
-                    <Grid
-                      size={{ xs: 12, md: 7 }}
-                      sx={{ order: { xs: 1, md: imageOnRight ? -1 : 1 } }}
-                    >
-                      <Box
-                        sx={{
-                          borderRadius: { xs: 2.5, md: 3 },
-                          overflow: "hidden",
-                          ...(!imageSrc && { aspectRatio: "3 / 2" }),
-                          position: "relative",
-                          background: imageSrc
-                            ? undefined
-                            : (theme) =>
-                                `linear-gradient(135deg, ${accentColor}0A 0%, ${theme.palette.grey[100]} 100%)`,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          boxShadow: (theme) =>
-                            theme.palette.mode === "light"
-                              ? "0 4px 24px rgba(0,0,0,0.10)"
-                              : "none",
-                          border: "1px solid",
-                          borderColor: "divider",
-                          bgcolor: imageSrc ? undefined : "background.paper",
-                        }}
-                      >
-                        {imageSrc ? (
-                          <Image
-                            src={imageSrc}
-                            alt={title}
-                            width={1200}
-                            height={800}
-                            sizes="(max-width: 960px) 100vw, 60vw"
-                            style={{ width: "100%", height: "auto", display: "block" }}
-                          />
-                        ) : (
-                          <Stack alignItems="center" spacing={1} sx={{ opacity: 0.35 }}>
-                            <Icon sx={{ fontSize: 40, color: accentColor }} />
-                            <Typography
-                              variant="body2"
-                              color="text.secondary"
-                              fontWeight={500}
-                            >
-                              {placeholder}
-                            </Typography>
-                          </Stack>
-                        )}
-                      </Box>
-                    </Grid>
-                  </Grid>
+                  </Box>
                 );
               }
             )}
           </Stack>
 
           {/* CTA */}
-          <Box sx={{ textAlign: "center", mt: { xs: 5, sm: 7 } }}>
+          <Box sx={{ textAlign: "center", mt: { xs: 4, sm: 5, md: 6 } }}>
             <Button
               component={Link}
               href="/how-it-works"
-              variant="outlined"
+              variant="contained"
               color="primary"
               size="large"
               sx={{
-                px: 4,
-                py: 1.5,
-                fontWeight: 600,
+                px: { xs: 4, sm: 5 },
+                py: 1.75,
+                fontWeight: 700,
                 fontSize: "1.0625rem",
                 borderRadius: 2.5,
                 textTransform: "none",
                 minWidth: { xs: "100%", sm: "auto" },
+                boxShadow: "0 4px 16px rgba(230,91,19,0.3)",
+                "&:hover": {
+                  boxShadow: "0 6px 24px rgba(230,91,19,0.4)",
+                },
               }}
             >
               See the full walkthrough
@@ -552,93 +613,256 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
         component="section"
         id="features"
         sx={{
-          ...SECTION_SPACING,
-          backgroundColor: (theme) => (theme.palette.mode === "light" ? "grey.50" : "grey.900"),
+          py: { xs: 7, sm: 10, md: 12 },
           mx: { xs: -2, sm: -3 },
           px: { xs: 2, sm: 3 },
+          backgroundColor: (theme) =>
+            theme.palette.mode === "light" ? "#F6F7F9" : "grey.900",
+          position: "relative",
+          overflow: "hidden",
+          // Organic blob accents — four shapes placed to guide the eye between cards
+          "& .features-blob": {
+            position: "absolute",
+            borderRadius: "50%",
+            pointerEvents: "none",
+            filter: "blur(1px)",
+          },
         }}
       >
-        <Box maxWidth={1100} mx="auto">
+        {/* Background blobs */}
+        <Box className="features-blob" sx={{ width: { xs: 300, md: 440 }, height: { xs: 300, md: 440 }, top: { xs: "-4%", md: "-2%" }, left: { xs: "-14%", md: "-8%" }, background: "radial-gradient(circle, rgba(252,236,195,0.45) 0%, transparent 65%)" }} />
+        <Box className="features-blob" sx={{ width: { xs: 260, md: 380 }, height: { xs: 260, md: 380 }, top: { xs: "35%", md: "30%" }, right: { xs: "-16%", md: "-6%" }, background: "radial-gradient(circle, rgba(230,91,19,0.03) 0%, transparent 65%)" }} />
+        <Box className="features-blob" sx={{ width: { xs: 280, md: 400 }, height: { xs: 280, md: 400 }, bottom: { xs: "20%", md: "18%" }, left: { xs: "-10%", md: "5%" }, background: "radial-gradient(circle, rgba(21,101,192,0.025) 0%, transparent 65%)" }} />
+        <Box className="features-blob" sx={{ width: { xs: 320, md: 480 }, height: { xs: 320, md: 480 }, bottom: { xs: "-6%", md: "-4%" }, right: { xs: "-12%", md: "-4%" }, background: "radial-gradient(circle, rgba(252,236,195,0.35) 0%, transparent 65%)" }} />
+
+        <Box maxWidth={1100} mx="auto" sx={{ position: "relative", zIndex: 1 }}>
           {/* Section heading */}
-          <Box sx={{ textAlign: "center", mb: { xs: 5, sm: 7 } }}>
+          <Box sx={{ textAlign: "center", mb: { xs: 4, sm: 5, md: 6 } }}>
             <Typography
               component="h2"
               variant="h2"
               fontWeight={800}
               sx={{
-                fontSize: { xs: "1.85rem", sm: "2.5rem", md: "2.75rem" },
-                lineHeight: 1.15,
-                letterSpacing: "-0.025em",
+                fontSize: { xs: "1.85rem", sm: "2.5rem", md: "3rem" },
+                lineHeight: 1.1,
+                letterSpacing: "-0.03em",
                 mb: 2,
               }}
             >
-              NewChums Features
+              Built for plans that actually happen
             </Typography>
             <Typography
               variant="h5"
               fontWeight={500}
               sx={{
-                fontSize: { xs: "1.05rem", sm: "1.2rem" },
+                fontSize: { xs: "1.05rem", sm: "1.15rem", md: "1.25rem" },
                 lineHeight: 1.6,
                 color: "text.secondary",
-                maxWidth: 620,
+                maxWidth: 520,
                 mx: "auto",
               }}
             >
-              Everything you need to organize great plans, keep everyone in the loop, and make
-              future get-togethers even better.
+              Thoughtful tools that take the friction out of getting people together.
             </Typography>
           </Box>
 
-          {/* Feature cards grid */}
-          <Grid container spacing={{ xs: 3, sm: 4 }}>
-            {FEATURES.map(({ Icon, accentColor, title, body }) => (
+          {/* Top row — 2 featured cards */}
+          <Grid container spacing={{ xs: 2.5, sm: 3 }}>
+            {FEATURES_TOP.map(({ accentColor, Icon, title, body, placeholder, imageSrc }) => (
+              <Grid key={title} size={{ xs: 12, md: 6 }}>
+                <Box
+                  sx={{
+                    height: "100%",
+                    backgroundColor: (theme) =>
+                      theme.palette.mode === "light"
+                        ? "rgba(255,255,255,0.72)"
+                        : "background.paper",
+                    backdropFilter: { md: "blur(12px)" },
+                    WebkitBackdropFilter: { md: "blur(12px)" },
+                    borderRadius: 3.5,
+                    overflow: "hidden",
+                    boxShadow: (theme) =>
+                      theme.palette.mode === "light"
+                        ? "0 1px 2px rgba(0,0,0,0.03), 0 8px 40px rgba(0,0,0,0.06)"
+                        : "none",
+                    border: "1px solid",
+                    borderColor: (theme) =>
+                      theme.palette.mode === "light"
+                        ? "rgba(255,255,255,0.20)"
+                        : "divider",
+                    display: "flex",
+                    flexDirection: "column",
+                    transition: "transform 0.25s ease, box-shadow 0.25s ease",
+                    "&:hover": {
+                      transform: { md: "translateY(-3px)" },
+                      boxShadow: (theme) =>
+                        theme.palette.mode === "light"
+                          ? "0 2px 4px rgba(0,0,0,0.04), 0 16px 56px rgba(0,0,0,0.09)"
+                          : "none",
+                    },
+                  }}
+                >
+                  {/* Image */}
+                  <Box
+                    sx={{
+                      position: "relative",
+                      ...(!imageSrc && { aspectRatio: "3 / 2" }),
+                      background: imageSrc
+                        ? undefined
+                        : (theme) =>
+                            `linear-gradient(135deg, ${accentColor}06 0%, ${theme.palette.grey[100]} 100%)`,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      borderBottom: "1px solid",
+                      borderColor: (theme) =>
+                        theme.palette.mode === "light" ? "rgba(0,0,0,0.04)" : "divider",
+                    }}
+                  >
+                    {imageSrc ? (
+                      <Image
+                        src={imageSrc}
+                        alt={title}
+                        width={1200}
+                        height={800}
+                        sizes="(max-width: 960px) 100vw, 50vw"
+                        style={{ width: "100%", height: "auto", display: "block" }}
+                      />
+                    ) : (
+                      <Stack alignItems="center" spacing={1} sx={{ opacity: 0.3 }}>
+                        <Icon sx={{ fontSize: 36, color: accentColor }} />
+                        <Typography variant="caption" color="text.secondary" fontWeight={500}>
+                          {placeholder}
+                        </Typography>
+                      </Stack>
+                    )}
+                  </Box>
+
+                  {/* Text */}
+                  <Box sx={{ p: { xs: 2.5, sm: 3, md: 3.5 }, flex: 1 }}>
+                    <Typography
+                      variant="h6"
+                      component="h3"
+                      fontWeight={700}
+                      sx={{
+                        mb: 0.75,
+                        fontSize: { xs: "1.05rem", sm: "1.15rem", md: "1.2rem" },
+                        lineHeight: 1.3,
+                        letterSpacing: "-0.01em",
+                        color: accentColor,
+                      }}
+                    >
+                      {title}
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ lineHeight: 1.7, fontSize: { xs: "0.9rem", sm: "0.95rem" } }}
+                    >
+                      {body}
+                    </Typography>
+                  </Box>
+                </Box>
+              </Grid>
+            ))}
+          </Grid>
+
+          {/* Bottom row — 3 cards */}
+          <Grid container spacing={{ xs: 2.5, sm: 3 }} sx={{ mt: { xs: 1, sm: 2, md: 3 } }}>
+            {FEATURES_BOTTOM.map(({ accentColor, Icon, title, body, placeholder, imageSrc }) => (
               <Grid key={title} size={{ xs: 12, sm: 6, md: 4 }}>
                 <Box
                   sx={{
                     height: "100%",
-                    backgroundColor: "background.paper",
-                    borderRadius: 2.5,
-                    p: { xs: 3, sm: 3.5 },
+                    backgroundColor: (theme) =>
+                      theme.palette.mode === "light"
+                        ? "rgba(255,255,255,0.72)"
+                        : "background.paper",
+                    backdropFilter: { md: "blur(12px)" },
+                    WebkitBackdropFilter: { md: "blur(12px)" },
+                    borderRadius: 3.5,
+                    overflow: "hidden",
                     boxShadow: (theme) =>
-                      theme.palette.mode === "light" ? "0 1px 6px rgba(0,0,0,0.07)" : "none",
+                      theme.palette.mode === "light"
+                        ? "0 1px 2px rgba(0,0,0,0.03), 0 8px 40px rgba(0,0,0,0.06)"
+                        : "none",
                     border: "1px solid",
-                    borderColor: "divider",
+                    borderColor: (theme) =>
+                      theme.palette.mode === "light"
+                        ? "rgba(255,255,255,0.20)"
+                        : "divider",
                     display: "flex",
                     flexDirection: "column",
-                    alignItems: { xs: "center", sm: "flex-start" },
-                    textAlign: { xs: "center", sm: "left" },
+                    transition: "transform 0.25s ease, box-shadow 0.25s ease",
+                    "&:hover": {
+                      transform: { md: "translateY(-3px)" },
+                      boxShadow: (theme) =>
+                        theme.palette.mode === "light"
+                          ? "0 2px 4px rgba(0,0,0,0.04), 0 16px 56px rgba(0,0,0,0.09)"
+                          : "none",
+                    },
                   }}
                 >
+                  {/* Image */}
                   <Box
                     sx={{
-                      width: 48,
-                      height: 48,
-                      borderRadius: 2,
-                      bgcolor: `${accentColor}14`,
+                      position: "relative",
+                      ...(!imageSrc && { aspectRatio: "3 / 2" }),
+                      background: imageSrc
+                        ? undefined
+                        : (theme) =>
+                            `linear-gradient(135deg, ${accentColor}06 0%, ${theme.palette.grey[100]} 100%)`,
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      mb: 2,
+                      borderBottom: "1px solid",
+                      borderColor: (theme) =>
+                        theme.palette.mode === "light" ? "rgba(0,0,0,0.04)" : "divider",
                     }}
                   >
-                    <Icon sx={{ fontSize: 24, color: accentColor }} />
+                    {imageSrc ? (
+                      <Image
+                        src={imageSrc}
+                        alt={title}
+                        width={1200}
+                        height={800}
+                        sizes="(max-width: 600px) 100vw, (max-width: 960px) 50vw, 33vw"
+                        style={{ width: "100%", height: "auto", display: "block" }}
+                      />
+                    ) : (
+                      <Stack alignItems="center" spacing={1} sx={{ opacity: 0.3 }}>
+                        <Icon sx={{ fontSize: 36, color: accentColor }} />
+                        <Typography variant="caption" color="text.secondary" fontWeight={500}>
+                          {placeholder}
+                        </Typography>
+                      </Stack>
+                    )}
                   </Box>
-                  <Typography
-                    variant="h6"
-                    component="h3"
-                    fontWeight={700}
-                    sx={{
-                      mb: 1,
-                      fontSize: { xs: "1rem", sm: "1.0625rem" },
-                      lineHeight: 1.35,
-                    }}
-                  >
-                    {title}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.75 }}>
-                    {body}
-                  </Typography>
+
+                  {/* Text */}
+                  <Box sx={{ p: { xs: 2.5, sm: 2.5, md: 3 }, flex: 1 }}>
+                    <Typography
+                      variant="h6"
+                      component="h3"
+                      fontWeight={700}
+                      sx={{
+                        mb: 0.75,
+                        fontSize: { xs: "1.05rem", sm: "1.0625rem" },
+                        lineHeight: 1.3,
+                        letterSpacing: "-0.01em",
+                        color: accentColor,
+                      }}
+                    >
+                      {title}
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ lineHeight: 1.7, fontSize: { xs: "0.9rem", sm: "0.9rem" } }}
+                    >
+                      {body}
+                    </Typography>
+                  </Box>
                 </Box>
               </Grid>
             ))}
@@ -712,7 +936,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                   Public plans
                 </Box>{" "}
                 are where it gets interesting. When someone nearby shares your hobbies and fits your
-                preferences, they&apos;ll hear about your plan. And you&apos;ll hear about theirs.
+                preferences, <Box component="span" sx={{ fontWeight: 700 }}>they&apos;ll hear about your plan</Box>. And you&apos;ll hear about theirs.
                 No cold introductions, no awkward swiping, just real people showing up to do
                 something they already enjoy.
               </Typography>
@@ -740,26 +964,26 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
             {/* Placeholder for screenshot or lifestyle image */}
             <Grid size={{ xs: 12, md: 6 }}>
               <Box
-                aria-hidden="true"
                 sx={{
                   borderRadius: 3,
                   overflow: "hidden",
-                  aspectRatio: "4 / 3",
-                  background: (theme) =>
+                  border: "1px solid",
+                  borderColor: (theme) =>
+                    theme.palette.mode === "light" ? "rgba(0,0,0,0.06)" : "divider",
+                  boxShadow: (theme) =>
                     theme.palette.mode === "light"
-                      ? `linear-gradient(135deg, ${theme.palette.primary.light} 0%, ${theme.palette.grey[200]} 100%)`
-                      : `linear-gradient(135deg, ${theme.palette.grey[800]} 0%, ${theme.palette.grey[700]} 100%)`,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
+                      ? "0 4px 24px rgba(0,0,0,0.10)"
+                      : "none",
                 }}
               >
-                <Stack alignItems="center" spacing={1.5} sx={{ opacity: 0.4 }}>
-                  <PeopleRoundedIcon sx={{ fontSize: 48, color: "primary.main" }} />
-                  <Typography variant="body2" color="text.secondary" fontWeight={500}>
-                    Screenshot placeholder &mdash; Profile preferences
-                  </Typography>
-                </Stack>
+                <Image
+                  src="/images/home/profile-settings.png"
+                  alt="NewChums profile and preference settings"
+                  width={1200}
+                  height={900}
+                  sizes="(max-width: 960px) 100vw, 50vw"
+                  style={{ width: "100%", height: "auto", display: "block" }}
+                />
               </Box>
             </Grid>
           </Grid>
@@ -867,7 +1091,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                 mb: 2,
               }}
             >
-              The nitty gritty
+              Why NewChums works
             </Typography>
             <Typography
               variant="h5"

@@ -2314,7 +2314,7 @@ export default function EventDetailClient() {
                     size="small"
                     label={
                       event.planViability === "viable"
-                        ? "Viable"
+                        ? "Required number of confirmations received"
                         : event.planViability === "at_risk"
                           ? "At risk"
                           : "Below minimum"

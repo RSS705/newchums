@@ -6939,28 +6939,25 @@ app.get("/events/explore", async (c) => {
     // Pre-fetch viewer's chum preferences for viewer→host compatibility notes
     const viewerPrefs = await loadChumPrefsForUser(sql, userId);
 
-    const hobbyMatchExpr = hasUserHobbies && personalizeEnabled
-      ? sql`(SELECT COUNT(*)::int FROM newchums.event_interests ei4 JOIN newchums.interests ii4 ON ii4.id = ei4.interest_id WHERE ei4.event_id = e.id AND ii4.slug = ANY(${userHobbySlugs}))`
-      : sql`(0)::int`;
+    const hobbyMatchSelectExpr = hasUserHobbies && personalizeEnabled
+      ? sql`(SELECT COUNT(*)::int FROM newchums.event_interests ei4 JOIN newchums.interests ii4 ON ii4.id = ei4.interest_id WHERE ei4.event_id = e.id AND ii4.slug = ANY(${userHobbySlugs})) AS hobby_match_count`
+      : sql`0 AS hobby_match_count`;
 
     const sortByNewest = sortParam === "newest";
 
     const orderClause = sortByNewest
       ? sql`
-          CASE WHEN e.host_user_id = ${userId} THEN 0 ELSE 1 END,
           e.created_at DESC,
           e.starts_at ASC
         `
       : hasLocation
         ? sql`
-            CASE WHEN e.host_user_id = ${userId} THEN 0 ELSE 1 END,
-            ${hobbyMatchExpr} DESC,
+            hobby_match_count DESC,
             distance_km ASC NULLS LAST,
             e.starts_at ASC
           `
         : sql`
-            CASE WHEN e.host_user_id = ${userId} THEN 0 ELSE 1 END,
-            ${hobbyMatchExpr} DESC,
+            hobby_match_count DESC,
             e.starts_at ASC
           `;
 
@@ -6971,6 +6968,7 @@ app.get("/events/explore", async (c) => {
         e.location_lat, e.location_lng,
         e.max_seats, e.visibility, e.status, e.allow_alt_times,
         e.host_user_id, e.created_at, e.banner_key,
+        ${hobbyMatchSelectExpr},
         COALESCE(
           (SELECT json_agg(json_build_object('name', ii.name, 'slug', ii.slug))
            FROM newchums.event_interests ei2
