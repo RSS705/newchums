@@ -546,7 +546,7 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
                     <ChatBubbleOutlineRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
                     <Typography variant="caption" color="text.disabled">{item.comment_count}</Typography>
                   </Stack>
-                  <Tooltip title={item.viewer_following ? "You\u2019re following this \u2014 click to unfollow" : "Follow for email updates"} arrow>
+                  <Tooltip title={item.viewer_following ? "You're following this -- click to unfollow" : "Follow for email updates"} arrow>
                     <Stack
                       direction="row"
                       spacing={0.5}

@@ -545,7 +545,7 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
             {isFiltered
               ? "Try broadening your search, changing the time window, or clearing filters to see more."
               : hasLocation
-                ? "There aren\u2019t any public plans in your area right now. Be the first to organize one, or check back soon."
+                ? "There aren't any public plans in your area right now. Be the first to organize one, or check back soon."
                 : !hasHobbies
                   ? "Add a few hobbies to your profile so we can show you relevant gatherings."
                   : "Plans are just getting started in your area. Start one and invite people around a hobby you already enjoy."}

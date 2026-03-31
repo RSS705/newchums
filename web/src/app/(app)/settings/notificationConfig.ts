@@ -74,7 +74,7 @@ export const NOTIFICATION_TYPES: NotificationTypeConfig[] = [
   {
     key: "unread_chat_digest",
     title: "Unread messages in your plans",
-    description: "A daily email when you have unread chat messages in plans you\u2019re part of.",
+    description: "A daily email when you have unread chat messages in plans you're part of.",
   },
   {
     key: "attendance_confirmation",
@@ -84,6 +84,6 @@ export const NOTIFICATION_TYPES: NotificationTypeConfig[] = [
   {
     key: "roadmap_updates",
     title: "Roadmap updates",
-    description: "Updates on roadmap items you\u2019ve submitted or followed.",
+    description: "Updates on roadmap items you've submitted or followed.",
   },
 ];

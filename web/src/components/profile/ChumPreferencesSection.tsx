@@ -41,7 +41,7 @@ const METRICS: { key: keyof Omit<Preferences, "enabled">; title: string; tooltip
   { key: "reliability", title: "Reliability", tooltip: "How important is follow-through and showing up reliably?" },
   { key: "sociability", title: "Sociability", tooltip: "How important is it that someone is enjoyable and easy to spend time with?" },
   { key: "presentation", title: "Cleanliness & consideration", tooltip: "How important is basic cleanliness and considerate use of shared space for in-person gatherings? This is about hygiene and shared-space courtesy, not appearance or style." },
-  { key: "hosting", title: "Hosting quality", tooltip: "When joining someone else\u2019s plan, how important is good hosting quality?" },
+  { key: "hosting", title: "Hosting quality", tooltip: "When joining someone else's plan, how important is good hosting quality?" },
 ];
 
 const LEVELS: { value: Level; label: string }[] = [

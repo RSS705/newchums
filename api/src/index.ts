@@ -4587,6 +4587,347 @@ app.get("/admin/kpis", async (c) => {
   }
 });
 
+// ── Growth loop KPI filters ──────────────────────────────────────────────────
+
+app.get("/admin/kpis/growth-loop/filters", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  const sql = getSql(c.env);
+  try {
+    // Fetch raw location_area values, then normalize to city-level.
+    // location_area can be "London, ON", "Old East Village, London, ON", etc.
+    // We extract the trailing "City, Province" (last 2 segments) to group by city.
+    const rawCities = (await sql`
+      SELECT DISTINCT location_area FROM newchums.events
+      WHERE location_area IS NOT NULL AND location_area != '' AND status IN ('published', 'canceled')
+    `) as { location_area: string }[];
+
+    const citySet = new Set<string>();
+    for (const r of rawCities) {
+      const parts = r.location_area.split(",").map((s) => s.trim()).filter(Boolean);
+      // Take the last 2 segments as city-level (e.g. "London, ON" from "Byron, London, ON")
+      const cityParts = parts.length >= 2 ? parts.slice(-2) : parts;
+      citySet.add(cityParts.join(", "));
+    }
+    const cities = [...citySet].sort();
+
+    const interests = (await sql`
+      SELECT DISTINCT i.id, i.name FROM newchums.interests i
+      JOIN newchums.event_interests ei ON ei.interest_id = i.id
+      JOIN newchums.events e ON e.id = ei.event_id
+      WHERE i.is_deleted = false AND e.status IN ('published', 'canceled')
+      ORDER BY i.name
+    `) as { id: string; name: string }[];
+    const communities = (await sql`
+      SELECT DISTINCT cm.id, cm.name FROM newchums.communities cm
+      JOIN newchums.events e ON e.community_id = cm.id
+      WHERE e.status IN ('published', 'canceled')
+      ORDER BY cm.name
+    `) as { id: string; name: string }[];
+    return c.json({ ok: true, cities, interests, communities });
+  } catch (err) {
+    console.error("[GET /admin/kpis/growth-loop/filters]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+// ── Growth loop KPI metrics ─────────────────────────────────────────────────
+
+app.get("/admin/kpis/growth-loop", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  const sql = getSql(c.env);
+
+  const city = c.req.query("city")?.trim() || null;
+  const interestId = c.req.query("interestId")?.trim() || null;
+  const communityId = c.req.query("communityId")?.trim() || null;
+
+  try {
+    // Build filter clause fragments. The neon tagged template doesn't support
+    // conditional WHERE parts elegantly, so we run a filtered_events CTE query
+    // and then join against it for each metric.
+
+    // Metric 1: First-plan activation (invite to first attendance)
+    const m1 = (await sql`
+      WITH fe AS (
+        SELECT e.id, e.host_user_id, e.starts_at, e.status
+        FROM newchums.events e
+        WHERE e.status IN ('published', 'canceled')
+          AND (${city}::text IS NULL OR e.location_area ILIKE '%' || ${city} || '%')
+          AND (${interestId}::text IS NULL OR EXISTS (SELECT 1 FROM newchums.event_interests ei WHERE ei.event_id = e.id AND ei.interest_id = ${interestId}::uuid))
+          AND (${communityId}::text IS NULL OR e.community_id = ${communityId}::uuid)
+      ),
+      invited_users AS (
+        SELECT DISTINCT inv.user_id
+        FROM newchums.event_invites inv
+        JOIN fe ON fe.id = inv.event_id
+        WHERE inv.user_id IS NOT NULL
+      ),
+      attended AS (
+        SELECT DISTINCT r.user_id
+        FROM newchums.event_rsvps r
+        JOIN fe ON fe.id = r.event_id
+        WHERE r.status = 'going' AND fe.status = 'published' AND fe.starts_at < NOW()
+          AND r.user_id != fe.host_user_id
+      )
+      SELECT
+        (SELECT COUNT(*)::int FROM invited_users) AS denominator,
+        (SELECT COUNT(*)::int FROM invited_users iu WHERE EXISTS (SELECT 1 FROM attended a WHERE a.user_id = iu.user_id)) AS numerator
+    `) as { denominator: number; numerator: number }[];
+
+    // Metric 2: Repeat attendance (30d)
+    const m2 = (await sql`
+      WITH fe AS (
+        SELECT e.id, e.host_user_id, e.starts_at, e.status
+        FROM newchums.events e
+        WHERE e.status = 'published' AND e.starts_at < NOW()
+          AND (${city}::text IS NULL OR e.location_area ILIKE '%' || ${city} || '%')
+          AND (${interestId}::text IS NULL OR EXISTS (SELECT 1 FROM newchums.event_interests ei WHERE ei.event_id = e.id AND ei.interest_id = ${interestId}::uuid))
+          AND (${communityId}::text IS NULL OR e.community_id = ${communityId}::uuid)
+      ),
+      user_plans AS (
+        SELECT r.user_id, fe.starts_at,
+               ROW_NUMBER() OVER (PARTITION BY r.user_id ORDER BY fe.starts_at) AS rn
+        FROM newchums.event_rsvps r
+        JOIN fe ON fe.id = r.event_id
+        WHERE r.status = 'going' AND r.user_id != fe.host_user_id
+      ),
+      first_timers AS (
+        SELECT user_id, starts_at AS first_at FROM user_plans WHERE rn = 1
+          AND starts_at < NOW() - INTERVAL '30 days'
+      ),
+      repeaters AS (
+        SELECT DISTINCT ft.user_id
+        FROM first_timers ft
+        JOIN user_plans up ON up.user_id = ft.user_id AND up.rn = 2
+          AND up.starts_at <= ft.first_at + INTERVAL '30 days'
+      )
+      SELECT
+        (SELECT COUNT(*)::int FROM first_timers) AS denominator,
+        (SELECT COUNT(*)::int FROM repeaters) AS numerator
+    `) as { denominator: number; numerator: number }[];
+
+    // Metric 3a: Host conversion (30d)
+    const m3a = (await sql`
+      WITH fe AS (
+        SELECT e.id, e.host_user_id, e.starts_at, e.status
+        FROM newchums.events e
+        WHERE e.status = 'published' AND e.starts_at < NOW()
+          AND (${city}::text IS NULL OR e.location_area ILIKE '%' || ${city} || '%')
+          AND (${interestId}::text IS NULL OR EXISTS (SELECT 1 FROM newchums.event_interests ei WHERE ei.event_id = e.id AND ei.interest_id = ${interestId}::uuid))
+          AND (${communityId}::text IS NULL OR e.community_id = ${communityId}::uuid)
+      ),
+      user_plans AS (
+        SELECT r.user_id, fe.starts_at,
+               ROW_NUMBER() OVER (PARTITION BY r.user_id ORDER BY fe.starts_at) AS rn
+        FROM newchums.event_rsvps r
+        JOIN fe ON fe.id = r.event_id
+        WHERE r.status = 'going' AND r.user_id != fe.host_user_id
+      ),
+      first_timers AS (
+        SELECT user_id, starts_at AS first_at FROM user_plans WHERE rn = 1
+      ),
+      converters AS (
+        SELECT DISTINCT ft.user_id
+        FROM first_timers ft
+        JOIN newchums.events he ON he.host_user_id = ft.user_id
+          AND he.status IN ('published', 'canceled')
+          AND he.created_at <= ft.first_at + INTERVAL '30 days'
+      )
+      SELECT
+        (SELECT COUNT(*)::int FROM first_timers) AS denominator,
+        (SELECT COUNT(*)::int FROM converters) AS numerator
+    `) as { denominator: number; numerator: number }[];
+
+    // Metric 3b: Hosted a completed plan within 45d
+    const m3b = (await sql`
+      WITH fe AS (
+        SELECT e.id, e.host_user_id, e.starts_at, e.status
+        FROM newchums.events e
+        WHERE e.status = 'published' AND e.starts_at < NOW()
+          AND (${city}::text IS NULL OR e.location_area ILIKE '%' || ${city} || '%')
+          AND (${interestId}::text IS NULL OR EXISTS (SELECT 1 FROM newchums.event_interests ei WHERE ei.event_id = e.id AND ei.interest_id = ${interestId}::uuid))
+          AND (${communityId}::text IS NULL OR e.community_id = ${communityId}::uuid)
+      ),
+      user_plans AS (
+        SELECT r.user_id, fe.starts_at,
+               ROW_NUMBER() OVER (PARTITION BY r.user_id ORDER BY fe.starts_at) AS rn
+        FROM newchums.event_rsvps r
+        JOIN fe ON fe.id = r.event_id
+        WHERE r.status = 'going' AND r.user_id != fe.host_user_id
+      ),
+      first_timers AS (
+        SELECT user_id, starts_at AS first_at FROM user_plans WHERE rn = 1
+      ),
+      converters AS (
+        SELECT DISTINCT ft.user_id
+        FROM first_timers ft
+        JOIN newchums.events he ON he.host_user_id = ft.user_id
+          AND he.status = 'published' AND he.starts_at < NOW()
+          AND he.starts_at <= ft.first_at + INTERVAL '45 days'
+      )
+      SELECT
+        (SELECT COUNT(*)::int FROM first_timers) AS denominator,
+        (SELECT COUNT(*)::int FROM converters) AS numerator
+    `) as { denominator: number; numerator: number }[];
+
+    // Metric 4: First-time attendees per completed plan
+    const m4 = (await sql`
+      WITH fe AS (
+        SELECT e.id, e.host_user_id, e.starts_at
+        FROM newchums.events e
+        WHERE e.status = 'published' AND e.starts_at < NOW()
+          AND (${city}::text IS NULL OR e.location_area ILIKE '%' || ${city} || '%')
+          AND (${interestId}::text IS NULL OR EXISTS (SELECT 1 FROM newchums.event_interests ei WHERE ei.event_id = e.id AND ei.interest_id = ${interestId}::uuid))
+          AND (${communityId}::text IS NULL OR e.community_id = ${communityId}::uuid)
+      ),
+      completed_plans AS (
+        SELECT id FROM fe
+      ),
+      user_first_plan AS (
+        SELECT r.user_id, MIN(fe.starts_at) AS first_at
+        FROM newchums.event_rsvps r
+        JOIN fe ON fe.id = r.event_id
+        WHERE r.status = 'going' AND r.user_id != fe.host_user_id
+        GROUP BY r.user_id
+      ),
+      first_timers_per_plan AS (
+        SELECT r.event_id, COUNT(*)::int AS cnt
+        FROM newchums.event_rsvps r
+        JOIN fe ON fe.id = r.event_id
+        JOIN user_first_plan ufp ON ufp.user_id = r.user_id AND ufp.first_at = fe.starts_at
+        WHERE r.status = 'going' AND r.user_id != fe.host_user_id
+        GROUP BY r.event_id
+      )
+      SELECT
+        (SELECT COUNT(*)::int FROM completed_plans) AS completed_plans,
+        COALESCE((SELECT SUM(cnt)::int FROM first_timers_per_plan), 0) AS total_first_timers,
+        CASE WHEN (SELECT COUNT(*) FROM completed_plans) > 0
+          THEN ROUND((SELECT COALESCE(SUM(cnt), 0) FROM first_timers_per_plan)::numeric / (SELECT COUNT(*) FROM completed_plans), 2)
+          ELSE NULL END AS avg_per_plan
+    `) as { completed_plans: number; total_first_timers: number; avg_per_plan: number | null }[];
+
+    // Metric 5: Hosts who reach a completed plan
+    const m5 = (await sql`
+      WITH fe AS (
+        SELECT e.id, e.host_user_id, e.starts_at, e.status
+        FROM newchums.events e
+        WHERE e.status IN ('published', 'canceled')
+          AND (${city}::text IS NULL OR e.location_area ILIKE '%' || ${city} || '%')
+          AND (${interestId}::text IS NULL OR EXISTS (SELECT 1 FROM newchums.event_interests ei WHERE ei.event_id = e.id AND ei.interest_id = ${interestId}::uuid))
+          AND (${communityId}::text IS NULL OR e.community_id = ${communityId}::uuid)
+      ),
+      all_hosts AS (
+        SELECT DISTINCT host_user_id FROM fe
+      ),
+      successful_hosts AS (
+        SELECT DISTINCT host_user_id FROM fe
+        WHERE status = 'published' AND starts_at < NOW()
+      )
+      SELECT
+        (SELECT COUNT(*)::int FROM all_hosts) AS denominator,
+        (SELECT COUNT(*)::int FROM successful_hosts) AS numerator
+    `) as { denominator: number; numerator: number }[];
+
+    // Metric 6: Host follow-through
+    const m6 = (await sql`
+      WITH fe AS (
+        SELECT e.id, e.host_user_id, e.starts_at, e.status, e.cancellation_reason
+        FROM newchums.events e
+        WHERE e.status IN ('published', 'canceled')
+          AND e.starts_at < NOW()
+          AND (${city}::text IS NULL OR e.location_area ILIKE '%' || ${city} || '%')
+          AND (${interestId}::text IS NULL OR EXISTS (SELECT 1 FROM newchums.event_interests ei WHERE ei.event_id = e.id AND ei.interest_id = ${interestId}::uuid))
+          AND (${communityId}::text IS NULL OR e.community_id = ${communityId}::uuid)
+      ),
+      with_attendees AS (
+        SELECT fe.id, fe.status
+        FROM fe
+        WHERE EXISTS (
+          SELECT 1 FROM newchums.event_rsvps er
+          WHERE er.event_id = fe.id AND er.user_id != fe.host_user_id AND er.committed_at IS NOT NULL
+        )
+        AND COALESCE(fe.cancellation_reason, '') != 'no_attendees'
+      )
+      SELECT
+        (SELECT COUNT(*)::int FROM with_attendees) AS denominator,
+        (SELECT COUNT(*)::int FROM with_attendees WHERE status = 'published') AS numerator
+    `) as { denominator: number; numerator: number }[];
+
+    // Metric 7: Days to second attended plan (median)
+    const m7 = (await sql`
+      WITH fe AS (
+        SELECT e.id, e.host_user_id, e.starts_at
+        FROM newchums.events e
+        WHERE e.status = 'published' AND e.starts_at < NOW()
+          AND (${city}::text IS NULL OR e.location_area ILIKE '%' || ${city} || '%')
+          AND (${interestId}::text IS NULL OR EXISTS (SELECT 1 FROM newchums.event_interests ei WHERE ei.event_id = e.id AND ei.interest_id = ${interestId}::uuid))
+          AND (${communityId}::text IS NULL OR e.community_id = ${communityId}::uuid)
+      ),
+      user_plans AS (
+        SELECT r.user_id, fe.starts_at,
+               ROW_NUMBER() OVER (PARTITION BY r.user_id ORDER BY fe.starts_at) AS rn
+        FROM newchums.event_rsvps r
+        JOIN fe ON fe.id = r.event_id
+        WHERE r.status = 'going' AND r.user_id != fe.host_user_id
+      ),
+      gaps AS (
+        SELECT p1.user_id, EXTRACT(EPOCH FROM (p2.starts_at - p1.starts_at)) / 86400.0 AS gap_days
+        FROM user_plans p1
+        JOIN user_plans p2 ON p2.user_id = p1.user_id AND p2.rn = 2
+        WHERE p1.rn = 1
+      )
+      SELECT
+        COUNT(*)::int AS sample_size,
+        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY gap_days) AS median_days
+      FROM gaps
+    `) as { sample_size: number; median_days: number | null }[];
+
+    // Metric 8: Relevant plan opportunity (7d proxy)
+    const m8 = (await sql`
+      WITH upcoming AS (
+        SELECT COUNT(*)::int AS cnt
+        FROM newchums.events e
+        WHERE e.status = 'published'
+          AND e.starts_at > NOW() AND e.starts_at <= NOW() + INTERVAL '7 days'
+          AND (${city}::text IS NULL OR e.location_area ILIKE '%' || ${city} || '%')
+          AND (${interestId}::text IS NULL OR EXISTS (SELECT 1 FROM newchums.event_interests ei WHERE ei.event_id = e.id AND ei.interest_id = ${interestId}::uuid))
+          AND (${communityId}::text IS NULL OR e.community_id = ${communityId}::uuid)
+      ),
+      active_users AS (
+        SELECT COUNT(*)::int AS cnt
+        FROM newchums.users u
+        WHERE u.last_active_at >= NOW() - INTERVAL '30 days'
+      )
+      SELECT
+        (SELECT cnt FROM upcoming) AS upcoming_plans,
+        (SELECT cnt FROM active_users) AS active_users
+    `) as { upcoming_plans: number; active_users: number }[];
+
+    return c.json({
+      ok: true,
+      data: {
+        firstPlanActivation: { numerator: Number(m1[0]?.numerator ?? 0), denominator: Number(m1[0]?.denominator ?? 0) },
+        repeatAttendance: { numerator: Number(m2[0]?.numerator ?? 0), denominator: Number(m2[0]?.denominator ?? 0) },
+        hostConversion: { numerator: Number(m3a[0]?.numerator ?? 0), denominator: Number(m3a[0]?.denominator ?? 0) },
+        hostedCompleted: { numerator: Number(m3b[0]?.numerator ?? 0), denominator: Number(m3b[0]?.denominator ?? 0) },
+        firstTimersPerPlan: {
+          completedPlans: Number(m4[0]?.completed_plans ?? 0),
+          totalFirstTimers: Number(m4[0]?.total_first_timers ?? 0),
+          avgPerPlan: m4[0]?.avg_per_plan != null ? Number(m4[0].avg_per_plan) : null,
+        },
+        hostsReachCompleted: { numerator: Number(m5[0]?.numerator ?? 0), denominator: Number(m5[0]?.denominator ?? 0) },
+        hostFollowThrough: { numerator: Number(m6[0]?.numerator ?? 0), denominator: Number(m6[0]?.denominator ?? 0) },
+        daysToSecond: { sampleSize: Number(m7[0]?.sample_size ?? 0), medianDays: m7[0]?.median_days != null ? Number(Number(m7[0].median_days).toFixed(1)) : null },
+        planOpportunity: { upcomingPlans: Number(m8[0]?.upcoming_plans ?? 0), activeUsers: Number(m8[0]?.active_users ?? 0) },
+      },
+    });
+  } catch (err) {
+    console.error("[GET /admin/kpis/growth-loop]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
 // ---- Objectives / nudge framework ----
 
 /** GET /objectives/next, returns the next best step for the authenticated user */
@@ -5413,7 +5754,7 @@ app.get("/notifications", async (c) => {
       eventTitle: r.event_title,
       unreadCount: r.unread_count,
       latestAt: r.latest_at,
-      latestMessageBody: r.latest_body ? (r.latest_body.length > 80 ? r.latest_body.slice(0, 80) + "\u2026" : r.latest_body) : null,
+      latestMessageBody: r.latest_body ? (r.latest_body.length > 80 ? r.latest_body.slice(0, 80) + "..." : r.latest_body) : null,
       latestSenderName: r.latest_sender_name ?? null,
     }));
 

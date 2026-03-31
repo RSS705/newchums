@@ -643,7 +643,7 @@ export default function EventDetailClient() {
             setEmailRsvpStatus(rsvpStatus);
             toast.success(
               rsvpStatus === "going"
-                ? "You\u2019re going!"
+                ? "You're going!"
                 : rsvpStatus === "maybe"
                   ? "Marked as maybe"
                   : "Response recorded"
@@ -1071,7 +1071,7 @@ export default function EventDetailClient() {
         setEmailRsvpStatus(status);
         toast.success(
           status === "going"
-            ? "You\u2019re going!"
+            ? "You're going!"
             : status === "maybe"
               ? "Marked as maybe"
               : "Response recorded"
@@ -1210,7 +1210,7 @@ export default function EventDetailClient() {
         }
         toast.success(
           status === "going"
-            ? "You\u2019re going!"
+            ? "You're going!"
             : status === "maybe"
               ? "Marked as maybe"
               : "Response recorded"
@@ -1651,7 +1651,7 @@ export default function EventDetailClient() {
         setRemoveReason("");
         toast.success(removeTarget.type === "invite" ? "Invite removed" : "Attendee removed");
       } else {
-        toast.error("Couldn\u2019t remove this person. Please try again.");
+        toast.error("Couldn't remove this person. Please try again.");
       }
     } catch {
       toast.error("Network error");
@@ -1954,8 +1954,8 @@ export default function EventDetailClient() {
   // Helper text shown below the location row when the exact venue is hidden.
   const locationHint = isLocationApprox
     ? event.locationVisibility === "exact_joined_only"
-      ? "Approximate area shown \u2014 exact address revealed after joining"
-      : "Approximate area shown \u2014 exact address isn\u2019t shared for this plan"
+      ? "Approximate area shown -- exact address revealed after joining"
+      : "Approximate area shown -- exact address isn't shared for this plan"
     : null;
 
   // For the map: use exact coords at street zoom when available; otherwise use
@@ -2083,7 +2083,7 @@ export default function EventDetailClient() {
             <Tooltip
               title={
                 isGuestInvite
-                  ? "This plan requires approval, but you\u2019re invited \u2014 no approval needed."
+                  ? "This plan requires approval, but you're invited -- no approval needed."
                   : "The host must approve each person before they can join this plan."
               }
               placement="top"
@@ -2127,7 +2127,7 @@ export default function EventDetailClient() {
           {event.isHost
             ? isPast
               ? "You hosted this"
-              : "You\u2019re hosting this"
+              : "You're hosting this"
             : `Hosted by ${event.hostName}`}
         </Typography>
         {event.community && (
@@ -2161,9 +2161,9 @@ export default function EventDetailClient() {
               {event.cancellationReason === "host_canceled"
                 ? "The host decided to cancel this plan."
                 : event.cancellationReason === "min_attendees_not_met"
-                  ? "The minimum number of confirmed attendees wasn\u2019t reached."
+                  ? "The minimum number of confirmed attendees wasn't reached."
                   : event.cancellationReason === "no_attendees"
-                    ? "No one else was able to join this time around, but don\u2019t let that discourage you. The right plan is out there."
+                    ? "No one else was able to join this time around, but don't let that discourage you. The right plan is out there."
                     : null}
             </Typography>
             {event.canceledAt && (
@@ -2474,7 +2474,7 @@ export default function EventDetailClient() {
                 <CheckCircleRoundedIcon sx={{ fontSize: 36, color: "success.main" }} />
                 <Typography variant="h6" fontWeight={600}>
                   {(guestRsvpStatus ?? emailRsvpStatus) === "going"
-                    ? "You\u2019re going!"
+                    ? "You're going!"
                     : (guestRsvpStatus ?? emailRsvpStatus) === "maybe"
                       ? "Marked as maybe"
                       : "Response recorded"}
@@ -2488,9 +2488,9 @@ export default function EventDetailClient() {
                     sx={{ textAlign: "center", lineHeight: 1.6 }}
                   >
                     {(guestRsvpStatus ?? emailRsvpStatus) === "going"
-                      ? "You\u2019ll get updates about this plan via email."
+                      ? "You'll get updates about this plan via email."
                       : (guestRsvpStatus ?? emailRsvpStatus) === "maybe"
-                        ? "We\u2019ll keep you posted if anything changes."
+                        ? "We'll keep you posted if anything changes."
                         : "Thanks for letting the host know."}
                   </Typography>
                   <Divider sx={{ my: 0.5 }} />
@@ -2558,7 +2558,7 @@ export default function EventDetailClient() {
                     {(guestRsvpStatus ?? emailRsvpStatus) === "going"
                       ? "Your attendance has been confirmed. Sign in to see the full plan details and chat."
                       : (guestRsvpStatus ?? emailRsvpStatus) === "maybe"
-                        ? "You\u2019ve been marked as maybe. Sign in to update your response or see the full plan details."
+                        ? "You've been marked as maybe. Sign in to update your response or see the full plan details."
                         : "Your response has been recorded. Sign in to see the full plan details."}
                   </Typography>
                   <Button
@@ -2698,7 +2698,7 @@ export default function EventDetailClient() {
                     {userJoinRequest.status === "pending" &&
                       "Your request is waiting for the host to review it."}
                     {userJoinRequest.status === "approved" &&
-                      "You\u2019ve been approved and added to this plan as Going."}
+                      "You've been approved and added to this plan as Going."}
                     {userJoinRequest.status === "declined" &&
                       "The host has declined your request to join this plan."}
                     {userJoinRequest.status === "withdrawn" &&
@@ -2743,7 +2743,7 @@ export default function EventDetailClient() {
                               disabled={withdrawSubmitting}
                               sx={{ textTransform: "none", fontSize: "0.8125rem" }}
                             >
-                              {withdrawSubmitting ? "Withdrawing\u2026" : "Yes, withdraw"}
+                              {withdrawSubmitting ? "Withdrawing..." : "Yes, withdraw"}
                             </Button>
                             <Button
                               size="small"
@@ -2840,7 +2840,7 @@ export default function EventDetailClient() {
                   <CheckCircleRoundedIcon sx={{ fontSize: 36, color: "success.main" }} />
                   <Typography variant="h6" fontWeight={600}>
                     {pubRsvpStatus === "going"
-                      ? "You\u2019re going!"
+                      ? "You're going!"
                       : pubRsvpStatus === "maybe"
                         ? "Marked as maybe"
                         : "Response recorded"}
@@ -2851,9 +2851,9 @@ export default function EventDetailClient() {
                     sx={{ textAlign: "center", lineHeight: 1.6 }}
                   >
                     {pubRsvpStatus === "going"
-                      ? "You\u2019ll get updates about this plan via email."
+                      ? "You'll get updates about this plan via email."
                       : pubRsvpStatus === "maybe"
-                        ? "We\u2019ll keep you posted if anything changes."
+                        ? "We'll keep you posted if anything changes."
                         : "Thanks for letting the host know."}
                   </Typography>
                 </Stack>
@@ -3234,10 +3234,10 @@ export default function EventDetailClient() {
                     )}
                     <Typography variant="h6" fontWeight={600}>
                       {viewerRsvpStatus === "going"
-                        ? "You\u2019re going"
+                        ? "You're going"
                         : viewerRsvpStatus === "maybe"
-                          ? "You\u2019re a maybe"
-                          : "You can\u2019t make it"}
+                          ? "You're a maybe"
+                          : "You can't make it"}
                     </Typography>
                   </Stack>
                   {event.requireApproval && !event.isInvited && event.hasRsvp && (
@@ -4182,7 +4182,7 @@ export default function EventDetailClient() {
                           startIcon={<CheckCircleRoundedIcon sx={{ fontSize: 16 }} />}
                           sx={{ textTransform: "none", fontWeight: 600 }}
                         >
-                          {quickConfirming ? "Saving\u2026" : "This time works for me"}
+                          {quickConfirming ? "Saving..." : "This time works for me"}
                         </Button>
                       )}
                       <Button
@@ -4389,7 +4389,7 @@ export default function EventDetailClient() {
                           onClick={handleAltTimeSubmit}
                           disabled={altSubmitting}
                         >
-                          {altSubmitting ? "Saving\u2026" : altEditingId ? "Save" : "Add"}
+                          {altSubmitting ? "Saving..." : altEditingId ? "Save" : "Add"}
                         </AppButton>
                         <Button size="small" onClick={resetAltForm} sx={{ textTransform: "none" }}>
                           Cancel
@@ -4443,10 +4443,10 @@ export default function EventDetailClient() {
                               >
                                 <Typography variant="body2" fontWeight={600} color="primary.main">
                                   {fmtDay(ov.date)}, {ovStart}
-                                  {ovEnd ? ` \u2013 ${ovEnd}` : ""}
+                                  {ovEnd ? ` - ${ovEnd}` : ""}
                                 </Typography>
                                 <Chip
-                                  label={`${ov.entries.length} overlap${isBest ? " \u2014 best fit" : ""}`}
+                                  label={`${ov.entries.length} overlap${isBest ? " -- best fit" : ""}`}
                                   size="small"
                                   color={isBest ? "primary" : "default"}
                                   variant={isBest ? "filled" : "outlined"}
@@ -4521,7 +4521,7 @@ export default function EventDetailClient() {
                                     >
                                       <Typography variant="body2" color="text.primary">
                                         {entryStart}
-                                        {entryEnd ? ` \u2013 ${entryEnd}` : ""}
+                                        {entryEnd ? ` - ${entryEnd}` : ""}
                                       </Typography>
                                       <Typography variant="body2" color="text.disabled">
                                         &middot;
@@ -4643,7 +4643,7 @@ export default function EventDetailClient() {
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5, lineHeight: 1.5 }}>
             {goingCount} going{maybeCount > 0 ? `, ${maybeCount} maybe` : ""}
-            {declinedCount > 0 ? `, ${declinedCount} can\u2019t make it` : ""}
+            {declinedCount > 0 ? `, ${declinedCount} can't make it` : ""}
             {reservedSeatCount > 0 ? `, ${reservedSeatCount} invited` : ""}
             {event.maxSeats
               ? ` · ${Math.max(0, event.maxSeats - goingCount - reservedSeatCount)} seat${event.maxSeats - goingCount - reservedSeatCount === 1 ? "" : "s"} remaining`
@@ -4765,7 +4765,7 @@ export default function EventDetailClient() {
                       />
                     ) : (
                       <Chip
-                        label={"Can\u2019t make it"}
+                        label={"Can't make it"}
                         size="small"
                         variant="outlined"
                         sx={{ fontWeight: 500, fontSize: "0.8125rem", color: "text.secondary" }}
@@ -4922,7 +4922,7 @@ export default function EventDetailClient() {
                     >
                       <Chip
                         icon={<MailOutlineRoundedIcon sx={{ fontSize: "0.875rem !important" }} />}
-                        label={event.reserveSeats ? "Invited \u00b7 Seat held" : "Invited"}
+                        label={event.reserveSeats ? "Invited · Seat held" : "Invited"}
                         size="small"
                         variant="outlined"
                         color="info"
@@ -5226,7 +5226,7 @@ export default function EventDetailClient() {
             }
             sx={{ textTransform: "none" }}
           >
-            {lockToggling ? "Locking\u2026" : "Lock plan"}
+            {lockToggling ? "Locking..." : "Lock plan"}
           </Button>
         </DialogActions>
       </Dialog>
@@ -5330,7 +5330,7 @@ export default function EventDetailClient() {
               )
             }
           >
-            {removing ? "Removing\u2026" : "Remove attendee"}
+            {removing ? "Removing..." : "Remove attendee"}
           </Button>
         </DialogActions>
       </Dialog>
@@ -5344,10 +5344,10 @@ export default function EventDetailClient() {
       >
         <DialogTitle sx={{ fontWeight: 700 }}>
           {rsvpDialogStatus === "going"
-            ? "Confirm you\u2019re going"
+            ? "Confirm you're going"
             : rsvpDialogStatus === "maybe"
               ? "RSVP as maybe"
-              : "Can\u2019t make it"}
+              : "Can't make it"}
         </DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
@@ -5371,10 +5371,10 @@ export default function EventDetailClient() {
           </Button>
           <Button variant="contained" onClick={handleRsvpConfirm} disabled={rsvpSubmitting}>
             {rsvpDialogStatus === "going"
-              ? "I\u2019m going"
+              ? "I'm going"
               : rsvpDialogStatus === "maybe"
                 ? "Maybe"
-                : "Can\u2019t make it"}
+                : "Can't make it"}
           </Button>
         </DialogActions>
       </Dialog>

@@ -38,7 +38,7 @@ type FeedbackState = Record<string, Partial<Record<Prompt, Response>>>;
 
 const PROMPTS: { key: Prompt; label: string; hostOnly?: boolean }[] = [
   { key: "reliability", label: "Showed up and followed through reliably" },
-  { key: "sociability", label: "I\u2019d spend time with this person again" },
+  { key: "sociability", label: "I'd spend time with this person again" },
   { key: "presentation", label: "This person showed basic in-person cleanliness and consideration" },
   { key: "match_quality", label: "This was a good match for me" },
   { key: "hosting_skills", label: "Ran a well-organized plan", hostOnly: true },
@@ -342,7 +342,7 @@ export default function PlanFeedback({ eventId }: PlanFeedbackProps) {
                     disabled={disputing}
                     sx={{ textTransform: "none", fontWeight: 600 }}
                   >
-                    {disputing ? "Disputing\u2026" : "Dispute this concern"}
+                    {disputing ? "Disputing..." : "Dispute this concern"}
                   </Button>
                 )}
               </Box>
@@ -712,7 +712,7 @@ export default function PlanFeedback({ eventId }: PlanFeedbackProps) {
           <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
             {submitted
               ? "Your feedback has been saved. This will permanently hide this section from your view."
-              : "This will permanently hide the feedback section for this plan. You won\u2019t be able to leave feedback later."}
+              : "This will permanently hide the feedback section for this plan. You won't be able to leave feedback later."}
           </Typography>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2.5 }}>

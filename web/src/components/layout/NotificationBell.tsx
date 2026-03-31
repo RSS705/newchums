@@ -143,13 +143,13 @@ function notificationText(n: AppNotification): {
       return {
         actorLabel,
         actorHref,
-        body: titleLink ? <>{" updated the details for "}{titleLink}.</> : " updated a plan you\u2019re attending.",
+        body: titleLink ? <>{" updated the details for "}{titleLink}.</> : " updated a plan you're attending.",
       };
     case "event_locked":
       return {
         actorLabel,
         actorHref,
-        body: titleLink ? <>{" locked "}{titleLink}{". No new people can join."}</> : " locked a plan you\u2019re attending.",
+        body: titleLink ? <>{" locked "}{titleLink}{". No new people can join."}</> : " locked a plan you're attending.",
       };
     case "event_canceled":
       return {

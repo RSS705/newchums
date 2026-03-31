@@ -71,7 +71,7 @@ const HOW_IT_WORKS_STEPS = [
     accentColor: "#7c3aed",
     Icon: PeopleRoundedIcon,
     title: "Meet up",
-    body: "Everyone\u2019s confirmed, the details are set. Time to go.",
+    body: "Everyone's confirmed, the details are set. Time to go.",
     placeholder: "Screenshot, Plan details",
     imageSrc: "/images/home/how-step-meetup.png",
   },
@@ -88,13 +88,13 @@ const MEET_PEOPLE_CALLOUTS: {
     imageSrc: "/images/home/Preferences.png",
     Icon: ExploreRoundedIcon,
     title: "Setup your profile",
-    body: "Set your hobbies, your location, how far you\u2019d travel, and the kind of people you enjoy spending time with. NewChums handles the rest.",
+    body: "Set your hobbies, your location, how far you'd travel, and the kind of people you enjoy spending time with. NewChums handles the rest.",
   },
   {
     imageSrc: "/images/home/Notifications.png",
     Icon: NotificationsActiveRoundedIcon,
     title: "Get notified of plans that fit you",
-    body: "You won\u2019t get flooded with everything happening nearby. You\u2019ll only hear about gatherings that match your interests and preferences.",
+    body: "You won't get flooded with everything happening nearby. You'll only hear about gatherings that match your interests and preferences.",
   },
   {
     imageSrc: "/images/home/Meet.png",
@@ -179,7 +179,7 @@ const FEATURES_BOTTOM: typeof FEATURES_TOP = [
   {
     accentColor: "#2e7d32",
     Icon: EventAvailableRoundedIcon,
-    title: "Know who\u2019s actually coming",
+    title: "Know who's actually coming",
     body: (<>24-hour reminders, <Box component="span" sx={{ fontWeight: 700 }}>final confirmations</Box>, and minimum-attendee thresholds so you never show up to an empty table.</>),
     placeholder: "Screenshot, Confirmations",
     imageSrc: "/images/home/feature-confirmations.png",

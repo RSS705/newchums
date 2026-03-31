@@ -477,7 +477,7 @@ export default function RoadmapItemClient({ itemId, isLoggedIn }: Props) {
             {item.viewer_voted ? "Voted" : "I want this"} &middot; {item.vote_count}
           </Button>
         </Tooltip>
-        <Tooltip title={item.viewer_following ? "You\u2019ll receive email updates \u2014 click to unfollow" : "Get email updates when this is addressed"} arrow>
+        <Tooltip title={item.viewer_following ? "You'll receive email updates -- click to unfollow" : "Get email updates when this is addressed"} arrow>
           <Button
             variant={item.viewer_following ? "contained" : "outlined"}
             size="small"

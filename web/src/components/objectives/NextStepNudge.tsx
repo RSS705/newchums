@@ -214,7 +214,7 @@ export default function NextStepNudge() {
                       color="text.disabled"
                       sx={{ fontSize: "0.6875rem", fontWeight: 600, letterSpacing: "0.03em", mb: 0.25 }}
                     >
-                      Next step{progress ? ` \u00b7 ${progress.completed} of ${progress.total} done` : ""}
+                      Next step{progress ? ` · ${progress.completed} of ${progress.total} done` : ""}
                     </Typography>
                     <Typography
                       variant="subtitle2"

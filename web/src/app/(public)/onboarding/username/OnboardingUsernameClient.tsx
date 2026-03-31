@@ -76,14 +76,14 @@ export default function OnboardingUsernameClient() {
       trimmed.toLowerCase().endsWith("_")
     ) {
       setUsernameError(
-        "Use 3\u201320 lowercase letters, numbers, or underscores; no leading/trailing underscore.",
+        "Use 3-20 lowercase letters, numbers, or underscores; no leading/trailing underscore.",
       );
       return false;
     }
     const usernameContentCheck = validateCleanText(trimmed, "username");
     if (!usernameContentCheck.ok) {
       setUsernameError(
-        usernameContentCheck.reason ?? "That username isn\u2019t allowed. Try something else.",
+        usernameContentCheck.reason ?? "That username isn't allowed. Try something else.",
       );
       return false;
     }
@@ -173,10 +173,10 @@ export default function OnboardingUsernameClient() {
           usernameData.error === "INAPPROPRIATE_TEXT" ||
           usernameData.code === "INAPPROPRIATE_TEXT"
         ) {
-          setUsernameError("That username isn\u2019t allowed. Try something else.");
+          setUsernameError("That username isn't allowed. Try something else.");
         } else if (usernameData.error === "INVALID_USERNAME") {
           setUsernameError(
-            "Use 3\u201320 lowercase letters, numbers, or underscores; no leading/trailing underscore.",
+            "Use 3-20 lowercase letters, numbers, or underscores; no leading/trailing underscore.",
           );
         } else {
           setUsernameError("Something went wrong. Please try again.");
@@ -241,7 +241,7 @@ export default function OnboardingUsernameClient() {
     2: {
       title: "What are you into?",
       subtitle:
-        "Adding hobbies helps us show plans you\u2019ll enjoy. You can always update these later.",
+        "Adding hobbies helps us show plans you'll enjoy. You can always update these later.",
     },
     3: {
       title: "Where are you based?",
@@ -306,7 +306,7 @@ export default function OnboardingUsernameClient() {
                         setUsernameError(
                           !check.ok
                             ? (check.reason ??
-                                "That username isn\u2019t allowed. Try something else.")
+                                "That username isn't allowed. Try something else.")
                             : null,
                         );
                       } else {
@@ -386,7 +386,7 @@ export default function OnboardingUsernameClient() {
                     disabled={isSubmitting}
                     onClick={submitOnboarding}
                   >
-                    {isSubmitting ? "Saving..." : "Let\u2019s go"}
+                    {isSubmitting ? "Saving..." : "Let's go"}
                   </AppButton>
                   <AppButton
                     fullWidth

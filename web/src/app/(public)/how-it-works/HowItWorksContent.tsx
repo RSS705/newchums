@@ -63,7 +63,7 @@ const LIFECYCLE_STEPS: { Icon: SvgIconComponent; label: string; description: str
   { Icon: AddCircleOutlineRoundedIcon, label: "Create", description: "Set the activity, time, location, and your preferences.", color: "#E65B13" },
   { Icon: MailOutlineRoundedIcon, label: "Invite", description: "Share a link, send invites, or let people discover your plan.", color: "#1565c0" },
   { Icon: ScheduleRoundedIcon, label: "Schedule", description: "Collect availability and find the time that works.", color: "#7c3aed" },
-  { Icon: EventAvailableRoundedIcon, label: "Confirm", description: "Reminders go out. Attendees confirm they\u2019re coming.", color: "#059669" },
+  { Icon: EventAvailableRoundedIcon, label: "Confirm", description: "Reminders go out. Attendees confirm they're coming.", color: "#059669" },
   { Icon: GroupsRoundedIcon, label: "Meet", description: "Everyone shows up with the same clear details.", color: "#0e7490" },
   { Icon: StarRoundedIcon, label: "Follow up", description: "Leave feedback and build your attendance reputation.", color: "#E65B13" },
 ];
@@ -74,9 +74,9 @@ const CREATE_FEATURES: { Icon: SvgIconComponent; label: string; detail: string }
   { Icon: TuneRoundedIcon, label: "Hobbies & interests", detail: "Tag multiple hobbies so the right people can find your plan. Create new hobbies on the fly." },
   { Icon: VisibilityRoundedIcon, label: "Location privacy", detail: "Show exact location to everyone, to confirmed attendees only, or just an approximate area." },
   { Icon: LockRoundedIcon, label: "Visibility controls", detail: "Public (anyone can find it), chums-only (your connections), or invite-only (specific people)." },
-  { Icon: PersonAddRoundedIcon, label: "Require approval", detail: "New people request to join and you approve or decline before they\u2019re added." },
-  { Icon: EventAvailableRoundedIcon, label: "Attendance confirmation", detail: "Enable automatic confirmation requests so you know who\u2019s actually coming." },
-  { Icon: AccessTimeRoundedIcon, label: "Scheduling flexibility", detail: "Let attendees suggest alternate times, or request everyone\u2019s full availability with a deadline." },
+  { Icon: PersonAddRoundedIcon, label: "Require approval", detail: "New people request to join and you approve or decline before they're added." },
+  { Icon: EventAvailableRoundedIcon, label: "Attendance confirmation", detail: "Enable automatic confirmation requests so you know who's actually coming." },
+  { Icon: AccessTimeRoundedIcon, label: "Scheduling flexibility", detail: "Let attendees suggest alternate times, or request everyone's full availability with a deadline." },
 ];
 
 const CREATE_EXTRA_FEATURES: string[] = [
@@ -116,9 +116,9 @@ const ZIGZAG_SECTIONS: ZigZagSection[] = [
       { label: "Direct invites", detail: "Invite people by NewChums handle or email address. They get a notification and an email." },
       { label: "Share links", detail: "Generate a permanent shareable link for any plan. Send it anywhere, text, email, social media." },
       { label: "Guest RSVP without an account", detail: "Anyone with a link can RSVP using just their email and a quick verification code. No signup required." },
-      { label: "Going, Maybe, or Can\u2019t Make It", detail: "Three clear RSVP options with optional personal notes. Update anytime before the plan starts." },
+      { label: "Going, Maybe, or Can't Make It", detail: "Three clear RSVP options with optional personal notes. Update anytime before the plan starts." },
       { label: "Join requests", detail: "For plans that require approval, people request to join and the host reviews each request." },
-      { label: "Custom invite messages", detail: "Add a personal note when sending invites so people know why you\u2019re reaching out." },
+      { label: "Custom invite messages", detail: "Add a personal note when sending invites so people know why you're reaching out." },
     ],
   },
   {
@@ -139,7 +139,7 @@ const ZIGZAG_SECTIONS: ZigZagSection[] = [
   },
   {
     id: "attendance-assurance",
-    sectionTitle: "Know who\u2019s actually coming",
+    sectionTitle: "Know who's actually coming",
     subtitle: "Automatic reminders and confirmation requests mean fewer empty tables and fewer wasted trips. Set your expectations and let the system handle the follow-up.",
     imageSrc: "/images/how-it-works/attendance-assurance.png",
     placeholder: "Screenshot, Attendance confirmation",
@@ -148,11 +148,11 @@ const ZIGZAG_SECTIONS: ZigZagSection[] = [
     imageOnLeft: true,
     features: [
       { label: "Confirmation window", detail: "Automatic confirmation requests go out 24 hours before the plan. Attendees confirm or decline with one tap." },
-      { label: "Timed reminders", detail: "Follow-up reminders at 12 hours and 3 hours before if someone hasn\u2019t responded yet." },
+      { label: "Timed reminders", detail: "Follow-up reminders at 12 hours and 3 hours before if someone hasn't responded yet." },
       { label: "Confirm from anywhere", detail: "One-click confirmation from the email reminder or directly on the plan page. No login required for email links." },
       { label: "Minimum attendees", detail: "Set a threshold, if not enough people confirm, fallback policies handle the rest." },
-      { label: "Fallback policies", detail: "Choose what happens if the minimum isn\u2019t met: proceed anyway, notify the host, or auto-cancel the plan." },
-      { label: "Real-time viability", detail: "The plan page shows a live confirmation tally so everyone can see whether it\u2019s on track to happen." },
+      { label: "Fallback policies", detail: "Choose what happens if the minimum isn't met: proceed anyway, notify the host, or auto-cancel the plan." },
+      { label: "Real-time viability", detail: "The plan page shows a live confirmation tally so everyone can see whether it's on track to happen." },
     ],
   },
   {
@@ -166,7 +166,7 @@ const ZIGZAG_SECTIONS: ZigZagSection[] = [
     imageOnLeft: false,
     features: [
       { label: "Real-time messaging", detail: "Messages appear instantly for everyone in the plan. No refresh needed." },
-      { label: "Unread indicators", detail: "See at a glance which of your plans have new messages you haven\u2019t read yet." },
+      { label: "Unread indicators", detail: "See at a glance which of your plans have new messages you haven't read yet." },
       { label: "Daily catch-up emails", detail: "Missed something? A daily digest email summarizes unread messages so you stay in the loop." },
       { label: "Plan updates & changes", detail: "When the host updates the plan, changes are logged and attendees are notified automatically." },
     ],
@@ -197,7 +197,7 @@ const GRID_SECTIONS: GridSection[] = [
     accentColor: "#1565c0",
     features: [
       { Icon: ExploreRoundedIcon, label: "Explore feed", detail: "Browse plans filtered by hobby, distance, time range, and sort order. Personalized to your interests." },
-      { Icon: VisibilityRoundedIcon, label: "Browse without an account", detail: "Public plans are visible to anyone. No signup required just to see what\u2019s happening nearby." },
+      { Icon: VisibilityRoundedIcon, label: "Browse without an account", detail: "Public plans are visible to anyone. No signup required just to see what's happening nearby." },
       { Icon: NotificationsActiveRoundedIcon, label: "Daily match digest", detail: "A daily email surfaces new plans that match your hobbies and travel distance. Delivered automatically." },
       { Icon: GroupsRoundedIcon, label: "Communities", detail: "Create or join public and private groups around shared interests. Community plans appear in a dedicated feed." },
       { Icon: PersonAddRoundedIcon, label: "Community join flows", detail: "Public communities are open to all. Private communities use approval-based join requests." },
@@ -218,7 +218,7 @@ const GRID_SECTIONS: GridSection[] = [
       { Icon: VerifiedRoundedIcon, label: "Issue reporting", detail: "Flag no-shows, very late arrivals, and late cancellations. Reports are private and affect reliability scores." },
       { Icon: ShieldRoundedIcon, label: "Conduct and safety reporting", detail: "Report safety or conduct concerns directly from any plan. Reports go to the admin team immediately." },
       { Icon: TuneRoundedIcon, label: "Chum preference matching", detail: "Set per-metric thresholds for reliability, sociability, and more. Plans are filtered based on your preferences." },
-      { Icon: LockRoundedIcon, label: "Profile privacy controls", detail: "Control what\u2019s visible on your public profile, age, chum list, search visibility, and more." },
+      { Icon: LockRoundedIcon, label: "Profile privacy controls", detail: "Control what's visible on your public profile, age, chum list, search visibility, and more." },
     ],
   },
 ];
@@ -226,7 +226,7 @@ const GRID_SECTIONS: GridSection[] = [
 // ── Use cases (Section 10) ───────────────────────────────────────────────────
 
 const USE_CASES: { Icon: SvgIconComponent; title: string; description: string }[] = [
-  { Icon: CasinoRoundedIcon, title: "Board game nights", description: "Set a player cap, pick the game, share a link. No more \u201cwho\u2019s in?\u201d messages that nobody replies to." },
+  { Icon: CasinoRoundedIcon, title: "Board game nights", description: "Set a player cap, pick the game, share a link. No more 'who's in?' messages that nobody replies to." },
   { Icon: LocalCafeRoundedIcon, title: "Coffee walks & casual meetups", description: "Low-key, low-commitment. Post a time and a meeting point and see who shows up." },
   { Icon: MenuBookRoundedIcon, title: "Study groups & coworking", description: "Find people working on the same thing nearby. Use availability mode to pick the best time." },
   { Icon: CelebrationRoundedIcon, title: "Community events", description: "Associate your plan with a community. Members see it in their feed automatically." },
@@ -237,7 +237,7 @@ const USE_CASES: { Icon: SvgIconComponent; title: string; description: string }[
 // ── Group chat comparison (Section 11) ───────────────────────────────────────
 
 const COMPARISON_POINTS: { problem: string; solution: string }[] = [
-  { problem: "\u201cWho\u2019s in?\u201d messages that nobody replies to", solution: "Structured RSVPs, Going, Maybe, or Can\u2019t Make It, with optional notes." },
+  { problem: "'Who's in?' messages that nobody replies to", solution: "Structured RSVPs, Going, Maybe, or Can't Make It, with optional notes." },
   { problem: "Nobody knows the final time or place", solution: "One source of truth for every detail, always up to date." },
   { problem: "Half the group says maybe and never confirms", solution: "Automatic 24-hour confirmation window with timed reminders." },
   { problem: "You show up and nobody else does", solution: "Minimum attendee thresholds with auto-cancel or host notification." },
@@ -1073,7 +1073,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
           >
             {[
               isLoggedIn ? "Open your profile" : "Sign up in under a minute",
-              "Create a plan or browse what\u2019s happening nearby",
+              "Create a plan or browse what's happening nearby",
               "Show up and enjoy",
             ].map((text, i) => (
               <Grid key={text} size={{ xs: 12, sm: 4 }}>

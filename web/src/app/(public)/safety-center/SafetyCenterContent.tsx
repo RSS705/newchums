@@ -70,7 +70,7 @@ const GATHERING_TIPS = [
     num: "03",
     title: "Start small and low-pressure",
     paragraphs: [
-      "You don\u2019t need a big event to build a connection.",
+      "You don't need a big event to build a connection.",
       "A short, casual meetup around something you already enjoy is often the best first step.",
     ],
   },
@@ -103,13 +103,13 @@ const GATHERING_TIPS = [
 const RESPECT_CARDS = [
   {
     accentColor: "secondary.main" as const,
-    title: "Respect people\u2019s time",
+    title: "Respect people's time",
     text: "If something comes up, let the organiser or other attendees know as early as possible. Reliable show-ups and honest cancellations both matter.",
   },
   {
     accentColor: "primary.main" as const,
     title: "Honour comfort levels",
-    text: "Not everyone moves at the same pace socially. Follow someone\u2019s lead and avoid applying pressure to extend plans beyond what was agreed.",
+    text: "Not everyone moves at the same pace socially. Follow someone's lead and avoid applying pressure to extend plans beyond what was agreed.",
   },
   {
     accentColor: "primary.main" as const,
@@ -119,7 +119,7 @@ const RESPECT_CARDS = [
   {
     accentColor: "secondary.main" as const,
     title: "Kindness sets the tone",
-    text: "Being considerate, patient, and genuinely interested in others makes gatherings better for everyone. It\u2019s what keeps people coming back.",
+    text: "Being considerate, patient, and genuinely interested in others makes gatherings better for everyone. It's what keeps people coming back.",
   },
 ];
 

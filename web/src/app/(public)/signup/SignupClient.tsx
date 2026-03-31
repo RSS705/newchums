@@ -135,14 +135,14 @@ export default function SignupClient() {
       trimmed.toLowerCase().endsWith("_")
     ) {
       setUsernameError(
-        "Use 3\u201320 lowercase letters, numbers, or underscores; no leading/trailing underscore.",
+        "Use 3-20 lowercase letters, numbers, or underscores; no leading/trailing underscore.",
       );
       return false;
     }
     const usernameContentCheck = validateCleanText(trimmed, "username");
     if (!usernameContentCheck.ok) {
       setUsernameError(
-        usernameContentCheck.reason ?? "That username isn\u2019t allowed. Try something else.",
+        usernameContentCheck.reason ?? "That username isn't allowed. Try something else.",
       );
       return false;
     }
@@ -276,11 +276,11 @@ export default function SignupClient() {
       setUsernameError("Username is already taken.");
       goToStep(2);
     } else if (data.error === "INAPPROPRIATE_TEXT" || data.code === "INAPPROPRIATE_TEXT") {
-      setUsernameError("That username isn\u2019t allowed. Try something else.");
+      setUsernameError("That username isn't allowed. Try something else.");
       goToStep(2);
     } else if (data.error === "INVALID_USERNAME") {
       setUsernameError(
-        "Use 3\u201320 lowercase letters, numbers, or underscores; no leading/trailing underscore.",
+        "Use 3-20 lowercase letters, numbers, or underscores; no leading/trailing underscore.",
       );
       goToStep(2);
     } else if (data.error === "EMAIL_EXISTS") {
@@ -332,7 +332,7 @@ export default function SignupClient() {
     },
     3: {
       title: "What are you into?",
-      subtitle: "Adding hobbies helps us show plans you\u2019ll enjoy. You can always update these later.",
+      subtitle: "Adding hobbies helps us show plans you'll enjoy. You can always update these later.",
     },
     4: {
       title: "Where are you based?",
@@ -529,7 +529,7 @@ export default function SignupClient() {
                         const check = validateCleanText(trimmed, "username");
                         setUsernameError(
                           !check.ok
-                            ? (check.reason ?? "That username isn\u2019t allowed. Try something else.")
+                            ? (check.reason ?? "That username isn't allowed. Try something else.")
                             : null,
                         );
                       } else {

@@ -122,7 +122,7 @@ export default function PlansPage() {
           {hosted.length > 0 && (
             <Box>
               <SectionHeader
-                title={isPast ? "Plans you hosted" : "Plans you\u2019re hosting"}
+                title={isPast ? "Plans you hosted" : "Plans you're hosting"}
                 emphasis="primary"
               />
               <Grid container spacing={2}>
@@ -139,7 +139,7 @@ export default function PlansPage() {
           {joined.length > 0 && (
             <Box>
               <SectionHeader
-                title={isPast ? "Plans you attended" : "Plans you\u2019re attending"}
+                title={isPast ? "Plans you attended" : "Plans you're attending"}
                 emphasis={hosted.length > 0 ? "secondary" : "primary"}
               />
               <Grid container spacing={2}>
@@ -173,7 +173,7 @@ export default function PlansPage() {
                 sx={{ mb: 3, maxWidth: 400, mx: "auto", lineHeight: 1.7 }}
               >
                 {isPast
-                  ? "Once you attend or host a gathering, it\u2019ll show up here so you can look back on the good times."
+                  ? "Once you attend or host a gathering, it'll show up here so you can look back on the good times."
                   : "Start a plan around something you enjoy, or keep an eye out for an invite from someone you know."}
               </Typography>
               {!isPast && (

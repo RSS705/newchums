@@ -226,18 +226,18 @@ export const sendEventChangedEmail = async (
 
   const headingMap = {
     canceled: "A plan has been cancelled",
-    locked:   "A plan you\u2019re attending has been locked",
-    updated:  "A plan you\u2019re attending has been updated",
+    locked:   "A plan you're attending has been locked",
+    updated:  "A plan you're attending has been updated",
   };
   const bodyMap = {
-    canceled: `Hey ${recipientName}, we\u2019re sorry to let you know that a plan you were attending has been cancelled by the host. We hope to see you at the next one.`,
-    locked:   `Hey ${recipientName}, the host has locked a plan you\u2019re attending. Your spot is confirmed \u2014 no action needed. You can still view the plan details below.`,
-    updated:  `Hey ${recipientName}, the host has made changes to a plan you\u2019re attending. Review the updates below.`,
+    canceled: `Hey ${recipientName}, we're sorry to let you know that a plan you were attending has been cancelled by the host. We hope to see you at the next one.`,
+    locked:   `Hey ${recipientName}, the host has locked a plan you're attending. Your spot is confirmed -- no action needed. You can still view the plan details below.`,
+    updated:  `Hey ${recipientName}, the host has made changes to a plan you're attending. Review the updates below.`,
   };
   const statusMap = {
-    canceled: "Plan \u2014 Cancelled",
-    locked:   "Plan \u2014 Locked",
-    updated:  "Plan \u2014 Updated",
+    canceled: "Plan -- Cancelled",
+    locked:   "Plan -- Locked",
+    updated:  "Plan -- Updated",
   };
   const ctaMap = {
     canceled: "Explore other plans",
@@ -687,14 +687,14 @@ export const sendConfirmationRequestEmail = async (
   if (!env.POSTMARK_TEMPLATE_CONFIRMATION_REQUEST) return;
 
   const headingMap = {
-    initial: isHost ? "Confirm you\u2019re still hosting" : "Confirm your attendance",
-    reminder: isHost ? "Reminder: Confirm you\u2019re still hosting" : "Reminder: Confirm your attendance",
-    final: isHost ? "Final reminder: Confirm you\u2019re hosting" : "Final reminder: Confirm your attendance",
+    initial: isHost ? "Confirm you're still hosting" : "Confirm your attendance",
+    reminder: isHost ? "Reminder: Confirm you're still hosting" : "Reminder: Confirm your attendance",
+    final: isHost ? "Final reminder: Confirm you're hosting" : "Final reminder: Confirm your attendance",
   };
   const stage = isFinal ? "final" : isReminder ? "reminder" : "initial";
 
-  const bodyHost = `Hey ${recipientName}, your plan is coming up and requires final confirmation. Please confirm you\u2019re still hosting so attendees know the plan is on.`;
-  const bodyAttendee = `Hey ${recipientName}, a plan you\u2019re attending requires final confirmation. Please confirm you\u2019re still coming so the host can plan ahead.`;
+  const bodyHost = `Hey ${recipientName}, your plan is coming up and requires final confirmation. Please confirm you're still hosting so attendees know the plan is on.`;
+  const bodyAttendee = `Hey ${recipientName}, a plan you're attending requires final confirmation. Please confirm you're still coming so the host can plan ahead.`;
 
   return sendPostmarkTemplateEmail(env, {
     From: env.EMAIL_FROM, To: to,
@@ -710,8 +710,8 @@ export const sendConfirmationRequestEmail = async (
       eventUrl,
       confirmUrl,
       declineUrl,
-      confirmLabel: isHost ? "I\u2019m still hosting" : "I\u2019m still coming",
-      declineLabel: isHost ? "Cancel this plan" : "I can\u2019t make it",
+      confirmLabel: isHost ? "I'm still hosting" : "I'm still coming",
+      declineLabel: isHost ? "Cancel this plan" : "I can't make it",
       deadline,
       isReminder: isReminder || isFinal ? "1" : "",
       isFinal: isFinal ? "1" : "",
@@ -737,7 +737,7 @@ export const sendPlanAtRiskEmail = async (
     TemplateModel: {
       productName: "NewChums",
       heading: `${confirmedCount} of ${minRequired} attendees confirmed`,
-      bodyText: `Hey ${hostName}, your plan didn\u2019t reach its minimum of ${minRequired} confirmed attendees \u2014 only ${confirmedCount} confirmed. Please review and decide whether to proceed or cancel. If you do nothing, the plan will go ahead as scheduled.`,
+      bodyText: `Hey ${hostName}, your plan didn't reach its minimum of ${minRequired} confirmed attendees -- only ${confirmedCount} confirmed. Please review and decide whether to proceed or cancel. If you do nothing, the plan will go ahead as scheduled.`,
       hostName,
       eventTitle,
       eventUrl,
@@ -771,7 +771,7 @@ export const sendPlanAutoCancelledEmail = async (
       TemplateModel: {
         productName: "NewChums",
         heading: "A plan you were attending has been cancelled",
-        bodyText: `Hey ${recipientName}, unfortunately "${eventTitle}" didn\u2019t reach its minimum of ${minRequired} confirmed attendees \u2014 only ${confirmedCount} confirmed \u2014 so it\u2019s been automatically cancelled.`,
+        bodyText: `Hey ${recipientName}, unfortunately "${eventTitle}" didn't reach its minimum of ${minRequired} confirmed attendees -- only ${confirmedCount} confirmed -- so it's been automatically cancelled.`,
         eventTitle,
         eventDate: eventDate || "",
         eventLocation: eventLocation || "",
@@ -789,7 +789,7 @@ export const sendPlanAutoCancelledEmail = async (
     to, recipientName, eventTitle,
     eventUrl: "https://newchums.com",
     changeType: "canceled",
-    changes: [{ fieldName: "Reason", oldValue: `${confirmedCount} of ${minRequired} confirmed`, newValue: "Auto-cancelled \u2014 minimum attendance not met" }],
+    changes: [{ fieldName: "Reason", oldValue: `${confirmedCount} of ${minRequired} confirmed`, newValue: "Auto-cancelled -- minimum attendance not met" }],
     unsubscribeUrl,
   });
 };
@@ -915,7 +915,7 @@ export const sendPlanFeedbackEmail = async (
     TemplateModel: {
       productName: "NewChums",
       heading: "How did it go?",
-      bodyText: `Hey ${recipientName}, "${planTitle}" has wrapped up! Take a quick moment to share how it went \u2014 it helps NewChums match you with better plans in the future.`,
+      bodyText: `Hey ${recipientName}, "${planTitle}" has wrapped up! Take a quick moment to share how it went -- it helps NewChums match you with better plans in the future.`,
       recipientName,
       planTitle,
       planUrl,
