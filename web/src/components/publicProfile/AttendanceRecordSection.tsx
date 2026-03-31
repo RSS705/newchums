@@ -268,27 +268,27 @@ export default function AttendanceRecordSection({ userId, isOwner, displayName, 
                   tooltipTitle={
                     ft!.display === "—"
                       ? "No plan commitments yet"
-                      : `Attended ${record!.followThrough.numerator} of ${record!.followThrough.denominator} plans they committed to`
+                      : `Followed through on ${record!.followThrough.numerator} of ${record!.followThrough.denominator} plans they committed to attend`
                   }
                 />
                 <MetricCard
                   icon={cr!.pct !== null && cr!.pct >= 80 ? <ThumbUpAltRoundedIcon sx={{ fontSize: { xs: 22, sm: 26 } }} /> : null}
-                  label="Responds"
+                  label="Confirms attendance"
                   value={cr!.display}
                   ratio={cr!.ratio || undefined}
                   tooltipTitle={
                     cr!.display === "—"
-                      ? "No pre-plan check-ins yet"
-                      : `Replied to ${record!.confirmationRate.numerator} of ${record!.confirmationRate.denominator} pre-plan attendance check-ins`
+                      ? "No final attendance confirmations requested yet"
+                      : `Responded to ${record!.confirmationRate.numerator} of ${record!.confirmationRate.denominator} final attendance confirmation requests`
                   }
                 />
                 {hasHosting && (
                   <MetricCard
                     icon={hc!.pct !== null && hc!.pct >= 50 ? <StarRoundedIcon sx={{ fontSize: { xs: 22, sm: 26 } }} /> : null}
-                    label="Plans ran"
+                    label="Host follow-through"
                     value={hc!.display}
                     ratio={hc!.ratio || undefined}
-                    tooltipTitle={`Successfully ran ${record!.hostCompletion.numerator} of ${record!.hostCompletion.denominator} hosted plans`}
+                    tooltipTitle={`Of ${record!.hostCompletion.denominator} hosted plan${record!.hostCompletion.denominator === 1 ? "" : "s"} where others committed to join, ${record!.hostCompletion.numerator} still went ahead`}
                   />
                 )}
               </Box>

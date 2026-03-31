@@ -235,7 +235,7 @@ const VALID_RSVP_PARAMS = ["going", "maybe", "cant_make_it"] as const;
 const PREF_NOTE_LABELS: Record<string, string> = {
   reliability: "reliability",
   sociability: "sociability",
-  presentation: "personal care",
+  presentation: "cleanliness & consideration",
   hosting_skills: "hosting quality",
 };
 
@@ -3977,7 +3977,6 @@ export default function EventDetailClient() {
       )}
 
       {/* Scheduling section — collaborative alternate scheduling (hidden for past plans) */}
-      {event.allowAltTimes && <Box id="plan-section-availability" />}
       {event.allowAltTimes &&
         !isCanceled &&
         !isPast &&
@@ -4103,7 +4102,7 @@ export default function EventDetailClient() {
           );
 
           return (
-            <AppCard>
+            <AppCard id="plan-section-availability">
               <Typography
                 variant="h5"
                 fontWeight={700}
@@ -4633,9 +4632,8 @@ export default function EventDetailClient() {
       </Dialog>
 
       {/* Who's in — combined RSVP + invite status */}
-      <Box id="plan-section-attendees" />
       {(rsvps.length > 0 || pendingInvites.length > 0) && (
-        <AppCard>
+        <AppCard id="plan-section-attendees">
           <Typography
             variant="h5"
             fontWeight={700}
@@ -4961,10 +4959,7 @@ export default function EventDetailClient() {
 
       {/* Plan Chat */}
       {chatAccessible === true && !isCanceled && (
-        <Box id="plan-section-chat" />
-      )}
-      {chatAccessible === true && !isCanceled && (
-        <AppCard>
+        <AppCard id="plan-section-chat">
           <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
             <Typography
               variant="h5"

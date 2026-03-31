@@ -77,7 +77,7 @@ type DiagnosticsData = {
 const METRIC_LABELS: Record<string, string> = {
   reliability: "Reliability",
   sociability: "Sociability",
-  presentation: "Personal Care",
+  presentation: "Cleanliness & Consideration",
   hosting_skills: "Hosting Skills",
   match_quality: "Match Quality",
 };

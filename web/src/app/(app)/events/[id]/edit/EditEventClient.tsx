@@ -44,7 +44,7 @@ type PrefOverrides = {
 const PREF_METRIC_LABELS: Record<string, string> = {
   reliability: "Reliability",
   sociability: "Sociability",
-  presentation: "Personal care",
+  presentation: "Cleanliness & consideration",
   hosting_skills: "Hosting quality",
 };
 

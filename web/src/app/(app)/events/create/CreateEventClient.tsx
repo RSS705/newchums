@@ -922,7 +922,7 @@ export default function CreateEventClient() {
                         }
                         label={
                           <Typography variant="body2">
-                            Skip <strong>{{ reliability: "Reliability", sociability: "Sociability", presentation: "Personal care" }[metric]}</strong> filtering
+                            Skip <strong>{{ reliability: "Reliability", sociability: "Sociability", presentation: "Cleanliness & consideration" }[metric]}</strong> filtering
                           </Typography>
                         }
                       />

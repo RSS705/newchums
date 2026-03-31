@@ -367,7 +367,7 @@ Enforced at both API level (endpoints return redacted data when no bearer token 
 ### Profile, onboarding, and lookups
 
 - `GET /profile`, `PUT /profile` (auth required). Response includes `role`, `gender`, `profile_theme`, `is_hidden_chum_list`, `is_hidden_from_chum_lists`, `userId`. `PUT /profile` validates `gender` (allowed: `male`, `female`, `other`, `prefer_not_to_say`) and `profile_theme` (allowed values defined in `web/src/lib/profileTheme.ts`). The `/profile` edit page includes the live Attendance Record section.
-- `GET /public/users/:userId/attendance-record` (public) — computes and returns attendance metrics for the specified user. **Auth-aware:** when a valid bearer token is present, returns all five metrics (follow-through rate, confirmation rate, plans attended, plans hosted, host completion rate) plus member-since date. When unauthenticated, returns only activity metrics (plans attended, plans hosted) and member-since date; reliability metrics (follow-through, confirmation, host completion) are zeroed out and a `reliabilityHidden: true` flag is included. Used by the `AttendanceRecordSection` component on profile pages.
+- `GET /public/users/:userId/attendance-record` (public) — computes and returns attendance metrics for the specified user. **Auth-aware:** when a valid bearer token is present, returns all five metrics (Shows up, Confirms attendance, plans attended, plans hosted, Host follow-through) plus member-since date. When unauthenticated, returns only activity metrics (plans attended, plans hosted) and member-since date; reliability metrics are zeroed out and a `reliabilityHidden: true` flag is included. Used by the `AttendanceRecordSection` component on profile pages.
 - `GET /public/users/:handle` (public) — returns public profile by handle. **Auth-aware:** when a valid bearer token is present, returns full profile including `displayName` (real name), `age`, and `gender`. When unauthenticated, `displayName` falls back to the username only, `age` is null, and `gender` is null. Always includes `profile_theme`, `is_hidden_chum_list`, `bio`, `hobbies`, `avatarUrl`. Age computed from DOB server-side; DOB never exposed.
 - `GET /handles/available?handle=...` (auth required)
 - `POST /user/username` (auth required)
@@ -719,11 +719,11 @@ The hourly cron handler includes `cancelNoAttendeePlans()` which auto-cancels pu
 
 Public profile section showing five reliability metrics computed from real event and RSVP data:
 
-1. **Follow-through rate** — of committed plans that occurred, how many did the user attend
-2. **Confirmation rate** — of plans requiring confirmation, how often did the user respond
-3. **Plans attended** — count of completed plans attended
-4. **Plans hosted** — count of completed plans organized
-5. **Host completion rate** — of hosted plans, how many went ahead
+1. **Shows up** (follow-through rate) — of plans the user committed to attend, how often they followed through. Counts committed RSVPs (`committed_at IS NOT NULL`) on past non-canceled events where the user is not the host. The numerator requires the RSVP to still be 'going' AND no undismissed no-show or very-late attendance issue reported against the user for that plan. This captures both explicit backing-out (RSVP changed away from 'going') and reported no-shows/very-late arrivals.
+2. **Confirms attendance** (confirmation rate) — of plans that asked for final attendance confirmation, how often the user responded (confirmed or declined). Narrowly tied to the attendance assurance confirmation step.
+3. **Plans attended** — count of completed plans attended (non-host, going, past, non-canceled).
+4. **Plans hosted** — count of completed plans organized (host, past, non-canceled).
+5. **Host follow-through** (host completion rate) — of hosted plans where at least one non-host attendee committed as Going, how often the plan still went ahead instead of being canceled. Excludes plans where nobody committed to join (no non-host `committed_at` records) and excludes auto-canceled no-attendee plans (`cancellation_reason = 'no_attendees'`). This ensures hosts are not penalized for hosting in a thin network where nobody joins.
 
 Uses `committed_at` on `event_rsvps` (migration 041) for accurate commitment tracking. New/low-history users see "Building history" treatment with underlying sample counts. Endpoint: `GET /public/users/:userId/attendance-record`.
 
@@ -737,7 +737,7 @@ Post-plan feedback allows attendees and hosts to leave lightweight, optional fee
 |--------|-----------|-------------------|
 | **Reliability** | Can this person be counted on to follow through? | Moves quickly — no-shows and very late cancellations matter immediately; positive follow-through recovers more slowly. |
 | **Sociability** | Does this person make social interaction comfortable and enjoyable? | Moves gradually — subjective, relies on repeated signals. |
-| **Presentation** | Does this person show up with basic hygiene and in-person consideration? | Moves cautiously but firmly — sensitive area, but repeated negative signals should matter. |
+| **Cleanliness & Consideration** | Does this person show basic in-person cleanliness and considerate use of shared space? (Hygiene and shared-space courtesy — not appearance, style, or a safety/conduct judgment.) | Moves cautiously but firmly — sensitive area, but repeated negative signals should matter. |
 | **Hosting Skills** | Does this person run plans that respect people's time and create a good experience? | Only moves from hosted-plan feedback. |
 | **Match Quality** | Was this a good match for the reviewer personally? | Per-pair signal, not an absolute score. |
 
@@ -764,7 +764,7 @@ All metrics use a 0–100 scale, starting at 50.00 (neutral baseline). `signal_c
 
 - Showed up and followed through reliably → Reliability
 - I'd spend time with this person again → Sociability
-- This person showed basic personal care for an in-person gathering → Presentation
+- This person showed basic in-person cleanliness and consideration → Cleanliness & Consideration
 - This was a good match for me → Match Quality
 - Ran a well-organized plan → Hosting Skills (host-only prompt)
 
@@ -809,7 +809,7 @@ Corroboration:
 
 Users configure matching preferences in their profile ("Your chum preferences" section, below Hobbies, above Attendance record). Settings:
 - **Master toggle:** "Use chum preferences" (default: on)
-- **Per-metric levels:** Reliability, Sociability, Personal care, Hosting quality — each set to Open to anyone / Preferred / Important / Required.
+- **Per-metric levels:** Reliability, Sociability, Cleanliness & consideration, Hosting quality — each set to Open to anyone / Preferred / Important / Required.
 - Defaults: Reliability = Preferred, all others = Open to anyone.
 - Saved in `chum_preferences` table (upsert on change, auto-saves).
 

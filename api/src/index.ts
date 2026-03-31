@@ -430,7 +430,16 @@ app.get("/public/users/:userId/attendance-record", async (c) => {
 
     const followThrough = (await sql`
       SELECT
-        COUNT(*) FILTER (WHERE r.status = 'going')::int AS followed_through,
+        COUNT(*) FILTER (
+          WHERE r.status = 'going'
+          AND NOT EXISTS (
+            SELECT 1 FROM newchums.attendance_issues ai
+            WHERE ai.plan_id = e.id
+              AND ai.reported_user_id = r.user_id
+              AND ai.issue_type IN ('no_show', 'very_late')
+              AND COALESCE(ai.status, 'active') != 'dismissed'
+          )
+        )::int AS followed_through,
         COUNT(*)::int AS total_committed
       FROM newchums.event_rsvps r
       JOIN newchums.events e ON e.id = r.event_id
@@ -459,6 +468,13 @@ app.get("/public/users/:userId/attendance-record", async (c) => {
       WHERE e.host_user_id = ${targetUserId}
         AND e.status IN ('published', 'canceled')
         AND e.starts_at < ${now}
+        AND EXISTS (
+          SELECT 1 FROM newchums.event_rsvps er
+          WHERE er.event_id = e.id
+            AND er.user_id != e.host_user_id
+            AND er.committed_at IS NOT NULL
+        )
+        AND COALESCE(e.cancellation_reason, '') != 'no_attendees'
     `) as { completed: number; total_hosted: number }[];
 
     return c.json({
@@ -9949,6 +9965,7 @@ app.get("/events/:id/feedback", async (c) => {
       .map((a) => ({
         userId: a.id,
         displayName: a.username ? `@${a.username.replace(/^@/, "")}` : (a.name?.trim() || "Someone"),
+        username: a.username ?? null,
         isHost: a.id === ev[0].host_user_id,
       }));
 
@@ -11616,7 +11633,7 @@ async function processEventMatchDigest(
           WHERE er.event_id = e.id AND er.status = 'maybe'
         ) AS maybe_invitee_count
       FROM (
-        -- Public plans: shared hobby + in travel radius
+        (-- Public plans: shared hobby + in travel radius
         SELECT DISTINCT ON (eu.user_id, e.id)
           eu.user_id,
           eu.email,
@@ -11643,9 +11660,9 @@ async function processEventMatchDigest(
               sin(radians(eu.home_lat)) * sin(radians(e.location_lat))
             ))
           ) <= COALESCE(eu.travel_radius_km, 200)
-        ORDER BY eu.user_id, e.id, e.starts_at
+        ORDER BY eu.user_id, e.id, e.starts_at)
         UNION ALL
-        -- Chums-only: same hobby + radius rules as public, plus recipient in host's On NewChums contacts
+        (-- Chums-only: same hobby + radius rules as public, plus recipient in host's On NewChums contacts
         SELECT DISTINCT ON (eu.user_id, e.id)
           eu.user_id,
           eu.email,
@@ -11673,7 +11690,7 @@ async function processEventMatchDigest(
               sin(radians(eu.home_lat)) * sin(radians(e.location_lat))
             ))
           ) <= COALESCE(eu.travel_radius_km, 200)
-        ORDER BY eu.user_id, e.id, e.starts_at
+        ORDER BY eu.user_id, e.id, e.starts_at)
       ) AS mid
       JOIN eligible_users eu ON eu.user_id = mid.user_id
       JOIN newchums.events e ON e.id = mid.event_id

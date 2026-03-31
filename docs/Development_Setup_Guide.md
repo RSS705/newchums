@@ -451,7 +451,7 @@ Chunk 15 — 2026-03-17
   - **Safety Center image:** Replaced placeholder with `Jenga.jpg`.
   - **Attendance Record (full implementation):**
     - DB migration 041 (`committed_at` on `event_rsvps` with backfill and index).
-    - API: `GET /public/users/:userId/attendance-record` computes 5 metrics. `POST /events/:id/rsvp` and host RSVP set `committed_at`. `GET /profile` returns `userId`.
+    - API: `GET /public/users/:userId/attendance-record` computes 5 metrics (Shows up, Confirms attendance, Plans attended, Plans hosted, Host follow-through). `POST /events/:id/rsvp` and host RSVP set `committed_at`. `GET /profile` returns `userId`.
     - New component: `AttendanceRecordSection.tsx` — fetches metrics, handles loading/new-user states, renders metric grid.
     - Replaced placeholder cards in `PublicProfileView.tsx` and `ProfileClient.tsx`.
   - **Documentation:** Updated AGENTS.md, README.md, Technical_Specs.md (v13.0), System_Map.md, Development_Setup_Guide.md.

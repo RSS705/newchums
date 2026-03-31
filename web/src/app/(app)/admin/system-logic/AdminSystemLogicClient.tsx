@@ -383,7 +383,7 @@ export default function AdminSystemLogicClient() {
           What do users rate?
         </Typography>
         <Bullet>
-          For each attendee (excluding yourself): <strong>Reliability</strong>, <strong>Sociability</strong>, <strong>Presentation</strong>, <strong>Match Quality</strong> — each on a 3-point scale (Agree / Maybe / Disagree).
+          For each attendee (excluding yourself): <strong>Reliability</strong>, <strong>Sociability</strong>, <strong>Cleanliness &amp; Consideration</strong>, <strong>Match Quality</strong> — each on a 3-point scale (Agree / Maybe / Disagree).
         </Bullet>
         <Bullet>
           If the attendee is the host, an extra prompt: <strong>Hosting Skills</strong> (&ldquo;I&rsquo;d join their plans again&rdquo;).
@@ -434,7 +434,7 @@ export default function AdminSystemLogicClient() {
           <strong>Sociability</strong> &mdash; Is this person enjoyable and easy to spend time with? Moves gradually; more subjective, relies on repeated signals.
         </Bullet>
         <Bullet>
-          <strong>Personal Care (Presentation)</strong> &mdash; Does this person show basic in-person consideration? Moves cautiously but firmly; repeated negative signals matter.
+          <strong>Cleanliness &amp; Consideration</strong> &mdash; Does this person show basic in-person cleanliness and considerate use of shared space? (Hygiene and shared-space courtesy — not appearance or style.) Moves cautiously but firmly; repeated negative signals matter.
         </Bullet>
         <Bullet>
           <strong>Hosting Skills</strong> &mdash; Does this person run well-organized plans? Only moves from feedback on plans they <em>hosted</em>.
