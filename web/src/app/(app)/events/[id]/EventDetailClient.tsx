@@ -307,7 +307,7 @@ export default function EventDetailClient() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
-  // Share token from API response — used by Copy Link to build share-access URLs
+  // Share token from API response, used by Copy Link to build share-access URLs
   const [shareToken, setShareToken] = useState<string | null>(null);
   const [shareLinkModalDismissed, setShareLinkModalDismissed] = useState(false);
   const [shareLinkModalOpen, setShareLinkModalOpen] = useState(false);
@@ -323,7 +323,7 @@ export default function EventDetailClient() {
     }
   }, [bannerUseFallback]);
 
-  // Copy link — builds a share URL with the share token so recipients get
+  // Copy link, builds a share URL with the share token so recipients get
   // guest access (not just the public preview).
   const handleCopyLink = useCallback(async () => {
     const base = `${window.location.origin}/events/${eventId}`;
@@ -346,7 +346,7 @@ export default function EventDetailClient() {
         setShareLinkModalOpen(true);
       }
     } catch {
-      toast.error("Could not copy link — please copy it from your browser's address bar");
+      toast.error("Could not copy link, please copy it from your browser's address bar");
     }
   }, [eventId, shareToken, toast, shareLinkModalDismissed]);
 
@@ -527,12 +527,12 @@ export default function EventDetailClient() {
     load();
   }, [load]);
 
-  // Persistent invite token — survives for the component lifecycle so guests
+  // Persistent invite token, survives for the component lifecycle so guests
   // can re-RSVP and access invite-only events without auth.
   // Initialized from URL so the first data fetch includes it.
   const inviteTokenRef = useRef<string | null>(searchParams.get("invite_token"));
 
-  // Share token — from Copy Link share URLs. Grants guest access without an invite.
+  // Share token, from Copy Link share URLs. Grants guest access without an invite.
   const shareTokenRef = useRef<string | null>(searchParams.get("share_token"));
 
   // Email link context hint (?context=host_review or ?context=request_approved)
@@ -624,7 +624,7 @@ export default function EventDetailClient() {
     pendingRsvpRef.current = null;
 
     if (inviteToken) {
-      // Token-based RSVP — works without login (registered users + guest invitees)
+      // Token-based RSVP, works without login (registered users + guest invitees)
       (async () => {
         setRsvpSubmitting(true);
         try {
@@ -658,7 +658,7 @@ export default function EventDetailClient() {
         setRsvpSubmitting(false);
       })();
     } else {
-      // Logged-in RSVP — requires auth
+      // Logged-in RSVP, requires auth
       getAuthToken().then((token) => {
         if (token) {
           handleRsvp(rsvpStatus);
@@ -1261,7 +1261,7 @@ export default function EventDetailClient() {
       } else if (data.error === "EVENT_LOCKED") {
         toast.error("This plan is locked and not accepting new participants");
       } else if (data.error === "APPROVAL_REQUIRED") {
-        toast.error('This plan requires host approval — use "Request to join" instead');
+        toast.error('This plan requires host approval, use "Request to join" instead');
       } else {
         toast.error(data.message ?? "Something went wrong");
       }
@@ -1332,7 +1332,7 @@ export default function EventDetailClient() {
       });
       const data = (await res.json()) as { ok: boolean; error?: string; message?: string };
       if (data.ok) {
-        toast.success("Request approved — they've been added as Going");
+        toast.success("Request approved, they've been added as Going");
         setHostResponseMessage((prev) => {
           const next = { ...prev };
           delete next[requestId];
@@ -1340,7 +1340,7 @@ export default function EventDetailClient() {
         });
         refresh();
       } else if (data.error === "EVENT_FULL") {
-        toast.error("This plan is full — cannot approve more participants");
+        toast.error("This plan is full, cannot approve more participants");
       } else {
         toast.error(data.message ?? "Failed to approve");
       }
@@ -1799,7 +1799,7 @@ export default function EventDetailClient() {
                   <Typography variant="body1">{pubLocationDisplay}</Typography>
                   {event.locationArea && (
                     <Typography variant="caption" color="text.secondary">
-                      Approximate area shown — sign in to see exact address
+                      Approximate area shown, sign in to see exact address
                     </Typography>
                   )}
                 </Box>
@@ -1922,7 +1922,7 @@ export default function EventDetailClient() {
 
   // Show request-to-join CTA instead of RSVP buttons when approval is required,
   // user is not the host, not invited, has no existing RSVP, and hasn't just RSVP'd via email token.
-  // Share-link visitors skip this — they use the public RSVP flow (email verification) instead.
+  // Share-link visitors skip this, they use the public RSVP flow (email verification) instead.
   const showRequestToJoin =
     event.requireApproval &&
     !event.isHost &&
@@ -2180,7 +2180,7 @@ export default function EventDetailClient() {
         </Box>
       )}
 
-      {/* Compatibility note — shown when the host doesn't fully meet viewer's chum preferences */}
+      {/* Compatibility note, shown when the host doesn't fully meet viewer's chum preferences */}
       {prefNote && prefNote.length > 0 && !event.isHost && (
         <Box
           sx={{
@@ -2207,7 +2207,7 @@ export default function EventDetailClient() {
         </Box>
       )}
 
-      {/* Post-plan feedback — shown prominently for past attended plans */}
+      {/* Post-plan feedback, shown prominently for past attended plans */}
       {isPast && !isCanceled && accessState === "attending" && (
         <Box id="plan-section-feedback">
           <PlanFeedback eventId={event.id} />
@@ -3976,7 +3976,7 @@ export default function EventDetailClient() {
         </AppCard>
       )}
 
-      {/* Scheduling section — collaborative alternate scheduling (hidden for past plans) */}
+      {/* Scheduling section, collaborative alternate scheduling (hidden for past plans) */}
       {event.allowAltTimes &&
         !isCanceled &&
         !isPast &&
@@ -4323,7 +4323,7 @@ export default function EventDetailClient() {
                       </Stack>
                       {altStartDate && altEndDate && altEndDate.isAfter(altStartDate, "day") && (
                         <Typography variant="caption" color="primary" sx={{ mt: -1 }}>
-                          {altEndDate.diff(altStartDate, "day") + 1} days selected — one entry will
+                          {altEndDate.diff(altStartDate, "day") + 1} days selected, one entry will
                           be created for each day with the same time.
                         </Typography>
                       )}
@@ -4631,7 +4631,7 @@ export default function EventDetailClient() {
         </DialogActions>
       </Dialog>
 
-      {/* Who's in — combined RSVP + invite status */}
+      {/* Who's in, combined RSVP + invite status */}
       {(rsvps.length > 0 || pendingInvites.length > 0) && (
         <AppCard id="plan-section-attendees">
           <Typography
@@ -5293,7 +5293,7 @@ export default function EventDetailClient() {
             value={removeReason}
             onChange={(e) => setRemoveReason(e.target.value.slice(0, 500))}
             inputProps={{ maxLength: 500 }}
-            helperText={`${removeReason.length}/500 — This will be included in the notification email to the attendee.`}
+            helperText={`${removeReason.length}/500, This will be included in the notification email to the attendee.`}
             sx={{ mb: 2 }}
           />
           <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.7, mb: 1.5 }}>

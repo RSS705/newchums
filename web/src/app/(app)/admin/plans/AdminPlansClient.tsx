@@ -56,7 +56,7 @@ type SortField = "created_at" | "starts_at" | "title" | "host_name" | "going_cou
 type SortDir = "asc" | "desc";
 
 function formatDate(iso: string | null): string {
-  if (!iso) return "—";
+  if (!iso) return "-";
   try {
     return new Date(iso).toLocaleDateString(undefined, {
       year: "numeric",
@@ -64,7 +64,7 @@ function formatDate(iso: string | null): string {
       day: "numeric",
     });
   } catch {
-    return "—";
+    return "-";
   }
 }
 
@@ -297,7 +297,7 @@ export default function AdminPlansClient() {
                   <TableCell sx={{ fontSize: "0.8125rem", display: { xs: "none", sm: "table-cell" } }}>
                     <Box>
                       <Typography variant="body2" noWrap>
-                        {plan.host_name || plan.host_username?.replace(/^@/, "") || "—"}
+                        {plan.host_name || plan.host_username?.replace(/^@/, "") || "-"}
                       </Typography>
                       <Typography variant="caption" color="text.disabled" noWrap>
                         {plan.host_email || ""}
@@ -338,7 +338,7 @@ export default function AdminPlansClient() {
                     <Typography variant="body2" noWrap color="text.secondary">
                       {plan.location_type === "online"
                         ? "Online"
-                        : plan.location_name || plan.location_address || "—"}
+                        : plan.location_name || plan.location_address || "-"}
                     </Typography>
                   </TableCell>
                   <TableCell align="center" sx={{ whiteSpace: "nowrap" }}>

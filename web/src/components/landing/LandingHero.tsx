@@ -11,7 +11,7 @@ import type { Theme } from "@mui/material/styles";
 import EmojiPeopleOutlinedIcon from "@mui/icons-material/EmojiPeopleOutlined";
 
 /**
- * Hero content only — no Container (Layout provides it).
+ * Hero content only, no Container (Layout provides it).
  */
 export default function LandingHero({ isLoggedIn = false }: { isLoggedIn?: boolean }) {
   const mdUp = useMediaQuery((theme: Theme) => theme.breakpoints.up("md"));

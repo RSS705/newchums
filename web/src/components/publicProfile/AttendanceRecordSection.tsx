@@ -60,7 +60,7 @@ type MetricCardProps = {
 };
 
 function MetricCard({ icon, label, value, ratio, tooltipTitle }: MetricCardProps) {
-  const isEmpty = value === "—";
+  const isEmpty = value === "-";
 
   const card = (
     <Box
@@ -242,7 +242,7 @@ export default function AttendanceRecordSection({ userId, isOwner, displayName, 
           </Stack>
         ) : (
           <Stack spacing={2.5}>
-            {/* Reliability — hidden from logged-out viewers */}
+            {/* Reliability, hidden from logged-out viewers */}
             {!reliabilityHidden && (
             <Box>
               <Typography
@@ -266,7 +266,7 @@ export default function AttendanceRecordSection({ userId, isOwner, displayName, 
                   value={ft!.display}
                   ratio={ft!.ratio || undefined}
                   tooltipTitle={
-                    ft!.display === "—"
+                    ft!.display === "-"
                       ? "No plan commitments yet"
                       : `Followed through on ${record!.followThrough.numerator} of ${record!.followThrough.denominator} plans they committed to attend`
                   }
@@ -277,7 +277,7 @@ export default function AttendanceRecordSection({ userId, isOwner, displayName, 
                   value={cr!.display}
                   ratio={cr!.ratio || undefined}
                   tooltipTitle={
-                    cr!.display === "—"
+                    cr!.display === "-"
                       ? "No final attendance confirmations requested yet"
                       : `Responded to ${record!.confirmationRate.numerator} of ${record!.confirmationRate.denominator} final attendance confirmation requests`
                   }

@@ -69,7 +69,7 @@ export async function getAuthToken(): Promise<string | null> {
   if (typeof window === "undefined") return null;
   // Return cached token only if it has not yet reached its expiry (with buffer).
   if (cachedToken && Date.now() < cachedTokenExpiry) return cachedToken;
-  // Cache is stale or empty — clear and fetch a fresh token.
+  // Cache is stale or empty, clear and fetch a fresh token.
   cachedToken = null;
   cachedTokenExpiry = 0;
   try {

@@ -464,7 +464,7 @@ export default function EditEventClient() {
             )}
           </Stack>
           <Typography variant="caption" color="text.secondary">
-            JPEG, PNG, or WebP up to 20 MB — we&apos;ll compress it automatically.
+            JPEG, PNG, or WebP up to 20 MB, we&apos;ll compress it automatically.
           </Typography>
         </Stack>
       </AppCard>

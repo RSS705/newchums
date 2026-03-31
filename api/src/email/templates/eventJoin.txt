@@ -1,6 +1,6 @@
 Someone is going to your plan
 
-Hey {{hostName}}, great news — someone just confirmed they're attending!
+Hey {{hostName}}, great news, someone just confirmed they're attending!
 
 ---
 

@@ -9,7 +9,7 @@ type WebSocketAttachment = {
  * Per-plan chat room Durable Object.
  *
  * Uses the WebSocket Hibernation API so idle connections don't consume CPU.
- * This DO is a stateless broadcast relay — the database is the source of truth
+ * This DO is a stateless broadcast relay; the database is the source of truth
  * for message history. It only holds open WebSocket connections and forwards
  * new messages to all connected participants in real time.
  */

@@ -101,7 +101,7 @@ export default function NextStepNudge() {
       setProgress(data.progress);
       setHidden(false);
     } catch {
-      /* silently ignore — keep showing cached data if available */
+      /* silently ignore, keep showing cached data if available */
     }
   }, []);
 

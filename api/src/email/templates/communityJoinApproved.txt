@@ -2,7 +2,7 @@ You've been approved!
 
 Hey {{userName}},
 
-Great news — your request to join "{{communityName}}" has been approved.
+Great news, your request to join "{{communityName}}" has been approved.
 
 Visit the community: {{communityUrl}}
 

@@ -54,11 +54,11 @@ export function renderContactSubmissionHtml(params: ContactSubmissionParams): st
   const loggedIn = params.userId != null ? "Yes" : "No";
   const username = params.username != null && params.username.trim() !== ""
     ? escapeHtml("@" + params.username.replace(/^@/, "").trim())
-    : "—";
-  const userId = params.userId != null ? escapeHtml(params.userId) : "—";
-  const ip = params.requestIp ? escapeHtml(params.requestIp) : "—";
+    : "N/A";
+  const userId = params.userId != null ? escapeHtml(params.userId) : "N/A";
+  const ip = params.requestIp ? escapeHtml(params.requestIp) : "N/A";
   const subjectDisplay = escapeHtml(params.subject);
-  const envDisplay = escapeHtml(params.environment ?? "—");
+  const envDisplay = escapeHtml(params.environment ?? "N/A");
   const timestampReadable = escapeHtml(formatTimestampReadable(params.timestamp));
   const timestampRaw = escapeHtml(params.timestamp);
 
@@ -174,10 +174,10 @@ export function renderContactSubmissionText(params: ContactSubmissionParams): st
     "Name: " + params.name,
     "Email: " + params.email,
     "Logged in: " + (params.userId != null ? "Yes" : "No"),
-    "Username: " + (params.username != null && params.username.trim() !== "" ? "@" + params.username.replace(/^@/, "").trim() : "—"),
-    "User ID: " + (params.userId ?? "—"),
-    "IP: " + (params.requestIp ?? "—"),
-    "Environment: " + (params.environment ?? "—"),
+    "Username: " + (params.username != null && params.username.trim() !== "" ? "@" + params.username.replace(/^@/, "").trim() : "N/A"),
+    "User ID: " + (params.userId ?? "N/A"),
+    "IP: " + (params.requestIp ?? "N/A"),
+    "Environment: " + (params.environment ?? "N/A"),
     "Timestamp: " + params.timestamp,
     "",
     "Message:",

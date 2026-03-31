@@ -191,7 +191,7 @@ export default function PlansPage() {
             </Box>
           )}
 
-          {/* Canceled plans — collapsed by default, shown on both tabs */}
+          {/* Canceled plans, collapsed by default, shown on both tabs */}
           {canceledList.length > 0 && (
             <Box>
               <Divider sx={{ mb: 2 }} />

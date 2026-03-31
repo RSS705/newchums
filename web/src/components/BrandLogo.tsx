@@ -20,7 +20,7 @@ export type BrandLogoProps = {
 };
 
 /**
- * Shared brand logo component. Sizes by height, width auto — logos hug their artwork
+ * Shared brand logo component. Sizes by height, width auto, logos hug their artwork
  * instead of a fixed-width box. Reusable across headers, footers, and app shells.
  */
 export default function BrandLogo({

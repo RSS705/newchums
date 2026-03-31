@@ -77,7 +77,7 @@ Matcher includes `/api/auth/*` (OAuth flow), excludes static assets.
 
 ---
 
-## 3) API Boundary — What Lives Where
+## 3) API Boundary, What Lives Where
 
 The following flows run in the API worker; the web app calls the API via `NEXT_PUBLIC_API_BASE_URL`:
 
@@ -104,7 +104,7 @@ The following flows run in the API worker; the web app calls the API via `NEXT_P
 | Chums | `GET /chums`, `GET /chums/search`, `GET /chums/check/:userId`, `POST /chums/:userId`, `DELETE /chums/:userId`, `PATCH /chums/:userId/note` | Bearer JWT |
 | Chum invites | `POST /chums/invite`, `POST /chums/invite/accept` | Bearer JWT |
 | Public Chums | `GET /public/users/:handle/chums` | none |
-| Events (plans) | `POST /events`, `GET /events/mine`, `GET /events/:id` (optional auth — returns `accessState` + `shareToken`), `GET /events/explore` (auth), `GET /events/explore/public` (no auth), `PATCH /events/:id`, `POST /events/:id/rsvp`, `POST /events/:id/alt-time`, `POST /events/:id/cancel`, `POST /events/:id/invite`, `POST /events/:id/confirm`, `POST /events/:id/email-confirm` | Bearer JWT (detail: optional; accepts `invite_token` / `participation_token` / `share_token`); explore/public: no auth |
+| Events (plans) | `POST /events`, `GET /events/mine`, `GET /events/:id` (optional auth, returns `accessState` + `shareToken`), `GET /events/explore` (auth), `GET /events/explore/public` (no auth), `PATCH /events/:id`, `POST /events/:id/rsvp`, `POST /events/:id/alt-time`, `POST /events/:id/cancel`, `POST /events/:id/invite`, `POST /events/:id/confirm`, `POST /events/:id/email-confirm` | Bearer JWT (detail: optional; accepts `invite_token` / `participation_token` / `share_token`); explore/public: no auth |
 | Plan feedback | `GET /events/:id/feedback`, `POST /events/:id/feedback` (updates `user_metrics`), `POST /events/:id/attendance-issue` (penalizes reliability), `POST /events/:id/conduct-report` | Bearer JWT |
 | Chum preferences | `GET /chum-preferences`, `PUT /chum-preferences` | Bearer JWT |
 | Attendance record | `GET /public/users/:userId/attendance-record` | none |
@@ -113,10 +113,10 @@ The following flows run in the API worker; the web app calls the API via `NEXT_P
 | Notifications | `GET /notifications` (includes `unreadChats`), `POST /notifications/read` | Bearer JWT |
 | Email unsubscribe | `POST /email/unsubscribe` | Signed JWT token |
 | Contact form | `POST /contact` | none (Turnstile for logged-out) |
-| Admin — interests | `GET /admin/interests`, `PATCH /admin/interests/:id`, `DELETE /admin/interests/:id`, `POST /admin/interests/:id/restore`, `POST /admin/interests/merge` | Bearer JWT + `super_admin` role |
-| Admin — users | `GET /admin/users`, `POST /admin/users/:id/suspend`, `POST /admin/users/:id/unsuspend`, `GET /admin/users/:id/diagnostics` | Bearer JWT + `super_admin` role |
+| Admin, interests | `GET /admin/interests`, `PATCH /admin/interests/:id`, `DELETE /admin/interests/:id`, `POST /admin/interests/:id/restore`, `POST /admin/interests/merge` | Bearer JWT + `super_admin` role |
+| Admin, users | `GET /admin/users`, `POST /admin/users/:id/suspend`, `POST /admin/users/:id/unsuspend`, `GET /admin/users/:id/diagnostics` | Bearer JWT + `super_admin` role |
 | Communities | `POST /communities`, `GET /communities`, `GET /communities/slug-available`, `GET /communities/:slug`, `PATCH /communities/:slug`, `DELETE /communities/:slug`, `POST /communities/:id/join`, `POST /communities/:id/leave`, `GET /communities/:id/members`, `POST /communities/:id/members/:userId/remove`, `PUT /communities/:id/join-requests/:requestId`, `GET /communities/:id/join-requests`, `GET /communities/:id/events` | Bearer JWT |
-| Admin — communities | `GET /admin/communities`, `POST /admin/communities/:id/remove` | Bearer JWT + `super_admin` role |
+| Admin, communities | `GET /admin/communities`, `POST /admin/communities/:id/remove` | Bearer JWT + `super_admin` role |
 | Diagnostics | `GET /health`, `GET /health/env` | none |
 
 ### Content safety
@@ -163,7 +163,7 @@ After the SQL selects candidate (recipient, plan) pairs, **chum preference filte
 
 ```
 Visit newchums.com → Homepage (LandingLayout)
-├── Public Explore feed — browse real public plans (search, time filter, pagination)
+├── Public Explore feed, browse real public plans (search, time filter, pagination)
 │   └── Click plan → Public plan details (limited preview, no RSVP)
 ├── Browse: How it Works, Science of Friendship, Safety Center
 ├── Contact form
@@ -255,7 +255,7 @@ Wrangler config is code-managed so deploys do not wipe routes or override canoni
 
 | Route | Purpose |
 |-------|---------|
-| `/` (logged out) | Homepage — hero, public Explore feed (real public plans via `/events/explore/public`), brand positioning, feature blocks, CTA |
+| `/` (logged out) | Homepage, hero, public Explore feed (real public plans via `/events/explore/public`), brand positioning, feature blocks, CTA |
 | `/how-it-works` | How it works |
 | `/science-of-friendship` | Research-backed trust page |
 | `/safety-center` | Community safety guidance |
@@ -267,7 +267,7 @@ Wrangler config is code-managed so deploys do not wipe routes or override canoni
 | `/auth/verify` | Email verification landing |
 | `/auth/verify-pending` | Verification pending polling page |
 | `/u/[handle]` | Public profile (works logged-in or out; logged-out viewers see reduced info: username only, no name/age/reliability) |
-| `/events/[id]` (logged out) | Plan detail — public preview with limited info and sign-in CTA |
+| `/events/[id]` (logged out) | Plan detail, public preview with limited info and sign-in CTA |
 | `/terms` | Terms of Use |
 | `/privacy` | Privacy Policy |
 
@@ -275,20 +275,20 @@ Wrangler config is code-managed so deploys do not wipe routes or override canoni
 
 | Route | Purpose |
 |-------|---------|
-| `/` (logged in) | Explore — event discovery feed |
+| `/` (logged in) | Explore, event discovery feed |
 | `/events/create` | Start a plan (create event) |
-| `/plans` | Your Plans — upcoming / past tabs |
-| `/events/[id]` | Event detail — full experience with RSVP, attendees, chat, lock, cancel (access state: authenticated/attending). Past plans show post-plan feedback section. |
-| `/chum-groups` | Your Chums — search, invite, list |
+| `/plans` | Your Plans, upcoming / past tabs |
+| `/events/[id]` | Event detail, full experience with RSVP, attendees, chat, lock, cancel (access state: authenticated/attending). Past plans show post-plan feedback section. |
+| `/chum-groups` | Your Chums, search, invite, list |
 | `/profile` | Edit profile |
 | `/settings` | Notifications, privacy, account |
 | `/admin/interests` | Interests moderation (super_admin) |
 | `/admin/chums` | User management (super_admin) |
-| `/admin/chums/[id]` | User diagnostics — metric scores, preferences, feedback, issues (super_admin) |
-| `/admin/communities` | Community management — list, search, remove (super_admin) |
+| `/admin/chums/[id]` | User diagnostics, metric scores, preferences, feedback, issues (super_admin) |
+| `/admin/communities` | Community management, list, search, remove (super_admin) |
 | `/communities` | Browse and search communities |
 | `/communities/create` | Create a new community |
-| `/communities/[slug]` | Community detail — info, members, plan feed, join/leave, join-request management |
+| `/communities/[slug]` | Community detail, info, members, plan feed, join/leave, join-request management |
 | `/communities/[slug]/edit` | Edit community settings (owner) |
 | `/unsubscribe` | Email notification unsubscribe (public, token-based) |
 

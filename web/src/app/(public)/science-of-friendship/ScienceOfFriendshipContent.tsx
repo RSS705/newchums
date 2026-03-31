@@ -428,7 +428,7 @@ export default function ScienceOfFriendshipContent({ isLoggedIn = false }: { isL
                 in the same places every day.
               </Typography>
 
-              {/* "School. Neighborhoods." callout — visible on mobile too */}
+              {/* "School. Neighborhoods." callout, visible on mobile too */}
               <Box
                 sx={{
                   pl: { xs: 0, sm: 3 },
@@ -491,7 +491,7 @@ export default function ScienceOfFriendshipContent({ isLoggedIn = false }: { isL
               </Stack>
             </Box>
 
-            {/* Closing — bridge to CTA */}
+            {/* Closing, bridge to CTA */}
             <Stack spacing={2} sx={{ pt: 1, textAlign: { xs: "center", sm: "left" } }}>
               <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
                 NewChums simply helps recreate those conditions.

@@ -84,7 +84,7 @@ const CATEGORY_LABELS_FULL: Record<string, string> = {
 function formatDate(iso: string): string {
   try {
     return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-  } catch { return "—"; }
+  } catch { return "-"; }
 }
 
 export default function AdminRoadmapClient() {
@@ -619,7 +619,7 @@ export default function AdminRoadmapClient() {
       {/* Comments dialog */}
       <Dialog open={!!commentsDialogItem} onClose={() => setCommentsDialogItem(null)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ fontWeight: 700 }}>
-          Comments &mdash; {commentsDialogItem?.title}
+          Comments, {commentsDialogItem?.title}
         </DialogTitle>
         <DialogContent>
           {loadingComments ? (

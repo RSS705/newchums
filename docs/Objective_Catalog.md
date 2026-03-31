@@ -4,7 +4,7 @@ Generated from codebase analysis. This catalog covers implemented objectives and
 
 ---
 
-## Implemented Objectives (v1 — Next Best Step)
+## Implemented Objectives (v1, Next Best Step)
 
 These are defined in `api/src/objectives.ts` and live in the system today.
 Listed in their current sequence order.
@@ -92,7 +92,7 @@ Listed in their current sequence order.
 |-------|-------|
 | **Title** | Attend your first plan |
 | **Category** | plans |
-| **Description** | Show up to a plan you joined — that's what NewChums is all about. |
+| **Description** | Show up to a plan you joined. That's what NewChums is all about. |
 | **Completion trigger** | At least one past, non-canceled event where user RSVP'd 'going' and is not the host |
 | **Suited for** | Retention |
 | **Notes** | Depends on join_first_plan. Measures actual follow-through, not just intent. |
@@ -192,7 +192,7 @@ These are natural extensions that may be added later. They are categorized by su
 
 | Key | Reason for exclusion |
 |-----|---------------------|
-| `respond_to_invite` | Depends on receiving an invite — cannot be reliably prompted. Better as a passive achievement. |
+| `respond_to_invite` | Depends on receiving an invite; cannot be reliably prompted. Better as a passive achievement. |
 | `suggest_better_time` | Very contextual action; depends on specific plan timing. Not a meaningful milestone. |
 | `open_plan_details` | Page views are not tracked in the database. Would require new tracking infrastructure. |
 | `set_gender` | Sensitive personal information. Should not be nudged. |

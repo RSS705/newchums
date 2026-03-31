@@ -4,7 +4,7 @@ Hey {{userName}},
 
 Unfortunately your request to join "{{communityName}}" was not approved at this time.
 
-Don't worry — there are plenty of other communities and plans to explore on NewChums.
+Don't worry, there are plenty of other communities and plans to explore on NewChums.
 
 Explore NewChums: https://newchums.com
 

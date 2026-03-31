@@ -149,7 +149,7 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
         viewerLoggedIn={viewerLoggedIn}
       />
 
-      {/* Public connections section — self-contained card, hidden if owner toggled it off or list is empty */}
+      {/* Public connections section, self-contained card, hidden if owner toggled it off or list is empty */}
       {ownerHandleSlug && !user.is_hidden_chum_list && (
         <ProfileChumsSection ownerHandle={ownerHandleSlug} viewerLoggedIn={viewerLoggedIn} />
       )}
@@ -194,7 +194,7 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
         </AppCard>
       )}
 
-      {/* TODO: Future sections — XP, badges, trust metrics, unlockables — add as separate components. */}
+      {/* TODO: Future sections, XP, badges, trust metrics, unlockables, add as separate components. */}
     </Stack>
   );
 }

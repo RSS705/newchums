@@ -60,7 +60,7 @@ function formatDate(iso: string): string {
       minute: "2-digit",
     });
   } catch {
-    return "—";
+    return "-";
   }
 }
 
@@ -194,7 +194,7 @@ export default function AdminSafetyClient() {
                   borderColor: report.status === "new" ? "error.light" : "grey.300",
                 }}
               >
-                {/* Header row — clickable */}
+                {/* Header row, clickable */}
                 <Box
                   onClick={() => setExpandedId(isExpanded ? null : report.id)}
                   sx={{

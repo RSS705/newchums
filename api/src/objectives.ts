@@ -1,5 +1,5 @@
 /**
- * Objectives / nudge framework — catalog + evaluation logic.
+ * Objectives / nudge framework, catalog + evaluation logic.
  *
  * Each objective has a durable key, user-facing copy, ordering, and a
  * SQL-evaluable completion condition.  The `evaluateObjectives` function
@@ -111,7 +111,7 @@ export const OBJECTIVES: ObjectiveDefinition[] = [
   {
     key: "attend_first_plan",
     title: "Attend your first plan",
-    description: "Show up to a plan you joined — that's what NewChums is all about.",
+    description: "Show up to a plan you joined. That's what NewChums is all about.",
     category: "plans",
     sequence: 80,
     actionUrl: "/your-plans",

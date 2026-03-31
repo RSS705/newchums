@@ -120,10 +120,10 @@ function scoreColor(score: number): "success" | "warning" | "error" | "info" {
 }
 
 function formatDate(iso: string | null): string {
-  if (!iso) return "—";
+  if (!iso) return "-";
   try {
     return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
-  } catch { return "—"; }
+  } catch { return "-"; }
 }
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
@@ -310,7 +310,7 @@ export default function AdminUserDiagnosticsClient() {
             User Diagnostics
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            {user.name ?? "—"} &middot; {user.username ? `@${user.username}` : "no handle"} &middot;{" "}
+            {user.name ?? "-"} &middot; {user.username ? `@${user.username}` : "no handle"} &middot;{" "}
             <span style={{ fontFamily: "monospace", fontSize: "0.8125rem" }}>{user.email}</span>
           </Typography>
         </Box>
@@ -443,7 +443,7 @@ export default function AdminUserDiagnosticsClient() {
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" sx={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {ai.planTitle ?? "—"}
+                        {ai.planTitle ?? "-"}
                       </Typography>
                     </TableCell>
                     <TableCell>
@@ -455,7 +455,7 @@ export default function AdminUserDiagnosticsClient() {
                       </Typography>
                     </TableCell>
                     <TableCell>
-                      {ai.isHostReport ? <Chip label="Host" size="small" color="info" variant="outlined" sx={{ fontSize: "0.7rem" }} /> : "—"}
+                      {ai.isHostReport ? <Chip label="Host" size="small" color="info" variant="outlined" sx={{ fontSize: "0.7rem" }} /> : "-"}
                     </TableCell>
                     <TableCell align="right">
                       <Typography variant="body2" sx={{ fontFamily: "monospace", fontSize: "0.8125rem" }}>
@@ -653,7 +653,7 @@ export default function AdminUserDiagnosticsClient() {
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" sx={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {f.reporterLabel ?? "—"}
+                        {f.reporterLabel ?? "-"}
                       </Typography>
                     </TableCell>
                     <TableCell>
@@ -769,10 +769,10 @@ export default function AdminUserDiagnosticsClient() {
           <Divider sx={{ my: 1 }} />
           <Typography variant="body2" fontWeight={600}>Tolerance thresholds:</Typography>
           <Typography variant="body2" sx={{ lineHeight: 1.6 }}>
-            <strong>Open to anyone:</strong> No threshold applied &mdash; all users pass.<br />
+            <strong>Open to anyone:</strong> No threshold applied, all users pass.<br />
             <strong>Preferred:</strong> Score must be &ge; 35 (tolerates mild negative average).<br />
             <strong>Important:</strong> Score must be &ge; 45 (tolerates only small negative average).<br />
-            <strong>Required:</strong> Score must be &ge; 55 (firm minimum &mdash; near-baseline or positive required).
+            <strong>Required:</strong> Score must be &ge; 55 (firm minimum, near-baseline or positive required).
           </Typography>
         </Stack>
       </Paper>

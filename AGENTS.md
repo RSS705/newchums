@@ -16,8 +16,8 @@ Architecture clarity > rigidity.
 NewChums helps people organize gatherings more easily around hobbies and shared interests.
 
 **Current product positioning:**
-- Primary pitch: making it easier to plan and coordinate real-world gatherings — board game nights, coffee walks, study sessions, pottery, sports, etc.
-- Secondary pitch: reducing follow-through friction — one place for invites, RSVPs, and updates, so plans actually happen.
+- Primary pitch: making it easier to plan and coordinate real-world gatherings, board game nights, coffee walks, study sessions, pottery, sports, etc.
+- Secondary pitch: reducing follow-through friction, one place for invites, RSVPs, and updates, so plans actually happen.
 - Tertiary / contextual: meeting new people naturally through shared interests and proximity.
 - Broader mission: reducing loneliness and helping people build real-world social connections. This is still true and still core to why the product exists, but it is not always the front-facing message.
 
@@ -25,7 +25,7 @@ NewChums helps people organize gatherings more easily around hobbies and shared 
 
 **Why this matters for agents:**
 - Do not frame user-facing copy as primarily about "meeting strangers" or "finding friends." The product should feel like a practical tool for organizing real-life plans.
-- Loneliness / friendship framing is appropriate on the Science of Friendship page, in mission-oriented contexts, and in internal docs — but it should not dominate product surfaces.
+- Loneliness / friendship framing is appropriate on the Science of Friendship page, in mission-oriented contexts, and in internal docs, but it should not dominate product surfaces.
 
 ### Terminology
 
@@ -37,7 +37,7 @@ NewChums helps people organize gatherings more easily around hobbies and shared 
 | **hobby** | User-facing term for interests. Aligned with the profile interests system. |
 | **chum** | NewChums term for a saved person. Now part of a two-part connection model: **On NewChums** (on-platform users) and **Private Contacts** (off-platform people tracked for planning). One-way, no mutual indicator, no approval flow. Adding does not notify the other person. Private Contacts auto-promote to On NewChums when the contact creates an account with a matching email. |
 
-Internal code may use `event`, `PlanEvent`, `EventCard`, etc. — this is fine. The distinction is between code identifiers and user-visible strings.
+Internal code may use `event`, `PlanEvent`, `EventCard`, etc., this is fine. The distinction is between code identifiers and user-visible strings.
 
 ### Design and UX Tone
 
@@ -46,6 +46,8 @@ When building or modifying UI:
 - Keep empty states helpful and encouraging, not dead or embarrassing
 - Keep helper text human and concise, not mechanical
 - Use the theme's design language (rounded corners, consistent spacing)
+
+**Copy rule: no em dashes.** Do not use em dashes (`—`, `&mdash;`, `\u2014`) in any user-facing text, marketing copy, tooltips, helper text, email templates, or documentation. Use commas, periods, or semicolons instead. This applies to both code strings and `.md` files in this repository.
 
 ---
 
@@ -69,7 +71,7 @@ Current production reality:
 - Domain live: newchums.com, www.newchums.com; canonical host enforced.
 - Durable Objects are used for real-time plan chat (WebSocket relay per plan).
 - R2 is used for media storage (avatars, banners).
-- Cron Triggers are active (hourly at `0 * * * *` UTC — attendance assurance processing, and daily unread-chat digest at 2 PM UTC within the same handler).
+- Cron Triggers are active (hourly at `0 * * * *` UTC, attendance assurance processing, and daily unread-chat digest at 2 PM UTC within the same handler).
 - Queues are planned but not yet implemented.
 
 ---
@@ -117,12 +119,12 @@ If architectural invariants change, update both:
 
 in the same change set.
 
-### Super Admin — System Logic (`/admin/system-logic`)
+### Super Admin, System Logic (`/admin/system-logic`)
 
 The **System Logic** tab is a concise, human-readable map of how plans, emails, and digests behave. It is **not** a substitute for `Technical_Specs.md`.
 
 - **Review cadence:** Any change that affects user-visible flows (notifications, emails, RSVP, visibility, digests, etc.) should include a **review of this page** in the **same change set**. Update it when behavior changes so it stays accurate.
-- **Writing style:** Key logic only; plain language; short bullets. No API dumps, table names, or low-level schema in this UI—those belong in repo docs.
+- **Writing style:** Key logic only; plain language; short bullets. No API dumps, table names, or low-level schema in this UI; those belong in repo docs.
 
 ---
 
@@ -141,7 +143,7 @@ The following areas are partially implemented. Agents should polish and improve 
 | **Plan feedback / matching quality** | Phase 1+2 implemented (migrations 049, 050). Post-plan feedback UI with carousel stepper. Hidden metric scoring with weighted averaging and attendance penalties. Chum preferences in profile (master toggle + per-metric levels: Open/Preferred/Important/Required). Super-admin user diagnostics view (`/admin/chums/[id]`). System Logic explanation. | Scoring is live. Tolerance thresholds defined (Open=none, Preferred≥35, Important≥45, Required≥55). Inbound matching filtering and compatibility notes on plan details not yet wired. Future: plan-level inheritance/override, compatibility warnings in plan detail UI. |
 | **Recurring events** | Not implemented. Schema supports single-time events only. | Do not add recurring event logic. |
 | **Event chat** | Implemented. Per-plan group chat with real-time WebSocket delivery (Durable Objects), host lock, unread indicators in bell and plan cards, daily digest email. | Improve polish, add features (reactions, threads, attachments) only when asked. |
-| **Communities** | Implemented. Community pages with create, browse, join/leave, member management, community plan feeds, share tokens for private communities, community avatar upload (rounded-square logo with crop dialog), soft-close flow (migration 059: `status` column), community attribution on plan cards and Explore feed. Schema: migrations 055 + 059. `hide_from_explore` toggle relabeled "Members only" — members still see these plans in Explore. Closed communities hidden from listings; linked events have `community_id` nullified. Beta badges removed. Email templates for join request/approved/declined (Postmark IDs configured). Super admin moderation. Community chat deferred (`chat_enabled` column exists but no chat implementation). | Polish UI, fix bugs. Do not build community chat without being asked. |
+| **Communities** | Implemented. Community pages with create, browse, join/leave, member management, community plan feeds, share tokens for private communities, community avatar upload (rounded-square logo with crop dialog), soft-close flow (migration 059: `status` column), community attribution on plan cards and Explore feed. Schema: migrations 055 + 059. `hide_from_explore` toggle relabeled "Members only", members still see these plans in Explore. Closed communities hidden from listings; linked events have `community_id` nullified. Beta badges removed. Email templates for join request/approved/declined (Postmark IDs configured). Super admin moderation. Community chat deferred (`chat_enabled` column exists but no chat implementation). | Polish UI, fix bugs. Do not build community chat without being asked. |
 
 ---
 
@@ -153,9 +155,9 @@ The following areas are partially implemented. Agents should polish and improve 
 
 - **Always prefer labels above fields.** Match the Date of birth / NCDatePicker pattern: a static Typography label above the input, not a floating or in-field label.
 - **Use the right component:**
-  - `AppTextField` — for text fields, selects, and any field with a label (renders label above automatically).
-  - `AuthField` — for auth flows (login, signup, forgot-password); same label-above pattern with optional `noTopMargin`.
-  - `NCDatePicker` — for date fields (e.g. date of birth).
+  - `AppTextField`, for text fields, selects, and any field with a label (renders label above automatically).
+  - `AuthField`, for auth flows (login, signup, forgot-password); same label-above pattern with optional `noTopMargin`.
+  - `NCDatePicker`, for date fields (e.g. date of birth).
 - **Do not use** raw MUI `TextField` with `label` prop for new form fields. Use `AppTextField` instead.
 - **For Autocomplete or custom inputs:** render a Typography label above (subtitle1, fontWeight 600, mb: 0.625), then the input with `label={undefined}`.
 - Floating / in-field labels are not permitted. Do not reintroduce them.
@@ -171,7 +173,7 @@ The following areas are partially implemented. Agents should polish and improve 
 
 | Task                                          | Look first                                                 | Then                                                             |
 | --------------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------- |
-| View/page change                              | `template_reference/src/app/` — find closest template page | Replicate structure in `web/src/app/`                            |
+| View/page change                              | `template_reference/src/app/`, find closest template page | Replicate structure in `web/src/app/`                            |
 | Auth views (login, register, forgot-password) | `template_reference/src/app/auth/auth1/` or `auth2/`       | Use AuthSplitLayout, AuthField patterns in `web/src/components/` |
 | Form fields (text, select, date)              | `web/src/components/ui/AppTextField.tsx`                  | AppTextField (label above), AuthField, NCDatePicker              |
 | Global styling                                | `web/src/theme/`                                           | Theme overrides, not per-page hacks                              |

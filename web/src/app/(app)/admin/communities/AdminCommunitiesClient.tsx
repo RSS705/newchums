@@ -51,7 +51,7 @@ type SortField = "created_at" | "name" | "member_count" | "plan_count";
 type SortDir = "asc" | "desc";
 
 function formatDate(iso: string | null): string {
-  if (!iso) return "—";
+  if (!iso) return "-";
   try {
     return new Date(iso).toLocaleDateString(undefined, {
       year: "numeric",
@@ -59,7 +59,7 @@ function formatDate(iso: string | null): string {
       day: "numeric",
     });
   } catch {
-    return "—";
+    return "-";
   }
 }
 
@@ -275,7 +275,7 @@ export default function AdminCommunitiesClient() {
                   <TableCell sx={{ fontSize: "0.8125rem", display: { xs: "none", sm: "table-cell" } }}>
                     <Box>
                       <Typography variant="body2" noWrap sx={{ maxWidth: 140 }}>
-                        {c.owner_name || c.owner_username?.replace(/^@/, "") || "—"}
+                        {c.owner_name || c.owner_username?.replace(/^@/, "") || "-"}
                       </Typography>
                       <Typography variant="caption" color="text.disabled" noWrap>
                         {c.owner_email || ""}

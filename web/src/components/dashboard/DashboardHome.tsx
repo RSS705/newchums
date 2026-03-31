@@ -115,7 +115,7 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
   const initializedRef = useRef(false);
   const filterDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Stable fetch — reads filter values from ref so its identity never changes.
+  // Stable fetch, reads filter values from ref so its identity never changes.
   const fetchEvents = useCallback(async (pageOffset: number, append: boolean) => {
     const PAGE_SIZE = 12;
     const f = filtersRef.current;

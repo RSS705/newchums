@@ -48,7 +48,7 @@ type SortField = "created_at" | "username" | "name" | "email";
 type SortDir = "asc" | "desc";
 
 function formatDate(iso: string | null): string {
-  if (!iso) return "—";
+  if (!iso) return "-";
   try {
     return new Date(iso).toLocaleDateString(undefined, {
       year: "numeric",
@@ -56,7 +56,7 @@ function formatDate(iso: string | null): string {
       day: "numeric",
     });
   } catch {
-    return "—";
+    return "-";
   }
 }
 
@@ -307,13 +307,13 @@ export default function AdminChumsClient() {
                         </Link>
                       ) : (
                         <Typography variant="body2" color="text.disabled">
-                          —
+                          -
                         </Typography>
                       )}
                     </TableCell>
                     <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>
                       <Typography variant="body2">
-                        {row.name ?? "—"}
+                        {row.name ?? "-"}
                       </Typography>
                     </TableCell>
                     <TableCell sx={{ display: { xs: "none", md: "table-cell" } }}>

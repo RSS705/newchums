@@ -42,8 +42,8 @@ import { BANNER_PRESETS, renderBannerPreset, suggestPreset } from "@/lib/eventBa
 import HobbyPickerField, { type HobbyOption } from "@/components/common/HobbyPickerField";
 
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
-const MAX_BANNER_INPUT_BYTES = 20 * 1024 * 1024; // 20MB — raw file limit before compression
-const MAX_BANNER_OUTPUT_BYTES = 400 * 1024;       // 400KB — compressed output target
+const MAX_BANNER_INPUT_BYTES = 20 * 1024 * 1024; // 20MB, raw file limit before compression
+const MAX_BANNER_OUTPUT_BYTES = 400 * 1024;       // 400KB, compressed output target
 
 export default function CreateEventClient() {
   const router = useRouter();
@@ -432,7 +432,7 @@ export default function CreateEventClient() {
             )}
           </Stack>
           <Typography variant="caption" color="text.secondary">
-            Colour themes are free. Custom photos: JPEG, PNG, or WebP up to 20 MB — we&apos;ll compress it automatically.
+            Colour themes are free. Custom photos: JPEG, PNG, or WebP up to 20 MB, we&apos;ll compress it automatically.
           </Typography>
         </Stack>
       </AppCard>

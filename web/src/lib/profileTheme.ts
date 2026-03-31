@@ -7,7 +7,7 @@
  * All other values are gentle tints with 18:1+ contrast against #111827.
  *
  * This file is the single source of truth for allowed values, display labels,
- * and resolved colors — shared across the API worker type-hints and the web app.
+ * and resolved colors, shared across the API worker type-hints and the web app.
  */
 
 export type ProfileThemeKey =

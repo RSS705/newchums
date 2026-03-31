@@ -20,7 +20,7 @@ export type Bindings = {
   POSTMARK_TEMPLATE_EMAIL_CHANGE_SUCCESS: string;
   /** Postmark template ID for Chum invite emails (template 43805532) */
   POSTMARK_TEMPLATE_INVITE?: string;
-  /** Event email template IDs — optional until Postmark templates are created */
+  /** Event email template IDs, optional until Postmark templates are created */
   POSTMARK_TEMPLATE_EVENT_INVITE?: string;
   POSTMARK_TEMPLATE_EVENT_UPDATED?: string;
   POSTMARK_TEMPLATE_EVENT_CANCELED?: string;
@@ -42,7 +42,7 @@ export type Bindings = {
   POSTMARK_TEMPLATE_CONFIRMATION_REQUEST?: string;
   /** Postmark template ID for plan-at-risk host notification */
   POSTMARK_TEMPLATE_PLAN_AT_RISK?: string;
-  /** Postmark template ID for auto-cancelled plan attendee notification — set after creating the Postmark template */
+  /** Postmark template ID for auto-cancelled plan attendee notification, set after creating the Postmark template */
   POSTMARK_TEMPLATE_PLAN_AUTO_CANCELLED?: string;
   /** Postmark template ID for admin plan removal notification (template 43998481) */
   POSTMARK_TEMPLATE_PLAN_REMOVED?: string;

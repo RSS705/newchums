@@ -54,7 +54,7 @@ type EventCardProps = {
   isExample?: boolean;
   /** When set, the whole card links here (e.g. /signup). Example cards default to signup when omitted. */
   hrefOverride?: string;
-  /** Viewer's hobby slugs — matching hobby chips get a subtle highlight */
+  /** Viewer's hobby slugs, matching hobby chips get a subtle highlight */
   viewerHobbySlugs?: ReadonlySet<string>;
 };
 
@@ -168,7 +168,7 @@ export default function EventCard({
         href={cardHref}
         sx={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "stretch", minHeight: 0 }}
       >
-        {/* Banner — uploaded photo or deterministic gradient fallback */}
+        {/* Banner, uploaded photo or deterministic gradient fallback */}
         <Box
           sx={{
             width: "100%",

@@ -21,7 +21,7 @@ export default function AdminSystemLogicClient() {
         System Logic
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        Plain-language notes on what actually happens in a few key screens. Handy when you&rsquo;re answering &ldquo;why did it do that?&rdquo; — add more
+        Plain-language notes on what actually happens in a few key screens. Handy when you&rsquo;re answering &ldquo;why did it do that?&rdquo;, add more
         sections here as you document other flows.
       </Typography>
 
@@ -66,7 +66,7 @@ export default function AdminSystemLogicClient() {
           a plan screen <strong>does not</strong> send invitees in that request, so <strong>no invite emails are sent</strong> from this flow today.
         </Bullet>
         <Bullet>
-          Choosing <strong>Chums only</strong> does <strong>not</strong> email every person in the host&rsquo;s connections—there is no mass notify step tied to visibility.
+          Choosing <strong>Chums only</strong> does <strong>not</strong> email every person in the host&rsquo;s connections; there is no mass notify step tied to visibility.
         </Bullet>
 
         <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
@@ -74,7 +74,7 @@ export default function AdminSystemLogicClient() {
         </Typography>
         <Bullet>
           A <strong>public</strong>, <strong>in-person</strong> plan may later appear in the &ldquo;new plans matching my interests&rdquo; email for people who
-          qualify—see <strong>Digest emails</strong> below (it&rsquo;s not instant when you hit Publish).
+          qualify; see <strong>Digest emails</strong> below (it&rsquo;s not instant when you hit Publish).
         </Bullet>
         <Bullet>
           A <strong>Chums only</strong> plan can appear in that same digest for people in the host&rsquo;s <strong>On NewChums</strong> connections who also{" "}
@@ -108,7 +108,7 @@ export default function AdminSystemLogicClient() {
         </Typography>
         <Bullet>
           <strong>In-app:</strong> Everyone with RSVP <strong>Going</strong> or <strong>Maybe</strong> except the host gets a notification that the plan
-          was updated (or locked/canceled on other actions—not covered in detail here).
+          was updated (or locked/canceled on other actions, not covered in detail here).
         </Bullet>
         <Bullet>
           <strong>Email:</strong> Those same people can get a &ldquo;plan changed&rdquo; email <strong>only if</strong>{" "}
@@ -116,7 +116,7 @@ export default function AdminSystemLogicClient() {
         </Bullet>
         <Bullet>
           People on <strong>Can&rsquo;t make it</strong> (or not on the plan) are <strong>not</strong> in this recipient list. The host does not get this
-          email as an attendee—they already know they edited.
+          email as an attendee; they already know they edited.
         </Bullet>
 
         <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
@@ -127,7 +127,7 @@ export default function AdminSystemLogicClient() {
           separate action from the plan page.
         </Bullet>
         <Bullet>
-          This is different from <strong>Someone invited you to a plan</strong>—that path is for invites, not for saving edits.
+          This is different from <strong>Someone invited you to a plan</strong>; that path is for invites, not for saving edits.
         </Bullet>
       </CollapsibleSection>
 
@@ -148,7 +148,7 @@ export default function AdminSystemLogicClient() {
       <CollapsibleSection title="Plan auto-cancellation" subtitle="When plans are automatically canceled by the system">
         <Bullet>
           <strong>No attendees:</strong> If a published plan&rsquo;s start time passes and the host is the <strong>only Going
-          attendee</strong>, the plan is automatically canceled with reason &ldquo;no_attendees.&rdquo; No email is sent &mdash;
+          attendee</strong>, the plan is automatically canceled with reason &ldquo;no_attendees.&rdquo; No email is sent , 
           this is a silent cleanup for plans that effectively never happened.
         </Bullet>
         <Bullet>
@@ -161,7 +161,7 @@ export default function AdminSystemLogicClient() {
         </Bullet>
       </CollapsibleSection>
 
-      <CollapsibleSection title="Digest emails" subtitle="Background emails that batch things up—not the same as instant invites or edit notices">
+      <CollapsibleSection title="Digest emails" subtitle="Background emails that batch things up, not the same as instant invites or edit notices">
         <Bullet>
           These run on a <strong>schedule in the background</strong> (same kind of timer that handles other housekeeping). They&rsquo;re not sent the
           instant someone clicks Publish on a plan.
@@ -191,15 +191,15 @@ export default function AdminSystemLogicClient() {
           on in notification settings, and you meet the rules for at least one of the two paths below.
         </Bullet>
         <Bullet>
-          <strong>Path A — Public plans:</strong> You share at least one <strong>hobby</strong> with the plan. The plan is <strong>published</strong>,{" "}
+          <strong>Path A, Public plans:</strong> You share at least one <strong>hobby</strong> with the plan. The plan is <strong>published</strong>,{" "}
           <strong>public</strong>, <strong>in person</strong>, still <strong>in the future</strong>, you&rsquo;re <strong>not the host</strong>, the venue has
           map coordinates, and the plan falls <strong>within your travel radius</strong> (default 200 km if unset). <strong>New</strong> since your last digest
           (or about the last day if you&rsquo;ve never gotten this email). If there&rsquo;s a seat cap, the plan still has <strong>room</strong>.
         </Bullet>
         <Bullet>
-          <strong>Path B — Chums-only plans:</strong> Same hobby, distance, timing, capacity, and other rules as <strong>Path A</strong>, and the plan is{" "}
+          <strong>Path B, Chums-only plans:</strong> Same hobby, distance, timing, capacity, and other rules as <strong>Path A</strong>, and the plan is{" "}
           <strong>Chums only</strong> instead of public. Additionally, the host must have <strong>you</strong> in their <strong>On NewChums</strong> connections. Example:
-          Robert creates a Chums-only plan about board games; Mike is in Robert&rsquo;s On NewChums connections and has that hobby in range; Sarah is not—Mike can see it in the digest, Sarah won&rsquo;t (for this plan).
+          Robert creates a Chums-only plan about board games; Mike is in Robert&rsquo;s On NewChums connections and has that hobby in range; Sarah is not,Mike can see it in the digest, Sarah won&rsquo;t (for this plan).
         </Bullet>
         <Bullet>
           <strong>Who does <em>not</em> get this:</strong> <strong>Invite only</strong> plans never appear. <strong>Online-only</strong> plans don&rsquo;t
@@ -228,7 +228,7 @@ export default function AdminSystemLogicClient() {
 
       <CollapsibleSection title="Plan sharing and guest participation" subtitle="How share links and public access work">
         <Bullet>
-          <strong>Plain URL vs share link:</strong> A <strong>plain URL</strong> (<code>/events/[id]</code>) shows a <strong>public preview</strong> only &mdash;
+          <strong>Plain URL vs share link:</strong> A <strong>plain URL</strong> (<code>/events/[id]</code>) shows a <strong>public preview</strong> only , 
           basic plan info, approximate location, attendee counts, and a sign-in prompt. No RSVP flow is available.
           The <strong>Copy Link</strong> button produces a <strong>share link</strong> (<code>/events/[id]?share_token=xxx</code>) that grants guest access.
         </Bullet>
@@ -271,7 +271,7 @@ export default function AdminSystemLogicClient() {
         <Bullet>
           <strong>Time flexibility in invites:</strong> When a plan has alt-times enabled, the invite email
           <strong>automatically</strong> includes a note asking the recipient to share availability or suggest a time
-          (depending on the plan&rsquo;s alt-times mode). There is no manual toggle &mdash; it&rsquo;s determined by the
+          (depending on the plan&rsquo;s alt-times mode). There is no manual toggle, it&rsquo;s determined by the
           plan settings.
         </Bullet>
         <Bullet>
@@ -383,7 +383,7 @@ export default function AdminSystemLogicClient() {
           What do users rate?
         </Typography>
         <Bullet>
-          For each attendee (excluding yourself): <strong>Reliability</strong>, <strong>Sociability</strong>, <strong>Cleanliness &amp; Consideration</strong>, <strong>Match Quality</strong> — each on a 3-point scale (Agree / Maybe / Disagree).
+          For each attendee (excluding yourself): <strong>Reliability</strong>, <strong>Sociability</strong>, <strong>Cleanliness &amp; Consideration</strong>, <strong>Match Quality</strong>, each on a 3-point scale (Agree / Maybe / Disagree).
         </Bullet>
         <Bullet>
           If the attendee is the host, an extra prompt: <strong>Hosting Skills</strong> (&ldquo;I&rsquo;d join their plans again&rdquo;).
@@ -396,10 +396,10 @@ export default function AdminSystemLogicClient() {
           Separate from normal feedback
         </Typography>
         <Bullet>
-          <strong>Attendance issues</strong> (no-show, cancelled too late, arrived very late) — reported separately via a dialog. This affects the <strong>reliability</strong> metric more directly.
+          <strong>Attendance issues</strong> (no-show, cancelled too late, arrived very late), reported separately via a dialog. This affects the <strong>reliability</strong> metric more directly.
         </Bullet>
         <Bullet>
-          <strong>Conduct / safety concerns</strong> (harassment, aggressive behavior, boundary issues, etc.) — reported separately via a dedicated dialog. These are confidential and treated distinctly from normal scoring. Submissions trigger an <strong>immediate email alert</strong> to the admin team and appear in the <strong>Safety</strong> admin tab for review.
+          <strong>Conduct / safety concerns</strong> (harassment, aggressive behavior, boundary issues, etc.), reported separately via a dedicated dialog. These are confidential and treated distinctly from normal scoring. Submissions trigger an <strong>immediate email alert</strong> to the admin team and appear in the <strong>Safety</strong> admin tab for review.
         </Bullet>
 
         <Typography variant="subtitle2" fontWeight={600} sx={{ mt: 2 }} gutterBottom>
@@ -428,19 +428,19 @@ export default function AdminSystemLogicClient() {
           The four metrics
         </Typography>
         <Bullet>
-          <strong>Reliability</strong> &mdash; Can this person be counted on to follow through? Moves quickly: no-shows and very late cancellations penalize immediately. Positive follow-through recovers more slowly.
+          <strong>Reliability</strong>, Can this person be counted on to follow through? Moves quickly: no-shows and very late cancellations penalize immediately. Positive follow-through recovers more slowly.
         </Bullet>
         <Bullet>
-          <strong>Sociability</strong> &mdash; Is this person enjoyable and easy to spend time with? Moves gradually; more subjective, relies on repeated signals.
+          <strong>Sociability</strong>, Is this person enjoyable and easy to spend time with? Moves gradually; more subjective, relies on repeated signals.
         </Bullet>
         <Bullet>
-          <strong>Cleanliness &amp; Consideration</strong> &mdash; Does this person show basic in-person cleanliness and considerate use of shared space? (Hygiene and shared-space courtesy — not appearance or style.) Moves cautiously but firmly; repeated negative signals matter.
+          <strong>Cleanliness &amp; Consideration</strong>, Does this person show basic in-person cleanliness and considerate use of shared space? (Hygiene and shared-space courtesy, not appearance or style.) Moves cautiously but firmly; repeated negative signals matter.
         </Bullet>
         <Bullet>
-          <strong>Hosting Skills</strong> &mdash; Does this person run well-organized plans? Only moves from feedback on plans they <em>hosted</em>.
+          <strong>Hosting Skills</strong>, Does this person run well-organized plans? Only moves from feedback on plans they <em>hosted</em>.
         </Bullet>
         <Bullet>
-          <strong>Conduct / Safety</strong> is tracked <em>separately</em> from these metrics. Serious behavioral issues do not lower normal metric scores &mdash; they may require moderation, warnings, or account action. Each concern report is emailed to the admin team immediately on submission and appears in the Safety admin tab with status tracking (new &rarr; reviewed &rarr; closed).
+          <strong>Conduct / Safety</strong> is tracked <em>separately</em> from these metrics. Serious behavioral issues do not lower normal metric scores, they may require moderation, warnings, or account action. Each concern report is emailed to the admin team immediately on submission and appears in the Safety admin tab with status tracking (new &rarr; reviewed &rarr; closed).
         </Bullet>
 
         <Typography variant="subtitle2" fontWeight={600} sx={{ mt: 2 }} gutterBottom>
@@ -523,10 +523,10 @@ export default function AdminSystemLogicClient() {
           <strong>Event match digest:</strong> Two-directional hard filter. Plans are excluded if the host fails the recipient&rsquo;s thresholds <em>or</em> the recipient fails the host&rsquo;s thresholds. Both must pass for a plan to appear in someone&rsquo;s digest.
         </Bullet>
         <Bullet>
-          <strong>Explore feed:</strong> The host&rsquo;s preferences are enforced as a <strong>hard filter</strong> in the query &mdash; if the host doesn&rsquo;t want the viewer matched to their plan, it won&rsquo;t appear. The viewer&rsquo;s own preferences produce a <strong>soft compatibility note</strong> on the plan card and details page, but plans are not hidden.
+          <strong>Explore feed:</strong> The host&rsquo;s preferences are enforced as a <strong>hard filter</strong> in the query, if the host doesn&rsquo;t want the viewer matched to their plan, it won&rsquo;t appear. The viewer&rsquo;s own preferences produce a <strong>soft compatibility note</strong> on the plan card and details page, but plans are not hidden.
         </Bullet>
         <Bullet>
-          <strong>Plan details:</strong> When viewing a plan you didn&rsquo;t create, a compatibility note appears if the host doesn&rsquo;t fully meet your preferences. This is informational &mdash; it never blocks access to the plan.
+          <strong>Plan details:</strong> When viewing a plan you didn&rsquo;t create, a compatibility note appears if the host doesn&rsquo;t fully meet your preferences. This is informational, it never blocks access to the plan.
         </Bullet>
         <Bullet>
           <strong>Disabled preferences:</strong> If a user has chum preferences turned off (or never configured), all checks pass. No filtering or notes are applied.
@@ -545,10 +545,10 @@ export default function AdminSystemLogicClient() {
           <strong>Disable specific metrics:</strong> The host can disable individual metrics (e.g. skip Sociability filtering). The remaining metrics still apply using the host&rsquo;s profile defaults.
         </Bullet>
         <Bullet>
-          Overrides affect <strong>outbound matching only</strong> (who sees the plan in digest and explore). Viewer-side compatibility notes are <strong>not</strong> suppressed &mdash; viewers still see informational warnings based on their own preferences.
+          Overrides affect <strong>outbound matching only</strong> (who sees the plan in digest and explore). Viewer-side compatibility notes are <strong>not</strong> suppressed, viewers still see informational warnings based on their own preferences.
         </Bullet>
         <Bullet>
-          Plans with no overrides behave exactly as before &mdash; the host&rsquo;s profile preferences apply in full.
+          Plans with no overrides behave exactly as before, the host&rsquo;s profile preferences apply in full.
         </Bullet>
       </CollapsibleSection>
 
@@ -621,7 +621,7 @@ export default function AdminSystemLogicClient() {
         </Typography>
         <Bullet>
           A community is a <strong>group page</strong> on NewChums. Members can browse and create plans within the community. Think of it as a shared space for
-          a recurring group &mdash; a running club, a neighborhood board game crew, a book club.
+          a recurring group, a running club, a neighborhood board game crew, a book club.
         </Bullet>
         <Bullet>
           Every community has a <strong>unique handle</strong> (slug), a name, optional description, and optional location.
@@ -638,7 +638,7 @@ export default function AdminSystemLogicClient() {
         </Bullet>
         <Bullet>
           <strong>Private:</strong> Only members (and super admins) can see the member list and community plans. Non-members who visit the page see limited
-          info &mdash; name, visibility, join mode, and member count &mdash; plus the option to request to join. Private communities have a <strong>share link</strong> the
+          info, name, visibility, join mode, and member count, plus the option to request to join. Private communities have a <strong>share link</strong> the
           owner can send to people, which lets them view the community and request to join.
         </Bullet>
 
@@ -656,7 +656,7 @@ export default function AdminSystemLogicClient() {
           The owner also gets an email when someone requests to join (once the template is configured).
         </Bullet>
         <Bullet>
-          The owner <strong>cannot leave</strong> their own community &mdash; they must transfer ownership first (not yet implemented as a UI action).
+          The owner <strong>cannot leave</strong> their own community, they must transfer ownership first (not yet implemented as a UI action).
         </Bullet>
 
         <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
@@ -678,7 +678,7 @@ export default function AdminSystemLogicClient() {
           Roles
         </Typography>
         <Bullet>
-          <strong>Owner:</strong> Full control &mdash; edit community settings, approve/decline join requests, remove members, delete the community.
+          <strong>Owner:</strong> Full control, edit community settings, approve/decline join requests, remove members, delete the community.
         </Bullet>
         <Bullet>
           <strong>Member:</strong> Can view the community, see other members, browse and create plans within it, and leave.
@@ -698,12 +698,12 @@ export default function AdminSystemLogicClient() {
 
       <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, bgcolor: "action.hover", mt: 3 }}>
         <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-          Want endpoints, database names, or the exact email templates? That lives in the repo docs (e.g. Technical_Specs) — this page is just the friendly
+          Want endpoints, database names, or the exact email templates? That lives in the repo docs (e.g. Technical_Specs), this page is just the friendly
           version for humans.
         </Typography>
         <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.6, display: "block", mt: 1.5 }}>
           <strong>Maintainers:</strong> When product behavior changes (plans, emails, notifications, digests, etc.), review this tab in the{" "}
-          <strong>same change set</strong> and update it so it stays accurate. Keep it to key logic, plain language, and short bullets — see{" "}
+          <strong>same change set</strong> and update it so it stays accurate. Keep it to key logic, plain language, and short bullets, see{" "}
           <strong>AGENTS.md</strong> (System Logic).
         </Typography>
       </Paper>

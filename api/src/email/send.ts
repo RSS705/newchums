@@ -139,15 +139,15 @@ export const sendChumInviteEmail = async (
 // run without email infrastructure blocking core functionality.
 //
 // TEMPLATES TO CREATE IN POSTMARK:
-//   1. Event Invite          — POSTMARK_TEMPLATE_EVENT_INVITE
+//   1. Event Invite         , POSTMARK_TEMPLATE_EVENT_INVITE
 //      Model: productName, recipientName, hostName, eventTitle, eventDate, eventUrl
-//   2. Event Updated         — POSTMARK_TEMPLATE_EVENT_UPDATED
+//   2. Event Updated        , POSTMARK_TEMPLATE_EVENT_UPDATED
 //      Model: productName, recipientName, eventTitle, changeDescription, eventUrl
-//   3. Event Canceled        — POSTMARK_TEMPLATE_EVENT_CANCELED
+//   3. Event Canceled       , POSTMARK_TEMPLATE_EVENT_CANCELED
 //      Model: productName, recipientName, hostName, eventTitle, eventDate
-//   4. Event Reminder        — POSTMARK_TEMPLATE_EVENT_REMINDER
+//   4. Event Reminder       , POSTMARK_TEMPLATE_EVENT_REMINDER
 //      Model: productName, recipientName, eventTitle, eventDate, eventLocation, eventUrl
-//   5. RSVP Update to Host   — POSTMARK_TEMPLATE_EVENT_RSVP_UPDATE
+//   5. RSVP Update to Host  , POSTMARK_TEMPLATE_EVENT_RSVP_UPDATE
 //      Model: productName, hostName, attendeeName, eventTitle, rsvpStatus, eventUrl
 
 export const sendEventInviteEmail = async (
@@ -201,9 +201,9 @@ export const sendEventUpdatedEmail = async (
 //   Postmark's Mustachio doesn't resolve parent-context variables inside
 //   string-value {{#section}} blocks. So ALL dynamic content is pre-rendered
 //   into flat top-level variables. The template uses only:
-//     {{variable}}         — top-level interpolation
-//     {{#variable}}...{{/variable}} — show/hide blocks (no nested vars)
-//     {{.}}                — self-reference inside a section (known to work)
+//     {{variable}}        , top-level interpolation
+//     {{#variable}}...{{/variable}}, show/hide blocks (no nested vars)
+//     {{.}}               , self-reference inside a section (known to work)
 
 export type PlanChangeItem = { fieldName: string; oldValue: string; newValue: string };
 
@@ -382,7 +382,7 @@ export const sendEventMaybeEmail = async (
 };
 
 // ── Attendee removed notification ───────────────────────────────────────
-//   You were removed from a plan — Postmark template 43923102
+//   You were removed from a plan, Postmark template 43923102
 //   Model: productName, recipientName, hostName, eventTitle, eventUrl, removalReason
 
 export const sendAttendeeRemovedEmail = async (
@@ -408,11 +408,11 @@ export const sendAttendeeRemovedEmail = async (
 };
 
 // ── Join-request email helpers ──────────────────────────────────────────
-//   6. Join Request (to host)    — hardcoded template 43906440
+//   6. Join Request (to host)   , hardcoded template 43906440
 //      Model: productName, hostName, requesterName, eventTitle, requestMessage, eventUrl
-//   7. Join Request Approved     — hardcoded template 43906609
+//   7. Join Request Approved    , hardcoded template 43906609
 //      Model: productName, recipientName, hostName, eventTitle, hostMessage, eventUrl
-//   8. Join Request Declined     — hardcoded template 43906703
+//   8. Join Request Declined    , hardcoded template 43906703
 //      Model: productName, recipientName, hostName, eventTitle, hostMessage, eventUrl
 
 export const sendJoinRequestEmail = async (
@@ -891,7 +891,7 @@ export const sendContactFormEmail = async (
   await sendPostmarkRawEmail(env, {
     From: CONTACT_EMAIL,
     To: CONTACT_EMAIL,
-    Subject: `NewChums: Contact — ${params.subject}`,
+    Subject: `NewChums: Contact, ${params.subject}`,
     HtmlBody: htmlBody,
     TextBody: textBody,
     ReplyTo: params.email,

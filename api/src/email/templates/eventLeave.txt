@@ -1,6 +1,6 @@
 Someone left your plan
 
-Hey {{hostName}}, just a heads-up — someone can no longer make it.
+Hey {{hostName}}, just a heads-up, someone can no longer make it.
 
 ---
 

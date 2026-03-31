@@ -1,6 +1,6 @@
 Heads up about a plan change
 
-Hey {{recipientName}}, the host of this plan has removed you from the attendee list. This can happen for a variety of reasons — no hard feelings.
+Hey {{recipientName}}, the host of this plan has removed you from the attendee list. This can happen for a variety of reasons, no hard feelings.
 
 ---
 

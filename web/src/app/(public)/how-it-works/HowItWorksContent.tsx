@@ -1,188 +1,358 @@
 "use client";
 
+import { useState } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Divider from "@mui/material/Divider";
 import Grid from "@mui/material/Grid";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+import Image from "next/image";
 import Link from "next/link";
 import SectionHeader from "@/components/ui/SectionHeader";
-import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
-import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
-import ChatRoundedIcon from "@mui/icons-material/ChatRounded";
-import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
-import EmojiPeopleRoundedIcon from "@mui/icons-material/EmojiPeopleRounded";
-import ExploreRoundedIcon from "@mui/icons-material/ExploreRounded";
-import FavoriteRoundedIcon from "@mui/icons-material/FavoriteRounded";
-import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
-import LocationOnRoundedIcon from "@mui/icons-material/LocationOnRounded";
-import NotificationsRoundedIcon from "@mui/icons-material/NotificationsRounded";
-import PeopleRoundedIcon from "@mui/icons-material/PeopleRounded";
-import RepeatRoundedIcon from "@mui/icons-material/RepeatRounded";
-import StyleRoundedIcon from "@mui/icons-material/StyleRounded";
 import type { SvgIconComponent } from "@mui/icons-material";
 
+// Lifecycle icons
+import AddCircleOutlineRoundedIcon from "@mui/icons-material/AddCircleOutlineRounded";
+import MailOutlineRoundedIcon from "@mui/icons-material/MailOutlineRounded";
+import ScheduleRoundedIcon from "@mui/icons-material/ScheduleRounded";
+import EventAvailableRoundedIcon from "@mui/icons-material/EventAvailableRounded";
+import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
+import StarRoundedIcon from "@mui/icons-material/StarRounded";
+
+// Feature section icons
+import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
+import LinkRoundedIcon from "@mui/icons-material/LinkRounded";
+import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
+import VerifiedRoundedIcon from "@mui/icons-material/VerifiedRounded";
+import ChatRoundedIcon from "@mui/icons-material/ChatRounded";
+import ExploreRoundedIcon from "@mui/icons-material/ExploreRounded";
+import ShieldRoundedIcon from "@mui/icons-material/ShieldRounded";
+import LockRoundedIcon from "@mui/icons-material/LockRounded";
+import PersonAddRoundedIcon from "@mui/icons-material/PersonAddRounded";
+import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
+import NotificationsActiveRoundedIcon from "@mui/icons-material/NotificationsActiveRounded";
+
+// Use case icons
+import CasinoRoundedIcon from "@mui/icons-material/CasinoRounded";
+import LocalCafeRoundedIcon from "@mui/icons-material/LocalCafeRounded";
+import MenuBookRoundedIcon from "@mui/icons-material/MenuBookRounded";
+import CelebrationRoundedIcon from "@mui/icons-material/CelebrationRounded";
+import RepeatRoundedIcon from "@mui/icons-material/RepeatRounded";
+import HikingRoundedIcon from "@mui/icons-material/HikingRounded";
+
+// Comparison icons
+import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
+import CancelRoundedIcon from "@mui/icons-material/CancelRounded";
+
 /**
- * Public marketing page: "How it Works."
- * Layout provides Container — this component uses maxWidth wrappers
- * for consistent bounds with the other marketing pages.
+ * Public marketing page: "How it Works", comprehensive product feature deep-dive.
+ *
+ * Screenshot placeholders: drop images into /public/images/how-it-works/ using the
+ * filenames referenced below. The page renders them automatically via <Image> with
+ * onError fallback to a styled gradient placeholder.
  */
 
-const SECTION_SPACING = { py: { xs: 5, sm: 8, md: 10 } };
 const CONTENT_MAX_WIDTH = 800;
+const WIDE_MAX_WIDTH = 1100;
+const FULL_BLEED = { mx: { xs: -2, sm: -3 }, px: { xs: 2, sm: 3 } };
 
-// ── Step-by-step walkthrough data ─────────────────────────────────────────
+// ── Lifecycle stepper (Section 2) ────────────────────────────────────────────
 
-type WalkthroughStep = {
-  num: string;
-  title: string;
-  paragraphs: string[];
+const LIFECYCLE_STEPS: { Icon: SvgIconComponent; label: string; description: string; color: string }[] = [
+  { Icon: AddCircleOutlineRoundedIcon, label: "Create", description: "Set the activity, time, location, and your preferences.", color: "#E65B13" },
+  { Icon: MailOutlineRoundedIcon, label: "Invite", description: "Share a link, send invites, or let people discover your plan.", color: "#1565c0" },
+  { Icon: ScheduleRoundedIcon, label: "Schedule", description: "Collect availability and find the time that works.", color: "#7c3aed" },
+  { Icon: EventAvailableRoundedIcon, label: "Confirm", description: "Reminders go out. Attendees confirm they\u2019re coming.", color: "#059669" },
+  { Icon: GroupsRoundedIcon, label: "Meet", description: "Everyone shows up with the same clear details.", color: "#0e7490" },
+  { Icon: StarRoundedIcon, label: "Follow up", description: "Leave feedback and build your attendance reputation.", color: "#E65B13" },
+];
+
+// ── "Create and shape" hero feature (Section 3) ─────────────────────────────
+
+const CREATE_FEATURES: { Icon: SvgIconComponent; label: string; detail: string }[] = [
+  { Icon: TuneRoundedIcon, label: "Hobbies & interests", detail: "Tag multiple hobbies so the right people can find your plan. Create new hobbies on the fly." },
+  { Icon: VisibilityRoundedIcon, label: "Location privacy", detail: "Show exact location to everyone, to confirmed attendees only, or just an approximate area." },
+  { Icon: LockRoundedIcon, label: "Visibility controls", detail: "Public (anyone can find it), chums-only (your connections), or invite-only (specific people)." },
+  { Icon: PersonAddRoundedIcon, label: "Require approval", detail: "New people request to join and you approve or decline before they\u2019re added." },
+  { Icon: EventAvailableRoundedIcon, label: "Attendance confirmation", detail: "Enable automatic confirmation requests so you know who\u2019s actually coming." },
+  { Icon: AccessTimeRoundedIcon, label: "Scheduling flexibility", detail: "Let attendees suggest alternate times, or request everyone\u2019s full availability with a deadline." },
+];
+
+const CREATE_EXTRA_FEATURES: string[] = [
+  "In-person or online plans",
+  "Seat limits & reservations",
+  "Let attendees invite others",
+  "Banner image upload",
+  "Community association",
+  "Preference overrides per plan",
+];
+
+// ── Zig-zag feature sections (Sections 4, 5, 6, 7) ─────────────────────────
+
+type ZigZagSection = {
+  id: string;
+  sectionTitle: string;
+  subtitle: string;
+  imageSrc: string;
+  placeholder: string;
   Icon: SvgIconComponent;
+  accentColor: string;
+  imageOnLeft: boolean;
+  features: { label: string; detail: string }[];
 };
 
-const WALKTHROUGH_STEPS: WalkthroughStep[] = [
+const ZIGZAG_SECTIONS: ZigZagSection[] = [
   {
-    num: "01",
-    title: "Enter what you enjoy",
-    Icon: StyleRoundedIcon,
-    paragraphs: [
-      "Pick the hobbies and interests that matter to you, board games, hiking, pottery, cooking, card games, whatever you like.",
-      "Your interests inform the system of relevant gatherings and connect you with people who enjoy the same things.",
+    id: "inviting",
+    sectionTitle: "Invite people and manage attendance",
+    subtitle: "Get the right people involved, whether they already have an account or not. Share a link, send a direct invite, or let people find you.",
+    imageSrc: "/images/how-it-works/inviting.png",
+    placeholder: "Screenshot, Invite and RSVP",
+    Icon: LinkRoundedIcon,
+    accentColor: "#1565c0",
+    imageOnLeft: true,
+    features: [
+      { label: "Direct invites", detail: "Invite people by NewChums handle or email address. They get a notification and an email." },
+      { label: "Share links", detail: "Generate a permanent shareable link for any plan. Send it anywhere, text, email, social media." },
+      { label: "Guest RSVP without an account", detail: "Anyone with a link can RSVP using just their email and a quick verification code. No signup required." },
+      { label: "Going, Maybe, or Can\u2019t Make It", detail: "Three clear RSVP options with optional personal notes. Update anytime before the plan starts." },
+      { label: "Join requests", detail: "For plans that require approval, people request to join and the host reviews each request." },
+      { label: "Custom invite messages", detail: "Add a personal note when sending invites so people know why you\u2019re reaching out." },
     ],
   },
   {
-    num: "02",
-    title: "Explore gatherings or create your own",
-    Icon: ExploreRoundedIcon,
-    paragraphs: [
-      "Browse gatherings happening near you, or start one yourself. Creating a plan is quick, name it, pick a time and place, and share what people can expect.",
-      "Board game nights, coffee walks, study sessions, beginner sports, the best gatherings are simple and specific.",
+    id: "scheduling",
+    sectionTitle: "Scheduling that actually works",
+    subtitle: "Stop guessing when people are free. Let attendees suggest times or share their availability, and find the slot that works for the most people.",
+    imageSrc: "/images/how-it-works/scheduling.png",
+    placeholder: "Screenshot, Availability and scheduling",
+    Icon: AccessTimeRoundedIcon,
+    accentColor: "#7c3aed",
+    imageOnLeft: false,
+    features: [
+      { label: "Suggest alternate times", detail: "Attendees can propose a different start time with an optional note explaining why it works better." },
+      { label: "Request availability", detail: "Switch to availability mode and ask everyone to share their free windows, with an optional deadline." },
+      { label: "See what overlaps", detail: "A visual breakdown shows which times work for the most people, so the best option is obvious." },
+      { label: "Host picks the time", detail: "Review the suggestions, then promote the best one to become the official plan time with one click." },
     ],
   },
   {
-    num: "03",
-    title: "Invite the right people",
-    Icon: GroupsRoundedIcon,
-    paragraphs: [
-      "Share your plan with existing friends, or let others nearby discover it. NewChums helps find people whose interests match the gathering.",
-      "You stay in control, choose who you want to invite, or let interested people find you.",
+    id: "attendance-assurance",
+    sectionTitle: "Know who\u2019s actually coming",
+    subtitle: "Automatic reminders and confirmation requests mean fewer empty tables and fewer wasted trips. Set your expectations and let the system handle the follow-up.",
+    imageSrc: "/images/how-it-works/attendance-assurance.png",
+    placeholder: "Screenshot, Attendance confirmation",
+    Icon: VerifiedRoundedIcon,
+    accentColor: "#059669",
+    imageOnLeft: true,
+    features: [
+      { label: "Confirmation window", detail: "Automatic confirmation requests go out 24 hours before the plan. Attendees confirm or decline with one tap." },
+      { label: "Timed reminders", detail: "Follow-up reminders at 12 hours and 3 hours before if someone hasn\u2019t responded yet." },
+      { label: "Confirm from anywhere", detail: "One-click confirmation from the email reminder or directly on the plan page. No login required for email links." },
+      { label: "Minimum attendees", detail: "Set a threshold, if not enough people confirm, fallback policies handle the rest." },
+      { label: "Fallback policies", detail: "Choose what happens if the minimum isn\u2019t met: proceed anyway, notify the host, or auto-cancel the plan." },
+      { label: "Real-time viability", detail: "The plan page shows a live confirmation tally so everyone can see whether it\u2019s on track to happen." },
     ],
   },
   {
-    num: "04",
-    title: "Coordinate without the chaos",
+    id: "plan-chat",
+    sectionTitle: "Coordinate in one place",
+    subtitle: "Every plan has its own built-in chat. Sort out last-minute details, share updates, or just say hello, without needing a separate group message thread.",
+    imageSrc: "/images/how-it-works/plan-chat.png",
+    placeholder: "Screenshot, Plan chat",
     Icon: ChatRoundedIcon,
-    paragraphs: [
-      "See who\u2019s coming, chat about the plan, and make changes, all in one place. No more chasing replies across scattered threads.",
-      "Attendees can suggest alternate times and share availability, so finding the right moment is easier for everyone without the endless back and forth.",
-    ],
-  },
-  {
-    num: "05",
-    title: "Meet up and have fun",
-    Icon: EmojiPeopleRoundedIcon,
-    paragraphs: [
-      "When the day arrives, everyone knows the plan. Show up, do something you enjoy, and spend time with people who share your interest.",
-      "Most NewChums gatherings are small and low-pressure.",
-    ],
-  },
-  {
-    num: "06",
-    title: "Keep the momentum going",
-    Icon: RepeatRoundedIcon,
-    paragraphs: [
-      "After a gathering, the connection does not have to end. Stay in touch, plan the next one, or discover new gatherings from people you've met.",
-      "The more you show up, the easier it gets.",
+    accentColor: "#0e7490",
+    imageOnLeft: false,
+    features: [
+      { label: "Real-time messaging", detail: "Messages appear instantly for everyone in the plan. No refresh needed." },
+      { label: "Unread indicators", detail: "See at a glance which of your plans have new messages you haven\u2019t read yet." },
+      { label: "Daily catch-up emails", detail: "Missed something? A daily digest email summarizes unread messages so you stay in the loop." },
+      { label: "Plan updates & changes", detail: "When the host updates the plan, changes are logged and attendees are notified automatically." },
     ],
   },
 ];
 
-// ── "Made for real plans" group-chat pain points ──────────────────────────
+// ── Grid feature sections (Sections 8, 9) ───────────────────────────────────
 
-const PAIN_POINTS = [
-  "\u201cWe should do something sometime\u201d never turns into a plan",
-  "Good ideas get buried in the group chat",
-  "Scheduling is awkward and nobody wants to take charge",
-  "People mean well, but plans fall apart before they start",
-];
+type GridSection = {
+  id: string;
+  sectionTitle: string;
+  subtitle: string;
+  imageSrc: string;
+  placeholder: string;
+  Icon: SvgIconComponent;
+  accentColor: string;
+  features: { Icon: SvgIconComponent; label: string; detail: string }[];
+};
 
-// ── Friends + new connections cards ───────────────────────────────────────
-
-const AUDIENCE_CARDS = [
+const GRID_SECTIONS: GridSection[] = [
   {
-    accentColor: "secondary.main" as const,
-    Icon: PeopleRoundedIcon,
-    title: "Organize with people you already know",
-    body: "Create a plan and invite friends directly. Everyone gets the same clear details, no more chasing replies or losing track in long group threads.",
+    id: "discovery",
+    sectionTitle: "Discover plans and communities",
+    subtitle: "Find plans that match your interests and location without scrolling through everything. Join communities to see what people near you are organizing.",
+    imageSrc: "/images/how-it-works/discovery.png",
+    placeholder: "Screenshot, Explore feed",
+    Icon: ExploreRoundedIcon,
+    accentColor: "#1565c0",
+    features: [
+      { Icon: ExploreRoundedIcon, label: "Explore feed", detail: "Browse plans filtered by hobby, distance, time range, and sort order. Personalized to your interests." },
+      { Icon: VisibilityRoundedIcon, label: "Browse without an account", detail: "Public plans are visible to anyone. No signup required just to see what\u2019s happening nearby." },
+      { Icon: NotificationsActiveRoundedIcon, label: "Daily match digest", detail: "A daily email surfaces new plans that match your hobbies and travel distance. Delivered automatically." },
+      { Icon: GroupsRoundedIcon, label: "Communities", detail: "Create or join public and private groups around shared interests. Community plans appear in a dedicated feed." },
+      { Icon: PersonAddRoundedIcon, label: "Community join flows", detail: "Public communities are open to all. Private communities use approval-based join requests." },
+      { Icon: TuneRoundedIcon, label: "Smart matching", detail: "Your chum preferences help filter which plans and people show up in your recommendations." },
+    ],
   },
   {
-    accentColor: "primary.main" as const,
-    Icon: FavoriteRoundedIcon,
-    title: "Discover plans through shared interests",
-    body: "When you enjoy the same hobbies, there\u2019s already common ground. Browse local gatherings, show up, and new connections can happen naturally.",
-  },
-];
-
-// ── Discovery section mock previews ───────────────────────────────────────
-// Structured for easy future replacement with real API data.
-
-const DISCOVERY_PREVIEWS = [
-  {
-    id: 1,
-    category: "Board Games",
-    title: "Thursday Board Game Night",
-    dayTime: "Every Thu \u00b7 7 pm",
-    location: "Community Space",
-    attending: 6,
-  },
-  {
-    id: 2,
-    category: "Coffee \u0026 Social",
-    title: "Morning Coffee Walk",
-    dayTime: "Saturday \u00b7 9 am",
-    location: "Riverside Park",
-    attending: 4,
-  },
-  {
-    id: 3,
-    category: "Sport",
-    title: "Beginner Pickleball",
-    dayTime: "Wednesday \u00b7 9 am",
-    location: "Sports Centre",
-    attending: 5,
+    id: "trust",
+    sectionTitle: "Trust and accountability",
+    subtitle: "A lightweight reputation system that rewards people who show up and follow through, and helps everyone make better decisions about who to plan with.",
+    imageSrc: "/images/how-it-works/trust.png",
+    placeholder: "Screenshot, Profile and attendance record",
+    Icon: ShieldRoundedIcon,
+    accentColor: "#E65B13",
+    features: [
+      { Icon: StarRoundedIcon, label: "Attendance record", detail: "Every profile shows follow-through stats: shows up, confirms attendance, and host follow-through." },
+      { Icon: ChatRoundedIcon, label: "Post-plan feedback", detail: "After a plan, leave quick private feedback on reliability, sociability, and hosting quality." },
+      { Icon: VerifiedRoundedIcon, label: "Issue reporting", detail: "Flag no-shows, very late arrivals, and late cancellations. Reports are private and affect reliability scores." },
+      { Icon: ShieldRoundedIcon, label: "Conduct and safety reporting", detail: "Report safety or conduct concerns directly from any plan. Reports go to the admin team immediately." },
+      { Icon: TuneRoundedIcon, label: "Chum preference matching", detail: "Set per-metric thresholds for reliability, sociability, and more. Plans are filtered based on your preferences." },
+      { Icon: LockRoundedIcon, label: "Profile privacy controls", detail: "Control what\u2019s visible on your public profile, age, chum list, search visibility, and more." },
+    ],
   },
 ];
 
-// ── Trust / comfort benefit items ─────────────────────────────────────────
+// ── Use cases (Section 10) ───────────────────────────────────────────────────
 
-const TRUST_ITEMS = [
-  {
-    Icon: FavoriteRoundedIcon,
-    label: "Shared interests make meeting up easier",
-  },
-  {
-    Icon: CalendarMonthRoundedIcon,
-    label: "Clear plans reduce friction",
-  },
-  {
-    Icon: PeopleRoundedIcon,
-    label: "Smaller gatherings feel more approachable",
-  },
-  {
-    Icon: CheckCircleRoundedIcon,
-    label: "The goal is real-life connection, not more complexity",
-  },
+const USE_CASES: { Icon: SvgIconComponent; title: string; description: string }[] = [
+  { Icon: CasinoRoundedIcon, title: "Board game nights", description: "Set a player cap, pick the game, share a link. No more \u201cwho\u2019s in?\u201d messages that nobody replies to." },
+  { Icon: LocalCafeRoundedIcon, title: "Coffee walks & casual meetups", description: "Low-key, low-commitment. Post a time and a meeting point and see who shows up." },
+  { Icon: MenuBookRoundedIcon, title: "Study groups & coworking", description: "Find people working on the same thing nearby. Use availability mode to pick the best time." },
+  { Icon: CelebrationRoundedIcon, title: "Community events", description: "Associate your plan with a community. Members see it in their feed automatically." },
+  { Icon: RepeatRoundedIcon, title: "Recurring plans", description: "Weekly run club, monthly potluck, regular crafting circle. Set it up and keep the momentum going." },
+  { Icon: HikingRoundedIcon, title: "Outdoor adventures", description: "Hikes, bike rides, park hangs. Approximate location keeps the meeting point flexible until the last minute." },
 ];
+
+// ── Group chat comparison (Section 11) ───────────────────────────────────────
+
+const COMPARISON_POINTS: { problem: string; solution: string }[] = [
+  { problem: "\u201cWho\u2019s in?\u201d messages that nobody replies to", solution: "Structured RSVPs, Going, Maybe, or Can\u2019t Make It, with optional notes." },
+  { problem: "Nobody knows the final time or place", solution: "One source of truth for every detail, always up to date." },
+  { problem: "Half the group says maybe and never confirms", solution: "Automatic 24-hour confirmation window with timed reminders." },
+  { problem: "You show up and nobody else does", solution: "Minimum attendee thresholds with auto-cancel or host notification." },
+  { problem: "Inviting new people means adding them to another chat", solution: "Share a link. Anyone can RSVP, even without an account." },
+  { problem: "No memory of who flaked last time", solution: "Attendance records and post-plan feedback visible on every profile." },
+];
+
+// ── Shared CTA button ────────────────────────────────────────────────────────
+
+function InlineCTA({ isLoggedIn, variant = "contained" }: { isLoggedIn: boolean; variant?: "contained" | "outlined" }) {
+  return (
+    <Button
+      component={Link}
+      href={isLoggedIn ? "/" : "/signup"}
+      variant={variant}
+      color="primary"
+      size="large"
+      sx={{
+        px: { xs: 4, sm: 5 },
+        py: 1.5,
+        fontSize: "1rem",
+        fontWeight: 600,
+        textTransform: "none",
+        borderRadius: 2.5,
+        minWidth: { xs: "100%", sm: 200 },
+        maxWidth: { xs: "none", sm: 280 },
+        boxShadow: variant === "contained" ? "0 2px 12px rgba(230,91,19,0.2)" : "none",
+        "&:hover": {
+          boxShadow: variant === "contained" ? "0 4px 20px rgba(230,91,19,0.3)" : "none",
+        },
+      }}
+    >
+      {isLoggedIn ? "Explore NewChums" : "Get started free"}
+    </Button>
+  );
+}
+
+// ── Component ────────────────────────────────────────────────────────────────
 
 export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?: boolean }) {
-  return (
-    <Box sx={{ pt: { xs: 6, sm: 8, md: 10 }, pb: { xs: 4, sm: 6 } }}>
+  const [imageErrors, setImageErrors] = useState<Set<string>>(new Set());
+  const [activeStep, setActiveStep] = useState(0);
 
-      {/* ─────────────── Section 1: Hero ─────────────── */}
-      <Box component="section" sx={{ ...SECTION_SPACING, mb: { xs: 2, sm: 4 } }}>
+  function ScreenshotFrame({ imageSrc, placeholder, icon: Icon, accentColor = "#E65B13", overlap }: {
+    imageSrc: string;
+    placeholder: string;
+    icon: SvgIconComponent;
+    accentColor?: string;
+    overlap?: boolean;
+  }) {
+    const hasError = imageErrors.has(imageSrc);
+    return (
+      <Box
+        sx={{
+          borderRadius: { xs: 3, md: 4 },
+          overflow: "hidden",
+          position: "relative",
+          ...(hasError && { aspectRatio: "3 / 2" }),
+          background: hasError
+            ? `linear-gradient(135deg, ${accentColor}08 0%, #f9fafb 100%)`
+            : "background.paper",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          boxShadow: (theme) =>
+            theme.palette.mode === "light"
+              ? "0 16px 48px rgba(0,0,0,0.10), 0 4px 12px rgba(0,0,0,0.06)"
+              : "0 8px 32px rgba(0,0,0,0.3)",
+          border: "1px solid",
+          borderColor: (theme) =>
+            theme.palette.mode === "light" ? "rgba(0,0,0,0.06)" : "divider",
+          transition: "transform 0.3s ease, box-shadow 0.3s ease",
+          "&:hover": {
+            transform: "translateY(-4px)",
+            boxShadow: (theme) =>
+              theme.palette.mode === "light"
+                ? "0 24px 64px rgba(0,0,0,0.12), 0 8px 20px rgba(0,0,0,0.08)"
+                : "0 16px 48px rgba(0,0,0,0.4)",
+          },
+          ...(overlap && {
+            mt: { xs: 0, md: -6 },
+            mb: { xs: 0, md: -4 },
+            position: { md: "relative" },
+            zIndex: 2,
+          }),
+        }}
+      >
+        {!hasError ? (
+          <Image
+            src={imageSrc}
+            alt={placeholder}
+            width={1200}
+            height={800}
+            sizes="(max-width: 960px) 100vw, 60vw"
+            style={{ width: "100%", height: "auto", display: "block" }}
+            onError={() => setImageErrors((prev) => new Set(prev).add(imageSrc))}
+          />
+        ) : (
+          <Stack alignItems="center" spacing={1.5} sx={{ opacity: 0.25, py: 6 }}>
+            <Icon sx={{ fontSize: 48, color: accentColor }} />
+            <Typography variant="body2" color="text.secondary" fontWeight={500} sx={{ fontSize: "0.8125rem" }}>
+              {placeholder}
+            </Typography>
+          </Stack>
+        )}
+      </Box>
+    );
+  }
+
+  return (
+    <Box sx={{ pt: { xs: 6, sm: 8, md: 10 }, pb: { xs: 4, sm: 6 }, overflow: "hidden" }}>
+
+      {/* ═══════════════ Section 1: Hero ═══════════════ */}
+      <Box component="section" sx={{ py: { xs: 5, sm: 8, md: 10 } }}>
         <Stack alignItems="center" textAlign="center" maxWidth={CONTENT_MAX_WIDTH} mx="auto" px={{ xs: 1, sm: 0 }}>
-          {/* Eyebrow */}
           <Typography
             variant="overline"
             sx={{
@@ -197,744 +367,658 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
             How this works
           </Typography>
 
-          {/* Heading */}
           <Typography
             component="h1"
             variant="h1"
             fontWeight={800}
-            sx={{
-              fontSize: "4rem",
-              lineHeight: 1.2,
-              mb: 3,
-            }}
+            sx={{ fontSize: { xs: "2.5rem", sm: "3.25rem", md: "4rem" }, lineHeight: 1.15, mb: 3 }}
           >
-            Shared interests to plans that actually happen
+            The best tool for making plans actually happen
           </Typography>
 
-          {/* Gold accent bar */}
-          <Box
-            sx={{
-              width: 48,
-              height: 3,
-              bgcolor: "secondary.main",
-              borderRadius: 1,
-              mb: { xs: 3.5, sm: 4.5 },
-            }}
-          />
+          <Box sx={{ width: 48, height: 3, bgcolor: "secondary.main", borderRadius: 1, mb: { xs: 3.5, sm: 4.5 } }} />
 
-          {/* Subheading */}
           <Typography
             variant="h5"
             fontWeight={400}
             color="text.primary"
-            sx={{
-              lineHeight: 1.7,
-              fontSize: { xs: "1.0625rem", sm: "1.25rem" },
-              mb: 2.5,
-            }}
+            sx={{ lineHeight: 1.7, fontSize: { xs: "1.0625rem", sm: "1.25rem" }, mb: 2 }}
           >
-            NewChums is designed to make it easy to organize gatherings around the things you enjoy,
-            whether you&apos;re making plans with friends or discovering people nearby.
+            NewChums handles the entire lifecycle of a plan, from the first idea
+            through inviting people, confirming attendance, coordinating details, and following up afterward.
           </Typography>
           <Typography
             variant="h5"
             fontWeight={400}
             color="text.secondary"
-            sx={{
-              lineHeight: 1.7,
-              fontSize: { xs: "1.0625rem", sm: "1.125rem" },
-              mb: { xs: 4, sm: 5 },
-            }}
+            sx={{ lineHeight: 1.7, fontSize: { xs: "1.0625rem", sm: "1.125rem" }, mb: { xs: 4, sm: 5 } }}
           >
-            Let&apos;s go through it step by step.
+            Here&apos;s everything it can do.
           </Typography>
-        </Stack>
 
-        {/* Hero image placeholder */}
-        <Box
-          aria-hidden="true"
-          sx={{
-            mt: { xs: 5, sm: 7 },
-            mx: "auto",
-            maxWidth: CONTENT_MAX_WIDTH,
-            borderRadius: 2,
-            overflow: "hidden",
-            width: "100%",
-            aspectRatio: "16 / 9",
-            background: (theme) =>
-              `linear-gradient(135deg, ${theme.palette.primary.light} 0%, ${theme.palette.grey[200]} 100%)`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <Stack alignItems="center" spacing={1.5} sx={{ opacity: 0.5 }}>
-            <CalendarMonthRoundedIcon sx={{ fontSize: 56, color: "primary.main" }} />
-            <Typography variant="body2" color="text.secondary" fontWeight={500}>
-              Image placeholder, the NewChums experience
-            </Typography>
-          </Stack>
-        </Box>
+          <InlineCTA isLoggedIn={isLoggedIn} />
+        </Stack>
       </Box>
 
-      {/* ─────────────── Section 2: Step-by-step walkthrough ─────────────── */}
+      {/* ═══════════════ Section 2: Interactive lifecycle stepper ═══════════════ */}
       <Box
         component="section"
-        id="walkthrough"
         sx={{
-          ...SECTION_SPACING,
+          py: { xs: 6, sm: 10, md: 12 },
           backgroundColor: (theme) =>
             theme.palette.mode === "light" ? "grey.100" : "grey.900",
-          mx: { xs: -2, sm: -3 },
-          px: { xs: 2, sm: 3 },
+          ...FULL_BLEED,
         }}
       >
-        <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto">
-          <SectionHeader
-            title="Six simple steps"
-            emphasis="primary"
-            accentColor="secondary"
-          />
-          <Typography
-            variant="body1"
+        <Box maxWidth={WIDE_MAX_WIDTH} mx="auto">
+          <Box sx={{ textAlign: "center", mb: { xs: 4, sm: 6 } }}>
+            <Typography
+              component="h2"
+              variant="h2"
+              fontWeight={800}
+              sx={{ fontSize: { xs: "1.75rem", sm: "2.25rem", md: "2.5rem" }, lineHeight: 1.15, mb: 2 }}
+            >
+              From idea to gathering
+            </Typography>
+            <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.75, maxWidth: 560, mx: "auto" }}>
+              Most tools cover one piece of the puzzle. NewChums covers the whole thing.
+            </Typography>
+          </Box>
+
+          {/* Stepper tabs */}
+          <Box
             sx={{
-              mb: { xs: 5, sm: 6 },
-              lineHeight: 1.75,
-              textAlign: { xs: "center", sm: "left" },
+              display: "flex",
+              justifyContent: "center",
+              gap: { xs: 0.5, sm: 1 },
+              mb: { xs: 4, sm: 5 },
+              flexWrap: "wrap",
             }}
           >
-            From picking your interests to meeting up in person, each step is
-            designed to make organizing and attending gatherings as easy as possible.
-          </Typography>
-
-          <Stack spacing={{ xs: 5, sm: 6 }} sx={{ mb: { xs: 5, sm: 6 } }}>
-            {WALKTHROUGH_STEPS.map(({ num, title, paragraphs, Icon }, index) => {
-              const isEven = index % 2 === 0;
+            {LIFECYCLE_STEPS.map(({ Icon, label, color }, i) => {
+              const isActive = i === activeStep;
               return (
                 <Box
-                  key={num}
+                  key={label}
+                  onClick={() => setActiveStep(i)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setActiveStep(i); } }}
                   sx={{
                     display: "flex",
-                    flexDirection: { xs: "column", sm: "row" },
-                    alignItems: { xs: "center", sm: "flex-start" },
-                    gap: { xs: 2.5, sm: 3 },
-                    textAlign: { xs: "center", sm: "left" },
+                    alignItems: "center",
+                    gap: 1,
+                    px: { xs: 1.5, sm: 2.5 },
+                    py: { xs: 1, sm: 1.25 },
+                    borderRadius: 3,
+                    cursor: "pointer",
+                    transition: "all 0.2s ease",
+                    backgroundColor: isActive ? "background.paper" : "transparent",
+                    boxShadow: isActive ? "0 4px 16px rgba(0,0,0,0.08)" : "none",
+                    border: "1.5px solid",
+                    borderColor: isActive ? color : "transparent",
+                    "&:hover": {
+                      backgroundColor: "background.paper",
+                      boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+                    },
+                    userSelect: "none",
                   }}
                 >
-                  {/* Number + icon block */}
                   <Box
                     sx={{
-                      width: 56,
-                      height: 56,
-                      borderRadius: 2,
-                      bgcolor: isEven ? "primary.light" : (theme) => `${theme.palette.secondary.main}18`,
+                      width: { xs: 28, sm: 36 },
+                      height: { xs: 28, sm: 36 },
+                      borderRadius: "50%",
+                      bgcolor: isActive ? `${color}14` : "transparent",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      flexShrink: 0,
-                      position: "relative",
+                      transition: "background-color 0.2s ease",
                     }}
                   >
-                    <Icon
-                      sx={{
-                        fontSize: 26,
-                        color: isEven ? "primary.main" : "secondary.dark",
-                      }}
-                    />
-                    {/* Step number badge */}
-                    <Box
-                      sx={{
-                        position: "absolute",
-                        top: -8,
-                        right: -8,
-                        width: 24,
-                        height: 24,
-                        borderRadius: "50%",
-                        bgcolor: "secondary.main",
-                        color: "#F7CE16",
-                        fontWeight: 800,
-                        fontSize: "0.6875rem",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      {num}
-                    </Box>
+                    <Icon sx={{ fontSize: { xs: 16, sm: 20 }, color: isActive ? color : "text.secondary" }} />
                   </Box>
-
-                  {/* Copy */}
-                  <Stack spacing={0.75} sx={{ flex: 1, minWidth: 0 }}>
-                    <Typography
-                      variant="h5"
-                      component="h3"
-                      fontWeight={700}
-                      sx={{
-                        fontSize: { xs: "1.15rem", sm: "1.25rem" },
-                        lineHeight: 1.3,
-                        textAlign: { xs: "center", sm: "left" },
-                      }}
-                    >
-                      {title}
-                    </Typography>
-                    {paragraphs.map((text, i) => (
-                      <Typography
-                        key={i}
-                        variant="body1"
-                        color="text.secondary"
-                        sx={{
-                          lineHeight: 1.75,
-                          textAlign: { xs: "center", sm: "left" },
-                        }}
-                      >
-                        {text}
-                      </Typography>
-                    ))}
-                  </Stack>
+                  <Typography
+                    variant="body2"
+                    fontWeight={isActive ? 700 : 500}
+                    sx={{
+                      color: isActive ? color : "text.secondary",
+                      fontSize: { xs: "0.75rem", sm: "0.875rem" },
+                      display: { xs: "none", sm: "block" },
+                    }}
+                  >
+                    {label}
+                  </Typography>
                 </Box>
               );
             })}
-          </Stack>
-
-          {/* Screenshot placeholder — will be replaced with plan creation screen */}
-          <Box
-            aria-hidden="true"
-            sx={{
-              borderRadius: 2.5,
-              overflow: "hidden",
-              width: "100%",
-              aspectRatio: "16 / 8",
-              background: (theme) =>
-                `linear-gradient(135deg, ${theme.palette.primary.light} 0%, ${theme.palette.grey[200]} 100%)`,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Stack alignItems="center" spacing={1.5} sx={{ opacity: 0.45 }}>
-              <CalendarMonthRoundedIcon sx={{ fontSize: 52, color: "primary.main" }} />
-              <Typography variant="body2" color="text.secondary" fontWeight={500}>
-                Screenshot placeholder — Create a plan
-              </Typography>
-            </Stack>
-          </Box>
-        </Box>
-      </Box>
-
-      {/* ─────────────── Section 3: Made for real plans ─────────────── */}
-      <Box
-        component="section"
-        id="real-plans"
-        sx={SECTION_SPACING}
-      >
-        <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto" sx={{ textAlign: { xs: "center", sm: "left" } }}>
-          <SectionHeader
-            title='Turn "we should do something" into an actual plan'
-            emphasis="primary"
-            accentColor="secondary"
-          />
-
-          <Typography variant="body1" sx={{ lineHeight: 1.75, mb: 2.5 }}>
-            Most plans with friends run into the same problems. Good ideas come up
-            in a group chat, people agree in principle, and then&hellip; nothing happens.
-          </Typography>
-
-          {/* Pain points — divider list */}
-          <Stack
-            divider={<Divider />}
-            spacing={0}
-            sx={{
-              mb: { xs: 3.5, sm: 4 },
-              maxWidth: { xs: 400, sm: "none" },
-              mx: { xs: "auto", sm: 0 },
-            }}
-          >
-            {PAIN_POINTS.map((text) => (
-              <Box
-                key={text}
-                sx={{
-                  py: 1.75,
-                  textAlign: { xs: "center", sm: "left" },
-                }}
-              >
-                <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
-                  {text}
-                </Typography>
-              </Box>
-            ))}
-          </Stack>
-
-          {/* Callout */}
-          <Box
-            sx={{
-              pl: { xs: 0, sm: 3 },
-              pt: { xs: 2.5, sm: 0.5 },
-              pb: { xs: 0.5, sm: 0.5 },
-              borderLeft: { xs: "none", sm: "3px solid #E65B13" },
-              borderTop: { xs: "2px solid #E65B13", sm: "none" },
-              textAlign: { xs: "center", sm: "left" },
-              mb: { xs: 3.5, sm: 4 },
-            }}
-          >
-            <Typography variant="body1" fontWeight={600} sx={{ lineHeight: 1.75 }}>
-              NewChums gives plans a real home, visible, organized, and easy
-              for people to commit to.
-            </Typography>
           </Box>
 
-          {/* Mini mock: coordination panel */}
+          {/* Active step content */}
           <Box
             sx={{
               backgroundColor: "background.paper",
-              borderRadius: 2.5,
+              borderRadius: 4,
+              p: { xs: 3, sm: 4, md: 5 },
+              boxShadow: "0 4px 24px rgba(0,0,0,0.06)",
               border: "1px solid",
               borderColor: "divider",
-              overflow: "hidden",
-              boxShadow: (theme) =>
-                theme.palette.mode === "light"
-                  ? "0 2px 16px rgba(0,0,0,0.06)"
-                  : "none",
-              maxWidth: 480,
-              mx: { xs: "auto", sm: 0 },
+              textAlign: "center",
+              maxWidth: 640,
+              mx: "auto",
             }}
           >
-            {/* Mock panel header */}
             <Box
               sx={{
-                px: 2.5,
-                py: 1.75,
-                backgroundColor: "primary.light",
-                borderBottom: "1px solid",
-                borderColor: "divider",
+                width: 56,
+                height: 56,
+                borderRadius: "50%",
+                bgcolor: `${LIFECYCLE_STEPS[activeStep].color}12`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                mx: "auto",
+                mb: 2.5,
               }}
             >
-              <Typography
-                variant="caption"
-                fontWeight={700}
-                color="primary.dark"
-                sx={{ letterSpacing: "0.07em", fontSize: "0.6875rem" }}
-              >
-                BOARD GAME NIGHT &middot; THURSDAY
-              </Typography>
+              {(() => { const StepIcon = LIFECYCLE_STEPS[activeStep].Icon; return <StepIcon sx={{ fontSize: 28, color: LIFECYCLE_STEPS[activeStep].color }} />; })()}
             </Box>
-
-            {/* Mock rows */}
-            {[
-              { name: "Alex", status: "Going", statusColor: "success.main" },
-              { name: "Jordan", status: "Maybe, suggested Fri?", statusColor: "secondary.dark" },
-              { name: "Sam", status: "Going", statusColor: "success.main" },
-              { name: "Taylor", status: "Waiting", statusColor: "text.disabled" },
-            ].map((row, i, arr) => (
-              <Box
-                key={row.name}
-                sx={{
-                  px: 2.5,
-                  py: 1.5,
-                  borderBottom: i < arr.length - 1 ? "1px solid" : "none",
-                  borderColor: "divider",
-                }}
-              >
-                <Stack direction="row" alignItems="center" justifyContent="space-between">
-                  <Typography variant="body2" fontWeight={500}>
-                    {row.name}
-                  </Typography>
-                  <Typography
-                    variant="caption"
-                    sx={{ color: row.statusColor, fontWeight: 600 }}
-                  >
-                    {row.status}
-                  </Typography>
-                </Stack>
-              </Box>
-            ))}
-
-            {/* Footer */}
-            <Box
-              sx={{
-                px: 2.5,
-                py: 1.5,
-                backgroundColor: "grey.50",
-                borderTop: "1px solid",
-                borderColor: "divider",
-              }}
-            >
-              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
-                Everyone sees the same plan, no chasing replies
-              </Typography>
-            </Box>
+            <Typography variant="h5" fontWeight={700} sx={{ mb: 1, fontSize: { xs: "1.25rem", sm: "1.375rem" } }}>
+              {activeStep + 1}. {LIFECYCLE_STEPS[activeStep].label}
+            </Typography>
+            <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.75, maxWidth: 440, mx: "auto" }}>
+              {LIFECYCLE_STEPS[activeStep].description}
+            </Typography>
           </Box>
         </Box>
       </Box>
 
-      {/* ─────────────── Section 4: Friends + new connections ─────────────── */}
+      {/* ═══════════════ Section 3: Create and shape (hero feature, full-width splash) ═══════════════ */}
       <Box
         component="section"
-        id="who-its-for"
+        id="create-plan"
         sx={{
-          ...SECTION_SPACING,
-          backgroundColor: (theme) =>
-            theme.palette.mode === "light" ? "grey.50" : "grey.900",
-          mx: { xs: -2, sm: -3 },
-          px: { xs: 2, sm: 3 },
+          py: { xs: 8, sm: 12, md: 14 },
+          position: "relative",
+          overflow: "hidden",
+          ...FULL_BLEED,
         }}
       >
-        <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto">
-          <SectionHeader
-            title="Works for existing friends and new connections"
-            emphasis="primary"
-            accentColor="secondary"
-          />
+        {/* Warm background gradient */}
+        <Box
+          sx={{
+            position: "absolute",
+            inset: 0,
+            background: (theme) =>
+              theme.palette.mode === "light"
+                ? "linear-gradient(165deg, #FFF7ED 0%, #FFFFFF 40%, #FFF7ED 100%)"
+                : "none",
+            zIndex: 0,
+          }}
+        />
 
-          <Typography
-            variant="body1"
-            sx={{
-              mb: { xs: 4, sm: 5 },
-              lineHeight: 1.75,
-              textAlign: { xs: "center", sm: "left" },
-            }}
-          >
-            NewChums is not just about meeting your neighbors. It&apos;s a better way to organize
-            anything social, from coordinating plans with friends you already have, to
-            finding people nearby who enjoy the same things you do.
-          </Typography>
+        <Box maxWidth={WIDE_MAX_WIDTH} mx="auto" sx={{ position: "relative", zIndex: 1 }}>
+          {/* Header */}
+          <Box sx={{ textAlign: "center", mb: { xs: 5, sm: 7 } }}>
+            <Typography
+              variant="overline"
+              sx={{ color: "primary.main", fontWeight: 700, letterSpacing: "0.12em", fontSize: "0.7rem", display: "block", mb: 1.5 }}
+            >
+              Host controls
+            </Typography>
+            <Typography
+              component="h2"
+              variant="h2"
+              fontWeight={800}
+              sx={{ fontSize: { xs: "1.75rem", sm: "2.25rem", md: "2.75rem" }, lineHeight: 1.15, mb: 2 }}
+            >
+              Create and shape the plan
+            </Typography>
+            <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.75, maxWidth: 620, mx: "auto" }}>
+              Every plan starts with the basics, a title, time, and place. Then customize exactly how it works. Control who can see it, who can join, and how attendance is handled.
+            </Typography>
+          </Box>
 
-          <Grid container spacing={{ xs: 3, sm: 4 }}>
-            {AUDIENCE_CARDS.map(({ accentColor, Icon, title, body }) => (
-              <Grid key={title} size={{ xs: 12, sm: 6 }}>
+          {/* Screenshot, floated with overlap effect */}
+          <Box sx={{ mb: { xs: 4, sm: 6 }, maxWidth: 800, mx: "auto" }}>
+            <ScreenshotFrame
+              imageSrc="/images/how-it-works/create-plan.png"
+              placeholder="Screenshot, Create a plan"
+              icon={TuneRoundedIcon}
+              accentColor="#E65B13"
+              overlap
+            />
+          </Box>
+
+          {/* Feature grid */}
+          <Grid container spacing={{ xs: 2.5, sm: 3 }} sx={{ mb: { xs: 3, sm: 4 } }}>
+            {CREATE_FEATURES.map(({ Icon, label, detail }) => (
+              <Grid key={label} size={{ xs: 12, sm: 6, md: 4 }}>
                 <Box
                   sx={{
                     height: "100%",
                     backgroundColor: "background.paper",
-                    borderTop: "3px solid",
-                    borderColor: accentColor,
-                    borderRadius: 2,
-                    p: { xs: 3, sm: 3.5 },
-                    boxShadow: (theme) =>
-                      theme.palette.mode === "light"
-                        ? "0 1px 6px rgba(0,0,0,0.07)"
-                        : "none",
+                    borderRadius: 3,
+                    p: { xs: 2.5, sm: 3 },
+                    boxShadow: "0 2px 12px rgba(0,0,0,0.04)",
+                    border: "1px solid",
+                    borderColor: "divider",
+                    display: "flex",
+                    flexDirection: { xs: "row", sm: "column" },
+                    gap: { xs: 1.5, sm: 0 },
+                    alignItems: { xs: "flex-start", sm: "flex-start" },
+                    transition: "box-shadow 0.2s ease, transform 0.2s ease",
+                    "&:hover": {
+                      boxShadow: "0 6px 24px rgba(0,0,0,0.08)",
+                      transform: "translateY(-2px)",
+                    },
                   }}
                 >
                   <Box
                     sx={{
                       width: 40,
                       height: 40,
-                      borderRadius: "50%",
+                      borderRadius: 2,
                       bgcolor: "primary.light",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                      mb: { xs: 0, sm: 1.5 },
+                    }}
+                  >
+                    <Icon sx={{ fontSize: 20, color: "primary.main" }} />
+                  </Box>
+                  <Box>
+                    <Typography variant="body1" fontWeight={700} sx={{ mb: 0.5, lineHeight: 1.3 }}>
+                      {label}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.65 }}>
+                      {detail}
+                    </Typography>
+                  </Box>
+                </Box>
+              </Grid>
+            ))}
+          </Grid>
+
+          {/* Additional capabilities, compact chips */}
+          <Box sx={{ textAlign: "center" }}>
+            <Typography variant="body2" color="text.secondary" fontWeight={600} sx={{ mb: 1.5 }}>
+              Plus:
+            </Typography>
+            <Stack direction="row" flexWrap="wrap" justifyContent="center" spacing={1} useFlexGap>
+              {CREATE_EXTRA_FEATURES.map((f) => (
+                <Box
+                  key={f}
+                  sx={{
+                    px: 2,
+                    py: 0.75,
+                    borderRadius: 2,
+                    bgcolor: "background.paper",
+                    border: "1px solid",
+                    borderColor: "divider",
+                    fontSize: "0.8125rem",
+                    fontWeight: 500,
+                    color: "text.secondary",
+                  }}
+                >
+                  {f}
+                </Box>
+              ))}
+            </Stack>
+          </Box>
+        </Box>
+      </Box>
+
+      {/* Mid-page CTA */}
+      <Box sx={{ textAlign: "center", py: { xs: 4, sm: 6 } }}>
+        <InlineCTA isLoggedIn={isLoggedIn} />
+      </Box>
+
+      {/* ═══════════════ Sections 4-7: Zig-zag feature deep-dives ═══════════════ */}
+      {ZIGZAG_SECTIONS.map((section, index) => {
+        const bgColors = [undefined, "grey.100", undefined, "grey.100"];
+        const bg = bgColors[index];
+        const needsBleed = !!bg;
+        return (
+          <Box
+            key={section.id}
+            component="section"
+            id={section.id}
+            sx={{
+              py: { xs: 7, sm: 10, md: 12 },
+              ...(needsBleed && {
+                backgroundColor: (theme) =>
+                  theme.palette.mode === "light" ? bg : "grey.900",
+                ...FULL_BLEED,
+              }),
+            }}
+          >
+            <Box maxWidth={WIDE_MAX_WIDTH} mx="auto">
+              <Grid container spacing={{ xs: 4, sm: 5, md: 8 }} alignItems="center">
+                {/* Text column */}
+                <Grid
+                  size={{ xs: 12, md: 5 }}
+                  sx={{ order: { xs: 0, md: section.imageOnLeft ? 1 : 0 } }}
+                >
+                  <Box sx={{ mb: { xs: 0, md: 0 } }}>
+                    <Typography
+                      variant="overline"
+                      sx={{ color: section.accentColor, fontWeight: 700, letterSpacing: "0.1em", fontSize: "0.65rem", display: "block", mb: 1.5 }}
+                    >
+                      {section.id.replace(/-/g, " ")}
+                    </Typography>
+                    <Typography
+                      component="h2"
+                      variant="h3"
+                      fontWeight={800}
+                      sx={{ fontSize: { xs: "1.5rem", sm: "1.75rem", md: "2rem" }, lineHeight: 1.2, mb: 1.5 }}
+                    >
+                      {section.sectionTitle}
+                    </Typography>
+                    <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.75, mb: 3 }}>
+                      {section.subtitle}
+                    </Typography>
+
+                    <Stack spacing={2}>
+                      {section.features.map(({ label, detail }) => (
+                        <Box key={label} sx={{ display: "flex", gap: 1.5, alignItems: "flex-start" }}>
+                          <Box
+                            sx={{
+                              width: 6,
+                              height: 6,
+                              borderRadius: "50%",
+                              bgcolor: section.accentColor,
+                              flexShrink: 0,
+                              mt: 1,
+                            }}
+                          />
+                          <Box>
+                            <Typography variant="body2" fontWeight={700} sx={{ lineHeight: 1.4 }}>
+                              {label}
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+                              {detail}
+                            </Typography>
+                          </Box>
+                        </Box>
+                      ))}
+                    </Stack>
+                  </Box>
+                </Grid>
+
+                {/* Image column */}
+                <Grid
+                  size={{ xs: 12, md: 7 }}
+                  sx={{ order: { xs: 1, md: section.imageOnLeft ? 0 : 1 } }}
+                >
+                  <ScreenshotFrame
+                    imageSrc={section.imageSrc}
+                    placeholder={section.placeholder}
+                    icon={section.Icon}
+                    accentColor={section.accentColor}
+                  />
+                </Grid>
+              </Grid>
+            </Box>
+          </Box>
+        );
+      })}
+
+      {/* Mid-page CTA */}
+      <Box sx={{ textAlign: "center", py: { xs: 4, sm: 6 } }}>
+        <Typography variant="body1" color="text.secondary" sx={{ mb: 2.5, fontWeight: 500 }}>
+          Sound useful? It only takes a minute to get started.
+        </Typography>
+        <InlineCTA isLoggedIn={isLoggedIn} />
+      </Box>
+
+      {/* ═══════════════ Sections 8-9: Grid feature sections ═══════════════ */}
+      {GRID_SECTIONS.map((section, index) => {
+        const bg = index === 0 ? "grey.100" : undefined;
+        const needsBleed = !!bg;
+        return (
+          <Box
+            key={section.id}
+            component="section"
+            id={section.id}
+            sx={{
+              py: { xs: 7, sm: 10, md: 12 },
+              ...(needsBleed && {
+                backgroundColor: (theme) =>
+                  theme.palette.mode === "light" ? bg : "grey.900",
+                ...FULL_BLEED,
+              }),
+            }}
+          >
+            <Box maxWidth={WIDE_MAX_WIDTH} mx="auto">
+              {/* Section header + screenshot side by side on desktop */}
+              <Grid container spacing={{ xs: 3, sm: 4, md: 6 }} sx={{ mb: { xs: 4, sm: 5 } }} alignItems="center">
+                <Grid size={{ xs: 12, md: 5 }}>
+                  <Typography
+                    variant="overline"
+                    sx={{ color: section.accentColor, fontWeight: 700, letterSpacing: "0.1em", fontSize: "0.65rem", display: "block", mb: 1.5 }}
+                  >
+                    {section.id}
+                  </Typography>
+                  <Typography
+                    component="h2"
+                    variant="h3"
+                    fontWeight={800}
+                    sx={{ fontSize: { xs: "1.5rem", sm: "1.75rem", md: "2rem" }, lineHeight: 1.2, mb: 1.5 }}
+                  >
+                    {section.sectionTitle}
+                  </Typography>
+                  <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.75 }}>
+                    {section.subtitle}
+                  </Typography>
+                </Grid>
+                <Grid size={{ xs: 12, md: 7 }}>
+                  <ScreenshotFrame
+                    imageSrc={section.imageSrc}
+                    placeholder={section.placeholder}
+                    icon={section.Icon}
+                    accentColor={section.accentColor}
+                  />
+                </Grid>
+              </Grid>
+
+              {/* 3-column feature grid */}
+              <Grid container spacing={{ xs: 2, sm: 2.5 }}>
+                {section.features.map(({ Icon, label, detail }) => (
+                  <Grid key={label} size={{ xs: 12, sm: 6, md: 4 }}>
+                    <Box
+                      sx={{
+                        height: "100%",
+                        p: { xs: 2.5, sm: 3 },
+                        borderRadius: 3,
+                        backgroundColor: needsBleed ? "background.paper" : (theme) =>
+                          theme.palette.mode === "light" ? "grey.50" : "grey.900",
+                        border: "1px solid",
+                        borderColor: "divider",
+                        transition: "box-shadow 0.2s ease, transform 0.2s ease",
+                        "&:hover": {
+                          boxShadow: "0 4px 16px rgba(0,0,0,0.06)",
+                          transform: "translateY(-2px)",
+                        },
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          width: 36,
+                          height: 36,
+                          borderRadius: 2,
+                          bgcolor: `${section.accentColor}10`,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          mb: 1.5,
+                        }}
+                      >
+                        <Icon sx={{ fontSize: 18, color: section.accentColor }} />
+                      </Box>
+                      <Typography variant="body2" fontWeight={700} sx={{ mb: 0.5, lineHeight: 1.3 }}>
+                        {label}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6, fontSize: "0.8125rem" }}>
+                        {detail}
+                      </Typography>
+                    </Box>
+                  </Grid>
+                ))}
+              </Grid>
+            </Box>
+          </Box>
+        );
+      })}
+
+      {/* ═══════════════ Section 10: Use cases ═══════════════ */}
+      <Box
+        component="section"
+        id="use-cases"
+        sx={{
+          py: { xs: 7, sm: 10, md: 12 },
+          backgroundColor: (theme) =>
+            theme.palette.mode === "light" ? "#FFF7ED" : "grey.900",
+          ...FULL_BLEED,
+        }}
+      >
+        <Box maxWidth={WIDE_MAX_WIDTH} mx="auto">
+          <Box sx={{ textAlign: "center", mb: { xs: 4, sm: 6 } }}>
+            <Typography
+              component="h2"
+              variant="h2"
+              fontWeight={800}
+              sx={{ fontSize: { xs: "1.75rem", sm: "2.25rem", md: "2.5rem" }, lineHeight: 1.15, mb: 2 }}
+            >
+              What people use NewChums for
+            </Typography>
+            <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.75, maxWidth: 560, mx: "auto" }}>
+              The best plans are simple and specific. Here are some of the ways people are using the platform.
+            </Typography>
+          </Box>
+
+          <Grid container spacing={{ xs: 2.5, sm: 3 }}>
+            {USE_CASES.map(({ Icon, title, description }, i) => (
+              <Grid key={title} size={{ xs: 12, sm: 6, md: 4 }}>
+                <Box
+                  sx={{
+                    height: "100%",
+                    backgroundColor: "background.paper",
+                    borderRadius: 3,
+                    p: { xs: 3, sm: 3.5 },
+                    boxShadow: "0 2px 12px rgba(0,0,0,0.04)",
+                    border: "1px solid",
+                    borderColor: "divider",
+                    transition: "box-shadow 0.2s ease, transform 0.2s ease",
+                    "&:hover": {
+                      boxShadow: "0 8px 32px rgba(0,0,0,0.08)",
+                      transform: "translateY(-3px)",
+                    },
+                  }}
+                >
+                  <Box
+                    sx={{
+                      width: 44,
+                      height: 44,
+                      borderRadius: "50%",
+                      bgcolor: i % 2 === 0 ? "primary.light" : "#FFF7ED",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
                       mb: 2,
                     }}
                   >
-                    <Icon sx={{ fontSize: 20, color: "primary.main" }} />
+                    <Icon sx={{ fontSize: 22, color: "primary.main" }} />
                   </Box>
-                  <Typography
-                    variant="h6"
-                    component="h3"
-                    fontWeight={700}
-                    sx={{
-                      mb: 1.25,
-                      fontSize: { xs: "1rem", sm: "1.0625rem" },
-                      lineHeight: 1.35,
-                    }}
-                  >
+                  <Typography variant="h6" component="h3" fontWeight={700} sx={{ mb: 0.75, fontSize: "1.0625rem", lineHeight: 1.35 }}>
                     {title}
                   </Typography>
                   <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.75 }}>
-                    {body}
+                    {description}
                   </Typography>
                 </Box>
               </Grid>
             ))}
           </Grid>
-
-          {/* Screenshot placeholder — will be replaced with Your Plans / profile screen */}
-          <Box
-            aria-hidden="true"
-            sx={{
-              mt: { xs: 4, sm: 5 },
-              borderRadius: 2.5,
-              overflow: "hidden",
-              width: "100%",
-              aspectRatio: "16 / 7",
-              background: (theme) =>
-                `linear-gradient(135deg, ${theme.palette.grey[100]} 0%, ${theme.palette.primary.light} 100%)`,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Stack alignItems="center" spacing={1.5} sx={{ opacity: 0.45 }}>
-              <GroupsRoundedIcon sx={{ fontSize: 52, color: "primary.main" }} />
-              <Typography variant="body2" color="text.secondary" fontWeight={500}>
-                Screenshot placeholder — Your Plans view
-              </Typography>
-            </Stack>
-          </Box>
         </Box>
       </Box>
 
-      {/* ─────────────── Section 5: Discovery / nearby events ─────────────── */}
-      {/*
-       * FUTURE-READY NOTE:
-       * Replace DISCOVERY_PREVIEWS with real API data when available.
-       * The mock panel structure mirrors the homepage discovery section
-       * and can be swapped to live event cards without layout changes.
-       */}
-      <Box
-        component="section"
-        id="discovery"
-        sx={SECTION_SPACING}
-      >
+      {/* ═══════════════ Section 11: Why not group chat? ═══════════════ */}
+      <Box component="section" id="why-not-group-chat" sx={{ py: { xs: 7, sm: 10, md: 12 } }}>
         <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto">
-          <SectionHeader
-            title="Discover plans without the endless searching"
-            emphasis="primary"
-            accentColor="secondary"
-          />
-
-          <Stack spacing={2} sx={{ mb: { xs: 4, sm: 5 }, textAlign: { xs: "center", sm: "left" } }}>
-            <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
-              Once you set your interests, NewChums can surface gatherings that are relevant
-              to you, no more scrolling through scattered posts and community boards
-              trying to find something worth joining.
-            </Typography>
-            <Typography variant="body1" sx={{ lineHeight: 1.75 }}>
-              Get notified when something you care about is being planned nearby, or browse
-              at your own pace.
-            </Typography>
-          </Stack>
-
-          {/* Discovery mock panel */}
-          <Box
-            sx={{
-              backgroundColor: "background.paper",
-              borderRadius: 2.5,
-              border: "1px solid",
-              borderColor: "divider",
-              overflow: "hidden",
-              boxShadow: (theme) =>
-                theme.palette.mode === "light"
-                  ? "0 2px 16px rgba(0,0,0,0.06)"
-                  : "none",
-              maxWidth: 520,
-              mx: { xs: "auto", sm: 0 },
-            }}
-          >
-            {/* Panel header */}
-            <Box
-              sx={{
-                px: 2.5,
-                py: 1.75,
-                backgroundColor: "primary.light",
-                borderBottom: "1px solid",
-                borderColor: "divider",
-                display: "flex",
-                alignItems: "center",
-                gap: 1,
-              }}
+          <Box sx={{ textAlign: "center", mb: { xs: 4, sm: 6 } }}>
+            <Typography
+              component="h2"
+              variant="h2"
+              fontWeight={800}
+              sx={{ fontSize: { xs: "1.75rem", sm: "2.25rem", md: "2.5rem" }, lineHeight: 1.15, mb: 2 }}
             >
-              <NotificationsRoundedIcon
-                sx={{ fontSize: 14, color: "primary.main", opacity: 0.8 }}
-              />
-              <Typography
-                variant="caption"
-                fontWeight={700}
-                color="primary.dark"
-                sx={{ letterSpacing: "0.07em", fontSize: "0.6875rem" }}
-              >
-                NEARBY GATHERINGS MATCHING YOUR INTERESTS
-              </Typography>
-            </Box>
+              Why not just use a group chat?
+            </Typography>
+            <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.75, maxWidth: 560, mx: "auto" }}>
+              Group chats are great for chatting. They&apos;re not great for organizing.
+              Plans get buried, nobody replies to the poll, and by the time you pin down the details
+              half the group has moved on.
+            </Typography>
+          </Box>
 
-            {/* Event rows */}
-            {DISCOVERY_PREVIEWS.map((event, i) => (
+          <Stack spacing={0} sx={{ mb: { xs: 4, sm: 5 } }}>
+            {COMPARISON_POINTS.map(({ problem, solution }, i) => (
               <Box
-                key={event.id}
+                key={problem}
                 sx={{
-                  px: 2.5,
-                  py: 2,
-                  borderBottom:
-                    i < DISCOVERY_PREVIEWS.length - 1 ? "1px solid" : "none",
+                  display: "flex",
+                  gap: { xs: 2, sm: 3 },
+                  py: { xs: 2.5, sm: 3 },
+                  borderBottom: i < COMPARISON_POINTS.length - 1 ? "1px solid" : "none",
                   borderColor: "divider",
+                  flexDirection: { xs: "column", sm: "row" },
                 }}
               >
-                <Stack
-                  direction="row"
-                  alignItems="flex-start"
-                  justifyContent="space-between"
-                  spacing={2}
-                >
-                  <Stack spacing={0.5} sx={{ flex: 1, minWidth: 0 }}>
-                    <Typography
-                      variant="caption"
-                      sx={{
-                        color: "primary.main",
-                        fontWeight: 700,
-                        letterSpacing: "0.04em",
-                        fontSize: "0.6875rem",
-                      }}
-                    >
-                      {event.category}
-                    </Typography>
-                    <Typography variant="body2" fontWeight={600} sx={{ lineHeight: 1.35 }}>
-                      {event.title}
-                    </Typography>
-                    <Stack direction="row" alignItems="center" spacing={1.5}>
-                      <Stack direction="row" alignItems="center" spacing={0.5}>
-                        <AccessTimeRoundedIcon sx={{ fontSize: 11, color: "text.disabled" }} />
-                        <Typography variant="caption" color="text.secondary">
-                          {event.dayTime}
-                        </Typography>
-                      </Stack>
-                      <Stack direction="row" alignItems="center" spacing={0.5}>
-                        <LocationOnRoundedIcon sx={{ fontSize: 11, color: "text.disabled" }} />
-                        <Typography variant="caption" color="text.secondary">
-                          {event.location}
-                        </Typography>
-                      </Stack>
-                    </Stack>
-                  </Stack>
-
-                  <Stack direction="row" alignItems="center" spacing={0.5} sx={{ flexShrink: 0, pt: 0.5 }}>
-                    <PeopleRoundedIcon sx={{ fontSize: 12, color: "text.disabled" }} />
-                    <Typography variant="caption" color="text.secondary">
-                      {event.attending}
+                <Box sx={{ flex: 1 }}>
+                  <Stack direction="row" spacing={1} alignItems="flex-start">
+                    <CancelRoundedIcon sx={{ fontSize: 18, color: "error.main", mt: 0.25, flexShrink: 0 }} />
+                    <Typography variant="body2" sx={{ lineHeight: 1.5, color: "text.secondary" }}>
+                      {problem}
                     </Typography>
                   </Stack>
-                </Stack>
+                </Box>
+                <Box sx={{ flex: 1 }}>
+                  <Stack direction="row" spacing={1} alignItems="flex-start">
+                    <CheckCircleRoundedIcon sx={{ fontSize: 18, color: "success.main", mt: 0.25, flexShrink: 0 }} />
+                    <Typography variant="body2" fontWeight={600} sx={{ lineHeight: 1.5 }}>
+                      {solution}
+                    </Typography>
+                  </Stack>
+                </Box>
               </Box>
             ))}
+          </Stack>
 
-            {/* Panel footer */}
-            <Box
-              sx={{
-                px: 2.5,
-                py: 1.5,
-                backgroundColor: "grey.50",
-                borderTop: "1px solid",
-                borderColor: "divider",
-              }}
-            >
-              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
-                Sign up to see what&apos;s happening near you &rarr;
-              </Typography>
-            </Box>
+          <Box
+            sx={{
+              p: { xs: 3, sm: 4 },
+              borderRadius: 3,
+              bgcolor: (theme) =>
+                theme.palette.mode === "light" ? "#FFF7ED" : "grey.900",
+              border: "1px solid",
+              borderColor: (theme) =>
+                theme.palette.mode === "light" ? "#FDBA7420" : "divider",
+              textAlign: "center",
+            }}
+          >
+            <Typography variant="body1" fontWeight={600} sx={{ lineHeight: 1.75, mb: 2.5 }}>
+              NewChums isn&apos;t another chat app. It&apos;s the thing that sits between the idea and the gathering,
+              and makes sure the gathering actually happens.
+            </Typography>
+            <InlineCTA isLoggedIn={isLoggedIn} />
           </Box>
         </Box>
       </Box>
 
-      {/* ─────────────── Section 6: Trust / comfort ─────────────── */}
-      <Box
-        component="section"
-        sx={{
-          ...SECTION_SPACING,
-          backgroundColor: (theme) =>
-            theme.palette.mode === "light" ? "grey.100" : "grey.900",
-          mx: { xs: -2, sm: -3 },
-          px: { xs: 2, sm: 3 },
-        }}
-      >
-        <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto">
-          <SectionHeader
-            title="Built for the way people actually connect"
-            emphasis="primary"
-            accentColor="secondary"
-          />
-
-          <Typography
-            variant="body1"
-            sx={{
-              mb: { xs: 4, sm: 5 },
-              lineHeight: 1.75,
-              textAlign: { xs: "center", sm: "left" },
-            }}
-          >
-            NewChums is designed around the idea that real connection happens when the
-            conditions are right, shared interests, clear plans, and
-            low-pressure settings.
-          </Typography>
-
-          <Grid container spacing={{ xs: 2.5, sm: 3 }}>
-            {TRUST_ITEMS.map(({ Icon, label }) => (
-              <Grid key={label} size={{ xs: 12, sm: 6 }}>
-                <Box
-                  sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 2,
-                    backgroundColor: "background.paper",
-                    borderRadius: 2,
-                    p: { xs: 2.5, sm: 2.5 },
-                    boxShadow: (theme) =>
-                      theme.palette.mode === "light"
-                        ? "0 1px 4px rgba(0,0,0,0.05)"
-                        : "none",
-                  }}
-                >
-                  <Box
-                    sx={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: "50%",
-                      bgcolor: "primary.light",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      flexShrink: 0,
-                    }}
-                  >
-                    <Icon sx={{ fontSize: 18, color: "primary.main" }} />
-                  </Box>
-                  <Typography variant="body1" fontWeight={600} sx={{ lineHeight: 1.4 }}>
-                    {label}
-                  </Typography>
-                </Box>
-              </Grid>
-            ))}
-          </Grid>
-
-          {/* Links to related pages */}
-          <Stack
-            direction={{ xs: "column", sm: "row" }}
-            spacing={{ xs: 1, sm: 3 }}
-            sx={{
-              mt: { xs: 4, sm: 5 },
-              textAlign: { xs: "center", sm: "left" },
-            }}
-          >
-            <Typography
-              component={Link}
-              href="/science-of-friendship"
-              variant="body2"
-              sx={{
-                color: "primary.main",
-                fontWeight: 600,
-                textDecoration: "none",
-                "&:hover": { textDecoration: "underline" },
-              }}
-            >
-              Read the science &rarr;
-            </Typography>
-            <Typography
-              component={Link}
-              href="/safety-center"
-              variant="body2"
-              sx={{
-                color: "primary.main",
-                fontWeight: 600,
-                textDecoration: "none",
-                "&:hover": { textDecoration: "underline" },
-              }}
-            >
-              Safety Center &rarr;
-            </Typography>
-          </Stack>
-        </Box>
-      </Box>
-
-      {/* ─────────────── Section 7: CTA ─────────────── */}
+      {/* ═══════════════ Section 12: Final CTA ═══════════════ */}
       <Box
         component="section"
         id="cta"
@@ -943,8 +1027,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
           textAlign: "center",
           backgroundColor: (theme) =>
             theme.palette.mode === "light" ? theme.palette.primary.main : "grey.900",
-          mx: { xs: -2, sm: -3 },
-          px: { xs: 3, sm: 4 },
+          ...FULL_BLEED,
           color: "white",
           position: "relative",
           "&::before": {
@@ -959,52 +1042,29 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
         }}
       >
         <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto">
-          {/* Eyebrow */}
           <Typography
             variant="overline"
-            sx={{
-              display: "block",
-              mb: 1.5,
-              opacity: 0.65,
-              letterSpacing: 2,
-              fontSize: "0.6875rem",
-              fontWeight: 600,
-            }}
+            sx={{ display: "block", mb: 1.5, opacity: 0.65, letterSpacing: 2, fontSize: "0.6875rem", fontWeight: 600 }}
           >
-            Getting started takes less than a minute
+            Ready to make plans that actually happen?
           </Typography>
 
-          {/* Heading */}
           <Typography
             component="h2"
             variant="h4"
             fontWeight={700}
-            sx={{
-              mb: 2,
-              fontSize: { xs: "1.5rem", sm: "2rem" },
-              lineHeight: 1.25,
-              color: "inherit",
-            }}
+            sx={{ mb: 2, fontSize: { xs: "1.5rem", sm: "2rem" }, lineHeight: 1.25, color: "inherit" }}
           >
-            Make plans that actually happen
+            Stop patching it together
           </Typography>
 
-          {/* Subtext */}
           <Typography
             variant="body1"
-            sx={{
-              mb: { xs: 6, sm: 8 },
-              opacity: 0.8,
-              lineHeight: 1.75,
-              maxWidth: 480,
-              mx: "auto",
-            }}
+            sx={{ mb: { xs: 6, sm: 8 }, opacity: 0.8, lineHeight: 1.75, maxWidth: 480, mx: "auto" }}
           >
-            Sign up once, add the hobbies you care about, and start seeing
-            what&apos;s possible.
+            One place for the plan, the people, and the follow-through.
           </Typography>
 
-          {/* Steps */}
           <Grid
             container
             spacing={{ xs: 4, sm: 3 }}
@@ -1012,9 +1072,9 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
             sx={{ mb: { xs: 6, sm: 8 }, maxWidth: 680, mx: "auto" }}
           >
             {[
-              isLoggedIn ? "Open your profile" : "Sign up",
-              "Add your interests",
-              "Discover and organize gatherings",
+              isLoggedIn ? "Open your profile" : "Sign up in under a minute",
+              "Create a plan or browse what\u2019s happening nearby",
+              "Show up and enjoy",
             ].map((text, i) => (
               <Grid key={text} size={{ xs: 12, sm: 4 }}>
                 <Stack alignItems="center" spacing={2}>
@@ -1036,11 +1096,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
                   >
                     {i + 1}
                   </Box>
-                  <Typography
-                    variant="body1"
-                    fontWeight={500}
-                    sx={{ opacity: 0.9, lineHeight: 1.5, maxWidth: 180 }}
-                  >
+                  <Typography variant="body1" fontWeight={500} sx={{ opacity: 0.9, lineHeight: 1.5, maxWidth: 180 }}>
                     {text}
                   </Typography>
                 </Stack>
@@ -1048,16 +1104,8 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
             ))}
           </Grid>
 
-          <Divider
-            sx={{
-              borderColor: "rgba(247,206,22,0.7)",
-              mb: { xs: 6, sm: 8 },
-              maxWidth: 480,
-              mx: "auto",
-            }}
-          />
+          <Divider sx={{ borderColor: "rgba(247,206,22,0.7)", mb: { xs: 6, sm: 8 }, maxWidth: 480, mx: "auto" }} />
 
-          {/* CTA Button */}
           <Button
             component={Link}
             href={isLoggedIn ? "/" : "/signup"}
@@ -1074,12 +1122,10 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
               minWidth: { xs: "100%", sm: 220 },
               maxWidth: { xs: "none", sm: 300 },
               boxShadow: "0 2px 12px rgba(0,0,0,0.15)",
-              "&:hover": {
-                boxShadow: "0 4px 20px rgba(0,0,0,0.25)",
-              },
+              "&:hover": { boxShadow: "0 4px 20px rgba(0,0,0,0.25)" },
             }}
           >
-            {isLoggedIn ? "Explore NewChums" : "Let's do it"}
+            {isLoggedIn ? "Explore NewChums" : "Get started"}
           </Button>
         </Box>
       </Box>

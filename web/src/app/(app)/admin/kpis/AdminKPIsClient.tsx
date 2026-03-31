@@ -120,12 +120,12 @@ const RED = "#DC2626";
 const BLUE = "#2563EB";
 
 function pct(n: number, d: number): string {
-  if (d === 0) return "—";
+  if (d === 0) return "-";
   return `${((n / d) * 100).toFixed(1)}%`;
 }
 
 function fmtPct(v: number | null): string {
-  if (v == null) return "—";
+  if (v == null) return "-";
   return `${(v * 100).toFixed(1)}%`;
 }
 
@@ -666,21 +666,21 @@ export default function AdminKPIsClient() {
             <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 2.5 }} flexWrap="wrap">
               <StatCard
                 label="Completion rate"
-                value={planHealth.completionRate != null ? pct(planHealth.completed, planHealth.totalPast) : "—"}
+                value={planHealth.completionRate != null ? pct(planHealth.completed, planHealth.totalPast) : "-"}
                 sub={`${planHealth.completed} completed of ${planHealth.totalPast} past plans`}
                 tooltip="Past-start-time published plans that were not canceled / all past published+canceled plans."
                 color={GREEN}
               />
               <StatCard
                 label="Cancellation rate"
-                value={planHealth.cancellationRate != null ? pct(planHealth.canceled, planHealth.totalAll) : "—"}
+                value={planHealth.cancellationRate != null ? pct(planHealth.canceled, planHealth.totalAll) : "-"}
                 sub={`${planHealth.canceled} canceled of ${planHealth.totalAll} total plans`}
                 tooltip="Canceled plans / all published+canceled plans (including future)."
                 color={RED}
               />
               <StatCard
                 label="Avg fill rate"
-                value={planHealth.avgFillRate != null ? fmtPct(planHealth.avgFillRate) : "—"}
+                value={planHealth.avgFillRate != null ? fmtPct(planHealth.avgFillRate) : "-"}
                 sub={
                   planHealth.fillRatePlanCount > 0
                     ? `Across ${planHealth.fillRatePlanCount} capped past plans`
@@ -766,7 +766,7 @@ export default function AdminKPIsClient() {
                       Objective completion funnel
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      Drop-off analysis — ordered by sequence. Look for steep drops between adjacent steps.
+                      Drop-off analysis, ordered by sequence. Look for steep drops between adjacent steps.
                     </Typography>
                   </Box>
                   <Divider />

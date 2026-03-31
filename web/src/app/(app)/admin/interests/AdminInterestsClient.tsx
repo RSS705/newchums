@@ -47,7 +47,7 @@ type SortField = "name" | "created_at";
 type SortDir = "asc" | "desc";
 
 function formatDate(iso: string | null): string {
-  if (!iso) return "—";
+  if (!iso) return "-";
   try {
     return new Date(iso).toLocaleDateString(undefined, {
       year: "numeric",
@@ -55,7 +55,7 @@ function formatDate(iso: string | null): string {
       day: "numeric",
     });
   } catch {
-    return "—";
+    return "-";
   }
 }
 
@@ -412,7 +412,7 @@ export default function AdminInterestsClient() {
                     </TableCell>
                     <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>
                       <Typography variant="body2" color="text.secondary">
-                        {row.category || "—"}
+                        {row.category || "-"}
                       </Typography>
                     </TableCell>
                     <TableCell>

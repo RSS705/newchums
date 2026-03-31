@@ -34,7 +34,7 @@ import PublicExploreFeed from "@/components/landing/PublicExploreFeed";
 
 const SECTION_SPACING = { py: { xs: 5, sm: 8, md: 10 } };
 
-// (Hero image placeholder — the right column of the hero section is an image frame
+// (Hero image placeholder, the right column of the hero section is an image frame
 //  ready to hold a screenshot or product photo. See the Grid item below.)
 
 // ── "How it works" four-step flow ────────────────────────────────────────────
@@ -45,7 +45,7 @@ const HOW_IT_WORKS_STEPS = [
     Icon: CalendarMonthRoundedIcon,
     title: "Create a plan",
     body: "Pick an activity and set the details.",
-    placeholder: "Screenshot — Create plan flow",
+    placeholder: "Screenshot, Create plan flow",
     imageSrc: "/images/home/how-step-create.png",
   },
   {
@@ -54,7 +54,7 @@ const HOW_IT_WORKS_STEPS = [
     Icon: MailOutlineRoundedIcon,
     title: "Invite people",
     body: "Share a link, send email invites, or even leave it open to new people nearby.",
-    placeholder: "Screenshot — Invite view",
+    placeholder: "Screenshot, Invite view",
     imageSrc: "/images/home/how-step-invite.png",
   },
   {
@@ -63,7 +63,7 @@ const HOW_IT_WORKS_STEPS = [
     Icon: EventAvailableRoundedIcon,
     title: "Gather responses",
     body: "Collect RSVPs, find the best time, and coordinate the details.",
-    placeholder: "Screenshot — RSVP & availability",
+    placeholder: "Screenshot, RSVP & availability",
     imageSrc: "/images/home/how-step-responses.png",
   },
   {
@@ -72,7 +72,7 @@ const HOW_IT_WORKS_STEPS = [
     Icon: PeopleRoundedIcon,
     title: "Meet up",
     body: "Everyone\u2019s confirmed, the details are set. Time to go.",
-    placeholder: "Screenshot — Plan details",
+    placeholder: "Screenshot, Plan details",
     imageSrc: "/images/home/how-step-meetup.png",
   },
 ];
@@ -140,7 +140,7 @@ const WHY_THIS_WORKS_CARDS: {
   },
 ];
 
-// ── "Features" section — curated highlight cards ────────────────────────────
+// ── "Features" section, curated highlight cards ────────────────────────────
 const FEATURES_TOP: {
   accentColor: string;
   Icon: typeof VisibilityRoundedIcon;
@@ -154,7 +154,7 @@ const FEATURES_TOP: {
     Icon: CalendarMonthRoundedIcon,
     title: "Smarter scheduling",
     body: (<>Let attendees suggest better times, or <Box component="span" sx={{ fontWeight: 700 }}>request everyone&apos;s availability</Box> and let the system find the best fit. Reminders and confirmations go out automatically.</>),
-    placeholder: "Screenshot — Availability / scheduling",
+    placeholder: "Screenshot, Availability / scheduling",
     imageSrc: "/images/home/feature-scheduling.png",
   },
   {
@@ -162,7 +162,7 @@ const FEATURES_TOP: {
     Icon: VisibilityRoundedIcon,
     title: "Privacy on your terms",
     body: "Plans can be public, chums-only, or invite-only. Location can be exact, approximate, or hidden until someone joins. You decide who sees what.",
-    placeholder: "Screenshot — Privacy controls",
+    placeholder: "Screenshot, Privacy controls",
     imageSrc: "/images/home/feature-privacy.png",
   },
 ];
@@ -173,7 +173,7 @@ const FEATURES_BOTTOM: typeof FEATURES_TOP = [
     Icon: ChatRoundedIcon,
     title: "Plan chat and updates",
     body: "Every plan has a built-in chat for quick hellos, coordination, and last-minute details. No separate group chat required.",
-    placeholder: "Screenshot — Plan chat",
+    placeholder: "Screenshot, Plan chat",
     imageSrc: "/images/home/feature-chat.png",
   },
   {
@@ -181,7 +181,7 @@ const FEATURES_BOTTOM: typeof FEATURES_TOP = [
     Icon: EventAvailableRoundedIcon,
     title: "Know who\u2019s actually coming",
     body: (<>24-hour reminders, <Box component="span" sx={{ fontWeight: 700 }}>final confirmations</Box>, and minimum-attendee thresholds so you never show up to an empty table.</>),
-    placeholder: "Screenshot — Confirmations",
+    placeholder: "Screenshot, Confirmations",
     imageSrc: "/images/home/feature-confirmations.png",
   },
   {
@@ -189,7 +189,7 @@ const FEATURES_BOTTOM: typeof FEATURES_TOP = [
     Icon: MailOutlineRoundedIcon,
     title: "Flexible invites and discovery",
     body: (<>Invite people by name or email, <Box component="span" sx={{ fontWeight: 700 }}>share a link</Box>, or let nearby people with matching hobbies discover your plan. Daily digests surface plans you&apos;d actually enjoy.</>),
-    placeholder: "Screenshot — Invites / discovery",
+    placeholder: "Screenshot, Invites / discovery",
     imageSrc: "/images/home/feature-invites.png",
   },
 ];
@@ -326,7 +326,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
             </Stack>
           </Grid>
 
-          {/* Right: hero image — desktop only, height matches left column */}
+          {/* Right: hero image, desktop only, height matches left column */}
           <Grid
             size={{ xs: 12, md: 6 }}
             sx={{
@@ -421,9 +421,9 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
             </Typography>
           </Box>
 
-          {/* Steps — alternating image / text rows */}
+          {/* Steps, alternating image / text rows */}
           <Stack spacing={{ xs: 4, sm: 6, md: 0 }} sx={{ position: "relative" }}>
-            {/* Vertical connector line — desktop only */}
+            {/* Vertical connector line, desktop only */}
             <Box
               aria-hidden="true"
               sx={{
@@ -457,7 +457,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                       spacing={{ xs: 2, sm: 4, md: 6 }}
                       alignItems="center"
                     >
-                      {/* Text column — always first on mobile */}
+                      {/* Text column, always first on mobile */}
                       <Grid
                         size={{ xs: 12, md: 5 }}
                         sx={{ order: { xs: 0, md: 0 } }}
@@ -512,7 +512,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                         </Stack>
                       </Grid>
 
-                      {/* Image column — below text on mobile, alternates on desktop */}
+                      {/* Image column, below text on mobile, alternates on desktop */}
                       <Grid
                         size={{ xs: 12, md: 7 }}
                         sx={{ order: { xs: 1, md: imageOnRight ? -1 : 1 } }}
@@ -663,7 +663,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
             </Typography>
           </Box>
 
-          {/* 2 featured cards — subgrid aligns text/image rows */}
+          {/* 2 featured cards, subgrid aligns text/image rows */}
           <Box
             sx={{
               display: "grid",
@@ -824,7 +824,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
             </Typography>
           </Box>
 
-          {/* 3 cards — subgrid aligns text/image rows */}
+          {/* 3 cards, subgrid aligns text/image rows */}
           <Box
             sx={{
               display: "grid",

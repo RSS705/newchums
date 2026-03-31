@@ -184,7 +184,7 @@ export default function SignupClient() {
         return;
       }
     } catch {
-      // Network error — let the user proceed; the server will catch duplicates at signup
+      // Network error, let the user proceed; the server will catch duplicates at signup
     } finally {
       setCheckingEmail(false);
     }

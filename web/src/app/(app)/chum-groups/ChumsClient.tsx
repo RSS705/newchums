@@ -609,7 +609,7 @@ function AddPrivateContactDialog({
       const data = await res.json() as { ok?: boolean; autoLinked?: boolean; type?: string };
       if (!data.ok) throw new Error();
       if (data.autoLinked) {
-        toast.success("This person already has an account — saved to On NewChums!");
+        toast.success("This person already has an account, saved to On NewChums!");
       } else {
         toast.success("Private contact added.");
       }
@@ -916,7 +916,7 @@ export default function ChumsClient() {
             </Typography>
           )}
 
-          {/* Invite / Add Private CTA — email entered, no eligible account found */}
+          {/* Invite / Add Private CTA, email entered, no eligible account found */}
           {hasSearched && inviteEligible && !searchLoading && (
             <Box
               sx={{

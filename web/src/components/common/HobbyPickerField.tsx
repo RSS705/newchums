@@ -149,7 +149,7 @@ export default function HobbyPickerField({
         onChange={(_event, newValue, reason) => {
           if (reason === "clear") return;
 
-          // "removeOption" — MUI removed a tag via backspace/delete.
+          // "removeOption", MUI removed a tag via backspace/delete.
           // Since we render tags externally and block backspace-delete, this shouldn't
           // normally fire, but handle it defensively.
           if (reason === "removeOption") {

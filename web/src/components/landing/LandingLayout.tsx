@@ -23,7 +23,7 @@ const APP_BAR_HEIGHT_MOBILE = 64;
 
 /**
  * Single source of truth for landing horizontal gutters.
- * Header, hero, and footer content all use this — no competing Containers.
+ * Header, hero, and footer content all use this, no competing Containers.
  */
 function LandingContainer({ children }: { children: ReactNode }) {
   return (
@@ -36,7 +36,7 @@ function LandingContainer({ children }: { children: ReactNode }) {
 /**
  * Layout for the public landing page (/).
  * Composes header, main content slot, and footer.
- * LandingContainer is the ONLY gutter source — sections do not add their own.
+ * LandingContainer is the ONLY gutter source, sections do not add their own.
  */
 export default function LandingLayout({
   children,

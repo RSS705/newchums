@@ -139,7 +139,7 @@ export default function PublicExploreFeed() {
         )}
       </Stack>
 
-      {/* Filter bar — hidden while showing sample fallback so filters don’t imply the examples respond to search */}
+      {/* Filter bar, hidden while showing sample fallback so filters don’t imply the examples respond to search */}
       {!showSampleFallback && (
         <Stack
           direction="row"

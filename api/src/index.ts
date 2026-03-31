@@ -257,13 +257,13 @@ app.use("*", async (c, next) => {
         403,
       );
     }
-    // Throttled activity tracking — at most once per hour per user
+    // Throttled activity tracking, at most once per hour per user
     const lastActive = rows[0]?.last_active_at ? new Date(rows[0].last_active_at).getTime() : 0;
     if (Date.now() - lastActive > 3_600_000) {
       sql`UPDATE newchums.users SET last_active_at = NOW() WHERE email = ${payload.email}`.catch(() => {});
     }
   } catch {
-    // If DB lookup fails, allow the request through — individual routes will fail safely.
+    // If DB lookup fails, allow the request through, individual routes will fail safely.
   }
   await next();
 });
@@ -1618,7 +1618,7 @@ async function requireAuth(c: { req: Request; env: Bindings }) {
   return verifyAuthToken(token, c.env.NEXTAUTH_SECRET);
 }
 
-// Invite tokens — allow one-click RSVP from email without requiring login.
+// Invite tokens, allow one-click RSVP from email without requiring login.
 // Token encodes the eventId + invitee identifier (userId or email) and is
 // signed with NEXTAUTH_SECRET. Valid for 30 days.
 const INVITE_TOKEN_EXPIRY_SECONDS = 30 * 24 * 60 * 60;
@@ -1653,7 +1653,7 @@ async function verifyInviteToken(
   }
 }
 
-// Public RSVP participation tokens — issued after email verification via 6-digit code.
+// Public RSVP participation tokens, issued after email verification via 6-digit code.
 // Structurally similar to invite tokens but with purpose "public_rsvp".
 // Valid for 30 days (same as invite tokens).
 
@@ -1736,7 +1736,7 @@ function verifyParticipationOrInviteToken(
     .catch(() => null);
 }
 
-// Share tokens — plan-level tokens for Copy Link / share URLs.
+// Share tokens, plan-level tokens for Copy Link / share URLs.
 // Not user-specific; anyone with the token can view the full plan detail
 // and use the public RSVP flow. Deterministic per event (no expiry).
 // Uses a short HMAC instead of a full JWT to keep share URLs compact.
@@ -1764,7 +1764,7 @@ function generateSixDigitCode(): string {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
 
-// Unsubscribe tokens — allow one-click email preference opt-out without requiring login.
+// Unsubscribe tokens, allow one-click email preference opt-out without requiring login.
 // Token encodes the userId + notification key and is signed with NEXTAUTH_SECRET.
 // Valid for 90 days.
 const UNSUBSCRIBE_TOKEN_EXPIRY_SECONDS = 90 * 24 * 60 * 60;
@@ -1797,7 +1797,7 @@ async function verifyUnsubscribeToken(
   }
 }
 
-// Confirmation tokens — allow one-click attendance confirmation from email.
+// Confirmation tokens, allow one-click attendance confirmation from email.
 // Token encodes eventId + userId, signed with NEXTAUTH_SECRET. Valid for 7 days.
 const CONFIRMATION_TOKEN_EXPIRY_SECONDS = 7 * 24 * 60 * 60;
 
@@ -1954,7 +1954,7 @@ app.put("/notification-preferences", async (c) => {
   }
 });
 
-/** POST /email/unsubscribe — one-click unsubscribe from a specific notification type via token.
+/** POST /email/unsubscribe, one-click unsubscribe from a specific notification type via token.
  *  No authentication required; the signed JWT token is the credential.
  */
 app.post("/email/unsubscribe", async (c) => {
@@ -2078,7 +2078,7 @@ app.get("/profile", async (c) => {
     const avatarKey = userInfo?.avatar_key ?? null;
     const avatarUpdatedAt = userInfo?.avatar_updated_at;
     // Return avatar_url when avatar_key is set. Client uses getAvatarBaseUrl() which may point to a
-    // different API (e.g. prod when sharing DB), so we don't check R2 here—avoids empty avatar_url
+    // different API (e.g. prod when sharing DB), so we don't check R2 here; avoids empty avatar_url
     // when local API has different R2 than where uploads were written.
     const avatarUrl =
       avatarKey && c.env.MEDIA_BUCKET
@@ -3597,7 +3597,7 @@ app.delete("/admin/interests/:id", async (c) => {
       WHERE id = ${id}
     `;
 
-    // Remove all user connections — caller should merge first if they want to preserve them
+    // Remove all user connections, caller should merge first if they want to preserve them
     await sql`DELETE FROM user_interests WHERE interest_id = ${id}`;
 
     return c.json({ ok: true });
@@ -3783,7 +3783,7 @@ app.post("/admin/users/:id/unsuspend", async (c) => {
 
 // ─── Admin user diagnostics (chum metrics / feedback inspection) ─────────────
 
-/** GET /admin/users/:id/diagnostics — super-admin-only per-user metric diagnostics */
+/** GET /admin/users/:id/diagnostics, super-admin-only per-user metric diagnostics */
 app.get("/admin/users/:id/diagnostics", async (c) => {
   const admin = await requireSuperAdmin(c);
   if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
@@ -3855,7 +3855,7 @@ app.get("/admin/users/:id/diagnostics", async (c) => {
       ORDER BY reason
     `) as { reason: string; count: number }[];
 
-    // Feedback received (anonymized — no reporter identity)
+    // Feedback received (anonymized, no reporter identity)
     const feedbackReceived = (await sql`
       SELECT prompt, response, COUNT(*)::int AS count
       FROM newchums.plan_feedback
@@ -3984,7 +3984,7 @@ app.get("/admin/users/:id/diagnostics", async (c) => {
   }
 });
 
-/** PUT /admin/users/:id/metrics — super-admin-only: manually set a user's hidden metric score */
+/** PUT /admin/users/:id/metrics, super-admin-only: manually set a user's hidden metric score */
 app.put("/admin/users/:id/metrics", async (c) => {
   const admin = await requireSuperAdmin(c);
   if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
@@ -4037,7 +4037,7 @@ app.put("/admin/users/:id/metrics", async (c) => {
   }
 });
 
-/** PUT /admin/attendance-issues/:id/status — super-admin: dismiss or confirm an attendance issue */
+/** PUT /admin/attendance-issues/:id/status, super-admin: dismiss or confirm an attendance issue */
 app.put("/admin/attendance-issues/:id/status", async (c) => {
   const admin = await requireSuperAdmin(c);
   if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
@@ -4070,7 +4070,7 @@ app.put("/admin/attendance-issues/:id/status", async (c) => {
 
 // ─── Admin concern reports ───────────────────────────────────────────────────
 
-/** GET /admin/concern-reports — list all concern/conduct reports */
+/** GET /admin/concern-reports, list all concern/conduct reports */
 app.get("/admin/concern-reports", async (c) => {
   const admin = await requireSuperAdmin(c);
   if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
@@ -4148,7 +4148,7 @@ app.get("/admin/concern-reports", async (c) => {
   }
 });
 
-/** PUT /admin/concern-reports/:id/status — update concern report status */
+/** PUT /admin/concern-reports/:id/status, update concern report status */
 app.put("/admin/concern-reports/:id/status", async (c) => {
   const admin = await requireSuperAdmin(c);
   if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
@@ -4178,7 +4178,7 @@ app.put("/admin/concern-reports/:id/status", async (c) => {
 
 // ─── Admin badge counts & mark-viewed ────────────────────────────────────────
 
-/** GET /admin/badge-counts — returns new-item counts since admin last viewed each section */
+/** GET /admin/badge-counts, returns new-item counts since admin last viewed each section */
 app.get("/admin/badge-counts", async (c) => {
   const admin = await requireSuperAdmin(c);
   if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
@@ -4218,7 +4218,7 @@ app.get("/admin/badge-counts", async (c) => {
   }
 });
 
-/** POST /admin/mark-viewed — mark a section as viewed */
+/** POST /admin/mark-viewed, mark a section as viewed */
 app.post("/admin/mark-viewed", async (c) => {
   const admin = await requireSuperAdmin(c);
   if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
@@ -4244,7 +4244,7 @@ app.post("/admin/mark-viewed", async (c) => {
   }
 });
 
-/** GET /admin/plans — list all plans for admin moderation */
+/** GET /admin/plans, list all plans for admin moderation */
 app.get("/admin/plans", async (c) => {
   const admin = await requireSuperAdmin(c);
   if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
@@ -4289,7 +4289,7 @@ app.get("/admin/plans", async (c) => {
   }
 });
 
-/** POST /admin/plans/:id/remove — admin hard-deletes an event and notifies the host */
+/** POST /admin/plans/:id/remove, admin hard-deletes an event and notifies the host */
 app.post("/admin/plans/:id/remove", async (c) => {
   const admin = await requireSuperAdmin(c);
   if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
@@ -4589,7 +4589,7 @@ app.get("/admin/kpis", async (c) => {
 
 // ---- Objectives / nudge framework ----
 
-/** GET /objectives/next — returns the next best step for the authenticated user */
+/** GET /objectives/next, returns the next best step for the authenticated user */
 app.get("/objectives/next", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
@@ -4616,7 +4616,7 @@ app.get("/objectives/next", async (c) => {
   }
 });
 
-/** PUT /objectives/tutorial-off — permanently turn off tutorial nudges */
+/** PUT /objectives/tutorial-off, permanently turn off tutorial nudges */
 app.put("/objectives/tutorial-off", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
@@ -4634,7 +4634,7 @@ app.put("/objectives/tutorial-off", async (c) => {
   }
 });
 
-/** PUT /share-link-modal-dismiss — permanently dismiss the share-link first-use info modal */
+/** PUT /share-link-modal-dismiss, permanently dismiss the share-link first-use info modal */
 app.put("/share-link-modal-dismiss", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
@@ -4650,7 +4650,7 @@ app.put("/share-link-modal-dismiss", async (c) => {
   }
 });
 
-/** GET /admin/objectives/kpi — aggregate objective completion metrics (super admin) */
+/** GET /admin/objectives/kpi, aggregate objective completion metrics (super admin) */
 app.get("/admin/objectives/kpi", async (c) => {
   const admin = await requireSuperAdmin(c);
   if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
@@ -4753,7 +4753,7 @@ function buildAvatarUrl(
   return `/users/${userId}/avatar?v=${ts}`;
 }
 
-/** GET /chums — list all contacts for the authenticated user (private).
+/** GET /chums, list all contacts for the authenticated user (private).
  *  Returns both On NewChums and Private Contact entries. */
 app.get("/chums", async (c) => {
   const payload = await requireAuth(c);
@@ -4818,7 +4818,7 @@ app.get("/chums", async (c) => {
   }
 });
 
-/** PATCH /chums/:contactId/note — save or clear the private note for any contact entry.
+/** PATCH /chums/:contactId/note, save or clear the private note for any contact entry.
  *  Accepts a real contact UUID or a "temp-{userId}" style ID (optimistic frontend ID)
  *  and falls back to linked_user_id lookup when needed. */
 app.patch("/chums/:contactId/note", async (c) => {
@@ -4869,7 +4869,7 @@ app.patch("/chums/:contactId/note", async (c) => {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/** GET /chums/search?q= — search users to add as a connection or private contact.
+/** GET /chums/search?q=, search users to add as a connection or private contact.
  *  Excludes self and users with is_hidden_from_search = true.
  *  If q looks like an email, performs exact email lookup instead of name/handle search.
  *  Returns up to 10 results with isSaved; for email lookups also returns inviteEligible
@@ -4986,7 +4986,7 @@ app.get("/chums/search", async (c) => {
   }
 });
 
-/** GET /chums/check/:userId — returns whether the authenticated user has this person saved. */
+/** GET /chums/check/:userId, returns whether the authenticated user has this person saved. */
 app.get("/chums/check/:userId", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string") {
@@ -5010,7 +5010,7 @@ app.get("/chums/check/:userId", async (c) => {
   }
 });
 
-/** POST /chums/private — add a private contact (off-platform person for planning).
+/** POST /chums/private, add a private contact (off-platform person for planning).
  *  If the email matches an existing user, auto-creates as on_newchums instead. */
 app.post("/chums/private", async (c) => {
   const payload = await requireAuth(c);
@@ -5071,7 +5071,7 @@ app.post("/chums/private", async (c) => {
   }
 });
 
-/** POST /chums/invite — send a NewChums invite email to an address not yet on NewChums.
+/** POST /chums/invite, send a NewChums invite email to an address not yet on NewChums.
  *  Also creates a Private Contact entry for the invitee if one doesn't exist.
  *  Prevents duplicate pending invites. Rate limit: 10 invites per inviter per 24 h. */
 app.post("/chums/invite", async (c) => {
@@ -5164,7 +5164,7 @@ app.post("/chums/invite", async (c) => {
   }
 });
 
-/** POST /chums/invite/accept — consume an invite token after account creation.
+/** POST /chums/invite/accept, consume an invite token after account creation.
  *  Creates two independent on_newchums entries (inviter → new user, new user → inviter).
  *  Also auto-links any Private Contacts matching the new user's email across all users. */
 app.post("/chums/invite/accept", async (c) => {
@@ -5247,7 +5247,7 @@ app.post("/chums/invite/accept", async (c) => {
   }
 });
 
-/** POST /chums/:userId — save an on-platform user to the authenticated user's connections. */
+/** POST /chums/:userId, save an on-platform user to the authenticated user's connections. */
 app.post("/chums/:userId", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string") {
@@ -5281,7 +5281,7 @@ app.post("/chums/:userId", async (c) => {
   }
 });
 
-/** DELETE /chums/:id — remove a contact entry by contact ID, linked user ID, or temp-{userId}. */
+/** DELETE /chums/:id, remove a contact entry by contact ID, linked user ID, or temp-{userId}. */
 app.delete("/chums/:id", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string") {
@@ -5314,7 +5314,7 @@ app.delete("/chums/:id", async (c) => {
   }
 });
 
-/** GET /notifications — fetch recent notifications for the authenticated user. */
+/** GET /notifications, fetch recent notifications for the authenticated user. */
 app.get("/notifications", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string") {
@@ -5424,8 +5424,8 @@ app.get("/notifications", async (c) => {
   }
 });
 
-/** POST /notifications/read — mark notifications as read.
- *  Body: { ids?: string[] } — if ids omitted or empty, marks all unread as read. */
+/** POST /notifications/read, mark notifications as read.
+ *  Body: { ids?: string[] }, if ids omitted or empty, marks all unread as read. */
 app.post("/notifications/read", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string") {
@@ -5458,7 +5458,7 @@ app.post("/notifications/read", async (c) => {
   }
 });
 
-/** GET /public/users/:handle/chums — public-facing paginated Chum list for a profile.
+/** GET /public/users/:handle/chums, public-facing paginated Chum list for a profile.
  *  Respects owner's is_hidden_chum_list and each Chum's is_hidden_from_chum_lists flag. */
 app.get("/public/users/:handle/chums", async (c) => {
   const handleParam = c.req.param("handle")?.trim();
@@ -5542,7 +5542,7 @@ const VALID_COMMUNITY_VISIBILITY = ["public", "private"] as const;
 const VALID_COMMUNITY_JOIN_MODE = ["open", "approval_required"] as const;
 const COMMUNITY_SLUG_RE = /^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$/;
 
-/** POST /communities — create a community */
+/** POST /communities, create a community */
 app.post("/communities", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
@@ -5595,7 +5595,7 @@ app.post("/communities", async (c) => {
   }
 });
 
-/** GET /communities — list/search communities */
+/** GET /communities, list/search communities */
 app.get("/communities", async (c) => {
   const payload = await requireAuth(c);
   const sql = getSql(c.env);
@@ -5645,7 +5645,7 @@ app.get("/communities", async (c) => {
   }
 });
 
-/** GET /communities/slug-available — check slug availability */
+/** GET /communities/slug-available, check slug availability */
 app.get("/communities/slug-available", async (c) => {
   const slug = (c.req.query("slug") ?? "").trim().toLowerCase();
   if (!COMMUNITY_SLUG_RE.test(slug)) return c.json({ ok: true, available: false });
@@ -5654,7 +5654,7 @@ app.get("/communities/slug-available", async (c) => {
   return c.json({ ok: true, available: rows.length === 0 });
 });
 
-/** GET /communities/:slug — community detail */
+/** GET /communities/:slug, community detail */
 app.get("/communities/:slug", async (c) => {
   const slug = c.req.param("slug");
   const payload = await requireAuth(c);
@@ -5760,7 +5760,7 @@ app.get("/communities/:slug", async (c) => {
   }
 });
 
-/** PATCH /communities/:slug — update community (owner or super admin) */
+/** PATCH /communities/:slug, update community (owner or super admin) */
 app.patch("/communities/:slug", async (c) => {
   const slug = c.req.param("slug");
   const payload = await requireAuth(c);
@@ -5830,7 +5830,7 @@ app.patch("/communities/:slug", async (c) => {
   }
 });
 
-/** POST /communities/:slug/close — soft-close a community (owner or super admin) */
+/** POST /communities/:slug/close, soft-close a community (owner or super admin) */
 app.post("/communities/:slug/close", async (c) => {
   const slug = c.req.param("slug");
   const payload = await requireAuth(c);
@@ -5856,7 +5856,7 @@ app.post("/communities/:slug/close", async (c) => {
   }
 });
 
-/** DELETE /communities/:slug — remove community (owner or super admin) */
+/** DELETE /communities/:slug, remove community (owner or super admin) */
 app.delete("/communities/:slug", async (c) => {
   const slug = c.req.param("slug");
   const payload = await requireAuth(c);
@@ -5881,7 +5881,7 @@ app.delete("/communities/:slug", async (c) => {
 
 // ─── Community membership ───────────────────────────────────────────────────
 
-/** POST /communities/:id/join — join or request to join */
+/** POST /communities/:id/join, join or request to join */
 app.post("/communities/:id/join", async (c) => {
   const communityId = c.req.param("id");
   const payload = await requireAuth(c);
@@ -5935,7 +5935,7 @@ app.post("/communities/:id/join", async (c) => {
   }
 });
 
-/** POST /communities/:id/leave — leave community */
+/** POST /communities/:id/leave, leave community */
 app.post("/communities/:id/leave", async (c) => {
   const communityId = c.req.param("id");
   const payload = await requireAuth(c);
@@ -5958,7 +5958,7 @@ app.post("/communities/:id/leave", async (c) => {
   }
 });
 
-/** GET /communities/:id/members — list members */
+/** GET /communities/:id/members, list members */
 app.get("/communities/:id/members", async (c) => {
   const communityId = c.req.param("id");
   const payload = await requireAuth(c);
@@ -6004,7 +6004,7 @@ app.get("/communities/:id/members", async (c) => {
   }
 });
 
-/** POST /communities/:id/members/:userId/remove — remove member (owner/super admin) */
+/** POST /communities/:id/members/:userId/remove, remove member (owner/super admin) */
 app.post("/communities/:id/members/:userId/remove", async (c) => {
   const communityId = c.req.param("id");
   const targetUserId = c.req.param("userId");
@@ -6029,7 +6029,7 @@ app.post("/communities/:id/members/:userId/remove", async (c) => {
   }
 });
 
-/** PUT /communities/:id/join-requests/:requestId — approve or decline */
+/** PUT /communities/:id/join-requests/:requestId, approve or decline */
 app.put("/communities/:id/join-requests/:requestId", async (c) => {
   const communityId = c.req.param("id");
   const requestId = c.req.param("requestId");
@@ -6093,7 +6093,7 @@ app.put("/communities/:id/join-requests/:requestId", async (c) => {
   }
 });
 
-/** GET /communities/:id/join-requests — list pending requests (owner/super admin) */
+/** GET /communities/:id/join-requests, list pending requests (owner/super admin) */
 app.get("/communities/:id/join-requests", async (c) => {
   const communityId = c.req.param("id");
   const payload = await requireAuth(c);
@@ -6123,7 +6123,7 @@ app.get("/communities/:id/join-requests", async (c) => {
   }
 });
 
-/** GET /communities/:id/events — community plan feed */
+/** GET /communities/:id/events, community plan feed */
 app.get("/communities/:id/events", async (c) => {
   const communityId = c.req.param("id");
   const payload = await requireAuth(c);
@@ -6244,7 +6244,7 @@ app.get("/communities/:id/events", async (c) => {
 
 // ─── Admin communities ──────────────────────────────────────────────────────
 
-/** GET /admin/communities — list all communities (super admin) */
+/** GET /admin/communities, list all communities (super admin) */
 app.get("/admin/communities", async (c) => {
   const admin = await requireSuperAdmin(c);
   if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
@@ -6274,7 +6274,7 @@ app.get("/admin/communities", async (c) => {
   }
 });
 
-/** POST /admin/communities/:id/remove — admin removes a community */
+/** POST /admin/communities/:id/remove, admin removes a community */
 app.post("/admin/communities/:id/remove", async (c) => {
   const admin = await requireSuperAdmin(c);
   if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
@@ -6310,7 +6310,7 @@ function buildLocationDisplay(name: string | null, address: string | null): stri
   return `${n}, ${a}`;
 }
 
-/** Location line for event-match digest emails — aligns with GET /events/:id display rules (non-host). */
+/** Location line for event-match digest emails, aligns with GET /events/:id display rules (non-host). */
 function formatEventMatchDigestLocation(p: {
   locationName: string | null;
   locationAddress: string | null;
@@ -6358,7 +6358,7 @@ function deriveApproxArea(address: string | null): string | null {
   return areaParts.filter(Boolean).join(", ") || null;
 }
 
-/** POST /events — create a new event/plan */
+/** POST /events, create a new event/plan */
 app.post("/events", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -6460,7 +6460,7 @@ app.post("/events", async (c) => {
         SELECT 1 FROM newchums.community_members WHERE community_id = ${communityId} AND user_id = ${userId} AND status = 'active' LIMIT 1
       `) as unknown[];
       if (cmRows.length === 0) return c.json({ ok: false, error: "VALIDATION", message: "You must be a member of the community", field: "community_id" }, 400);
-    } catch { /* community validation failure is non-fatal — will fail at INSERT FK */ }
+    } catch { /* community validation failure is non-fatal, will fail at INSERT FK */ }
   }
 
   try {
@@ -6472,7 +6472,7 @@ app.post("/events", async (c) => {
       if (rows.length > 0 && !resolvedInterestIds.includes(iid)) resolvedInterestIds.push(iid);
     }
 
-    // Process interest_items — create missing interests then collect IDs
+    // Process interest_items, create missing interests then collect IDs
     if (rawInterestItems.length > 0) {
       const slugsToResolve: { slug: string; name: string }[] = [];
       for (const it of rawInterestItems) {
@@ -6525,9 +6525,9 @@ app.post("/events", async (c) => {
           } else if (existing.merged_into_interest_id) {
             const target = mergeTargetById.get(existing.merged_into_interest_id);
             if (target && !target.is_deleted) resolvedId = target.id;
-            // else: merged target also gone — skip silently
+            // else: merged target also gone, skip silently
           }
-          // else: deleted with no merge target — skip silently
+          // else: deleted with no merge target, skip silently
 
           if (resolvedId && !resolvedInterestIds.includes(resolvedId)) {
             resolvedInterestIds.push(resolvedId);
@@ -6631,7 +6631,7 @@ app.post("/events", async (c) => {
                 eventLocation: locationType === "online" ? (onlineLink || "Online") : buildLocationDisplay(locationName, locationAddress),
                 eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
                 inviteToken: iToken,
-                // No unsubscribeUrl for email-only guests — they have no account to update prefs on
+                // No unsubscribeUrl for email-only guests, they have no account to update prefs on
               });
             } catch { /* noop if template missing */ }
           }
@@ -6652,7 +6652,7 @@ app.post("/events", async (c) => {
   }
 });
 
-/** GET /events/mine — list events I host or am invited to / RSVPd */
+/** GET /events/mine, list events I host or am invited to / RSVPd */
 app.get("/events/mine", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -6778,7 +6778,7 @@ app.get("/events/mine", async (c) => {
   }
 });
 
-/** GET /events/explore/public — public event discovery feed for anonymous visitors.
+/** GET /events/explore/public, public event discovery feed for anonymous visitors.
  *  No auth required. Only returns public-visibility events with privacy-safe data. */
 app.get("/events/explore/public", async (c) => {
   const sql = getSql(c.env);
@@ -6894,7 +6894,7 @@ app.get("/events/explore/public", async (c) => {
   }
 });
 
-/** GET /events/explore — discoverable events for the logged-in user.
+/** GET /events/explore, discoverable events for the logged-in user.
  *  MUST be registered before /events/:id to prevent "explore" being parsed as a UUID. */
 app.get("/events/explore", async (c) => {
   const payload = await requireAuth(c);
@@ -7191,7 +7191,7 @@ app.get("/events/explore", async (c) => {
   }
 });
 
-/** GET /events/:id — event details */
+/** GET /events/:id, event details */
 app.get("/events/:id", async (c) => {
   const eventId = c.req.param("id");
   const sql = getSql(c.env);
@@ -7224,7 +7224,7 @@ app.get("/events/:id", async (c) => {
         if (decoded.email) {
           tokenGuestEmail = decoded.email.toLowerCase();
         } else if (decoded.userId) {
-          // Invite token for a registered user opened while not logged in —
+          // Invite token for a registered user opened while not logged in,
           // resolve their email so the guest-invite path can identify them.
           const tokenUserRows = (await sql`SELECT email FROM newchums.users WHERE id = ${decoded.userId} LIMIT 1`) as { email: string }[];
           if (tokenUserRows[0]) tokenGuestEmail = tokenUserRows[0].email.toLowerCase();
@@ -7312,7 +7312,7 @@ app.get("/events/:id", async (c) => {
     // Visibility controls discoverability (explore feed, digests), not direct URL access.
     // Anyone with the plan URL can view it. Draft plans remain host-only (above).
 
-    // Hobbies — needed by both public and non-public response paths
+    // Hobbies, needed by both public and non-public response paths
     const eventHobbies = (await sql`
       SELECT ii.name, ii.slug
       FROM newchums.event_interests ei2
@@ -7342,7 +7342,7 @@ app.get("/events/:id", async (c) => {
           : tokenGrantsAccess ? "invite"
             : "public";
 
-    // Public access: return a limited payload — basic plan info, attendee counts,
+    // Public access: return a limited payload, basic plan info, attendee counts,
     // approximate location only. No individual RSVPs, invites, alt-times, or join requests.
     if (accessState === "public") {
       const goingCount = ((await sql`SELECT COUNT(*) AS c FROM newchums.event_rsvps WHERE event_id = ${eventId} AND status = 'going'`) as Array<{ c: string }>)[0]?.c ?? "0";
@@ -7441,7 +7441,7 @@ app.get("/events/:id", async (c) => {
       ORDER BY ei.created_at ASC
     `) as Array<{ user_id: string | null; email: string | null; name: string | null; username: string | null }>;
 
-    // Join requests — return all for host, or just the viewer's own request
+    // Join requests, return all for host, or just the viewer's own request
     let joinRequests: Array<{
       id: string; user_id: string; status: string;
       message: string | null; host_message: string | null;
@@ -7479,7 +7479,7 @@ app.get("/events/:id", async (c) => {
         ? ((await sql`SELECT 1 FROM newchums.event_invites WHERE event_id = ${eventId} AND LOWER(email) = ${tokenGuestEmail} LIMIT 1`) as unknown[]).length > 0
         : false;
 
-    // Attendance assurance — confirmation state
+    // Attendance assurance, confirmation state
     const requiresConfirmation = event.require_reconfirmation === true;
     let confirmations: Array<{ user_id: string; status: string; responded_at: string | null }> = [];
     let confirmationWindowOpen = false;
@@ -7680,7 +7680,7 @@ app.get("/events/:id", async (c) => {
   }
 });
 
-/** POST /events/:id/rsvp — RSVP to an event */
+/** POST /events/:id/rsvp, RSVP to an event */
 app.post("/events/:id/rsvp", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -7811,7 +7811,7 @@ app.post("/events/:id/rsvp", async (c) => {
   }
 });
 
-/** POST /events/:id/email-rsvp — RSVP via signed invite token or public participation token (no login required) */
+/** POST /events/:id/email-rsvp, RSVP via signed invite token or public participation token (no login required) */
 app.post("/events/:id/email-rsvp", async (c) => {
   const eventId = c.req.param("id");
   let body: Record<string, unknown>;
@@ -7861,7 +7861,7 @@ app.post("/events/:id/email-rsvp", async (c) => {
     }
 
     if (isGuest) {
-      // Guest RSVP path — no user account
+      // Guest RSVP path, no user account
       const existingGuest = (await sql`SELECT id FROM newchums.event_rsvps WHERE event_id = ${eventId} AND guest_email = ${guestEmail} AND user_id IS NULL`) as { id: string }[];
 
       if (event.locked_at && existingGuest.length === 0)
@@ -7962,7 +7962,7 @@ app.post("/events/:id/email-rsvp", async (c) => {
 
 // ─── Public RSVP (share-link visitors) ────────────────────────────────────────
 
-/** POST /events/:id/public-rsvp/request-code — send a 6-digit verification code to the visitor's email */
+/** POST /events/:id/public-rsvp/request-code, send a 6-digit verification code to the visitor's email */
 app.post("/events/:id/public-rsvp/request-code", async (c) => {
   const eventId = c.req.param("id");
   let body: Record<string, unknown>;
@@ -7972,7 +7972,7 @@ app.post("/events/:id/public-rsvp/request-code", async (c) => {
   if (!rawEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail))
     return c.json({ ok: false, error: "VALIDATION", message: "Please enter a valid email address" }, 400);
 
-  // Validate share token if provided — allows the public RSVP flow for
+  // Validate share token if provided, allows the public RSVP flow for
   // non-public-visibility plans when the user has a valid share link.
   const shareTokenParam = typeof body.share_token === "string" ? body.share_token : null;
   let hasShareAccess = false;
@@ -8012,7 +8012,7 @@ app.post("/events/:id/public-rsvp/request-code", async (c) => {
   }
 });
 
-/** POST /events/:id/public-rsvp/confirm-code — verify the 6-digit code and issue a participation token */
+/** POST /events/:id/public-rsvp/confirm-code, verify the 6-digit code and issue a participation token */
 app.post("/events/:id/public-rsvp/confirm-code", async (c) => {
   const eventId = c.req.param("id");
   let body: Record<string, unknown>;
@@ -8041,7 +8041,7 @@ app.post("/events/:id/public-rsvp/confirm-code", async (c) => {
   }
 });
 
-/** POST /events/:id/confirm — logged-in user confirms or declines attendance */
+/** POST /events/:id/confirm, logged-in user confirms or declines attendance */
 app.post("/events/:id/confirm", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -8110,7 +8110,7 @@ app.post("/events/:id/confirm", async (c) => {
       return c.json({ ok: false, error: "NO_CONFIRMATION", message: "No pending confirmation found for this plan." }, 404);
     }
 
-    // If host declines, that's effectively a cancel intent — but don't auto-cancel here.
+    // If host declines, that's effectively a cancel intent, but don't auto-cancel here.
     // The host can use the cancel flow separately.
 
     await markConfirmationRequestedNotificationsRead(sql, userId, eventId);
@@ -8121,7 +8121,7 @@ app.post("/events/:id/confirm", async (c) => {
   }
 });
 
-/** POST /events/:id/email-confirm — token-based attendance confirmation from email */
+/** POST /events/:id/email-confirm, token-based attendance confirmation from email */
 app.post("/events/:id/email-confirm", async (c) => {
   const eventId = c.req.param("id");
   let body: Record<string, unknown>;
@@ -8170,7 +8170,7 @@ app.post("/events/:id/email-confirm", async (c) => {
   }
 });
 
-/** PATCH /events/:id/alt-time/:altTimeId — edit own alternate time entry */
+/** PATCH /events/:id/alt-time/:altTimeId, edit own alternate time entry */
 app.patch("/events/:id/alt-time/:altTimeId", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -8226,7 +8226,7 @@ app.patch("/events/:id/alt-time/:altTimeId", async (c) => {
   }
 });
 
-/** DELETE /events/:id/alt-time/:altTimeId — delete own entry (or host can delete any) */
+/** DELETE /events/:id/alt-time/:altTimeId, delete own entry (or host can delete any) */
 app.delete("/events/:id/alt-time/:altTimeId", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -8256,7 +8256,7 @@ app.delete("/events/:id/alt-time/:altTimeId", async (c) => {
   }
 });
 
-/** POST /events/:id/alt-time — add an alternate time */
+/** POST /events/:id/alt-time, add an alternate time */
 app.post("/events/:id/alt-time", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -8336,7 +8336,7 @@ app.post("/events/:id/alt-time", async (c) => {
   }
 });
 
-/** POST /events/:id/guest-alt-time — guest (invite-token or participation token) alternate time suggestion */
+/** POST /events/:id/guest-alt-time, guest (invite-token or participation token) alternate time suggestion */
 app.post("/events/:id/guest-alt-time", async (c) => {
   const eventId = c.req.param("id");
   let body: Record<string, unknown>;
@@ -8402,7 +8402,7 @@ app.post("/events/:id/guest-alt-time", async (c) => {
   }
 });
 
-/** POST /events/:id/promote-alt-time — host promotes an alternate time to official starts_at */
+/** POST /events/:id/promote-alt-time, host promotes an alternate time to official starts_at */
 app.post("/events/:id/promote-alt-time", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -8535,11 +8535,11 @@ async function notifyAttendeesPlanChanged(
         eventLocation,
         unsubscribeUrl,
       });
-    } catch { /* noop — never let email failure break the host's action */ }
+    } catch { /* noop, never let email failure break the host's action */ }
   }
 }
 
-/** PATCH /events/:id — edit core event fields (host only, published events) */
+/** PATCH /events/:id, edit core event fields (host only, published events) */
 app.patch("/events/:id", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -8609,7 +8609,7 @@ app.patch("/events/:id", async (c) => {
     }
     const patchReserveSeats = body.reserve_seats != null ? body.reserve_seats === true : undefined;
 
-    // Location fields (optional — only processed if location_type is present in the body)
+    // Location fields (optional, only processed if location_type is present in the body)
     const hasLocationUpdate = "location_type" in body;
     let patchLocationType: string | undefined;
     let patchLocationName: string | null | undefined;
@@ -8743,7 +8743,7 @@ app.patch("/events/:id", async (c) => {
     const effectiveTz = patchTimezone ?? before.timezone ?? "UTC";
     const changes: PlanChangeItem[] = [];
     const VIS_LABEL: Record<string, string> = { public: "Public", chums_only: "Chums only", invite_only: "Invite only" };
-    const truncate = (s: string | null, n: number): string => s ? (s.length > n ? s.slice(0, n) + "…" : s) : "—";
+    const truncate = (s: string | null, n: number): string => s ? (s.length > n ? s.slice(0, n) + "…" : s) : "(none)";
 
     if (before.title !== rawTitle)
       changes.push({ fieldName: "Title", oldValue: before.title, newValue: rawTitle });
@@ -8856,7 +8856,7 @@ app.patch("/events/:id", async (c) => {
   }
 });
 
-/** POST /events/:id/cancel — cancel an event (host only) */
+/** POST /events/:id/cancel, cancel an event (host only) */
 app.post("/events/:id/cancel", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -8884,7 +8884,7 @@ app.post("/events/:id/cancel", async (c) => {
   }
 });
 
-/** POST /events/:id/remove-attendee — host removes an attendee from a plan */
+/** POST /events/:id/remove-attendee, host removes an attendee from a plan */
 app.post("/events/:id/remove-attendee", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -8972,7 +8972,7 @@ app.post("/events/:id/remove-attendee", async (c) => {
   }
 });
 
-/** POST /events/:id/remove-invite — host revokes a pending invite */
+/** POST /events/:id/remove-invite, host revokes a pending invite */
 app.post("/events/:id/remove-invite", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -9045,7 +9045,7 @@ app.post("/events/:id/remove-invite", async (c) => {
   }
 });
 
-/** POST /events/:id/invite — add invitees to a published event (host or Going attendees) */
+/** POST /events/:id/invite, add invitees to a published event (host or Going attendees) */
 app.post("/events/:id/invite", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -9192,7 +9192,7 @@ async function checkChatAccess(
   return { allowed: false, event, reason: "NOT_PARTICIPANT" };
 }
 
-/** GET /events/:id/chat/ws — WebSocket upgrade for real-time plan chat */
+/** GET /events/:id/chat/ws, WebSocket upgrade for real-time plan chat */
 app.get("/events/:id/chat/ws", async (c) => {
   const upgradeHeader = c.req.header("Upgrade");
   if (!upgradeHeader || upgradeHeader.toLowerCase() !== "websocket") {
@@ -9236,7 +9236,7 @@ app.get("/events/:id/chat/ws", async (c) => {
   return doStub.fetch(doRequest);
 });
 
-/** GET /events/:id/chat — fetch chat messages for a plan */
+/** GET /events/:id/chat, fetch chat messages for a plan */
 app.get("/events/:id/chat", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -9295,7 +9295,7 @@ app.get("/events/:id/chat", async (c) => {
   }
 });
 
-/** POST /events/:id/chat — send a chat message */
+/** POST /events/:id/chat, send a chat message */
 app.post("/events/:id/chat", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -9368,7 +9368,7 @@ app.post("/events/:id/chat", async (c) => {
   }
 });
 
-/** POST /events/:id/chat/read — mark chat as read */
+/** POST /events/:id/chat/read, mark chat as read */
 app.post("/events/:id/chat/read", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -9398,7 +9398,7 @@ app.post("/events/:id/chat/read", async (c) => {
   }
 });
 
-/** POST /events/:id/lock — toggle plan lock (host only) */
+/** POST /events/:id/lock, toggle plan lock (host only) */
 app.post("/events/:id/lock", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -9438,7 +9438,7 @@ app.post("/events/:id/lock", async (c) => {
   }
 });
 
-/** POST /events/:id/reserve-seats — toggle reserve seats for invites (host only) */
+/** POST /events/:id/reserve-seats, toggle reserve seats for invites (host only) */
 app.post("/events/:id/reserve-seats", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -9463,7 +9463,7 @@ app.post("/events/:id/reserve-seats", async (c) => {
   }
 });
 
-/** POST /events/:id/toggle-attendee-invites — host toggles whether Going attendees can invite */
+/** POST /events/:id/toggle-attendee-invites, host toggles whether Going attendees can invite */
 app.post("/events/:id/toggle-attendee-invites", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -9490,7 +9490,7 @@ app.post("/events/:id/toggle-attendee-invites", async (c) => {
 
 // ── Join request endpoints ──────────────────────────────────────────────
 
-/** POST /events/:id/join-request — submit a request to join a plan */
+/** POST /events/:id/join-request, submit a request to join a plan */
 app.post("/events/:id/join-request", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -9585,7 +9585,7 @@ app.post("/events/:id/join-request", async (c) => {
   }
 });
 
-/** POST /events/:id/join-request/:requestId/approve — approve a join request (host only) */
+/** POST /events/:id/join-request/:requestId/approve, approve a join request (host only) */
 app.post("/events/:id/join-request/:requestId/approve", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -9676,7 +9676,7 @@ app.post("/events/:id/join-request/:requestId/approve", async (c) => {
   }
 });
 
-/** POST /events/:id/join-request/:requestId/decline — decline a join request (host only) */
+/** POST /events/:id/join-request/:requestId/decline, decline a join request (host only) */
 app.post("/events/:id/join-request/:requestId/decline", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -9753,7 +9753,7 @@ app.post("/events/:id/join-request/:requestId/decline", async (c) => {
   }
 });
 
-/** POST /events/:id/join-request/:requestId/withdraw — withdraw own pending join request */
+/** POST /events/:id/join-request/:requestId/withdraw, withdraw own pending join request */
 app.post("/events/:id/join-request/:requestId/withdraw", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -9779,7 +9779,7 @@ app.post("/events/:id/join-request/:requestId/withdraw", async (c) => {
       WHERE id = ${requestId}
     `;
 
-    // Notify host (in-app only — no email to avoid noise)
+    // Notify host (in-app only, no email to avoid noise)
     const ev = (await sql`
       SELECT host_user_id, title FROM newchums.events WHERE id = ${eventId}
     `) as { host_user_id: string; title: string }[];
@@ -9914,7 +9914,7 @@ async function adjustReliabilityPenalty(
   `;
 }
 
-/** GET /events/:id/feedback — existing feedback by this user for this plan + eligible attendees */
+/** GET /events/:id/feedback, existing feedback by this user for this plan + eligible attendees */
 app.get("/events/:id/feedback", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -9924,7 +9924,7 @@ app.get("/events/:id/feedback", async (c) => {
   const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
   const eventId = c.req.param("id");
 
-  // Check dismissal early — if the table doesn't exist yet, silently skip
+  // Check dismissal early, if the table doesn't exist yet, silently skip
   try {
     const dismissedRows = await sql`
       SELECT 1 FROM newchums.plan_feedback_dismissals
@@ -10004,7 +10004,7 @@ app.get("/events/:id/feedback", async (c) => {
   }
 });
 
-/** POST /events/:id/feedback — submit feedback for attendees */
+/** POST /events/:id/feedback, submit feedback for attendees */
 app.post("/events/:id/feedback", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -10063,7 +10063,7 @@ app.post("/events/:id/feedback", async (c) => {
   }
 });
 
-/** POST /events/:id/feedback/dismiss — permanently dismiss the feedback prompt for this plan */
+/** POST /events/:id/feedback/dismiss, permanently dismiss the feedback prompt for this plan */
 app.post("/events/:id/feedback/dismiss", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -10086,7 +10086,7 @@ app.post("/events/:id/feedback/dismiss", async (c) => {
   }
 });
 
-/** POST /events/:id/attendance-issue — report an attendance issue */
+/** POST /events/:id/attendance-issue, report an attendance issue */
 app.post("/events/:id/attendance-issue", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -10158,7 +10158,7 @@ app.post("/events/:id/attendance-issue", async (c) => {
   }
 });
 
-/** POST /events/:id/attendance-dispute — user disputes attendance issues on this plan */
+/** POST /events/:id/attendance-dispute, user disputes attendance issues on this plan */
 app.post("/events/:id/attendance-dispute", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -10200,7 +10200,7 @@ const CONDUCT_REASON_LABELS: Record<string, string> = {
   other: "Other",
 };
 
-/** POST /events/:id/conduct-report — report a conduct / safety concern */
+/** POST /events/:id/conduct-report, report a conduct / safety concern */
 app.post("/events/:id/conduct-report", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -10233,7 +10233,7 @@ app.post("/events/:id/conduct-report", async (c) => {
       RETURNING id, created_at
     `) as { id: string; created_at: string }[];
 
-    // Send admin alert email (fire-and-forget — do not block the response)
+    // Send admin alert email (fire-and-forget, do not block the response)
     try {
       const [reporterRows, reportedRows] = await Promise.all([
         sql`SELECT name, email, username FROM newchums.users WHERE id = ${userId} LIMIT 1` as Promise<{ name: string | null; email: string; username: string | null }[]>,
@@ -10429,7 +10429,7 @@ async function batchLoadMetrics(
   return map;
 }
 
-/** GET /chum-preferences — get current user's chum preference settings */
+/** GET /chum-preferences, get current user's chum preference settings */
 app.get("/chum-preferences", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -10483,7 +10483,7 @@ app.get("/chum-preferences", async (c) => {
   }
 });
 
-/** PUT /chum-preferences — save current user's chum preference settings */
+/** PUT /chum-preferences, save current user's chum preference settings */
 app.put("/chum-preferences", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -10541,7 +10541,7 @@ const STATUS_LABELS: Record<string, string> = {
   not_planned: "Not planned",
 };
 
-/** GET /roadmap — public list, optionally includes viewer vote/follow state */
+/** GET /roadmap, public list, optionally includes viewer vote/follow state */
 app.get("/roadmap", async (c) => {
   const sql = getSql(c.env);
   const url = new URL(c.req.url);
@@ -10627,7 +10627,7 @@ app.get("/roadmap", async (c) => {
   }
 });
 
-/** GET /roadmap/:id — single item detail with comments, admin notes, merge info */
+/** GET /roadmap/:id, single item detail with comments, admin notes, merge info */
 app.get("/roadmap/:id", async (c) => {
   const sql = getSql(c.env);
   const itemId = c.req.param("id");
@@ -10707,7 +10707,7 @@ app.get("/roadmap/:id", async (c) => {
   }
 });
 
-/** POST /roadmap — submit a new roadmap item (authenticated) */
+/** POST /roadmap, submit a new roadmap item (authenticated) */
 app.post("/roadmap", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email) return c.json({ ok: false, error: "AUTH_REQUIRED" }, 401);
@@ -10759,7 +10759,7 @@ app.post("/roadmap", async (c) => {
   }
 });
 
-/** POST /roadmap/:id/vote — toggle upvote */
+/** POST /roadmap/:id/vote, toggle upvote */
 app.post("/roadmap/:id/vote", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email) return c.json({ ok: false, error: "AUTH_REQUIRED" }, 401);
@@ -10789,7 +10789,7 @@ app.post("/roadmap/:id/vote", async (c) => {
   }
 });
 
-/** POST /roadmap/:id/follow — toggle follow */
+/** POST /roadmap/:id/follow, toggle follow */
 app.post("/roadmap/:id/follow", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email) return c.json({ ok: false, error: "AUTH_REQUIRED" }, 401);
@@ -10819,7 +10819,7 @@ app.post("/roadmap/:id/follow", async (c) => {
   }
 });
 
-/** PUT /roadmap/:id — edit a roadmap item (author only) */
+/** PUT /roadmap/:id, edit a roadmap item (author only) */
 app.put("/roadmap/:id", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email) return c.json({ ok: false, error: "AUTH_REQUIRED" }, 401);
@@ -10878,7 +10878,7 @@ app.put("/roadmap/:id", async (c) => {
   }
 });
 
-/** DELETE /roadmap/:id — soft-delete a roadmap item (author only) */
+/** DELETE /roadmap/:id, soft-delete a roadmap item (author only) */
 app.delete("/roadmap/:id", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email) return c.json({ ok: false, error: "AUTH_REQUIRED" }, 401);
@@ -10902,7 +10902,7 @@ app.delete("/roadmap/:id", async (c) => {
   }
 });
 
-/** POST /roadmap/:id/comment — add a comment */
+/** POST /roadmap/:id/comment, add a comment */
 app.post("/roadmap/:id/comment", async (c) => {
   const authPayload = await requireAuth(c);
   if (!authPayload?.email) return c.json({ ok: false, error: "AUTH_REQUIRED" }, 401);
@@ -10945,7 +10945,7 @@ app.post("/roadmap/:id/comment", async (c) => {
   }
 });
 
-/** GET /roadmap/:id/attachment — serve the attachment image from R2 */
+/** GET /roadmap/:id/attachment, serve the attachment image from R2 */
 app.get("/roadmap/:id/attachment", async (c) => {
   if (!c.env.MEDIA_BUCKET) return c.json({ ok: false, error: "MEDIA_NOT_CONFIGURED" }, 503);
   const itemId = c.req.param("id");
@@ -11012,7 +11012,7 @@ async function sendRoadmapNotifications(
   }
 }
 
-/** GET /admin/roadmap — list all items for moderation */
+/** GET /admin/roadmap, list all items for moderation */
 app.get("/admin/roadmap", async (c) => {
   const admin = await requireSuperAdmin(c);
   if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
@@ -11053,7 +11053,7 @@ app.get("/admin/roadmap", async (c) => {
   }
 });
 
-/** POST /admin/roadmap/:id/status — update status with optional note */
+/** POST /admin/roadmap/:id/status, update status with optional note */
 app.post("/admin/roadmap/:id/status", async (c) => {
   const admin = await requireSuperAdmin(c);
   if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
@@ -11109,7 +11109,7 @@ app.post("/admin/roadmap/:id/status", async (c) => {
   }
 });
 
-/** POST /admin/roadmap/:id/merge — merge item into target */
+/** POST /admin/roadmap/:id/merge, merge item into target */
 app.post("/admin/roadmap/:id/merge", async (c) => {
   const admin = await requireSuperAdmin(c);
   if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
@@ -11179,7 +11179,7 @@ app.post("/admin/roadmap/:id/merge", async (c) => {
   }
 });
 
-/** POST /admin/roadmap/:id/edit — edit item title, body, category */
+/** POST /admin/roadmap/:id/edit, edit item title, body, category */
 app.post("/admin/roadmap/:id/edit", async (c) => {
   const admin = await requireSuperAdmin(c);
   if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
@@ -11219,7 +11219,7 @@ app.post("/admin/roadmap/:id/edit", async (c) => {
   }
 });
 
-/** POST /admin/roadmap/:id/remove — soft-remove item */
+/** POST /admin/roadmap/:id/remove, soft-remove item */
 app.post("/admin/roadmap/:id/remove", async (c) => {
   const admin = await requireSuperAdmin(c);
   if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
@@ -11244,7 +11244,7 @@ app.post("/admin/roadmap/:id/remove", async (c) => {
   }
 });
 
-/** POST /admin/roadmap/:id/restore — restore removed item */
+/** POST /admin/roadmap/:id/restore, restore removed item */
 app.post("/admin/roadmap/:id/restore", async (c) => {
   const admin = await requireSuperAdmin(c);
   if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
@@ -11264,7 +11264,7 @@ app.post("/admin/roadmap/:id/restore", async (c) => {
   }
 });
 
-/** DELETE /admin/roadmap/comments/:id — remove a comment */
+/** DELETE /admin/roadmap/comments/:id, remove a comment */
 app.delete("/admin/roadmap/comments/:id", async (c) => {
   const admin = await requireSuperAdmin(c);
   if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
@@ -11297,7 +11297,7 @@ async function processAttendanceAssurance(
 ) {
   const now = new Date();
 
-  // Phase 1: Open confirmation windows — send initial confirmation requests
+  // Phase 1: Open confirmation windows, send initial confirmation requests
   const eventsNeedingInitialSend = (await sql`
     SELECT e.id, e.host_user_id, e.title, e.starts_at, e.timezone,
            e.confirmation_window_hours, e.confirmation_cutoff_hours,
@@ -11373,7 +11373,7 @@ async function processAttendanceAssurance(
             SET reminder_count = 1, last_reminder_at = NOW(), updated_at = NOW()
             WHERE event_id = ${ev.id} AND user_id = ${att.user_id}
           `;
-        } catch { /* noop — don't let one email failure stop the batch */ }
+        } catch { /* noop, don't let one email failure stop the batch */ }
       }
     } catch (err) {
       console.error(`[attendance-assurance] initial send failed for event ${ev.id}:`, err);
@@ -11475,7 +11475,7 @@ async function processAttendanceAssurance(
     }
   }
 
-  // Phase 3: Process cutoffs — expire pending confirmations and evaluate viability
+  // Phase 3: Process cutoffs, expire pending confirmations and evaluate viability
   const eventsAtCutoff = (await sql`
     SELECT e.id, e.host_user_id, e.title, e.starts_at, e.timezone,
            e.confirmation_cutoff_hours, e.min_confirmed_attendees, e.fallback_policy,
@@ -11982,7 +11982,7 @@ async function processPlanFeedbackEmails(
 async function cancelNoAttendeePlans(sql: ReturnType<typeof getSql>) {
   // Find published plans that have started (within the last 2 hours to avoid
   // retroactively cancelling old plans) where the host is the only participant
-  // — i.e. no one else RSVP'd "going".
+  //, i.e. no one else RSVP'd "going".
   const abandoned = (await sql`
     SELECT e.id
     FROM newchums.events e

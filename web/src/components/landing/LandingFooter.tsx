@@ -8,7 +8,7 @@ import Link from "next/link";
 import BrandLogo from "@/components/BrandLogo";
 
 /**
- * Footer content only — no Container, no outer Box (Layout provides both).
+ * Footer content only, no Container, no outer Box (Layout provides both).
  * Top row: logo + tagline (left), links column (right). Ready for future Terms, Privacy, etc.
  */
 export default function LandingFooter() {
