@@ -4,13 +4,17 @@ import ChatBubbleOutlineRoundedIcon from "@mui/icons-material/ChatBubbleOutlineR
 import EventNoteRoundedIcon from "@mui/icons-material/EventNoteRounded";
 import NotificationsOutlinedIcon from "@mui/icons-material/NotificationsOutlined";
 import NotificationsRoundedIcon from "@mui/icons-material/NotificationsRounded";
+import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import Box from "@mui/material/Box";
 import CircularProgress from "@mui/material/CircularProgress";
 import Divider from "@mui/material/Divider";
+import Drawer from "@mui/material/Drawer";
 import IconButton from "@mui/material/IconButton";
 import Popover from "@mui/material/Popover";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+import { useTheme } from "@mui/material/styles";
+import useMediaQuery from "@mui/material/useMediaQuery";
 import Link from "next/link";
 import * as React from "react";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
@@ -495,6 +499,68 @@ export default function NotificationBell() {
 
   const handleClose = React.useCallback(() => setAnchorEl(null), []);
 
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+
+  const notificationContent = (
+    <>
+      {/* Header */}
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="space-between"
+        sx={{ px: 2, py: 1.5, flexShrink: 0 }}
+      >
+        <Typography variant="subtitle2" fontWeight={700}>
+          Your Notifications
+        </Typography>
+        <Stack direction="row" alignItems="center" spacing={0.5}>
+          {fetching && <CircularProgress size={14} sx={{ color: "text.disabled" }} />}
+          {isMobile && (
+            <IconButton size="small" onClick={handleClose} aria-label="Close notifications" sx={{ minWidth: 36, minHeight: 36 }}>
+              <CloseRoundedIcon fontSize="small" />
+            </IconButton>
+          )}
+        </Stack>
+      </Stack>
+      <Divider />
+
+      {/* Scrollable notification list */}
+      <Box sx={{ overflowY: "auto", flex: 1 }}>
+        {notifications.length === 0 && unreadChats.length === 0 ? (
+          <Box sx={{ py: 5, px: 2, textAlign: "center" }}>
+            <Typography variant="body2" color="text.secondary">
+              You&apos;re all caught up.
+            </Typography>
+          </Box>
+        ) : (
+          <>
+            {/* Unread chat entries first */}
+            {unreadChats.map((entry, index) => (
+              <React.Fragment key={`chat-${entry.eventId}`}>
+                {index > 0 && <Divider sx={{ opacity: 0.5 }} />}
+                <UnreadChatRow entry={entry} />
+              </React.Fragment>
+            ))}
+            {unreadChats.length > 0 && notifications.length > 0 && (
+              <Divider />
+            )}
+            {/* Regular notifications */}
+            {notifications.map((notification, index) => (
+              <React.Fragment key={notification.id}>
+                {index > 0 && <Divider sx={{ opacity: 0.5 }} />}
+                <NotificationRow
+                  notification={notification}
+                  avatarBaseUrl={avatarBaseUrl}
+                />
+              </React.Fragment>
+            ))}
+          </>
+        )}
+      </Box>
+    </>
+  );
+
   return (
     <>
       <IconButton
@@ -530,74 +596,46 @@ export default function NotificationBell() {
         )}
       </IconButton>
 
-      <Popover
-        open={open}
-        anchorEl={anchorEl}
-        onClose={handleClose}
-        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-        transformOrigin={{ vertical: "top", horizontal: "right" }}
-        disableScrollLock
-        PaperProps={{
-          elevation: 3,
-          sx: {
-            width: { xs: "calc(100vw - 24px)", sm: 360 },
-            maxWidth: 400,
-            maxHeight: 460,
-            display: "flex",
-            flexDirection: "column",
-            borderRadius: 2,
-            overflow: "hidden",
-          },
-        }}
-      >
-        {/* Header */}
-        <Stack
-          direction="row"
-          alignItems="center"
-          justifyContent="space-between"
-          sx={{ px: 2, py: 1.5, flexShrink: 0 }}
+      {isMobile ? (
+        <Drawer
+          anchor="right"
+          open={open}
+          onClose={handleClose}
+          PaperProps={{
+            sx: {
+              width: "100%",
+              maxWidth: 360,
+              display: "flex",
+              flexDirection: "column",
+            },
+          }}
         >
-          <Typography variant="subtitle2" fontWeight={700}>
-            Your Notifications
-          </Typography>
-          {fetching && <CircularProgress size={14} sx={{ color: "text.disabled" }} />}
-        </Stack>
-        <Divider />
-
-        {/* Scrollable notification list */}
-        <Box sx={{ overflowY: "auto", flex: 1 }}>
-          {notifications.length === 0 && unreadChats.length === 0 ? (
-            <Box sx={{ py: 5, px: 2, textAlign: "center" }}>
-              <Typography variant="body2" color="text.secondary">
-                You&apos;re all caught up.
-              </Typography>
-            </Box>
-          ) : (
-            <>
-              {/* Unread chat entries first */}
-              {unreadChats.map((entry, index) => (
-                <React.Fragment key={`chat-${entry.eventId}`}>
-                  {index > 0 && <Divider sx={{ opacity: 0.5 }} />}
-                  <UnreadChatRow entry={entry} />
-                </React.Fragment>
-              ))}
-              {unreadChats.length > 0 && notifications.length > 0 && (
-                <Divider />
-              )}
-              {/* Regular notifications */}
-              {notifications.map((notification, index) => (
-                <React.Fragment key={notification.id}>
-                  {index > 0 && <Divider sx={{ opacity: 0.5 }} />}
-                  <NotificationRow
-                    notification={notification}
-                    avatarBaseUrl={avatarBaseUrl}
-                  />
-                </React.Fragment>
-              ))}
-            </>
-          )}
-        </Box>
-      </Popover>
+          {notificationContent}
+        </Drawer>
+      ) : (
+        <Popover
+          open={open}
+          anchorEl={anchorEl}
+          onClose={handleClose}
+          anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+          transformOrigin={{ vertical: "top", horizontal: "right" }}
+          disableScrollLock
+          PaperProps={{
+            elevation: 3,
+            sx: {
+              width: 360,
+              maxWidth: 400,
+              maxHeight: 460,
+              display: "flex",
+              flexDirection: "column",
+              borderRadius: 2,
+              overflow: "hidden",
+            },
+          }}
+        >
+          {notificationContent}
+        </Popover>
+      )}
     </>
   );
 }

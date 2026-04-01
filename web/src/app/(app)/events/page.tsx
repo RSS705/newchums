@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import StubPage from "@/components/layout/StubPage";
 
 export const metadata: Metadata = {
-  title: "Events | NewChums",
+  title: "Plans | NewChums",
 };
 
 export default function EventsPage() {

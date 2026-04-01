@@ -5,7 +5,7 @@ import Box from "@mui/material/Box";
 import EventDetailClient from "./EventDetailClient";
 
 export const metadata: Metadata = {
-  title: "Event Details | NewChums",
+  title: "Plan Details | NewChums",
 };
 
 export default function EventDetailPage() {

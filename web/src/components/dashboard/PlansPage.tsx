@@ -13,6 +13,7 @@ import Typography from "@mui/material/Typography";
 import AddCircleRoundedIcon from "@mui/icons-material/AddCircleRounded";
 import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
 import Divider from "@mui/material/Divider";
+import EventCardSkeleton from "@/components/ui/EventCardSkeleton";
 import ExpandLessRoundedIcon from "@mui/icons-material/ExpandLessRounded";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import Link from "next/link";
@@ -110,9 +111,13 @@ export default function PlansPage() {
 
       {/* Loading */}
       {loading && (
-        <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}>
-          <CircularProgress />
-        </Box>
+        <Grid container spacing={{ xs: 1.5, sm: 2 }}>
+          {[0, 1, 2].map((i) => (
+            <Grid key={i} size={{ xs: 12, sm: 6, md: 4 }} sx={{ display: "flex" }}>
+              <EventCardSkeleton />
+            </Grid>
+          ))}
+        </Grid>
       )}
 
       {/* Content */}

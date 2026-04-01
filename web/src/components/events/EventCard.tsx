@@ -94,7 +94,7 @@ function rsvpColor(s: string | null): string {
   return "text.secondary";
 }
 
-export default function EventCard({
+const EventCard = React.memo(function EventCard({
   event,
   isPast = false,
   isExample = false,
@@ -336,4 +336,6 @@ export default function EventCard({
       </CardActionArea>
     </Card>
   );
-}
+});
+
+export default EventCard;

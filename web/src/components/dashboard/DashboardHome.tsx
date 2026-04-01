@@ -22,6 +22,7 @@ import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
 import Link from "next/link";
 import EventCard, { type PlanEvent } from "@/components/events/EventCard";
+import EventCardSkeleton from "@/components/ui/EventCardSkeleton";
 import DistanceSelect from "@/components/common/DistanceSelect";
 import { apiFetch } from "@/lib/apiClient";
 
@@ -94,6 +95,8 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
   const [loadingMore, setLoadingMore] = useState(false);
 
   const [searchText, setSearchText] = useState("");
+  const [searchInputValue, setSearchInputValue] = useState("");
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [timeRange, setTimeRange] = useState("all");
   const [radiusKm, setRadiusKm] = useState(200);
   const [selectedHobby, setSelectedHobby] = useState<HobbyOption | null>(null);
@@ -192,6 +195,7 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
       setProfile(p);
       setHobbyOptions(hobbies);
       setSearchText(st);
+      setSearchInputValue(st);
       setTimeRange(tr);
       setRadiusKm(rk);
       setSelectedHobby(sh);
@@ -254,6 +258,7 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
 
   const clearAllFilters = () => {
     setSearchText("");
+    setSearchInputValue("");
     setTimeRange("all");
     setSelectedHobby(null);
     setRadiusKm(defaultRadiusKm);
@@ -302,8 +307,13 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
             <TextField
               id="explore-search-input"
               placeholder="Search plans…"
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
+              value={searchInputValue}
+              onChange={(e) => {
+                const v = e.target.value;
+                setSearchInputValue(v);
+                if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+                searchDebounceRef.current = setTimeout(() => setSearchText(v), 200);
+              }}
               size="small"
               fullWidth
               variant="outlined"
@@ -331,7 +341,19 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
           </Stack>
 
           {/* Time + sort chips */}
-          <Stack direction="row" flexWrap="wrap" gap={0.75} alignItems="center">
+          <Stack
+            direction="row"
+            gap={0.75}
+            alignItems="center"
+            sx={{
+              flexWrap: { xs: "nowrap", sm: "wrap" },
+              overflowX: { xs: "auto", sm: "visible" },
+              scrollbarWidth: "none",
+              "&::-webkit-scrollbar": { display: "none" },
+              WebkitOverflowScrolling: "touch",
+              pb: { xs: 0.5, sm: 0 },
+            }}
+          >
             {TIME_CHIPS.map((chip) => (
               <Chip
                 key={chip.value}
@@ -492,9 +514,13 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
 
       {/* ── Event feed ──────────────────────────────────────────────── */}
       {loading && allEvents.length === 0 ? (
-        <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}>
-          <CircularProgress />
-        </Box>
+        <Grid container spacing={{ xs: 1.5, sm: 2 }}>
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <Grid key={i} size={{ xs: 12, sm: 6, md: 4 }} sx={{ display: "flex" }}>
+              <EventCardSkeleton />
+            </Grid>
+          ))}
+        </Grid>
       ) : allEvents.length > 0 ? (
         <>
           <Grid container spacing={2}>

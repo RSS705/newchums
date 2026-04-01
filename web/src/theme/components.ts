@@ -60,6 +60,7 @@ export function getComponents(theme: Theme): Theme["components"] {
             boxShadow: "none",
             textTransform: "none",
             fontWeight: 600,
+            minHeight: 44,
           };
           if (ownerState.color === "onPrimary" && ownerState.variant === "contained") {
             return {
@@ -168,6 +169,8 @@ export function getComponents(theme: Theme): Theme["components"] {
     MuiIconButton: {
       styleOverrides: {
         root: {
+          minWidth: 44,
+          minHeight: 44,
           "&:hover": {
             backgroundColor: theme.palette.primary.light,
             color: theme.palette.primary.main,
@@ -323,6 +326,14 @@ export function getComponents(theme: Theme): Theme["components"] {
       styleOverrides: {
         paper: {
           borderRadius: Number(theme.shape.borderRadius) + 6,
+          [`@media (max-width:${theme.breakpoints.values.sm - 1}px)`]: {
+            borderRadius: 0,
+            margin: 0,
+            width: "100%",
+            maxWidth: "100%",
+            height: "100dvh",
+            maxHeight: "100dvh",
+          },
         },
       },
     },
@@ -363,6 +374,26 @@ export function getComponents(theme: Theme): Theme["components"] {
       defaultProps: {
         anchorOrigin: { vertical: "bottom", horizontal: "right" },
       },
+      styleOverrides: {
+        root: {
+          [`@media (max-width:${theme.breakpoints.values.sm - 1}px)`]: {
+            left: "50%",
+            right: "auto",
+            transform: "translateX(-50%)",
+          },
+        },
+      },
+    },
+    MuiSkeleton: {
+      defaultProps: {
+        animation: "wave",
+      },
+      styleOverrides: {
+        root: {
+          borderRadius: theme.shape.borderRadius,
+          backgroundColor: theme.palette.grey[200],
+        },
+      },
     },
     MuiChip: {
       styleOverrides: {
@@ -372,7 +403,7 @@ export function getComponents(theme: Theme): Theme["components"] {
           borderRadius: "999px",
         },
         sizeSmall: {
-          height: 26,
+          height: 32,
         },
       },
     },

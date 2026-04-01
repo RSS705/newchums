@@ -5717,17 +5717,19 @@ app.get("/notifications", async (c) => {
         e.title     AS event_title,
         COUNT(cm.id)::int AS unread_count,
         MAX(cm.created_at) AS latest_at,
-        (SELECT cm2.body FROM newchums.event_chat_messages cm2
-         WHERE cm2.event_id = e.id ORDER BY cm2.created_at DESC LIMIT 1
-        ) AS latest_body,
-        (SELECT u2.name FROM newchums.event_chat_messages cm2
-         JOIN newchums.users u2 ON u2.id = cm2.user_id
-         WHERE cm2.event_id = e.id ORDER BY cm2.created_at DESC LIMIT 1
-        ) AS latest_sender_name
+        latest_msg.body AS latest_body,
+        latest_msg.sender_name AS latest_sender_name
       FROM newchums.event_chat_messages cm
       JOIN newchums.events e ON e.id = cm.event_id AND e.status != 'canceled'
       LEFT JOIN newchums.event_chat_reads cr
         ON cr.event_id = cm.event_id AND cr.user_id = ${appUserId}
+      LEFT JOIN LATERAL (
+        SELECT cm2.body, u2.name AS sender_name
+        FROM newchums.event_chat_messages cm2
+        JOIN newchums.users u2 ON u2.id = cm2.user_id
+        WHERE cm2.event_id = e.id
+        ORDER BY cm2.created_at DESC LIMIT 1
+      ) latest_msg ON true
       WHERE (
         e.host_user_id = ${appUserId}
         OR EXISTS (
@@ -5737,7 +5739,7 @@ app.get("/notifications", async (c) => {
       )
       AND cm.created_at > COALESCE(cr.last_read_at, '1970-01-01'::timestamptz)
       AND cm.user_id != ${appUserId}
-      GROUP BY e.id, e.title
+      GROUP BY e.id, e.title, latest_msg.body, latest_msg.sender_name
       ORDER BY MAX(cm.created_at) DESC
       LIMIT 10
     `) as {
@@ -6901,9 +6903,13 @@ app.post("/events", async (c) => {
 
     const eventId = rows[0].id;
 
-    for (const iid of resolvedInterestIds) {
+    if (resolvedInterestIds.length > 0) {
       try {
-        await sql`INSERT INTO newchums.event_interests (event_id, interest_id) VALUES (${eventId}, ${iid}) ON CONFLICT DO NOTHING`;
+        await sql`
+          INSERT INTO newchums.event_interests (event_id, interest_id)
+          SELECT ${eventId}::uuid, unnest(${resolvedInterestIds}::uuid[])
+          ON CONFLICT DO NOTHING
+        `;
       } catch { /* skip invalid interest refs */ }
     }
 
@@ -6915,38 +6921,50 @@ app.post("/events", async (c) => {
     `;
 
     const invitees = Array.isArray(body.invitees) ? (body.invitees as Array<{ user_id?: string; email?: string }>) : [];
-    for (const inv of invitees.slice(0, 50)) {
-      const invUserId = inv.user_id ? String(inv.user_id) : null;
-      const invEmail = inv.email ? String(inv.email).trim().toLowerCase() : null;
-      if (!invUserId && !invEmail) continue;
+    if (invitees.length > 0 && status === "published") {
+      // Pre-fetch host info once instead of per-invitee
+      const hostUserRow = (await sql`SELECT name, username FROM newchums.users WHERE id = ${userId}`) as { name: string | null; username: string | null }[];
+      const hostName = hostUserRow[0]?.name?.trim() || hostUserRow[0]?.username?.replace(/^@/, "") || "Someone";
 
-      try {
-        await sql`
-          INSERT INTO newchums.event_invites (event_id, user_id, email, invited_by)
-          VALUES (${eventId}, ${invUserId}, ${invEmail}, ${userId})
-          ON CONFLICT DO NOTHING
-        `;
+      // Batch-load invitee notification prefs and user details
+      const inviteeUserIds = invitees.slice(0, 50)
+        .map((inv) => inv.user_id ? String(inv.user_id) : null)
+        .filter((id): id is string => id !== null);
+      const [invPrefsMap, invUserRowsBatch] = await Promise.all([
+        batchLoadNotificationPrefs(sql, inviteeUserIds),
+        inviteeUserIds.length > 0
+          ? (sql`SELECT id, email, name FROM newchums.users WHERE id = ANY(${inviteeUserIds}::uuid[])` as Promise<{ id: string; email: string; name: string | null }[]>)
+          : Promise.resolve([] as { id: string; email: string; name: string | null }[]),
+      ]);
+      const invUserMap = new Map(invUserRowsBatch.map((r) => [r.id, r]));
 
-        if (status === "published") {
+      for (const inv of invitees.slice(0, 50)) {
+        const invUserId = inv.user_id ? String(inv.user_id) : null;
+        const invEmail = inv.email ? String(inv.email).trim().toLowerCase() : null;
+        if (!invUserId && !invEmail) continue;
+
+        try {
+          await sql`
+            INSERT INTO newchums.event_invites (event_id, user_id, email, invited_by)
+            VALUES (${eventId}, ${invUserId}, ${invEmail}, ${userId})
+            ON CONFLICT DO NOTHING
+          `;
+
           if (invUserId) {
             await sql`
               INSERT INTO newchums.notifications (user_id, type, actor_user_id, entity_id, metadata)
               VALUES (${invUserId}, 'event_invite', ${userId}, ${eventId}, ${JSON.stringify({ eventTitle: title })})
             `;
-            // Respect the invitee's invitation email preference
-            const invProfileRows = (await sql`SELECT notification_prefs FROM user_profile WHERE user_id = ${invUserId} LIMIT 1`) as { notification_prefs: unknown }[];
-            const invPrefs = normalizeNotificationPrefs(invProfileRows[0]?.notification_prefs);
+            const invPrefs = normalizeNotificationPrefs(invPrefsMap.get(invUserId));
             if (invPrefs.items.event_invite?.enabled !== false) {
-              const invUser = (await sql`SELECT email, name FROM newchums.users WHERE id = ${invUserId}`) as { email: string; name: string | null }[];
-              if (invUser.length > 0) {
-                const hostUser = (await sql`SELECT name, username FROM newchums.users WHERE id = ${userId}`) as { name: string | null; username: string | null }[];
-                const hostName = hostUser[0]?.name?.trim() || hostUser[0]?.username?.replace(/^@/, "") || "Someone";
+              const invUser = invUserMap.get(invUserId);
+              if (invUser) {
                 try {
                   const iToken = await createInviteToken(c.env.NEXTAUTH_SECRET, { eventId, userId: invUserId });
                   const unsubToken = await createUnsubscribeToken(c.env.NEXTAUTH_SECRET, invUserId, "event_invite");
                   await sendEventInviteEmail(c.env, {
-                    to: invUser[0].email,
-                    recipientName: invUser[0].name?.trim() || "there",
+                    to: invUser.email,
+                    recipientName: invUser.name?.trim() || "there",
                     hostName,
                     eventTitle: title,
                     eventDate: formatEventDate(startsDate.toISOString(), timezone),
@@ -6959,8 +6977,6 @@ app.post("/events", async (c) => {
               }
             }
           } else if (invEmail) {
-            const hostUser = (await sql`SELECT name, username FROM newchums.users WHERE id = ${userId}`) as { name: string | null; username: string | null }[];
-            const hostName = hostUser[0]?.name?.trim() || hostUser[0]?.username?.replace(/^@/, "") || "Someone";
             try {
               const iToken = await createInviteToken(c.env.NEXTAUTH_SECRET, { eventId, email: invEmail });
               await sendEventInviteEmail(c.env, {
@@ -6972,12 +6988,25 @@ app.post("/events", async (c) => {
                 eventLocation: locationType === "online" ? (onlineLink || "Online") : buildLocationDisplay(locationName, locationAddress),
                 eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
                 inviteToken: iToken,
-                // No unsubscribeUrl for email-only guests, they have no account to update prefs on
               });
             } catch { /* noop if template missing */ }
           }
-        }
-      } catch { /* skip individual invite failures */ }
+        } catch { /* skip individual invite failures */ }
+      }
+    } else {
+      // Draft status or no invitees - just insert invite records without sending emails
+      for (const inv of invitees.slice(0, 50)) {
+        const invUserId = inv.user_id ? String(inv.user_id) : null;
+        const invEmail = inv.email ? String(inv.email).trim().toLowerCase() : null;
+        if (!invUserId && !invEmail) continue;
+        try {
+          await sql`
+            INSERT INTO newchums.event_invites (event_id, user_id, email, invited_by)
+            VALUES (${eventId}, ${invUserId}, ${invEmail}, ${userId})
+            ON CONFLICT DO NOTHING
+          `;
+        } catch { /* skip individual invite failures */ }
+      }
     }
 
     return c.json({ ok: true, event: { id: eventId, created_at: rows[0].created_at } }, 201);
@@ -7336,8 +7365,8 @@ app.get("/events/explore", async (c) => {
         i.name AS interest_name, i.slug AS interest_slug,
         h.name AS host_name, h.username AS host_username,
         r.status AS my_rsvp_status,
-        (SELECT COUNT(*)::int FROM newchums.event_rsvps er WHERE er.event_id = e.id AND er.status = 'going') AS going_count,
-        (SELECT COUNT(*)::int FROM newchums.event_rsvps er WHERE er.event_id = e.id AND er.status = 'maybe') AS maybe_count,
+        COALESCE(rsvp_counts.going_count, 0) AS going_count,
+        COALESCE(rsvp_counts.maybe_count, 0) AS maybe_count,
         CASE WHEN e.host_user_id = ${userId} THEN true ELSE false END AS is_host,
         CASE
           WHEN ${hasLocation} AND e.location_lat IS NOT NULL AND e.location_lng IS NOT NULL THEN
@@ -7359,6 +7388,13 @@ app.get("/events/explore", async (c) => {
       LEFT JOIN newchums.event_rsvps r ON r.event_id = e.id AND r.user_id = ${userId}
       LEFT JOIN newchums.chum_preferences hp ON hp.user_id = e.host_user_id
       LEFT JOIN newchums.communities cm_community ON cm_community.id = e.community_id AND COALESCE(cm_community.status, 'active') = 'active'
+      LEFT JOIN (
+        SELECT event_id,
+          COUNT(*) FILTER (WHERE status = 'going')::int AS going_count,
+          COUNT(*) FILTER (WHERE status = 'maybe')::int AS maybe_count
+        FROM newchums.event_rsvps
+        GROUP BY event_id
+      ) rsvp_counts ON rsvp_counts.event_id = e.id
       WHERE e.status = 'published'
         AND e.starts_at >= ${now.toISOString()}
         AND (
@@ -9075,8 +9111,12 @@ app.patch("/events/:id", async (c) => {
     `;
 
     await sql`DELETE FROM newchums.event_interests WHERE event_id = ${eventId}`;
-    for (const iid of patchInterestIds) {
-      await sql`INSERT INTO newchums.event_interests (event_id, interest_id) VALUES (${eventId}, ${iid}) ON CONFLICT DO NOTHING`;
+    if (patchInterestIds.length > 0) {
+      await sql`
+        INSERT INTO newchums.event_interests (event_id, interest_id)
+        SELECT ${eventId}::uuid, unnest(${patchInterestIds}::uuid[])
+        ON CONFLICT DO NOTHING
+      `;
     }
 
     // Build a human-readable diff for the email notification
@@ -9594,6 +9634,9 @@ app.get("/events/:id/chat", async (c) => {
       return c.json({ ok: false, error: access.reason }, status);
     }
 
+    const before = c.req.query("before"); // ISO timestamp cursor for older messages
+    const limitParam = Math.min(Math.max(Number(c.req.query("limit") ?? 50), 1), 100);
+
     const messages = (await sql`
       SELECT m.id, m.body, m.created_at, m.user_id,
              u.name AS sender_name, u.username AS sender_username,
@@ -9601,13 +9644,18 @@ app.get("/events/:id/chat", async (c) => {
       FROM newchums.event_chat_messages m
       JOIN newchums.users u ON u.id = m.user_id
       WHERE m.event_id = ${eventId}
-      ORDER BY m.created_at ASC
-      LIMIT 100
+        ${before ? sql`AND m.created_at < ${before}` : sql``}
+      ORDER BY m.created_at DESC
+      LIMIT ${limitParam + 1}
     `) as Array<{
       id: string; body: string; created_at: string; user_id: string;
       sender_name: string | null; sender_username: string | null;
       avatar_key: string | null; avatar_updated_at: string | Date | null;
     }>;
+
+    const hasMore = messages.length > limitParam;
+    if (hasMore) messages.pop();
+    messages.reverse(); // Return in chronological order
 
     const readRow = (await sql`
       SELECT last_read_at FROM newchums.event_chat_reads
@@ -9628,6 +9676,8 @@ app.get("/events/:id/chat", async (c) => {
           avatarUrl: buildAvatarUrl(m.user_id, m.avatar_key, m.avatar_updated_at, c.env.MEDIA_BUCKET),
         };
       }),
+      hasMore,
+      oldestCursor: messages.length > 0 ? messages[0].created_at : null,
       lastReadAt: readRow.length > 0 ? readRow[0].last_read_at : null,
     });
   } catch (err) {
@@ -10740,6 +10790,20 @@ async function loadMetricsForUser(
   return m;
 }
 
+async function batchLoadNotificationPrefs(
+  sql: ReturnType<typeof getSql>,
+  userIds: string[],
+): Promise<Map<string, unknown>> {
+  if (userIds.length === 0) return new Map();
+  const rows = (await sql`
+    SELECT user_id, notification_prefs
+    FROM newchums.user_profile WHERE user_id = ANY(${userIds}::uuid[])
+  `) as { user_id: string; notification_prefs: unknown }[];
+  const map = new Map<string, unknown>();
+  for (const r of rows) map.set(r.user_id, r.notification_prefs);
+  return map;
+}
+
 async function batchLoadChumPrefs(
   sql: ReturnType<typeof getSql>,
   userIds: string[],
@@ -11683,9 +11747,11 @@ async function processAttendanceAssurance(
       const eventUrl = `${env.WEB_BASE_URL}/events/${ev.id}`;
       const eventLocation = ev.location_type === "online" ? (ev.online_link || "Online") : [ev.location_name, ev.location_address].filter(Boolean).join(", ") || "";
 
+      const goingUserIds = goingRsvps.map((a) => a.user_id);
+      const prefsMap = await batchLoadNotificationPrefs(sql, goingUserIds);
+
       for (const att of goingRsvps) {
-        const profileRows = (await sql`SELECT notification_prefs FROM user_profile WHERE user_id = ${att.user_id} LIMIT 1`) as { notification_prefs: unknown }[];
-        const prefs = normalizeNotificationPrefs(profileRows[0]?.notification_prefs);
+        const prefs = normalizeNotificationPrefs(prefsMap.get(att.user_id));
         if (prefs.items.attendance_confirmation?.enabled === false) continue;
 
         try {
@@ -11776,11 +11842,13 @@ async function processAttendanceAssurance(
           AND ec.reminder_count < ${targetReminderCount + 1}
       `) as Array<{ user_id: string; reminder_count: number; email: string; name: string | null; username: string | null }>;
 
+      const pendingUserIds = pendingUsers.map((a) => a.user_id);
+      const reminderPrefsMap = await batchLoadNotificationPrefs(sql, pendingUserIds);
+
       for (const att of pendingUsers) {
         if (att.reminder_count >= targetReminderCount + 1) continue;
 
-        const profileRows = (await sql`SELECT notification_prefs FROM user_profile WHERE user_id = ${att.user_id} LIMIT 1`) as { notification_prefs: unknown }[];
-        const prefs = normalizeNotificationPrefs(profileRows[0]?.notification_prefs);
+        const prefs = normalizeNotificationPrefs(reminderPrefsMap.get(att.user_id));
         if (prefs.items.attendance_confirmation?.enabled === false) continue;
 
         try {
@@ -12338,15 +12406,16 @@ async function cancelNoAttendeePlans(sql: ReturnType<typeof getSql>) {
       )
   `) as { id: string }[];
 
-  for (const ev of abandoned) {
+  if (abandoned.length > 0) {
+    const ids = abandoned.map((ev) => ev.id);
     try {
       await sql`
         UPDATE newchums.events
         SET status = 'canceled', canceled_at = NOW(), cancellation_reason = 'no_attendees', updated_at = NOW()
-        WHERE id = ${ev.id} AND status = 'published'
+        WHERE id = ANY(${ids}::uuid[]) AND status = 'published'
       `;
     } catch (err) {
-      console.error("[cancelNoAttendeePlans]", ev.id, err);
+      console.error("[cancelNoAttendeePlans]", ids, err);
     }
   }
 }

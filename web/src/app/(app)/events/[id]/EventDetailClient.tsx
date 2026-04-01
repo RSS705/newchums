@@ -5019,7 +5019,7 @@ export default function EventDetailClient() {
           <Box
             ref={chatContainerRef}
             sx={{
-              maxHeight: 400,
+              maxHeight: { xs: "50vh", sm: 400 },
               overflowY: "auto",
               mb: 2,
               border: "1px solid",
@@ -5141,6 +5141,7 @@ export default function EventDetailClient() {
                 multiline
                 maxRows={4}
                 disabled={chatSending}
+                slotProps={{ htmlInput: { enterKeyHint: "send" } }}
                 sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
               />
               <IconButton

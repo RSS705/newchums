@@ -298,7 +298,7 @@ export default function CreateEventClient() {
 
 
   return (
-    <Stack spacing={{ xs: 3, sm: 4 }}>
+    <Stack spacing={{ xs: 2.5, sm: 4 }}>
       {/* Header */}
       <Box>
         <Typography
@@ -964,7 +964,18 @@ export default function CreateEventClient() {
         direction={{ xs: "column-reverse", sm: "row" }}
         spacing={2}
         justifyContent="flex-end"
-        sx={{ pt: 1, pb: 4 }}
+        sx={{
+          position: { xs: "sticky", sm: "static" },
+          bottom: 0,
+          bgcolor: "background.default",
+          borderTop: { xs: "1px solid", sm: "none" },
+          borderColor: "divider",
+          py: { xs: 1.5, sm: 1 },
+          zIndex: 10,
+          mx: { xs: -2, sm: 0 },
+          px: { xs: 2, sm: 0 },
+          pb: { xs: 2, sm: 4 },
+        }}
       >
         <AppButton
           variant="outlined"
