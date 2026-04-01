@@ -42,6 +42,8 @@ export type PlanEvent = {
   maybeCount: number;
   distanceKm?: number | null;
   bannerKey?: string | null;
+  /** Direct banner URL for static/demo images (bypasses API-based banner resolution) */
+  bannerUrl?: string | null;
   hasUnreadChat?: boolean;
   community?: { id: string; slug: string; name: string } | null;
   hasPrefMismatch?: boolean;
@@ -119,14 +121,17 @@ const EventCard = React.memo(function EventCard({
         ? `${event.goingCount} going`
         : "No responses yet";
 
-  const primaryBannerUrl = event.bannerKey
-    ? `${getAvatarBaseUrl()}/events/${event.id}/banner`
-    : null;
+  const primaryBannerUrl = event.bannerUrl
+    ? event.bannerUrl
+    : event.bannerKey
+      ? `${getAvatarBaseUrl()}/events/${event.id}/banner`
+      : null;
   const fallbackBannerUrl = React.useMemo(() => {
+    if (event.bannerUrl) return null; // static URL, no fallback needed
     if (!event.bannerKey) return null;
     const fb = getImageFallbackBaseUrl();
     return fb ? `${fb}/events/${event.id}/banner` : null;
-  }, [event.bannerKey, event.id]);
+  }, [event.bannerUrl, event.bannerKey, event.id]);
   const [bannerSrc, setBannerSrc] = React.useState(primaryBannerUrl);
   const [bannerFailed, setBannerFailed] = React.useState(false);
   const bannerUrl = bannerSrc && !bannerFailed ? bannerSrc : null;

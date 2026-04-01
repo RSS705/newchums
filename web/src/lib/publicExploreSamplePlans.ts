@@ -57,6 +57,7 @@ export function getSamplePublicExplorePlans(now = new Date()): PlanEvent[] {
       maybeCount: 1,
       distanceKm: null,
       bannerKey: null,
+      bannerUrl: "/images/sample-plans/board-games.jpg",
     },
     {
       id: IDS[1],
@@ -81,6 +82,7 @@ export function getSamplePublicExplorePlans(now = new Date()): PlanEvent[] {
       maybeCount: 0,
       distanceKm: null,
       bannerKey: null,
+      bannerUrl: "/images/sample-plans/card-games.jpg",
     },
     {
       id: IDS[2],
@@ -105,6 +107,7 @@ export function getSamplePublicExplorePlans(now = new Date()): PlanEvent[] {
       maybeCount: 2,
       distanceKm: null,
       bannerKey: null,
+      bannerUrl: "/images/sample-plans/dnd.jpg",
     },
     {
       id: IDS[3],
@@ -129,6 +132,7 @@ export function getSamplePublicExplorePlans(now = new Date()): PlanEvent[] {
       maybeCount: 0,
       distanceKm: null,
       bannerKey: null,
+      bannerUrl: "/images/sample-plans/chess.jpg",
     },
     {
       id: IDS[4],
@@ -156,6 +160,7 @@ export function getSamplePublicExplorePlans(now = new Date()): PlanEvent[] {
       maybeCount: 1,
       distanceKm: null,
       bannerKey: null,
+      bannerUrl: "/images/sample-plans/drawing.jpg",
     },
     {
       id: IDS[5],
@@ -180,6 +185,7 @@ export function getSamplePublicExplorePlans(now = new Date()): PlanEvent[] {
       maybeCount: 0,
       distanceKm: null,
       bannerKey: null,
+      bannerUrl: "/images/sample-plans/pottery.jpg",
     },
   ];
 
