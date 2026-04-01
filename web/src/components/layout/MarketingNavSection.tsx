@@ -4,6 +4,7 @@ import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { headerNavLinks } from "@/config/nav";
 
 type MarketingNavSectionProps = {
@@ -19,6 +20,8 @@ type MarketingNavSectionProps = {
  * Typography slightly larger for improved mobile readability.
  */
 export default function MarketingNavSection({ onLinkClick, sectionTitle = "More Goodness" }: MarketingNavSectionProps) {
+  const pathname = usePathname();
+
   return (
     <Box sx={{ px: 2.5, py: 2 }}>
       <Typography
@@ -36,29 +39,32 @@ export default function MarketingNavSection({ onLinkClick, sectionTitle = "More 
         {sectionTitle}
       </Typography>
       <Stack spacing={0.25}>
-        {headerNavLinks.map((link) => (
-          <Link
-            key={link.href}
-            href={link.href}
-            onClick={onLinkClick}
-            style={{ textDecoration: "none" }}
-          >
-            <Typography
-              component="span"
-              variant="body2"
-              sx={{
-                color: "text.secondary",
-                fontSize: "0.9375rem",
-                fontWeight: 500,
-                "&:hover": { color: "primary.main" },
-                display: "block",
-                py: 0.875,
-              }}
+        {headerNavLinks.map((link) => {
+          const isActive = pathname === link.href;
+          return (
+            <Link
+              key={link.href}
+              href={link.href}
+              onClick={onLinkClick}
+              style={{ textDecoration: "none" }}
             >
-              {link.label}
-            </Typography>
-          </Link>
-        ))}
+              <Typography
+                component="span"
+                variant="body2"
+                sx={{
+                  color: isActive ? "primary.main" : "text.secondary",
+                  fontSize: "0.9375rem",
+                  fontWeight: isActive ? 700 : 500,
+                  "&:hover": { color: "primary.main" },
+                  display: "block",
+                  py: 0.875,
+                }}
+              >
+                {link.label}
+              </Typography>
+            </Link>
+          );
+        })}
       </Stack>
     </Box>
   );

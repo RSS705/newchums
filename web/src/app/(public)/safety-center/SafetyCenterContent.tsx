@@ -102,22 +102,18 @@ const GATHERING_TIPS = [
 
 const RESPECT_CARDS = [
   {
-    accentColor: "secondary.main" as const,
     title: "Respect people's time",
     text: "If something comes up, let the organiser or other attendees know as early as possible. Reliable show-ups and honest cancellations both matter.",
   },
   {
-    accentColor: "primary.main" as const,
     title: "Honour comfort levels",
     text: "Not everyone moves at the same pace socially. Follow someone's lead and avoid applying pressure to extend plans beyond what was agreed.",
   },
   {
-    accentColor: "primary.main" as const,
     title: "Communicate if plans change",
     text: "A quick message if you are running late or need to cancel is a small effort that makes a big difference to how gatherings feel.",
   },
   {
-    accentColor: "secondary.main" as const,
     title: "Kindness sets the tone",
     text: "Being considerate, patient, and genuinely interested in others makes gatherings better for everyone. It's what keeps people coming back.",
   },
@@ -150,7 +146,7 @@ export default function SafetyCenterContent({ isLoggedIn = false }: { isLoggedIn
             component="h1"
             variant="h1"
             fontWeight={800}
-            sx={{ fontSize: "4rem", lineHeight: 1.2, mb: 3 }}
+            sx={{ fontSize: { xs: "2.5rem", sm: "3.25rem", md: "4rem" }, lineHeight: 1.15, mb: 3 }}
           >
             Simple habits for better, safer gatherings
           </Typography>
@@ -160,7 +156,7 @@ export default function SafetyCenterContent({ isLoggedIn = false }: { isLoggedIn
             sx={{
               width: 48,
               height: 3,
-              bgcolor: "primary.main",
+              bgcolor: "secondary.main",
               borderRadius: 1,
               mb: { xs: 3.5, sm: 4.5 },
             }}
@@ -288,7 +284,9 @@ export default function SafetyCenterContent({ isLoggedIn = false }: { isLoggedIn
                     borderRadius: 2,
                     p: { xs: 2.5, sm: 3 },
                     boxShadow: (theme) =>
-                      theme.palette.mode === "light" ? "0 1px 6px rgba(0,0,0,0.07)" : "none",
+                      theme.palette.mode === "light" ? "0 1px 6px rgba(0,0,0,0.05)" : "none",
+                    border: "1px solid",
+                    borderColor: (theme) => theme.palette.mode === "light" ? "rgba(0,0,0,0.06)" : "divider",
                     display: "flex",
                     flexDirection: { xs: "row", sm: "column" },
                     alignItems: { xs: "flex-start", sm: "flex-start" },
@@ -300,7 +298,7 @@ export default function SafetyCenterContent({ isLoggedIn = false }: { isLoggedIn
                       width: 40,
                       height: 40,
                       borderRadius: "50%",
-                      bgcolor: "primary.light",
+                      bgcolor: (theme) => theme.palette.mode === "light" ? "#E65B1310" : "#E65B1320",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
@@ -346,8 +344,8 @@ export default function SafetyCenterContent({ isLoggedIn = false }: { isLoggedIn
                       width: 36,
                       height: 36,
                       borderRadius: "50%",
-                      bgcolor: "secondary.main",
-                      color: "#F7CE16",
+                      bgcolor: (theme) => theme.palette.mode === "light" ? "#E65B1310" : "#E65B1320",
+                      color: "primary.main",
                       fontWeight: 800,
                       fontSize: "0.75rem",
                       display: "flex",
@@ -392,7 +390,7 @@ export default function SafetyCenterContent({ isLoggedIn = false }: { isLoggedIn
         id="respect-and-comfort"
         sx={{
           ...SECTION_SPACING,
-          backgroundColor: (theme) => theme.palette.mode === "light" ? "grey.50" : "grey.900",
+          backgroundColor: (theme) => theme.palette.mode === "light" ? "grey.100" : "grey.900",
           mx: { xs: -2, sm: -3 },
           px: { xs: 2, sm: 3 },
         }}
@@ -408,18 +406,20 @@ export default function SafetyCenterContent({ isLoggedIn = false }: { isLoggedIn
           </Typography>
 
           <Grid container spacing={{ xs: 3, sm: 4 }}>
-            {RESPECT_CARDS.map(({ accentColor, title, text }) => (
+            {RESPECT_CARDS.map(({ title, text }) => (
               <Grid key={title} size={{ xs: 12, sm: 6 }}>
                 <Box
                   sx={{
                     height: "100%",
                     backgroundColor: "background.paper",
+                    border: "1px solid",
+                    borderColor: (theme) => theme.palette.mode === "light" ? "rgba(0,0,0,0.06)" : "divider",
                     borderTop: "3px solid",
-                    borderColor: accentColor,
+                    borderTopColor: "primary.main",
                     borderRadius: 2,
                     p: { xs: 3, sm: 3.5 },
                     boxShadow: (theme) =>
-                      theme.palette.mode === "light" ? "0 1px 6px rgba(0,0,0,0.07)" : "none",
+                      theme.palette.mode === "light" ? "0 1px 6px rgba(0,0,0,0.05)" : "none",
                   }}
                 >
                   <Typography
@@ -459,12 +459,11 @@ export default function SafetyCenterContent({ isLoggedIn = false }: { isLoggedIn
           {/* Callout block */}
           <Box
             sx={{
-              pl: { xs: 0, sm: 3 },
-              pt: { xs: 3, sm: 1 },
-              pb: { xs: 0.5, sm: 1 },
-              borderLeft: { xs: "none", sm: "3px solid #E65B13" },
-              borderTop: { xs: "2px solid #E65B13", sm: "none" },
-              textAlign: { xs: "center", sm: "left" },
+              pl: { xs: 2.5, sm: 3 },
+              py: 1,
+              borderLeft: "3px solid",
+              borderColor: "primary.main",
+              textAlign: "left",
               mb: { xs: 3, sm: 4 },
             }}
           >
@@ -508,6 +507,12 @@ export default function SafetyCenterContent({ isLoggedIn = false }: { isLoggedIn
               justifyContent: "space-between",
               gap: { xs: 3, sm: 4 },
               textAlign: { xs: "center", sm: "left" },
+              bgcolor: "background.paper",
+              borderRadius: 3,
+              p: { xs: 3, sm: 4 },
+              border: "1px solid",
+              borderColor: (theme) => theme.palette.mode === "light" ? "rgba(0,0,0,0.06)" : "divider",
+              boxShadow: (theme) => theme.palette.mode === "light" ? "0 1px 6px rgba(0,0,0,0.05)" : "none",
             }}
           >
             <Stack spacing={1.5} sx={{ flex: 1, maxWidth: { sm: 560 } }}>

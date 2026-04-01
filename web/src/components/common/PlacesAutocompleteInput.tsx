@@ -29,7 +29,7 @@ export type PlacesAutocompleteInputProps = {
   error?: boolean;
   disabled?: boolean;
   sx?: Record<string, unknown>;
-  /** Google Places types filter. Defaults to ["address"]. Use ["establishment", "geocode"] for venue+address search. */
+  /** Google Places types filter. Defaults to ["address"]. Pass [] to return all place types (parks, landmarks, etc.). */
   placeTypes?: string[];
   /** Unique HTML id for the input (avoids conflicts when multiple instances exist). */
   inputId?: string;
@@ -88,7 +88,7 @@ export default function PlacesAutocompleteInput({
     (el: HTMLInputElement) => {
       if (autocompleteRef.current || !el || typeof google === "undefined") return;
       const autocomplete = new google.maps.places.Autocomplete(el, {
-        types: placeTypes,
+        ...(placeTypes.length > 0 && { types: placeTypes }),
         fields: ["formatted_address", "place_id", "geometry", "name"],
       });
       autocompleteRef.current = autocomplete;

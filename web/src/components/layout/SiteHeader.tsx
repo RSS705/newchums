@@ -7,6 +7,7 @@ import Link from "next/link";
 import Stack from "@mui/material/Stack";
 import Toolbar from "@mui/material/Toolbar";
 import type { ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import BrandLogo from "@/components/BrandLogo";
 import { headerNavLinks } from "@/config/nav";
 
@@ -28,6 +29,8 @@ export default function SiteHeader({
   rightSide,
   mobileMenuButton,
 }: SiteHeaderProps) {
+  const pathname = usePathname();
+
   return (
     <Container
       maxWidth="lg"
@@ -76,18 +79,27 @@ export default function SiteHeader({
             display: { xs: "none", md: "flex" },
           }}
         >
-          {headerNavLinks.map((link) => (
-            <Button
-              key={link.href}
-              component={Link}
-              href={link.href}
-              color="inherit"
-              variant="text"
-              sx={{ fontSize: "inherit", textTransform: "none" }}
-            >
-              {link.label}
-            </Button>
-          ))}
+          {headerNavLinks.map((link) => {
+            const isActive = pathname === link.href;
+            return (
+              <Button
+                key={link.href}
+                component={Link}
+                href={link.href}
+                color="inherit"
+                variant="text"
+                sx={{
+                  fontSize: "inherit",
+                  textTransform: "none",
+                  color: isActive ? "primary.main" : "inherit",
+                  fontWeight: isActive ? 700 : undefined,
+                  position: "relative",
+                }}
+              >
+                {link.label}
+              </Button>
+            );
+          })}
         </Stack>
         <Box sx={{ flexGrow: 1, minWidth: 0 }} />
         <Stack

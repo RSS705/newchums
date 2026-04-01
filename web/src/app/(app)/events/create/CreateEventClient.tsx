@@ -463,6 +463,7 @@ export default function CreateEventClient() {
             minRows={3}
             maxRows={6}
             inputProps={{ maxLength: 2000 }}
+            helperText={null}
           />
 
           <HobbyPickerField
@@ -586,7 +587,10 @@ export default function CreateEventClient() {
                       value={deadlineTime}
                       onChange={setDeadlineTime}
                       format="h:mm A"
-                      slotProps={{ textField: { size: "small", placeholder: "Time", sx: { flex: 1 } } }}
+                      slotProps={{
+                        field: { shouldRespectLeadingZeros: true } as Record<string, unknown>,
+                        textField: { size: "small", placeholder: "Time", sx: { flex: 1 } },
+                      }}
                     />
                   </Stack>
                 </Box>
@@ -639,7 +643,7 @@ export default function CreateEventClient() {
                 placeholder="Search for a place or enter an address"
                 helperText={errors.location || undefined}
                 error={!!errors.location}
-                placeTypes={["establishment", "geocode"]}
+                placeTypes={[]}
                 inputId="places-autocomplete-event"
               />
               <FormControl fullWidth size="medium" sx={{ minWidth: 200 }}>

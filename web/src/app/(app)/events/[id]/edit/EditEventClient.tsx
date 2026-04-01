@@ -589,7 +589,10 @@ export default function EditEventClient() {
                       value={deadlineTime}
                       onChange={setDeadlineTime}
                       format="h:mm A"
-                      slotProps={{ textField: { size: "small", placeholder: "Time", sx: { flex: 1 } } }}
+                      slotProps={{
+                        field: { shouldRespectLeadingZeros: true } as Record<string, unknown>,
+                        textField: { size: "small", placeholder: "Time", sx: { flex: 1 } },
+                      }}
                     />
                   </Stack>
                 </Box>
@@ -640,7 +643,7 @@ export default function EditEventClient() {
                 }}
                 label="Venue or address"
                 placeholder="Search for a place or enter an address"
-                placeTypes={["establishment", "geocode"]}
+                placeTypes={[]}
                 inputId="places-autocomplete-edit-event"
               />
               <FormControl fullWidth size="medium" sx={{ minWidth: 200 }}>

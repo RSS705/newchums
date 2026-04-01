@@ -1,6 +1,6 @@
 # System Map
 
-Last Updated: March 24, 2026
+Last Updated: March 31, 2026
 
 This document reflects the current production reality of NewChums.
 It is diagram-first: use this for boundaries, flows, and "how it connects."
@@ -43,10 +43,10 @@ flowchart TB
   API -->|"Logs"| AX["Axiom<br/>(Logs)"]
   W -->|"Analytics"| GA["Google Analytics<br/>(gtag.js)"]
 
-  API -->|"Avatar objects"| R2["R2 (avatars)<br/>newchums-media"]
+  API -->|"Media objects"| R2["R2 (media)<br/>newchums-media<br/>(avatars, banners, attachments)"]
   API -->|"WebSocket relay"| DO["Durable Objects<br/>(ChatRoom per plan)"]
   U -->|"WebSocket"| API
-  CRON["Cron Triggers<br/>(hourly: attendance assurance + daily digest)"] -->|"scheduled"| API
+  CRON["Cron Triggers<br/>(hourly: attendance assurance,<br/>auto-cancel, chat digest,<br/>event match digest, feedback emails)"] -->|"scheduled"| API
 
   subgraph "Community Features"
     COMM_PAGES["Community Pages<br/>/communities/*"]
@@ -85,7 +85,7 @@ The following flows run in the API worker; the web app calls the API via `NEXT_P
 |------|------------------|------|
 | Signup | `POST /auth/signup` (with legal acceptance) | none |
 | Legal acceptance (OAuth) | `POST /auth/record-legal-acceptance` | Bearer JWT |
-| Email verification | `POST /auth/email-verify/request`, `POST /auth/email-verify/confirm`, `GET /auth/email-verify/status` | none |
+| Email verification | `POST /auth/email-verify/request`, `POST /auth/email-verify/confirm`, `GET /auth/email-verify/status`, `POST /auth/email-verify/mark-oauth` | none |
 | Password reset | `POST /auth/password-reset/request`, `POST /auth/password-reset/confirm` | none |
 | Email change | `POST /account/email-change/request`, `POST /account/email-change/confirm` | Bearer JWT |
 | Password change | `POST /account/password-change` | Bearer JWT (credentials users only) |
@@ -98,26 +98,38 @@ The following flows run in the API worker; the web app calls the API via `NEXT_P
 | Handle availability | `GET /handles/available?handle=...` | Bearer JWT |
 | Objectives / nudge | `GET /objectives/next`, `PUT /objectives/tutorial-off` | Bearer JWT |
 | Onboarding | `POST /user/username`, `POST /user/date-of-birth` | Bearer JWT |
-| Avatar upload | `POST /media/init` → PUT to uploadUrl → `POST /media/finalize` | Bearer JWT |
+| Media upload | `POST /media/init` → `PUT /media/upload/:token` → `POST /media/finalize` | Bearer JWT |
 | Avatar remove | `DELETE /profile/avatar` | Bearer JWT |
 | Avatar image | `GET /users/:userId/avatar` | public |
-| Chums | `GET /chums`, `GET /chums/search`, `GET /chums/check/:userId`, `POST /chums/:userId`, `DELETE /chums/:userId`, `PATCH /chums/:userId/note` | Bearer JWT |
+| Event banner image | `GET /events/:eventId/banner` | public |
+| Community avatar image | `GET /communities/:communityId/avatar` | public |
+| Chums | `GET /chums`, `GET /chums/search`, `GET /chums/check/:userId`, `POST /chums/:userId`, `POST /chums/private`, `DELETE /chums/:id`, `PATCH /chums/:contactId/note` | Bearer JWT |
 | Chum invites | `POST /chums/invite`, `POST /chums/invite/accept` | Bearer JWT |
 | Public Chums | `GET /public/users/:handle/chums` | none |
-| Events (plans) | `POST /events`, `GET /events/mine`, `GET /events/:id` (optional auth, returns `accessState` + `shareToken`), `GET /events/explore` (auth), `GET /events/explore/public` (no auth), `PATCH /events/:id`, `POST /events/:id/rsvp`, `POST /events/:id/alt-time`, `POST /events/:id/cancel`, `POST /events/:id/invite`, `POST /events/:id/confirm`, `POST /events/:id/email-confirm` | Bearer JWT (detail: optional; accepts `invite_token` / `participation_token` / `share_token`); explore/public: no auth |
-| Plan feedback | `GET /events/:id/feedback`, `POST /events/:id/feedback` (updates `user_metrics`), `POST /events/:id/attendance-issue` (penalizes reliability), `POST /events/:id/conduct-report` | Bearer JWT |
+| Events (plans) | `POST /events`, `GET /events/mine`, `GET /events/:id` (optional auth, returns `accessState` + `shareToken`), `GET /events/explore` (auth), `GET /events/explore/public` (no auth), `PATCH /events/:id`, `POST /events/:id/cancel` | Bearer JWT (detail: optional; accepts `invite_token` / `participation_token` / `share_token`); explore/public: no auth |
+| Plan RSVP | `POST /events/:id/rsvp`, `POST /events/:id/email-rsvp`, `POST /events/:id/public-rsvp/request-code`, `POST /events/:id/public-rsvp/confirm-code`, `POST /events/:id/confirm`, `POST /events/:id/email-confirm` | Bearer JWT / token-based |
+| Plan alt times | `POST /events/:id/alt-time`, `PATCH /events/:id/alt-time/:altTimeId`, `DELETE /events/:id/alt-time/:altTimeId`, `POST /events/:id/guest-alt-time`, `POST /events/:id/promote-alt-time` | Bearer JWT |
+| Plan attendee mgmt | `POST /events/:id/invite`, `POST /events/:id/remove-attendee`, `POST /events/:id/remove-invite`, `POST /events/:id/reserve-seats`, `POST /events/:id/toggle-attendee-invites` | Bearer JWT (host only) |
+| Plan join requests | `POST /events/:id/join-request`, `POST /events/:id/join-request/:requestId/approve`, `POST /events/:id/join-request/:requestId/decline`, `POST /events/:id/join-request/:requestId/withdraw` | Bearer JWT |
+| Plan lock | `POST /events/:id/lock` | Bearer JWT (host only) |
+| Plan feedback | `GET /events/:id/feedback`, `POST /events/:id/feedback` (updates `user_metrics`), `POST /events/:id/feedback/dismiss`, `POST /events/:id/attendance-issue` (penalizes reliability), `POST /events/:id/attendance-dispute`, `POST /events/:id/conduct-report` | Bearer JWT |
 | Chum preferences | `GET /chum-preferences`, `PUT /chum-preferences` | Bearer JWT |
 | Attendance record | `GET /public/users/:userId/attendance-record` | none |
 | Plan chat | `GET /events/:id/chat`, `POST /events/:id/chat`, `POST /events/:id/chat/read`, `GET /events/:id/chat/ws` (WebSocket upgrade) | Bearer JWT |
-| Plan lock | `POST /events/:id/lock` | Bearer JWT (host only) |
 | Notifications | `GET /notifications` (includes `unreadChats`), `POST /notifications/read` | Bearer JWT |
 | Email unsubscribe | `POST /email/unsubscribe` | Signed JWT token |
 | Contact form | `POST /contact` | none (Turnstile for logged-out) |
+| UI state | `PUT /share-link-modal-dismiss` | Bearer JWT |
+| Roadmap | `GET /roadmap`, `GET /roadmap/:id`, `POST /roadmap`, `PUT /roadmap/:id`, `DELETE /roadmap/:id`, `POST /roadmap/:id/vote`, `POST /roadmap/:id/follow`, `POST /roadmap/:id/comment`, `GET /roadmap/:id/attachment` | Bearer JWT |
 | Admin, interests | `GET /admin/interests`, `PATCH /admin/interests/:id`, `DELETE /admin/interests/:id`, `POST /admin/interests/:id/restore`, `POST /admin/interests/merge` | Bearer JWT + `super_admin` role |
-| Admin, users | `GET /admin/users`, `POST /admin/users/:id/suspend`, `POST /admin/users/:id/unsuspend`, `GET /admin/users/:id/diagnostics` | Bearer JWT + `super_admin` role |
-| Communities | `POST /communities`, `GET /communities`, `GET /communities/slug-available`, `GET /communities/:slug`, `PATCH /communities/:slug`, `DELETE /communities/:slug`, `POST /communities/:id/join`, `POST /communities/:id/leave`, `GET /communities/:id/members`, `POST /communities/:id/members/:userId/remove`, `PUT /communities/:id/join-requests/:requestId`, `GET /communities/:id/join-requests`, `GET /communities/:id/events` | Bearer JWT |
+| Admin, users | `GET /admin/users`, `POST /admin/users/:id/suspend`, `POST /admin/users/:id/unsuspend`, `GET /admin/users/:id/diagnostics`, `PUT /admin/users/:id/metrics` | Bearer JWT + `super_admin` role |
+| Admin, safety | `PUT /admin/attendance-issues/:id/status`, `GET /admin/concern-reports`, `PUT /admin/concern-reports/:id/status` | Bearer JWT + `super_admin` role |
+| Admin, dashboard | `GET /admin/badge-counts`, `POST /admin/mark-viewed`, `GET /admin/kpis`, `GET /admin/kpis/growth-loop/filters`, `GET /admin/kpis/growth-loop`, `GET /admin/objectives/kpi` | Bearer JWT + `super_admin` role |
+| Admin, plans | `GET /admin/plans`, `POST /admin/plans/:id/remove` | Bearer JWT + `super_admin` role |
+| Admin, roadmap | `GET /admin/roadmap`, `POST /admin/roadmap/:id/status`, `POST /admin/roadmap/:id/merge`, `POST /admin/roadmap/:id/edit`, `POST /admin/roadmap/:id/remove`, `POST /admin/roadmap/:id/restore`, `DELETE /admin/roadmap/comments/:id` | Bearer JWT + `super_admin` role |
+| Communities | `POST /communities`, `GET /communities`, `GET /communities/slug-available`, `GET /communities/:slug`, `PATCH /communities/:slug`, `POST /communities/:slug/close`, `DELETE /communities/:slug`, `POST /communities/:id/join`, `POST /communities/:id/leave`, `GET /communities/:id/members`, `POST /communities/:id/members/:userId/remove`, `PUT /communities/:id/join-requests/:requestId`, `GET /communities/:id/join-requests`, `GET /communities/:id/events` | Bearer JWT |
 | Admin, communities | `GET /admin/communities`, `POST /admin/communities/:id/remove` | Bearer JWT + `super_admin` role |
-| Diagnostics | `GET /health`, `GET /health/env` | none |
+| Diagnostics | `GET /`, `GET /health`, `GET /health/env`, `GET /health/db`, `GET /db/ping`, `GET /db/postgis` | none |
 
 ### Content safety
 
@@ -153,9 +165,15 @@ sequenceDiagram
 
 ## 5) Key User Flows
 
-### Background digest emails (API `scheduled`)
+### Background scheduled tasks (API `scheduled`, hourly cron)
 
-The hourly cron runs attendance assurance, then unread-chat digest (daily gate), then the **event match digest** (“new plans matching my interests”). Recipients need home location, travel radius, and the `event_match` preference. **Public** in-person plans require hobby overlap with the plan within travel radius (and the other digest gates). **Chums-only** in-person plans use the **same** hobby and distance rules; the recipient must also be on the **host’s** On NewChums connections (`user_contacts`, `type = 'on_newchums'`). **Invite-only** plans are excluded.
+The hourly cron runs five tasks in sequence:
+
+1. **Attendance assurance** -- validates and manages event attendance
+2. **Auto-cancel plans** -- cancels published plans whose event time has passed with no attendees beyond the host (within a 2-hour window)
+3. **Unread chat digest** -- sends digest emails for unread chat messages (daily gate, 23-hour cooldown)
+4. **Event match digest** -- “new plans matching my interests.” Recipients need home location, travel radius, and the `event_match` preference. **Public** in-person plans require hobby overlap with the plan within travel radius (and the other digest gates). **Chums-only** in-person plans use the **same** hobby and distance rules; the recipient must also be on the **host’s** On NewChums connections (`user_contacts`, `type = ‘on_newchums’`). **Invite-only** plans are excluded.
+5. **Post-plan feedback emails** -- sends feedback request 3+ hours after a plan ends to attendees
 
 After the SQL selects candidate (recipient, plan) pairs, **chum preference filtering** applies two checks: (1) the host's metrics must meet the recipient's chum preference thresholds, and (2) the recipient's metrics must meet the host's thresholds. Both must pass for a plan to appear in a digest. **Plan-level preference overrides** (`pref_overrides` JSONB on events) are respected: `{ "disabled": true }` bypasses all host preference checks for that plan; `{ "disabled_metrics": [...] }` bypasses specific metrics only. The **Explore feed** also enforces the host's chum preferences as a hard filter (respecting plan-level overrides in SQL); the viewer's own preferences produce informational compatibility notes but do not hide plans.
 
@@ -177,11 +195,13 @@ Visit newchums.com → Homepage (LandingLayout)
 ```
 Sign in → Explore (event discovery feed)
 ├── Start a plan → Create event form → Publish → Your Plans
-├── Explore → Browse events → RSVP / Suggest alt time
+├── Explore → Browse events → RSVP / Suggest alt time / Request to join
 ├── Your Plans → Upcoming / Past tabs → Event detail
+│   ├── Edit plan (host) → Edit event form
 │   └── Past plan → Post-plan feedback (rate attendees, report issues/concerns)
 ├── Your Chums → Search / Add / Remove / Invite by email
 ├── Communities → Browse / Create / Join / Community plans feed
+├── Roadmap → Browse / Vote / Follow / Comment on feature requests
 ├── Profile → Edit → Chum preferences → Public profile (/u/handle)
 ├── Settings → Notifications / Privacy / Email / Password / Delete account
 ├── Notifications (bell) → View / mark read
@@ -265,11 +285,17 @@ Wrangler config is code-managed so deploys do not wipe routes or override canoni
 | `/forgot-password` | Request password reset |
 | `/reset-password` | Set new password |
 | `/auth/verify` | Email verification landing |
-| `/auth/verify-pending` | Verification pending polling page |
+| `/auth/verify/pending` | Verification pending polling page |
+| `/auth/email-change/confirm` | Email change confirmation landing |
+| `/onboarding/username` | Onboarding: set username |
+| `/onboarding/date-of-birth` | Onboarding: set date of birth |
 | `/u/[handle]` | Public profile (works logged-in or out; logged-out viewers see reduced info: username only, no name/age/reliability) |
 | `/events/[id]` (logged out) | Plan detail, public preview with limited info and sign-in CTA |
+| `/roadmap` | Public product roadmap, vote and follow items |
+| `/roadmap/[id]` | Roadmap item detail, comments, voting |
 | `/terms` | Terms of Use |
 | `/privacy` | Privacy Policy |
+| `/unsubscribe` | Email notification unsubscribe (public, token-based) |
 
 ### Logged-in routes (AppShell)
 
@@ -279,18 +305,23 @@ Wrangler config is code-managed so deploys do not wipe routes or override canoni
 | `/events/create` | Start a plan (create event) |
 | `/plans` | Your Plans, upcoming / past tabs |
 | `/events/[id]` | Event detail, full experience with RSVP, attendees, chat, lock, cancel (access state: authenticated/attending). Past plans show post-plan feedback section. |
+| `/events/[id]/edit` | Edit an existing event (host only) |
 | `/chum-groups` | Your Chums, search, invite, list |
 | `/profile` | Edit profile |
 | `/settings` | Notifications, privacy, account |
-| `/admin/interests` | Interests moderation (super_admin) |
-| `/admin/chums` | User management (super_admin) |
-| `/admin/chums/[id]` | User diagnostics, metric scores, preferences, feedback, issues (super_admin) |
-| `/admin/communities` | Community management, list, search, remove (super_admin) |
 | `/communities` | Browse and search communities |
 | `/communities/create` | Create a new community |
 | `/communities/[slug]` | Community detail, info, members, plan feed, join/leave, join-request management |
 | `/communities/[slug]/edit` | Edit community settings (owner) |
-| `/unsubscribe` | Email notification unsubscribe (public, token-based) |
+| `/admin/interests` | Interests moderation (super_admin) |
+| `/admin/chums` | User management (super_admin) |
+| `/admin/chums/[id]` | User diagnostics, metric scores, preferences, feedback, issues (super_admin) |
+| `/admin/communities` | Community management, list, search, remove (super_admin) |
+| `/admin/kpis` | KPI dashboard, growth loop analytics (super_admin) |
+| `/admin/plans` | Plan management, list, search, remove (super_admin) |
+| `/admin/safety` | Concern reports, attendance issues management (super_admin) |
+| `/admin/roadmap` | Roadmap item moderation, status, merge, remove (super_admin) |
+| `/admin/system-logic` | System logic configuration (super_admin) |
 
 ---
 
@@ -316,10 +347,10 @@ flowchart TB
   API --> AX["Axiom Logs"]
   W --> GA["Google Analytics"]
 
-  R2["R2 (avatars)"] --> API
+  R2["R2 (media)<br/>(avatars, banners, attachments)"] --> API
   API -->|"WebSocket relay"| DO["Durable Objects<br/>(ChatRoom)"]
   U -->|"WebSocket"| API
-  CRON["Cron Triggers<br/>(hourly: attendance assurance + daily digest)"] -->|"scheduled"| API
+  CRON["Cron Triggers<br/>(hourly: attendance assurance,<br/>auto-cancel, chat digest,<br/>event match digest, feedback emails)"] -->|"scheduled"| API
 
   API -->|"Community CRUD<br/>+ membership"| DB
 ```

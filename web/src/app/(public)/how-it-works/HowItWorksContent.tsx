@@ -310,12 +310,14 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
   const [imageErrors, setImageErrors] = useState<Set<string>>(new Set());
   const [activeStep, setActiveStep] = useState(0);
 
-  function Screenshot({ src, placeholder, icon: Icon, accentColor = "#E65B13", aspectRatio = "3 / 2" }: {
+  function Screenshot({ src, placeholder, icon: Icon, accentColor = "#E65B13", aspectRatio = "3 / 2", width = 1200, height = 800 }: {
     src: string;
     placeholder: string;
     icon: SvgIconComponent;
     accentColor?: string;
     aspectRatio?: string;
+    width?: number;
+    height?: number;
   }) {
     const hasError = imageErrors.has(src);
     return (
@@ -344,8 +346,8 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
           <Image
             src={src}
             alt={placeholder}
-            width={1200}
-            height={800}
+            width={width}
+            height={height}
             sizes="(max-width: 960px) 100vw, 50vw"
             style={{ width: "100%", height: "auto", display: "block" }}
             onError={() => setImageErrors((prev) => new Set(prev).add(src))}
@@ -355,6 +357,9 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
             <Icon sx={{ fontSize: 36, color: accentColor }} />
             <Typography variant="caption" color="text.secondary" fontWeight={500}>
               {placeholder}
+            </Typography>
+            <Typography variant="caption" color="text.disabled" sx={{ fontSize: "0.625rem", fontFamily: "monospace" }}>
+              {width} x {height}px
             </Typography>
           </Stack>
         )}
@@ -426,7 +431,13 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
           </Box>
 
           {/* Stepper tabs */}
-          <Box sx={{ display: "flex", justifyContent: "center", gap: { xs: 0.5, sm: 1 }, mb: { xs: 3, sm: 4 }, flexWrap: "wrap" }}>
+          <Box sx={{
+            display: "flex", justifyContent: { xs: "flex-start", sm: "center" }, gap: { xs: 0.5, sm: 1 }, mb: { xs: 3, sm: 4 },
+            overflowX: { xs: "auto", sm: "visible" }, flexWrap: { xs: "nowrap", sm: "wrap" },
+            WebkitOverflowScrolling: "touch",
+            scrollbarWidth: "none", "&::-webkit-scrollbar": { display: "none" },
+            px: { xs: 1, sm: 0 },
+          }}>
             {LIFECYCLE_STEPS.map(({ Icon, label, color }, i) => {
               const isActive = i === activeStep;
               return (
@@ -437,7 +448,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
                   tabIndex={0}
                   onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setActiveStep(i); } }}
                   sx={{
-                    display: "flex", alignItems: "center", gap: 1,
+                    display: "flex", alignItems: "center", gap: 1, flexShrink: 0,
                     px: { xs: 1.5, sm: 2.5 }, py: { xs: 1, sm: 1.25 }, borderRadius: 3,
                     cursor: "pointer", transition: "all 0.2s ease", userSelect: "none",
                     backgroundColor: isActive ? "background.paper" : "transparent",
@@ -456,7 +467,8 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
                   <Typography variant="body2" fontWeight={isActive ? 700 : 500} sx={{
                     color: isActive ? color : "text.secondary",
                     fontSize: { xs: "0.75rem", sm: "0.875rem" },
-                    display: { xs: "none", sm: "block" },
+                    display: { xs: isActive ? "block" : "none", sm: "block" },
+                    whiteSpace: "nowrap",
                   }}>
                     {label}
                   </Typography>
@@ -479,22 +491,24 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
             <Grid container>
               {/* Screenshot side */}
               <Grid size={{ xs: 12, md: 7 }}>
-                <Box sx={{ p: { xs: 2, sm: 3 } }}>
+                <Box sx={{ p: { xs: 1.5, sm: 3 } }}>
                   <Screenshot
                     src={step.imageSrc}
                     placeholder={step.placeholder}
                     icon={step.Icon}
                     accentColor={step.color}
                     aspectRatio="16 / 10"
+                    width={1200}
+                    height={750}
                   />
                 </Box>
               </Grid>
               {/* Details side */}
               <Grid size={{ xs: 12, md: 5 }}>
-                <Box sx={{ p: { xs: 2.5, sm: 3, md: 4 }, display: "flex", flexDirection: "column", justifyContent: "center", height: "100%" }}>
+                <Box sx={{ p: { xs: 2.5, sm: 3, md: 4 }, pt: { xs: 1, sm: 3, md: 4 }, display: "flex", flexDirection: "column", justifyContent: "center", height: "100%" }}>
                   <Box sx={{
                     width: 40, height: 40, borderRadius: "50%", bgcolor: `${step.color}12`,
-                    display: "flex", alignItems: "center", justifyContent: "center", mb: 2,
+                    display: { xs: "none", md: "flex" }, alignItems: "center", justifyContent: "center", mb: 2,
                   }}>
                     {(() => { const StepIcon = step.Icon; return <StepIcon sx={{ fontSize: 22, color: step.color }} />; })()}
                   </Box>
@@ -565,10 +579,10 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
                   }}
                 >
                   {/* Card image */}
-                  <Screenshot src={imageSrc} placeholder={placeholder} icon={TuneRoundedIcon} accentColor="#E65B13" aspectRatio="16 / 10" />
+                  <Screenshot src={imageSrc} placeholder={placeholder} icon={TuneRoundedIcon} accentColor="#E65B13" aspectRatio="16 / 10" width={1200} height={750} />
                   {/* Card text */}
                   <Box sx={{ p: { xs: 2, sm: 2.5 } }}>
-                    <Typography variant="body1" fontWeight={700} sx={{ mb: 0.5, lineHeight: 1.3 }}>
+                    <Typography variant="body1" fontWeight={700} sx={{ mb: 0.5, lineHeight: 1.3, color: "primary.main" }}>
                       {label}
                     </Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
@@ -580,10 +594,6 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
             ))}
           </Grid>
 
-          {/* CTA inside this section's background */}
-          <Box sx={{ textAlign: "center", mt: { xs: 4, sm: 6 } }}>
-            <InlineCTA isLoggedIn={isLoggedIn} />
-          </Box>
         </Box>
       </Box>
 
@@ -640,12 +650,12 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
                   {hasMultipleImages ? (
                     <Stack spacing={2}>
                       {/* Primary large screenshot */}
-                      <Screenshot src={section.images[0].src} placeholder={section.images[0].placeholder} icon={section.images[0].Icon} accentColor={section.accentColor} aspectRatio="16 / 10" />
+                      <Screenshot src={section.images[0].src} placeholder={section.images[0].placeholder} icon={section.images[0].Icon} accentColor={section.accentColor} aspectRatio="16 / 10" width={1200} height={750} />
                       {/* Secondary screenshots side by side */}
                       <Grid container spacing={2}>
                         {section.images.slice(1).map((img) => (
                           <Grid key={img.src} size={{ xs: 6 }}>
-                            <Screenshot src={img.src} placeholder={img.placeholder} icon={img.Icon} accentColor={section.accentColor} aspectRatio="4 / 3" />
+                            <Screenshot src={img.src} placeholder={img.placeholder} icon={img.Icon} accentColor={section.accentColor} aspectRatio="4 / 3" width={1200} height={900} />
                           </Grid>
                         ))}
                       </Grid>
@@ -709,7 +719,12 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
                         onError={() => setImageErrors((prev) => new Set(prev).add(bannerSrc))}
                       />
                     ) : (
-                      <Icon sx={{ fontSize: 32, color: bannerColor, opacity: 0.25 }} />
+                      <Stack alignItems="center" spacing={0.5}>
+                        <Icon sx={{ fontSize: 32, color: bannerColor, opacity: 0.25 }} />
+                        <Typography variant="caption" color="text.disabled" sx={{ fontSize: "0.625rem", fontFamily: "monospace", opacity: 0.6 }}>
+                          600 x 240px
+                        </Typography>
+                      </Stack>
                     )}
                   </Box>
                   {/* Card content */}

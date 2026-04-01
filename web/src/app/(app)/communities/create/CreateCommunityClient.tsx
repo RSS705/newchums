@@ -275,7 +275,7 @@ export default function CreateCommunityClient() {
                 setLocationAddress(result.formattedAddress);
               }}
               placeholder="Search for a place or enter a name"
-              placeTypes={["establishment", "geocode"]}
+              placeTypes={[]}
               inputId="places-autocomplete-community-create"
             />
             {locationAddress && (

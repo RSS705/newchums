@@ -1830,23 +1830,20 @@ export default function EventDetailClient() {
                 {event.maxSeats != null ? ` · ${event.maxSeats} max` : ""}
               </Typography>
             </Stack>
+            {event.description && (
+              <>
+                <Divider />
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ whiteSpace: "pre-line", lineHeight: 1.7 }}
+                >
+                  {event.description}
+                </Typography>
+              </>
+            )}
           </Stack>
         </AppCard>
-
-        {event.description && (
-          <AppCard>
-            <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
-              About this plan
-            </Typography>
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              sx={{ whiteSpace: "pre-line", lineHeight: 1.7 }}
-            >
-              {event.description}
-            </Typography>
-          </AppCard>
-        )}
 
         {!pubIsCanceled && !pubIsPast && (
           <AppCard>
@@ -2291,7 +2288,7 @@ export default function EventDetailClient() {
                       ? `, ${event.pendingConfirmationCount} pending`
                       : ""}
                     {event.minConfirmedAttendees
-                      ? ` · ${event.minConfirmedAttendees} required`
+                      ? ` · ${event.minConfirmedAttendees} ${event.minConfirmedAttendees === 1 ? "person" : "people"} required`
                       : ""}
                   </Typography>
                   {event.confirmationCutoffAt && (
@@ -2341,6 +2338,14 @@ export default function EventDetailClient() {
                 </Stack>
               )}
             </Stack>
+          )}
+          {event.description && (
+            <>
+              <Divider />
+              <Typography variant="body1" sx={{ whiteSpace: "pre-line", lineHeight: 1.7 }}>
+                {event.description}
+              </Typography>
+            </>
           )}
         </Stack>
       </AppCard>
@@ -2393,15 +2398,6 @@ export default function EventDetailClient() {
               </Typography>
             )}
           </Box>
-        </AppCard>
-      )}
-
-      {/* Description */}
-      {event.description && (
-        <AppCard>
-          <Typography variant="body1" sx={{ whiteSpace: "pre-line", lineHeight: 1.7 }}>
-            {event.description}
-          </Typography>
         </AppCard>
       )}
 
@@ -3670,7 +3666,7 @@ export default function EventDetailClient() {
                             {isInviting ? (
                               <CircularProgress size={14} color="inherit" sx={{ mx: 1 }} />
                             ) : (
-                              "Send Invite"
+                              "Send Email Invite"
                             )}
                           </Button>
                         </Box>
@@ -4121,51 +4117,42 @@ export default function EventDetailClient() {
               </Typography>
 
               {isAvailMode && event.availabilityDeadlineAt && (
-                <Typography
-                  variant="body2"
-                  sx={{
-                    mb: 1.5,
-                    px: 1.5,
-                    py: 1,
-                    borderRadius: 1.5,
-                    bgcolor: "warning.50",
-                    border: "1px solid",
-                    borderColor: "warning.200",
-                    color: "warning.dark",
-                    fontSize: "0.8125rem",
-                  }}
-                >
-                  Please share your availability by{" "}
-                  <strong>
-                    {new Date(event.availabilityDeadlineAt).toLocaleString(undefined, {
-                      weekday: "short",
-                      month: "short",
-                      day: "numeric",
-                      hour: "numeric",
-                      minute: "2-digit",
-                    })}
-                  </strong>
-                </Typography>
+                <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mb: 1.5 }}>
+                  <AccessTimeRoundedIcon sx={{ fontSize: 16, color: "warning.main" }} />
+                  <Typography
+                    variant="body2"
+                    sx={{ color: "warning.dark", fontSize: "0.8125rem" }}
+                  >
+                    Please share your availability by{" "}
+                    <strong>
+                      {new Date(event.availabilityDeadlineAt).toLocaleString(undefined, {
+                        weekday: "short",
+                        month: "short",
+                        day: "numeric",
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })}
+                    </strong>
+                  </Typography>
+                </Stack>
               )}
 
               {/* --- Your response status + quick actions (availability mode only) --- */}
               {isAvailMode && canSuggest && (
-                <Paper
-                  variant="outlined"
+                <Box
                   sx={{
-                    p: 2,
                     mb: 2,
-                    borderRadius: 2,
-                    borderColor: viewerHasSuggested ? "success.light" : "warning.light",
-                    bgcolor: viewerHasSuggested ? "success.50" : "warning.50",
+                    pl: 2,
+                    borderLeft: "3px solid",
+                    borderColor: viewerHasSuggested ? "success.main" : "warning.main",
                   }}
                 >
-                  <Stack spacing={1.5}>
+                  <Stack spacing={1}>
                     <Stack direction="row" alignItems="center" spacing={1}>
                       {viewerHasSuggested ? (
-                        <CheckCircleRoundedIcon sx={{ fontSize: 20, color: "success.main" }} />
+                        <CheckCircleRoundedIcon sx={{ fontSize: 18, color: "success.main" }} />
                       ) : (
-                        <Box sx={{ width: 20, height: 20, borderRadius: "50%", border: "2px solid", borderColor: "warning.main", flexShrink: 0 }} />
+                        <Box sx={{ width: 18, height: 18, borderRadius: "50%", border: "2px solid", borderColor: "warning.main", flexShrink: 0 }} />
                       )}
                       <Typography variant="body2" fontWeight={600}>
                         {viewerHasSuggested ? "You've shared your availability" : "You haven't responded yet"}
@@ -4202,7 +4189,7 @@ export default function EventDetailClient() {
                       </Button>
                     </Stack>
                   </Stack>
-                </Paper>
+                </Box>
               )}
 
               {/* --- Quick confirm for suggest mode (non-availability) --- */}
@@ -4226,19 +4213,19 @@ export default function EventDetailClient() {
               {/* --- Group response summary (availability mode, visible to all attendees) --- */}
               {isAvailMode && participants.length > 0 && (
                 <Box sx={{ mb: 2 }}>
-                  <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.75, fontSize: "0.8125rem" }}>
+                  <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ mb: 0.5, display: "block", fontSize: "0.75rem" }}>
                     Responses ({respondedParticipants.length}/{participants.length})
                   </Typography>
-                  <Stack direction="row" spacing={0.5} sx={{ flexWrap: "wrap", gap: 0.5 }}>
+                  <Stack direction="row" sx={{ flexWrap: "wrap", gap: 0.5 }}>
                     {respondedParticipants.map((p) => (
                       <Chip
                         key={p.userId}
                         label={p.name.split(" ")[0]}
                         size="small"
-                        icon={<CheckCircleRoundedIcon sx={{ fontSize: "1rem !important" }} />}
+                        icon={<CheckCircleRoundedIcon sx={{ fontSize: "0.875rem !important" }} />}
                         color="success"
                         variant="outlined"
-                        sx={{ height: 26, fontSize: "0.75rem" }}
+                        sx={{ height: 24, fontSize: "0.75rem" }}
                       />
                     ))}
                     {pendingParticipants.map((p) => (
@@ -4247,7 +4234,7 @@ export default function EventDetailClient() {
                         label={p.name.split(" ")[0]}
                         size="small"
                         variant="outlined"
-                        sx={{ height: 26, fontSize: "0.75rem", opacity: 0.6, borderStyle: "dashed" }}
+                        sx={{ height: 24, fontSize: "0.75rem", opacity: 0.5, borderStyle: "dashed" }}
                       />
                     ))}
                   </Stack>
@@ -4321,12 +4308,6 @@ export default function EventDetailClient() {
                           </Box>
                         )}
                       </Stack>
-                      {altStartDate && altEndDate && altEndDate.isAfter(altStartDate, "day") && (
-                        <Typography variant="caption" color="primary" sx={{ mt: -1 }}>
-                          {altEndDate.diff(altStartDate, "day") + 1} days selected, one entry will
-                          be created for each day with the same time.
-                        </Typography>
-                      )}
                       <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
                         <Box sx={{ flex: 1 }}>
                           <Typography
@@ -4742,7 +4723,40 @@ export default function EventDetailClient() {
                         />
                       </Tooltip>
                     )}
-                    {r.status === "going" ? (
+                    {r.status === "going" && event.confirmationWindowOpen && r.confirmationStatus === "confirmed" ? (
+                      /* Merged badge: Going + Confirmed */
+                      <Tooltip title="This person confirmed their attendance for the 24-hour check-in" arrow placement="top" enterTouchDelay={0}>
+                        <Chip
+                          icon={<CheckCircleRoundedIcon sx={{ fontSize: "1rem !important" }} />}
+                          label="Going & Confirmed"
+                          size="small"
+                          color="success"
+                          variant="filled"
+                          sx={{
+                            fontWeight: 600,
+                            fontSize: "0.8125rem",
+                            "& .MuiChip-icon": { color: "inherit", opacity: 0.9 },
+                            background: (theme) => `linear-gradient(135deg, ${theme.palette.success.main} 0%, ${theme.palette.success.dark} 100%)`,
+                          }}
+                        />
+                      </Tooltip>
+                    ) : r.status === "going" && event.confirmationWindowOpen && r.confirmationStatus !== "confirmed" && r.confirmationStatus !== "declined" ? (
+                      /* Merged badge: Going + Pending/no confirmation (covers guests with no confirmation record and registered users with pending status) */
+                      <Tooltip title="This person said they're going but hasn't completed the 24-hour confirmation yet" arrow placement="top" enterTouchDelay={0}>
+                        <Chip
+                          icon={<AccessTimeRoundedIcon sx={{ fontSize: "1rem !important" }} />}
+                          label="Going - Unconfirmed"
+                          size="small"
+                          color="warning"
+                          variant="outlined"
+                          sx={{
+                            fontWeight: 600,
+                            fontSize: "0.8125rem",
+                            "& .MuiChip-icon": { color: "inherit", opacity: 0.85 },
+                          }}
+                        />
+                      </Tooltip>
+                    ) : r.status === "going" ? (
                       <Chip
                         icon={<CheckCircleRoundedIcon sx={{ fontSize: "1rem !important" }} />}
                         label="Going"
@@ -4771,15 +4785,16 @@ export default function EventDetailClient() {
                         sx={{ fontWeight: 500, fontSize: "0.8125rem", color: "text.secondary" }}
                       />
                     )}
-                    {event.confirmationWindowOpen && r.confirmationStatus && (
+                    {/* Show confirmation status badge for non-merged states (exclude going+confirmed and going+pending which are merged above) */}
+                    {event.confirmationWindowOpen && r.confirmationStatus && !(r.status === "going" && (r.confirmationStatus === "confirmed" || r.confirmationStatus === "pending")) && (
                       <Chip
                         label={
-                          r.confirmationStatus === "confirmed"
-                            ? "Confirmed"
-                            : r.confirmationStatus === "pending"
-                              ? "Pending confirmation"
-                              : r.confirmationStatus === "declined"
-                                ? "Declined"
+                          r.confirmationStatus === "pending"
+                            ? "Pending confirmation"
+                            : r.confirmationStatus === "declined"
+                              ? "Declined"
+                              : r.confirmationStatus === "confirmed"
+                                ? "Confirmed"
                                 : "Missed deadline"
                         }
                         size="small"
@@ -5381,23 +5396,33 @@ export default function EventDetailClient() {
 
       {/* Share link first-use info modal */}
       <Dialog open={shareLinkModalOpen} onClose={handleShareLinkModalClose} fullWidth maxWidth="xs">
-        <DialogTitle sx={{ fontWeight: 700 }}>Link copied!</DialogTitle>
+        <DialogTitle sx={{ fontWeight: 700, pb: 1 }}>
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <CheckCircleRoundedIcon sx={{ color: "success.main", fontSize: 22 }} />
+            <span>Link copied!</span>
+          </Stack>
+        </DialogTitle>
         <DialogContent>
-          <Typography variant="body2" sx={{ mb: 1 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, lineHeight: 1.65 }}>
             Paste this link to share the plan. Anyone with it can:
           </Typography>
-          <Box component="ul" sx={{ pl: 2.5, mb: 2, "& li": { mb: 0.5 } }}>
-            <Typography component="li" variant="body2">View the full plan details</Typography>
-            <Typography component="li" variant="body2">RSVP (Going, Maybe, or Can&rsquo;t make it)</Typography>
-            {event?.allowAltTimes && (
-              <Typography component="li" variant="body2">
-                {event.altTimesMode === "availability"
-                  ? "Share their availability"
-                  : "Suggest an alternative time"}
-              </Typography>
-            )}
-          </Box>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          <Stack spacing={1} sx={{ mb: 2 }}>
+            {[
+              "View the full plan details",
+              "RSVP (Going, Maybe, or Can\u2019t make it)",
+              ...(event?.allowAltTimes
+                ? [event.altTimesMode === "availability"
+                    ? "Share their availability"
+                    : "Suggest an alternative time"]
+                : []),
+            ].map((item) => (
+              <Stack key={item} direction="row" spacing={1} alignItems="center">
+                <Box sx={{ width: 5, height: 5, borderRadius: "50%", bgcolor: "primary.main", flexShrink: 0 }} />
+                <Typography variant="body2" sx={{ lineHeight: 1.5 }}>{item}</Typography>
+              </Stack>
+            ))}
+          </Stack>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, lineHeight: 1.65 }}>
             Recipients don&rsquo;t need a NewChums account to respond.
           </Typography>
           <FormControlLabel
@@ -5411,8 +5436,8 @@ export default function EventDetailClient() {
             label={<Typography variant="body2">Don&rsquo;t show this again</Typography>}
           />
         </DialogContent>
-        <DialogActions>
-          <Button onClick={handleShareLinkModalClose} variant="contained" size="small">
+        <DialogActions sx={{ px: { xs: 2, sm: 3 }, pb: { xs: 2, sm: 2.5 }, gap: 1 }}>
+          <Button onClick={handleShareLinkModalClose} variant="contained">
             Got it
           </Button>
         </DialogActions>
