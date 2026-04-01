@@ -1157,6 +1157,7 @@ Core tables include:
 - `newchums.events.alt_times_mode` (migration 057), `TEXT NOT NULL DEFAULT 'suggest'`. Host-controlled presentation mode for the alternate times feature: `'suggest'` (default, current behavior) or `'availability'` (collaborative scheduling framing). Same underlying `event_alt_times` engine; only attendee-facing copy differs.
 - `newchums.users.share_link_modal_dismissed` (migration 062), `BOOLEAN NOT NULL DEFAULT false`; when true, the share-link first-use info modal is permanently dismissed for the user.
 - `newchums.events.availability_deadline_at` (migration 063), `TIMESTAMPTZ NULL`. Optional deadline by which attendees should submit their availability when the plan uses "Request availability" mode (`alt_times_mode = 'availability'`). Must be before `starts_at`. Automatically cleared when the plan's mode changes away from availability.
+- `newchums.events.is_qa` (migration 065), `BOOLEAN NOT NULL DEFAULT false`. Marks a plan as a QA/testing plan. QA plans are invisible to normal users but fully functional for super admins. Normal users see 404 on direct access, and QA plans are excluded from all feeds, emails, notifications, and cron processing for non-admins. Super admins see QA plans in feeds and receive cron-driven emails/notifications normally. QA plans are excluded from KPI metrics and the public explore feed. Partial index `idx_events_is_qa` for efficient filtering.
 
 PostGIS is available for geo queries.
 

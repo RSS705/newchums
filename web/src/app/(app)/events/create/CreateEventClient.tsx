@@ -93,6 +93,10 @@ export default function CreateEventClient() {
   const [communityName, setCommunityName] = useState<string | null>(searchParams.get("community_name"));
   const [hideFromExplore, setHideFromExplore] = useState(false);
 
+  // QA plan (super admin only)
+  const [isQa, setIsQa] = useState(false);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+
   // Banner image
   const [bannerFile, setBannerFile] = useState<File | null>(null);
   const [bannerPreview, setBannerPreview] = useState<string | null>(null);
@@ -123,6 +127,21 @@ export default function CreateEventClient() {
       } catch { /* non-fatal */ }
     };
     void check();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Fetch role for QA toggle visibility
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch("/profile", { auth: true });
+        const data = await res.json();
+        if (!cancelled && data.ok && data.profile?.role === "super_admin") {
+          setIsSuperAdmin(true);
+        }
+      } catch { /* non-fatal */ }
+    })();
     return () => { cancelled = true; };
   }, []);
 
@@ -235,6 +254,7 @@ export default function CreateEventClient() {
       pref_overrides: buildPrefOverrides(),
       community_id: communityId || null,
       hide_from_explore: hideFromExplore,
+      ...(isQa ? { is_qa: true } : {}),
     };
 
     try {
@@ -954,6 +974,22 @@ export default function CreateEventClient() {
             />
             <Typography variant="caption" color="text.secondary" sx={{ mt: -0.5 }}>
               When on, this plan only appears in the community feed and to members in their Explore. Others won&#39;t see it.
+            </Typography>
+          </Stack>
+        </AppCard>
+      )}
+
+      {/* QA plan toggle (super admin only) */}
+      {isSuperAdmin && (
+        <AppCard>
+          <Stack spacing={1}>
+            <FormControlLabel
+              control={<Switch checked={isQa} onChange={(e) => setIsQa(e.target.checked)} size="small" />}
+              label="QA plan"
+              slotProps={{ typography: { variant: "subtitle1", fontWeight: 600, fontSize: "1.0625rem" } }}
+            />
+            <Typography variant="caption" color="text.secondary" sx={{ mt: -0.5 }}>
+              QA plans are only visible to super admins. Normal users will never see this plan anywhere in the system.
             </Typography>
           </Stack>
         </AppCard>

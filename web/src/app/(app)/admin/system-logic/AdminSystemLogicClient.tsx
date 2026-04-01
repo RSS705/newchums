@@ -675,6 +675,22 @@ export default function AdminSystemLogicClient() {
         </Bullet>
 
         <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
+          QA plans
+        </Typography>
+        <Bullet>
+          Plans can be marked as <strong>QA</strong> by super admins. QA plans are invisible to normal users but fully functional for super admins.
+        </Bullet>
+        <Bullet>
+          Normal users cannot see QA plans in feeds, notifications, emails, or digests. Direct URL access returns 404 for non-admins.
+        </Bullet>
+        <Bullet>
+          Super admins see QA plans in Explore, Your Plans, community feeds, and notifications. Cron jobs (attendance assurance, digests, feedback) process QA plans and send emails only to super admin recipients.
+        </Bullet>
+        <Bullet>
+          QA plans are excluded from KPI metrics and the public (unauthenticated) Explore feed.
+        </Bullet>
+
+        <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
           Roles
         </Typography>
         <Bullet>

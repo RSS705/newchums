@@ -103,6 +103,10 @@ export default function EditEventClient() {
   const [communityName, setCommunityName] = useState<string | null>(null);
   const [hideFromExplore, setHideFromExplore] = useState(false);
 
+  // QA plan (super admin only)
+  const [isQa, setIsQa] = useState(false);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+
   // Banner image
   const [bannerFile, setBannerFile] = useState<File | null>(null);
   const [bannerPreview, setBannerPreview] = useState<string | null>(null);
@@ -175,6 +179,7 @@ export default function EditEventClient() {
           setCommunityName(ev.community.name);
         }
         if (ev.hideFromExplore !== undefined) setHideFromExplore(ev.hideFromExplore === true);
+        if (ev.isQa) setIsQa(true);
 
         if (ev.bannerKey) {
           setExistingBannerKey(ev.bannerKey);
@@ -213,6 +218,21 @@ export default function EditEventClient() {
     void load();
     return () => { cancelled = true; };
   }, [eventId]);
+
+  // Fetch role for QA toggle visibility
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch("/profile", { auth: true });
+        const data = await res.json();
+        if (!cancelled && data.ok && data.profile?.role === "super_admin") {
+          setIsSuperAdmin(true);
+        }
+      } catch { /* non-fatal */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const buildPrefOverrides = (): PrefOverrides => {
     if (prefDisableAll) return { disabled: true };
@@ -274,6 +294,7 @@ export default function EditEventClient() {
           pref_overrides: buildPrefOverrides(),
           community_id: communityId || null,
           hide_from_explore: hideFromExplore,
+          ...(isSuperAdmin ? { is_qa: isQa } : {}),
           location_type: locationType,
           location_name: locationName.trim() || null,
           location_address: locationAddress.trim() || null,
@@ -910,6 +931,22 @@ export default function EditEventClient() {
             />
             <Typography variant="caption" color="text.secondary" sx={{ mt: -0.5 }}>
               When on, this plan only appears in the community feed and to members in their Explore. Others won&#39;t see it.
+            </Typography>
+          </Stack>
+        </AppCard>
+      )}
+
+      {/* QA plan toggle (super admin only) */}
+      {isSuperAdmin && (
+        <AppCard>
+          <Stack spacing={1}>
+            <FormControlLabel
+              control={<Switch checked={isQa} onChange={(e) => setIsQa(e.target.checked)} size="small" />}
+              label="QA plan"
+              slotProps={{ typography: { variant: "subtitle1", fontWeight: 600, fontSize: "1.0625rem" } }}
+            />
+            <Typography variant="caption" color="text.secondary" sx={{ mt: -0.5 }}>
+              QA plans are only visible to super admins. Normal users will never see this plan anywhere in the system.
             </Typography>
           </Stack>
         </AppCard>

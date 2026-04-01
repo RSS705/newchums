@@ -45,6 +45,7 @@ export type PlanEvent = {
   hasUnreadChat?: boolean;
   community?: { id: string; slug: string; name: string } | null;
   hasPrefMismatch?: boolean;
+  isQa?: boolean;
 };
 
 type EventCardProps = {
@@ -215,6 +216,13 @@ const EventCard = React.memo(function EventCard({
                   />
                 );
               })}
+              {event.isQa && (
+                <Chip
+                  label="QA"
+                  size="small"
+                  sx={{ bgcolor: "warning.light", color: "warning.dark", fontWeight: 700, fontSize: "0.6875rem" }}
+                />
+              )}
               {isCanceled && (
                 <Chip
                   label="Canceled"

@@ -132,6 +132,7 @@ type EventDetail = {
   planViability: string | null;
   community?: { id: string; slug: string; name: string } | null;
   hideFromExplore?: boolean;
+  isQa?: boolean;
 };
 
 type RsvpEntry = {
@@ -2119,6 +2120,13 @@ export default function EventDetailClient() {
           sx={{ mb: 0.75, ...(isPast && !isCanceled ? { color: "text.secondary" } : {}) }}
         >
           {event.title}
+          {event.isQa && (
+            <Chip
+              label="QA Plan"
+              size="small"
+              sx={{ ml: 1.5, bgcolor: "warning.light", color: "warning.dark", fontWeight: 700, fontSize: "0.75rem", verticalAlign: "middle" }}
+            />
+          )}
         </Typography>
         <Typography variant="body1" color="text.secondary">
           {event.isHost

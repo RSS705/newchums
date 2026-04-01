@@ -121,6 +121,7 @@ export default function CommunityDetailClient() {
       bannerKey: (ev.banner_key as string) ?? null,
       community: (ev.community as { id: string; slug: string; name: string }) ?? null,
       hasPrefMismatch: ev.hasPrefMismatch === true,
+      isQa: ev.isQa === true,
     };
   }, []);
 

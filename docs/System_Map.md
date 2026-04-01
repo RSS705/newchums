@@ -131,6 +131,23 @@ The following flows run in the API worker; the web app calls the API via `NEXT_P
 | Admin, communities | `GET /admin/communities`, `POST /admin/communities/:id/remove` | Bearer JWT + `super_admin` role |
 | Diagnostics | `GET /`, `GET /health`, `GET /health/env`, `GET /health/db`, `GET /db/ping`, `GET /db/postgis` | none |
 
+### QA plan isolation
+
+Plans with `is_qa = true` are isolated from normal users but fully functional for super admins.
+
+**Normal users** never see QA plans. They are excluded from:
+- All feeds, notifications, emails, and chat
+- Direct URL access (returns 404)
+- RSVP, invite, join request, and all interaction endpoints
+
+**Super admins** get a fully realistic experience with QA plans:
+- QA plans appear in Explore feed, Your Plans, community plan feeds
+- Cron jobs (attendance assurance, event match digest, chat digest, feedback reminders) process QA plans and send emails/notifications to super admin recipients only
+- Auto-cancel and attendance cutoff processing runs normally on QA plans
+- QA plans are excluded from KPI metrics and the public (unauthenticated) explore feed
+
+Enforcement: list queries use `AND (COALESCE(e.is_qa, false) = false OR <viewer_is_super_admin>)`. Single-event endpoints check `is_qa` and verify super_admin role, returning 404 for non-admins. Cron jobs check recipient role via `batchLoadSuperAdminIds()` before sending.
+
 ### Content safety
 
 Signup, onboarding username, and profile edits validate:

@@ -404,6 +404,7 @@ app.get("/public/users/:userId/attendance-record", async (c) => {
       FROM newchums.events e
       WHERE e.host_user_id = ${targetUserId}
         AND e.status != 'canceled'
+        AND COALESCE(e.is_qa, false) = false
         AND e.starts_at < ${now}
     `) as { c: number }[];
 
@@ -467,6 +468,7 @@ app.get("/public/users/:userId/attendance-record", async (c) => {
       FROM newchums.events e
       WHERE e.host_user_id = ${targetUserId}
         AND e.status IN ('published', 'canceled')
+        AND COALESCE(e.is_qa, false) = false
         AND e.starts_at < ${now}
         AND EXISTS (
           SELECT 1 FROM newchums.event_rsvps er
@@ -3278,6 +3280,29 @@ app.post("/email/test", async (c) => {
 
 // ─── Admin helpers ───────────────────────────────────────────────────────────
 
+/** Check if a user ID belongs to a super_admin. Used for QA plan access checks. */
+async function checkIsSuperAdmin(
+  sql: ReturnType<typeof getSql>,
+  userId: string,
+): Promise<boolean> {
+  const rows = (await sql`
+    SELECT 1 FROM newchums.users WHERE id = ${userId} AND role = 'super_admin' LIMIT 1
+  `) as { "?column?": number }[];
+  return rows.length > 0;
+}
+
+/** Batch-load super admin status for multiple user IDs. Returns a Set of super admin user IDs. */
+async function batchLoadSuperAdminIds(
+  sql: ReturnType<typeof getSql>,
+  userIds: string[],
+): Promise<Set<string>> {
+  if (userIds.length === 0) return new Set();
+  const rows = (await sql`
+    SELECT id FROM newchums.users WHERE id = ANY(${userIds}::uuid[]) AND role = 'super_admin'
+  `) as { id: string }[];
+  return new Set(rows.map((r) => r.id));
+}
+
 async function requireSuperAdmin(
   c: { req: Request; env: Bindings },
 ): Promise<{ id: string; email: string } | null> {
@@ -3896,7 +3921,7 @@ app.get("/admin/users/:id/diagnostics", async (c) => {
     const planStats = (await sql`
       SELECT
         (SELECT COUNT(*)::int FROM newchums.event_rsvps WHERE user_id = ${userId} AND status = 'going') AS plans_going,
-        (SELECT COUNT(*)::int FROM newchums.events WHERE host_user_id = ${userId}) AS plans_hosted
+        (SELECT COUNT(*)::int FROM newchums.events WHERE host_user_id = ${userId} AND COALESCE(is_qa, false) = false) AS plans_hosted
     `) as { plans_going: number; plans_hosted: number }[];
 
     const objectivesResult = await evaluateObjectives(sql, userId);
@@ -4201,7 +4226,7 @@ app.get("/admin/badge-counts", async (c) => {
       SELECT
         (SELECT COUNT(*)::int FROM newchums.users WHERE created_at > ${usersTs}) AS new_users,
         (SELECT COUNT(*)::int FROM newchums.interests WHERE created_at > ${interestsTs} AND is_deleted = false) AS new_interests,
-        (SELECT COUNT(*)::int FROM newchums.events WHERE created_at > ${plansTs} AND status != 'draft') AS new_plans,
+        (SELECT COUNT(*)::int FROM newchums.events WHERE created_at > ${plansTs} AND status != 'draft' AND COALESCE(is_qa, false) = false) AS new_plans,
         (SELECT COUNT(*)::int FROM newchums.roadmap_items WHERE created_at > ${roadmapTs} AND is_removed = false) AS new_roadmap
     `) as { new_users: number; new_interests: number; new_plans: number; new_roadmap: number }[];
 
@@ -4383,6 +4408,7 @@ app.get("/admin/kpis", async (c) => {
       SELECT DATE(DATE_TRUNC(${growthGranularity}, created_at)) AS date, COUNT(*)::int AS count
       FROM newchums.events
       WHERE status IN ('published', 'canceled')
+        AND COALESCE(is_qa, false) = false
         AND created_at >= ${startDateIso}::timestamptz
       GROUP BY 1
       ORDER BY date
@@ -4396,7 +4422,7 @@ app.get("/admin/kpis", async (c) => {
       participants AS (
         SELECT user_id, COUNT(DISTINCT plan_id)::int AS plan_count FROM (
           SELECT host_user_id AS user_id, id AS plan_id
-          FROM newchums.events WHERE status IN ('published', 'canceled')
+          FROM newchums.events WHERE status IN ('published', 'canceled') AND COALESCE(is_qa, false) = false
           UNION ALL
           SELECT er.user_id, er.event_id AS plan_id
           FROM newchums.event_rsvps er
@@ -4406,7 +4432,7 @@ app.get("/admin/kpis", async (c) => {
       ),
       hosts AS (
         SELECT COUNT(DISTINCT host_user_id)::int AS cnt
-        FROM newchums.events WHERE status IN ('published', 'canceled')
+        FROM newchums.events WHERE status IN ('published', 'canceled') AND COALESCE(is_qa, false) = false
       )
       SELECT
         (SELECT cnt FROM total) AS total_users,
@@ -4428,7 +4454,7 @@ app.get("/admin/kpis", async (c) => {
         (SELECT COUNT(*) FROM newchums.users WHERE created_at < d + INTERVAL '1 day')::int AS total_users,
         (SELECT COUNT(DISTINCT user_id) FROM (
           SELECT host_user_id AS user_id FROM newchums.events
-            WHERE status IN ('published', 'canceled') AND created_at < d + INTERVAL '1 day'
+            WHERE status IN ('published', 'canceled') AND COALESCE(is_qa, false) = false AND created_at < d + INTERVAL '1 day'
           UNION
           SELECT user_id FROM newchums.event_rsvps
             WHERE user_id IS NOT NULL AND status = 'going' AND created_at < d + INTERVAL '1 day'
@@ -4436,14 +4462,14 @@ app.get("/admin/kpis", async (c) => {
         (SELECT COUNT(*) FROM (
           SELECT user_id FROM (
             SELECT host_user_id AS user_id, id AS plan_id FROM newchums.events
-              WHERE status IN ('published', 'canceled') AND created_at < d + INTERVAL '1 day'
+              WHERE status IN ('published', 'canceled') AND COALESCE(is_qa, false) = false AND created_at < d + INTERVAL '1 day'
             UNION ALL
             SELECT user_id, event_id AS plan_id FROM newchums.event_rsvps
               WHERE user_id IS NOT NULL AND status = 'going' AND created_at < d + INTERVAL '1 day'
           ) t GROUP BY user_id HAVING COUNT(DISTINCT plan_id) >= 2
         ) t2)::int AS participated_two,
         (SELECT COUNT(DISTINCT host_user_id) FROM newchums.events
-          WHERE status IN ('published', 'canceled') AND created_at < d + INTERVAL '1 day')::int AS hosted_one
+          WHERE status IN ('published', 'canceled') AND COALESCE(is_qa, false) = false AND created_at < d + INTERVAL '1 day')::int AS hosted_one
       FROM generate_series(
         ${startDateIso}::date,
         NOW()::date,
@@ -5664,6 +5690,7 @@ app.get("/notifications", async (c) => {
   try {
     const sql = getSql(c.env);
     const appUserId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+    const notifViewerIsSuperAdmin = await checkIsSuperAdmin(sql, appUserId);
     const rows = (await sql`
       SELECT
         n.id, n.type, n.actor_user_id, n.entity_id, n.metadata, n.read_at, n.created_at,
@@ -5720,7 +5747,7 @@ app.get("/notifications", async (c) => {
         latest_msg.body AS latest_body,
         latest_msg.sender_name AS latest_sender_name
       FROM newchums.event_chat_messages cm
-      JOIN newchums.events e ON e.id = cm.event_id AND e.status != 'canceled'
+      JOIN newchums.events e ON e.id = cm.event_id AND e.status != 'canceled' AND (COALESCE(e.is_qa, false) = false OR ${notifViewerIsSuperAdmin})
       LEFT JOIN newchums.event_chat_reads cr
         ON cr.event_id = cm.event_id AND cr.user_id = ${appUserId}
       LEFT JOIN LATERAL (
@@ -6514,7 +6541,7 @@ app.get("/communities/:id/events", async (c) => {
       FROM newchums.events e
       JOIN newchums.users u ON u.id = e.host_user_id
       LEFT JOIN newchums.event_rsvps r_viewer ON r_viewer.event_id = e.id AND r_viewer.user_id = ${userId}
-      WHERE e.community_id = ${communityId} AND e.status = 'published' AND e.starts_at > now() - interval '24 hours'
+      WHERE e.community_id = ${communityId} AND e.status = 'published' AND e.starts_at > now() - interval '24 hours' AND (COALESCE(e.is_qa, false) = false OR ${isSuperAdmin})
       ORDER BY e.starts_at ASC
       LIMIT ${limit} OFFSET ${offset}
     `) as Record<string, unknown>[];
@@ -6770,6 +6797,13 @@ app.post("/events", async (c) => {
   const communityId = body.community_id ? String(body.community_id) : null;
   const hideFromExplore = body.hide_from_explore === true;
 
+  // QA plan flag: only super_admins can create QA plans
+  const isQa = body.is_qa === true;
+  if (isQa) {
+    const isSuperAdmin = await checkIsSuperAdmin(sql, userId);
+    if (!isSuperAdmin) return c.json({ ok: false, error: "FORBIDDEN", message: "Only super admins can create QA plans" }, 403);
+  }
+
   // Attendance assurance fields
   const minConfirmedAttendees = requireReconfirmation && body.min_confirmed_attendees != null
     ? Math.max(1, Math.min(500, Math.floor(Number(body.min_confirmed_attendees))))
@@ -6890,13 +6924,13 @@ app.post("/events", async (c) => {
         location_type, location_name, location_address, location_place_id, location_lat, location_lng,
         location_visibility, location_area, online_link,
         max_seats, visibility, status, allow_alt_times, alt_times_mode, availability_deadline_at, allow_attendee_invites, reserve_seats, require_reconfirmation, require_approval, timezone,
-        min_confirmed_attendees, fallback_policy, pref_overrides, community_id, hide_from_explore
+        min_confirmed_attendees, fallback_policy, pref_overrides, community_id, hide_from_explore, is_qa
       ) VALUES (
         ${userId}, ${title}, ${description}, ${interestId}, ${startsDate.toISOString()},
         ${locationType}, ${locationName}, ${locationAddress}, ${locationPlaceId}, ${locationLat}, ${locationLng},
         ${locationVisibility}, ${locationArea}, ${onlineLink},
         ${maxSeats}, ${visibility}, ${status}, ${allowAltTimes}, ${altTimesMode}, ${availabilityDeadlineAt}, ${allowAttendeeInvites}, ${reserveSeats}, ${requireReconfirmation}, ${requireApproval}, ${timezone},
-        ${minConfirmedAttendees}, ${fallbackPolicy}, ${prefOverrides ? JSON.stringify(prefOverrides) : null}, ${communityId}, ${hideFromExplore}
+        ${minConfirmedAttendees}, ${fallbackPolicy}, ${prefOverrides ? JSON.stringify(prefOverrides) : null}, ${communityId}, ${hideFromExplore}, ${isQa}
       )
       RETURNING id, created_at
     `) as { id: string; created_at: string }[];
@@ -6938,10 +6972,19 @@ app.post("/events", async (c) => {
       ]);
       const invUserMap = new Map(invUserRowsBatch.map((r) => [r.id, r]));
 
+      // QA plans: only send invite emails/notifications to super admin invitees
+      const qaInviteAdminIds = isQa ? await batchLoadSuperAdminIds(sql, inviteeUserIds) : null;
+
       for (const inv of invitees.slice(0, 50)) {
         const invUserId = inv.user_id ? String(inv.user_id) : null;
         const invEmail = inv.email ? String(inv.email).trim().toLowerCase() : null;
         if (!invUserId && !invEmail) continue;
+
+        // QA plans: skip non-super-admin invitees entirely (no invite record, no email)
+        if (qaInviteAdminIds) {
+          if (invUserId && !qaInviteAdminIds.has(invUserId)) continue;
+          if (!invUserId && invEmail) continue; // email-only invites can't be super admins
+        }
 
         try {
           await sql`
@@ -7030,6 +7073,7 @@ app.get("/events/mine", async (c) => {
 
   const sql = getSql(c.env);
   const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+  const mineViewerIsSuperAdmin = await checkIsSuperAdmin(sql, userId);
 
   const filter = c.req.query("filter") ?? "upcoming";
   const now = new Date().toISOString();
@@ -7041,6 +7085,7 @@ app.get("/events/mine", async (c) => {
         e.location_name, e.location_address, e.location_visibility, e.location_area, e.online_link,
         e.max_seats, e.visibility, e.status, e.allow_alt_times,
         e.host_user_id, e.created_at, e.canceled_at, e.cancellation_reason, e.banner_key,
+        COALESCE(e.is_qa, false) AS is_qa,
         COALESCE(
           (SELECT json_agg(json_build_object('name', ii.name, 'slug', ii.slug))
            FROM newchums.event_interests ei2
@@ -7070,6 +7115,7 @@ app.get("/events/mine", async (c) => {
       LEFT JOIN newchums.users h ON h.id = e.host_user_id
       LEFT JOIN newchums.event_rsvps r ON r.event_id = e.id AND r.user_id = ${userId}
       WHERE e.status != 'draft'
+        AND (COALESCE(e.is_qa, false) = false OR ${mineViewerIsSuperAdmin})
         AND (
           e.host_user_id = ${userId}
           OR EXISTS (SELECT 1 FROM newchums.event_invites ei WHERE ei.event_id = e.id AND ei.user_id = ${userId})
@@ -7090,7 +7136,7 @@ app.get("/events/mine", async (c) => {
       host_name: string | null; host_username: string | null;
       my_rsvp_status: string | null;
       going_count: number; maybe_count: number; is_host: boolean;
-      has_unread_chat: boolean;
+      has_unread_chat: boolean; is_qa: boolean;
     }>;
 
     const events = rows.map((r) => {
@@ -7138,6 +7184,7 @@ app.get("/events/mine", async (c) => {
         maybeCount: r.maybe_count,
         bannerKey: r.banner_key ?? null,
         hasUnreadChat: r.has_unread_chat === true,
+        isQa: r.is_qa || undefined,
       };
     });
 
@@ -7206,6 +7253,7 @@ app.get("/events/explore/public", async (c) => {
         AND e.starts_at >= ${now.toISOString()}
         AND e.visibility = 'public'
         AND COALESCE(e.hide_from_explore, false) = false
+        AND COALESCE(e.is_qa, false) = false
         ${hobbySlug ? sql`AND EXISTS (SELECT 1 FROM newchums.event_interests ei3 JOIN newchums.interests ii3 ON ii3.id = ei3.interest_id WHERE ei3.event_id = e.id AND ii3.slug = ${hobbySlug})` : sql``}
         ${search ? sql`AND (e.title ILIKE ${"%" + search + "%"} OR e.description ILIKE ${"%" + search + "%"})` : sql``}
         ${dateEnd ? sql`AND e.starts_at <= ${dateEnd.toISOString()}` : sql``}
@@ -7273,6 +7321,7 @@ app.get("/events/explore", async (c) => {
 
   const sql = getSql(c.env);
   const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+  const viewerIsSuperAdmin = await checkIsSuperAdmin(sql, userId);
 
   const lat = c.req.query("lat") ? Number(c.req.query("lat")) : null;
   const lng = c.req.query("lng") ? Number(c.req.query("lng")) : null;
@@ -7354,6 +7403,7 @@ app.get("/events/explore", async (c) => {
         e.location_lat, e.location_lng,
         e.max_seats, e.visibility, e.status, e.allow_alt_times,
         e.host_user_id, e.created_at, e.banner_key,
+        COALESCE(e.is_qa, false) AS is_qa,
         ${hobbyMatchSelectExpr},
         COALESCE(
           (SELECT json_agg(json_build_object('name', ii.name, 'slug', ii.slug))
@@ -7397,6 +7447,7 @@ app.get("/events/explore", async (c) => {
       ) rsvp_counts ON rsvp_counts.event_id = e.id
       WHERE e.status = 'published'
         AND e.starts_at >= ${now.toISOString()}
+        AND (COALESCE(e.is_qa, false) = false OR ${viewerIsSuperAdmin})
         AND (
           COALESCE(e.hide_from_explore, false) = false
           OR (e.community_id IS NOT NULL AND EXISTS (
@@ -7463,7 +7514,7 @@ app.get("/events/explore", async (c) => {
       host_name: string | null; host_username: string | null;
       my_rsvp_status: string | null;
       going_count: number; maybe_count: number; is_host: boolean;
-      distance_km: number | null;
+      distance_km: number | null; is_qa: boolean;
       community_id: string | null; community_slug: string | null; community_name: string | null;
     }>;
 
@@ -7556,6 +7607,7 @@ app.get("/events/explore", async (c) => {
         prefNote,
         hasPrefMismatch,
         community: r.community_id ? { id: r.community_id, slug: r.community_slug!, name: r.community_name! } : null,
+        isQa: r.is_qa || undefined,
       };
     });
 
@@ -7664,6 +7716,13 @@ app.get("/events/:id", async (c) => {
 
     if (rows.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     const event = rows[0];
+
+    // QA plan isolation: only super admins can access QA plans
+    if (event.is_qa) {
+      if (!userId) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+      const viewerIsSuperAdmin = await checkIsSuperAdmin(sql, userId);
+      if (!viewerIsSuperAdmin) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    }
 
     const isHost = userId && event.host_user_id === userId;
     const rsvpRows = userId ? (await sql`SELECT 1 FROM newchums.event_rsvps WHERE event_id = ${eventId} AND user_id = ${userId}`) as unknown[] : [];
@@ -7995,6 +8054,7 @@ app.get("/events/:id", async (c) => {
         prefOverrides: isHost ? (event.pref_overrides ?? null) : undefined,
         community: communityInfo,
         hideFromExplore: isHost ? (event.hide_from_explore === true) : undefined,
+        isQa: event.is_qa === true ? true : undefined,
       },
       rsvps: rsvps.map((r) => {
         const rHandle = r.username?.replace(/^@/, "") ?? null;
@@ -8077,9 +8137,15 @@ app.post("/events/:id/rsvp", async (c) => {
   const note = body.note ? String(body.note).trim().slice(0, 500) : null;
 
   try {
-    const ev = (await sql`SELECT id, host_user_id, visibility, status, max_seats, title, locked_at, require_approval, reserve_seats, require_reconfirmation, confirmation_sent_at, starts_at, timezone, location_type, location_name, location_address, online_link FROM newchums.events WHERE id = ${eventId} AND status = 'published'`) as { id: string; host_user_id: string; visibility: string; status: string; max_seats: number | null; title: string; locked_at: string | null; require_approval: boolean; reserve_seats: boolean; require_reconfirmation: boolean; confirmation_sent_at: string | null; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; online_link: string | null }[];
+    const ev = (await sql`SELECT id, host_user_id, visibility, status, max_seats, title, locked_at, require_approval, reserve_seats, require_reconfirmation, confirmation_sent_at, starts_at, timezone, location_type, location_name, location_address, online_link, is_qa FROM newchums.events WHERE id = ${eventId} AND status = 'published'`) as { id: string; host_user_id: string; visibility: string; status: string; max_seats: number | null; title: string; locked_at: string | null; require_approval: boolean; reserve_seats: boolean; require_reconfirmation: boolean; confirmation_sent_at: string | null; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; online_link: string | null; is_qa: boolean }[];
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     const event = ev[0];
+
+    // QA plan isolation
+    if (event.is_qa) {
+      const isSuperAdmin = await checkIsSuperAdmin(sql, userId);
+      if (!isSuperAdmin) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    }
 
     if (event.host_user_id === userId) return c.json({ ok: false, error: "VALIDATION", message: "Hosts cannot RSVP to their own event" }, 400);
 
@@ -8850,9 +8916,9 @@ async function notifyAttendeesPlanChanged(
 
   // Fetch event details for date/location display in the email
   const evRows = (await sql`
-    SELECT starts_at, timezone, location_type, location_name, location_address, online_link
+    SELECT starts_at, timezone, location_type, location_name, location_address, online_link, COALESCE(is_qa, false) AS is_qa
     FROM newchums.events WHERE id = ${eventId} LIMIT 1
-  `) as { starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; online_link: string | null }[];
+  `) as { starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; online_link: string | null; is_qa: boolean }[];
   const ev = evRows[0];
   const eventDate = ev ? formatEventDate(ev.starts_at, ev.timezone || "UTC") : "";
   const eventLocation = ev
@@ -8884,7 +8950,11 @@ async function notifyAttendeesPlanChanged(
     : changeType === "locked" ? "event_locked"
     : "event_updated";
 
+  // QA plans: only notify super admin attendees
+  const qaChangeAdminIds = ev?.is_qa ? await batchLoadSuperAdminIds(sql, attendees.map((a) => a.id)) : null;
+
   for (const att of attendees) {
+    if (qaChangeAdminIds && !qaChangeAdminIds.has(att.id)) continue;
     try {
       await sql`
         INSERT INTO newchums.notifications (user_id, type, actor_user_id, entity_id, metadata)
@@ -9023,6 +9093,12 @@ app.patch("/events/:id", async (c) => {
     const patchPrefOverrides = "pref_overrides" in body ? parsePrefOverrides(body.pref_overrides ?? null) : undefined;
     const patchCommunityId = "community_id" in body ? (body.community_id ? String(body.community_id) : null) : undefined;
     const patchHideFromExplore = "hide_from_explore" in body ? body.hide_from_explore === true : undefined;
+    const patchIsQa = "is_qa" in body ? body.is_qa === true : undefined;
+    // Only super admins can toggle the QA flag
+    if (patchIsQa !== undefined) {
+      const isSuperAdmin = await checkIsSuperAdmin(sql, userId);
+      if (!isSuperAdmin) return c.json({ ok: false, error: "FORBIDDEN", message: "Only super admins can set QA flag" }, 403);
+    }
     const patchBannerKey = "banner_key" in body ? (body.banner_key === null ? null : undefined) : undefined;
 
     // Attendance assurance fields
@@ -9096,6 +9172,7 @@ app.patch("/events/:id", async (c) => {
           pref_overrides           = CASE WHEN ${patchPrefOverrides !== undefined} THEN ${patchPrefOverrides !== undefined ? (patchPrefOverrides ? JSON.stringify(patchPrefOverrides) : null) : null}::jsonb ELSE pref_overrides END,
           community_id             = CASE WHEN ${patchCommunityId !== undefined} THEN ${patchCommunityId !== undefined ? patchCommunityId : null}::uuid ELSE community_id END,
           hide_from_explore        = CASE WHEN ${patchHideFromExplore !== undefined} THEN ${patchHideFromExplore !== undefined ? patchHideFromExplore : false} ELSE hide_from_explore END,
+          is_qa                    = CASE WHEN ${patchIsQa !== undefined} THEN ${patchIsQa !== undefined ? patchIsQa : false} ELSE is_qa END,
           banner_key               = CASE WHEN ${patchBannerKey !== undefined} THEN ${patchBannerKey !== undefined ? patchBannerKey : null} ELSE banner_key END,
           location_type            = CASE WHEN ${hasLocationUpdate} THEN ${patchLocationType ?? null} ELSE location_type END,
           location_name            = CASE WHEN ${hasLocationUpdate} THEN ${patchLocationName ?? null} ELSE location_name END,
@@ -9560,10 +9637,15 @@ async function checkChatAccess(
   userId: string,
 ): Promise<{ allowed: boolean; event?: Record<string, unknown>; reason?: string }> {
   const ev = (await sql`
-    SELECT id, host_user_id, status, starts_at FROM newchums.events WHERE id = ${eventId}
+    SELECT id, host_user_id, status, starts_at, is_qa FROM newchums.events WHERE id = ${eventId}
   `) as Array<Record<string, unknown>>;
   if (ev.length === 0) return { allowed: false, reason: "NOT_FOUND" };
   const event = ev[0];
+  // QA plan isolation
+  if (event.is_qa) {
+    const isSuperAdmin = await checkIsSuperAdmin(sql, userId);
+    if (!isSuperAdmin) return { allowed: false, reason: "NOT_FOUND" };
+  }
   if (event.status === "canceled") return { allowed: false, event, reason: "EVENT_CANCELED" };
   if (event.host_user_id === userId) return { allowed: true, event };
   const rsvp = (await sql`
@@ -11706,7 +11788,8 @@ async function processAttendanceAssurance(
   const eventsNeedingInitialSend = (await sql`
     SELECT e.id, e.host_user_id, e.title, e.starts_at, e.timezone,
            e.confirmation_window_hours, e.confirmation_cutoff_hours,
-           e.location_type, e.location_name, e.location_address, e.online_link
+           e.location_type, e.location_name, e.location_address, e.online_link,
+           COALESCE(e.is_qa, false) AS is_qa
     FROM newchums.events e
     WHERE e.require_reconfirmation = true
       AND e.status = 'published'
@@ -11718,7 +11801,7 @@ async function processAttendanceAssurance(
     timezone: string | null; confirmation_window_hours: number;
     confirmation_cutoff_hours: number; location_type: string;
     location_name: string | null; location_address: string | null;
-    online_link: string | null;
+    online_link: string | null; is_qa: boolean;
   }>;
 
   for (const ev of eventsNeedingInitialSend) {
@@ -11750,7 +11833,13 @@ async function processAttendanceAssurance(
       const goingUserIds = goingRsvps.map((a) => a.user_id);
       const prefsMap = await batchLoadNotificationPrefs(sql, goingUserIds);
 
+      // QA plans: only send emails/notifications to super admin recipients
+      const qaAdminIds = ev.is_qa ? await batchLoadSuperAdminIds(sql, goingUserIds) : null;
+
       for (const att of goingRsvps) {
+        // QA plan isolation: skip non-super-admin recipients
+        if (qaAdminIds && !qaAdminIds.has(att.user_id)) continue;
+
         const prefs = normalizeNotificationPrefs(prefsMap.get(att.user_id));
         if (prefs.items.attendance_confirmation?.enabled === false) continue;
 
@@ -11791,7 +11880,8 @@ async function processAttendanceAssurance(
   const eventsWithPending = (await sql`
     SELECT DISTINCT e.id, e.host_user_id, e.title, e.starts_at, e.timezone,
            e.confirmation_cutoff_hours, e.location_type, e.location_name,
-           e.location_address, e.online_link
+           e.location_address, e.online_link,
+           COALESCE(e.is_qa, false) AS is_qa
     FROM newchums.events e
     WHERE e.require_reconfirmation = true
       AND e.status = 'published'
@@ -11807,6 +11897,7 @@ async function processAttendanceAssurance(
     timezone: string | null; confirmation_cutoff_hours: number;
     location_type: string; location_name: string | null;
     location_address: string | null; online_link: string | null;
+    is_qa: boolean;
   }>;
 
   for (const ev of eventsWithPending) {
@@ -11845,7 +11936,11 @@ async function processAttendanceAssurance(
       const pendingUserIds = pendingUsers.map((a) => a.user_id);
       const reminderPrefsMap = await batchLoadNotificationPrefs(sql, pendingUserIds);
 
+      // QA plans: only send to super admin recipients
+      const qaReminderAdminIds = ev.is_qa ? await batchLoadSuperAdminIds(sql, pendingUserIds) : null;
+
       for (const att of pendingUsers) {
+        if (qaReminderAdminIds && !qaReminderAdminIds.has(att.user_id)) continue;
         if (att.reminder_count >= targetReminderCount + 1) continue;
 
         const prefs = normalizeNotificationPrefs(reminderPrefsMap.get(att.user_id));
@@ -11888,7 +11983,8 @@ async function processAttendanceAssurance(
   const eventsAtCutoff = (await sql`
     SELECT e.id, e.host_user_id, e.title, e.starts_at, e.timezone,
            e.confirmation_cutoff_hours, e.min_confirmed_attendees, e.fallback_policy,
-           e.location_type, e.location_name, e.location_address, e.online_link
+           e.location_type, e.location_name, e.location_address, e.online_link,
+           COALESCE(e.is_qa, false) AS is_qa
     FROM newchums.events e
     WHERE e.require_reconfirmation = true
       AND e.status = 'published'
@@ -11902,6 +11998,7 @@ async function processAttendanceAssurance(
     min_confirmed_attendees: number | null; fallback_policy: string;
     location_type: string; location_name: string | null;
     location_address: string | null; online_link: string | null;
+    is_qa: boolean;
   }>;
 
   for (const ev of eventsAtCutoff) {
@@ -11941,7 +12038,11 @@ async function processAttendanceAssurance(
         const cancelEventDate = formatEventDate(ev.starts_at, tz);
         const cancelEventLocation = ev.location_type === "online" ? (ev.online_link || "Online") : [ev.location_name, ev.location_address].filter(Boolean).join(", ") || "";
 
+        // QA plans: only notify super admin attendees
+        const qaCancelAdminIds = ev.is_qa ? await batchLoadSuperAdminIds(sql, attendees.map((a) => a.user_id)) : null;
+
         for (const att of attendees) {
+          if (qaCancelAdminIds && !qaCancelAdminIds.has(att.user_id)) continue;
           try {
             const recipientName = att.name?.trim() || att.username?.replace(/^@/, "") || "there";
             const unsubToken = await createUnsubscribeToken(env.NEXTAUTH_SECRET, att.user_id, "event_changed_canceled");
@@ -11994,6 +12095,7 @@ async function processEventMatchDigest(
         u.id AS user_id,
         u.email,
         u.name,
+        u.role,
         up.home_lat,
         up.home_lng,
         up.travel_radius_km,
@@ -12055,6 +12157,7 @@ async function processEventMatchDigest(
         JOIN newchums.events e ON e.id = ei.event_id
         WHERE e.status = 'published'
           AND e.visibility = 'public'
+          AND (COALESCE(e.is_qa, false) = false OR eu.role = 'super_admin')
           AND e.location_type = 'in_person'
           AND e.starts_at > NOW()
           AND e.host_user_id != eu.user_id
@@ -12085,6 +12188,7 @@ async function processEventMatchDigest(
         JOIN newchums.user_contacts uc ON uc.user_id = e.host_user_id AND uc.linked_user_id = eu.user_id AND uc.type = 'on_newchums'
         WHERE e.visibility = 'chums_only'
           AND e.status = 'published'
+          AND (COALESCE(e.is_qa, false) = false OR eu.role = 'super_admin')
           AND e.location_type = 'in_person'
           AND e.starts_at > NOW()
           AND e.host_user_id != eu.user_id
@@ -12308,14 +12412,15 @@ async function processPlanFeedbackEmails(
   const plans = (await sql`
     SELECT e.id, e.title, e.host_user_id,
            e.starts_at, e.timezone,
-           e.location_type, e.location_name, e.location_address, e.online_link
+           e.location_type, e.location_name, e.location_address, e.online_link,
+           COALESCE(e.is_qa, false) AS is_qa
     FROM newchums.events e
     WHERE e.status = 'published'
       AND e.starts_at <= NOW() - INTERVAL '3 hours'
       AND e.feedback_email_sent_at IS NULL
     ORDER BY e.starts_at ASC
     LIMIT 20
-  `) as { id: string; title: string; host_user_id: string; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; online_link: string | null }[];
+  `) as { id: string; title: string; host_user_id: string; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; online_link: string | null; is_qa: boolean }[];
 
   if (plans.length === 0) return;
 
@@ -12341,8 +12446,12 @@ async function processPlanFeedbackEmails(
       WHERE u.id = ${plan.host_user_id}
     `) as { id: string; email: string; name: string | null; notification_prefs: unknown }[];
 
+    // QA plans: only send feedback emails to super admin recipients
+    const qaFbAdminIds = plan.is_qa ? await batchLoadSuperAdminIds(sql, recipients.map((r) => r.id)) : null;
+
     const emailPromises: Promise<unknown>[] = [];
     for (const r of recipients) {
+      if (qaFbAdminIds && !qaFbAdminIds.has(r.id)) continue;
       fbTotal++;
       const prefs = normalizeNotificationPrefs(r.notification_prefs);
       if (prefs.items.feedback_requests?.enabled === false) { fbSkippedPref++; continue; }
@@ -12465,12 +12574,14 @@ async function handleScheduled(
           AND cm.user_id != p.user_id
         JOIN newchums.events e
           ON e.id = p.event_id AND e.status != 'canceled'
+        JOIN newchums.users pu ON pu.id = p.user_id
         LEFT JOIN newchums.event_chat_reads cr
           ON cr.event_id = p.event_id AND cr.user_id = p.user_id
         LEFT JOIN newchums.user_profile up
           ON up.user_id = p.user_id
         WHERE cm.created_at > COALESCE(cr.last_read_at, '1970-01-01'::timestamptz)
           AND cm.created_at > COALESCE(up.chat_digest_sent_at, '1970-01-01'::timestamptz)
+          AND (COALESCE(e.is_qa, false) = false OR pu.role = 'super_admin')
         GROUP BY p.user_id, p.event_id, e.title
       )
       SELECT
