@@ -12,7 +12,7 @@ import PeopleRoundedIcon from "@mui/icons-material/PeopleRounded";
 import LockRoundedIcon from "@mui/icons-material/LockRounded";
 import PublicRoundedIcon from "@mui/icons-material/PublicRounded";
 import Link from "next/link";
-import { AppCard } from "@/components/ui";
+import { AppCard, EmptyState } from "@/components/ui";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 
 type Community = {
@@ -132,41 +132,39 @@ export default function CommunitiesListClient() {
         </Box>
       ) : communities.length === 0 ? (
         <AppCard>
-          <Stack spacing={2} alignItems="center" sx={{ py: { xs: 5, sm: 6 } }}>
-            <PeopleRoundedIcon sx={{ fontSize: 56, color: "text.disabled", opacity: 0.5 }} />
-            <Box sx={{ textAlign: "center" }}>
-              <Typography variant="h6" fontWeight={600} sx={{ mb: 0.5 }}>
-                {view === "mine" ? "You haven't joined any communities yet" : "No communities found"}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                {view === "mine"
-                  ? "Browse what's available or start your own community."
-                  : search.trim()
-                    ? "Try a different search or create a new community."
-                    : "Be the first to create a community and bring people together."}
-              </Typography>
-            </Box>
-            <Stack direction="row" spacing={1.5} sx={{ mt: 1 }}>
-              {view === "mine" && (
+          <EmptyState
+            icon={<PeopleRoundedIcon sx={{ fontSize: 56 }} />}
+            title={view === "mine" ? "You haven't joined any communities yet" : "No communities found"}
+            description={
+              view === "mine"
+                ? "Browse what's available or start your own community."
+                : search.trim()
+                  ? "Try a different search or create a new community."
+                  : "Be the first to create a community and bring people together."
+            }
+            action={
+              <Stack direction="row" spacing={1.5}>
+                {view === "mine" && (
+                  <Button
+                    variant="outlined"
+                    onClick={() => setView("all")}
+                    sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3 }}
+                  >
+                    Browse communities
+                  </Button>
+                )}
                 <Button
-                  variant="outlined"
-                  onClick={() => setView("all")}
-                  sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
+                  component={Link}
+                  href="/communities/create"
+                  variant="contained"
+                  startIcon={<AddCircleRoundedIcon />}
+                  sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3 }}
                 >
-                  Browse communities
+                  Create a community
                 </Button>
-              )}
-              <Button
-                component={Link}
-                href="/communities/create"
-                variant="contained"
-                startIcon={<AddCircleRoundedIcon />}
-                sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3 }}
-              >
-                Create a community
-              </Button>
-            </Stack>
-          </Stack>
+              </Stack>
+            }
+          />
         </AppCard>
       ) : (
         <Stack spacing={2}>

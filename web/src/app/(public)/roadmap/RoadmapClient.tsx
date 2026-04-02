@@ -84,8 +84,8 @@ function StatusBadge({ status }: { status: string }) {
       size="small"
       sx={{
         fontWeight: 600,
-        fontSize: "0.6875rem",
-        height: 22,
+        fontSize: "0.75rem",
+        height: 24,
         bgcolor: STATUS_COLORS[status] ?? "grey.400",
         color: status === "not_planned" ? "text.secondary" : "#fff",
       }}
@@ -99,7 +99,7 @@ function CategoryChip({ category }: { category: string }) {
       label={CATEGORY_LABELS[category] ?? category}
       size="small"
       variant="outlined"
-      sx={{ fontWeight: 500, fontSize: "0.6875rem", height: 22 }}
+      sx={{ fontWeight: 500, fontSize: "0.75rem", height: 24 }}
     />
   );
 }
@@ -407,8 +407,8 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
             variant={category === opt.value ? "filled" : "outlined"}
             color={category === opt.value ? "primary" : "default"}
             onClick={() => setCategory(opt.value)}
-            size="small"
-            sx={{ fontWeight: 500 }}
+            size="medium"
+            sx={{ fontWeight: 500, fontSize: "0.8125rem", minWidth: 56 }}
           />
         ))}
         <Box sx={{ flex: 1 }} />
@@ -419,16 +419,16 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
               variant={sort === "votes" ? "filled" : "outlined"}
               color={sort === "votes" ? "primary" : "default"}
               onClick={() => setSort("votes")}
-              size="small"
-              sx={{ fontWeight: 500 }}
+              size="medium"
+              sx={{ fontWeight: 500, fontSize: "0.8125rem" }}
             />
             <Chip
               label="Newest"
               variant={sort === "newest" ? "filled" : "outlined"}
               color={sort === "newest" ? "primary" : "default"}
               onClick={() => setSort("newest")}
-              size="small"
-              sx={{ fontWeight: 500 }}
+              size="medium"
+              sx={{ fontWeight: 500, fontSize: "0.8125rem" }}
             />
           </Stack>
         )}

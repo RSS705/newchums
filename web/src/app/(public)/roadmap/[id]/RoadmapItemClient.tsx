@@ -328,31 +328,38 @@ export default function RoadmapItemClient({ itemId, isLoggedIn }: Props) {
       )}
 
       {/* Item header */}
-      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
         <Chip
           label={CATEGORY_LABELS[item.category] ?? item.category}
           size="small"
           variant="outlined"
-          sx={{ fontWeight: 500, fontSize: "0.6875rem" }}
+          sx={{ fontWeight: 500, fontSize: "0.75rem", height: 24 }}
         />
         <Chip
           label={STATUS_LABELS[item.status] ?? item.status}
           size="small"
           sx={{
             fontWeight: 600,
-            fontSize: "0.6875rem",
+            fontSize: "0.75rem",
+            height: 24,
             bgcolor: STATUS_COLORS[item.status] ?? "grey.400",
             color: item.status === "not_planned" ? "text.secondary" : "#fff",
           }}
         />
       </Stack>
 
-      <Typography variant="h5" fontWeight={700} sx={{ mb: 1 }}>
+      <Typography variant="h5" fontWeight={700} sx={{ mb: 0.75 }}>
         {item.title}
       </Typography>
 
-      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
-        <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>
+      <Stack
+        direction="row"
+        spacing={1.5}
+        alignItems="center"
+        sx={{ mb: 2.5 }}
+        flexWrap="wrap"
+      >
+        <Typography variant="body2" color="text.secondary">
           Submitted by{" "}
           <Typography
             component={Link}
@@ -365,25 +372,27 @@ export default function RoadmapItemClient({ itemId, isLoggedIn }: Props) {
           {" "}&middot; {formatDate(item.created_at)}
         </Typography>
         {item.viewer_is_author && !editing && (
-          <>
+          <Stack direction="row" spacing={1}>
             <Button
+              variant="outlined"
               size="small"
               startIcon={<EditRoundedIcon />}
               onClick={startEditing}
-              sx={{ textTransform: "none", fontWeight: 600 }}
+              sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
             >
               Edit
             </Button>
             <Button
+              variant="outlined"
               size="small"
               color="error"
               startIcon={<DeleteOutlineRoundedIcon />}
               onClick={() => setDeleteOpen(true)}
-              sx={{ textTransform: "none", fontWeight: 600 }}
+              sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
             >
               Remove
             </Button>
-          </>
+          </Stack>
         )}
       </Stack>
 
@@ -469,7 +478,7 @@ export default function RoadmapItemClient({ itemId, isLoggedIn }: Props) {
             sx={{
               textTransform: "none",
               fontWeight: 600,
-              borderRadius: 2,
+              borderRadius: 2.5,
               boxShadow: "none",
               "&:hover": { boxShadow: "none", opacity: 0.92 },
             }}
@@ -488,7 +497,7 @@ export default function RoadmapItemClient({ itemId, isLoggedIn }: Props) {
             sx={{
               textTransform: "none",
               fontWeight: 600,
-              borderRadius: 2,
+              borderRadius: 2.5,
               boxShadow: "none",
               "&:hover": { boxShadow: "none", opacity: 0.92 },
             }}
@@ -502,8 +511,8 @@ export default function RoadmapItemClient({ itemId, isLoggedIn }: Props) {
 
       {/* Admin notes / status timeline */}
       {adminNotes.length > 0 && (
-        <Box sx={{ mb: 3 }}>
-          <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1.5 }}>
+        <Box sx={{ mb: 4 }}>
+          <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1.5 }}>
             Developer Updates
           </Typography>
           <Stack spacing={1.5}>
@@ -519,14 +528,14 @@ export default function RoadmapItemClient({ itemId, isLoggedIn }: Props) {
                 }}
               >
                 {note.status_after && (
-                  <Box sx={{ mb: 0.5 }}>
+                  <Box sx={{ mb: 0.75 }}>
                     <Chip
                       label={STATUS_LABELS[note.status_after] ?? note.status_after}
                       size="small"
                       sx={{
                         fontWeight: 600,
-                        fontSize: "0.625rem",
-                        height: 20,
+                        fontSize: "0.75rem",
+                        height: 24,
                         bgcolor: STATUS_COLORS[note.status_after] ?? "grey.400",
                         color: note.status_after === "not_planned" ? "text.secondary" : "#fff",
                       }}
@@ -554,7 +563,7 @@ export default function RoadmapItemClient({ itemId, isLoggedIn }: Props) {
       )}
 
       {/* Comments */}
-      <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1.5 }}>
+      <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1.5 }}>
         Comments ({item.comment_count})
       </Typography>
 

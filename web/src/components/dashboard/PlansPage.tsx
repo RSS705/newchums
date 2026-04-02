@@ -18,7 +18,7 @@ import ExpandLessRoundedIcon from "@mui/icons-material/ExpandLessRounded";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import Link from "next/link";
 import EventCard, { type PlanEvent } from "@/components/events/EventCard";
-import { SectionHeader } from "@/components/ui";
+import { EmptyState, SectionHeader } from "@/components/ui";
 import { apiFetch } from "@/lib/apiClient";
 
 export default function PlansPage() {
@@ -159,41 +159,28 @@ export default function PlansPage() {
 
           {/* Empty state */}
           {hosted.length === 0 && joined.length === 0 && (
-            <Box
-              sx={{
-                textAlign: "center",
-                py: { xs: 8, sm: 12 },
-                px: 3,
-              }}
-            >
-              <CalendarMonthRoundedIcon
-                sx={{ fontSize: 52, color: "secondary.main", mb: 2, opacity: 0.7 }}
-              />
-              <Typography variant="h6" fontWeight={600} sx={{ mb: 1 }}>
-                {isPast ? "No past plans yet" : "No upcoming plans"}
-              </Typography>
-              <Typography
-                variant="body1"
-                color="text.secondary"
-                sx={{ mb: 3, maxWidth: 400, mx: "auto", lineHeight: 1.7 }}
-              >
-                {isPast
+            <EmptyState
+              icon={<CalendarMonthRoundedIcon sx={{ fontSize: 56 }} />}
+              title={isPast ? "No past plans yet" : "No upcoming plans"}
+              description={
+                isPast
                   ? "Once you attend or host a gathering, it'll show up here so you can look back on the good times."
-                  : "Start a plan around something you enjoy, or keep an eye out for an invite from someone you know."}
-              </Typography>
-              {!isPast && (
-                <Button
-                  component={Link}
-                  href="/events/create"
-                  variant="contained"
-                  color="primary"
-                  startIcon={<AddCircleRoundedIcon />}
-                  sx={{ px: 4, py: 1.25, fontWeight: 600, borderRadius: 2.5, textTransform: "none" }}
-                >
-                  Start a plan
-                </Button>
-              )}
-            </Box>
+                  : "Start a plan around something you enjoy, or keep an eye out for an invite from someone you know."
+              }
+              action={
+                !isPast ? (
+                  <Button
+                    component={Link}
+                    href="/events/create"
+                    variant="contained"
+                    startIcon={<AddCircleRoundedIcon />}
+                    sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3 }}
+                  >
+                    Start a plan
+                  </Button>
+                ) : undefined
+              }
+            />
           )}
 
           {/* Canceled plans, collapsed by default, shown on both tabs */}

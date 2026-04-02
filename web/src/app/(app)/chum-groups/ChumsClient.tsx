@@ -18,13 +18,14 @@ import Typography from "@mui/material/Typography";
 import CakeOutlinedIcon from "@mui/icons-material/CakeOutlined";
 import EditNoteRoundedIcon from "@mui/icons-material/EditNoteRounded";
 import MailOutlineRoundedIcon from "@mui/icons-material/MailOutlineRounded";
+import PeopleRoundedIcon from "@mui/icons-material/PeopleRounded";
 import PersonOutlineRoundedIcon from "@mui/icons-material/PersonOutlineRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import { notifyObjectivesChanged } from "@/components/objectives/NextStepNudge";
-import { AppCard, useToast } from "@/components/ui";
+import { AppCard, EmptyState, useToast } from "@/components/ui";
 import UserAvatar from "@/components/common/UserAvatar";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -997,14 +998,11 @@ export default function ChumsClient() {
               <CircularProgress size={28} />
             </Box>
           ) : onNewChums.length === 0 && privateContacts.length === 0 ? (
-            <Box sx={{ py: 5, textAlign: "center" }}>
-              <Typography variant="body1" color="text.secondary" sx={{ mb: 0.5 }}>
-                No chums yet
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-                Use the search above to find and add people.
-              </Typography>
-            </Box>
+            <EmptyState
+              icon={<PeopleRoundedIcon sx={{ fontSize: 56 }} />}
+              title="No chums yet"
+              description="Use the search above to find and add people. Chums can be invited to private plans, and having them here makes it easy to keep track of people you know."
+            />
           ) : (
             <Stack divider={<Divider />}>
               {onNewChums.map((contact) => (

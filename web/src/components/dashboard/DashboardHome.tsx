@@ -23,6 +23,7 @@ import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
 import Link from "next/link";
 import EventCard, { type PlanEvent } from "@/components/events/EventCard";
 import EventCardSkeleton from "@/components/ui/EventCardSkeleton";
+import EmptyState from "@/components/ui/EmptyState";
 import DistanceSelect from "@/components/common/DistanceSelect";
 import { apiFetch } from "@/lib/apiClient";
 
@@ -550,70 +551,53 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
         </>
       ) : (
         /* ── Empty state ──────────────────────────────────────────── */
-        /* Compact: icon, headline, one paragraph, actions, small note. */
-        <Box sx={{ textAlign: "center", py: { xs: 5, sm: 7 }, px: 3 }}>
-          <ExploreRoundedIcon
-            sx={{ fontSize: 48, color: "secondary.main", mb: 1.5, opacity: 0.6 }}
-          />
-          <Typography variant="h6" fontWeight={600} sx={{ mb: 0.75 }}>
-            {isFiltered ? "Nothing matched this time" : "No upcoming plans nearby yet"}
-          </Typography>
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{ mb: 2.5, maxWidth: 400, mx: "auto", lineHeight: 1.6 }}
-          >
-            {isFiltered
+        <EmptyState
+          icon={<ExploreRoundedIcon sx={{ fontSize: 56 }} />}
+          title={isFiltered ? "Nothing matched this time" : "No upcoming plans nearby yet"}
+          description={
+            isFiltered
               ? "Try widening the time window, removing a hobby filter, or clearing filters to see more plans."
               : hasLocation
                 ? "There aren't any public plans in your area right now. Check back soon or start one yourself."
                 : !hasHobbies
                   ? "Add a few hobbies to your profile so we can show you relevant plans nearby."
-                  : "Plans are just getting started in your area. Start one and invite people around a hobby you enjoy."}
-          </Typography>
-          <Stack
-            direction={{ xs: "column", sm: "row" }}
-            spacing={1.5}
-            justifyContent="center"
-          >
-            {isFiltered && (
-              <Button
-                variant="outlined"
-                onClick={clearAllFilters}
-                sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3 }}
-              >
-                Clear all filters
-              </Button>
-            )}
-            {!hasLocation && (
+                  : "Plans are just getting started in your area. Start one and invite people around a hobby you enjoy."
+          }
+          action={
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+              {isFiltered && (
+                <Button
+                  variant="outlined"
+                  onClick={clearAllFilters}
+                  sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3 }}
+                >
+                  Clear all filters
+                </Button>
+              )}
+              {!hasLocation && (
+                <Button
+                  component={Link}
+                  href="/profile"
+                  variant="outlined"
+                  startIcon={<EditLocationRoundedIcon />}
+                  sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3 }}
+                >
+                  Set your location
+                </Button>
+              )}
               <Button
                 component={Link}
-                href="/profile"
-                variant="outlined"
-                startIcon={<EditLocationRoundedIcon />}
+                href="/events/create"
+                variant="contained"
+                startIcon={<AddCircleRoundedIcon />}
                 sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3 }}
               >
-                Set your location
+                Start a plan
               </Button>
-            )}
-            <Button
-              component={Link}
-              href="/events/create"
-              variant="contained"
-              startIcon={<AddCircleRoundedIcon />}
-              sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3 }}
-            >
-              Start a plan
-            </Button>
-          </Stack>
-          <Typography
-            variant="caption"
-            color="text.disabled"
-            sx={{ display: "block", mt: 2, maxWidth: 340, mx: "auto" }}
-          >
-            People nearby with matching hobbies can discover your plan in Explore.
-          </Typography>
-        </Box>
+            </Stack>
+          }
+          footnote="People nearby with matching hobbies can discover your plan in Explore."
+        />
       )}
     </Stack>
   );
