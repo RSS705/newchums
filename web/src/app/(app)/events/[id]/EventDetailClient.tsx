@@ -1009,7 +1009,7 @@ export default function EventDetailClient() {
         auth: true,
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status, ...(shareTokenRef.current ? { share_token: shareTokenRef.current } : {}) }),
       });
       const data = (await res.json()) as {
         ok: boolean;
@@ -1242,7 +1242,7 @@ export default function EventDetailClient() {
         auth: true,
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status, note }),
+        body: JSON.stringify({ status, note, ...(shareTokenRef.current ? { share_token: shareTokenRef.current } : {}) }),
       });
       const data = (await res.json()) as {
         ok: boolean;

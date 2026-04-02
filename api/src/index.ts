@@ -8168,10 +8168,15 @@ app.post("/events/:id/rsvp", async (c) => {
     }
 
     // Invite-only gate: non-invited users cannot RSVP to invite-only plans
+    // A valid share_token in the request body bypasses this gate (user accessed via share link)
     if (event.visibility === "invite_only" && existingRsvp.length === 0) {
       const invited = (await sql`SELECT 1 FROM newchums.event_invites WHERE event_id = ${eventId} AND user_id = ${userId} LIMIT 1`) as unknown[];
-      if (invited.length === 0)
-        return c.json({ ok: false, error: "INVITE_ONLY", message: "This plan is invite only. Ask the host for a share link or invite." }, 403);
+      if (invited.length === 0) {
+        const shareToken = typeof body.share_token === "string" ? body.share_token : null;
+        const hasValidShareToken = shareToken ? await verifyShareToken(shareToken, eventId, c.env.NEXTAUTH_SECRET) : false;
+        if (!hasValidShareToken)
+          return c.json({ ok: false, error: "INVITE_ONLY", message: "This plan is invite only. Ask the host for a share link or invite." }, 403);
+      }
     }
 
     // Require-approval gate: non-invited users without an existing RSVP must go through the request flow

@@ -5,6 +5,8 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import Link from "next/link";
 import Button from "@mui/material/Button";
+import PersonAddRoundedIcon from "@mui/icons-material/PersonAddRounded";
+import PersonRemoveRoundedIcon from "@mui/icons-material/PersonRemoveRounded";
 import { AppCard } from "@/components/ui";
 import { getProfileCardBg } from "@/lib/profileTheme";
 import AttendanceRecordSection from "./AttendanceRecordSection";
@@ -108,15 +110,19 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
                 color={chumAction.isSaved ? "inherit" : "primary"}
                 disabled={chumAction.loading}
                 onClick={chumAction.onToggle}
+                startIcon={chumAction.isSaved ? <PersonRemoveRoundedIcon /> : <PersonAddRoundedIcon />}
                 sx={{
                   fontSize: "0.8125rem",
                   lineHeight: 1.25,
                   textAlign: "center",
                   maxWidth: { xs: 168, sm: "none" },
                   whiteSpace: { xs: "normal", sm: "nowrap" },
+                  textTransform: "none",
+                  fontWeight: 600,
+                  borderRadius: 2.5,
                 }}
               >
-                {chumAction.isSaved ? "Remove Chum Connection" : "Save"}
+                {chumAction.isSaved ? "Remove Chum" : "Add Chum"}
               </Button>
             </Box>
           )}
