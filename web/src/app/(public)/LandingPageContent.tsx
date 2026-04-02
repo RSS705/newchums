@@ -36,6 +36,8 @@ const SECTION_SPACING = { py: { xs: 5, sm: 8, md: 10 } };
 
 // ── Intersection Observer reveal hook ──────────────────────────────────────
 
+// Reveal animation uses a CSS class toggle via the DOM directly,
+// avoiding React re-renders when elements scroll into view.
 function useReveal(threshold = 0.12) {
   const ref = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
@@ -43,13 +45,17 @@ function useReveal(threshold = 0.12) {
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    // Respect reduced-motion: skip animation entirely
     if (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       setVisible(true);
       return;
     }
     const io = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) { setVisible(true); io.disconnect(); } },
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setVisible(true);
+          io.disconnect();
+        }
+      },
       { threshold },
     );
     io.observe(el);
@@ -68,13 +74,11 @@ const REVEAL_SX = (visible: boolean, delay = 0) => ({
 // ── Card hover sx mixin ────────────────────────────────────────────────────
 
 const CARD_HOVER = {
-  transition: "transform 0.3s cubic-bezier(0.22,1,0.36,1), box-shadow 0.3s cubic-bezier(0.22,1,0.36,1)",
-  "&:hover": {
-    transform: { md: "translateY(-4px)" },
-    boxShadow: (theme: { palette: { mode: string } }) =>
-      theme.palette.mode === "light"
-        ? "0 4px 8px rgba(0,0,0,0.04), 0 20px 56px rgba(0,0,0,0.10)"
-        : "none",
+  "@media (hover: hover)": {
+    "&:hover": {
+      transform: { md: "translateY(-4px)" },
+      transition: "transform 0.3s cubic-bezier(0.22,1,0.36,1)",
+    },
   },
 };
 
@@ -261,10 +265,8 @@ function FeatureCard({ accentColor, Icon, title, body, placeholder, imageSrc, si
         gridTemplateRows: { sm: "subgrid" },
         backgroundColor: (theme) =>
           theme.palette.mode === "light"
-            ? "rgba(255,255,255,0.8)"
+            ? "rgba(255,255,255,0.95)"
             : "background.paper",
-        backdropFilter: { md: "blur(16px)" },
-        WebkitBackdropFilter: { md: "blur(16px)" },
         borderRadius: 3.5,
         overflow: "hidden",
         boxShadow: (theme) =>
@@ -654,7 +656,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
           mx: { xs: -2, sm: -3 }, px: { xs: 2, sm: 3 },
           backgroundColor: (theme) => theme.palette.mode === "light" ? "#F6F7F9" : "grey.900",
           position: "relative", overflow: "hidden",
-          "& .features-blob": { position: "absolute", borderRadius: "50%", pointerEvents: "none", filter: "blur(1px)" },
+          "& .features-blob": { position: "absolute", borderRadius: "50%", pointerEvents: "none" },
         }}
       >
         <Box className="features-blob" sx={{ width: { xs: 300, md: 440 }, height: { xs: 300, md: 440 }, top: { xs: "-4%", md: "-2%" }, left: { xs: "-14%", md: "-8%" }, background: "radial-gradient(circle, rgba(252,236,195,0.45) 0%, transparent 65%)" }} />
@@ -686,7 +688,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
           py: { xs: 7, sm: 10, md: 12 },
           mx: { xs: -2, sm: -3 }, px: { xs: 2, sm: 3 },
           position: "relative", overflow: "hidden",
-          "& .loop-blob": { position: "absolute", borderRadius: "50%", pointerEvents: "none", filter: "blur(1px)" },
+          "& .loop-blob": { position: "absolute", borderRadius: "50%", pointerEvents: "none" },
         }}
       >
         <Box className="loop-blob" sx={{ width: { xs: 280, md: 400 }, height: { xs: 280, md: 400 }, top: { xs: "10%", md: "8%" }, left: { xs: "-10%", md: "5%" }, background: "radial-gradient(circle, rgba(21,101,192,0.025) 0%, transparent 65%)" }} />
