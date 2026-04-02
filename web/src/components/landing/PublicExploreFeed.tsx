@@ -149,6 +149,7 @@ export default function PublicExploreFeed() {
           sx={{ gap: 1, mb: { xs: 3, sm: 3.5 } }}
         >
           <TextField
+            id="explore-search"
             size="small"
             placeholder="Search plans..."
             value={search}
