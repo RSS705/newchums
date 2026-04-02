@@ -1918,10 +1918,24 @@ export default function EventDetailClient() {
   const isGuestInvite = event.guestInvite === true;
   const guestRsvpStatus = emailRsvpStatus ?? event.guestRsvpStatus ?? null;
 
+  // Invite-only gate: logged-in users who are not invited and don't have a share/invite token
+  // cannot RSVP. They see an informational message instead of RSVP buttons.
+  const showInviteOnlyGate =
+    event.visibility === "invite_only" &&
+    !event.isHost &&
+    !event.isInvited &&
+    !event.hasRsvp &&
+    !emailRsvpStatus &&
+    !isGuestInvite &&
+    !shareTokenRef.current &&
+    !participationTokenRef.current &&
+    isAuthenticated !== false;
+
   // Show request-to-join CTA instead of RSVP buttons when approval is required,
   // user is not the host, not invited, has no existing RSVP, and hasn't just RSVP'd via email token.
   // Share-link visitors skip this, they use the public RSVP flow (email verification) instead.
   const showRequestToJoin =
+    !showInviteOnlyGate &&
     event.requireApproval &&
     !event.isHost &&
     !event.isInvited &&
@@ -2837,6 +2851,20 @@ export default function EventDetailClient() {
                 )
               ) : null}
             </>
+          ) : showInviteOnlyGate ? (
+            <Stack spacing={1.5} sx={{ py: 1 }}>
+              <Stack
+                direction="row"
+                alignItems="center"
+                spacing={1}
+                sx={{ p: 1.5, bgcolor: "grey.50", borderRadius: 2 }}
+              >
+                <LockRoundedIcon sx={{ fontSize: 18, color: "text.secondary" }} />
+                <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem", lineHeight: 1.6 }}>
+                  This plan is invite only. Ask the host to send you a share link or invite to join.
+                </Typography>
+              </Stack>
+            </Stack>
           ) : isAuthenticated === false ? (
             pubRsvpStatus ? (
               <>

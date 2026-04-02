@@ -8029,7 +8029,7 @@ app.get("/events/:id", async (c) => {
         hobby: hobbyList[0]?.name ?? null,
         hobbySlug: hobbyList[0]?.slug ?? null,
         hobbies: hobbyList,
-        hostName: (() => { const u = ((event as Record<string, unknown>).host_username as string)?.replace(/^@/, ""); return u ? `@${u}` : (((event as Record<string, unknown>).host_name as string)?.trim() || "Someone"); })(),
+        hostName: (() => { const u = ((event as Record<string, unknown>).host_username as string)?.replace(/^@/, ""); if (u) return `@${u}`; if (accessState === "attending") return ((event as Record<string, unknown>).host_name as string)?.trim() || "Someone"; return "Someone"; })(),
         hostUserId: event.host_user_id,
         isHost: isHost === true,
         lockedAt: event.locked_at ?? null,
@@ -8056,12 +8056,17 @@ app.get("/events/:id", async (c) => {
         hideFromExplore: isHost ? (event.hide_from_explore === true) : undefined,
         isQa: event.is_qa === true ? true : undefined,
       },
+      // Non-attending viewers (authenticated, invite) see handles instead of real names
+      // to protect user privacy. Attending viewers (host, RSVP'd) see real names.
       rsvps: rsvps.map((r) => {
         const rHandle = r.username?.replace(/^@/, "") ?? null;
         const rPrefNotes = r.user_id ? (attendeePrefNotes.get(r.user_id) ?? null) : null;
+        const displayName = accessState === "attending"
+          ? (r.name?.trim() || rHandle || r.guest_name || r.guest_email || "Someone")
+          : (rHandle || r.guest_name || r.guest_email || "Someone");
         return {
           userId: r.user_id ?? r.guest_email ?? "guest",
-          name: r.name?.trim() || rHandle || r.guest_name || r.guest_email || "Someone",
+          name: displayName,
           handle: rHandle ? `@${rHandle}` : null,
           status: r.status,
           note: r.note,
@@ -8075,10 +8080,13 @@ app.get("/events/:id", async (c) => {
       altTimes: altTimes.map((a) => {
         const aHandle = a.username?.replace(/^@/, "") ?? null;
         const guestLabel = a.guest_email ? a.guest_email.split("@")[0] : null;
+        const displayName = accessState === "attending"
+          ? (a.name?.trim() || aHandle || guestLabel || "Someone")
+          : (aHandle || guestLabel || "Someone");
         return {
           id: a.id,
           userId: a.user_id,
-          name: a.name?.trim() || aHandle || guestLabel || "Someone",
+          name: displayName,
           handle: aHandle ? `@${aHandle}` : null,
           suggestedAt: a.suggested_at,
           endsAt: a.ends_at,
@@ -8088,10 +8096,13 @@ app.get("/events/:id", async (c) => {
       }),
       invites: invites.map((inv) => {
         const invHandle = inv.username?.replace(/^@/, "") ?? null;
+        const displayName = accessState === "attending"
+          ? (inv.name?.trim() || invHandle || inv.email || "Invited")
+          : (invHandle || inv.email || "Invited");
         return {
           userId: inv.user_id,
           email: inv.email,
-          name: inv.name?.trim() || invHandle || inv.email || "Invited",
+          name: displayName,
           handle: invHandle ? `@${invHandle}` : null,
         };
       }),
@@ -8154,6 +8165,13 @@ app.post("/events/:id/rsvp", async (c) => {
     if (event.locked_at) {
       if (existingRsvp.length === 0)
         return c.json({ ok: false, error: "EVENT_LOCKED", message: "This plan is locked and not accepting new participants" }, 403);
+    }
+
+    // Invite-only gate: non-invited users cannot RSVP to invite-only plans
+    if (event.visibility === "invite_only" && existingRsvp.length === 0) {
+      const invited = (await sql`SELECT 1 FROM newchums.event_invites WHERE event_id = ${eventId} AND user_id = ${userId} LIMIT 1`) as unknown[];
+      if (invited.length === 0)
+        return c.json({ ok: false, error: "INVITE_ONLY", message: "This plan is invite only. Ask the host for a share link or invite." }, 403);
     }
 
     // Require-approval gate: non-invited users without an existing RSVP must go through the request flow
@@ -9430,7 +9448,8 @@ app.post("/events/:id/remove-attendee", async (c) => {
   }
 });
 
-/** POST /events/:id/remove-invite, host revokes a pending invite */
+/** POST /events/:id/remove-invite, host revokes a pending invite.
+ *  Accepts either user_id (registered-user invite) or email (email-only invite). */
 app.post("/events/:id/remove-invite", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -9444,11 +9463,13 @@ app.post("/events/:id/remove-invite", async (c) => {
   try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
 
   const targetUserId = body.user_id ? String(body.user_id) : null;
-  if (!targetUserId) return c.json({ ok: false, error: "VALIDATION", message: "user_id is required" }, 400);
+  const targetEmail = body.email ? String(body.email).trim().toLowerCase() : null;
+  if (!targetUserId && !targetEmail)
+    return c.json({ ok: false, error: "VALIDATION", message: "user_id or email is required" }, 400);
   const reason = body.reason ? String(body.reason).trim().slice(0, 500) : null;
 
   try {
-    const ev = (await sql`SELECT id, host_user_id, title, starts_at FROM newchums.events WHERE id = ${eventId}`) as { id: string; host_user_id: string; title: string; starts_at: string }[];
+    const ev = (await sql`SELECT id, host_user_id, title, starts_at, timezone, location_type, location_name, location_address, online_link FROM newchums.events WHERE id = ${eventId}`) as { id: string; host_user_id: string; title: string; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; online_link: string | null }[];
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     const event = ev[0];
 
@@ -9458,41 +9479,72 @@ app.post("/events/:id/remove-invite", async (c) => {
     if (new Date(event.starts_at) < new Date())
       return c.json({ ok: false, error: "VALIDATION", message: "Invites cannot be removed from past events" }, 400);
 
-    if (targetUserId === userId)
+    if (targetUserId && targetUserId === userId)
       return c.json({ ok: false, error: "VALIDATION", message: "You cannot remove yourself from your own plan" }, 400);
 
-    const inviteRows = (await sql`SELECT id FROM newchums.event_invites WHERE event_id = ${eventId} AND user_id = ${targetUserId}`) as { id: string }[];
+    // Look up the invite by user_id if available, otherwise by email
+    const inviteRows = targetUserId
+      ? (await sql`SELECT id, email FROM newchums.event_invites WHERE event_id = ${eventId} AND user_id = ${targetUserId}`) as { id: string; email: string | null }[]
+      : (await sql`SELECT id, email FROM newchums.event_invites WHERE event_id = ${eventId} AND LOWER(email) = ${targetEmail} AND user_id IS NULL`) as { id: string; email: string | null }[];
     if (inviteRows.length === 0)
-      return c.json({ ok: false, error: "NOT_FOUND", message: "No pending invite found for this user" }, 404);
+      return c.json({ ok: false, error: "NOT_FOUND", message: "No pending invite found for this person" }, 404);
 
-    await sql`DELETE FROM newchums.event_invites WHERE event_id = ${eventId} AND user_id = ${targetUserId}`;
+    // Delete the invite
+    if (targetUserId) {
+      await sql`DELETE FROM newchums.event_invites WHERE event_id = ${eventId} AND user_id = ${targetUserId}`;
+    } else {
+      await sql`DELETE FROM newchums.event_invites WHERE event_id = ${eventId} AND LOWER(email) = ${targetEmail} AND user_id IS NULL`;
+    }
 
-    await sql`
-      INSERT INTO newchums.host_attendee_removals (event_id, host_user_id, removed_user_id, status_at_removal, reason)
-      VALUES (${eventId}, ${userId}, ${targetUserId}, ${"invited"}, ${reason})
-    `;
+    // Record the removal (only if the target has a user account)
+    if (targetUserId) {
+      await sql`
+        INSERT INTO newchums.host_attendee_removals (event_id, host_user_id, removed_user_id, status_at_removal, reason)
+        VALUES (${eventId}, ${userId}, ${targetUserId}, ${"invited"}, ${reason})
+      `;
+    }
 
-    const removedUser = (await sql`SELECT email, name, username FROM newchums.users WHERE id = ${targetUserId}`) as { email: string; name: string | null; username: string | null }[];
+    // Send notification email
     const hostUser = (await sql`SELECT name, username FROM newchums.users WHERE id = ${userId}`) as { name: string | null; username: string | null }[];
+    const hostName = hostUser[0]?.name?.trim() || hostUser[0]?.username?.replace(/^@/, "") || "the host";
+    const eventLocation = event.location_type === "online" ? (event.online_link || "Online") : [event.location_name, event.location_address].filter(Boolean).join(", ") || "";
 
-    if (removedUser.length > 0) {
+    if (targetUserId) {
+      // Registered user: look up their details and check notification prefs
+      const removedUser = (await sql`SELECT email, name, username FROM newchums.users WHERE id = ${targetUserId}`) as { email: string; name: string | null; username: string | null }[];
+      if (removedUser.length > 0) {
+        try {
+          const removedProfileRows = (await sql`SELECT notification_prefs FROM user_profile WHERE user_id = ${targetUserId} LIMIT 1`) as { notification_prefs: unknown }[];
+          const removedPrefs = normalizeNotificationPrefs(removedProfileRows[0]?.notification_prefs);
+          if (removedPrefs.items.attendee_removed?.enabled !== false) {
+            const unsubToken = await createUnsubscribeToken(c.env.NEXTAUTH_SECRET, targetUserId, "attendee_removed");
+            await sendAttendeeRemovedEmail(c.env, {
+              to: removedUser[0].email,
+              recipientName: removedUser[0].name?.trim() || removedUser[0].username?.replace(/^@/, "") || "there",
+              hostName,
+              eventTitle: event.title,
+              eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
+              eventDate: formatEventDate(event.starts_at, event.timezone || "UTC"),
+              eventLocation,
+              removalReason: reason,
+              unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
+            });
+          }
+        } catch { /* noop */ }
+      }
+    } else if (targetEmail) {
+      // Email-only invite: send directly to that email address
       try {
-        const removedProfileRows = (await sql`SELECT notification_prefs FROM user_profile WHERE user_id = ${targetUserId} LIMIT 1`) as { notification_prefs: unknown }[];
-        const removedPrefs = normalizeNotificationPrefs(removedProfileRows[0]?.notification_prefs);
-        if (removedPrefs.items.attendee_removed?.enabled !== false) {
-          const unsubToken = await createUnsubscribeToken(c.env.NEXTAUTH_SECRET, targetUserId, "attendee_removed");
-          await sendAttendeeRemovedEmail(c.env, {
-            to: removedUser[0].email,
-            recipientName: removedUser[0].name?.trim() || removedUser[0].username?.replace(/^@/, "") || "there",
-            hostName: hostUser[0]?.name?.trim() || hostUser[0]?.username?.replace(/^@/, "") || "the host",
-            eventTitle: event.title,
-            eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
-            eventDate: formatEventDate(event.starts_at, event.timezone || "UTC"),
-            eventLocation: event.location_type === "online" ? (event.online_link || "Online") : [event.location_name, event.location_address].filter(Boolean).join(", ") || "",
-            removalReason: reason,
-            unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
-          });
-        }
+        await sendAttendeeRemovedEmail(c.env, {
+          to: targetEmail,
+          recipientName: targetEmail.split("@")[0] || "there",
+          hostName,
+          eventTitle: event.title,
+          eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
+          eventDate: formatEventDate(event.starts_at, event.timezone || "UTC"),
+          eventLocation,
+          removalReason: reason,
+        });
       } catch { /* noop */ }
     }
 
