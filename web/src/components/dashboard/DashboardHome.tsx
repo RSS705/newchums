@@ -549,32 +549,27 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
           )}
         </>
       ) : (
-        /* ── Empty states ──────────────────────────────────────────── */
-        <Box
-          sx={{
-            textAlign: "center",
-            py: { xs: 6, sm: 10 },
-            px: 3,
-          }}
-        >
+        /* ── Empty state ──────────────────────────────────────────── */
+        /* Compact: icon, headline, one paragraph, actions, small note. */
+        <Box sx={{ textAlign: "center", py: { xs: 5, sm: 7 }, px: 3 }}>
           <ExploreRoundedIcon
-            sx={{ fontSize: 52, color: "secondary.main", mb: 2, opacity: 0.6 }}
+            sx={{ fontSize: 48, color: "secondary.main", mb: 1.5, opacity: 0.6 }}
           />
-          <Typography variant="h6" fontWeight={600} sx={{ mb: 1 }}>
-            {isFiltered ? "No plans match your filters" : "No upcoming plans nearby yet"}
+          <Typography variant="h6" fontWeight={600} sx={{ mb: 0.75 }}>
+            {isFiltered ? "Nothing matched this time" : "No upcoming plans nearby yet"}
           </Typography>
           <Typography
-            variant="body1"
+            variant="body2"
             color="text.secondary"
-            sx={{ mb: 3, maxWidth: 440, mx: "auto", lineHeight: 1.7 }}
+            sx={{ mb: 2.5, maxWidth: 400, mx: "auto", lineHeight: 1.6 }}
           >
             {isFiltered
-              ? "Try broadening your search, changing the time window, or clearing filters to see more."
+              ? "Try widening the time window, removing a hobby filter, or clearing filters to see more plans."
               : hasLocation
-                ? "There aren't any public plans in your area right now. Be the first to organize one, or check back soon."
+                ? "There aren't any public plans in your area right now. Check back soon or start one yourself."
                 : !hasHobbies
-                  ? "Add a few hobbies to your profile so we can show you relevant gatherings."
-                  : "Plans are just getting started in your area. Start one and invite people around a hobby you already enjoy."}
+                  ? "Add a few hobbies to your profile so we can show you relevant plans nearby."
+                  : "Plans are just getting started in your area. Start one and invite people around a hobby you enjoy."}
           </Typography>
           <Stack
             direction={{ xs: "column", sm: "row" }}
@@ -585,20 +580,11 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
               <Button
                 variant="outlined"
                 onClick={clearAllFilters}
-                sx={{ textTransform: "none", fontWeight: 600 }}
+                sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3 }}
               >
                 Clear all filters
               </Button>
             )}
-            <Button
-              component={Link}
-              href="/events/create"
-              variant="contained"
-              startIcon={<AddCircleRoundedIcon />}
-              sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3 }}
-            >
-              Start a plan
-            </Button>
             {!hasLocation && (
               <Button
                 component={Link}
@@ -610,7 +596,23 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
                 Set your location
               </Button>
             )}
+            <Button
+              component={Link}
+              href="/events/create"
+              variant="contained"
+              startIcon={<AddCircleRoundedIcon />}
+              sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3 }}
+            >
+              Start a plan
+            </Button>
           </Stack>
+          <Typography
+            variant="caption"
+            color="text.disabled"
+            sx={{ display: "block", mt: 2, maxWidth: 340, mx: "auto" }}
+          >
+            People nearby with matching hobbies can discover your plan in Explore.
+          </Typography>
         </Box>
       )}
     </Stack>

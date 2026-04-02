@@ -97,12 +97,7 @@ export default function PendingClient() {
             <Typography variant="body1" color="text.secondary">
               Verification links expire after 24 hours. You can request a new one below.
             </Typography>
-            <AppButton
-              variant="contained"
-              onClick={handleResend}
-              disabled={resending}
-              fullWidth
-            >
+            <AppButton variant="contained" onClick={handleResend} disabled={resending} fullWidth>
               {resending ? "Sending…" : "Resend verification email"}
             </AppButton>
             <AppButton href="/login" fullWidth>
@@ -122,17 +117,14 @@ export default function PendingClient() {
             Check your email
           </Typography>
           <Typography variant="body1" color="text.secondary">
-            We&apos;ve sent a verification link to <strong>{email}</strong>. Click the link to verify your account.
+            We&apos;ve sent a verification link to <strong>{email}</strong>. Click the link in that
+            email to verify your account.
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            This page will update automatically when you&apos;ve verified. You can also close it and return later.
+            This page will update automatically when you&apos;ve verified. You can also close it and
+            return later.
           </Typography>
-          <AppButton
-            variant="outlined"
-            onClick={handleResend}
-            disabled={resending}
-            fullWidth
-          >
+          <AppButton variant="outlined" onClick={handleResend} disabled={resending} fullWidth>
             {resending ? "Sending…" : "Resend verification email"}
           </AppButton>
           <AppButton href="/login" fullWidth>

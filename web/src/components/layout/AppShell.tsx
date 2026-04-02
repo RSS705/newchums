@@ -569,7 +569,7 @@ export default function AppShell({ children, user }: AppShellProps) {
                 sx={{
                   display: { xs: "none", md: "block" },
                   position: "sticky",
-                  top: "88px",
+                  top: 0,
                   borderRadius: 3,
                   overflow: "hidden",
                   flexShrink: 0,

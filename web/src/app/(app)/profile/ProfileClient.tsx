@@ -187,10 +187,12 @@ export default function ProfileClient() {
     fetchData();
   }, [fetchData]);
 
-  // Silently re-fetch profile data when the user returns to a previously idle tab.
+  // Silently re-fetch profile data when the user returns to a previously idle
+  // browser tab — but only when there are no unsaved changes.
+  const isDirtyRef = useRef<() => boolean>(() => false);
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
+      if (document.visibilityState === "visible" && !isDirtyRef.current()) {
         fetchData(true);
       }
     };
@@ -228,6 +230,7 @@ export default function ProfileClient() {
     for (const s of currSlugs) if (!prevSlugs.has(s)) return true;
     return false;
   }, [profile, displayName, handle, gender, profileTheme, dateOfBirth, bio, homeAddress, homeLat, homeLng, travelRadiusKm, interestItems]);
+  isDirtyRef.current = isDirty;
 
   const handleAvatarUpload = useCallback(
     async (fileOrBlob: File | Blob) => {

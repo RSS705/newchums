@@ -211,12 +211,15 @@ export default function PublicExploreFeed() {
           </Button>
         </Stack>
       ) : events.length === 0 && !showSampleFallback ? (
+        /* Empty state: no plans for current search/filter state. */
         <Stack spacing={2} alignItems="center" sx={{ py: 6 }}>
           <Typography variant="h6" color="text.secondary" fontWeight={500}>
-            {searchDebounced ? "No plans match your search" : "No public plans right now"}
+            {searchDebounced ? "Nothing matched this time" : "No public plans right now"}
           </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center", maxWidth: 400 }}>
-            Plans appear here as people create them. Sign up to start your own or get notified when new plans match your interests.
+          <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center", maxWidth: 400, lineHeight: 1.6 }}>
+            {searchDebounced
+              ? "Try a different search to find what you're looking for."
+              : "Plans appear here as people create them. Sign up to start your own or get notified when new plans match your hobbies."}
           </Typography>
           <Button
             component={Link}
