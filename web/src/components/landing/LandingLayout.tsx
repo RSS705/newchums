@@ -182,7 +182,7 @@ export default function LandingLayout({
         <MarketingNavSection sectionTitle="Learn More" onLinkClick={() => setMobileOpen(false)} />
       </Drawer>
 
-      <Box component="main" sx={{ flex: 1, pt: { xs: 8, lg: 10 } }}>
+      <Box component="main" sx={{ flex: 1 }}>
         <LandingContainer>{children}</LandingContainer>
       </Box>
 

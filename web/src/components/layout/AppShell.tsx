@@ -194,7 +194,7 @@ export default function AppShell({ children, user }: AppShellProps) {
 
         <Box
           component="main"
-          sx={{ flexGrow: 1, display: "flex", flexDirection: "column", pt: { xs: 8, lg: 10 } }}
+          sx={{ flexGrow: 1, display: "flex", flexDirection: "column" }}
         >
           <Box sx={{ flex: 1, pb: { xs: 0, md: 4 } }}>
             <Container maxWidth="lg" sx={{ pt: { xs: 3, sm: 4 }, pb: { xs: 2, sm: 3 }, px: { xs: 2, sm: 3 } }}>
@@ -538,7 +538,6 @@ export default function AppShell({ children, user }: AppShellProps) {
           flexGrow: 1,
           display: "flex",
           flexDirection: "column",
-          pt: { xs: 8, lg: 10 },
           pb: 0,
         }}
       >

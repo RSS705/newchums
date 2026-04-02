@@ -46,7 +46,7 @@ export default function HobbyPickerField({
   const [showAll, setShowAll] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  // Keep a stable ref to current value so addItem can read latest without re-creating
+  // Stable ref to current value so addItem always reads the latest selections.
   const valueRef = useRef(value);
   valueRef.current = value;
 
@@ -109,8 +109,16 @@ export default function HobbyPickerField({
   }, [onChange, onReject]);
 
   const removeItem = useCallback((slug: string) => {
-    onChange(value.filter((i) => i.slug !== slug));
-  }, [value, onChange]);
+    onChange(valueRef.current.filter((i) => i.slug !== slug));
+  }, [onChange]);
+
+  // Filter out already-selected hobbies from the dropdown suggestions.
+  const filteredSuggestions = useMemo(() => {
+    if (!value.length) return suggestions;
+    return suggestions.filter(
+      (s) => !value.some((v) => isDuplicate(v, s)),
+    );
+  }, [suggestions, value]);
 
   const sorted = useMemo(
     () => [...value].sort((a, b) => a.name.localeCompare(b.name)),
@@ -123,12 +131,19 @@ export default function HobbyPickerField({
 
   return (
     <Stack spacing={1.5}>
+      {/*
+       * MUI Autocomplete is used ONLY for the search input + dropdown.
+       * Selection state is fully managed by the parent via value/onChange props
+       * on this component — we intentionally pass value={[]} to Autocomplete
+       * so MUI never tries to reconcile its internal selection state with ours.
+       * This eliminates race conditions that caused selections to be cleared.
+       */}
       <Autocomplete<HobbyOption | string, true, true, true>
         freeSolo
         multiple
         disableClearable
         filterOptions={(x) => x}
-        options={suggestions}
+        options={filteredSuggestions}
         renderOption={(props, option) => {
           const { key: _key, ...rest } = props as React.HTMLAttributes<HTMLLIElement> & { key: string };
           return (
@@ -137,46 +152,25 @@ export default function HobbyPickerField({
             </li>
           );
         }}
-        // We pass value to keep MUI aware of selections, but render tags ourselves below.
-        value={value}
+        value={[]}
         inputValue={inputValue}
         onInputChange={(_event, newInputValue, reason) => {
-          // "reset" fires when MUI clears the input after a selection or on re-render.
-          // We manage clearing ourselves via addItem, so ignore resets.
           if (reason === "reset") return;
           setInputValue(newInputValue);
         }}
         onChange={(_event, newValue, reason) => {
-          if (reason === "clear") return;
-
-          // "removeOption", MUI removed a tag via backspace/delete.
-          // Since we render tags externally and block backspace-delete, this shouldn't
-          // normally fire, but handle it defensively.
-          if (reason === "removeOption") {
-            const kept = (newValue as (HobbyOption | string)[])
-              .filter((v): v is HobbyOption => typeof v !== "string");
-            onChange(kept);
-            return;
-          }
-
-          // "createOption" (Enter on free text) or "selectOption" (click/Enter on dropdown item)
+          if (reason === "clear" || reason === "removeOption") return;
+          // "selectOption" or "createOption" — the new item is the last entry.
           const last = newValue[newValue.length - 1];
-          if (!last) return;
-          if (typeof last === "string") {
-            addItem(last);
-          } else {
-            addItem(last);
-          }
+          if (last) addItem(last);
         }}
         getOptionLabel={(opt) => (typeof opt === "string" ? opt : opt.name)}
         isOptionEqualToValue={(opt, val) => {
-          if (!opt || !val) return false;
           if (typeof opt === "string" || typeof val === "string") return false;
           return opt.slug === val.slug;
         }}
         loading={loading}
         renderInput={(params) => {
-          // Intercept keyDown to handle Enter ourselves and block backspace-delete
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const origKeyDown = (params.inputProps as any)?.onKeyDown as
             | ((e: React.KeyboardEvent) => void)
@@ -214,8 +208,6 @@ export default function HobbyPickerField({
                     if (e.key === "Enter") {
                       const trimmed = inputValue.trim();
                       if (trimmed) {
-                        // If a dropdown option is highlighted, let MUI handle it
-                        // (aria-activedescendant is set when a listbox option has focus)
                         const hasHighlight = e.currentTarget.getAttribute("aria-activedescendant");
                         if (!hasHighlight) {
                           e.preventDefault();

@@ -32,12 +32,20 @@ body {
 }
 
 #app-scroll-root {
-  height: 100%;
+  --header-h: 64px;
+  margin-top: var(--header-h);
+  height: calc(100% - var(--header-h));
   overflow-x: hidden;
   overflow-y: auto;
   /* Reserve scrollbar space so layout doesn't shift when content loads/overflows */
   scrollbar-gutter: stable;
   -webkit-overflow-scrolling: touch;
+}
+
+@media (min-width: 1200px) {
+  #app-scroll-root {
+    --header-h: 80px;
+  }
 }
 
 @supports not (scrollbar-gutter: stable) {
