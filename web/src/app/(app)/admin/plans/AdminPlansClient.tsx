@@ -76,6 +76,7 @@ function formatDateTime(iso: string): string {
       year: "numeric",
       hour: "numeric",
       minute: "2-digit",
+      hour12: true,
     });
   } catch {
     return iso;

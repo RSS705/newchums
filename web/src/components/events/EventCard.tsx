@@ -67,7 +67,7 @@ function formatDateTime(iso: string): string {
   const diffMs = d.getTime() - now.getTime();
   const diffDays = Math.floor(diffMs / 86400000);
 
-  const timeStr = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const timeStr = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", hour12: true });
 
   if (diffDays === 0) return `Today, ${timeStr}`;
   if (diffDays === 1) return `Tomorrow, ${timeStr}`;

@@ -164,7 +164,7 @@ function notificationText(n: AppNotification): {
     case "event_alt_time": {
       const suggestedIso = n.metadata?.suggestedAt as string | undefined;
       const formattedTime = suggestedIso
-        ? new Date(suggestedIso).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+        ? new Date(suggestedIso).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true })
         : null;
       return {
         actorLabel,

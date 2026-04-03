@@ -230,6 +230,7 @@ function formatDateTime(iso: string): string {
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    hour12: true,
   });
 }
 
@@ -4077,7 +4078,7 @@ export default function EventDetailClient() {
           type OverlapWindow = { startMs: number; endMs: number; entries: AltTimeEntry[] };
 
           const fmtTime = (d: Date) =>
-            d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+            d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", hour12: true });
 
           const viewerHasSuggested = viewerUserId
             ? altTimes.some((e) => e.userId === viewerUserId)
