@@ -16,6 +16,10 @@ export type HobbyOption = { id?: string; name: string; slug: string };
 const MAX_NAME_LENGTH = 50;
 const DEBOUNCE_MS = 250;
 
+// Stable empty array so MUI Autocomplete doesn't see a new reference on every
+// render and trigger internal value-sync callbacks.
+const EMPTY_VALUE: HobbyOption[] = [];
+
 type HobbyPickerFieldProps = {
   value: HobbyOption[];
   onChange: (items: HobbyOption[]) => void;
@@ -152,7 +156,7 @@ export default function HobbyPickerField({
             </li>
           );
         }}
-        value={[]}
+        value={EMPTY_VALUE}
         inputValue={inputValue}
         onInputChange={(_event, newInputValue, reason) => {
           if (reason === "reset") return;

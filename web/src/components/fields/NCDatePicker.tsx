@@ -42,11 +42,21 @@ export default function NCDatePicker({
   ...rest
 }: NCDatePickerProps) {
   const fieldId = id ?? `date-${label.replace(/\s/g, "-")}`;
-  const dayjsValue = value && dayjs(value, "YYYY-MM-DD").isValid() ? dayjs(value) : null;
 
-  const handleChange = (newValue: Dayjs | null) => {
-    onChange(newValue && newValue.isValid() ? newValue.format("YYYY-MM-DD") : "");
-  };
+  // Memoize the dayjs instance so MUI DateField receives a stable reference
+  // when the underlying string hasn't changed. Without this, DateField's
+  // internal value-sync can enter a render loop (MUI X v8 compares by ref).
+  const dayjsValue = React.useMemo(
+    () => (value && dayjs(value, "YYYY-MM-DD").isValid() ? dayjs(value) : null),
+    [value],
+  );
+
+  const handleChange = React.useCallback(
+    (newValue: Dayjs | null) => {
+      onChange(newValue && newValue.isValid() ? newValue.format("YYYY-MM-DD") : "");
+    },
+    [onChange],
+  );
 
   return (
     <Box sx={{ mt: noTopMargin ? 0 : 2 }}>

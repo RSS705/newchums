@@ -209,7 +209,18 @@ export default function ProfileClient() {
     [interestItems],
   );
 
-
+  // Stable InputProps reference for the Username field so MUI InputBase
+  // doesn't see a new object every render and trigger re-layout effects.
+  const handleInputProps = useMemo(
+    () => ({
+      startAdornment: (
+        <InputAdornment position="start">
+          <Typography color="text.secondary">@</Typography>
+        </InputAdornment>
+      ),
+    }),
+    [],
+  );
 
   const isDirty = useCallback(() => {
     if (!profile) return true;
@@ -314,8 +325,32 @@ export default function ProfileClient() {
     [profile, toast, router],
   );
 
+  // Guard Cropper callbacks with value comparison so that identical-value but
+  // new-reference objects don't trigger re-renders. Without this, react-easy-crop's
+  // internal useEffect fires onCropChange/onCropComplete on every render cycle,
+  // each producing a new object → setState sees new ref → re-render → effect
+  // re-fires → infinite "Maximum update depth exceeded" loop.
+  const handleCropChange = useCallback((c: { x: number; y: number }) => {
+    setCropPosition((prev) => (prev.x === c.x && prev.y === c.y ? prev : c));
+  }, []);
+
+  const handleZoomChange = useCallback((z: number) => {
+    setCropZoom((prev) => (prev === z ? prev : z));
+  }, []);
+
   const handleCropComplete = useCallback((_: Area, croppedAreaPx: Area) => {
-    setCroppedAreaPixels(croppedAreaPx);
+    setCroppedAreaPixels((prev) => {
+      if (
+        prev &&
+        prev.x === croppedAreaPx.x &&
+        prev.y === croppedAreaPx.y &&
+        prev.width === croppedAreaPx.width &&
+        prev.height === croppedAreaPx.height
+      ) {
+        return prev;
+      }
+      return croppedAreaPx;
+    });
   }, []);
 
   const handleRemoveAvatar = useCallback(async () => {
@@ -340,21 +375,19 @@ export default function ProfileClient() {
     } finally {
       setAvatarUploading(false);
     }
-  }, [profile, avatarUploading, toast, router]);
+  }, [profile, toast, router]);
 
   const handleCropSave = useCallback(async () => {
     if (!cropImageSrc || !croppedAreaPixels) return;
-    setAvatarUploading(true);
     try {
       const blob = await getCroppedImg(cropImageSrc, croppedAreaPixels as PixelCrop);
       URL.revokeObjectURL(cropImageSrc);
       setCropImageSrc(null);
       setCroppedAreaPixels(null);
+      // handleAvatarUpload manages avatarUploading state internally
       await handleAvatarUpload(blob);
     } catch {
       toast.error("Failed to process image");
-    } finally {
-      setAvatarUploading(false);
     }
   }, [cropImageSrc, croppedAreaPixels, handleAvatarUpload, toast]);
 
@@ -616,13 +649,7 @@ export default function ProfileClient() {
                 }}
                 placeholder="yourhandle"
                 error={Boolean(handleError)}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <Typography color="text.secondary">@</Typography>
-                    </InputAdornment>
-                  ),
-                }}
+                InputProps={handleInputProps}
                 helperText={
                   handleError ??
                   (handleStatus === "available"
@@ -859,8 +886,8 @@ export default function ProfileClient() {
                   zoom={cropZoom}
                   aspect={1}
                   cropShape="round"
-                  onCropChange={setCropPosition}
-                  onZoomChange={setCropZoom}
+                  onCropChange={handleCropChange}
+                  onZoomChange={handleZoomChange}
                   onCropComplete={handleCropComplete}
                 />
               </Box>
@@ -918,6 +945,7 @@ export default function ProfileClient() {
                 URL.revokeObjectURL(cropImageSrc);
                 setCropImageSrc(null);
                 setCroppedAreaPixels(null);
+                if (fileInputRef.current) fileInputRef.current.value = "";
               }}
             >
               Choose different
