@@ -119,7 +119,7 @@ This document is meant to:
 
 ## General
 
-- We need ways for the user to invest into the app. Build interest lists, pin events, add chums, get feedback for events, define chum preferences, etc.
+- We need ways for the user to invest into the app. Build interest lists, pin events, add to Chums, get feedback for events, define chum preferences, etc.
 - Notification of one of their chums joins something they might be interested in
 
 ---

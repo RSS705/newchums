@@ -137,8 +137,8 @@ export const OBJECTIVES: ObjectiveDefinition[] = [
   },
   {
     key: "add_first_chum",
-    title: "Add your first chum",
-    description: "Save someone to your connections so you can plan together easily.",
+    title: "Add someone to Chums",
+    description: "Add someone to your Chums so you can plan together easily.",
     category: "social",
     sequence: 110,
     actionUrl: "/chum-groups",

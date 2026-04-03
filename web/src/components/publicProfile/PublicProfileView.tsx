@@ -122,7 +122,7 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
                   borderRadius: 2.5,
                 }}
               >
-                {chumAction.isSaved ? "Remove Chum" : "Add Chum"}
+                {chumAction.isSaved ? "Remove from Chums" : "Add to Chums"}
               </Button>
             </Box>
           )}

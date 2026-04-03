@@ -482,7 +482,7 @@ function SearchResultRow({
         <Box sx={{ flexShrink: 0 }}>
           {isSaved ? (
             <Button variant="outlined" size="small" color="inherit" disabled sx={{ fontSize: "0.8125rem", whiteSpace: "nowrap" }}>
-              Added
+              In Chums
             </Button>
           ) : (
             <Button
@@ -610,7 +610,7 @@ function AddPrivateContactDialog({
       const data = await res.json() as { ok?: boolean; autoLinked?: boolean; type?: string };
       if (!data.ok) throw new Error();
       if (data.autoLinked) {
-        toast.success("This person already has an account, saved to On NewChums!");
+        toast.success("This person already has an account — added to Chums!");
       } else {
         toast.success("Private contact added.");
       }
@@ -618,7 +618,7 @@ function AddPrivateContactDialog({
       onAdded();
       onClose();
     } catch {
-      toast.error("Couldn't add contact. Please try again.");
+      toast.error("Couldn't save contact. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -671,7 +671,7 @@ function AddPrivateContactDialog({
           disabled={saving || (!email.trim() && !name.trim())}
           startIcon={saving ? <CircularProgress size={14} color="inherit" /> : undefined}
         >
-          {saving ? "Saving…" : "Add contact"}
+          {saving ? "Saving…" : "Save contact"}
         </Button>
       </DialogActions>
     </Dialog>
@@ -806,10 +806,10 @@ export default function ChumsClient() {
         }, ...prev]);
       }
       clearFindAndAddArea();
-      toast.success("Chum saved");
+      toast.success("Added to Chums");
       notifyObjectivesChanged();
     } catch {
-      toast.error("Couldn't add contact. Please try again.");
+      toast.error("Couldn't save contact. Please try again.");
     } finally {
       setActionLoading((prev) => { const next = new Set(prev); next.delete(userId); return next; });
     }
@@ -823,7 +823,7 @@ export default function ChumsClient() {
       if (!data.ok) throw new Error();
       setOnNewChums((prev) => prev.filter((c) => c.contactId !== contactId));
       setPrivateContacts((prev) => prev.filter((c) => c.contactId !== contactId));
-      toast.success("Chum removed");
+      toast.success("Removed from Chums");
     } catch {
       toast.error("Couldn't remove contact. Please try again.");
     } finally {
@@ -887,7 +887,7 @@ export default function ChumsClient() {
       <AppCard>
         <Stack spacing={2.5}>
           <Box>
-            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>Find and add people</Typography>
+            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>Find people</Typography>
             <Typography color="text.secondary" variant="body2" sx={{ mt: 0.5, lineHeight: 1.6 }}>
               Search by name, @handle, or email.
             </Typography>
@@ -1001,7 +1001,7 @@ export default function ChumsClient() {
             <EmptyState
               icon={<PeopleRoundedIcon sx={{ fontSize: 56 }} />}
               title="No chums yet"
-              description="Use the search above to find and add people. Chums can be invited to private plans, and having them here makes it easy to keep track of people you know."
+              description="Use the search above to find people. Chums can be invited to private plans, and having them here makes it easy to keep track of people you know."
             />
           ) : (
             <Stack divider={<Divider />}>

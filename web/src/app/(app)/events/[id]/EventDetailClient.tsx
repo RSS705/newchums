@@ -19,7 +19,10 @@ import FormControl from "@mui/material/FormControl";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import InputAdornment from "@mui/material/InputAdornment";
 import Select from "@mui/material/Select";
+import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
+import ListItemIcon from "@mui/material/ListItemIcon";
+import ListItemText from "@mui/material/ListItemText";
 import Checkbox from "@mui/material/Checkbox";
 import Radio from "@mui/material/Radio";
 import RadioGroup from "@mui/material/RadioGroup";
@@ -47,8 +50,12 @@ import NotificationsRoundedIcon from "@mui/icons-material/NotificationsRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import SendRoundedIcon from "@mui/icons-material/SendRounded";
 import PeopleOutlineRoundedIcon from "@mui/icons-material/PeopleOutlineRounded";
+import MoreVertRoundedIcon from "@mui/icons-material/MoreVertRounded";
+import OpenInNewRoundedIcon from "@mui/icons-material/OpenInNewRounded";
 import PersonAddRoundedIcon from "@mui/icons-material/PersonAddRounded";
 import PersonRemoveRoundedIcon from "@mui/icons-material/PersonRemoveRounded";
+import BookmarkAddRoundedIcon from "@mui/icons-material/BookmarkAddRounded";
+import BookmarkRemoveRoundedIcon from "@mui/icons-material/BookmarkRemoveRounded";
 import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
 import CancelRoundedIcon from "@mui/icons-material/CancelRounded";
 import FlagRoundedIcon from "@mui/icons-material/FlagRounded";
@@ -146,6 +153,7 @@ type RsvpEntry = {
   isGuest?: boolean;
   guestEmail?: string | null;
   prefNotes?: string[] | null;
+  isChumSaved?: boolean;
 };
 type AltTimeEntry = {
   id: string;
@@ -298,6 +306,15 @@ export default function EventDetailClient() {
   const [removeTarget, setRemoveTarget] = useState<RemoveTarget | null>(null);
   const [removeReason, setRemoveReason] = useState("");
   const [removing, setRemoving] = useState(false);
+
+  // Attendee overflow menu state
+  const [attendeeMenuAnchor, setAttendeeMenuAnchor] = useState<HTMLElement | null>(null);
+  const [attendeeMenuTarget, setAttendeeMenuTarget] = useState<RsvpEntry | null>(null);
+  const [chumToggling, setChumToggling] = useState(false);
+
+  // Invite overflow menu state
+  const [inviteMenuAnchor, setInviteMenuAnchor] = useState<HTMLElement | null>(null);
+  const [inviteMenuTarget, setInviteMenuTarget] = useState<InviteEntry | null>(null);
 
   // Chat state
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -1658,6 +1675,42 @@ export default function EventDetailClient() {
       toast.error("Network error");
     } finally {
       setRemoving(false);
+    }
+  };
+
+  // Toggle save/remove chum from the attendee overflow menu
+  const handleToggleChum = async (r: RsvpEntry) => {
+    if (!viewerUserId || r.userId === viewerUserId || r.isGuest) return;
+    setChumToggling(true);
+    try {
+      if (r.isChumSaved) {
+        // Remove chum — DELETE /chums/:userId removes by linked_user_id
+        const res = await apiFetch(`/chums/${r.userId}`, { auth: true, method: "DELETE" });
+        const data = (await res.json()) as { ok: boolean };
+        if (data.ok) {
+          setRsvps((prev) => prev.map((x) => x.userId === r.userId ? { ...x, isChumSaved: false } : x));
+          toast.success("Removed from Chums");
+        } else {
+          toast.error("Couldn't update Chums. Please try again.");
+        }
+      } else {
+        // Add to Chums — POST /chums/:userId
+        const res = await apiFetch(`/chums/${r.userId}`, { auth: true, method: "POST" });
+        const data = (await res.json()) as { ok: boolean };
+        if (data.ok) {
+          setRsvps((prev) => prev.map((x) => x.userId === r.userId ? { ...x, isChumSaved: true } : x));
+          toast.success("Added to Chums");
+          notifyObjectivesChanged();
+        } else {
+          toast.error("Couldn't update Chums. Please try again.");
+        }
+      }
+    } catch {
+      toast.error("Network error");
+    } finally {
+      setChumToggling(false);
+      setAttendeeMenuAnchor(null);
+      setAttendeeMenuTarget(null);
     }
   };
 
@@ -4845,30 +4898,19 @@ export default function EventDetailClient() {
                         sx={{ fontWeight: 500, fontSize: "0.6875rem" }}
                       />
                     )}
-                    {event.isHost &&
-                      !isCanceled &&
-                      !isPast &&
-                      r.userId !== event.hostUserId &&
-                      (r.status === "going" || r.status === "maybe") && (
-                        <Tooltip title="Remove from plan" arrow>
-                          <IconButton
-                            size="small"
-                            onClick={() => {
-                              setRemoveTarget({
-                                type: "rsvp",
-                                userId: r.userId,
-                                name: r.name,
-                                guestEmail: r.guestEmail ?? null,
-                              });
-                              setRemoveReason("");
-                              setRemoveDialogOpen(true);
-                            }}
-                            sx={{ color: "text.disabled", "&:hover": { color: "error.main" } }}
-                          >
-                            <PersonRemoveRoundedIcon sx={{ fontSize: "1.125rem" }} />
-                          </IconButton>
-                        </Tooltip>
-                      )}
+                    {/* Overflow menu trigger — shown when there are any applicable actions for this attendee */}
+                    {viewerUserId && r.userId !== viewerUserId && !r.isGuest && (
+                      <IconButton
+                        size="small"
+                        onClick={(e) => {
+                          setAttendeeMenuAnchor(e.currentTarget);
+                          setAttendeeMenuTarget(r);
+                        }}
+                        sx={{ color: "text.disabled", ml: 0.25, "&:hover": { color: "text.primary" } }}
+                      >
+                        <MoreVertRoundedIcon sx={{ fontSize: "1.125rem" }} />
+                      </IconButton>
+                    )}
                   </Stack>
                 </Stack>
                 {r.note && (
@@ -4979,25 +5021,18 @@ export default function EventDetailClient() {
                         color="info"
                         sx={{ fontWeight: 600, fontSize: "0.75rem" }}
                       />
-                      {event.isHost && !isCanceled && !isPast && inv.userId !== null && (
-                        <Tooltip title="Remove invite" arrow>
-                          <IconButton
-                            size="small"
-                            onClick={() => {
-                              setRemoveTarget({
-                                type: "invite",
-                                userId: inv.userId,
-                                email: inv.email,
-                                name: inv.name || inv.email || "this person",
-                              });
-                              setRemoveReason("");
-                              setRemoveDialogOpen(true);
-                            }}
-                            sx={{ color: "text.disabled", "&:hover": { color: "error.main" } }}
-                          >
-                            <PersonRemoveRoundedIcon sx={{ fontSize: "1.125rem" }} />
-                          </IconButton>
-                        </Tooltip>
+                      {/* Overflow menu for pending invites — show when there's at least one action */}
+                      {(invProfileHref || (event.isHost && !isCanceled && !isPast && inv.userId !== null)) && (
+                        <IconButton
+                          size="small"
+                          onClick={(e) => {
+                            setInviteMenuAnchor(e.currentTarget);
+                            setInviteMenuTarget(inv);
+                          }}
+                          sx={{ color: "text.disabled", ml: 0.25, "&:hover": { color: "text.primary" } }}
+                        >
+                          <MoreVertRoundedIcon sx={{ fontSize: "1.125rem" }} />
+                        </IconButton>
                       )}
                     </Stack>
                   </Stack>
@@ -5317,6 +5352,135 @@ export default function EventDetailClient() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Attendee overflow menu */}
+      <Menu
+        anchorEl={attendeeMenuAnchor}
+        open={Boolean(attendeeMenuAnchor) && Boolean(attendeeMenuTarget)}
+        onClose={() => { setAttendeeMenuAnchor(null); setAttendeeMenuTarget(null); }}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+        transformOrigin={{ vertical: "top", horizontal: "right" }}
+        slotProps={{
+          paper: {
+            sx: {
+              minWidth: 180,
+              borderRadius: 2.5,
+              mt: 0.5,
+              "@keyframes menuFadeIn": {
+                from: { opacity: 0, transform: "scale(0.95) translateY(-4px)" },
+                to: { opacity: 1, transform: "scale(1) translateY(0)" },
+              },
+              animation: "menuFadeIn 150ms ease-out",
+            },
+          },
+        }}
+      >
+        {/* View profile */}
+        {attendeeMenuTarget?.handle && (
+          <MenuItem
+            component={Link}
+            href={`/u/${attendeeMenuTarget.handle.replace(/^@/, "")}`}
+            onClick={() => { setAttendeeMenuAnchor(null); setAttendeeMenuTarget(null); }}
+          >
+            <ListItemIcon><OpenInNewRoundedIcon fontSize="small" /></ListItemIcon>
+            <ListItemText>View profile</ListItemText>
+          </MenuItem>
+        )}
+        {/* Add to / Remove from Chums */}
+        {attendeeMenuTarget && viewerUserId && attendeeMenuTarget.userId !== viewerUserId && !attendeeMenuTarget.isGuest && (
+          <MenuItem
+            disabled={chumToggling}
+            onClick={() => attendeeMenuTarget && handleToggleChum(attendeeMenuTarget)}
+          >
+            <ListItemIcon>
+              {attendeeMenuTarget.isChumSaved
+                ? <BookmarkRemoveRoundedIcon fontSize="small" />
+                : <BookmarkAddRoundedIcon fontSize="small" />}
+            </ListItemIcon>
+            <ListItemText>{attendeeMenuTarget.isChumSaved ? "Remove from Chums" : "Add to Chums"}</ListItemText>
+          </MenuItem>
+        )}
+        {/* Remove from plan (host only) */}
+        {event.isHost && !isCanceled && !isPast &&
+          attendeeMenuTarget &&
+          attendeeMenuTarget.userId !== event.hostUserId &&
+          (attendeeMenuTarget.status === "going" || attendeeMenuTarget.status === "maybe") && (
+          <MenuItem
+            onClick={() => {
+              if (!attendeeMenuTarget) return;
+              setRemoveTarget({
+                type: "rsvp",
+                userId: attendeeMenuTarget.userId,
+                name: attendeeMenuTarget.name,
+                guestEmail: attendeeMenuTarget.guestEmail ?? null,
+              });
+              setRemoveReason("");
+              setRemoveDialogOpen(true);
+              setAttendeeMenuAnchor(null);
+              setAttendeeMenuTarget(null);
+            }}
+            sx={{ color: "error.main" }}
+          >
+            <ListItemIcon><PersonRemoveRoundedIcon fontSize="small" sx={{ color: "error.main" }} /></ListItemIcon>
+            <ListItemText>Remove from plan</ListItemText>
+          </MenuItem>
+        )}
+      </Menu>
+
+      {/* Invite overflow menu */}
+      <Menu
+        anchorEl={inviteMenuAnchor}
+        open={Boolean(inviteMenuAnchor) && Boolean(inviteMenuTarget)}
+        onClose={() => { setInviteMenuAnchor(null); setInviteMenuTarget(null); }}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+        transformOrigin={{ vertical: "top", horizontal: "right" }}
+        slotProps={{
+          paper: {
+            sx: {
+              minWidth: 180,
+              borderRadius: 2.5,
+              mt: 0.5,
+              "@keyframes menuFadeIn": {
+                from: { opacity: 0, transform: "scale(0.95) translateY(-4px)" },
+                to: { opacity: 1, transform: "scale(1) translateY(0)" },
+              },
+              animation: "menuFadeIn 150ms ease-out",
+            },
+          },
+        }}
+      >
+        {inviteMenuTarget?.handle && (
+          <MenuItem
+            component={Link}
+            href={`/u/${inviteMenuTarget.handle.replace(/^@/, "")}`}
+            onClick={() => { setInviteMenuAnchor(null); setInviteMenuTarget(null); }}
+          >
+            <ListItemIcon><OpenInNewRoundedIcon fontSize="small" /></ListItemIcon>
+            <ListItemText>View profile</ListItemText>
+          </MenuItem>
+        )}
+        {event.isHost && !isCanceled && !isPast && inviteMenuTarget?.userId !== null && (
+          <MenuItem
+            onClick={() => {
+              if (!inviteMenuTarget) return;
+              setRemoveTarget({
+                type: "invite",
+                userId: inviteMenuTarget.userId,
+                email: inviteMenuTarget.email,
+                name: inviteMenuTarget.name || inviteMenuTarget.email || "this person",
+              });
+              setRemoveReason("");
+              setRemoveDialogOpen(true);
+              setInviteMenuAnchor(null);
+              setInviteMenuTarget(null);
+            }}
+            sx={{ color: "error.main" }}
+          >
+            <ListItemIcon><PersonRemoveRoundedIcon fontSize="small" sx={{ color: "error.main" }} /></ListItemIcon>
+            <ListItemText>Remove invite</ListItemText>
+          </MenuItem>
+        )}
+      </Menu>
 
       {/* Remove attendee confirmation dialog */}
       <Dialog

@@ -7861,6 +7861,20 @@ app.get("/events/:id", async (c) => {
       ORDER BY er.created_at ASC
     `) as Array<{ status: string; note: string | null; user_id: string | null; guest_email: string | null; guest_name: string | null; name: string | null; username: string | null; avatar_key: string | null; avatar_updated_at: string | Date | null }>;
 
+    // Batch chum-status lookup: which RSVP'd users has the viewer already saved?
+    const chumSavedSet = new Set<string>();
+    if (userId) {
+      const rsvpUserIds = rsvps.map((r) => r.user_id).filter((id): id is string => !!id && id !== userId);
+      if (rsvpUserIds.length > 0) {
+        const savedRows = (await sql`
+          SELECT linked_user_id FROM newchums.user_contacts
+          WHERE user_id = ${userId} AND type = 'on_newchums'
+            AND linked_user_id = ANY(${rsvpUserIds})
+        `) as { linked_user_id: string }[];
+        for (const row of savedRows) chumSavedSet.add(row.linked_user_id);
+      }
+    }
+
     const altTimes = (await sql`
       SELECT eat.id, eat.suggested_at, eat.ends_at, eat.note, eat.user_id, eat.guest_email, u.name, u.username
       FROM newchums.event_alt_times eat
@@ -8075,6 +8089,7 @@ app.get("/events/:id", async (c) => {
           guestEmail: r.guest_email ?? null,
           confirmationStatus: r.user_id ? (confirmationByUserId.get(r.user_id) ?? null) : null,
           ...(rPrefNotes ? { prefNotes: rPrefNotes } : {}),
+          ...(userId && r.user_id && r.user_id !== userId ? { isChumSaved: chumSavedSet.has(r.user_id) } : {}),
         };
       }),
       altTimes: altTimes.map((a) => {

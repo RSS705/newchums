@@ -134,9 +134,9 @@ Listed in their current sequence order.
 
 | Field | Value |
 |-------|-------|
-| **Title** | Add your first chum |
+| **Title** | Add someone to Chums |
 | **Category** | social |
-| **Description** | Save someone to your connections so you can plan together easily. |
+| **Description** | Add someone to your Chums so you can plan together easily. |
 | **Completion trigger** | At least one row in `user_contacts` for the user |
 | **Suited for** | Retention |
 | **Notes** | Moved to the end of the sequence because connections form most naturally after participating in plans. Nudging this too early feels premature when the user hasn't met anyone yet. |
