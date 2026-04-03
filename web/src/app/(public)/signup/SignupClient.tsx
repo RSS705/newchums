@@ -49,6 +49,7 @@ export default function SignupClient() {
   const [confirmPasswordError, setConfirmPasswordError] = React.useState<string | null>(null);
   const [legalAccepted, setLegalAccepted] = React.useState(false);
   const [legalError, setLegalError] = React.useState<string | null>(null);
+  const legalRef = React.useRef<HTMLDivElement>(null);
 
   // Step 2: Identity
   const [username, setUsername] = React.useState("");
@@ -115,6 +116,7 @@ export default function SignupClient() {
     }
     if (!legalAccepted) {
       setLegalError("Please agree to the Terms of Use and Privacy Policy to continue.");
+      setTimeout(() => legalRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
       return false;
     }
     return true;
@@ -401,6 +403,7 @@ export default function SignupClient() {
                     onClick={() => {
                       if (!legalAccepted) {
                         setLegalError("Please agree to the Terms of Use and Privacy Policy to continue.");
+                        setTimeout(() => legalRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
                         return;
                       }
                       if (inviteToken) {
@@ -470,7 +473,7 @@ export default function SignupClient() {
                       error={Boolean(confirmPasswordError)}
                       inputProps={{ autoComplete: "new-password" }}
                     />
-                    <Box sx={{ mt: 2 }}>
+                    <Box ref={legalRef} sx={{ mt: 2 }}>
                       <FormControlLabel
                         control={
                           <Checkbox
