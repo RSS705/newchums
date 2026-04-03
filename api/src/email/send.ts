@@ -23,6 +23,8 @@ export const sendVerificationEmail = async (
       name: name ?? "there",
       verifyUrl,
     },
+    TrackLinks: "None",
+    TrackOpens: false,
   });
 
 export const sendPasswordResetEmail = async (
@@ -38,6 +40,8 @@ export const sendPasswordResetEmail = async (
       name: name ?? "there",
       resetUrl,
     },
+    TrackLinks: "None",
+    TrackOpens: false,
   });
 
 export const sendEmailChangeConfirmEmail = async (
@@ -53,6 +57,8 @@ export const sendEmailChangeConfirmEmail = async (
       name: name ?? "there",
       confirmUrl,
     },
+    TrackLinks: "None",
+    TrackOpens: false,
   });
 
 export const sendEmailChangeNotifyOldEmail = async (
@@ -68,6 +74,8 @@ export const sendEmailChangeNotifyOldEmail = async (
       name: name ?? "there",
       newEmail,
     },
+    TrackLinks: "None",
+    TrackOpens: false,
   });
 
 export const sendEmailChangeSuccessEmail = async (
@@ -82,6 +90,8 @@ export const sendEmailChangeSuccessEmail = async (
       productName: "NewChums",
       name: name ?? "there",
     },
+    TrackLinks: "None",
+    TrackOpens: false,
   });
 
 export const sendRsvpConfirmationEmail = async (
@@ -131,6 +141,8 @@ export const sendChumInviteEmail = async (
       inviterName,
       inviteUrl,
     },
+    TrackLinks: "None",
+    TrackOpens: false,
   });
 
 // ── Event email helpers ─────────────────────────────────────────────────
@@ -669,6 +681,8 @@ export const sendGuestVerifyCodeEmail = async (
       code,
       planTitle,
     },
+    TrackLinks: "None",
+    TrackOpens: false,
   });
 };
 

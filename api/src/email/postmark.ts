@@ -5,6 +5,10 @@ type PostmarkTemplateEmail = {
   To: string;
   TemplateId: string;
   TemplateModel: Record<string, unknown>;
+  /** Per-message link tracking override. "None" disables click-tracking redirects. */
+  TrackLinks?: "None" | "HtmlAndText" | "HtmlOnly" | "TextOnly";
+  /** Per-message open tracking override. false disables the tracking pixel. */
+  TrackOpens?: boolean;
 };
 
 type PostmarkError = {
