@@ -2340,7 +2340,7 @@ export default function EventDetailClient() {
               <NotificationsRoundedIcon sx={{ color: "text.secondary", fontSize: 22, mt: "1px" }} />
               <Stack spacing={0.25}>
                 <Typography variant="body2" color="text.secondary">
-                  Final confirmation will be requested 24 hours before
+                  24-hour attendance check is enabled for this plan
                 </Typography>
                 {event.fallbackPolicy === "auto_cancel" && event.minConfirmedAttendees && (
                   <Typography variant="caption" color="text.secondary">
@@ -2368,7 +2368,7 @@ export default function EventDetailClient() {
                   </Typography>
                   {event.confirmationCutoffAt && (
                     <Typography variant="caption" color="text.secondary">
-                      Confirmation deadline:{" "}
+                      Attendance check deadline:{" "}
                       {new Date(event.confirmationCutoffAt).toLocaleString(undefined, {
                         weekday: "short",
                         month: "short",
@@ -2386,7 +2386,7 @@ export default function EventDetailClient() {
                     size="small"
                     label={
                       event.planViability === "viable"
-                        ? "Required number of confirmations received"
+                        ? "Enough people confirmed"
                         : event.planViability === "at_risk"
                           ? "At risk"
                           : "Below minimum"
@@ -3248,7 +3248,7 @@ export default function EventDetailClient() {
                         }}
                       >
                         <Typography variant="subtitle1" fontWeight={700}>
-                          Final confirmation required
+                          Attendance check: are you still coming?
                         </Typography>
                         {event.confirmationCutoffAt && (
                           <Typography variant="body2" color="text.secondary">
@@ -4814,7 +4814,7 @@ export default function EventDetailClient() {
                     )}
                     {r.status === "going" && event.confirmationWindowOpen && r.confirmationStatus === "confirmed" ? (
                       /* Merged badge: Going + Confirmed */
-                      <Tooltip title="This person confirmed their attendance for the 24-hour check-in" arrow placement="top" enterTouchDelay={0}>
+                      <Tooltip title="This person confirmed they are still coming via the 24-hour attendance check" arrow placement="top" enterTouchDelay={0}>
                         <Chip
                           icon={<CheckCircleRoundedIcon sx={{ fontSize: "1rem !important" }} />}
                           label="Going & Confirmed"
@@ -4831,7 +4831,7 @@ export default function EventDetailClient() {
                       </Tooltip>
                     ) : r.status === "going" && event.confirmationWindowOpen && r.confirmationStatus !== "confirmed" && r.confirmationStatus !== "declined" ? (
                       /* Merged badge: Going + Pending/no confirmation (covers guests with no confirmation record and registered users with pending status) */
-                      <Tooltip title="This person said they're going but hasn't completed the 24-hour confirmation yet" arrow placement="top" enterTouchDelay={0}>
+                      <Tooltip title="This person said they're going but hasn't responded to the 24-hour attendance check yet" arrow placement="top" enterTouchDelay={0}>
                         <Chip
                           icon={<AccessTimeRoundedIcon sx={{ fontSize: "1rem !important" }} />}
                           label="Going - Unconfirmed"
@@ -4879,12 +4879,12 @@ export default function EventDetailClient() {
                       <Chip
                         label={
                           r.confirmationStatus === "pending"
-                            ? "Pending confirmation"
+                            ? "Awaiting response"
                             : r.confirmationStatus === "declined"
                               ? "Declined"
                               : r.confirmationStatus === "confirmed"
                                 ? "Confirmed"
-                                : "Missed deadline"
+                                : "No response"
                         }
                         size="small"
                         color={

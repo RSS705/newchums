@@ -85,6 +85,9 @@ export default function AdminInterestsClient() {
   const [mergeTarget, setMergeTarget] = useState<InterestRow | null>(null);
   const [mergeSubmitting, setMergeSubmitting] = useState(false);
 
+  // Category options for combo-box
+  const [categoryOptions, setCategoryOptions] = useState<string[]>([]);
+
   const toast = useToast();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -118,6 +121,17 @@ export default function AdminInterestsClient() {
   useEffect(() => {
     fetchInterests(debouncedSearch);
   }, [debouncedSearch, fetchInterests]);
+
+  // Load distinct categories for the edit combo-box
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await apiFetch("/admin/interests/categories", { auth: true });
+        const data = await res.json();
+        if (data.ok) setCategoryOptions(data.categories ?? []);
+      } catch { /* silent */ }
+    })();
+  }, []);
 
   const sorted = useMemo(() => {
     return [...rows].sort((a, b) => {
@@ -175,6 +189,10 @@ export default function AdminInterestsClient() {
           ),
         );
         toast.success("Interest updated");
+        // Refresh category options if a new category was introduced
+        if (editCategory.trim() && !categoryOptions.includes(editCategory.trim())) {
+          setCategoryOptions((prev) => [...prev, editCategory.trim()].sort());
+        }
         closeEdit();
       } else {
         toast.error(data.error?.message ?? "Failed to update interest");
@@ -502,13 +520,34 @@ export default function AdminInterestsClient() {
               fullWidth
               autoFocus
             />
-            <AppTextField
-              label="Category"
-              value={editCategory}
-              onChange={(e) => setEditCategory(e.target.value)}
-              fullWidth
-              placeholder="Leave blank if none"
-            />
+            <Box>
+              <Typography
+                component="label"
+                variant="subtitle1"
+                fontWeight={600}
+                sx={{ display: "block", mb: 0.625, cursor: "text" }}
+              >
+                Category
+              </Typography>
+              <Autocomplete
+                freeSolo
+                options={categoryOptions}
+                value={editCategory}
+                onChange={(_, v) => setEditCategory(typeof v === "string" ? v : "")}
+                onInputChange={(_, v) => setEditCategory(v)}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label={undefined}
+                    placeholder="Select or type a new category"
+                    fullWidth
+                    variant="outlined"
+                    size="medium"
+                    helperText="Optional. Select an existing category or type a new one."
+                  />
+                )}
+              />
+            </Box>
             {editRow && (
               <Typography variant="caption" color="text.secondary">
                 Slug: <code>{editRow.slug}</code> (not changed)

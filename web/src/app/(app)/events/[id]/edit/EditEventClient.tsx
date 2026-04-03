@@ -770,10 +770,10 @@ export default function EditEventClient() {
           <Stack direction="row" alignItems="center" spacing={0.5}>
             <FormControlLabel
               control={<Switch size="small" checked={requireReconfirmation} onChange={(e) => setRequireReconfirmation(e.target.checked)} />}
-              label={<Typography variant="body2" fontWeight={500}>Require final confirmation before the plan</Typography>}
+              label={<Typography variant="body2" fontWeight={500}>24-hour attendance check</Typography>}
               sx={{ alignItems: "center", mt: 0.5, mr: 0 }}
             />
-            <Tooltip title="Going attendees will be asked to confirm 24 hours before. This includes you as the host." arrow placement="top" enterTouchDelay={0}>
+            <Tooltip title="About 24 hours before the plan, people who marked Going will be asked to confirm they are still coming. This includes you as the host." arrow placement="top" enterTouchDelay={0}>
               <IconButton size="small" sx={{ p: 0.25, color: "text.disabled", mt: 0.5 }}>
                 <HelpOutlineRoundedIcon sx={{ fontSize: 16 }} />
               </IconButton>

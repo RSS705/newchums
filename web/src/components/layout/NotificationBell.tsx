@@ -176,9 +176,9 @@ function notificationText(n: AppNotification): {
     }
     case "confirmation_requested":
       return {
-        actorLabel: "Confirm attendance",
+        actorLabel: "Attendance check",
         actorHref: eventHref,
-        body: titleLink ? <>{" for "}{titleLink}</> : " for an upcoming plan.",
+        body: titleLink ? <>{" for "}{titleLink}{". Confirm you're still coming."}</> : " for an upcoming plan. Confirm you're still coming.",
       };
     default:
       return { actorLabel, actorHref, body: " did something." };

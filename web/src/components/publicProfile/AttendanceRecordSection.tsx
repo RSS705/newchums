@@ -7,6 +7,7 @@ import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import EventAvailableRoundedIcon from "@mui/icons-material/EventAvailableRounded";
 import CheckCircleOutlineRoundedIcon from "@mui/icons-material/CheckCircleOutlineRounded";
+import HandshakeRoundedIcon from "@mui/icons-material/HandshakeRounded";
 import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
 import CampaignRoundedIcon from "@mui/icons-material/CampaignRounded";
 import ThumbUpAltRoundedIcon from "@mui/icons-material/ThumbUpAltRounded";
@@ -18,6 +19,7 @@ import { apiFetch } from "@/lib/apiClient";
 type RatioMetric = { numerator: number; denominator: number };
 
 type AttendanceRecord = {
+  goingFollowThrough: RatioMetric;
   followThrough: RatioMetric;
   confirmationRate: RatioMetric;
   plansAttended: number;
@@ -181,12 +183,12 @@ export default function AttendanceRecordSection({ userId, isOwner, displayName, 
     return () => { cancelled = true; };
   }, [userId, viewerLoggedIn]);
 
+  const gft = record ? formatRate(record.goingFollowThrough) : null;
   const ft = record ? formatRate(record.followThrough) : null;
   const cr = record ? formatRate(record.confirmationRate) : null;
   const hc = record ? formatRate(record.hostCompletion) : null;
 
   const hasHosting = record ? record.hostCompletion.denominator > 0 : false;
-  const rateCount = hasHosting ? 3 : 2;
 
   const totalActivity = record ? record.plansAttended + record.plansHosted : 0;
 
@@ -256,10 +258,21 @@ export default function AttendanceRecordSection({ userId, isOwner, displayName, 
               <Box
                 sx={{
                   display: "grid",
-                  gridTemplateColumns: `repeat(${rateCount}, 1fr)`,
+                  gridTemplateColumns: hasHosting ? "repeat(2, 1fr)" : { xs: "repeat(2, 1fr)", sm: "repeat(3, 1fr)" },
                   gap: 1.25,
                 }}
               >
+                <MetricCard
+                  icon={gft!.pct !== null && gft!.pct >= 80 ? <HandshakeRoundedIcon sx={{ fontSize: { xs: 22, sm: 26 } }} /> : null}
+                  label="Going follow-through"
+                  value={gft!.display}
+                  ratio={gft!.ratio || undefined}
+                  tooltipTitle={
+                    gft!.display === "-"
+                      ? "No plan commitments yet"
+                      : `Kept a Going RSVP on ${record!.goingFollowThrough.numerator} of ${record!.goingFollowThrough.denominator} plan${record!.goingFollowThrough.denominator === 1 ? "" : "s"}. Measures how often they stick with a Going commitment.`
+                  }
+                />
                 <MetricCard
                   icon={ft!.pct !== null && ft!.pct >= 80 ? <CheckCircleOutlineRoundedIcon sx={{ fontSize: { xs: 22, sm: 26 } }} /> : null}
                   label="Shows up"
@@ -268,18 +281,18 @@ export default function AttendanceRecordSection({ userId, isOwner, displayName, 
                   tooltipTitle={
                     ft!.display === "-"
                       ? "No plan commitments yet"
-                      : `Followed through on ${record!.followThrough.numerator} of ${record!.followThrough.denominator} plans they committed to attend`
+                      : `Followed through on ${record!.followThrough.numerator} of ${record!.followThrough.denominator} plan${record!.followThrough.denominator === 1 ? "" : "s"} they committed to attend`
                   }
                 />
                 <MetricCard
                   icon={cr!.pct !== null && cr!.pct >= 80 ? <ThumbUpAltRoundedIcon sx={{ fontSize: { xs: 22, sm: 26 } }} /> : null}
-                  label="Confirms attendance"
+                  label="Attendance checks answered"
                   value={cr!.display}
                   ratio={cr!.ratio || undefined}
                   tooltipTitle={
                     cr!.display === "-"
-                      ? "No final attendance confirmations requested yet"
-                      : `Responded to ${record!.confirmationRate.numerator} of ${record!.confirmationRate.denominator} final attendance confirmation requests`
+                      ? "No 24-hour attendance checks received yet"
+                      : `Responded to ${record!.confirmationRate.numerator} of ${record!.confirmationRate.denominator} 24-hour attendance check${record!.confirmationRate.denominator === 1 ? "" : "s"}`
                   }
                 />
                 {hasHosting && (

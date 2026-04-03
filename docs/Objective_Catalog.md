@@ -185,7 +185,7 @@ These are natural extensions that may be added later. They are categorized by su
 | `perfect_followthrough_5` | Perfect attendance (5 plans) | trust | Show up to 5 consecutive plans. | 5+ consecutive attended plans | Streak-based; requires tracking logic. |
 | `first_positive_feedback` | Positive reception | trust | Receive your first "Yes" feedback. | Feedback row where response = 'yes' for reported user | Passive achievement. |
 | `set_profile_theme` | Customize your profile color | profile | Choose a theme color for your profile card. | `users.profile_theme` is not null | Low-value for nudge; better as cosmetic achievement. |
-| `confirm_attendance` | Confirm your attendance | engagement | Respond to a pre-plan check-in. | `event_confirmations` row with status 'confirmed' | Attendance assurance feature. |
+| `confirm_attendance` | Respond to an attendance check | engagement | Respond to a 24-hour attendance check for an upcoming plan. | `event_confirmations` row with status 'confirmed' | 24-hour attendance check feature. |
 | `receive_first_chum` | Someone added you | social | Another person saved you as a connection. | `user_contacts` row where `linked_user_id` matches | Passive; works better as notification/achievement. |
 
 ### Considered and intentionally excluded from v1

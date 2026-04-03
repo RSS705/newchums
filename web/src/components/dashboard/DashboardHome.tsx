@@ -25,9 +25,11 @@ import EventCard, { type PlanEvent } from "@/components/events/EventCard";
 import EventCardSkeleton from "@/components/ui/EventCardSkeleton";
 import EmptyState from "@/components/ui/EmptyState";
 import DistanceSelect from "@/components/common/DistanceSelect";
+import PeopleRoundedIcon from "@mui/icons-material/PeopleRounded";
 import { apiFetch } from "@/lib/apiClient";
 
 type HobbyOption = { slug: string; name: string };
+type LocalSignal = { hobbyName: string; count: number };
 
 type TimeChip = { value: string; label: string };
 const TIME_CHIPS: TimeChip[] = [
@@ -105,6 +107,7 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [sort, setSort] = useState("upcoming");
   const [personalizeEnabled, setPersonalizeEnabled] = useState(true);
+  const [localSignal, setLocalSignal] = useState<LocalSignal | null>(null);
 
   const filtersRef = useRef({
     profile: null as ProfileData | null,
@@ -207,6 +210,18 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
       initializedRef.current = true;
 
       await fetchEvents(0, false);
+
+      // Fetch the local-signal in parallel (fire-and-forget, degrades silently)
+      const sigParams = new URLSearchParams();
+      if (sh) sigParams.set("hobby", sh.slug);
+      apiFetch(`/explore/local-signal?${sigParams.toString()}`, { auth: true })
+        .then((r) => r.json())
+        .then((d: unknown) => {
+          if (cancelled) return;
+          const data = d as { ok: boolean; signal: LocalSignal | null };
+          if (data.ok) setLocalSignal(data.signal);
+        })
+        .catch(() => {});
     })();
     return () => { cancelled = true; };
   }, [fetchEvents]);
@@ -227,6 +242,23 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
     filterDebounceRef.current = setTimeout(() => { void fetchEvents(0, false); }, 150);
     return () => { if (filterDebounceRef.current) clearTimeout(filterDebounceRef.current); };
   }, [searchText, timeRange, radiusKm, selectedHobby, sort, personalizeEnabled, fetchEvents]);
+
+  // Fetch the local-signal whenever the hobby filter or profile changes.
+  useEffect(() => {
+    if (!readyRef.current) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const params = new URLSearchParams();
+        if (selectedHobby) params.set("hobby", selectedHobby.slug);
+        const res = await apiFetch(`/explore/local-signal?${params.toString()}`, { auth: true });
+        if (cancelled) return;
+        const data = (await res.json()) as { ok: boolean; signal: LocalSignal | null };
+        if (data.ok) setLocalSignal(data.signal);
+      } catch { /* degrade silently */ }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedHobby]);
 
   const handleLoadMore = () => {
     filtersRef.current = { ...filtersRef.current, searchText, timeRange, radiusKm, selectedHobby, sort, personalizeEnabled };
@@ -598,6 +630,30 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
           }
           footnote="People nearby with matching hobbies can discover your plan in Explore."
         />
+      )}
+
+      {/* ── Local interest signal ──────────────────────────────────── */}
+      {localSignal && !loading && (
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 1,
+            pt: 2,
+            pb: 1,
+          }}
+        >
+          <PeopleRoundedIcon sx={{ fontSize: 16, color: "text.disabled" }} />
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            sx={{ fontSize: "0.8125rem", fontWeight: 500 }}
+          >
+            {localSignal.count} active {localSignal.count === 1 ? "person" : "people"} near you{" "}
+            {localSignal.count === 1 ? "is" : "are"} into {localSignal.hobbyName}
+          </Typography>
+        </Box>
       )}
     </Stack>
   );

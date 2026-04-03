@@ -230,7 +230,7 @@ const FEATURES_BOTTOM: typeof FEATURES_TOP = [
     accentColor: "#2e7d32",
     Icon: EventAvailableRoundedIcon,
     title: "Know who's actually coming",
-    body: (<>24-hour reminders, <Box component="span" sx={{ fontWeight: 700 }}>final confirmations</Box>, and minimum-attendee thresholds so you never show up to an empty table.</>),
+    body: (<>A <Box component="span" sx={{ fontWeight: 700 }}>24-hour attendance check</Box> asks everyone who marked Going to confirm they are still coming, with minimum-attendee thresholds so you never show up to an empty table.</>),
     placeholder: "Screenshot, Confirmations",
     imageSrc: "/images/home/feature-confirmations.png",
   },

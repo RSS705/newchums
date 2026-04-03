@@ -418,6 +418,7 @@ app.get("/public/users/:userId/attendance-record", async (c) => {
       return c.json({
         ok: true,
         record: {
+          goingFollowThrough: zeroRatio,
           followThrough: zeroRatio,
           confirmationRate: zeroRatio,
           plansAttended: attended[0]?.c ?? 0,
@@ -429,6 +430,9 @@ app.get("/public/users/:userId/attendance-record", async (c) => {
       });
     }
 
+    // Computes both follow-through metrics from the same base scan:
+    // - followed_through: still "going" AND no attendance issues (measures actually showing up)
+    // - going_kept: still "going" regardless of attendance issues (measures commitment honoured)
     const followThrough = (await sql`
       SELECT
         COUNT(*) FILTER (
@@ -441,6 +445,7 @@ app.get("/public/users/:userId/attendance-record", async (c) => {
               AND COALESCE(ai.status, 'active') != 'dismissed'
           )
         )::int AS followed_through,
+        COUNT(*) FILTER (WHERE r.status = 'going')::int AS going_kept,
         COUNT(*)::int AS total_committed
       FROM newchums.event_rsvps r
       JOIN newchums.events e ON e.id = r.event_id
@@ -449,7 +454,7 @@ app.get("/public/users/:userId/attendance-record", async (c) => {
         AND e.host_user_id != ${targetUserId}
         AND e.status != 'canceled'
         AND e.starts_at < ${now}
-    `) as { followed_through: number; total_committed: number }[];
+    `) as { followed_through: number; going_kept: number; total_committed: number }[];
 
     const confirmation = (await sql`
       SELECT
@@ -482,6 +487,10 @@ app.get("/public/users/:userId/attendance-record", async (c) => {
     return c.json({
       ok: true,
       record: {
+        goingFollowThrough: {
+          numerator: followThrough[0]?.going_kept ?? 0,
+          denominator: followThrough[0]?.total_committed ?? 0,
+        },
         followThrough: {
           numerator: followThrough[0]?.followed_through ?? 0,
           denominator: followThrough[0]?.total_committed ?? 0,
@@ -3326,6 +3335,26 @@ type AdminInterestRow = {
   created_by_user_id: string | null;
   username: string | null;
 };
+
+// ─── GET /admin/interests/categories ─────────────────────────────────────────
+
+/** Returns distinct non-empty category values for the category combo-box. */
+app.get("/admin/interests/categories", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  try {
+    const sql = getSql(c.env);
+    const rows = (await sql`
+      SELECT DISTINCT category FROM newchums.interests
+      WHERE category IS NOT NULL AND category != '' AND is_deleted = false
+      ORDER BY category ASC
+    `) as { category: string }[];
+    return c.json({ ok: true, categories: rows.map((r) => r.category) });
+  } catch (err) {
+    console.error(err);
+    return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
+  }
+});
 
 // ─── GET /admin/interests ────────────────────────────────────────────────────
 
@@ -7309,6 +7338,165 @@ app.get("/events/explore/public", async (c) => {
   } catch (err) {
     console.error("[GET /events/explore/public]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** GET /explore/local-signal — lightweight support signal for the bottom of the
+ *  logged-in Explore feed. Returns one local-interest line when the count meets
+ *  the minimum threshold.
+ *
+ *  Selection logic:
+ *  1. If `hobby` query param is set, try that exact hobby first.
+ *  2. If the exact hobby doesn't reach the threshold, try its category (if any).
+ *  3. Otherwise, iterate the viewer's profile hobbies and pick the one with the
+ *     highest qualifying local count (exact first, then category fallback).
+ *  4. Minimum count: 5. If nothing qualifies, return null.
+ *
+ *  "Active" = last_active_at within 6 months AND not suspended.
+ *  "Local" = user has home_lat/lng and is within the viewer's travel radius.
+ */
+app.get("/explore/local-signal", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+
+  const MIN_COUNT = 5;
+  const ACTIVE_MONTHS = 6;
+
+  try {
+    const sql = getSql(c.env);
+    const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+
+    // Load viewer location + travel radius
+    const profileRows = (await sql`
+      SELECT home_lat, home_lng, travel_radius_km
+      FROM newchums.user_profile WHERE user_id = ${userId} LIMIT 1
+    `) as { home_lat: number | null; home_lng: number | null; travel_radius_km: number | null }[];
+    const prof = profileRows[0];
+    if (!prof?.home_lat || !prof?.home_lng) {
+      return c.json({ ok: true, signal: null });
+    }
+    const lat = prof.home_lat;
+    const lng = prof.home_lng;
+    const radiusKm = prof.travel_radius_km ?? 200;
+
+    // Active cutoff
+    const activeSince = new Date(Date.now() - ACTIVE_MONTHS * 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    // Determine candidate hobby slugs: filtered hobby first, then viewer profile hobbies
+    const filterHobbySlug = c.req.query("hobby")?.trim() || null;
+
+    const viewerHobbyRows = (await sql`
+      SELECT i.id, i.slug, i.name, i.category
+      FROM newchums.user_interests ui
+      JOIN newchums.interests i ON i.id = ui.interest_id AND i.is_deleted = false
+      WHERE ui.user_id = ${userId}
+      ORDER BY i.name
+    `) as { id: string; slug: string; name: string; category: string | null }[];
+
+    // Build ordered candidate list: filter hobby first (if any), then viewer's hobbies
+    type Candidate = { slug: string; name: string; category: string | null; interestId: string };
+    const candidates: Candidate[] = [];
+    const seen = new Set<string>();
+
+    if (filterHobbySlug) {
+      // Look up the filtered hobby (may or may not be in the viewer's profile)
+      const filterRows = (await sql`
+        SELECT id, slug, name, category FROM newchums.interests
+        WHERE slug = ${filterHobbySlug} AND is_deleted = false LIMIT 1
+      `) as { id: string; slug: string; name: string; category: string | null }[];
+      if (filterRows.length > 0) {
+        const f = filterRows[0];
+        candidates.push({ slug: f.slug, name: f.name, category: f.category, interestId: f.id });
+        seen.add(f.slug);
+      }
+    }
+    for (const h of viewerHobbyRows) {
+      if (!seen.has(h.slug)) {
+        candidates.push({ slug: h.slug, name: h.name, category: h.category, interestId: h.id });
+        seen.add(h.slug);
+      }
+    }
+
+    if (candidates.length === 0) {
+      return c.json({ ok: true, signal: null });
+    }
+
+    // For each candidate, count local active users with that exact hobby
+    // Use a single query with ANY to count all at once
+    const candidateIds = candidates.map((c) => c.interestId);
+    const exactCounts = (await sql`
+      SELECT ui.interest_id, COUNT(DISTINCT ui.user_id)::int AS cnt
+      FROM newchums.user_interests ui
+      JOIN newchums.users u ON u.id = ui.user_id
+        AND u.id != ${userId}
+        AND COALESCE(u.is_suspended, false) = false
+        AND u.last_active_at >= ${activeSince}::timestamptz
+      JOIN newchums.user_profile up ON up.user_id = u.id
+        AND up.home_lat IS NOT NULL AND up.home_lng IS NOT NULL
+        AND 6371 * acos(LEAST(1.0, GREATEST(-1.0,
+          cos(radians(${lat})) * cos(radians(up.home_lat)) *
+          cos(radians(up.home_lng) - radians(${lng})) +
+          sin(radians(${lat})) * sin(radians(up.home_lat))
+        ))) <= ${radiusKm}
+      WHERE ui.interest_id = ANY(${candidateIds})
+      GROUP BY ui.interest_id
+    `) as { interest_id: string; cnt: number }[];
+
+    const exactMap = new Map(exactCounts.map((r) => [r.interest_id, r.cnt]));
+
+    // Find the best exact-match candidate
+    let bestExact: { name: string; count: number } | null = null;
+    for (const cand of candidates) {
+      const cnt = exactMap.get(cand.interestId) ?? 0;
+      if (cnt >= MIN_COUNT && (!bestExact || cnt > bestExact.count)) {
+        bestExact = { name: cand.name, count: cnt };
+      }
+    }
+
+    if (bestExact) {
+      return c.json({ ok: true, signal: { hobbyName: bestExact.name, count: bestExact.count } });
+    }
+
+    // No exact hobby qualifies — try category fallback for candidates that have a category
+    const categoryNames = [...new Set(candidates.map((c) => c.category).filter((c): c is string => !!c && c.trim() !== ""))];
+
+    if (categoryNames.length > 0) {
+      // Count local active users who have ANY hobby in those categories
+      const categoryCounts = (await sql`
+        SELECT i.category, COUNT(DISTINCT ui.user_id)::int AS cnt
+        FROM newchums.user_interests ui
+        JOIN newchums.interests i ON i.id = ui.interest_id AND i.is_deleted = false
+          AND i.category = ANY(${categoryNames})
+        JOIN newchums.users u ON u.id = ui.user_id
+          AND u.id != ${userId}
+          AND COALESCE(u.is_suspended, false) = false
+          AND u.last_active_at >= ${activeSince}::timestamptz
+        JOIN newchums.user_profile up ON up.user_id = u.id
+          AND up.home_lat IS NOT NULL AND up.home_lng IS NOT NULL
+          AND 6371 * acos(LEAST(1.0, GREATEST(-1.0,
+            cos(radians(${lat})) * cos(radians(up.home_lat)) *
+            cos(radians(up.home_lng) - radians(${lng})) +
+            sin(radians(${lat})) * sin(radians(up.home_lat))
+          ))) <= ${radiusKm}
+        GROUP BY i.category
+      `) as { category: string; cnt: number }[];
+
+      // Prefer the category of the first candidate that qualifies (preserves priority order)
+      const catMap = new Map(categoryCounts.map((r) => [r.category, r.cnt]));
+      for (const cand of candidates) {
+        if (!cand.category || !cand.category.trim()) continue;
+        const cnt = catMap.get(cand.category) ?? 0;
+        if (cnt >= MIN_COUNT) {
+          return c.json({ ok: true, signal: { hobbyName: cand.category, count: cnt } });
+        }
+      }
+    }
+
+    return c.json({ ok: true, signal: null });
+  } catch (err) {
+    console.error("[GET /explore/local-signal]", err);
+    return c.json({ ok: true, signal: null }); // Degrade gracefully
   }
 });
 

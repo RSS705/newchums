@@ -152,7 +152,7 @@ export default function AdminSystemLogicClient() {
           this is a silent cleanup for plans that effectively never happened.
         </Bullet>
         <Bullet>
-          <strong>Minimum not met (auto-cancel policy):</strong> If a plan has <strong>attendance confirmation</strong> enabled
+          <strong>Minimum not met (auto-cancel policy):</strong> If a plan has a <strong>24-hour attendance check</strong> enabled
           with fallback policy <strong>auto-cancel</strong>, and the confirmed count is below the minimum at cutoff time, the plan
           is canceled and all Going/Maybe attendees are notified by email.
         </Bullet>

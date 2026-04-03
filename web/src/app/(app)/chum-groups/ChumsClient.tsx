@@ -610,7 +610,7 @@ function AddPrivateContactDialog({
       const data = await res.json() as { ok?: boolean; autoLinked?: boolean; type?: string };
       if (!data.ok) throw new Error();
       if (data.autoLinked) {
-        toast.success("This person already has an account — added to Chums!");
+        toast.success("This person already has an account. Added to Chums!");
       } else {
         toast.success("Private contact added.");
       }

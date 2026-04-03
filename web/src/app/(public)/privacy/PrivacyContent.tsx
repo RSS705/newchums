@@ -209,7 +209,7 @@ export default function PrivacyContent() {
               </Typography>
               <Typography variant="body1">
                 We share information with other users as part of the normal operation of the Service, such as
-                profile details, event participation, RSVP-related information, attendance confirmation status,
+                profile details, event participation, RSVP-related information, attendance check responses,
                 plan content, and chat content.
               </Typography>
 

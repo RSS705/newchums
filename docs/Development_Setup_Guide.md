@@ -19,13 +19,13 @@ For product direction, terminology, and agent governance, see `AGENTS.md`.
 - **API migration:** All business logic is in the API worker: auth flows, profile, interests, Chums, Chum invites, events (plans), notifications, email unsubscribe, admin, avatar, contact form, scheduled tasks.
 - **Signup/Onboarding:** Multi-step wizard for both email/password (4 steps) and Google OAuth (3 steps). Collects credentials + legal acceptance → username/DOB → hobbies (optional) → location/travel distance (optional). Required Terms of Use and Privacy Policy acceptance before signup. Shared `OnboardingProgress`, `StepTransition`, `HobbiesStep`, `LocationStep` components.
 - **Events (plans):** Full event creation, context-aware RSVP (going/maybe/can't make it), invite, alternate time suggestion (with best-start-times overlap display), cancel, edit (host), request-to-join (host approval), host attendee removal. Visibility: invite_only, chums_only, public. Gradient banner presets + custom upload. Plan-change email notifications to attendees (edits, locks, cancellations). Per-plan participant chat with real-time WebSocket delivery via Cloudflare Durable Objects, unread chat indicators in bell and plan cards, daily unread-chat digest email. Host can lock/unlock plans. Attendance assurance (host-configurable final confirmation, min confirmed attendees, fallback policies, cron-based reminders and cutoff processing). Going attendees can invite others (host-controlled via `allow_attendee_invites`, on by default). Invites support optional "suggest a better time" mode when alt times are enabled. Guest (unauthenticated) invitees can suggest alternate times from the public plan view via invite token.
-- **Explore page:** Personalized discovery feed (`/`). Uses `GET /events/explore` with hobby-based ranking, sort options (upcoming/newest), personalization toggle, location-aware ordering (Haversine), hobby filter, time-range chips, text search, session state persistence via `localStorage`.
+- **Explore page:** Personalized discovery feed (`/`). Uses `GET /events/explore` with hobby-based ranking, sort options (upcoming/newest), personalization toggle, location-aware ordering (Haversine), hobby filter, time-range chips, text search, session state persistence via `localStorage`. Includes a local-signal footer (`GET /explore/local-signal`) showing nearby active-user counts for relevant hobbies (e.g. "14 active people near you are into board games") when the count meets a minimum threshold of 5.
 - **Your Plans:** Tabbed upcoming/past view with hosted and joined sections, unread chat indicators, real API data.
 - **Chums:** One-way saved-people feature with search, email invite flow, mutual indicators, privacy controls, public Chums on profiles, private per-chum notes, and birthday display.
 - **Notifications:** In-app bell with unread state for chum, event, and join-request notification types. Unread chat indicators derived from per-plan read tracking. 14 email notification types with per-type Settings toggles and tokenized email unsubscribe links.
-- **Scheduled tasks:** Cloudflare Cron Trigger (`0 * * * *` UTC, hourly) processes attendance assurance (confirmation requests, reminders, cutoff) and daily unread-chat digest email.
-- **Admin:** Interests moderation (default sort newest-first) + user account management (super_admin only).
-- **Profiles:** Edit profile page and public profile page include live Attendance Record section (follow-through rate, confirmation rate, plans attended, plans hosted, host completion rate).
+- **Scheduled tasks:** Cloudflare Cron Trigger (`0 * * * *` UTC, hourly) processes 24-hour attendance checks (confirmation requests, reminders, cutoff) and daily unread-chat digest email.
+- **Admin:** Interests moderation (default sort newest-first, category combo-box for structured-but-flexible categorization) + user account management (super_admin only).
+- **Profiles:** Edit profile page and public profile page include live Attendance Record section (Going follow-through, follow-through rate, attendance checks answered, plans attended, plans hosted, host completion rate).
 - **Legal:** Privacy Policy (`/privacy`) and Terms of Use (`/terms`) pages. Required legal acceptance checkbox on signup (credentials and OAuth). Acceptance metadata stored on users table.
 - **Public site:** Homepage (updated copy, gradient event cards, screenshot placeholders), How it Works (updated copy, screenshot placeholders), Science of Friendship, Safety Center, Contact, all sharing `LandingLayout`. Footer includes Terms of Use and Privacy Policy links.
 - **Build:** `cd web && npm run build` passes (Edge/OpenNext constraints apply).
@@ -102,7 +102,7 @@ Email / Postmark (required for email flows):
 Event email templates (active, set in `wrangler.toml` vars):
 - `POSTMARK_TEMPLATE_EVENT_CHANGED` (template 43971187, plan changed/locked/canceled)
 - `POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST` (template 43975299, daily unread chat digest)
-- `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST` (template 43984465, attendance confirmation request/reminder)
+- `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST` (template 43984465, 24-hour attendance check request/reminder)
 - `POSTMARK_TEMPLATE_PLAN_AT_RISK` (template 43984947, plan at risk notification to host)
 
 Event email templates (scaffolded, sends noop if not set):

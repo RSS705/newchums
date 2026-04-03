@@ -102,7 +102,7 @@ const LIFECYCLE_STEPS: LifecycleStep[] = [
     Icon: EventAvailableRoundedIcon,
     label: "Confirm",
     headline: "Know who's actually coming",
-    description: "24 hours before the plan, automatic confirmation requests go out. Attendees confirm or decline with one tap. You see viability in real time.",
+    description: "About 24 hours before the plan, everyone who marked Going is asked to confirm they are still coming. One tap to respond. You see viability in real time.",
     color: "#059669",
     imageSrc: "/images/how-it-works/step-confirm.png",
     placeholder: "Screenshot: Attendance confirmation",
@@ -139,7 +139,7 @@ const CREATE_CARDS: CreateCard[] = [
   { label: "Location privacy", detail: "Show exact location to everyone, to confirmed attendees only, or just an approximate area.", imageSrc: "/images/how-it-works/create-location.png", placeholder: "Screenshot: Location controls" },
   { label: "Visibility controls", detail: "Public (anyone can find it), chums-only (your connections), or invite-only (specific people).", imageSrc: "/images/how-it-works/create-visibility.png", placeholder: "Screenshot: Visibility options" },
   { label: "Require approval", detail: "New people request to join and you approve or decline before they're added.", imageSrc: "/images/how-it-works/create-approval.png", placeholder: "Screenshot: Approval flow" },
-  { label: "Attendance confirmation", detail: "Enable automatic confirmation requests so you know who's actually coming before the plan starts.", imageSrc: "/images/how-it-works/create-confirmation.png", placeholder: "Screenshot: Confirmation settings" },
+  { label: "24-hour attendance check", detail: "Ask people who marked Going to confirm they are still coming about 24 hours before the plan.", imageSrc: "/images/how-it-works/create-confirmation.png", placeholder: "Screenshot: Attendance check settings" },
   { label: "Scheduling flexibility", detail: "Let attendees suggest alternate times, or request everyone's full availability with a deadline.", imageSrc: "/images/how-it-works/create-scheduling.png", placeholder: "Screenshot: Scheduling options" },
 ];
 

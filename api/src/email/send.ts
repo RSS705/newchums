@@ -701,14 +701,14 @@ export const sendConfirmationRequestEmail = async (
   if (!env.POSTMARK_TEMPLATE_CONFIRMATION_REQUEST) return;
 
   const headingMap = {
-    initial: isHost ? "Confirm you're still hosting" : "Confirm your attendance",
-    reminder: isHost ? "Reminder: Confirm you're still hosting" : "Reminder: Confirm your attendance",
-    final: isHost ? "Final reminder: Confirm you're hosting" : "Final reminder: Confirm your attendance",
+    initial: isHost ? "Attendance check: are you still hosting?" : "Attendance check: are you still coming?",
+    reminder: isHost ? "Reminder: are you still hosting?" : "Reminder: are you still coming?",
+    final: isHost ? "Final reminder: are you still hosting?" : "Final reminder: are you still coming?",
   };
   const stage = isFinal ? "final" : isReminder ? "reminder" : "initial";
 
-  const bodyHost = `Hey ${recipientName}, your plan is coming up and requires final confirmation. Please confirm you're still hosting so attendees know the plan is on.`;
-  const bodyAttendee = `Hey ${recipientName}, a plan you're attending requires final confirmation. Please confirm you're still coming so the host can plan ahead.`;
+  const bodyHost = `Hey ${recipientName}, your plan is coming up and has a 24-hour attendance check enabled. Please confirm you're still hosting so attendees know the plan is on.`;
+  const bodyAttendee = `Hey ${recipientName}, a plan you're attending has a 24-hour attendance check. Please confirm you're still coming so the host can plan ahead.`;
 
   return sendPostmarkTemplateEmail(env, {
     From: env.EMAIL_FROM, To: to,
@@ -750,8 +750,8 @@ export const sendPlanAtRiskEmail = async (
     TemplateId: env.POSTMARK_TEMPLATE_PLAN_AT_RISK,
     TemplateModel: {
       productName: "NewChums",
-      heading: `${confirmedCount} of ${minRequired} attendees confirmed`,
-      bodyText: `Hey ${hostName}, your plan didn't reach its minimum of ${minRequired} confirmed attendees -- only ${confirmedCount} confirmed. Please review and decide whether to proceed or cancel. If you do nothing, the plan will go ahead as scheduled.`,
+      heading: `Attendance check: ${confirmedCount} of ${minRequired} confirmed`,
+      bodyText: `Hey ${hostName}, your plan's 24-hour attendance check didn't reach the minimum of ${minRequired} confirmed. Only ${confirmedCount} confirmed so far. Please review and decide whether to proceed or cancel. If you do nothing, the plan will go ahead as scheduled.`,
       hostName,
       eventTitle,
       eventUrl,

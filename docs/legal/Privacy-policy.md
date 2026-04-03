@@ -111,7 +111,7 @@ We may share information with vendors and service providers that help us operate
 
 ### B. With Other Users
 
-We share information with other users as part of the normal operation of the Service, such as profile details, event participation, RSVP-related information, attendance confirmation status, plan content, and chat content.
+We share information with other users as part of the normal operation of the Service, such as profile details, event participation, RSVP-related information, attendance check responses, plan content, and chat content.
 
 ### C. For Legal, Safety, and Platform Integrity Reasons
 

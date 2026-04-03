@@ -367,7 +367,7 @@ Enforced at both API level (endpoints return redacted data when no bearer token 
 ### Profile, onboarding, and lookups
 
 - `GET /profile`, `PUT /profile` (auth required). Response includes `role`, `gender`, `profile_theme`, `is_hidden_chum_list`, `is_hidden_from_chum_lists`, `userId`. `PUT /profile` validates `gender` (allowed: `male`, `female`, `other`, `prefer_not_to_say`) and `profile_theme` (allowed values defined in `web/src/lib/profileTheme.ts`). The `/profile` edit page includes the live Attendance Record section.
-- `GET /public/users/:userId/attendance-record` (public), computes and returns attendance metrics for the specified user. **Auth-aware:** when a valid bearer token is present, returns all five metrics (Shows up, Confirms attendance, plans attended, plans hosted, Host follow-through) plus member-since date. When unauthenticated, returns only activity metrics (plans attended, plans hosted) and member-since date; reliability metrics are zeroed out and a `reliabilityHidden: true` flag is included. Used by the `AttendanceRecordSection` component on profile pages.
+- `GET /public/users/:userId/attendance-record` (public), computes and returns attendance metrics for the specified user. **Auth-aware:** when a valid bearer token is present, returns all six metrics (Going follow-through, Shows up, Confirms attendance, plans attended, plans hosted, Host follow-through) plus member-since date. When unauthenticated, returns only activity metrics (plans attended, plans hosted) and member-since date; reliability metrics are zeroed out and a `reliabilityHidden: true` flag is included. Used by the `AttendanceRecordSection` component on profile pages.
 - `GET /public/users/:handle` (public), returns public profile by handle. **Auth-aware:** when a valid bearer token is present, returns full profile including `displayName` (real name), `age`, and `gender`. When unauthenticated, `displayName` falls back to the username only, `age` is null, and `gender` is null. Always includes `profile_theme`, `is_hidden_chum_list`, `bio`, `hobbies`, `avatarUrl`. Age computed from DOB server-side; DOB never exposed.
 - `GET /handles/available?handle=...` (auth required)
 - `POST /user/username` (auth required)
@@ -395,10 +395,13 @@ Enforced at both API level (endpoints return redacted data when no bearer token 
 All `/admin/*` routes require `role = 'super_admin'` on the requesting user, enforced server-side by a `requireSuperAdmin` helper in `api/src/index.ts`. Non-admins receive 403.
 
 - `GET /admin/interests`, list all interests (including deleted). Query params: `q` (search name/slug), `sort=name|created_at`, `dir=asc|desc`. Returns: `id`, `name`, `slug`, `category`, `created_at`, `is_deleted`, `created_by_user_id`, `username` (joined from `users`).
+- `GET /admin/interests/categories`, returns distinct non-empty category values from active interests. Used to populate the category combo-box in the admin edit dialog.
 - `PATCH /admin/interests/:id`, update `name` and/or `category`. Records `updated_at` and `updated_by_user_id`.
 - `DELETE /admin/interests/:id`, soft-delete: sets `is_deleted = true`, `deleted_at`, `deleted_by_user_id`. Also hard-deletes all `user_interests` rows for that interest (users are disconnected).
 - `POST /admin/interests/:id/restore`, restore a soft-deleted interest: clears `is_deleted`, `deleted_at`, `deleted_by_user_id`.
 - `POST /admin/interests/merge`, body: `{ sourceInterestId, targetInterestId }`. Moves all `user_interests` from source → target (deduplicating to avoid unique constraint violations), sets `source.merged_into_interest_id = target.id`, then soft-deletes source. Target must be active.
+
+**Interest categories:** The `category` column on `interests` is a free-text field used for grouping related hobbies (e.g. "Board games", "Outdoor sports"). Categories are optional — many interests may remain uncategorized. The admin edit dialog provides a combo-box (Autocomplete with freeSolo) that shows existing categories for selection and allows typing a new one. Categories are used by the Explore local-signal feature as a fallback when an exact hobby doesn't meet the display threshold. Admins can assign categories incrementally over time without needing to classify everything up front.
 
 ### Admin, user accounts (super_admin only)
 
@@ -514,10 +517,10 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 - `alt_times_mode`: `'suggest'` | `'availability'` (default `'suggest'`, migration 057), host-controlled presentation mode for the scheduling feature. `'suggest'` frames it as "suggest another time if needed" (original behavior). `'availability'` frames it as "share your availability" for collaborative scheduling. Both modes use the same underlying `event_alt_times` engine; only the attendee-facing copy differs.
 - `allow_attendee_invites`: boolean (default true, migration 042), when true, Going attendees can invite others to the plan; host can toggle at any time
 - `interest_id`: FK to `interests` table (hobbies)
-- `require_reconfirmation`: boolean (migration 028), when true, enables the Attendance Assurance system; attendees receive confirmation requests 24 hours before the event
+- `require_reconfirmation`: boolean (migration 028), when true, enables the 24-hour attendance check; people who marked Going receive a confirmation request about 24 hours before the plan
 - `min_confirmed_attendees`: integer (migration 039), minimum confirmed count for plan viability (host counts toward total)
 - `fallback_policy`: text (migration 039), what happens if minimum is not met at cutoff: `proceed`, `notify_host`, or `auto_cancel`
-- `confirmation_window_hours`, `confirmation_cutoff_hours`, `confirmation_sent_at`, `cutoff_processed_at`: attendance assurance lifecycle timestamps (migration 039)
+- `confirmation_window_hours`, `confirmation_cutoff_hours`, `confirmation_sent_at`, `cutoff_processed_at`: 24-hour attendance check lifecycle timestamps (migration 039)
 - `locked_at`: timestamptz nullable (migration 029), when set, the plan is locked and no new participants can join; existing participants and host retain access
 - `require_approval`: boolean (migration 030), when true, non-invited users must submit a join request that the host approves or declines before being added to the plan
 
@@ -538,6 +541,7 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 | `POST /events/:id/toggle-attendee-invites` | Toggle `allow_attendee_invites` (host only). Returns updated value. |
 | `GET /events/explore/public` | Public discovery feed for anonymous visitors. No authentication required. Only returns `visibility = 'public'` events. Privacy-safe: approximate location only (`location_area`), no exact addresses, no online links, no user-specific fields (`isHost` always false, `myRsvpStatus` always null, no `distanceKm`). Supports: `time_range`, `q` (text search), `sort` (upcoming/newest), `limit`/`offset`. |
 | `GET /events/explore` | Personalized discovery feed for logged-in users. Supports: `lat`/`lng`/`radius_km` (location), `hobby` (slug), `time_range` (this_week/this_weekend/next_30/all), `q` (text search), `sort` (upcoming/newest), `personalize` (0/1, hobby-based ranking boost). Applies visibility rules (public + chums_only for the user's chums). Distance computed via Haversine. Prioritizes host's own events, then hobby matches (when personalized), then distance/time. |
+| `GET /explore/local-signal` | Lightweight support signal for the bottom of the logged-in Explore feed. Returns one local-interest data point (`{ hobbyName, count }`) or `null`. Selection: (1) if `hobby` query param is set, try that exact hobby; (2) if exact hobby < 5, try its category; (3) else iterate viewer's profile hobbies and pick highest qualifying count (exact first, then category fallback). Threshold: minimum 5. "Active" = `last_active_at` within 6 months, not suspended. "Local" = within viewer's travel radius via Haversine. Degrades gracefully (returns null on error). |
 | `GET /events/:id/chat` | Fetch chat messages and user's `lastReadAt` for a plan. Access: host or `going` RSVP only. |
 | `POST /events/:id/chat` | Send a chat message. Body: `{ body: string }`. Inserts into DB, then broadcasts to the ChatRoom Durable Object for real-time delivery. Access: host or `going` RSVP only. |
 | `POST /events/:id/chat/read` | Mark chat as read. Upserts `last_read_at` in `event_chat_reads`. |
@@ -693,7 +697,7 @@ HTML and plain text versions of Postmark email templates are stored in `api/src/
 |-------|-----------|-------------|
 | `/` (logged out) | `LandingPageContent` + `PublicExploreFeed` | Landing page with hero, brand positioning, features; includes an embedded public Explore feed showing real public plans via `GET /events/explore/public`. When the API returns no rows (default “all upcoming” query, no search), the UI shows curated **sample** plans from `web/src/lib/publicExploreSamplePlans.ts` (cards link to `/signup`, not real event IDs; gradient banners like other plans without uploaded banners). Search/time filters and load-more behave on real data only; API errors show an error empty state, not samples. |
 | `/` (logged in) | `DashboardHome` | Explore page, personalized discovery feed with search, time chips, sort options (upcoming / newest), personalization toggle, distance/hobby filters, location-aware ordering, session state persistence via `localStorage`, location nudge, contextual empty states |
-| `/events/create` | `CreateEventClient` | "Start a plan" form, title, description, hobby, seats, date/time, location (in-person/online), visibility, invite people, gradient banner preset picker with auto-suggestion, attendance assurance config (enable/disable, min attendees, fallback policy), publish |
+| `/events/create` | `CreateEventClient` | "Start a plan" form, title, description, hobby, seats, date/time, location (in-person/online), visibility, invite people, gradient banner preset picker with auto-suggestion, 24-hour attendance check config (enable/disable, min attendees, fallback policy), publish |
 | `/plans` | `PlansPage` | Tabbed view (Upcoming / Past) with hosted/joined sections, real API data, empty states |
 | `/events/[id]` | `EventDetailClient` | Event detail, RSVP actions, alternate time suggestions with best-start-times overlap display, attendee list with confirmation status, attendance assurance confirmation UI, participant chat (real-time via WebSocket), lock/unlock (host), cancel (host), edit plan (host) |
 
@@ -717,13 +721,14 @@ The hourly cron handler includes `cancelNoAttendeePlans()` which auto-cancels pu
 
 **Attendance Record (implemented):**
 
-Public profile section showing five reliability metrics computed from real event and RSVP data:
+Public profile section showing six reliability metrics computed from real event and RSVP data:
 
-1. **Shows up** (follow-through rate), of plans the user committed to attend, how often they followed through. Counts committed RSVPs (`committed_at IS NOT NULL`) on past non-canceled events where the user is not the host. The numerator requires the RSVP to still be 'going' AND no undismissed no-show or very-late attendance issue reported against the user for that plan. This captures both explicit backing-out (RSVP changed away from 'going') and reported no-shows/very-late arrivals.
-2. **Confirms attendance** (confirmation rate), of plans that asked for final attendance confirmation, how often the user responded (confirmed or declined). Narrowly tied to the attendance assurance confirmation step.
-3. **Plans attended**, count of completed plans attended (non-host, going, past, non-canceled).
-4. **Plans hosted**, count of completed plans organized (host, past, non-canceled).
-5. **Host follow-through** (host completion rate), of hosted plans where at least one non-host attendee committed as Going, how often the plan still went ahead instead of being canceled. Excludes plans where nobody committed to join (no non-host `committed_at` records) and excludes auto-canceled no-attendee plans (`cancellation_reason = 'no_attendees'`). This ensures hosts are not penalized for hosting in a thin network where nobody joins.
+1. **Going follow-through**, of plans the user set Going on, how often they kept that Going RSVP without backing out to Maybe or Can't make it. Denominator: committed RSVPs (`committed_at IS NOT NULL`) on past non-canceled events where the user is not the host. Numerator: subset still with `status = 'going'`. Does NOT penalize for attendance issues (no-shows) — this metric purely measures commitment to a Going RSVP. Not affected by host removals (RSVP row deleted), plan cancellations (filtered out), or auto-cancellations. No schema change required — derived from existing `committed_at` + current `status`.
+2. **Shows up** (follow-through rate), of plans the user committed to attend, how often they followed through. Same base query as Going follow-through but additionally subtracts undismissed no-show or very-late attendance issues. This captures both explicit backing-out (RSVP changed away from 'going') and reported no-shows/very-late arrivals.
+3. **Attendance checks answered**, of plans that had a 24-hour attendance check, how often the user responded (confirmed or declined). Measures responsiveness to the pre-plan check-in.
+4. **Plans attended**, count of completed plans attended (non-host, going, past, non-canceled).
+5. **Plans hosted**, count of completed plans organized (host, past, non-canceled).
+6. **Host follow-through** (host completion rate), of hosted plans where at least one non-host attendee committed as Going, how often the plan still went ahead instead of being canceled. Excludes plans where nobody committed to join (no non-host `committed_at` records) and excludes auto-canceled no-attendee plans (`cancellation_reason = 'no_attendees'`). This ensures hosts are not penalized for hosting in a thin network where nobody joins.
 
 Uses `committed_at` on `event_rsvps` (migration 041) for accurate commitment tracking. New/low-history users see "Building history" treatment with underlying sample counts. Endpoint: `GET /public/users/:userId/attendance-record`.
 

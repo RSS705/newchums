@@ -8,7 +8,7 @@ Plan: {{eventTitle}}
 When: {{eventDate}}
 {{#eventLocation}}Where: {{.}}
 {{/eventLocation}}
-Confirm by: {{deadline}}
+Respond by: {{deadline}}
 
 ---
 
@@ -26,7 +26,7 @@ Clicking a link above will confirm or decline your attendance. No login required
 
 ---
 
-You're receiving this because you RSVP'd to a plan on NewChums that requires final confirmation.
+You're receiving this because a plan you're attending on NewChums has a 24-hour attendance check enabled.
 {{#unsubscribeUrl}}Unsubscribe from confirmation emails: {{.}}{{/unsubscribeUrl}}
 
 © {{year}} {{productName}}
