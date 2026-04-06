@@ -121,7 +121,7 @@ The following flows run in the API worker; the web app calls the API via `NEXT_P
 | Email unsubscribe | `POST /email/unsubscribe` | Signed JWT token |
 | Contact form | `POST /contact` | none (Turnstile for logged-out) |
 | UI state | `PUT /share-link-modal-dismiss` | Bearer JWT |
-| Roadmap | `GET /roadmap`, `GET /roadmap/:id`, `POST /roadmap`, `PUT /roadmap/:id`, `DELETE /roadmap/:id`, `POST /roadmap/:id/vote`, `POST /roadmap/:id/follow`, `POST /roadmap/:id/comment`, `GET /roadmap/:id/attachment` | Bearer JWT |
+| Roadmap | `GET /roadmap`, `GET /roadmap/:id`, `POST /roadmap`, `PUT /roadmap/:id`, `DELETE /roadmap/:id`, `POST /roadmap/:id/vote`, `POST /roadmap/:id/follow`, `POST /roadmap/:id/comment`, `GET /roadmap/:id/attachment` | Bearer JWT. List and detail endpoints filter out "received" status items unless viewer is author or super_admin. Anonymous submissions (`is_anonymous`) show `@anonymous` publicly; admin endpoints always show real author. Statuses: received, needs_clarification, in_progress, planned, completed, not_planned. |
 | Admin, interests | `GET /admin/interests`, `GET /admin/interests/categories`, `PATCH /admin/interests/:id`, `DELETE /admin/interests/:id`, `POST /admin/interests/:id/restore`, `POST /admin/interests/merge` | Bearer JWT + `super_admin` role |
 | Admin, users | `GET /admin/users`, `POST /admin/users/:id/suspend`, `POST /admin/users/:id/unsuspend`, `GET /admin/users/:id/diagnostics`, `PUT /admin/users/:id/metrics` | Bearer JWT + `super_admin` role |
 | Admin, safety | `PUT /admin/attendance-issues/:id/status`, `GET /admin/concern-reports`, `PUT /admin/concern-reports/:id/status` | Bearer JWT + `super_admin` role |
@@ -310,8 +310,8 @@ Wrangler config is code-managed so deploys do not wipe routes or override canoni
 | `/onboarding/date-of-birth` | Onboarding: set date of birth |
 | `/u/[handle]` | Public profile (works logged-in or out; logged-out viewers see reduced info: username only, no name/age/reliability) |
 | `/events/[id]` (logged out) | Plan detail, public preview with limited info and sign-in CTA |
-| `/roadmap` | Public product roadmap, vote and follow items |
-| `/roadmap/[id]` | Roadmap item detail, comments, voting |
+| `/roadmap` | Public product roadmap, vote and follow items. Items with "Received" status are only visible to the author and super admins; once reviewed and moved to another status they appear publicly. |
+| `/roadmap/[id]` | Roadmap item detail, comments, voting. Returns 404 for "Received" items unless viewer is the author or a super admin. |
 | `/terms` | Terms of Use |
 | `/privacy` | Privacy Policy |
 | `/unsubscribe` | Email notification unsubscribe (public, token-based) |

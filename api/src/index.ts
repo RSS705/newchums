@@ -11278,12 +11278,13 @@ app.put("/chum-preferences", async (c) => {
 
 // ─── Community Roadmap ────────────────────────────────────────────────────────
 
-const ROADMAP_STATUSES = ["received", "needs_clarification", "in_progress", "completed", "not_planned"] as const;
+const ROADMAP_STATUSES = ["received", "needs_clarification", "in_progress", "planned", "completed", "not_planned"] as const;
 const ROADMAP_CATEGORIES = ["feature_request", "bug", "general_feedback"] as const;
 const STATUS_LABELS: Record<string, string> = {
   received: "Received",
   needs_clarification: "Needs clarification",
   in_progress: "In progress",
+  planned: "Planned",
   completed: "Completed",
   not_planned: "Not planned",
 };
@@ -11300,11 +11301,15 @@ app.get("/roadmap", async (c) => {
   const offset = Number(url.searchParams.get("offset")) || 0;
 
   let viewerUserId: string | null = null;
+  let viewerIsSuperAdmin = false;
   try {
     const payload = await requireAuth(c);
     if (payload?.email) {
-      const u = (await sql`SELECT id FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string }[];
-      if (u.length > 0) viewerUserId = u[0].id;
+      const u = (await sql`SELECT id, role FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string; role: string | null }[];
+      if (u.length > 0) {
+        viewerUserId = u[0].id;
+        viewerIsSuperAdmin = u[0].role === "super_admin";
+      }
     }
   } catch { /* unauthenticated is fine */ }
 
@@ -11327,7 +11332,7 @@ app.get("/roadmap", async (c) => {
     const items = await sql`
       SELECT ri.id, ri.title, ri.body, ri.category, ri.status, ri.vote_count,
              ri.comment_count, ri.follower_count, ri.completed_at, ri.created_at,
-             ri.merged_into_item_id,
+             ri.merged_into_item_id, ri.is_anonymous, ri.author_user_id,
              u.username AS author_username
       FROM newchums.roadmap_items ri
       JOIN newchums.users u ON u.id = ri.author_user_id
@@ -11336,6 +11341,7 @@ app.get("/roadmap", async (c) => {
         ${statusFilter === "completed" ? sql`AND ri.status IN ('completed', 'not_planned')` : statusFilter === "all" ? sql`` : sql`AND ri.status NOT IN ('completed', 'not_planned')`}
         ${category && ROADMAP_CATEGORIES.includes(category as typeof ROADMAP_CATEGORIES[number]) ? sql`AND ri.category = ${category}` : sql``}
         ${search ? sql`AND ri.title ILIKE ${"%" + search + "%"}` : sql``}
+        ${viewerIsSuperAdmin ? sql`` : viewerUserId ? sql`AND (ri.status != 'received' OR ri.author_user_id = ${viewerUserId})` : sql`AND ri.status != 'received'`}
       ORDER BY ${sort === "newest" ? sql`ri.created_at DESC` : sql`ri.vote_count DESC, ri.created_at DESC`}
       LIMIT ${limit} OFFSET ${offset}
     `;
@@ -11356,16 +11362,23 @@ app.get("/roadmap", async (c) => {
         ${statusFilter === "completed" ? sql`AND ri.status IN ('completed', 'not_planned')` : statusFilter === "all" ? sql`` : sql`AND ri.status NOT IN ('completed', 'not_planned')`}
         ${category && ROADMAP_CATEGORIES.includes(category as typeof ROADMAP_CATEGORIES[number]) ? sql`AND ri.category = ${category}` : sql``}
         ${search ? sql`AND ri.title ILIKE ${"%" + search + "%"}` : sql``}
+        ${viewerIsSuperAdmin ? sql`` : viewerUserId ? sql`AND (ri.status != 'received' OR ri.author_user_id = ${viewerUserId})` : sql`AND ri.status != 'received'`}
     `) as { count: number }[];
 
     return c.json({
       ok: true,
-      items: items.map((i: Record<string, unknown>) => ({
-        ...i,
-        body: i.body ? String(i.body).slice(0, 200) : null,
-        viewer_voted: viewerVotes.has(i.id as string),
-        viewer_following: viewerFollows.has(i.id as string),
-      })),
+      items: items.map((i: Record<string, unknown>) => {
+        const isAnon = i.is_anonymous === true;
+        return {
+          ...i,
+          body: i.body ? String(i.body).slice(0, 200) : null,
+          author_username: isAnon ? "anonymous" : i.author_username,
+          is_anonymous: isAnon,
+          author_user_id: undefined,
+          viewer_voted: viewerVotes.has(i.id as string),
+          viewer_following: viewerFollows.has(i.id as string),
+        };
+      }),
       total: total[0].count,
     });
   } catch (err) {
@@ -11380,11 +11393,15 @@ app.get("/roadmap/:id", async (c) => {
   const itemId = c.req.param("id");
 
   let viewerUserId: string | null = null;
+  let viewerIsSuperAdmin = false;
   try {
     const payload = await requireAuth(c);
     if (payload?.email) {
-      const u = (await sql`SELECT id FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string }[];
-      if (u.length > 0) viewerUserId = u[0].id;
+      const u = (await sql`SELECT id, role FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string; role: string | null }[];
+      if (u.length > 0) {
+        viewerUserId = u[0].id;
+        viewerIsSuperAdmin = u[0].role === "super_admin";
+      }
     }
   } catch { /* unauthenticated is fine */ }
 
@@ -11397,6 +11414,12 @@ app.get("/roadmap/:id", async (c) => {
     `) as Record<string, unknown>[];
 
     if (items.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+
+    // Items with "received" status are only visible to the author and super admins
+    const item0 = items[0];
+    if (item0.status === "received" && !viewerIsSuperAdmin && item0.author_user_id !== viewerUserId) {
+      return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    }
     const item = items[0];
 
     const comments = await sql`
@@ -11433,11 +11456,14 @@ app.get("/roadmap/:id", async (c) => {
     }
 
     const viewerIsAuthor = viewerUserId !== null && item.author_user_id === viewerUserId;
+    const isAnon = item.is_anonymous === true;
 
     return c.json({
       ok: true,
       item: {
         ...item,
+        author_username: isAnon ? "anonymous" : item.author_username,
+        author_user_id: undefined,
         viewer_voted: viewerVoted,
         viewer_following: viewerFollowing,
         viewer_is_author: viewerIsAuthor,
@@ -11473,6 +11499,7 @@ app.post("/roadmap", async (c) => {
   const attachmentKey = typeof body.attachment_key === "string" && body.attachment_key.startsWith("roadmap_attachments/")
     ? body.attachment_key.trim()
     : null;
+  const isAnonymous = body.is_anonymous === true;
 
   if (!title || title.length > 200) return c.json({ ok: false, error: "VALIDATION", message: "Title is required (max 200 chars)" }, 400);
   if (description.length > 5000) return c.json({ ok: false, error: "VALIDATION", message: "Description too long (max 5000 chars)" }, 400);
@@ -11488,8 +11515,8 @@ app.post("/roadmap", async (c) => {
 
   try {
     const rows = (await sql`
-      INSERT INTO newchums.roadmap_items (author_user_id, category, title, body, attachment_key, vote_count, follower_count)
-      VALUES (${userId}, ${category}, ${title}, ${description || null}, ${attachmentKey}, 1, 1)
+      INSERT INTO newchums.roadmap_items (author_user_id, category, title, body, attachment_key, is_anonymous, vote_count, follower_count)
+      VALUES (${userId}, ${category}, ${title}, ${description || null}, ${attachmentKey}, ${isAnonymous}, 1, 1)
       RETURNING id
     `) as { id: string }[];
 

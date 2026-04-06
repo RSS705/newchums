@@ -47,6 +47,7 @@ type RoadmapRow = {
   comment_count: number;
   follower_count: number;
   is_removed: boolean;
+  is_anonymous: boolean;
   merged_into_item_id: string | null;
   created_at: string;
   author_username: string;
@@ -57,6 +58,7 @@ const STATUS_LABELS: Record<string, string> = {
   received: "Received",
   needs_clarification: "Needs clarification",
   in_progress: "In progress",
+  planned: "Planned",
   completed: "Completed",
   not_planned: "Not planned",
 };
@@ -65,6 +67,7 @@ const STATUS_BG: Record<string, string> = {
   received: "#D4880F",
   needs_clarification: "#C67A12",
   in_progress: "#9C3587",
+  planned: "#2E7D9B",
   completed: "#0E8A6D",
   not_planned: "grey.400",
 };
@@ -385,7 +388,12 @@ export default function AdminRoadmapClient() {
                     </Typography>
                   </TableCell>
                   <TableCell sx={{ display: { xs: "none", md: "table-cell" } }}>
-                    <Typography variant="body2" noWrap>@{item.author_username}</Typography>
+                    <Stack direction="row" spacing={0.5} alignItems="center">
+                      <Typography variant="body2" noWrap>@{item.author_username}</Typography>
+                      {item.is_anonymous && (
+                        <Chip label="Anon" size="small" variant="outlined" sx={{ fontSize: "0.625rem", height: 18, fontWeight: 600 }} />
+                      )}
+                    </Stack>
                     <Typography variant="caption" color="text.disabled" noWrap>{item.author_email}</Typography>
                   </TableCell>
                   <TableCell sx={{ display: { xs: "none", md: "table-cell" }, whiteSpace: "nowrap", fontSize: "0.8125rem" }}>

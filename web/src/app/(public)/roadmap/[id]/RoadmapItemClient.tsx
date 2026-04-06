@@ -70,6 +70,7 @@ const STATUS_LABELS: Record<string, string> = {
   received: "Received",
   needs_clarification: "Needs clarification",
   in_progress: "In progress",
+  planned: "Planned",
   completed: "Completed",
   not_planned: "Not planned",
 };
@@ -78,6 +79,7 @@ const STATUS_COLORS: Record<string, string> = {
   received: "#D4880F",
   needs_clarification: "#C67A12",
   in_progress: "#9C3587",
+  planned: "#2E7D9B",
   completed: "#0E8A6D",
   not_planned: "text.disabled",
 };
@@ -100,6 +102,7 @@ type ItemDetail = {
   completed_at: string | null;
   created_at: string;
   author_username: string;
+  is_anonymous: boolean;
   viewer_voted: boolean;
   viewer_following: boolean;
   viewer_is_author: boolean;
@@ -361,14 +364,18 @@ export default function RoadmapItemClient({ itemId, isLoggedIn }: Props) {
       >
         <Typography variant="body2" color="text.secondary">
           Submitted by{" "}
-          <Typography
-            component={Link}
-            href={`/u/${item.author_username}`}
-            variant="body2"
-            sx={{ textDecoration: "none", "&:hover": { textDecoration: "underline", color: "primary.main" } }}
-          >
-            @{item.author_username}
-          </Typography>
+          {item.is_anonymous ? (
+            <Typography component="span" variant="body2">@anonymous</Typography>
+          ) : (
+            <Typography
+              component={Link}
+              href={`/u/${item.author_username}`}
+              variant="body2"
+              sx={{ textDecoration: "none", "&:hover": { textDecoration: "underline", color: "primary.main" } }}
+            >
+              @{item.author_username}
+            </Typography>
+          )}
           {" "}&middot; {formatDate(item.created_at)}
         </Typography>
         {item.viewer_is_author && !editing && (

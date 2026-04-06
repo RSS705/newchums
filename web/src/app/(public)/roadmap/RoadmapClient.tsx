@@ -4,13 +4,9 @@ import * as React from "react";
 import {
   Box,
   Button,
-  Checkbox,
   Chip,
   CircularProgress,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
+  Collapse,
   FormControlLabel,
   IconButton,
   InputAdornment,
@@ -18,6 +14,7 @@ import {
   RadioGroup,
   Skeleton,
   Stack,
+  Switch,
   Tab,
   Tabs,
   TextField,
@@ -25,6 +22,7 @@ import {
   Typography,
 } from "@mui/material";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
+import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import ClearRoundedIcon from "@mui/icons-material/ClearRounded";
 import ThumbUpRoundedIcon from "@mui/icons-material/ThumbUpRounded";
@@ -32,12 +30,11 @@ import ThumbUpOutlinedIcon from "@mui/icons-material/ThumbUpOutlined";
 import ChatBubbleOutlineRoundedIcon from "@mui/icons-material/ChatBubbleOutlineRounded";
 import NotificationsActiveRoundedIcon from "@mui/icons-material/NotificationsActiveRounded";
 import NotificationsNoneRoundedIcon from "@mui/icons-material/NotificationsNoneRounded";
+import AttachFileRoundedIcon from "@mui/icons-material/AttachFileRounded";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiFetch, getApiBaseUrl } from "@/lib/apiClient";
 import AppTextField from "@/components/ui/AppTextField";
-import AttachFileRoundedIcon from "@mui/icons-material/AttachFileRounded";
-import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 
 type RoadmapItem = {
   id: string;
@@ -51,6 +48,7 @@ type RoadmapItem = {
   completed_at: string | null;
   created_at: string;
   author_username: string;
+  is_anonymous: boolean;
   viewer_voted: boolean;
   viewer_following: boolean;
 };
@@ -65,6 +63,7 @@ const STATUS_LABELS: Record<string, string> = {
   received: "Received",
   needs_clarification: "Needs clarification",
   in_progress: "In progress",
+  planned: "Planned",
   completed: "Completed",
   not_planned: "Not planned",
 };
@@ -73,6 +72,7 @@ const STATUS_COLORS: Record<string, string> = {
   received: "#D4880F",
   needs_clarification: "#C67A12",
   in_progress: "#9C3587",
+  planned: "#2E7D9B",
   completed: "#0E8A6D",
   not_planned: "text.disabled",
 };
@@ -145,6 +145,7 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
   const [submitTitle, setSubmitTitle] = React.useState("");
   const [submitBody, setSubmitBody] = React.useState("");
   const [submitFollow, setSubmitFollow] = React.useState(true);
+  const [submitAnonymous, setSubmitAnonymous] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
   const [submitError, setSubmitError] = React.useState("");
   const [submitFile, setSubmitFile] = React.useState<File | null>(null);
@@ -299,6 +300,7 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
           body: submitBody.trim(),
           category: submitCategory,
           ...(attachmentKey ? { attachment_key: attachmentKey } : {}),
+          ...(submitAnonymous ? { is_anonymous: true } : {}),
         }),
       });
       const data = await res.json();
@@ -311,6 +313,7 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
         setSubmitBody("");
         setSubmitCategory("feature_request");
         setSubmitFollow(true);
+        setSubmitAnonymous(false);
         clearFile();
         fetchItems(false);
       } else {
@@ -341,11 +344,11 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
           <Button
             variant="contained"
             color="primary"
-            startIcon={<AddRoundedIcon />}
-            onClick={() => setSubmitOpen(true)}
+            startIcon={submitOpen ? undefined : <AddRoundedIcon />}
+            onClick={() => setSubmitOpen((v) => !v)}
             sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
           >
-            Submit feedback
+            {submitOpen ? "Close form" : "Submit feedback"}
           </Button>
         ) : (
           <Button
@@ -359,6 +362,145 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
           </Button>
         )}
       </Box>
+
+      {/* Inline submit form */}
+      <Collapse in={submitOpen} unmountOnExit>
+        <Box
+          sx={{
+            mb: { xs: 3, sm: 4 },
+            p: { xs: 2.5, sm: 3 },
+            border: 1,
+            borderColor: "divider",
+            borderRadius: 3,
+            bgcolor: "background.paper",
+          }}
+        >
+          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+            <Typography variant="h5" fontWeight={700}>
+              Submit feedback
+            </Typography>
+            <IconButton size="small" onClick={() => setSubmitOpen(false)} sx={{ color: "text.secondary" }}>
+              <CloseRoundedIcon fontSize="small" />
+            </IconButton>
+          </Stack>
+
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
+            Bug reports, feature requests, and suggestions are all welcome.
+          </Typography>
+
+          <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
+            Category
+          </Typography>
+          <RadioGroup
+            value={submitCategory}
+            onChange={(e) => setSubmitCategory(e.target.value)}
+            sx={{ mb: 2 }}
+          >
+            <FormControlLabel value="feature_request" control={<Radio size="small" />} label="Feature request" />
+            <FormControlLabel value="bug" control={<Radio size="small" />} label="Bug / issue" />
+            <FormControlLabel value="general_feedback" control={<Radio size="small" />} label="General feedback" />
+          </RadioGroup>
+
+          <AppTextField
+            label="Title"
+            value={submitTitle}
+            onChange={(e) => setSubmitTitle(e.target.value)}
+            placeholder="A short summary"
+            fullWidth
+            inputProps={{ maxLength: 200 }}
+            sx={{ mb: 2 }}
+          />
+          <AppTextField
+            label="Description (optional)"
+            value={submitBody}
+            onChange={(e) => setSubmitBody(e.target.value)}
+            placeholder="The more detail the better!"
+            fullWidth
+            multiline
+            minRows={3}
+            maxRows={8}
+            inputProps={{ maxLength: 5000 }}
+            sx={{ mb: 1.5 }}
+          />
+
+          <Box sx={{ mb: 1.5 }}>
+            <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.5 }}>
+              Attach a screenshot (optional)
+            </Typography>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              style={{ display: "none" }}
+              onChange={handleFileSelect}
+            />
+            {submitFile && submitFilePreview ? (
+              <Box sx={{ position: "relative", display: "inline-block" }}>
+                <Box
+                  component="img"
+                  src={submitFilePreview}
+                  alt="Attachment preview"
+                  sx={{ maxWidth: "100%", maxHeight: 160, borderRadius: 1.5, border: "1px solid", borderColor: "divider" }}
+                />
+                <IconButton
+                  size="small"
+                  onClick={clearFile}
+                  sx={{ position: "absolute", top: 4, right: 4, bgcolor: "background.paper", boxShadow: 1, "&:hover": { bgcolor: "background.paper" } }}
+                >
+                  <CloseRoundedIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              </Box>
+            ) : (
+              <Button
+                size="small"
+                startIcon={<AttachFileRoundedIcon />}
+                onClick={() => fileInputRef.current?.click()}
+                sx={{ textTransform: "none" }}
+              >
+                Choose file
+              </Button>
+            )}
+          </Box>
+
+          <Stack spacing={0.5} sx={{ mb: 2 }}>
+            <FormControlLabel
+              control={<Switch checked={submitFollow} onChange={(e) => setSubmitFollow(e.target.checked)} size="small" />}
+              label={<Typography variant="body2" color="text.secondary">Follow this and receive email updates when addressed</Typography>}
+            />
+            <FormControlLabel
+              control={<Switch checked={submitAnonymous} onChange={(e) => setSubmitAnonymous(e.target.checked)} size="small" />}
+              label={<Typography variant="body2" color="text.secondary">Post anonymously on the public roadmap</Typography>}
+            />
+          </Stack>
+
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.6 }}>
+            Submissions are reviewed before they appear publicly. You can track your submission from this page once it&apos;s posted.
+          </Typography>
+
+          {submitError && (
+            <Typography variant="body2" color="error" sx={{ mb: 1.5 }}>
+              {submitError}
+            </Typography>
+          )}
+
+          <Stack direction="row" spacing={1.5}>
+            <Button
+              variant="contained"
+              onClick={handleSubmit}
+              disabled={submitting || !submitTitle.trim()}
+              sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
+            >
+              {submitting ? <CircularProgress size={20} /> : "Submit"}
+            </Button>
+            <Button
+              onClick={() => setSubmitOpen(false)}
+              sx={{ textTransform: "none" }}
+            >
+              Cancel
+            </Button>
+          </Stack>
+        </Box>
+      </Collapse>
 
       {/* Tabs */}
       <Box sx={{ borderBottom: 1, borderColor: "divider", mb: 2 }}>
@@ -529,16 +671,22 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
                   </Typography>
                 )}
                 <Stack direction="row" spacing={1.5} alignItems="center">
-                  <Typography
-                    component={Link}
-                    href={`/u/${item.author_username}`}
-                    variant="caption"
-                    color="text.disabled"
-                    onClick={(e) => e.stopPropagation()}
-                    sx={{ textDecoration: "none", "&:hover": { textDecoration: "underline", color: "primary.main" } }}
-                  >
-                    @{item.author_username}
-                  </Typography>
+                  {item.is_anonymous ? (
+                    <Typography variant="caption" color="text.disabled">
+                      @anonymous
+                    </Typography>
+                  ) : (
+                    <Typography
+                      component={Link}
+                      href={`/u/${item.author_username}`}
+                      variant="caption"
+                      color="text.disabled"
+                      onClick={(e) => e.stopPropagation()}
+                      sx={{ textDecoration: "none", "&:hover": { textDecoration: "underline", color: "primary.main" } }}
+                    >
+                      @{item.author_username}
+                    </Typography>
+                  )}
                   <Typography variant="caption" color="text.disabled">
                     {timeAgo(item.created_at)}
                   </Typography>
@@ -595,128 +743,6 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
         </Box>
       )}
 
-      {/* Submit dialog */}
-      <Dialog
-        open={submitOpen}
-        onClose={() => setSubmitOpen(false)}
-        maxWidth="sm"
-        fullWidth
-        PaperProps={{ sx: { borderRadius: 3 } }}
-      >
-        <DialogTitle sx={{ fontWeight: 700, pb: 0.5 }}>Submit feedback</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
-            Bug reports, feature requests, and suggestions are all welcome.
-          </Typography>
-
-          <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
-            Category
-          </Typography>
-          <RadioGroup
-            value={submitCategory}
-            onChange={(e) => setSubmitCategory(e.target.value)}
-            sx={{ mb: 2 }}
-          >
-            <FormControlLabel value="feature_request" control={<Radio size="small" />} label="Feature request" />
-            <FormControlLabel value="bug" control={<Radio size="small" />} label="Bug / issue" />
-            <FormControlLabel value="general_feedback" control={<Radio size="small" />} label="General feedback" />
-          </RadioGroup>
-
-          <AppTextField
-            label="Title"
-            value={submitTitle}
-            onChange={(e) => setSubmitTitle(e.target.value)}
-            placeholder="A short summary"
-            fullWidth
-            inputProps={{ maxLength: 200 }}
-            sx={{ mb: 2 }}
-          />
-          <AppTextField
-            label="Description (optional)"
-            value={submitBody}
-            onChange={(e) => setSubmitBody(e.target.value)}
-            placeholder="The more detail the better!"
-            fullWidth
-            multiline
-            minRows={3}
-            maxRows={8}
-            inputProps={{ maxLength: 5000 }}
-            sx={{ mb: 1.5 }}
-          />
-
-          <Box sx={{ mb: 1.5 }}>
-            <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.5 }}>
-              Attach a screenshot (optional)
-            </Typography>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              style={{ display: "none" }}
-              onChange={handleFileSelect}
-            />
-            {submitFile && submitFilePreview ? (
-              <Box sx={{ position: "relative", display: "inline-block" }}>
-                <Box
-                  component="img"
-                  src={submitFilePreview}
-                  alt="Attachment preview"
-                  sx={{ maxWidth: "100%", maxHeight: 160, borderRadius: 1.5, border: "1px solid", borderColor: "divider" }}
-                />
-                <IconButton
-                  size="small"
-                  onClick={clearFile}
-                  sx={{ position: "absolute", top: 4, right: 4, bgcolor: "background.paper", boxShadow: 1, "&:hover": { bgcolor: "background.paper" } }}
-                >
-                  <CloseRoundedIcon sx={{ fontSize: 16 }} />
-                </IconButton>
-              </Box>
-            ) : (
-              <Button
-                size="small"
-                startIcon={<AttachFileRoundedIcon />}
-                onClick={() => fileInputRef.current?.click()}
-                sx={{ textTransform: "none" }}
-              >
-                Choose file
-              </Button>
-            )}
-          </Box>
-
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={submitFollow}
-                onChange={(e) => setSubmitFollow(e.target.checked)}
-                size="small"
-              />
-            }
-            label={
-              <Typography variant="body2" color="text.secondary">
-                Follow this and receive email updates when addressed
-              </Typography>
-            }
-          />
-          {submitError && (
-            <Typography variant="body2" color="error" sx={{ mt: 1 }}>
-              {submitError}
-            </Typography>
-          )}
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5 }}>
-          <Button onClick={() => setSubmitOpen(false)} sx={{ textTransform: "none" }}>
-            Cancel
-          </Button>
-          <Button
-            variant="contained"
-            onClick={handleSubmit}
-            disabled={submitting || !submitTitle.trim()}
-            sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
-          >
-            {submitting ? <CircularProgress size={20} /> : "Submit"}
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   );
 }
