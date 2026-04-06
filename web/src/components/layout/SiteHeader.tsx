@@ -64,6 +64,7 @@ export default function SiteHeader({
             src="/logo-horizontal-black.png"
             alt="NewChums"
             height={32}
+            width={77}
             sx={{ maxWidth: { xs: 140, sm: 200 } }}
           />
         </Link>

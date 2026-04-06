@@ -11,6 +11,8 @@ export type BrandLogoProps = {
   alt: string;
   /** Height in px; width follows aspect ratio. Default 32 */
   height?: number;
+  /** Width in px; set to match the image's natural aspect ratio at the given height to prevent layout shift. */
+  width?: number;
   /** Optional link wrapper. Omit for no link */
   href?: string;
   /** Preload image. Default false */
@@ -27,34 +29,42 @@ export default function BrandLogo({
   src,
   alt,
   height = 32,
+  width,
   href,
   sx,
 }: BrandLogoProps) {
-  const img = (
-    <Box
-      component="img"
+  /* Inline style on the <img> ensures the browser constrains size at parse time,
+     before any CSS-in-JS or external stylesheets load. This prevents the brief
+     flash of the full-resolution image on mobile refresh. */
+  const imgEl = (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
       src={src}
       alt={alt}
-      sx={[
-        {
-          height: `${height}px`,
-          width: "auto",
-          display: "block",
-          objectFit: "contain",
-          objectPosition: "left center",
-        },
-        ...(sx ? (Array.isArray(sx) ? sx : [sx]) : []),
-      ]}
+      height={height}
+      width={width ?? Math.round(height * 2.4)}
+      style={{
+        height: `${height}px`,
+        width: "auto",
+        maxWidth: "100%",
+        display: "block",
+        objectFit: "contain",
+        objectPosition: "left center",
+      }}
+      loading="eager"
+      fetchPriority="high"
     />
   );
+
+  const wrapped = sx ? <Box sx={sx}>{imgEl}</Box> : imgEl;
 
   if (href !== undefined) {
     return (
       <Link href={href} underline="none" sx={{ display: "inline-block" }}>
-        {img}
+        {wrapped}
       </Link>
     );
   }
 
-  return img;
+  return wrapped;
 }

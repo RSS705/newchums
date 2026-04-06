@@ -25,7 +25,7 @@ export default function LandingFooter() {
         }}
       >
         <Stack spacing={1.5} sx={{ flexShrink: 0 }}>
-          <BrandLogo src="/logo-horizontal-black-no-dot-com.png" alt="NewChums" height={32} />
+          <BrandLogo src="/logo-horizontal-black-no-dot-com.png" alt="NewChums" height={32} width={79} />
           <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 320, lineHeight: 1.6 }}>
             A place for people who actually like to do things.
           </Typography>

@@ -42,6 +42,8 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
+        <link rel="preload" href="/logo-horizontal-black.png" as="image" />
+        <link rel="preload" href="/logo-horizontal-black-no-dot-com.png" as="image" />
         {process.env.NODE_ENV === "production" ? (
           <>
             <Script
