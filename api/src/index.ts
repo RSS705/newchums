@@ -433,6 +433,7 @@ app.get("/public/users/:userId/attendance-record", async (c) => {
     // Computes both follow-through metrics from the same base scan:
     // - followed_through: still "going" AND no attendance issues (measures actually showing up)
     // - going_kept: still "going" regardless of attendance issues (measures commitment honoured)
+    // Includes both hosted and attended plans — the host committed to being there too.
     const followThrough = (await sql`
       SELECT
         COUNT(*) FILTER (
@@ -451,7 +452,6 @@ app.get("/public/users/:userId/attendance-record", async (c) => {
       JOIN newchums.events e ON e.id = r.event_id
       WHERE r.user_id = ${targetUserId}
         AND r.committed_at IS NOT NULL
-        AND e.host_user_id != ${targetUserId}
         AND e.status != 'canceled'
         AND e.starts_at < ${now}
     `) as { followed_through: number; going_kept: number; total_committed: number }[];
