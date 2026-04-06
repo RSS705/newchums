@@ -66,6 +66,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import UserAvatar from "@/components/common/UserAvatar";
 import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
+import RichTextContent from "@/components/ui/RichTextContent";
 import {
   apiFetch,
   clearAuthTokenCache,
@@ -1891,13 +1892,7 @@ export default function EventDetailClient() {
             {event.description && (
               <>
                 <Divider />
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                  sx={{ whiteSpace: "pre-line", lineHeight: 1.7 }}
-                >
-                  {event.description}
-                </Typography>
+                <RichTextContent html={event.description} size="body2" />
               </>
             )}
           </Stack>
@@ -2421,9 +2416,7 @@ export default function EventDetailClient() {
           {event.description && (
             <>
               <Divider />
-              <Typography variant="body1" sx={{ whiteSpace: "pre-line", lineHeight: 1.7 }}>
-                {event.description}
-              </Typography>
+              <RichTextContent html={event.description} />
             </>
           )}
         </Stack>

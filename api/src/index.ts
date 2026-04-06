@@ -51,6 +51,7 @@ import { isValidContactSubject } from "./lib/contact";
 import { computeAge } from "./lib/publicProfile";
 import { checkContactRateLimit } from "./lib/contactRateLimit";
 import { validateCleanText } from "./lib/contentSafety";
+import { sanitizeDescriptionHtml } from "./lib/sanitizeHtml";
 import { verifyTurnstileToken } from "./lib/turnstile";
 import {
   getDefaultPrefsJson,
@@ -6787,7 +6788,7 @@ app.post("/events", async (c) => {
   const titleCheck = validateCleanText(title, "title");
   if (!titleCheck.ok) return c.json({ ok: false, error: "INAPPROPRIATE_TEXT", field: "title" }, 400);
 
-  const description = body.description ? String(body.description).trim().slice(0, 2000) : null;
+  const description = body.description ? sanitizeDescriptionHtml(String(body.description).trim().slice(0, 5000)) || null : null;
   // Seed from any explicit UUIDs the client already knows
   const seedInterestIds: string[] = Array.isArray(body.interest_ids)
     ? (body.interest_ids as string[]).map(String).filter(Boolean).slice(0, 10)
@@ -9286,7 +9287,7 @@ app.patch("/events/:id", async (c) => {
     if (!rawTitle) return c.json({ ok: false, error: "VALIDATION", message: "Title is required", field: "title" }, 400);
     if (rawTitle.length > 200) return c.json({ ok: false, error: "VALIDATION", message: "Title must be 200 characters or less", field: "title" }, 400);
 
-    const description = body.description != null ? String(body.description).trim().slice(0, 2000) || null : null;
+    const description = body.description != null ? sanitizeDescriptionHtml(String(body.description).trim().slice(0, 5000)) || null : null;
 
     const startsAtRaw = body.starts_at ? String(body.starts_at) : null;
     if (!startsAtRaw) return c.json({ ok: false, error: "VALIDATION", message: "Date and time are required", field: "starts_at" }, 400);
@@ -9574,9 +9575,13 @@ app.patch("/events/:id", async (c) => {
       newTitle: rawTitle,
     }));
 
-    c.executionCtx.waitUntil(
-      notifyAttendeesPlanChanged(sql, c.env, eventId, userId, rawTitle, "updated", changes),
-    );
+    // Host can opt out of attendee notifications for this edit
+    const shouldNotify = body.notify_attendees !== false;
+    if (shouldNotify) {
+      c.executionCtx.waitUntil(
+        notifyAttendeesPlanChanged(sql, c.env, eventId, userId, rawTitle, "updated", changes),
+      );
+    }
 
     return c.json({ ok: true });
   } catch (err) {

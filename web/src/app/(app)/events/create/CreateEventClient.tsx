@@ -33,6 +33,7 @@ import dayjs, { type Dayjs } from "dayjs";
 import Cropper, { type Area } from "react-easy-crop";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
+import RichTextEditor from "@/components/ui/RichTextEditor";
 import PlacesAutocompleteInput from "@/components/common/PlacesAutocompleteInput";
 import { apiFetch, getApiBaseUrl } from "@/lib/apiClient";
 import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
@@ -474,16 +475,11 @@ export default function CreateEventClient() {
             inputProps={{ maxLength: 200 }}
           />
 
-          <AppTextField
+          <RichTextEditor
             label="Description"
             placeholder="What should people expect? Any details they should know?"
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            multiline
-            minRows={3}
-            maxRows={6}
-            inputProps={{ maxLength: 2000 }}
-            helperText={null}
+            onChange={setDescription}
           />
 
           <HobbyPickerField
@@ -516,6 +512,7 @@ export default function CreateEventClient() {
                   />
                 }
                 label="Reserve seats for invited people"
+                sx={{ gap: 0.5 }}
               />
             </>
           )}
@@ -583,16 +580,16 @@ export default function CreateEventClient() {
                 if (mode !== "availability") { setDeadlineDate(null); setDeadlineTime(null); }
               }}
             >
-              <FormControlLabel value="suggest" control={<Radio />} label="Allow suggestions" />
-              <Typography variant="caption" color="text.secondary" sx={{ ml: 4, mt: -0.5, mb: 0.5 }}>
+              <FormControlLabel value="suggest" control={<Radio />} label="Allow suggestions" sx={{ gap: 0.5 }} />
+              <Typography variant="caption" color="text.secondary" sx={{ ml: "32px", mt: -0.5, mb: 0.5 }}>
                 People can suggest other times if the listed time doesn't work.
               </Typography>
-              <FormControlLabel value="availability" control={<Radio />} label="Request availability" />
-              <Typography variant="caption" color="text.secondary" sx={{ ml: 4, mt: -0.5, mb: 0.5 }}>
+              <FormControlLabel value="availability" control={<Radio />} label="Request availability" sx={{ gap: 0.5 }} />
+              <Typography variant="caption" color="text.secondary" sx={{ ml: "32px", mt: -0.5, mb: 0.5 }}>
                 Ask attendees to share when they're free so you can find the best time.
               </Typography>
               {schedulingMode === "availability" && (
-                <Box sx={{ ml: 4, mb: 1 }}>
+                <Box sx={{ ml: "32px", mb: 1 }}>
                   <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.75 }}>
                     Availability needed by (optional)
                   </Typography>
@@ -615,7 +612,7 @@ export default function CreateEventClient() {
                   </Stack>
                 </Box>
               )}
-              <FormControlLabel value="off" control={<Radio />} label="Off" />
+              <FormControlLabel value="off" control={<Radio />} label="Off" sx={{ gap: 0.5 }} />
             </RadioGroup>
           </Box>
         </Stack>
@@ -809,7 +806,7 @@ export default function CreateEventClient() {
                 />
               }
               label="24-hour attendance check"
-              sx={{ mr: 0 }}
+              sx={{ mr: 0, gap: 0.5 }}
             />
             <Tooltip title="About 24 hours before the plan, people who marked Going will be asked to confirm they are still coming. This includes you as the host." arrow placement="top" enterTouchDelay={0}>
               <IconButton size="small" sx={{ p: 0.25, color: "text.disabled" }}>
@@ -865,7 +862,7 @@ export default function CreateEventClient() {
                 />
               }
               label="Require approval before joining"
-              sx={{ mr: 0 }}
+              sx={{ mr: 0, gap: 0.5 }}
             />
             <Tooltip title="People who are not directly invited will need to request to join, and you'll approve or decline each request." arrow placement="top" enterTouchDelay={0}>
               <IconButton size="small" sx={{ p: 0.25, color: "text.disabled" }}>
@@ -882,6 +879,7 @@ export default function CreateEventClient() {
               />
             }
             label="Let Going attendees invite others"
+            sx={{ gap: 0.5 }}
           />
         </Stack>
       </AppCard>
@@ -889,25 +887,24 @@ export default function CreateEventClient() {
       {/* Matching preferences override */}
       {hostHasPrefs && (
         <AppCard>
-          <Stack spacing={1.5}>
-            <Box
-              onClick={() => setPrefOverridesOpen((v) => !v)}
-              sx={{ display: "flex", alignItems: "center", cursor: "pointer", userSelect: "none" }}
-            >
-              <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem", flex: 1 }}>
-                Matching preferences for this plan
-              </Typography>
-              <ExpandMoreRoundedIcon
-                sx={{
-                  transform: prefOverridesOpen ? "rotate(180deg)" : "rotate(0deg)",
-                  transition: "transform 0.2s",
-                  color: "text.secondary",
-                }}
-              />
-            </Box>
+          <Box
+            onClick={() => setPrefOverridesOpen((v) => !v)}
+            sx={{ display: "flex", alignItems: "center", cursor: "pointer", userSelect: "none" }}
+          >
+            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem", flex: 1 }}>
+              Matching preferences for this plan
+            </Typography>
+            <ExpandMoreRoundedIcon
+              sx={{
+                transform: prefOverridesOpen ? "rotate(180deg)" : "rotate(0deg)",
+                transition: "transform 0.2s",
+                color: "text.secondary",
+              }}
+            />
+          </Box>
 
             <Collapse in={prefOverridesOpen}>
-              <Stack spacing={2} sx={{ pt: 1 }}>
+              <Stack spacing={2} sx={{ pt: 2 }}>
                 <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
                   Your profile chum preferences are used by default when matching people to your plans.
                   You can relax those rules for this plan only, without changing your profile settings.
@@ -924,7 +921,7 @@ export default function CreateEventClient() {
                     />
                   }
                   label="Disable all preference filtering for this plan"
-                  sx={{ alignItems: "center" }}
+                  sx={{ alignItems: "center", gap: 0.5 }}
                 />
 
                 {!prefDisableAll && (
@@ -949,13 +946,13 @@ export default function CreateEventClient() {
                             Skip <strong>{{ reliability: "Reliability", sociability: "Sociability", presentation: "Cleanliness & consideration" }[metric]}</strong> filtering
                           </Typography>
                         }
+                        sx={{ gap: 0.5 }}
                       />
                     ))}
                   </Stack>
                 )}
               </Stack>
             </Collapse>
-          </Stack>
         </AppCard>
       )}
 
@@ -971,6 +968,7 @@ export default function CreateEventClient() {
               control={<Switch checked={hideFromExplore} onChange={(e) => setHideFromExplore(e.target.checked)} size="small" />}
               label="Members only"
               slotProps={{ typography: { variant: "body2" } }}
+              sx={{ gap: 0.5 }}
             />
             <Typography variant="caption" color="text.secondary" sx={{ mt: -0.5 }}>
               When on, this plan only appears in the community feed and to members in their Explore. Others won&#39;t see it.
@@ -987,6 +985,7 @@ export default function CreateEventClient() {
               control={<Switch checked={isQa} onChange={(e) => setIsQa(e.target.checked)} size="small" />}
               label="QA plan"
               slotProps={{ typography: { variant: "subtitle1", fontWeight: 600, fontSize: "1.0625rem" } }}
+              sx={{ gap: 0.5 }}
             />
             <Typography variant="caption" color="text.secondary" sx={{ mt: -0.5 }}>
               QA plans are only visible to super admins. Normal users will never see this plan anywhere in the system.

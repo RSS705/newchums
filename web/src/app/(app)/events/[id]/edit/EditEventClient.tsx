@@ -30,6 +30,7 @@ import dayjs, { type Dayjs } from "dayjs";
 import Cropper, { type Area } from "react-easy-crop";
 import { useParams, useRouter } from "next/navigation";
 import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
+import RichTextEditor from "@/components/ui/RichTextEditor";
 import { apiFetch, getApiBaseUrl, getAvatarBaseUrl, getImageFallbackBaseUrl } from "@/lib/apiClient";
 import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
 import ListItemText from "@mui/material/ListItemText";
@@ -102,6 +103,9 @@ export default function EditEventClient() {
   const [communityId, setCommunityId] = useState<string | null>(null);
   const [communityName, setCommunityName] = useState<string | null>(null);
   const [hideFromExplore, setHideFromExplore] = useState(false);
+
+  // Notification control for this edit
+  const [notifyAttendees, setNotifyAttendees] = useState(true);
 
   // QA plan (super admin only)
   const [isQa, setIsQa] = useState(false);
@@ -304,6 +308,7 @@ export default function EditEventClient() {
           location_area: locationType === "in_person" ? (locationArea?.trim() || null) : null,
           location_visibility: locationType === "in_person" ? locationVisibility : "exact_everyone",
           online_link: locationType === "online" ? onlineLink.trim() || null : null,
+          notify_attendees: notifyAttendees,
         }),
       });
       const data = (await res.json()) as { ok: boolean; message?: string };
@@ -397,7 +402,7 @@ export default function EditEventClient() {
           Edit plan
         </Typography>
         <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-          Update the details for this plan. Changes will notify attendees who are Going or Maybe.
+          Update the details for this plan.
         </Typography>
       </Box>
 
@@ -505,15 +510,10 @@ export default function EditEventClient() {
             helperText={null}
           />
 
-          <AppTextField
+          <RichTextEditor
             label="Description"
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            multiline
-            minRows={3}
-            maxRows={6}
-            inputProps={{ maxLength: 2000 }}
-            helperText={null}
+            onChange={setDescription}
           />
 
           <HobbyPickerField
@@ -540,7 +540,7 @@ export default function EditEventClient() {
                 />
               }
               label={<Typography variant="body2" fontWeight={500}>Reserve seats for invited people</Typography>}
-              sx={{ alignItems: "center", mt: 0.5 }}
+              sx={{ alignItems: "center", mt: 0.5, gap: 0.5 }}
             />
           )}
         </Stack>
@@ -587,16 +587,16 @@ export default function EditEventClient() {
                 if (mode !== "availability") { setDeadlineDate(null); setDeadlineTime(null); }
               }}
             >
-              <FormControlLabel value="suggest" control={<Radio size="small" />} label={<Typography variant="body2" fontWeight={500}>Allow suggestions</Typography>} />
-              <Typography variant="caption" color="text.secondary" sx={{ ml: 4, mt: -0.5, mb: 0.5 }}>
+              <FormControlLabel value="suggest" control={<Radio size="small" />} label={<Typography variant="body2" fontWeight={500}>Allow suggestions</Typography>} sx={{ gap: 0.5 }} />
+              <Typography variant="caption" color="text.secondary" sx={{ ml: "28px", mt: -0.5, mb: 0.5 }}>
                 People can suggest other times if the listed time doesn't work.
               </Typography>
-              <FormControlLabel value="availability" control={<Radio size="small" />} label={<Typography variant="body2" fontWeight={500}>Request availability</Typography>} />
-              <Typography variant="caption" color="text.secondary" sx={{ ml: 4, mt: -0.5, mb: 0.5 }}>
+              <FormControlLabel value="availability" control={<Radio size="small" />} label={<Typography variant="body2" fontWeight={500}>Request availability</Typography>} sx={{ gap: 0.5 }} />
+              <Typography variant="caption" color="text.secondary" sx={{ ml: "28px", mt: -0.5, mb: 0.5 }}>
                 Ask attendees to share when they're free so you can find the best time.
               </Typography>
               {schedulingMode === "availability" && (
-                <Box sx={{ ml: 4, mb: 1 }}>
+                <Box sx={{ ml: "28px", mb: 1 }}>
                   <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.75 }}>
                     Availability needed by (optional)
                   </Typography>
@@ -618,7 +618,7 @@ export default function EditEventClient() {
                   </Stack>
                 </Box>
               )}
-              <FormControlLabel value="off" control={<Radio size="small" />} label={<Typography variant="body2" fontWeight={500}>Off</Typography>} />
+              <FormControlLabel value="off" control={<Radio size="small" />} label={<Typography variant="body2" fontWeight={500}>Off</Typography>} sx={{ gap: 0.5 }} />
             </RadioGroup>
           </Box>
         </Stack>
@@ -771,7 +771,7 @@ export default function EditEventClient() {
             <FormControlLabel
               control={<Switch size="small" checked={requireReconfirmation} onChange={(e) => setRequireReconfirmation(e.target.checked)} />}
               label={<Typography variant="body2" fontWeight={500}>24-hour attendance check</Typography>}
-              sx={{ alignItems: "center", mt: 0.5, mr: 0 }}
+              sx={{ alignItems: "center", mt: 0.5, mr: 0, gap: 0.5 }}
             />
             <Tooltip title="About 24 hours before the plan, people who marked Going will be asked to confirm they are still coming. This includes you as the host." arrow placement="top" enterTouchDelay={0}>
               <IconButton size="small" sx={{ p: 0.25, color: "text.disabled", mt: 0.5 }}>
@@ -819,7 +819,7 @@ export default function EditEventClient() {
             <FormControlLabel
               control={<Switch size="small" checked={requireApproval} onChange={(e) => setRequireApproval(e.target.checked)} />}
               label={<Typography variant="body2" fontWeight={500}>Require approval before joining</Typography>}
-              sx={{ alignItems: "center", mt: 0.5, mr: 0 }}
+              sx={{ alignItems: "center", mt: 0.5, mr: 0, gap: 0.5 }}
             />
             <Tooltip title="People who are not directly invited will need to request to join, and you'll approve or decline each request." arrow placement="top" enterTouchDelay={0}>
               <IconButton size="small" sx={{ p: 0.25, color: "text.disabled", mt: 0.5 }}>
@@ -831,33 +831,43 @@ export default function EditEventClient() {
           <FormControlLabel
             control={<Switch size="small" checked={allowAttendeeInvites} onChange={(e) => setAllowAttendeeInvites(e.target.checked)} />}
             label={<Typography variant="body2" fontWeight={500}>Let Going attendees invite others</Typography>}
-            sx={{ alignItems: "center", mt: 0.5 }}
+            sx={{ alignItems: "center", mt: 0.5, gap: 0.5 }}
           />
+
+          <FormControlLabel
+            control={<Switch size="small" checked={notifyAttendees} onChange={(e) => setNotifyAttendees(e.target.checked)} />}
+            label={<Typography variant="body2" fontWeight={500}>Notify attendees about these changes</Typography>}
+            sx={{ alignItems: "center", mt: 0.5, gap: 0.5 }}
+          />
+          {notifyAttendees && (
+            <Typography variant="caption" color="text.secondary" sx={{ mt: -0.5 }}>
+              Going and Maybe attendees will receive an update about any meaningful changes.
+            </Typography>
+          )}
         </Stack>
       </AppCard>
 
       {/* Matching preferences override */}
       {hostHasPrefs && (
         <AppCard>
-          <Stack spacing={1.5}>
-            <Box
-              onClick={() => setPrefOverridesOpen((v) => !v)}
-              sx={{ display: "flex", alignItems: "center", cursor: "pointer", userSelect: "none" }}
-            >
-              <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem", flex: 1 }}>
-                Matching preferences for this plan
-              </Typography>
-              <ExpandMoreRoundedIcon
-                sx={{
-                  transform: prefOverridesOpen ? "rotate(180deg)" : "rotate(0deg)",
-                  transition: "transform 0.2s",
-                  color: "text.secondary",
-                }}
-              />
-            </Box>
+          <Box
+            onClick={() => setPrefOverridesOpen((v) => !v)}
+            sx={{ display: "flex", alignItems: "center", cursor: "pointer", userSelect: "none" }}
+          >
+            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem", flex: 1 }}>
+              Matching preferences for this plan
+            </Typography>
+            <ExpandMoreRoundedIcon
+              sx={{
+                transform: prefOverridesOpen ? "rotate(180deg)" : "rotate(0deg)",
+                transition: "transform 0.2s",
+                color: "text.secondary",
+              }}
+            />
+          </Box>
 
             <Collapse in={prefOverridesOpen}>
-              <Stack spacing={2} sx={{ pt: 1 }}>
+              <Stack spacing={2} sx={{ pt: 2 }}>
                 <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
                   Your profile chum preferences are used by default when matching people to your plans.
                   You can relax those rules for this plan only, without changing your profile settings.
@@ -875,7 +885,7 @@ export default function EditEventClient() {
                     />
                   }
                   label={<Typography variant="body2" fontWeight={500}>Disable all preference filtering for this plan</Typography>}
-                  sx={{ alignItems: "center" }}
+                  sx={{ alignItems: "center", gap: 0.5 }}
                 />
 
                 {!prefDisableAll && (
@@ -900,20 +910,15 @@ export default function EditEventClient() {
                             Skip <strong>{PREF_METRIC_LABELS[metric]}</strong> filtering
                           </Typography>
                         }
+                        sx={{ gap: 0.5 }}
                       />
                     ))}
                   </Stack>
                 )}
               </Stack>
             </Collapse>
-          </Stack>
         </AppCard>
       )}
-
-      {/* Info note */}
-      <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem", lineHeight: 1.65, px: 0.5 }}>
-        Saving changes to this plan (such as date, description, capacity, or visibility) will send an update email to attendees who are Going or Maybe.
-      </Typography>
 
       {/* Actions */}
       {/* Community association */}
@@ -928,6 +933,7 @@ export default function EditEventClient() {
               control={<Switch checked={hideFromExplore} onChange={(e) => setHideFromExplore(e.target.checked)} size="small" />}
               label="Members only"
               slotProps={{ typography: { variant: "body2" } }}
+              sx={{ gap: 0.5 }}
             />
             <Typography variant="caption" color="text.secondary" sx={{ mt: -0.5 }}>
               When on, this plan only appears in the community feed and to members in their Explore. Others won&#39;t see it.
@@ -944,6 +950,7 @@ export default function EditEventClient() {
               control={<Switch checked={isQa} onChange={(e) => setIsQa(e.target.checked)} size="small" />}
               label="QA plan"
               slotProps={{ typography: { variant: "subtitle1", fontWeight: 600, fontSize: "1.0625rem" } }}
+              sx={{ gap: 0.5 }}
             />
             <Typography variant="caption" color="text.secondary" sx={{ mt: -0.5 }}>
               QA plans are only visible to super admins. Normal users will never see this plan anywhere in the system.

@@ -26676,6 +26676,36 @@ function validateCleanText(input, field) {
 }
 __name(validateCleanText, "validateCleanText");
 
+// src/lib/sanitizeHtml.ts
+init_modules_watch_stub();
+init_virtual_unenv_global_polyfill_cloudflare_unenv_preset_node_process();
+init_performance2();
+var ALLOWED_TAGS = /* @__PURE__ */ new Set(["p", "strong", "em", "ul", "ol", "li", "a", "br"]);
+function escapeHtmlAttr(s) {
+  return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+__name(escapeHtmlAttr, "escapeHtmlAttr");
+function sanitizeDescriptionHtml(raw2) {
+  if (!raw2) return "";
+  return raw2.replace(/<\/?([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)>/g, (match2, tagName, attrs) => {
+    const tag3 = tagName.toLowerCase();
+    if (!ALLOWED_TAGS.has(tag3)) return "";
+    const isClosing = match2.startsWith("</");
+    if (isClosing) return `</${tag3}>`;
+    if (tag3 === "br") return "<br>";
+    if (tag3 === "a") {
+      const hrefMatch = attrs.match(/href\s*=\s*["']([^"']*)["']/i);
+      const href = hrefMatch?.[1] ?? "";
+      if (href && /^(https?:\/\/|mailto:)/i.test(href)) {
+        return `<a href="${escapeHtmlAttr(href)}" rel="noopener noreferrer" target="_blank">`;
+      }
+      return `<a rel="noopener noreferrer" target="_blank">`;
+    }
+    return `<${tag3}>`;
+  });
+}
+__name(sanitizeDescriptionHtml, "sanitizeDescriptionHtml");
+
 // src/lib/turnstile.ts
 init_modules_watch_stub();
 init_virtual_unenv_global_polyfill_cloudflare_unenv_preset_node_process();
@@ -32423,7 +32453,7 @@ app.post("/events", async (c) => {
   if (!title2 || title2.length > 200) return c.json({ ok: false, error: "VALIDATION", message: "Title is required (max 200 chars)", field: "title" }, 400);
   const titleCheck = validateCleanText(title2, "title");
   if (!titleCheck.ok) return c.json({ ok: false, error: "INAPPROPRIATE_TEXT", field: "title" }, 400);
-  const description = body.description ? String(body.description).trim().slice(0, 2e3) : null;
+  const description = body.description ? sanitizeDescriptionHtml(String(body.description).trim().slice(0, 5e3)) || null : null;
   const seedInterestIds = Array.isArray(body.interest_ids) ? body.interest_ids.map(String).filter(Boolean).slice(0, 10) : body.interest_id ? [String(body.interest_id)] : [];
   const rawInterestItems = Array.isArray(body.interest_items) ? body.interest_items.slice(0, 10) : [];
   const startsAt = body.starts_at ? String(body.starts_at) : null;
@@ -34465,7 +34495,7 @@ app.patch("/events/:id", async (c) => {
     const rawTitle = body.title != null ? String(body.title).trim() : null;
     if (!rawTitle) return c.json({ ok: false, error: "VALIDATION", message: "Title is required", field: "title" }, 400);
     if (rawTitle.length > 200) return c.json({ ok: false, error: "VALIDATION", message: "Title must be 200 characters or less", field: "title" }, 400);
-    const description = body.description != null ? String(body.description).trim().slice(0, 2e3) || null : null;
+    const description = body.description != null ? sanitizeDescriptionHtml(String(body.description).trim().slice(0, 5e3)) || null : null;
     const startsAtRaw = body.starts_at ? String(body.starts_at) : null;
     if (!startsAtRaw) return c.json({ ok: false, error: "VALIDATION", message: "Date and time are required", field: "starts_at" }, 400);
     const startsAt = new Date(startsAtRaw);
@@ -34698,9 +34728,12 @@ app.patch("/events/:id", async (c) => {
       beforeTitle: before.title,
       newTitle: rawTitle
     }));
-    c.executionCtx.waitUntil(
-      notifyAttendeesPlanChanged(sql, c.env, eventId, userId, rawTitle, "updated", changes)
-    );
+    const shouldNotify = body.notify_attendees !== false;
+    if (shouldNotify) {
+      c.executionCtx.waitUntil(
+        notifyAttendeesPlanChanged(sql, c.env, eventId, userId, rawTitle, "updated", changes)
+      );
+    }
     return c.json({ ok: true });
   } catch (err) {
     console.error("[PATCH /events/:id]", err);
