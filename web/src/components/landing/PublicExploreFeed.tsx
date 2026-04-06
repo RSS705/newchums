@@ -243,7 +243,7 @@ export default function PublicExploreFeed() {
           >
             {displayEvents.map((ev) => (
               <Grid key={ev.id} size={{ xs: 12, sm: 6, md: 4 }}>
-                <EventCard event={ev} isExample={showSampleFallback} />
+                <EventCard event={ev} isExample={showSampleFallback} hideRsvp />
               </Grid>
             ))}
           </Grid>
@@ -274,7 +274,7 @@ export default function PublicExploreFeed() {
               </Button>
             ) : events.length > 0 ? (
               <Stack spacing={1.5} alignItems="center">
-                <Typography variant="body2" color="text.secondary">
+                <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center", maxWidth: 440 }}>
                   Sign up to see more plans, get personalized recommendations, and create your own.
                 </Typography>
                 <Button

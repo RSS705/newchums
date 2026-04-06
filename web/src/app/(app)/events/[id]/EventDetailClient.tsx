@@ -60,6 +60,8 @@ import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
 import CancelRoundedIcon from "@mui/icons-material/CancelRounded";
 import FlagRoundedIcon from "@mui/icons-material/FlagRounded";
 import HistoryRoundedIcon from "@mui/icons-material/HistoryRounded";
+import VisibilityOffRoundedIcon from "@mui/icons-material/VisibilityOffRounded";
+import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import UserAvatar from "@/components/common/UserAvatar";
@@ -154,6 +156,7 @@ type RsvpEntry = {
   guestEmail?: string | null;
   prefNotes?: string[] | null;
   isChumSaved?: boolean;
+  hideName?: boolean;
 };
 type AltTimeEntry = {
   id: string;
@@ -4899,8 +4902,8 @@ export default function EventDetailClient() {
                         sx={{ fontWeight: 500, fontSize: "0.6875rem" }}
                       />
                     )}
-                    {/* Overflow menu trigger — shown when there are any applicable actions for this attendee */}
-                    {viewerUserId && r.userId !== viewerUserId && !r.isGuest && (
+                    {/* Overflow menu trigger — shown for other attendees (chum/remove actions) and for self (hide name) */}
+                    {viewerUserId && !r.isGuest && (
                       <IconButton
                         size="small"
                         onClick={(e) => {
@@ -5376,8 +5379,36 @@ export default function EventDetailClient() {
           },
         }}
       >
+        {/* Hide / Show my name (self only) */}
+        {attendeeMenuTarget && viewerUserId && attendeeMenuTarget.userId === viewerUserId && (
+          <MenuItem
+            onClick={async () => {
+              const target = attendeeMenuTarget;
+              setAttendeeMenuAnchor(null);
+              setAttendeeMenuTarget(null);
+              try {
+                const res = await apiFetch(`/events/${event.id}/hide-name`, { auth: true, method: "POST" });
+                const data = await res.json();
+                if (data.ok) {
+                  setRsvps((prev) => prev.map((r) =>
+                    r.userId === target.userId ? { ...r, hideName: data.hideName } : r
+                  ));
+                  toast.success(data.hideName ? "Your name is now hidden on this plan" : "Your name is now visible on this plan");
+                  refresh();
+                }
+              } catch { /* noop */ }
+            }}
+          >
+            <ListItemIcon>
+              {attendeeMenuTarget.hideName
+                ? <VisibilityRoundedIcon fontSize="small" />
+                : <VisibilityOffRoundedIcon fontSize="small" />}
+            </ListItemIcon>
+            <ListItemText>{attendeeMenuTarget.hideName ? "Show my name" : "Hide my name"}</ListItemText>
+          </MenuItem>
+        )}
         {/* View profile */}
-        {attendeeMenuTarget?.handle && (
+        {attendeeMenuTarget?.handle && attendeeMenuTarget.userId !== viewerUserId && (
           <MenuItem
             component={Link}
             href={`/u/${attendeeMenuTarget.handle.replace(/^@/, "")}`}

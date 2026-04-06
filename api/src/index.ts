@@ -8041,13 +8041,13 @@ app.get("/events/:id", async (c) => {
     }
 
     const rsvps = (await sql`
-      SELECT er.status, er.note, er.user_id, er.guest_email, er.guest_name,
+      SELECT er.status, er.note, er.user_id, er.guest_email, er.guest_name, er.hide_name,
              u.name, u.username, u.avatar_key, u.avatar_updated_at
       FROM newchums.event_rsvps er
       LEFT JOIN newchums.users u ON u.id = er.user_id
       WHERE er.event_id = ${eventId}
       ORDER BY er.created_at ASC
-    `) as Array<{ status: string; note: string | null; user_id: string | null; guest_email: string | null; guest_name: string | null; name: string | null; username: string | null; avatar_key: string | null; avatar_updated_at: string | Date | null }>;
+    `) as Array<{ status: string; note: string | null; user_id: string | null; guest_email: string | null; guest_name: string | null; hide_name: boolean; name: string | null; username: string | null; avatar_key: string | null; avatar_updated_at: string | Date | null }>;
 
     // Batch chum-status lookup: which RSVP'd users has the viewer already saved?
     const chumSavedSet = new Set<string>();
@@ -8263,9 +8263,12 @@ app.get("/events/:id", async (c) => {
       rsvps: rsvps.map((r) => {
         const rHandle = r.username?.replace(/^@/, "") ?? null;
         const rPrefNotes = r.user_id ? (attendeePrefNotes.get(r.user_id) ?? null) : null;
-        const displayName = accessState === "attending"
-          ? (r.name?.trim() || rHandle || r.guest_name || r.guest_email || "Someone")
-          : (rHandle || r.guest_name || r.guest_email || "Someone");
+        const nameHidden = r.hide_name === true;
+        const displayName = nameHidden
+          ? (rHandle || "Someone")
+          : accessState === "attending"
+            ? (r.name?.trim() || rHandle || r.guest_name || r.guest_email || "Someone")
+            : (rHandle || r.guest_name || r.guest_email || "Someone");
         return {
           userId: r.user_id ?? r.guest_email ?? "guest",
           name: displayName,
@@ -8278,6 +8281,8 @@ app.get("/events/:id", async (c) => {
           confirmationStatus: r.user_id ? (confirmationByUserId.get(r.user_id) ?? null) : null,
           ...(rPrefNotes ? { prefNotes: rPrefNotes } : {}),
           ...(userId && r.user_id && r.user_id !== userId ? { isChumSaved: chumSavedSet.has(r.user_id) } : {}),
+          // Only tell the viewer about their own hide_name state
+          ...(userId && r.user_id === userId ? { hideName: nameHidden } : {}),
         };
       }),
       altTimes: altTimes.map((a) => {
@@ -8476,6 +8481,34 @@ app.post("/events/:id/rsvp", async (c) => {
     return c.json({ ok: true, status });
   } catch (err) {
     console.error("[POST /events/:id/rsvp]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /events/:id/hide-name, toggle hide_name on the viewer's RSVP for this event */
+app.post("/events/:id/hide-name", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email) return c.json({ ok: false, error: "AUTH_REQUIRED" }, 401);
+
+  const sql = getSql(c.env);
+  const eventId = c.req.param("id");
+  const users = (await sql`SELECT id FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string }[];
+  if (users.length === 0) return c.json({ ok: false, error: "AUTH_REQUIRED" }, 401);
+  const userId = users[0].id;
+
+  try {
+    const rows = (await sql`
+      UPDATE newchums.event_rsvps
+      SET hide_name = NOT hide_name, updated_at = NOW()
+      WHERE event_id = ${eventId} AND user_id = ${userId}
+      RETURNING hide_name
+    `) as { hide_name: boolean }[];
+
+    if (rows.length === 0) return c.json({ ok: false, error: "NOT_FOUND", message: "No RSVP found for this event" }, 404);
+
+    return c.json({ ok: true, hideName: rows[0].hide_name });
+  } catch (err) {
+    console.error("[POST /events/:id/hide-name]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });
@@ -10365,9 +10398,10 @@ app.post("/events/:id/join-request/:requestId/approve", async (c) => {
 
     // Add as Going
     await sql`
-      INSERT INTO newchums.event_rsvps (event_id, user_id, status)
-      VALUES (${eventId}, ${req[0].user_id}, 'going')
-      ON CONFLICT (event_id, user_id) DO UPDATE SET status = 'going', updated_at = NOW()
+      INSERT INTO newchums.event_rsvps (event_id, user_id, status, committed_at)
+      VALUES (${eventId}, ${req[0].user_id}, 'going', NOW())
+      ON CONFLICT (event_id, user_id) DO UPDATE SET status = 'going', updated_at = NOW(),
+        committed_at = COALESCE(newchums.event_rsvps.committed_at, NOW())
     `;
 
     // Notify requester (in-app)

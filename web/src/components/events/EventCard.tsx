@@ -59,6 +59,8 @@ type EventCardProps = {
   hrefOverride?: string;
   /** Viewer's hobby slugs, matching hobby chips get a subtle highlight */
   viewerHobbySlugs?: ReadonlySet<string>;
+  /** Hide the RSVP status row (e.g. on public preview where the viewer has no RSVP) */
+  hideRsvp?: boolean;
 };
 
 function formatDateTime(iso: string): string {
@@ -103,6 +105,7 @@ const EventCard = React.memo(function EventCard({
   isExample = false,
   hrefOverride,
   viewerHobbySlugs,
+  hideRsvp = false,
 }: EventCardProps) {
   const isCanceled = event.status === "canceled";
   const hobbies = event.hobbies?.length
@@ -336,7 +339,7 @@ const EventCard = React.memo(function EventCard({
           </Stack>
 
           {/* RSVP status (for non-hosts) */}
-          {!event.isHost && !isExample && (
+          {!event.isHost && !isExample && !hideRsvp && (
             <Box sx={{ mt: 1.75, pt: 1.25, borderTop: "1px solid", borderColor: "grey.200" }}>
               <Typography variant="body2" sx={{ color: rsvpColor(event.myRsvpStatus), fontWeight: 600, fontSize: "0.8125rem" }}>
                 {rsvpLabel(event.myRsvpStatus)}
