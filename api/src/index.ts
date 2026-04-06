@@ -413,6 +413,16 @@ app.get("/public/users/:userId/attendance-record", async (c) => {
       SELECT created_at FROM newchums.users WHERE id = ${targetUserId} LIMIT 1
     `) as { created_at: string | Date }[];
 
+    // ─── Local recognition badges (precomputed hourly by cron) ─────────────────
+    let badges: { type: string; tier: string; count: number; rank: number; totalInArea: number }[] = [];
+    try {
+      badges = (await sql`
+        SELECT badge_type AS type, tier, count, rank, total_in_area AS "totalInArea"
+        FROM newchums.user_badges
+        WHERE user_id = ${targetUserId}
+      `) as typeof badges;
+    } catch { /* table may not exist yet before migration 070 runs */ }
+
     // Reliability metrics are only returned for authenticated viewers
     if (!viewerAuthenticated) {
       return c.json({
@@ -426,6 +436,7 @@ app.get("/public/users/:userId/attendance-record", async (c) => {
           hostCompletion: zeroRatio,
           memberSince: memberSince[0]?.created_at ?? null,
           reliabilityHidden: true,
+          badges,
         },
       });
     }
@@ -506,6 +517,7 @@ app.get("/public/users/:userId/attendance-record", async (c) => {
           denominator: hostCompletion[0]?.total_hosted ?? 0,
         },
         memberSince: memberSince[0]?.created_at ?? null,
+        badges,
       },
     });
   } catch (err) {
@@ -7675,13 +7687,13 @@ app.get("/events/explore", async (c) => {
           OR (
             (COALESCE(hp.reliability_level, 'preferred') = 'open'
               OR (e.pref_overrides IS NOT NULL AND e.pref_overrides->'disabled_metrics' ? 'reliability')
-              OR ${viewerReliability} >= CASE COALESCE(hp.reliability_level, 'preferred') WHEN 'preferred' THEN 35 WHEN 'important' THEN 45 WHEN 'required' THEN 55 ELSE 0 END)
+              OR ${viewerReliability} >= CASE COALESCE(hp.reliability_level, 'preferred') WHEN 'preferred' THEN 35.0 WHEN 'important' THEN 45.0 WHEN 'required' THEN 55.0 ELSE 0.0 END)
             AND (COALESCE(hp.sociability_level, 'open') = 'open'
               OR (e.pref_overrides IS NOT NULL AND e.pref_overrides->'disabled_metrics' ? 'sociability')
-              OR ${viewerSociability} >= CASE COALESCE(hp.sociability_level, 'open') WHEN 'preferred' THEN 35 WHEN 'important' THEN 45 WHEN 'required' THEN 55 ELSE 0 END)
+              OR ${viewerSociability} >= CASE COALESCE(hp.sociability_level, 'open') WHEN 'preferred' THEN 35.0 WHEN 'important' THEN 45.0 WHEN 'required' THEN 55.0 ELSE 0.0 END)
             AND (COALESCE(hp.presentation_level, 'open') = 'open'
               OR (e.pref_overrides IS NOT NULL AND e.pref_overrides->'disabled_metrics' ? 'presentation')
-              OR ${viewerPresentation} >= CASE COALESCE(hp.presentation_level, 'open') WHEN 'preferred' THEN 35 WHEN 'important' THEN 45 WHEN 'required' THEN 55 ELSE 0 END)
+              OR ${viewerPresentation} >= CASE COALESCE(hp.presentation_level, 'open') WHEN 'preferred' THEN 35.0 WHEN 'important' THEN 45.0 WHEN 'required' THEN 55.0 ELSE 0.0 END)
           )
         )
         ${hobbySlug ? sql`AND EXISTS (SELECT 1 FROM newchums.event_interests ei3 JOIN newchums.interests ii3 ON ii3.id = ei3.interest_id WHERE ei3.event_id = e.id AND ii3.slug = ${hobbySlug})` : sql``}
@@ -12850,6 +12862,150 @@ async function cancelNoAttendeePlans(sql: ReturnType<typeof getSql>) {
   }
 }
 
+// ─── Local recognition badge computation ─────────────────────────────────────
+
+async function computeLocalBadges(sql: ReturnType<typeof getSql>) {
+  const BADGE_RADIUS_KM = 50;
+  const BADGE_MIN_THRESHOLD = 1;
+  const now = new Date().toISOString();
+  const twelveMonthsAgo = new Date(Date.now() - 365 * 86400000).toISOString();
+
+  // Get all users with a home location
+  const locatedUsers = (await sql`
+    SELECT user_id, home_lat, home_lng FROM user_profile
+    WHERE home_lat IS NOT NULL AND home_lng IS NOT NULL
+  `) as { user_id: string; home_lat: number; home_lng: number }[];
+
+  if (locatedUsers.length === 0) return;
+
+  // Build a lookup for fast access
+  const locMap = new Map(locatedUsers.map((u) => [u.user_id, u]));
+
+  // ── Attendee counts per user (global, we'll filter by radius per-user later) ──
+  const attendeeCounts = (await sql`
+    SELECT r.user_id, COUNT(DISTINCT e.id)::int AS cnt
+    FROM newchums.event_rsvps r
+    JOIN newchums.events e ON e.id = r.event_id
+    WHERE r.status = 'going'
+      AND r.committed_at IS NOT NULL
+      AND e.status != 'canceled'
+      AND COALESCE(e.is_qa, false) = false
+      AND e.starts_at < ${now}
+      AND e.starts_at >= ${twelveMonthsAgo}
+      AND NOT EXISTS (
+        SELECT 1 FROM newchums.attendance_issues ai
+        WHERE ai.plan_id = e.id AND ai.reported_user_id = r.user_id
+          AND ai.issue_type IN ('no_show', 'very_late')
+          AND COALESCE(ai.status, 'active') != 'dismissed'
+      )
+    GROUP BY r.user_id
+    HAVING COUNT(DISTINCT e.id) >= ${BADGE_MIN_THRESHOLD}
+  `) as { user_id: string; cnt: number }[];
+
+  const attendeeMap = new Map(attendeeCounts.map((r) => [r.user_id, r.cnt]));
+
+  // ── Host counts per user ──
+  const hostCounts = (await sql`
+    SELECT e.host_user_id AS user_id, COUNT(DISTINCT e.id)::int AS cnt
+    FROM newchums.events e
+    WHERE e.status != 'canceled'
+      AND COALESCE(e.is_qa, false) = false
+      AND e.starts_at < ${now}
+      AND e.starts_at >= ${twelveMonthsAgo}
+      AND COALESCE(e.cancellation_reason, '') != 'no_attendees'
+      AND EXISTS (
+        SELECT 1 FROM newchums.event_rsvps er
+        WHERE er.event_id = e.id
+          AND er.user_id != e.host_user_id
+          AND er.committed_at IS NOT NULL
+      )
+    GROUP BY e.host_user_id
+    HAVING COUNT(DISTINCT e.id) >= ${BADGE_MIN_THRESHOLD}
+  `) as { user_id: string; cnt: number }[];
+
+  const hostMap = new Map(hostCounts.map((r) => [r.user_id, r.cnt]));
+
+  // ── Haversine helper ──
+  function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+    const toRad = Math.PI / 180;
+    const dLat = (lat2 - lat1) * toRad;
+    const dLng = (lng2 - lng1) * toRad;
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * toRad) * Math.cos(lat2 * toRad) * Math.sin(dLng / 2) ** 2;
+    return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  // ── Compute badges per user by ranking within their local area ──
+  type BadgeRow = { user_id: string; badge_type: string; tier: string; count: number; rank: number; total_in_area: number };
+  const allBadges: BadgeRow[] = [];
+
+  for (const user of locatedUsers) {
+    // Find all located users within radius
+    const nearby = locatedUsers.filter(
+      (other) => haversineKm(user.home_lat, user.home_lng, other.home_lat, other.home_lng) <= BADGE_RADIUS_KM
+    );
+
+    // Top Attendee ranking
+    const attendeeInArea = nearby
+      .map((u) => ({ user_id: u.user_id, cnt: attendeeMap.get(u.user_id) ?? 0 }))
+      .filter((u) => u.cnt >= BADGE_MIN_THRESHOLD)
+      .sort((a, b) => b.cnt - a.cnt);
+
+    if (attendeeInArea.length > 0) {
+      const idx = attendeeInArea.findIndex((u) => u.user_id === user.user_id);
+      if (idx >= 0) {
+        const rank = idx + 1;
+        const pctile = rank / attendeeInArea.length;
+        const tier = pctile <= 0.10 ? "gold" : pctile <= 0.20 ? "silver" : pctile <= 0.30 ? "bronze" : null;
+        if (tier) {
+          allBadges.push({ user_id: user.user_id, badge_type: "top_attendee", tier, count: attendeeInArea[idx].cnt, rank, total_in_area: attendeeInArea.length });
+        }
+      }
+    }
+
+    // Top Host ranking
+    const hostInArea = nearby
+      .map((u) => ({ user_id: u.user_id, cnt: hostMap.get(u.user_id) ?? 0 }))
+      .filter((u) => u.cnt >= BADGE_MIN_THRESHOLD)
+      .sort((a, b) => b.cnt - a.cnt);
+
+    if (hostInArea.length > 0) {
+      const idx = hostInArea.findIndex((u) => u.user_id === user.user_id);
+      if (idx >= 0) {
+        const rank = idx + 1;
+        const pctile = rank / hostInArea.length;
+        const tier = pctile <= 0.10 ? "gold" : pctile <= 0.20 ? "silver" : pctile <= 0.30 ? "bronze" : null;
+        if (tier) {
+          allBadges.push({ user_id: user.user_id, badge_type: "top_host", tier, count: hostInArea[idx].cnt, rank, total_in_area: hostInArea.length });
+        }
+      }
+    }
+  }
+
+  // ── Write results: clear old badges and insert new ones ──
+  await sql`DELETE FROM newchums.user_badges`;
+
+  if (allBadges.length > 0) {
+    // Batch insert in chunks of 500
+    for (let i = 0; i < allBadges.length; i += 500) {
+      const chunk = allBadges.slice(i, i + 500);
+      await sql`
+        INSERT INTO newchums.user_badges (user_id, badge_type, tier, count, rank, total_in_area, computed_at)
+        SELECT * FROM UNNEST(
+          ${chunk.map((b) => b.user_id)}::uuid[],
+          ${chunk.map((b) => b.badge_type)}::text[],
+          ${chunk.map((b) => b.tier)}::text[],
+          ${chunk.map((b) => b.count)}::int[],
+          ${chunk.map((b) => b.rank)}::int[],
+          ${chunk.map((b) => b.total_in_area)}::int[],
+          ${chunk.map(() => now)}::timestamptz[]
+        )
+      `;
+    }
+  }
+
+  console.log(`[computeLocalBadges] computed ${allBadges.length} badges for ${locatedUsers.length} located users`);
+}
+
 // ─── Scheduled handler ────────────────────────────────────────────────────────
 
 async function handleScheduled(
@@ -13001,6 +13157,13 @@ async function handleScheduled(
     await processPlanFeedbackEmails(sql, env, ctx);
   } catch (err) {
     console.error("[scheduled] plan feedback email error:", err);
+  }
+
+  // Local recognition badges (hourly refresh)
+  try {
+    await computeLocalBadges(sql);
+  } catch (err) {
+    console.error("[scheduled] local badges error:", err);
   }
 }
 

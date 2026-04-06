@@ -1170,6 +1170,49 @@ Core tables include:
 
 PostGIS is available for geo queries.
 
+### Local recognition badges
+
+The attendance-record endpoint (`GET /public/users/:userId/attendance-record`) returns a `badges` array alongside existing Chum Stats. Badges are public and returned for all viewers (authenticated or not).
+
+**Schema:** `newchums.user_badges` (migration 070) stores precomputed badge results. Primary key `(user_id, badge_type)`. Columns: `tier`, `count`, `rank`, `total_in_area`, `computed_at`.
+
+**Badge types:**
+
+| Badge | Metric | Eligibility criteria |
+|-------|--------|---------------------|
+| Top Attendee | Plans attended with follow-through | Going RSVP, `committed_at` set, no unresolved no-show/very-late issues, event not canceled, not QA |
+| Top Host | Plans successfully hosted | Host of non-canceled event, not QA, at least one non-host committed attendee, cancellation_reason != 'no_attendees' |
+
+**Tiers (percentile of local ranking):**
+
+| Tier | Percentile | Meaning |
+|------|-----------|---------|
+| Gold | Top 10% | Highest activity in area |
+| Silver | Top 20% | Very active in area |
+| Bronze | Top 30% | Active in area |
+
+**Key parameters:**
+
+- **Time window:** Rolling last 12 months (`e.starts_at >= NOW() - 365 days`)
+- **Minimum threshold:** 1 qualifying plan (intentionally low for early-stage community; constant `BADGE_MIN_THRESHOLD` in the cron function)
+- **Local area:** 50 km radius from each user's `home_lat`/`home_lng` (Haversine distance, constant `BADGE_RADIUS_KM`). All users with a home location within this radius are included in the comparison group.
+- **No location = no badges:** Users without a home location set receive an empty badges array.
+
+**Update cadence:**
+
+- Badges are **precomputed hourly** by the `computeLocalBadges()` cron function, which runs as part of the existing Cloudflare Worker scheduled handler (`0 * * * *`).
+- The cron function fetches global attendee/host counts in two queries, then ranks each located user against their 50 km neighborhood in-memory using Haversine distance.
+- Results are written to `newchums.user_badges` (full table replace: DELETE + INSERT).
+- The attendance-record endpoint reads badges with a simple `SELECT ... WHERE user_id = ?` — no per-request aggregation.
+- A badge can appear, change tier, or disappear after the next hourly cron run.
+
+**Response shape (per badge):**
+```json
+{ "type": "top_attendee", "tier": "gold", "count": 12, "rank": 1, "totalInArea": 47 }
+```
+
+**UI:** Badges render as compact tier-colored pill chips with a trophy icon in the Chum Stats card, between the header and the reliability metrics. Each badge has a tooltip explaining the tier, rank, area context, and 12-month window.
+
 ### Avatar storage (R2)
 
 - Bucket: `newchums-media` (binding `MEDIA_BUCKET`)

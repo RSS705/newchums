@@ -4782,18 +4782,44 @@ export default function EventDetailClient() {
                         )}
                       </Box>
                     ) : (
-                      <Typography
-                        variant="body1"
-                        fontWeight={600}
-                        sx={{
-                          fontSize: "1rem",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {r.name}
-                      </Typography>
+                      <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
+                        <Typography
+                          variant="body1"
+                          fontWeight={600}
+                          sx={{
+                            fontSize: "1rem",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            color: r.isGuest ? "text.secondary" : "text.primary",
+                          }}
+                        >
+                          {r.name}
+                        </Typography>
+                        {r.isGuest && (
+                          <Tooltip
+                            title="Joined via invite link without a NewChums account. Profile and chum features aren't available for guests yet."
+                            arrow
+                            placement="top"
+                            enterTouchDelay={0}
+                          >
+                            <Chip
+                              label="Guest"
+                              size="small"
+                              variant="outlined"
+                              sx={{
+                                height: 20,
+                                fontSize: "0.6875rem",
+                                fontWeight: 600,
+                                color: "text.disabled",
+                                borderColor: "divider",
+                                cursor: "help",
+                                flexShrink: 0,
+                              }}
+                            />
+                          </Tooltip>
+                        )}
+                      </Stack>
                     )}
                   </Box>
                   <Stack

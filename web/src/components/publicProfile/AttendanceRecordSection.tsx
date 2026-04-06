@@ -5,6 +5,7 @@ import Skeleton from "@mui/material/Skeleton";
 import Stack from "@mui/material/Stack";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
+import Chip from "@mui/material/Chip";
 import EventAvailableRoundedIcon from "@mui/icons-material/EventAvailableRounded";
 import CheckCircleOutlineRoundedIcon from "@mui/icons-material/CheckCircleOutlineRounded";
 import HandshakeRoundedIcon from "@mui/icons-material/HandshakeRounded";
@@ -12,11 +13,20 @@ import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
 import CampaignRoundedIcon from "@mui/icons-material/CampaignRounded";
 import ThumbUpAltRoundedIcon from "@mui/icons-material/ThumbUpAltRounded";
 import StarRoundedIcon from "@mui/icons-material/StarRounded";
+import EmojiEventsRoundedIcon from "@mui/icons-material/EmojiEventsRounded";
 import { useEffect, useState } from "react";
 import { AppCard } from "@/components/ui";
 import { apiFetch } from "@/lib/apiClient";
 
 type RatioMetric = { numerator: number; denominator: number };
+
+type BadgeEntry = {
+  type: string;
+  tier: "gold" | "silver" | "bronze";
+  count: number;
+  rank: number;
+  totalInArea: number;
+};
 
 type AttendanceRecord = {
   goingFollowThrough: RatioMetric;
@@ -26,6 +36,7 @@ type AttendanceRecord = {
   plansHosted: number;
   hostCompletion: RatioMetric;
   memberSince: string | null;
+  badges?: BadgeEntry[];
 };
 
 type AttendanceRecordSectionProps = {
@@ -144,6 +155,46 @@ function MetricCard({ icon, label, value, ratio, tooltipTitle }: MetricCardProps
   return card;
 }
 
+const TIER_COLORS: Record<string, { bg: string; border: string; icon: string }> = {
+  gold:   { bg: "linear-gradient(135deg, #FFF8E1 0%, #FFF3C4 100%)", border: "#F9D649", icon: "#D4A017" },
+  silver: { bg: "linear-gradient(135deg, #F5F5F5 0%, #E8E8E8 100%)", border: "#B0B0B0", icon: "#757575" },
+  bronze: { bg: "linear-gradient(135deg, #FFF3E0 0%, #FFE0B2 100%)", border: "#E0A060", icon: "#C17832" },
+};
+
+const TIER_LABELS: Record<string, string> = { gold: "Gold", silver: "Silver", bronze: "Bronze" };
+
+const BADGE_TYPE_LABELS: Record<string, string> = { top_attendee: "Top Attendee", top_host: "Top Host" };
+
+function BadgePill({ badge }: { badge: BadgeEntry }) {
+  const tier = TIER_COLORS[badge.tier] ?? TIER_COLORS.bronze;
+  const tierLabel = TIER_LABELS[badge.tier] ?? badge.tier;
+  const typeLabel = BADGE_TYPE_LABELS[badge.type] ?? badge.type;
+  const pctLabel = badge.tier === "gold" ? "top 10%" : badge.tier === "silver" ? "top 20%" : "top 30%";
+
+  const tooltip = `${tierLabel} ${typeLabel} — Ranked #${badge.rank} of ${badge.totalInArea} in your area (${pctLabel}). Based on ${badge.count} plan${badge.count === 1 ? "" : "s"} in the last 12 months.`;
+
+  return (
+    <Tooltip title={tooltip} arrow placement="top" enterTouchDelay={0}>
+      <Chip
+        icon={<EmojiEventsRoundedIcon sx={{ fontSize: 16, color: `${tier.icon} !important` }} />}
+        label={`${tierLabel} ${typeLabel}`}
+        size="small"
+        sx={{
+          fontWeight: 700,
+          fontSize: "0.75rem",
+          height: 28,
+          background: tier.bg,
+          border: "1px solid",
+          borderColor: tier.border,
+          color: tier.icon,
+          "& .MuiChip-icon": { ml: 0.5 },
+          "& .MuiChip-label": { px: 1 },
+        }}
+      />
+    </Tooltip>
+  );
+}
+
 function statsSectionTitle({
   variant,
   isOwner,
@@ -228,6 +279,15 @@ export default function AttendanceRecordSection({ userId, isOwner, displayName, 
             </Typography>
           </Box>
         </Stack>
+
+        {/* Local recognition badges */}
+        {record?.badges && record.badges.length > 0 && (
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            {record.badges.map((b) => (
+              <BadgePill key={b.type} badge={b} />
+            ))}
+          </Stack>
+        )}
 
         {loading ? (
           <Stack spacing={1.5}>
