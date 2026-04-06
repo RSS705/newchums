@@ -169,9 +169,10 @@ function BadgePill({ badge }: { badge: BadgeEntry }) {
   const tier = TIER_COLORS[badge.tier] ?? TIER_COLORS.bronze;
   const tierLabel = TIER_LABELS[badge.tier] ?? badge.tier;
   const typeLabel = BADGE_TYPE_LABELS[badge.type] ?? badge.type;
-  const pctLabel = badge.tier === "gold" ? "top 10%" : badge.tier === "silver" ? "top 20%" : "top 30%";
+  const pctLabel = badge.tier === "gold" ? "Top 10%" : badge.tier === "silver" ? "Top 20%" : "Top 30%";
+  const activityLabel = badge.type === "top_host" ? "hosting" : "attending";
 
-  const tooltip = `${tierLabel} ${typeLabel} — Ranked #${badge.rank} of ${badge.totalInArea} in your area (${pctLabel}). Based on ${badge.count} plan${badge.count === 1 ? "" : "s"} in the last 12 months.`;
+  const tooltip = `${pctLabel} for ${activityLabel} plans in your area, based on the last 12 months of activity.`;
 
   return (
     <Tooltip title={tooltip} arrow placement="top" enterTouchDelay={0}>
