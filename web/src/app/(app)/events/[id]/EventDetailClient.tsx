@@ -1951,14 +1951,18 @@ export default function EventDetailClient() {
 
   // Invitees who haven't RSVP'd yet (shown with "Invited" status in Who's in)
   const rsvpUserIds = new Set(rsvps.map((r) => r.userId));
-  const pendingInvites = invites.filter((inv) => inv.userId && !rsvpUserIds.has(inv.userId));
+  const allPendingInvites = invites.filter((inv) => inv.userId && !rsvpUserIds.has(inv.userId));
+  // Only the host sees all pending invites; other viewers only see their own invite (if any).
+  const pendingInvites = event.isHost
+    ? allPendingInvites
+    : allPendingInvites.filter((inv) => viewerUserId && inv.userId === viewerUserId);
   // Reserved seats: pending invites + maybe RSVPs from invitees (maybe RSVPs
   // already appear in the RSVP list but their seat stays held when reserve_seats is on)
   const maybeInviteeCount = event.reserveSeats
     ? rsvps.filter((r) => r.status === "maybe" && invites.some((inv) => inv.userId === r.userId))
         .length
     : 0;
-  const reservedSeatCount = event.reserveSeats ? pendingInvites.length + maybeInviteeCount : 0;
+  const reservedSeatCount = event.reserveSeats ? allPendingInvites.length + maybeInviteeCount : 0;
   const isFull = event.maxSeats != null && goingCount + reservedSeatCount >= event.maxSeats;
 
   // Request-to-join derived state
@@ -3616,21 +3620,6 @@ export default function EventDetailClient() {
 
                 <TextField
                   fullWidth
-                  size="small"
-                  multiline
-                  minRows={2}
-                  maxRows={4}
-                  placeholder="Add a personal note (optional)"
-                  value={inviteMessage}
-                  onChange={(e) => {
-                    if (e.target.value.length <= 500) setInviteMessage(e.target.value);
-                  }}
-                  helperText={inviteMessage.length > 0 ? `${inviteMessage.length}/500` : undefined}
-                  sx={{ "& .MuiFormHelperText-root": { textAlign: "right" } }}
-                />
-
-                <TextField
-                  fullWidth
                   size="medium"
                   placeholder="Search by name, @handle, or email…"
                   value={inviteSearch}
@@ -3656,6 +3645,21 @@ export default function EventDetailClient() {
                       </InputAdornment>
                     ),
                   }}
+                />
+
+                <TextField
+                  fullWidth
+                  size="small"
+                  multiline
+                  minRows={2}
+                  maxRows={4}
+                  placeholder="Add a personal note (optional)"
+                  value={inviteMessage}
+                  onChange={(e) => {
+                    if (e.target.value.length <= 500) setInviteMessage(e.target.value);
+                  }}
+                  helperText={inviteMessage.length > 0 ? `${inviteMessage.length}/500` : undefined}
+                  sx={{ "& .MuiFormHelperText-root": { textAlign: "right" } }}
                 />
 
                 {hasSearched &&
@@ -5042,7 +5046,7 @@ export default function EventDetailClient() {
                         size="small"
                         variant="outlined"
                         color="info"
-                        sx={{ fontWeight: 600, fontSize: "0.75rem" }}
+                        sx={{ fontWeight: 600, fontSize: "0.75rem", "& .MuiChip-label": { pr: 1.25 }, "& .MuiChip-icon": { ml: 1 } }}
                       />
                       {/* Overflow menu for pending invites — show when there's at least one action */}
                       {(invProfileHref || (event.isHost && !isCanceled && !isPast && inv.userId !== null)) && (

@@ -608,6 +608,10 @@ export default function NotificationBell() {
               display: "flex",
               flexDirection: "column",
             },
+            // Auto-close the drawer when a notification link is tapped on mobile
+            onClick: (e: React.MouseEvent<HTMLDivElement>) => {
+              if ((e.target as HTMLElement).closest("a")) handleClose();
+            },
           }}
         >
           {notificationContent}

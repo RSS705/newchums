@@ -90,7 +90,14 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
       </Box>
 
       <AppCard sx={{ borderRadius: { xs: 2, sm: 2.5 }, overflow: "hidden", backgroundColor: cardBg }}>
-        <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1 }}>
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: { xs: "column", sm: "row" },
+            alignItems: { xs: "stretch", sm: "flex-start" },
+            gap: { xs: 2, sm: 1 },
+          }}
+        >
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <ProfileHeaderSection
               displayName={user.displayName}
@@ -103,23 +110,26 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
             />
           </Box>
           {chumAction && (
-            <Box sx={{ flexShrink: 0, pt: 0.25 }}>
+            <Box sx={{ flexShrink: 0, pt: { xs: 0, sm: 0.25 }, width: { xs: "100%", sm: "auto" } }}>
               <Button
                 variant={chumAction.isSaved ? "outlined" : "contained"}
-                size="small"
+                size="medium"
                 color={chumAction.isSaved ? "inherit" : "primary"}
                 disabled={chumAction.loading}
                 onClick={chumAction.onToggle}
                 startIcon={chumAction.isSaved ? <PersonRemoveRoundedIcon /> : <PersonAddRoundedIcon />}
+                fullWidth
                 sx={{
                   fontSize: "0.8125rem",
                   lineHeight: 1.25,
                   textAlign: "center",
-                  maxWidth: { xs: 168, sm: "none" },
-                  whiteSpace: { xs: "normal", sm: "nowrap" },
+                  whiteSpace: "nowrap",
                   textTransform: "none",
                   fontWeight: 600,
                   borderRadius: 2.5,
+                  px: { xs: 2, sm: 2.5 },
+                  py: { xs: 1, sm: 0.75 },
+                  width: { xs: "100%", sm: "auto" },
                 }}
               >
                 {chumAction.isSaved ? "Remove from Chums" : "Add to Chums"}

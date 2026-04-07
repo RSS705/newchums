@@ -249,11 +249,6 @@ export default function RichTextEditor({ label, value, onChange, placeholder, ma
         </Box>
       </Box>
 
-      {/* Helper text spacer to match AppTextField */}
-      <Typography variant="caption" sx={{ visibility: "hidden", display: "block", mt: 0.375 }}>
-        &nbsp;
-      </Typography>
-
       {/* Link dialog */}
       <Dialog
         open={linkDialogOpen}

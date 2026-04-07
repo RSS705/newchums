@@ -471,7 +471,7 @@ export default function CreateEventClient() {
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             error={!!errors.title}
-            helperText={errors.title || undefined}
+            helperText={errors.title || null}
             inputProps={{ maxLength: 200 }}
           />
 

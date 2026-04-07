@@ -50,12 +50,25 @@ export default function ToastProvider({ children }: { children: ReactNode }) {
         open={state.open}
         autoHideDuration={4000}
         onClose={() => setState((previous) => ({ ...previous, open: false }))}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+        sx={{
+          // Pull above mobile safe-area / browser chrome and keep it from butting against screen edges
+          bottom: { xs: "calc(env(safe-area-inset-bottom, 0px) + 16px)", sm: 24 },
+          left: { xs: 16, sm: "auto" },
+          right: { xs: 16, sm: "auto" },
+        }}
       >
         <Alert
           variant="filled"
           severity={state.severity}
           onClose={() => setState((previous) => ({ ...previous, open: false }))}
-          sx={{ width: "100%" }}
+          sx={{
+            width: "100%",
+            maxWidth: { sm: 480 },
+            borderRadius: 2,
+            boxShadow: 6,
+            alignItems: "center",
+          }}
         >
           {state.message}
         </Alert>

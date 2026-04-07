@@ -39,7 +39,7 @@ export default function HobbyPickerField({
   value,
   onChange,
   label = "Hobbies",
-  placeholder = "Type to search or create...",
+  placeholder = "e.g. bowling, card games, cycling",
   error,
   onReject,
   collapsedCount = 0,

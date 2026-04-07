@@ -39,7 +39,7 @@ export default function ProfileChumsSection({ ownerHandle, viewerLoggedIn }: Pro
 
   const fetchPage = useCallback(
     async (pageNum: number) => {
-      setFetchState({ status: "loading" });
+      setFetchState((prev) => (prev.status === "success" ? prev : { status: "loading" }));
       try {
         const offset = pageNum * PAGE_SIZE;
         const handleSlug = ownerHandle.replace(/^@/, "");
