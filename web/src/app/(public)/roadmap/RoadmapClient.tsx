@@ -49,6 +49,7 @@ type RoadmapItem = {
   created_at: string;
   author_username: string;
   is_anonymous: boolean;
+  is_private: boolean;
   viewer_voted: boolean;
   viewer_following: boolean;
 };
@@ -654,6 +655,16 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
                 <Stack direction="row" spacing={0.75} alignItems="center" sx={{ mb: 0.5, flexWrap: "wrap" }}>
                   <CategoryChip category={item.category} />
                   <StatusBadge status={item.status} />
+                  {item.is_private && (
+                    <Tooltip title="Only you and the NewChums team can see this idea">
+                      <Chip
+                        label="Private"
+                        size="small"
+                        color="warning"
+                        sx={{ fontWeight: 600, fontSize: "0.75rem", height: 24 }}
+                      />
+                    </Tooltip>
+                  )}
                 </Stack>
                 <Typography
                   variant="subtitle1"

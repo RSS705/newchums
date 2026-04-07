@@ -11383,10 +11383,13 @@ app.get("/roadmap", async (c) => {
 
     const orderClause = sort === "newest" ? "ri.created_at DESC" : "ri.vote_count DESC, ri.created_at DESC";
 
+    // Visibility rule: items with status='received' or is_private=true are
+    // hidden from non-author / non-admin viewers. Author and super admins
+    // always see their own / all items respectively.
     const items = await sql`
       SELECT ri.id, ri.title, ri.body, ri.category, ri.status, ri.vote_count,
              ri.comment_count, ri.follower_count, ri.completed_at, ri.created_at,
-             ri.merged_into_item_id, ri.is_anonymous, ri.author_user_id,
+             ri.merged_into_item_id, ri.is_anonymous, ri.is_private, ri.author_user_id,
              u.username AS author_username
       FROM newchums.roadmap_items ri
       JOIN newchums.users u ON u.id = ri.author_user_id
@@ -11395,7 +11398,7 @@ app.get("/roadmap", async (c) => {
         ${statusFilter === "completed" ? sql`AND ri.status IN ('completed', 'not_planned')` : statusFilter === "all" ? sql`` : sql`AND ri.status NOT IN ('completed', 'not_planned')`}
         ${category && ROADMAP_CATEGORIES.includes(category as typeof ROADMAP_CATEGORIES[number]) ? sql`AND ri.category = ${category}` : sql``}
         ${search ? sql`AND ri.title ILIKE ${"%" + search + "%"}` : sql``}
-        ${viewerIsSuperAdmin ? sql`` : viewerUserId ? sql`AND (ri.status != 'received' OR ri.author_user_id = ${viewerUserId})` : sql`AND ri.status != 'received'`}
+        ${viewerIsSuperAdmin ? sql`` : viewerUserId ? sql`AND ((ri.status != 'received' AND ri.is_private = false) OR ri.author_user_id = ${viewerUserId})` : sql`AND ri.status != 'received' AND ri.is_private = false`}
       ORDER BY ${sort === "newest" ? sql`ri.created_at DESC` : sql`ri.vote_count DESC, ri.created_at DESC`}
       LIMIT ${limit} OFFSET ${offset}
     `;
@@ -11416,7 +11419,7 @@ app.get("/roadmap", async (c) => {
         ${statusFilter === "completed" ? sql`AND ri.status IN ('completed', 'not_planned')` : statusFilter === "all" ? sql`` : sql`AND ri.status NOT IN ('completed', 'not_planned')`}
         ${category && ROADMAP_CATEGORIES.includes(category as typeof ROADMAP_CATEGORIES[number]) ? sql`AND ri.category = ${category}` : sql``}
         ${search ? sql`AND ri.title ILIKE ${"%" + search + "%"}` : sql``}
-        ${viewerIsSuperAdmin ? sql`` : viewerUserId ? sql`AND (ri.status != 'received' OR ri.author_user_id = ${viewerUserId})` : sql`AND ri.status != 'received'`}
+        ${viewerIsSuperAdmin ? sql`` : viewerUserId ? sql`AND ((ri.status != 'received' AND ri.is_private = false) OR ri.author_user_id = ${viewerUserId})` : sql`AND ri.status != 'received' AND ri.is_private = false`}
     `) as { count: number }[];
 
     return c.json({
@@ -11469,9 +11472,11 @@ app.get("/roadmap/:id", async (c) => {
 
     if (items.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
 
-    // Items with "received" status are only visible to the author and super admins
+    // Items with "received" status OR is_private = true are only visible to
+    // the author and super admins. Both gates are OR'd together.
     const item0 = items[0];
-    if (item0.status === "received" && !viewerIsSuperAdmin && item0.author_user_id !== viewerUserId) {
+    const isHidden = item0.status === "received" || item0.is_private === true;
+    if (isHidden && !viewerIsSuperAdmin && item0.author_user_id !== viewerUserId) {
       return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     }
     const item = items[0];
@@ -11778,10 +11783,37 @@ app.get("/roadmap/:id/attachment", async (c) => {
   if (!c.env.MEDIA_BUCKET) return c.json({ ok: false, error: "MEDIA_NOT_CONFIGURED" }, 503);
   const itemId = c.req.param("id");
   const sql = getSql(c.env);
+
+  // Honor the same visibility gates as the item itself: hidden items
+  // (status='received' or is_private=true) are only accessible to the author
+  // and super admins.
+  let viewerUserId: string | null = null;
+  let viewerIsSuperAdmin = false;
   try {
-    const rows = (await sql`SELECT attachment_key FROM newchums.roadmap_items WHERE id = ${itemId} AND is_removed = false`) as { attachment_key: string | null }[];
+    const payload = await requireAuth(c);
+    if (payload?.email) {
+      const u = (await sql`SELECT id, role FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string; role: string | null }[];
+      if (u.length > 0) {
+        viewerUserId = u[0].id;
+        viewerIsSuperAdmin = u[0].role === "super_admin";
+      }
+    }
+  } catch { /* unauthenticated is fine */ }
+
+  try {
+    const rows = (await sql`
+      SELECT attachment_key, status, is_private, author_user_id
+      FROM newchums.roadmap_items WHERE id = ${itemId} AND is_removed = false
+    `) as { attachment_key: string | null; status: string; is_private: boolean; author_user_id: string }[];
     if (rows.length === 0 || !rows[0].attachment_key) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-    const obj = await c.env.MEDIA_BUCKET.get(rows[0].attachment_key);
+
+    const row = rows[0];
+    const isHidden = row.status === "received" || row.is_private === true;
+    if (isHidden && !viewerIsSuperAdmin && row.author_user_id !== viewerUserId) {
+      return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    }
+
+    const obj = await c.env.MEDIA_BUCKET.get(row.attachment_key);
     if (!obj) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     const headers = new Headers();
     headers.set("Content-Type", obj.httpMetadata?.contentType ?? "image/jpeg");
@@ -12007,7 +12039,7 @@ app.post("/admin/roadmap/:id/merge", async (c) => {
   }
 });
 
-/** POST /admin/roadmap/:id/edit, edit item title, body, category */
+/** POST /admin/roadmap/:id/edit, edit item title, body, category, privacy */
 app.post("/admin/roadmap/:id/edit", async (c) => {
   const admin = await requireSuperAdmin(c);
   if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
@@ -12021,6 +12053,7 @@ app.post("/admin/roadmap/:id/edit", async (c) => {
   const title = String(body.title ?? "").trim();
   const description = body.body != null ? String(body.body).trim() : undefined;
   const category = body.category ? String(body.category) : undefined;
+  const isPrivate = typeof body.is_private === "boolean" ? body.is_private : undefined;
 
   if (!title || title.length > 200) return c.json({ ok: false, error: "VALIDATION", message: "Title is required (max 200 chars)" }, 400);
   if (description !== undefined && description.length > 5000) return c.json({ ok: false, error: "VALIDATION", message: "Description too long (max 5000 chars)" }, 400);
@@ -12036,6 +12069,7 @@ app.post("/admin/roadmap/:id/edit", async (c) => {
       SET title = ${title},
           body = ${description !== undefined ? (description || null) : sql`body`},
           category = ${category ?? sql`category`},
+          is_private = ${isPrivate !== undefined ? isPrivate : sql`is_private`},
           updated_at = NOW()
       WHERE id = ${itemId}
     `;

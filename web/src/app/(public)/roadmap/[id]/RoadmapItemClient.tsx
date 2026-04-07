@@ -103,6 +103,7 @@ type ItemDetail = {
   created_at: string;
   author_username: string;
   is_anonymous: boolean;
+  is_private: boolean;
   viewer_voted: boolean;
   viewer_following: boolean;
   viewer_is_author: boolean;
@@ -331,7 +332,7 @@ export default function RoadmapItemClient({ itemId, isLoggedIn }: Props) {
       )}
 
       {/* Item header */}
-      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
+      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mb: 1.5 }}>
         <Chip
           label={CATEGORY_LABELS[item.category] ?? item.category}
           size="small"
@@ -349,6 +350,16 @@ export default function RoadmapItemClient({ itemId, isLoggedIn }: Props) {
             color: item.status === "not_planned" ? "text.secondary" : "#fff",
           }}
         />
+        {item.is_private && (
+          <Tooltip title="Only you and the NewChums team can see this idea. Contact support if you'd like it made public.">
+            <Chip
+              label="Private"
+              size="small"
+              color="warning"
+              sx={{ fontWeight: 600, fontSize: "0.75rem", height: 24 }}
+            />
+          </Tooltip>
+        )}
       </Stack>
 
       <Typography variant="h5" fontWeight={700} sx={{ mb: 0.75 }}>

@@ -48,6 +48,7 @@ type RoadmapRow = {
   follower_count: number;
   is_removed: boolean;
   is_anonymous: boolean;
+  is_private: boolean;
   merged_into_item_id: string | null;
   created_at: string;
   author_username: string;
@@ -114,6 +115,7 @@ export default function AdminRoadmapClient() {
   const [editTitle, setEditTitle] = useState("");
   const [editBody, setEditBody] = useState("");
   const [editCategory, setEditCategory] = useState("");
+  const [editIsPrivate, setEditIsPrivate] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const [commentsDialogItem, setCommentsDialogItem] = useState<RoadmapRow | null>(null);
@@ -193,7 +195,12 @@ export default function AdminRoadmapClient() {
       const res = await apiFetch(`/admin/roadmap/${editDialogItem.id}/edit`, {
         auth: true, method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: editTitle.trim(), body: editBody.trim(), category: editCategory }),
+        body: JSON.stringify({
+          title: editTitle.trim(),
+          body: editBody.trim(),
+          category: editCategory,
+          is_private: editIsPrivate,
+        }),
       });
       const data = await res.json();
       if (data.ok) {
@@ -334,6 +341,7 @@ export default function AdminRoadmapClient() {
                 <TableCell>Title</TableCell>
                 <TableCell sx={{ display: { xs: "none", md: "table-cell" } }}>Category</TableCell>
                 <TableCell>Status</TableCell>
+                <TableCell align="center">Privacy</TableCell>
                 <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }} align="center">Votes</TableCell>
                 <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }} align="center">Comments</TableCell>
                 <TableCell sx={{ display: { xs: "none", md: "table-cell" } }}>Author</TableCell>
@@ -376,6 +384,20 @@ export default function AdminRoadmapClient() {
                       }}
                     />
                   </TableCell>
+                  <TableCell align="center">
+                    {item.is_private ? (
+                      <Tooltip title="Only the author and super admins can see this idea">
+                        <Chip
+                          label="Private"
+                          size="small"
+                          color="warning"
+                          sx={{ fontWeight: 600, fontSize: "0.6875rem" }}
+                        />
+                      </Tooltip>
+                    ) : (
+                      <Typography variant="caption" color="text.disabled">Public</Typography>
+                    )}
+                  </TableCell>
                   <TableCell align="center" sx={{ display: { xs: "none", sm: "table-cell" }, fontSize: "0.8125rem" }}>{item.vote_count}</TableCell>
                   <TableCell align="center" sx={{ display: { xs: "none", sm: "table-cell" }, fontSize: "0.8125rem" }}>
                     <Typography
@@ -413,7 +435,7 @@ export default function AdminRoadmapClient() {
                           <TuneRoundedIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
-                      <Tooltip title="Edit title, description, or category">
+                      <Tooltip title="Edit title, description, category, or privacy">
                         <IconButton
                           size="small"
                           onClick={() => {
@@ -421,6 +443,7 @@ export default function AdminRoadmapClient() {
                             setEditTitle(item.title);
                             setEditBody(item.body ?? "");
                             setEditCategory(item.category);
+                            setEditIsPrivate(item.is_private === true);
                           }}
                         >
                           <EditRoundedIcon fontSize="small" />
@@ -557,6 +580,28 @@ export default function AdminRoadmapClient() {
             maxRows={8}
             inputProps={{ maxLength: 5000 }}
           />
+          <Box sx={{ mt: 2, p: 1.5, border: 1, borderColor: "divider", borderRadius: 2, bgcolor: "grey.50" }}>
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small"
+                  checked={editIsPrivate}
+                  onChange={(e) => setEditIsPrivate(e.target.checked)}
+                />
+              }
+              label={
+                <Typography variant="body2" fontWeight={600}>
+                  Keep idea private
+                </Typography>
+              }
+              sx={{ alignItems: "center", gap: 0.5, m: 0 }}
+            />
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5, lineHeight: 1.5 }}>
+              When on, only the original author and super admins can see this idea, regardless of its status.
+              Use this to keep ideas containing personal information out of public view while still progressing
+              them through the workflow.
+            </Typography>
+          </Box>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => setEditDialogItem(null)} disabled={saving}>
