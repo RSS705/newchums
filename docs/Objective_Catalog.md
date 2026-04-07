@@ -165,7 +165,7 @@ These are natural extensions that may be added later. They are categorized by su
 
 | Key | Title | Category | Description | Trigger | Notes |
 |-----|-------|----------|-------------|---------|-------|
-| `set_chum_preferences` | Set your chum preferences | profile | Tell NewChums what matters to you in the people you meet. | `chum_preferences` row exists with `enabled = true` | Power-user feature. Valuable but could be overwhelming during onboarding. Consider adding as a later-sequence objective. |
+| `set_chum_preferences` | Set your chum preferences | profile | Tell NewChums what matters to you in the people you meet. | `chum_preferences` row exists for the user (the `enabled` master toggle was removed in migration 071; preferences are always active and the trigger is just row presence) | Power-user feature. Valuable but could be overwhelming during onboarding. Consider adding as a later-sequence objective. |
 
 ### Retention / engagement candidates (repeatable or milestone-based)
 

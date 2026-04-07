@@ -52,10 +52,13 @@ export default function ToastProvider({ children }: { children: ReactNode }) {
         onClose={() => setState((previous) => ({ ...previous, open: false }))}
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
         sx={{
-          // Pull above mobile safe-area / browser chrome and keep it from butting against screen edges
+          // Pull above mobile safe-area / browser chrome and keep it from butting against screen edges.
+          // On xs, span the viewport with side gutters and clear the default centering transform so
+          // the snackbar isn't pushed off-screen by translateX(-50%).
           bottom: { xs: "calc(env(safe-area-inset-bottom, 0px) + 16px)", sm: 24 },
-          left: { xs: 16, sm: "auto" },
+          left: { xs: 16, sm: "50%" },
           right: { xs: 16, sm: "auto" },
+          transform: { xs: "none", sm: "translateX(-50%)" },
         }}
       >
         <Alert

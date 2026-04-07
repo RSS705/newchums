@@ -49,6 +49,19 @@ import { ensureAppUserId } from "./profile";
 import { generateResetToken, hashResetToken } from "./resetTokens";
 import { isValidContactSubject } from "./lib/contact";
 import { computeAge } from "./lib/publicProfile";
+import {
+  AGE_PREF_YEAR_OPTIONS,
+  type ChumPrefsRow,
+  DEFAULT_CHUM_PREFS,
+  evaluateChumPreferences,
+  METRIC_BASELINE,
+  parsePrefOverrides,
+  PREF_LEVELS,
+  type PrefLevel,
+  type PrefOverrides,
+  resolveEffectiveHostPrefs,
+  type UserMetricsMap,
+} from "./lib/chumPreferences";
 import { checkContactRateLimit } from "./lib/contactRateLimit";
 import { validateCleanText } from "./lib/contentSafety";
 import { sanitizeDescriptionHtml } from "./lib/sanitizeHtml";
@@ -3874,11 +3887,11 @@ app.get("/admin/users/:id/diagnostics", async (c) => {
     `) as { metric: string; score: string; signal_count: number; updated_at: string }[];
 
     const preferences = (await sql`
-      SELECT enabled, reliability_level, sociability_level, presentation_level, hosting_level, updated_at
+      SELECT reliability_level, sociability_level, presentation_level, hosting_level, age_pref_years, updated_at
       FROM newchums.chum_preferences
       WHERE user_id = ${userId}
       LIMIT 1
-    `) as { enabled: boolean; reliability_level: string; sociability_level: string; presentation_level: string; hosting_level: string; updated_at: string }[];
+    `) as { reliability_level: string; sociability_level: string; presentation_level: string; hosting_level: string; age_pref_years: number | null; updated_at: string }[];
 
     const attendanceIssues = (await sql`
       SELECT
@@ -4001,11 +4014,11 @@ app.get("/admin/users/:id/diagnostics", async (c) => {
       })),
       preferences: preferences.length > 0
         ? {
-            enabled: preferences[0].enabled,
             reliability: preferences[0].reliability_level,
             sociability: preferences[0].sociability_level,
             presentation: preferences[0].presentation_level,
             hosting: preferences[0].hosting_level,
+            ageYears: preferences[0].age_pref_years ?? null,
             updatedAt: preferences[0].updated_at,
           }
         : null,
@@ -6591,12 +6604,14 @@ app.get("/communities/:id/events", async (c) => {
     // Chum-preference mismatch indicator for feed cards
     let viewerPrefs: ChumPrefsRow | null = null;
     let allMetrics = new Map<string, UserMetricsMap>();
+    let dobByUserId = new Map<string, string | null>();
+    let viewerDob: string | null = null;
     const attendeeIdsByEvent = new Map<string, string[]>();
 
     if (userId) {
       viewerPrefs = await loadChumPrefsForUser(sql, userId);
 
-      if (viewerPrefs && (viewerPrefs.enabled !== false)) {
+      if (viewerPrefs) {
         // Gather host + attendee IDs
         const nonHostEventIds = events.filter((ev) => String(ev.host_user_id) !== userId).map((ev) => String(ev.id));
         const hostIds = [...new Set(events.filter((ev) => String(ev.host_user_id) !== userId).map((ev) => String(ev.host_user_id)))];
@@ -6614,6 +6629,12 @@ app.get("/communities/:id/events", async (c) => {
           allUserIds.add(ar.user_id);
         }
         allMetrics = await batchLoadMetrics(sql, [...allUserIds]);
+
+        // Only fetch DOBs if the viewer actually has an age preference set.
+        if (viewerPrefs.age_pref_years != null) {
+          dobByUserId = await batchLoadDobs(sql, [userId, ...allUserIds]);
+          viewerDob = dobByUserId.get(userId) ?? null;
+        }
       }
     }
 
@@ -6621,10 +6642,13 @@ app.get("/communities/:id/events", async (c) => {
       const isHost = String(ev.host_user_id) === userId;
       let hasPrefMismatch = false;
 
-      if (!isHost && viewerPrefs && viewerPrefs.enabled !== false) {
+      if (!isHost && viewerPrefs) {
         // Check host
         const hMetrics = allMetrics.get(String(ev.host_user_id)) ?? {};
-        const hostCompat = evaluateChumPreferences(viewerPrefs, hMetrics, true);
+        const hostCompat = evaluateChumPreferences(viewerPrefs, hMetrics, true, {
+          checkerDob: viewerDob,
+          targetDob: dobByUserId.get(String(ev.host_user_id)) ?? null,
+        });
         if (!hostCompat.passes) hasPrefMismatch = true;
 
         // Check attendees
@@ -6633,7 +6657,10 @@ app.get("/communities/:id/events", async (c) => {
           for (const uid of attendees) {
             const m = allMetrics.get(uid) ?? {};
             const isHostUser = uid === String(ev.host_user_id);
-            const ac = evaluateChumPreferences(viewerPrefs, m, isHostUser);
+            const ac = evaluateChumPreferences(viewerPrefs, m, isHostUser, {
+              checkerDob: viewerDob,
+              targetDob: dobByUserId.get(uid) ?? null,
+            });
             if (!ac.passes) { hasPrefMismatch = true; break; }
           }
         }
@@ -7575,6 +7602,18 @@ app.get("/events/explore", async (c) => {
     // Pre-fetch viewer's chum preferences for viewer→host compatibility notes
     const viewerPrefs = await loadChumPrefsForUser(sql, userId);
 
+    // Pre-fetch viewer's DOB so the host→viewer age filter (in SQL below) and the
+    // viewer→host age soft note (in JS post-pass) can both run.
+    const viewerDobRows = (await sql`
+      SELECT date_of_birth FROM newchums.users WHERE id = ${userId} LIMIT 1
+    `) as { date_of_birth: string | Date | null }[];
+    const viewerDob: string | null = viewerDobRows[0]?.date_of_birth
+      ? typeof viewerDobRows[0].date_of_birth === "string"
+        ? (viewerDobRows[0].date_of_birth as string)
+        : (viewerDobRows[0].date_of_birth as Date).toISOString().slice(0, 10)
+      : null;
+    const viewerAge = computeAge(viewerDob);
+
     const hobbyMatchSelectExpr = hasUserHobbies && personalizeEnabled
       ? sql`(SELECT COUNT(*)::int FROM newchums.event_interests ei4 JOIN newchums.interests ii4 ON ii4.id = ei4.interest_id WHERE ei4.event_id = e.id AND ii4.slug = ANY(${userHobbySlugs})) AS hobby_match_count`
       : sql`0 AS hobby_match_count`;
@@ -7615,6 +7654,7 @@ app.get("/events/explore", async (c) => {
         ) AS hobbies,
         i.name AS interest_name, i.slug AS interest_slug,
         h.name AS host_name, h.username AS host_username,
+        h.date_of_birth AS host_date_of_birth,
         r.status AS my_rsvp_status,
         COALESCE(rsvp_counts.going_count, 0) AS going_count,
         COALESCE(rsvp_counts.maybe_count, 0) AS maybe_count,
@@ -7683,7 +7723,6 @@ app.get("/events/explore", async (c) => {
         AND (
           e.host_user_id = ${userId}
           OR EXISTS (SELECT 1 FROM newchums.event_rsvps er_pref WHERE er_pref.event_id = e.id AND er_pref.user_id = ${userId})
-          OR COALESCE(hp.enabled, true) = false
           OR (e.pref_overrides IS NOT NULL AND (e.pref_overrides->>'disabled')::boolean = true)
           OR (
             (COALESCE(hp.reliability_level, 'preferred') = 'open'
@@ -7695,6 +7734,11 @@ app.get("/events/explore", async (c) => {
             AND (COALESCE(hp.presentation_level, 'open') = 'open'
               OR (e.pref_overrides IS NOT NULL AND e.pref_overrides->'disabled_metrics' ? 'presentation')
               OR ${viewerPresentation} >= CASE COALESCE(hp.presentation_level, 'open') WHEN 'preferred' THEN 35.0 WHEN 'important' THEN 45.0 WHEN 'required' THEN 55.0 ELSE 0.0 END)
+            AND (hp.age_pref_years IS NULL
+              OR (e.pref_overrides IS NOT NULL AND e.pref_overrides->'disabled_metrics' ? 'age')
+              OR h.date_of_birth IS NULL
+              OR ${viewerAge === null}
+              OR abs(EXTRACT(YEAR FROM age(h.date_of_birth))::int - ${viewerAge ?? 0}) <= hp.age_pref_years)
           )
         )
         ${hobbySlug ? sql`AND EXISTS (SELECT 1 FROM newchums.event_interests ei3 JOIN newchums.interests ii3 ON ii3.id = ei3.interest_id WHERE ei3.event_id = e.id AND ii3.slug = ${hobbySlug})` : sql``}
@@ -7713,6 +7757,7 @@ app.get("/events/explore", async (c) => {
       hobbies: Array<{ name: string; slug: string }> | string;
       interest_name: string | null; interest_slug: string | null;
       host_name: string | null; host_username: string | null;
+      host_date_of_birth: string | Date | null;
       my_rsvp_status: string | null;
       going_count: number; maybe_count: number; is_host: boolean;
       distance_km: number | null; is_qa: boolean;
@@ -7722,6 +7767,19 @@ app.get("/events/explore", async (c) => {
     // Batch-load host metrics for viewer→host compatibility notes
     const hostIds = [...new Set(rows.filter((r) => !r.is_host).map((r) => r.host_user_id))];
     const hostMetricsMap = await batchLoadMetrics(sql, hostIds);
+
+    // Host DOBs come back inline on each row (no extra query needed). Normalize to YYYY-MM-DD.
+    const hostDobById = new Map<string, string | null>();
+    for (const r of rows) {
+      if (hostDobById.has(r.host_user_id)) continue;
+      const raw = r.host_date_of_birth;
+      const dob = raw
+        ? typeof raw === "string"
+          ? raw
+          : (raw as Date).toISOString().slice(0, 10)
+        : null;
+      hostDobById.set(r.host_user_id, dob);
+    }
 
     // Batch-load attendee user IDs + metrics for viewer→attendee pref mismatch indicator
     const eventIds = rows.filter((r) => !r.is_host).map((r) => r.id);
@@ -7742,6 +7800,13 @@ app.get("/events/explore", async (c) => {
     const attendeeMetricsMap = await batchLoadMetrics(sql, extraAttendeeIds);
     // Merge into a single lookup
     const allMetrics = new Map([...hostMetricsMap, ...attendeeMetricsMap]);
+
+    // Batch-load attendee DOBs (host DOBs already inline). Only needed when the
+    // viewer has an age preference set; otherwise the age check is a no-op.
+    const attendeeDobMap = viewerPrefs?.age_pref_years != null
+      ? await batchLoadDobs(sql, [...allAttendeeIds].filter((id) => !hostDobById.has(id)))
+      : new Map<string, string | null>();
+    const dobByUserId = new Map<string, string | null>([...hostDobById, ...attendeeDobMap]);
 
     const allMapped = rows.map((r) => {
       const parsedHobbies = typeof r.hobbies === "string" ? JSON.parse(r.hobbies) : (r.hobbies ?? []);
@@ -7767,7 +7832,10 @@ app.get("/events/explore", async (c) => {
       let hasPrefMismatch = false;
       if (!r.is_host && viewerPrefs) {
         const hMetrics = allMetrics.get(r.host_user_id) ?? {};
-        const compat = evaluateChumPreferences(viewerPrefs, hMetrics, true);
+        const compat = evaluateChumPreferences(viewerPrefs, hMetrics, true, {
+          checkerDob: viewerDob,
+          targetDob: dobByUserId.get(r.host_user_id) ?? null,
+        });
         if (!compat.passes) { prefNote = compat.failedMetrics; hasPrefMismatch = true; }
 
         // Also check attendees for the card-level mismatch indicator
@@ -7776,7 +7844,10 @@ app.get("/events/explore", async (c) => {
           for (const uid of attendees) {
             const m = allMetrics.get(uid) ?? {};
             const isHostUser = uid === r.host_user_id;
-            const ac = evaluateChumPreferences(viewerPrefs, m, isHostUser);
+            const ac = evaluateChumPreferences(viewerPrefs, m, isHostUser, {
+              checkerDob: viewerDob,
+              targetDob: dobByUserId.get(uid) ?? null,
+            });
             if (!ac.passes) { hasPrefMismatch = true; break; }
           }
         }
@@ -8189,18 +8260,29 @@ app.get("/events/:id", async (c) => {
         .filter((r) => r.user_id && r.user_id !== userId)
         .map((r) => r.user_id as string);
       const allUserIds = [event.host_user_id as string, ...attendeeUserIds.filter((id) => id !== event.host_user_id)];
-      const [vPrefs, metricsMap] = await Promise.all([
+      // Include the viewer in the DOB lookup so the age check has both sides.
+      const allDobUserIds = Array.from(new Set([userId, ...allUserIds]));
+      const [vPrefs, metricsMap, dobMap] = await Promise.all([
         loadChumPrefsForUser(sql, userId),
         batchLoadMetrics(sql, allUserIds),
+        batchLoadDobs(sql, allDobUserIds),
       ]);
       if (vPrefs) {
+        const viewerDob = dobMap.get(userId) ?? null;
+        const hostDob = dobMap.get(event.host_user_id as string) ?? null;
         const hMetrics = metricsMap.get(event.host_user_id as string) ?? {};
-        const hostCompat = evaluateChumPreferences(vPrefs, hMetrics, true);
+        const hostCompat = evaluateChumPreferences(vPrefs, hMetrics, true, {
+          checkerDob: viewerDob,
+          targetDob: hostDob,
+        });
         if (!hostCompat.passes) prefNote = hostCompat.failedMetrics;
         for (const uid of attendeeUserIds) {
           const m = metricsMap.get(uid) ?? {};
           const isHostUser = uid === event.host_user_id;
-          const compat = evaluateChumPreferences(vPrefs, m, isHostUser);
+          const compat = evaluateChumPreferences(vPrefs, m, isHostUser, {
+            checkerDob: viewerDob,
+            targetDob: dobMap.get(uid) ?? null,
+          });
           if (!compat.passes) attendeePrefNotes.set(uid, compat.failedMetrics);
         }
       }
@@ -10592,7 +10674,6 @@ const CONDUCT_REASONS = ["rude_aggressive", "harassment", "boundary_issue", "dis
 
 const FEEDBACK_RESPONSE_TARGETS: Record<string, number> = { agree: 80, maybe: 50, disagree: 20 };
 const ATTENDANCE_PENALTIES: Record<string, number> = { no_show: -10, late_cancel: -5, very_late: -8 };
-const METRIC_BASELINE = 50;
 
 async function nudgeUserMetric(sql: ReturnType<typeof getSql>, userId: string, metric: string, response: string) {
   const target = FEEDBACK_RESPONSE_TARGETS[response];
@@ -11054,118 +11135,18 @@ app.post("/events/:id/conduct-report", async (c) => {
 });
 
 // ─── Chum Preferences ────────────────────────────────────────────────────────
-
-const PREF_LEVELS = ["open", "preferred", "important", "required"] as const;
-type PrefLevel = typeof PREF_LEVELS[number];
-
-// ── Chum preference matching helpers ──────────────────────────────────────────
-
-const PREF_THRESHOLDS: Record<string, number> = {
-  open: 0,
-  preferred: 35,
-  important: 45,
-  required: 55,
-};
-
-type ChumPrefsRow = {
-  enabled: boolean;
-  reliability_level: string;
-  sociability_level: string;
-  presentation_level: string;
-  hosting_level: string;
-};
-
-const DEFAULT_CHUM_PREFS: ChumPrefsRow = {
-  enabled: true,
-  reliability_level: "preferred",
-  sociability_level: "open",
-  presentation_level: "open",
-  hosting_level: "open",
-};
-
-type UserMetricsMap = Record<string, number>;
-
-/**
- * Evaluate whether a target user passes a checker's chum preferences.
- * @param checkerPrefs  Preferences of the person doing the filtering (null = use defaults)
- * @param targetMetrics Metric scores of the person being evaluated
- * @param includeHosting If true, also evaluate hosting_skills metric
- * @returns passes (all thresholds met) and which metrics failed
- */
-function evaluateChumPreferences(
-  checkerPrefs: ChumPrefsRow | null,
-  targetMetrics: UserMetricsMap,
-  includeHosting: boolean = false,
-): { passes: boolean; failedMetrics: string[] } {
-  const prefs = checkerPrefs ?? DEFAULT_CHUM_PREFS;
-  if (!prefs.enabled) return { passes: true, failedMetrics: [] };
-
-  const checks: [string, string][] = [
-    ["reliability", prefs.reliability_level],
-    ["sociability", prefs.sociability_level],
-    ["presentation", prefs.presentation_level],
-  ];
-  if (includeHosting) {
-    checks.push(["hosting_skills", prefs.hosting_level]);
-  }
-
-  const failedMetrics: string[] = [];
-  for (const [metric, level] of checks) {
-    const threshold = PREF_THRESHOLDS[level] ?? 0;
-    if (threshold === 0) continue;
-    const score = targetMetrics[metric] ?? METRIC_BASELINE;
-    if (score < threshold) failedMetrics.push(metric);
-  }
-
-  return { passes: failedMetrics.length === 0, failedMetrics };
-}
-
-type PrefOverrides = { disabled?: boolean; disabled_metrics?: string[] } | null;
-
-function parsePrefOverrides(raw: unknown): PrefOverrides {
-  if (!raw || typeof raw !== "object") return null;
-  const obj = raw as Record<string, unknown>;
-  if (obj.disabled === true) return { disabled: true };
-  if (Array.isArray(obj.disabled_metrics) && obj.disabled_metrics.length > 0) {
-    const valid = ["reliability", "sociability", "presentation", "hosting_skills"];
-    const filtered = (obj.disabled_metrics as unknown[]).filter((m) => typeof m === "string" && valid.includes(m)) as string[];
-    return filtered.length > 0 ? { disabled_metrics: filtered } : null;
-  }
-  return null;
-}
-
-function resolveEffectiveHostPrefs(
-  globalPrefs: ChumPrefsRow | null,
-  planOverrides: PrefOverrides,
-): ChumPrefsRow | null {
-  const prefs = globalPrefs ?? DEFAULT_CHUM_PREFS;
-  if (!prefs.enabled) return globalPrefs;
-  if (!planOverrides) return globalPrefs;
-
-  if (planOverrides.disabled === true) {
-    return { ...prefs, enabled: false };
-  }
-
-  const dm = planOverrides.disabled_metrics;
-  if (Array.isArray(dm) && dm.length > 0) {
-    return {
-      ...prefs,
-      reliability_level: dm.includes("reliability") ? "open" : prefs.reliability_level,
-      sociability_level: dm.includes("sociability") ? "open" : prefs.sociability_level,
-      presentation_level: dm.includes("presentation") ? "open" : prefs.presentation_level,
-      hosting_level: dm.includes("hosting_skills") ? "open" : prefs.hosting_level,
-    };
-  }
-
-  return globalPrefs;
-}
+//
+// Pure evaluation helpers (evaluateChumPreferences, parsePrefOverrides,
+// resolveEffectiveHostPrefs, ChumPrefsRow, DEFAULT_CHUM_PREFS, PREF_LEVELS,
+// METRIC_BASELINE, etc) live in `./lib/chumPreferences.ts` so they can be unit
+// tested without spinning up Hono. The DB-touching loaders below stay here.
 
 async function loadChumPrefsForUser(
   sql: ReturnType<typeof getSql>,
   userId: string,
 ): Promise<ChumPrefsRow | null> {
   const rows = (await sql`
-    SELECT enabled, reliability_level, sociability_level, presentation_level, hosting_level
+    SELECT reliability_level, sociability_level, presentation_level, hosting_level, age_pref_years
     FROM newchums.chum_preferences WHERE user_id = ${userId} LIMIT 1
   `) as ChumPrefsRow[];
   return rows.length > 0 ? rows[0] : null;
@@ -11203,11 +11184,32 @@ async function batchLoadChumPrefs(
 ): Promise<Map<string, ChumPrefsRow>> {
   if (userIds.length === 0) return new Map();
   const rows = (await sql`
-    SELECT user_id, enabled, reliability_level, sociability_level, presentation_level, hosting_level
+    SELECT user_id, reliability_level, sociability_level, presentation_level, hosting_level, age_pref_years
     FROM newchums.chum_preferences WHERE user_id = ANY(${userIds}::uuid[])
   `) as (ChumPrefsRow & { user_id: string })[];
   const map = new Map<string, ChumPrefsRow>();
   for (const r of rows) map.set(r.user_id, r);
+  return map;
+}
+
+/** Batch-load `date_of_birth` for a list of user IDs. Returns YYYY-MM-DD strings (or null). */
+async function batchLoadDobs(
+  sql: ReturnType<typeof getSql>,
+  userIds: string[],
+): Promise<Map<string, string | null>> {
+  if (userIds.length === 0) return new Map();
+  const rows = (await sql`
+    SELECT id, date_of_birth FROM newchums.users WHERE id = ANY(${userIds}::uuid[])
+  `) as { id: string; date_of_birth: string | Date | null }[];
+  const map = new Map<string, string | null>();
+  for (const r of rows) {
+    const dob = r.date_of_birth
+      ? typeof r.date_of_birth === "string"
+        ? r.date_of_birth
+        : (r.date_of_birth as Date).toISOString().slice(0, 10)
+      : null;
+    map.set(r.id, dob);
+  }
   return map;
 }
 
@@ -11238,16 +11240,16 @@ app.get("/chum-preferences", async (c) => {
 
   try {
     const rows = (await sql`
-      SELECT enabled, reliability_level, sociability_level, presentation_level, hosting_level, updated_at
+      SELECT reliability_level, sociability_level, presentation_level, hosting_level, age_pref_years, updated_at
       FROM newchums.chum_preferences
       WHERE user_id = ${userId}
       LIMIT 1
     `) as {
-      enabled: boolean;
       reliability_level: string;
       sociability_level: string;
       presentation_level: string;
       hosting_level: string;
+      age_pref_years: number | null;
       updated_at: string;
     }[];
 
@@ -11255,11 +11257,11 @@ app.get("/chum-preferences", async (c) => {
       return c.json({
         ok: true,
         preferences: {
-          enabled: true,
           reliability: "preferred",
           sociability: "open",
           presentation: "open",
           hosting: "open",
+          age: null,
         },
       });
     }
@@ -11268,11 +11270,11 @@ app.get("/chum-preferences", async (c) => {
     return c.json({
       ok: true,
       preferences: {
-        enabled: r.enabled,
         reliability: r.reliability_level,
         sociability: r.sociability_level,
         presentation: r.presentation_level,
         hosting: r.hosting_level,
+        age: r.age_pref_years ?? null,
       },
     });
   } catch (err) {
@@ -11291,35 +11293,36 @@ app.put("/chum-preferences", async (c) => {
   const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
 
   const body = await c.req.json<{
-    enabled?: boolean;
     reliability?: string;
     sociability?: string;
     presentation?: string;
     hosting?: string;
+    age?: number | null;
   }>();
 
-  const enabled = typeof body.enabled === "boolean" ? body.enabled : true;
   const reliability = (PREF_LEVELS.includes(body.reliability as PrefLevel) ? body.reliability : "preferred") as PrefLevel;
   const sociability = (PREF_LEVELS.includes(body.sociability as PrefLevel) ? body.sociability : "open") as PrefLevel;
   const presentation = (PREF_LEVELS.includes(body.presentation as PrefLevel) ? body.presentation : "open") as PrefLevel;
   const hosting = (PREF_LEVELS.includes(body.hosting as PrefLevel) ? body.hosting : "open") as PrefLevel;
+  const agePrefYears: number | null =
+    body.age != null && AGE_PREF_YEAR_OPTIONS.includes(body.age) ? body.age : null;
 
   try {
     await sql`
-      INSERT INTO newchums.chum_preferences (user_id, enabled, reliability_level, sociability_level, presentation_level, hosting_level, updated_at)
-      VALUES (${userId}, ${enabled}, ${reliability}, ${sociability}, ${presentation}, ${hosting}, NOW())
+      INSERT INTO newchums.chum_preferences (user_id, reliability_level, sociability_level, presentation_level, hosting_level, age_pref_years, updated_at)
+      VALUES (${userId}, ${reliability}, ${sociability}, ${presentation}, ${hosting}, ${agePrefYears}, NOW())
       ON CONFLICT (user_id) DO UPDATE SET
-        enabled = ${enabled},
         reliability_level = ${reliability},
         sociability_level = ${sociability},
         presentation_level = ${presentation},
         hosting_level = ${hosting},
+        age_pref_years = ${agePrefYears},
         updated_at = NOW()
     `;
 
     return c.json({
       ok: true,
-      preferences: { enabled, reliability, sociability, presentation, hosting },
+      preferences: { reliability, sociability, presentation, hosting, age: agePrefYears },
     });
   } catch (err) {
     console.error("[PUT /chum-preferences]", err);
@@ -12615,9 +12618,10 @@ async function processEventMatchDigest(
   const allHostIds = [...new Set(rows.flatMap((r) => (Array.isArray(r.plans) ? r.plans : []).map((p) => p.hostUserId)))];
   const allInvolvedIds = [...new Set([...allRecipientIds, ...allHostIds])];
 
-  const [prefsByUser, metricsByUser] = await Promise.all([
+  const [prefsByUser, metricsByUser, dobsByUser] = await Promise.all([
     batchLoadChumPrefs(sql, allInvolvedIds),
     batchLoadMetrics(sql, allInvolvedIds),
+    batchLoadDobs(sql, allInvolvedIds),
   ]);
 
   const userIds: string[] = [];
@@ -12634,20 +12638,28 @@ async function processEventMatchDigest(
 
     const recipientPrefs = prefsByUser.get(row.user_id) ?? null;
     const recipientMetrics = metricsByUser.get(row.user_id) ?? {};
+    const recipientDob = dobsByUser.get(row.user_id) ?? null;
 
     candidatePlans = candidatePlans.filter((p) => {
       const hostMetrics = metricsByUser.get(p.hostUserId) ?? {};
       const hostGlobalPrefs = prefsByUser.get(p.hostUserId) ?? null;
+      const hostDob = dobsByUser.get(p.hostUserId) ?? null;
 
       // 1. Does the host pass the recipient's preferences? (includeHosting = true)
-      const viewerCheck = evaluateChumPreferences(recipientPrefs, hostMetrics, true);
+      const viewerCheck = evaluateChumPreferences(recipientPrefs, hostMetrics, true, {
+        checkerDob: recipientDob,
+        targetDob: hostDob,
+      });
       if (!viewerCheck.passes) return false;
 
       // 2. Does the recipient pass the host's preferences? (includeHosting = false)
       // Resolve plan-level overrides before evaluating
       const planOverrides = parsePrefOverrides(p.prefOverrides);
       const effectiveHostPrefs = resolveEffectiveHostPrefs(hostGlobalPrefs, planOverrides);
-      const hostCheck = evaluateChumPreferences(effectiveHostPrefs, recipientMetrics, false);
+      const hostCheck = evaluateChumPreferences(effectiveHostPrefs, recipientMetrics, false, {
+        checkerDob: hostDob,
+        targetDob: recipientDob,
+      });
       if (!hostCheck.passes) return false;
 
       return true;

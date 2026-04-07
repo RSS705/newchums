@@ -51,7 +51,7 @@ type AttendanceIssue = {
   reporterLabel: string;
 };
 type ConductReport = { reason: string; count: number };
-type PrefData = { enabled: boolean; reliability: string; sociability: string; presentation: string; hosting: string; updatedAt: string } | null;
+type PrefData = { reliability: string; sociability: string; presentation: string; hosting: string; ageYears: number | null; updatedAt: string } | null;
 type UserInfo = { id: string; email: string; username: string | null; name: string | null; createdAt: string; lastActiveAt: string | null; role: string | null; isSuspended: boolean };
 type PlanStats = { plans_going: number; plans_hosted: number };
 
@@ -381,10 +381,6 @@ export default function AdminUserDiagnosticsClient() {
         <SectionTitle>Chum Preferences</SectionTitle>
         {preferences ? (
           <Stack spacing={1.5}>
-            <Stack direction="row" spacing={1} alignItems="center">
-              <Typography variant="body2" fontWeight={600}>Enabled:</Typography>
-              <Chip label={preferences.enabled ? "Yes" : "No"} size="small" color={preferences.enabled ? "success" : "default"} />
-            </Stack>
             {(["reliability", "sociability", "presentation", "hosting"] as const).map((key) => (
               <Stack key={key} direction="row" spacing={1} alignItems="center">
                 <Typography variant="body2" fontWeight={600} sx={{ minWidth: 120 }}>
@@ -398,6 +394,16 @@ export default function AdminUserDiagnosticsClient() {
                 />
               </Stack>
             ))}
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Typography variant="body2" fontWeight={600} sx={{ minWidth: 120 }}>
+                Age range:
+              </Typography>
+              <Chip
+                label={preferences.ageYears == null ? "Any age" : `Within ${preferences.ageYears} years`}
+                size="small"
+                variant="outlined"
+              />
+            </Stack>
             <Typography variant="caption" color="text.secondary">
               Last updated: {formatDate(preferences.updatedAt)}
             </Typography>

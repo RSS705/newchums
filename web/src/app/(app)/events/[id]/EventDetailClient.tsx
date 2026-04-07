@@ -251,6 +251,7 @@ const PREF_NOTE_LABELS: Record<string, string> = {
   sociability: "sociability",
   presentation: "cleanliness & consideration",
   hosting_skills: "hosting quality",
+  age: "age range",
 };
 
 export default function EventDetailClient() {

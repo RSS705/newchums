@@ -4,10 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Box from "@mui/material/Box";
 import Collapse from "@mui/material/Collapse";
 import Fade from "@mui/material/Fade";
-import FormControlLabel from "@mui/material/FormControlLabel";
 import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
-import Switch from "@mui/material/Switch";
 import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import Tooltip from "@mui/material/Tooltip";
@@ -22,22 +20,22 @@ import { apiFetch } from "@/lib/apiClient";
 type Level = "open" | "preferred" | "important" | "required";
 
 type Preferences = {
-  enabled: boolean;
   reliability: Level;
   sociability: Level;
   presentation: Level;
   hosting: Level;
+  age: number | null;
 };
 
 const DEFAULT_PREFS: Preferences = {
-  enabled: true,
   reliability: "preferred",
   sociability: "open",
   presentation: "open",
   hosting: "open",
+  age: null,
 };
 
-const METRICS: { key: keyof Omit<Preferences, "enabled">; title: string; tooltip: string }[] = [
+const METRICS: { key: "reliability" | "sociability" | "presentation" | "hosting"; title: string; tooltip: string }[] = [
   { key: "reliability", title: "Reliability", tooltip: "How important is follow-through and showing up reliably?" },
   { key: "sociability", title: "Sociability", tooltip: "How important is it that someone is enjoyable and easy to spend time with?" },
   { key: "presentation", title: "Cleanliness & consideration", tooltip: "How important is basic cleanliness and considerate use of shared space for in-person gatherings? This is about hygiene and shared-space courtesy, not appearance or style." },
@@ -50,6 +48,19 @@ const LEVELS: { value: Level; label: string }[] = [
   { value: "important", label: "Important" },
   { value: "required", label: "Required" },
 ];
+
+// "any" is a UI-only sentinel. The wire/storage value is `null`.
+type AgeOptionValue = "any" | "5" | "10" | "15";
+const AGE_OPTIONS: { value: AgeOptionValue; label: string; years: number | null }[] = [
+  { value: "any", label: "Any age", years: null },
+  { value: "5", label: "Within 5 years", years: 5 },
+  { value: "10", label: "Within 10 years", years: 10 },
+  { value: "15", label: "Within 15 years", years: 15 },
+];
+const ageYearsToOption = (y: number | null): AgeOptionValue =>
+  y === 5 ? "5" : y === 10 ? "10" : y === 15 ? "15" : "any";
+const ageOptionToYears = (v: AgeOptionValue): number | null =>
+  v === "5" ? 5 : v === "10" ? 10 : v === "15" ? 15 : null;
 
 export default function ChumPreferencesSection() {
   const toast = useToast();
@@ -100,7 +111,7 @@ export default function ChumPreferencesSection() {
     }
   }, [toast]);
 
-  const updatePref = (key: keyof Preferences, value: Level | boolean) => {
+  const updatePref = <K extends keyof Preferences>(key: K, value: Preferences[K]) => {
     const updated = { ...prefs, [key]: value };
     setPrefs(updated);
     latestPrefsRef.current = updated;
@@ -146,26 +157,12 @@ export default function ChumPreferencesSection() {
             </Fade>
           </Stack>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-            Optional filters for recommendations and plan matching. Changes save automatically.
+            Tune how strict matching should be. Permissive settings let more people through;
+            stricter settings filter inbound matches more aggressively. Changes save automatically.
           </Typography>
         </Box>
 
-        <FormControlLabel
-          control={
-            <Switch
-              checked={prefs.enabled}
-              onChange={(_, checked) => updatePref("enabled", checked)}
-            />
-          }
-          label={
-            <Typography variant="body1" fontWeight={600}>
-              Use chum preferences
-            </Typography>
-          }
-          sx={{ alignItems: "center", ml: 0 }}
-        />
-
-        <Stack spacing={2} sx={{ opacity: prefs.enabled ? 1 : 0.5, pointerEvents: prefs.enabled ? "auto" : "none", transition: "opacity 0.2s" }}>
+        <Stack spacing={2}>
           {METRICS.map((m) => (
             <Box key={m.key}>
               <Stack direction="row" alignItems="center" spacing={0.5} sx={{ mb: 0.75 }}>
@@ -213,6 +210,60 @@ export default function ChumPreferencesSection() {
               </ToggleButtonGroup>
             </Box>
           ))}
+
+          {/* Age range — relative to your own age, evaluated server-side from DOB. */}
+          <Box>
+            <Stack direction="row" alignItems="center" spacing={0.5} sx={{ mb: 0.75 }}>
+              <Typography variant="subtitle2" fontWeight={600}>
+                Age range
+              </Typography>
+              <Tooltip
+                title="Match plans whose host and attendees are close in age to you. Privacy-safe — exact ages are never shown."
+                arrow
+                placement="top"
+                enterTouchDelay={0}
+              >
+                <IconButton size="small" sx={{ p: 0.25, color: "text.disabled" }}>
+                  <HelpOutlineRoundedIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              </Tooltip>
+            </Stack>
+            <ToggleButtonGroup
+              value={ageYearsToOption(prefs.age)}
+              exclusive
+              onChange={(_, val) => {
+                if (val) updatePref("age", ageOptionToYears(val as AgeOptionValue));
+              }}
+              size="small"
+              sx={{
+                flexWrap: "wrap",
+                gap: 0.75,
+                "& .MuiToggleButtonGroup-grouped": {
+                  border: "1.5px solid",
+                  borderColor: "grey.300",
+                  borderRadius: "8px !important",
+                  textTransform: "none",
+                  fontWeight: 500,
+                  fontSize: "0.8125rem",
+                  px: { xs: 1.25, sm: 2 },
+                  py: 0.625,
+                  "&.Mui-selected": {
+                    bgcolor: "primary.main",
+                    color: "primary.contrastText",
+                    borderColor: "primary.main",
+                    fontWeight: 600,
+                    "&:hover": { bgcolor: "primary.dark" },
+                  },
+                },
+              }}
+            >
+              {AGE_OPTIONS.map((o) => (
+                <ToggleButton key={o.value} value={o.value}>
+                  {o.label}
+                </ToggleButton>
+              ))}
+            </ToggleButtonGroup>
+          </Box>
         </Stack>
 
         {/* Collapsible help */}

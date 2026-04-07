@@ -813,16 +813,16 @@ Corroboration:
 *Chum Preferences (user-facing, implemented):*
 
 Users configure matching preferences in their profile ("Your chum preferences" section, below Hobbies, above Attendance record). Settings:
-- **Master toggle:** "Use chum preferences" (default: on)
 - **Per-metric levels:** Reliability, Sociability, Cleanliness & consideration, Hosting quality, each set to Open to anyone / Preferred / Important / Required.
-- Defaults: Reliability = Preferred, all others = Open to anyone.
-- Saved in `chum_preferences` table (upsert on change, auto-saves).
+- **Age range:** Any age / Within 5 years / Within 10 years / Within 15 years. Evaluated dynamically against DOB at match time, never stored as absolute bounds. Users without DOB on file always pass this check.
+- Defaults: Reliability = Preferred, all other metric levels = Open to anyone, Age range = Any age.
+- Saved in `chum_preferences` table (upsert on change, auto-saves). The `enabled` master toggle was removed in migration 071; permissive values ("Open to anyone" + "Any age") now represent the no-filter state.
 
 *Browsing vs. inbound matching behavior (implemented):*
 - A user's chum preferences filter who gets matched **into their plans** and who appears in their **digest / recommendations**.
-- **Digest:** Both directions are hard-filtered. Plans whose host fails the recipient's preferences (including hosting quality) are excluded. Plans where the recipient fails the host's preferences are also excluded.
-- **Explore feed:** The host's preferences are enforced as a hard filter in the SQL query (if the host has preferences that the viewer doesn't meet, the plan is excluded). Plan-level `pref_overrides` are respected inline in the SQL: `{ "disabled": true }` bypasses all host preference checks; `disabled_metrics` bypasses specific metric checks. The viewer's own preferences produce a soft **compatibility note** (`prefNote` in the API response), plans are not hidden from the viewer, but the frontend can indicate a mismatch.
-- **Plan details:** When a logged-in user views a plan they didn't create, `GET /events/:id` evaluates the viewer's chum preferences against the host's metrics (including hosting quality) and returns a `prefNote` array of failed metrics. The frontend displays an informational banner: "Based on your chum preferences, this plan may not fully match your expectations for [metric(s)]." This does **not** block access; it informs.
+- **Digest:** Both directions are hard-filtered across all five preference dimensions (reliability, sociability, cleanliness & consideration, hosting quality, age range). Plans whose host fails the recipient's preferences (including hosting quality) are excluded. Plans where the recipient fails the host's preferences are also excluded.
+- **Explore feed:** The host's preferences are enforced as a hard filter in the SQL query, including the host's age range vs the viewer's age (computed via `EXTRACT(YEAR FROM AGE(h.date_of_birth))` against the viewer's DOB injected as a parameter). Plan-level `pref_overrides` are respected inline in the SQL: `{ "disabled": true }` bypasses all host preference checks; `disabled_metrics` bypasses specific dimensions including `"age"`. The viewer's own preferences produce a soft **compatibility note** (`prefNote` in the API response), including age mismatches against the host, plans are not hidden from the viewer, but the frontend can indicate a mismatch.
+- **Plan details:** When a logged-in user views a plan they didn't create, `GET /events/:id` evaluates the viewer's chum preferences against the host's metrics (including hosting quality) and against the host's DOB (when the viewer has an age preference set), then returns a `prefNote` array of failed dimensions. Per-attendee mismatches are computed the same way (each attendee's DOB and metrics are checked against the viewer's preferences). The frontend displays an informational banner: "Based on your chum preferences, this plan may not fully match your expectations for [dimension(s)]." Age mismatches surface as the generic phrase "age range" — exact ages, DOBs, and differences are never exposed in user-facing copy. This does **not** block access; it informs.
 - A user's chum preferences do **not** block them from browsing and opening plans themselves.
 
 *API endpoints:*
@@ -854,19 +854,19 @@ Users configure matching preferences in their profile ("Your chum preferences" s
 
 - Hosts can override their default chum preferences for a specific plan when creating or editing it.
 - Overrides are stored as a JSONB column `pref_overrides` on `events` (migration 051).
-- `{ "disabled": true }` disables all chum preference filtering for that plan.
-- `{ "disabled_metrics": ["sociability", ...] }` disables specific metrics only; remaining metrics use the host's profile defaults.
+- `{ "disabled": true }` disables all chum preference filtering for that plan (including age range).
+- `{ "disabled_metrics": ["sociability", "age", ...] }` disables specific dimensions only; remaining dimensions use the host's profile defaults. Valid keys: `reliability`, `sociability`, `presentation`, `hosting_skills`, `age`.
 - `NULL` means no override (use host's global preferences as-is).
 - Overrides affect **outbound** matching only (digest + explore hard filters on the host's side). Viewer-side compatibility notes are not suppressed.
-- The create and edit plan forms expose this as a collapsible "Matching preferences for this plan" section, visible only when the host has chum preferences enabled.
-- `resolveEffectiveHostPrefs(globalPrefs, planOverrides)` merges overrides with global prefs before evaluation. `parsePrefOverrides(raw)` validates the JSONB shape.
+- The create and edit plan forms always expose this as a collapsible "Matching preferences for this plan" section. Since the master toggle was removed, there is no `hostHasPrefs` gate — the override card is always available.
+- `resolveEffectiveHostPrefs(globalPrefs, planOverrides)` merges overrides with global prefs before evaluation. When `disabled: true` is set, it returns a fully permissive prefs row (every level `'open'`, `age_pref_years` `null`) — this replaces the previous master-toggle short-circuit. `parsePrefOverrides(raw)` validates the JSONB shape.
 - The edit plan form has moved from an embedded Dialog in EventDetailClient to a dedicated page at `/events/[id]/edit`.
 
 *Future direction (documented, not yet implemented):*
 
 - New plans may inherit the creator's chum preferences by default (the override infrastructure now supports this).
 
-*Schema:* Migration 049: `plan_feedback`, `attendance_issues`, `conduct_reports`, `user_metrics` tables + `events.feedback_email_sent_at` column. Migration 050: `chum_preferences` table. Migration 051: `events.pref_overrides` JSONB column. Migration 052: attendance trust columns on `attendance_issues`. Migration 053: `status` column on `conduct_reports`. Migration 054: `user_objective_completions` table + `users.tutorial_nudges_off` column.
+*Schema:* Migration 049: `plan_feedback`, `attendance_issues`, `conduct_reports`, `user_metrics` tables + `events.feedback_email_sent_at` column. Migration 050: `chum_preferences` table. Migration 051: `events.pref_overrides` JSONB column. Migration 052: attendance trust columns on `attendance_issues`. Migration 053: `status` column on `conduct_reports`. Migration 054: `user_objective_completions` table + `users.tutorial_nudges_off` column. Migration 071: add `chum_preferences.age_pref_years` (SMALLINT NULL, CHECK IN 5/10/15), reset metric levels to `'open'` for users who had `enabled = false`, drop `chum_preferences.enabled`.
 
 **Not yet implemented:** recurring events.
 

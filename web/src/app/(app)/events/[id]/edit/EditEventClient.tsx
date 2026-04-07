@@ -47,9 +47,10 @@ const PREF_METRIC_LABELS: Record<string, string> = {
   sociability: "Sociability",
   presentation: "Cleanliness & consideration",
   hosting_skills: "Hosting quality",
+  age: "Age range",
 };
 
-const PREF_METRICS = ["reliability", "sociability", "presentation"] as const;
+const PREF_METRICS = ["reliability", "sociability", "presentation", "age"] as const;
 
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_BANNER_INPUT_BYTES = 20 * 1024 * 1024;
@@ -97,7 +98,6 @@ export default function EditEventClient() {
   const [prefOverridesOpen, setPrefOverridesOpen] = useState(false);
   const [prefDisableAll, setPrefDisableAll] = useState(false);
   const [prefDisabledMetrics, setPrefDisabledMetrics] = useState<Record<string, boolean>>({});
-  const [hostHasPrefs, setHostHasPrefs] = useState(false);
 
   // Community association
   const [communityId, setCommunityId] = useState<string | null>(null);
@@ -205,14 +205,6 @@ export default function EditEventClient() {
           }
         }
 
-        // Check if host has chum preferences enabled
-        try {
-          const cpRes = await apiFetch("/chum-preferences", { auth: true });
-          const cpData = await cpRes.json();
-          if (!cancelled && cpData.ok) {
-            setHostHasPrefs(cpData.preferences?.enabled !== false);
-          }
-        } catch { /* non-fatal */ }
       } catch {
         if (!cancelled) setNotFound(true);
       } finally {
@@ -848,77 +840,75 @@ export default function EditEventClient() {
       </AppCard>
 
       {/* Matching preferences override */}
-      {hostHasPrefs && (
-        <AppCard>
-          <Box
-            onClick={() => setPrefOverridesOpen((v) => !v)}
-            sx={{ display: "flex", alignItems: "center", cursor: "pointer", userSelect: "none" }}
-          >
-            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem", flex: 1 }}>
-              Matching preferences for this plan
+      <AppCard>
+        <Box
+          onClick={() => setPrefOverridesOpen((v) => !v)}
+          sx={{ display: "flex", alignItems: "center", cursor: "pointer", userSelect: "none" }}
+        >
+          <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem", flex: 1 }}>
+            Matching preferences for this plan
+          </Typography>
+          <ExpandMoreRoundedIcon
+            sx={{
+              transform: prefOverridesOpen ? "rotate(180deg)" : "rotate(0deg)",
+              transition: "transform 0.2s",
+              color: "text.secondary",
+            }}
+          />
+        </Box>
+
+        <Collapse in={prefOverridesOpen}>
+          <Stack spacing={2} sx={{ pt: 2 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+              Your profile chum preferences are used by default when matching people to your plans.
+              You can relax those rules for this plan only, without changing your profile settings.
             </Typography>
-            <ExpandMoreRoundedIcon
-              sx={{
-                transform: prefOverridesOpen ? "rotate(180deg)" : "rotate(0deg)",
-                transition: "transform 0.2s",
-                color: "text.secondary",
-              }}
-            />
-          </Box>
 
-            <Collapse in={prefOverridesOpen}>
-              <Stack spacing={2} sx={{ pt: 2 }}>
-                <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-                  Your profile chum preferences are used by default when matching people to your plans.
-                  You can relax those rules for this plan only, without changing your profile settings.
-                </Typography>
-
-                <FormControlLabel
-                  control={
-                    <Switch
-                      size="small"
-                      checked={prefDisableAll}
-                      onChange={(e) => {
-                        setPrefDisableAll(e.target.checked);
-                        if (e.target.checked) setPrefDisabledMetrics({});
-                      }}
-                    />
-                  }
-                  label={<Typography variant="body2" fontWeight={500}>Disable all preference filtering for this plan</Typography>}
-                  sx={{ alignItems: "center", gap: 0.5 }}
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small"
+                  checked={prefDisableAll}
+                  onChange={(e) => {
+                    setPrefDisableAll(e.target.checked);
+                    if (e.target.checked) setPrefDisabledMetrics({});
+                  }}
                 />
+              }
+              label={<Typography variant="body2" fontWeight={500}>Disable all preference filtering for this plan</Typography>}
+              sx={{ alignItems: "center", gap: 0.5 }}
+            />
 
-                {!prefDisableAll && (
-                  <Stack spacing={1} sx={{ pl: 0.5 }}>
-                    <Typography variant="body2" fontWeight={600} sx={{ mb: 0.5 }}>
-                      Or disable specific metrics for this plan:
-                    </Typography>
-                    {PREF_METRICS.map((metric) => (
-                      <FormControlLabel
-                        key={metric}
-                        control={
-                          <Switch
-                            size="small"
-                            checked={!!prefDisabledMetrics[metric]}
-                            onChange={(e) =>
-                              setPrefDisabledMetrics((prev) => ({ ...prev, [metric]: e.target.checked }))
-                            }
-                          />
+            {!prefDisableAll && (
+              <Stack spacing={1} sx={{ pl: 0.5 }}>
+                <Typography variant="body2" fontWeight={600} sx={{ mb: 0.5 }}>
+                  Or disable specific metrics for this plan:
+                </Typography>
+                {PREF_METRICS.map((metric) => (
+                  <FormControlLabel
+                    key={metric}
+                    control={
+                      <Switch
+                        size="small"
+                        checked={!!prefDisabledMetrics[metric]}
+                        onChange={(e) =>
+                          setPrefDisabledMetrics((prev) => ({ ...prev, [metric]: e.target.checked }))
                         }
-                        label={
-                          <Typography variant="body2">
-                            Skip <strong>{PREF_METRIC_LABELS[metric]}</strong> filtering
-                          </Typography>
-                        }
-                        sx={{ gap: 0.5 }}
                       />
-                    ))}
-                  </Stack>
-                )}
+                    }
+                    label={
+                      <Typography variant="body2">
+                        Skip <strong>{PREF_METRIC_LABELS[metric]}</strong> filtering
+                      </Typography>
+                    }
+                    sx={{ gap: 0.5 }}
+                  />
+                ))}
               </Stack>
-            </Collapse>
-        </AppCard>
-      )}
+            )}
+          </Stack>
+        </Collapse>
+      </AppCard>
 
       {/* Actions */}
       {/* Community association */}

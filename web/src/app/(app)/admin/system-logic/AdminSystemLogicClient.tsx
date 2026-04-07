@@ -425,7 +425,7 @@ export default function AdminSystemLogicClient() {
         </Bullet>
 
         <Typography variant="subtitle2" fontWeight={600} sx={{ mt: 2 }} gutterBottom>
-          The four metrics
+          The five preference dimensions
         </Typography>
         <Bullet>
           <strong>Reliability</strong>, Can this person be counted on to follow through? Moves quickly: no-shows and very late cancellations penalize immediately. Positive follow-through recovers more slowly.
@@ -440,7 +440,10 @@ export default function AdminSystemLogicClient() {
           <strong>Hosting Skills</strong>, Does this person run well-organized plans? Only moves from feedback on plans they <em>hosted</em>.
         </Bullet>
         <Bullet>
-          <strong>Conduct / Safety</strong> is tracked <em>separately</em> from these metrics. Serious behavioral issues do not lower normal metric scores, they may require moderation, warnings, or account action. Each concern report is emailed to the admin team immediately on submission and appears in the Safety admin tab with status tracking (new &rarr; reviewed &rarr; closed).
+          <strong>Age range</strong>, Match plans where the host and attendees fall within your chosen age tolerance from your own age. Calculated server-side from DOB at match time; exact ages and differences are never exposed in user-facing copy. Users without DOB on file always pass this check.
+        </Bullet>
+        <Bullet>
+          <strong>Conduct / Safety</strong> is tracked <em>separately</em> from these dimensions. Serious behavioral issues do not lower normal metric scores, they may require moderation, warnings, or account action. Each concern report is emailed to the admin team immediately on submission and appears in the Safety admin tab with status tracking (new &rarr; reviewed &rarr; closed).
         </Bullet>
 
         <Typography variant="subtitle2" fontWeight={600} sx={{ mt: 2 }} gutterBottom>
@@ -505,6 +508,9 @@ export default function AdminSystemLogicClient() {
         <Bullet>
           <strong>Required:</strong> Score must be &ge; 55. Firm minimum standard. Requires a near-baseline or positive record. Users with even a moderate negative average are filtered.
         </Bullet>
+        <Bullet>
+          <strong>Age range:</strong> Any age (no filtering) / Within 5 years / Within 10 years / Within 15 years. Calculated dynamically from DOB at match time. Users without DOB on file always pass this check. The four numeric metrics use the tolerance levels above; the age dimension uses these year-tolerance options instead.
+        </Bullet>
 
         <Typography variant="subtitle2" fontWeight={600} sx={{ mt: 2 }} gutterBottom>
           Browsing vs. inbound matching
@@ -520,16 +526,16 @@ export default function AdminSystemLogicClient() {
           Where chum preferences are enforced
         </Typography>
         <Bullet>
-          <strong>Event match digest:</strong> Two-directional hard filter. Plans are excluded if the host fails the recipient&rsquo;s thresholds <em>or</em> the recipient fails the host&rsquo;s thresholds. Both must pass for a plan to appear in someone&rsquo;s digest.
+          <strong>Event match digest:</strong> Two-directional hard filter on all five dimensions (reliability, sociability, cleanliness &amp; consideration, hosting skills, age range). Plans are excluded if the host fails the recipient&rsquo;s thresholds <em>or</em> the recipient fails the host&rsquo;s thresholds. Both must pass for a plan to appear in someone&rsquo;s digest.
         </Bullet>
         <Bullet>
-          <strong>Explore feed:</strong> The host&rsquo;s preferences are enforced as a <strong>hard filter</strong> in the query, if the host doesn&rsquo;t want the viewer matched to their plan, it won&rsquo;t appear. The viewer&rsquo;s own preferences produce a <strong>soft compatibility note</strong> on the plan card and details page, but plans are not hidden.
+          <strong>Explore feed:</strong> The host&rsquo;s preferences are enforced as a <strong>hard filter</strong> in the query (including the host&rsquo;s age range vs the viewer&rsquo;s age). The viewer&rsquo;s own preferences (including their age range vs each host) produce a <strong>soft compatibility note</strong> on the plan card and details page, but plans are not hidden.
         </Bullet>
         <Bullet>
-          <strong>Plan details:</strong> When viewing a plan you didn&rsquo;t create, a compatibility note appears if the host doesn&rsquo;t fully meet your preferences. This is informational, it never blocks access to the plan.
+          <strong>Plan details:</strong> When viewing a plan you didn&rsquo;t create, a compatibility note appears if the host or any attendee doesn&rsquo;t fully meet your preferences. Age is included in this check the same way as the other dimensions. This is informational, it never blocks access to the plan.
         </Bullet>
         <Bullet>
-          <strong>Disabled preferences:</strong> If a user has chum preferences turned off (or never configured), all checks pass. No filtering or notes are applied.
+          <strong>Permissive defaults are the off state:</strong> The old &ldquo;Use chum preferences&rdquo; master toggle has been removed. Setting every dimension to its permissive value (&ldquo;Open to anyone&rdquo; for the four metric levels and &ldquo;Any age&rdquo; for the age range) is now the canonical &ldquo;no filtering&rdquo; state. New users default to Reliability = Preferred, others = Open to anyone, Age range = Any age.
         </Bullet>
 
         <Typography variant="subtitle2" fontWeight={600} sx={{ mt: 2 }} gutterBottom>
@@ -539,10 +545,10 @@ export default function AdminSystemLogicClient() {
           When creating or editing a plan, the host can <strong>override their profile chum preferences</strong> for that specific plan only.
         </Bullet>
         <Bullet>
-          <strong>Disable all:</strong> Turns off all chum preference filtering for that plan. Anyone can be matched regardless of the host&rsquo;s profile preferences.
+          <strong>Disable all:</strong> Turns off all chum preference filtering for that plan (including age range). Anyone can be matched regardless of the host&rsquo;s profile preferences.
         </Bullet>
         <Bullet>
-          <strong>Disable specific metrics:</strong> The host can disable individual metrics (e.g. skip Sociability filtering). The remaining metrics still apply using the host&rsquo;s profile defaults.
+          <strong>Disable specific dimensions:</strong> The host can disable individual dimensions (e.g. skip Sociability or Age range filtering). The remaining dimensions still apply using the host&rsquo;s profile defaults.
         </Bullet>
         <Bullet>
           Overrides affect <strong>outbound matching only</strong> (who sees the plan in digest and explore). Viewer-side compatibility notes are <strong>not</strong> suppressed, viewers still see informational warnings based on their own preferences.
