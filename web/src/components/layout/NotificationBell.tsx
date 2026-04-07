@@ -564,7 +564,6 @@ export default function NotificationBell() {
   return (
     <>
       <IconButton
-        color="inherit"
         aria-label="notifications"
         size="medium"
         onClick={handleOpen}
@@ -586,7 +585,7 @@ export default function NotificationBell() {
                   boxShadow: "none",
                 },
               }
-            : undefined
+            : { color: "text.primary" }
         }
       >
         {hasUnread ? (

@@ -64,18 +64,17 @@ export default function LandingLayout({
           borderColor: "divider",
           borderBottomColor: "grey.200",
           backgroundColor: "background.default",
-          color: "text.secondary",
+          color: "text.primary",
           minHeight: HEADER_MIN_HEIGHT,
         }}
       >
         <SiteHeader
           mobileMenuButton={
             <IconButton
-              color="inherit"
               aria-label="open navigation"
               edge="start"
               onClick={() => setMobileOpen((prev) => !prev)}
-              sx={{ mr: 0, display: { md: "none" } }}
+              sx={{ mr: 0, display: { md: "none" }, color: "text.primary" }}
             >
               <MenuRoundedIcon />
             </IconButton>

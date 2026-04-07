@@ -161,7 +161,7 @@ export default function AppShell({ children, user }: AppShellProps) {
             borderColor: "divider",
             borderBottomColor: "grey.200",
             backgroundColor: "background.default",
-            color: "text.secondary",
+            color: "text.primary",
             minHeight: HEADER_MIN_HEIGHT,
           }}
         >
@@ -429,18 +429,17 @@ export default function AppShell({ children, user }: AppShellProps) {
           borderColor: "divider",
           borderBottomColor: "grey.200",
           backgroundColor: "background.default",
-          color: "text.secondary",
+          color: "text.primary",
           minHeight: HEADER_MIN_HEIGHT,
         }}
       >
         <SiteHeader
           mobileMenuButton={
             <IconButton
-              color="inherit"
               aria-label="open navigation"
               edge="start"
               onClick={() => setMobileOpen((previous) => !previous)}
-              sx={{ mr: 0, display: { md: "none" } }}
+              sx={{ mr: 0, display: { md: "none" }, color: "text.primary" }}
             >
               <MenuRoundedIcon />
             </IconButton>
@@ -449,13 +448,13 @@ export default function AppShell({ children, user }: AppShellProps) {
             <>
               <NotificationBell />
               <IconButton
-                color="inherit"
                 aria-label="open account menu"
                 size="medium"
                 aria-controls={accountMenuOpen ? "appshell-account-menu" : undefined}
                 aria-haspopup="true"
                 aria-expanded={accountMenuOpen ? "true" : undefined}
                 onClick={(event) => setAccountMenuAnchor(event.currentTarget)}
+                sx={{ color: "text.primary" }}
               >
                 <PersonRoundedIcon fontSize="medium" />
               </IconButton>
