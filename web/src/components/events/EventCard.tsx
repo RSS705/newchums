@@ -18,6 +18,7 @@ import Tooltip from "@mui/material/Tooltip";
 import Link from "next/link";
 import { getAvatarBaseUrl, getImageFallbackBaseUrl } from "@/lib/apiClient";
 import { getGradientForEventId } from "@/lib/eventBanners";
+import { effectiveCategoryOf } from "@/lib/interestUtils";
 
 export type PlanEvent = {
   id: string;
@@ -34,7 +35,7 @@ export type PlanEvent = {
   status: string;
   hobby: string | null;
   hobbySlug?: string | null;
-  hobbies?: Array<{ name: string; slug: string }>;
+  hobbies?: Array<{ name: string; slug: string; category?: string | null }>;
   hostName: string;
   isHost: boolean;
   myRsvpStatus: string | null;
@@ -57,8 +58,10 @@ type EventCardProps = {
   isExample?: boolean;
   /** When set, the whole card links here (e.g. /signup). Example cards default to signup when omitted. */
   hrefOverride?: string;
-  /** Viewer's hobby slugs, matching hobby chips get a subtle highlight */
-  viewerHobbySlugs?: ReadonlySet<string>;
+  /** Viewer's effective hobby categories. Hobby chips whose effective category
+   *  is in this set get a subtle highlight. See `effectiveCategoryOf` in
+   *  web/src/lib/interestUtils.ts. */
+  viewerHobbyCategories?: ReadonlySet<string>;
   /** Hide the RSVP status row (e.g. on public preview where the viewer has no RSVP) */
   hideRsvp?: boolean;
 };
@@ -104,7 +107,7 @@ const EventCard = React.memo(function EventCard({
   isPast = false,
   isExample = false,
   hrefOverride,
-  viewerHobbySlugs,
+  viewerHobbyCategories,
   hideRsvp = false,
 }: EventCardProps) {
   const isCanceled = event.status === "canceled";
@@ -209,7 +212,9 @@ const EventCard = React.memo(function EventCard({
           <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5 }}>
             <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
               {hobbies.map((h) => {
-                const isMatch = !isPast && viewerHobbySlugs?.has(h.slug);
+                const isMatch =
+                  !isPast &&
+                  viewerHobbyCategories?.has(effectiveCategoryOf(h));
                 return (
                   <Chip
                     key={h.slug}
@@ -338,11 +343,22 @@ const EventCard = React.memo(function EventCard({
             </Stack>
           </Stack>
 
-          {/* RSVP status (for non-hosts) */}
-          {!event.isHost && !isExample && !hideRsvp && (
+          {/* Viewer participation row. For attendees this shows their RSVP
+              status (Going / Maybe / Not responded); for hosts it shows a
+              clear "You're hosting" state so the card always tells the viewer
+              how they relate to the plan at a glance. Hidden on example
+              cards and on surfaces that opt out via `hideRsvp`. */}
+          {!isExample && !hideRsvp && (
             <Box sx={{ mt: 1.75, pt: 1.25, borderTop: "1px solid", borderColor: "grey.200" }}>
-              <Typography variant="body2" sx={{ color: rsvpColor(event.myRsvpStatus), fontWeight: 600, fontSize: "0.8125rem" }}>
-                {rsvpLabel(event.myRsvpStatus)}
+              <Typography
+                variant="body2"
+                sx={{
+                  color: event.isHost ? "primary.main" : rsvpColor(event.myRsvpStatus),
+                  fontWeight: 600,
+                  fontSize: "0.8125rem",
+                }}
+              >
+                {event.isHost ? "You're hosting" : rsvpLabel(event.myRsvpStatus)}
               </Typography>
             </Box>
           )}

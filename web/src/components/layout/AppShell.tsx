@@ -134,13 +134,16 @@ export default function AppShell({ children, user }: AppShellProps) {
     let cancelled = false;
     apiFetch("/admin/badge-counts", { auth: true })
       .then((res) => res.json())
-      .then((data: { ok?: boolean; users?: number; interests?: number; plans?: number; roadmap?: number }) => {
+      .then((data: { ok?: boolean; users?: number; interests?: number; plans?: number; roadmap?: number; safety?: number; communities?: number; shoutouts?: number }) => {
         if (!cancelled && data.ok) {
           setAdminBadges({
             "/admin/chums": data.users ?? 0,
             "/admin/interests": data.interests ?? 0,
             "/admin/plans": data.plans ?? 0,
             "/admin/roadmap": data.roadmap ?? 0,
+            "/admin/safety": data.safety ?? 0,
+            "/admin/communities": data.communities ?? 0,
+            "/admin/shoutouts": data.shoutouts ?? 0,
           });
         }
       })
@@ -391,7 +394,7 @@ export default function AppShell({ children, user }: AppShellProps) {
                   onClick={() => {
                     setMobileOpen(false);
                     if (badgeCount > 0) {
-                      const sectionMap: Record<string, string> = { "/admin/chums": "users", "/admin/interests": "interests", "/admin/plans": "plans", "/admin/roadmap": "roadmap" };
+                      const sectionMap: Record<string, string> = { "/admin/chums": "users", "/admin/interests": "interests", "/admin/plans": "plans", "/admin/roadmap": "roadmap", "/admin/safety": "safety", "/admin/communities": "communities", "/admin/shoutouts": "shoutouts" };
                       const section = sectionMap[item.href];
                       if (section) {
                         apiFetch("/admin/mark-viewed", { auth: true, method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ section }) }).catch(() => {});

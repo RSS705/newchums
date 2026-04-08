@@ -27,6 +27,7 @@ import EmptyState from "@/components/ui/EmptyState";
 import DistanceSelect from "@/components/common/DistanceSelect";
 import PeopleRoundedIcon from "@mui/icons-material/PeopleRounded";
 import { apiFetch } from "@/lib/apiClient";
+import { effectiveCategorySet } from "@/lib/interestUtils";
 
 type HobbyOption = { slug: string; name: string };
 type LocalSignal = { hobbyName: string; count: number };
@@ -83,7 +84,7 @@ type ProfileData = {
   home_lat: number | null;
   home_lng: number | null;
   travel_radius_km: number;
-  interest_items?: { slug: string; name: string }[];
+  interest_items?: { slug: string; name: string; category?: string | null }[];
 };
 
 type DashboardHomeProps = {
@@ -226,6 +227,25 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
     return () => { cancelled = true; };
   }, [fetchEvents]);
 
+  // Refresh profile + events when the user updates their profile on another
+  // page (e.g. setting home location) and returns via Next.js router cache,
+  // which would otherwise leave this component's `profile` state stale.
+  useEffect(() => {
+    const onProfileChanged = async () => {
+      try {
+        const res = await apiFetch("/profile", { auth: true });
+        if (!res.ok) return;
+        const d = (await res.json()) as { profile: ProfileData };
+        const p = d.profile;
+        setProfile(p);
+        filtersRef.current = { ...filtersRef.current, profile: p };
+        if (readyRef.current) void fetchEvents(0, false);
+      } catch { /* ignore */ }
+    };
+    window.addEventListener("nc:profile-changed", onProfileChanged);
+    return () => window.removeEventListener("nc:profile-changed", onProfileChanged);
+  }, [fetchEvents]);
+
   // Re-fetch when the user changes filters (skipped during init).
   useEffect(() => {
     if (!readyRef.current) return;
@@ -268,10 +288,10 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
   const hasLocation = profile?.home_lat != null && profile?.home_lng != null;
   const hasHobbies = (profile?.interest_items?.length ?? 0) > 0;
 
-  const viewerHobbySlugs = useMemo(() => {
+  const viewerHobbyCategories = useMemo(() => {
     const items = profile?.interest_items;
     if (!items?.length) return undefined;
-    return new Set(items.map((i) => i.slug));
+    return effectiveCategorySet(items);
   }, [profile?.interest_items]);
 
   const defaultRadiusKm = profile?.travel_radius_km ?? 200;
@@ -559,7 +579,7 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
           <Grid container spacing={2}>
             {allEvents.map((event) => (
               <Grid key={event.id} size={{ xs: 12, sm: 6, md: 4 }} sx={{ display: "flex" }}>
-                <EventCard event={event} viewerHobbySlugs={viewerHobbySlugs} />
+                <EventCard event={event} viewerHobbyCategories={viewerHobbyCategories} />
               </Grid>
             ))}
           </Grid>

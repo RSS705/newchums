@@ -117,21 +117,6 @@ export default function AuthSplitLayout({
             bgcolor: "background.paper",
           }}
         >
-          {/* Mobile: compact illustration above form */}
-          <Box
-            component="img"
-            src={illustrationSrc}
-            alt=""
-            sx={{
-              display: { xs: "block", md: "none" },
-              width: "100%",
-              maxWidth: 200,
-              height: "auto",
-              mx: "auto",
-              mb: 2,
-              objectFit: "contain",
-            }}
-          />
           {children}
         </Box>
       </Box>

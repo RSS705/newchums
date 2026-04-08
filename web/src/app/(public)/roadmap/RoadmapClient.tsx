@@ -14,6 +14,8 @@ import {
   RadioGroup,
   Skeleton,
   Stack,
+  Snackbar,
+  Alert,
   Switch,
   Tab,
   Tabs,
@@ -149,42 +151,48 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
   const [submitAnonymous, setSubmitAnonymous] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
   const [submitError, setSubmitError] = React.useState("");
+  const [submitSuccess, setSubmitSuccess] = React.useState(false);
   const [submitFile, setSubmitFile] = React.useState<File | null>(null);
   const [submitFilePreview, setSubmitFilePreview] = React.useState<string | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const statusFilter = tab === 0 ? "active" : "completed";
 
-  const fetchItems = React.useCallback(async (append = false) => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({
-        status: statusFilter,
-        sort,
-        limit: "20",
-        offset: append ? String(offset) : "0",
-      });
-      if (category) params.set("category", category);
-      if (search) params.set("search", search);
+  const fetchItems = React.useCallback(
+    async (append = false) => {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams({
+          status: statusFilter,
+          sort,
+          limit: "20",
+          offset: append ? String(offset) : "0",
+        });
+        if (category) params.set("category", category);
+        if (search) params.set("search", search);
 
-      const res = await (isLoggedIn
-        ? apiFetch(`/roadmap?${params}`, { auth: true })
-        : fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/roadmap?${params}`));
+        const res = await (isLoggedIn
+          ? apiFetch(`/roadmap?${params}`, { auth: true })
+          : fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/roadmap?${params}`));
 
-      const data = await res.json();
-      if (data.ok) {
-        if (append) {
-          setItems((prev) => [...prev, ...data.items]);
-        } else {
-          setItems(data.items);
+        const data = await res.json();
+        if (data.ok) {
+          if (append) {
+            setItems((prev) => [...prev, ...data.items]);
+          } else {
+            setItems(data.items);
+          }
+          setTotal(data.total);
+          if (!append) setOffset(data.items.length);
+          else setOffset((prev) => prev + data.items.length);
         }
-        setTotal(data.total);
-        if (!append) setOffset(data.items.length);
-        else setOffset((prev) => prev + data.items.length);
+      } catch {
+        /* noop */
       }
-    } catch { /* noop */ }
-    setLoading(false);
-  }, [statusFilter, sort, category, search, offset, isLoggedIn]);
+      setLoading(false);
+    },
+    [statusFilter, sort, category, search, offset, isLoggedIn]
+  );
 
   React.useEffect(() => {
     setOffset(0);
@@ -205,7 +213,9 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
           )
         );
       }
-    } catch { /* noop */ }
+    } catch {
+      /* noop */
+    }
   };
 
   const handleFollow = async (e: React.MouseEvent, itemId: string) => {
@@ -218,11 +228,15 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
       if (data.ok) {
         setItems((prev) =>
           prev.map((i) =>
-            i.id === itemId ? { ...i, viewer_following: data.following, follower_count: data.follower_count } : i
+            i.id === itemId
+              ? { ...i, viewer_following: data.following, follower_count: data.follower_count }
+              : i
           )
         );
       }
-    } catch { /* noop */ }
+    } catch {
+      /* noop */
+    }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -260,7 +274,11 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
           auth: true,
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ purpose: "roadmap_attachment", contentType: submitFile.type, contentLength: submitFile.size }),
+          body: JSON.stringify({
+            purpose: "roadmap_attachment",
+            contentType: submitFile.type,
+            contentLength: submitFile.size,
+          }),
         });
         const initData = await initRes.json();
         if (!initData.ok) {
@@ -270,7 +288,11 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
         }
 
         const uploadUrl = `${getApiBaseUrl()}${initData.uploadUrl}`;
-        const upRes = await fetch(uploadUrl, { method: "PUT", headers: { "Content-Type": submitFile.type }, body: submitFile });
+        const upRes = await fetch(uploadUrl, {
+          method: "PUT",
+          headers: { "Content-Type": submitFile.type },
+          body: submitFile,
+        });
         if (!upRes.ok) {
           setSubmitError("File upload failed. Please try again.");
           setSubmitting(false);
@@ -317,6 +339,10 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
         setSubmitAnonymous(false);
         clearFile();
         fetchItems(false);
+        setSubmitSuccess(true);
+        if (typeof window !== "undefined") {
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }
       } else {
         setSubmitError(data.message || "Something went wrong. Please try again.");
       }
@@ -347,7 +373,13 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
             color="primary"
             startIcon={submitOpen ? undefined : <AddRoundedIcon />}
             onClick={() => setSubmitOpen((v) => !v)}
-            sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
+            sx={{
+              textTransform: "none",
+              fontWeight: 600,
+              borderRadius: 2,
+              boxShadow: "none",
+              "&:hover": { boxShadow: "none", opacity: 0.92 },
+            }}
           >
             {submitOpen ? "Close form" : "Submit feedback"}
           </Button>
@@ -357,7 +389,13 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
             href="/login?next=/roadmap"
             variant="contained"
             color="primary"
-            sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
+            sx={{
+              textTransform: "none",
+              fontWeight: 600,
+              borderRadius: 2,
+              boxShadow: "none",
+              "&:hover": { boxShadow: "none", opacity: 0.92 },
+            }}
           >
             Sign in to submit feedback and vote
           </Button>
@@ -380,7 +418,11 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
             <Typography variant="h5" fontWeight={700}>
               Submit feedback
             </Typography>
-            <IconButton size="small" onClick={() => setSubmitOpen(false)} sx={{ color: "text.secondary" }}>
+            <IconButton
+              size="small"
+              onClick={() => setSubmitOpen(false)}
+              sx={{ color: "text.secondary" }}
+            >
               <CloseRoundedIcon fontSize="small" />
             </IconButton>
           </Stack>
@@ -397,9 +439,17 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
             onChange={(e) => setSubmitCategory(e.target.value)}
             sx={{ mb: 2 }}
           >
-            <FormControlLabel value="feature_request" control={<Radio size="small" />} label="Feature request" />
+            <FormControlLabel
+              value="feature_request"
+              control={<Radio size="small" />}
+              label="Feature request"
+            />
             <FormControlLabel value="bug" control={<Radio size="small" />} label="Bug / issue" />
-            <FormControlLabel value="general_feedback" control={<Radio size="small" />} label="General feedback" />
+            <FormControlLabel
+              value="general_feedback"
+              control={<Radio size="small" />}
+              label="General feedback"
+            />
           </RadioGroup>
 
           <AppTextField
@@ -441,12 +491,25 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
                   component="img"
                   src={submitFilePreview}
                   alt="Attachment preview"
-                  sx={{ maxWidth: "100%", maxHeight: 160, borderRadius: 1.5, border: "1px solid", borderColor: "divider" }}
+                  sx={{
+                    maxWidth: "100%",
+                    maxHeight: 160,
+                    borderRadius: 1.5,
+                    border: "1px solid",
+                    borderColor: "divider",
+                  }}
                 />
                 <IconButton
                   size="small"
                   onClick={clearFile}
-                  sx={{ position: "absolute", top: 4, right: 4, bgcolor: "background.paper", boxShadow: 1, "&:hover": { bgcolor: "background.paper" } }}
+                  sx={{
+                    position: "absolute",
+                    top: 4,
+                    right: 4,
+                    bgcolor: "background.paper",
+                    boxShadow: 1,
+                    "&:hover": { bgcolor: "background.paper" },
+                  }}
                 >
                   <CloseRoundedIcon sx={{ fontSize: 16 }} />
                 </IconButton>
@@ -465,17 +528,37 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
 
           <Stack spacing={0.5} sx={{ mb: 2 }}>
             <FormControlLabel
-              control={<Switch checked={submitFollow} onChange={(e) => setSubmitFollow(e.target.checked)} size="small" />}
-              label={<Typography variant="body2" color="text.secondary">Follow this and receive email updates when addressed</Typography>}
+              control={
+                <Switch
+                  checked={submitFollow}
+                  onChange={(e) => setSubmitFollow(e.target.checked)}
+                  size="small"
+                />
+              }
+              label={
+                <Typography variant="body2" color="text.secondary">
+                  Follow this and receive email updates when addressed
+                </Typography>
+              }
             />
             <FormControlLabel
-              control={<Switch checked={submitAnonymous} onChange={(e) => setSubmitAnonymous(e.target.checked)} size="small" />}
-              label={<Typography variant="body2" color="text.secondary">Post anonymously on the public roadmap</Typography>}
+              control={
+                <Switch
+                  checked={submitAnonymous}
+                  onChange={(e) => setSubmitAnonymous(e.target.checked)}
+                  size="small"
+                />
+              }
+              label={
+                <Typography variant="body2" color="text.secondary">
+                  Post anonymously on the public roadmap
+                </Typography>
+              }
             />
           </Stack>
 
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.6 }}>
-            Submissions are reviewed before they appear publicly. You can track your submission from this page once it&apos;s posted.
+            Submissions are reviewed before they appear publicly.
           </Typography>
 
           {submitError && (
@@ -489,14 +572,17 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
               variant="contained"
               onClick={handleSubmit}
               disabled={submitting || !submitTitle.trim()}
-              sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
+              sx={{
+                textTransform: "none",
+                fontWeight: 600,
+                borderRadius: 2,
+                boxShadow: "none",
+                "&:hover": { boxShadow: "none", opacity: 0.92 },
+              }}
             >
               {submitting ? <CircularProgress size={20} /> : "Submit"}
             </Button>
-            <Button
-              onClick={() => setSubmitOpen(false)}
-              sx={{ textTransform: "none" }}
-            >
+            <Button onClick={() => setSubmitOpen(false)} sx={{ textTransform: "none" }}>
               Cancel
             </Button>
           </Stack>
@@ -526,8 +612,16 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
           endAdornment: searchInput ? (
             <InputAdornment position="end">
               <ClearRoundedIcon
-                sx={{ fontSize: 16, color: "text.disabled", cursor: "pointer", "&:hover": { color: "text.secondary" } }}
-                onClick={() => { setSearchInput(""); setSearch(""); }}
+                sx={{
+                  fontSize: 16,
+                  color: "text.disabled",
+                  cursor: "pointer",
+                  "&:hover": { color: "text.secondary" },
+                }}
+                onClick={() => {
+                  setSearchInput("");
+                  setSearch("");
+                }}
               />
             </InputAdornment>
           ) : null,
@@ -537,7 +631,12 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
       />
 
       {/* Filters */}
-      <Stack direction="row" spacing={1} sx={{ mb: 2.5, flexWrap: "wrap", gap: 1 }} alignItems="center">
+      <Stack
+        direction="row"
+        spacing={1}
+        sx={{ mb: 2.5, flexWrap: "wrap", gap: 1 }}
+        alignItems="center"
+      >
         {[
           { value: "", label: "All" },
           { value: "feature_request", label: "Features" },
@@ -633,10 +732,12 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
                     color: item.viewer_voted ? "primary.main" : "text.secondary",
                     transition: "all 0.15s",
                     cursor: isLoggedIn ? "pointer" : "default",
-                    "&:hover": isLoggedIn ? {
-                      borderColor: "primary.main",
-                      bgcolor: "primary.50",
-                    } : {},
+                    "&:hover": isLoggedIn
+                      ? {
+                          borderColor: "primary.main",
+                          bgcolor: "primary.50",
+                        }
+                      : {},
                   }}
                 >
                   {item.viewer_voted ? (
@@ -652,7 +753,12 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
 
               {/* Content */}
               <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Stack direction="row" spacing={0.75} alignItems="center" sx={{ mb: 0.5, flexWrap: "wrap" }}>
+                <Stack
+                  direction="row"
+                  spacing={0.75}
+                  alignItems="center"
+                  sx={{ mb: 0.5, flexWrap: "wrap" }}
+                >
                   <CategoryChip category={item.category} />
                   <StatusBadge status={item.status} />
                   {item.is_private && (
@@ -677,7 +783,12 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
                   {item.title}
                 </Typography>
                 {item.body && (
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 0.75, lineHeight: 1.5 }} noWrap>
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ mb: 0.75, lineHeight: 1.5 }}
+                    noWrap
+                  >
                     {item.body}
                   </Typography>
                 )}
@@ -693,7 +804,10 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
                       variant="caption"
                       color="text.disabled"
                       onClick={(e) => e.stopPropagation()}
-                      sx={{ textDecoration: "none", "&:hover": { textDecoration: "underline", color: "primary.main" } }}
+                      sx={{
+                        textDecoration: "none",
+                        "&:hover": { textDecoration: "underline", color: "primary.main" },
+                      }}
                     >
                       @{item.author_username}
                     </Typography>
@@ -703,9 +817,18 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
                   </Typography>
                   <Stack direction="row" spacing={0.5} alignItems="center">
                     <ChatBubbleOutlineRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
-                    <Typography variant="caption" color="text.disabled">{item.comment_count}</Typography>
+                    <Typography variant="caption" color="text.disabled">
+                      {item.comment_count}
+                    </Typography>
                   </Stack>
-                  <Tooltip title={item.viewer_following ? "You're following this -- click to unfollow" : "Follow for email updates"} arrow>
+                  <Tooltip
+                    title={
+                      item.viewer_following
+                        ? "You're following this -- click to unfollow"
+                        : "Follow for email updates"
+                    }
+                    arrow
+                  >
                     <Stack
                       direction="row"
                       spacing={0.5}
@@ -721,11 +844,20 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
                       }}
                     >
                       {item.viewer_following ? (
-                        <NotificationsActiveRoundedIcon sx={{ fontSize: 14, color: "primary.main" }} />
+                        <NotificationsActiveRoundedIcon
+                          sx={{ fontSize: 14, color: "primary.main" }}
+                        />
                       ) : (
-                        <NotificationsNoneRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
+                        <NotificationsNoneRoundedIcon
+                          sx={{ fontSize: 14, color: "text.disabled" }}
+                        />
                       )}
-                      <Typography variant="caption" color={item.viewer_following ? "primary.main" : "text.disabled"}>{item.follower_count}</Typography>
+                      <Typography
+                        variant="caption"
+                        color={item.viewer_following ? "primary.main" : "text.disabled"}
+                      >
+                        {item.follower_count}
+                      </Typography>
                     </Stack>
                   </Tooltip>
                 </Stack>
@@ -748,12 +880,27 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
         </Box>
       )}
 
+      <Snackbar
+        open={submitSuccess}
+        autoHideDuration={6000}
+        onClose={() => setSubmitSuccess(false)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          onClose={() => setSubmitSuccess(false)}
+          severity="success"
+          variant="filled"
+          sx={{ width: "100%" }}
+        >
+          Thanks! Your feedback was received and will appear publicly once reviewed.
+        </Alert>
+      </Snackbar>
+
       {loading && items.length > 0 && (
         <Box sx={{ textAlign: "center", mt: 2 }}>
           <CircularProgress size={24} />
         </Box>
       )}
-
     </Box>
   );
 }

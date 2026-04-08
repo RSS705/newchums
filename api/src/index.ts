@@ -1462,13 +1462,13 @@ app.get("/interests", async (c) => {
     const likePattern = q ? `%${q.toLowerCase()}%` : null;
     const rows = likePattern
       ? ((await sql`
-          SELECT id, name, slug
+          SELECT id, name, category, slug
           FROM interests
           WHERE LOWER(name) LIKE ${likePattern}
             AND (is_deleted IS NULL OR is_deleted = false)
           ORDER BY name ASC
           LIMIT 20
-        `) as { id: string; name: string; slug: string }[])
+        `) as { id: string; name: string; category: string | null; slug: string }[])
       : ((await sql`
           SELECT id, name, category, slug, sort_order
           FROM interests
@@ -1477,16 +1477,16 @@ app.get("/interests", async (c) => {
         `) as {
           id: string;
           name: string;
-          category: string;
+          category: string | null;
           slug: string;
           sort_order: number;
         }[]);
     return c.json({
       ok: true,
       interests: rows.map((r) =>
-        "category" in r
+        "sort_order" in r
           ? { id: r.id, name: r.name, category: r.category, slug: r.slug, sort_order: r.sort_order }
-          : { id: r.id, name: r.name, slug: r.slug },
+          : { id: r.id, name: r.name, category: r.category, slug: r.slug },
       ),
     });
   } catch (err) {
@@ -2096,13 +2096,13 @@ app.get("/profile", async (c) => {
     }>;
     const profile = profileRows[0];
     const interestRows = (await sql`
-      SELECT i.slug, i.name
+      SELECT i.slug, i.name, i.category
       FROM user_interests ui
       JOIN interests i ON i.id = ui.interest_id
       WHERE ui.user_id = ${appUserId}
       ORDER BY i.sort_order, i.name
-    `) as { slug: string; name: string }[];
-    const interest_items = interestRows.map((r) => ({ slug: r.slug, name: r.name }));
+    `) as { slug: string; name: string; category: string | null }[];
+    const interest_items = interestRows.map((r) => ({ slug: r.slug, name: r.name, category: r.category }));
     const displayName = userInfo?.name ?? null;
     const handle = userInfo?.username ?? null;
     const email = userInfo?.email ?? payload.email ?? null;
@@ -4276,14 +4276,28 @@ app.get("/admin/badge-counts", async (c) => {
     const interestsTs = tsMap["interests"] ?? "1970-01-01T00:00:00Z";
     const plansTs = tsMap["plans"] ?? "1970-01-01T00:00:00Z";
     const roadmapTs = tsMap["roadmap"] ?? "1970-01-01T00:00:00Z";
+    const safetyTs = tsMap["safety"] ?? "1970-01-01T00:00:00Z";
+    const communitiesTs = tsMap["communities"] ?? "1970-01-01T00:00:00Z";
+    const shoutoutsTs = tsMap["shoutouts"] ?? "1970-01-01T00:00:00Z";
 
     const counts = (await sql`
       SELECT
         (SELECT COUNT(*)::int FROM newchums.users WHERE created_at > ${usersTs}) AS new_users,
         (SELECT COUNT(*)::int FROM newchums.interests WHERE created_at > ${interestsTs} AND is_deleted = false) AS new_interests,
         (SELECT COUNT(*)::int FROM newchums.events WHERE created_at > ${plansTs} AND status != 'draft' AND COALESCE(is_qa, false) = false) AS new_plans,
-        (SELECT COUNT(*)::int FROM newchums.roadmap_items WHERE created_at > ${roadmapTs} AND is_removed = false) AS new_roadmap
-    `) as { new_users: number; new_interests: number; new_plans: number; new_roadmap: number }[];
+        (SELECT COUNT(*)::int FROM newchums.roadmap_items WHERE created_at > ${roadmapTs} AND is_removed = false) AS new_roadmap,
+        (SELECT COUNT(*)::int FROM newchums.conduct_reports WHERE created_at > ${safetyTs}) AS new_safety,
+        (SELECT COUNT(*)::int FROM newchums.communities WHERE created_at > ${communitiesTs}) AS new_communities,
+        (SELECT COUNT(*)::int FROM newchums.shoutouts WHERE created_at > ${shoutoutsTs} AND status = 'pending') AS new_shoutouts
+    `) as {
+      new_users: number;
+      new_interests: number;
+      new_plans: number;
+      new_roadmap: number;
+      new_safety: number;
+      new_communities: number;
+      new_shoutouts: number;
+    }[];
 
     return c.json({
       ok: true,
@@ -4291,6 +4305,9 @@ app.get("/admin/badge-counts", async (c) => {
       interests: counts[0].new_interests,
       plans: counts[0].new_plans,
       roadmap: counts[0].new_roadmap,
+      safety: counts[0].new_safety,
+      communities: counts[0].new_communities,
+      shoutouts: counts[0].new_shoutouts,
     });
   } catch (err) {
     console.error("[GET /admin/badge-counts]", err);
@@ -4307,7 +4324,7 @@ app.post("/admin/mark-viewed", async (c) => {
   try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
 
   const section = String(body.section ?? "");
-  if (!["users", "interests", "plans", "roadmap"].includes(section))
+  if (!["users", "interests", "plans", "roadmap", "safety", "communities", "shoutouts"].includes(section))
     return c.json({ ok: false, error: "VALIDATION", message: "Invalid section" }, 400);
 
   const sql = getSql(c.env);
@@ -6585,7 +6602,7 @@ app.get("/communities/:id/events", async (c) => {
         (SELECT COUNT(*)::int FROM newchums.event_rsvps r WHERE r.event_id = e.id AND r.status = 'maybe') AS maybe_count,
         (SELECT string_agg(i.name, ', ') FROM newchums.event_interests ei JOIN newchums.interests i ON i.id = ei.interest_id WHERE ei.event_id = e.id) AS hobby_names,
         COALESCE(
-          (SELECT json_agg(json_build_object('name', ii.name, 'slug', ii.slug))
+          (SELECT json_agg(json_build_object('name', ii.name, 'slug', ii.slug, 'category', ii.category))
            FROM newchums.event_interests ei2
            JOIN newchums.interests ii ON ii.id = ei2.interest_id
            WHERE ei2.event_id = e.id AND ii.is_deleted = false),
@@ -7156,7 +7173,7 @@ app.get("/events/mine", async (c) => {
         e.host_user_id, e.created_at, e.canceled_at, e.cancellation_reason, e.banner_key,
         COALESCE(e.is_qa, false) AS is_qa,
         COALESCE(
-          (SELECT json_agg(json_build_object('name', ii.name, 'slug', ii.slug))
+          (SELECT json_agg(json_build_object('name', ii.name, 'slug', ii.slug, 'category', ii.category))
            FROM newchums.event_interests ei2
            JOIN newchums.interests ii ON ii.id = ei2.interest_id
            WHERE ei2.event_id = e.id AND ii.is_deleted = false),
@@ -7305,7 +7322,7 @@ app.get("/events/explore/public", async (c) => {
         e.location_area, e.online_link,
         e.max_seats, e.visibility, e.status, e.banner_key,
         COALESCE(
-          (SELECT json_agg(json_build_object('name', ii.name, 'slug', ii.slug))
+          (SELECT json_agg(json_build_object('name', ii.name, 'slug', ii.slug, 'category', ii.category))
            FROM newchums.event_interests ei2
            JOIN newchums.interests ii ON ii.id = ei2.interest_id
            WHERE ei2.event_id = e.id AND ii.is_deleted = false),
@@ -7323,7 +7340,17 @@ app.get("/events/explore/public", async (c) => {
         AND e.visibility = 'public'
         AND COALESCE(e.hide_from_explore, false) = false
         AND COALESCE(e.is_qa, false) = false
-        ${hobbySlug ? sql`AND EXISTS (SELECT 1 FROM newchums.event_interests ei3 JOIN newchums.interests ii3 ON ii3.id = ei3.interest_id WHERE ei3.event_id = e.id AND ii3.slug = ${hobbySlug})` : sql``}
+        ${hobbySlug ? sql`AND EXISTS (
+          SELECT 1 FROM newchums.interests ii_pick
+          WHERE ii_pick.slug = ${hobbySlug} AND ii_pick.is_deleted = false
+            AND EXISTS (
+              SELECT 1 FROM newchums.event_interests ei3
+              JOIN newchums.interests ii3 ON ii3.id = ei3.interest_id AND ii3.is_deleted = false
+              WHERE ei3.event_id = e.id
+                AND LOWER(COALESCE(NULLIF(TRIM(ii3.category), ''), ii3.name))
+                  = LOWER(COALESCE(NULLIF(TRIM(ii_pick.category), ''), ii_pick.name))
+            )
+        )` : sql``}
         ${search ? sql`AND (e.title ILIKE ${"%" + search + "%"} OR e.description ILIKE ${"%" + search + "%"})` : sql``}
         ${dateEnd ? sql`AND e.starts_at <= ${dateEnd.toISOString()}` : sql``}
       ORDER BY ${orderClause}
@@ -7385,12 +7412,18 @@ app.get("/events/explore/public", async (c) => {
  *  logged-in Explore feed. Returns one local-interest line when the count meets
  *  the minimum threshold.
  *
+ *  Matching is done on **effective category** (see effectiveCategoryOf in
+ *  web/src/lib/interestUtils.ts). Each candidate hobby contributes its
+ *  effective category, and we count distinct local active users who have any
+ *  interest sharing that effective category.
+ *
  *  Selection logic:
- *  1. If `hobby` query param is set, try that exact hobby first.
- *  2. If the exact hobby doesn't reach the threshold, try its category (if any).
- *  3. Otherwise, iterate the viewer's profile hobbies and pick the one with the
- *     highest qualifying local count (exact first, then category fallback).
- *  4. Minimum count: 5. If nothing qualifies, return null.
+ *  1. Build candidate categories: filter hobby's category first (if set),
+ *     followed by the viewer's profile hobby categories in order.
+ *  2. For each candidate (in priority order), count local active users with an
+ *     interest in the same effective category.
+ *  3. Pick the highest-count candidate that reaches MIN_COUNT (= 5).
+ *  4. If nothing qualifies, return null.
  *
  *  "Active" = last_active_at within 6 months AND not suspended.
  *  "Local" = user has home_lat/lng and is within the viewer's travel radius.
@@ -7434,40 +7467,47 @@ app.get("/explore/local-signal", async (c) => {
       ORDER BY i.name
     `) as { id: string; slug: string; name: string; category: string | null }[];
 
-    // Build ordered candidate list: filter hobby first (if any), then viewer's hobbies
-    type Candidate = { slug: string; name: string; category: string | null; interestId: string };
+    // Build ordered candidate list: filter hobby first (if any), then viewer's
+    // hobbies. Each candidate is keyed by its **effective category**, which is
+    // also the display label we'd show in the signal. We dedupe by effective
+    // category so two interests in the same category contribute one candidate.
+    type Candidate = { displayLabel: string; effectiveCategory: string };
     const candidates: Candidate[] = [];
-    const seen = new Set<string>();
+    const seenCategories = new Set<string>();
+    const pushCandidate = (name: string, category: string | null) => {
+      const cat = (category ?? "").trim();
+      const display = cat !== "" ? cat : name;
+      const ec = display.trim().toLowerCase();
+      if (!ec || seenCategories.has(ec)) return;
+      seenCategories.add(ec);
+      candidates.push({ displayLabel: display, effectiveCategory: ec });
+    };
 
     if (filterHobbySlug) {
-      // Look up the filtered hobby (may or may not be in the viewer's profile)
       const filterRows = (await sql`
         SELECT id, slug, name, category FROM newchums.interests
         WHERE slug = ${filterHobbySlug} AND is_deleted = false LIMIT 1
       `) as { id: string; slug: string; name: string; category: string | null }[];
       if (filterRows.length > 0) {
-        const f = filterRows[0];
-        candidates.push({ slug: f.slug, name: f.name, category: f.category, interestId: f.id });
-        seen.add(f.slug);
+        pushCandidate(filterRows[0].name, filterRows[0].category);
       }
     }
     for (const h of viewerHobbyRows) {
-      if (!seen.has(h.slug)) {
-        candidates.push({ slug: h.slug, name: h.name, category: h.category, interestId: h.id });
-        seen.add(h.slug);
-      }
+      pushCandidate(h.name, h.category);
     }
 
     if (candidates.length === 0) {
       return c.json({ ok: true, signal: null });
     }
 
-    // For each candidate, count local active users with that exact hobby
-    // Use a single query with ANY to count all at once
-    const candidateIds = candidates.map((c) => c.interestId);
-    const exactCounts = (await sql`
-      SELECT ui.interest_id, COUNT(DISTINCT ui.user_id)::int AS cnt
+    // Count local active users per candidate effective category in one pass.
+    const candidateCategories = candidates.map((c) => c.effectiveCategory);
+    const counts = (await sql`
+      SELECT
+        LOWER(COALESCE(NULLIF(TRIM(i.category), ''), i.name)) AS effective_category,
+        COUNT(DISTINCT ui.user_id)::int AS cnt
       FROM newchums.user_interests ui
+      JOIN newchums.interests i ON i.id = ui.interest_id AND i.is_deleted = false
       JOIN newchums.users u ON u.id = ui.user_id
         AND u.id != ${userId}
         AND COALESCE(u.is_suspended, false) = false
@@ -7479,58 +7519,26 @@ app.get("/explore/local-signal", async (c) => {
           cos(radians(up.home_lng) - radians(${lng})) +
           sin(radians(${lat})) * sin(radians(up.home_lat))
         ))) <= ${radiusKm}
-      WHERE ui.interest_id = ANY(${candidateIds})
-      GROUP BY ui.interest_id
-    `) as { interest_id: string; cnt: number }[];
+      WHERE LOWER(COALESCE(NULLIF(TRIM(i.category), ''), i.name)) = ANY(${candidateCategories})
+      GROUP BY effective_category
+    `) as { effective_category: string; cnt: number }[];
 
-    const exactMap = new Map(exactCounts.map((r) => [r.interest_id, r.cnt]));
+    const countMap = new Map(counts.map((r) => [r.effective_category, r.cnt]));
 
-    // Find the best exact-match candidate
-    let bestExact: { name: string; count: number } | null = null;
-    for (const cand of candidates) {
-      const cnt = exactMap.get(cand.interestId) ?? 0;
-      if (cnt >= MIN_COUNT && (!bestExact || cnt > bestExact.count)) {
-        bestExact = { name: cand.name, count: cnt };
+    // Pick the highest-count candidate that reaches the minimum, breaking ties
+    // by candidate priority order (filter hobby first, then viewer hobbies).
+    let best: { displayLabel: string; count: number; priority: number } | null = null;
+    candidates.forEach((cand, idx) => {
+      const cnt = countMap.get(cand.effectiveCategory) ?? 0;
+      if (cnt < MIN_COUNT) return;
+      if (!best || cnt > best.count || (cnt === best.count && idx < best.priority)) {
+        best = { displayLabel: cand.displayLabel, count: cnt, priority: idx };
       }
-    }
+    });
 
-    if (bestExact) {
-      return c.json({ ok: true, signal: { hobbyName: bestExact.name, count: bestExact.count } });
-    }
-
-    // No exact hobby qualifies — try category fallback for candidates that have a category
-    const categoryNames = [...new Set(candidates.map((c) => c.category).filter((c): c is string => !!c && c.trim() !== ""))];
-
-    if (categoryNames.length > 0) {
-      // Count local active users who have ANY hobby in those categories
-      const categoryCounts = (await sql`
-        SELECT i.category, COUNT(DISTINCT ui.user_id)::int AS cnt
-        FROM newchums.user_interests ui
-        JOIN newchums.interests i ON i.id = ui.interest_id AND i.is_deleted = false
-          AND i.category = ANY(${categoryNames})
-        JOIN newchums.users u ON u.id = ui.user_id
-          AND u.id != ${userId}
-          AND COALESCE(u.is_suspended, false) = false
-          AND u.last_active_at >= ${activeSince}::timestamptz
-        JOIN newchums.user_profile up ON up.user_id = u.id
-          AND up.home_lat IS NOT NULL AND up.home_lng IS NOT NULL
-          AND 6371 * acos(LEAST(1.0, GREATEST(-1.0,
-            cos(radians(${lat})) * cos(radians(up.home_lat)) *
-            cos(radians(up.home_lng) - radians(${lng})) +
-            sin(radians(${lat})) * sin(radians(up.home_lat))
-          ))) <= ${radiusKm}
-        GROUP BY i.category
-      `) as { category: string; cnt: number }[];
-
-      // Prefer the category of the first candidate that qualifies (preserves priority order)
-      const catMap = new Map(categoryCounts.map((r) => [r.category, r.cnt]));
-      for (const cand of candidates) {
-        if (!cand.category || !cand.category.trim()) continue;
-        const cnt = catMap.get(cand.category) ?? 0;
-        if (cnt >= MIN_COUNT) {
-          return c.json({ ok: true, signal: { hobbyName: cand.category, count: cnt } });
-        }
-      }
+    if (best) {
+      const winner = best as { displayLabel: string; count: number; priority: number };
+      return c.json({ ok: true, signal: { hobbyName: winner.displayLabel, count: winner.count } });
     }
 
     return c.json({ ok: true, signal: null });
@@ -7583,13 +7591,19 @@ app.get("/events/explore", async (c) => {
   const hasLocation = lat !== null && lng !== null && !isNaN(lat) && !isNaN(lng);
 
   try {
+    // Hobby matching uses **effective category** (see effectiveCategoryOf in
+    // web/src/lib/interestUtils.ts and the digest comment block above). Two
+    // interests match when they share an effective category, so the viewer's
+    // fingerprint is the set of distinct effective categories on their profile.
     const userHobbyRows = (await sql`
-      SELECT ii.slug FROM newchums.user_interests ui
+      SELECT DISTINCT
+        LOWER(COALESCE(NULLIF(TRIM(ii.category), ''), ii.name)) AS effective_category
+      FROM newchums.user_interests ui
       JOIN newchums.interests ii ON ii.id = ui.interest_id
       WHERE ui.user_id = ${userId} AND ii.is_deleted = false
-    `) as { slug: string }[];
-    const userHobbySlugs = userHobbyRows.map((r) => r.slug);
-    const hasUserHobbies = userHobbySlugs.length > 0;
+    `) as { effective_category: string }[];
+    const userEffectiveCategories = userHobbyRows.map((r) => r.effective_category);
+    const hasUserHobbies = userEffectiveCategories.length > 0;
 
     // Pre-fetch viewer's metrics for host→viewer chum preference filtering
     const viewerMetricRows = (await sql`
@@ -7614,8 +7628,17 @@ app.get("/events/explore", async (c) => {
       : null;
     const viewerAge = computeAge(viewerDob);
 
+    // Count distinct effective categories on the event that overlap with the
+    // viewer's set. Distinct so an event tagged with both "MTG Draft" and
+    // "MTG Commander" still contributes 1 to the score, not 2.
     const hobbyMatchSelectExpr = hasUserHobbies && personalizeEnabled
-      ? sql`(SELECT COUNT(*)::int FROM newchums.event_interests ei4 JOIN newchums.interests ii4 ON ii4.id = ei4.interest_id WHERE ei4.event_id = e.id AND ii4.slug = ANY(${userHobbySlugs})) AS hobby_match_count`
+      ? sql`(
+          SELECT COUNT(DISTINCT LOWER(COALESCE(NULLIF(TRIM(ii4.category), ''), ii4.name)))::int
+          FROM newchums.event_interests ei4
+          JOIN newchums.interests ii4 ON ii4.id = ei4.interest_id AND ii4.is_deleted = false
+          WHERE ei4.event_id = e.id
+            AND LOWER(COALESCE(NULLIF(TRIM(ii4.category), ''), ii4.name)) = ANY(${userEffectiveCategories})
+        ) AS hobby_match_count`
       : sql`0 AS hobby_match_count`;
 
     const sortByNewest = sortParam === "newest";
@@ -7646,7 +7669,7 @@ app.get("/events/explore", async (c) => {
         COALESCE(e.is_qa, false) AS is_qa,
         ${hobbyMatchSelectExpr},
         COALESCE(
-          (SELECT json_agg(json_build_object('name', ii.name, 'slug', ii.slug))
+          (SELECT json_agg(json_build_object('name', ii.name, 'slug', ii.slug, 'category', ii.category))
            FROM newchums.event_interests ei2
            JOIN newchums.interests ii ON ii.id = ei2.interest_id
            WHERE ei2.event_id = e.id AND ii.is_deleted = false),
@@ -7741,7 +7764,17 @@ app.get("/events/explore", async (c) => {
               OR abs(EXTRACT(YEAR FROM age(h.date_of_birth))::int - ${viewerAge ?? 0}) <= hp.age_pref_years)
           )
         )
-        ${hobbySlug ? sql`AND EXISTS (SELECT 1 FROM newchums.event_interests ei3 JOIN newchums.interests ii3 ON ii3.id = ei3.interest_id WHERE ei3.event_id = e.id AND ii3.slug = ${hobbySlug})` : sql``}
+        ${hobbySlug ? sql`AND EXISTS (
+          SELECT 1 FROM newchums.interests ii_pick
+          WHERE ii_pick.slug = ${hobbySlug} AND ii_pick.is_deleted = false
+            AND EXISTS (
+              SELECT 1 FROM newchums.event_interests ei3
+              JOIN newchums.interests ii3 ON ii3.id = ei3.interest_id AND ii3.is_deleted = false
+              WHERE ei3.event_id = e.id
+                AND LOWER(COALESCE(NULLIF(TRIM(ii3.category), ''), ii3.name))
+                  = LOWER(COALESCE(NULLIF(TRIM(ii_pick.category), ''), ii_pick.name))
+            )
+        )` : sql``}
         ${search ? sql`AND (e.title ILIKE ${"%" + search + "%"} OR e.description ILIKE ${"%" + search + "%"})` : sql``}
         ${dateEnd ? sql`AND e.starts_at <= ${dateEnd.toISOString()}` : sql``}
         ${hasLocation && radiusKm < 20000 ? sql`AND (e.location_lat IS NULL OR e.location_lng IS NULL OR 6371 * acos(LEAST(1.0, GREATEST(-1.0, cos(radians(${lat ?? 0})) * cos(radians(e.location_lat)) * cos(radians(e.location_lng) - radians(${lng ?? 0})) + sin(radians(${lat ?? 0})) * sin(radians(e.location_lat))))) <= ${radiusKm})` : sql``}
@@ -8022,17 +8055,17 @@ app.get("/events/:id", async (c) => {
 
     // Hobbies, needed by both public and non-public response paths
     const eventHobbies = (await sql`
-      SELECT ii.name, ii.slug
+      SELECT ii.name, ii.slug, ii.category
       FROM newchums.event_interests ei2
       JOIN newchums.interests ii ON ii.id = ei2.interest_id
       WHERE ei2.event_id = ${eventId} AND ii.is_deleted = false
       ORDER BY ei2.created_at ASC
-    `) as Array<{ name: string; slug: string }>;
+    `) as Array<{ name: string; slug: string; category: string | null }>;
 
     const hobbyList = eventHobbies.length > 0
       ? eventHobbies
       : (event as Record<string, unknown>).interest_name
-        ? [{ name: (event as Record<string, unknown>).interest_name as string, slug: ((event as Record<string, unknown>).interest_slug as string) ?? "" }]
+        ? [{ name: (event as Record<string, unknown>).interest_name as string, slug: ((event as Record<string, unknown>).interest_slug as string) ?? "", category: null }]
         : [];
 
     // Community info (if plan belongs to a community)
@@ -10671,6 +10704,7 @@ const FEEDBACK_PROMPTS = ["reliability", "sociability", "presentation", "match_q
 const FEEDBACK_RESPONSES = ["agree", "maybe", "disagree"] as const;
 const ATTENDANCE_ISSUE_TYPES = ["no_show", "late_cancel", "very_late"] as const;
 const CONDUCT_REASONS = ["rude_aggressive", "harassment", "boundary_issue", "discriminatory", "unsafe_intoxicated", "disruptive", "property_damage", "other"] as const;
+const SHOUTOUT_MAX_LENGTH = 280;
 
 const FEEDBACK_RESPONSE_TARGETS: Record<string, number> = { agree: 80, maybe: 50, disagree: 20 };
 const ATTENDANCE_PENALTIES: Record<string, number> = { no_show: -10, late_cancel: -5, very_late: -8 };
@@ -10852,6 +10886,15 @@ app.get("/events/:id/feedback", async (c) => {
       WHERE plan_id = ${eventId} AND reported_user_id = ${userId}
     `) as { id: string; issue_type: string; status: string }[];
 
+    // Hydrate the per-attendee shout-out drafts the viewer has authored on
+    // this plan so the form can show "Awaiting review" / "Sent" / "Not approved"
+    // pills and pre-fill any pending message text.
+    const existingShoutouts = (await sql`
+      SELECT recipient_user_id, message, status
+      FROM newchums.shoutouts
+      WHERE plan_id = ${eventId} AND sender_user_id = ${userId}
+    `) as { recipient_user_id: string; message: string; status: string }[];
+
     return c.json({
       ok: true,
       attendees: otherAttendees,
@@ -10861,6 +10904,11 @@ app.get("/events/:id/feedback", async (c) => {
         id: i.id,
         issueType: i.issue_type,
         status: i.status,
+      })),
+      shoutouts: existingShoutouts.map((s) => ({
+        recipientUserId: s.recipient_user_id,
+        message: s.message,
+        status: s.status,
       })),
     });
   } catch (err) {
@@ -11134,6 +11182,312 @@ app.post("/events/:id/conduct-report", async (c) => {
   }
 });
 
+/** POST /events/:id/shoutout, submit (or update) a pending shout-out for one
+ *  attendee on a past plan. One shout-out per (plan, sender, recipient).
+ *  Pending shout-outs can be edited freely; once moderated (approved or
+ *  rejected) the slot is locked. */
+app.post("/events/:id/shoutout", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+  const eventId = c.req.param("id");
+
+  const body = await c.req.json<{
+    recipientUserId: string;
+    message: string;
+  }>();
+
+  const recipientUserId = String(body.recipientUserId ?? "");
+  const message = String(body.message ?? "").trim();
+
+  if (!recipientUserId)
+    return c.json({ ok: false, error: "VALIDATION", message: "Recipient is required" }, 400);
+  if (recipientUserId === userId)
+    return c.json({ ok: false, error: "CANNOT_SHOUT_SELF" }, 400);
+  if (message.length === 0)
+    return c.json({ ok: false, error: "VALIDATION", message: "Shout-out cannot be empty" }, 400);
+  if (message.length > SHOUTOUT_MAX_LENGTH)
+    return c.json({ ok: false, error: "VALIDATION", message: `Shout-out must be ${SHOUTOUT_MAX_LENGTH} characters or less` }, 400);
+
+  const safety = validateCleanText(message, "hobby");
+  if (!safety.ok)
+    return c.json({ ok: false, error: "INAPPROPRIATE_TEXT", message: safety.reason ?? "Please rephrase your shout-out." }, 400);
+
+  try {
+    // Plan must exist, must be in the past, and both parties must have been
+    // participants (host or going/maybe RSVP).
+    const ev = (await sql`
+      SELECT host_user_id, starts_at FROM newchums.events WHERE id = ${eventId}
+    `) as { host_user_id: string; starts_at: string }[];
+    if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    if (new Date(ev[0].starts_at) > new Date())
+      return c.json({ ok: false, error: "NOT_PAST" }, 400);
+
+    const isParticipant = async (uid: string): Promise<boolean> => {
+      if (uid === ev[0].host_user_id) return true;
+      const rows = (await sql`
+        SELECT 1 FROM newchums.event_rsvps
+        WHERE event_id = ${eventId} AND user_id = ${uid} AND status IN ('going', 'maybe')
+        LIMIT 1
+      `) as unknown[];
+      return rows.length > 0;
+    };
+    if (!(await isParticipant(userId))) return c.json({ ok: false, error: "NOT_PARTICIPANT" }, 403);
+    if (!(await isParticipant(recipientUserId))) return c.json({ ok: false, error: "RECIPIENT_NOT_PARTICIPANT" }, 400);
+
+    // Upsert: only allow editing while still pending. ON CONFLICT updates the
+    // row in place if a previous draft exists, but the WHERE clause keeps the
+    // moderated state untouchable.
+    const upserted = (await sql`
+      INSERT INTO newchums.shoutouts
+        (plan_id, sender_user_id, recipient_user_id, message, status)
+      VALUES
+        (${eventId}, ${userId}, ${recipientUserId}, ${message}, 'pending')
+      ON CONFLICT (plan_id, sender_user_id, recipient_user_id)
+        DO UPDATE SET message = EXCLUDED.message, updated_at = NOW()
+        WHERE shoutouts.status = 'pending'
+      RETURNING id, status
+    `) as { id: string; status: string }[];
+
+    if (upserted.length === 0) {
+      // The row already exists in a moderated state; the upsert was a no-op.
+      return c.json({ ok: false, error: "ALREADY_MODERATED" }, 409);
+    }
+
+    return c.json({ ok: true, status: upserted[0].status });
+  } catch (err) {
+    console.error("[POST /events/:id/shoutout]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** GET /profile/shoutouts, approved shout-outs received by the viewer.
+ *  Powers the private "Shout-outs received" section on /profile. */
+app.get("/profile/shoutouts", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+
+  try {
+    const rows = (await sql`
+      SELECT
+        s.id, s.message, s.created_at, s.reviewed_at,
+        s.plan_id, e.title AS plan_title, e.starts_at AS plan_starts_at,
+        s.sender_user_id, u.name AS sender_name, u.username AS sender_username
+      FROM newchums.shoutouts s
+      JOIN newchums.events e ON e.id = s.plan_id
+      JOIN newchums.users u ON u.id = s.sender_user_id
+      WHERE s.recipient_user_id = ${userId} AND s.status = 'approved'
+      ORDER BY COALESCE(s.reviewed_at, s.created_at) DESC
+      LIMIT 100
+    `) as Array<{
+      id: string;
+      message: string;
+      created_at: string;
+      reviewed_at: string | null;
+      plan_id: string;
+      plan_title: string;
+      plan_starts_at: string;
+      sender_user_id: string;
+      sender_name: string | null;
+      sender_username: string | null;
+    }>;
+
+    return c.json({
+      ok: true,
+      items: rows.map((r) => ({
+        id: r.id,
+        message: r.message,
+        receivedAt: r.reviewed_at ?? r.created_at,
+        planId: r.plan_id,
+        planTitle: r.plan_title,
+        planStartsAt: r.plan_starts_at,
+        sender: {
+          userId: r.sender_user_id,
+          displayName: r.sender_name?.trim() || (r.sender_username ? `@${r.sender_username.replace(/^@/, "")}` : "Someone"),
+          username: r.sender_username,
+        },
+      })),
+    });
+  } catch (err) {
+    console.error("[GET /profile/shoutouts]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** GET /admin/shoutouts, list shout-outs for moderation. */
+app.get("/admin/shoutouts", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  const sql = getSql(c.env);
+  const url = new URL(c.req.url);
+  const statusParam = (url.searchParams.get("status") || "pending").toLowerCase();
+  const search = url.searchParams.get("q")?.trim() || "";
+  const limit = Math.min(Number(url.searchParams.get("limit")) || 30, 100);
+  const offset = Math.max(Number(url.searchParams.get("offset")) || 0, 0);
+
+  const allowed = ["pending", "approved", "rejected", "all"];
+  if (!allowed.includes(statusParam))
+    return c.json({ ok: false, error: "VALIDATION", message: "Invalid status" }, 400);
+
+  const statusClause = statusParam === "all"
+    ? sql``
+    : sql`AND s.status = ${statusParam}`;
+  const searchClause = search
+    ? sql`AND (
+        s.message ILIKE ${"%" + search + "%"}
+        OR sender.name ILIKE ${"%" + search + "%"}
+        OR sender.username ILIKE ${"%" + search + "%"}
+        OR recipient.name ILIKE ${"%" + search + "%"}
+        OR recipient.username ILIKE ${"%" + search + "%"}
+        OR e.title ILIKE ${"%" + search + "%"}
+      )`
+    : sql``;
+
+  try {
+    const items = (await sql`
+      SELECT
+        s.id, s.message, s.status, s.created_at, s.reviewed_at,
+        s.plan_id, e.title AS plan_title, e.starts_at AS plan_starts_at,
+        s.sender_user_id, sender.name AS sender_name, sender.username AS sender_username,
+        s.recipient_user_id, recipient.name AS recipient_name, recipient.username AS recipient_username,
+        s.reviewed_by_user_id, reviewer.name AS reviewer_name, reviewer.username AS reviewer_username
+      FROM newchums.shoutouts s
+      JOIN newchums.events e ON e.id = s.plan_id
+      JOIN newchums.users sender ON sender.id = s.sender_user_id
+      JOIN newchums.users recipient ON recipient.id = s.recipient_user_id
+      LEFT JOIN newchums.users reviewer ON reviewer.id = s.reviewed_by_user_id
+      WHERE 1=1
+        ${statusClause}
+        ${searchClause}
+      ORDER BY s.created_at DESC
+      LIMIT ${limit} OFFSET ${offset}
+    `) as Array<{
+      id: string;
+      message: string;
+      status: string;
+      created_at: string;
+      reviewed_at: string | null;
+      plan_id: string;
+      plan_title: string;
+      plan_starts_at: string;
+      sender_user_id: string;
+      sender_name: string | null;
+      sender_username: string | null;
+      recipient_user_id: string;
+      recipient_name: string | null;
+      recipient_username: string | null;
+      reviewed_by_user_id: string | null;
+      reviewer_name: string | null;
+      reviewer_username: string | null;
+    }>;
+
+    const totalRows = (await sql`
+      SELECT COUNT(*)::int AS count
+      FROM newchums.shoutouts s
+      JOIN newchums.events e ON e.id = s.plan_id
+      JOIN newchums.users sender ON sender.id = s.sender_user_id
+      JOIN newchums.users recipient ON recipient.id = s.recipient_user_id
+      WHERE 1=1
+        ${statusClause}
+        ${searchClause}
+    `) as { count: number }[];
+
+    return c.json({
+      ok: true,
+      items: items.map((r) => ({
+        id: r.id,
+        message: r.message,
+        status: r.status,
+        createdAt: r.created_at,
+        reviewedAt: r.reviewed_at,
+        plan: { id: r.plan_id, title: r.plan_title, startsAt: r.plan_starts_at },
+        sender: {
+          userId: r.sender_user_id,
+          displayName: r.sender_name?.trim() || (r.sender_username ? `@${r.sender_username.replace(/^@/, "")}` : "Someone"),
+          username: r.sender_username,
+        },
+        recipient: {
+          userId: r.recipient_user_id,
+          displayName: r.recipient_name?.trim() || (r.recipient_username ? `@${r.recipient_username.replace(/^@/, "")}` : "Someone"),
+          username: r.recipient_username,
+        },
+        reviewer: r.reviewed_by_user_id
+          ? {
+              userId: r.reviewed_by_user_id,
+              displayName: r.reviewer_name?.trim() || (r.reviewer_username ? `@${r.reviewer_username.replace(/^@/, "")}` : "Admin"),
+            }
+          : null,
+      })),
+      total: totalRows[0].count,
+    });
+  } catch (err) {
+    console.error("[GET /admin/shoutouts]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /admin/shoutouts/:id/status, approve or reject a shout-out.
+ *  On approval, fires a bell notification to the recipient (no email). */
+app.post("/admin/shoutouts/:id/status", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  const sql = getSql(c.env);
+  const shoutoutId = c.req.param("id");
+
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+
+  const newStatus = String(body.status ?? "");
+  if (newStatus !== "approved" && newStatus !== "rejected")
+    return c.json({ ok: false, error: "VALIDATION", message: "Status must be 'approved' or 'rejected'" }, 400);
+
+  try {
+    const updated = (await sql`
+      UPDATE newchums.shoutouts
+      SET status = ${newStatus},
+          reviewed_at = NOW(),
+          reviewed_by_user_id = ${admin.id},
+          updated_at = NOW()
+      WHERE id = ${shoutoutId}
+      RETURNING id, sender_user_id, recipient_user_id, plan_id
+    `) as { id: string; sender_user_id: string; recipient_user_id: string; plan_id: string }[];
+
+    if (updated.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+
+    if (newStatus === "approved") {
+      const row = updated[0];
+      const planRows = (await sql`
+        SELECT title FROM newchums.events WHERE id = ${row.plan_id} LIMIT 1
+      `) as { title: string }[];
+      const planTitle = planRows[0]?.title ?? "your plan";
+      await sql`
+        INSERT INTO newchums.notifications (user_id, type, actor_user_id, entity_id, metadata)
+        VALUES (
+          ${row.recipient_user_id},
+          'shoutout_received',
+          ${row.sender_user_id},
+          ${row.id},
+          ${JSON.stringify({ planTitle, planId: row.plan_id })}::jsonb
+        )
+      `;
+    }
+
+    return c.json({ ok: true, status: newStatus });
+  } catch (err) {
+    console.error("[POST /admin/shoutouts/:id/status]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
 // ─── Chum Preferences ────────────────────────────────────────────────────────
 //
 // Pure evaluation helpers (evaluateChumPreferences, parsePrefOverrides,
@@ -11398,7 +11752,7 @@ app.get("/roadmap", async (c) => {
         ${statusFilter === "completed" ? sql`AND ri.status IN ('completed', 'not_planned')` : statusFilter === "all" ? sql`` : sql`AND ri.status NOT IN ('completed', 'not_planned')`}
         ${category && ROADMAP_CATEGORIES.includes(category as typeof ROADMAP_CATEGORIES[number]) ? sql`AND ri.category = ${category}` : sql``}
         ${search ? sql`AND ri.title ILIKE ${"%" + search + "%"}` : sql``}
-        ${viewerIsSuperAdmin ? sql`` : viewerUserId ? sql`AND ((ri.status != 'received' AND ri.is_private = false) OR ri.author_user_id = ${viewerUserId})` : sql`AND ri.status != 'received' AND ri.is_private = false`}
+        ${viewerUserId ? sql`AND ((ri.status != 'received' AND ri.is_private = false) OR ri.author_user_id = ${viewerUserId})` : sql`AND ri.status != 'received' AND ri.is_private = false`}
       ORDER BY ${sort === "newest" ? sql`ri.created_at DESC` : sql`ri.vote_count DESC, ri.created_at DESC`}
       LIMIT ${limit} OFFSET ${offset}
     `;
@@ -11419,7 +11773,7 @@ app.get("/roadmap", async (c) => {
         ${statusFilter === "completed" ? sql`AND ri.status IN ('completed', 'not_planned')` : statusFilter === "all" ? sql`` : sql`AND ri.status NOT IN ('completed', 'not_planned')`}
         ${category && ROADMAP_CATEGORIES.includes(category as typeof ROADMAP_CATEGORIES[number]) ? sql`AND ri.category = ${category}` : sql``}
         ${search ? sql`AND ri.title ILIKE ${"%" + search + "%"}` : sql``}
-        ${viewerIsSuperAdmin ? sql`` : viewerUserId ? sql`AND ((ri.status != 'received' AND ri.is_private = false) OR ri.author_user_id = ${viewerUserId})` : sql`AND ri.status != 'received' AND ri.is_private = false`}
+        ${viewerUserId ? sql`AND ((ri.status != 'received' AND ri.is_private = false) OR ri.author_user_id = ${viewerUserId})` : sql`AND ri.status != 'received' AND ri.is_private = false`}
     `) as { count: number }[];
 
     return c.json({
@@ -11885,13 +12239,28 @@ app.get("/admin/roadmap", async (c) => {
   const limit = Math.min(Number(url.searchParams.get("limit")) || 30, 100);
   const offset = Number(url.searchParams.get("offset")) || 0;
 
+  // "removed" is a synthetic status that maps to the existing `is_removed`
+  // soft-delete flag, not a real status enum value. By default the admin view
+  // hides removed items so they only appear when the admin explicitly filters
+  // by "Removed" — matching the behavior the community-facing roadmap has
+  // always had (`WHERE is_removed = false`).
+  const removedFilter =
+    statusFilter === "removed"
+      ? sql`AND ri.is_removed = true`
+      : sql`AND ri.is_removed = false`;
+  const realStatusFilter =
+    statusFilter && statusFilter !== "removed" && ROADMAP_STATUSES.includes(statusFilter as typeof ROADMAP_STATUSES[number])
+      ? sql`AND ri.status = ${statusFilter}`
+      : sql``;
+
   try {
     const items = await sql`
       SELECT ri.*, u.username AS author_username, u.email AS author_email
       FROM newchums.roadmap_items ri
       JOIN newchums.users u ON u.id = ri.author_user_id
       WHERE 1=1
-        ${statusFilter && ROADMAP_STATUSES.includes(statusFilter as typeof ROADMAP_STATUSES[number]) ? sql`AND ri.status = ${statusFilter}` : sql``}
+        ${removedFilter}
+        ${realStatusFilter}
         ${category && ROADMAP_CATEGORIES.includes(category as typeof ROADMAP_CATEGORIES[number]) ? sql`AND ri.category = ${category}` : sql``}
         ${search ? sql`AND ri.title ILIKE ${"%" + search + "%"}` : sql``}
       ORDER BY ri.created_at DESC
@@ -11901,7 +12270,8 @@ app.get("/admin/roadmap", async (c) => {
     const total = (await sql`
       SELECT COUNT(*)::int AS count FROM newchums.roadmap_items ri
       WHERE 1=1
-        ${statusFilter && ROADMAP_STATUSES.includes(statusFilter as typeof ROADMAP_STATUSES[number]) ? sql`AND ri.status = ${statusFilter}` : sql``}
+        ${removedFilter}
+        ${realStatusFilter}
         ${category && ROADMAP_CATEGORIES.includes(category as typeof ROADMAP_CATEGORIES[number]) ? sql`AND ri.category = ${category}` : sql``}
         ${search ? sql`AND ri.title ILIKE ${"%" + search + "%"}` : sql``}
     `) as { count: number }[];
@@ -12456,6 +12826,12 @@ async function processAttendanceAssurance(
 }
 
 // ─── Event match digest ───────────────────────────────────────────────────────
+//
+// Hobby matching uses **effective category**, not exact interest identity.
+// Effective category = COALESCE(NULLIF(TRIM(category), ''), name), lower-cased.
+// So "MTG Draft" and "MTG Commander" (both category "MTG") match each other,
+// while "Dog walking" with no category falls back to its own name.
+// See `effectiveCategoryOf` in web/src/lib/interestUtils.ts for the JS twin.
 
 async function processEventMatchDigest(
   sql: ReturnType<typeof getSql>,
@@ -12528,7 +12904,12 @@ async function processEventMatchDigest(
           e.id AS event_id
         FROM eligible_users eu
         JOIN newchums.user_interests ui ON ui.user_id = eu.user_id
-        JOIN newchums.event_interests ei ON ei.interest_id = ui.interest_id
+        JOIN newchums.interests ui_i ON ui_i.id = ui.interest_id AND ui_i.is_deleted = false
+        JOIN newchums.interests ei_i
+          ON LOWER(COALESCE(NULLIF(TRIM(ei_i.category), ''), ei_i.name))
+           = LOWER(COALESCE(NULLIF(TRIM(ui_i.category), ''), ui_i.name))
+          AND ei_i.is_deleted = false
+        JOIN newchums.event_interests ei ON ei.interest_id = ei_i.id
         JOIN newchums.events e ON e.id = ei.event_id
         WHERE e.status = 'published'
           AND e.visibility = 'public'
@@ -12558,7 +12939,12 @@ async function processEventMatchDigest(
           e.id AS event_id
         FROM eligible_users eu
         JOIN newchums.user_interests ui ON ui.user_id = eu.user_id
-        JOIN newchums.event_interests ei ON ei.interest_id = ui.interest_id
+        JOIN newchums.interests ui_i ON ui_i.id = ui.interest_id AND ui_i.is_deleted = false
+        JOIN newchums.interests ei_i
+          ON LOWER(COALESCE(NULLIF(TRIM(ei_i.category), ''), ei_i.name))
+           = LOWER(COALESCE(NULLIF(TRIM(ui_i.category), ''), ui_i.name))
+          AND ei_i.is_deleted = false
+        JOIN newchums.event_interests ei ON ei.interest_id = ei_i.id
         JOIN newchums.events e ON e.id = ei.event_id
         JOIN newchums.user_contacts uc ON uc.user_id = e.host_user_id AND uc.linked_user_id = eu.user_id AND uc.type = 'on_newchums'
         WHERE e.visibility = 'chums_only'

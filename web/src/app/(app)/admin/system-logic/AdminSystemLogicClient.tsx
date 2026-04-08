@@ -78,7 +78,7 @@ export default function AdminSystemLogicClient() {
         </Bullet>
         <Bullet>
           A <strong>Chums only</strong> plan can appear in that same digest for people in the host&rsquo;s <strong>On NewChums</strong> connections who also{" "}
-          <strong>share a hobby</strong> with the plan and meet the same <strong>location / radius</strong> rules as public plans (see{" "}
+          <strong>share a hobby category</strong> with the plan and meet the same <strong>location / radius</strong> rules as public plans (see{" "}
           <strong>Digest emails</strong> below). <strong>Invite only</strong> plans never appear in this digest.
         </Bullet>
       </CollapsibleSection>
@@ -191,19 +191,26 @@ export default function AdminSystemLogicClient() {
           on in notification settings, and you meet the rules for at least one of the two paths below.
         </Bullet>
         <Bullet>
-          <strong>Path A, Public plans:</strong> You share at least one <strong>hobby</strong> with the plan. The plan is <strong>published</strong>,{" "}
+          <strong>Path A, Public plans:</strong> You share at least one <strong>hobby category</strong> with the plan. The plan is <strong>published</strong>,{" "}
           <strong>public</strong>, <strong>in person</strong>, still <strong>in the future</strong>, you&rsquo;re <strong>not the host</strong>, the venue has
           map coordinates, and the plan falls <strong>within your travel radius</strong> (default 200 km if unset). <strong>New</strong> since your last digest
           (or about the last day if you&rsquo;ve never gotten this email). If there&rsquo;s a seat cap, the plan still has <strong>room</strong>.
         </Bullet>
         <Bullet>
-          <strong>Path B, Chums-only plans:</strong> Same hobby, distance, timing, capacity, and other rules as <strong>Path A</strong>, and the plan is{" "}
+          <strong>Path B, Chums-only plans:</strong> Same hobby category, distance, timing, capacity, and other rules as <strong>Path A</strong>, and the plan is{" "}
           <strong>Chums only</strong> instead of public. Additionally, the host must have <strong>you</strong> in their <strong>On NewChums</strong> connections. Example:
-          Robert creates a Chums-only plan about board games; Mike is in Robert&rsquo;s On NewChums connections and has that hobby in range; Sarah is not,Mike can see it in the digest, Sarah won&rsquo;t (for this plan).
+          Robert creates a Chums-only plan about board games; Mike is in Robert&rsquo;s On NewChums connections and has a board-games hobby in range; Sarah is not, Mike can see it in the digest, Sarah won&rsquo;t (for this plan).
+        </Bullet>
+        <Bullet>
+          <strong>How &ldquo;sharing a hobby&rdquo; works:</strong> Hobby matching uses each interest&rsquo;s <strong>category</strong>, not its exact identity. If admins
+          have grouped interests under a category (e.g. &ldquo;MTG Draft&rdquo; and &ldquo;MTG Commander&rdquo; both under category &ldquo;MTG&rdquo;), the
+          system treats them as the same hobby for matching, ranking, and digest selection. Interests without a category fall back to their own name as the unit
+          of matching, so two interests with no category only match if their names are the same. Categories are managed in the admin Interests page. The same
+          rule is applied by the Explore feed&rsquo;s personalized ranking, the hobby filter chip, and the local-signal line at the bottom of Explore.
         </Bullet>
         <Bullet>
           <strong>Who does <em>not</em> get this:</strong> <strong>Invite only</strong> plans never appear. <strong>Online-only</strong> plans don&rsquo;t
-          either. <strong>Chums-only</strong> plans don&rsquo;t appear for people who aren&rsquo;t in the host&rsquo;s On NewChums connections, or who don&rsquo;t share a hobby
+          either. <strong>Chums-only</strong> plans don&rsquo;t appear for people who aren&rsquo;t in the host&rsquo;s On NewChums connections, or who don&rsquo;t share a hobby category
           with the plan, or who are outside the usual radius / other Path A rules.
         </Bullet>
         <Bullet>
@@ -403,6 +410,80 @@ export default function AdminSystemLogicClient() {
         </Bullet>
 
         <Typography variant="subtitle2" fontWeight={600} sx={{ mt: 2 }} gutterBottom>
+          How each button affects metrics
+        </Typography>
+        <Bullet>
+          Each prompt updates <strong>only its own metric</strong> on the reviewed person. Clicking <em>Yes</em> on &ldquo;showed up reliably&rdquo; only nudges Reliability; clicking <em>No</em> on &ldquo;good match for me&rdquo; only nudges Match Quality. They don&rsquo;t cross-pollinate.
+        </Bullet>
+        <Bullet>
+          Every metric starts at a <strong>baseline of 50</strong>. The three prompt buttons each have a <strong>target</strong> the metric is pulled toward:
+          <Box component="span" sx={{ display: "block", mt: 0.5, ml: 1.5 }}>
+            <strong>Yes</strong> &rarr; pulls toward <strong>80</strong>
+            <br />
+            <strong>Somewhat</strong> &rarr; pulls toward <strong>50</strong> (the baseline)
+            <br />
+            <strong>No</strong> &rarr; pulls toward <strong>20</strong>
+          </Box>
+        </Bullet>
+        <Bullet>
+          The shift is a <strong>weighted moving average</strong>, not a fixed delta:
+          <Box component="span" sx={{ display: "block", mt: 0.5, ml: 1.5, fontFamily: "monospace", fontSize: "0.85em" }}>
+            nudge = (target &minus; currentScore) &divide; (signalCount + 5)
+          </Box>
+          <Box component="span" sx={{ display: "block", mt: 0.5 }}>
+            New users move fast (early ratings divide by 5, 6, 7&hellip;), established users barely budge per rating (divided by 50, 100, &hellip;). This makes the score robust against single outliers.
+          </Box>
+        </Bullet>
+        <Bullet>
+          Worked example: a user at 50.0 gets <em>Yes</em> on Reliability for the first time &rarr; nudge = (80 &minus; 50) &divide; (0 + 5) = <strong>+6.0</strong>, new score 56.0. Second <em>Yes</em> &rarr; (80 &minus; 56) &divide; (1 + 5) = <strong>+4.0</strong>, new score 60.0. They asymptotically approach 80 and never overshoot. A user only ever rated <em>No</em> converges on 20, never 0.
+        </Bullet>
+        <Bullet>
+          Score is hard-clamped to <strong>[0, 100]</strong>. In practice only attendance penalties (below) push scores close to 0.
+        </Bullet>
+        <Bullet>
+          <strong>Changing your answer is allowed.</strong> Re-submitting overwrites the stored response, but the metric gets <em>another</em> nudge &mdash; metrics evolve forward only and are never retroactively recomputed.
+        </Bullet>
+        <Bullet>
+          <strong>Hosting Skills is host-only:</strong> the prompt may only be submitted for the plan&rsquo;s host. Attempting to send it for any other attendee returns a 400.
+        </Bullet>
+        <Bullet>
+          <strong>You can&rsquo;t rate yourself.</strong> The <code>/events/:id/feedback</code> attendee list excludes the viewer, and the API rejects any attempt server-side as a safety net.
+        </Bullet>
+
+        <Typography variant="subtitle2" fontWeight={600} sx={{ mt: 2 }} gutterBottom>
+          Attendance issue button (separate from prompts)
+        </Typography>
+        <Bullet>
+          Unlike the prompts, attendance issues apply a <strong>flat additive penalty</strong> to Reliability, scaled by reporter confidence. They do <em>not</em> asymptote, so repeated no-shows can drive Reliability toward 0 over time.
+        </Bullet>
+        <Bullet>
+          Raw penalties:
+          <Box component="span" sx={{ display: "block", mt: 0.5, ml: 1.5 }}>
+            <strong>No-show</strong> &rarr; <strong>&minus;10</strong>
+            <br />
+            <strong>Arrived very late</strong> &rarr; <strong>&minus;8</strong>
+            <br />
+            <strong>Cancelled too late</strong> &rarr; <strong>&minus;5</strong>
+          </Box>
+        </Bullet>
+        <Bullet>
+          <strong>Reporter confidence:</strong> a <strong>host</strong> report applies the full penalty (confidence 1.0). A <strong>non-host</strong> report applies <strong>75%</strong> of the penalty (confidence 0.75) until <strong>corroborated</strong> by a second attendee filing the same issue type for the same person on the same plan &mdash; at that point both reports are bumped to confidence 1.0 and the prior report&rsquo;s applied penalty is back-adjusted to the full amount.
+        </Bullet>
+        <Bullet>
+          <strong>Disputes</strong> (raised by the reviewed person) flag the issue for moderator review and back-adjust the applied penalty if the issue is dismissed or downgraded. The reporter is never told who disputed.
+        </Bullet>
+        <Bullet>
+          Each accepted report also bumps the Reliability <code>signal_count</code> by 1, which slightly slows future prompt-based nudges on that user (because the smoothing denominator grows).
+        </Bullet>
+
+        <Typography variant="subtitle2" fontWeight={600} sx={{ mt: 2 }} gutterBottom>
+          Conduct / safety report button
+        </Typography>
+        <Bullet>
+          Filing a conduct report has <strong>zero direct effect on any metric</strong>. It creates a row in the moderation queue, sends an immediate email alert to the admin team, and appears in the Safety admin tab. By design, conduct is handled by humans, not by an automated score.
+        </Bullet>
+
+        <Typography variant="subtitle2" fontWeight={600} sx={{ mt: 2 }} gutterBottom>
           Privacy
         </Typography>
         <Bullet>
@@ -410,6 +491,81 @@ export default function AdminSystemLogicClient() {
         </Bullet>
         <Bullet>
           Hidden metrics (stored in <code>user_metrics</code>) aggregate feedback over time. These are <strong>not</strong> visible to users yet.
+        </Bullet>
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Shout-outs" subtitle="Optional moderated positive notes between participants on past plans">
+        <Typography variant="subtitle2" fontWeight={600} gutterBottom>
+          What it is
+        </Typography>
+        <Bullet>
+          A reviewer leaving feedback on a past plan can optionally write a short
+          (<strong>up to 280 characters</strong>) <strong>shout-out</strong> for one other participant.
+          Shout-outs sit alongside the normal feedback prompts in the per-attendee feedback card and are
+          purely additive &mdash; they do <em>not</em> affect any user metric or scoring.
+        </Bullet>
+        <Bullet>
+          One shout-out per <strong>(plan, sender, recipient)</strong> tuple. Enforced by a unique constraint
+          on the <code>shoutouts</code> table.
+        </Bullet>
+        <Bullet>
+          Shout-outs are <strong>moderated by super admins</strong> before they become visible to the recipient.
+          A new <strong>Shout-outs</strong> tab in the super admin nav lists pending entries in a fast table view.
+        </Bullet>
+
+        <Typography variant="subtitle2" fontWeight={600} sx={{ mt: 2 }} gutterBottom>
+          Lifecycle
+        </Typography>
+        <Bullet>
+          <strong>Pending:</strong> default state on submission. The sender can keep editing the message and
+          re-submit (the row is upserted in place) until a moderator acts on it.
+        </Bullet>
+        <Bullet>
+          <strong>Approved:</strong> a moderator approves it. The recipient gets a <strong>bell notification only</strong>
+          (no email) and the shout-out appears in their <strong>private &ldquo;Shout-outs received&rdquo; section on /profile</strong>.
+          The slot is now <strong>locked</strong> &mdash; the sender cannot edit it further.
+        </Bullet>
+        <Bullet>
+          <strong>Rejected:</strong> a moderator rejects it. <strong>No notification fires.</strong> The recipient
+          never sees it. The slot is locked &mdash; the sender cannot re-try a rejected shout-out (they would
+          need admin help, or use the safety/conduct flow if something serious is going on).
+        </Bullet>
+
+        <Typography variant="subtitle2" fontWeight={600} sx={{ mt: 2 }} gutterBottom>
+          Visibility (v1)
+        </Typography>
+        <Bullet>
+          <strong>Public profile:</strong> shout-outs are <strong>not</strong> shown on <code>/u/&lt;handle&gt;</code> in v1.
+          The recipient&rsquo;s public profile is unaffected.
+        </Bullet>
+        <Bullet>
+          <strong>Recipient&rsquo;s own /profile:</strong> approved shout-outs appear in a private section,
+          newest first. The section is labelled &ldquo;Only visible to you.&rdquo;
+        </Bullet>
+        <Bullet>
+          <strong>Sender:</strong> can see their own draft / status (Awaiting review / Sent / Not approved) on the
+          per-attendee feedback card.
+        </Bullet>
+
+        <Typography variant="subtitle2" fontWeight={600} sx={{ mt: 2 }} gutterBottom>
+          Moderation behavior
+        </Typography>
+        <Bullet>
+          The Shout-outs admin tab shows a <strong>badge count</strong> of new pending shout-outs since the
+          admin&rsquo;s last view of that section, using the same <code>admin_view_timestamps</code> mechanism
+          as other admin tabs.
+        </Bullet>
+        <Bullet>
+          Approve and reject are <strong>single-click actions</strong> in the table &mdash; no confirm dialog &mdash;
+          to keep the queue fast. Each row can be expanded inline to read the full message.
+        </Bullet>
+        <Bullet>
+          Submitted shout-outs pass the same <code>validateCleanText</code> safety check used for hobby names,
+          and are capped at 280 characters server-side.
+        </Bullet>
+        <Bullet>
+          Serious safety / conduct issues should still be raised through the existing <strong>Safety</strong>
+          report flow, not through shout-outs.
         </Bullet>
       </CollapsibleSection>
 

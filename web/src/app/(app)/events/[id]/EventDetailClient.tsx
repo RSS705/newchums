@@ -87,7 +87,7 @@ function normalizeMeetingLinkHref(raw: string): string {
   return `https://${trimmed}`;
 }
 
-type HobbyInfo = { name: string; slug: string };
+type HobbyInfo = { name: string; slug: string; category?: string | null };
 
 type EventDetail = {
   id: string;
@@ -2286,7 +2286,7 @@ export default function EventDetailClient() {
       {/* Post-plan feedback, shown prominently for past attended plans */}
       {isPast && !isCanceled && accessState === "attending" && (
         <Box id="plan-section-feedback">
-          <PlanFeedback eventId={event.id} />
+          <PlanFeedback eventId={event.id} planTitle={event.title} planStartsAt={event.startsAt} />
         </Box>
       )}
 
@@ -2382,6 +2382,15 @@ export default function EventDetailClient() {
                       })}
                     </Typography>
                   )}
+                  {event.fallbackPolicy === "auto_cancel" && event.minConfirmedAttendees && (
+                    <Typography variant="caption" color="text.secondary">
+                      This plan will be auto-canceled if fewer than {event.minConfirmedAttendees}{" "}
+                      {event.minConfirmedAttendees === 1
+                        ? "attendee confirms"
+                        : "attendees confirm"}{" "}
+                      by the deadline
+                    </Typography>
+                  )}
                 </Stack>
               </Stack>
               {event.planViability && event.minConfirmedAttendees && (
@@ -2405,15 +2414,6 @@ export default function EventDetailClient() {
                     variant={event.planViability === "viable" ? "filled" : "outlined"}
                     sx={{ fontWeight: 600, fontSize: "0.8125rem" }}
                   />
-                  {event.fallbackPolicy === "auto_cancel" && (
-                    <Typography variant="caption" color="text.secondary">
-                      This plan will be auto-canceled if fewer than {event.minConfirmedAttendees}{" "}
-                      {event.minConfirmedAttendees === 1
-                        ? "attendee confirms"
-                        : "attendees confirm"}{" "}
-                      by the deadline
-                    </Typography>
-                  )}
                 </Stack>
               )}
             </Stack>

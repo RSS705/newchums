@@ -300,6 +300,7 @@ export default function AdminRoadmapClient() {
           {Object.entries(STATUS_LABELS).map(([val, label]) => (
             <MenuItem key={val} value={val}>{label}</MenuItem>
           ))}
+          <MenuItem value="removed">Removed</MenuItem>
         </Select>
         <Select
           size="small"
@@ -366,23 +367,31 @@ export default function AdminRoadmapClient() {
                         {item.title}
                       </Typography>
                     </NextLink>
-                    {item.is_removed && <Chip label="Removed" size="small" color="error" sx={{ fontSize: "0.625rem", height: 18, mt: 0.25, ml: 0.5 }} />}
                     {item.merged_into_item_id && <Chip label="Merged" size="small" sx={{ fontSize: "0.625rem", height: 18, mt: 0.25, ml: 0.5 }} />}
                   </TableCell>
                   <TableCell sx={{ display: { xs: "none", md: "table-cell" } }}>
                     <Typography variant="caption">{CATEGORY_LABELS[item.category] ?? item.category}</Typography>
                   </TableCell>
                   <TableCell>
-                    <Chip
-                      label={STATUS_LABELS[item.status] ?? item.status}
-                      size="small"
-                      sx={{
-                        fontWeight: 600,
-                        fontSize: "0.6875rem",
-                        bgcolor: STATUS_BG[item.status] ?? "grey.400",
-                        color: item.status === "not_planned" ? "text.secondary" : "#fff",
-                      }}
-                    />
+                    {item.is_removed ? (
+                      <Chip
+                        label="Removed"
+                        size="small"
+                        color="error"
+                        sx={{ fontWeight: 600, fontSize: "0.6875rem" }}
+                      />
+                    ) : (
+                      <Chip
+                        label={STATUS_LABELS[item.status] ?? item.status}
+                        size="small"
+                        sx={{
+                          fontWeight: 600,
+                          fontSize: "0.6875rem",
+                          bgcolor: STATUS_BG[item.status] ?? "grey.400",
+                          color: item.status === "not_planned" ? "text.secondary" : "#fff",
+                        }}
+                      />
+                    )}
                   </TableCell>
                   <TableCell align="center">
                     {item.is_private ? (

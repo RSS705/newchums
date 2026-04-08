@@ -180,6 +180,18 @@ function notificationText(n: AppNotification): {
         actorHref: eventHref,
         body: titleLink ? <>{" for "}{titleLink}{". Confirm you're still coming."}</> : " for an upcoming plan. Confirm you're still coming.",
       };
+    case "shoutout_received": {
+      // entityId is the shoutout id, NOT an event id, so the existing
+      // titleLink (which assumes /events/<entityId>) doesn't apply. The body
+      // text deep-links to the recipient's own private shout-outs section
+      // on /profile.
+      const planTitle = n.metadata?.planTitle as string | undefined;
+      const shoutoutsHref = "/profile#shoutouts";
+      const trailing = planTitle
+        ? <> left you a shout-out from <Box component={Link} href={shoutoutsHref} sx={{ fontWeight: 600, color: "inherit", textDecoration: "none", "&:hover": { textDecoration: "underline" } }}>&ldquo;{planTitle}&rdquo;</Box>.</>
+        : <> left you a <Box component={Link} href={shoutoutsHref} sx={{ fontWeight: 600, color: "inherit", textDecoration: "none", "&:hover": { textDecoration: "underline" } }}>shout-out</Box>.</>;
+      return { actorLabel, actorHref, body: trailing };
+    }
     default:
       return { actorLabel, actorHref, body: " did something." };
   }

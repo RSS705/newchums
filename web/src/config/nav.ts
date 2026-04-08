@@ -12,6 +12,7 @@ import MapRoundedIcon from "@mui/icons-material/MapRounded";
 import BarChartRoundedIcon from "@mui/icons-material/BarChartRounded";
 import IntegrationInstructionsRoundedIcon from "@mui/icons-material/IntegrationInstructionsRounded";
 import ShieldRoundedIcon from "@mui/icons-material/ShieldRounded";
+import CampaignRoundedIcon from "@mui/icons-material/CampaignRounded";
 import type { SvgIconComponent } from "@mui/icons-material";
 
 export type NavItem = {
@@ -38,6 +39,7 @@ export const superAdminNavItems: NavItem[] = [
   { label: "System Logic", href: "/admin/system-logic", icon: IntegrationInstructionsRoundedIcon },
   { label: "Users", href: "/admin/chums", icon: PeopleRoundedIcon },
   { label: "Safety", href: "/admin/safety", icon: ShieldRoundedIcon },
+  { label: "Shout-outs", href: "/admin/shoutouts", icon: CampaignRoundedIcon },
   { label: "Interests", href: "/admin/interests", icon: StyleRoundedIcon },
   { label: "Plans", href: "/admin/plans", icon: CalendarMonthRoundedIcon },
   { label: "Communities", href: "/admin/communities", icon: ForumRoundedIcon },

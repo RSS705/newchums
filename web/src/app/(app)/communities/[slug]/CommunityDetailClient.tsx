@@ -21,6 +21,7 @@ import Link from "next/link";
 import { AppCard, useToast } from "@/components/ui";
 import EventCard, { type PlanEvent } from "@/components/events/EventCard";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
+import { effectiveCategorySet } from "@/lib/interestUtils";
 
 type CommunityData = {
   id: string;
@@ -84,7 +85,7 @@ export default function CommunityDetailClient() {
   const [joining, setJoining] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [isClosed, setIsClosed] = useState(false);
-  const [viewerHobbyItems, setViewerHobbyItems] = useState<{ slug: string }[]>([]);
+  const [viewerHobbyItems, setViewerHobbyItems] = useState<{ slug: string; name: string; category?: string | null }[]>([]);
 
   const mapApiEvent = useCallback((ev: ApiEvent): PlanEvent => {
     const hostUsername = (ev.host_username as string)?.replace(/^@/, "");
@@ -182,9 +183,9 @@ export default function CommunityDetailClient() {
     })();
   }, []);
 
-  const viewerHobbySlugs = useMemo(() => {
+  const viewerHobbyCategories = useMemo(() => {
     if (!viewerHobbyItems.length) return undefined;
-    return new Set(viewerHobbyItems.map((i) => i.slug));
+    return effectiveCategorySet(viewerHobbyItems);
   }, [viewerHobbyItems]);
 
   useEffect(() => {
@@ -536,7 +537,7 @@ export default function CommunityDetailClient() {
               <Grid container spacing={2.5}>
                 {events.map((ev) => (
                   <Grid size={{ xs: 12, sm: 6, md: 4 }} key={ev.id}>
-                    <EventCard event={ev} viewerHobbySlugs={viewerHobbySlugs} />
+                    <EventCard event={ev} viewerHobbyCategories={viewerHobbyCategories} />
                   </Grid>
                 ))}
               </Grid>

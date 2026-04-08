@@ -4,23 +4,30 @@ import { useCallback, useEffect, useState } from "react";
 import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
-import Divider from "@mui/material/Divider";
+import Fade from "@mui/material/Fade";
 import FormControl from "@mui/material/FormControl";
-import IconButton from "@mui/material/IconButton";
+import LinearProgress from "@mui/material/LinearProgress";
 import MenuItem from "@mui/material/MenuItem";
 import Paper from "@mui/material/Paper";
 import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
+import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
 import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
+import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
-import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
-import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import HowToRegRoundedIcon from "@mui/icons-material/HowToRegRounded";
+import PersonAddRoundedIcon from "@mui/icons-material/PersonAddRounded";
+import ReportProblemRoundedIcon from "@mui/icons-material/ReportProblemRounded";
+import ShieldOutlinedIcon from "@mui/icons-material/ShieldOutlined";
+import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
 import Link from "next/link";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 
@@ -69,14 +76,24 @@ const RESPONSE_OPTIONS: { value: "agree" | "maybe" | "disagree"; label: string; 
 
 type PlanFeedbackProps = {
   eventId: string;
+  /** Plan title shown in the participant hero as a contextual reminder. */
+  planTitle?: string;
+  /** Plan start time (ISO) shown in the participant hero as a contextual reminder. */
+  planStartsAt?: string;
 };
 
-export default function PlanFeedback({ eventId }: PlanFeedbackProps) {
+export default function PlanFeedback({ eventId, planTitle, planStartsAt }: PlanFeedbackProps) {
   const [attendees, setAttendees] = useState<Attendee[]>([]);
   const [feedback, setFeedback] = useState<FeedbackState>({});
+  /** Reviewees we've already saved to the API in this session (or from prior
+   *  visits). Drives the per-step "submitted" check on the progress bar. */
+  const [submittedSet, setSubmittedSet] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  /** Cross-fade key bumped on every advance to play a subtle slide between
+   *  attendees. Keeps the experience guided rather than survey-flat. */
+  const [stepNonce, setStepNonce] = useState(0);
   const [dismissed, setDismissed] = useState(false);
   const [dismissDialogOpen, setDismissDialogOpen] = useState(false);
   const [dismissing, setDismissing] = useState(false);
@@ -99,6 +116,22 @@ export default function PlanFeedback({ eventId }: PlanFeedbackProps) {
   const [issuesAgainstMe, setIssuesAgainstMe] = useState<{ id: string; issueType: string; status: string }[]>([]);
   const [disputing, setDisputing] = useState(false);
 
+  // Chum-status cache for the reviewed attendees. `undefined` = not yet
+  // checked, `null` = check failed (hide the action), boolean = current state.
+  const [chumStatus, setChumStatus] = useState<Record<string, boolean | null | undefined>>({});
+  const [chumLoading, setChumLoading] = useState<Record<string, boolean>>({});
+
+  // Per-recipient shout-out drafts. `serverMessage` is the value last seen
+  // from the API (for change detection on submit). `serverStatus` is the
+  // moderation state — if it's 'approved' or 'rejected' the slot is locked
+  // and the textarea is read-only.
+  type ShoutoutDraft = {
+    message: string;
+    serverMessage: string;
+    serverStatus: "none" | "pending" | "approved" | "rejected";
+  };
+  const [shoutouts, setShoutouts] = useState<Record<string, ShoutoutDraft>>({});
+
   const avatarBase = getAvatarBaseUrl();
 
   const load = useCallback(async () => {
@@ -111,18 +144,41 @@ export default function PlanFeedback({ eventId }: PlanFeedbackProps) {
         feedback: { reviewee_user_id: string; prompt: string; response: string }[];
         attendanceIssues: { reported_user_id: string; issue_type: string }[];
         issuesAgainstMe?: { id: string; issueType: string; status: string }[];
+        shoutouts?: { recipientUserId: string; message: string; status: string }[];
       };
       if (data.dismissed) { setDismissed(true); setLoading(false); return; }
       setAttendees(data.attendees);
 
+      if (data.shoutouts && data.shoutouts.length > 0) {
+        const next: Record<string, ShoutoutDraft> = {};
+        for (const s of data.shoutouts) {
+          const status = s.status === "pending" || s.status === "approved" || s.status === "rejected"
+            ? s.status
+            : "none";
+          next[s.recipientUserId] = {
+            message: s.message,
+            serverMessage: s.message,
+            serverStatus: status,
+          };
+        }
+        setShoutouts(next);
+      }
+
       if (data.feedback.length > 0) {
         const state: FeedbackState = {};
+        const already = new Set<string>();
         for (const f of data.feedback) {
           if (!state[f.reviewee_user_id]) state[f.reviewee_user_id] = {};
           state[f.reviewee_user_id][f.prompt as Prompt] = f.response as Response;
+          already.add(f.reviewee_user_id);
         }
         setFeedback(state);
-        setSubmitted(true);
+        setSubmittedSet(already);
+        // If every eligible attendee has at least one prior response, we're
+        // already in the post-submit "thanks" state on first paint.
+        if (data.attendees.every((a) => already.has(a.userId))) {
+          setSubmitted(true);
+        }
       }
 
       if (data.attendanceIssues.length > 0) {
@@ -138,6 +194,43 @@ export default function PlanFeedback({ eventId }: PlanFeedbackProps) {
 
   useEffect(() => { load(); }, [load]);
 
+  const ensureChumStatus = useCallback(async (userId: string) => {
+    setChumStatus((prev) => {
+      if (userId in prev) return prev;
+      // Mark as in-flight so concurrent renders don't refetch.
+      return { ...prev, [userId]: undefined };
+    });
+    try {
+      const res = await apiFetch(`/chums/check/${userId}`, { auth: true });
+      const data = (await res.json()) as { ok?: boolean; isSaved?: boolean };
+      setChumStatus((prev) => ({ ...prev, [userId]: data.ok ? (data.isSaved ?? false) : null }));
+    } catch {
+      setChumStatus((prev) => ({ ...prev, [userId]: null }));
+    }
+  }, []);
+
+  const toggleChum = useCallback(async (userId: string) => {
+    const current = chumStatus[userId];
+    if (current === null || current === undefined) return;
+    setChumLoading((prev) => ({ ...prev, [userId]: true }));
+    // Optimistic flip — revert on failure.
+    setChumStatus((prev) => ({ ...prev, [userId]: !current }));
+    try {
+      const res = await apiFetch(`/chums/${userId}`, {
+        auth: true,
+        method: current ? "DELETE" : "POST",
+      });
+      const data = (await res.json()) as { ok?: boolean };
+      if (!data.ok) {
+        setChumStatus((prev) => ({ ...prev, [userId]: current }));
+      }
+    } catch {
+      setChumStatus((prev) => ({ ...prev, [userId]: current }));
+    } finally {
+      setChumLoading((prev) => ({ ...prev, [userId]: false }));
+    }
+  }, [chumStatus]);
+
   const setResponse = (userId: string, prompt: Prompt, value: Response) => {
     setFeedback((prev) => ({
       ...prev,
@@ -145,26 +238,100 @@ export default function PlanFeedback({ eventId }: PlanFeedbackProps) {
     }));
   };
 
-  const handleSubmit = async () => {
+  const SHOUTOUT_MAX_LENGTH = 280;
+
+  const setShoutoutMessage = (userId: string, value: string) => {
+    setShoutouts((prev) => {
+      const existing = prev[userId];
+      const trimmed = value.slice(0, SHOUTOUT_MAX_LENGTH);
+      return {
+        ...prev,
+        [userId]: {
+          message: trimmed,
+          serverMessage: existing?.serverMessage ?? "",
+          serverStatus: existing?.serverStatus ?? "none",
+        },
+      };
+    });
+  };
+
+  /** Submit just the current attendee's responses (if any) and advance.
+   *  This drives the "Submit & Next" CTA — the focal action of the redesigned
+   *  flow. Empty responses are allowed: we simply skip-and-advance without
+   *  hitting the API (the backend rejects empty entries arrays).
+   *
+   *  Also fires the shout-out POST in the same step if the user has typed
+   *  one and the slot is still editable. Shout-out failures are silent and
+   *  do NOT block the Submit & Next flow — feedback always wins.
+   *
+   *  On the last attendee, we flip into the "submitted" thanks state after
+   *  the save (or after the skip, since the user has now walked the queue).
+   */
+  const handleSubmitAndNext = async (attendee: Attendee, isLastAttendee: boolean) => {
+    const responses = feedback[attendee.userId] ?? {};
     const entries: { revieweeUserId: string; prompt: string; response: string }[] = [];
-    for (const [userId, prompts] of Object.entries(feedback)) {
-      for (const [prompt, response] of Object.entries(prompts)) {
-        if (response) entries.push({ revieweeUserId: userId, prompt, response });
-      }
+    for (const [prompt, response] of Object.entries(responses)) {
+      if (response) entries.push({ revieweeUserId: attendee.userId, prompt, response });
     }
-    if (entries.length === 0) return;
 
     setSubmitting(true);
-    try {
-      const res = await apiFetch(`/events/${eventId}/feedback`, {
-        auth: true,
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ entries }),
-      });
-      if (res.ok) setSubmitted(true);
-    } catch { /* silent */ }
+
+    if (entries.length > 0) {
+      try {
+        const res = await apiFetch(`/events/${eventId}/feedback`, {
+          auth: true,
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ entries }),
+        });
+        if (res.ok) {
+          setSubmittedSet((prev) => {
+            const next = new Set(prev);
+            next.add(attendee.userId);
+            return next;
+          });
+        }
+      } catch { /* silent */ }
+    }
+
+    // Fire the shout-out POST if the user has a non-empty draft, the slot is
+    // still editable (none/pending), and the message has actually changed
+    // since the last server-confirmed value. Optimistically flip to "pending"
+    // on success; revert quietly on failure so the user can retry.
+    const draft = shoutouts[attendee.userId];
+    const draftMessage = draft?.message?.trim() ?? "";
+    const slotEditable = !draft || draft.serverStatus === "none" || draft.serverStatus === "pending";
+    const messageChanged = draftMessage !== (draft?.serverMessage?.trim() ?? "");
+    if (draftMessage.length > 0 && slotEditable && messageChanged) {
+      try {
+        const res = await apiFetch(`/events/${eventId}/shoutout`, {
+          auth: true,
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ recipientUserId: attendee.userId, message: draftMessage }),
+        });
+        const data = (await res.json()) as { ok?: boolean; status?: string };
+        if (res.ok && data.ok) {
+          setShoutouts((prev) => ({
+            ...prev,
+            [attendee.userId]: {
+              message: draftMessage,
+              serverMessage: draftMessage,
+              serverStatus: "pending",
+            },
+          }));
+        }
+      } catch { /* silent — shout-out is best-effort */ }
+    }
+
     setSubmitting(false);
+
+    if (isLastAttendee) {
+      setSubmitted(true);
+    } else {
+      setCurrentIndex((i) => i + 1);
+      setStepNonce((n) => n + 1);
+    }
   };
 
   const handleAttendanceIssue = async () => {
@@ -235,20 +402,45 @@ export default function PlanFeedback({ eventId }: PlanFeedbackProps) {
     setDismissing(false);
   };
 
+  // Lazy-load the current attendee's chum status the first time we land on
+  // them. Cached in `chumStatus`, so flipping back/forward doesn't refetch.
+  // MUST stay above the early returns below to keep hook order stable across
+  // renders (Rules of Hooks).
+  const currentAttendee = attendees[currentIndex];
+  useEffect(() => {
+    if (!currentAttendee) return;
+    if (currentAttendee.userId in chumStatus) return;
+    void ensureChumStatus(currentAttendee.userId);
+  }, [currentAttendee, chumStatus, ensureChumStatus]);
+
   if (loading) return null;
   if (dismissed) return null;
   if (attendees.length === 0 && issuesAgainstMe.length === 0) return null;
 
-  const hasAnyFeedback = Object.values(feedback).some((prompts) =>
-    Object.values(prompts).some((v) => v != null),
-  );
-
-  const currentAttendee = attendees[currentIndex];
+  const total = attendees.length;
+  const completedCount = attendees.filter((a) => submittedSet.has(a.userId)).length;
+  const progressPct = total > 0 ? Math.round((completedCount / total) * 100) : 0;
+  const isLast = currentIndex === total - 1;
   const isFirst = currentIndex === 0;
-  const isLast = currentIndex === attendees.length - 1;
   const currentHasResponse = currentAttendee
     ? Object.values(feedback[currentAttendee.userId] ?? {}).some((v) => v != null)
     : false;
+  const currentReportedIssue = currentAttendee
+    ? Array.from(reportedIssues).some((k) => k.startsWith(currentAttendee.userId + ":"))
+    : false;
+  const currentChumSaved = currentAttendee
+    ? (chumStatus[currentAttendee.userId] ?? undefined)
+    : undefined;
+  const currentChumLoading = currentAttendee ? !!chumLoading[currentAttendee.userId] : false;
+  const currentPrompts = currentAttendee
+    ? PROMPTS.filter((p) => !p.hostOnly || currentAttendee.isHost)
+    : [];
+  const currentResponses = currentAttendee ? (feedback[currentAttendee.userId] ?? {}) : {};
+  const currentProfileHref = currentAttendee?.username
+    ? `/u/${currentAttendee.username.replace(/^@/, "")}`
+    : null;
+  const planContextLine = formatPlanContext(planTitle, planStartsAt);
+  const showChumAction = currentChumSaved !== null;
 
   const openIssueForPerson = (attendee: Attendee) => {
     setIssueTarget(attendee);
@@ -257,278 +449,745 @@ export default function PlanFeedback({ eventId }: PlanFeedbackProps) {
     setIssueDialogOpen(true);
   };
 
+  const openConductForPerson = (attendee: Attendee | null) => {
+    setConductTarget(attendee);
+    setConductDone(false);
+    setConductReason("");
+    setConductDetails("");
+    setConductDialogOpen(true);
+  };
+
   return (
     <>
-      <Paper
-        variant="outlined"
-        sx={{
-          borderRadius: 3,
-          overflow: "hidden",
-          borderColor: submitted ? "success.light" : "grey.300",
-        }}
-      >
-        {/* Header */}
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            px: { xs: 2, sm: 2.5 },
-            py: { xs: 1.75, sm: 2 },
-            bgcolor: submitted ? "#f0fdf4" : "#fffbeb",
-          }}
-        >
-          <Stack direction="row" alignItems="center" spacing={1.5}>
-            {submitted ? (
-              <CheckCircleRoundedIcon sx={{ color: "success.main", fontSize: 24 }} />
-            ) : (
-              <Box sx={{
-                width: 24,
-                height: 24,
+      <Box sx={{ display: "flex", flexDirection: "column", gap: { xs: 2, sm: 2.5 } }}>
+        {/* Dispute banner for attendance issues against the current user.
+            Lives above the flow because it's about the viewer, not the
+            person currently being reviewed. */}
+        {issuesAgainstMe.length > 0 && (
+          <Paper
+            variant="outlined"
+            sx={{
+              p: { xs: 2, sm: 2.25 },
+              borderRadius: 3,
+              borderColor: issuesAgainstMe.every((i) => i.status === "disputed") ? "grey.300" : "#fbbf24",
+              bgcolor: issuesAgainstMe.every((i) => i.status === "disputed") ? "#f8fafc" : "#fffbeb",
+            }}
+          >
+            <Typography fontWeight={700} sx={{ fontSize: "0.9375rem", mb: 0.5 }}>
+              {issuesAgainstMe.every((i) => i.status === "disputed")
+                ? "You disputed an attendance concern on this plan"
+                : "An attendance concern was raised about you for this plan"}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1.25, lineHeight: 1.55 }}>
+              {issuesAgainstMe.every((i) => i.status === "disputed")
+                ? "Your dispute has been recorded. A moderator may review if needed."
+                : "If you believe this is inaccurate, you can dispute it. Your dispute is private and the reporter will not be notified."}
+            </Typography>
+            {issuesAgainstMe.some((i) => i.status === "active") && (
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={handleDispute}
+                disabled={disputing}
+                sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
+              >
+                {disputing ? "Disputing…" : "Dispute this concern"}
+              </Button>
+            )}
+          </Paper>
+        )}
+
+        {submitted ? (
+          /* ── Done state ──────────────────────────────────────────────── */
+          <Paper
+            variant="outlined"
+            sx={{
+              p: { xs: 3, sm: 3.5 },
+              borderRadius: 4,
+              borderColor: "success.light",
+              background: "linear-gradient(180deg, #f0fdf4 0%, #ffffff 70%)",
+              textAlign: "center",
+            }}
+          >
+            <Box
+              sx={{
+                width: 56,
+                height: 56,
                 borderRadius: "50%",
-                bgcolor: "#f59e0b",
+                bgcolor: "success.main",
+                color: "#fff",
+                mx: "auto",
+                mb: 2,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: 13,
-                fontWeight: 800,
-                color: "#fff",
-                flexShrink: 0,
-              }}>
-                !
-              </Box>
-            )}
-            <Box>
-              <Typography fontWeight={700} sx={{ fontSize: { xs: "1.0625rem", sm: "1.125rem" }, lineHeight: 1.3 }}>
-                {submitted ? "Feedback submitted" : "How did it go?"}
-              </Typography>
-              {!submitted && (
-                <Typography variant="body2" sx={{ color: "text.secondary", lineHeight: 1.3, display: { xs: "none", sm: "block" } }}>
-                  Quick, private feedback to improve future matches
-                </Typography>
-              )}
+                boxShadow: "0 4px 14px rgba(22, 163, 74, 0.25)",
+              }}
+            >
+              <CheckRoundedIcon sx={{ fontSize: 32 }} />
             </Box>
-          </Stack>
-        </Box>
-
-        <Box sx={{ px: { xs: 2, sm: 2.5 }, pt: { xs: 1.5, sm: 2 }, pb: { xs: 2, sm: 2.5 } }}>
-            {/* Dispute banner for attendance issues against the current user */}
-            {issuesAgainstMe.length > 0 && (
-              <Box sx={{
-                mb: 2,
-                p: 2,
-                borderRadius: 2,
-                bgcolor: issuesAgainstMe.every((i) => i.status === "disputed") ? "#f0f4f8" : "#fef3c7",
-                border: "1px solid",
-                borderColor: issuesAgainstMe.every((i) => i.status === "disputed") ? "grey.300" : "#fbbf24",
-              }}>
-                <Typography variant="body2" fontWeight={600} sx={{ mb: 0.5 }}>
-                  {issuesAgainstMe.every((i) => i.status === "disputed")
-                    ? "You disputed an attendance concern on this plan"
-                    : "An attendance concern was raised about you for this plan"
-                  }
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                  {issuesAgainstMe.every((i) => i.status === "disputed")
-                    ? "Your dispute has been recorded. A moderator may review if needed."
-                    : "If you believe this is inaccurate, you can dispute it. Your dispute is private and the reporter will not be notified."
-                  }
-                </Typography>
-                {issuesAgainstMe.some((i) => i.status === "active") && (
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    onClick={handleDispute}
-                    disabled={disputing}
-                    sx={{ textTransform: "none", fontWeight: 600 }}
-                  >
-                    {disputing ? "Disputing..." : "Dispute this concern"}
-                  </Button>
-                )}
-              </Box>
-            )}
-
-            {/* ── Submitted: compact done state ── */}
-            {submitted ? (
-              <>
-                <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.5, fontSize: "0.875rem" }}>
-                  Thanks for sharing your feedback. It helps improve matches for everyone.
-                </Typography>
-
-                <Divider sx={{ my: 2 }} />
-                <Stack direction="row" alignItems="center" justifyContent="space-between" flexWrap="wrap" spacing={1}>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    onClick={() => { setConductDialogOpen(true); setConductDone(false); setConductReason(""); setConductDetails(""); }}
+            <Typography sx={{ fontWeight: 700, fontSize: { xs: "1.125rem", sm: "1.25rem" }, mb: 0.5 }}>
+              Thanks for sharing your feedback
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 380, mx: "auto", lineHeight: 1.55 }}>
+              It stays private and helps improve matches for everyone on NewChums.
+            </Typography>
+            <Stack
+              direction={{ xs: "column", sm: "row" }}
+              spacing={1}
+              justifyContent="center"
+              sx={{ mt: 2.5 }}
+            >
+              <Button
+                size="small"
+                variant="text"
+                onClick={() => openConductForPerson(null)}
+                sx={{
+                  textTransform: "none",
+                  fontWeight: 600,
+                  fontSize: "0.8125rem",
+                  borderRadius: 2,
+                  color: "text.secondary",
+                  "&:hover": { color: "error.main", bgcolor: "#fef2f2" },
+                }}
+              >
+                Report a safety or conduct concern
+              </Button>
+              <Button
+                size="small"
+                variant="text"
+                color="inherit"
+                onClick={() => setDismissDialogOpen(true)}
+                sx={{
+                  textTransform: "none",
+                  fontWeight: 500,
+                  fontSize: "0.75rem",
+                  color: "text.disabled",
+                  "&:hover": { color: "text.secondary", bgcolor: "action.hover" },
+                }}
+              >
+                Hide
+              </Button>
+            </Stack>
+          </Paper>
+        ) : (
+          <>
+            {/* ── 1. Progress area ─────────────────────────────────────── */}
+            <Paper
+              variant="outlined"
+              sx={{
+                p: { xs: 1.75, sm: 2 },
+                borderRadius: 3,
+                borderColor: "grey.200",
+                bgcolor: "background.paper",
+              }}
+            >
+              <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
+                <Stack direction="row" alignItems="center" spacing={1}>
+                  <Box
                     sx={{
-                      textTransform: "none",
-                      fontWeight: 600,
-                      fontSize: "0.875rem",
-                      borderRadius: 2,
-                      borderColor: "grey.300",
-                      color: "text.secondary",
-                      "&:hover": { borderColor: "error.main", color: "error.main", bgcolor: "#fef2f2" },
+                      width: 28,
+                      height: 28,
+                      borderRadius: "50%",
+                      bgcolor: "primary.50",
+                      color: "primary.main",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "0.75rem",
+                      fontWeight: 800,
+                      border: "1px solid",
+                      borderColor: "primary.light",
                     }}
                   >
-                    Report a safety or conduct concern
-                  </Button>
-                  <Button
-                    size="small"
-                    color="inherit"
-                    onClick={() => setDismissDialogOpen(true)}
-                    sx={{
-                      textTransform: "none",
-                      fontWeight: 500,
-                      fontSize: "0.8125rem",
-                      color: "text.disabled",
-                      bgcolor: "transparent",
-                      "&:hover": { color: "text.secondary", bgcolor: "action.hover" },
-                    }}
-                  >
-                    Hide
-                  </Button>
-                </Stack>
-              </>
-            ) : (
-              <>
-                {/* Progress indicator */}
-                {attendees.length > 1 && (
-                  <Stack direction="row" alignItems="center" justifyContent="center" spacing={1} sx={{ mb: 2 }}>
-                    <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                      {currentIndex + 1} of {attendees.length}
+                    {currentIndex + 1}
+                  </Box>
+                  <Box sx={{ lineHeight: 1.2 }}>
+                    <Typography sx={{ fontWeight: 700, fontSize: "0.9375rem", lineHeight: 1.2 }}>
+                      Person {currentIndex + 1} of {total}
                     </Typography>
-                    <Stack direction="row" spacing={0.5}>
-                      {attendees.map((_, i) => (
-                        <Box
-                          key={i}
-                          onClick={() => setCurrentIndex(i)}
+                    <Typography variant="caption" sx={{ color: "text.secondary", fontSize: "0.75rem" }}>
+                      {completedCount === 0
+                        ? "Quick, private feedback"
+                        : completedCount === total
+                          ? "All saved — review or finish"
+                          : `${completedCount} of ${total} saved`}
+                    </Typography>
+                  </Box>
+                </Stack>
+                {total > 1 && (
+                  <Stack direction="row" spacing={0.5}>
+                    {attendees.map((a, i) => {
+                      const done = submittedSet.has(a.userId);
+                      const isCurrent = i === currentIndex;
+                      return (
+                        <Tooltip key={a.userId} title={a.displayName} arrow>
+                          <Box
+                            onClick={() => { setCurrentIndex(i); setStepNonce((n) => n + 1); }}
+                            sx={{
+                              width: isCurrent ? 22 : 10,
+                              height: 10,
+                              borderRadius: 5,
+                              bgcolor: done ? "success.main" : isCurrent ? "primary.main" : "grey.300",
+                              cursor: "pointer",
+                              transition: "all 0.2s ease",
+                              "&:hover": { opacity: 0.85 },
+                            }}
+                          />
+                        </Tooltip>
+                      );
+                    })}
+                  </Stack>
+                )}
+              </Stack>
+              <LinearProgress
+                variant="determinate"
+                value={progressPct}
+                sx={{
+                  height: 6,
+                  borderRadius: 3,
+                  bgcolor: "grey.100",
+                  "& .MuiLinearProgress-bar": { borderRadius: 3, bgcolor: "primary.main" },
+                }}
+              />
+            </Paper>
+
+            {/* Card-based per-attendee flow. The Fade keyed on stepNonce
+                produces a subtle cross-fade between attendees so the change
+                feels guided rather than jumping between form pages. */}
+            <Fade in key={stepNonce} timeout={220}>
+              <Box sx={{ display: "flex", flexDirection: "column", gap: { xs: 2, sm: 2.25 } }}>
+                {/* ── 2. Participant hero card ───────────────────────── */}
+                {currentAttendee && (
+                  <Paper
+                    variant="outlined"
+                    sx={{
+                      p: { xs: 2.25, sm: 2.75 },
+                      borderRadius: 4,
+                      borderColor: "primary.light",
+                      background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
+                    }}
+                  >
+                    <Stack
+                      direction={{ xs: "column", sm: "row" }}
+                      spacing={{ xs: 2, sm: 2.5 }}
+                      alignItems={{ xs: "stretch", sm: "center" }}
+                    >
+                      <Stack
+                        direction="row"
+                        alignItems="center"
+                        spacing={2}
+                        sx={{ flex: 1, minWidth: 0 }}
+                      >
+                        <Avatar
+                          src={`${avatarBase}/users/${currentAttendee.userId}/avatar`}
                           sx={{
-                            width: i === currentIndex ? 18 : 8,
-                            height: 8,
-                            borderRadius: 4,
-                            bgcolor: i === currentIndex ? "primary.main" : "grey.300",
-                            cursor: "pointer",
-                            transition: "all 0.2s ease",
+                            width: { xs: 60, sm: 68 },
+                            height: { xs: 60, sm: 68 },
+                            fontSize: "1.5rem",
+                            border: "3px solid #fff",
+                            boxShadow: "0 2px 10px rgba(0,0,0,0.08)",
+                            flexShrink: 0,
                           }}
-                        />
-                      ))}
+                        >
+                          {currentAttendee.displayName[0]?.toUpperCase()}
+                        </Avatar>
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Stack direction="row" alignItems="center" spacing={0.75} sx={{ minWidth: 0 }}>
+                            <Typography
+                              component={currentProfileHref ? Link : "span"}
+                              {...(currentProfileHref ? { href: currentProfileHref } : {})}
+                              sx={{
+                                fontWeight: 700,
+                                fontSize: { xs: "1.1875rem", sm: "1.3125rem" },
+                                lineHeight: 1.2,
+                                color: currentProfileHref ? "primary.dark" : "text.primary",
+                                textDecoration: "none",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                                minWidth: 0,
+                                "&:hover": currentProfileHref ? { textDecoration: "underline" } : {},
+                              }}
+                            >
+                              {currentAttendee.displayName}
+                            </Typography>
+                            {currentAttendee.isHost && (
+                              <Chip
+                                label="Host"
+                                size="small"
+                                sx={{
+                                  height: 20,
+                                  fontSize: "0.6875rem",
+                                  fontWeight: 700,
+                                  bgcolor: "primary.main",
+                                  color: "#fff",
+                                  flexShrink: 0,
+                                  "& .MuiChip-label": { px: 0.875 },
+                                }}
+                              />
+                            )}
+                          </Stack>
+                          {planContextLine && (
+                            <Typography
+                              variant="body2"
+                              sx={{
+                                color: "text.secondary",
+                                fontSize: "0.8125rem",
+                                lineHeight: 1.35,
+                                mt: 0.25,
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                display: "-webkit-box",
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: "vertical",
+                              }}
+                            >
+                              {planContextLine}
+                            </Typography>
+                          )}
+                        </Box>
+                      </Stack>
+                      {showChumAction && (
+                        <Tooltip title={currentChumSaved ? "Remove from your Chums" : "Add to your Chums"} arrow>
+                          <Button
+                            onClick={() => toggleChum(currentAttendee.userId)}
+                            disabled={currentChumLoading || currentChumSaved === undefined}
+                            size="small"
+                            variant={currentChumSaved ? "outlined" : "contained"}
+                            color={currentChumSaved ? "inherit" : "primary"}
+                            startIcon={currentChumSaved
+                              ? <HowToRegRoundedIcon sx={{ fontSize: 18 }} />
+                              : <PersonAddRoundedIcon sx={{ fontSize: 18 }} />}
+                            sx={{
+                              textTransform: "none",
+                              fontWeight: 700,
+                              borderRadius: 2.5,
+                              fontSize: "0.8125rem",
+                              px: { xs: 2, sm: 1.75 },
+                              py: 0.75,
+                              flexShrink: 0,
+                              alignSelf: { xs: "stretch", sm: "center" },
+                              ...(currentChumSaved ? {
+                                borderColor: "success.light",
+                                color: "success.dark",
+                                bgcolor: "#f0fdf4",
+                                "&:hover": { borderColor: "success.main", bgcolor: "#dcfce7" },
+                              } : {
+                                boxShadow: "none",
+                                "&:hover": { boxShadow: "none", opacity: 0.92 },
+                              }),
+                            }}
+                          >
+                            {currentChumSaved ? "Saved as Chum" : "Save to Chums"}
+                          </Button>
+                        </Tooltip>
+                      )}
                     </Stack>
+                  </Paper>
+                )}
+
+                {/* ── 3. Feedback modules ────────────────────────────── */}
+                {currentAttendee && (
+                  <Stack spacing={{ xs: 1.25, sm: 1.5 }}>
+                    {currentPrompts.map((p) => {
+                      const current = currentResponses[p.key] ?? null;
+                      const answered = current !== null;
+                      return (
+                        <Paper
+                          key={p.key}
+                          variant="outlined"
+                          sx={{
+                            p: { xs: 1.75, sm: 2 },
+                            borderRadius: 3,
+                            borderColor: answered ? "primary.light" : "grey.200",
+                            transition: "border-color 0.18s ease",
+                            "&:hover": { borderColor: answered ? "primary.main" : "grey.300" },
+                          }}
+                        >
+                          <Typography
+                            sx={{
+                              color: "text.primary",
+                              fontWeight: 600,
+                              mb: 1,
+                              lineHeight: 1.4,
+                              fontSize: { xs: "0.9375rem", sm: "0.9375rem" },
+                            }}
+                          >
+                            {p.label}
+                          </Typography>
+                          <Stack direction="row" spacing={0.875}>
+                            {RESPONSE_OPTIONS.map((opt) => {
+                              const isSelected = current === opt.value;
+                              return (
+                                <Box
+                                  key={opt.value}
+                                  onClick={() => setResponse(currentAttendee.userId, p.key, opt.value)}
+                                  role="button"
+                                  tabIndex={0}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" || e.key === " ") {
+                                      e.preventDefault();
+                                      setResponse(currentAttendee.userId, p.key, opt.value);
+                                    }
+                                  }}
+                                  sx={{
+                                    flex: 1,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    py: { xs: 1, sm: 1.125 },
+                                    px: 1,
+                                    borderRadius: 999,
+                                    border: "1.5px solid",
+                                    borderColor: isSelected ? "transparent" : "grey.200",
+                                    bgcolor: isSelected ? opt.selectedBg : "background.paper",
+                                    color: isSelected ? opt.selectedColor : "text.secondary",
+                                    fontWeight: isSelected ? 700 : 600,
+                                    fontSize: "0.875rem",
+                                    cursor: "pointer",
+                                    transition: "all 0.12s ease",
+                                    userSelect: "none",
+                                    boxShadow: isSelected ? "0 1px 4px rgba(0,0,0,0.08)" : "none",
+                                    "&:hover": {
+                                      bgcolor: isSelected ? opt.selectedBg : opt.hoverBg,
+                                      borderColor: isSelected ? "transparent" : "grey.300",
+                                    },
+                                    "&:focus-visible": {
+                                      outline: "2px solid",
+                                      outlineColor: "primary.main",
+                                      outlineOffset: 2,
+                                    },
+                                  }}
+                                >
+                                  {opt.label}
+                                </Box>
+                              );
+                            })}
+                          </Stack>
+                        </Paper>
+                      );
+                    })}
                   </Stack>
                 )}
 
-                {/* Current person card */}
-                {currentAttendee && (
-                  <PersonFeedbackCard
-                    attendee={currentAttendee}
-                    responses={feedback[currentAttendee.userId] ?? {}}
-                    onResponse={(prompt, value) => setResponse(currentAttendee.userId, prompt, value)}
-                    avatarBase={avatarBase}
-                    onReportIssue={() => openIssueForPerson(currentAttendee)}
-                    hasReportedIssue={
-                      Array.from(reportedIssues).some((k) => k.startsWith(currentAttendee.userId + ":"))
-                    }
-                  />
-                )}
-
-                {/* Stepper navigation */}
-                <Stack
-                  direction="row"
-                  alignItems="center"
-                  justifyContent="space-between"
-                  sx={{ mt: 2 }}
-                >
-                  <Box sx={{ flex: 1 }}>
-                    {!isFirst && (
-                      <IconButton
-                        onClick={() => setCurrentIndex((i) => i - 1)}
+                {/* ── 3b. Shout-out (optional) ───────────────────────── */}
+                {currentAttendee && (() => {
+                  const draft = shoutouts[currentAttendee.userId];
+                  const status = draft?.serverStatus ?? "none";
+                  const message = draft?.message ?? "";
+                  const locked = status === "approved" || status === "rejected";
+                  const charsLeft = SHOUTOUT_MAX_LENGTH - message.length;
+                  return (
+                    <Paper
+                      variant="outlined"
+                      sx={{
+                        p: { xs: 2, sm: 2.25 },
+                        borderRadius: 3,
+                        borderColor: status === "approved" ? "success.light" : "primary.light",
+                        background: status === "approved"
+                          ? "linear-gradient(135deg, #f0fdf4 0%, #ffffff 65%)"
+                          : "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
+                      }}
+                    >
+                      <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
+                        <Typography sx={{ fontWeight: 700, fontSize: "0.9375rem" }}>
+                          Shout-out
+                        </Typography>
+                        {status === "pending" && (
+                          <Chip
+                            label="Awaiting review"
+                            size="small"
+                            variant="outlined"
+                            sx={{
+                              height: 20,
+                              fontSize: "0.6875rem",
+                              fontWeight: 600,
+                              borderColor: "grey.300",
+                              color: "text.secondary",
+                              "& .MuiChip-label": { px: 0.875 },
+                            }}
+                          />
+                        )}
+                        {status === "approved" && (
+                          <Chip
+                            label="Sent"
+                            size="small"
+                            sx={{
+                              height: 20,
+                              fontSize: "0.6875rem",
+                              fontWeight: 700,
+                              bgcolor: "success.main",
+                              color: "#fff",
+                              "& .MuiChip-label": { px: 0.875 },
+                            }}
+                          />
+                        )}
+                        {status === "rejected" && (
+                          <Chip
+                            label="Not approved"
+                            size="small"
+                            variant="outlined"
+                            sx={{
+                              height: 20,
+                              fontSize: "0.6875rem",
+                              fontWeight: 600,
+                              borderColor: "grey.300",
+                              color: "text.disabled",
+                              "& .MuiChip-label": { px: 0.875 },
+                            }}
+                          />
+                        )}
+                      </Stack>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          color: "text.secondary",
+                          fontSize: "0.75rem",
+                          lineHeight: 1.5,
+                          display: "block",
+                          mb: 1.25,
+                        }}
+                      >
+                        {locked
+                          ? status === "approved"
+                            ? "Your shout-out has been sent to this person."
+                            : "Our team didn't approve this one. You can use the safety section below if something needs reporting."
+                          : "Optional. If approved by our team, it'll appear on their profile. Use it for kind, fun, or appreciative notes — please allow a short delay for review."}
+                      </Typography>
+                      <TextField
+                        value={message}
+                        onChange={(e) => setShoutoutMessage(currentAttendee.userId, e.target.value)}
+                        placeholder="Say something kind or fun"
+                        multiline
+                        minRows={2}
+                        maxRows={4}
+                        fullWidth
                         size="small"
-                        sx={{ border: "1px solid", borderColor: "grey.300", borderRadius: 2, px: 1.5 }}
-                      >
-                        <ChevronLeftRoundedIcon sx={{ fontSize: 20 }} />
-                        <Typography variant="body2" sx={{ fontWeight: 600, ml: 0.25 }}>Back</Typography>
-                      </IconButton>
-                    )}
-                  </Box>
-
-                  <Box sx={{ flex: 1, display: "flex", justifyContent: "flex-end" }}>
-                    {isLast ? (
-                        <Button
-                        onClick={handleSubmit}
-                        disabled={submitting || !hasAnyFeedback}
-                        variant="contained"
+                        disabled={locked}
+                        inputProps={{ maxLength: SHOUTOUT_MAX_LENGTH }}
                         sx={{
-                          textTransform: "none",
-                          fontWeight: 600,
-                          borderRadius: 2,
-                          px: 3,
-                          py: 0.875,
-                          fontSize: "0.9375rem",
-                          "&.Mui-disabled": { bgcolor: "grey.200", color: "grey.500" },
+                          "& .MuiOutlinedInput-root": {
+                            borderRadius: 2,
+                            bgcolor: "background.paper",
+                            fontSize: "0.875rem",
+                          },
                         }}
-                      >
-                        {submitting ? "Saving..." : "Submit feedback"}
-                      </Button>
-                    ) : (
-                      <Button
-                        onClick={() => setCurrentIndex((i) => i + 1)}
-                        variant={currentHasResponse ? "contained" : "outlined"}
-                        sx={{
-                          textTransform: "none",
-                          fontWeight: 600,
-                          borderRadius: 2,
-                          px: 2.5,
-                          py: 0.875,
-                          fontSize: "0.9375rem",
-                          ...(currentHasResponse ? {} : { borderColor: "grey.300", color: "text.secondary" }),
-                        }}
-                        endIcon={<ChevronRightRoundedIcon sx={{ fontSize: 20 }} />}
-                      >
-                        {currentHasResponse ? "Next person" : "Skip"}
-                      </Button>
-                    )}
-                  </Box>
-                </Stack>
+                      />
+                      {!locked && (
+                        <Stack direction="row" justifyContent="flex-end" sx={{ mt: 0.5 }}>
+                          <Typography
+                            variant="caption"
+                            sx={{
+                              color: charsLeft < 20 ? "warning.dark" : "text.disabled",
+                              fontSize: "0.6875rem",
+                              fontWeight: 600,
+                            }}
+                          >
+                            {message.length}/{SHOUTOUT_MAX_LENGTH}
+                          </Typography>
+                        </Stack>
+                      )}
+                    </Paper>
+                  );
+                })()}
 
-                {/* Conduct report & dismiss */}
-                <Divider sx={{ my: 2 }} />
-                <Stack direction="row" alignItems="center" justifyContent="space-between" flexWrap="wrap" spacing={1}>
+                {/* ── 4. Primary action area ─────────────────────────── */}
+                <Stack
+                  direction={{ xs: "column-reverse", sm: "row" }}
+                  alignItems={{ xs: "stretch", sm: "center" }}
+                  justifyContent="space-between"
+                  spacing={{ xs: 1, sm: 1.5 }}
+                  sx={{ mt: { xs: 0.5, sm: 1 } }}
+                >
+                  {!isFirst ? (
+                    <Button
+                      onClick={() => { setCurrentIndex((i) => i - 1); setStepNonce((n) => n + 1); }}
+                      variant="text"
+                      startIcon={<ChevronLeftRoundedIcon sx={{ fontSize: 20 }} />}
+                      sx={{
+                        textTransform: "none",
+                        fontWeight: 600,
+                        fontSize: "0.875rem",
+                        color: "text.secondary",
+                        borderRadius: 2,
+                        alignSelf: { xs: "center", sm: "flex-start" },
+                        "&:hover": { bgcolor: "action.hover" },
+                      }}
+                    >
+                      Back
+                    </Button>
+                  ) : (
+                    <Box sx={{ display: { xs: "none", sm: "block" } }} />
+                  )}
+
                   <Button
-                    size="small"
-                    variant="outlined"
-                    onClick={() => { setConductDialogOpen(true); setConductDone(false); setConductReason(""); setConductDetails(""); }}
+                    onClick={() => currentAttendee && handleSubmitAndNext(currentAttendee, isLast)}
+                    disabled={submitting || !currentAttendee}
+                    variant="contained"
+                    color="primary"
+                    endIcon={isLast
+                      ? <CheckRoundedIcon sx={{ fontSize: 20 }} />
+                      : <ArrowForwardRoundedIcon sx={{ fontSize: 20 }} />}
                     sx={{
                       textTransform: "none",
-                      fontWeight: 600,
-                      fontSize: "0.875rem",
-                      borderRadius: 2,
-                      borderColor: "grey.300",
-                      color: "text.secondary",
-                      "&:hover": { borderColor: "error.main", color: "error.main", bgcolor: "#fef2f2" },
+                      fontWeight: 700,
+                      borderRadius: 2.5,
+                      px: { xs: 3, sm: 3.5 },
+                      py: { xs: 1.125, sm: 1.25 },
+                      fontSize: "0.9375rem",
+                      boxShadow: "0 2px 8px rgba(230, 91, 19, 0.25)",
+                      "&:hover": { boxShadow: "0 4px 14px rgba(230, 91, 19, 0.30)", opacity: 0.96 },
+                      "&.Mui-disabled": { boxShadow: "none", bgcolor: "grey.200", color: "grey.500" },
                     }}
                   >
-                    Report a safety or conduct concern
-                  </Button>
-                  <Button
-                    size="small"
-                    color="inherit"
-                    onClick={() => setDismissDialogOpen(true)}
-                    sx={{
-                      textTransform: "none",
-                      fontWeight: 500,
-                      fontSize: "0.8125rem",
-                      color: "text.disabled",
-                      bgcolor: "transparent",
-                      "&:hover": { color: "text.secondary", bgcolor: "action.hover" },
-                    }}
-                  >
-                    I don&apos;t want to leave feedback
+                    {submitting
+                      ? "Saving…"
+                      : currentHasResponse
+                        ? (isLast ? "Submit & finish" : "Submit & next")
+                        : (isLast ? "Skip & finish" : "Skip & next")}
                   </Button>
                 </Stack>
-              </>
-            )}
-          </Box>
-      </Paper>
+
+                {/* ── 5. Unusual issues section ──────────────────────── */}
+                {/* Clearly separated bottom section. Two equal-weight cards
+                    so attendance and safety are easy to find without
+                    competing with the primary feedback flow above. */}
+                <Box sx={{ mt: { xs: 1.5, sm: 2 } }}>
+                  <Stack
+                    direction="row"
+                    alignItems="center"
+                    spacing={1.25}
+                    sx={{ mb: 1.25 }}
+                  >
+                    <Box sx={{ flex: 1, height: 1, bgcolor: "grey.200" }} />
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        color: "text.disabled",
+                        fontWeight: 700,
+                        fontSize: "0.6875rem",
+                        textTransform: "uppercase",
+                        letterSpacing: 0.6,
+                      }}
+                    >
+                      Something unusual?
+                    </Typography>
+                    <Box sx={{ flex: 1, height: 1, bgcolor: "grey.200" }} />
+                  </Stack>
+                  <Stack direction={{ xs: "column", md: "row" }} spacing={{ xs: 1.25, md: 1.5 }}>
+                    {/* Attendance issue */}
+                    <Paper
+                      variant="outlined"
+                      onClick={() => currentAttendee && !currentReportedIssue && openIssueForPerson(currentAttendee)}
+                      sx={{
+                        flex: 1,
+                        p: { xs: 1.75, sm: 2 },
+                        borderRadius: 3,
+                        borderColor: currentReportedIssue ? "success.light" : "#fbbf24",
+                        bgcolor: currentReportedIssue ? "#f0fdf4" : "#fffbeb",
+                        cursor: currentReportedIssue ? "default" : "pointer",
+                        transition: "all 0.15s ease",
+                        "&:hover": currentReportedIssue ? {} : {
+                          borderColor: "#d97706",
+                          bgcolor: "#fef3c7",
+                        },
+                      }}
+                    >
+                      <Stack direction="row" alignItems="flex-start" spacing={1.25}>
+                        {currentReportedIssue ? (
+                          <CheckCircleRoundedIcon sx={{ color: "success.main", fontSize: 22, flexShrink: 0, mt: 0.125 }} />
+                        ) : (
+                          <ReportProblemRoundedIcon sx={{ color: "#b45309", fontSize: 22, flexShrink: 0, mt: 0.125 }} />
+                        )}
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Typography sx={{
+                            fontWeight: 700,
+                            fontSize: "0.875rem",
+                            color: currentReportedIssue ? "success.dark" : "#92400e",
+                            lineHeight: 1.3,
+                            mb: 0.25,
+                          }}>
+                            {currentReportedIssue ? "Attendance issue reported" : "Report an attendance issue"}
+                          </Typography>
+                          <Typography variant="body2" sx={{
+                            color: currentReportedIssue ? "text.secondary" : "#78350f",
+                            fontSize: "0.75rem",
+                            lineHeight: 1.4,
+                          }}>
+                            {currentReportedIssue
+                              ? "Thanks — this helps keep plans reliable."
+                              : "No-show, cancelled too late, or arrived very late."}
+                          </Typography>
+                        </Box>
+                      </Stack>
+                    </Paper>
+
+                    {/* Safety / conduct */}
+                    <Paper
+                      variant="outlined"
+                      onClick={() => currentAttendee && openConductForPerson(currentAttendee)}
+                      sx={{
+                        flex: 1,
+                        p: { xs: 1.75, sm: 2 },
+                        borderRadius: 3,
+                        borderColor: "grey.200",
+                        bgcolor: "background.paper",
+                        cursor: "pointer",
+                        transition: "all 0.15s ease",
+                        "&:hover": {
+                          borderColor: "error.light",
+                          bgcolor: "#fef2f2",
+                        },
+                      }}
+                    >
+                      <Stack direction="row" alignItems="flex-start" spacing={1.25}>
+                        <ShieldOutlinedIcon sx={{ color: "error.main", fontSize: 22, flexShrink: 0, mt: 0.125 }} />
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Typography sx={{
+                            fontWeight: 700,
+                            fontSize: "0.875rem",
+                            color: "text.primary",
+                            lineHeight: 1.3,
+                            mb: 0.25,
+                          }}>
+                            Report a safety or conduct concern
+                          </Typography>
+                          <Typography variant="body2" sx={{
+                            color: "text.secondary",
+                            fontSize: "0.75rem",
+                            lineHeight: 1.4,
+                          }}>
+                            Confidential. Reviewed by the NewChums team.
+                          </Typography>
+                        </Box>
+                      </Stack>
+                    </Paper>
+                  </Stack>
+
+                  <Box sx={{ textAlign: "center", mt: 1.5 }}>
+                    <Button
+                      size="small"
+                      variant="text"
+                      color="inherit"
+                      onClick={() => setDismissDialogOpen(true)}
+                      sx={{
+                        textTransform: "none",
+                        fontWeight: 500,
+                        fontSize: "0.75rem",
+                        color: "text.disabled",
+                        "&:hover": { color: "text.secondary", bgcolor: "action.hover" },
+                      }}
+                    >
+                      I don&apos;t want to leave feedback for this plan
+                    </Button>
+                  </Box>
+                </Box>
+              </Box>
+            </Fade>
+          </>
+        )}
+      </Box>
 
       {/* Attendance issue dialog */}
       <Dialog
@@ -538,71 +1197,74 @@ export default function PlanFeedback({ eventId }: PlanFeedbackProps) {
         fullWidth
         PaperProps={{ sx: { borderRadius: 3 } }}
       >
-        <DialogTitle sx={{ fontWeight: 700, fontSize: "1.0625rem", pb: 0.5 }}>
-          Report attendance issue
-        </DialogTitle>
-        <DialogContent>
-          {issueDone ? (
-            <Stack spacing={1.5} alignItems="center" sx={{ py: 2 }}>
-              <CheckCircleRoundedIcon sx={{ color: "success.main", fontSize: 36 }} />
-              <Typography variant="body2" color="text.secondary">Issue reported. Thank you.</Typography>
-            </Stack>
-          ) : (
-            <Stack spacing={2.5} sx={{ pt: 1 }}>
-              <FormControl fullWidth size="small">
-                <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.625 }}>Who?</Typography>
-                <Select
-                  value={issueTarget?.userId ?? ""}
-                  onChange={(e) => {
-                    const a = attendees.find((att) => att.userId === e.target.value);
-                    if (a) setIssueTarget(a);
-                  }}
-                  displayEmpty
-                  sx={{ borderRadius: 2 }}
-                >
-                  <MenuItem value="" disabled>Select a person</MenuItem>
-                  {attendees.map((a) => (
-                    <MenuItem key={a.userId} value={a.userId}>{a.displayName}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-              <FormControl fullWidth size="small">
-                <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.625 }}>What happened?</Typography>
-                <Select
-                  value={issueType}
-                  onChange={(e) => setIssueType(e.target.value)}
-                  displayEmpty
-                  sx={{ borderRadius: 2 }}
-                >
-                  <MenuItem value="" disabled>Select issue type</MenuItem>
-                  {ATTENDANCE_ISSUES.map((i) => (
-                    <MenuItem key={i.value} value={i.value}>{i.label}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Stack>
-          )}
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5 }}>
-          <Button onClick={() => setIssueDialogOpen(false)} sx={{ textTransform: "none", fontWeight: 600 }}>
-            {issueDone ? "Close" : "Cancel"}
-          </Button>
-          {!issueDone && (
-            <Button
-              onClick={handleAttendanceIssue}
-              disabled={!issueTarget || !issueType || issueSubmitting}
-              variant="contained"
-              sx={{
-                textTransform: "none",
-                fontWeight: 600,
-                borderRadius: 2,
-                "&.Mui-disabled": { bgcolor: "grey.200", color: "grey.500" },
-              }}
-            >
-              {issueSubmitting ? "Submitting..." : "Submit"}
-            </Button>
-          )}
-        </DialogActions>
+        {issueDone ? (
+          <DialogContent sx={{ p: 0 }}>
+            <DialogSuccessState
+              title="Issue reported"
+              message="Thanks — this helps keep plans reliable for everyone."
+              onClose={() => setIssueDialogOpen(false)}
+            />
+          </DialogContent>
+        ) : (
+          <>
+            <DialogTitle sx={{ fontWeight: 700, fontSize: "1.0625rem", pb: 0.5 }}>
+              Report attendance issue
+            </DialogTitle>
+            <DialogContent>
+              <Stack spacing={2.5} sx={{ pt: 1 }}>
+                <FormControl fullWidth size="small">
+                  <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.625 }}>Who?</Typography>
+                  <Select
+                    value={issueTarget?.userId ?? ""}
+                    onChange={(e) => {
+                      const a = attendees.find((att) => att.userId === e.target.value);
+                      if (a) setIssueTarget(a);
+                    }}
+                    displayEmpty
+                    sx={{ borderRadius: 2 }}
+                  >
+                    <MenuItem value="" disabled>Select a person</MenuItem>
+                    {attendees.map((a) => (
+                      <MenuItem key={a.userId} value={a.userId}>{a.displayName}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <FormControl fullWidth size="small">
+                  <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.625 }}>What happened?</Typography>
+                  <Select
+                    value={issueType}
+                    onChange={(e) => setIssueType(e.target.value)}
+                    displayEmpty
+                    sx={{ borderRadius: 2 }}
+                  >
+                    <MenuItem value="" disabled>Select issue type</MenuItem>
+                    {ATTENDANCE_ISSUES.map((i) => (
+                      <MenuItem key={i.value} value={i.value}>{i.label}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Stack>
+            </DialogContent>
+            <DialogActions sx={{ px: 3, pb: 2.5 }}>
+              <Button onClick={() => setIssueDialogOpen(false)} sx={{ textTransform: "none", fontWeight: 600 }}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleAttendanceIssue}
+                disabled={!issueTarget || !issueType || issueSubmitting}
+                variant="contained"
+                sx={{
+                  textTransform: "none",
+                  fontWeight: 600,
+                  borderRadius: 2,
+                  "&.Mui-disabled": { bgcolor: "grey.200", color: "grey.500" },
+                }}
+              >
+                {issueSubmitting ? "Submitting..." : "Submit"}
+              </Button>
+            </DialogActions>
+          </>
+        )}
       </Dialog>
 
       {/* Conduct report dialog */}
@@ -613,283 +1275,292 @@ export default function PlanFeedback({ eventId }: PlanFeedbackProps) {
         fullWidth
         PaperProps={{ sx: { borderRadius: 3 } }}
       >
-        <DialogTitle sx={{ fontWeight: 700, fontSize: "1.0625rem", pb: 0.5 }}>
-          Report a concern
-        </DialogTitle>
-        <DialogContent>
-          {conductDone ? (
-            <Stack spacing={1.5} alignItems="center" sx={{ py: 2 }}>
-              <CheckCircleRoundedIcon sx={{ color: "success.main", fontSize: 36 }} />
-              <Typography variant="body2" color="text.secondary">Report submitted. We take these seriously.</Typography>
-            </Stack>
-          ) : (
-            <Stack spacing={2.5} sx={{ pt: 1 }}>
-              <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-                This report is confidential and will not be shared with the person you are reporting.
-              </Typography>
-              <FormControl fullWidth size="small">
-                <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.625 }}>Who?</Typography>
-                <Select
-                  value={conductTarget?.userId ?? ""}
-                  onChange={(e) => {
-                    const a = attendees.find((att) => att.userId === e.target.value);
-                    if (a) setConductTarget(a);
-                  }}
-                  displayEmpty
-                  sx={{ borderRadius: 2 }}
-                >
-                  <MenuItem value="" disabled>Select a person</MenuItem>
-                  {attendees.map((a) => (
-                    <MenuItem key={a.userId} value={a.userId}>{a.displayName}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-              <FormControl fullWidth size="small">
-                <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.625 }}>What happened?</Typography>
-                <Select
-                  value={conductReason}
-                  onChange={(e) => setConductReason(e.target.value)}
-                  displayEmpty
-                  sx={{ borderRadius: 2 }}
-                >
-                  <MenuItem value="" disabled>Select a reason</MenuItem>
-                  {CONDUCT_REASONS.map((r) => (
-                    <MenuItem key={r.value} value={r.value}>{r.label}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-              <Box>
-                <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.625 }}>Details (optional)</Typography>
-                <TextField
-                  value={conductDetails}
-                  onChange={(e) => setConductDetails(e.target.value)}
-                  placeholder="Any additional context..."
-                  multiline
-                  rows={3}
-                  fullWidth
-                  size="small"
-                  sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
-                />
-              </Box>
-            </Stack>
-          )}
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5 }}>
-          <Button onClick={() => setConductDialogOpen(false)} sx={{ textTransform: "none", fontWeight: 600 }}>
-            {conductDone ? "Close" : "Cancel"}
-          </Button>
-          {!conductDone && (
-            <Button
-              onClick={handleConductReport}
-              disabled={!conductTarget || !conductReason || conductSubmitting}
-              variant="contained"
-              color="error"
-              sx={{
-                textTransform: "none",
-                fontWeight: 600,
-                borderRadius: 2,
-                "&.Mui-disabled": { bgcolor: "grey.200", color: "grey.500" },
-              }}
-            >
-              {conductSubmitting ? "Submitting..." : "Submit report"}
-            </Button>
-          )}
-        </DialogActions>
+        {conductDone ? (
+          <DialogContent sx={{ p: 0 }}>
+            <DialogSuccessState
+              title="Report received"
+              message="Our team will review this confidentially. The person you reported will not be notified."
+              onClose={() => setConductDialogOpen(false)}
+            />
+          </DialogContent>
+        ) : (
+          <>
+            <DialogTitle sx={{ fontWeight: 700, fontSize: "1.0625rem", pb: 0.5 }}>
+              Report a concern
+            </DialogTitle>
+            <DialogContent>
+              <Stack spacing={2.5} sx={{ pt: 1 }}>
+                <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+                  This report is confidential and will not be shared with the person you are reporting.
+                </Typography>
+                <FormControl fullWidth size="small">
+                  <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.625 }}>Who?</Typography>
+                  <Select
+                    value={conductTarget?.userId ?? ""}
+                    onChange={(e) => {
+                      const a = attendees.find((att) => att.userId === e.target.value);
+                      if (a) setConductTarget(a);
+                    }}
+                    displayEmpty
+                    sx={{ borderRadius: 2 }}
+                  >
+                    <MenuItem value="" disabled>Select a person</MenuItem>
+                    {attendees.map((a) => (
+                      <MenuItem key={a.userId} value={a.userId}>{a.displayName}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <FormControl fullWidth size="small">
+                  <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.625 }}>What happened?</Typography>
+                  <Select
+                    value={conductReason}
+                    onChange={(e) => setConductReason(e.target.value)}
+                    displayEmpty
+                    sx={{ borderRadius: 2 }}
+                  >
+                    <MenuItem value="" disabled>Select a reason</MenuItem>
+                    {CONDUCT_REASONS.map((r) => (
+                      <MenuItem key={r.value} value={r.value}>{r.label}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <Box>
+                  <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.625 }}>Details (optional)</Typography>
+                  <TextField
+                    value={conductDetails}
+                    onChange={(e) => setConductDetails(e.target.value)}
+                    placeholder="Any additional context..."
+                    multiline
+                    rows={3}
+                    fullWidth
+                    size="small"
+                    sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
+                  />
+                </Box>
+              </Stack>
+            </DialogContent>
+            <DialogActions sx={{ px: 3, pb: 2.5 }}>
+              <Button onClick={() => setConductDialogOpen(false)} sx={{ textTransform: "none", fontWeight: 600 }}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleConductReport}
+                disabled={!conductTarget || !conductReason || conductSubmitting}
+                variant="contained"
+                color="error"
+                sx={{
+                  textTransform: "none",
+                  fontWeight: 600,
+                  borderRadius: 2,
+                  "&.Mui-disabled": { bgcolor: "grey.200", color: "grey.500" },
+                }}
+              >
+                {conductSubmitting ? "Submitting..." : "Submit report"}
+              </Button>
+            </DialogActions>
+          </>
+        )}
       </Dialog>
 
-      {/* Dismiss confirmation dialog */}
+      {/* Dismiss confirmation dialog — polished to feel intentional and
+          consistent with the redesigned feedback flow. Mirrors the visual
+          rhythm of `DialogSuccessState` (centered icon → heading → body →
+          actions) but stays a confirmation, not a success state. */}
       <Dialog
         open={dismissDialogOpen}
         onClose={() => setDismissDialogOpen(false)}
         maxWidth="xs"
         fullWidth
-        PaperProps={{ sx: { borderRadius: 3 } }}
+        PaperProps={{ sx: { borderRadius: 4 } }}
       >
-        <DialogTitle sx={{ fontWeight: 700, fontSize: "1.0625rem", pb: 0.5 }}>
-          {submitted ? "Hide feedback for this plan?" : "Skip feedback for this plan?"}
-        </DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-            {submitted
-              ? "Your feedback has been saved. This will permanently hide this section from your view."
-              : "This will permanently hide the feedback section for this plan. You won't be able to leave feedback later."}
-          </Typography>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5 }}>
-          <Button onClick={() => setDismissDialogOpen(false)} sx={{ textTransform: "none", fontWeight: 600 }}>
-            Cancel
-          </Button>
-          <Button
-            onClick={handleDismiss}
-            disabled={dismissing}
-            variant="contained"
+        <DialogContent sx={{ p: 0 }}>
+          <Box
             sx={{
-              textTransform: "none",
-              fontWeight: 600,
-              borderRadius: 2,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              textAlign: "center",
+              px: { xs: 2.5, sm: 3 },
+              pt: { xs: 3, sm: 3.5 },
+              pb: { xs: 2.25, sm: 2.5 },
             }}
           >
-            {dismissing ? "Hiding..." : submitted ? "Yes, hide" : "Yes, skip feedback"}
-          </Button>
-        </DialogActions>
+            <Box
+              sx={{
+                width: 60,
+                height: 60,
+                borderRadius: "50%",
+                bgcolor: "grey.100",
+                color: "text.secondary",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                mb: 2,
+              }}
+            >
+              <VisibilityOffOutlinedIcon sx={{ fontSize: 30 }} />
+            </Box>
+            <Typography sx={{ fontWeight: 700, fontSize: "1.0625rem", lineHeight: 1.3, mb: 0.75 }}>
+              {submitted ? "Hide feedback for this plan?" : "Skip feedback for this plan?"}
+            </Typography>
+            <Typography
+              variant="body2"
+              sx={{
+                color: "text.secondary",
+                fontSize: "0.875rem",
+                lineHeight: 1.55,
+                maxWidth: 360,
+                mb: 2.5,
+              }}
+            >
+              {submitted
+                ? "Your feedback has been saved. This will permanently hide this section from your view."
+                : "This will permanently hide the feedback section for this plan. You won't be able to leave feedback later."}
+            </Typography>
+            <Stack
+              direction={{ xs: "column-reverse", sm: "row" }}
+              spacing={1}
+              sx={{ width: "100%", justifyContent: "center" }}
+            >
+              <Button
+                onClick={() => setDismissDialogOpen(false)}
+                variant="text"
+                sx={{
+                  textTransform: "none",
+                  fontWeight: 600,
+                  fontSize: "0.875rem",
+                  borderRadius: 2.5,
+                  color: "text.secondary",
+                  px: 3,
+                  py: 0.875,
+                  "&:hover": { bgcolor: "action.hover" },
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleDismiss}
+                disabled={dismissing}
+                variant="contained"
+                color="primary"
+                sx={{
+                  textTransform: "none",
+                  fontWeight: 700,
+                  borderRadius: 2.5,
+                  px: 3,
+                  py: 0.875,
+                  fontSize: "0.875rem",
+                  boxShadow: "none",
+                  "&:hover": { boxShadow: "none", opacity: 0.94 },
+                  "&.Mui-disabled": { bgcolor: "grey.200", color: "grey.500" },
+                }}
+              >
+                {dismissing ? "Hiding…" : submitted ? "Yes, hide" : "Yes, skip feedback"}
+              </Button>
+            </Stack>
+          </Box>
+        </DialogContent>
       </Dialog>
     </>
   );
 }
 
-function PersonFeedbackCard({
-  attendee,
-  responses,
-  onResponse,
-  avatarBase,
-  onReportIssue,
-  hasReportedIssue,
+/** Compact, balanced success-confirmation block used inside both the attendance
+ *  issue dialog and the safety / conduct concern dialog. Replaces the dialog's
+ *  title + content + actions when the submission has succeeded so the icon,
+ *  heading, message, and dismiss button read as a single coherent unit instead
+ *  of three disconnected pieces.
+ *
+ *  Manual-close only (no auto-dismiss) — both confirmations should give the
+ *  user a moment to read, especially the safety / conduct one.
+ */
+function DialogSuccessState({
+  title,
+  message,
+  onClose,
 }: {
-  attendee: Attendee;
-  responses: Partial<Record<Prompt, Response>>;
-  onResponse: (prompt: Prompt, value: Response) => void;
-  avatarBase: string;
-  onReportIssue: () => void;
-  hasReportedIssue: boolean;
+  title: string;
+  message: string;
+  onClose: () => void;
 }) {
-  const prompts = PROMPTS.filter((p) => !p.hostOnly || attendee.isHost);
-  const profileHref = attendee.username
-    ? `/u/${attendee.username.replace(/^@/, "")}`
-    : null;
-
-  const nameContent = (
-    <Typography
-      component={profileHref ? Link : "span"}
-      {...(profileHref ? { href: profileHref } : {})}
-      fontWeight={700}
+  return (
+    <Box
       sx={{
-        fontSize: "0.9375rem",
-        lineHeight: 1.3,
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap",
-        minWidth: 0,
-        textDecoration: "none",
-        color: profileHref ? "primary.main" : "text.primary",
-        "&:hover": profileHref ? { textDecoration: "underline" } : {},
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        textAlign: "center",
+        px: { xs: 1, sm: 2 },
+        pt: { xs: 3, sm: 3.5 },
+        pb: { xs: 2.75, sm: 3 },
       }}
     >
-      {attendee.displayName}
-    </Typography>
-  );
-
-  return (
-    <Box>
-      {/* Person header */}
-      <Stack
-        direction="row"
-        alignItems="center"
-        spacing={1.25}
-        sx={{ mb: 2 }}
+      <Box
+        sx={{
+          width: 64,
+          height: 64,
+          borderRadius: "50%",
+          bgcolor: "success.main",
+          color: "#fff",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          mb: 2,
+          boxShadow: "0 4px 14px rgba(22, 163, 74, 0.28)",
+        }}
       >
-        <Avatar
-          src={`${avatarBase}/users/${attendee.userId}/avatar`}
-          sx={{ width: 32, height: 32, fontSize: "0.875rem" }}
-        >
-          {attendee.displayName[0]?.toUpperCase()}
-        </Avatar>
-        {nameContent}
-        {attendee.isHost && (
-          <Typography variant="caption" sx={{ color: "primary.main", fontWeight: 600, fontSize: "0.75rem", flexShrink: 0 }}>
-            Host
-          </Typography>
-        )}
-      </Stack>
-
-      {/* Prompt rows */}
-      <Stack spacing={1.75}>
-        {prompts.map((p) => {
-          const current = responses[p.key] ?? null;
-          return (
-            <Box key={p.key}>
-              <Typography
-                variant="body2"
-                sx={{
-                  color: "text.secondary",
-                  fontWeight: 500,
-                  mb: 0.75,
-                  lineHeight: 1.4,
-                  fontSize: "0.9375rem",
-                }}
-              >
-                {p.label}
-              </Typography>
-              <Stack direction="row" spacing={0.75}>
-                {RESPONSE_OPTIONS.map((opt) => {
-                  const isSelected = current === opt.value;
-                  return (
-                    <Box
-                      key={opt.value}
-                      onClick={() => onResponse(p.key, opt.value)}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onResponse(p.key, opt.value); } }}
-                      sx={{
-                        flex: 1,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        py: 0.625,
-                        px: 1,
-                        borderRadius: 1.5,
-                        border: "1px solid",
-                        borderColor: isSelected ? "transparent" : "grey.200",
-                        bgcolor: isSelected ? opt.selectedBg : "transparent",
-                        color: isSelected ? opt.selectedColor : "text.disabled",
-                        fontWeight: isSelected ? 700 : 500,
-                        fontSize: "0.8125rem",
-                        cursor: "pointer",
-                        transition: "all 0.12s ease",
-                        userSelect: "none",
-                        "&:hover": {
-                          bgcolor: isSelected ? opt.selectedBg : opt.hoverBg,
-                          borderColor: isSelected ? "transparent" : "grey.300",
-                        },
-                      }}
-                    >
-                      {opt.label}
-                    </Box>
-                  );
-                })}
-              </Stack>
-            </Box>
-          );
-        })}
-      </Stack>
-
-      {/* Per-person attendance issue prompt */}
-      <Box sx={{ mt: 2 }}>
-        {hasReportedIssue ? (
-          <Stack direction="row" alignItems="center" spacing={0.75}>
-            <CheckCircleRoundedIcon sx={{ fontSize: 16, color: "success.main" }} />
-            <Typography variant="caption" sx={{ color: "success.dark", fontWeight: 600 }}>
-              Attendance issue reported
-            </Typography>
-          </Stack>
-        ) : (
-          <Stack
-            direction="row"
-            alignItems="center"
-            spacing={0.75}
-            onClick={onReportIssue}
-            sx={{ cursor: "pointer", "&:hover .issue-text": { textDecoration: "underline" } }}
-          >
-            <InfoOutlinedIcon sx={{ fontSize: 16, color: "text.secondary" }} />
-            <Typography
-              className="issue-text"
-              variant="body2"
-              sx={{ color: "text.secondary", fontWeight: 500, fontSize: "0.8125rem" }}
-            >
-              Let us know if this person didn&apos;t show up or arrived very late
-            </Typography>
-          </Stack>
-        )}
+        <CheckRoundedIcon sx={{ fontSize: 36 }} />
       </Box>
+      <Typography sx={{ fontWeight: 700, fontSize: "1.0625rem", lineHeight: 1.3, mb: 0.75 }}>
+        {title}
+      </Typography>
+      <Typography
+        variant="body2"
+        sx={{
+          color: "text.secondary",
+          fontSize: "0.875rem",
+          lineHeight: 1.55,
+          maxWidth: 320,
+          mb: 2.5,
+        }}
+      >
+        {message}
+      </Typography>
+      <Button
+        onClick={onClose}
+        variant="contained"
+        color="primary"
+        sx={{
+          textTransform: "none",
+          fontWeight: 700,
+          borderRadius: 2.5,
+          px: 4,
+          py: 0.875,
+          fontSize: "0.875rem",
+          boxShadow: "none",
+          "&:hover": { boxShadow: "none", opacity: 0.94 },
+        }}
+      >
+        Done
+      </Button>
     </Box>
   );
+}
+
+/** Build a short contextual reminder of the plan for the participant hero
+ *  ("From your <Plan title> on <date>"). Returns null when neither field is
+ *  available so the hero gracefully omits the line. */
+function formatPlanContext(title: string | undefined, startsAtIso: string | undefined): string | null {
+  const cleanTitle = title?.trim();
+  let dateStr: string | null = null;
+  if (startsAtIso) {
+    const d = new Date(startsAtIso);
+    if (!isNaN(d.getTime())) {
+      dateStr = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    }
+  }
+  if (cleanTitle && dateStr) return `From your plan “${cleanTitle}” on ${dateStr}`;
+  if (cleanTitle) return `From your plan “${cleanTitle}”`;
+  if (dateStr) return `From your plan on ${dateStr}`;
+  return null;
 }
