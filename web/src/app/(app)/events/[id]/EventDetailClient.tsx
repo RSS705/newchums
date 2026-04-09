@@ -78,6 +78,7 @@ import {
 import { isDuplicate, nameToSlug } from "@/lib/interestUtils";
 import { notifyObjectivesChanged } from "@/components/objectives/NextStepNudge";
 import PlanFeedback from "@/components/events/PlanFeedback";
+import PlanHobbyAddSuggestion from "@/components/events/PlanHobbyAddSuggestion";
 
 /** Meeting URLs pasted without a scheme should still open in the browser. */
 function normalizeMeetingLinkHref(raw: string): string {
@@ -2222,6 +2223,16 @@ export default function EventDetailClient() {
               }}
             />
           ))}
+          {/* Lightweight, contextual nudge to add this plan's hobby/hobbies
+              to the viewer's profile. Self-gates: renders nothing unless the
+              viewer is missing at least one of the plan's hobbies. Sits
+              inline with the hobby chips so it reads as metadata-adjacent
+              guidance, not a second post-feedback CTA. */}
+          {accessState === "attending" && (
+            <PlanHobbyAddSuggestion
+              planHobbies={hobbies.map((h) => ({ name: h.name, slug: h.slug }))}
+            />
+          )}
           <Chip label={visibilityLabel(event.visibility)} size="small" variant="outlined" />
           {event.lockedAt && !isCanceled && (
             <Chip
