@@ -305,7 +305,8 @@ app.get("/public/users/:handle", async (c) => {
         u.avatar_key, u.avatar_updated_at,
         COALESCE(u.is_hidden_age, false) AS is_hidden_age,
         COALESCE(u.is_hidden_from_external_indexing, false) AS is_hidden_from_external_indexing,
-        COALESCE(u.is_hidden_chum_list, false) AS is_hidden_chum_list
+        COALESCE(u.is_hidden_chum_list, false) AS is_hidden_chum_list,
+        COALESCE(u.is_hidden_shoutouts, false) AS is_hidden_shoutouts
       FROM newchums.users u
       WHERE u.username_norm = ${handleNorm}
         AND u.username IS NOT NULL
@@ -322,6 +323,7 @@ app.get("/public/users/:handle", async (c) => {
       is_hidden_age: boolean;
       is_hidden_from_external_indexing: boolean;
       is_hidden_chum_list: boolean;
+      is_hidden_shoutouts: boolean;
     }>;
     const user = userRows[0];
     if (!user) {
@@ -376,6 +378,7 @@ app.get("/public/users/:handle", async (c) => {
         avatarUrl,
         is_hidden_from_external_indexing: user.is_hidden_from_external_indexing ?? false,
         is_hidden_chum_list: user.is_hidden_chum_list ?? false,
+        is_hidden_shoutouts: user.is_hidden_shoutouts ?? false,
       },
     });
   } catch (err) {
@@ -384,6 +387,100 @@ app.get("/public/users/:handle", async (c) => {
       { ok: false, error: "SERVER_ERROR", message: "Failed to fetch profile" },
       500,
     );
+  }
+});
+
+/** GET /public/users/:handle/shoutouts
+ *  Approved shout-outs for the recipient's public profile section.
+ *  Auth is optional. If the recipient has hidden the section
+ *  (`users.is_hidden_shoutouts = true`) and the viewer is not the recipient
+ *  themselves, returns `{ ok: true, items: [], hidden: true }`. The owner
+ *  always gets their items so the inline owner-only toggle on the public
+ *  profile can render the dimmed "hidden from visitors" preview state. */
+app.get("/public/users/:handle/shoutouts", async (c) => {
+  const handleParam = c.req.param("handle")?.trim();
+  if (!handleParam) {
+    return c.json({ ok: false, error: "NOT_FOUND", message: "Profile not found" }, 404);
+  }
+  const handleNorm = handleParam.toLowerCase().trim();
+
+  // Auth is optional but we use it to detect the profile owner so they can
+  // see their own hidden section.
+  const authPayload = await requireAuth(c);
+  const viewerEmail = authPayload?.email && typeof authPayload.email === "string" ? authPayload.email : null;
+
+  try {
+    const sql = getSql(c.env);
+    const userRows = (await sql`
+      SELECT id, COALESCE(is_hidden_shoutouts, false) AS is_hidden_shoutouts
+      FROM newchums.users
+      WHERE username_norm = ${handleNorm}
+        AND username IS NOT NULL
+      LIMIT 1
+    `) as Array<{ id: string; is_hidden_shoutouts: boolean }>;
+    const target = userRows[0];
+    if (!target) {
+      return c.json({ ok: false, error: "NOT_FOUND", message: "Profile not found" }, 404);
+    }
+
+    let viewerUserId: string | null = null;
+    if (viewerEmail) {
+      try {
+        viewerUserId = await ensureAppUserId(sql, viewerEmail, (authPayload as { name?: string | null }).name);
+      } catch {
+        viewerUserId = null;
+      }
+    }
+    const isOwner = viewerUserId !== null && viewerUserId === target.id;
+
+    if (target.is_hidden_shoutouts && !isOwner) {
+      return c.json({ ok: true, items: [], hidden: true });
+    }
+
+    const rows = (await sql`
+      SELECT
+        s.id, s.message, s.created_at, s.reviewed_at,
+        s.plan_id, e.title AS plan_title, e.starts_at AS plan_starts_at,
+        s.sender_user_id, u.name AS sender_name, u.username AS sender_username
+      FROM newchums.shoutouts s
+      JOIN newchums.events e ON e.id = s.plan_id
+      JOIN newchums.users u ON u.id = s.sender_user_id
+      WHERE s.recipient_user_id = ${target.id} AND s.status = 'approved'
+      ORDER BY COALESCE(s.reviewed_at, s.created_at) DESC
+      LIMIT 100
+    `) as Array<{
+      id: string;
+      message: string;
+      created_at: string;
+      reviewed_at: string | null;
+      plan_id: string;
+      plan_title: string;
+      plan_starts_at: string;
+      sender_user_id: string;
+      sender_name: string | null;
+      sender_username: string | null;
+    }>;
+
+    return c.json({
+      ok: true,
+      hidden: target.is_hidden_shoutouts,
+      items: rows.map((r) => ({
+        id: r.id,
+        message: r.message,
+        receivedAt: r.reviewed_at ?? r.created_at,
+        planId: r.plan_id,
+        planTitle: r.plan_title,
+        planStartsAt: r.plan_starts_at,
+        sender: {
+          userId: r.sender_user_id,
+          displayName: r.sender_name?.trim() || (r.sender_username ? `@${r.sender_username.replace(/^@/, "")}` : "Someone"),
+          username: r.sender_username,
+        },
+      })),
+    });
+  } catch (err) {
+    console.error("[GET /public/users/:handle/shoutouts]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR", message: "Failed to fetch shout-outs" }, 500);
   }
 });
 
@@ -2061,6 +2158,7 @@ app.get("/profile", async (c) => {
         COALESCE(is_hidden_age, false) AS is_hidden_age,
         COALESCE(is_hidden_chum_list, false) AS is_hidden_chum_list,
         COALESCE(is_hidden_from_chum_lists, false) AS is_hidden_from_chum_lists,
+        COALESCE(is_hidden_shoutouts, false) AS is_hidden_shoutouts,
         COALESCE(tutorial_nudges_off, false) AS tutorial_nudges_off
       FROM newchums.users WHERE id = ${appUserId} LIMIT 1
     `) as Array<{
@@ -2079,6 +2177,7 @@ app.get("/profile", async (c) => {
       is_hidden_age: boolean;
       is_hidden_chum_list: boolean;
       is_hidden_from_chum_lists: boolean;
+      is_hidden_shoutouts: boolean;
       tutorial_nudges_off: boolean;
     }>;
     const userInfo = userRows[0];
@@ -2128,6 +2227,7 @@ app.get("/profile", async (c) => {
     const isHiddenAge = userInfo?.is_hidden_age ?? false;
     const isHiddenChumList = userInfo?.is_hidden_chum_list ?? false;
     const isHiddenFromChumLists = userInfo?.is_hidden_from_chum_lists ?? false;
+    const isHiddenShoutouts = userInfo?.is_hidden_shoutouts ?? false;
     const tutorialNudgesOff = userInfo?.tutorial_nudges_off ?? false;
     const role = userInfo?.role ?? null;
     const gender = userInfo?.gender ?? null;
@@ -2160,6 +2260,7 @@ app.get("/profile", async (c) => {
           is_hidden_age: isHiddenAge,
           is_hidden_chum_list: isHiddenChumList,
           is_hidden_from_chum_lists: isHiddenFromChumLists,
+          is_hidden_shoutouts: isHiddenShoutouts,
           tutorial_nudges_off: tutorialNudgesOff,
           role,
         },
@@ -2191,6 +2292,7 @@ app.get("/profile", async (c) => {
         is_hidden_age: isHiddenAge,
         is_hidden_chum_list: isHiddenChumList,
         is_hidden_from_chum_lists: isHiddenFromChumLists,
+        is_hidden_shoutouts: isHiddenShoutouts,
         tutorial_nudges_off: tutorialNudgesOff,
         role,
       },
@@ -2243,6 +2345,7 @@ app.put("/profile", async (c) => {
       is_hidden_age?: boolean;
       is_hidden_chum_list?: boolean;
       is_hidden_from_chum_lists?: boolean;
+      is_hidden_shoutouts?: boolean;
     };
 
     if ("date_of_birth" in body && body.date_of_birth !== undefined) {
@@ -2519,6 +2622,10 @@ app.put("/profile", async (c) => {
       const val = body.is_hidden_from_chum_lists === true;
       txQueries.push(sql`UPDATE newchums.users SET is_hidden_from_chum_lists = ${val} WHERE id = ${appUserId}`);
     }
+    if ("is_hidden_shoutouts" in body && body.is_hidden_shoutouts !== undefined) {
+      const val = body.is_hidden_shoutouts === true;
+      txQueries.push(sql`UPDATE newchums.users SET is_hidden_shoutouts = ${val} WHERE id = ${appUserId}`);
+    }
     if ("gender" in body && body.gender !== undefined) {
       const genderVal = body.gender != null && body.gender !== "" ? String(body.gender) : null;
       txQueries.push(sql`UPDATE newchums.users SET gender = ${genderVal} WHERE id = ${appUserId}`);
@@ -2548,7 +2655,8 @@ app.put("/profile", async (c) => {
         COALESCE(is_hidden_from_external_indexing, false) AS is_hidden_from_external_indexing,
         COALESCE(is_hidden_age, false) AS is_hidden_age,
         COALESCE(is_hidden_chum_list, false) AS is_hidden_chum_list,
-        COALESCE(is_hidden_from_chum_lists, false) AS is_hidden_from_chum_lists
+        COALESCE(is_hidden_from_chum_lists, false) AS is_hidden_from_chum_lists,
+        COALESCE(is_hidden_shoutouts, false) AS is_hidden_shoutouts
       FROM newchums.users WHERE id = ${appUserId} LIMIT 1
     `) as Array<{
       name: string | null;
@@ -2565,6 +2673,7 @@ app.put("/profile", async (c) => {
       is_hidden_age: boolean;
       is_hidden_chum_list: boolean;
       is_hidden_from_chum_lists: boolean;
+      is_hidden_shoutouts: boolean;
     }>;
     const userAfter = userRowsAfter[0];
     const profileRows = (await sql`
@@ -2622,6 +2731,7 @@ app.put("/profile", async (c) => {
         is_hidden_age: userAfter?.is_hidden_age ?? false,
         is_hidden_chum_list: userAfter?.is_hidden_chum_list ?? false,
         is_hidden_from_chum_lists: userAfter?.is_hidden_from_chum_lists ?? false,
+        is_hidden_shoutouts: userAfter?.is_hidden_shoutouts ?? false,
       },
     });
   } catch (err) {
@@ -11264,63 +11374,6 @@ app.post("/events/:id/shoutout", async (c) => {
   }
 });
 
-/** GET /profile/shoutouts, approved shout-outs received by the viewer.
- *  Powers the private "Shout-outs received" section on /profile. */
-app.get("/profile/shoutouts", async (c) => {
-  const payload = await requireAuth(c);
-  if (!payload?.email || typeof payload.email !== "string")
-    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
-
-  const sql = getSql(c.env);
-  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
-
-  try {
-    const rows = (await sql`
-      SELECT
-        s.id, s.message, s.created_at, s.reviewed_at,
-        s.plan_id, e.title AS plan_title, e.starts_at AS plan_starts_at,
-        s.sender_user_id, u.name AS sender_name, u.username AS sender_username
-      FROM newchums.shoutouts s
-      JOIN newchums.events e ON e.id = s.plan_id
-      JOIN newchums.users u ON u.id = s.sender_user_id
-      WHERE s.recipient_user_id = ${userId} AND s.status = 'approved'
-      ORDER BY COALESCE(s.reviewed_at, s.created_at) DESC
-      LIMIT 100
-    `) as Array<{
-      id: string;
-      message: string;
-      created_at: string;
-      reviewed_at: string | null;
-      plan_id: string;
-      plan_title: string;
-      plan_starts_at: string;
-      sender_user_id: string;
-      sender_name: string | null;
-      sender_username: string | null;
-    }>;
-
-    return c.json({
-      ok: true,
-      items: rows.map((r) => ({
-        id: r.id,
-        message: r.message,
-        receivedAt: r.reviewed_at ?? r.created_at,
-        planId: r.plan_id,
-        planTitle: r.plan_title,
-        planStartsAt: r.plan_starts_at,
-        sender: {
-          userId: r.sender_user_id,
-          displayName: r.sender_name?.trim() || (r.sender_username ? `@${r.sender_username.replace(/^@/, "")}` : "Someone"),
-          username: r.sender_username,
-        },
-      })),
-    });
-  } catch (err) {
-    console.error("[GET /profile/shoutouts]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
-  }
-});
-
 /** GET /admin/shoutouts, list shout-outs for moderation. */
 app.get("/admin/shoutouts", async (c) => {
   const admin = await requireSuperAdmin(c);
@@ -13182,7 +13235,7 @@ async function processPlanFeedbackEmails(
   const plans = (await sql`
     SELECT e.id, e.title, e.host_user_id,
            e.starts_at, e.timezone,
-           e.location_type, e.location_name, e.location_address, e.online_link,
+           e.location_type, e.location_name, e.location_address, e.location_area, e.online_link,
            COALESCE(e.is_qa, false) AS is_qa
     FROM newchums.events e
     WHERE e.status = 'published'
@@ -13190,7 +13243,7 @@ async function processPlanFeedbackEmails(
       AND e.feedback_email_sent_at IS NULL
     ORDER BY e.starts_at ASC
     LIMIT 20
-  `) as { id: string; title: string; host_user_id: string; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; online_link: string | null; is_qa: boolean }[];
+  `) as { id: string; title: string; host_user_id: string; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; location_area: string | null; online_link: string | null; is_qa: boolean }[];
 
   if (plans.length === 0) return;
 
@@ -13201,7 +13254,16 @@ async function processPlanFeedbackEmails(
   for (const plan of plans) {
     const tz = plan.timezone || "UTC";
     const planDate = formatEventDate(plan.starts_at, tz);
-    const planLocation = plan.location_type === "online" ? (plan.online_link || "Online") : [plan.location_name, plan.location_address].filter(Boolean).join(", ") || "";
+    // Privacy-conscious location for the feedback email: never include the
+    // street address. Online → "Online". In-person → venue name + city/area
+    // (falls back to derived area or just the venue/area on its own).
+    let planLocation = "";
+    if (plan.location_type === "online") {
+      planLocation = "Online";
+    } else {
+      const area = plan.location_area || deriveApproxArea(plan.location_address) || "";
+      planLocation = [plan.location_name, area].filter(Boolean).join(", ");
+    }
 
     const recipients = (await sql`
       SELECT u.id, u.email, u.name, up.notification_prefs

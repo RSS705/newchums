@@ -449,7 +449,7 @@ export default function AppShell({ children, user }: AppShellProps) {
           }
           rightSide={
             <>
-              <NotificationBell />
+              <NotificationBell viewerHandle={navProfile?.username ?? null} />
               <IconButton
                 aria-label="open account menu"
                 size="medium"

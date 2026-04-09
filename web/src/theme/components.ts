@@ -455,6 +455,14 @@ export function getComponents(theme: Theme): Theme["components"] {
       },
     },
     MuiTooltip: {
+      defaultProps: {
+        // Touch users tap a help icon expecting to read the tooltip — MUI's
+        // 1500ms default closes it almost immediately on mobile. Hold it
+        // visible for 8s after the tap so the copy is actually readable.
+        // (Per-instance enterTouchDelay/leaveTouchDelay still override this.)
+        leaveTouchDelay: 8000,
+        enterTouchDelay: 0,
+      },
       styleOverrides: {
         tooltip: {
           color: theme.palette.background.paper,

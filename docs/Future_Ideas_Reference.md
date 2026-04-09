@@ -70,7 +70,6 @@ This document is meant to:
 ## Profile
 
 - Section to specify what kind of chums you are looking for.
-
 - Public vs private profile toggle
 - Profile completeness indicator
 - Soft gamification (levels, badges)
@@ -87,7 +86,7 @@ This document is meant to:
 - Friction check: “Would you attend this?”
 - A way to invite people to an event by email.
 - Option for people to request a different date or time.
-- Need a robust coordination tool, works per event. Host gives date and times slots, guests indicate their date and time slots, host picks.
+- Need a robust coordination tool, works per event. Host gives date and time slots, guests indicate their date and time slots, host picks.
 
 ---
 
@@ -110,17 +109,103 @@ This document is meant to:
 
 ## Monetization
 
+### Paid Plans
+
+- Keep paid plans narrowly scoped: free event features + only the functionality needed for paid plans to work cleanly and credibly.
+- Paid RSVP flow where seat confirmation and payment happen together.
+- Paid attendee tracking so the host can clearly see who has paid, who has refunded, and who is actually confirmed.
+- Host-configurable refund / cancellation rules per paid event.
+- Clear payout flow to the host so there is no ambiguity around where funds go and when they are released.
+- Paid confirmation messaging and receipts so attendees know they are fully in.
+- Event instructions field specifically for paid events (what to bring, refund rules, venue instructions, etc.).
+- Paid events should feel operationally complete, but should not swallow the higher-value subscription benefits.
+- Control how the plan appears publicly.
+
+### Power Host Subscription Ideas
+
+- This tier should be built around **saving serious hosts time**.
+- Duplicate / copy past events quickly.
+- Save reusable event templates with title, description, location, hobbies, visibility, attendee settings, reconfirmation settings, guest permissions, and boilerplate notes.
+- Reusable invite groups so a host can re-invite the same cluster of people in one action.
+- One-click “invite previous attendees again” flow.
+- Waitlist management tools.
+- Better seat management for full events, cancellations, and spot openings.
+- Saved host defaults so frequent hosts are not rebuilding the same event settings repeatedly.
+- Host automation tools such as scheduled reminders, RSVP cutoffs, auto-close windows, or automatic waitlist notifications.
+- Custom RSVP questions / intake prompts for practical host use cases (dietary, experience level, what to bring, deck power level, etc.).
+- Practical host insights that actually help improve future events, for example:
+  - RSVP to attendance rate
+  - reconfirmation rate
+  - repeat attendee rate
+  - which event formats fill fastest
+  - which days / times perform best
+- Better host presentation that reduces mismatch and makes attendees more comfortable joining, such as host style notes, beginner-friendly markers, social tone, pacing, or expectations.
+- This tier should feel like “I host often, and NewChums saves me time every time I create something.”
+- Control how the plan appears publicly.
+
+### Business / Community Subscription Ideas
+
+- This tier should be built around **helping a store, club, or organizer group run a true social hub**.
+- Strong upgraded community page with banner, description, organizer identity, location context, featured plans, featured series/templates, and pinned updates.
+- Advanced community privacy settings:
+  - public
+  - private
+  - hidden
+  - request to join
+  - invite-only
+- Advanced member visibility controls:
+  - visible member list
+  - hidden member list
+  - optional visible hobbies/interests across members
+  - searchable/filterable member directory
+- Community chat room so members have a home between events.
+- Organizer / manager / moderator roles so a community does not rely on one account.
+- Community announcements / pinned posts / organizer updates.
+- Community calendar page showing all upcoming community activity in one place.
+- Richer member directory with hobby visibility and “who is into what” discovery.
+- League page that a community manager can configure, with seasons, rules, points, standings, participation, and links to related plans.
+- Tournament / bracket page tied to community events.
+- Newcomer onboarding flow for communities, such as selecting interests, formats, hobbies, or preferred event types when joining.
+- Community insights that help organizers understand activity and health, such as member activity, attendance trends, popular event types, and repeat participation.
+- This tier should feel like “our group can actually live here, not just post events here.”
+- Control how plans appears publicly for community.
+
+### Additional Monetization Thoughts
+
 - Premium profile highlights
 - Featured event boost
-- Business event pages
 - Local partner integrations
+- Sponsored placement, but only if it never hurts trust in the core experience
+
+---
+
+## Communities
+
+- Community chat room as a persistent home between events.
+- Member directory that shows who is in the community and what hobbies or formats they are into.
+- More expressive community profiles that make stores and clubs feel real and alive.
+- Community join questions or onboarding prompts.
+- Optional rules / expectations / welcome guide for each community.
+- Better tools for communities to spotlight upcoming plans, hosts, leagues, and special nights.
+- Community feed that mixes announcements, upcoming plans, and recent activity.
+- Ability for communities to feel social even when no event is happening that day.
+
+---
+
+## Leagues / Tournaments / Structured Play
+
+- League page with configurable season dates, scoring rules, standings, and linked event nights.
+- Match submission flow for leagues.
+- Tournament bracket page for one-day competitions or community-run events.
+- Tie league standings, brackets, and community activity together so structured play still feels social rather than purely administrative.
+- Build structured hobby tools that work for MTG, mini painting leagues, board game ladders, book clubs, and other repeated community activities.
 
 ---
 
 ## General
 
 - We need ways for the user to invest into the app. Build interest lists, pin events, add to Chums, get feedback for events, define chum preferences, etc.
-- Notification of one of their chums joins something they might be interested in
+- Notification if one of their chums joins something they might be interested in.
 
 ---
 

@@ -1,11 +1,21 @@
 import { auth } from "@/auth";
 import AppShell from "@/components/layout/AppShell";
 import MarkOAuthVerified from "@/components/auth/MarkOAuthVerified";
-import { getRequestedPathFromHeaders } from "@/lib/authRedirect";
+import {
+  getRequestedPathFromHeaders,
+  getRequestedSearchFromHeaders,
+} from "@/lib/authRedirect";
 import { getGreetingName } from "@/lib/greeting";
 import { getOrCreateAppUser } from "@/lib/user";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+
+// Sections that an event-detail email link can deep-link into and that
+// require an authenticated viewer. Must stay in sync with
+// AUTH_REQUIRED_SECTIONS in EventDetailClient.tsx — duplicated here so the
+// server can short-circuit before any HTML is rendered (avoiding the brief
+// flash of the public-preview shell on the way to /login).
+const AUTH_REQUIRED_EVENT_SECTIONS = new Set(["feedback", "chat"]);
 
 export default async function AppLayout({
   children,
@@ -22,6 +32,17 @@ export default async function AppLayout({
 
   if (!session) {
     if (isPublicRoute) {
+      // Email links like /events/{id}?section=feedback target sections that
+      // require auth. If the visitor is logged out, send them straight to
+      // /login here so they don't see the (app) shell flash on the way.
+      const search = getRequestedSearchFromHeaders(requestHeaders);
+      const sectionMatch = search.match(/[?&]section=([^&]+)/);
+      const sectionParam = sectionMatch
+        ? decodeURIComponent(sectionMatch[1])
+        : null;
+      if (sectionParam && AUTH_REQUIRED_EVENT_SECTIONS.has(sectionParam)) {
+        redirect(`/login?next=${encodeURIComponent(requestedPath)}`);
+      }
       return <AppShell>{children}</AppShell>;
     }
     redirect(`/login?next=${encodeURIComponent(requestedPath)}`);

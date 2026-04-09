@@ -33,7 +33,6 @@ import { loadGooglePlacesScript } from "@/lib/loadGooglePlaces";
 import NextStepNudge, { notifyObjectivesChanged } from "@/components/objectives/NextStepNudge";
 import AttendanceRecordSection from "@/components/publicProfile/AttendanceRecordSection";
 import ChumPreferencesSection from "@/components/profile/ChumPreferencesSection";
-import ProfileShoutoutsReceivedSection from "@/components/profile/ProfileShoutoutsReceivedSection";
 
 const GENDER_OPTIONS = [
   { value: "", label: "Not specified" },
@@ -815,10 +814,6 @@ export default function ProfileClient() {
 
       {/* Chum preferences */}
       <ChumPreferencesSection />
-
-      {/* Shout-outs received (private to the viewer; v1 does not surface
-          on the public profile). Approved by super admin moderation. */}
-      <ProfileShoutoutsReceivedSection />
 
       {/* Attendance record */}
       {profile?.userId && (

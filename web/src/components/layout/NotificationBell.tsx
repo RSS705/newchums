@@ -80,7 +80,7 @@ function resolveActorLabel(n: AppNotification): { actorLabel: string; actorHref:
   return { actorLabel, actorHref };
 }
 
-function notificationText(n: AppNotification): {
+function notificationText(n: AppNotification, viewerHandle: string | null): {
   actorLabel: string;
   actorHref: string | null;
   body: React.ReactNode;
@@ -183,10 +183,14 @@ function notificationText(n: AppNotification): {
     case "shoutout_received": {
       // entityId is the shoutout id, NOT an event id, so the existing
       // titleLink (which assumes /events/<entityId>) doesn't apply. The body
-      // text deep-links to the recipient's own private shout-outs section
-      // on /profile.
+      // text deep-links to the recipient's Shout-outs section on their own
+      // public profile (/u/<handle>#shoutouts). Falls back to /profile while
+      // navProfile is still loading; that path no longer renders shout-outs
+      // but will not 404 either.
       const planTitle = n.metadata?.planTitle as string | undefined;
-      const shoutoutsHref = "/profile#shoutouts";
+      const shoutoutsHref = viewerHandle
+        ? `/u/${viewerHandle.replace(/^@/, "")}#shoutouts`
+        : "/profile#shoutouts";
       const trailing = planTitle
         ? <> left you a shout-out from <Box component={Link} href={shoutoutsHref} sx={{ fontWeight: 600, color: "inherit", textDecoration: "none", "&:hover": { textDecoration: "underline" } }}>&ldquo;{planTitle}&rdquo;</Box>.</>
         : <> left you a <Box component={Link} href={shoutoutsHref} sx={{ fontWeight: 600, color: "inherit", textDecoration: "none", "&:hover": { textDecoration: "underline" } }}>shout-out</Box>.</>;
@@ -202,12 +206,14 @@ function notificationText(n: AppNotification): {
 function NotificationRow({
   notification,
   avatarBaseUrl,
+  viewerHandle,
 }: {
   notification: AppNotification;
   avatarBaseUrl: string;
+  viewerHandle: string | null;
 }) {
   const isUnread = !notification.readAt;
-  const { actorLabel, actorHref, body } = notificationText(notification);
+  const { actorLabel, actorHref, body } = notificationText(notification, viewerHandle);
   const avatarSrc = notification.actorAvatarUrl
     ? `${avatarBaseUrl}${notification.actorAvatarUrl}`
     : null;
@@ -425,7 +431,16 @@ function UnreadChatRow({ entry }: { entry: UnreadChatEntry }) {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function NotificationBell() {
+type NotificationBellProps = {
+  /** Logged-in viewer's @handle (no leading "@"). Used to deep-link the
+   *  shoutout_received notification straight to the recipient's own public
+   *  profile shout-outs section (`/u/<handle>#shoutouts`). May be null while
+   *  the parent's profile fetch is still in flight; the bell falls back to a
+   *  safe legacy URL in that window. */
+  viewerHandle?: string | null;
+};
+
+export default function NotificationBell({ viewerHandle = null }: NotificationBellProps = {}) {
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
   const [notifications, setNotifications] = React.useState<AppNotification[]>([]);
   const [unreadChats, setUnreadChats] = React.useState<UnreadChatEntry[]>([]);
@@ -564,6 +579,7 @@ export default function NotificationBell() {
                 <NotificationRow
                   notification={notification}
                   avatarBaseUrl={avatarBaseUrl}
+                  viewerHandle={viewerHandle}
                 />
               </React.Fragment>
             ))}

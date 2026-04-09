@@ -14,6 +14,7 @@ import ProfileHeaderSection from "./ProfileHeaderSection";
 import ProfileBioSection from "./ProfileBioSection";
 import ProfileChumsSection from "./ProfileChumsSection";
 import ProfileHobbiesSection from "./ProfileHobbiesSection";
+import PublicProfileShoutoutsSection from "./PublicProfileShoutoutsSection";
 
 export type PublicProfileUser = {
   userId: string;
@@ -26,6 +27,7 @@ export type PublicProfileUser = {
   hobbies: string[];
   avatarUrl: string | null;
   is_hidden_chum_list: boolean;
+  is_hidden_shoutouts: boolean;
 };
 
 export type ChumAction = {
@@ -111,29 +113,61 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
           </Box>
           {chumAction && (
             <Box sx={{ flexShrink: 0, pt: { xs: 0, sm: 0.25 }, width: { xs: "100%", sm: "auto" } }}>
-              <Button
-                variant={chumAction.isSaved ? "outlined" : "contained"}
-                size="medium"
-                color={chumAction.isSaved ? "inherit" : "primary"}
-                disabled={chumAction.loading}
-                onClick={chumAction.onToggle}
-                startIcon={chumAction.isSaved ? <PersonRemoveRoundedIcon /> : <PersonAddRoundedIcon />}
-                fullWidth
-                sx={{
-                  fontSize: "0.8125rem",
-                  lineHeight: 1.25,
-                  textAlign: "center",
-                  whiteSpace: "nowrap",
-                  textTransform: "none",
-                  fontWeight: 600,
-                  borderRadius: 2.5,
-                  px: { xs: 2, sm: 2.5 },
-                  py: { xs: 1, sm: 0.75 },
-                  width: { xs: "100%", sm: "auto" },
-                }}
-              >
-                {chumAction.isSaved ? "Remove from Chums" : "Add to Chums"}
-              </Button>
+              {chumAction.isSaved ? (
+                /* Already-a-chum state: deliberately understated. The user
+                   has already taken the primary action; "Remove from Chums"
+                   should be discoverable but never the focus of the page. */
+                <Button
+                  variant="text"
+                  size="small"
+                  disabled={chumAction.loading}
+                  onClick={chumAction.onToggle}
+                  startIcon={<PersonRemoveRoundedIcon sx={{ fontSize: "1rem !important" }} />}
+                  sx={{
+                    fontSize: "0.75rem",
+                    lineHeight: 1.25,
+                    textAlign: "center",
+                    whiteSpace: "nowrap",
+                    textTransform: "none",
+                    fontWeight: 500,
+                    borderRadius: 2,
+                    color: "text.disabled",
+                    px: { xs: 1.25, sm: 1.5 },
+                    py: 0.5,
+                    width: { xs: "100%", sm: "auto" },
+                    "&:hover": {
+                      color: "text.secondary",
+                      backgroundColor: "action.hover",
+                    },
+                  }}
+                >
+                  Remove from Chums
+                </Button>
+              ) : (
+                <Button
+                  variant="contained"
+                  size="medium"
+                  color="primary"
+                  disabled={chumAction.loading}
+                  onClick={chumAction.onToggle}
+                  startIcon={<PersonAddRoundedIcon />}
+                  fullWidth
+                  sx={{
+                    fontSize: "0.8125rem",
+                    lineHeight: 1.25,
+                    textAlign: "center",
+                    whiteSpace: "nowrap",
+                    textTransform: "none",
+                    fontWeight: 600,
+                    borderRadius: 2.5,
+                    px: { xs: 2, sm: 2.5 },
+                    py: { xs: 1, sm: 0.75 },
+                    width: { xs: "100%", sm: "auto" },
+                  }}
+                >
+                  Add to Chums
+                </Button>
+              )}
             </Box>
           )}
         </Box>
@@ -164,6 +198,19 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
         variant="public"
         viewerLoggedIn={viewerLoggedIn}
       />
+
+      {/* Approved shout-outs from people they've joined plans with. Self-
+          contained card with its own fetch. The owner sees a subtle inline
+          hide/show toggle and can preview the dimmed-hidden state without
+          leaving the page. Empty (no approved shout-outs) renders nothing. */}
+      {ownerHandleSlug && (
+        <PublicProfileShoutoutsSection
+          handle={ownerHandleSlug}
+          isOwner={!!isOwner}
+          viewerLoggedIn={!!viewerLoggedIn}
+          initiallyHidden={user.is_hidden_shoutouts}
+        />
+      )}
 
       {/* Public connections section, self-contained card, hidden if owner toggled it off or list is empty */}
       {ownerHandleSlug && !user.is_hidden_chum_list && (

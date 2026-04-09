@@ -42,7 +42,8 @@ function mergePathAndQuery(path: string | null, query: string | null): string | 
 export function getRequestedPathFromHeaders(requestHeaders: Headers): string {
   const requestPath = requestHeaders.get("x-request-path");
   if (requestPath) {
-    return getSafeRedirectPath(requestPath);
+    const search = requestHeaders.get("x-request-search") ?? "";
+    return getSafeRedirectPath(requestPath + search);
   }
 
   const nextUrl = requestHeaders.get("next-url");
@@ -51,4 +52,13 @@ export function getRequestedPathFromHeaders(requestHeaders: Headers): string {
 
   const requestedPath = nextUrl ?? mergePathAndQuery(invokePath, invokeQuery);
   return getSafeRedirectPath(requestedPath);
+}
+
+/**
+ * Returns the raw search string ("?foo=bar") for the current request, or "".
+ * Used by server components to inspect query params without round-tripping
+ * through the client.
+ */
+export function getRequestedSearchFromHeaders(requestHeaders: Headers): string {
+  return requestHeaders.get("x-request-search") ?? "";
 }

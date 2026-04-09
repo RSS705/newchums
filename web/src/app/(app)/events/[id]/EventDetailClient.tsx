@@ -246,6 +246,11 @@ function visibilityLabel(v: string): string {
 
 const VALID_RSVP_PARAMS = ["going", "maybe", "cant_make_it"] as const;
 
+// Sections from email deep-links (?section=...) that require an authenticated
+// viewer. Logged-out visitors hitting these are redirected through /login first
+// and returned to the same plan + section after signing in.
+const AUTH_REQUIRED_SECTIONS: readonly string[] = ["feedback", "chat"];
+
 const PREF_NOTE_LABELS: Record<string, string> = {
   reliability: "reliability",
   sociability: "sociability",
@@ -395,6 +400,12 @@ export default function EventDetailClient() {
     getAuthToken().then((t) => setIsAuthenticated(!!t));
   }, []);
 
+  // Prefetched feedback payload, populated in load() when the visitor arrived
+  // via ?section=feedback. Lets <PlanFeedback> mount with data already in
+  // hand so the form is visible on first paint instead of popping in after a
+  // second round-trip.
+  const [prefetchedFeedback, setPrefetchedFeedback] = useState<unknown>(null);
+
   // ── Public RSVP (share-link visitors) ──────────────────────────────────
   type PubStep = "email" | "code" | "rsvp";
   const [pubStep, setPubStep] = useState<PubStep>("email");
@@ -512,8 +523,51 @@ export default function EventDetailClient() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      // Email deep-links to auth-required sections (e.g. ?section=feedback in
+      // the post-plan feedback email): if the visitor is logged out, route
+      // them through /login first so they return to the correct plan and
+      // section after signing in. This avoids hitting the public preview path
+      // (which has no feedback form) or a "Plan not found" fallback.
+      let sectionParam: string | null = null;
+      try {
+        sectionParam = new URL(window.location.href).searchParams.get("section");
+      } catch {
+        /* noop */
+      }
+      if (sectionParam && AUTH_REQUIRED_SECTIONS.includes(sectionParam)) {
+        const tok = await getAuthToken();
+        if (!tok) {
+          const target = `/events/${eventId}?section=${encodeURIComponent(sectionParam)}`;
+          router.replace(`/login?next=${encodeURIComponent(target)}`);
+          return;
+        }
+      }
+
+      // When the visitor was deep-linked into the feedback section we already
+      // know <PlanFeedback> will be rendered, so kick its data fetch off in
+      // parallel with the event request. The result is handed to the child
+      // via a prop so it can paint the form on first render instead of doing
+      // a second round-trip and flickering content into view.
+      const feedbackPromise =
+        sectionParam === "feedback"
+          ? apiFetch(`/events/${eventId}/feedback`, { auth: true })
+              .then(async (r) => (r.ok ? await r.json() : null))
+              .catch(() => null)
+          : Promise.resolve(null);
+
       const res = await apiFetch(`/events/${eventId}${buildTokenSuffix()}`, { auth: true });
       if (!res.ok) {
+        // Safety net: if the plan endpoint refuses for any reason and the
+        // viewer was deep-linked to an auth-required section without a token,
+        // still send them to login instead of "Plan not found".
+        if (sectionParam && AUTH_REQUIRED_SECTIONS.includes(sectionParam)) {
+          const tok = await getAuthToken();
+          if (!tok) {
+            const target = `/events/${eventId}?section=${encodeURIComponent(sectionParam)}`;
+            router.replace(`/login?next=${encodeURIComponent(target)}`);
+            return;
+          }
+        }
         setError("Plan not found");
         setLoading(false);
         return;
@@ -529,11 +583,24 @@ export default function EventDetailClient() {
         }
       }
       applyEventData(data);
+
+      // Wait for the parallel feedback fetch (if any) before flipping
+      // loading=false. This is the small delta that lets <PlanFeedback>
+      // render its content on first paint instead of after a follow-up
+      // round-trip — eliminating the form pop-in flicker on email links.
+      if (sectionParam === "feedback") {
+        try {
+          const fb = await feedbackPromise;
+          if (fb) setPrefetchedFeedback(fb);
+        } catch {
+          /* fall back to child-side fetch */
+        }
+      }
     } catch {
       setError("Failed to load plan");
     }
     setLoading(false);
-  }, [eventId, applyEventData, buildTokenSuffix]);
+  }, [eventId, applyEventData, buildTokenSuffix, router]);
 
   const refresh = useCallback(async () => {
     try {
@@ -618,7 +685,6 @@ export default function EventDetailClient() {
   }, [searchParams]);
 
   // Section deep-linking: scroll or show login nudge
-  const AUTH_REQUIRED_SECTIONS = ["feedback", "chat"];
   const [sectionLoginNudge, setSectionLoginNudge] = useState<string | null>(null);
   useEffect(() => {
     if (!event || !pendingSectionRef.current) return;
@@ -2286,7 +2352,12 @@ export default function EventDetailClient() {
       {/* Post-plan feedback, shown prominently for past attended plans */}
       {isPast && !isCanceled && accessState === "attending" && (
         <Box id="plan-section-feedback">
-          <PlanFeedback eventId={event.id} planTitle={event.title} planStartsAt={event.startsAt} />
+          <PlanFeedback
+            eventId={event.id}
+            planTitle={event.title}
+            planStartsAt={event.startsAt}
+            initialData={prefetchedFeedback}
+          />
         </Box>
       )}
 
@@ -4780,21 +4851,22 @@ export default function EventDetailClient() {
                         )}
                       </Box>
                     ) : (
-                      <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
-                        <Typography
-                          variant="body1"
-                          fontWeight={600}
-                          sx={{
-                            fontSize: "1rem",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                            color: r.isGuest ? "text.secondary" : "text.primary",
-                          }}
-                        >
-                          {r.name}
-                        </Typography>
-                        {r.isGuest && (
+                      <Box sx={{ minWidth: 0 }}>
+                        <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
+                          <Typography
+                            variant="body1"
+                            fontWeight={600}
+                            sx={{
+                              fontSize: "1rem",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                              color: r.isGuest ? "text.secondary" : "text.primary",
+                            }}
+                          >
+                            {r.isGuest && (!r.name || r.name === r.guestEmail) ? (r.guestEmail ?? r.name) : r.name}
+                          </Typography>
+                          {r.isGuest && (
                           <Tooltip
                             title="Joined via invite link without a NewChums account. Profile and chum features aren't available for guests yet."
                             arrow
@@ -4815,9 +4887,24 @@ export default function EventDetailClient() {
                                 flexShrink: 0,
                               }}
                             />
-                          </Tooltip>
+                            </Tooltip>
+                          )}
+                        </Stack>
+                        {r.isGuest && r.guestEmail && r.name && r.name !== r.guestEmail && (
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            sx={{
+                              display: "block",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {r.guestEmail}
+                          </Typography>
                         )}
-                      </Stack>
+                      </Box>
                     )}
                   </Box>
                   <Stack

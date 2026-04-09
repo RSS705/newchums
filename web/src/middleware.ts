@@ -25,6 +25,11 @@ export function middleware(request: NextRequest) {
 
   const response = NextResponse.next();
   response.headers.set("x-request-path", request.nextUrl.pathname);
+  // Expose the raw search string so server components can detect query
+  // params (e.g. ?section=feedback on /events/[id]) without depending on
+  // client-side hydration. Used by (app)/layout.tsx to redirect logged-out
+  // visitors hitting auth-required sections before any HTML is sent.
+  response.headers.set("x-request-search", request.nextUrl.search);
   return response;
 }
 

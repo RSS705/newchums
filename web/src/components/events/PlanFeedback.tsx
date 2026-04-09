@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -74,27 +74,95 @@ const RESPONSE_OPTIONS: { value: "agree" | "maybe" | "disagree"; label: string; 
   { value: "disagree", label: "No", selectedBg: "#f3f4f6", selectedColor: "#4b5563", hoverBg: "#e5e7eb" },
 ];
 
+/** Per-recipient shout-out draft. `serverMessage` is the value last seen from
+ *  the API (for change detection on submit). `serverStatus` is the moderation
+ *  state — if it's 'approved' or 'rejected' the slot is locked and the
+ *  textarea is read-only. Hoisted to module scope so the prefetch path can
+ *  type its initial map without forward-referencing a function-local type. */
+type ShoutoutDraft = {
+  message: string;
+  serverMessage: string;
+  serverStatus: "none" | "pending" | "approved" | "rejected";
+};
+
+/** Wire-format payload for /events/{id}/feedback. Exported so callers that
+ *  prefetch this endpoint (e.g. EventDetailClient on email deep-links) can
+ *  hand the result straight to <PlanFeedback> via `initialData` and avoid
+ *  the second round-trip + content pop-in. */
+export type PlanFeedbackInitialData = {
+  dismissed?: boolean;
+  attendees: Attendee[];
+  feedback: { reviewee_user_id: string; prompt: string; response: string }[];
+  attendanceIssues: { reported_user_id: string; issue_type: string }[];
+  issuesAgainstMe?: { id: string; issueType: string; status: string }[];
+  shoutouts?: { recipientUserId: string; message: string; status: string }[];
+};
+
 type PlanFeedbackProps = {
   eventId: string;
   /** Plan title shown in the participant hero as a contextual reminder. */
   planTitle?: string;
   /** Plan start time (ISO) shown in the participant hero as a contextual reminder. */
   planStartsAt?: string;
+  /** Optional payload pre-fetched by the parent (used when the visitor was
+   *  deep-linked via ?section=feedback). When provided, the component skips
+   *  its own initial fetch and renders content on first paint. */
+  initialData?: unknown;
 };
 
-export default function PlanFeedback({ eventId, planTitle, planStartsAt }: PlanFeedbackProps) {
-  const [attendees, setAttendees] = useState<Attendee[]>([]);
-  const [feedback, setFeedback] = useState<FeedbackState>({});
+function isFeedbackPayload(value: unknown): value is PlanFeedbackInitialData {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return Array.isArray(v.attendees) && Array.isArray(v.feedback) && Array.isArray(v.attendanceIssues);
+}
+
+export default function PlanFeedback({ eventId, planTitle, planStartsAt, initialData }: PlanFeedbackProps) {
+  const initial = isFeedbackPayload(initialData) ? initialData : null;
+
+  // Compute initial state from a prefetched payload (when the parent passed
+  // `initialData`). Mirrors the logic in load() so the first paint matches
+  // what a child-side fetch would have produced.
+  const initialFeedbackState: FeedbackState = {};
+  const initialSubmittedSet = new Set<string>();
+  if (initial) {
+    for (const f of initial.feedback) {
+      if (!initialFeedbackState[f.reviewee_user_id]) initialFeedbackState[f.reviewee_user_id] = {};
+      initialFeedbackState[f.reviewee_user_id][f.prompt as Prompt] = f.response as Response;
+      initialSubmittedSet.add(f.reviewee_user_id);
+    }
+  }
+  const initialShoutouts: Record<string, ShoutoutDraft> = {};
+  if (initial?.shoutouts) {
+    for (const s of initial.shoutouts) {
+      const status = s.status === "pending" || s.status === "approved" || s.status === "rejected"
+        ? s.status
+        : "none";
+      initialShoutouts[s.recipientUserId] = { message: s.message, serverMessage: s.message, serverStatus: status };
+    }
+  }
+  const initialReportedIssues = new Set<string>(
+    initial?.attendanceIssues.map((i) => `${i.reported_user_id}:${i.issue_type}`) ?? []
+  );
+  const initialIssuesAgainstMe = initial?.issuesAgainstMe ?? [];
+  const initiallyDismissed = !!initial?.dismissed;
+  const initiallySubmitted = !!initial && !initial.dismissed
+    && initial.attendees.length > 0
+    && initial.attendees.every((a) => initialSubmittedSet.has(a.userId));
+
+  const [attendees, setAttendees] = useState<Attendee[]>(initial?.attendees ?? []);
+  const [feedback, setFeedback] = useState<FeedbackState>(initialFeedbackState);
   /** Reviewees we've already saved to the API in this session (or from prior
    *  visits). Drives the per-step "submitted" check on the progress bar. */
-  const [submittedSet, setSubmittedSet] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(true);
-  const [submitted, setSubmitted] = useState(false);
+  const [submittedSet, setSubmittedSet] = useState<Set<string>>(initialSubmittedSet);
+  // When the parent prefetched the payload there's nothing to load — render
+  // content on first paint instead of returning null.
+  const [loading, setLoading] = useState(initial == null);
+  const [submitted, setSubmitted] = useState(initiallySubmitted);
   const [submitting, setSubmitting] = useState(false);
   /** Cross-fade key bumped on every advance to play a subtle slide between
    *  attendees. Keeps the experience guided rather than survey-flat. */
   const [stepNonce, setStepNonce] = useState(0);
-  const [dismissed, setDismissed] = useState(false);
+  const [dismissed, setDismissed] = useState(initiallyDismissed);
   const [dismissDialogOpen, setDismissDialogOpen] = useState(false);
   const [dismissing, setDismissing] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -104,7 +172,7 @@ export default function PlanFeedback({ eventId, planTitle, planStartsAt }: PlanF
   const [issueType, setIssueType] = useState<string>("");
   const [issueSubmitting, setIssueSubmitting] = useState(false);
   const [issueDone, setIssueDone] = useState(false);
-  const [reportedIssues, setReportedIssues] = useState<Set<string>>(new Set());
+  const [reportedIssues, setReportedIssues] = useState<Set<string>>(initialReportedIssues);
 
   const [conductDialogOpen, setConductDialogOpen] = useState(false);
   const [conductTarget, setConductTarget] = useState<Attendee | null>(null);
@@ -113,7 +181,7 @@ export default function PlanFeedback({ eventId, planTitle, planStartsAt }: PlanF
   const [conductSubmitting, setConductSubmitting] = useState(false);
   const [conductDone, setConductDone] = useState(false);
 
-  const [issuesAgainstMe, setIssuesAgainstMe] = useState<{ id: string; issueType: string; status: string }[]>([]);
+  const [issuesAgainstMe, setIssuesAgainstMe] = useState<{ id: string; issueType: string; status: string }[]>(initialIssuesAgainstMe);
   const [disputing, setDisputing] = useState(false);
 
   // Chum-status cache for the reviewed attendees. `undefined` = not yet
@@ -121,16 +189,28 @@ export default function PlanFeedback({ eventId, planTitle, planStartsAt }: PlanF
   const [chumStatus, setChumStatus] = useState<Record<string, boolean | null | undefined>>({});
   const [chumLoading, setChumLoading] = useState<Record<string, boolean>>({});
 
-  // Per-recipient shout-out drafts. `serverMessage` is the value last seen
-  // from the API (for change detection on submit). `serverStatus` is the
-  // moderation state — if it's 'approved' or 'rejected' the slot is locked
-  // and the textarea is read-only.
-  type ShoutoutDraft = {
-    message: string;
-    serverMessage: string;
-    serverStatus: "none" | "pending" | "approved" | "rejected";
-  };
-  const [shoutouts, setShoutouts] = useState<Record<string, ShoutoutDraft>>({});
+  const [shoutouts, setShoutouts] = useState<Record<string, ShoutoutDraft>>(initialShoutouts);
+
+  // Ref on the "Thanks for sharing your feedback" panel so we can scroll the
+  // viewer up to it after they submit the last attendee. Without this the
+  // success state can render below the fold (especially on mobile, where the
+  // last interaction was at the bottom of the form) and feel like nothing
+  // happened.
+  const thanksPanelRef = useRef<HTMLDivElement>(null);
+  // Tracks whether the latest flip into `submitted=true` was the user's own
+  // submit action vs. an initial hydration from the API. We only want to
+  // auto-scroll on the former.
+  const justSubmittedRef = useRef(false);
+  useEffect(() => {
+    if (!submitted || !justSubmittedRef.current) return;
+    justSubmittedRef.current = false;
+    // Wait one frame for the success Paper to mount, then ease the viewport
+    // up to it. `block: "start"` lands the heading at the top of the
+    // viewport, which is the natural reading position.
+    requestAnimationFrame(() => {
+      thanksPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, [submitted]);
 
   const avatarBase = getAvatarBaseUrl();
 
@@ -192,7 +272,14 @@ export default function PlanFeedback({ eventId, planTitle, planStartsAt }: PlanF
     setLoading(false);
   }, [eventId]);
 
-  useEffect(() => { load(); }, [load]);
+  // Skip the round-trip when the parent prefetched the payload (email
+  // ?section=feedback path). The component is already populated from
+  // initialData, so a follow-up fetch would only re-paint the same content.
+  useEffect(() => {
+    if (initial) return;
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load]);
 
   const ensureChumStatus = useCallback(async (userId: string) => {
     setChumStatus((prev) => {
@@ -327,6 +414,9 @@ export default function PlanFeedback({ eventId, planTitle, planStartsAt }: PlanF
     setSubmitting(false);
 
     if (isLastAttendee) {
+      // Flag this transition as user-initiated so the success panel
+      // auto-scrolls into view (see effect on `submitted` above).
+      justSubmittedRef.current = true;
       setSubmitted(true);
     } else {
       setCurrentIndex((i) => i + 1);
@@ -497,9 +587,53 @@ export default function PlanFeedback({ eventId, planTitle, planStartsAt }: PlanF
           </Paper>
         )}
 
+        {/* ── 0. Intro / what is this screen ────────────────────────────
+            Compact header so users instantly understand what this is, why
+            it matters, and that it's optional. Hidden once the form is
+            submitted to keep the success state focused. */}
+        {!submitted && (
+          <Box sx={{ px: { xs: 0.5, sm: 0 } }}>
+            <Typography
+              component="h2"
+              sx={{
+                fontWeight: 700,
+                fontSize: { xs: "1.125rem", sm: "1.25rem" },
+                lineHeight: 1.25,
+                color: "text.primary",
+                mb: 0.5,
+              }}
+            >
+              How did it go?
+            </Typography>
+            <Typography
+              variant="body2"
+              sx={{
+                color: "text.secondary",
+                fontSize: "0.875rem",
+                lineHeight: 1.55,
+                mb: 0.5,
+              }}
+            >
+              You&rsquo;re leaving quick, private feedback for people from this plan. This helps NewChums make better matches and more reliable plans over time.
+            </Typography>
+            <Typography
+              variant="caption"
+              sx={{
+                color: "text.disabled",
+                fontSize: "0.75rem",
+                fontWeight: 600,
+                display: "block",
+              }}
+            >
+              Answer what you can, skip what you want.
+            </Typography>
+          </Box>
+        )}
+
         {submitted ? (
           /* ── Done state ──────────────────────────────────────────────── */
           <Paper
+            ref={thanksPanelRef}
             variant="outlined"
             sx={{
               p: { xs: 3, sm: 3.5 },
@@ -507,6 +641,10 @@ export default function PlanFeedback({ eventId, planTitle, planStartsAt }: PlanF
               borderColor: "success.light",
               background: "linear-gradient(180deg, #f0fdf4 0%, #ffffff 70%)",
               textAlign: "center",
+              // Reserve a bit of breathing room above the heading so a
+              // sticky app bar doesn't crop the title when we scroll into
+              // view post-submit.
+              scrollMarginTop: { xs: 80, sm: 96 },
             }}
           >
             <Box
@@ -604,13 +742,13 @@ export default function PlanFeedback({ eventId, planTitle, planStartsAt }: PlanF
                   </Box>
                   <Box sx={{ lineHeight: 1.2 }}>
                     <Typography sx={{ fontWeight: 700, fontSize: "0.9375rem", lineHeight: 1.2 }}>
-                      Person {currentIndex + 1} of {total}
+                      Feedback {currentIndex + 1} of {total}
                     </Typography>
                     <Typography variant="caption" sx={{ color: "text.secondary", fontSize: "0.75rem" }}>
                       {completedCount === 0
-                        ? "Quick, private feedback"
+                        ? "Quick and private"
                         : completedCount === total
-                          ? "All saved — review or finish"
+                          ? "All saved, review or finish"
                           : `${completedCount} of ${total} saved`}
                     </Typography>
                   </Box>
@@ -953,12 +1091,12 @@ export default function PlanFeedback({ eventId, planTitle, planStartsAt }: PlanF
                           ? status === "approved"
                             ? "Your shout-out has been sent to this person."
                             : "Our team didn't approve this one. You can use the safety section below if something needs reporting."
-                          : "Optional. If approved by our team, it'll appear on their profile. Use it for kind, fun, or appreciative notes — please allow a short delay for review."}
+                          : "Optional. Give them a fun or memorable shout-out for their public profile. There may be a short delay before it appears."}
                       </Typography>
                       <TextField
                         value={message}
                         onChange={(e) => setShoutoutMessage(currentAttendee.userId, e.target.value)}
-                        placeholder="Say something kind or fun"
+                        placeholder="Easy to be around, great vibes, would join again"
                         multiline
                         minRows={2}
                         maxRows={4}
@@ -992,61 +1130,84 @@ export default function PlanFeedback({ eventId, planTitle, planStartsAt }: PlanF
                   );
                 })()}
 
-                {/* ── 4. Primary action area ─────────────────────────── */}
+                {/* ── 4. Primary action area ───────────────────────────
+                    Three-column layout on sm+: Back (left), primary CTA
+                    (centered), and an empty mirror column. The mirror keeps
+                    the CTA visually centered regardless of whether the Back
+                    button is rendered, and gives the CTA room to be a bit
+                    wider via minWidth. On xs we keep the column-reverse
+                    stretch layout so the button stays full-width on mobile. */}
                 <Stack
                   direction={{ xs: "column-reverse", sm: "row" }}
                   alignItems={{ xs: "stretch", sm: "center" }}
-                  justifyContent="space-between"
+                  justifyContent={{ xs: "flex-start", sm: "space-between" }}
                   spacing={{ xs: 1, sm: 1.5 }}
                   sx={{ mt: { xs: 0.5, sm: 1 } }}
                 >
-                  {!isFirst ? (
-                    <Button
-                      onClick={() => { setCurrentIndex((i) => i - 1); setStepNonce((n) => n + 1); }}
-                      variant="text"
-                      startIcon={<ChevronLeftRoundedIcon sx={{ fontSize: 20 }} />}
-                      sx={{
-                        textTransform: "none",
-                        fontWeight: 600,
-                        fontSize: "0.875rem",
-                        color: "text.secondary",
-                        borderRadius: 2,
-                        alignSelf: { xs: "center", sm: "flex-start" },
-                        "&:hover": { bgcolor: "action.hover" },
-                      }}
-                    >
-                      Back
-                    </Button>
-                  ) : (
-                    <Box sx={{ display: { xs: "none", sm: "block" } }} />
-                  )}
-
-                  <Button
-                    onClick={() => currentAttendee && handleSubmitAndNext(currentAttendee, isLast)}
-                    disabled={submitting || !currentAttendee}
-                    variant="contained"
-                    color="primary"
-                    endIcon={isLast
-                      ? <CheckRoundedIcon sx={{ fontSize: 20 }} />
-                      : <ArrowForwardRoundedIcon sx={{ fontSize: 20 }} />}
+                  <Box
                     sx={{
-                      textTransform: "none",
-                      fontWeight: 700,
-                      borderRadius: 2.5,
-                      px: { xs: 3, sm: 3.5 },
-                      py: { xs: 1.125, sm: 1.25 },
-                      fontSize: "0.9375rem",
-                      boxShadow: "0 2px 8px rgba(230, 91, 19, 0.25)",
-                      "&:hover": { boxShadow: "0 4px 14px rgba(230, 91, 19, 0.30)", opacity: 0.96 },
-                      "&.Mui-disabled": { boxShadow: "none", bgcolor: "grey.200", color: "grey.500" },
+                      flex: { sm: 1 },
+                      display: "flex",
+                      justifyContent: { xs: "center", sm: "flex-start" },
                     }}
                   >
-                    {submitting
-                      ? "Saving…"
-                      : currentHasResponse
-                        ? (isLast ? "Submit & finish" : "Submit & next")
-                        : (isLast ? "Skip & finish" : "Skip & next")}
-                  </Button>
+                    {!isFirst && (
+                      <Button
+                        onClick={() => { setCurrentIndex((i) => i - 1); setStepNonce((n) => n + 1); }}
+                        variant="text"
+                        startIcon={<ChevronLeftRoundedIcon sx={{ fontSize: 20 }} />}
+                        sx={{
+                          textTransform: "none",
+                          fontWeight: 600,
+                          fontSize: "0.875rem",
+                          color: "text.secondary",
+                          borderRadius: 2,
+                          "&:hover": { bgcolor: "action.hover" },
+                        }}
+                      >
+                        Back
+                      </Button>
+                    )}
+                  </Box>
+
+                  <Box
+                    sx={{
+                      display: "flex",
+                      justifyContent: "center",
+                      width: { xs: "100%", sm: "auto" },
+                    }}
+                  >
+                    <Button
+                      onClick={() => currentAttendee && handleSubmitAndNext(currentAttendee, isLast)}
+                      disabled={submitting || !currentAttendee}
+                      variant="contained"
+                      color="primary"
+                      endIcon={isLast
+                        ? <CheckRoundedIcon sx={{ fontSize: 20 }} />
+                        : <ArrowForwardRoundedIcon sx={{ fontSize: 20 }} />}
+                      sx={{
+                        textTransform: "none",
+                        fontWeight: 700,
+                        borderRadius: 2.5,
+                        px: { xs: 3, sm: 4.5 },
+                        py: { xs: 1.125, sm: 1.25 },
+                        fontSize: "0.9375rem",
+                        minWidth: { xs: "100%", sm: 240 },
+                        boxShadow: "0 2px 8px rgba(230, 91, 19, 0.25)",
+                        "&:hover": { boxShadow: "0 4px 14px rgba(230, 91, 19, 0.30)", opacity: 0.96 },
+                        "&.Mui-disabled": { boxShadow: "none", bgcolor: "grey.200", color: "grey.500" },
+                      }}
+                    >
+                      {submitting
+                        ? "Saving…"
+                        : currentHasResponse
+                          ? (isLast ? "Submit & finish" : "Submit & next")
+                          : (isLast ? "Skip & finish" : "Skip & next")}
+                    </Button>
+                  </Box>
+
+                  {/* Mirror of the Back column to keep the CTA centered. */}
+                  <Box sx={{ flex: { sm: 1 }, display: { xs: "none", sm: "block" } }} />
                 </Stack>
 
                 {/* ── 5. Unusual issues section ──────────────────────── */}
@@ -1116,7 +1277,7 @@ export default function PlanFeedback({ eventId, planTitle, planStartsAt }: PlanF
                             lineHeight: 1.4,
                           }}>
                             {currentReportedIssue
-                              ? "Thanks — this helps keep plans reliable."
+                              ? "Thanks, this helps keep plans reliable."
                               : "No-show, cancelled too late, or arrived very late."}
                           </Typography>
                         </Box>
@@ -1165,21 +1326,30 @@ export default function PlanFeedback({ eventId, planTitle, planStartsAt }: PlanF
                     </Paper>
                   </Stack>
 
-                  <Box sx={{ textAlign: "center", mt: 1.5 }}>
+                  <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
                     <Button
                       size="small"
-                      variant="text"
+                      variant="outlined"
                       color="inherit"
                       onClick={() => setDismissDialogOpen(true)}
                       sx={{
                         textTransform: "none",
-                        fontWeight: 500,
-                        fontSize: "0.75rem",
-                        color: "text.disabled",
-                        "&:hover": { color: "text.secondary", bgcolor: "action.hover" },
+                        fontWeight: 600,
+                        fontSize: "0.8125rem",
+                        borderRadius: 2.5,
+                        px: { xs: 4, sm: 5 },
+                        py: 0.875,
+                        minWidth: { xs: 220, sm: 260 },
+                        borderColor: "grey.300",
+                        color: "text.secondary",
+                        "&:hover": {
+                          borderColor: "grey.400",
+                          color: "text.primary",
+                          bgcolor: "action.hover",
+                        },
                       }}
                     >
-                      I don&apos;t want to leave feedback for this plan
+                      I&rsquo;d rather skip feedback
                     </Button>
                   </Box>
                 </Box>
@@ -1201,7 +1371,7 @@ export default function PlanFeedback({ eventId, planTitle, planStartsAt }: PlanF
           <DialogContent sx={{ p: 0 }}>
             <DialogSuccessState
               title="Issue reported"
-              message="Thanks — this helps keep plans reliable for everyone."
+              message="Thanks, this helps keep plans reliable for everyone."
               onClose={() => setIssueDialogOpen(false)}
             />
           </DialogContent>
@@ -1548,7 +1718,7 @@ function DialogSuccessState({
 }
 
 /** Build a short contextual reminder of the plan for the participant hero
- *  ("From your <Plan title> on <date>"). Returns null when neither field is
+ *  ("You met at <Plan title> on <date>"). Returns null when neither field is
  *  available so the hero gracefully omits the line. */
 function formatPlanContext(title: string | undefined, startsAtIso: string | undefined): string | null {
   const cleanTitle = title?.trim();
@@ -1559,8 +1729,8 @@ function formatPlanContext(title: string | undefined, startsAtIso: string | unde
       dateStr = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
     }
   }
-  if (cleanTitle && dateStr) return `From your plan “${cleanTitle}” on ${dateStr}`;
-  if (cleanTitle) return `From your plan “${cleanTitle}”`;
-  if (dateStr) return `From your plan on ${dateStr}`;
+  if (cleanTitle && dateStr) return `You met at ${cleanTitle} on ${dateStr}`;
+  if (cleanTitle) return `You met at ${cleanTitle}`;
+  if (dateStr) return `You met on ${dateStr}`;
   return null;
 }
