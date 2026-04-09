@@ -1812,13 +1812,53 @@ export default function EventDetailClient() {
 
   if (error || !event) {
     return (
-      <Stack spacing={2} sx={{ py: 8, textAlign: "center" }}>
-        <Typography variant="h5" fontWeight={600}>
-          {error ?? "Not found"}
+      <Stack
+        spacing={3}
+        sx={{
+          py: { xs: 6, sm: 10 },
+          px: 2,
+          textAlign: "center",
+          maxWidth: 460,
+          mx: "auto",
+        }}
+      >
+        <Stack spacing={1.25}>
+          <Typography variant="h5" fontWeight={700}>
+            {error ?? "We couldn't find that plan"}
+          </Typography>
+          <Typography variant="body1" color="text.secondary">
+            It may have been removed, the link might be incorrect, or you may not
+            have access to it.
+          </Typography>
+        </Stack>
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          spacing={1.5}
+          justifyContent="center"
+          alignItems="center"
+        >
+          <AppButton onClick={() => router.push("/")} startIcon={<ArrowBackRoundedIcon />}>
+            Back to home
+          </AppButton>
+          {isAuthenticated === false && (
+            <AppButton
+              variant="outlined"
+              onClick={() => router.push("/login?next=/")}
+            >
+              Sign in
+            </AppButton>
+          )}
+        </Stack>
+        <Typography variant="body2" color="text.secondary">
+          Still stuck? Email{" "}
+          <MuiLink
+            href="mailto:contact@newchums.com"
+            sx={{ color: "primary.main", fontWeight: 500 }}
+          >
+            contact@newchums.com
+          </MuiLink>{" "}
+          and we'll take a look.
         </Typography>
-        <Button onClick={() => router.push("/plans")} startIcon={<ArrowBackRoundedIcon />}>
-          Back to Your Plans
-        </Button>
       </Stack>
     );
   }
@@ -1907,6 +1947,41 @@ export default function EventDetailClient() {
           )}
         </Box>
 
+        {/* Persistent acknowledgement when a logged-out viewer just confirmed
+            or declined via an email link. The toast is fleeting; this panel
+            stays on the page so the action feels resolved. */}
+        {emailConfirmResult && (
+          <Paper
+            variant="outlined"
+            sx={{
+              p: 2,
+              borderRadius: 2.5,
+              borderColor: emailConfirmResult === "confirmed" ? "success.main" : "divider",
+              bgcolor: emailConfirmResult === "confirmed" ? "success.50" : "grey.50",
+            }}
+          >
+            <Stack direction="row" spacing={1.5} alignItems="center">
+              {emailConfirmResult === "confirmed" ? (
+                <CheckCircleRoundedIcon sx={{ color: "success.main" }} />
+              ) : (
+                <InfoOutlinedIcon sx={{ color: "text.secondary" }} />
+              )}
+              <Box>
+                <Typography variant="subtitle2" fontWeight={700}>
+                  {emailConfirmResult === "confirmed"
+                    ? "You're confirmed for this plan"
+                    : "You've let the host know you can't make it"}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {emailConfirmResult === "confirmed"
+                    ? "Thanks! The host has been notified."
+                    : "Thanks for letting us know."}
+                </Typography>
+              </Box>
+            </Stack>
+          </Paper>
+        )}
+
         {pubIsCanceled && (
           <Paper
             variant="outlined"
@@ -1980,6 +2055,41 @@ export default function EventDetailClient() {
             )}
           </Stack>
         </AppCard>
+
+        {/* Approximate-area map for in-person plans. We only show this when
+            the host has a real approximate area; the iframe pins a
+            neighbourhood-level search rather than coords, so the exact venue
+            is never revealed. */}
+        {event.locationType === "in_person" &&
+          event.locationArea &&
+          process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY && (
+            <AppCard sx={{ p: 0, overflow: "hidden" }}>
+              <Box
+                component="iframe"
+                src={`https://www.google.com/maps/embed/v1/place?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&q=${encodeURIComponent(event.locationArea)}&zoom=13`}
+                title="Approximate event area"
+                sx={{
+                  width: "100%",
+                  height: 240,
+                  border: "none",
+                  display: "block",
+                }}
+              />
+              <Box
+                sx={{
+                  px: 2,
+                  py: 1.25,
+                  borderTop: "1px solid",
+                  borderColor: "divider",
+                  textAlign: "center",
+                }}
+              >
+                <Typography variant="caption" color="text.secondary" sx={{ fontStyle: "italic" }}>
+                  Map shows approximate area only
+                </Typography>
+              </Box>
+            </AppCard>
+          )}
 
         {!pubIsCanceled && !pubIsPast && (
           <AppCard>

@@ -700,15 +700,28 @@ export const sendConfirmationRequestEmail = async (
 ) => {
   if (!env.POSTMARK_TEMPLATE_CONFIRMATION_REQUEST) return;
 
-  const headingMap = {
-    initial: isHost ? "Attendance check: are you still hosting?" : "Attendance check: are you still coming?",
-    reminder: isHost ? "Reminder: are you still hosting?" : "Reminder: are you still coming?",
-    final: isHost ? "Final reminder: are you still hosting?" : "Final reminder: are you still coming?",
-  };
-  const stage = isFinal ? "final" : isReminder ? "reminder" : "initial";
+  const stage: "initial" | "reminder" | "final" = isFinal ? "final" : isReminder ? "reminder" : "initial";
 
-  const bodyHost = `Hey ${recipientName}, your plan is coming up and has a 24-hour attendance check enabled. Please confirm you're still hosting so attendees know the plan is on.`;
-  const bodyAttendee = `Hey ${recipientName}, a plan you're attending has a 24-hour attendance check. Please confirm you're still coming so the host can plan ahead.`;
+  // Headlines: short, action-oriented. Slight urgency lift on the reminder
+  // variants without going dramatic. Hosts and attendees diverge in voice but
+  // stay in the same family.
+  const headingMap = {
+    initial: isHost ? "Confirm you're still hosting" : "Confirm your attendance",
+    reminder: isHost ? "Quick check: are you still hosting?" : "Quick check: are you still coming?",
+    final: isHost ? "Last call: are you still hosting?" : "Last call: are you still coming?",
+  } as const;
+
+  // Body copy: lead with timing context, then the ask. Plain language.
+  const bodyAttendee = {
+    initial: "Your plan is coming up soon. Please confirm whether you're still in so the host can plan ahead.",
+    reminder: "Your plan is later today. Please let the host know whether you're still in so they can plan ahead.",
+    final: "Your plan starts soon. Please respond now so the host knows who to expect.",
+  } as const;
+  const bodyHost = {
+    initial: "Your plan is coming up soon. Please confirm you're still hosting so attendees know it's going ahead.",
+    reminder: "Your plan is later today. Please confirm you're still hosting so attendees know it's going ahead.",
+    final: "Your plan starts soon. Please confirm you're still hosting so attendees aren't left guessing.",
+  } as const;
 
   return sendPostmarkTemplateEmail(env, {
     From: env.EMAIL_FROM, To: to,
@@ -716,7 +729,8 @@ export const sendConfirmationRequestEmail = async (
     TemplateModel: {
       productName: "NewChums",
       heading: headingMap[stage],
-      bodyText: isHost ? bodyHost : bodyAttendee,
+      greeting: `Hi ${recipientName},`,
+      bodyText: isHost ? bodyHost[stage] : bodyAttendee[stage],
       recipientName,
       eventTitle,
       eventDate,
@@ -730,6 +744,7 @@ export const sendConfirmationRequestEmail = async (
       isReminder: isReminder || isFinal ? "1" : "",
       isFinal: isFinal ? "1" : "",
       unsubscribeUrl: unsubscribeUrl || "",
+      year: new Date().getFullYear(),
     },
   });
 };

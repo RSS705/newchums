@@ -8300,7 +8300,10 @@ app.get("/events/:id", async (c) => {
           locationDisplay: pubLocationDisplay,
           locationVisibility: locVis,
           locationExact: false,
-          locationArea: event.location_type === "online" ? null : pubLocArea,
+          // Only expose a real approximate area; the literal "General area"
+          // fallback is just label text, not something we want to map or to
+          // advertise as "approximate area shown".
+          locationArea: event.location_type === "online" ? null : (locArea || null),
           locationName: null,
           locationAddress: null,
           locationLat: null,
@@ -12736,7 +12739,7 @@ async function processAttendanceAssurance(
   const eventsNeedingInitialSend = (await sql`
     SELECT e.id, e.host_user_id, e.title, e.starts_at, e.timezone,
            e.confirmation_window_hours, e.confirmation_cutoff_hours,
-           e.location_type, e.location_name, e.location_address, e.online_link,
+           e.location_type, e.location_name, e.location_address, e.location_area, e.online_link,
            COALESCE(e.is_qa, false) AS is_qa
     FROM newchums.events e
     WHERE e.require_reconfirmation = true
@@ -12749,7 +12752,7 @@ async function processAttendanceAssurance(
     timezone: string | null; confirmation_window_hours: number;
     confirmation_cutoff_hours: number; location_type: string;
     location_name: string | null; location_address: string | null;
-    online_link: string | null; is_qa: boolean;
+    location_area: string | null; online_link: string | null; is_qa: boolean;
   }>;
 
   for (const ev of eventsNeedingInitialSend) {
@@ -12776,7 +12779,16 @@ async function processAttendanceAssurance(
       const deadline = formatEventDate(cutoffAt.toISOString(), tz);
       const eventDate = formatEventDate(ev.starts_at, tz);
       const eventUrl = `${env.WEB_BASE_URL}/events/${ev.id}`;
-      const eventLocation = ev.location_type === "online" ? (ev.online_link || "Online") : [ev.location_name, ev.location_address].filter(Boolean).join(", ") || "";
+      // Privacy-conscious location for the email body: never include the full
+      // street address. Online → "Online". In-person → venue name + city/area
+      // (mirrors the feedback email treatment so the family stays consistent).
+      let eventLocation = "";
+      if (ev.location_type === "online") {
+        eventLocation = "Online";
+      } else {
+        const area = ev.location_area || deriveApproxArea(ev.location_address) || "";
+        eventLocation = [ev.location_name, area].filter(Boolean).join(", ");
+      }
 
       const goingUserIds = goingRsvps.map((a) => a.user_id);
       const prefsMap = await batchLoadNotificationPrefs(sql, goingUserIds);
@@ -12828,7 +12840,7 @@ async function processAttendanceAssurance(
   const eventsWithPending = (await sql`
     SELECT DISTINCT e.id, e.host_user_id, e.title, e.starts_at, e.timezone,
            e.confirmation_cutoff_hours, e.location_type, e.location_name,
-           e.location_address, e.online_link,
+           e.location_address, e.location_area, e.online_link,
            COALESCE(e.is_qa, false) AS is_qa
     FROM newchums.events e
     WHERE e.require_reconfirmation = true
@@ -12844,8 +12856,8 @@ async function processAttendanceAssurance(
     id: string; host_user_id: string; title: string; starts_at: string;
     timezone: string | null; confirmation_cutoff_hours: number;
     location_type: string; location_name: string | null;
-    location_address: string | null; online_link: string | null;
-    is_qa: boolean;
+    location_address: string | null; location_area: string | null;
+    online_link: string | null; is_qa: boolean;
   }>;
 
   for (const ev of eventsWithPending) {
@@ -12857,7 +12869,14 @@ async function processAttendanceAssurance(
       const deadline = formatEventDate(cutoffAt.toISOString(), tz);
       const eventDate = formatEventDate(ev.starts_at, tz);
       const eventUrl = `${env.WEB_BASE_URL}/events/${ev.id}`;
-      const eventLocation = ev.location_type === "online" ? (ev.online_link || "Online") : [ev.location_name, ev.location_address].filter(Boolean).join(", ") || "";
+      // Privacy-conscious location for the email body — see Phase 1 above.
+      let eventLocation = "";
+      if (ev.location_type === "online") {
+        eventLocation = "Online";
+      } else {
+        const area = ev.location_area || deriveApproxArea(ev.location_address) || "";
+        eventLocation = [ev.location_name, area].filter(Boolean).join(", ");
+      }
 
       // ~12h before: send first follow-up (reminder_count = 1)
       // ~3h before: send final reminder (reminder_count = 2)

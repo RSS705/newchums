@@ -16,6 +16,7 @@ import RadioGroup from "@mui/material/RadioGroup";
 import Select from "@mui/material/Select";
 import Slider from "@mui/material/Slider";
 import Stack from "@mui/material/Stack";
+import MuiLink from "@mui/material/Link";
 import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
@@ -370,9 +371,38 @@ export default function EditEventClient() {
 
   if (notFound) {
     return (
-      <Stack spacing={2} sx={{ py: 8, textAlign: "center" }}>
-        <Typography variant="h5" fontWeight={600}>Plan not found or you don&apos;t have access</Typography>
-        <AppButton variant="outlined" onClick={() => router.back()}>Go back</AppButton>
+      <Stack
+        spacing={3}
+        sx={{
+          py: { xs: 6, sm: 10 },
+          px: 2,
+          textAlign: "center",
+          maxWidth: 460,
+          mx: "auto",
+        }}
+      >
+        <Stack spacing={1.25}>
+          <Typography variant="h5" fontWeight={700}>
+            We couldn&apos;t find that plan
+          </Typography>
+          <Typography variant="body1" color="text.secondary">
+            It may have been removed, the link might be incorrect, or you may not
+            have access to it.
+          </Typography>
+        </Stack>
+        <Stack direction="row" spacing={1.5} justifyContent="center">
+          <AppButton onClick={() => router.push("/")}>Back to home</AppButton>
+        </Stack>
+        <Typography variant="body2" color="text.secondary">
+          Still stuck? Email{" "}
+          <MuiLink
+            href="mailto:contact@newchums.com"
+            sx={{ color: "primary.main", fontWeight: 500 }}
+          >
+            contact@newchums.com
+          </MuiLink>{" "}
+          and we&apos;ll take a look.
+        </Typography>
       </Stack>
     );
   }

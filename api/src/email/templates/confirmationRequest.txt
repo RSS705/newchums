@@ -1,32 +1,32 @@
-{{heading}}
+{{#isFinal}}FINAL REMINDER
+
+{{/isFinal}}{{^isFinal}}{{#isReminder}}REMINDER
+
+{{/isReminder}}{{/isFinal}}{{heading}}
+
+{{greeting}}
 
 {{bodyText}}
 
 ---
 
-Plan: {{eventTitle}}
-When: {{eventDate}}
-{{#eventLocation}}Where: {{.}}
-{{/eventLocation}}
-Respond by: {{deadline}}
+{{eventTitle}}
+{{eventDate}}{{#eventLocation}} · {{.}}{{/eventLocation}}
+Respond by {{deadline}}
 
 ---
-
-Are you still in?
 
 {{confirmLabel}}: {{confirmUrl}}
 
 {{declineLabel}}: {{declineUrl}}
 
----
+No login needed. Tap a link above to record your response.
 
 View full plan details: {{eventUrl}}
 
-Clicking a link above will confirm or decline your attendance. No login required.
-
 ---
 
-You're receiving this because a plan you're attending on NewChums has a 24-hour attendance check enabled.
-{{#unsubscribeUrl}}Unsubscribe from confirmation emails: {{.}}{{/unsubscribeUrl}}
+You're receiving this because a plan you're attending on NewChums uses the 24-hour attendance check.
+{{#unsubscribeUrl}}Unsubscribe: {{.}}{{/unsubscribeUrl}}
 
 © {{year}} {{productName}}
