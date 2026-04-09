@@ -30,6 +30,7 @@ import ShieldOutlinedIcon from "@mui/icons-material/ShieldOutlined";
 import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
 import Link from "next/link";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
+import PlanHobbyAddSuggestion, { type PlanHobby } from "./PlanHobbyAddSuggestion";
 
 type Response = "agree" | "maybe" | "disagree" | null;
 type Prompt = "reliability" | "sociability" | "presentation" | "match_quality" | "hosting_skills";
@@ -104,6 +105,10 @@ type PlanFeedbackProps = {
   planTitle?: string;
   /** Plan start time (ISO) shown in the participant hero as a contextual reminder. */
   planStartsAt?: string;
+  /** Hobbies attached to the plan. When the viewer is in the post-submit
+   *  "thanks" state and is missing at least one of these on their profile,
+   *  we show a single inline button to add them. */
+  planHobbies?: PlanHobby[];
   /** Optional payload pre-fetched by the parent (used when the visitor was
    *  deep-linked via ?section=feedback). When provided, the component skips
    *  its own initial fetch and renders content on first paint. */
@@ -116,7 +121,7 @@ function isFeedbackPayload(value: unknown): value is PlanFeedbackInitialData {
   return Array.isArray(v.attendees) && Array.isArray(v.feedback) && Array.isArray(v.attendanceIssues);
 }
 
-export default function PlanFeedback({ eventId, planTitle, planStartsAt, initialData }: PlanFeedbackProps) {
+export default function PlanFeedback({ eventId, planTitle, planStartsAt, planHobbies, initialData }: PlanFeedbackProps) {
   const initial = isFeedbackPayload(initialData) ? initialData : null;
 
   // Compute initial state from a prefetched payload (when the parent passed
@@ -670,43 +675,14 @@ export default function PlanFeedback({ eventId, planTitle, planStartsAt, initial
             <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 380, mx: "auto", lineHeight: 1.55 }}>
               It stays private and helps improve matches for everyone on NewChums.
             </Typography>
-            <Stack
-              direction={{ xs: "column", sm: "row" }}
-              spacing={1}
-              justifyContent="center"
-              sx={{ mt: 2.5 }}
-            >
-              <Button
-                size="small"
-                variant="text"
-                onClick={() => openConductForPerson(null)}
-                sx={{
-                  textTransform: "none",
-                  fontWeight: 600,
-                  fontSize: "0.8125rem",
-                  borderRadius: 2,
-                  color: "text.secondary",
-                  "&:hover": { color: "error.main", bgcolor: "#fef2f2" },
-                }}
-              >
-                Report a safety or conduct concern
-              </Button>
-              <Button
-                size="small"
-                variant="text"
-                color="inherit"
-                onClick={() => setDismissDialogOpen(true)}
-                sx={{
-                  textTransform: "none",
-                  fontWeight: 500,
-                  fontSize: "0.75rem",
-                  color: "text.disabled",
-                  "&:hover": { color: "text.secondary", bgcolor: "action.hover" },
-                }}
-              >
-                Hide
-              </Button>
-            </Stack>
+            {/* Single inline action: add this plan's hobbies to the viewer's
+                profile so they get notified about similar plans next time.
+                Self-gates: renders nothing while loading or when the viewer
+                already follows every hobby on this plan, in which case the
+                Paper collapses cleanly to its heading + body. */}
+            {planHobbies && planHobbies.length > 0 && (
+              <PlanHobbyAddSuggestion planHobbies={planHobbies} />
+            )}
           </Paper>
         ) : (
           <>

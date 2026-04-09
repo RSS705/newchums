@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Chip from "@mui/material/Chip";
+import Button from "@mui/material/Button";
 import CircularProgress from "@mui/material/CircularProgress";
-import Tooltip from "@mui/material/Tooltip";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import { apiFetch } from "@/lib/apiClient";
@@ -18,16 +17,15 @@ type Props = {
   planHobbies: PlanHobby[];
 };
 
-/** Lightweight, contextual "add this plan's hobby to my profile" chip.
+/** Single text-style button rendered inside the post-feedback "Thanks for
+ *  sharing your feedback" Paper. Replaces the previous Report + Hide row.
  *
- *  Designed to sit inline within the plan header's hobby/badge row, right
- *  next to the actual hobby chips it relates to. Renders nothing unless the
- *  plan has at least one hobby the viewer doesn't already have, so it stays
- *  out of the way for users who already follow these interests.
- *
- *  Visually mirrors the other small outlined chips in the metadata row
- *  (variant="outlined", size="small") so it reads as a piece of contextual
- *  product guidance, not a second CTA block.
+ *  Self-contained: fetches the viewer's interests on mount, gates render
+ *  on whether the plan has at least one hobby they don't already follow,
+ *  and on click PUTs the merged interest list back to /profile. Renders
+ *  nothing while loading or when the viewer already has every plan hobby,
+ *  so the success Paper collapses cleanly to its heading + body in those
+ *  cases.
  */
 export default function PlanHobbyAddSuggestion({ planHobbies }: Props) {
   const [viewerInterests, setViewerInterests] = useState<ViewerInterest[] | null>(null);
@@ -52,9 +50,6 @@ export default function PlanHobbyAddSuggestion({ planHobbies }: Props) {
     return out;
   }, [planHobbies]);
 
-  // Fetch the viewer's interests once on mount so we can decide whether
-  // to render at all. We render `null` while loading to avoid flashing in
-  // and then disappearing when the user already has every plan hobby.
   useEffect(() => {
     let cancelled = false;
     if (candidateHobbies.length === 0) {
@@ -94,7 +89,7 @@ export default function PlanHobbyAddSuggestion({ planHobbies }: Props) {
   );
 
   // Wait for the viewer-interests fetch before deciding anything. Without
-  // this gate the chip would briefly render and then vanish for users who
+  // this gate the button would briefly render and then vanish for users who
   // already follow the hobby.
   if (viewerInterests === null) return null;
   if (missingHobbies.length === 0 && !added) return null;
@@ -107,19 +102,13 @@ export default function PlanHobbyAddSuggestion({ planHobbies }: Props) {
 
   const label = added
     ? isPlural
-      ? "Hobbies added"
-      : `${singularHobbyName ?? "Hobby"} added`
+      ? "Hobbies added to your profile"
+      : `${singularHobbyName ?? "Hobby"} added to your profile`
     : adding
       ? "Adding…"
       : isPlural
-        ? "Add these hobbies"
-        : `Add ${singularHobbyName}`;
-
-  const tooltipTitle = added
-    ? "On your profile. You'll start hearing about more plans like this."
-    : isPlural
-      ? "Want more plans like this? Add this plan's hobbies to your profile."
-      : `Want more plans like this? Add ${singularHobbyName} to your profile.`;
+        ? "Add this plan's hobbies to your profile to be notified next time"
+        : `Add ${singularHobbyName} to your profile to be notified next time`;
 
   const ariaLabel = added
     ? isPlural
@@ -152,7 +141,7 @@ export default function PlanHobbyAddSuggestion({ planHobbies }: Props) {
       });
       const data = (await res.json().catch(() => ({}))) as { ok?: boolean };
       if (!res.ok || !data.ok) {
-        setError("Couldn't add right now");
+        setError("Couldn't add right now. Please try again.");
         setAdding(false);
         return;
       }
@@ -162,59 +151,49 @@ export default function PlanHobbyAddSuggestion({ planHobbies }: Props) {
         window.dispatchEvent(new Event("nc:profile-changed"));
       }
     } catch {
-      setError("Couldn't add right now");
+      setError("Couldn't add right now. Please try again.");
     } finally {
       setAdding(false);
     }
   };
 
-  const interactive = !added && !adding;
-
-  // MUI Chip automatically applies role="button", tabIndex and keyboard
-  // handlers when an onClick is provided, so this stays accessible without
-  // dropping out of the existing chip-row pattern. Outlined variant keeps
-  // it visually quieter than the filled hobby chips next to it.
   return (
-    <Tooltip title={error ?? tooltipTitle} arrow placement="top">
-      <Chip
-        size="small"
-        variant="outlined"
-        clickable={interactive}
-        onClick={interactive ? handleAdd : undefined}
-        aria-label={ariaLabel}
-        icon={
-          adding ? (
-            <CircularProgress size={12} thickness={6} sx={{ color: "inherit", ml: "8px !important" }} />
-          ) : added ? (
-            <CheckRoundedIcon sx={{ fontSize: "0.875rem !important" }} />
-          ) : (
-            <AddRoundedIcon sx={{ fontSize: "0.875rem !important" }} />
-          )
-        }
-        label={label}
-        sx={{
-          fontWeight: 600,
-          fontSize: "0.75rem",
-          borderStyle: added ? "solid" : "dashed",
-          borderColor: added ? "success.main" : "primary.main",
-          color: added ? "success.dark" : "primary.dark",
-          bgcolor: "transparent",
-          "& .MuiChip-icon": {
-            color: added ? "success.main" : "primary.main",
-          },
-          "&:hover": interactive
-            ? {
-                bgcolor: "primary.light",
-                borderStyle: "solid",
-              }
-            : undefined,
-          "&:focus-visible": {
-            outline: "2px solid",
-            outlineColor: "primary.main",
-            outlineOffset: 2,
-          },
-        }}
-      />
-    </Tooltip>
+    <Button
+      size="small"
+      variant="text"
+      onClick={handleAdd}
+      disabled={adding || added}
+      aria-label={ariaLabel}
+      startIcon={
+        added ? (
+          <CheckRoundedIcon sx={{ fontSize: "1rem !important" }} />
+        ) : adding ? (
+          <CircularProgress size={14} thickness={6} sx={{ color: "inherit" }} />
+        ) : (
+          <AddRoundedIcon sx={{ fontSize: "1rem !important" }} />
+        )
+      }
+      sx={{
+        mt: 2.5,
+        textTransform: "none",
+        fontWeight: 600,
+        fontSize: "0.8125rem",
+        borderRadius: 2,
+        px: 1.5,
+        color: added ? "success.dark" : "text.secondary",
+        "&:hover": {
+          color: "primary.main",
+          bgcolor: "primary.light",
+        },
+        "&.Mui-disabled": {
+          // Keep the success state legible — MUI fades disabled buttons,
+          // but we want the green check state to stay readable.
+          color: added ? "success.dark" : undefined,
+          opacity: added ? 1 : undefined,
+        },
+      }}
+    >
+      {error ?? label}
+    </Button>
   );
 }
