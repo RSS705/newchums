@@ -1066,14 +1066,30 @@ export default function EventDetailClient() {
           message: inviteMessage || undefined,
         }),
       });
-      const data = (await res.json()) as { ok: boolean; message?: string };
+      const data = (await res.json()) as {
+        ok: boolean;
+        message?: string;
+        added?: number;
+        alreadyInvited?: number;
+      };
       if (data.ok) {
-        toast.success("Invite sent!");
+        // Single-invitee call: distinguish "actually invited" from "the API
+        // recognized this person was already on the invite list and skipped
+        // them" so the inviter knows nothing is broken when the second toast
+        // appears.
+        if ((data.added ?? 0) === 0 && (data.alreadyInvited ?? 0) > 0) {
+          toast.info("This person is already invited to this plan");
+        } else {
+          toast.success("Invite sent!");
+        }
         setInviteSearch("");
         setInviteMessage("");
         setSearchResults([]);
         setHasSearched(false);
-        // Update the invited list locally without a full page reload
+        // Update the invited list locally without a full page reload. Even
+        // when the server reported alreadyInvited we still want the row to
+        // appear in the local state if it was missing (e.g. because the
+        // initial fetch raced ahead of an attendee-sent invite).
         const match = userId ? searchResults.find((r) => r.userId === userId) : undefined;
         const name = match?.displayName ?? email ?? "Invited user";
         const handle = match?.handle ?? null;
@@ -2016,20 +2032,22 @@ export default function EventDetailClient() {
   const chatLockDate = new Date(new Date(event.startsAt).getTime() + 3 * 24 * 60 * 60 * 1000);
   const isChatLocked = isPast && Date.now() >= chatLockDate.getTime();
 
-  // Invitees who haven't RSVP'd yet (shown with "Invited" status in Who's in)
+  // Invitees who haven't RSVP'd yet (shown with "Invited" status in Who's in).
+  // Visible to all participants (host, attendees, anyone with plan access)
+  // so that an invite sent by an attendee shows up for the rest of the
+  // group too — not just for the host. The set is the same regardless of
+  // who created each invite; we no longer narrow by `invited_by` on the
+  // client. Server-side access control on GET /events/:id is what
+  // determines whether the viewer can see the plan at all.
   const rsvpUserIds = new Set(rsvps.map((r) => r.userId));
-  const allPendingInvites = invites.filter((inv) => inv.userId && !rsvpUserIds.has(inv.userId));
-  // Only the host sees all pending invites; other viewers only see their own invite (if any).
-  const pendingInvites = event.isHost
-    ? allPendingInvites
-    : allPendingInvites.filter((inv) => viewerUserId && inv.userId === viewerUserId);
+  const pendingInvites = invites.filter((inv) => inv.userId && !rsvpUserIds.has(inv.userId));
   // Reserved seats: pending invites + maybe RSVPs from invitees (maybe RSVPs
   // already appear in the RSVP list but their seat stays held when reserve_seats is on)
   const maybeInviteeCount = event.reserveSeats
     ? rsvps.filter((r) => r.status === "maybe" && invites.some((inv) => inv.userId === r.userId))
         .length
     : 0;
-  const reservedSeatCount = event.reserveSeats ? allPendingInvites.length + maybeInviteeCount : 0;
+  const reservedSeatCount = event.reserveSeats ? pendingInvites.length + maybeInviteeCount : 0;
   const isFull = event.maxSeats != null && goingCount + reservedSeatCount >= event.maxSeats;
 
   // Request-to-join derived state

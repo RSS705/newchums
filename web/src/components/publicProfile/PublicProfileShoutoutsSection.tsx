@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
-import Button from "@mui/material/Button";
+import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
@@ -19,6 +20,11 @@ type ShoutoutItem = {
   planId: string;
   planTitle: string;
   planStartsAt: string;
+  /** Per-card visibility flag (migration 076). When true, non-owner viewers
+   *  do not receive this item from the API at all; it's only surfaced here
+   *  so the profile owner can render it in a dimmed "hidden from visitors"
+   *  state and toggle it back via the inline icon button. */
+  hiddenByRecipient: boolean;
   sender: {
     userId: string;
     displayName: string;
@@ -29,16 +35,19 @@ type ShoutoutItem = {
 type PublicProfileShoutoutsSectionProps = {
   /** Handle (without leading @) for the profile being viewed. */
   handle: string;
-  /** True when the logged-in viewer is the profile owner. Drives the inline
-   *  hide/unhide control and the dimmed-preview state. */
+  /** True when the logged-in viewer is the profile owner. Drives the per-
+   *  card hide/unhide icon button and the dimmed-preview state. */
   isOwner: boolean;
   /** True when there is any logged-in viewer at all. Used to forward auth on
    *  the fetch so the API can detect the owner case and return their items
    *  even when the section is hidden. */
   viewerLoggedIn: boolean;
-  /** Initial value of the owner's `is_hidden_shoutouts` flag, taken from the
-   *  /public/users/:handle payload. The component owns its own copy after
-   *  mount so the inline toggle can flip optimistically. */
+  /** Initial value of the owner's section-level `is_hidden_shoutouts` flag,
+   *  taken from the /public/users/:handle payload. Controls only whether
+   *  the whole Shout-outs section is hidden from visitors; per-card
+   *  visibility is a separate dimension handled below. The section-level
+   *  toggle lives in Settings -> Privacy; there is intentionally no inline
+   *  control for it. */
   initiallyHidden: boolean;
 };
 
@@ -52,13 +61,22 @@ function formatReceived(iso: string): string {
 }
 
 /** Public Shout-outs section on /u/<handle>. Renders approved shout-outs the
- *  recipient has received. Hidden from non-owner viewers when the recipient
- *  has toggled `is_hidden_shoutouts` on; the owner sees the same content
- *  dimmed with an inline "Show on my public profile" control so they can
- *  reverse the toggle without leaving the page.
+ *  recipient has received.
  *
- *  Empty state: when there are no approved shout-outs the entire card is
- *  suppressed for everyone (including the owner). No empty stubs. */
+ *  Two independent visibility dimensions are at play:
+ *    1. Section-level (`users.is_hidden_shoutouts`, migration 074) -
+ *       controlled exclusively from Settings -> Privacy. When true, the
+ *       section is hidden from all non-owner viewers. The owner still sees
+ *       the section here in a dimmed "Hidden from visitors" preview with
+ *       a caption explaining the state.
+ *    2. Per-card (`shoutouts.hidden_by_recipient`, migration 076) -
+ *       controlled via the subtle eye/eye-off IconButton on each card
+ *       (owner-only). Non-owner viewers never receive hidden rows from the
+ *       API. Owners see them dimmed with the icon in the "show" state.
+ *
+ *  Empty state: when there are no visible shout-outs for the current viewer
+ *  (non-owner: all approved minus any `hidden_by_recipient = true`; owner:
+ *  all approved) the whole card is suppressed. No empty stubs. */
 export default function PublicProfileShoutoutsSection({
   handle,
   isOwner,
@@ -67,8 +85,11 @@ export default function PublicProfileShoutoutsSection({
 }: PublicProfileShoutoutsSectionProps) {
   const [items, setItems] = useState<ShoutoutItem[] | null>(null);
   const [loading, setLoading] = useState(true);
-  const [hidden, setHidden] = useState(initiallyHidden);
-  const [toggling, setToggling] = useState(false);
+  const [sectionHidden, setSectionHidden] = useState(initiallyHidden);
+  // Per-card in-flight toggles, keyed by shoutout id. Used to disable the
+  // icon button while a request is in flight so a rapid double-click can't
+  // race two mutations.
+  const [togglingIds, setTogglingIds] = useState<Set<string>>(new Set());
   const avatarBase = getAvatarBaseUrl();
   const toast = useToast();
 
@@ -97,12 +118,15 @@ export default function PublicProfileShoutoutsSection({
           hidden?: boolean;
         };
         if (cancelled) return;
-        setItems(data.ok && Array.isArray(data.items) ? data.items : []);
-        // Trust the server's hidden flag for the canonical state. For non-
-        // owners the API zeroes out items when hidden so this is moot, but
-        // for owners it ensures we render the dimmed-preview state even if
-        // the parent's initiallyHidden hint was stale.
-        if (typeof data.hidden === "boolean") setHidden(data.hidden);
+        const fetchedItems = data.ok && Array.isArray(data.items)
+          ? data.items.map((it) => ({ ...it, hiddenByRecipient: Boolean(it.hiddenByRecipient) }))
+          : [];
+        setItems(fetchedItems);
+        // Trust the server's section-level hidden flag as the canonical
+        // state. Non-owners never hit this branch because the API gates
+        // them out earlier, but owners need the accurate value so the
+        // dimmed-preview and "Hidden from visitors" caption render.
+        if (typeof data.hidden === "boolean") setSectionHidden(data.hidden);
       } catch {
         if (!cancelled) setItems([]);
       } finally {
@@ -114,29 +138,53 @@ export default function PublicProfileShoutoutsSection({
     };
   }, [handle, viewerLoggedIn]);
 
-  const handleToggleHidden = async () => {
-    if (toggling) return;
-    const next = !hidden;
-    setHidden(next);
-    setToggling(true);
+  const handleToggleCard = async (shoutoutId: string, currentlyHidden: boolean) => {
+    if (togglingIds.has(shoutoutId)) return;
+    const next = !currentlyHidden;
+    // Optimistic local flip so the card responds immediately.
+    setItems((prev) =>
+      prev
+        ? prev.map((it) => (it.id === shoutoutId ? { ...it, hiddenByRecipient: next } : it))
+        : prev
+    );
+    setTogglingIds((prev) => {
+      const copy = new Set(prev);
+      copy.add(shoutoutId);
+      return copy;
+    });
     try {
-      const res = await apiFetch("/profile", {
-        method: "PUT",
+      const res = await apiFetch(`/shoutouts/${encodeURIComponent(shoutoutId)}`, {
+        method: "PATCH",
         auth: true,
-        body: JSON.stringify({ is_hidden_shoutouts: next }),
+        body: JSON.stringify({ hidden: next }),
       });
-      const data = (await res.json()) as { ok?: boolean };
+      const data = (await res.json()) as { ok?: boolean; hidden?: boolean };
       if (!res.ok || !data.ok) {
-        setHidden(!next);
+        // Revert on failure.
+        setItems((prev) =>
+          prev
+            ? prev.map((it) =>
+                it.id === shoutoutId ? { ...it, hiddenByRecipient: currentlyHidden } : it
+              )
+            : prev
+        );
         toast.error("Couldn't update shout-out visibility");
-      } else {
-        toast.success(next ? "Shout-outs hidden from your public profile" : "Shout-outs visible on your public profile");
       }
     } catch {
-      setHidden(!next);
+      setItems((prev) =>
+        prev
+          ? prev.map((it) =>
+              it.id === shoutoutId ? { ...it, hiddenByRecipient: currentlyHidden } : it
+            )
+          : prev
+      );
       toast.error("Couldn't update shout-out visibility");
     } finally {
-      setToggling(false);
+      setTogglingIds((prev) => {
+        const copy = new Set(prev);
+        copy.delete(shoutoutId);
+        return copy;
+      });
     }
   };
 
@@ -146,7 +194,7 @@ export default function PublicProfileShoutoutsSection({
 
   // Non-owners with the section hidden see nothing. The API already returns
   // empty items in that case, so this is a defense-in-depth check.
-  if (hidden && !isOwner) return null;
+  if (sectionHidden && !isOwner) return null;
 
   return (
     <AppCard
@@ -159,85 +207,45 @@ export default function PublicProfileShoutoutsSection({
     >
       <Stack spacing={2}>
         <Box>
-          <Stack
-            direction="row"
-            alignItems="flex-start"
-            justifyContent="space-between"
-            spacing={1}
-            sx={{ flexWrap: "wrap", rowGap: 0.5 }}
+          <Typography
+            variant="h6"
+            fontWeight={700}
+            sx={{ fontSize: { xs: "1.0625rem", sm: "1.125rem" } }}
           >
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography
-                variant="h6"
-                fontWeight={700}
-                sx={{ fontSize: { xs: "1.0625rem", sm: "1.125rem" } }}
-              >
-                Shout-outs
-              </Typography>
-              <Typography
-                variant="body2"
-                color="text.secondary"
-                sx={{ mt: 0.25, maxWidth: 560 }}
-              >
-                Notes from people they&rsquo;ve joined plans with.
-              </Typography>
-              {hidden && isOwner && (
-                <Typography
-                  variant="caption"
-                  sx={{
-                    display: "block",
-                    mt: 0.5,
-                    color: "text.disabled",
-                    fontSize: "0.6875rem",
-                    fontWeight: 600,
-                    letterSpacing: 0.2,
-                    textTransform: "uppercase",
-                  }}
-                >
-                  Hidden from visitors
-                </Typography>
-              )}
-            </Box>
-            {isOwner && (
-              <Button
-                variant="text"
-                size="small"
-                disabled={toggling}
-                onClick={handleToggleHidden}
-                startIcon={
-                  hidden ? (
-                    <VisibilityOutlinedIcon sx={{ fontSize: "1rem !important" }} />
-                  ) : (
-                    <VisibilityOffOutlinedIcon sx={{ fontSize: "1rem !important" }} />
-                  )
-                }
-                sx={{
-                  fontSize: "0.75rem",
-                  lineHeight: 1.25,
-                  whiteSpace: "nowrap",
-                  textTransform: "none",
-                  fontWeight: 500,
-                  borderRadius: 2,
-                  color: "text.disabled",
-                  px: 1.25,
-                  py: 0.5,
-                  flexShrink: 0,
-                  "&:hover": {
-                    color: "text.secondary",
-                    backgroundColor: "action.hover",
-                  },
-                }}
-              >
-                {hidden ? "Show on my public profile" : "Hide from my public profile"}
-              </Button>
-            )}
-          </Stack>
+            Shout-outs
+          </Typography>
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            sx={{ mt: 0.25, maxWidth: 560 }}
+          >
+            Notes from people they&rsquo;ve joined plans with.
+          </Typography>
+          {sectionHidden && isOwner && (
+            <Typography
+              variant="caption"
+              sx={{
+                display: "block",
+                mt: 0.5,
+                color: "text.disabled",
+                fontSize: "0.6875rem",
+                fontWeight: 600,
+                letterSpacing: 0.2,
+                textTransform: "uppercase",
+              }}
+            >
+              Section hidden from visitors (Settings &rsaquo; Privacy)
+            </Typography>
+          )}
         </Box>
 
         <Stack
           spacing={1.25}
           sx={{
-            opacity: hidden && isOwner ? 0.55 : 1,
+            // The whole list dims slightly when the owner has hidden the
+            // section via Settings, purely as an at-a-glance state cue.
+            // Per-card dimming is layered on top below.
+            opacity: sectionHidden && isOwner ? 0.72 : 1,
             transition: "opacity 0.2s ease",
           }}
         >
@@ -246,18 +254,33 @@ export default function PublicProfileShoutoutsSection({
               ? `/u/${s.sender.username.replace(/^@/, "")}`
               : null;
             const planHref = `/events/${s.planId}`;
+            const cardHidden = s.hiddenByRecipient;
+            const isToggling = togglingIds.has(s.id);
             return (
               <Box
                 key={s.id}
                 sx={{
+                  position: "relative",
                   p: { xs: 1.75, sm: 2 },
+                  // Reserve space on the right so the absolute-positioned
+                  // icon button never collides with the message text on
+                  // narrow screens.
+                  pr: isOwner ? { xs: 4.5, sm: 5 } : { xs: 1.75, sm: 2 },
                   borderRadius: 2.5,
                   border: "1px solid",
                   borderColor: "grey.200",
                   background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 75%)",
                 }}
               >
-                <Stack direction="row" spacing={1.5} alignItems="flex-start">
+                <Stack
+                  direction="row"
+                  spacing={1.5}
+                  alignItems="flex-start"
+                  sx={{
+                    opacity: cardHidden ? 0.5 : 1,
+                    transition: "opacity 0.2s ease",
+                  }}
+                >
                   <Avatar
                     src={`${avatarBase}/users/${s.sender.userId}/avatar`}
                     sx={{ width: 36, height: 36, fontSize: "0.9375rem", flexShrink: 0, mt: 0.25 }}
@@ -315,6 +338,40 @@ export default function PublicProfileShoutoutsSection({
                     </Typography>
                   </Box>
                 </Stack>
+
+                {isOwner && (
+                  <Tooltip
+                    title={cardHidden ? "Show this shout-out" : "Hide this shout-out"}
+                    arrow
+                    placement="top"
+                    enterTouchDelay={0}
+                  >
+                    <span>
+                      <IconButton
+                        size="small"
+                        disabled={isToggling}
+                        onClick={() => handleToggleCard(s.id, cardHidden)}
+                        aria-label={cardHidden ? "Show this shout-out" : "Hide this shout-out"}
+                        sx={{
+                          position: "absolute",
+                          top: 6,
+                          right: 6,
+                          color: "text.disabled",
+                          "&:hover": {
+                            color: "text.secondary",
+                            backgroundColor: "rgba(0, 0, 0, 0.04)",
+                          },
+                        }}
+                      >
+                        {cardHidden ? (
+                          <VisibilityOutlinedIcon sx={{ fontSize: "1.0625rem" }} />
+                        ) : (
+                          <VisibilityOffOutlinedIcon sx={{ fontSize: "1.0625rem" }} />
+                        )}
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                )}
               </Box>
             );
           })}

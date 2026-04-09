@@ -440,6 +440,7 @@ app.get("/public/users/:handle/shoutouts", async (c) => {
     const rows = (await sql`
       SELECT
         s.id, s.message, s.created_at, s.reviewed_at,
+        COALESCE(s.hidden_by_recipient, false) AS hidden_by_recipient,
         s.plan_id, e.title AS plan_title, e.starts_at AS plan_starts_at,
         s.sender_user_id, u.name AS sender_name, u.username AS sender_username
       FROM newchums.shoutouts s
@@ -453,6 +454,7 @@ app.get("/public/users/:handle/shoutouts", async (c) => {
       message: string;
       created_at: string;
       reviewed_at: string | null;
+      hidden_by_recipient: boolean;
       plan_id: string;
       plan_title: string;
       plan_starts_at: string;
@@ -461,16 +463,23 @@ app.get("/public/users/:handle/shoutouts", async (c) => {
       sender_username: string | null;
     }>;
 
+    // Per-card visibility: non-owners only see rows the recipient has left
+    // visible. Owners see everything so they can re-show rows they previously
+    // hid; the per-item flag is surfaced to the client so it can render the
+    // dimmed state and the toggle label.
+    const visibleRows = isOwner ? rows : rows.filter((r) => !r.hidden_by_recipient);
+
     return c.json({
       ok: true,
       hidden: target.is_hidden_shoutouts,
-      items: rows.map((r) => ({
+      items: visibleRows.map((r) => ({
         id: r.id,
         message: r.message,
         receivedAt: r.reviewed_at ?? r.created_at,
         planId: r.plan_id,
         planTitle: r.plan_title,
         planStartsAt: r.plan_starts_at,
+        hiddenByRecipient: r.hidden_by_recipient,
         sender: {
           userId: r.sender_user_id,
           displayName: r.sender_name?.trim() || (r.sender_username ? `@${r.sender_username.replace(/^@/, "")}` : "Someone"),
@@ -481,6 +490,54 @@ app.get("/public/users/:handle/shoutouts", async (c) => {
   } catch (err) {
     console.error("[GET /public/users/:handle/shoutouts]", err);
     return c.json({ ok: false, error: "SERVER_ERROR", message: "Failed to fetch shout-outs" }, 500);
+  }
+});
+
+/** PATCH /shoutouts/:id
+ *  Per-shout-out visibility toggle. Only the recipient may flip their own
+ *  `hidden_by_recipient` flag. Returns the new flag so the client can
+ *  reconcile with the server after an optimistic UI update. */
+app.patch("/shoutouts/:id", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+
+  const shoutoutId = c.req.param("id")?.trim();
+  if (!shoutoutId) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+
+  let body: Record<string, unknown>;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ ok: false, error: "INVALID_JSON" }, 400);
+  }
+  // `hidden` is the only field this endpoint accepts. Anything else is
+  // ignored so the surface stays tight.
+  if (typeof body.hidden !== "boolean")
+    return c.json({ ok: false, error: "VALIDATION", message: "`hidden` must be a boolean" }, 400);
+  const hidden = body.hidden;
+
+  try {
+    const sql = getSql(c.env);
+    const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+
+    const rows = (await sql`
+      SELECT recipient_user_id FROM newchums.shoutouts WHERE id = ${shoutoutId} LIMIT 1
+    `) as { recipient_user_id: string }[];
+    if (rows.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    if (rows[0].recipient_user_id !== userId)
+      return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+    await sql`
+      UPDATE newchums.shoutouts
+      SET hidden_by_recipient = ${hidden},
+          updated_at = NOW()
+      WHERE id = ${shoutoutId}
+    `;
+    return c.json({ ok: true, hidden });
+  } catch (err) {
+    console.error("[PATCH /shoutouts/:id]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });
 
@@ -7172,14 +7229,29 @@ app.post("/events", async (c) => {
       const qaInviteAdminIds = isQa ? await batchLoadSuperAdminIds(sql, inviteeUserIds) : null;
 
       for (const inv of invitees.slice(0, 50)) {
-        const invUserId = inv.user_id ? String(inv.user_id) : null;
-        const invEmail = inv.email ? String(inv.email).trim().toLowerCase() : null;
+        let invUserId = inv.user_id ? String(inv.user_id) : null;
+        let invEmail = inv.email ? String(inv.email).trim().toLowerCase() : null;
         if (!invUserId && !invEmail) continue;
 
         // QA plans: skip non-super-admin invitees entirely (no invite record, no email)
         if (qaInviteAdminIds) {
           if (invUserId && !qaInviteAdminIds.has(invUserId)) continue;
           if (!invUserId && invEmail) continue; // email-only invites can't be super admins
+        }
+
+        // Normalize identity: if the inviter passed an email and a user with
+        // that email already has an account, resolve to user_id (and clear
+        // email) so the invite is stored against the canonical identity.
+        // Mirrors the same normalization used in POST /events/:id/invite and
+        // ensures creation-time invites land in a form that future dedup
+        // checks can recognize.
+        if (!invUserId && invEmail) {
+          const lookup = (await sql`SELECT id FROM newchums.users WHERE LOWER(email) = ${invEmail} LIMIT 1`) as { id: string }[];
+          if (lookup.length > 0) {
+            invUserId = lookup[0].id;
+            invEmail = null;
+            if (qaInviteAdminIds && !qaInviteAdminIds.has(invUserId)) continue;
+          }
         }
 
         try {
@@ -7235,9 +7307,18 @@ app.post("/events", async (c) => {
     } else {
       // Draft status or no invitees - just insert invite records without sending emails
       for (const inv of invitees.slice(0, 50)) {
-        const invUserId = inv.user_id ? String(inv.user_id) : null;
-        const invEmail = inv.email ? String(inv.email).trim().toLowerCase() : null;
+        let invUserId = inv.user_id ? String(inv.user_id) : null;
+        let invEmail = inv.email ? String(inv.email).trim().toLowerCase() : null;
         if (!invUserId && !invEmail) continue;
+        // Same email->user_id normalization as the published branch above so
+        // draft invites land in canonical form too.
+        if (!invUserId && invEmail) {
+          const lookup = (await sql`SELECT id FROM newchums.users WHERE LOWER(email) = ${invEmail} LIMIT 1`) as { id: string }[];
+          if (lookup.length > 0) {
+            invUserId = lookup[0].id;
+            invEmail = null;
+          }
+        }
         try {
           await sql`
             INSERT INTO newchums.event_invites (event_id, user_id, email, invited_by)
@@ -10071,6 +10152,12 @@ app.post("/events/:id/invite", async (c) => {
     const invitees = Array.isArray(body.invitees) ? (body.invitees as Array<{ user_id?: string; email?: string }>) : [];
     const customMessage = typeof body.message === "string" ? body.message.slice(0, 500).trim() : "";
     let added = 0;
+    // Counts invitees we silently skipped because they were already invited
+    // to this plan (matched by user_id or email, in either direction so we
+    // don't double-invite when the request and the existing row reference
+    // the same person via different identity columns). Surfaced in the
+    // response so the client can toast "Already invited to this plan".
+    let alreadyInvited = 0;
 
     const inviterUser = (await sql`SELECT name, username FROM newchums.users WHERE id = ${userId}`) as { name: string | null; username: string | null }[];
     const inviterName = inviterUser[0]?.name?.trim() || inviterUser[0]?.username?.replace(/^@/, "") || "Someone";
@@ -10088,8 +10175,8 @@ app.post("/events/:id/invite", async (c) => {
     }
 
     for (const inv of invitees.slice(0, 50)) {
-      const invUserId = inv.user_id ? String(inv.user_id) : null;
-      const invEmail = inv.email ? String(inv.email).trim().toLowerCase() : null;
+      let invUserId = inv.user_id ? String(inv.user_id) : null;
+      let invEmail = inv.email ? String(inv.email).trim().toLowerCase() : null;
       if (!invUserId && !invEmail) continue;
 
       // Self-invite guard
@@ -10098,6 +10185,63 @@ app.post("/events/:id/invite", async (c) => {
       if (invUserId && invUserId === userId)
         return c.json({ ok: false, error: "SELF_INVITE", message: "You can't invite yourself" }, 400);
 
+      // Normalize identity: if the inviter passed an email and a user with
+      // that email already has an account, resolve to user_id (and clear
+      // email) so the row is stored against the canonical identity. This
+      // makes the dedup checks below trivially correct and avoids creating
+      // a stranded email-only row that would re-fire when the user signs
+      // up later.
+      if (!invUserId && invEmail) {
+        const lookup = (await sql`SELECT id FROM newchums.users WHERE LOWER(email) = ${invEmail} LIMIT 1`) as { id: string }[];
+        if (lookup.length > 0) {
+          invUserId = lookup[0].id;
+          invEmail = null;
+          // Re-check self-invite after the resolution
+          if (invUserId === userId)
+            return c.json({ ok: false, error: "SELF_INVITE", message: "You can't invite yourself" }, 400);
+        }
+      }
+
+      // Cross-key duplicate check before insert. The partial unique indexes
+      // in migration 024 only catch dups within a single identity column;
+      // they miss the case where the existing row uses one identity and the
+      // new row uses the other (e.g. existing email-only row vs incoming
+      // user_id row, or vice versa via a stale account). Look up by both
+      // pathways here so the result is correct regardless of which column
+      // either row uses.
+      const existingRows = invUserId
+        ? (await sql`
+            SELECT 1 FROM newchums.event_invites
+            WHERE event_id = ${eventId}
+              AND (
+                user_id = ${invUserId}
+                OR EXISTS (
+                  SELECT 1 FROM newchums.users u
+                  WHERE u.id = ${invUserId}
+                    AND LOWER(u.email) = LOWER(newchums.event_invites.email)
+                )
+              )
+            LIMIT 1
+          `) as unknown[]
+        : (await sql`
+            SELECT 1 FROM newchums.event_invites
+            WHERE event_id = ${eventId}
+              AND (
+                LOWER(email) = ${invEmail}
+                OR EXISTS (
+                  SELECT 1 FROM newchums.users u
+                  WHERE u.id = newchums.event_invites.user_id
+                    AND LOWER(u.email) = ${invEmail}
+                )
+              )
+            LIMIT 1
+          `) as unknown[];
+
+      if (existingRows.length > 0) {
+        alreadyInvited++;
+        continue;
+      }
+
       const result = (await sql`
         INSERT INTO newchums.event_invites (event_id, user_id, email, invited_by)
         VALUES (${eventId}, ${invUserId}, ${invEmail}, ${userId})
@@ -10105,60 +10249,66 @@ app.post("/events/:id/invite", async (c) => {
         RETURNING id
       `) as { id: string }[];
 
-      if (result.length > 0) {
-        added++;
-        if (ev[0].status === "published") {
-          if (invUserId) {
-            await sql`
-              INSERT INTO newchums.notifications (user_id, type, actor_user_id, entity_id, metadata)
-              VALUES (${invUserId}, 'event_invite', ${userId}, ${eventId}, ${JSON.stringify({ eventTitle: ev[0].title })})
-            `;
-            const invProfileRows = (await sql`SELECT notification_prefs FROM user_profile WHERE user_id = ${invUserId} LIMIT 1`) as { notification_prefs: unknown }[];
-            const invPrefs = normalizeNotificationPrefs(invProfileRows[0]?.notification_prefs);
-            if (invPrefs.items.event_invite?.enabled !== false) {
-              const invUser = (await sql`SELECT email, name FROM newchums.users WHERE id = ${invUserId}`) as { email: string; name: string | null }[];
-              if (invUser.length > 0) {
-                try {
-                  const iToken = await createInviteToken(c.env.NEXTAUTH_SECRET, { eventId, userId: invUserId });
-                  const unsubToken = await createUnsubscribeToken(c.env.NEXTAUTH_SECRET, invUserId, "event_invite");
-                  await sendEventInviteEmail(c.env, {
-                    to: invUser[0].email,
-                    recipientName: invUser[0].name?.trim() || "there",
-                    hostName: inviterName,
-                    eventTitle: ev[0].title,
-                    eventDate: formatEventDate(ev[0].starts_at, ev[0].timezone),
-                    eventLocation: inviteLocationDisplay,
-                    eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
-                    inviteToken: iToken,
-                    unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
-                    suggestTimeNote,
-                    customMessage,
-                  });
-                } catch { /* noop */ }
-              }
+      if (result.length === 0) {
+        // Lost a race with another request that just inserted the same
+        // invite. Treat as already-invited so the caller still gets a
+        // coherent response.
+        alreadyInvited++;
+        continue;
+      }
+
+      added++;
+      if (ev[0].status === "published") {
+        if (invUserId) {
+          await sql`
+            INSERT INTO newchums.notifications (user_id, type, actor_user_id, entity_id, metadata)
+            VALUES (${invUserId}, 'event_invite', ${userId}, ${eventId}, ${JSON.stringify({ eventTitle: ev[0].title })})
+          `;
+          const invProfileRows = (await sql`SELECT notification_prefs FROM user_profile WHERE user_id = ${invUserId} LIMIT 1`) as { notification_prefs: unknown }[];
+          const invPrefs = normalizeNotificationPrefs(invProfileRows[0]?.notification_prefs);
+          if (invPrefs.items.event_invite?.enabled !== false) {
+            const invUser = (await sql`SELECT email, name FROM newchums.users WHERE id = ${invUserId}`) as { email: string; name: string | null }[];
+            if (invUser.length > 0) {
+              try {
+                const iToken = await createInviteToken(c.env.NEXTAUTH_SECRET, { eventId, userId: invUserId });
+                const unsubToken = await createUnsubscribeToken(c.env.NEXTAUTH_SECRET, invUserId, "event_invite");
+                await sendEventInviteEmail(c.env, {
+                  to: invUser[0].email,
+                  recipientName: invUser[0].name?.trim() || "there",
+                  hostName: inviterName,
+                  eventTitle: ev[0].title,
+                  eventDate: formatEventDate(ev[0].starts_at, ev[0].timezone),
+                  eventLocation: inviteLocationDisplay,
+                  eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
+                  inviteToken: iToken,
+                  unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
+                  suggestTimeNote,
+                  customMessage,
+                });
+              } catch { /* noop */ }
             }
-          } else if (invEmail) {
-            try {
-              const iToken = await createInviteToken(c.env.NEXTAUTH_SECRET, { eventId, email: invEmail });
-              await sendEventInviteEmail(c.env, {
-                to: invEmail,
-                recipientName: "there",
-                hostName: inviterName,
-                eventTitle: ev[0].title,
-                eventDate: formatEventDate(ev[0].starts_at, ev[0].timezone),
-                eventLocation: inviteLocationDisplay,
-                eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
-                inviteToken: iToken,
-                suggestTimeNote,
-                customMessage,
-              });
-            } catch { /* noop */ }
           }
+        } else if (invEmail) {
+          try {
+            const iToken = await createInviteToken(c.env.NEXTAUTH_SECRET, { eventId, email: invEmail });
+            await sendEventInviteEmail(c.env, {
+              to: invEmail,
+              recipientName: "there",
+              hostName: inviterName,
+              eventTitle: ev[0].title,
+              eventDate: formatEventDate(ev[0].starts_at, ev[0].timezone),
+              eventLocation: inviteLocationDisplay,
+              eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
+              inviteToken: iToken,
+              suggestTimeNote,
+              customMessage,
+            });
+          } catch { /* noop */ }
         }
       }
     }
 
-    return c.json({ ok: true, added });
+    return c.json({ ok: true, added, alreadyInvited });
   } catch (err) {
     console.error("[POST /events/:id/invite]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
@@ -12974,6 +13124,24 @@ async function processEventMatchDigest(
           AND e.location_lng IS NOT NULL
           AND e.created_at > COALESCE(eu.event_digest_sent_at, NOW() - INTERVAL '24 hours')
           AND (e.max_seats IS NULL OR (SELECT COUNT(*)::int FROM newchums.event_rsvps er WHERE er.event_id = e.id AND er.status = 'going') < e.max_seats)
+          -- Suppress plans the recipient is already connected to: any RSVP
+          -- (going/maybe/cant_make_it) or any invite (matched by user_id OR
+          -- by email so a legacy email-only invite still counts after the
+          -- recipient signs up). Keeps the digest a "new things you don't
+          -- know about" channel rather than a second outreach for plans
+          -- they've already been pulled into.
+          AND NOT EXISTS (
+            SELECT 1 FROM newchums.event_rsvps er_dedup
+            WHERE er_dedup.event_id = e.id AND er_dedup.user_id = eu.user_id
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM newchums.event_invites ei_dedup
+            WHERE ei_dedup.event_id = e.id
+              AND (
+                ei_dedup.user_id = eu.user_id
+                OR LOWER(ei_dedup.email) = LOWER(eu.email)
+              )
+          )
           AND 6371 * acos(
             LEAST(1.0, GREATEST(-1.0,
               cos(radians(eu.home_lat)) * cos(radians(e.location_lat)) *
@@ -13010,6 +13178,20 @@ async function processEventMatchDigest(
           AND e.location_lng IS NOT NULL
           AND e.created_at > COALESCE(eu.event_digest_sent_at, NOW() - INTERVAL '24 hours')
           AND (e.max_seats IS NULL OR (SELECT COUNT(*)::int FROM newchums.event_rsvps er WHERE er.event_id = e.id AND er.status = 'going') < e.max_seats)
+          -- Same recipient-already-connected suppression as the public branch
+          -- above. Keeps chums-only digests consistent with public ones.
+          AND NOT EXISTS (
+            SELECT 1 FROM newchums.event_rsvps er_dedup
+            WHERE er_dedup.event_id = e.id AND er_dedup.user_id = eu.user_id
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM newchums.event_invites ei_dedup
+            WHERE ei_dedup.event_id = e.id
+              AND (
+                ei_dedup.user_id = eu.user_id
+                OR LOWER(ei_dedup.email) = LOWER(eu.email)
+              )
+          )
           AND 6371 * acos(
             LEAST(1.0, GREATEST(-1.0,
               cos(radians(eu.home_lat)) * cos(radians(e.location_lat)) *
