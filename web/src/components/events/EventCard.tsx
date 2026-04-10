@@ -25,6 +25,7 @@ export type PlanEvent = {
   title: string;
   description?: string | null;
   startsAt: string;
+  timezone?: string | null;
   locationType: string;
   locationDisplay?: string;
   locationName: string | null;
@@ -66,20 +67,28 @@ type EventCardProps = {
   hideRsvp?: boolean;
 };
 
-function formatDateTime(iso: string): string {
+function formatDateTime(iso: string, tz?: string | null): string {
   const d = new Date(iso);
-  const now = new Date();
-  const diffMs = d.getTime() - now.getTime();
-  const diffDays = Math.floor(diffMs / 86400000);
+  const tzOpts: Intl.DateTimeFormatOptions = tz ? { timeZone: tz } : {};
 
-  const timeStr = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", hour12: true });
+  const timeStr = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", hour12: true, ...tzOpts });
 
-  if (diffDays === 0) return `Today, ${timeStr}`;
-  if (diffDays === 1) return `Tomorrow, ${timeStr}`;
-  if (diffDays > 1 && diffDays < 7) {
-    return `${d.toLocaleDateString(undefined, { weekday: "long" })}, ${timeStr}`;
+  // Compare calendar dates in the event's timezone (or local if unavailable)
+  const eventDay = d.toLocaleDateString("en-CA", tzOpts); // YYYY-MM-DD
+  const todayDay = new Date().toLocaleDateString("en-CA", tzOpts);
+
+  if (eventDay === todayDay) return `Today, ${timeStr}`;
+
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowDay = tomorrow.toLocaleDateString("en-CA", tzOpts);
+  if (eventDay === tomorrowDay) return `Tomorrow, ${timeStr}`;
+
+  const diffMs = d.getTime() - Date.now();
+  if (diffMs > 0 && diffMs < 7 * 86400000) {
+    return `${d.toLocaleDateString(undefined, { weekday: "long", ...tzOpts })}, ${timeStr}`;
   }
-  return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}, ${timeStr}`;
+  return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric", ...tzOpts })}, ${timeStr}`;
 }
 
 function visibilityLabel(v: string): string {
@@ -287,7 +296,7 @@ const EventCard = React.memo(function EventCard({
             <Stack direction="row" alignItems="center" spacing={1}>
               <AccessTimeRoundedIcon sx={{ fontSize: 16, color: isPast ? "text.disabled" : "primary.main", opacity: 0.85 }} />
               <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
-                {formatDateTime(event.startsAt)}
+                {formatDateTime(event.startsAt, event.timezone)}
               </Typography>
             </Stack>
             <Stack direction="row" alignItems="center" spacing={1}>

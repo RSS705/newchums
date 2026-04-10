@@ -1,6 +1,6 @@
 New community join request
 
-Hey {{ownerName}},
+Hi {{ownerName}},
 
 {{requesterName}} wants to join your community "{{communityName}}".
 

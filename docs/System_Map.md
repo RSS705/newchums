@@ -108,7 +108,7 @@ The following flows run in the API worker; the web app calls the API via `NEXT_P
 | Public Chums | `GET /public/users/:handle/chums` | none |
 | Events (plans) | `POST /events`, `GET /events/mine`, `GET /events/:id` (optional auth, returns `accessState` + `shareToken`), `GET /events/explore` (auth), `GET /events/explore/public` (no auth), `PATCH /events/:id`, `POST /events/:id/cancel` | Bearer JWT (detail: optional; accepts `invite_token` / `participation_token` / `share_token`); explore/public: no auth |
 | Explore support | `GET /explore/local-signal` | Bearer JWT |
-| Plan RSVP | `POST /events/:id/rsvp`, `POST /events/:id/email-rsvp`, `POST /events/:id/public-rsvp/request-code`, `POST /events/:id/public-rsvp/confirm-code`, `POST /events/:id/confirm`, `POST /events/:id/email-confirm` | Bearer JWT / token-based |
+| Plan RSVP | `POST /events/:id/rsvp`, `POST /events/:id/email-rsvp`, `POST /events/:id/public-rsvp/request-code`, `POST /events/:id/public-rsvp/confirm-code`, `POST /events/:id/confirm`, `POST /events/:id/guest-confirm` | Bearer JWT / token-based |
 | Plan alt times | `POST /events/:id/alt-time`, `PATCH /events/:id/alt-time/:altTimeId`, `DELETE /events/:id/alt-time/:altTimeId`, `POST /events/:id/guest-alt-time`, `POST /events/:id/promote-alt-time` | Bearer JWT |
 | Plan attendee mgmt | `POST /events/:id/invite`, `POST /events/:id/remove-attendee`, `POST /events/:id/remove-invite`, `POST /events/:id/reserve-seats`, `POST /events/:id/toggle-attendee-invites` | Bearer JWT (host only) |
 | Plan join requests | `POST /events/:id/join-request`, `POST /events/:id/join-request/:requestId/approve`, `POST /events/:id/join-request/:requestId/decline`, `POST /events/:id/join-request/:requestId/withdraw` | Bearer JWT |

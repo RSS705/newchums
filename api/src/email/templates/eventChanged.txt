@@ -2,16 +2,9 @@
 
 {{bodyText}}
 
----
-
-{{statusLabel}}
 {{eventTitle}}
-{{#eventDate}}
-When: {{.}}
-{{/eventDate}}
-{{#eventLocation}}
-Where: {{.}}
-{{/eventLocation}}
+{{eventDate}}{{#eventLocation}} · {{.}}{{/eventLocation}}
+{{statusLabel}}
 
 {{#hasChanges}}
 What changed:
@@ -32,8 +25,6 @@ What changed:
 - {{.}}
 {{/change5}}
 {{/hasChanges}}
-
----
 
 {{ctaText}}: {{ctaUrl}}
 

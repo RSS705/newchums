@@ -1,21 +1,15 @@
 Someone is going to your plan
 
-Hey {{hostName}}, great news, someone just confirmed they're attending!
+Hi {{hostName}},
 
----
+Great news, {{attendeeName}} just confirmed they're attending.
 
-Plan: {{eventTitle}}
-{{#eventDate}}
-When: {{.}}
-{{/eventDate}}
-{{#eventLocation}}
-Where: {{.}}
-{{/eventLocation}}
-Going: {{attendeeName}}
-{{#attendeeMessage}}
+{{#attendeeMessage}}Their message: "{{.}}"
 
-Their message: "{{.}}"
-{{/attendeeMessage}}
+{{/attendeeMessage}}---
+
+{{eventTitle}}
+{{eventDate}}{{#eventLocation}} · {{.}}{{/eventLocation}}
 
 ---
 

@@ -1,6 +1,6 @@
 Join request update
 
-Hey {{userName}},
+Hi {{userName}},
 
 Unfortunately your request to join "{{communityName}}" was not approved at this time.
 

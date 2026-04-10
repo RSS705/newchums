@@ -53,54 +53,56 @@
 
           <!-- Body -->
           <tr>
-            <td style="padding: 32px 32px 12px 32px;">
+            <td style="padding: 36px 32px 12px 32px;">
+
               <!-- Heading -->
-              <p style="margin: 0 0 6px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 22px; font-weight: 700; color: #1F2937; line-height: 1.3;">
+              <p style="margin: 0 0 14px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 24px; font-weight: 700; color: #1F2937; line-height: 1.25;">
                 Your plan was removed
               </p>
-              <p style="margin: 0 0 24px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 15px; color: #4B5563; line-height: 1.55;">
-                Hey {{hostName}}, a NewChums administrator has reviewed and removed your plan because it appears to violate our <a href="https://newchums.com/terms" style="color: #E65B13; text-decoration: none; font-weight: 600;">Terms of Use</a>. The plan is no longer accessible to anyone on the platform.
+
+              <!-- Greeting -->
+              <p style="margin: 0 0 10px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 15px; color: #1F2937; line-height: 1.55;">
+                Hi {{hostName}},
               </p>
 
-              <!-- Plan card -->
-              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 24px; border: 1px solid #E5E7EB; border-radius: 12px; overflow: hidden;">
-                <!-- Red top accent (warning) -->
+              <!-- Body copy -->
+              <p style="margin: 0 0 22px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 15px; color: #4B5563; line-height: 1.6;">
+                A NewChums administrator has reviewed and removed your plan because it appears to violate our <a href="https://newchums.com/terms" style="color: #E65B13; text-decoration: none; font-weight: 600;">Terms of Use</a>. The plan is no longer accessible to anyone on the platform.
+              </p>
+
+              <!-- Plan summary -->
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 26px; border-left: 3px solid #DC2626;">
                 <tr>
-                  <td style="background-color: #DC2626; height: 4px; font-size: 0; line-height: 0;">&nbsp;</td>
-                </tr>
-                <tr>
-                  <td style="padding: 20px 24px;">
-                    <p style="margin: 0 0 4px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 11px; font-weight: 600; color: #DC2626; text-transform: uppercase; letter-spacing: 0.8px;">
-                      Removed plan
-                    </p>
-                    <p style="margin: 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 18px; font-weight: 700; color: #1F2937; line-height: 1.35;">
+                  <td style="padding: 4px 0 4px 14px;">
+                    <p style="margin: 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 16px; font-weight: 700; color: #1F2937; line-height: 1.35;">
                       {{eventTitle}}
                     </p>
-
-                    {{#reason}}
-                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top: 14px;">
-                      <tr>
-                        <td style="padding: 14px 16px; background-color: #FEF2F2; border-left: 3px solid #DC2626; border-radius: 0 8px 8px 0;">
-                          <p style="margin: 0 0 4px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 11px; font-weight: 600; color: #4B5563; text-transform: uppercase; letter-spacing: 0.5px;">
-                            Reason
-                          </p>
-                          <p style="margin: 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 14px; color: #1F2937; line-height: 1.55;">
-                            {{.}}
-                          </p>
-                        </td>
-                      </tr>
-                    </table>
-                    {{/reason}}
                   </td>
                 </tr>
               </table>
 
+              {{#reason}}
+              <!-- Reason callout -->
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 22px; border-left: 3px solid #DC2626; background-color: #FEF2F2; border-radius: 0 8px 8px 0;">
+                <tr>
+                  <td style="padding: 14px 20px;">
+                    <p style="margin: 0 0 4px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 11px; font-weight: 600; color: #DC2626; text-transform: uppercase; letter-spacing: 0.5px;">
+                      Reason
+                    </p>
+                    <p style="margin: 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 14px; color: #4B5563; line-height: 1.55;">
+                      {{.}}
+                    </p>
+                  </td>
+                </tr>
+              </table>
+              {{/reason}}
+
               <!-- Warning box -->
-              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 24px; background-color: #FEF2F2; border: 1px solid #FECACA; border-radius: 10px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 22px; background-color: #FEF2F2; border: 1px solid #FECACA; border-radius: 10px;">
                 <tr>
                   <td style="padding: 20px 24px;">
                     <p style="margin: 0 0 6px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 14px; font-weight: 700; color: #991B1B; line-height: 1.35;">
-                      &#9888;&#65039; Please note
+                      Please note
                     </p>
                     <p style="margin: 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 14px; color: #991B1B; line-height: 1.55;">
                       Repeated violations of the NewChums Terms of Use may result in the suspension or permanent deactivation of your account. We take the safety and trust of our community seriously.
@@ -110,22 +112,22 @@
               </table>
 
               <!-- Contact note -->
-              <p style="margin: 0 0 24px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 14px; color: #4B5563; line-height: 1.55;">
+              <p style="margin: 0 0 22px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 14px; color: #4B5563; line-height: 1.55;">
                 If you believe this was a mistake or have questions, please reach out to us at <a href="mailto:contact@newchums.com" style="color: #E65B13; text-decoration: none; font-weight: 600;">contact@newchums.com</a> and we&rsquo;ll be happy to review.
               </p>
 
               <!-- CTA -->
-              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 24px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 14px;">
                 <tr>
                   <td align="center">
                     <!--[if mso]>
-                    <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="https://newchums.com/terms" style="height:48px;v-text-anchor:middle;width:280px;" arcsize="17%" strokecolor="#4B5563" fillcolor="#4B5563">
+                    <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="https://newchums.com/terms" style="height:44px;v-text-anchor:middle;width:260px;" arcsize="18%" strokecolor="#4B5563" fillcolor="#4B5563">
                       <w:anchorlock/>
-                      <center style="color:#ffffff;font-family:'Segoe UI',sans-serif;font-size:15px;font-weight:bold;">Review our Terms of Use</center>
+                      <center style="color:#ffffff;font-family:'Segoe UI',sans-serif;font-size:14px;font-weight:bold;">Review our Terms of Use</center>
                     </v:roundrect>
                     <![endif]-->
                     <!--[if !mso]><!-->
-                    <a href="https://newchums.com/terms" style="display: inline-block; background-color: #4B5563; color: #ffffff; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 15px; font-weight: 700; text-decoration: none; padding: 14px 40px; border-radius: 8px; line-height: 1; text-align: center;">
+                    <a href="https://newchums.com/terms" style="display: inline-block; background-color: #4B5563; color: #ffffff; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 14px; font-weight: 700; text-decoration: none; padding: 14px 32px; border-radius: 8px; line-height: 1; text-align: center;">
                       Review our Terms of Use
                     </a>
                     <!--<![endif]-->
@@ -133,10 +135,6 @@
                 </tr>
               </table>
 
-              <!-- Helper text -->
-              <p style="margin: 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 13px; color: #9CA3AF; line-height: 1.55; text-align: center;">
-                We appreciate your understanding and cooperation in keeping NewChums a welcoming community for everyone.
-              </p>
             </td>
           </tr>
 

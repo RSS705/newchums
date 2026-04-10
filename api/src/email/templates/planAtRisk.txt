@@ -2,18 +2,9 @@
 
 {{bodyText}}
 
----
-
-Plan: {{eventTitle}}
-{{#eventDate}}
-When: {{.}}
-{{/eventDate}}
-{{#eventLocation}}
-Where: {{.}}
-{{/eventLocation}}
-Confirmed: {{confirmedCount}} of {{minRequired}} required
-
----
+{{eventTitle}}
+{{eventDate}}{{#eventLocation}} · {{.}}{{/eventLocation}}
+{{confirmedCount}} of {{minRequired}} confirmed
 
 {{ctaText}}: {{ctaUrl}}
 

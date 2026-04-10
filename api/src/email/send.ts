@@ -690,10 +690,10 @@ export const sendGuestVerifyCodeEmail = async (
 
 export const sendConfirmationRequestEmail = async (
   env: Bindings,
-  { to, recipientName, eventTitle, eventDate, eventLocation, eventUrl, confirmUrl, declineUrl, isHost, isReminder, isFinal, deadline, unsubscribeUrl }: {
+  { to, recipientName, eventTitle, eventDate, eventLocation, eventUrl, ctaUrl, isHost, isReminder, isFinal, deadline, unsubscribeUrl }: {
     to: string; recipientName: string;
     eventTitle: string; eventDate: string; eventLocation?: string; eventUrl: string;
-    confirmUrl: string; declineUrl: string;
+    ctaUrl: string;
     isHost: boolean; isReminder: boolean; isFinal: boolean;
     deadline: string; unsubscribeUrl?: string;
   }
@@ -736,14 +736,65 @@ export const sendConfirmationRequestEmail = async (
       eventDate,
       eventLocation: eventLocation || "",
       eventUrl,
-      confirmUrl,
-      declineUrl,
-      confirmLabel: isHost ? "I'm still hosting" : "I'm still coming",
-      declineLabel: isHost ? "Cancel this plan" : "I can't make it",
+      ctaUrl,
+      ctaLabel: "View plan and confirm",
       deadline,
       isReminder: isReminder || isFinal ? "1" : "",
       isFinal: isFinal ? "1" : "",
       unsubscribeUrl: unsubscribeUrl || "",
+      year: new Date().getFullYear(),
+    },
+  });
+};
+
+export const sendGuestConfirmationRequestEmail = async (
+  env: Bindings,
+  { to, recipientName, eventTitle, eventDate, eventLocation, eventUrl, confirmUrl, declineUrl, viewUrl, isReminder, isFinal, deadline }: {
+    to: string; recipientName: string;
+    eventTitle: string; eventDate: string; eventLocation?: string; eventUrl: string;
+    confirmUrl: string; declineUrl: string; viewUrl: string;
+    isReminder: boolean; isFinal: boolean;
+    deadline: string;
+  }
+) => {
+  if (!env.POSTMARK_TEMPLATE_CONFIRMATION_REQUEST) return;
+
+  const stage: "initial" | "reminder" | "final" = isFinal ? "final" : isReminder ? "reminder" : "initial";
+
+  const headingMap = {
+    initial: "Confirm your attendance",
+    reminder: "Quick check: are you still coming?",
+    final: "Last call: are you still coming?",
+  } as const;
+
+  const bodyMap = {
+    initial: "Your plan is coming up soon. Please confirm whether you're still in so the host can plan ahead.",
+    reminder: "Your plan is later today. Please let the host know whether you're still in so they can plan ahead.",
+    final: "Your plan starts soon. Please respond now so the host knows who to expect.",
+  } as const;
+
+  return sendPostmarkTemplateEmail(env, {
+    From: env.EMAIL_FROM, To: to,
+    TemplateId: env.POSTMARK_TEMPLATE_CONFIRMATION_REQUEST,
+    TemplateModel: {
+      productName: "NewChums",
+      heading: headingMap[stage],
+      greeting: `Hi ${recipientName},`,
+      bodyText: bodyMap[stage],
+      recipientName,
+      eventTitle,
+      eventDate,
+      eventLocation: eventLocation || "",
+      eventUrl,
+      confirmUrl,
+      declineUrl,
+      confirmLabel: "I'm still coming",
+      declineLabel: "I can't make it",
+      viewUrl,
+      isGuest: "1",
+      deadline,
+      isReminder: isReminder || isFinal ? "1" : "",
+      isFinal: isFinal ? "1" : "",
       year: new Date().getFullYear(),
     },
   });

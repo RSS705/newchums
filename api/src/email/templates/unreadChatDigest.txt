@@ -1,6 +1,8 @@
 You have unread messages
 
-Hey {{recipientName}}, there are new chat messages waiting for you in plans you're part of.
+Hi {{recipientName}},
+
+There are new chat messages waiting for you in plans you're part of.
 
 ---
 

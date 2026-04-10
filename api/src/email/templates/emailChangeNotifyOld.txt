@@ -1,6 +1,8 @@
 Your email is being changed
 
-Hey {{name}}, we wanted to let you know that a request was made to change the email address on your NewChums account.
+Hi {{name}},
+
+We wanted to let you know that a request was made to change the email address on your NewChums account.
 
 New email: {{newEmail}}
 

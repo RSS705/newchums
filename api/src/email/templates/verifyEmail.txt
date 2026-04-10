@@ -1,6 +1,8 @@
 Verify your email
 
-Hey {{name}}, thanks for signing up for NewChums! Please confirm your email address by visiting the link below.
+Hi {{name}},
+
+Thanks for signing up for NewChums! Please confirm your email address by visiting the link below.
 
 Verify email address: {{verifyUrl}}
 

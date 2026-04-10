@@ -1,5 +1,4 @@
-New plans near you
-==================
+{{planCount}} new {{planNoun}} near you
 
 Hi {{recipientName}},
 

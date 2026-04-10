@@ -1,26 +1,17 @@
 You're in!
 
-Hey {{recipientName}}, great news, {{hostName}} approved your request to join their plan. You've been added as Going.
+Hi {{recipientName}},
 
----
+Great news, {{hostName}} approved your request to join their plan. You've been added as Going.
 
-Plan: {{eventTitle}}
-{{#eventDate}}
-When: {{.}}
-{{/eventDate}}
-{{#eventLocation}}
-Where: {{.}}
-{{/eventLocation}}
+{{eventTitle}}
+{{eventDate}}{{#eventLocation}} · {{.}}{{/eventLocation}}
 {{#hostMessage}}
 
 Message from the host: "{{.}}"
 {{/hostMessage}}
 
----
-
 View plan details: {{eventUrl}}
-
-Check the plan details page for time, location, and chat.
 
 ---
 

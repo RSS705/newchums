@@ -139,6 +139,7 @@ type EventDetail = {
   confirmedCount: number;
   pendingConfirmationCount: number;
   myConfirmationStatus: string | null;
+  guestConfirmToken?: string | null;
   planViability: string | null;
   community?: { id: string; slug: string; name: string } | null;
   hideFromExplore?: boolean;
@@ -249,7 +250,7 @@ const VALID_RSVP_PARAMS = ["going", "maybe", "cant_make_it"] as const;
 // Sections from email deep-links (?section=...) that require an authenticated
 // viewer. Logged-out visitors hitting these are redirected through /login first
 // and returned to the same plan + section after signing in.
-const AUTH_REQUIRED_SECTIONS: readonly string[] = ["feedback", "chat"];
+const AUTH_REQUIRED_SECTIONS: readonly string[] = ["feedback", "chat", "confirmation"];
 
 const PREF_NOTE_LABELS: Record<string, string> = {
   reliability: "reliability",
@@ -285,7 +286,8 @@ export default function EventDetailClient() {
   const [emailRsvpStatus, setEmailRsvpStatus] = useState<string | null>(null);
   // Attendance assurance
   const [confirmSubmitting, setConfirmSubmitting] = useState(false);
-  const [emailConfirmResult, setEmailConfirmResult] = useState<string | null>(null);
+  // Local override for confirmation status, provides immediate UI feedback before refresh() completes
+  const [localConfirmStatus, setLocalConfirmStatus] = useState<string | null>(null);
   const [showAltTimeForm, setShowAltTimeForm] = useState(false);
   const [altStartDate, setAltStartDate] = useState<Dayjs | null>(null);
   const [altEndDate, setAltEndDate] = useState<Dayjs | null>(null);
@@ -394,11 +396,8 @@ export default function EventDetailClient() {
   const [lockToggling, setLockToggling] = useState(false);
   const [lockDialogOpen, setLockDialogOpen] = useState(false);
 
-  // Auth detection for logged-out user handling
+  // Auth detection for logged-out user handling (set by load())
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
-  useEffect(() => {
-    getAuthToken().then((t) => setIsAuthenticated(!!t));
-  }, []);
 
   // Prefetched feedback payload, populated in load() when the visitor arrived
   // via ?section=feedback. Lets <PlanFeedback> mount with data already in
@@ -505,6 +504,9 @@ export default function EventDetailClient() {
       if (data.viewerUserId) setViewerUserId(data.viewerUserId);
       if (data.viewerEmail) setViewerEmail(data.viewerEmail);
       if (data.shareLinkModalDismissed != null) setShareLinkModalDismissed(data.shareLinkModalDismissed);
+      if (data.event?.guestConfirmToken) guestConfirmTokenRef.current = data.event.guestConfirmToken;
+      // Clear local confirmation override once server state arrives
+      setLocalConfirmStatus(null);
     },
     []
   );
@@ -523,6 +525,12 @@ export default function EventDetailClient() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      // Fetch the auth token once up front so we can decide whether to send
+      // authenticated requests without hitting /api/auth/api-token repeatedly
+      // (each call produces a visible 401 console error for logged-out users).
+      const authToken = await getAuthToken();
+      const useAuth = !!authToken;
+
       // Email deep-links to auth-required sections (e.g. ?section=feedback in
       // the post-plan feedback email): if the visitor is logged out, route
       // them through /login first so they return to the correct plan and
@@ -535,8 +543,7 @@ export default function EventDetailClient() {
         /* noop */
       }
       if (sectionParam && AUTH_REQUIRED_SECTIONS.includes(sectionParam)) {
-        const tok = await getAuthToken();
-        if (!tok) {
+        if (!authToken) {
           const target = `/events/${eventId}?section=${encodeURIComponent(sectionParam)}`;
           router.replace(`/login?next=${encodeURIComponent(target)}`);
           return;
@@ -549,24 +556,21 @@ export default function EventDetailClient() {
       // via a prop so it can paint the form on first render instead of doing
       // a second round-trip and flickering content into view.
       const feedbackPromise =
-        sectionParam === "feedback"
+        sectionParam === "feedback" && useAuth
           ? apiFetch(`/events/${eventId}/feedback`, { auth: true })
               .then(async (r) => (r.ok ? await r.json() : null))
               .catch(() => null)
           : Promise.resolve(null);
 
-      const res = await apiFetch(`/events/${eventId}${buildTokenSuffix()}`, { auth: true });
+      const res = await apiFetch(`/events/${eventId}${buildTokenSuffix()}`, { auth: useAuth });
       if (!res.ok) {
         // Safety net: if the plan endpoint refuses for any reason and the
         // viewer was deep-linked to an auth-required section without a token,
         // still send them to login instead of "Plan not found".
-        if (sectionParam && AUTH_REQUIRED_SECTIONS.includes(sectionParam)) {
-          const tok = await getAuthToken();
-          if (!tok) {
-            const target = `/events/${eventId}?section=${encodeURIComponent(sectionParam)}`;
-            router.replace(`/login?next=${encodeURIComponent(target)}`);
-            return;
-          }
+        if (sectionParam && AUTH_REQUIRED_SECTIONS.includes(sectionParam) && !authToken) {
+          const target = `/events/${eventId}?section=${encodeURIComponent(sectionParam)}`;
+          router.replace(`/login?next=${encodeURIComponent(target)}`);
+          return;
         }
         setError("Plan not found");
         setLoading(false);
@@ -583,6 +587,7 @@ export default function EventDetailClient() {
         }
       }
       applyEventData(data);
+      setIsAuthenticated(useAuth);
 
       // Wait for the parallel feedback fetch (if any) before flipping
       // loading=false. This is the small delta that lets <PlanFeedback>
@@ -604,7 +609,8 @@ export default function EventDetailClient() {
 
   const refresh = useCallback(async () => {
     try {
-      const res = await apiFetch(`/events/${eventId}${buildTokenSuffix()}`, { auth: true });
+      const authToken = await getAuthToken();
+      const res = await apiFetch(`/events/${eventId}${buildTokenSuffix()}`, { auth: !!authToken });
       if (res.ok) {
         const data = await res.json();
         applyEventData(data);
@@ -634,15 +640,18 @@ export default function EventDetailClient() {
 
   // Auto-RSVP from email link (?rsvp=going&invite_token=xxx)
   const pendingRsvpRef = useRef<string | null>(null);
-  const pendingConfirmRef = useRef<{ action: string; token: string } | null>(null);
+  // Guest confirmation from email link (?guest_confirm_token=xxx&action=confirm|decline)
+  const pendingGuestConfirmRef = useRef<{ token: string; action: string } | null>(null);
+  // Guest confirmation token for in-page use (from API response)
+  const guestConfirmTokenRef = useRef<string | null>(null);
   useEffect(() => {
     const rsvpParam = searchParams.get("rsvp");
     const inviteTokenParam = searchParams.get("invite_token");
     const shareTokenParam = searchParams.get("share_token");
     const contextParam = searchParams.get("context");
-    const confirmParam = searchParams.get("confirm");
-    const confirmTokenParam = searchParams.get("confirm_token");
     const sectionParam = searchParams.get("section");
+    const guestConfirmTokenParam = searchParams.get("guest_confirm_token");
+    const guestConfirmActionParam = searchParams.get("action");
     if (inviteTokenParam) {
       inviteTokenRef.current = inviteTokenParam;
       try {
@@ -655,11 +664,8 @@ export default function EventDetailClient() {
     if (rsvpParam && VALID_RSVP_PARAMS.includes(rsvpParam as (typeof VALID_RSVP_PARAMS)[number])) {
       pendingRsvpRef.current = rsvpParam;
     }
-    if (confirmParam && confirmTokenParam && (confirmParam === "yes" || confirmParam === "no")) {
-      pendingConfirmRef.current = {
-        action: confirmParam === "yes" ? "confirm" : "decline",
-        token: confirmTokenParam,
-      };
+    if (guestConfirmTokenParam && guestConfirmActionParam && (guestConfirmActionParam === "confirm" || guestConfirmActionParam === "decline")) {
+      pendingGuestConfirmRef.current = { token: guestConfirmTokenParam, action: guestConfirmActionParam };
     }
     if (contextParam) setEmailContext(contextParam);
     if (sectionParam) pendingSectionRef.current = sectionParam;
@@ -668,18 +674,17 @@ export default function EventDetailClient() {
       inviteTokenParam ||
       shareTokenParam ||
       contextParam ||
-      confirmParam ||
-      confirmTokenParam ||
-      sectionParam
+      sectionParam ||
+      guestConfirmTokenParam
     ) {
       const url = new URL(window.location.href);
       url.searchParams.delete("rsvp");
       url.searchParams.delete("invite_token");
       url.searchParams.delete("share_token");
       url.searchParams.delete("context");
-      url.searchParams.delete("confirm");
-      url.searchParams.delete("confirm_token");
       url.searchParams.delete("section");
+      url.searchParams.delete("guest_confirm_token");
+      url.searchParams.delete("action");
       window.history.replaceState({}, "", url.pathname + url.search);
     }
   }, [searchParams]);
@@ -702,6 +707,41 @@ export default function EventDetailClient() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event, isAuthenticated]);
+
+  // Auto-confirm from guest email link (?guest_confirm_token=xxx&action=confirm|decline)
+  useEffect(() => {
+    if (!event || !pendingGuestConfirmRef.current) return;
+    const { token, action } = pendingGuestConfirmRef.current;
+    pendingGuestConfirmRef.current = null;
+
+    (async () => {
+      setConfirmSubmitting(true);
+      try {
+        const res = await apiFetch(`/events/${eventId}/guest-confirm`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token, action }),
+        });
+        const data = (await res.json()) as {
+          ok: boolean;
+          status?: string;
+          error?: string;
+          message?: string;
+        };
+        if (data.ok) {
+          setLocalConfirmStatus(action === "confirm" ? "confirmed" : "declined");
+          toast.success(action === "confirm" ? "Attendance confirmed!" : "Response recorded");
+          refresh();
+        } else {
+          toast.error(data.message ?? "This link has expired or is invalid.");
+        }
+      } catch {
+        toast.error("Network error");
+      }
+      setConfirmSubmitting(false);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [event]);
 
   useEffect(() => {
     if (!event || !pendingRsvpRef.current) return;
@@ -758,41 +798,6 @@ export default function EventDetailClient() {
         }
       });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [event]);
-
-  // Auto-confirm from email link (?confirm=yes&confirm_token=xxx)
-  useEffect(() => {
-    if (!event || !pendingConfirmRef.current) return;
-    const { action, token } = pendingConfirmRef.current;
-    pendingConfirmRef.current = null;
-
-    (async () => {
-      setConfirmSubmitting(true);
-      try {
-        const res = await apiFetch(`/events/${eventId}/email-confirm`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token, action }),
-        });
-        const data = (await res.json()) as {
-          ok: boolean;
-          status?: string;
-          error?: string;
-          message?: string;
-        };
-        if (data.ok) {
-          setEmailConfirmResult(data.status ?? (action === "confirm" ? "confirmed" : "declined"));
-          toast.success(action === "confirm" ? "Attendance confirmed!" : "Response recorded");
-          refresh();
-        } else {
-          toast.error(data.message ?? "This link has expired or is invalid.");
-        }
-      } catch {
-        toast.error("Network error");
-      }
-      setConfirmSubmitting(false);
-    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event]);
 
@@ -1152,6 +1157,30 @@ export default function EventDetailClient() {
       });
       const data = (await res.json()) as { ok: boolean; error?: string; message?: string };
       if (data.ok) {
+        setLocalConfirmStatus(action === "confirm" ? "confirmed" : "declined");
+        toast.success(action === "confirm" ? "Attendance confirmed!" : "Response recorded");
+        refresh();
+      } else {
+        toast.error(data.message ?? "Something went wrong");
+      }
+    } catch {
+      toast.error("Network error");
+    }
+    setConfirmSubmitting(false);
+  };
+
+  const handleGuestConfirmAction = async (action: "confirm" | "decline") => {
+    if (!guestConfirmTokenRef.current) return;
+    setConfirmSubmitting(true);
+    try {
+      const res = await apiFetch(`/events/${eventId}/guest-confirm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: guestConfirmTokenRef.current, action }),
+      });
+      const data = (await res.json()) as { ok: boolean; error?: string; message?: string };
+      if (data.ok) {
+        setLocalConfirmStatus(action === "confirm" ? "confirmed" : "declined");
         toast.success(action === "confirm" ? "Attendance confirmed!" : "Response recorded");
         refresh();
       } else {
@@ -1947,41 +1976,6 @@ export default function EventDetailClient() {
           )}
         </Box>
 
-        {/* Persistent acknowledgement when a logged-out viewer just confirmed
-            or declined via an email link. The toast is fleeting; this panel
-            stays on the page so the action feels resolved. */}
-        {emailConfirmResult && (
-          <Paper
-            variant="outlined"
-            sx={{
-              p: 2,
-              borderRadius: 2.5,
-              borderColor: emailConfirmResult === "confirmed" ? "success.main" : "divider",
-              bgcolor: emailConfirmResult === "confirmed" ? "success.50" : "grey.50",
-            }}
-          >
-            <Stack direction="row" spacing={1.5} alignItems="center">
-              {emailConfirmResult === "confirmed" ? (
-                <CheckCircleRoundedIcon sx={{ color: "success.main" }} />
-              ) : (
-                <InfoOutlinedIcon sx={{ color: "text.secondary" }} />
-              )}
-              <Box>
-                <Typography variant="subtitle2" fontWeight={700}>
-                  {emailConfirmResult === "confirmed"
-                    ? "You're confirmed for this plan"
-                    : "You've let the host know you can't make it"}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {emailConfirmResult === "confirmed"
-                    ? "Thanks! The host has been notified."
-                    : "Thanks for letting us know."}
-                </Typography>
-              </Box>
-            </Stack>
-          </Paper>
-        )}
-
         {pubIsCanceled && (
           <Paper
             variant="outlined"
@@ -2167,6 +2161,8 @@ export default function EventDetailClient() {
     : [];
   // Guest invite: the viewer arrived via a valid invite token but has no NewChums account
   const isGuestInvite = event.guestInvite === true;
+  // Effective confirmation status: local override (immediate) takes priority over server state
+  const effectiveConfirmStatus = localConfirmStatus ?? event.myConfirmationStatus;
   const guestRsvpStatus = emailRsvpStatus ?? event.guestRsvpStatus ?? null;
 
   // Invite-only gate: logged-in users who are not invited and don't have a share/invite token
@@ -2803,6 +2799,92 @@ export default function EventDetailClient() {
                       </AppButton>
                     )}
                   </Stack>
+                  {/* Guest attendance confirmation UI */}
+                  {event.confirmationWindowOpen &&
+                    guestRsvpStatus === "going" &&
+                    guestConfirmTokenRef.current && (
+                    <>
+                      <Divider sx={{ my: 0.5 }} />
+                      {effectiveConfirmStatus === "confirmed" ? (
+                        <Stack spacing={1} alignItems="center">
+                          <CheckCircleRoundedIcon sx={{ fontSize: 20, color: "success.main" }} />
+                          <Typography variant="body2" fontWeight={600}>
+                            You&apos;re confirmed for this plan
+                          </Typography>
+                          <AppButton
+                            size="small"
+                            variant="outlined"
+                            color="inherit"
+                            onClick={() => handleGuestConfirmAction("decline")}
+                            disabled={confirmSubmitting}
+                          >
+                            Change to can&apos;t make it
+                          </AppButton>
+                        </Stack>
+                      ) : effectiveConfirmStatus === "declined" ? (
+                        <Stack spacing={1} alignItems="center">
+                          <InfoOutlinedIcon sx={{ fontSize: 20, color: "text.secondary" }} />
+                          <Typography variant="body2" fontWeight={600}>
+                            You&apos;ve indicated you can&apos;t make it
+                          </Typography>
+                          <AppButton
+                            size="small"
+                            onClick={() => handleGuestConfirmAction("confirm")}
+                            disabled={confirmSubmitting}
+                          >
+                            Change to confirmed
+                          </AppButton>
+                        </Stack>
+                      ) : (
+                        <Stack spacing={1.5}>
+                          <Stack
+                            spacing={1}
+                            sx={{
+                              p: 2,
+                              bgcolor: "warning.50",
+                              borderRadius: 2,
+                              border: "1px solid",
+                              borderColor: "warning.200",
+                            }}
+                          >
+                            <Typography variant="subtitle2" fontWeight={700}>
+                              Attendance check: are you still coming?
+                            </Typography>
+                            {event.confirmationCutoffAt && (
+                              <Typography variant="caption" color="text.secondary">
+                                Please confirm by{" "}
+                                {new Date(event.confirmationCutoffAt).toLocaleString(undefined, {
+                                  weekday: "short",
+                                  month: "short",
+                                  day: "numeric",
+                                  hour: "numeric",
+                                  minute: "2-digit",
+                                })}
+                              </Typography>
+                            )}
+                          </Stack>
+                          <Stack direction="row" spacing={1.5}>
+                            <AppButton
+                              onClick={() => handleGuestConfirmAction("confirm")}
+                              disabled={confirmSubmitting}
+                              sx={{ flex: 1 }}
+                            >
+                              I&apos;m still coming
+                            </AppButton>
+                            <AppButton
+                              onClick={() => handleGuestConfirmAction("decline")}
+                              disabled={confirmSubmitting}
+                              variant="outlined"
+                              color="inherit"
+                              sx={{ flex: 1 }}
+                            >
+                              I can&apos;t make it
+                            </AppButton>
+                          </Stack>
+                        </Stack>
+                      )}
+                    </>
+                  )}
                   <Typography
                     variant="caption"
                     color="text.secondary"
@@ -3411,82 +3493,61 @@ export default function EventDetailClient() {
               </>
             )
           ) : (
-            <>
+            <div id="plan-section-confirmation">
               {/* Confirmation UI when window is open */}
               {event.confirmationWindowOpen &&
               viewerRsvpStatus === "going" &&
               !event.isHost &&
-              (event.myConfirmationStatus === "pending" ||
-                event.myConfirmationStatus === "expired" ||
-                event.myConfirmationStatus === null ||
-                emailConfirmResult) ? (
+              (effectiveConfirmStatus === "pending" ||
+                effectiveConfirmStatus === "expired" ||
+                effectiveConfirmStatus === null) ? (
                 <Stack spacing={2} sx={{ py: 1 }}>
-                  {emailConfirmResult === "confirmed" ||
-                  event.myConfirmationStatus === "confirmed" ? (
-                    <Stack spacing={1.5} alignItems="center">
-                      <CheckCircleRoundedIcon sx={{ fontSize: 36, color: "success.main" }} />
-                      <Typography variant="h6" fontWeight={600}>
-                        You&apos;re confirmed for this plan
+                  <Stack
+                    spacing={1}
+                    sx={{
+                      p: 2,
+                      bgcolor: "warning.50",
+                      borderRadius: 2,
+                      border: "1px solid",
+                      borderColor: "warning.200",
+                    }}
+                  >
+                    <Typography variant="subtitle1" fontWeight={700}>
+                      Attendance check: are you still coming?
+                    </Typography>
+                    {event.confirmationCutoffAt && (
+                      <Typography variant="body2" color="text.secondary">
+                        Please confirm by{" "}
+                        {new Date(event.confirmationCutoffAt).toLocaleString(undefined, {
+                          weekday: "short",
+                          month: "short",
+                          day: "numeric",
+                          hour: "numeric",
+                          minute: "2-digit",
+                        })}
                       </Typography>
-                    </Stack>
-                  ) : emailConfirmResult === "declined" ||
-                    event.myConfirmationStatus === "declined" ? (
-                    <Stack spacing={1.5} alignItems="center">
-                      <InfoOutlinedIcon sx={{ fontSize: 36, color: "text.secondary" }} />
-                      <Typography variant="h6" fontWeight={600}>
-                        You&apos;ve indicated you can&apos;t make it
-                      </Typography>
-                    </Stack>
-                  ) : (
-                    <>
-                      <Stack
-                        spacing={1}
-                        sx={{
-                          p: 2,
-                          bgcolor: "warning.50",
-                          borderRadius: 2,
-                          border: "1px solid",
-                          borderColor: "warning.200",
-                        }}
-                      >
-                        <Typography variant="subtitle1" fontWeight={700}>
-                          Attendance check: are you still coming?
-                        </Typography>
-                        {event.confirmationCutoffAt && (
-                          <Typography variant="body2" color="text.secondary">
-                            Please confirm by{" "}
-                            {new Date(event.confirmationCutoffAt).toLocaleString(undefined, {
-                              weekday: "short",
-                              month: "short",
-                              day: "numeric",
-                              hour: "numeric",
-                              minute: "2-digit",
-                            })}
-                          </Typography>
-                        )}
-                      </Stack>
-                      <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
-                        <AppButton
-                          onClick={() => handleConfirmAction("confirm")}
-                          disabled={confirmSubmitting}
-                          sx={{ flex: 1 }}
-                        >
-                          I&apos;m still coming
-                        </AppButton>
-                        <AppButton
-                          onClick={() => handleConfirmAction("decline")}
-                          disabled={confirmSubmitting}
-                          variant="outlined"
-                          color="inherit"
-                          sx={{ flex: 1 }}
-                        >
-                          I can&apos;t make it
-                        </AppButton>
-                      </Stack>
-                    </>
-                  )}
+                    )}
+                  </Stack>
+                  <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                    <AppButton
+                      onClick={() => handleConfirmAction("confirm")}
+                      disabled={confirmSubmitting}
+                      sx={{ flex: 1 }}
+                    >
+                      I&apos;m still coming
+                    </AppButton>
+                    <AppButton
+                      onClick={() => handleConfirmAction("decline")}
+                      disabled={confirmSubmitting}
+                      variant="outlined"
+                      color="inherit"
+                      sx={{ flex: 1 }}
+                    >
+                      I can&apos;t make it
+                    </AppButton>
+                  </Stack>
                 </Stack>
-              ) : event.confirmationWindowOpen && event.myConfirmationStatus === "confirmed" ? (
+              ) : event.confirmationWindowOpen && effectiveConfirmStatus === "confirmed" ? (
                 <Stack spacing={1.5} sx={{ py: 1 }}>
                   <Stack direction="row" alignItems="center" spacing={1}>
                     <CheckCircleRoundedIcon sx={{ fontSize: 20, color: "success.main" }} />
@@ -3498,7 +3559,7 @@ export default function EventDetailClient() {
                     Your attendance is confirmed. See you there!
                   </Typography>
                 </Stack>
-              ) : event.confirmationWindowOpen && event.myConfirmationStatus === "declined" ? (
+              ) : event.confirmationWindowOpen && effectiveConfirmStatus === "declined" ? (
                 <Stack spacing={1.5} sx={{ py: 1 }}>
                   <Stack direction="row" alignItems="center" spacing={1}>
                     <InfoOutlinedIcon sx={{ fontSize: 20, color: "text.secondary" }} />
@@ -3653,7 +3714,7 @@ export default function EventDetailClient() {
                   )}
                 </>
               )}
-            </>
+            </div>
           )}
         </AppCard>
       )}
@@ -3663,8 +3724,8 @@ export default function EventDetailClient() {
         !isCanceled &&
         event.requireReconfirmation &&
         event.confirmationWindowOpen && (
-          <AppCard>
-            {event.myConfirmationStatus === "confirmed" ? (
+          <AppCard id="plan-section-confirmation">
+            {effectiveConfirmStatus === "confirmed" ? (
               <Stack spacing={1.5} sx={{ py: 1 }}>
                 <Stack direction="row" alignItems="center" spacing={1}>
                   <CheckCircleRoundedIcon sx={{ fontSize: 20, color: "success.main" }} />
@@ -3676,7 +3737,7 @@ export default function EventDetailClient() {
                   Your attendees can see this plan is still on.
                 </Typography>
               </Stack>
-            ) : event.myConfirmationStatus === "declined" ? (
+            ) : effectiveConfirmStatus === "declined" ? (
               <Stack spacing={1.5} sx={{ py: 1 }}>
                 <Stack direction="row" alignItems="center" spacing={1}>
                   <InfoOutlinedIcon sx={{ fontSize: 20, color: "text.secondary" }} />
@@ -5142,8 +5203,8 @@ export default function EventDetailClient() {
                         sx={{ fontWeight: 500, fontSize: "0.6875rem" }}
                       />
                     )}
-                    {/* Overflow menu trigger — shown for other attendees (chum/remove actions) and for self (hide name) */}
-                    {viewerUserId && !r.isGuest && (
+                    {/* Overflow menu trigger — shown for other attendees (chum/remove actions), for self (hide name), and for guests (host remove) */}
+                    {(viewerUserId || (event.isHost && r.isGuest)) && (
                       <IconButton
                         size="small"
                         onClick={(e) => {

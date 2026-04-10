@@ -1,19 +1,16 @@
 Your plan was removed
 
-Hey {{hostName}}, a NewChums administrator has reviewed and removed your plan because it appears to violate our Terms of Use. The plan is no longer accessible to anyone on the platform.
+Hi {{hostName}},
 
----
+A NewChums administrator has reviewed and removed your plan because it appears to violate our Terms of Use. The plan is no longer accessible to anyone on the platform.
 
-REMOVED PLAN
 {{eventTitle}}
 
 {{#reason}}
 Reason: {{.}}
 {{/reason}}
 
----
-
-⚠️ Please note: Repeated violations of the NewChums Terms of Use may result in the suspension or permanent deactivation of your account. We take the safety and trust of our community seriously.
+Please note: Repeated violations of the NewChums Terms of Use may result in the suspension or permanent deactivation of your account. We take the safety and trust of our community seriously.
 
 If you believe this was a mistake or have questions, please reach out to us at contact@newchums.com and we'll be happy to review.
 

@@ -16,13 +16,20 @@ Respond by {{deadline}}
 
 ---
 
+{{#isGuest}}
 {{confirmLabel}}: {{confirmUrl}}
 
 {{declineLabel}}: {{declineUrl}}
 
-No login needed. Tap a link above to record your response.
+View full plan details: {{viewUrl}}
 
-View full plan details: {{eventUrl}}
+No login needed. Tap a link above to record your response.
+{{/isGuest}}
+{{^isGuest}}
+{{ctaLabel}}: {{ctaUrl}}
+
+You'll be asked to sign in if you aren't already.
+{{/isGuest}}
 
 ---
 

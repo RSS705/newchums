@@ -1,21 +1,15 @@
 Someone left your plan
 
-Hey {{hostName}}, just a heads-up, someone can no longer make it.
+Hi {{hostName}},
 
----
+Just a heads-up, {{attendeeName}} can no longer make it.
 
-Plan: {{eventTitle}}
-{{#eventDate}}
-When: {{.}}
-{{/eventDate}}
-{{#eventLocation}}
-Where: {{.}}
-{{/eventLocation}}
-Can't make it: {{attendeeName}}
-{{#attendeeMessage}}
+{{#attendeeMessage}}Their message: "{{.}}"
 
-Their message: "{{.}}"
-{{/attendeeMessage}}
+{{/attendeeMessage}}---
+
+{{eventTitle}}
+{{eventDate}}{{#eventLocation}} · {{.}}{{/eventLocation}}
 
 ---
 

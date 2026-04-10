@@ -15,7 +15,7 @@ import { redirect } from "next/navigation";
 // AUTH_REQUIRED_SECTIONS in EventDetailClient.tsx — duplicated here so the
 // server can short-circuit before any HTML is rendered (avoiding the brief
 // flash of the public-preview shell on the way to /login).
-const AUTH_REQUIRED_EVENT_SECTIONS = new Set(["feedback", "chat"]);
+const AUTH_REQUIRED_EVENT_SECTIONS = new Set(["feedback", "chat", "confirmation"]);
 
 export default async function AppLayout({
   children,

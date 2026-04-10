@@ -1,6 +1,6 @@
-You've been approved!
+You're in!
 
-Hey {{userName}},
+Hi {{userName}},
 
 Great news, your request to join "{{communityName}}" has been approved.
 

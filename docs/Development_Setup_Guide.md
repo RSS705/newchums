@@ -425,7 +425,8 @@ Chunk 15, 2026-03-17
 - Changes:
   - **Attendance Assurance (full implementation):**
     - DB migration 039 (`event_confirmations` table, attendance assurance columns on `events`).
-    - API: `POST /events/:id/confirm` (in-app), `POST /events/:id/email-confirm` (token-based), `processAttendanceAssurance` cron handler (initial sends, reminders at 12h/3h, cutoff processing). `POST /events` and `PATCH /events/:id` accept `min_confirmed_attendees` and `fallback_policy`. `GET /events/:id` returns confirmation state and viability.
+    - DB migration 077 (guest support for `event_confirmations`: nullable `user_id`, `guest_email` column, partial unique indexes).
+    - API: `POST /events/:id/confirm` (in-app, auth-required), `POST /events/:id/guest-confirm` (token-based guest confirmation, no login), `processAttendanceAssurance` cron handler (initial sends, reminders at 12h/3h, cutoff processing). Registered user confirmation emails use `?section=confirmation` deep-link pattern (login-required redirect). Guest confirmation emails include direct confirm/decline buttons and a "View plan" link (token-based, no login). `POST /events` and `PATCH /events/:id` accept `min_confirmed_attendees` and `fallback_policy`. `GET /events/:id` returns confirmation state and viability, including guest confirmations.
     - Cron changed from daily (`0 14 * * *`) to hourly (`0 * * * *`).
     - New Postmark templates: Confirmation Request (43984465), Plan At Risk (43984947), HTML and text versions.
     - `CreateEventClient.tsx`: Attendance assurance config (switch, min attendees, fallback policy dropdown).

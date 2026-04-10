@@ -1,27 +1,17 @@
 Heads up about a plan change
 
-Hey {{recipientName}}, the host of this plan has removed you from the attendee list. This can happen for a variety of reasons, no hard feelings.
+Hi {{recipientName}},
 
----
+{{hostName}} has removed you from the attendee list for the following plan. This can happen for a variety of reasons, no hard feelings.
 
-Plan: {{eventTitle}}
-{{#eventDate}}
-When: {{.}}
-{{/eventDate}}
-{{#eventLocation}}
-Where: {{.}}
-{{/eventLocation}}
-Hosted by: {{hostName}}
+{{eventTitle}}
+{{eventDate}}{{#eventLocation}} · {{.}}{{/eventLocation}}
 {{#removalReason}}
 
 Reason from the host: "{{.}}"
 {{/removalReason}}
 
----
-
 Browse plans: https://newchums.com
-
-There are plenty of other plans to join. We hope to see you at the next one!
 
 ---
 

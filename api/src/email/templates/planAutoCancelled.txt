@@ -2,22 +2,14 @@
 
 {{bodyText}}
 
----
+{{eventTitle}}
+{{eventDate}}{{#eventLocation}} · {{.}}{{/eventLocation}}
 
-Cancelled: {{eventTitle}}
-{{#eventDate}}
-When: {{.}}
-{{/eventDate}}
-{{#eventLocation}}
-Where: {{.}}
-{{/eventLocation}}
 Why: {{reasonText}}
 
----
+{{ctaText}}: {{ctaUrl}}
 
 No action needed on your end. We hope to see you at the next one.
-
-{{ctaText}}: {{ctaUrl}}
 
 ---
 

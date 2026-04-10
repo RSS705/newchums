@@ -1,27 +1,17 @@
 New join request
 
-Hey {{hostName}}, someone wants to join your plan.
+Hi {{hostName}},
 
----
+{{requesterName}} wants to join your plan.
 
-Plan: {{eventTitle}}
-{{#eventDate}}
-When: {{.}}
-{{/eventDate}}
-{{#eventLocation}}
-Where: {{.}}
-{{/eventLocation}}
-Requested by: {{requesterName}}
+{{eventTitle}}
+{{eventDate}}{{#eventLocation}} · {{.}}{{/eventLocation}}
 {{#requestMessage}}
 
 Their message: "{{.}}"
 {{/requestMessage}}
 
----
-
 Review request: {{eventUrl}}
-
-You can approve or decline this request from the plan details page.
 
 ---
 

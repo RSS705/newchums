@@ -1,6 +1,8 @@
 Email updated successfully
 
-Hey {{name}}, your NewChums email address has been successfully updated. All future emails will be sent to this address.
+Hi {{name}},
+
+Your NewChums email address has been successfully updated. All future emails will be sent to this address.
 
 No action is needed. You can continue using NewChums as normal. If you didn't make this change, please contact us at contact@newchums.com immediately.
 

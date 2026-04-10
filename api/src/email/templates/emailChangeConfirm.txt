@@ -1,6 +1,8 @@
 Confirm your new email
 
-Hey {{name}}, you requested to change the email address on your NewChums account. Please confirm this new email by visiting the link below.
+Hi {{name}},
+
+You requested to change the email address on your NewChums account. Please confirm this new email by visiting the link below.
 
 Confirm new email: {{confirmUrl}}
 

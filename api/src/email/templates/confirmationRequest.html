@@ -99,7 +99,8 @@
                 </tr>
               </table>
 
-              <!-- Confirmation buttons -->
+              {{#isGuest}}
+              <!-- Guest: three-button layout (confirm, decline, view plan) -->
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 14px;">
                 <tr>
                   <td align="center">
@@ -107,12 +108,6 @@
                       <tr>
                         <!-- Confirm -->
                         <td style="padding: 6px;">
-                          <!--[if mso]>
-                          <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{confirmUrl}}" style="height:44px;v-text-anchor:middle;width:200px;" arcsize="18%" strokecolor="#C44D10" fillcolor="#E65B13">
-                            <w:anchorlock/>
-                            <center style="color:#ffffff;font-family:'Segoe UI',sans-serif;font-size:14px;font-weight:bold;">{{confirmLabel}}</center>
-                          </v:roundrect>
-                          <![endif]-->
                           <!--[if !mso]><!-->
                           <a href="{{confirmUrl}}" style="display: inline-block; background-color: #E65B13; color: #ffffff; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 14px; font-weight: 700; text-decoration: none; padding: 14px 32px; border-radius: 8px; line-height: 1; text-align: center;">
                             {{confirmLabel}}
@@ -121,12 +116,6 @@
                         </td>
                         <!-- Decline -->
                         <td style="padding: 6px;">
-                          <!--[if mso]>
-                          <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{declineUrl}}" style="height:44px;v-text-anchor:middle;width:200px;" arcsize="18%" strokecolor="#D1D5DB" fillcolor="#ffffff">
-                            <w:anchorlock/>
-                            <center style="color:#374151;font-family:'Segoe UI',sans-serif;font-size:14px;font-weight:bold;">{{declineLabel}}</center>
-                          </v:roundrect>
-                          <![endif]-->
                           <!--[if !mso]><!-->
                           <a href="{{declineUrl}}" style="display: inline-block; background-color: #ffffff; color: #374151; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 14px; font-weight: 700; text-decoration: none; padding: 13px 31px; border-radius: 8px; line-height: 1; text-align: center; border: 1px solid #D1D5DB;">
                             {{declineLabel}}
@@ -139,15 +128,42 @@
                 </tr>
               </table>
 
+              <!-- View plan link -->
+              <p style="margin: 0 0 18px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 13px; color: #6B7280; line-height: 1.5; text-align: center;">
+                <a href="{{viewUrl}}" style="color: #6B7280; text-decoration: underline;">View full plan details</a>
+              </p>
+
               <!-- Helper text -->
               <p style="margin: 0 0 18px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 12px; color: #9CA3AF; line-height: 1.5; text-align: center;">
                 No login needed. Tap a button above to record your response.
               </p>
+              {{/isGuest}}
 
-              <!-- Secondary plan details link -->
-              <p style="margin: 0 0 18px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 13px; color: #6B7280; line-height: 1.5; text-align: center;">
-                <a href="{{eventUrl}}" style="color: #6B7280; text-decoration: underline;">View full plan details</a>
+              {{^isGuest}}
+              <!-- Registered user: single CTA button -->
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 14px;">
+                <tr>
+                  <td align="center">
+                    <!--[if mso]>
+                    <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{ctaUrl}}" style="height:44px;v-text-anchor:middle;width:260px;" arcsize="18%" strokecolor="#C44D10" fillcolor="#E65B13">
+                      <w:anchorlock/>
+                      <center style="color:#ffffff;font-family:'Segoe UI',sans-serif;font-size:14px;font-weight:bold;">{{ctaLabel}}</center>
+                    </v:roundrect>
+                    <![endif]-->
+                    <!--[if !mso]><!-->
+                    <a href="{{ctaUrl}}" style="display: inline-block; background-color: #E65B13; color: #ffffff; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 14px; font-weight: 700; text-decoration: none; padding: 14px 32px; border-radius: 8px; line-height: 1; text-align: center;">
+                      {{ctaLabel}}
+                    </a>
+                    <!--<![endif]-->
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Helper text -->
+              <p style="margin: 0 0 18px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 12px; color: #9CA3AF; line-height: 1.5; text-align: center;">
+                You'll be asked to sign in if you aren't already.
               </p>
+              {{/isGuest}}
 
             </td>
           </tr>

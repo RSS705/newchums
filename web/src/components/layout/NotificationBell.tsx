@@ -489,6 +489,10 @@ export default function NotificationBell({ viewerHandle = null }: NotificationBe
 
   const handleOpen = React.useCallback(
     async (event: React.MouseEvent<HTMLElement>) => {
+      if (anchorEl) {
+        setAnchorEl(null);
+        return;
+      }
       setAnchorEl(event.currentTarget);
       setFetching(true);
       try {
@@ -521,7 +525,7 @@ export default function NotificationBell({ viewerHandle = null }: NotificationBe
         setFetching(false);
       }
     },
-    [],
+    [anchorEl],
   );
 
   const handleClose = React.useCallback(() => setAnchorEl(null), []);

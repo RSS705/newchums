@@ -1,21 +1,15 @@
 Someone might attend your plan
 
-Hey {{hostName}}, someone is interested but hasn't fully committed yet.
+Hi {{hostName}},
 
----
+{{attendeeName}} is interested but hasn't fully committed yet.
 
-Plan: {{eventTitle}}
-{{#eventDate}}
-When: {{.}}
-{{/eventDate}}
-{{#eventLocation}}
-Where: {{.}}
-{{/eventLocation}}
-Maybe attending: {{attendeeName}}
-{{#attendeeMessage}}
+{{#attendeeMessage}}Their message: "{{.}}"
 
-Their message: "{{.}}"
-{{/attendeeMessage}}
+{{/attendeeMessage}}---
+
+{{eventTitle}}
+{{eventDate}}{{#eventLocation}} · {{.}}{{/eventLocation}}
 
 ---
 
