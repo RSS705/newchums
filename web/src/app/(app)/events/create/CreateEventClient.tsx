@@ -40,7 +40,13 @@ import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
 import { notifyObjectivesChanged } from "@/components/objectives/NextStepNudge";
 import { loadGooglePlacesScript } from "@/lib/loadGooglePlaces";
 import { BANNER_PRESETS, renderBannerPreset, suggestPreset } from "@/lib/eventBanners";
+import { scrollToFirstError } from "@/lib/scrollToFirstError";
 import HobbyPickerField, { type HobbyOption } from "@/components/common/HobbyPickerField";
+
+// Visual top-to-bottom order of validation-bearing fields. Drives the
+// scroll-to-first-error helper so the user always lands on the earliest
+// problem they need to fix rather than a later one.
+const FIELD_ORDER = ["title", "hobby", "maxSeats", "date", "time", "location"] as const;
 
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_BANNER_INPUT_BYTES = 20 * 1024 * 1024; // 20MB, raw file limit before compression
@@ -83,6 +89,17 @@ export default function CreateEventClient() {
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // Field-level scroll targets for the validation-error recenter behavior.
+  // Each errored field wraps its visual block in a Box that registers itself
+  // here on mount, so handleSubmit can scroll the first failing one into view.
+  const fieldRefs = useRef<Record<string, HTMLElement | null>>({});
+  const setFieldRef = useCallback(
+    (key: string) => (el: HTMLElement | null) => {
+      fieldRefs.current[key] = el;
+    },
+    [],
+  );
+
   // Chum preference overrides
   const [prefOverridesOpen, setPrefOverridesOpen] = useState(false);
   const [prefDisableAll, setPrefDisableAll] = useState(false);
@@ -112,7 +129,14 @@ export default function CreateEventClient() {
   const autoSuggestedRef = useRef(false);
 
   useEffect(() => {
-    loadGooglePlacesScript().catch(() => {});
+    // Warm-load the Google Places script so the autocomplete on the location
+    // field is ready by the time the user reaches it. We log a warning rather
+    // than swallowing the failure so misconfigured environments (e.g. missing
+    // NEXT_PUBLIC_GOOGLE_MAPS_API_KEY) are visible during diagnosis instead
+    // of producing a silently disabled field.
+    loadGooglePlacesScript().catch((err) => {
+      console.warn("[CreateEventClient] Google Places script failed to load:", err);
+    });
   }, []);
 
   // Fetch role for QA toggle visibility
@@ -176,7 +200,7 @@ export default function CreateEventClient() {
     void handlePresetSelect(suggestion);
   }, [selectedHobbies, bannerFile, handlePresetSelect]);
 
-  const validate = (): boolean => {
+  const validate = (): Record<string, string> => {
     const errs: Record<string, string> = {};
     if (!title.trim()) errs.title = "Give your plan a title";
     if (selectedHobbies.length === 0) errs.hobby = "Add at least one hobby so people can find this plan";
@@ -187,7 +211,7 @@ export default function CreateEventClient() {
     if (maxSeats && (isNaN(Number(maxSeats)) || Number(maxSeats) < 1))
       errs.maxSeats = "Must be a positive number";
     setErrors(errs);
-    return Object.keys(errs).length === 0;
+    return errs;
   };
 
   const buildPrefOverrides = (): { disabled?: boolean; disabled_metrics?: string[] } | null => {
@@ -198,7 +222,15 @@ export default function CreateEventClient() {
   };
 
   const handleSubmit = async () => {
-    if (!validate()) return;
+    const errs = validate();
+    if (Object.keys(errs).length > 0) {
+      // Wait one frame so the helperText / error styling has rendered before
+      // we recenter, otherwise the scroll target may move under us.
+      requestAnimationFrame(() => {
+        scrollToFirstError(fieldRefs.current, errs, FIELD_ORDER);
+      });
+      return;
+    }
     setSubmitting(true);
 
     const d = dateValue!;
@@ -290,7 +322,11 @@ export default function CreateEventClient() {
         router.push(`/events/${data.event.id}`);
       } else {
         if (data.field) {
-          setErrors({ [data.field]: data.message ?? "Validation error" });
+          const fieldErrs = { [data.field]: data.message ?? "Validation error" };
+          setErrors(fieldErrs);
+          requestAnimationFrame(() => {
+            scrollToFirstError(fieldRefs.current, fieldErrs, FIELD_ORDER);
+          });
         } else {
           toast.error(data.message ?? "Something went wrong");
         }
@@ -449,15 +485,17 @@ export default function CreateEventClient() {
             What&apos;s the plan?
           </Typography>
 
-          <AppTextField
-            label="Title"
-            placeholder="e.g. Thursday Board Game Night"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            error={!!errors.title}
-            helperText={errors.title || null}
-            inputProps={{ maxLength: 200 }}
-          />
+          <Box ref={setFieldRef("title")} sx={{ scrollMarginTop: 96 }}>
+            <AppTextField
+              label="Title"
+              placeholder="e.g. Thursday Board Game Night"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              error={!!errors.title}
+              helperText={errors.title || null}
+              inputProps={{ maxLength: 200 }}
+            />
+          </Box>
 
           <RichTextEditor
             label="Description"
@@ -466,25 +504,29 @@ export default function CreateEventClient() {
             onChange={setDescription}
           />
 
-          <HobbyPickerField
-            value={selectedHobbies}
-            onChange={setSelectedHobbies}
-            error={errors.hobby}
-            onReject={(msg) => toast.error(msg)}
-          />
+          <Box ref={setFieldRef("hobby")} sx={{ scrollMarginTop: 96 }}>
+            <HobbyPickerField
+              value={selectedHobbies}
+              onChange={setSelectedHobbies}
+              error={errors.hobby}
+              onReject={(msg) => toast.error(msg)}
+            />
+          </Box>
 
           <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="flex-start">
-            <AppTextField
-              label="Seats"
-              placeholder="e.g. 8"
-              value={maxSeats}
-              onChange={(e) => setMaxSeats(e.target.value)}
-              error={!!errors.maxSeats}
-              helperText={errors.maxSeats ?? "Include yourself in the count"}
-              type="number"
-              inputProps={{ min: 1, max: 500 }}
-              sx={{ minWidth: { xs: "100%", sm: 260 } }}
-            />
+            <Box ref={setFieldRef("maxSeats")} sx={{ width: { xs: "100%", sm: "auto" }, scrollMarginTop: 96 }}>
+              <AppTextField
+                label="Seats"
+                placeholder="e.g. 8"
+                value={maxSeats}
+                onChange={(e) => setMaxSeats(e.target.value)}
+                error={!!errors.maxSeats}
+                helperText={errors.maxSeats ?? "Include yourself in the count"}
+                type="number"
+                inputProps={{ min: 1, max: 500 }}
+                sx={{ minWidth: { xs: "100%", sm: 260 } }}
+              />
+            </Box>
           </Stack>
           {maxSeats && Number(maxSeats) >= 1 && (
             <>
@@ -511,7 +553,7 @@ export default function CreateEventClient() {
           </Typography>
 
           <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-            <Box sx={{ flex: 1 }}>
+            <Box ref={setFieldRef("date")} sx={{ flex: 1, scrollMarginTop: 96 }}>
               <Typography variant="subtitle1" fontWeight={600} sx={{ display: "block", mb: 0.625 }}>
                 Date
               </Typography>
@@ -530,7 +572,7 @@ export default function CreateEventClient() {
                 }}
               />
             </Box>
-            <Box sx={{ flex: 1 }}>
+            <Box ref={setFieldRef("time")} sx={{ flex: 1, scrollMarginTop: 96 }}>
               <Typography variant="subtitle1" fontWeight={600} sx={{ display: "block", mb: 0.625 }}>
                 Time
               </Typography>
@@ -566,11 +608,11 @@ export default function CreateEventClient() {
             >
               <FormControlLabel value="suggest" control={<Radio />} label="Allow suggestions" sx={{ gap: 0.5 }} />
               <Typography variant="caption" color="text.secondary" sx={{ ml: "32px", mt: -0.5, mb: 0.5 }}>
-                People can suggest other times if the listed time doesn't work.
+                People can suggest other times if the listed time doesn&apos;t work.
               </Typography>
               <FormControlLabel value="availability" control={<Radio />} label="Request availability" sx={{ gap: 0.5 }} />
               <Typography variant="caption" color="text.secondary" sx={{ ml: "32px", mt: -0.5, mb: 0.5 }}>
-                Ask attendees to share when they're free so you can find the best time.
+                Ask attendees to share when they&apos;re free so you can find the best time.
               </Typography>
               {schedulingMode === "availability" && (
                 <Box sx={{ ml: "32px", mb: 1 }}>
@@ -620,33 +662,35 @@ export default function CreateEventClient() {
 
           {locationType === "in_person" ? (
             <>
-              <PlacesAutocompleteInput
-                value={locationName}
-                onChange={(v) => {
-                  setLocationName(v);
-                  if (!v.trim()) {
-                    setLocationAddress("");
-                    setLocationPlaceId(null);
-                    setLocationLat(null);
-                    setLocationLng(null);
-                    setLocationArea(null);
-                  }
-                }}
-                onPlaceSelect={(result) => {
-                  setLocationName(result.name || result.formattedAddress);
-                  setLocationAddress(result.formattedAddress);
-                  setLocationPlaceId(result.placeId);
-                  setLocationLat(result.lat);
-                  setLocationLng(result.lng);
-                  setLocationArea(result.area ?? null);
-                }}
-                label="Venue or address"
-                placeholder="Search for a place or enter an address"
-                helperText={errors.location || undefined}
-                error={!!errors.location}
-                placeTypes={[]}
-                inputId="places-autocomplete-event"
-              />
+              <Box ref={setFieldRef("location")} sx={{ scrollMarginTop: 96 }}>
+                <PlacesAutocompleteInput
+                  value={locationName}
+                  onChange={(v) => {
+                    setLocationName(v);
+                    if (!v.trim()) {
+                      setLocationAddress("");
+                      setLocationPlaceId(null);
+                      setLocationLat(null);
+                      setLocationLng(null);
+                      setLocationArea(null);
+                    }
+                  }}
+                  onPlaceSelect={(result) => {
+                    setLocationName(result.name || result.formattedAddress);
+                    setLocationAddress(result.formattedAddress);
+                    setLocationPlaceId(result.placeId);
+                    setLocationLat(result.lat);
+                    setLocationLng(result.lng);
+                    setLocationArea(result.area ?? null);
+                  }}
+                  label="Venue or address"
+                  placeholder="Search for a place or enter an address"
+                  helperText={errors.location || undefined}
+                  error={!!errors.location}
+                  placeTypes={[]}
+                  inputId="places-autocomplete-event"
+                />
+              </Box>
               <FormControl fullWidth size="medium" sx={{ minWidth: 200 }}>
                 <Typography
                   component="label"

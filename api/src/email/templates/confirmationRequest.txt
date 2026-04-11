@@ -26,7 +26,7 @@ View full plan details: {{viewUrl}}
 No login needed. Tap a link above to record your response.
 {{/isGuest}}
 {{^isGuest}}
-{{ctaLabel}}: {{ctaUrl}}
+{{ctaText}}: {{ctaUrl}}
 
 You'll be asked to sign in if you aren't already.
 {{/isGuest}}

@@ -31,6 +31,7 @@ AUTH_URL = "https://newchums.com"
 AUTH_TRUST_HOST = "true"
 NEXTAUTH_URL = "https://newchums.com"
 GOOGLE_CLIENT_ID = "408122271431-fdenoqaiec18udki7i3k9fu4mc2tvbpe.apps.googleusercontent.com"
+NEXT_PUBLIC_GOOGLE_MAPS_API_KEY = "AIzaSyCwdarGM-BB5hAb5T3Xr091-f-vAqPW9jE"
 NEXT_PUBLIC_API_BASE_URL = "https://newchums-api.robsmith775.workers.dev"
 NEXT_PUBLIC_AVATAR_BASE_URL = "https://newchums-api.robsmith775.workers.dev"
 

@@ -37,6 +37,13 @@ import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
 import ListItemText from "@mui/material/ListItemText";
 import HobbyPickerField, { type HobbyOption } from "@/components/common/HobbyPickerField";
 import PlacesAutocompleteInput from "@/components/common/PlacesAutocompleteInput";
+import { loadGooglePlacesScript } from "@/lib/loadGooglePlaces";
+import { scrollToFirstError } from "@/lib/scrollToFirstError";
+
+// Visual top-to-bottom order of validation-bearing fields. Drives the
+// scroll-to-first-error helper so the user always lands on the earliest
+// problem they need to fix rather than a later one.
+const FIELD_ORDER = ["title", "hobby", "date", "time", "location"] as const;
 
 type PrefOverrides = {
   disabled?: boolean;
@@ -125,6 +132,31 @@ export default function EditEventClient() {
   const bannerInputRef = useRef<HTMLInputElement>(null);
 
   const [submitting, setSubmitting] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Field-level scroll targets for the validation-error recenter behavior.
+  // Each errored field wraps its visual block in a Box that registers itself
+  // here on mount, so handleSubmit can scroll the first failing one into view.
+  const fieldRefs = useRef<Record<string, HTMLElement | null>>({});
+  const setFieldRef = useCallback(
+    (key: string) => (el: HTMLElement | null) => {
+      fieldRefs.current[key] = el;
+    },
+    [],
+  );
+
+  // Warm-load the Google Places script as soon as the form mounts so the
+  // autocomplete on the location field is ready by the time the user reaches
+  // it. PlacesAutocompleteInput also lazy-loads when its input mounts, but
+  // doing it here mirrors CreateEventClient and shaves visible latency.
+  useEffect(() => {
+    loadGooglePlacesScript().catch((err) => {
+      // Surface as a warning so devs see misconfigured environments. A silent
+      // catch is intentionally avoided here because that pattern is what hid
+      // this issue in the first place.
+      console.warn("[EditEventClient] Google Places script failed to load:", err);
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -258,11 +290,29 @@ export default function EditEventClient() {
     }
   }, [bannerCropSrc, bannerCroppedArea, toast]);
 
+  const validate = (): Record<string, string> => {
+    const errs: Record<string, string> = {};
+    if (!title.trim()) errs.title = "Give your plan a title";
+    if (hobbies.length === 0) errs.hobby = "Add at least one hobby so people can find this plan";
+    if (!dateValue?.isValid()) errs.date = "Pick a date";
+    if (!timeValue?.isValid()) errs.time = "Pick a time";
+    if (locationType === "in_person" && !locationName.trim() && !locationAddress.trim())
+      errs.location = "Add a venue or address";
+    setErrors(errs);
+    return errs;
+  };
+
   const handleSubmit = async () => {
-    if (!title.trim()) { toast.error("Title is required"); return; }
-    if (!dateValue?.isValid() || !timeValue?.isValid()) { toast.error("Date and time are required"); return; }
-    if (hobbies.length === 0) { toast.error("At least one hobby is required"); return; }
-    const startsAt = dateValue.hour(timeValue.hour()).minute(timeValue.minute()).second(0).toISOString();
+    const errs = validate();
+    if (Object.keys(errs).length > 0) {
+      // Wait one frame so the helperText / error styling has rendered before
+      // we recenter, otherwise the scroll target may move under us.
+      requestAnimationFrame(() => {
+        scrollToFirstError(fieldRefs.current, errs, FIELD_ORDER);
+      });
+      return;
+    }
+    const startsAt = dateValue!.hour(timeValue!.hour()).minute(timeValue!.minute()).second(0).toISOString();
     setSubmitting(true);
     try {
       const res = await apiFetch(`/events/${eventId}`, {
@@ -524,13 +574,16 @@ export default function EditEventClient() {
             Plan details
           </Typography>
 
-          <AppTextField
-            label="Title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            inputProps={{ maxLength: 200 }}
-            helperText={null}
-          />
+          <Box ref={setFieldRef("title")} sx={{ scrollMarginTop: 96 }}>
+            <AppTextField
+              label="Title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              inputProps={{ maxLength: 200 }}
+              error={!!errors.title}
+              helperText={errors.title || null}
+            />
+          </Box>
 
           <RichTextEditor
             label="Description"
@@ -538,11 +591,14 @@ export default function EditEventClient() {
             onChange={setDescription}
           />
 
-          <HobbyPickerField
-            value={hobbies}
-            onChange={setHobbies}
-            onReject={(msg) => toast.error(msg)}
-          />
+          <Box ref={setFieldRef("hobby")} sx={{ scrollMarginTop: 96 }}>
+            <HobbyPickerField
+              value={hobbies}
+              onChange={setHobbies}
+              error={errors.hobby}
+              onReject={(msg) => toast.error(msg)}
+            />
+          </Box>
 
           <AppTextField
             label="Max seats (optional)"
@@ -575,17 +631,17 @@ export default function EditEventClient() {
             When?
           </Typography>
           <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-            <Box sx={{ flex: 1 }}>
+            <Box ref={setFieldRef("date")} sx={{ flex: 1, scrollMarginTop: 96 }}>
               <Typography variant="subtitle1" fontWeight={600} sx={{ display: "block", mb: 0.625 }}>
                 Date
               </Typography>
               <DatePicker
                 value={dateValue}
                 onChange={setDateValue}
-                slotProps={{ textField: { fullWidth: true, size: "medium" } }}
+                slotProps={{ textField: { fullWidth: true, size: "medium", error: !!errors.date, helperText: errors.date } }}
               />
             </Box>
-            <Box sx={{ flex: 1 }}>
+            <Box ref={setFieldRef("time")} sx={{ flex: 1, scrollMarginTop: 96 }}>
               <Typography variant="subtitle1" fontWeight={600} sx={{ display: "block", mb: 0.625 }}>
                 Time
               </Typography>
@@ -593,7 +649,7 @@ export default function EditEventClient() {
                 value={timeValue}
                 onChange={setTimeValue}
                 format="h:mm A"
-                slotProps={{ field: { shouldRespectLeadingZeros: true } as Record<string, unknown>, textField: { fullWidth: true, size: "medium" } }}
+                slotProps={{ field: { shouldRespectLeadingZeros: true } as Record<string, unknown>, textField: { fullWidth: true, size: "medium", error: !!errors.time, helperText: errors.time } }}
               />
             </Box>
           </Stack>
@@ -611,11 +667,11 @@ export default function EditEventClient() {
             >
               <FormControlLabel value="suggest" control={<Radio size="small" />} label={<Typography variant="body2" fontWeight={500}>Allow suggestions</Typography>} sx={{ gap: 0.5 }} />
               <Typography variant="caption" color="text.secondary" sx={{ ml: "28px", mt: -0.5, mb: 0.5 }}>
-                People can suggest other times if the listed time doesn't work.
+                People can suggest other times if the listed time doesn&apos;t work.
               </Typography>
               <FormControlLabel value="availability" control={<Radio size="small" />} label={<Typography variant="body2" fontWeight={500}>Request availability</Typography>} sx={{ gap: 0.5 }} />
               <Typography variant="caption" color="text.secondary" sx={{ ml: "28px", mt: -0.5, mb: 0.5 }}>
-                Ask attendees to share when they're free so you can find the best time.
+                Ask attendees to share when they&apos;re free so you can find the best time.
               </Typography>
               {schedulingMode === "availability" && (
                 <Box sx={{ ml: "28px", mb: 1 }}>
@@ -664,31 +720,35 @@ export default function EditEventClient() {
 
           {locationType === "in_person" ? (
             <>
-              <PlacesAutocompleteInput
-                value={locationName}
-                onChange={(v) => {
-                  setLocationName(v);
-                  if (!v.trim()) {
-                    setLocationAddress("");
-                    setLocationPlaceId(null);
-                    setLocationLat(null);
-                    setLocationLng(null);
-                    setLocationArea(null);
-                  }
-                }}
-                onPlaceSelect={(result) => {
-                  setLocationName(result.name || result.formattedAddress);
-                  setLocationAddress(result.formattedAddress);
-                  setLocationPlaceId(result.placeId);
-                  setLocationLat(result.lat);
-                  setLocationLng(result.lng);
-                  setLocationArea(result.area ?? null);
-                }}
-                label="Venue or address"
-                placeholder="Search for a place or enter an address"
-                placeTypes={[]}
-                inputId="places-autocomplete-edit-event"
-              />
+              <Box ref={setFieldRef("location")} sx={{ scrollMarginTop: 96 }}>
+                <PlacesAutocompleteInput
+                  value={locationName}
+                  onChange={(v) => {
+                    setLocationName(v);
+                    if (!v.trim()) {
+                      setLocationAddress("");
+                      setLocationPlaceId(null);
+                      setLocationLat(null);
+                      setLocationLng(null);
+                      setLocationArea(null);
+                    }
+                  }}
+                  onPlaceSelect={(result) => {
+                    setLocationName(result.name || result.formattedAddress);
+                    setLocationAddress(result.formattedAddress);
+                    setLocationPlaceId(result.placeId);
+                    setLocationLat(result.lat);
+                    setLocationLng(result.lng);
+                    setLocationArea(result.area ?? null);
+                  }}
+                  label="Venue or address"
+                  placeholder="Search for a place or enter an address"
+                  helperText={errors.location || undefined}
+                  error={!!errors.location}
+                  placeTypes={[]}
+                  inputId="places-autocomplete-edit-event"
+                />
+              </Box>
               <FormControl fullWidth size="medium" sx={{ minWidth: 200 }}>
                 <Typography
                   component="label"

@@ -38,6 +38,12 @@ type Prompt = "reliability" | "sociability" | "presentation" | "match_quality" |
 type Attendee = {
   userId: string;
   displayName: string;
+  /** Real / display name when available (separate from handle so the UI can
+   *  show "Real Name @handle" side-by-side). May be null if the user only has
+   *  a handle. */
+  name?: string | null;
+  /** Pretty handle prefixed with `@`. May be null. */
+  handle?: string | null;
   username: string | null;
   isHost: boolean;
 };
@@ -196,6 +202,12 @@ export default function PlanFeedback({ eventId, planTitle, planStartsAt, planHob
 
   const [shoutouts, setShoutouts] = useState<Record<string, ShoutoutDraft>>(initialShoutouts);
 
+  // Ref on the top of the feedback section. Used both for the per-step
+  // recenter (between attendees) and as a fallback target for the success
+  // state, so the next page or confirmation always begins at the top of the
+  // form on mobile rather than mid-screen behind the bottom of the previous
+  // step.
+  const formTopRef = useRef<HTMLDivElement>(null);
   // Ref on the "Thanks for sharing your feedback" panel so we can scroll the
   // viewer up to it after they submit the last attendee. Without this the
   // success state can render below the fold (especially on mobile, where the
@@ -210,12 +222,24 @@ export default function PlanFeedback({ eventId, planTitle, planStartsAt, planHob
     if (!submitted || !justSubmittedRef.current) return;
     justSubmittedRef.current = false;
     // Wait one frame for the success Paper to mount, then ease the viewport
-    // up to it. `block: "start"` lands the heading at the top of the
-    // viewport, which is the natural reading position.
+    // up to the top of the feedback section so the confirmation card sits
+    // squarely in view. We prefer formTopRef (the section anchor) so the
+    // section header is included; fall back to the panel itself if the
+    // anchor is missing for any reason.
     requestAnimationFrame(() => {
-      thanksPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      const target = formTopRef.current ?? thanksPanelRef.current;
+      target?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   }, [submitted]);
+
+  /** Scroll the viewport to the top of the feedback section. Called after
+   *  each per-attendee step submits, so the next page begins at the top
+   *  rather than wherever the previous step's button happened to land. */
+  const scrollFormToTop = useCallback(() => {
+    requestAnimationFrame(() => {
+      formTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, []);
 
   const avatarBase = getAvatarBaseUrl();
 
@@ -426,6 +450,11 @@ export default function PlanFeedback({ eventId, planTitle, planStartsAt, planHob
     } else {
       setCurrentIndex((i) => i + 1);
       setStepNonce((n) => n + 1);
+      // Recenter to the top of the feedback section so the next attendee's
+      // hero card is immediately visible. Especially important on mobile
+      // where the previous step's submit button is at the bottom of the
+      // viewport when this fires.
+      scrollFormToTop();
     }
   };
 
@@ -554,7 +583,18 @@ export default function PlanFeedback({ eventId, planTitle, planStartsAt, planHob
 
   return (
     <>
-      <Box sx={{ display: "flex", flexDirection: "column", gap: { xs: 2, sm: 2.5 } }}>
+      <Box
+        ref={formTopRef}
+        sx={{
+          display: "flex",
+          flexDirection: "column",
+          gap: { xs: 2, sm: 2.5 },
+          // Reserve breathing room above the section so a sticky app bar
+          // doesn't crop the heading when we scroll the form to the top
+          // between steps or on completion.
+          scrollMarginTop: { xs: 80, sm: 96 },
+        }}
+      >
         {/* Dispute banner for attendance issues against the current user.
             Lives above the flow because it's about the viewer, not the
             person currently being reviewed. */}
@@ -737,7 +777,7 @@ export default function PlanFeedback({ eventId, planTitle, planStartsAt, planHob
                       return (
                         <Tooltip key={a.userId} title={a.displayName} arrow>
                           <Box
-                            onClick={() => { setCurrentIndex(i); setStepNonce((n) => n + 1); }}
+                            onClick={() => { setCurrentIndex(i); setStepNonce((n) => n + 1); scrollFormToTop(); }}
                             sx={{
                               width: isCurrent ? 22 : 10,
                               height: 10,
@@ -807,41 +847,74 @@ export default function PlanFeedback({ eventId, planTitle, planStartsAt, planHob
                           {currentAttendee.displayName[0]?.toUpperCase()}
                         </Avatar>
                         <Box sx={{ flex: 1, minWidth: 0 }}>
-                          <Stack direction="row" alignItems="center" spacing={0.75} sx={{ minWidth: 0 }}>
-                            <Typography
-                              component={currentProfileHref ? Link : "span"}
-                              {...(currentProfileHref ? { href: currentProfileHref } : {})}
-                              sx={{
-                                fontWeight: 700,
-                                fontSize: { xs: "1.1875rem", sm: "1.3125rem" },
-                                lineHeight: 1.2,
-                                color: currentProfileHref ? "primary.dark" : "text.primary",
-                                textDecoration: "none",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                whiteSpace: "nowrap",
-                                minWidth: 0,
-                                "&:hover": currentProfileHref ? { textDecoration: "underline" } : {},
-                              }}
-                            >
-                              {currentAttendee.displayName}
-                            </Typography>
-                            {currentAttendee.isHost && (
-                              <Chip
-                                label="Host"
-                                size="small"
-                                sx={{
-                                  height: 20,
-                                  fontSize: "0.6875rem",
-                                  fontWeight: 700,
-                                  bgcolor: "primary.main",
-                                  color: "#fff",
-                                  flexShrink: 0,
-                                  "& .MuiChip-label": { px: 0.875 },
-                                }}
-                              />
-                            )}
-                          </Stack>
+                          {(() => {
+                            // Prefer the real / display name as the primary
+                            // label so reviewers actually recognize the
+                            // person. The handle drops to a smaller secondary
+                            // line when both exist (mirrors the public profile
+                            // header pattern). If no real name is available we
+                            // fall back to the handle alone, which is what the
+                            // form used to show in every case.
+                            const realName = currentAttendee.name?.trim() || null;
+                            const handle = currentAttendee.handle
+                              ?? (currentAttendee.username ? `@${currentAttendee.username.replace(/^@/, "")}` : null);
+                            const primaryLabel = realName || handle || currentAttendee.displayName;
+                            const showHandleLine = !!realName && !!handle && handle !== realName;
+                            return (
+                              <>
+                                <Stack direction="row" alignItems="center" spacing={0.75} sx={{ minWidth: 0 }}>
+                                  <Typography
+                                    component={currentProfileHref ? Link : "span"}
+                                    {...(currentProfileHref ? { href: currentProfileHref } : {})}
+                                    sx={{
+                                      fontWeight: 700,
+                                      fontSize: { xs: "1.1875rem", sm: "1.3125rem" },
+                                      lineHeight: 1.2,
+                                      color: currentProfileHref ? "primary.dark" : "text.primary",
+                                      textDecoration: "none",
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                      whiteSpace: "nowrap",
+                                      minWidth: 0,
+                                      "&:hover": currentProfileHref ? { textDecoration: "underline" } : {},
+                                    }}
+                                  >
+                                    {primaryLabel}
+                                  </Typography>
+                                  {currentAttendee.isHost && (
+                                    <Chip
+                                      label="Host"
+                                      size="small"
+                                      sx={{
+                                        height: 20,
+                                        fontSize: "0.6875rem",
+                                        fontWeight: 700,
+                                        bgcolor: "primary.main",
+                                        color: "#fff",
+                                        flexShrink: 0,
+                                        "& .MuiChip-label": { px: 0.875 },
+                                      }}
+                                    />
+                                  )}
+                                </Stack>
+                                {showHandleLine && (
+                                  <Typography
+                                    sx={{
+                                      color: "text.secondary",
+                                      fontSize: "0.8125rem",
+                                      lineHeight: 1.3,
+                                      mt: 0.125,
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                      whiteSpace: "nowrap",
+                                    }}
+                                  >
+                                    {handle}
+                                  </Typography>
+                                )}
+                              </>
+                            );
+                          })()}
                           {planContextLine && (
                             <Typography
                               variant="body2"

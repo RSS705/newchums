@@ -737,7 +737,17 @@ export const sendConfirmationRequestEmail = async (
       eventLocation: eventLocation || "",
       eventUrl,
       ctaUrl,
+      // Pass both variable names so the CTA button label renders correctly
+      // regardless of which variable the live Postmark template references.
+      // All other templates in this folder use {{ctaText}}; we keep {{ctaLabel}}
+      // as a safety net in case an older revision of the Postmark template is
+      // still using the previous name.
+      ctaText: "View plan and confirm",
       ctaLabel: "View plan and confirm",
+      // Explicitly mark this as non-guest so the {{^isGuest}} inverted section
+      // is never ambiguous, regardless of how the template engine handles
+      // missing keys.
+      isGuest: "",
       deadline,
       isReminder: isReminder || isFinal ? "1" : "",
       isFinal: isFinal ? "1" : "",

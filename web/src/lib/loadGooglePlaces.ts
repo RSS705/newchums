@@ -18,6 +18,13 @@ export function loadGooglePlacesScript(): Promise<void> {
   }
   const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   if (!key?.trim()) {
+    // Surface a structured warning so the missing-key case is visible in dev
+    // tools rather than appearing as a silently disabled autocomplete.
+    console.warn(
+      "[loadGooglePlacesScript] NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is not set. " +
+        "Add it to web/.env.local for local dev, or to web/wrangler.toml [vars] " +
+        "for the deployed Worker. Without it, location autocomplete is disabled.",
+    );
     return Promise.reject(new Error("NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is not set"));
   }
   window.__googlePlacesLoadPromise = new Promise((resolve, reject) => {

@@ -11182,12 +11182,24 @@ app.get("/events/:id/feedback", async (c) => {
 
     const otherAttendees = attendees
       .filter((a) => a.id !== userId)
-      .map((a) => ({
-        userId: a.id,
-        displayName: a.username ? `@${a.username.replace(/^@/, "")}` : (a.name?.trim() || "Someone"),
-        username: a.username ?? null,
-        isHost: a.id === ev[0].host_user_id,
-      }));
+      .map((a) => {
+        const realName = a.name?.trim() || null;
+        const handle = a.username ? `@${a.username.replace(/^@/, "")}` : null;
+        // displayName is the canonical primary label and remains backward
+        // compatible with existing clients: prefer the real/display name when
+        // available, fall back to the handle, then to a generic placeholder.
+        // The frontend now also receives `name` and `handle` separately so it
+        // can render "Real Name @handle" side-by-side without re-deriving.
+        const displayName = realName || handle || "Someone";
+        return {
+          userId: a.id,
+          displayName,
+          name: realName,
+          handle,
+          username: a.username ?? null,
+          isHost: a.id === ev[0].host_user_id,
+        };
+      });
 
     const existing = (await sql`
       SELECT reviewee_user_id, prompt, response
