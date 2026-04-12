@@ -798,7 +798,15 @@ export const sendGuestConfirmationRequestEmail = async (
       eventUrl,
       confirmUrl,
       declineUrl,
+      // Pass both variable names so the button labels render correctly
+      // regardless of which variable the live Postmark template references.
+      // This mirrors the safety net added to sendConfirmationRequestEmail
+      // for the registered-user CTA — the previous round only fixed that
+      // one and missed the guest path, which is why guest emails were
+      // arriving with empty button labels even after that fix shipped.
+      confirmText: "I'm still coming",
       confirmLabel: "I'm still coming",
+      declineText: "I can't make it",
       declineLabel: "I can't make it",
       viewUrl,
       isGuest: "1",
