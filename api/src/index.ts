@@ -8783,7 +8783,7 @@ app.post("/events/:id/rsvp", async (c) => {
           await sql`
             INSERT INTO newchums.event_confirmations (event_id, user_id, status)
             VALUES (${eventId}, ${userId}, 'pending')
-            ON CONFLICT (event_id, user_id) DO NOTHING
+            ON CONFLICT (event_id, user_id) WHERE user_id IS NOT NULL DO NOTHING
           `;
         }
       }
@@ -12828,21 +12828,22 @@ async function processAttendanceAssurance(
   for (const ev of eventsNeedingInitialSend) {
     try {
       const goingRsvps = (await sql`
-        SELECT er.user_id, u.email, u.name, u.username
+        SELECT er.user_id, u.email, u.name, u.username,
+               COALESCE(ec.reminder_count, 0) AS reminder_count
         FROM newchums.event_rsvps er
         JOIN newchums.users u ON u.id = er.user_id
+        LEFT JOIN newchums.event_confirmations ec
+          ON ec.event_id = er.event_id AND ec.user_id = er.user_id
         WHERE er.event_id = ${ev.id} AND er.status = 'going'
-      `) as Array<{ user_id: string; email: string; name: string | null; username: string | null }>;
+      `) as Array<{ user_id: string; email: string; name: string | null; username: string | null; reminder_count: number }>;
 
       for (const att of goingRsvps) {
         await sql`
           INSERT INTO newchums.event_confirmations (event_id, user_id, status)
           VALUES (${ev.id}, ${att.user_id}, 'pending')
-          ON CONFLICT (event_id, user_id) DO NOTHING
+          ON CONFLICT (event_id, user_id) WHERE user_id IS NOT NULL DO NOTHING
         `;
       }
-
-      await sql`UPDATE newchums.events SET confirmation_sent_at = NOW() WHERE id = ${ev.id}`;
 
       const tz = ev.timezone || "UTC";
       const cutoffAt = new Date(new Date(ev.starts_at).getTime() - Number(ev.confirmation_cutoff_hours) * 3600000);
@@ -12867,6 +12868,11 @@ async function processAttendanceAssurance(
       const qaAdminIds = ev.is_qa ? await batchLoadSuperAdminIds(sql, goingUserIds) : null;
 
       for (const att of goingRsvps) {
+        // Idempotency: skip recipients who already received the initial email on
+        // a prior cron attempt. reminder_count is bumped to 1 only after a
+        // successful send, so this correctly retries failed recipients without
+        // double-sending successful ones.
+        if (att.reminder_count >= 1) continue;
         // QA plan isolation: skip non-super-admin recipients
         if (qaAdminIds && !qaAdminIds.has(att.user_id)) continue;
 
@@ -12902,21 +12908,27 @@ async function processAttendanceAssurance(
 
       // Guest attendees: create confirmation rows and send emails
       const goingGuests = (await sql`
-        SELECT er.guest_email, er.guest_name
+        SELECT er.guest_email, er.guest_name,
+               COALESCE(ec.reminder_count, 0) AS reminder_count
         FROM newchums.event_rsvps er
+        LEFT JOIN newchums.event_confirmations ec
+          ON ec.event_id = er.event_id AND ec.guest_email = er.guest_email
         WHERE er.event_id = ${ev.id} AND er.status = 'going'
           AND er.user_id IS NULL AND er.guest_email IS NOT NULL
-      `) as Array<{ guest_email: string; guest_name: string | null }>;
+      `) as Array<{ guest_email: string; guest_name: string | null; reminder_count: number }>;
 
       for (const guest of goingGuests) {
         await sql`
           INSERT INTO newchums.event_confirmations (event_id, user_id, guest_email, status)
           VALUES (${ev.id}, ${null}, ${guest.guest_email}, 'pending')
-          ON CONFLICT (event_id, guest_email) DO NOTHING
+          ON CONFLICT (event_id, guest_email) WHERE guest_email IS NOT NULL DO NOTHING
         `;
       }
 
       for (const guest of goingGuests) {
+        // Idempotency: skip guests who already received the initial email on a
+        // prior cron attempt.
+        if (guest.reminder_count >= 1) continue;
         try {
           const recipientName = guest.guest_name?.trim() || guest.guest_email.split("@")[0] || "there";
 
@@ -12939,6 +12951,13 @@ async function processAttendanceAssurance(
           `;
         } catch { /* noop */ }
       }
+
+      // Mark the event as processed for Phase 1. Stamped at the very end of the
+      // per-event block so that a throw in any of the steps above leaves
+      // confirmation_sent_at NULL and the next cron tick retries the event. The
+      // per-recipient reminder_count gates above ensure retries don't
+      // double-send to recipients who already received the initial email.
+      await sql`UPDATE newchums.events SET confirmation_sent_at = NOW() WHERE id = ${ev.id}`;
     } catch (err) {
       console.error(`[attendance-assurance] initial send failed for event ${ev.id}:`, err);
     }

@@ -224,11 +224,11 @@ export default function CreateEventClient() {
   const handleSubmit = async () => {
     const errs = validate();
     if (Object.keys(errs).length > 0) {
-      // Wait one frame so the helperText / error styling has rendered before
-      // we recenter, otherwise the scroll target may move under us.
-      requestAnimationFrame(() => {
-        scrollToFirstError(fieldRefs.current, errs, FIELD_ORDER);
-      });
+      // scrollToFirstError -> scrollElementIntoView already double-rAFs
+      // internally to wait for layout to settle, so no outer rAF wrapper
+      // needed here. The previous attempt's single-rAF wrapper was racing
+      // React's commit on slow mobile devices.
+      scrollToFirstError(fieldRefs.current, errs, FIELD_ORDER);
       return;
     }
     setSubmitting(true);
@@ -324,9 +324,7 @@ export default function CreateEventClient() {
         if (data.field) {
           const fieldErrs = { [data.field]: data.message ?? "Validation error" };
           setErrors(fieldErrs);
-          requestAnimationFrame(() => {
-            scrollToFirstError(fieldRefs.current, fieldErrs, FIELD_ORDER);
-          });
+          scrollToFirstError(fieldRefs.current, fieldErrs, FIELD_ORDER);
         } else {
           toast.error(data.message ?? "Something went wrong");
         }

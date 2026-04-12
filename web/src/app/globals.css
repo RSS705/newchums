@@ -12,10 +12,13 @@
 }
 
 /*
- * Desktop: scroll lives in #app-scroll-root so MUI's modal scroll lock (overflow:hidden
- * on body) never touches the scrollbar. This prevents layout shift when modals open.
- * Mobile: body scrolls normally so native pull-to-refresh works. No scrollbar gutter
- * shift to worry about on mobile.
+ * Desktop: scroll lives in #app-scroll-root so MUI's modal scroll lock
+ * (overflow:hidden on body) never touches the scrollbar. This prevents
+ * layout shift when modals open.
+ * Mobile: body scrolls naturally (so MUI's modal scroll-lock targeting
+ * body keeps working, and pull-to-refresh keeps working). The fix for
+ * Google Places / scrollIntoView misbehavior on mobile lives in
+ * #app-scroll-root below — it must NOT be a scroll container on mobile.
  */
 html,
 body {
@@ -39,26 +42,65 @@ body {
   }
 }
 
-/* Mobile: body scrolls naturally for pull-to-refresh */
+/* Mobile: html owns the scroll. Three things make this work together:
+ *
+ *  1. `html { overflow-y: scroll }` (NOT auto) makes html the scroll
+ *     container AND triggers MUI's ModalManager scroll-lock fast-path.
+ *     ModalManager.js explicitly checks for `parent.nodeName === 'HTML'
+ *     && getComputedStyle(parent).overflowY === 'scroll'` and uses html
+ *     instead of body when that's true. So modals still lock background
+ *     scroll correctly without us overriding anything.
+ *  2. body has no overflow declaration on mobile, so it stays at the
+ *     default `visible` and never becomes its own competing scroll
+ *     container. (The CSS auto-promotion rule that turns
+ *     `overflow-x: hidden; overflow-y: visible` into
+ *     `overflow-x: hidden; overflow-y: auto` is still a footgun, but
+ *     since body has no overflow declaration on mobile, it doesn't
+ *     trigger.)
+ *  3. body keeps `height: 100%` inherited from the base rule, but its
+ *     overflow stays visible — content beyond body's box still renders
+ *     and html scrolls to reveal it.
+ *
+ * window.scrollTo and Element.scrollIntoView() now both work correctly
+ * because html is the actual scroll container, AND Google Places
+ * Autocomplete's pac-container (positioned in document coordinates) tracks
+ * the input as the user scrolls because window.scrollY moves with the
+ * scroll. */
 @media (max-width: 599.95px) {
-  html,
-  body {
+  html {
     overflow-x: hidden;
-    overflow-y: auto;
+    overflow-y: scroll;
   }
+  /* body intentionally left at base values: no overflow declaration. */
 }
 
 #app-scroll-root {
   --header-h: 64px;
   margin-top: var(--header-h);
-  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
 }
 
-/* Desktop: fixed-height scroll container with scrollbar gutter */
+/* Desktop: fixed-height scroll container with scrollbar gutter.
+ *
+ * Note — `overflow-x: hidden` lives inside the desktop block intentionally.
+ * The previous version put it at the base level, which on mobile cascaded
+ * via the CSS overflow rule (`overflow-x: hidden` with default
+ * `overflow-y: visible` computes to `overflow-y: auto`) and silently turned
+ * `#app-scroll-root` into an inner scroll container on mobile. That broke
+ * three separate behaviors at once: scrollIntoView/scrollTo on mobile
+ * landed on this non-effective inner scroll container instead of the
+ * window, AND Google Places Autocomplete computes its dropdown position
+ * from the input's document offset chain — which doesn't change when an
+ * inner scroll container scrolls, so the pac-container parked itself at
+ * the input's pre-scroll location and stayed there. Pinning the overflow
+ * properties to desktop only restores body-level scrolling on mobile,
+ * which is what every mobile-specific scroll path in the app actually
+ * needs.
+ */
 @media (min-width: 600px) {
   #app-scroll-root {
     height: calc(100% - var(--header-h));
+    overflow-x: hidden;
     overflow-y: auto;
     scrollbar-gutter: stable;
   }
@@ -69,7 +111,11 @@ body {
   }
 }
 
-/* Mobile: scroll root is just a container, body does the scrolling */
+/* Mobile: scroll root is just a min-height container, body does the
+ * scrolling. Explicitly NOT setting overflow here so #app-scroll-root
+ * stays a "transparent" wrapper for layout purposes. Body already has
+ * `overflow-x: hidden` set above, which clips any rogue horizontal
+ * overflow at the body level instead. */
 @media (max-width: 599.95px) {
   #app-scroll-root {
     min-height: calc(100dvh - var(--header-h));
@@ -90,10 +136,29 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Google Places autocomplete dropdown: ensure visible above MUI/z-index layers */
+/* Google Places autocomplete dropdown: ensure visible above MUI/z-index
+ * layers and clickable on mobile. The legacy widget appends `.pac-container`
+ * directly to <body> with position: absolute, computed top/left from the
+ * input's bounding rect. Several things can break this on mobile that are
+ * harmless on desktop, so we belt-and-brace here:
+ *   - z-index 1400 keeps it above MUI Drawer (1200) and Modal (1300).
+ *   - pointer-events: auto guards against any ancestor that disables them.
+ *   - Forcing a stacking context with isolation prevents iOS Safari from
+ *     occasionally rendering the dropdown beneath the input due to a paint
+ *     order quirk when the input is inside a flex container.
+ */
 .pac-container {
   z-index: 1400 !important;
   font-family: inherit;
+  pointer-events: auto !important;
+  isolation: isolate;
+}
+.pac-item {
+  cursor: pointer;
+  /* Mobile tap targets — the default 11px line-height is too tight to hit
+   * reliably with a thumb on iOS. */
+  padding: 8px 12px;
+  font-size: 14px;
 }
 
 /* Prevent logo images from flashing at intrinsic size during page load / refresh */

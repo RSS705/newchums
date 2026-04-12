@@ -305,11 +305,10 @@ export default function EditEventClient() {
   const handleSubmit = async () => {
     const errs = validate();
     if (Object.keys(errs).length > 0) {
-      // Wait one frame so the helperText / error styling has rendered before
-      // we recenter, otherwise the scroll target may move under us.
-      requestAnimationFrame(() => {
-        scrollToFirstError(fieldRefs.current, errs, FIELD_ORDER);
-      });
+      // scrollToFirstError -> scrollElementIntoView already double-rAFs
+      // internally to wait for layout to settle, so no outer rAF wrapper
+      // needed here.
+      scrollToFirstError(fieldRefs.current, errs, FIELD_ORDER);
       return;
     }
     const startsAt = dateValue!.hour(timeValue!.hour()).minute(timeValue!.minute()).second(0).toISOString();

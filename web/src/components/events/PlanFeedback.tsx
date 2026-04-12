@@ -30,6 +30,7 @@ import ShieldOutlinedIcon from "@mui/icons-material/ShieldOutlined";
 import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
 import Link from "next/link";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
+import { scrollElementIntoView } from "@/lib/scrollUtils";
 import PlanHobbyAddSuggestion, { type PlanHobby } from "./PlanHobbyAddSuggestion";
 
 type Response = "agree" | "maybe" | "disagree" | null;
@@ -221,24 +222,27 @@ export default function PlanFeedback({ eventId, planTitle, planStartsAt, planHob
   useEffect(() => {
     if (!submitted || !justSubmittedRef.current) return;
     justSubmittedRef.current = false;
-    // Wait one frame for the success Paper to mount, then ease the viewport
-    // up to the top of the feedback section so the confirmation card sits
-    // squarely in view. We prefer formTopRef (the section anchor) so the
-    // section header is included; fall back to the panel itself if the
-    // anchor is missing for any reason.
-    requestAnimationFrame(() => {
-      const target = formTopRef.current ?? thanksPanelRef.current;
-      target?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
+    // Recenter to the top of the feedback section so the confirmation card
+    // sits squarely in view. Prefer the section anchor so the heading is
+    // included; fall back to the panel itself if the anchor is missing.
+    //
+    // Why scrollElementIntoView (not scrollIntoView): the previous attempt
+    // used `scrollIntoView({ behavior: "smooth" })` which walks up to the
+    // *nearest* scrollable ancestor. On mobile that picked
+    // `#app-scroll-root` (whose computed `overflow-y` is `auto` even though
+    // the element doesn't actually overflow on mobile), so the request
+    // landed on a non-scrolling container and the window never moved. The
+    // helper here explicitly checks for actual overflow and falls through to
+    // window.scrollTo when appropriate.
+    const target = formTopRef.current ?? thanksPanelRef.current;
+    if (target) scrollElementIntoView(target);
   }, [submitted]);
 
   /** Scroll the viewport to the top of the feedback section. Called after
    *  each per-attendee step submits, so the next page begins at the top
    *  rather than wherever the previous step's button happened to land. */
   const scrollFormToTop = useCallback(() => {
-    requestAnimationFrame(() => {
-      formTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
+    if (formTopRef.current) scrollElementIntoView(formTopRef.current);
   }, []);
 
   const avatarBase = getAvatarBaseUrl();
