@@ -51,7 +51,7 @@ flowchart TB
   subgraph "Community Features"
     COMM_PAGES["Community Pages<br/>/communities/*"]
     COMM_API["Community API<br/>/communities/*, /admin/communities/*"]
-    COMM_TABLES["communities, community_members,<br/>community_join_requests"]
+    COMM_TABLES["communities, community_members,<br/>community_join_requests, community_interests"]
   end
 
   W --> COMM_PAGES
@@ -331,10 +331,10 @@ Wrangler config is code-managed so deploys do not wipe routes or override canoni
 | `/chum-groups` | Your Chums, search, invite, list |
 | `/profile` | Edit profile |
 | `/settings` | Notifications, privacy, account |
-| `/communities` | Browse and search communities |
-| `/communities/create` | Create a new community |
-| `/communities/[slug]` | Community detail, info, members, plan feed, join/leave, join-request management |
-| `/communities/[slug]/edit` | Edit community settings (owner) |
+| `/communities` | Community discovery feed with search, distance/hobby filtering, personalization, All/Yours scope |
+| `/communities/create` | Create community with rich text description, required hobbies, online/offline, location, website, join link |
+| `/communities/[slug]` | Community detail with hobbies, online/website/join-link, members, plan feed, join/leave, join-request management |
+| `/communities/[slug]/edit` | Edit community settings (owner), same form quality as create |
 | `/admin/interests` | Interests moderation (super_admin) |
 | `/admin/chums` | User management (super_admin) |
 | `/admin/chums/[id]` | User diagnostics, metric scores, preferences, feedback, issues (super_admin) |

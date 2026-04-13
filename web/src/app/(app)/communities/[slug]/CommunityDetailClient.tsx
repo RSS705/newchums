@@ -7,9 +7,12 @@ import {
   Divider, IconButton, Tooltip, Tab, Tabs, Grid,
 } from "@mui/material";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
+import LanguageRoundedIcon from "@mui/icons-material/LanguageRounded";
+import LinkRoundedIcon from "@mui/icons-material/LinkRounded";
 import ShareRoundedIcon from "@mui/icons-material/ShareRounded";
 import PeopleRoundedIcon from "@mui/icons-material/PeopleRounded";
 import LockRoundedIcon from "@mui/icons-material/LockRounded";
+import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
 import PublicRoundedIcon from "@mui/icons-material/PublicRounded";
 import EventNoteRoundedIcon from "@mui/icons-material/EventNoteRounded";
 import AddCircleRoundedIcon from "@mui/icons-material/AddCircleRounded";
@@ -31,6 +34,9 @@ type CommunityData = {
   visibility: string;
   join_mode: string;
   chat_enabled: boolean;
+  is_online: boolean;
+  website: string | null;
+  join_link: string | null;
   location_name: string | null;
   location_address: string | null;
   avatar_key: string | null;
@@ -41,6 +47,7 @@ type CommunityData = {
   member_count: number;
   created_at: string;
   status?: string;
+  hobbies?: { name: string; slug: string }[];
 };
 
 type Member = {
@@ -334,7 +341,7 @@ export default function CommunityDetailClient() {
                 {community.name}
               </Typography>
               <Typography variant="body1" color="text.secondary">
-                This is a private community. Join to see plans and members.
+                This community is private. Plans and members are only visible to approved members.
               </Typography>
             </Box>
             <Chip icon={<PeopleRoundedIcon sx={{ fontSize: "14px !important" }} />} label={`${community.member_count} member${community.member_count !== 1 ? "s" : ""}`} size="small" variant="outlined" />
@@ -388,21 +395,102 @@ export default function CommunityDetailClient() {
                 <Tooltip title="Public community"><PublicRoundedIcon sx={{ fontSize: 18, color: "text.secondary" }} /></Tooltip>
               )}
             </Stack>
+            {/* Hobby chips */}
+            {community.hobbies && community.hobbies.length > 0 && (
+              <Stack direction="row" gap={0.5} flexWrap="wrap" useFlexGap sx={{ mb: 1 }}>
+                {community.hobbies.map((h) => {
+                  const isMatch = viewerHobbyCategories?.has(h.name.toLowerCase()) || viewerHobbyCategories?.has(h.slug.toLowerCase());
+                  return (
+                    <Chip
+                      key={h.slug}
+                      label={h.name}
+                      size="small"
+                      color={isMatch ? "primary" : "default"}
+                      variant={isMatch ? "filled" : "outlined"}
+                      sx={{
+                        height: 24,
+                        fontSize: "0.75rem",
+                        fontWeight: 500,
+                        borderRadius: 1.5,
+                        ...(isMatch
+                          ? { bgcolor: "primary.light", color: "primary.dark" }
+                          : { borderColor: "divider", color: "text.secondary" }),
+                      }}
+                    />
+                  );
+                })}
+              </Stack>
+            )}
+
             {community.description && (
-              <Typography variant="body1" color="text.secondary" sx={{ mb: 1.5, whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
-                {community.description}
-              </Typography>
+              <Typography
+                variant="body1"
+                color="text.secondary"
+                sx={{ mb: 1.5, lineHeight: 1.6, "& p": { m: 0 }, "& a": { color: "primary.main" } }}
+                dangerouslySetInnerHTML={{ __html: community.description }}
+              />
             )}
             <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center" useFlexGap>
-              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, fontSize: "0.8125rem" }}>
-                {community.member_count} {community.member_count === 1 ? "member" : "members"}
-              </Typography>
-              {community.location_name && (
+              <Stack direction="row" spacing={0.5} alignItems="center">
+                <PeopleRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
+                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, fontSize: "0.8125rem" }}>
+                  {community.member_count} {community.member_count === 1 ? "member" : "members"}
+                </Typography>
+              </Stack>
+              {community.is_online ? (
                 <>
                   <Typography variant="body2" color="text.disabled">·</Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
-                    {community.location_name}
+                  <Stack direction="row" spacing={0.5} alignItems="center">
+                    <LanguageRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
+                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
+                      Online
+                    </Typography>
+                  </Stack>
+                </>
+              ) : community.location_name ? (
+                <>
+                  <Typography variant="body2" color="text.disabled">·</Typography>
+                  <Stack direction="row" spacing={0.5} alignItems="center">
+                    <PlaceRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
+                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
+                      {community.location_name}
+                    </Typography>
+                  </Stack>
+                </>
+              ) : null}
+              {community.website && (
+                <>
+                  <Typography variant="body2" color="text.disabled">·</Typography>
+                  <Typography
+                    component="a"
+                    href={community.website.startsWith("http") ? community.website : `https://${community.website}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    variant="body2"
+                    sx={{ fontSize: "0.8125rem", color: "primary.main", textDecoration: "none", "&:hover": { textDecoration: "underline" } }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    Website
                   </Typography>
+                </>
+              )}
+              {community.is_online && community.join_link && (
+                <>
+                  <Typography variant="body2" color="text.disabled">·</Typography>
+                  <Stack direction="row" spacing={0.5} alignItems="center">
+                    <LinkRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
+                    <Typography
+                      component="a"
+                      href={community.join_link.startsWith("http") ? community.join_link : `https://${community.join_link}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      variant="body2"
+                      sx={{ fontSize: "0.8125rem", color: "primary.main", textDecoration: "none", "&:hover": { textDecoration: "underline" } }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      Join link
+                    </Typography>
+                  </Stack>
                 </>
               )}
               {community.join_mode === "approval_required" && (

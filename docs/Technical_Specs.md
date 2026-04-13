@@ -405,6 +405,17 @@ All `/admin/*` routes require `role = 'super_admin'` on the requesting user, enf
 
 **Interest categories:** The `category` column on `interests` is a free-text field used for grouping related hobbies (e.g. "Board games", "Outdoor sports"). Categories are optional — many interests may remain uncategorized. The admin edit dialog provides a combo-box (Autocomplete with freeSolo) that shows existing categories for selection and allows typing a new one. Categories are used by the Explore local-signal feature as a fallback when an exact hobby doesn't meet the display threshold. Admins can assign categories incrementally over time without needing to classify everything up front.
 
+**Hobby/interest system and effective category matching:**
+
+The interest system underpins personalization across plans, communities, and discovery feeds. Key behaviors:
+
+- **Effective category**: For matching and personalization, each interest resolves to an "effective category" via `LOWER(COALESCE(NULLIF(TRIM(i.category), ''), i.name))`. If the interest has a `category` set, the category is used; otherwise, the interest name itself is the effective category. This allows "Chess" and "Go" to both match if they share a "Board games" category.
+- **HobbyPickerField** (`web/src/components/common/HobbyPickerField.tsx`): Shared autocomplete component used in plan create/edit, community create/edit, and profile onboarding. Supports free-text entry (creates new interests via API if needed), suggestion search against `GET /interests?q=`, content safety validation, duplicate detection, and chip-based display with optional collapse. This component's behavior is important to preserve; it handles interest creation, slug generation, and validation uniformly across all surfaces.
+- **Interest linking**: Plans use `event_interests` junction table. Communities use `community_interests` junction table. User profiles use `user_interests`. All three follow the same pattern: many-to-many via interest IDs.
+- **Personalization scoring**: Both Explore (plans) and the Communities feed compute a `hobby_match_count` by counting how many of the item's interests share an effective category with the viewer's profile interests. This count is used as the primary sort key when personalization is enabled.
+- **Hobby filter**: Both Explore and Communities support a `hobby` query param that filters by effective category match, not exact slug. This means filtering by "Chess" also includes plans/communities tagged with "Go" if both share the "Board games" category.
+- **Client-side highlighting**: `effectiveCategorySet()` (`web/src/lib/interestUtils.ts`) builds a Set of the viewer's effective categories. Community and plan cards use this to highlight matching hobby chips in a different color.
+
 ### Admin, user accounts (super_admin only)
 
 - `GET /admin/users`, list all user accounts. Query params: `q` (search email/handle/name/userId). Returns: `id`, `created_at`, `email`, `username`, `name`, `role`, `is_suspended`, `suspended_at`.
@@ -930,15 +941,18 @@ Shared UI components: `OnboardingProgress` (step indicator + progress bar), `Ste
 
 ### Communities
 
-Community pages where users can join, browse, and create plans together.
+Community pages where users can join, browse, and create plans together. The communities discovery feed supports distance-based filtering, hobby personalization, and search, similar to the Explore feed for plans.
 
-**Schema (migration 055, extended by 059):**
+**Schema (migration 055, extended by 059, 078):**
 
 | Table | Purpose |
 |-------|---------|
-| `newchums.communities` | Core community entity, name, slug, description, avatar_key, banner_key, visibility (`public` / `private`), join_mode (`open` / `approval_required`), chat_enabled (boolean, deferred), location fields, owner_user_id, `status` (`active` / `closed`, default `active`, migration 059), timestamps |
+| `newchums.communities` | Core community entity, name, slug, description, avatar_key, banner_key, visibility (`public` / `private`), join_mode (`open` / `approval_required`), chat_enabled (boolean, deferred), `is_online` (boolean, default false), `website` (text, max 500), `join_link` (text, max 500), location fields, owner_user_id, `status` (`active` / `closed`, default `active`, migration 059), timestamps. Migration 078 adds `is_online`, `website`, `join_link`. |
 | `newchums.community_members` | Membership records, community_id, user_id, role (`owner` / `member`), status (`active` / `pending` / `removed`). Unique on `(community_id, user_id)`. |
 | `newchums.community_join_requests` | Join request records, community_id, user_id, status (`pending` / `approved` / `declined` / `withdrawn`), reviewed_by_user_id, timestamps. Unique partial index on `(community_id, user_id) WHERE status = 'pending'`. |
+| `newchums.community_interests` | Hobby/interest tagging for communities. Composite PK on `(community_id, interest_id)`. FK to `communities` (CASCADE) and `interests` (CASCADE). Indexed on `interest_id`. Migration 078. |
+
+**Unified access model:** The forms present a single "Access" setting with two options: **Open** (visibility=public, join_mode=open) and **Private** (visibility=private, join_mode=approval_required). The API accepts an `access` field that maps to these DB column pairs. The underlying `visibility` and `join_mode` columns are preserved for backward compatibility, but the only supported combinations going forward are these two. Private communities remain discoverable in the feed; their internal contents (plans and members) are restricted until the viewer is an approved member.
 
 **Events table additions (migration 055):**
 - `community_id UUID NULL` FK → `communities(id)` ON DELETE SET NULL, associates a plan with 0 or 1 community.
@@ -948,11 +962,11 @@ Community pages where users can join, browse, and create plans together.
 
 | Route | Description |
 |-------|-------------|
-| `POST /communities` | Create a community. Validates name, slug (3–50 chars, lowercase alphanumeric + hyphens), visibility, join_mode. Creator becomes owner + member. |
-| `GET /communities` | List communities. Query params: `filter=mine` (user's communities), `q` (search). Returns member_count. |
+| `POST /communities` | Create a community. Validates name, slug (3-50 chars), description (required). Accepts unified `access` field (`"open"` or `"private"`) which maps to the DB columns: open = `visibility=public, join_mode=open`; private = `visibility=private, join_mode=approval_required`. Also accepts legacy `visibility`/`join_mode` for backward compatibility. Requires at least one hobby (`interest_items`). Requires location for offline communities (`is_online = false`). Accepts `is_online`, `website`, `join_link`. Creator becomes owner + member. Links hobbies via `community_interests`. |
+| `GET /communities` | Discovery feed. Query params: `mine=1` (user's communities, ignores distance), `q` (search), `lat`/`lng`/`radius_km` (distance filtering for offline communities; online communities bypass distance), `hobby` (filter by hobby slug via effective category matching), `personalize` (0 to disable hobby-match ranking). Returns `member_count`, `hobby_match_count`, `distance_km`, `hobbies` array, `hasMore`. Default ordering: hobby_match_count DESC, distance ASC (with location) or member_count DESC (without). |
 | `GET /communities/slug-available` | Check slug availability. |
-| `GET /communities/:slug` | Community detail. Returns full community info, member_count, viewer's membership role/status, pending join request status. Private communities return limited info to non-members. Owner/admin sees pending join requests. Private communities include a share token (JWT, purpose `community_share`). |
-| `PATCH /communities/:slug` | Update community (owner or super admin). Accepts: name, description, visibility, join_mode, chat_enabled, location fields, avatar_key. |
+| `GET /communities/:slug` | Community detail. Returns full community info including `is_online`, `website`, `join_link`, `hobbies` array, member_count, viewer's membership role/status, pending join request status. Private communities return limited info to non-members. Owner/admin sees pending join requests. Private communities include a share token (JWT, purpose `community_share`). |
+| `PATCH /communities/:slug` | Update community (owner or super admin). Accepts unified `access` field (`"open"` or `"private"`, preferred) or legacy `visibility`/`join_mode`. Also: name, description (required), chat_enabled, `is_online`, `website`, `join_link`, location fields, avatar_key, `interest_items` (replaces all community hobbies; at least one required). |
 | `POST /communities/:slug/close` | Soft-close a community (owner or super admin). Sets `status = 'closed'`, nullifies `community_id` on linked events. Community data is preserved but hidden from listings. Irreversible. Migration 059 adds the `status` column. |
 | `DELETE /communities/:slug` | Hard-delete community (owner or super admin). Cascades to members, join requests; events have `community_id` set to NULL. |
 | `POST /communities/:id/join` | Join (open) or request to join (approval_required). Idempotent. Sends join-request email to owner when approval is required. |
@@ -999,10 +1013,10 @@ Private communities generate a share token (JWT, purpose `community_share`) retu
 
 | Route | Component | Description |
 |-------|-----------|-------------|
-| `/communities` | `CommunitiesListClient` | Browse and search communities; "my communities" filter |
-| `/communities/create` | `CreateCommunityClient` | Create a new community |
-| `/communities/[slug]` | `CommunityDetailClient` | Community detail, info, members, community plans feed, join/leave, join-request management (owner) |
-| `/communities/[slug]/edit` | `EditCommunityClient` | Edit community settings (owner) |
+| `/communities` | `CommunitiesListClient` | Community discovery feed with search, All/Yours scope, distance filtering, hobby filtering, personalization toggle, location nudge, load-more pagination. Distance filtering hides offline communities outside travel radius; online communities bypass distance. Yours ignores distance. |
+| `/communities/create` | `CreateCommunityClient` | Create a new community. Rich text description (Tiptap), required hobbies (HobbyPickerField), online/offline toggle, location (required for offline, PlacesAutocompleteInput), website, join link (online), visibility, join mode. Validation with scroll-to-first-error. Matches plan form structure. |
+| `/communities/[slug]` | `CommunityDetailClient` | Community detail with hobby chips, online/offline badge, website link, join link, rich text description, members, community plans feed, join/leave, join-request management (owner) |
+| `/communities/[slug]/edit` | `EditCommunityClient` | Edit community settings (owner). Same form structure as create, pre-populated. Includes close community action. |
 | `/admin/communities` | `AdminCommunitiesClient` | Super admin community management, list, search, remove |
 
 ### Diagnostics
@@ -1156,9 +1170,10 @@ Core tables include:
 - `newchums.events.feedback_email_sent_at` (migration 049), `TIMESTAMPTZ NULL`; tracks when feedback reminder email was sent for a plan.
 - `newchums.user_objective_completions` (migration 054), tracks per-user objective completion. Columns: `id` (UUID PK), `user_id` (FK), `objective_key` (TEXT), `completed_at` (TIMESTAMPTZ). Unique constraint on `(user_id, objective_key)`.
 - `newchums.users.tutorial_nudges_off` (migration 054), `BOOLEAN NOT NULL DEFAULT false`; when true, tutorial nudges are permanently suppressed for the user.
-- `newchums.communities` (migration 055), community entity. Columns: `id` (UUID PK), `slug` (TEXT UNIQUE), `name`, `description`, `avatar_key`, `banner_key`, `visibility` (public/private), `join_mode` (open/approval_required), `chat_enabled` (boolean, default true, deferred), `location_name`, `location_address`, `location_lat`, `location_lng`, `owner_user_id` (FK), `created_at`, `updated_at`. Indexed on `slug` (unique) and `owner_user_id`.
+- `newchums.communities` (migration 055, extended 059, 078), community entity. Columns: `id` (UUID PK), `slug` (TEXT UNIQUE), `name`, `description`, `avatar_key`, `banner_key`, `visibility` (public/private), `join_mode` (open/approval_required), `chat_enabled` (boolean, default true, deferred), `is_online` (boolean, default false, migration 078), `website` (text, max 500, migration 078), `join_link` (text, max 500, migration 078), `location_name`, `location_address`, `location_lat`, `location_lng`, `owner_user_id` (FK), `status` (active/closed, default active, migration 059), `created_at`, `updated_at`. Indexed on `slug` (unique) and `owner_user_id`.
 - `newchums.community_members` (migration 055), membership records. Columns: `id` (UUID PK), `community_id` (FK, CASCADE), `user_id` (FK, CASCADE), `role` (owner/member), `status` (active/pending/removed), `created_at`. Unique on `(community_id, user_id)`. Indexed on `user_id`.
 - `newchums.community_join_requests` (migration 055), join request records. Columns: `id` (UUID PK), `community_id` (FK, CASCADE), `user_id` (FK, CASCADE), `status` (pending/approved/declined/withdrawn), `reviewed_by_user_id` (FK), `created_at`, `reviewed_at`. Unique partial index on `(community_id, user_id) WHERE status = 'pending'`.
+- `newchums.community_interests` (migration 078), hobby/interest tagging for communities. Columns: `community_id` (FK, CASCADE), `interest_id` (FK, CASCADE). Composite PK. Indexed on `interest_id`.
 - `newchums.events.community_id` (migration 055), `UUID NULL` FK → `communities(id)` ON DELETE SET NULL. Associates a plan with 0 or 1 community. Indexed where not null.
 - `newchums.events.hide_from_explore` (migration 055), `BOOLEAN NOT NULL DEFAULT false`. When true, the plan is hidden from the general Explore feed but visible in the community's plan feed.
 - `newchums.roadmap_items.attachment_key` (migration 056), `TEXT NULL`. Stores R2 object key for optional roadmap item attachments.

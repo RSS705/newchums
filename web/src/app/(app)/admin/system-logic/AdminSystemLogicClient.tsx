@@ -786,36 +786,66 @@ export default function AdminSystemLogicClient() {
           a recurring group, a running club, a neighborhood board game crew, a book club.
         </Bullet>
         <Bullet>
-          Every community has a <strong>unique handle</strong> (slug), a name, optional description, and optional location.
+          Every community has a <strong>unique handle</strong> (slug), a name, a description, one or more hobbies, and either a physical location or an online presence.
         </Bullet>
         <Bullet>
           The person who creates it is the <strong>owner</strong>. Super admins can also manage any community.
         </Bullet>
 
         <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
-          Visibility
+          Required fields (create and edit)
         </Typography>
         <Bullet>
-          <strong>Public:</strong> Anyone can find the community, see its members and plans, and join (or request to join).
+          <strong>Name, description, and at least one hobby</strong> are always required.
         </Bullet>
         <Bullet>
-          <strong>Private:</strong> Only members (and super admins) can see the member list and community plans. Non-members who visit the page see limited
-          info, name, visibility, join mode, and member count, plus the option to request to join. Private communities have a <strong>share link</strong> the
-          owner can send to people, which lets them view the community and request to join.
+          Communities can be <strong>in-person</strong> (default) or <strong>online</strong>. In-person communities require a physical location. Online communities can exist without one.
+        </Bullet>
+        <Bullet>
+          Both online and offline communities can have an optional <strong>website</strong>. Online communities can also have a <strong>join link</strong> (e.g. Discord invite).
+        </Bullet>
+        <Bullet>
+          <strong>Logo</strong> is optional.
         </Bullet>
 
         <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
-          Joining
+          Discovery and feed
         </Typography>
         <Bullet>
-          <strong>Open:</strong> Anyone can join instantly. No approval needed.
+          The <strong>Communities page</strong> is a discovery feed similar to Explore. It supports search, hobby filtering, distance filtering, and personalization.
         </Bullet>
         <Bullet>
-          <strong>Approval required:</strong> The user submits a join request. The owner sees pending requests and can approve or decline them. The requester
-          gets an email when their request is approved or declined (once Postmark templates are configured).
+          <strong>Offline communities</strong> outside the viewer&rsquo;s travel distance are hidden by default. The distance filter can be widened manually.
         </Bullet>
         <Bullet>
-          The owner also gets an email when someone requests to join (once the template is configured).
+          <strong>Online communities</strong> are not affected by distance filtering and always appear in the feed.
+        </Bullet>
+        <Bullet>
+          <strong>Personalized</strong> mode ranks communities with matching hobbies higher. Distance still matters for offline communities.
+        </Bullet>
+        <Bullet>
+          <strong>All / Yours</strong> scope: &ldquo;Yours&rdquo; shows only communities you&rsquo;ve joined, ignoring distance. Search and hobby filters still apply.
+        </Bullet>
+        <Bullet>
+          Both public and private communities appear in discovery where allowed by visibility rules.
+        </Bullet>
+
+        <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
+          Access
+        </Typography>
+        <Bullet>
+          Communities have a single <strong>access setting</strong> rather than separate visibility and joining controls.
+        </Bullet>
+        <Bullet>
+          <strong>Open:</strong> Anyone can find the community, see its members and plans, and join immediately.
+        </Bullet>
+        <Bullet>
+          <strong>Private:</strong> The community is still discoverable, but plans and members are only visible to approved members. Non-members see the name,
+          description, hobbies, and member count, plus the option to request to join. The owner reviews each request. Private communities have a <strong>share link</strong> the
+          owner can send to people.
+        </Bullet>
+        <Bullet>
+          The owner and requester receive emails for join requests, approvals, and declines.
         </Bullet>
         <Bullet>
           The owner <strong>cannot leave</strong> their own community, they must transfer ownership first (not yet implemented as a UI action).

@@ -6178,30 +6178,73 @@ app.post("/communities", async (c) => {
   if (!slugCheck.ok) return c.json({ ok: false, error: "INAPPROPRIATE_TEXT", field: "slug" }, 400);
 
   const description = body.description ? String(body.description).trim().slice(0, 2000) : null;
-  const visibility = String(body.visibility ?? "public");
-  if (!VALID_COMMUNITY_VISIBILITY.includes(visibility as typeof VALID_COMMUNITY_VISIBILITY[number]))
-    return c.json({ ok: false, error: "VALIDATION", message: "Invalid visibility", field: "visibility" }, 400);
-  const joinMode = String(body.join_mode ?? "open");
-  if (!VALID_COMMUNITY_JOIN_MODE.includes(joinMode as typeof VALID_COMMUNITY_JOIN_MODE[number]))
-    return c.json({ ok: false, error: "VALIDATION", message: "Invalid join mode", field: "join_mode" }, 400);
+  if (!description) return c.json({ ok: false, error: "VALIDATION", message: "Description is required", field: "description" }, 400);
+
+  // Unified access model: "open" or "private". Maps to visibility + join_mode.
+  // Also accepts legacy visibility/join_mode fields for backward compatibility.
+  let visibility: string;
+  let joinMode: string;
+  if (body.access !== undefined) {
+    const access = String(body.access);
+    if (access === "open") { visibility = "public"; joinMode = "open"; }
+    else if (access === "private") { visibility = "private"; joinMode = "approval_required"; }
+    else return c.json({ ok: false, error: "VALIDATION", message: "Access must be 'open' or 'private'", field: "access" }, 400);
+  } else {
+    visibility = String(body.visibility ?? "public");
+    if (!VALID_COMMUNITY_VISIBILITY.includes(visibility as typeof VALID_COMMUNITY_VISIBILITY[number]))
+      return c.json({ ok: false, error: "VALIDATION", message: "Invalid visibility", field: "visibility" }, 400);
+    joinMode = String(body.join_mode ?? "open");
+    if (!VALID_COMMUNITY_JOIN_MODE.includes(joinMode as typeof VALID_COMMUNITY_JOIN_MODE[number]))
+      return c.json({ ok: false, error: "VALIDATION", message: "Invalid join mode", field: "join_mode" }, 400);
+  }
   const chatEnabled = body.chat_enabled !== false;
+
+  const isOnline = body.is_online === true;
+  const website = body.website ? String(body.website).trim().slice(0, 500) : null;
+  const joinLink = body.join_link ? String(body.join_link).trim().slice(0, 500) : null;
+
   const locationName = body.location_name ? String(body.location_name).trim().slice(0, 200) : null;
   const locationAddress = body.location_address ? String(body.location_address).trim().slice(0, 500) : null;
   const locationLat = body.location_lat != null ? Number(body.location_lat) : null;
   const locationLng = body.location_lng != null ? Number(body.location_lng) : null;
+
+  if (!isOnline && !locationName && !locationAddress)
+    return c.json({ ok: false, error: "VALIDATION", message: "Location is required for in-person communities", field: "location" }, 400);
+
+  // Hobbies/interests are required
+  const interestItems = Array.isArray(body.interest_items) ? body.interest_items as { slug: string; name: string }[] : [];
+  if (interestItems.length === 0)
+    return c.json({ ok: false, error: "VALIDATION", message: "Add at least one hobby so people can find this community", field: "hobby" }, 400);
 
   try {
     const existing = (await sql`SELECT id FROM newchums.communities WHERE slug = ${slug}`) as { id: string }[];
     if (existing.length > 0) return c.json({ ok: false, error: "SLUG_TAKEN", message: "That handle is already taken" }, 409);
 
     const rows = (await sql`
-      INSERT INTO newchums.communities (name, slug, description, visibility, join_mode, chat_enabled, location_name, location_address, location_lat, location_lng, owner_user_id)
-      VALUES (${name}, ${slug}, ${description}, ${visibility}, ${joinMode}, ${chatEnabled}, ${locationName}, ${locationAddress}, ${locationLat}, ${locationLng}, ${userId})
+      INSERT INTO newchums.communities (name, slug, description, visibility, join_mode, chat_enabled, is_online, website, join_link, location_name, location_address, location_lat, location_lng, owner_user_id)
+      VALUES (${name}, ${slug}, ${description}, ${visibility}, ${joinMode}, ${chatEnabled}, ${isOnline}, ${website}, ${joinLink}, ${locationName}, ${locationAddress}, ${locationLat}, ${locationLng}, ${userId})
       RETURNING id, slug, created_at
     `) as { id: string; slug: string; created_at: string }[];
     const community = rows[0];
 
     await sql`INSERT INTO newchums.community_members (community_id, user_id, role, status) VALUES (${community.id}, ${userId}, 'owner', 'active')`;
+
+    // Link hobbies/interests
+    if (interestItems.length > 0) {
+      const interestIds: string[] = [];
+      for (const item of interestItems) {
+        const slugVal = String(item.slug ?? "").trim().toLowerCase();
+        const nameVal = String(item.name ?? "").trim();
+        if (!slugVal || !nameVal) continue;
+        const existing = (await sql`SELECT id FROM newchums.interests WHERE slug = ${slugVal} AND is_deleted = false LIMIT 1`) as { id: string }[];
+        if (existing[0]) { interestIds.push(existing[0].id); continue; }
+        const inserted = (await sql`INSERT INTO newchums.interests (name, slug) VALUES (${nameVal}, ${slugVal}) ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name RETURNING id`) as { id: string }[];
+        if (inserted[0]) interestIds.push(inserted[0].id);
+      }
+      if (interestIds.length > 0) {
+        await sql`INSERT INTO newchums.community_interests (community_id, interest_id) SELECT ${community.id}, UNNEST(${interestIds}::uuid[]) ON CONFLICT DO NOTHING`;
+      }
+    }
 
     return c.json({ ok: true, community: { id: community.id, slug: community.slug, created_at: community.created_at } }, 201);
   } catch (err) {
@@ -6210,7 +6253,7 @@ app.post("/communities", async (c) => {
   }
 });
 
-/** GET /communities, list/search communities */
+/** GET /communities, list/search communities with discovery */
 app.get("/communities", async (c) => {
   const payload = await requireAuth(c);
   const sql = getSql(c.env);
@@ -6219,6 +6262,14 @@ app.get("/communities", async (c) => {
   const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 20), 1), 50);
   const offset = Math.max(Number(c.req.query("offset") ?? 0), 0);
 
+  const lat = c.req.query("lat") ? Number(c.req.query("lat")) : null;
+  const lng = c.req.query("lng") ? Number(c.req.query("lng")) : null;
+  const radiusKm = Math.min(Math.max(Number(c.req.query("radius_km") ?? 200), 1), 20000);
+  const hasLocation = lat !== null && lng !== null && !isNaN(lat) && !isNaN(lng);
+  const hobbySlug = c.req.query("hobby") ?? null;
+  const personalizeParam = c.req.query("personalize") ?? "1";
+  const personalizeEnabled = personalizeParam !== "0";
+
   let userId: string | null = null;
   let isSuperAdmin = false;
   if (payload?.email) {
@@ -6226,34 +6277,128 @@ app.get("/communities", async (c) => {
     if (userRows[0]) { userId = userRows[0].id; isSuperAdmin = userRows[0].role === "super_admin"; }
   }
 
+  // Fetch viewer's hobby categories for personalization
+  let userEffectiveCategories: string[] = [];
+  if (userId && personalizeEnabled) {
+    const userHobbies = (await sql`
+      SELECT DISTINCT LOWER(COALESCE(NULLIF(TRIM(i.category), ''), i.name)) AS eff
+      FROM newchums.user_interests ui
+      JOIN newchums.interests i ON i.id = ui.interest_id AND i.is_deleted = false
+      WHERE ui.user_id = ${userId}
+    `) as { eff: string }[];
+    userEffectiveCategories = userHobbies.map((h) => h.eff);
+  }
+  const hasUserHobbies = userEffectiveCategories.length > 0;
+
   try {
-    let communities;
+    const q = search ? `%${search}%` : null;
+    const hobbyMatchExpr = hasUserHobbies && personalizeEnabled
+      ? sql`(
+          SELECT COUNT(DISTINCT LOWER(COALESCE(NULLIF(TRIM(ii.category), ''), ii.name)))::int
+          FROM newchums.community_interests ci2
+          JOIN newchums.interests ii ON ii.id = ci2.interest_id AND ii.is_deleted = false
+          WHERE ci2.community_id = c.id
+            AND LOWER(COALESCE(NULLIF(TRIM(ii.category), ''), ii.name)) = ANY(${userEffectiveCategories})
+        )`
+      : sql`0`;
+
+    const distanceExpr = hasLocation
+      ? sql`CASE
+          WHEN c.location_lat IS NOT NULL AND c.location_lng IS NOT NULL THEN
+            6371 * acos(
+              LEAST(1.0, GREATEST(-1.0,
+                cos(radians(${lat})) * cos(radians(c.location_lat)) *
+                cos(radians(c.location_lng) - radians(${lng})) +
+                sin(radians(${lat})) * sin(radians(c.location_lat))
+              ))
+            )
+          ELSE NULL
+        END`
+      : sql`NULL`;
+
     if (mine && userId) {
-      communities = (await sql`
+      const communities = (await sql`
         SELECT c.id, c.slug, c.name, c.description, c.visibility, c.join_mode, c.avatar_key, c.banner_key,
-          c.location_name, c.owner_user_id, c.created_at,
+          c.location_name, c.owner_user_id, c.created_at, c.is_online, c.website, c.join_link,
           (SELECT COUNT(*)::int FROM newchums.community_members cm WHERE cm.community_id = c.id AND cm.status = 'active') AS member_count,
-          'member' AS viewer_role
+          cme.role AS viewer_role,
+          (SELECT COUNT(*)::int FROM newchums.events e WHERE e.community_id = c.id AND e.status = 'published' AND e.starts_at >= NOW() AND COALESCE(e.is_qa, false) = false) AS upcoming_plan_count,
+          ${hobbyMatchExpr} AS hobby_match_count,
+          ${distanceExpr} AS distance_km,
+          (SELECT COALESCE(json_agg(json_build_object('name', ii.name, 'slug', ii.slug)), '[]'::json)
+           FROM newchums.community_interests ci3
+           JOIN newchums.interests ii ON ii.id = ci3.interest_id AND ii.is_deleted = false
+           WHERE ci3.community_id = c.id) AS hobbies
         FROM newchums.communities c
-        JOIN newchums.community_members cm ON cm.community_id = c.id AND cm.user_id = ${userId} AND cm.status = 'active'
+        JOIN newchums.community_members cme ON cme.community_id = c.id AND cme.user_id = ${userId} AND cme.status = 'active'
         WHERE COALESCE(c.status, 'active') = 'active'
+          ${q ? sql`AND (c.name ILIKE ${q} OR c.slug ILIKE ${q})` : sql``}
         ORDER BY c.name ASC LIMIT ${limit} OFFSET ${offset}
       `) as Record<string, unknown>[];
-    } else {
-      const q = search ? `%${search}%` : null;
-      communities = (await sql`
-        SELECT c.id, c.slug, c.name, c.description, c.visibility, c.join_mode, c.avatar_key, c.banner_key,
-          c.location_name, c.owner_user_id, c.created_at,
-          (SELECT COUNT(*)::int FROM newchums.community_members cm WHERE cm.community_id = c.id AND cm.status = 'active') AS member_count
-        FROM newchums.communities c
-        WHERE (${isSuperAdmin}::boolean OR c.visibility = 'public')
-          AND COALESCE(c.status, 'active') = 'active'
-          AND (${q}::text IS NULL OR c.name ILIKE ${q} OR c.slug ILIKE ${q})
-        ORDER BY c.created_at DESC LIMIT ${limit} OFFSET ${offset}
-      `) as Record<string, unknown>[];
+      const hasMore = communities.length === limit;
+      return c.json({ ok: true, communities, hasMore });
     }
 
-    return c.json({ ok: true, communities });
+    // Discovery query: distance filtering for offline, personalization ranking
+    const distanceFilter = hasLocation && radiusKm < 20000
+      ? sql`AND (
+          c.is_online = true
+          OR c.location_lat IS NULL OR c.location_lng IS NULL
+          OR 6371 * acos(
+            LEAST(1.0, GREATEST(-1.0,
+              cos(radians(${lat})) * cos(radians(c.location_lat)) *
+              cos(radians(c.location_lng) - radians(${lng})) +
+              sin(radians(${lat})) * sin(radians(c.location_lat))
+            ))
+          ) <= ${radiusKm}
+        )`
+      : sql``;
+
+    const hobbyFilter = hobbySlug
+      ? sql`AND EXISTS (
+          SELECT 1 FROM newchums.interests ii_pick
+          WHERE ii_pick.slug = ${hobbySlug} AND ii_pick.is_deleted = false
+            AND EXISTS (
+              SELECT 1 FROM newchums.community_interests ci4
+              JOIN newchums.interests ii4 ON ii4.id = ci4.interest_id AND ii4.is_deleted = false
+              WHERE ci4.community_id = c.id
+                AND LOWER(COALESCE(NULLIF(TRIM(ii4.category), ''), ii4.name))
+                  = LOWER(COALESCE(NULLIF(TRIM(ii_pick.category), ''), ii_pick.name))
+            )
+        )`
+      : sql``;
+
+    const orderClause = hasLocation
+      ? sql`hobby_match_count DESC, distance_km ASC NULLS LAST, member_count DESC, c.created_at DESC`
+      : sql`hobby_match_count DESC, member_count DESC, c.created_at DESC`;
+
+    const viewerRoleExpr = userId
+      ? sql`(SELECT vcm.role FROM newchums.community_members vcm WHERE vcm.community_id = c.id AND vcm.user_id = ${userId} AND vcm.status = 'active' LIMIT 1)`
+      : sql`NULL`;
+
+    const communities = (await sql`
+      SELECT c.id, c.slug, c.name, c.description, c.visibility, c.join_mode, c.avatar_key, c.banner_key,
+        c.location_name, c.owner_user_id, c.created_at, c.is_online, c.website, c.join_link,
+        (SELECT COUNT(*)::int FROM newchums.community_members cm WHERE cm.community_id = c.id AND cm.status = 'active') AS member_count,
+        ${viewerRoleExpr} AS viewer_role,
+        (SELECT COUNT(*)::int FROM newchums.events e WHERE e.community_id = c.id AND e.status = 'published' AND e.starts_at >= NOW() AND COALESCE(e.is_qa, false) = false) AS upcoming_plan_count,
+        ${hobbyMatchExpr} AS hobby_match_count,
+        ${distanceExpr} AS distance_km,
+        (SELECT COALESCE(json_agg(json_build_object('name', ii.name, 'slug', ii.slug)), '[]'::json)
+         FROM newchums.community_interests ci3
+         JOIN newchums.interests ii ON ii.id = ci3.interest_id AND ii.is_deleted = false
+         WHERE ci3.community_id = c.id) AS hobbies
+      FROM newchums.communities c
+      WHERE (${isSuperAdmin}::boolean OR c.visibility = 'public')
+        AND COALESCE(c.status, 'active') = 'active'
+        ${q ? sql`AND (c.name ILIKE ${q} OR c.slug ILIKE ${q})` : sql``}
+        ${distanceFilter}
+        ${hobbyFilter}
+      ORDER BY ${orderClause}
+      LIMIT ${limit} OFFSET ${offset}
+    `) as Record<string, unknown>[];
+    const hasMore = communities.length === limit;
+    return c.json({ ok: true, communities, hasMore });
   } catch (err) {
     console.error("[GET /communities]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
@@ -6335,6 +6480,14 @@ app.get("/communities/:slug", async (c) => {
       }
     }
 
+    // Fetch community hobbies
+    const communityHobbies = (await sql`
+      SELECT i.name, i.slug
+      FROM newchums.community_interests ci
+      JOIN newchums.interests i ON i.id = ci.interest_id AND i.is_deleted = false
+      WHERE ci.community_id = ${community.id}
+    `) as { name: string; slug: string }[];
+
     const ownerAvatarUrl = buildAvatarUrl(String(community.owner_user_id), community.owner_avatar_key as string | null, community.owner_avatar_updated_at as string | null, c.env.MEDIA_BUCKET);
     const isOwnerOrAdmin = isSuperAdmin || (viewerMembership?.role === "owner");
 
@@ -6362,6 +6515,7 @@ app.get("/communities/:slug", async (c) => {
       community: {
         ...community,
         owner_avatar_url: ownerAvatarUrl,
+        hobbies: communityHobbies,
       },
       viewerMembership,
       viewerPendingRequest,
@@ -6405,25 +6559,61 @@ app.patch("/communities/:slug", async (c) => {
       if (!nc.ok) return c.json({ ok: false, error: "INAPPROPRIATE_TEXT", field: "name" }, 400);
       updates.push("name"); vals.push(n);
     }
-    if (body.description !== undefined) { updates.push("description"); vals.push(body.description ? String(body.description).trim().slice(0, 2000) : null); }
-    if (body.visibility !== undefined) {
-      if (!VALID_COMMUNITY_VISIBILITY.includes(String(body.visibility) as typeof VALID_COMMUNITY_VISIBILITY[number]))
-        return c.json({ ok: false, error: "VALIDATION", message: "Invalid visibility" }, 400);
-      updates.push("visibility"); vals.push(String(body.visibility));
+    if (body.description !== undefined) {
+      const d = body.description ? String(body.description).trim().slice(0, 2000) : null;
+      if (!d) return c.json({ ok: false, error: "VALIDATION", message: "Description is required", field: "description" }, 400);
+      updates.push("description"); vals.push(d);
     }
-    if (body.join_mode !== undefined) {
-      if (!VALID_COMMUNITY_JOIN_MODE.includes(String(body.join_mode) as typeof VALID_COMMUNITY_JOIN_MODE[number]))
-        return c.json({ ok: false, error: "VALIDATION", message: "Invalid join mode" }, 400);
-      updates.push("join_mode"); vals.push(String(body.join_mode));
+    // Unified access model: prefer "access" field, fall back to legacy visibility/join_mode
+    if (body.access !== undefined) {
+      const access = String(body.access);
+      if (access === "open") { updates.push("visibility"); vals.push("public"); updates.push("join_mode"); vals.push("open"); }
+      else if (access === "private") { updates.push("visibility"); vals.push("private"); updates.push("join_mode"); vals.push("approval_required"); }
+      else return c.json({ ok: false, error: "VALIDATION", message: "Access must be 'open' or 'private'" }, 400);
+    } else {
+      if (body.visibility !== undefined) {
+        if (!VALID_COMMUNITY_VISIBILITY.includes(String(body.visibility) as typeof VALID_COMMUNITY_VISIBILITY[number]))
+          return c.json({ ok: false, error: "VALIDATION", message: "Invalid visibility" }, 400);
+        updates.push("visibility"); vals.push(String(body.visibility));
+      }
+      if (body.join_mode !== undefined) {
+        if (!VALID_COMMUNITY_JOIN_MODE.includes(String(body.join_mode) as typeof VALID_COMMUNITY_JOIN_MODE[number]))
+          return c.json({ ok: false, error: "VALIDATION", message: "Invalid join mode" }, 400);
+        updates.push("join_mode"); vals.push(String(body.join_mode));
+      }
     }
     if (body.chat_enabled !== undefined) { updates.push("chat_enabled"); vals.push(body.chat_enabled !== false); }
+    if (body.is_online !== undefined) { updates.push("is_online"); vals.push(body.is_online === true); }
+    if (body.website !== undefined) { updates.push("website"); vals.push(body.website ? String(body.website).trim().slice(0, 500) : null); }
+    if (body.join_link !== undefined) { updates.push("join_link"); vals.push(body.join_link ? String(body.join_link).trim().slice(0, 500) : null); }
     if (body.location_name !== undefined) { updates.push("location_name"); vals.push(body.location_name ? String(body.location_name).trim().slice(0, 200) : null); }
     if (body.location_address !== undefined) { updates.push("location_address"); vals.push(body.location_address ? String(body.location_address).trim().slice(0, 500) : null); }
     if (body.location_lat !== undefined) { updates.push("location_lat"); vals.push(body.location_lat != null ? Number(body.location_lat) : null); }
     if (body.location_lng !== undefined) { updates.push("location_lng"); vals.push(body.location_lng != null ? Number(body.location_lng) : null); }
     if (body.avatar_key !== undefined) { updates.push("avatar_key"); vals.push(body.avatar_key ? String(body.avatar_key) : null); }
 
-    if (updates.length === 0) return c.json({ ok: true });
+    // Handle interest_items update (replace all community interests)
+    if (Array.isArray(body.interest_items)) {
+      const interestItems = body.interest_items as { slug: string; name: string }[];
+      if (interestItems.length === 0)
+        return c.json({ ok: false, error: "VALIDATION", message: "Add at least one hobby", field: "hobby" }, 400);
+      const interestIds: string[] = [];
+      for (const item of interestItems) {
+        const slugVal = String(item.slug ?? "").trim().toLowerCase();
+        const nameVal = String(item.name ?? "").trim();
+        if (!slugVal || !nameVal) continue;
+        const existing = (await sql`SELECT id FROM newchums.interests WHERE slug = ${slugVal} AND is_deleted = false LIMIT 1`) as { id: string }[];
+        if (existing[0]) { interestIds.push(existing[0].id); continue; }
+        const inserted = (await sql`INSERT INTO newchums.interests (name, slug) VALUES (${nameVal}, ${slugVal}) ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name RETURNING id`) as { id: string }[];
+        if (inserted[0]) interestIds.push(inserted[0].id);
+      }
+      await sql`DELETE FROM newchums.community_interests WHERE community_id = ${community.id}`;
+      if (interestIds.length > 0) {
+        await sql`INSERT INTO newchums.community_interests (community_id, interest_id) SELECT ${community.id}, UNNEST(${interestIds}::uuid[]) ON CONFLICT DO NOTHING`;
+      }
+    }
+
+    if (updates.length === 0 && !Array.isArray(body.interest_items)) return c.json({ ok: true });
 
     const fieldMap = Object.fromEntries(updates.map((col, i) => [col, vals[i]]));
     const cid = community.id;
@@ -6432,6 +6622,9 @@ app.patch("/communities/:slug", async (c) => {
     if (fieldMap.visibility !== undefined) await sql`UPDATE newchums.communities SET visibility = ${fieldMap.visibility as string}, updated_at = now() WHERE id = ${cid}`;
     if (fieldMap.join_mode !== undefined) await sql`UPDATE newchums.communities SET join_mode = ${fieldMap.join_mode as string}, updated_at = now() WHERE id = ${cid}`;
     if (fieldMap.chat_enabled !== undefined) await sql`UPDATE newchums.communities SET chat_enabled = ${fieldMap.chat_enabled as boolean}, updated_at = now() WHERE id = ${cid}`;
+    if (fieldMap.is_online !== undefined) await sql`UPDATE newchums.communities SET is_online = ${fieldMap.is_online as boolean}, updated_at = now() WHERE id = ${cid}`;
+    if (fieldMap.website !== undefined) await sql`UPDATE newchums.communities SET website = ${fieldMap.website as string | null}, updated_at = now() WHERE id = ${cid}`;
+    if (fieldMap.join_link !== undefined) await sql`UPDATE newchums.communities SET join_link = ${fieldMap.join_link as string | null}, updated_at = now() WHERE id = ${cid}`;
     if (fieldMap.location_name !== undefined) await sql`UPDATE newchums.communities SET location_name = ${fieldMap.location_name as string | null}, updated_at = now() WHERE id = ${cid}`;
     if (fieldMap.location_address !== undefined) await sql`UPDATE newchums.communities SET location_address = ${fieldMap.location_address as string | null}, updated_at = now() WHERE id = ${cid}`;
     if (fieldMap.location_lat !== undefined) await sql`UPDATE newchums.communities SET location_lat = ${fieldMap.location_lat as number | null}, updated_at = now() WHERE id = ${cid}`;
