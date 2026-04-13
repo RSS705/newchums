@@ -1069,15 +1069,15 @@ export const sendConcernReportAlert = async (
 
 export const sendCommunityJoinRequestEmail = async (
   env: Bindings,
-  { to, ownerName, requesterName, communityName, communityUrl }: {
-    to: string; ownerName: string; requesterName: string; communityName: string; communityUrl: string;
+  { to, ownerName, requesterName, communityName, communityUrl, message }: {
+    to: string; ownerName: string; requesterName: string; communityName: string; communityUrl: string; message?: string | null;
   }
 ) => {
   if (!env.POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST) return;
   return sendPostmarkTemplateEmail(env, {
     From: env.EMAIL_FROM, To: to,
     TemplateId: env.POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST,
-    TemplateModel: { productName: "NewChums", ownerName, requesterName, communityName, communityUrl },
+    TemplateModel: { productName: "NewChums", ownerName, requesterName, communityName, communityUrl, message: message || "" },
   });
 };
 

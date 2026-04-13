@@ -28,6 +28,8 @@ export const VALID_KEYS = [
   "unread_chat_digest",
   "attendance_confirmation",
   "roadmap_updates",
+  "community_join_request_received",
+  "community_join_request_result",
 ] as const;
 
 export type NotificationKey = (typeof VALID_KEYS)[number];
@@ -52,6 +54,8 @@ export const DEFAULT_PREFS: Record<NotificationKey, NotificationPrefItem> = {
   unread_chat_digest: { enabled: true },
   attendance_confirmation: { enabled: true },
   roadmap_updates: { enabled: true },
+  community_join_request_received: { enabled: true },
+  community_join_request_result: { enabled: true },
 };
 
 /**

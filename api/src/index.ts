@@ -6319,7 +6319,8 @@ app.get("/communities", async (c) => {
     if (mine && userId) {
       const communities = (await sql`
         SELECT c.id, c.slug, c.name, c.description, c.visibility, c.join_mode, c.avatar_key, c.banner_key,
-          c.location_name, c.owner_user_id, c.created_at, c.is_online, c.website, c.join_link,
+          c.location_name, c.location_address, c.location_lat, c.location_lng,
+          c.owner_user_id, c.created_at, c.is_online, c.website, c.join_link,
           (SELECT COUNT(*)::int FROM newchums.community_members cm WHERE cm.community_id = c.id AND cm.status = 'active') AS member_count,
           cme.role AS viewer_role,
           (SELECT COUNT(*)::int FROM newchums.events e WHERE e.community_id = c.id AND e.status = 'published' AND e.starts_at >= NOW() AND COALESCE(e.is_qa, false) = false) AS upcoming_plan_count,
@@ -6389,8 +6390,7 @@ app.get("/communities", async (c) => {
          JOIN newchums.interests ii ON ii.id = ci3.interest_id AND ii.is_deleted = false
          WHERE ci3.community_id = c.id) AS hobbies
       FROM newchums.communities c
-      WHERE (${isSuperAdmin}::boolean OR c.visibility = 'public')
-        AND COALESCE(c.status, 'active') = 'active'
+      WHERE COALESCE(c.status, 'active') = 'active'
         ${q ? sql`AND (c.name ILIKE ${q} OR c.slug ILIKE ${q})` : sql``}
         ${distanceFilter}
         ${hobbyFilter}
@@ -6448,6 +6448,14 @@ app.get("/communities/:slug", async (c) => {
       });
     }
 
+    // Fetch community hobbies (needed for both restricted and full responses)
+    const communityHobbies = (await sql`
+      SELECT i.name, i.slug
+      FROM newchums.community_interests ci
+      JOIN newchums.interests i ON i.id = ci.interest_id AND i.is_deleted = false
+      WHERE ci.community_id = ${community.id}
+    `) as { name: string; slug: string }[];
+
     if (community.visibility === "private" && !isSuperAdmin) {
       if (!userId) return c.json({ ok: false, error: "PRIVATE_COMMUNITY" }, 403);
       const memberRows = (await sql`
@@ -6457,11 +6465,22 @@ app.get("/communities/:slug", async (c) => {
         const pendingRows = (await sql`
           SELECT 1 FROM newchums.community_join_requests WHERE community_id = ${community.id} AND user_id = ${userId} AND status = 'pending' LIMIT 1
         `) as unknown[];
+        const declinedRows = (await sql`
+          SELECT 1 FROM newchums.community_join_requests WHERE community_id = ${community.id} AND user_id = ${userId} AND status = 'declined' LIMIT 1
+        `) as unknown[];
         return c.json({
           ok: true,
-          community: { id: community.id, slug: community.slug, name: community.name, visibility: community.visibility, join_mode: community.join_mode, member_count: community.member_count },
+          community: {
+            id: community.id, slug: community.slug, name: community.name,
+            description: community.description, avatar_key: community.avatar_key,
+            visibility: community.visibility, join_mode: community.join_mode,
+            is_online: community.is_online, location_name: community.location_name,
+            website: community.website, member_count: community.member_count,
+            hobbies: communityHobbies,
+          },
           viewerMembership: null,
           viewerPendingRequest: pendingRows.length > 0,
+          viewerDeclinedRequest: declinedRows.length > 0,
           restricted: true,
         });
       }
@@ -6480,26 +6499,22 @@ app.get("/communities/:slug", async (c) => {
       }
     }
 
-    // Fetch community hobbies
-    const communityHobbies = (await sql`
-      SELECT i.name, i.slug
-      FROM newchums.community_interests ci
-      JOIN newchums.interests i ON i.id = ci.interest_id AND i.is_deleted = false
-      WHERE ci.community_id = ${community.id}
-    `) as { name: string; slug: string }[];
-
     const ownerAvatarUrl = buildAvatarUrl(String(community.owner_user_id), community.owner_avatar_key as string | null, community.owner_avatar_updated_at as string | null, c.env.MEDIA_BUCKET);
     const isOwnerOrAdmin = isSuperAdmin || (viewerMembership?.role === "owner");
 
-    let pendingRequests: unknown[] = [];
+    let pendingRequests: Record<string, unknown>[] = [];
     if (isOwnerOrAdmin && community.join_mode === "approval_required") {
-      pendingRequests = (await sql`
-        SELECT cjr.id, cjr.user_id, cjr.created_at, u.name, u.username, u.avatar_key, u.avatar_updated_at
+      const rawRequests = (await sql`
+        SELECT cjr.id, cjr.user_id, cjr.created_at, cjr.message, u.name, u.username, u.avatar_key, u.avatar_updated_at
         FROM newchums.community_join_requests cjr
         JOIN newchums.users u ON u.id = cjr.user_id
         WHERE cjr.community_id = ${community.id} AND cjr.status = 'pending'
         ORDER BY cjr.created_at ASC
-      `) as unknown[];
+      `) as { id: string; user_id: string; created_at: string; message: string | null; name: string | null; username: string | null; avatar_key: string | null; avatar_updated_at: string | null }[];
+      pendingRequests = rawRequests.map((r) => ({
+        ...r,
+        avatar_url: buildAvatarUrl(r.user_id, r.avatar_key, r.avatar_updated_at, c.env.MEDIA_BUCKET),
+      }));
     }
 
     let shareToken: string | null = null;
@@ -6697,8 +6712,17 @@ app.post("/communities/:id/join", async (c) => {
   const sql = getSql(c.env);
   const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
 
+  // Parse optional message from body
+  let joinMessage: string | null = null;
   try {
-    const communityRows = (await sql`SELECT id, join_mode, visibility, owner_user_id, name FROM newchums.communities WHERE id = ${communityId} LIMIT 1`) as { id: string; join_mode: string; visibility: string; owner_user_id: string; name: string }[];
+    const body = await c.req.json();
+    if (body.message && typeof body.message === "string") {
+      joinMessage = body.message.trim().slice(0, 500) || null;
+    }
+  } catch { /* body may be empty for open joins */ }
+
+  try {
+    const communityRows = (await sql`SELECT id, slug, join_mode, visibility, owner_user_id, name FROM newchums.communities WHERE id = ${communityId} LIMIT 1`) as { id: string; slug: string; join_mode: string; visibility: string; owner_user_id: string; name: string }[];
     if (!communityRows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     const community = communityRows[0];
 
@@ -6713,19 +6737,33 @@ app.post("/communities/:id/join", async (c) => {
       `) as unknown[];
       if (existingReq.length > 0) return c.json({ ok: true, status: "already_pending" });
 
-      await sql`INSERT INTO newchums.community_join_requests (community_id, user_id) VALUES (${communityId}, ${userId})`;
+      await sql`INSERT INTO newchums.community_join_requests (community_id, user_id, message) VALUES (${communityId}, ${userId}, ${joinMessage})`;
 
-      // Notify owner
+      // Notify owner (in-app + email)
       const ownerRows = (await sql`SELECT email, name FROM newchums.users WHERE id = ${community.owner_user_id} LIMIT 1`) as { email: string; name: string | null }[];
       const requesterRows = (await sql`SELECT name, username FROM newchums.users WHERE id = ${userId} LIMIT 1`) as { name: string | null; username: string | null }[];
-      if (ownerRows[0] && c.env.POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST) {
-        c.executionCtx.waitUntil(sendCommunityJoinRequestEmail(c.env, {
-          to: ownerRows[0].email,
-          ownerName: ownerRows[0].name || "there",
-          requesterName: requesterRows[0]?.name || requesterRows[0]?.username || "Someone",
-          communityName: community.name,
-          communityUrl: `${c.env.WEB_BASE_URL}/communities/${communityRows[0].id}`,
-        }));
+      const requesterName = requesterRows[0]?.name || requesterRows[0]?.username || "Someone";
+
+      // In-app notification
+      await sql`
+        INSERT INTO newchums.notifications (user_id, type, actor_user_id, entity_id, metadata)
+        VALUES (${community.owner_user_id}, 'community_join_request', ${userId}, ${communityId}, ${JSON.stringify({ communityName: community.name, communitySlug: community.slug, requesterName })})
+      `;
+
+      // Email
+      if (ownerRows[0]) {
+        const ownerProfileRows = (await sql`SELECT notification_prefs FROM user_profile WHERE user_id = ${community.owner_user_id} LIMIT 1`) as { notification_prefs: unknown }[];
+        const ownerPrefs = normalizeNotificationPrefs(ownerProfileRows[0]?.notification_prefs);
+        if (ownerPrefs.items.community_join_request_received?.enabled !== false) {
+          c.executionCtx.waitUntil(sendCommunityJoinRequestEmail(c.env, {
+            to: ownerRows[0].email,
+            ownerName: ownerRows[0].name || "there",
+            requesterName,
+            communityName: community.name,
+            communityUrl: `${c.env.WEB_BASE_URL}/communities/${community.slug}`,
+            message: joinMessage,
+          }));
+        }
       }
 
       return c.json({ ok: true, status: "pending" });
@@ -6874,10 +6912,18 @@ app.put("/communities/:id/join-requests/:requestId", async (c) => {
       `;
     }
 
-    // Send email notification to the requester
+    const community = communityRows[0];
+
+    // In-app notification to requester
+    const notifType = action === "approve" ? "community_join_request_approved" : "community_join_request_declined";
+    await sql`
+      INSERT INTO newchums.notifications (user_id, type, actor_user_id, entity_id, metadata)
+      VALUES (${reqRows[0].user_id}, ${notifType}, ${userRows[0].id}, ${communityId}, ${JSON.stringify({ communityName: community.name, communitySlug: community.slug })})
+    `;
+
+    // Email notification to requester
     const requesterRows = (await sql`SELECT email, name FROM newchums.users WHERE id = ${reqRows[0].user_id} LIMIT 1`) as { email: string; name: string | null }[];
     if (requesterRows[0]) {
-      const community = communityRows[0];
       if (action === "approve" && c.env.POSTMARK_TEMPLATE_COMMUNITY_JOIN_APPROVED) {
         c.executionCtx.waitUntil(sendCommunityJoinApprovedEmail(c.env, {
           to: requesterRows[0].email,
@@ -6916,13 +6962,17 @@ app.get("/communities/:id/join-requests", async (c) => {
     if (!communityRows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     if (communityRows[0].owner_user_id !== userRows[0].id && !isSuperAdmin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
 
-    const requests = (await sql`
-      SELECT cjr.id, cjr.user_id, cjr.created_at, u.name, u.username, u.avatar_key, u.avatar_updated_at
+    const rawRequests = (await sql`
+      SELECT cjr.id, cjr.user_id, cjr.created_at, cjr.message, u.name, u.username, u.avatar_key, u.avatar_updated_at
       FROM newchums.community_join_requests cjr
       JOIN newchums.users u ON u.id = cjr.user_id
       WHERE cjr.community_id = ${communityId} AND cjr.status = 'pending'
       ORDER BY cjr.created_at ASC
-    `) as Record<string, unknown>[];
+    `) as { id: string; user_id: string; created_at: string; message: string | null; name: string | null; username: string | null; avatar_key: string | null; avatar_updated_at: string | null }[];
+    const requests = rawRequests.map((r) => ({
+      ...r,
+      avatar_url: buildAvatarUrl(r.user_id, r.avatar_key, r.avatar_updated_at, c.env.MEDIA_BUCKET),
+    }));
 
     return c.json({ ok: true, requests });
   } catch (err) {
@@ -8111,6 +8161,15 @@ app.get("/events/explore", async (c) => {
             WHERE cm_viewer.community_id = e.community_id AND cm_viewer.user_id = ${userId} AND cm_viewer.status = 'active'
           ))
           OR EXISTS (SELECT 1 FROM newchums.event_rsvps er_hid WHERE er_hid.event_id = e.id AND er_hid.user_id = ${userId})
+        )
+        AND (
+          e.community_id IS NULL
+          OR cm_community.visibility IS NULL
+          OR cm_community.visibility = 'public'
+          OR EXISTS (
+            SELECT 1 FROM newchums.community_members cm_priv
+            WHERE cm_priv.community_id = e.community_id AND cm_priv.user_id = ${userId} AND cm_priv.status = 'active'
+          )
         )
         AND (e.visibility != 'invite_only'
           OR EXISTS (SELECT 1 FROM newchums.event_rsvps er_inv WHERE er_inv.event_id = e.id AND er_inv.user_id = ${userId})

@@ -3,6 +3,10 @@ New community join request
 Hi {{ownerName}},
 
 {{requesterName}} wants to join your community "{{communityName}}".
+{{#message}}
+
+Their message: "{{message}}"
+{{/message}}
 
 Review this request: {{communityUrl}}
 

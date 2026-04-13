@@ -86,4 +86,14 @@ export const NOTIFICATION_TYPES: NotificationTypeConfig[] = [
     title: "Roadmap updates",
     description: "Updates on roadmap items you've submitted or followed.",
   },
+  {
+    key: "community_join_request_received",
+    title: "Someone requested to join your community",
+    description: "When someone requests to join a private community you own.",
+  },
+  {
+    key: "community_join_request_result",
+    title: "Your community join request was reviewed",
+    description: "When a community owner approves or declines your request to join.",
+  },
 ];

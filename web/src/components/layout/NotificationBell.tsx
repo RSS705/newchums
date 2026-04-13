@@ -196,6 +196,50 @@ function notificationText(n: AppNotification, viewerHandle: string | null): {
         : <> left you a <Box component={Link} href={shoutoutsHref} sx={{ fontWeight: 600, color: "inherit", textDecoration: "none", "&:hover": { textDecoration: "underline" } }}>shout-out</Box>.</>;
       return { actorLabel, actorHref, body: trailing };
     }
+    case "community_join_request": {
+      const communityName = n.metadata?.communityName as string | undefined;
+      const communitySlug = n.metadata?.communitySlug as string | undefined;
+      const communityHref = communitySlug ? `/communities/${communitySlug}` : null;
+      const communityLink = communityName && communityHref ? (
+        <Link href={communityHref} style={{ fontWeight: 600, color: "inherit", textDecoration: "none" }}
+          onMouseOver={(e) => { (e.target as HTMLElement).style.textDecoration = "underline"; }}
+          onMouseOut={(e) => { (e.target as HTMLElement).style.textDecoration = "none"; }}
+        >
+          {communityName}
+        </Link>
+      ) : communityName ? <strong>{communityName}</strong> : null;
+      return {
+        actorLabel,
+        actorHref,
+        body: communityLink ? <>{" requested to join "}{communityLink}.</> : " requested to join your community.",
+      };
+    }
+    case "community_join_request_approved": {
+      const communityName = n.metadata?.communityName as string | undefined;
+      const communitySlug = n.metadata?.communitySlug as string | undefined;
+      const communityHref = communitySlug ? `/communities/${communitySlug}` : null;
+      const communityLink = communityName && communityHref ? (
+        <Link href={communityHref} style={{ fontWeight: 600, color: "inherit", textDecoration: "none" }}
+          onMouseOver={(e) => { (e.target as HTMLElement).style.textDecoration = "underline"; }}
+          onMouseOut={(e) => { (e.target as HTMLElement).style.textDecoration = "none"; }}
+        >
+          {communityName}
+        </Link>
+      ) : communityName ? <strong>{communityName}</strong> : null;
+      return {
+        actorLabel,
+        actorHref,
+        body: communityLink ? <>{" approved your request to join "}{communityLink}!</> : " approved your community join request!",
+      };
+    }
+    case "community_join_request_declined": {
+      const communityName = n.metadata?.communityName as string | undefined;
+      return {
+        actorLabel,
+        actorHref,
+        body: communityName ? <>{" declined your request to join "}<strong>{communityName}</strong>.</> : " declined your community join request.",
+      };
+    }
     default:
       return { actorLabel, actorHref, body: " did something." };
   }

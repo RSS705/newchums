@@ -51,7 +51,7 @@ const FIELD_ORDER = ["title", "hobby", "maxSeats", "date", "time", "location"] a
 
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_BANNER_INPUT_BYTES = 20 * 1024 * 1024; // 20MB, raw file limit before compression
-const MAX_BANNER_OUTPUT_BYTES = 400 * 1024;       // 400KB, compressed output target
+const MAX_BANNER_OUTPUT_BYTES = 400 * 1024; // 400KB, compressed output target
 
 export default function CreateEventClient() {
   const router = useRouter();
@@ -73,11 +73,15 @@ export default function CreateEventClient() {
   const [locationLat, setLocationLat] = useState<number | null>(null);
   const [locationLng, setLocationLng] = useState<number | null>(null);
   const [locationArea, setLocationArea] = useState<string | null>(null);
-  const [locationVisibility, setLocationVisibility] = useState<"exact_everyone" | "exact_joined_only" | "approximate_only">("exact_everyone");
+  const [locationVisibility, setLocationVisibility] = useState<
+    "exact_everyone" | "exact_joined_only" | "approximate_only"
+  >("exact_everyone");
   const [onlineLink, setOnlineLink] = useState("");
 
   const [visibility, setVisibility] = useState<"public" | "chums_only" | "invite_only">("public");
-  const [schedulingMode, setSchedulingMode] = useState<"off" | "suggest" | "availability">("suggest");
+  const [schedulingMode, setSchedulingMode] = useState<"off" | "suggest" | "availability">(
+    "suggest"
+  );
   const [deadlineDate, setDeadlineDate] = useState<Dayjs | null>(null);
   const [deadlineTime, setDeadlineTime] = useState<Dayjs | null>(null);
   const [allowAttendeeInvites, setAllowAttendeeInvites] = useState(true);
@@ -85,7 +89,9 @@ export default function CreateEventClient() {
   const [requireReconfirmation, setRequireReconfirmation] = useState(true);
   const [requireApproval, setRequireApproval] = useState(false);
   const [minConfirmedAttendees, setMinConfirmedAttendees] = useState("");
-  const [fallbackPolicy, setFallbackPolicy] = useState<"notify_host" | "proceed" | "auto_cancel">("notify_host");
+  const [fallbackPolicy, setFallbackPolicy] = useState<"notify_host" | "proceed" | "auto_cancel">(
+    "notify_host"
+  );
 
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -98,7 +104,7 @@ export default function CreateEventClient() {
     (key: string) => (el: HTMLElement | null) => {
       fieldRefs.current[key] = el;
     },
-    [],
+    []
   );
 
   // Chum preference overrides
@@ -107,8 +113,20 @@ export default function CreateEventClient() {
   const [prefDisabledMetrics, setPrefDisabledMetrics] = useState<Record<string, boolean>>({});
 
   // Community association
-  const [communityId, setCommunityId] = useState<string | null>(searchParams.get("community_id"));
-  const [communityName, setCommunityName] = useState<string | null>(searchParams.get("community_name"));
+  type MyCommunity = {
+    id: string;
+    slug: string;
+    name: string;
+    is_online: boolean;
+    location_name: string | null;
+    location_address: string | null;
+    location_lat: number | null;
+    location_lng: number | null;
+  };
+  const [myCommunities, setMyCommunities] = useState<MyCommunity[]>([]);
+  const [selectedCommunityId, setSelectedCommunityId] = useState<string | null>(
+    searchParams.get("community_id")
+  );
   const [hideFromExplore, setHideFromExplore] = useState(false);
 
   // QA plan (super admin only)
@@ -130,29 +148,63 @@ export default function CreateEventClient() {
   const autoSuggestedRef = useRef(false);
 
   useEffect(() => {
-    // Warm-load the Google Places script so the autocomplete on the location
-    // field is ready by the time the user reaches it. We log a warning rather
-    // than swallowing the failure so misconfigured environments (e.g. missing
-    // NEXT_PUBLIC_GOOGLE_MAPS_API_KEY) are visible during diagnosis instead
-    // of producing a silently disabled field.
     loadGooglePlacesScript().catch((err) => {
       console.warn("[CreateEventClient] Google Places script failed to load:", err);
     });
   }, []);
 
-  // Fetch role for QA toggle visibility
+  // Fetch profile (for QA toggle) and user's communities (for the community selector)
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await apiFetch("/profile", { auth: true });
-        const data = await res.json();
-        if (!cancelled && data.ok && data.profile?.role === "super_admin") {
-          setIsSuperAdmin(true);
+        const [profileRes, communitiesRes] = await Promise.allSettled([
+          apiFetch("/profile", { auth: true }),
+          apiFetch("/communities?mine=1&limit=50", { auth: true }),
+        ]);
+        if (cancelled) return;
+        if (profileRes.status === "fulfilled" && profileRes.value.ok) {
+          const d = await profileRes.value.json();
+          if (d.ok && d.profile?.role === "super_admin") setIsSuperAdmin(true);
         }
-      } catch { /* non-fatal */ }
+        if (communitiesRes.status === "fulfilled" && communitiesRes.value.ok) {
+          const d = await communitiesRes.value.json();
+          if (d.ok && Array.isArray(d.communities)) {
+            const list: MyCommunity[] = d.communities.map((c: Record<string, unknown>) => ({
+              id: String(c.id),
+              slug: String(c.slug ?? ""),
+              name: String(c.name ?? ""),
+              is_online: c.is_online === true,
+              location_name: (c.location_name as string) ?? null,
+              location_address: (c.location_address as string) ?? null,
+              location_lat: c.location_lat != null ? Number(c.location_lat) : null,
+              location_lng: c.location_lng != null ? Number(c.location_lng) : null,
+            }));
+            setMyCommunities(list);
+
+            // If arriving from a community page, prefill location from that community
+            const preselectedId = searchParams.get("community_id");
+            if (preselectedId) {
+              const match = list.find((c) => c.id === preselectedId);
+              if (match && !match.is_online && match.location_name && !locationName) {
+                setLocationName(match.location_name);
+                if (match.location_address) setLocationAddress(match.location_address);
+                if (match.location_lat != null && match.location_lng != null) {
+                  setLocationLat(match.location_lat);
+                  setLocationLng(match.location_lng);
+                }
+              }
+            }
+          }
+        }
+      } catch {
+        /* non-fatal */
+      }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleBannerCropComplete = useCallback((_: Area, croppedAreaPx: Area) => {
@@ -162,7 +214,13 @@ export default function CreateEventClient() {
   const handleBannerCropSave = useCallback(async () => {
     if (!bannerCropSrc || !bannerCroppedArea) return;
     try {
-      const blob = await getCroppedImg(bannerCropSrc, bannerCroppedArea as PixelCrop, 1200, 400, MAX_BANNER_OUTPUT_BYTES);
+      const blob = await getCroppedImg(
+        bannerCropSrc,
+        bannerCroppedArea as PixelCrop,
+        1200,
+        400,
+        MAX_BANNER_OUTPUT_BYTES
+      );
       URL.revokeObjectURL(bannerCropSrc);
       setBannerCropSrc(null);
       const file = new File([blob], "banner.webp", { type: blob.type || "image/webp" });
@@ -174,22 +232,25 @@ export default function CreateEventClient() {
     }
   }, [bannerCropSrc, bannerCroppedArea, toast]);
 
-  const handlePresetSelect = useCallback(async (slug: string) => {
-    if (presetRendering) return;
-    setPresetRendering(true);
-    try {
-      const blob = await renderBannerPreset(slug);
-      if (bannerPreview && selectedPresetSlug) URL.revokeObjectURL(bannerPreview);
-      const file = new File([blob], `banner-${slug}.webp`, { type: "image/webp" });
-      setBannerFile(file);
-      setBannerPreview(URL.createObjectURL(file));
-      setSelectedPresetSlug(slug);
-    } catch {
-      toast.error("Failed to generate banner");
-    } finally {
-      setPresetRendering(false);
-    }
-  }, [presetRendering, bannerPreview, selectedPresetSlug, toast]);
+  const handlePresetSelect = useCallback(
+    async (slug: string) => {
+      if (presetRendering) return;
+      setPresetRendering(true);
+      try {
+        const blob = await renderBannerPreset(slug);
+        if (bannerPreview && selectedPresetSlug) URL.revokeObjectURL(bannerPreview);
+        const file = new File([blob], `banner-${slug}.webp`, { type: "image/webp" });
+        setBannerFile(file);
+        setBannerPreview(URL.createObjectURL(file));
+        setSelectedPresetSlug(slug);
+      } catch {
+        toast.error("Failed to generate banner");
+      } finally {
+        setPresetRendering(false);
+      }
+    },
+    [presetRendering, bannerPreview, selectedPresetSlug, toast]
+  );
 
   // Auto-suggest a preset based on the first hobby selected (fires once)
   useEffect(() => {
@@ -204,7 +265,8 @@ export default function CreateEventClient() {
   const validate = (): Record<string, string> => {
     const errs: Record<string, string> = {};
     if (!title.trim()) errs.title = "Give your plan a title";
-    if (selectedHobbies.length === 0) errs.hobby = "Add at least one hobby so people can find this plan";
+    if (selectedHobbies.length === 0)
+      errs.hobby = "Add at least one hobby so people can find this plan";
     if (!dateValue || !dateValue.isValid()) errs.date = "Pick a date";
     if (!timeValue || !timeValue.isValid()) errs.time = "Pick a time";
     if (locationType === "in_person" && !locationName.trim() && !locationAddress.trim())
@@ -217,7 +279,9 @@ export default function CreateEventClient() {
 
   const buildPrefOverrides = (): { disabled?: boolean; disabled_metrics?: string[] } | null => {
     if (prefDisableAll) return { disabled: true };
-    const dm = Object.entries(prefDisabledMetrics).filter(([, v]) => v).map(([k]) => k);
+    const dm = Object.entries(prefDisabledMetrics)
+      .filter(([, v]) => v)
+      .map(([k]) => k);
     if (dm.length > 0) return { disabled_metrics: dm };
     return null;
   };
@@ -251,7 +315,7 @@ export default function CreateEventClient() {
       location_place_id: locationPlaceId,
       location_lat: locationLat,
       location_lng: locationLng,
-      location_area: locationType === "in_person" ? (locationArea?.trim() || null) : null,
+      location_area: locationType === "in_person" ? locationArea?.trim() || null : null,
       location_visibility: locationType === "in_person" ? locationVisibility : "exact_everyone",
       online_link: locationType === "online" ? onlineLink.trim() || null : null,
       max_seats: maxSeats ? Number(maxSeats) : null,
@@ -259,18 +323,24 @@ export default function CreateEventClient() {
       visibility,
       allow_alt_times: schedulingMode !== "off",
       alt_times_mode: schedulingMode === "availability" ? "availability" : "suggest",
-      availability_deadline_at: schedulingMode === "availability" && deadlineDate?.isValid() && deadlineTime?.isValid()
-        ? deadlineDate.hour(deadlineTime.hour()).minute(deadlineTime.minute()).second(0).toISOString()
-        : null,
+      availability_deadline_at:
+        schedulingMode === "availability" && deadlineDate?.isValid() && deadlineTime?.isValid()
+          ? deadlineDate
+              .hour(deadlineTime.hour())
+              .minute(deadlineTime.minute())
+              .second(0)
+              .toISOString()
+          : null,
       allow_attendee_invites: allowAttendeeInvites,
       require_reconfirmation: requireReconfirmation,
       require_approval: requireApproval,
-      min_confirmed_attendees: requireReconfirmation && minConfirmedAttendees ? Number(minConfirmedAttendees) : null,
+      min_confirmed_attendees:
+        requireReconfirmation && minConfirmedAttendees ? Number(minConfirmedAttendees) : null,
       fallback_policy: requireReconfirmation ? fallbackPolicy : "notify_host",
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       status: "published",
       pref_overrides: buildPrefOverrides(),
-      community_id: communityId || null,
+      community_id: selectedCommunityId || null,
       hide_from_explore: hideFromExplore,
       ...(isQa ? { is_qa: true } : {}),
     };
@@ -282,7 +352,13 @@ export default function CreateEventClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const data = (await res.json()) as { ok: boolean; event?: { id: string }; error?: string; message?: string; field?: string };
+      const data = (await res.json()) as {
+        ok: boolean;
+        event?: { id: string };
+        error?: string;
+        message?: string;
+        field?: string;
+      };
       if (data.ok && data.event) {
         if (bannerFile) {
           try {
@@ -295,8 +371,18 @@ export default function CreateEventClient() {
                 contentLength: bannerFile.size,
               }),
             });
-            const bInitData = (await bInitRes.json()) as { ok?: boolean; uploadToken?: string; objectKey?: string; uploadUrl?: string };
-            if (bInitData.ok && bInitData.uploadToken && bInitData.uploadUrl && bInitData.objectKey) {
+            const bInitData = (await bInitRes.json()) as {
+              ok?: boolean;
+              uploadToken?: string;
+              objectKey?: string;
+              uploadUrl?: string;
+            };
+            if (
+              bInitData.ok &&
+              bInitData.uploadToken &&
+              bInitData.uploadUrl &&
+              bInitData.objectKey
+            ) {
               const uploadUrl = `${getApiBaseUrl()}${bInitData.uploadUrl}`;
               const uploadRes = await fetch(uploadUrl, {
                 method: "PUT",
@@ -316,7 +402,9 @@ export default function CreateEventClient() {
                 });
               }
             }
-          } catch { /* banner upload failure is non-fatal */ }
+          } catch {
+            /* banner upload failure is non-fatal */
+          }
         }
         toast.success("Plan created!");
         notifyObjectivesChanged();
@@ -336,7 +424,6 @@ export default function CreateEventClient() {
     setSubmitting(false);
   };
 
-
   return (
     <Stack spacing={{ xs: 2.5, sm: 4 }}>
       {/* Header */}
@@ -354,7 +441,8 @@ export default function CreateEventClient() {
           Start a plan
         </Typography>
         <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-          Organize a gathering around something you enjoy. Keep it simple, you can always update later.
+          Organize a gathering around something you enjoy. Keep it simple, you can always update
+          later.
         </Typography>
       </Box>
 
@@ -387,7 +475,9 @@ export default function CreateEventClient() {
                     cursor: presetRendering ? "wait" : "pointer",
                     border: "2px solid",
                     borderColor: isSelected ? "primary.main" : "transparent",
-                    boxShadow: isSelected ? "0 0 0 2px rgba(99,102,241,0.35)" : "0 1px 3px rgba(0,0,0,0.15)",
+                    boxShadow: isSelected
+                      ? "0 0 0 2px rgba(99,102,241,0.35)"
+                      : "0 1px 3px rgba(0,0,0,0.15)",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -395,7 +485,15 @@ export default function CreateEventClient() {
                     "&:hover": { transform: presetRendering ? "none" : "scale(1.06)" },
                   }}
                 >
-                  {isSelected && <CheckRoundedIcon sx={{ fontSize: 16, color: "white", filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.4))" }} />}
+                  {isSelected && (
+                    <CheckRoundedIcon
+                      sx={{
+                        fontSize: 16,
+                        color: "white",
+                        filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.4))",
+                      }}
+                    />
+                  )}
                 </Box>
               );
             })}
@@ -472,7 +570,8 @@ export default function CreateEventClient() {
             )}
           </Stack>
           <Typography variant="caption" color="text.secondary">
-            Colour themes are free. Custom photos: JPEG, PNG, or WebP up to 20 MB, we&apos;ll compress it automatically.
+            Colour themes are free. Custom photos: JPEG, PNG, or WebP up to 20 MB, we&apos;ll
+            compress it automatically.
           </Typography>
         </Stack>
       </AppCard>
@@ -513,7 +612,10 @@ export default function CreateEventClient() {
           </Box>
 
           <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="flex-start">
-            <Box ref={setFieldRef("maxSeats")} sx={{ width: { xs: "100%", sm: "auto" }, scrollMarginTop: 96 }}>
+            <Box
+              ref={setFieldRef("maxSeats")}
+              sx={{ width: { xs: "100%", sm: "auto" }, scrollMarginTop: 96 }}
+            >
               <AppTextField
                 label="Seats"
                 placeholder="e.g. 8"
@@ -604,20 +706,45 @@ export default function CreateEventClient() {
               onChange={(e) => {
                 const mode = e.target.value as "off" | "suggest" | "availability";
                 setSchedulingMode(mode);
-                if (mode !== "availability") { setDeadlineDate(null); setDeadlineTime(null); }
+                if (mode !== "availability") {
+                  setDeadlineDate(null);
+                  setDeadlineTime(null);
+                }
               }}
             >
-              <FormControlLabel value="suggest" control={<Radio />} label="Allow suggestions" sx={{ gap: 0.5 }} />
-              <Typography variant="caption" color="text.secondary" sx={{ ml: "32px", mt: -0.5, mb: 0.5 }}>
+              <FormControlLabel
+                value="suggest"
+                control={<Radio />}
+                label="Allow suggestions"
+                sx={{ gap: 0.5 }}
+              />
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ ml: "32px", mt: -0.5, mb: 0.5 }}
+              >
                 People can suggest other times if the listed time doesn&apos;t work.
               </Typography>
-              <FormControlLabel value="availability" control={<Radio />} label="Request availability" sx={{ gap: 0.5 }} />
-              <Typography variant="caption" color="text.secondary" sx={{ ml: "32px", mt: -0.5, mb: 0.5 }}>
+              <FormControlLabel
+                value="availability"
+                control={<Radio />}
+                label="Request availability"
+                sx={{ gap: 0.5 }}
+              />
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ ml: "32px", mt: -0.5, mb: 0.5 }}
+              >
                 Ask attendees to share when they&apos;re free so you can find the best time.
               </Typography>
               {schedulingMode === "availability" && (
                 <Box sx={{ ml: "32px", mb: 1 }}>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.75 }}>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ display: "block", mb: 0.75 }}
+                  >
                     Availability needed by (optional)
                   </Typography>
                   <Stack direction="row" spacing={1.5}>
@@ -625,7 +752,14 @@ export default function CreateEventClient() {
                       value={deadlineDate}
                       onChange={setDeadlineDate}
                       minDate={dayjs()}
-                      slotProps={{ textField: { size: "small", placeholder: "Date", sx: { flex: 1 }, onKeyDown: pickerFieldTabKeyDown } }}
+                      slotProps={{
+                        textField: {
+                          size: "small",
+                          placeholder: "Date",
+                          sx: { flex: 1 },
+                          onKeyDown: pickerFieldTabKeyDown,
+                        },
+                      }}
                     />
                     <TimePicker
                       value={deadlineTime}
@@ -633,7 +767,12 @@ export default function CreateEventClient() {
                       format="h:mm A"
                       slotProps={{
                         field: { shouldRespectLeadingZeros: true } as Record<string, unknown>,
-                        textField: { size: "small", placeholder: "Time", sx: { flex: 1 }, onKeyDown: pickerFieldTabKeyDown },
+                        textField: {
+                          size: "small",
+                          placeholder: "Time",
+                          sx: { flex: 1 },
+                          onKeyDown: pickerFieldTabKeyDown,
+                        },
                       }}
                     />
                   </Stack>
@@ -705,7 +844,9 @@ export default function CreateEventClient() {
                 <Select
                   id="location-visibility-select"
                   value={locationVisibility}
-                  onChange={(e) => setLocationVisibility(e.target.value as typeof locationVisibility)}
+                  onChange={(e) =>
+                    setLocationVisibility(e.target.value as typeof locationVisibility)
+                  }
                   variant="outlined"
                   displayEmpty={false}
                   renderValue={(v) => {
@@ -768,7 +909,8 @@ export default function CreateEventClient() {
               Who can see this?
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              Controls who can find this plan and who may get notified about it, in the app or by email.
+              Controls who can find this plan and who may get notified about it, in the app or by
+              email.
             </Typography>
           </Box>
 
@@ -781,7 +923,9 @@ export default function CreateEventClient() {
               control={<Radio />}
               label={
                 <Box>
-                  <Typography variant="body1" fontWeight={500}>Public</Typography>
+                  <Typography variant="body1" fontWeight={500}>
+                    Public
+                  </Typography>
                   <Typography variant="caption" color="text.secondary">
                     Anyone on NewChums can discover and join this plan
                   </Typography>
@@ -794,7 +938,9 @@ export default function CreateEventClient() {
               control={<Radio />}
               label={
                 <Box>
-                  <Typography variant="body1" fontWeight={500}>Chums only</Typography>
+                  <Typography variant="body1" fontWeight={500}>
+                    Chums only
+                  </Typography>
                   <Typography variant="caption" color="text.secondary">
                     Only your Chums can see and join this plan
                   </Typography>
@@ -807,7 +953,9 @@ export default function CreateEventClient() {
               control={<Radio />}
               label={
                 <Box>
-                  <Typography variant="body1" fontWeight={500}>Invite only</Typography>
+                  <Typography variant="body1" fontWeight={500}>
+                    Invite only
+                  </Typography>
                   <Typography variant="caption" color="text.secondary">
                     Only people you invite will see this plan
                   </Typography>
@@ -837,14 +985,22 @@ export default function CreateEventClient() {
               label="24-hour attendance check"
               sx={{ mr: 0, gap: 0.5 }}
             />
-            <Tooltip title="About 24 hours before the plan, people who marked Going will be asked to confirm they are still coming. This includes you as the host." arrow placement="top" enterTouchDelay={0}>
+            <Tooltip
+              title="About 24 hours before the plan, people who marked Going will be asked to confirm they are still coming. This includes you as the host."
+              arrow
+              placement="top"
+              enterTouchDelay={0}
+            >
               <IconButton size="small" sx={{ p: 0.25, color: "text.disabled" }}>
                 <HelpOutlineRoundedIcon sx={{ fontSize: 16 }} />
               </IconButton>
             </Tooltip>
           </Stack>
           {requireReconfirmation && (
-            <Stack spacing={2} sx={{ mt: 1, pl: 2, borderLeft: "2px solid", borderColor: "divider" }}>
+            <Stack
+              spacing={2}
+              sx={{ mt: 1, pl: 2, borderLeft: "2px solid", borderColor: "divider" }}
+            >
               <Box>
                 <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.625 }}>
                   Minimum confirmed attendees (optional)
@@ -858,8 +1014,13 @@ export default function CreateEventClient() {
                   onChange={(e) => setMinConfirmedAttendees(e.target.value)}
                   inputProps={{ min: 1, max: 500 }}
                 />
-                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: "block" }}>
-                  Minimum people who need to confirm before the plan is considered viable. You count toward this total.
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ mt: 0.5, display: "block" }}
+                >
+                  Minimum people who need to confirm before the plan is considered viable. You count
+                  toward this total.
                 </Typography>
               </Box>
               {minConfirmedAttendees && Number(minConfirmedAttendees) >= 1 && (
@@ -871,7 +1032,9 @@ export default function CreateEventClient() {
                     fullWidth
                     size="small"
                     value={fallbackPolicy}
-                    onChange={(e) => setFallbackPolicy(e.target.value as "notify_host" | "proceed" | "auto_cancel")}
+                    onChange={(e) =>
+                      setFallbackPolicy(e.target.value as "notify_host" | "proceed" | "auto_cancel")
+                    }
                   >
                     <MenuItem value="notify_host">Notify me so I can decide</MenuItem>
                     <MenuItem value="proceed">Proceed unless I cancel</MenuItem>
@@ -893,7 +1056,12 @@ export default function CreateEventClient() {
               label="Require approval before joining"
               sx={{ mr: 0, gap: 0.5 }}
             />
-            <Tooltip title="People who are not directly invited will need to request to join, and you'll approve or decline each request." arrow placement="top" enterTouchDelay={0}>
+            <Tooltip
+              title="People who are not directly invited will need to request to join, and you'll approve or decline each request."
+              arrow
+              placement="top"
+              enterTouchDelay={0}
+            >
               <IconButton size="small" sx={{ p: 0.25, color: "text.disabled" }}>
                 <HelpOutlineRoundedIcon sx={{ fontSize: 16 }} />
               </IconButton>
@@ -912,6 +1080,63 @@ export default function CreateEventClient() {
           />
         </Stack>
       </AppCard>
+
+      {/* Community association */}
+      {myCommunities.length > 0 && (
+        <AppCard>
+          <Stack spacing={2}>
+            <Box>
+              <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
+                Community
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                Linked plans appear in the community and in explore by default.
+              </Typography>
+            </Box>
+
+            <FormControl fullWidth size="medium">
+              <Select
+                id="community-select"
+                value={selectedCommunityId ?? ""}
+                onChange={(e) => {
+                  const val = e.target.value || null;
+                  setSelectedCommunityId(val);
+                  if (!val) setHideFromExplore(false);
+                }}
+                displayEmpty
+                variant="outlined"
+                sx={{ "& .MuiSelect-select": { py: 1.25 } }}
+              >
+                <MenuItem value="">
+                  <Typography variant="body2" color="text.secondary">
+                    None
+                  </Typography>
+                </MenuItem>
+                {myCommunities.map((c) => (
+                  <MenuItem key={c.id} value={c.id}>
+                    <Typography variant="body2">{c.name}</Typography>
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            {selectedCommunityId && (
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={hideFromExplore}
+                    onChange={(e) => setHideFromExplore(e.target.checked)}
+                    size="small"
+                  />
+                }
+                label="Only show this plan to community members"
+                slotProps={{ typography: { variant: "body2", fontWeight: 500 } }}
+                sx={{ gap: 0.5 }}
+              />
+            )}
+          </Stack>
+        </AppCard>
+      )}
 
       {/* Matching preferences override */}
       <AppCard>
@@ -965,13 +1190,27 @@ export default function CreateEventClient() {
                         size="small"
                         checked={!!prefDisabledMetrics[metric]}
                         onChange={(e) =>
-                          setPrefDisabledMetrics((prev) => ({ ...prev, [metric]: e.target.checked }))
+                          setPrefDisabledMetrics((prev) => ({
+                            ...prev,
+                            [metric]: e.target.checked,
+                          }))
                         }
                       />
                     }
                     label={
                       <Typography variant="body2">
-                        Skip <strong>{{ reliability: "Reliability", sociability: "Sociability", presentation: "Cleanliness & consideration", age: "Age range" }[metric]}</strong> filtering
+                        Skip{" "}
+                        <strong>
+                          {
+                            {
+                              reliability: "Reliability",
+                              sociability: "Sociability",
+                              presentation: "Cleanliness & consideration",
+                              age: "Age range",
+                            }[metric]
+                          }
+                        </strong>{" "}
+                        filtering
                       </Typography>
                     }
                     sx={{ gap: 0.5 }}
@@ -983,39 +1222,23 @@ export default function CreateEventClient() {
         </Collapse>
       </AppCard>
 
-      {/* Community association */}
-      {communityId && communityName && (
-        <AppCard>
-          <Stack spacing={1.5}>
-            <Typography variant="subtitle1" fontWeight={700}>Community</Typography>
-            <Typography variant="body2" color="text.secondary">
-              This plan will be linked to <strong>{communityName}</strong>.
-            </Typography>
-            <FormControlLabel
-              control={<Switch checked={hideFromExplore} onChange={(e) => setHideFromExplore(e.target.checked)} size="small" />}
-              label="Members only"
-              slotProps={{ typography: { variant: "body2" } }}
-              sx={{ gap: 0.5 }}
-            />
-            <Typography variant="caption" color="text.secondary" sx={{ mt: -0.5 }}>
-              When on, this plan only appears in the community feed and to members in their Explore. Others won&#39;t see it.
-            </Typography>
-          </Stack>
-        </AppCard>
-      )}
-
       {/* QA plan toggle (super admin only) */}
       {isSuperAdmin && (
         <AppCard>
           <Stack spacing={1}>
             <FormControlLabel
-              control={<Switch checked={isQa} onChange={(e) => setIsQa(e.target.checked)} size="small" />}
+              control={
+                <Switch checked={isQa} onChange={(e) => setIsQa(e.target.checked)} size="small" />
+              }
               label="QA plan"
-              slotProps={{ typography: { variant: "subtitle1", fontWeight: 600, fontSize: "1.0625rem" } }}
+              slotProps={{
+                typography: { variant: "subtitle1", fontWeight: 600, fontSize: "1.0625rem" },
+              }}
               sx={{ gap: 0.5 }}
             />
             <Typography variant="caption" color="text.secondary" sx={{ mt: -0.5 }}>
-              QA plans are only visible to super admins. Normal users will never see this plan anywhere in the system.
+              QA plans are only visible to super admins. Normal users will never see this plan
+              anywhere in the system.
             </Typography>
           </Stack>
         </AppCard>
@@ -1031,7 +1254,10 @@ export default function CreateEventClient() {
         <AppButton
           variant="outlined"
           color="inherit"
-          onClick={() => router.push("/plans")}
+          onClick={() => {
+            const selectedCommunity = selectedCommunityId ? myCommunities.find((c) => c.id === selectedCommunityId) : null;
+            router.push(selectedCommunity?.slug ? `/communities/${selectedCommunity.slug}` : "/plans");
+          }}
           disabled={submitting}
           sx={{ minWidth: { xs: "100%", sm: 140 }, borderRadius: 2.5, textTransform: "none" }}
         >
@@ -1040,7 +1266,14 @@ export default function CreateEventClient() {
         <AppButton
           onClick={handleSubmit}
           disabled={submitting}
-          sx={{ minWidth: { xs: "100%", sm: 200 }, py: 1.5, borderRadius: 2.5, fontWeight: 600, textTransform: "none", fontSize: "1rem" }}
+          sx={{
+            minWidth: { xs: "100%", sm: 200 },
+            py: 1.5,
+            borderRadius: 2.5,
+            fontWeight: 600,
+            textTransform: "none",
+            fontSize: "1rem",
+          }}
         >
           {submitting ? <CircularProgress size={22} color="inherit" /> : "Publish plan"}
         </AppButton>
@@ -1087,7 +1320,10 @@ export default function CreateEventClient() {
         maxWidth="sm"
         fullWidth
         PaperProps={{
-          sx: { m: { xs: 2, sm: 3 }, maxHeight: { xs: "calc(100dvh - 32px)", sm: "calc(100dvh - 48px)" } },
+          sx: {
+            m: { xs: 2, sm: 3 },
+            maxHeight: { xs: "calc(100dvh - 32px)", sm: "calc(100dvh - 48px)" },
+          },
         }}
       >
         <DialogTitle>Crop banner image</DialogTitle>

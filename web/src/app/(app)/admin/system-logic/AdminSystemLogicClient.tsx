@@ -840,12 +840,20 @@ export default function AdminSystemLogicClient() {
           <strong>Open:</strong> Anyone can find the community, see its members and plans, and join immediately.
         </Bullet>
         <Bullet>
-          <strong>Private:</strong> The community is still discoverable, but plans and members are only visible to approved members. Non-members see the name,
-          description, hobbies, and member count, plus the option to request to join. The owner reviews each request. Private communities have a <strong>share link</strong> the
-          owner can send to people.
+          <strong>Private:</strong> The community is still discoverable. Non-members can open the community page and see a preview (name, description,
+          hobbies, location, member count), but plans and members are only visible to approved members.
         </Bullet>
         <Bullet>
-          The owner and requester receive emails for join requests, approvals, and declines.
+          Non-members can <strong>request to join</strong> with an optional short message. The owner sees requests in a dedicated
+          <strong> Requests</strong> tab, including the message if provided, and can approve or decline.
+        </Bullet>
+        <Bullet>
+          <strong>Notifications:</strong> The owner receives an in-app notification and email when someone requests to join. The requester receives
+          an in-app notification and email when approved or declined.
+        </Bullet>
+        <Bullet>
+          Plans belonging to a private community are <strong>excluded from the Explore feed</strong> for non-members. Members of the community
+          see them normally.
         </Bullet>
         <Bullet>
           The owner <strong>cannot leave</strong> their own community, they must transfer ownership first (not yet implemented as a UI action).

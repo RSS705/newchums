@@ -372,7 +372,12 @@ export default function CreateCommunityClient() {
                   }
                 }}
                 onPlaceSelect={(result) => {
-                  setLocationName(result.name || result.formattedAddress);
+                  // Combine venue name with address so the full location is
+                  // visible on the community detail page and plan prefill.
+                  const name = result.name && result.formattedAddress && !result.formattedAddress.startsWith(result.name)
+                    ? `${result.name}, ${result.formattedAddress}`
+                    : (result.name || result.formattedAddress);
+                  setLocationName(name);
                   setLocationAddress(result.formattedAddress);
                   setLocationLat(result.lat);
                   setLocationLng(result.lng);
