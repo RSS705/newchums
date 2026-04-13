@@ -564,6 +564,7 @@ app.get("/public/users/:userId/attendance-record", async (c) => {
         AND r.status = 'going'
         AND e.host_user_id != ${targetUserId}
         AND e.status != 'canceled'
+        AND COALESCE(e.is_qa, false) = false
         AND e.starts_at < ${now}
     `) as { c: number }[];
 
@@ -633,6 +634,7 @@ app.get("/public/users/:userId/attendance-record", async (c) => {
       WHERE r.user_id = ${targetUserId}
         AND r.committed_at IS NOT NULL
         AND e.status != 'canceled'
+        AND COALESCE(e.is_qa, false) = false
         AND e.starts_at < ${now}
     `) as { followed_through: number; going_kept: number; total_committed: number }[];
 
@@ -643,6 +645,7 @@ app.get("/public/users/:userId/attendance-record", async (c) => {
       FROM newchums.event_confirmations ec
       JOIN newchums.events e ON e.id = ec.event_id
       WHERE ec.user_id = ${targetUserId}
+        AND COALESCE(e.is_qa, false) = false
         AND e.starts_at < ${now}
     `) as { responded: number; total_requested: number }[];
 
@@ -13733,6 +13736,7 @@ async function cancelNoAttendeePlans(sql: ReturnType<typeof getSql>) {
 async function computeLocalBadges(sql: ReturnType<typeof getSql>) {
   const BADGE_RADIUS_KM = 50;
   const BADGE_MIN_THRESHOLD = 1;
+  const BADGE_MIN_USERS = 10; // Minimum users in area for badges to be awarded (ensures gold/silver/bronze are all achievable)
   const now = new Date().toISOString();
   const twelveMonthsAgo = new Date(Date.now() - 365 * 86400000).toISOString();
 
@@ -13816,7 +13820,7 @@ async function computeLocalBadges(sql: ReturnType<typeof getSql>) {
       .filter((u) => u.cnt >= BADGE_MIN_THRESHOLD)
       .sort((a, b) => b.cnt - a.cnt);
 
-    if (attendeeInArea.length > 0) {
+    if (attendeeInArea.length >= BADGE_MIN_USERS) {
       const idx = attendeeInArea.findIndex((u) => u.user_id === user.user_id);
       if (idx >= 0) {
         const rank = idx + 1;
@@ -13834,7 +13838,7 @@ async function computeLocalBadges(sql: ReturnType<typeof getSql>) {
       .filter((u) => u.cnt >= BADGE_MIN_THRESHOLD)
       .sort((a, b) => b.cnt - a.cnt);
 
-    if (hostInArea.length > 0) {
+    if (hostInArea.length >= BADGE_MIN_USERS) {
       const idx = hostInArea.findIndex((u) => u.user_id === user.user_id);
       if (idx >= 0) {
         const rank = idx + 1;

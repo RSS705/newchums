@@ -698,20 +698,16 @@ export const sendConfirmationRequestEmail = async (
     deadline: string; unsubscribeUrl?: string;
   }
 ) => {
-  if (!env.POSTMARK_TEMPLATE_CONFIRMATION_REQUEST) return;
+  if (!env.POSTMARK_TEMPLATE_CONFIRMATION_REQUEST_USER) return;
 
   const stage: "initial" | "reminder" | "final" = isFinal ? "final" : isReminder ? "reminder" : "initial";
 
-  // Headlines: short, action-oriented. Slight urgency lift on the reminder
-  // variants without going dramatic. Hosts and attendees diverge in voice but
-  // stay in the same family.
   const headingMap = {
     initial: isHost ? "Confirm you're still hosting" : "Confirm your attendance",
     reminder: isHost ? "Quick check: are you still hosting?" : "Quick check: are you still coming?",
     final: isHost ? "Last call: are you still hosting?" : "Last call: are you still coming?",
   } as const;
 
-  // Body copy: lead with timing context, then the ask. Plain language.
   const bodyAttendee = {
     initial: "Your plan is coming up soon. Please confirm whether you're still in so the host can plan ahead.",
     reminder: "Your plan is later today. Please let the host know whether you're still in so they can plan ahead.",
@@ -723,9 +719,14 @@ export const sendConfirmationRequestEmail = async (
     final: "Your plan starts soon. Please confirm you're still hosting so attendees aren't left guessing.",
   } as const;
 
+  // Button text ("View plan and confirm") is hard-coded directly in the
+  // Postmark template HTML — no template variable needed. This matches the
+  // pattern used by every other working email template and eliminates the
+  // recurring empty-button bug caused by variable name drift between the
+  // code and the Postmark hosted template.
   return sendPostmarkTemplateEmail(env, {
     From: env.EMAIL_FROM, To: to,
-    TemplateId: env.POSTMARK_TEMPLATE_CONFIRMATION_REQUEST,
+    TemplateId: env.POSTMARK_TEMPLATE_CONFIRMATION_REQUEST_USER,
     TemplateModel: {
       productName: "NewChums",
       heading: headingMap[stage],
@@ -737,17 +738,6 @@ export const sendConfirmationRequestEmail = async (
       eventLocation: eventLocation || "",
       eventUrl,
       ctaUrl,
-      // Pass both variable names so the CTA button label renders correctly
-      // regardless of which variable the live Postmark template references.
-      // All other templates in this folder use {{ctaText}}; we keep {{ctaLabel}}
-      // as a safety net in case an older revision of the Postmark template is
-      // still using the previous name.
-      ctaText: "View plan and confirm",
-      ctaLabel: "View plan and confirm",
-      // Explicitly mark this as non-guest so the {{^isGuest}} inverted section
-      // is never ambiguous, regardless of how the template engine handles
-      // missing keys.
-      isGuest: "",
       deadline,
       isReminder: isReminder || isFinal ? "1" : "",
       isFinal: isFinal ? "1" : "",
@@ -767,7 +757,7 @@ export const sendGuestConfirmationRequestEmail = async (
     deadline: string;
   }
 ) => {
-  if (!env.POSTMARK_TEMPLATE_CONFIRMATION_REQUEST) return;
+  if (!env.POSTMARK_TEMPLATE_CONFIRMATION_REQUEST_GUEST) return;
 
   const stage: "initial" | "reminder" | "final" = isFinal ? "final" : isReminder ? "reminder" : "initial";
 
@@ -783,9 +773,13 @@ export const sendGuestConfirmationRequestEmail = async (
     final: "Your plan starts soon. Please respond now so the host knows who to expect.",
   } as const;
 
+  // Button text ("I'm still coming" / "I can't make it") is hard-coded
+  // directly in the Postmark template HTML — no template variables needed.
+  // This eliminates the recurring empty-button bug caused by variable name
+  // drift between the code and the Postmark hosted template.
   return sendPostmarkTemplateEmail(env, {
     From: env.EMAIL_FROM, To: to,
-    TemplateId: env.POSTMARK_TEMPLATE_CONFIRMATION_REQUEST,
+    TemplateId: env.POSTMARK_TEMPLATE_CONFIRMATION_REQUEST_GUEST,
     TemplateModel: {
       productName: "NewChums",
       heading: headingMap[stage],
@@ -798,18 +792,7 @@ export const sendGuestConfirmationRequestEmail = async (
       eventUrl,
       confirmUrl,
       declineUrl,
-      // Pass both variable names so the button labels render correctly
-      // regardless of which variable the live Postmark template references.
-      // This mirrors the safety net added to sendConfirmationRequestEmail
-      // for the registered-user CTA — the previous round only fixed that
-      // one and missed the guest path, which is why guest emails were
-      // arriving with empty button labels even after that fix shipped.
-      confirmText: "I'm still coming",
-      confirmLabel: "I'm still coming",
-      declineText: "I can't make it",
-      declineLabel: "I can't make it",
       viewUrl,
-      isGuest: "1",
       deadline,
       isReminder: isReminder || isFinal ? "1" : "",
       isFinal: isFinal ? "1" : "",

@@ -38,8 +38,10 @@ export type Bindings = {
   POSTMARK_TEMPLATE_EVENT_CHANGED?: string;
   /** Postmark template ID for daily unread-chat digest email (template 43975299) */
   POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST?: string;
-  /** Postmark template ID for attendance confirmation request emails */
-  POSTMARK_TEMPLATE_CONFIRMATION_REQUEST?: string;
+  /** Postmark template ID for registered-user attendance confirmation request */
+  POSTMARK_TEMPLATE_CONFIRMATION_REQUEST_USER?: string;
+  /** Postmark template ID for guest attendance confirmation request */
+  POSTMARK_TEMPLATE_CONFIRMATION_REQUEST_GUEST?: string;
   /** Postmark template ID for plan-at-risk host notification */
   POSTMARK_TEMPLATE_PLAN_AT_RISK?: string;
   /** Postmark template ID for auto-cancelled plan attendee notification, set after creating the Postmark template */

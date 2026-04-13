@@ -16,20 +16,9 @@ Respond by {{deadline}}
 
 ---
 
-{{#isGuest}}
-{{confirmLabel}}: {{confirmUrl}}
-
-{{declineLabel}}: {{declineUrl}}
-
-View full plan details: {{viewUrl}}
-
-No login needed. Tap a link above to record your response.
-{{/isGuest}}
-{{^isGuest}}
-{{ctaText}}: {{ctaUrl}}
+View plan and confirm: {{ctaUrl}}
 
 You'll be asked to sign in if you aren't already.
-{{/isGuest}}
 
 ---
 
