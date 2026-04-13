@@ -42,6 +42,7 @@ import { loadGooglePlacesScript } from "@/lib/loadGooglePlaces";
 import { BANNER_PRESETS, renderBannerPreset, suggestPreset } from "@/lib/eventBanners";
 import { scrollToFirstError } from "@/lib/scrollToFirstError";
 import HobbyPickerField, { type HobbyOption } from "@/components/common/HobbyPickerField";
+import { pickerFieldTabKeyDown } from "@/components/fields/pickerTabNav";
 
 // Visual top-to-bottom order of validation-bearing fields. Drives the
 // scroll-to-first-error helper so the user always lands on the earliest
@@ -566,6 +567,7 @@ export default function CreateEventClient() {
                     error: !!errors.date,
                     helperText: errors.date,
                     placeholder: "Pick a date",
+                    onKeyDown: pickerFieldTabKeyDown,
                   },
                 }}
               />
@@ -586,6 +588,7 @@ export default function CreateEventClient() {
                     error: !!errors.time,
                     helperText: errors.time,
                     placeholder: "Pick a time",
+                    onKeyDown: pickerFieldTabKeyDown,
                   },
                 }}
               />
@@ -622,7 +625,7 @@ export default function CreateEventClient() {
                       value={deadlineDate}
                       onChange={setDeadlineDate}
                       minDate={dayjs()}
-                      slotProps={{ textField: { size: "small", placeholder: "Date", sx: { flex: 1 } } }}
+                      slotProps={{ textField: { size: "small", placeholder: "Date", sx: { flex: 1 }, onKeyDown: pickerFieldTabKeyDown } }}
                     />
                     <TimePicker
                       value={deadlineTime}
@@ -630,7 +633,7 @@ export default function CreateEventClient() {
                       format="h:mm A"
                       slotProps={{
                         field: { shouldRespectLeadingZeros: true } as Record<string, unknown>,
-                        textField: { size: "small", placeholder: "Time", sx: { flex: 1 } },
+                        textField: { size: "small", placeholder: "Time", sx: { flex: 1 }, onKeyDown: pickerFieldTabKeyDown },
                       }}
                     />
                   </Stack>

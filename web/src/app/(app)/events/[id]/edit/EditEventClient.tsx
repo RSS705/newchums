@@ -36,6 +36,7 @@ import { apiFetch, getApiBaseUrl, getAvatarBaseUrl, getImageFallbackBaseUrl } fr
 import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
 import ListItemText from "@mui/material/ListItemText";
 import HobbyPickerField, { type HobbyOption } from "@/components/common/HobbyPickerField";
+import { pickerFieldTabKeyDown } from "@/components/fields/pickerTabNav";
 import PlacesAutocompleteInput from "@/components/common/PlacesAutocompleteInput";
 import { loadGooglePlacesScript } from "@/lib/loadGooglePlaces";
 import { scrollToFirstError } from "@/lib/scrollToFirstError";
@@ -637,7 +638,7 @@ export default function EditEventClient() {
               <DatePicker
                 value={dateValue}
                 onChange={setDateValue}
-                slotProps={{ textField: { fullWidth: true, size: "medium", error: !!errors.date, helperText: errors.date } }}
+                slotProps={{ textField: { fullWidth: true, size: "medium", error: !!errors.date, helperText: errors.date, onKeyDown: pickerFieldTabKeyDown } }}
               />
             </Box>
             <Box ref={setFieldRef("time")} sx={{ flex: 1, scrollMarginTop: 96 }}>
@@ -648,7 +649,7 @@ export default function EditEventClient() {
                 value={timeValue}
                 onChange={setTimeValue}
                 format="h:mm A"
-                slotProps={{ field: { shouldRespectLeadingZeros: true } as Record<string, unknown>, textField: { fullWidth: true, size: "medium", error: !!errors.time, helperText: errors.time } }}
+                slotProps={{ field: { shouldRespectLeadingZeros: true } as Record<string, unknown>, textField: { fullWidth: true, size: "medium", error: !!errors.time, helperText: errors.time, onKeyDown: pickerFieldTabKeyDown } }}
               />
             </Box>
           </Stack>
@@ -681,7 +682,7 @@ export default function EditEventClient() {
                     <DatePicker
                       value={deadlineDate}
                       onChange={setDeadlineDate}
-                      slotProps={{ textField: { size: "small", placeholder: "Date", sx: { flex: 1 } } }}
+                      slotProps={{ textField: { size: "small", placeholder: "Date", sx: { flex: 1 }, onKeyDown: pickerFieldTabKeyDown } }}
                     />
                     <TimePicker
                       value={deadlineTime}
@@ -689,7 +690,7 @@ export default function EditEventClient() {
                       format="h:mm A"
                       slotProps={{
                         field: { shouldRespectLeadingZeros: true } as Record<string, unknown>,
-                        textField: { size: "small", placeholder: "Time", sx: { flex: 1 } },
+                        textField: { size: "small", placeholder: "Time", sx: { flex: 1 }, onKeyDown: pickerFieldTabKeyDown },
                       }}
                     />
                   </Stack>

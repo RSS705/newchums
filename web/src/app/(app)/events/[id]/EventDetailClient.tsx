@@ -10,6 +10,7 @@ import Dialog from "@mui/material/Dialog";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { TimePicker } from "@mui/x-date-pickers/TimePicker";
 import dayjs, { type Dayjs } from "dayjs";
+import { pickerFieldTabKeyDown } from "@/components/fields/pickerTabNav";
 import IconButton from "@mui/material/IconButton";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
@@ -4631,6 +4632,7 @@ export default function EventDetailClient() {
                                 fullWidth: true,
                                 size: "medium",
                                 placeholder: "Pick a date",
+                                onKeyDown: pickerFieldTabKeyDown,
                               },
                             }}
                           />
@@ -4654,6 +4656,7 @@ export default function EventDetailClient() {
                                   fullWidth: true,
                                   size: "medium",
                                   placeholder: "Same day",
+                                  onKeyDown: pickerFieldTabKeyDown,
                                 },
                               }}
                             />
@@ -4679,6 +4682,7 @@ export default function EventDetailClient() {
                                 fullWidth: true,
                                 size: "medium",
                                 placeholder: "Pick a time",
+                                onKeyDown: pickerFieldTabKeyDown,
                               },
                             }}
                           />
@@ -4701,6 +4705,7 @@ export default function EventDetailClient() {
                                 fullWidth: true,
                                 size: "medium",
                                 placeholder: "Pick a time",
+                                onKeyDown: pickerFieldTabKeyDown,
                               },
                             }}
                           />
