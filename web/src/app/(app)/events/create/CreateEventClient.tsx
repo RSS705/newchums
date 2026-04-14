@@ -1,10 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Box from "@mui/material/Box";
 
 import CircularProgress from "@mui/material/CircularProgress";
-import Collapse from "@mui/material/Collapse";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
@@ -19,14 +18,9 @@ import Select from "@mui/material/Select";
 import Slider from "@mui/material/Slider";
 import Stack from "@mui/material/Stack";
 import Switch from "@mui/material/Switch";
-import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import AddPhotoAlternateRoundedIcon from "@mui/icons-material/AddPhotoAlternateRounded";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
-import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
-import HelpOutlineRoundedIcon from "@mui/icons-material/HelpOutlineRounded";
-import IconButton from "@mui/material/IconButton";
-import Tooltip from "@mui/material/Tooltip";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { TimePicker } from "@mui/x-date-pickers/TimePicker";
 import dayjs, { type Dayjs } from "dayjs";
@@ -42,6 +36,13 @@ import { loadGooglePlacesScript } from "@/lib/loadGooglePlaces";
 import { BANNER_PRESETS, renderBannerPreset, suggestPreset } from "@/lib/eventBanners";
 import { scrollToFirstError } from "@/lib/scrollToFirstError";
 import HobbyPickerField, { type HobbyOption } from "@/components/common/HobbyPickerField";
+import {
+  CommunityLinkSection,
+  ExtraOptionsSection,
+  MatchingPreferencesSection,
+  QAPlanSection,
+  type MyCommunity as SharedMyCommunity,
+} from "@/components/events/planForm";
 import { pickerFieldTabKeyDown } from "@/components/fields/pickerTabNav";
 
 // Visual top-to-bottom order of validation-bearing fields. Drives the
@@ -206,6 +207,18 @@ export default function CreateEventClient() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // When visibility switches to invite_only, clear any community linkage so
+  // the form state matches what the server will store (POST /events forces
+  // community_id=null for invite_only) and the Community section disappears
+  // rather than misleading the user. Mirror of the same effect in the Edit
+  // form. See AGENTS.md -> Plan Feed and Community Visibility Contract.
+  useEffect(() => {
+    if (visibility === "invite_only") {
+      setSelectedCommunityId(null);
+      setHideFromExplore(false);
+    }
+  }, [visibility]);
 
   const handleBannerCropComplete = useCallback((_: Area, croppedAreaPx: Area) => {
     setBannerCroppedArea(croppedAreaPx);
@@ -968,281 +981,44 @@ export default function CreateEventClient() {
       </AppCard>
 
       {/* Extra options */}
-      <AppCard>
-        <Stack spacing={2.5}>
-          <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
-            Extra options
-          </Typography>
+      <ExtraOptionsSection
+        requireReconfirmation={requireReconfirmation}
+        onChangeRequireReconfirmation={setRequireReconfirmation}
+        minConfirmedAttendees={minConfirmedAttendees}
+        onChangeMinConfirmedAttendees={setMinConfirmedAttendees}
+        fallbackPolicy={fallbackPolicy}
+        onChangeFallbackPolicy={setFallbackPolicy}
+        requireApproval={requireApproval}
+        onChangeRequireApproval={setRequireApproval}
+        allowAttendeeInvites={allowAttendeeInvites}
+        onChangeAllowAttendeeInvites={setAllowAttendeeInvites}
+      />
 
-          <Stack direction="row" alignItems="center" spacing={0.5}>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={requireReconfirmation}
-                  onChange={(e) => setRequireReconfirmation(e.target.checked)}
-                />
-              }
-              label="24-hour attendance check"
-              sx={{ mr: 0, gap: 0.5 }}
-            />
-            <Tooltip
-              title="About 24 hours before the plan, people who marked Going will be asked to confirm they are still coming. This includes you as the host."
-              arrow
-              placement="top"
-              enterTouchDelay={0}
-            >
-              <IconButton size="small" sx={{ p: 0.25, color: "text.disabled" }}>
-                <HelpOutlineRoundedIcon sx={{ fontSize: 16 }} />
-              </IconButton>
-            </Tooltip>
-          </Stack>
-          {requireReconfirmation && (
-            <Stack
-              spacing={2}
-              sx={{ mt: 1, pl: 2, borderLeft: "2px solid", borderColor: "divider" }}
-            >
-              <Box>
-                <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.625 }}>
-                  Minimum confirmed attendees (optional)
-                </Typography>
-                <TextField
-                  fullWidth
-                  size="small"
-                  type="number"
-                  placeholder="e.g. 4 (including you)"
-                  value={minConfirmedAttendees}
-                  onChange={(e) => setMinConfirmedAttendees(e.target.value)}
-                  inputProps={{ min: 1, max: 500 }}
-                />
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ mt: 0.5, display: "block" }}
-                >
-                  Minimum people who need to confirm before the plan is considered viable. You count
-                  toward this total.
-                </Typography>
-              </Box>
-              {minConfirmedAttendees && Number(minConfirmedAttendees) >= 1 && (
-                <Box>
-                  <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.625 }}>
-                    If minimum isn&apos;t met
-                  </Typography>
-                  <Select
-                    fullWidth
-                    size="small"
-                    value={fallbackPolicy}
-                    onChange={(e) =>
-                      setFallbackPolicy(e.target.value as "notify_host" | "proceed" | "auto_cancel")
-                    }
-                  >
-                    <MenuItem value="notify_host">Notify me so I can decide</MenuItem>
-                    <MenuItem value="proceed">Proceed unless I cancel</MenuItem>
-                    <MenuItem value="auto_cancel">Auto-cancel the plan</MenuItem>
-                  </Select>
-                </Box>
-              )}
-            </Stack>
-          )}
-
-          <Stack direction="row" alignItems="center" spacing={0.5}>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={requireApproval}
-                  onChange={(e) => setRequireApproval(e.target.checked)}
-                />
-              }
-              label="Require approval before joining"
-              sx={{ mr: 0, gap: 0.5 }}
-            />
-            <Tooltip
-              title="People who are not directly invited will need to request to join, and you'll approve or decline each request."
-              arrow
-              placement="top"
-              enterTouchDelay={0}
-            >
-              <IconButton size="small" sx={{ p: 0.25, color: "text.disabled" }}>
-                <HelpOutlineRoundedIcon sx={{ fontSize: 16 }} />
-              </IconButton>
-            </Tooltip>
-          </Stack>
-
-          <FormControlLabel
-            control={
-              <Switch
-                checked={allowAttendeeInvites}
-                onChange={(e) => setAllowAttendeeInvites(e.target.checked)}
-              />
-            }
-            label="Let Going attendees invite others"
-            sx={{ gap: 0.5 }}
-          />
-        </Stack>
-      </AppCard>
-
-      {/* Community association */}
-      {myCommunities.length > 0 && (
-        <AppCard>
-          <Stack spacing={2}>
-            <Box>
-              <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
-                Community
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                Linked plans appear in the community and in explore by default.
-              </Typography>
-            </Box>
-
-            <FormControl fullWidth size="medium">
-              <Select
-                id="community-select"
-                value={selectedCommunityId ?? ""}
-                onChange={(e) => {
-                  const val = e.target.value || null;
-                  setSelectedCommunityId(val);
-                  if (!val) setHideFromExplore(false);
-                }}
-                displayEmpty
-                variant="outlined"
-                sx={{ "& .MuiSelect-select": { py: 1.25 } }}
-              >
-                <MenuItem value="">
-                  <Typography variant="body2" color="text.secondary">
-                    None
-                  </Typography>
-                </MenuItem>
-                {myCommunities.map((c) => (
-                  <MenuItem key={c.id} value={c.id}>
-                    <Typography variant="body2">{c.name}</Typography>
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-
-            {selectedCommunityId && (
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={hideFromExplore}
-                    onChange={(e) => setHideFromExplore(e.target.checked)}
-                    size="small"
-                  />
-                }
-                label="Only show this plan to community members"
-                slotProps={{ typography: { variant: "body2", fontWeight: 500 } }}
-                sx={{ gap: 0.5 }}
-              />
-            )}
-          </Stack>
-        </AppCard>
-      )}
+      {/* Community association. Hidden entirely when visibility=invite_only,
+          since invite_only plans never appear in Explore or community feeds.
+          See AGENTS.md -> Plan Feed and Community Visibility Contract. */}
+      <CommunityLinkSection
+        mode="add"
+        visibility={visibility}
+        myCommunities={myCommunities as SharedMyCommunity[]}
+        selectedCommunityId={selectedCommunityId}
+        onChangeSelectedCommunityId={setSelectedCommunityId}
+        hideFromExplore={hideFromExplore}
+        onChangeHideFromExplore={setHideFromExplore}
+      />
 
       {/* Matching preferences override */}
-      <AppCard>
-        <Box
-          onClick={() => setPrefOverridesOpen((v) => !v)}
-          sx={{ display: "flex", alignItems: "center", cursor: "pointer", userSelect: "none" }}
-        >
-          <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem", flex: 1 }}>
-            Matching preferences for this plan
-          </Typography>
-          <ExpandMoreRoundedIcon
-            sx={{
-              transform: prefOverridesOpen ? "rotate(180deg)" : "rotate(0deg)",
-              transition: "transform 0.2s",
-              color: "text.secondary",
-            }}
-          />
-        </Box>
-
-        <Collapse in={prefOverridesOpen}>
-          <Stack spacing={2} sx={{ pt: 2 }}>
-            <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-              Your profile chum preferences are used by default when matching people to your plans.
-              You can relax those rules for this plan only, without changing your profile settings.
-            </Typography>
-
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={prefDisableAll}
-                  onChange={(e) => {
-                    setPrefDisableAll(e.target.checked);
-                    if (e.target.checked) setPrefDisabledMetrics({});
-                  }}
-                />
-              }
-              label="Disable all preference filtering for this plan"
-              sx={{ alignItems: "center", gap: 0.5 }}
-            />
-
-            {!prefDisableAll && (
-              <Stack spacing={1} sx={{ pl: 0.5 }}>
-                <Typography variant="body2" fontWeight={600} sx={{ mb: 0.5 }}>
-                  Or disable specific metrics for this plan:
-                </Typography>
-                {(["reliability", "sociability", "presentation", "age"] as const).map((metric) => (
-                  <FormControlLabel
-                    key={metric}
-                    control={
-                      <Switch
-                        size="small"
-                        checked={!!prefDisabledMetrics[metric]}
-                        onChange={(e) =>
-                          setPrefDisabledMetrics((prev) => ({
-                            ...prev,
-                            [metric]: e.target.checked,
-                          }))
-                        }
-                      />
-                    }
-                    label={
-                      <Typography variant="body2">
-                        Skip{" "}
-                        <strong>
-                          {
-                            {
-                              reliability: "Reliability",
-                              sociability: "Sociability",
-                              presentation: "Cleanliness & consideration",
-                              age: "Age range",
-                            }[metric]
-                          }
-                        </strong>{" "}
-                        filtering
-                      </Typography>
-                    }
-                    sx={{ gap: 0.5 }}
-                  />
-                ))}
-              </Stack>
-            )}
-          </Stack>
-        </Collapse>
-      </AppCard>
+      <MatchingPreferencesSection
+        open={prefOverridesOpen}
+        onToggleOpen={() => setPrefOverridesOpen((v) => !v)}
+        disableAll={prefDisableAll}
+        onChangeDisableAll={setPrefDisableAll}
+        disabledMetrics={prefDisabledMetrics}
+        onChangeDisabledMetrics={setPrefDisabledMetrics}
+      />
 
       {/* QA plan toggle (super admin only) */}
-      {isSuperAdmin && (
-        <AppCard>
-          <Stack spacing={1}>
-            <FormControlLabel
-              control={
-                <Switch checked={isQa} onChange={(e) => setIsQa(e.target.checked)} size="small" />
-              }
-              label="QA plan"
-              slotProps={{
-                typography: { variant: "subtitle1", fontWeight: 600, fontSize: "1.0625rem" },
-              }}
-              sx={{ gap: 0.5 }}
-            />
-            <Typography variant="caption" color="text.secondary" sx={{ mt: -0.5 }}>
-              QA plans are only visible to super admins. Normal users will never see this plan
-              anywhere in the system.
-            </Typography>
-          </Stack>
-        </AppCard>
-      )}
+      <QAPlanSection show={isSuperAdmin} value={isQa} onChange={setIsQa} />
 
       {/* Submit */}
       <Stack

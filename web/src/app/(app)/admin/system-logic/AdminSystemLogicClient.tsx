@@ -841,19 +841,32 @@ export default function AdminSystemLogicClient() {
         </Bullet>
         <Bullet>
           <strong>Private:</strong> The community is still discoverable. Non-members can open the community page and see a preview (name, description,
-          hobbies, location, member count), but plans and members are only visible to approved members.
+          hobbies, location, member count, upcoming-plan count) plus a locked-preview panel showing those counts, but plans and members themselves are
+          only visible to approved members.
         </Bullet>
         <Bullet>
           Non-members can <strong>request to join</strong> with an optional short message. The owner sees requests in a dedicated
           <strong> Requests</strong> tab, including the message if provided, and can approve or decline.
         </Bullet>
         <Bullet>
-          <strong>Notifications:</strong> The owner receives an in-app notification and email when someone requests to join. The requester receives
-          an in-app notification and email when approved or declined.
+          <strong>Pending-request status:</strong> While a request is unresolved, the requester sees a status card that names the state, shows
+          how long they&rsquo;ve been waiting (&ldquo;Sent N days ago&rdquo;), and reassures them they&rsquo;ll receive an email on approval or decline.
+          The owner is not spammed, each request triggers exactly one in-app notification and one email.
         </Bullet>
         <Bullet>
-          Plans belonging to a private community are <strong>excluded from the Explore feed</strong> for non-members. Members of the community
-          see them normally.
+          <strong>Re-request cooldown:</strong> if a request stays pending for 7 days without a decision, the requester can send it again from the
+          same status card. The server refreshes the existing pending row in place (one row per requester, enforced by a partial unique index),
+          bumps its timestamp so it reappears near the top of the owner&rsquo;s Requests tab, and re-fires the owner&rsquo;s notification + email. Within
+          the 7-day window the resend button is not shown and the endpoint returns &ldquo;available in N days&rdquo;, so owners can&rsquo;t be pinged repeatedly.
+        </Bullet>
+        <Bullet>
+          <strong>Notifications:</strong> The owner receives an in-app notification and email when someone requests to join (including resends).
+          The requester receives an in-app notification and email when approved or declined.
+        </Bullet>
+        <Bullet>
+          Community privacy gates the <strong>community page</strong> itself (non-members see only a preview), but it does not override the per-plan
+          <code style={{ fontSize: "0.85em" }}> hide_from_explore</code> toggle. Each plan&rsquo;s Explore visibility is controlled by its host via
+          &ldquo;Only show this plan to community members&rdquo;: off = appears in Explore plus the community feed, on = community/members-only.
         </Bullet>
         <Bullet>
           The owner <strong>cannot leave</strong> their own community, they must transfer ownership first (not yet implemented as a UI action).
@@ -867,11 +880,28 @@ export default function AdminSystemLogicClient() {
           member of.
         </Bullet>
         <Bullet>
-          Community plans appear in the <strong>community&rsquo;s plan feed</strong> on the community page.
+          <strong>Community linkage is organizational context, not audience expansion.</strong> Linking a plan to a community never widens who can see it
+          beyond what the plan&rsquo;s base visibility setting (<strong>Public</strong>, <strong>Chums only</strong>, <strong>Invite only</strong>) already
+          allows. Community members who don&rsquo;t satisfy the base visibility rule still do not see the plan, even in the community&rsquo;s own plan feed.
         </Bullet>
         <Bullet>
-          Community plans can optionally be <strong>hidden from Explore</strong> (<code style={{ fontSize: "0.85em" }}>hide_from_explore</code>). When hidden,
-          they still show up in the community&rsquo;s own plan feed but are excluded from the general Explore page and digests.
+          <strong>Public</strong> community plans show up in the community feed and (subject to <em>&ldquo;Only show this plan to community members&rdquo;</em>
+          below) in Explore.
+        </Bullet>
+        <Bullet>
+          <strong>Chums only</strong> community plans are shown only to the host, the host&rsquo;s on-NewChums chums, and viewers who are already RSVP&rsquo;d.
+          Community members who aren&rsquo;t on the host&rsquo;s Chum List still don&rsquo;t see the plan, even inside the community feed.
+        </Bullet>
+        <Bullet>
+          <strong>Invite only</strong> plans do not participate in community discovery at all. The Add/Edit plan forms hide the Community section when Invite
+          only is selected, and the server refuses to link an Invite only plan to a community even if a client tries to. Invitees reach the plan via their
+          invite link; the host can find it in Your Plans.
+        </Bullet>
+        <Bullet>
+          <strong>&ldquo;Only show this plan to community members&rdquo;</strong> toggle (stored as <code style={{ fontSize: "0.85em" }}>hide_from_explore</code>,
+          defaults off). Only affects Explore, never the community feed. Off: the plan appears in Explore subject to base visibility and personalization. On:
+          Explore shows the plan only to viewers who would already satisfy base visibility as community members or RSVP&rsquo;d viewers, and hides it from
+          general Explore otherwise. Direct URL access is unaffected, that is governed by the plan&rsquo;s own visibility.
         </Bullet>
 
         <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>

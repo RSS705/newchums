@@ -120,6 +120,11 @@ type PlanFeedbackProps = {
    *  deep-linked via ?section=feedback). When provided, the component skips
    *  its own initial fetch and renders content on first paint. */
   initialData?: unknown;
+  /** DOM id attached to the outer wrapper — lets callers use this component
+   *  as a scroll anchor (e.g. `?section=feedback` deep-links) without wrapping
+   *  it in an extra Box that would otherwise consume Stack-gap when the
+   *  component returns null. */
+  id?: string;
 };
 
 function isFeedbackPayload(value: unknown): value is PlanFeedbackInitialData {
@@ -128,7 +133,7 @@ function isFeedbackPayload(value: unknown): value is PlanFeedbackInitialData {
   return Array.isArray(v.attendees) && Array.isArray(v.feedback) && Array.isArray(v.attendanceIssues);
 }
 
-export default function PlanFeedback({ eventId, planTitle, planStartsAt, planHobbies, initialData }: PlanFeedbackProps) {
+export default function PlanFeedback({ eventId, planTitle, planStartsAt, planHobbies, initialData, id }: PlanFeedbackProps) {
   const initial = isFeedbackPayload(initialData) ? initialData : null;
 
   // Compute initial state from a prefetched payload (when the parent passed
@@ -589,6 +594,7 @@ export default function PlanFeedback({ eventId, planTitle, planStartsAt, planHob
     <>
       <Box
         ref={formTopRef}
+        id={id}
         sx={{
           display: "flex",
           flexDirection: "column",

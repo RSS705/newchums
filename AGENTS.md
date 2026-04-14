@@ -119,6 +119,19 @@ If architectural invariants change, update both:
 
 in the same change set.
 
+### Governance-Doc Review Cadence (Cross-Cutting Rule)
+
+Several repeated regressions (QA isolation, the "Only show this plan to community members" toggle, Add/Edit plan parity) trace back to an edit that updated **one** source of truth and left the others stale. To prevent this, treat the following as a single **governance surface**: if your change touches any one of them, review all of them in the same change set and update whichever need to change.
+
+| Governance surface | Docs / files that describe it |
+|---|---|
+| Plan visibility, Explore / community feeds, "Only show this plan to community members" toggle | `AGENTS.md` → Plan Feed and Community Visibility Contract; `docs/Technical_Specs.md` → Communities → Plan Feeds subsection; `docs/System_Map.md` → Plan feeds subsection; Super Admin System Logic page bullets (Plans and communities) |
+| QA plan isolation | `AGENTS.md` → Incomplete Areas (QA plans row); `docs/System_Map.md` → QA plan isolation; Super Admin System Logic page (QA plans bullets); any SQL filter added/changed |
+| Add Plan / Edit Plan form parity | `AGENTS.md` → Add Plan / Edit Plan Parity Rule; both form files (`CreateEventClient.tsx`, `EditEventClient.tsx`); shared section components under `web/src/components/events/planForm/` |
+| Notifications, emails, RSVP, digests (user-visible behavior changes) | Super Admin System Logic page (see cadence below); `docs/Technical_Specs.md` relevant section |
+
+The rule: **if a commit touches one row, open the other files in that row and check them.** Tightening docs for a change you're already making is in scope; doing so is cheaper than the next regression.
+
 ### Super Admin, System Logic (`/admin/system-logic`)
 
 The **System Logic** tab is a concise, human-readable map of how plans, emails, and digests behave. It is **not** a substitute for `Technical_Specs.md`.
@@ -143,8 +156,117 @@ The following areas are partially implemented. Agents should polish and improve 
 | **Plan feedback / matching quality** | Phase 1+2 implemented (migrations 049, 050). Post-plan feedback UI with carousel stepper. Hidden metric scoring with weighted averaging and attendance penalties. Chum preferences in profile (master toggle + per-metric levels: Open/Preferred/Important/Required). Super-admin user diagnostics view (`/admin/chums/[id]`). System Logic explanation. | Scoring is live. Tolerance thresholds defined (Open=none, Preferred≥35, Important≥45, Required≥55). Inbound matching filtering and compatibility notes on plan details not yet wired. Future: plan-level inheritance/override, compatibility warnings in plan detail UI. |
 | **Recurring events** | Not implemented. Schema supports single-time events only. | Do not add recurring event logic. |
 | **Event chat** | Implemented. Per-plan group chat with real-time WebSocket delivery (Durable Objects), host lock, unread indicators in bell and plan cards, daily digest email. | Improve polish, add features (reactions, threads, attachments) only when asked. |
-| **Communities** | Implemented. Community pages with create, browse/discover, join/leave, member management, community plan feeds, share tokens for private communities, community avatar upload (rounded-square logo with crop dialog), soft-close flow (migration 059: `status` column), community attribution on plan cards and Explore feed. Schema: migrations 055 + 059 + 078. Migration 078 adds `is_online`, `website`, `join_link` columns and `community_interests` junction table. Discovery feed (`/communities`) supports distance filtering (offline communities hidden outside travel radius; online communities bypass distance), hobby filtering and personalization (matching viewer's hobbies, ranked by hobby_match_count), search, All/Yours scope (Yours ignores distance), location nudge, load-more pagination. Create/edit forms match plan form quality: rich text description (Tiptap), required hobbies (HobbyPickerField), online/offline toggle, required location for offline, website and join link fields, scroll-to-first-error validation. Detail view shows hobby chips, online badge, website/join-link, rich-text description. `hide_from_explore` toggle relabeled "Members only", members still see these plans in Explore. Closed communities hidden from listings; linked events have `community_id` nullified. Email templates for join request/approved/declined (Postmark IDs configured). Super admin moderation. Community chat deferred (`chat_enabled` column exists but no chat implementation). | Polish UI, fix bugs. Do not build community chat without being asked. |
+| **Communities** | Implemented. Community pages with create, browse/discover, join/leave, member management, community plan feeds, share tokens for private communities, community avatar upload (rounded-square logo with crop dialog), soft-close flow (migration 059: `status` column), community attribution on plan cards and Explore feed. Schema: migrations 055 + 059 + 078. Migration 078 adds `is_online`, `website`, `join_link` columns and `community_interests` junction table. Discovery feed (`/communities`) supports distance filtering (offline communities hidden outside travel radius; online communities bypass distance), hobby filtering and personalization (matching viewer's hobbies, ranked by hobby_match_count), search, All/Yours scope (Yours ignores distance), location nudge, load-more pagination. Create/edit forms match plan form quality: rich text description (Tiptap), required hobbies (HobbyPickerField), online/offline toggle, required location for offline, website and join link fields, scroll-to-first-error validation. Detail view shows hobby chips, online badge, website/join-link, rich-text description. Community plans are governed by a per-plan `hide_from_explore` toggle (labeled "Only show this plan to community members"); community privacy gates the community page itself, not plan-level Explore visibility, see the **Plan Feed and Community Visibility Contract** section below. **Private-community preview** for non-members renders a locked-preview card alongside the detail header, surfacing real `upcoming_plan_count` and `member_count` figures (no plan or member details leaked) so the page doesn't feel empty. **Join-request lifecycle** (migration 055 + 079): one active pending row per `(community, user)` enforced by a partial unique index; requesters see a full status card with "Sent N days ago" + email reassurance; if a pending request has aged past `COMMUNITY_JOIN_REQUEST_COOLDOWN_DAYS` (default 7), the same POST endpoint refreshes the row in place and re-notifies the owner (returns `status: "refreshed"`), otherwise returns `already_pending` with `daysRemaining`. Closed communities hidden from listings; linked events have `community_id` nullified. Email templates for join request/approved/declined (Postmark IDs configured); the join-request template (44111064) uses an explicit `hasMessage` boolean to gate the optional requester-message block (avoids the Mustachio empty-string-is-truthy footgun), and its "Review request" CTA links to `/communities/:slug?tab=requests` so owners land on the Requests tab. Super admin moderation. Community chat deferred (`chat_enabled` column exists but no chat implementation). | Polish UI, fix bugs. Do not build community chat without being asked. |
 | **QA plans** | Implemented (migration 065). Plans with `is_qa = true` are isolated from normal users but fully functional for super admins. Only super admins can create, view, join, or interact with QA plans. QA plans appear in feeds, notifications, and emails for super admin users. Cron jobs (attendance assurance, digests, feedback) process QA plans but only send emails/notifications to super admin recipients. QA plans are excluded from KPI metrics and the public (unauthenticated) explore feed. | **Critical invariant**: any new feature touching events must preserve QA-plan isolation. Use `AND (COALESCE(e.is_qa, false) = false OR <viewer_is_super_admin>)` in event queries. For cron/email paths, check recipient role before sending. Single-event access must check `is_qa` and verify super_admin role. |
+
+---
+
+## Plan Feed and Community Visibility Contract
+
+This contract governs what users see in the **Explore feed** versus a **community plan feed**, how the **"Only show this plan to community members"** toggle (internally `hide_from_explore`) changes visibility, and how these rules interact with QA plans. Regressions in this area have happened before. Treat it as load-bearing; do not modify the underlying filters or toggle semantics without updating this section in the same change set.
+
+### The two feeds are distinct
+
+- **Explore feed** (`/`, logged in; `/` landing, logged out). Discoverability surface. Sourced from `GET /events/explore` (auth) and `GET /events/explore/public` (anonymous). Filters by plan visibility (`public` / `chums_only` / `invite_only`), distance, hobby personalization, and the per-plan `hide_from_explore` toggle. **A plan being linked to a community does not by itself remove it from Explore.**
+- **Community plan feed** (`/communities/[slug]`). The community's own list of its upcoming plans. Sourced from `GET /communities/:id/events`. Returns plans attached to that community that also satisfy the per-plan `visibility` gate (see the matrix below). Access to the feed itself follows community privacy: public communities' feeds are readable by anyone, private communities' feeds require active membership (or super admin). `hide_from_explore` is **not** applied in the community feed; it only affects Explore.
+
+### Core principle: community linkage is organizational context, not audience expansion
+
+Linking a plan to a community groups it with the community on surfaces, but it **never broadens the plan's audience beyond what the base `visibility` setting allows**. Community members who would not otherwise satisfy `visibility` still do not see the plan.
+
+### Visibility × community-linkage matrix
+
+This is the authoritative rule for what appears where. All three columns are enforced in the same place on the server (see "Where the rule is enforced" below).
+
+| Plan `visibility` | Can be linked to a community? | Community feed | Explore feed |
+|---|---|---|---|
+| `public` | Yes | Shown, subject to community-privacy access (private communities require membership to view the feed). | Shown; the per-plan `hide_from_explore` toggle governs whether non-members see it. |
+| `chums_only` | Yes | Shown **only to the host, the host's on-NewChums chums, and viewers already RSVP'd**. Regular community members who are not chums still do not see the plan, even though it's linked. | Same `chums_only` rule as elsewhere; `hide_from_explore` layers on top. |
+| `invite_only` | **No.** Forms hide the Community section and forms/server both clear `community_id` to null. | Never shown. Invitees reach the plan via their invite link; the host can find it in Your Plans. | Never shown (except to viewers already RSVP'd, per the standing Explore rule). |
+
+### "Only show this plan to community members" toggle (per-plan, stored as `hide_from_explore`)
+
+The toggle is shown on Add Plan and Edit Plan **only when a community is selected**. `hide_from_explore` defaults to `false` (toggle OFF). It only affects **Explore**; the community feed applies the base `visibility` rule from the matrix above regardless.
+
+| State | `hide_from_explore` | Community feed | Explore feed (non-member, non-RSVP) | Explore feed (community member or RSVP'd) |
+|---|---|---|---|---|
+| **OFF (default)** | `false` | Per visibility matrix | Per visibility matrix | Per visibility matrix |
+| **ON** | `true` | Per visibility matrix (unchanged) | Hidden | Shown if the visibility matrix already shows it (community-member or RSVP branch of the Explore filter) |
+
+Unchanging rules regardless of the toggle:
+
+- Community privacy (`public` / `private`) gates the community **page and plan feed**, not individual-plan Explore visibility. A public plan hosted in a private community can still appear in Explore for non-members when its host leaves the toggle off.
+- Plan-level `visibility` (`public` / `chums_only` / `invite_only`) and chum-preference filters still apply in Explore and in the community feed on top of the toggle.
+- Plan-level `visibility` governs Explore discoverability; it does not restrict direct URL access to a published plan (which is governed by the plan's access-state rules).
+- The UI label, the helper text, the stored boolean, the API payload field, and both the Explore filter and the community-feed filter must all agree. If one is changed, change the others in the same commit.
+
+### Where the rule is enforced (update together if touching)
+
+- Stored fields: `newchums.events.hide_from_explore BOOLEAN NOT NULL DEFAULT false` and `newchums.events.community_id UUID NULL` (migration 055); plan `visibility` (`public` / `chums_only` / `invite_only`) on `newchums.events`.
+- Request / response wire names: `hide_from_explore` / `community_id` / `visibility` (snake) in/out on `POST /events` and `PATCH /events/:id`; `hideFromExplore` on `GET /events/:id` (host only).
+- **Invite-only invariant, server-side.** Both `POST /events` and `PATCH /events/:id` force `community_id = null` (and `hide_from_explore = false`) when `visibility === 'invite_only'`, regardless of what the client sends. This is the last line of defense for the rule; the forms hide the Community section so this is rarely triggered in practice, but any client bypassing the UI still cannot create or save an invite_only plan with a linked community.
+- **Explore filter** (`GET /events/explore`). The `hide_from_explore` gate: `COALESCE(e.hide_from_explore, false) = false OR member OR RSVP'd`. The `visibility` gate: `invite_only` hidden unless RSVP'd; `chums_only` shown to host + on-NewChums chums + RSVP'd.
+- **Community feed** (`GET /communities/:id/events`). Applies the same `visibility` gate as Explore **minus the RSVP bypass for invite_only**: `invite_only` rows are always excluded; `chums_only` shown to host + on-NewChums chums + RSVP'd; `public` always shown (subject to community privacy on the endpoint itself). No `hide_from_explore` filter.
+- Form state: `hideFromExplore`, `selectedCommunityId` / `communityId`, and `visibility` in `CreateEventClient.tsx` and `EditEventClient.tsx` (see the parity rule below). A `useEffect` on `visibility` auto-clears community linkage when `visibility === 'invite_only'` so the form state matches the server invariant.
+- Shared UI: `CommunityLinkSection` (`web/src/components/events/planForm/CommunityLinkSection.tsx`) takes a `visibility` prop, returns `null` for `invite_only`, and renders a "Chums only" reminder when `visibility === 'chums_only'` so authors don't assume community members will see a chums-only plan.
+- Label / helper text: Add Plan and Edit Plan forms must display the same label and helper text. Current wording: **"Only show this plan to community members"** (label) and **"When on, this plan only appears in the community feed and to members in their Explore. Others won't see it."** (helper, Edit form).
+
+### QA plans within community functionality
+
+QA plans (`is_qa = true`) follow all of the rules above **plus** the system-wide QA-isolation invariant (see the Incomplete Areas table row for QA plans). Specifically:
+
+- QA plans may be linked to a community exactly like non-QA plans. Membership is still validated at `POST /events`.
+- QA plans appear in the community plan feed, Explore, digests, and notifications **for super admins only**. Normal users never see them anywhere.
+- Every community / events query that returns plan rows must use `AND (COALESCE(e.is_qa, false) = false OR <viewer_is_super_admin>)`. Counts that surface to super admins (e.g. a community card's `upcoming_plan_count`) must bypass the filter for super admin viewers so the number matches what they'll actually see.
+- Response payloads for community plan feeds should expose `isQa` so the QA badge surfaces on super-admin-visible cards; never expose `isQa` in a way that would let a normal user discover QA plans exist.
+
+### Docs that must stay aligned
+
+If you change anything in this contract, update all of the following in the same change set:
+
+1. This section in `AGENTS.md`.
+2. The Communities / plan-feed sections in `docs/Technical_Specs.md`.
+3. The System Map's QA-isolation and feed flow notes in `docs/System_Map.md`.
+4. The Super Admin System Logic page (`web/src/app/(app)/admin/system-logic/AdminSystemLogicClient.tsx`); specifically the "Plans and communities" bullets.
+
+---
+
+## Add Plan / Edit Plan Parity Rule
+
+`web/src/app/(app)/events/create/CreateEventClient.tsx` and `web/src/app/(app)/events/[id]/edit/EditEventClient.tsx` are **one plan form system**, intentionally presented as such to the user. They are not currently extracted into a shared component.
+
+### Current implementation reality
+
+- Both files implement the same top-level sections in the same order: **Banner, Basic details, Date & time, Location, Visibility, Extra options, Community, Matching preferences, QA plan, Submit.**
+- The four historically drift-prone sections are **already extracted** into shared components under `web/src/components/events/planForm/`: `ExtraOptionsSection`, `CommunityLinkSection` (supports `mode="add"` vs `mode="edit"`), `MatchingPreferencesSection`, and `QAPlanSection`. Both forms import and render the same components; the sections cannot drift visually.
+- The remaining six sections (Banner crop, Basic details, Date & time, Location, Visibility, Submit) are still duplicated between the two files. They have been stable in practice, so the extraction cost has not been spent yet. Extract them when and if they drift, or as part of a dedicated scope.
+- Shared UI primitives (`AppCard`, `AppTextField`, `AppButton`, `HobbyPickerField`, `PlacesAutocompleteInput`, `RichTextEditor`) are shared across both forms as building blocks.
+
+### The rule (for future agents)
+
+**Treat changes to one file as changes to both** unless the prompt explicitly says otherwise, or the change is demonstrably edit-only (e.g. touching initial-value hydration from the event payload, or the "Notify attendees about these changes" toggle that only exists in Edit).
+
+When making UI or behavior changes:
+
+1. If the change lands in one of the four extracted sections (`ExtraOptionsSection`, `CommunityLinkSection`, `MatchingPreferencesSection`, `QAPlanSection`), edit the shared component; both forms pick it up automatically. Do not fork back into the form files.
+2. If the change lands in one of the still-duplicated sections (Banner, Basic details, Date & time, Location, Visibility, Submit), read the matching section in the other file before editing and mirror the change: same labels, helper text, spacing, control sizes, section order, shared-primitive usage, and validation semantics.
+3. Keep the parity delta contained to intentionally divergent fields (initial state loading, edit-only toggles, submit endpoint/method). Everything else should read identically.
+4. If you must diverge visually for a good reason, document it with a code comment so the next agent doesn't revert the difference.
+
+### Sections that are deliberately allowed to differ
+
+| Section | Add vs Edit difference | Why |
+|---|---|---|
+| Community dropdown / read-only label | Add: `Select` of `myCommunities`; Edit: read-only "This plan is linked to **X**." | Community linkage is fixed at creation time; we don't currently support re-parenting. |
+| Extra options → "Notify attendees about these changes" toggle | Edit only | Only meaningful when editing an existing plan with attendees. |
+| Submit wiring | `POST /events` vs `PATCH /events/:id`; different success redirects | Inherent to create vs edit. |
+| Banner / hobby initial state | Edit hydrates from `GET /events/:id`; Add starts empty | Inherent to edit-vs-create. |
+
+Anything outside that list should render and behave identically in both forms.
+
+### If you're extracting more sections
+
+The four drift-prone sections are already extracted under `web/src/components/events/planForm/`. Extract additional sections only when they start drifting or as part of a dedicated scope; per-section extraction without observed drift adds surface area for little payoff. If you do extract another section, follow the pattern: a controlled "dumb" component that takes state + change handlers as props, add it to `planForm/index.ts`, and swap both form files in the same commit.
 
 ---
 

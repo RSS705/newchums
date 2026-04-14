@@ -6,25 +6,7 @@
 {{eventDate}}{{#eventLocation}} · {{.}}{{/eventLocation}}
 {{statusLabel}}
 
-{{#hasChanges}}
-What changed:
-
-{{#change1}}
-- {{.}}
-{{/change1}}
-{{#change2}}
-- {{.}}
-{{/change2}}
-{{#change3}}
-- {{.}}
-{{/change3}}
-{{#change4}}
-- {{.}}
-{{/change4}}
-{{#change5}}
-- {{.}}
-{{/change5}}
-{{/hasChanges}}
+{{{changesBlockText}}}
 
 {{ctaText}}: {{ctaUrl}}
 

@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   Box, Typography, Stack, Button, Chip, Avatar, CircularProgress,
   Divider, IconButton, Tooltip, Tab, Tabs, Grid, TextField,
@@ -20,6 +20,8 @@ import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import HourglassEmptyRoundedIcon from "@mui/icons-material/HourglassEmptyRounded";
 import BlockRoundedIcon from "@mui/icons-material/BlockRounded";
+import MailOutlineRoundedIcon from "@mui/icons-material/MailOutlineRounded";
+import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
 import Link from "next/link";
 import { AppCard, useToast } from "@/components/ui";
 import EventCard, { type PlanEvent } from "@/components/events/EventCard";
@@ -47,6 +49,10 @@ type CommunityData = {
   owner_username: string | null;
   owner_avatar_url: string | null;
   member_count: number;
+  /** Number of upcoming non-QA plans linked to this community. Exposed on
+   *  the restricted (non-member, private-community) response so the locked
+   *  preview can surface a real count without leaking plan details. */
+  upcoming_plan_count?: number;
   created_at: string;
   status?: string;
   hobbies?: { name: string; slug: string }[];
@@ -77,12 +83,25 @@ type JoinRequest = {
 export default function CommunityDetailClient() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Initial tab param from the URL (e.g. `?tab=requests` from the
+  // community-join-request email CTA). Read once on mount so the user
+  // lands on the right tab, then ignored so manual tab clicks aren't
+  // fought by the URL state.
+  const initialTabParam = searchParams.get("tab");
+  const hasAppliedInitialTab = useRef(false);
   const toast = useToast();
   const slug = params.slug as string;
 
   const [community, setCommunity] = useState<CommunityData | null>(null);
   const [viewerMembership, setViewerMembership] = useState<{ role: string; status: string } | null>(null);
   const [viewerPendingRequest, setViewerPendingRequest] = useState(false);
+  // All pending-request display strings and flags are computed server-side
+  // so the client doesn't have to do time math during render (keeps the
+  // component pure and avoids coupling copy to the local clock).
+  const [viewerPendingRequestSentLabel, setViewerPendingRequestSentLabel] = useState<string | null>(null);
+  const [viewerPendingRequestRefreshable, setViewerPendingRequestRefreshable] = useState(false);
+  const [viewerPendingRequestDaysUntilRefreshable, setViewerPendingRequestDaysUntilRefreshable] = useState<number | null>(null);
   const [viewerDeclinedRequest, setViewerDeclinedRequest] = useState(false);
   const [restricted, setRestricted] = useState(false);
   const [shareToken, setShareToken] = useState<string | null>(null);
@@ -92,8 +111,13 @@ export default function CommunityDetailClient() {
 
   const [events, setEvents] = useState<PlanEvent[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
+  // True once the plans fetch has resolved at least once. Gates the empty
+  // state so it cannot paint during the one-render gap between the tab
+  // mounting and the useEffect kicking off the fetch.
+  const [eventsFetched, setEventsFetched] = useState(false);
   const [members, setMembers] = useState<Member[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
+  const [membersFetched, setMembersFetched] = useState(false);
   const [joining, setJoining] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [joinRequestMessage, setJoinRequestMessage] = useState("");
@@ -101,38 +125,38 @@ export default function CommunityDetailClient() {
   const [viewerHobbyItems, setViewerHobbyItems] = useState<{ slug: string; name: string; category?: string | null }[]>([]);
 
   const mapApiEvent = useCallback((ev: ApiEvent): PlanEvent => {
-    const hostUsername = (ev.host_username as string)?.replace(/^@/, "");
-    const hostName = hostUsername ? `@${hostUsername}` : ((ev.host_name as string) || "Someone");
+    const hostUsername = (ev.hostUsername as string)?.replace(/^@/, "");
+    const hostName = hostUsername ? `@${hostUsername}` : ((ev.hostName as string) || "Someone");
     const hobbiesRaw = ev.hobbies;
     const hobbies: Array<{ name: string; slug: string }> = typeof hobbiesRaw === "string"
       ? JSON.parse(hobbiesRaw)
       : Array.isArray(hobbiesRaw) ? hobbiesRaw : [];
-    const locationType = String(ev.location_type ?? "in_person");
+    const locationType = String(ev.locationType ?? "in_person");
     const locationDisplay = locationType === "online"
-      ? ((ev.online_link as string) || "Online")
-      : ((ev.location_name as string) || (ev.location_address as string) || (ev.location_area as string) || "TBD");
+      ? ((ev.onlineLink as string) || "Online")
+      : ((ev.locationName as string) || (ev.locationAddress as string) || (ev.locationArea as string) || "TBD");
     return {
       id: String(ev.id),
       title: String(ev.title ?? ""),
       description: (ev.description as string) ?? null,
-      startsAt: String(ev.starts_at ?? ""),
+      startsAt: String(ev.startsAt ?? ""),
       locationType,
       locationDisplay,
-      locationName: (ev.location_name as string) ?? null,
-      locationAddress: (ev.location_address as string) ?? null,
-      onlineLink: (ev.online_link as string) ?? null,
-      maxSeats: ev.max_seats != null ? Number(ev.max_seats) : null,
+      locationName: (ev.locationName as string) ?? null,
+      locationAddress: (ev.locationAddress as string) ?? null,
+      onlineLink: (ev.onlineLink as string) ?? null,
+      maxSeats: ev.maxSeats != null ? Number(ev.maxSeats) : null,
       visibility: String(ev.visibility ?? "public"),
       status: String(ev.status ?? "published"),
-      hobby: hobbies[0]?.name ?? (ev.hobby_names as string)?.split(", ")[0] ?? null,
+      hobby: hobbies[0]?.name ?? (ev.hobbyNames as string)?.split(", ")[0] ?? null,
       hobbySlug: hobbies[0]?.slug ?? null,
       hobbies,
       hostName,
-      isHost: ev.is_host === true,
-      myRsvpStatus: (ev.my_rsvp_status as string) ?? null,
-      goingCount: Number(ev.going_count ?? 0),
-      maybeCount: Number(ev.maybe_count ?? 0),
-      bannerKey: (ev.banner_key as string) ?? null,
+      isHost: ev.isHost === true,
+      myRsvpStatus: (ev.myRsvpStatus as string) ?? null,
+      goingCount: Number(ev.goingCount ?? 0),
+      maybeCount: Number(ev.maybeCount ?? 0),
+      bannerKey: (ev.bannerKey as string) ?? null,
       community: (ev.community as { id: string; slug: string; name: string }) ?? null,
       hasPrefMismatch: ev.hasPrefMismatch === true,
       isQa: ev.isQa === true,
@@ -151,6 +175,13 @@ export default function CommunityDetailClient() {
           setCommunity(data.community);
           setViewerMembership(data.viewerMembership);
           setViewerPendingRequest(data.viewerPendingRequest ?? false);
+          setViewerPendingRequestSentLabel(data.viewerPendingRequestSentLabel ?? null);
+          setViewerPendingRequestRefreshable(data.viewerPendingRequestRefreshable ?? false);
+          setViewerPendingRequestDaysUntilRefreshable(
+            typeof data.viewerPendingRequestDaysUntilRefreshable === "number"
+              ? data.viewerPendingRequestDaysUntilRefreshable
+              : null
+          );
           setViewerDeclinedRequest(data.viewerDeclinedRequest ?? false);
           setRestricted(data.restricted ?? false);
           setShareToken(data.shareToken ?? null);
@@ -170,6 +201,7 @@ export default function CommunityDetailClient() {
       if (data.ok) setEvents((data.events as ApiEvent[]).map(mapApiEvent));
     } catch { /* noop */ }
     setEventsLoading(false);
+    setEventsFetched(true);
   }, [community, mapApiEvent]);
 
   const fetchMembers = useCallback(async () => {
@@ -181,6 +213,7 @@ export default function CommunityDetailClient() {
       if (data.ok) setMembers(data.members);
     } catch { /* noop */ }
     setMembersLoading(false);
+    setMembersFetched(true);
   }, [community]);
 
   useEffect(() => { fetchCommunity(); }, [fetchCommunity]);
@@ -208,6 +241,36 @@ export default function CommunityDetailClient() {
     else if (tabIndex === 1) fetchMembers();
   }, [community, restricted, tabIndex, fetchEvents, fetchMembers]);
 
+  // Apply an incoming ?tab=<name> query param to tabIndex exactly once, the
+  // first time we know enough about the viewer to evaluate eligibility
+  // (community loaded + viewerMembership resolved). The main caller is the
+  // community-join-request email's "Review request" CTA, which deep-links
+  // to ?tab=requests. Non-owner viewers who somehow land on that URL (e.g.
+  // share) silently fall back to Plans instead of showing a broken tab.
+  //
+  // setState-in-effect is intentional here: the initial tabIndex depends
+  // on async data (community + membership) and a URL param that aren't
+  // available at mount, and the ref guard ensures this runs exactly once
+  // so manual tab clicks are not fought on subsequent renders.
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (hasAppliedInitialTab.current) return;
+    if (!community) return;
+    if (!initialTabParam) {
+      hasAppliedInitialTab.current = true;
+      return;
+    }
+    const viewerIsOwner = viewerMembership?.role === "owner";
+    if (initialTabParam === "requests" && viewerIsOwner && community.visibility === "private") {
+      setTabIndex(2);
+    } else if (initialTabParam === "members") {
+      setTabIndex(1);
+    }
+    // `plans` or any unrecognized value falls through to the default of 0.
+    hasAppliedInitialTab.current = true;
+  }, [community, viewerMembership, initialTabParam]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
   const handleJoin = async () => {
     if (!community) return;
     setJoining(true);
@@ -220,9 +283,30 @@ export default function CommunityDetailClient() {
       });
       const data = await res.json();
       if (data.ok) {
-        if (data.status === "joined") { toast.success("You've joined!"); fetchCommunity(); }
-        else if (data.status === "pending") { toast.success("Request sent! The owner will review it."); setViewerPendingRequest(true); }
-        else if (data.status === "already_member") toast.info("You're already a member");
+        if (data.status === "joined") {
+          toast.success("You've joined!");
+          fetchCommunity();
+        } else if (data.status === "pending") {
+          toast.success("Request sent! The owner will review it.");
+          setJoinRequestMessage("");
+          // Re-fetch so the UI picks up the new pending timestamp and
+          // cooldown state instead of guessing.
+          fetchCommunity();
+        } else if (data.status === "refreshed") {
+          toast.success("Request re-sent. The owner will be notified again.");
+          setJoinRequestMessage("");
+          fetchCommunity();
+        } else if (data.status === "already_pending") {
+          // Cooldown not yet met. Server returns daysRemaining; surface it.
+          const days = typeof data.daysRemaining === "number" ? data.daysRemaining : null;
+          toast.info(
+            days
+              ? `You can send another request in ${days} ${days === 1 ? "day" : "days"}.`
+              : "You already have a pending request."
+          );
+        } else if (data.status === "already_member") {
+          toast.info("You're already a member");
+        }
       }
     } catch { toast.error("Something went wrong"); }
     setJoining(false);
@@ -451,11 +535,38 @@ export default function CommunityDetailClient() {
           </Typography>
 
           {viewerPendingRequest ? (
-            <Chip icon={<HourglassEmptyRoundedIcon />} label="Request pending" color="warning" variant="outlined" size="small" />
+            <PendingRequestStatusBlock
+              sentLabel={viewerPendingRequestSentLabel}
+              refreshable={viewerPendingRequestRefreshable}
+              daysUntilRefreshable={viewerPendingRequestDaysUntilRefreshable}
+              joinRequestMessage={joinRequestMessage}
+              onChangeMessage={setJoinRequestMessage}
+              onRefresh={handleJoin}
+              refreshing={joining}
+            />
           ) : viewerDeclinedRequest ? (
-            <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
-              Your request to join this community was declined.
-            </Typography>
+            <Box
+              sx={{
+                p: 2,
+                borderRadius: 2,
+                border: "1px solid",
+                borderColor: "divider",
+                bgcolor: "action.hover",
+              }}
+            >
+              <Stack direction="row" spacing={1.5} alignItems="flex-start">
+                <BlockRoundedIcon sx={{ color: "text.secondary", mt: "2px" }} />
+                <Box>
+                  <Typography variant="body2" fontWeight={600} sx={{ mb: 0.25 }}>
+                    Your request was declined
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+                    The community owner declined your request. Reach out to them directly if you
+                    believe this was a mistake.
+                  </Typography>
+                </Box>
+              </Stack>
+            </Box>
           ) : (
             <Stack spacing={2}>
               <TextField
@@ -483,6 +594,11 @@ export default function CommunityDetailClient() {
             </Stack>
           )}
         </AppCard>
+
+        <LockedPreviewCard
+          memberCount={community.member_count}
+          upcomingPlanCount={community.upcoming_plan_count ?? 0}
+        />
       </Stack>
     );
   }
@@ -685,7 +801,23 @@ export default function CommunityDetailClient() {
 
       {/* Tabs */}
       <Box>
-        <Tabs value={tabIndex} onChange={(_, v) => setTabIndex(v)} sx={{ mb: 2.5 }}>
+        <Tabs
+          value={tabIndex}
+          onChange={(_, v) => {
+            setTabIndex(v);
+            // Keep the URL in sync with the active tab so a refresh lands
+            // on the same surface and a copy-pasted link matches what the
+            // sharer was looking at. router.replace keeps this out of the
+            // browser history so the back button doesn't tab-walk.
+            const next = v === 2 ? "requests" : v === 1 ? "members" : null;
+            const url = new URL(window.location.href);
+            if (next) url.searchParams.set("tab", next);
+            else url.searchParams.delete("tab");
+            const nextHref = url.pathname + (url.search || "") + (url.hash || "");
+            router.replace(nextHref, { scroll: false });
+          }}
+          sx={{ mb: 2.5 }}
+        >
           <Tab
             label={`Plans${events.length > 0 ? ` (${events.length})` : ""}`}
             icon={<EventNoteRoundedIcon sx={{ fontSize: 18 }} />}
@@ -711,7 +843,7 @@ export default function CommunityDetailClient() {
         {/* Plans tab */}
         {tabIndex === 0 && (
           <>
-            {eventsLoading && events.length === 0 ? (
+            {(!eventsFetched || eventsLoading) && events.length === 0 ? (
               <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}><CircularProgress size={28} /></Box>
             ) : events.length === 0 ? (
               <AppCard>
@@ -755,7 +887,7 @@ export default function CommunityDetailClient() {
         {/* Members tab */}
         {tabIndex === 1 && (
           <>
-            {membersLoading && members.length === 0 ? (
+            {(!membersFetched || membersLoading) && members.length === 0 ? (
               <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}><CircularProgress size={28} /></Box>
             ) : members.length === 0 ? (
               <AppCard>
@@ -894,5 +1026,204 @@ export default function CommunityDetailClient() {
         )}
       </Box>
     </Stack>
+  );
+}
+
+type PendingRequestStatusBlockProps = {
+  /** Pre-formatted "Sent N days ago" label from the server. Null when we
+   *  don't have a createdAt (shouldn't happen in practice given this
+   *  component only renders when viewerPendingRequest is true). */
+  sentLabel: string | null;
+  refreshable: boolean;
+  /** Whole days remaining before the viewer may re-submit. Null when the
+   *  request is already refreshable or when the data is missing. */
+  daysUntilRefreshable: number | null;
+  joinRequestMessage: string;
+  onChangeMessage: (value: string) => void;
+  onRefresh: () => void;
+  refreshing: boolean;
+};
+
+/** Replaces the previous "Request pending" mini-chip with a status card that
+ *  actually explains what is happening, that the owner will be emailed, and
+ *  (once the cooldown is up) lets the requester re-submit without having to
+ *  contact someone out of band. All time math is done server-side and
+ *  passed in as pre-formatted strings / numbers so the component stays
+ *  pure and doesn't depend on the client clock. */
+function PendingRequestStatusBlock({
+  sentLabel,
+  refreshable,
+  daysUntilRefreshable,
+  joinRequestMessage,
+  onChangeMessage,
+  onRefresh,
+  refreshing,
+}: PendingRequestStatusBlockProps) {
+  return (
+    <Box
+      sx={{
+        p: 2,
+        borderRadius: 2,
+        border: "1px solid",
+        borderColor: "warning.light",
+        bgcolor: "rgba(255, 167, 38, 0.08)",
+      }}
+    >
+      <Stack direction="row" spacing={1.5} alignItems="flex-start" sx={{ mb: 1 }}>
+        <HourglassEmptyRoundedIcon sx={{ color: "warning.main", mt: "2px" }} />
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography variant="body1" fontWeight={700} sx={{ lineHeight: 1.3 }}>
+            Your request is awaiting review
+          </Typography>
+          {sentLabel && (
+            <Typography variant="caption" color="text.secondary">
+              {sentLabel}
+            </Typography>
+          )}
+        </Box>
+      </Stack>
+
+      <Stack direction="row" spacing={1} alignItems="flex-start" sx={{ pl: { xs: 0, sm: 4.5 }, mb: refreshable ? 2 : 1 }}>
+        <MailOutlineRoundedIcon sx={{ fontSize: 16, color: "text.secondary", mt: "3px" }} />
+        <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+          The community owner will review your request. You&rsquo;ll receive an email when it&rsquo;s
+          approved or declined.
+        </Typography>
+      </Stack>
+
+      {refreshable ? (
+        <Stack spacing={1.5} sx={{ pl: { xs: 0, sm: 4.5 } }}>
+          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+            Still waiting? You can send another request to nudge the owner.
+          </Typography>
+          <TextField
+            value={joinRequestMessage}
+            onChange={(e) => onChangeMessage(e.target.value.slice(0, 500))}
+            placeholder="Add a note to the community owner (optional)"
+            multiline
+            maxRows={3}
+            size="small"
+            fullWidth
+            variant="outlined"
+            inputProps={{ maxLength: 500 }}
+            sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2, bgcolor: "background.paper" } }}
+          />
+          <Box>
+            <Button
+              variant="outlined"
+              startIcon={refreshing ? undefined : <RefreshRoundedIcon sx={{ fontSize: 18 }} />}
+              onClick={onRefresh}
+              disabled={refreshing}
+              sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3 }}
+            >
+              {refreshing ? <CircularProgress size={16} color="inherit" /> : "Send another request"}
+            </Button>
+          </Box>
+        </Stack>
+      ) : daysUntilRefreshable !== null ? (
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ display: "block", pl: { xs: 0, sm: 4.5 }, fontStyle: "italic" }}
+        >
+          Still no response? You&rsquo;ll be able to send another request in{" "}
+          {daysUntilRefreshable} {daysUntilRefreshable === 1 ? "day" : "days"}.
+        </Typography>
+      ) : null}
+    </Box>
+  );
+}
+
+type LockedPreviewCardProps = {
+  memberCount: number;
+  upcomingPlanCount: number;
+};
+
+/** Locked-preview panel rendered beneath the restricted preview card. Makes
+ *  the private-community page feel alive by showing real counts for
+ *  upcoming plans and active members, without leaking any of the underlying
+ *  detail (names, plan titles, dates, etc). The tabs are visually suggestive
+ *  of the full member experience but are not interactive. */
+function LockedPreviewCard({ memberCount, upcomingPlanCount }: LockedPreviewCardProps) {
+  return (
+    <AppCard>
+      <Stack spacing={2.5}>
+        <Stack direction="row" spacing={2} alignItems="center">
+          <Box
+            sx={{
+              width: 40,
+              height: 40,
+              borderRadius: 2,
+              bgcolor: "action.hover",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            <LockRoundedIcon sx={{ fontSize: 20, color: "text.secondary" }} />
+          </Box>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="body1" fontWeight={700}>
+              Members-only content
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Join to see plans, members, and community activity.
+            </Typography>
+          </Box>
+        </Stack>
+
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          spacing={1.5}
+          sx={{ "& > *": { flex: 1 } }}
+        >
+          <LockedPreviewTile
+            icon={<EventNoteRoundedIcon sx={{ fontSize: 20, color: "text.disabled" }} />}
+            label="Upcoming plans"
+            value={upcomingPlanCount}
+          />
+          <LockedPreviewTile
+            icon={<PeopleRoundedIcon sx={{ fontSize: 20, color: "text.disabled" }} />}
+            label="Active members"
+            value={memberCount}
+          />
+        </Stack>
+      </Stack>
+    </AppCard>
+  );
+}
+
+function LockedPreviewTile({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: number;
+}) {
+  return (
+    <Box
+      sx={{
+        p: 2,
+        borderRadius: 2,
+        border: "1px solid",
+        borderColor: "divider",
+        display: "flex",
+        alignItems: "center",
+        gap: 1.5,
+      }}
+    >
+      {icon}
+      <Box sx={{ minWidth: 0 }}>
+        <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.2 }}>
+          {label}
+        </Typography>
+        <Typography variant="h6" fontWeight={700} sx={{ lineHeight: 1.2 }}>
+          {value}
+        </Typography>
+      </Box>
+    </Box>
   );
 }

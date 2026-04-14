@@ -135,6 +135,33 @@ The following flows run in the API worker; the web app calls the API via `NEXT_P
 | Admin, communities | `GET /admin/communities`, `POST /admin/communities/:id/remove` | Bearer JWT + `super_admin` role |
 | Diagnostics | `GET /`, `GET /health`, `GET /health/env`, `GET /health/db`, `GET /db/ping`, `GET /db/postgis` | none |
 
+### Plan feeds, community linkage, and "Only show this plan to community members"
+
+**Core principle:** Community linkage is organizational context, not audience expansion. Linking a plan to a community never widens its audience beyond what the plan's base `visibility` setting allows.
+
+Two distinct feeds surface plans; the per-plan `hide_from_explore` toggle (UI label: "Only show this plan to community members") gates Explore only.
+
+| Feed | Endpoint | Governed by |
+|---|---|---|
+| Explore (authenticated) | `GET /events/explore` | Plan `visibility` + `hide_from_explore` + community-member / RSVP bypass + chum-prefs + distance + hobby |
+| Explore (public, anonymous) | `GET /events/explore/public` | `visibility='public'` + `hide_from_explore=false` + `is_qa=false` |
+| Community plan feed | `GET /communities/:id/events` | `community_id = :id` + per-plan `visibility` gate (invite_only excluded entirely; chums_only scoped to host + host's on-NewChums chums + RSVP'd viewers; public always shown). Endpoint access is gated by community privacy (private communities: members + super admin). No `hide_from_explore` filter on rows. |
+
+Visibility × community-linkage matrix (applies to all three feeds):
+
+| Plan `visibility` | Can link to community? | Community feed | Explore |
+|---|---|---|---|
+| `public` | Yes | Shown | Shown; `hide_from_explore` governs non-member visibility |
+| `chums_only` | Yes | Shown only to host, host's on-NewChums chums, and RSVP'd viewers | Same chums_only rule; `hide_from_explore` layers on top |
+| `invite_only` | No (server forces `community_id = null` on POST and PATCH) | Never shown | Hidden except to viewers already RSVP'd |
+
+Toggle states (per plan, shown only when a community is selected and `visibility != 'invite_only'`):
+
+- **OFF (`hide_from_explore=false`, default):** per the matrix above.
+- **ON (`hide_from_explore=true`):** community feed unchanged (base `visibility` still applies); in Explore the plan is limited to viewers who would already satisfy the matrix as active community members or RSVP'd viewers.
+
+Community `visibility` (`public` / `private`) gates the community page and plan feed **endpoint**, not individual-plan Explore visibility. A public plan in a private community with the toggle off still appears in Explore for non-members. Full contract: `AGENTS.md` → Plan Feed and Community Visibility Contract; `docs/Technical_Specs.md` → Communities → Plan Feeds, Community Linkage, and "Only show this plan to community members" Toggle.
+
 ### QA plan isolation
 
 Plans with `is_qa = true` are isolated from normal users but fully functional for super admins.
@@ -146,11 +173,13 @@ Plans with `is_qa = true` are isolated from normal users but fully functional fo
 
 **Super admins** get a fully realistic experience with QA plans:
 - QA plans appear in Explore feed, Your Plans, community plan feeds
+- `GET /communities/:id/events` exposes `isQa` on each row so QA badges render on super-admin-visible cards
+- Community-card counts that super admins see (e.g. `upcoming_plan_count` in `/communities`) bypass the QA filter so the count reflects what the viewer can actually see
 - Cron jobs (attendance assurance, event match digest, chat digest, feedback reminders) process QA plans and send emails/notifications to super admin recipients only
 - Auto-cancel and attendance cutoff processing runs normally on QA plans
 - QA plans are excluded from KPI metrics and the public (unauthenticated) explore feed
 
-Enforcement: list queries use `AND (COALESCE(e.is_qa, false) = false OR <viewer_is_super_admin>)`. Single-event endpoints check `is_qa` and verify super_admin role, returning 404 for non-admins. Cron jobs check recipient role via `batchLoadSuperAdminIds()` before sending.
+Enforcement: every list query that returns plan rows or plan counts uses `AND (COALESCE(e.is_qa, false) = false OR <viewer_is_super_admin>)`. Single-event endpoints check `is_qa` and verify super_admin role, returning 404 for non-admins. Cron jobs check recipient role via `batchLoadSuperAdminIds()` before sending. This invariant applies equally to community plan queries and counts; see the Plan feeds subsection above for the full contract.
 
 ### Content safety
 

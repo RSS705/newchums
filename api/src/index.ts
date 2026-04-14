@@ -6157,6 +6157,14 @@ const VALID_COMMUNITY_VISIBILITY = ["public", "private"] as const;
 const VALID_COMMUNITY_JOIN_MODE = ["open", "approval_required"] as const;
 const COMMUNITY_SLUG_RE = /^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$/;
 
+/** Minimum age of an unresolved community join request before the requester
+ *  may re-submit (which bumps created_at + message on the existing row and
+ *  re-notifies the owner). See AGENTS.md -> Community join-request lifecycle.
+ *  A shorter cooldown would risk spamming owners; a longer one would leave
+ *  users stuck. Exposed to the client via the restricted /communities/:slug
+ *  response so the UI can show the countdown. */
+const COMMUNITY_JOIN_REQUEST_COOLDOWN_DAYS = 7;
+
 /** POST /communities, create a community */
 app.post("/communities", async (c) => {
   const payload = await requireAuth(c);
@@ -6323,7 +6331,7 @@ app.get("/communities", async (c) => {
           c.owner_user_id, c.created_at, c.is_online, c.website, c.join_link,
           (SELECT COUNT(*)::int FROM newchums.community_members cm WHERE cm.community_id = c.id AND cm.status = 'active') AS member_count,
           cme.role AS viewer_role,
-          (SELECT COUNT(*)::int FROM newchums.events e WHERE e.community_id = c.id AND e.status = 'published' AND e.starts_at >= NOW() AND COALESCE(e.is_qa, false) = false) AS upcoming_plan_count,
+          (SELECT COUNT(*)::int FROM newchums.events e WHERE e.community_id = c.id AND e.status = 'published' AND e.starts_at >= NOW() AND (COALESCE(e.is_qa, false) = false OR ${isSuperAdmin})) AS upcoming_plan_count,
           ${hobbyMatchExpr} AS hobby_match_count,
           ${distanceExpr} AS distance_km,
           (SELECT COALESCE(json_agg(json_build_object('name', ii.name, 'slug', ii.slug)), '[]'::json)
@@ -6382,7 +6390,7 @@ app.get("/communities", async (c) => {
         c.location_name, c.owner_user_id, c.created_at, c.is_online, c.website, c.join_link,
         (SELECT COUNT(*)::int FROM newchums.community_members cm WHERE cm.community_id = c.id AND cm.status = 'active') AS member_count,
         ${viewerRoleExpr} AS viewer_role,
-        (SELECT COUNT(*)::int FROM newchums.events e WHERE e.community_id = c.id AND e.status = 'published' AND e.starts_at >= NOW() AND COALESCE(e.is_qa, false) = false) AS upcoming_plan_count,
+        (SELECT COUNT(*)::int FROM newchums.events e WHERE e.community_id = c.id AND e.status = 'published' AND e.starts_at >= NOW() AND (COALESCE(e.is_qa, false) = false OR ${isSuperAdmin})) AS upcoming_plan_count,
         ${hobbyMatchExpr} AS hobby_match_count,
         ${distanceExpr} AS distance_km,
         (SELECT COALESCE(json_agg(json_build_object('name', ii.name, 'slug', ii.slug)), '[]'::json)
@@ -6462,12 +6470,64 @@ app.get("/communities/:slug", async (c) => {
         SELECT 1 FROM newchums.community_members WHERE community_id = ${community.id} AND user_id = ${userId} AND status = 'active' LIMIT 1
       `) as unknown[];
       if (memberRows.length === 0) {
+        // Pull the pending request's created_at so we can surface both the
+        // "sent N days ago" age in the UI and the refreshable-eligibility
+        // derived below. The partial unique index on (community_id, user_id)
+        // WHERE status='pending' guarantees at most one row.
         const pendingRows = (await sql`
-          SELECT 1 FROM newchums.community_join_requests WHERE community_id = ${community.id} AND user_id = ${userId} AND status = 'pending' LIMIT 1
-        `) as unknown[];
+          SELECT created_at FROM newchums.community_join_requests
+          WHERE community_id = ${community.id} AND user_id = ${userId} AND status = 'pending'
+          LIMIT 1
+        `) as { created_at: string | Date }[];
         const declinedRows = (await sql`
           SELECT 1 FROM newchums.community_join_requests WHERE community_id = ${community.id} AND user_id = ${userId} AND status = 'declined' LIMIT 1
         `) as unknown[];
+        // Plan count for the locked-preview experience. Matches the filter
+        // used elsewhere for community plan counts: future, published,
+        // non-QA (super admins are a separate branch earlier in the
+        // endpoint, so this is always the non-admin path).
+        const planCountRows = (await sql`
+          SELECT COUNT(*)::int AS cnt FROM newchums.events e
+          WHERE e.community_id = ${community.id}
+            AND e.status = 'published'
+            AND e.starts_at >= NOW()
+            AND COALESCE(e.is_qa, false) = false
+        `) as { cnt: number }[];
+        const upcomingPlanCount = planCountRows[0]?.cnt ?? 0;
+
+        // Compute pending-request age + refresh eligibility. "Refreshable"
+        // means the existing request has been pending for at least
+        // COMMUNITY_JOIN_REQUEST_COOLDOWN_DAYS and the UI may show a
+        // "Send another request" action that re-triggers owner
+        // notifications. See AGENTS.md for the lifecycle and cooldown rule.
+        const pendingCreatedAt = pendingRows[0]?.created_at ?? null;
+        const pendingCreatedAtIso = pendingCreatedAt
+          ? typeof pendingCreatedAt === "string"
+            ? pendingCreatedAt
+            : pendingCreatedAt.toISOString()
+          : null;
+        const pendingAgeMs = pendingCreatedAtIso ? Date.now() - new Date(pendingCreatedAtIso).getTime() : null;
+        const cooldownMs = COMMUNITY_JOIN_REQUEST_COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
+        const refreshable = pendingAgeMs !== null && pendingAgeMs >= cooldownMs;
+        // Days remaining until the viewer can re-request, so the client
+        // doesn't have to re-derive it from createdAt during render (which
+        // trips the react-hooks/purity lint rule and, more importantly,
+        // ties the UI to the client clock). Null when refreshable is
+        // already true or when there's no pending request at all.
+        const pendingDaysUntilRefreshable =
+          pendingAgeMs !== null && pendingAgeMs < cooldownMs
+            ? Math.max(1, Math.ceil((cooldownMs - pendingAgeMs) / (24 * 60 * 60 * 1000)))
+            : null;
+        // Pre-formatted "sent N days ago" label so the card's age line
+        // stays accurate without client-side Date.now() during render.
+        const pendingSentLabel = (() => {
+          if (pendingAgeMs === null) return null;
+          const days = Math.floor(pendingAgeMs / (24 * 60 * 60 * 1000));
+          if (days < 1) return "Sent today";
+          if (days === 1) return "Sent 1 day ago";
+          return `Sent ${days} days ago`;
+        })();
+
         return c.json({
           ok: true,
           community: {
@@ -6477,9 +6537,15 @@ app.get("/communities/:slug", async (c) => {
             is_online: community.is_online, location_name: community.location_name,
             website: community.website, member_count: community.member_count,
             hobbies: communityHobbies,
+            upcoming_plan_count: upcomingPlanCount,
           },
           viewerMembership: null,
           viewerPendingRequest: pendingRows.length > 0,
+          viewerPendingRequestCreatedAt: pendingCreatedAtIso,
+          viewerPendingRequestSentLabel: pendingSentLabel,
+          viewerPendingRequestRefreshable: refreshable,
+          viewerPendingRequestDaysUntilRefreshable: pendingDaysUntilRefreshable,
+          viewerPendingRequestCooldownDays: COMMUNITY_JOIN_REQUEST_COOLDOWN_DAYS,
           viewerDeclinedRequest: declinedRows.length > 0,
           restricted: true,
         });
@@ -6732,14 +6798,60 @@ app.post("/communities/:id/join", async (c) => {
     if (existingMember.length > 0) return c.json({ ok: true, status: "already_member" });
 
     if (community.join_mode === "approval_required") {
+      // Look up any existing pending request so we can decide between
+      // "already pending (cooldown not met)", "refreshed (cooldown met)",
+      // and "new pending (no prior pending row)". The partial unique index
+      // on (community_id, user_id) WHERE status='pending' guarantees at
+      // most one row here.
       const existingReq = (await sql`
-        SELECT 1 FROM newchums.community_join_requests WHERE community_id = ${communityId} AND user_id = ${userId} AND status = 'pending' LIMIT 1
-      `) as unknown[];
-      if (existingReq.length > 0) return c.json({ ok: true, status: "already_pending" });
+        SELECT id, created_at FROM newchums.community_join_requests
+        WHERE community_id = ${communityId} AND user_id = ${userId} AND status = 'pending'
+        LIMIT 1
+      `) as { id: string; created_at: string | Date }[];
 
-      await sql`INSERT INTO newchums.community_join_requests (community_id, user_id, message) VALUES (${communityId}, ${userId}, ${joinMessage})`;
+      let requestAction: "pending" | "refreshed" = "pending";
 
-      // Notify owner (in-app + email)
+      if (existingReq.length > 0) {
+        const createdAt = existingReq[0].created_at;
+        const createdAtMs = typeof createdAt === "string" ? Date.parse(createdAt) : createdAt.getTime();
+        const ageMs = Date.now() - createdAtMs;
+        const cooldownMs = COMMUNITY_JOIN_REQUEST_COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
+
+        if (ageMs < cooldownMs) {
+          // Cooldown not yet met. Surface how many days remain so the UI
+          // can show an accurate "available in N days" message instead of
+          // rendering a stale button.
+          const daysRemaining = Math.max(1, Math.ceil((cooldownMs - ageMs) / (24 * 60 * 60 * 1000)));
+          return c.json({
+            ok: true,
+            status: "already_pending",
+            cooldownDays: COMMUNITY_JOIN_REQUEST_COOLDOWN_DAYS,
+            daysRemaining,
+          });
+        }
+
+        // Cooldown met: refresh the existing row in place. One row per
+        // (community, user) pending request is the right invariant, so we
+        // don't want a second insert. Bumping created_at makes the request
+        // look fresh on the owner's Requests tab and lets the notification
+        // + email fire again, which is the whole point of this path (the
+        // owner may have missed the first one).
+        await sql`
+          UPDATE newchums.community_join_requests
+          SET created_at = NOW(), message = ${joinMessage}
+          WHERE id = ${existingReq[0].id}
+        `;
+        requestAction = "refreshed";
+      } else {
+        await sql`
+          INSERT INTO newchums.community_join_requests (community_id, user_id, message)
+          VALUES (${communityId}, ${userId}, ${joinMessage})
+        `;
+      }
+
+      // Notify owner (in-app + email). Fires for both a brand-new request
+      // and a refreshed one; the cooldown above is what prevents this from
+      // becoming a spam vector.
       const ownerRows = (await sql`SELECT email, name FROM newchums.users WHERE id = ${community.owner_user_id} LIMIT 1`) as { email: string; name: string | null }[];
       const requesterRows = (await sql`SELECT name, username FROM newchums.users WHERE id = ${userId} LIMIT 1`) as { name: string | null; username: string | null }[];
       const requesterName = requesterRows[0]?.name || requesterRows[0]?.username || "Someone";
@@ -6747,7 +6859,7 @@ app.post("/communities/:id/join", async (c) => {
       // In-app notification
       await sql`
         INSERT INTO newchums.notifications (user_id, type, actor_user_id, entity_id, metadata)
-        VALUES (${community.owner_user_id}, 'community_join_request', ${userId}, ${communityId}, ${JSON.stringify({ communityName: community.name, communitySlug: community.slug, requesterName })})
+        VALUES (${community.owner_user_id}, 'community_join_request', ${userId}, ${communityId}, ${JSON.stringify({ communityName: community.name, communitySlug: community.slug, requesterName, refreshed: requestAction === "refreshed" })})
       `;
 
       // Email
@@ -6760,13 +6872,18 @@ app.post("/communities/:id/join", async (c) => {
             ownerName: ownerRows[0].name || "there",
             requesterName,
             communityName: community.name,
-            communityUrl: `${c.env.WEB_BASE_URL}/communities/${community.slug}`,
+            // Deep-link the "Review request" CTA straight into the Requests
+            // tab so the owner doesn't land on Plans and have to go hunt
+            // for the request they came here to act on. The client reads
+            // ?tab=requests on mount and clamps to Plans when the viewer
+            // isn't eligible to see the Requests tab.
+            communityUrl: `${c.env.WEB_BASE_URL}/communities/${community.slug}?tab=requests`,
             message: joinMessage,
           }));
         }
       }
 
-      return c.json({ ok: true, status: "pending" });
+      return c.json({ ok: true, status: requestAction });
     }
 
     // Open join
@@ -7013,6 +7130,7 @@ app.get("/communities/:id/events", async (c) => {
       SELECT e.id, e.title, e.description, e.starts_at, e.timezone, e.location_type, e.location_name, e.location_area,
         e.location_address, e.location_visibility, e.online_link, e.location_lat, e.location_lng,
         e.visibility, e.status, e.max_seats, e.banner_key, e.host_user_id, e.created_at, e.allow_alt_times,
+        COALESCE(e.is_qa, false) AS is_qa,
         u.name AS host_name, u.username AS host_username, u.avatar_key AS host_avatar_key, u.avatar_updated_at AS host_avatar_updated_at,
         (SELECT COUNT(*)::int FROM newchums.event_rsvps r WHERE r.event_id = e.id AND r.status = 'going') AS going_count,
         (SELECT COUNT(*)::int FROM newchums.event_rsvps r WHERE r.event_id = e.id AND r.status = 'maybe') AS maybe_count,
@@ -7029,7 +7147,39 @@ app.get("/communities/:id/events", async (c) => {
       FROM newchums.events e
       JOIN newchums.users u ON u.id = e.host_user_id
       LEFT JOIN newchums.event_rsvps r_viewer ON r_viewer.event_id = e.id AND r_viewer.user_id = ${userId}
-      WHERE e.community_id = ${communityId} AND e.status = 'published' AND e.starts_at > now() - interval '24 hours' AND (COALESCE(e.is_qa, false) = false OR ${isSuperAdmin})
+      WHERE e.community_id = ${communityId} AND e.status = 'published' AND e.starts_at > now() - interval '24 hours'
+        AND (COALESCE(e.is_qa, false) = false OR ${isSuperAdmin})
+        -- Community linkage is organizational context only; it does not expand
+        -- the audience beyond the plan's base visibility rule. See
+        -- AGENTS.md -> Plan Feed and Community Visibility Contract.
+        --
+        -- invite_only plans never appear in the community feed. Invitees
+        -- reach the plan via their invite link; the host can find it in
+        -- Your Plans. The Add/Edit plan forms also prevent new invite_only
+        -- plans from being linked to a community, but we enforce the rule
+        -- here too for any legacy rows.
+        AND e.visibility != 'invite_only'
+        -- chums_only plans are still scoped to the host, the host's
+        -- on-NewChums chums, and anyone already RSVP'd, even inside the
+        -- community feed. Community membership alone is not enough.
+        AND (
+          e.visibility = 'public'
+          OR (e.visibility = 'chums_only' AND (
+            ${userId}::text IS NOT NULL AND (
+              e.host_user_id = ${userId}
+              OR EXISTS (
+                SELECT 1 FROM newchums.user_contacts uc_vis
+                WHERE uc_vis.user_id = e.host_user_id
+                  AND uc_vis.linked_user_id = ${userId}
+                  AND uc_vis.type = 'on_newchums'
+              )
+              OR EXISTS (
+                SELECT 1 FROM newchums.event_rsvps er_vis
+                WHERE er_vis.event_id = e.id AND er_vis.user_id = ${userId}
+              )
+            )
+          ))
+        )
       ORDER BY e.starts_at ASC
       LIMIT ${limit} OFFSET ${offset}
     `) as Record<string, unknown>[];
@@ -7099,11 +7249,43 @@ app.get("/communities/:id/events", async (c) => {
         }
       }
 
+      // Normalized camelCase payload. The prior spread mixed DB snake_case
+      // with ad-hoc camelCase (hasPrefMismatch, isQa) and forced the sole
+      // caller (CommunityDetailClient) to hand-pick which convention to use
+      // per field. All plan-card fields are now camelCase.
       return {
-        ...ev,
-        host_avatar_url: buildAvatarUrl(String(ev.host_user_id), ev.host_avatar_key as string | null, ev.host_avatar_updated_at as string | null, c.env.MEDIA_BUCKET),
+        id: String(ev.id),
+        title: String(ev.title ?? ""),
+        description: (ev.description as string | null) ?? null,
+        startsAt: String(ev.starts_at ?? ""),
+        timezone: (ev.timezone as string | null) ?? null,
+        locationType: String(ev.location_type ?? "in_person"),
+        locationName: (ev.location_name as string | null) ?? null,
+        locationAddress: (ev.location_address as string | null) ?? null,
+        locationArea: (ev.location_area as string | null) ?? null,
+        locationVisibility: (ev.location_visibility as string | null) ?? null,
+        locationLat: ev.location_lat != null ? Number(ev.location_lat) : null,
+        locationLng: ev.location_lng != null ? Number(ev.location_lng) : null,
+        onlineLink: (ev.online_link as string | null) ?? null,
+        visibility: String(ev.visibility ?? "public"),
+        status: String(ev.status ?? "published"),
+        maxSeats: ev.max_seats != null ? Number(ev.max_seats) : null,
+        bannerKey: (ev.banner_key as string | null) ?? null,
+        hostUserId: String(ev.host_user_id),
+        hostName: (ev.host_name as string | null) ?? null,
+        hostUsername: (ev.host_username as string | null) ?? null,
+        hostAvatarUrl: buildAvatarUrl(String(ev.host_user_id), ev.host_avatar_key as string | null, ev.host_avatar_updated_at as string | null, c.env.MEDIA_BUCKET),
+        createdAt: String(ev.created_at ?? ""),
+        allowAltTimes: ev.allow_alt_times === true,
+        goingCount: Number(ev.going_count ?? 0),
+        maybeCount: Number(ev.maybe_count ?? 0),
+        hobbyNames: (ev.hobby_names as string | null) ?? null,
+        hobbies: ev.hobbies,
+        isHost: ev.is_host === true,
+        myRsvpStatus: (ev.my_rsvp_status as string | null) ?? null,
         community: communityInfo,
         hasPrefMismatch,
+        isQa: ev.is_qa === true,
       };
     });
 
@@ -7296,8 +7478,18 @@ app.post("/events", async (c) => {
   const status = body.status === "draft" ? "draft" : "published";
   const timezone = body.timezone && typeof body.timezone === "string" ? body.timezone.trim().slice(0, 64) : "UTC";
   const prefOverrides = parsePrefOverrides(body.pref_overrides ?? null);
-  const communityId = body.community_id ? String(body.community_id) : null;
-  const hideFromExplore = body.hide_from_explore === true;
+  // Community linkage is organizational context only, not an audience
+  // expansion. invite_only plans do not participate in community discovery
+  // (Explore already excludes them, and GET /communities/:id/events excludes
+  // them from the community feed), so we also refuse to store the link at
+  // all. The Add/Edit plan forms hide the community controls when
+  // invite_only is selected; this server-side guard catches any client that
+  // bypasses that UI or any legacy payload.
+  const rawCommunityId = body.community_id ? String(body.community_id) : null;
+  const communityId = visibility === "invite_only" ? null : rawCommunityId;
+  // hide_from_explore is only meaningful when a community is linked; clear
+  // it when we clear the community (keeps the DB row consistent).
+  const hideFromExplore = communityId !== null && body.hide_from_explore === true;
 
   // QA plan flag: only super_admins can create QA plans
   const isQa = body.is_qa === true;
@@ -8161,15 +8353,6 @@ app.get("/events/explore", async (c) => {
             WHERE cm_viewer.community_id = e.community_id AND cm_viewer.user_id = ${userId} AND cm_viewer.status = 'active'
           ))
           OR EXISTS (SELECT 1 FROM newchums.event_rsvps er_hid WHERE er_hid.event_id = e.id AND er_hid.user_id = ${userId})
-        )
-        AND (
-          e.community_id IS NULL
-          OR cm_community.visibility IS NULL
-          OR cm_community.visibility = 'public'
-          OR EXISTS (
-            SELECT 1 FROM newchums.community_members cm_priv
-            WHERE cm_priv.community_id = e.community_id AND cm_priv.user_id = ${userId} AND cm_priv.status = 'active'
-          )
         )
         AND (e.visibility != 'invite_only'
           OR EXISTS (SELECT 1 FROM newchums.event_rsvps er_inv WHERE er_inv.event_id = e.id AND er_inv.user_id = ${userId})
@@ -9989,8 +10172,38 @@ app.patch("/events/:id", async (c) => {
 
     const patchTimezone = body.timezone && typeof body.timezone === "string" ? body.timezone.trim().slice(0, 64) : null;
     const patchPrefOverrides = "pref_overrides" in body ? parsePrefOverrides(body.pref_overrides ?? null) : undefined;
-    const patchCommunityId = "community_id" in body ? (body.community_id ? String(body.community_id) : null) : undefined;
-    const patchHideFromExplore = "hide_from_explore" in body ? body.hide_from_explore === true : undefined;
+    const patchCommunityIdRaw = "community_id" in body ? (body.community_id ? String(body.community_id) : null) : undefined;
+    // Server-side invariant: invite_only plans can never be linked to a
+    // community. If the caller sets visibility=invite_only in this PATCH, we
+    // force community_id=null regardless of what else they sent. Mirror of
+    // the POST /events guard. See AGENTS.md -> Plan Feed and Community
+    // Visibility Contract.
+    const patchCommunityId: string | null | undefined =
+      visibility === "invite_only"
+        ? null
+        : patchCommunityIdRaw;
+    // hide_from_explore is only meaningful when a community is linked. When
+    // the effective community_id is null (either explicitly cleared or
+    // forced null by invite_only), clear hide_from_explore too so the two
+    // columns cannot drift apart.
+    const patchHideFromExploreRaw = "hide_from_explore" in body ? body.hide_from_explore === true : undefined;
+    const patchHideFromExplore: boolean | undefined =
+      patchCommunityId === null
+        ? false
+        : patchHideFromExploreRaw;
+    // Mirror the POST /events guard: if the caller is attaching the plan to a
+    // community (set or change), require them to be an active member. Clearing
+    // the link (null) is always allowed; no-op is a no-op.
+    if (patchCommunityId) {
+      try {
+        const cmRows = (await sql`
+          SELECT 1 FROM newchums.community_members
+          WHERE community_id = ${patchCommunityId} AND user_id = ${userId} AND status = 'active' LIMIT 1
+        `) as unknown[];
+        if (cmRows.length === 0)
+          return c.json({ ok: false, error: "VALIDATION", message: "You must be a member of the community", field: "community_id" }, 400);
+      } catch { /* community validation failure is non-fatal, will fail at UPDATE FK */ }
+    }
     const patchIsQa = "is_qa" in body ? body.is_qa === true : undefined;
     // Only super admins can toggle the QA flag
     if (patchIsQa !== undefined) {

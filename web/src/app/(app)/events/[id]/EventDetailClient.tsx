@@ -2474,17 +2474,20 @@ export default function EventDetailClient() {
         </Box>
       )}
 
-      {/* Post-plan feedback, shown prominently for past attended plans */}
+      {/* Post-plan feedback, shown prominently for past attended plans.
+          Rendered without an outer wrapper so that, when PlanFeedback
+          bails out (loading/dismissed/no attendees-or-issues to review),
+          it doesn't leave an empty Box consuming a Stack gap slot between
+          the header and the details card. */}
       {isPast && !isCanceled && accessState === "attending" && (
-        <Box id="plan-section-feedback">
-          <PlanFeedback
-            eventId={event.id}
-            planTitle={event.title}
-            planStartsAt={event.startsAt}
-            planHobbies={event.hobbies?.map((h) => ({ name: h.name, slug: h.slug })) ?? []}
-            initialData={prefetchedFeedback}
-          />
-        </Box>
+        <PlanFeedback
+          id="plan-section-feedback"
+          eventId={event.id}
+          planTitle={event.title}
+          planStartsAt={event.startsAt}
+          planHobbies={event.hobbies?.map((h) => ({ name: h.name, slug: h.slug })) ?? []}
+          initialData={prefetchedFeedback}
+        />
       )}
 
       {/* Details card */}
@@ -4459,7 +4462,22 @@ export default function EventDetailClient() {
               >
                 {isAvailMode ? "Share your availability" : "Suggest a different time"}
               </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: isAvailMode && canSuggest ? 1.5 : 2 }}>
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                // When the viewer can't suggest and no alt times exist yet,
+                // nothing else renders below this text inside the card.
+                // Drop the bottom margin so the card isn't padded by a
+                // reservation for content that never appears.
+                sx={{
+                  mb:
+                    !canSuggest && altTimes.length === 0
+                      ? 0
+                      : isAvailMode && canSuggest
+                        ? 1.5
+                        : 2,
+                }}
+              >
                 {isAvailMode
                   ? canSuggest
                     ? "The host wants to find a time that works for everyone. Confirm the proposed time or share other times you're free."
@@ -4595,9 +4613,6 @@ export default function EventDetailClient() {
               )}
 
               <Box ref={altTimeScrollRef} sx={{ maxHeight: 420, overflowY: "auto" }}>
-                {/* --- Non-suggest-mode empty state --- */}
-                {!canSuggest && altTimes.length === 0 && <Box sx={{ height: 4 }} />}
-
                 {/* --- Availability form (shared by both modes) --- */}
                 {showAltTimeForm && (
                   <Paper

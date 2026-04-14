@@ -10,6 +10,28 @@ type EmailPayloadBase = {
   name?: string;
 };
 
+/** True when a TemplateModel field has content that should render a
+ *  conditional section. Used on the VALUE side of optional fields: callers
+ *  pass `field: hasContent(field) ? field : null` so Postmark's Mustachio
+ *  sees a non-empty scalar (rendered) or null (section hidden). Empty
+ *  strings must never be sent because Mustachio treats `""` as truthy
+ *  inside `{{#field}}...{{/field}}` blocks.
+ *
+ *  The template side uses the SAME-NAME scalar-section idiom with the dot
+ *  for the value:
+ *      {{#field}} ... "{{.}}" ... {{/field}}
+ *  Postmark does not walk up to the parent scope inside a scalar section,
+ *  so a `{{#hasField}}...{{field}}...{{/hasField}}` pattern would NOT
+ *  render the value, even though it's legal Mustache. See
+ *  docs/Technical_Specs.md -> "Postmark email templates (Mustachio)". */
+const hasContent = (value: unknown): boolean => {
+  if (value == null) return false;
+  if (typeof value === "string") return value.trim().length > 0;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  return true;
+};
+
 export const sendVerificationEmail = async (
   env: Bindings,
   { to, name, verifyUrl }: EmailPayloadBase & { verifyUrl: string }
@@ -181,11 +203,11 @@ export const sendEventInviteEmail = async (
     TemplateId: env.POSTMARK_TEMPLATE_EVENT_INVITE,
     TemplateModel: {
       productName: "NewChums", recipientName, hostName, eventTitle, eventDate,
-      eventLocation: eventLocation || "",
+      eventLocation: hasContent(eventLocation) ? eventLocation : null,
       eventUrl: viewUrl, goingUrl, maybeUrl, cantMakeItUrl,
-      unsubscribeUrl: unsubscribeUrl || "",
-      suggestTimeNote: suggestTimeNote || null,
-      customMessage: customMessage || null,
+      unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
+      suggestTimeNote: hasContent(suggestTimeNote) ? suggestTimeNote : null,
+      customMessage: hasContent(customMessage) ? customMessage : null,
       year: new Date().getFullYear(),
     },
   });
@@ -257,6 +279,26 @@ export const sendEventChangedEmail = async (
     updated:  "View updated plan",
   };
 
+  // Build the "What changed" block server-side, same strategy used by
+  // unreadChatDigest's planCards field. Postmark's Mustachio does not walk
+  // up the parent scope inside a scalar section, so a per-row
+  // {{#changeN}}{{changeN}}{{/changeN}} pattern would render empty rows.
+  // Pre-rendering the whole block keeps the template a single scalar
+  // section that just dumps the HTML/text via {{.}}. When there are no
+  // changes we pass null, which hides the block entirely.
+  const hasAnyChanges = !!(changes && changes.length > 0);
+  const changesBlockHtml = hasAnyChanges
+    ? (() => {
+        const rows = changes!.map((c) =>
+          `<p style="margin: 0 0 4px 0; font-family: ${FONT}; font-size: 14px; color: #4B5563; line-height: 1.55;">${escapeHtml(formatChange(c))}</p>`
+        ).join("");
+        return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 22px; border-left: 3px solid #E65B13; background-color: #FFF7ED; border-radius: 0 8px 8px 0;"><tr><td style="padding: 14px 20px;"><p style="margin: 0 0 8px 0; font-family: ${FONT}; font-size: 11px; font-weight: 600; color: #E65B13; text-transform: uppercase; letter-spacing: 0.5px;">What changed</p>${rows}</td></tr></table>`;
+      })()
+    : null;
+  const changesBlockText = hasAnyChanges
+    ? "What changed:\n" + changes!.map((c) => `- ${formatChange(c)}`).join("\n")
+    : null;
+
   return sendPostmarkTemplateEmail(env, {
     From: env.EMAIL_FROM, To: to,
     TemplateId: env.POSTMARK_TEMPLATE_EVENT_CHANGED,
@@ -267,17 +309,13 @@ export const sendEventChangedEmail = async (
       statusLabel: statusMap[changeType],
       statusColor: changeType === "canceled" ? "#6B7280" : "#E65B13",
       eventTitle,
-      eventDate: eventDate || "",
-      eventLocation: eventLocation || "",
-      ctaUrl:      changeType === "canceled" ? "https://newchums.com" : eventUrl,
-      ctaText:     ctaMap[changeType],
-      change1: changes?.[0] ? formatChange(changes[0]) : "",
-      change2: changes?.[1] ? formatChange(changes[1]) : "",
-      change3: changes?.[2] ? formatChange(changes[2]) : "",
-      change4: changes?.[3] ? formatChange(changes[3]) : "",
-      change5: changes?.[4] ? formatChange(changes[4]) : "",
-      hasChanges: changes && changes.length > 0 ? "1" : "",
-      unsubscribeUrl: unsubscribeUrl || "",
+      eventDate:     eventDate || "",
+      eventLocation: hasContent(eventLocation) ? eventLocation : null,
+      ctaUrl:        changeType === "canceled" ? "https://newchums.com" : eventUrl,
+      ctaText:       ctaMap[changeType],
+      changesBlockHtml,
+      changesBlockText,
+      unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
       year: new Date().getFullYear(),
     },
   });
@@ -339,6 +377,21 @@ type HostRsvpEmailParams = {
   unsubscribeUrl?: string;
 };
 
+/** Shared TemplateModel builder for the three host-RSVP notification
+ *  emails. All three use the same conditional-section fields. */
+const buildHostRsvpModel = (params: HostRsvpEmailParams) => ({
+  productName: "NewChums",
+  hostName: params.hostName,
+  attendeeName: params.attendeeName,
+  eventTitle: params.eventTitle,
+  eventUrl: params.eventUrl,
+  eventDate: params.eventDate || "",
+  eventLocation: hasContent(params.eventLocation) ? params.eventLocation : null,
+  attendeeMessage: hasContent(params.attendeeMessage) ? params.attendeeMessage : null,
+  unsubscribeUrl: hasContent(params.unsubscribeUrl) ? params.unsubscribeUrl : null,
+  year: new Date().getFullYear(),
+});
+
 export const sendEventJoinEmail = async (
   env: Bindings, params: HostRsvpEmailParams
 ) => {
@@ -346,14 +399,7 @@ export const sendEventJoinEmail = async (
   return sendPostmarkTemplateEmail(env, {
     From: env.EMAIL_FROM, To: params.to,
     TemplateId: env.POSTMARK_TEMPLATE_EVENT_JOIN,
-    TemplateModel: {
-      productName: "NewChums", hostName: params.hostName, attendeeName: params.attendeeName,
-      eventTitle: params.eventTitle, eventUrl: params.eventUrl,
-      eventDate: params.eventDate || "", eventLocation: params.eventLocation || "",
-      attendeeMessage: params.attendeeMessage || "",
-      unsubscribeUrl: params.unsubscribeUrl || "",
-      year: new Date().getFullYear(),
-    },
+    TemplateModel: buildHostRsvpModel(params),
   });
 };
 
@@ -364,14 +410,7 @@ export const sendEventLeaveEmail = async (
   return sendPostmarkTemplateEmail(env, {
     From: env.EMAIL_FROM, To: params.to,
     TemplateId: env.POSTMARK_TEMPLATE_EVENT_LEAVE,
-    TemplateModel: {
-      productName: "NewChums", hostName: params.hostName, attendeeName: params.attendeeName,
-      eventTitle: params.eventTitle, eventUrl: params.eventUrl,
-      eventDate: params.eventDate || "", eventLocation: params.eventLocation || "",
-      attendeeMessage: params.attendeeMessage || "",
-      unsubscribeUrl: params.unsubscribeUrl || "",
-      year: new Date().getFullYear(),
-    },
+    TemplateModel: buildHostRsvpModel(params),
   });
 };
 
@@ -382,14 +421,7 @@ export const sendEventMaybeEmail = async (
   return sendPostmarkTemplateEmail(env, {
     From: env.EMAIL_FROM, To: params.to,
     TemplateId: env.POSTMARK_TEMPLATE_EVENT_MAYBE,
-    TemplateModel: {
-      productName: "NewChums", hostName: params.hostName, attendeeName: params.attendeeName,
-      eventTitle: params.eventTitle, eventUrl: params.eventUrl,
-      eventDate: params.eventDate || "", eventLocation: params.eventLocation || "",
-      attendeeMessage: params.attendeeMessage || "",
-      unsubscribeUrl: params.unsubscribeUrl || "",
-      year: new Date().getFullYear(),
-    },
+    TemplateModel: buildHostRsvpModel(params),
   });
 };
 
@@ -412,8 +444,10 @@ export const sendAttendeeRemovedEmail = async (
     TemplateId: env.POSTMARK_TEMPLATE_ATTENDEE_REMOVED,
     TemplateModel: {
       productName: "NewChums", recipientName, hostName, eventTitle, eventUrl,
-      eventDate: eventDate || "", eventLocation: eventLocation || "",
-      removalReason: removalReason || "", unsubscribeUrl: unsubscribeUrl || "",
+      eventDate: eventDate || "",
+      eventLocation: hasContent(eventLocation) ? eventLocation : null,
+      removalReason: hasContent(removalReason) ? removalReason : null,
+      unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
       year: new Date().getFullYear(),
     },
   });
@@ -439,9 +473,12 @@ export const sendJoinRequestEmail = async (
     From: env.EMAIL_FROM, To: to,
     TemplateId: "43906440",
     TemplateModel: {
-      productName: "NewChums", hostName, requesterName, eventTitle, requestMessage, eventUrl,
-      eventDate: eventDate || "", eventLocation: eventLocation || "",
-      unsubscribeUrl: unsubscribeUrl || "", year: new Date().getFullYear(),
+      productName: "NewChums", hostName, requesterName, eventTitle, eventUrl,
+      requestMessage: hasContent(requestMessage) ? requestMessage : null,
+      eventDate: eventDate || "",
+      eventLocation: hasContent(eventLocation) ? eventLocation : null,
+      unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
+      year: new Date().getFullYear(),
     },
   });
 };
@@ -458,9 +495,12 @@ export const sendJoinRequestApprovedEmail = async (
     From: env.EMAIL_FROM, To: to,
     TemplateId: "43906609",
     TemplateModel: {
-      productName: "NewChums", recipientName, hostName, eventTitle, hostMessage, eventUrl,
-      eventDate: eventDate || "", eventLocation: eventLocation || "",
-      unsubscribeUrl: unsubscribeUrl || "", year: new Date().getFullYear(),
+      productName: "NewChums", recipientName, hostName, eventTitle, eventUrl,
+      hostMessage: hasContent(hostMessage) ? hostMessage : null,
+      eventDate: eventDate || "",
+      eventLocation: hasContent(eventLocation) ? eventLocation : null,
+      unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
+      year: new Date().getFullYear(),
     },
   });
 };
@@ -477,9 +517,12 @@ export const sendJoinRequestDeclinedEmail = async (
     From: env.EMAIL_FROM, To: to,
     TemplateId: "43906703",
     TemplateModel: {
-      productName: "NewChums", recipientName, hostName, eventTitle, hostMessage, eventUrl,
-      eventDate: eventDate || "", eventLocation: eventLocation || "",
-      unsubscribeUrl: unsubscribeUrl || "", year: new Date().getFullYear(),
+      productName: "NewChums", recipientName, hostName, eventTitle, eventUrl,
+      hostMessage: hasContent(hostMessage) ? hostMessage : null,
+      eventDate: eventDate || "",
+      eventLocation: hasContent(eventLocation) ? eventLocation : null,
+      unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
+      year: new Date().getFullYear(),
     },
   });
 };
@@ -537,13 +580,13 @@ export const sendUnreadChatDigestEmail = async (
   const planCardsHtml = plans.slice(0, maxPlans).map((p) => buildPlanCardHtml(p.title, p.unreadCount, p.url)).join("\n");
   const planCardsText = plans.slice(0, maxPlans).map((p) => buildPlanCardText(p.title, p.unreadCount, p.url)).join("\n");
 
-  const model: Record<string, string | number> = {
+  const model: Record<string, string | number | boolean | null> = {
     productName: "NewChums",
     recipientName,
     planCount: plans.length,
     planCards: planCardsHtml,
     planCardsText,
-    unsubscribeUrl: unsubscribeUrl || "",
+    unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl! : null,
   };
 
   return sendPostmarkTemplateEmail(env, {
@@ -646,7 +689,7 @@ export const sendEventMatchDigestEmail = async (
   const planCardsHtml = displayed.map((p) => buildMatchPlanCardHtml(p)).join("\n");
   const planCardsText = displayed.map((p) => buildMatchPlanCardText(p)).join("\n\n");
 
-  const model: Record<string, string | number> = {
+  const model: Record<string, string | number | boolean | null> = {
     productName: "NewChums",
     recipientName,
     planCount: plans.length,
@@ -654,7 +697,7 @@ export const sendEventMatchDigestEmail = async (
     planCards: planCardsHtml,
     planCardsText,
     exploreUrl: `${env.WEB_BASE_URL}/`,
-    unsubscribeUrl: unsubscribeUrl || "",
+    unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl! : null,
   };
 
   return sendPostmarkTemplateEmail(env, {
@@ -735,13 +778,17 @@ export const sendConfirmationRequestEmail = async (
       recipientName,
       eventTitle,
       eventDate,
-      eventLocation: eventLocation || "",
+      eventLocation: hasContent(eventLocation) ? eventLocation : null,
       eventUrl,
       ctaUrl,
       deadline,
-      isReminder: isReminder || isFinal ? "1" : "",
-      isFinal: isFinal ? "1" : "",
-      unsubscribeUrl: unsubscribeUrl || "",
+      // Booleans only. Mustachio treats "" as truthy in `{{#field}}` so the
+      // previous `"1"` / `""` encoding silently rendered the reminder /
+      // final banners every time. Templates read `{{#isReminder}}` and
+      // `{{#isFinal}}` on plain booleans.
+      isReminder: isReminder || isFinal,
+      isFinal: !!isFinal,
+      unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
       year: new Date().getFullYear(),
     },
   });
@@ -788,14 +835,14 @@ export const sendGuestConfirmationRequestEmail = async (
       recipientName,
       eventTitle,
       eventDate,
-      eventLocation: eventLocation || "",
+      eventLocation: hasContent(eventLocation) ? eventLocation : null,
       eventUrl,
       confirmUrl,
       declineUrl,
       viewUrl,
       deadline,
-      isReminder: isReminder || isFinal ? "1" : "",
-      isFinal: isFinal ? "1" : "",
+      isReminder: isReminder || isFinal,
+      isFinal: !!isFinal,
       year: new Date().getFullYear(),
     },
   });
@@ -823,12 +870,12 @@ export const sendPlanAtRiskEmail = async (
       eventTitle,
       eventUrl,
       eventDate: eventDate || "",
-      eventLocation: eventLocation || "",
+      eventLocation: hasContent(eventLocation) ? eventLocation : null,
       confirmedCount,
       minRequired,
       ctaUrl: eventUrl,
       ctaText: "Review and decide",
-      unsubscribeUrl: unsubscribeUrl || "",
+      unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
       year: new Date().getFullYear(),
     },
   });
@@ -855,11 +902,11 @@ export const sendPlanAutoCancelledEmail = async (
         bodyText: `Hey ${recipientName}, unfortunately "${eventTitle}" didn't reach its minimum of ${minRequired} confirmed attendees -- only ${confirmedCount} confirmed -- so it's been automatically cancelled.`,
         eventTitle,
         eventDate: eventDate || "",
-        eventLocation: eventLocation || "",
+        eventLocation: hasContent(eventLocation) ? eventLocation : null,
         reasonText: `Only ${confirmedCount} of ${minRequired} required attendees confirmed`,
         ctaUrl: "https://newchums.com",
         ctaText: "Browse other plans",
-        unsubscribeUrl: unsubscribeUrl || "",
+        unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
         year: new Date().getFullYear(),
       },
     });
@@ -895,7 +942,7 @@ export const sendPlanRemovedByAdminEmail = async (
       productName: "NewChums",
       hostName,
       eventTitle,
-      reason: reason || "",
+      reason: hasContent(reason) ? reason : null,
     },
   });
 };
@@ -930,11 +977,11 @@ export const sendRoadmapUpdateEmail = async (
       itemTitle,
       itemUrl,
       updateType,
-      statusLabel: statusLabel ?? "",
-      adminNote: adminNote ?? "",
-      mergedIntoTitle: mergedIntoTitle ?? "",
-      mergedIntoUrl: mergedIntoUrl ?? "",
-      unsubscribeUrl,
+      statusLabel: hasContent(statusLabel) ? statusLabel : null,
+      adminNote: hasContent(adminNote) ? adminNote : null,
+      mergedIntoTitle: hasContent(mergedIntoTitle) ? mergedIntoTitle : null,
+      mergedIntoUrl: hasContent(mergedIntoUrl) ? mergedIntoUrl : null,
+      unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
     },
   });
 };
@@ -1001,12 +1048,12 @@ export const sendPlanFeedbackEmail = async (
       recipientName,
       planTitle,
       planUrl,
-      planDate: planDate || "",
-      planLocation: planLocation || "",
+      planDate: hasContent(planDate) ? planDate : null,
+      planLocation: hasContent(planLocation) ? planLocation : null,
       ctaUrl: planUrl,
       ctaText: "Leave feedback",
       ctaHelperText: "Quick and private. Takes about a minute.",
-      unsubscribeUrl,
+      unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
       year: new Date().getFullYear(),
     },
   });
@@ -1074,10 +1121,32 @@ export const sendCommunityJoinRequestEmail = async (
   }
 ) => {
   if (!env.POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST) return;
+  // Postmark Mustachio quirks we have to work around:
+  //   1. Empty string "" is truthy inside `{{#field}}...{{/field}}` blocks,
+  //      so API callers must never pass `""` as an "absent" value. We send
+  //      `null` instead.
+  //   2. Inside a scalar section `{{#field}}...{{/field}}`, Postmark does
+  //      NOT walk up to the parent scope to resolve `{{otherField}}`. A
+  //      `{{#hasMessage}}...{{message}}...{{/hasMessage}}` pattern renders
+  //      the wrapper but not the inner value, leaving an empty quoted
+  //      block. The safe idiom is the SAME-NAME scalar section with `{{.}}`
+  //      inside, which renders the section's own value:
+  //        {{#message}} ... "{{.}}" ... {{/message}}
+  // See docs/Technical_Specs.md -> "Postmark email templates (Mustachio)".
+  const trimmed = typeof message === "string" ? message.trim() : "";
+  const messageValue = trimmed.length > 0 ? trimmed : null;
   return sendPostmarkTemplateEmail(env, {
     From: env.EMAIL_FROM, To: to,
     TemplateId: env.POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST,
-    TemplateModel: { productName: "NewChums", ownerName, requesterName, communityName, communityUrl, message: message || "" },
+    TemplateModel: {
+      productName: "NewChums",
+      ownerName,
+      requesterName,
+      communityName,
+      communityUrl,
+      message: messageValue,
+      year: new Date().getFullYear(),
+    },
   });
 };
 

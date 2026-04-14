@@ -5,7 +5,7 @@ Hi {{ownerName}},
 {{requesterName}} wants to join your community "{{communityName}}".
 {{#message}}
 
-Their message: "{{message}}"
+Their message: "{{.}}"
 {{/message}}
 
 Review this request: {{communityUrl}}

@@ -68,7 +68,10 @@
                 {{hostName}} invited you to join a plan on NewChums. Take a look and let them know if you can make it.
               </p>
 
-              <!-- Custom message (conditional) -->
+              <!-- Custom message (conditional). Same-name scalar section
+                   with the dot pattern, the safe Postmark Mustachio idiom.
+                   The API sends null when no note was provided, which
+                   hides the block. See docs/Technical_Specs.md. -->
               {{#customMessage}}
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 22px; border-left: 3px solid #E65B13; background-color: #FFF7ED; border-radius: 0 8px 8px 0;">
                 <tr>
@@ -101,7 +104,7 @@
                 </tr>
               </table>
 
-              <!-- Suggest time note (conditional) -->
+              <!-- Suggest time note (conditional). -->
               {{#suggestTimeNote}}
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 24px; border-radius: 10px; overflow: hidden; background-color: #EFF6FF; border: 1px solid #BFDBFE;">
                 <tr>

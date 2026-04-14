@@ -208,34 +208,157 @@ Each RSVP status has a dedicated host notification email, each gated on its own 
 
 ### Postmark email templates (Mustachio)
 
-Postmark uses **Mustachio** (a Mustache variant) for template rendering. Key rules for conditional sections:
+Postmark renders templates with **Mustachio**, a Mustache variant with two quirks that together caused most of the recurring email bugs in this codebase. If you're touching any template or any `send*Email` helper, read this whole subsection first.
 
-**Empty strings are truthy.** In Mustachio, `""` is treated as truthy inside `{{#variable}}` blocks. This means `{{#someField}}...{{/someField}}` will render even when `someField` is `""`. To hide a conditional section when there is no value, pass `null` (not `""`) from the API code.
+#### Quirk 1: Empty strings are truthy
 
-**Correct pattern for optional content blocks:**
-- API code: pass the raw value (`null` when absent, the string when present). Do **not** coerce with `|| ""`.
-- Template: use `{{#variable}}` as the section guard and `{{.}}` to render the value inside the block.
-- Reference implementation: template 43906440 (`joinRequestToHost.html`), which conditionally shows a requester message.
+In Mustachio, `""` is truthy inside `{{#variable}}` blocks. That means `{{#someField}}...{{/someField}}` will render even when `someField` is the empty string. **Callers must never pass `""`** for an "absent" value — use `null` or omit the field entirely. Any coercion like `someField || ""` is a footgun; callers should write:
 
+```ts
+someField: typeof someField === "string" && someField.trim() ? someField.trim() : null,
+// or use the `hasContent` helper in api/src/email/send.ts:
+someField: hasContent(someField) ? someField : null,
 ```
-// API (correct)
-TemplateModel: { hostMessage }          // null when empty
 
-// API (WRONG - will render the section with empty content)
-TemplateModel: { hostMessage: hostMessage || "" }
+#### Quirk 2: No parent-scope lookup inside a scalar section
 
-// Template (correct)
+This is the critical rule and the one we learned the hard way. In standard Mustache, `{{#foo}}...{{bar}}...{{/foo}}` looks up `bar` first on `foo`'s context, then walks up to the parent. **Postmark's Mustachio does not walk up.** Inside a scalar section, any `{{otherField}}` lookup that isn't on the section's own value resolves to empty and renders as a blank space.
+
+**This means the `{{#hasField}}...{{field}}...{{/hasField}}` pattern does NOT work in Postmark**, even though it's legal Mustache. Inside `{{#hasMessage}}` where `hasMessage` is `true`, the section's "context" is the boolean, which has no `message` property, so `{{message}}` renders nothing. You get the wrapper but not the value — an empty quoted block.
+
+#### The one safe pattern: same-name scalar section + `{{.}}` inside
+
+This is the only conditional-section idiom supported by Postmark Mustachio for rendering optional string values. Every new and existing template in this codebase uses it:
+
+```ts
+// API: pass the value itself, null when absent (NEVER empty string).
+TemplateModel: {
+  hostMessage: hasContent(hostMessage) ? hostMessage : null,
+}
+```
+
+```mustache
+{{! Template: same-name scalar section, dot renders the scalar value. }}
 {{#hostMessage}}
   <p>"{{.}}"</p>
 {{/hostMessage}}
-
-// Template (also works but less canonical inside a section)
-{{#hostMessage}}
-  <p>"{{hostMessage}}"</p>
-{{/hostMessage}}
 ```
 
-Local HTML copies of all Postmark templates are stored in `api/src/email/templates/` for reference. When updating a template, update both the local file and the Postmark dashboard.
+How it behaves:
+- `hostMessage: null` → section hidden ✓
+- `hostMessage: "some text"` → section renders with `"some text"` inside ✓
+- `hostMessage: ""` → would render an empty block, but the API layer never sends `""`. This is the API-side guarantee that makes the pattern bulletproof.
+
+#### True boolean gates (no inner value lookup)
+
+When a conditional has NO inner variable lookup — it only toggles static text or static HTML — a plain boolean section works fine:
+
+```ts
+TemplateModel: {
+  isFinal: true, // or false
+}
+```
+
+```mustache
+{{#isFinal}}FINAL REMINDER{{/isFinal}}
+```
+
+This is safe because there's no `{{someOtherField}}` inside the section to trip Quirk 2. Used for things like `isFinal` / `isReminder` on the confirmation-request emails. **Never** put a `{{otherField}}` lookup inside a boolean section; if you need both a gate and a value, the same-name pattern above is always the answer.
+
+#### Multi-item lists: pre-render server-side
+
+If a template needs to emit a variable-length list (e.g. multiple "what changed" rows, multiple unread chat cards), build the entire list block as a single pre-formatted string in the API helper and render it with `{{#blockField}}{{{.}}}{{/blockField}}` (triple-brace for HTML, double-brace for text). Reference implementations:
+
+- `sendUnreadChatDigestEmail` — `planCards` / `planCardsText` built via `buildPlanCardHtml` / `buildPlanCardText`.
+- `sendEventChangedEmail` — `changesBlockHtml` / `changesBlockText` built inline from the `changes[]` array.
+
+Do NOT try to build a fixed-slot array (`change1`, `change2`, ... `change5`) with per-slot boolean gates. That pattern hits Quirk 2 and can't be rescued.
+
+#### Iteration over arrays
+
+Arrays of objects DO work in Postmark Mustachio because the section context becomes the item object, and `{{propertyOnItem}}` is a valid lookup on that item:
+
+```ts
+TemplateModel: {
+  orders: [{ id: "A", total: "$10" }, { id: "B", total: "$20" }],
+}
+```
+
+```mustache
+{{#orders}}
+  <p>{{id}}: {{total}}</p>
+{{/orders}}
+```
+
+Use this only for TRUE lists (same shape per item). For heterogeneous blocks or styled wrappers, pre-render server-side as above.
+
+#### Never embed literal Mustachio tag syntax in template text
+
+Postmark's parser scans every character of the template — including HTML comments, backticks, and string literals — looking for `{{...}}` / `{{{...}}}` tokens. A comment like `<!-- {{#foo}} is the opening tag -->` or `<!-- dumped via {{{.}}} -->` will be parsed as a real tag and the save will fail — sometimes with the specific "scope block ... not closed" error, sometimes with a vague "There is an unknown issue parsing the template." Describe tag syntax in prose in this doc, never inside template files.
+
+**Rule of thumb:** if you'd write the literal `{{` anywhere in an `.html`/`.txt` template for any reason other than being an actual tag (inside Outlook-conditional `<!--[if mso]>...` markup is fine — those run through Postmark's variable substitution), rewrite the passage.
+
+**One exception that IS safe:** Outlook conditional comments like `<!--[if mso]><v:roundrect ... href="{{ctaUrl}}" ...></v:roundrect><![endif]-->` — Postmark actually substitutes variables inside these, because they're intentional fallback markup for Outlook's mail client. That's why every template in the repo has `{{url}}` inside `[if mso]` without trouble. The ban is on PLAIN HTML comments that happen to mention tag syntax for documentation purposes.
+
+#### Deploying a template fix: both sides must ship together
+
+Every template fix touches two systems:
+
+1. The **API `send*Email` helper** in `api/src/email/send.ts` — what the code passes into `TemplateModel`.
+2. The **Postmark-hosted template** in the dashboard — what renders the HTML/text.
+
+Both have to be on the new shape for the email to render correctly. Until both sides land, you can be in one of these broken states (all of which have bitten us):
+
+| API helper | Postmark template | Behaviour |
+|---|---|---|
+| old (`field \|\| ""`) | old (`{{#field}}...{{field}}...{{/field}}`) | The original empty-block bug when `field` is absent |
+| old | new (same-name + `{{.}}`) | Field renders when present (old still sends the raw string); but API may still send `""` on some paths and leak the empty-block bug |
+| new (`field: hasContent(field) ? field : null`) | old | Field renders when present, block correctly hidden when absent |
+| new | new | Correct: renders when present, hidden when absent |
+
+Checklist when shipping a template fix:
+
+1. Edit the local `.html` and `.txt` files in `api/src/email/templates/`. That's the source of truth.
+2. Update the corresponding `send*Email` helper in `api/src/email/send.ts` to send the value as `field: hasContent(x) ? x : null` (never `x || ""`).
+3. Deploy the API (`cd api && wrangler deploy`). A running `wrangler dev` session needs a restart to pick up `send.ts` edits.
+4. Paste the updated local HTML and text into Postmark dashboard template #N and save.
+5. If the dashboard "Template Model" JSON panel (used by the **Send test email** button) references removed fields like `hasFoo`, update it to match the new shape or you'll see confusing preview results that don't match production.
+6. End-to-end test on prod by exercising the real flow (not the dashboard test-send). Include both the "value present" and "value absent" cases.
+
+The local `.html` and `.txt` files are the source of truth; the Postmark dashboard is what actually ships. Drift between the two is a recurring class of email bug — treat them as one change set.
+
+#### Template ID map
+
+| Local filename | `POSTMARK_TEMPLATE_*` env var | Template ID |
+|---|---|---|
+| `verifyEmail` | `POSTMARK_TEMPLATE_VERIFY` | 43483393 |
+| `passwordReset` | `POSTMARK_TEMPLATE_RESET` | 43483403 |
+| `eventInvite` | `POSTMARK_TEMPLATE_EVENT_INVITE` | 43910392 |
+| `eventJoin` | `POSTMARK_TEMPLATE_EVENT_JOIN` | 43922675 |
+| `eventLeave` | `POSTMARK_TEMPLATE_EVENT_LEAVE` | 43921920 |
+| `eventMaybe` | `POSTMARK_TEMPLATE_EVENT_MAYBE` | 43922237 |
+| `eventChanged` | `POSTMARK_TEMPLATE_EVENT_CHANGED` | 43971187 |
+| `attendeeRemoved` | `POSTMARK_TEMPLATE_ATTENDEE_REMOVED` | 43923102 |
+| `joinRequestToHost` | *(hard-coded id)* | 43906440 |
+| `joinRequestApproved` | *(hard-coded id)* | 43906609 |
+| `joinRequestDeclined` | *(hard-coded id)* | 43906703 |
+| `planAtRisk` | `POSTMARK_TEMPLATE_PLAN_AT_RISK` | 43984947 |
+| `planAutoCancelled` | `POSTMARK_TEMPLATE_PLAN_AUTO_CANCELLED` | 44165043 |
+| `planRemovedByAdmin` | `POSTMARK_TEMPLATE_PLAN_REMOVED` | 43998481 |
+| `confirmationRequestUser` | `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST_USER` | 44415561 |
+| `confirmationRequestGuest` | `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST_GUEST` | 44415587 |
+| `unreadChatDigest` | `POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST` | 43975299 |
+| `eventMatchDigest` | `POSTMARK_TEMPLATE_EVENT_MATCH_DIGEST` | 44018889 |
+| `planFeedback` | `POSTMARK_TEMPLATE_PLAN_FEEDBACK` | 44091936 |
+| `roadmapUpdate` | `POSTMARK_TEMPLATE_ROADMAP_UPDATE` | 44007454 |
+| `communityJoinRequest` | `POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST` | 44111064 |
+| `communityJoinApproved` | `POSTMARK_TEMPLATE_COMMUNITY_JOIN_APPROVED` | 44111212 |
+| `communityJoinDeclined` | `POSTMARK_TEMPLATE_COMMUNITY_JOIN_DECLINED` | 44111205 |
+| `concernReportAlert` | `POSTMARK_TEMPLATE_CONCERN_REPORT` | 44107767 |
+| `guestVerifyCode` | `POSTMARK_TEMPLATE_GUEST_VERIFY` | 44041128 |
+| `emailChangeConfirm` | `POSTMARK_TEMPLATE_EMAIL_CHANGE_CONFIRM` | 43739983 |
+| `emailChangeNotifyOld` | `POSTMARK_TEMPLATE_EMAIL_CHANGE_NOTIFY_OLD` | 43740027 |
+| `emailChangeSuccess` | `POSTMARK_TEMPLATE_EMAIL_CHANGE_SUCCESS` | 43740066 |
 
 ### Host attendee removal
 
@@ -576,11 +699,14 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 **Important: Hono route ordering.** `GET /events/explore/public` and `GET /events/explore` must be registered **before** `GET /events/:id` in the route table. Otherwise, Hono interprets "explore" as a UUID `:id`, resulting in a database error.
 
 **Visibility enforcement:**
-- Visibility controls **discoverability** (explore feed, digests), **not** direct URL access.
+- Plan `visibility` controls **discoverability** (Explore feed, community feed, digests), **not** direct URL access.
 - Anyone with the plan URL can view published plans (draft plans remain host-only).
-- `invite_only`: excluded from explore feed and digests
-- `chums_only`: shown in explore/digests only to the host's chums
-- `public`: shown in explore feed and digests to all eligible users
+- `invite_only`: excluded from Explore feed, community feed, and digests. Cannot be linked to a community (server-side invariant on POST and PATCH).
+- `chums_only`: shown in Explore, community feed, and digests only to the host, the host's on-NewChums chums, and viewers already RSVP'd. Community linkage does not widen this audience.
+- `public`: shown in Explore feed, community feed, and digests to all eligible users, subject to `hide_from_explore` for Explore.
+- For community-linked plans, `hide_from_explore` ("Only show this plan to community members") layers on top of `visibility` to gate Explore only. It does not affect direct URL access or the community's own plan feed. See the **Plan Feeds, Community Linkage, and "Only show this plan to community members" Toggle** subsection under Communities for the full matrix.
+
+**Add Plan / Edit Plan parity:** `CreateEventClient.tsx` (`/events/create`) and `EditEventClient.tsx` (`/events/[id]/edit`) are a single plan form system; the four historically drift-prone sections (Extra options, Community, Matching preferences, QA plan) are extracted under `web/src/components/events/planForm/` and shared between both files. See `AGENTS.md` → **Add Plan / Edit Plan Parity Rule**. Changes to remaining duplicated sections should be mirrored in the other form.
 
 **Plan Access States:**
 
@@ -952,11 +1078,13 @@ Community pages where users can join, browse, and create plans together. The com
 | `newchums.community_join_requests` | Join request records, community_id, user_id, status (`pending` / `approved` / `declined` / `withdrawn`), reviewed_by_user_id, `message` (text, nullable, max 500, migration 079), timestamps. Unique partial index on `(community_id, user_id) WHERE status = 'pending'`. |
 | `newchums.community_interests` | Hobby/interest tagging for communities. Composite PK on `(community_id, interest_id)`. FK to `communities` (CASCADE) and `interests` (CASCADE). Indexed on `interest_id`. Migration 078. |
 
-**Unified access model:** The forms present a single "Access" setting with two options: **Open** (visibility=public, join_mode=open) and **Private** (visibility=private, join_mode=approval_required). The API accepts an `access` field that maps to these DB column pairs. The underlying `visibility` and `join_mode` columns are preserved for backward compatibility, but the only supported combinations going forward are these two. Private communities are discoverable in the feed and in the community detail page; non-members see a preview (description, hobbies, metadata) but internal contents (plans, members) are restricted until the viewer is an approved member. Plans belonging to private communities are excluded from the Explore feed for non-members. In-app notifications (`community_join_request`, `community_join_request_approved`, `community_join_request_declined`) and Postmark emails support the full join request lifecycle including optional requester messages.
+**Unified access model:** The forms present a single "Access" setting with two options: **Open** (visibility=public, join_mode=open) and **Private** (visibility=private, join_mode=approval_required). The API accepts an `access` field that maps to these DB column pairs. The underlying `visibility` and `join_mode` columns are preserved for backward compatibility, but the only supported combinations going forward are these two. Private communities are discoverable in the communities discovery feed and in the community detail page; non-members see a preview (description, hobbies, metadata) but internal contents (plans, members) are restricted until the viewer is an approved member. In-app notifications (`community_join_request`, `community_join_request_approved`, `community_join_request_declined`) and Postmark emails support the full join request lifecycle including optional requester messages.
+
+**Community privacy vs plan-level Explore visibility.** A community's `visibility` (`public` / `private`) gates access to the **community page and plan feed**. It does **not** remove the community's plans from the Explore feed. Per-plan Explore visibility is controlled exclusively by the host's `hide_from_explore` toggle on that plan. A plan in a private community with the toggle off still appears in Explore for non-members (subject to normal plan-visibility and personalization filters); the same plan with the toggle on is scoped to community members and RSVP'd viewers. See the **Plan Feeds, Community Linkage, and "Only show this plan to community members" Toggle** subsection below for the full matrix and enforcement points.
 
 **Events table additions (migration 055):**
-- `community_id UUID NULL` FK → `communities(id)` ON DELETE SET NULL, associates a plan with 0 or 1 community.
-- `hide_from_explore BOOLEAN NOT NULL DEFAULT false`, when true, the plan is hidden from the general Explore feed (still visible in the community's own plan feed).
+- `community_id UUID NULL` FK → `communities(id)` ON DELETE SET NULL, associates a plan with 0 or 1 community. Forced to NULL by `POST /events` and `PATCH /events/:id` when `visibility = 'invite_only'`.
+- `hide_from_explore BOOLEAN NOT NULL DEFAULT false`, when true, the plan is hidden from the general Explore feed for non-members / non-RSVP'd viewers. Independent of base `visibility`, which still applies in both Explore and the community feed.
 
 **API endpoints (auth required unless noted):**
 
@@ -965,17 +1093,17 @@ Community pages where users can join, browse, and create plans together. The com
 | `POST /communities` | Create a community. Validates name, slug (3-50 chars), description (required). Accepts unified `access` field (`"open"` or `"private"`) which maps to the DB columns: open = `visibility=public, join_mode=open`; private = `visibility=private, join_mode=approval_required`. Also accepts legacy `visibility`/`join_mode` for backward compatibility. Requires at least one hobby (`interest_items`). Requires location for offline communities (`is_online = false`). Accepts `is_online`, `website`, `join_link`. Creator becomes owner + member. Links hobbies via `community_interests`. |
 | `GET /communities` | Discovery feed. Query params: `mine=1` (user's communities, ignores distance), `q` (search), `lat`/`lng`/`radius_km` (distance filtering for offline communities; online communities bypass distance), `hobby` (filter by hobby slug via effective category matching), `personalize` (0 to disable hobby-match ranking). Returns `member_count`, `hobby_match_count`, `distance_km`, `hobbies` array, `hasMore`. Default ordering: hobby_match_count DESC, distance ASC (with location) or member_count DESC (without). |
 | `GET /communities/slug-available` | Check slug availability. |
-| `GET /communities/:slug` | Community detail. Returns full community info including `is_online`, `website`, `join_link`, `hobbies` array, member_count, viewer's membership role/status, pending join request status. Private communities return a preview for non-members (name, description, avatar, hobbies, location, website, member count, visibility) with `restricted: true`; plans and members are hidden. Owner/admin sees pending join requests with message and avatar URLs. Private communities include a share token (JWT, purpose `community_share`). |
+| `GET /communities/:slug` | Community detail. Returns full community info including `is_online`, `website`, `join_link`, `hobbies` array, member_count, viewer's membership role/status, pending join request status. Private communities return a preview for non-members (name, description, avatar, hobbies, location, website, member count, visibility, plus `upcoming_plan_count` so the locked preview can surface a real number without leaking plan detail) with `restricted: true`; plans and members are hidden. Non-member responses also include `viewerPendingRequestSentLabel` (pre-formatted "Sent N days ago" string), `viewerPendingRequestRefreshable` (boolean; true once the pending request has aged past the cooldown), `viewerPendingRequestDaysUntilRefreshable` (number or null), and `viewerPendingRequestCooldownDays` (echoes the server-side constant) so the client can render the pending-state card without doing any time math of its own. Owner/admin sees pending join requests with message and avatar URLs. Private communities include a share token (JWT, purpose `community_share`). |
 | `PATCH /communities/:slug` | Update community (owner or super admin). Accepts unified `access` field (`"open"` or `"private"`, preferred) or legacy `visibility`/`join_mode`. Also: name, description (required), chat_enabled, `is_online`, `website`, `join_link`, location fields, avatar_key, `interest_items` (replaces all community hobbies; at least one required). |
 | `POST /communities/:slug/close` | Soft-close a community (owner or super admin). Sets `status = 'closed'`, nullifies `community_id` on linked events. Community data is preserved but hidden from listings. Irreversible. Migration 059 adds the `status` column. |
 | `DELETE /communities/:slug` | Hard-delete community (owner or super admin). Cascades to members, join requests; events have `community_id` set to NULL. |
-| `POST /communities/:id/join` | Join (open) or request to join (approval_required). Accepts optional JSON body with `message` (max 500 chars). Idempotent. For approval_required: creates join request, creates in-app notification for owner (`community_join_request`), sends join-request email to owner (respects `community_join_request_received` notification pref). |
+| `POST /communities/:id/join` | Join (open) or request to join (approval_required). Accepts optional JSON body with `message` (max 500 chars). Idempotent. For approval_required: creates a join request, creates in-app notification for owner (`community_join_request`), sends join-request email to owner (Postmark template 44111064, respects `community_join_request_received` notification pref). The email's "Review request" CTA links to `/communities/:slug?tab=requests` so the owner lands directly on the Requests tab (see **Community detail tab deep-links** below). The message field is passed to the template via the `hasMessage` + `message` pair so the "Their message" block only renders when the requester included a note. **Re-request cooldown:** if a pending request already exists, the server checks its age. Within `COMMUNITY_JOIN_REQUEST_COOLDOWN_DAYS` (default 7) the endpoint returns `{ ok: true, status: "already_pending", cooldownDays, daysRemaining }` without notifying anyone. After the cooldown, the existing pending row is refreshed in place (`created_at = NOW()`, `message` replaced), the owner is re-notified, and the response is `{ ok: true, status: "refreshed" }`. The partial unique index guarantees only one active pending row per `(community, user)`. |
 | `POST /communities/:id/leave` | Leave community. Owner cannot leave (must transfer ownership first). Also withdraws any pending join request. |
 | `GET /communities/:id/members` | List active members. Private communities restrict to members + super admin. |
 | `POST /communities/:id/members/:userId/remove` | Remove a member (owner or super admin). Cannot remove owner. |
 | `PUT /communities/:id/join-requests/:requestId` | Approve or decline a join request (owner or super admin). On approve, adds user as active member. Sends approved/declined email to requester. |
 | `GET /communities/:id/join-requests` | List pending join requests (owner or super admin). |
-| `GET /communities/:id/events` | Community plan feed. Returns published plans belonging to this community. Private communities restrict to members + super admin. Supports `limit`/`offset`. |
+| `GET /communities/:id/events` | Community plan feed. Returns published plans belonging to this community, gated by the per-plan `visibility` rule: `invite_only` rows are always excluded; `chums_only` rows are shown only to the host, the host's on-NewChums chums, and viewers already RSVP'd; `public` rows are always shown. No `hide_from_explore` filter. Private communities restrict endpoint access to members + super admin. Supports `limit`/`offset`. |
 
 **Admin endpoints (super_admin only):**
 
@@ -985,11 +1113,67 @@ Community pages where users can join, browse, and create plans together. The com
 | `POST /admin/communities/:id/remove` | Admin delete a community. |
 
 **Plan creation/edit integration:**
-- `POST /events` accepts optional `community_id` and `hide_from_explore`. Validates that the user is an active member of the community. A plan belongs to zero or one community.
-- `PATCH /events/:id` accepts `community_id` (set or clear) and `hide_from_explore`.
+- `POST /events` accepts optional `community_id` and `hide_from_explore`. Validates that the user is an active member of the community. A plan belongs to zero or one community. **Invite-only invariant:** when `visibility = 'invite_only'`, the server forces `community_id = null` and `hide_from_explore = false` regardless of what the client sends.
+- `PATCH /events/:id` accepts `community_id` (set or clear) and `hide_from_explore`, and re-validates active community membership on any set-or-change. Same invite-only invariant as POST: setting `visibility = 'invite_only'` on a PATCH clears `community_id`.
 - `GET /events/:id` includes `community` info (`id`, `slug`, `name`) when the plan belongs to a community.
-- `GET /events/explore` includes community attribution (`community` object) on plans that belong to a community. Plans with `hide_from_explore = true` are still visible to members of the associated community.
-- **Add plan form community selector:** The add plan form fetches the user's communities (`GET /communities?mine=1`) on mount. If the user belongs to one or more communities, a Community section appears with a single-select dropdown to optionally attach the plan to one community. When arriving from a community detail page, the `community_id` search param preselects that community and its location is prefilled into the venue/address field (for in-person communities). The "Members only" toggle (`hide_from_explore`) is shown when a community is selected.
+- `GET /events/explore` includes community attribution (`community` object) on plans that belong to a community. Plans with `hide_from_explore = true` are still visible in Explore to active community members and viewers with an existing RSVP.
+- **Plan form community selector:** The Add and Edit plan forms both render the shared `CommunityLinkSection` (`web/src/components/events/planForm/CommunityLinkSection.tsx`). Add mode fetches the user's communities (`GET /communities?mine=1`) on mount; if the user belongs to one or more communities, a Community section appears with a single-select dropdown to optionally attach the plan to one community. Edit mode displays the linked community as read-only (plans cannot be re-parented). When arriving from a community detail page, the `community_id` search param preselects that community and its location is prefilled into the venue/address field (for in-person communities). The "Only show this plan to community members" toggle (`hide_from_explore`) is shown when a community is selected. The whole Community section is hidden when `visibility = 'invite_only'`; both forms also run a `useEffect` on `visibility` that auto-clears community linkage state when the host switches to invite-only. When `visibility = 'chums_only'` and a community is linked, a reminder renders inside the section clarifying that community members who aren't on the host's Chum List still won't see the plan.
+
+#### Plan Feeds, Community Linkage, and "Only show this plan to community members" Toggle
+
+This is the authoritative contract for how plans appear in the **Explore feed** vs a **community's own plan feed**. Any change to a filter, toggle label, or payload shape below must update this subsection in the same change set, plus the parallel contract section in `AGENTS.md` and the bullets on the Super Admin System Logic page.
+
+**Two distinct feeds.**
+
+| Feed | Endpoint | Purpose | Filters |
+|---|---|---|---|
+| Explore (authenticated) | `GET /events/explore` | Personalized discovery for logged-in users | Plan `visibility` + `hide_from_explore` + community-member/RSVP bypass + chum-prefs + distance + hobby + QA-isolation |
+| Explore (public) | `GET /events/explore/public` | Anonymous discovery on the landing page | `visibility = 'public'` + `hide_from_explore = false` + `is_qa = false` + distance + hobby |
+| Community plan feed | `GET /communities/:id/events` | The community's own upcoming plan list | `community_id = :id` + per-plan `visibility` gate (invite_only excluded; chums_only scoped to host + host's on-NewChums chums + RSVP'd viewers) + QA-isolation. **No `hide_from_explore` filter.** Endpoint-level privacy check: private communities restrict access to active members + super admin. |
+
+**Core principle.** Community linkage is organizational context, not audience expansion. Linking a plan to a community **never broadens** the plan's audience beyond what the base `visibility` setting allows. Community members who would not otherwise satisfy `visibility` still do not see the plan.
+
+**Visibility × community-linkage matrix.** This is how the three `visibility` values behave with community linkage across both feeds.
+
+| Plan `visibility` | Can link to community? | Community feed | Explore feed |
+|---|---|---|---|
+| `public` | Yes | Shown (subject to community-privacy access) | Shown; `hide_from_explore` governs non-member visibility |
+| `chums_only` | Yes | Shown only to host, host's on-NewChums chums, and viewers already RSVP'd | Same chums_only rule; `hide_from_explore` layers on top |
+| `invite_only` | **No.** Forms hide the Community section; server forces `community_id = null` on POST and PATCH | Never shown | Hidden except to viewers already RSVP'd (standing Explore rule) |
+
+**Toggle semantics (per plan; stored as `hide_from_explore`, default `false`).** Shown on Add Plan and Edit Plan only when a community is selected and `visibility` is not `invite_only`. The toggle only affects **Explore**; the community feed applies the base `visibility` rule from the matrix above regardless.
+
+| Toggle state | `hide_from_explore` | Community plan feed | Explore for non-members | Explore for community members / RSVP'd |
+|---|---|---|---|---|
+| OFF (default) | `false` | Per visibility matrix | Per visibility matrix | Per visibility matrix |
+| ON | `true` | Per visibility matrix (unchanged) | Hidden | Shown if the visibility matrix already shows it (member or RSVP branch) |
+
+**Invariants that hold regardless of the toggle.**
+
+- Community `visibility` (`public` / `private`) gates the community page and its plan feed endpoint; it does not override `hide_from_explore` for Explore.
+- Plan `visibility` (`public` / `chums_only` / `invite_only`) applies in both Explore and the community feed. `visibility` controls discoverability only; direct URL access to a published plan is governed by the plan's access-state rules (see §11).
+- Chum-preference filtering and plan-level `pref_overrides` still apply in Explore.
+- Super admins bypass the `is_qa = false` clause in every community- and explore-related plan query. Normal users never see QA plans in any feed, notification, or email.
+
+**Enforcement points (kept in sync).**
+
+- Database: `newchums.events.hide_from_explore BOOLEAN NOT NULL DEFAULT false` and `newchums.events.community_id UUID NULL` (migration 055). `visibility TEXT NOT NULL` with values in `{public, chums_only, invite_only}`.
+- **Invite-only server-side invariant.** `POST /events` and `PATCH /events/:id` both force `community_id = null` and `hide_from_explore = false` when `visibility === 'invite_only'`, regardless of what the client sends. The forms hide the Community section so this is rarely triggered in practice, but any client bypassing the UI still cannot create or save an invite_only plan with a linked community.
+- Explore filter: `hide_from_explore` gate is `COALESCE(e.hide_from_explore, false) = false OR (community member) OR (viewer has an existing RSVP row)`. Do not re-add a separate community-visibility override here; it caused the April 2026 regression that required a doc pass. Visibility gate is: invite_only hidden unless RSVP'd; chums_only shown to host + on-NewChums chums + RSVP'd.
+- Community feed: per-plan `visibility` gate is enforced in SQL. `invite_only` rows never match (no RSVP bypass). `chums_only` rows match for host + host's on-NewChums chums + RSVP'd viewers. `public` rows always match. QA-isolation filter: `AND (COALESCE(e.is_qa, false) = false OR <isSuperAdmin>)`. No `hide_from_explore` filter.
+- Form state: `hideFromExplore`, `selectedCommunityId` / `communityId`, and `visibility` in both `CreateEventClient.tsx` and `EditEventClient.tsx`. Both forms run a `useEffect` on `visibility` that auto-clears community linkage when `visibility === 'invite_only'`. Initial value on Edit is `ev.hideFromExplore === true`.
+- Shared UI: `CommunityLinkSection` (`web/src/components/events/planForm/CommunityLinkSection.tsx`) takes a `visibility` prop. Returns `null` for `invite_only`. Renders a "Chums only" reminder under the Community section when `visibility === 'chums_only'` so authors don't assume community members will see a chums-only plan.
+- UI label: "Only show this plan to community members" on both Add Plan and Edit Plan. Helper text on Edit: "When on, this plan only appears in the community feed and to members in their Explore. Others won't see it."
+
+**QA plans in community flows.**
+
+- QA plans can be linked to communities the super admin is a member of (standard membership validation at `POST /events`).
+- QA plans flow through the community plan feed, Explore, digests, and notifications for super admins only.
+- Every community- or events-related plan query must carry `AND (COALESCE(e.is_qa, false) = false OR <viewer_is_super_admin>)` or an equivalent role check. Counts that surface to super admins (e.g. a community card's `upcoming_plan_count`) must bypass the filter for super admin viewers so the count matches their visible reality.
+- Public feeds (`/events/explore/public`) hard-filter `is_qa = false`; they have no authenticated viewer to grant bypass to.
+- `GET /communities/:id/events` exposes `isQa` on each row so super-admin surfaces can render the QA indicator. Do not surface this field in a way that would let a normal user infer QA plans exist.
+
+**Community detail tab deep-links:** `/communities/[slug]` accepts an optional `?tab=` query param on initial load. Recognized values: `requests` (owner of private community only; silently falls back to Plans for other viewers) and `members`. Any other value or an absent param keeps the default of Plans. The param is read **once on mount** via a ref guard so manual tab clicks are not overridden on subsequent renders. On manual tab clicks the URL is synced via `router.replace({ scroll: false })` so a refresh preserves the active tab and copy-pasted links reflect what the sharer was viewing; the Plans tab clears the param instead of adding `?tab=plans`. The join-request owner email uses `?tab=requests` so reviewers land on the right surface; approved/declined emails intentionally link to the default tab.
 
 **Community avatar upload:**
 Uses the shared media upload pipeline (`POST /media/init` → `PUT /upload/:token` → `POST /media/finalize`) with purpose `community_avatar`. Object key pattern: `community_avatars/{userId}/{timestamp}.{ext}`. Finalize requires community ownership or super admin. Served via `GET /communities/:communityId/avatar`.
@@ -1176,7 +1360,7 @@ Core tables include:
 - `newchums.community_join_requests` (migration 055, extended 079), join request records. Columns: `id` (UUID PK), `community_id` (FK, CASCADE), `user_id` (FK, CASCADE), `status` (pending/approved/declined/withdrawn), `reviewed_by_user_id` (FK), `message` (text, nullable, max 500 chars, migration 079), `created_at`, `reviewed_at`. Unique partial index on `(community_id, user_id) WHERE status = 'pending'`.
 - `newchums.community_interests` (migration 078), hobby/interest tagging for communities. Columns: `community_id` (FK, CASCADE), `interest_id` (FK, CASCADE). Composite PK. Indexed on `interest_id`.
 - `newchums.events.community_id` (migration 055), `UUID NULL` FK → `communities(id)` ON DELETE SET NULL. Associates a plan with 0 or 1 community. Indexed where not null.
-- `newchums.events.hide_from_explore` (migration 055), `BOOLEAN NOT NULL DEFAULT false`. When true, the plan is hidden from the general Explore feed but visible in the community's plan feed.
+- `newchums.events.hide_from_explore` (migration 055), `BOOLEAN NOT NULL DEFAULT false`. When true, the plan is hidden from the general Explore feed for non-members / non-RSVP'd viewers. Does not affect the community's plan feed, which applies the base `visibility` rule instead. See the **Plan Feeds, Community Linkage, and "Only show this plan to community members" Toggle** subsection under Communities.
 - `newchums.roadmap_items.attachment_key` (migration 056), `TEXT NULL`. Stores R2 object key for optional roadmap item attachments.
 - `newchums.events.alt_times_mode` (migration 057), `TEXT NOT NULL DEFAULT 'suggest'`. Host-controlled presentation mode for the alternate times feature: `'suggest'` (default, current behavior) or `'availability'` (collaborative scheduling framing). Same underlying `event_alt_times` engine; only attendee-facing copy differs.
 - `newchums.users.share_link_modal_dismissed` (migration 062), `BOOLEAN NOT NULL DEFAULT false`; when true, the share-link first-use info modal is permanently dismissed for the user.
