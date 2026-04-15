@@ -48,8 +48,6 @@ type Community = {
   owner_user_id: string;
   created_at: string;
   is_online: boolean;
-  website: string | null;
-  join_link: string | null;
   viewer_role: string | null;
   upcoming_plan_count: number;
   hobby_match_count: number;

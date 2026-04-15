@@ -50,7 +50,7 @@ export default function CreateCommunityClient() {
   const [locationLat, setLocationLat] = useState<number | null>(null);
   const [locationLng, setLocationLng] = useState<number | null>(null);
   const [website, setWebsite] = useState("");
-  const [joinLink, setJoinLink] = useState("");
+  const [discordUrl, setDiscordUrl] = useState("");
   const [access, setAccess] = useState<"open" | "private">("open");
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -182,7 +182,7 @@ export default function CreateCommunityClient() {
           description: description.trim(),
           is_online: isOnline,
           website: website.trim() || null,
-          join_link: isOnline ? (joinLink.trim() || null) : null,
+          discord_url: discordUrl.trim() || null,
           access,
           location_name: isOnline ? null : (locationName.trim() || null),
           location_address: isOnline ? null : (locationAddress.trim() || null),
@@ -359,7 +359,7 @@ export default function CreateCommunityClient() {
             <FormControlLabel value="online" control={<Radio />} label="Online" />
           </RadioGroup>
 
-          {!isOnline ? (
+          {!isOnline && (
             <Box ref={setFieldRef("location")} sx={{ scrollMarginTop: 96 }}>
               <PlacesAutocompleteInput
                 value={locationName}
@@ -390,15 +390,6 @@ export default function CreateCommunityClient() {
                 inputId="places-autocomplete-community-create"
               />
             </Box>
-          ) : (
-            <AppTextField
-              label="Join link"
-              placeholder="e.g. https://discord.gg/yourserver"
-              value={joinLink}
-              onChange={(e) => setJoinLink(e.target.value)}
-              helperText={null}
-              inputProps={{ maxLength: 500 }}
-            />
           )}
 
           <Box ref={setFieldRef("website")} sx={{ scrollMarginTop: 96 }}>
@@ -407,9 +398,19 @@ export default function CreateCommunityClient() {
               placeholder="https://example.com"
               value={website}
               onChange={(e) => setWebsite(e.target.value)}
+              helperText={null}
               inputProps={{ maxLength: 500 }}
             />
           </Box>
+
+          <AppTextField
+            label="Discord Server"
+            placeholder="e.g. https://discord.gg/yourserver"
+            value={discordUrl}
+            onChange={(e) => setDiscordUrl(e.target.value)}
+            helperText={null}
+            inputProps={{ maxLength: 500 }}
+          />
         </Stack>
       </AppCard>
 

@@ -51,7 +51,7 @@ export default function EditCommunityClient() {
   const [locationLat, setLocationLat] = useState<number | null>(null);
   const [locationLng, setLocationLng] = useState<number | null>(null);
   const [website, setWebsite] = useState("");
-  const [joinLink, setJoinLink] = useState("");
+  const [discordUrl, setDiscordUrl] = useState("");
   const [access, setAccess] = useState<"open" | "private">("open");
 
   // Logo state
@@ -95,7 +95,7 @@ export default function EditCommunityClient() {
         setAccess(c.visibility === "private" ? "private" : "open");
         setIsOnline(c.is_online === true);
         setWebsite(c.website || "");
-        setJoinLink(c.join_link || "");
+        setDiscordUrl(c.discord_url || "");
         setLocationName(c.location_name || "");
         setLocationAddress(c.location_address || "");
         setLocationLat(c.location_lat ?? null);
@@ -204,7 +204,7 @@ export default function EditCommunityClient() {
           description: description.trim(),
           is_online: isOnline,
           website: website.trim() || null,
-          join_link: isOnline ? (joinLink.trim() || null) : null,
+          discord_url: discordUrl.trim() || null,
           access,
           location_name: isOnline ? null : (locationName.trim() || null),
           location_address: isOnline ? null : (locationAddress.trim() || null),
@@ -379,7 +379,7 @@ export default function EditCommunityClient() {
             <FormControlLabel value="online" control={<Radio />} label="Online" />
           </RadioGroup>
 
-          {!isOnline ? (
+          {!isOnline && (
             <Box ref={setFieldRef("location")} sx={{ scrollMarginTop: 96 }}>
               <PlacesAutocompleteInput
                 value={locationName}
@@ -408,15 +408,6 @@ export default function EditCommunityClient() {
                 inputId="places-autocomplete-community-edit"
               />
             </Box>
-          ) : (
-            <AppTextField
-              label="Join link"
-              placeholder="e.g. https://discord.gg/yourserver"
-              value={joinLink}
-              onChange={(e) => setJoinLink(e.target.value)}
-              helperText={null}
-              inputProps={{ maxLength: 500 }}
-            />
           )}
 
           <Box ref={setFieldRef("website")} sx={{ scrollMarginTop: 96 }}>
@@ -425,9 +416,19 @@ export default function EditCommunityClient() {
               placeholder="https://example.com"
               value={website}
               onChange={(e) => setWebsite(e.target.value)}
+              helperText={null}
               inputProps={{ maxLength: 500 }}
             />
           </Box>
+
+          <AppTextField
+            label="Discord Server"
+            placeholder="e.g. https://discord.gg/yourserver"
+            value={discordUrl}
+            onChange={(e) => setDiscordUrl(e.target.value)}
+            helperText={null}
+            inputProps={{ maxLength: 500 }}
+          />
         </Stack>
       </AppCard>
 

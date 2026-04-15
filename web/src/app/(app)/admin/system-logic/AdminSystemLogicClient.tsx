@@ -903,6 +903,13 @@ export default function AdminSystemLogicClient() {
           Explore shows the plan only to viewers who would already satisfy base visibility as community members or RSVP&rsquo;d viewers, and hides it from
           general Explore otherwise. Direct URL access is unaffected, that is governed by the plan&rsquo;s own visibility.
         </Bullet>
+        <Bullet>
+          <strong>Daily plan digest</strong> (Postmark template 44018889) honors the same members-only gate. When a plan is community-linked and &ldquo;Only
+          show this plan to community members&rdquo; is on, the digest additionally requires the recipient to be an active community member. This is layered
+          on top of the existing hobby / distance / visibility / QA / already-connected suppression rules &mdash; it narrows digest eligibility, never broadens
+          it. Super admins don&rsquo;t bypass this gate: a super admin who isn&rsquo;t in the community still won&rsquo;t receive a community-members-only
+          plan in their digest.
+        </Bullet>
 
         <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
           QA plans

@@ -648,7 +648,6 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
               </Button>
             </Stack>
           }
-          footnote="People nearby with matching hobbies can discover your plan in Explore."
         />
       )}
 

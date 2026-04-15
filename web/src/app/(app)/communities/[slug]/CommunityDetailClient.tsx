@@ -38,8 +38,10 @@ type CommunityData = {
   join_mode: string;
   chat_enabled: boolean;
   is_online: boolean;
-  website: string | null;
-  join_link: string | null;
+  /** Omitted from the response for non-members of private communities. */
+  website?: string | null;
+  /** Omitted from the response for non-members of private communities. */
+  discord_url?: string | null;
   location_name: string | null;
   location_address: string | null;
   location_lat: number | null;
@@ -579,10 +581,11 @@ export default function CommunityDetailClient() {
                 />
               )}
 
-              {/* Meta stack: location/online on its own line, website on a
-                  separate line below so a long address doesn't push the link
-                  off to the right. */}
-              {(community.is_online || community.location_name || community.website) && (
+              {/* Meta stack: location/online on its own line, external links
+                  on their own lines below. website and discord_url are
+                  omitted by the API for non-members of private communities,
+                  so the conditional checks also act as the privacy gate. */}
+              {(community.is_online || community.location_name || community.website || community.discord_url) && (
                 <Stack spacing={0.5}>
                   {community.is_online ? (
                     <Stack direction="row" spacing={0.5} alignItems="center">
@@ -617,6 +620,29 @@ export default function CommunityDetailClient() {
                       <LinkRoundedIcon sx={{ fontSize: 14 }} />
                       <Typography className="visit-label" component="span" variant="body2" sx={{ fontSize: "0.8125rem", fontWeight: 600 }}>
                         Visit website
+                      </Typography>
+                    </Stack>
+                  )}
+                  {community.discord_url && (
+                    <Stack
+                      component="a"
+                      href={community.discord_url.startsWith("http") ? community.discord_url : `https://${community.discord_url}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      direction="row"
+                      spacing={0.5}
+                      alignItems="center"
+                      onClick={(e) => e.stopPropagation()}
+                      sx={{
+                        alignSelf: "flex-start",
+                        color: "primary.main",
+                        textDecoration: "none",
+                        "&:hover .discord-label": { textDecoration: "underline" },
+                      }}
+                    >
+                      <LinkRoundedIcon sx={{ fontSize: 14 }} />
+                      <Typography className="discord-label" component="span" variant="body2" sx={{ fontSize: "0.8125rem", fontWeight: 600 }}>
+                        Discord Server
                       </Typography>
                     </Stack>
                   )}
@@ -937,10 +963,10 @@ export default function CommunityDetailClient() {
                   </Typography>
                 </Stack>
               )}
-              {community.is_online && community.join_link && (
+              {community.discord_url && (
                 <Stack
                   component="a"
-                  href={community.join_link.startsWith("http") ? community.join_link : `https://${community.join_link}`}
+                  href={community.discord_url.startsWith("http") ? community.discord_url : `https://${community.discord_url}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   direction="row"
@@ -951,12 +977,12 @@ export default function CommunityDetailClient() {
                     alignSelf: "flex-start",
                     color: "primary.main",
                     textDecoration: "none",
-                    "&:hover .join-label": { textDecoration: "underline" },
+                    "&:hover .discord-label": { textDecoration: "underline" },
                   }}
                 >
                   <LinkRoundedIcon sx={{ fontSize: 14 }} />
-                  <Typography className="join-label" component="span" variant="body2" sx={{ fontSize: "0.8125rem", fontWeight: 600 }}>
-                    Join link
+                  <Typography className="discord-label" component="span" variant="body2" sx={{ fontSize: "0.8125rem", fontWeight: 600 }}>
+                    Discord Server
                   </Typography>
                 </Stack>
               )}

@@ -6235,7 +6235,7 @@ app.post("/communities", async (c) => {
 
   const isOnline = body.is_online === true;
   const website = body.website ? String(body.website).trim().slice(0, 500) : null;
-  const joinLink = body.join_link ? String(body.join_link).trim().slice(0, 500) : null;
+  const discordUrl = body.discord_url ? String(body.discord_url).trim().slice(0, 500) : null;
 
   const locationName = body.location_name ? String(body.location_name).trim().slice(0, 200) : null;
   const locationAddress = body.location_address ? String(body.location_address).trim().slice(0, 500) : null;
@@ -6255,8 +6255,8 @@ app.post("/communities", async (c) => {
     if (existing.length > 0) return c.json({ ok: false, error: "SLUG_TAKEN", message: "That handle is already taken" }, 409);
 
     const rows = (await sql`
-      INSERT INTO newchums.communities (name, slug, description, visibility, join_mode, chat_enabled, is_online, website, join_link, location_name, location_address, location_lat, location_lng, owner_user_id)
-      VALUES (${name}, ${slug}, ${description}, ${visibility}, ${joinMode}, ${chatEnabled}, ${isOnline}, ${website}, ${joinLink}, ${locationName}, ${locationAddress}, ${locationLat}, ${locationLng}, ${userId})
+      INSERT INTO newchums.communities (name, slug, description, visibility, join_mode, chat_enabled, is_online, website, discord_url, location_name, location_address, location_lat, location_lng, owner_user_id)
+      VALUES (${name}, ${slug}, ${description}, ${visibility}, ${joinMode}, ${chatEnabled}, ${isOnline}, ${website}, ${discordUrl}, ${locationName}, ${locationAddress}, ${locationLat}, ${locationLng}, ${userId})
       RETURNING id, slug, created_at
     `) as { id: string; slug: string; created_at: string }[];
     const community = rows[0];
@@ -6354,7 +6354,7 @@ app.get("/communities", async (c) => {
       const communities = (await sql`
         SELECT c.id, c.slug, c.name, c.description, c.visibility, c.join_mode, c.avatar_key, c.banner_key,
           c.location_name, c.location_address, c.location_lat, c.location_lng,
-          c.owner_user_id, c.created_at, c.is_online, c.website, c.join_link,
+          c.owner_user_id, c.created_at, c.is_online,
           (SELECT COUNT(*)::int FROM newchums.community_members cm WHERE cm.community_id = c.id AND cm.status = 'active') AS member_count,
           cme.role AS viewer_role,
           (SELECT COUNT(*)::int FROM newchums.events e WHERE e.community_id = c.id AND e.status = 'published' AND e.starts_at >= NOW() AND (COALESCE(e.is_qa, false) = false OR ${isSuperAdmin})) AS upcoming_plan_count,
@@ -6413,7 +6413,7 @@ app.get("/communities", async (c) => {
 
     const communities = (await sql`
       SELECT c.id, c.slug, c.name, c.description, c.visibility, c.join_mode, c.avatar_key, c.banner_key,
-        c.location_name, c.owner_user_id, c.created_at, c.is_online, c.website, c.join_link,
+        c.location_name, c.owner_user_id, c.created_at, c.is_online,
         (SELECT COUNT(*)::int FROM newchums.community_members cm WHERE cm.community_id = c.id AND cm.status = 'active') AS member_count,
         ${viewerRoleExpr} AS viewer_role,
         (SELECT COUNT(*)::int FROM newchums.events e WHERE e.community_id = c.id AND e.status = 'published' AND e.starts_at >= NOW() AND (COALESCE(e.is_qa, false) = false OR ${isSuperAdmin})) AS upcoming_plan_count,
@@ -6505,6 +6505,9 @@ app.get("/communities/:slug", async (c) => {
           LIMIT 1
         `) as { removal_reason: string | null }[];
         if (removedRows.length > 0) {
+          // Private-community non-members don't see website / discord_url
+          // (members-only fields). See the Community field visibility rules
+          // in AGENTS.md / Technical_Specs.md.
           return c.json({
             ok: true,
             community: {
@@ -6512,7 +6515,7 @@ app.get("/communities/:slug", async (c) => {
               description: community.description, avatar_key: community.avatar_key,
               visibility: community.visibility, join_mode: community.join_mode,
               is_online: community.is_online, location_name: community.location_name,
-              website: community.website, member_count: community.member_count,
+              member_count: community.member_count,
               hobbies: communityHobbies,
             },
             viewerMembership: null,
@@ -6572,12 +6575,13 @@ app.get("/communities/:slug", async (c) => {
 
         return c.json({
           ok: true,
+          // Private-community non-members don't see website / discord_url.
           community: {
             id: community.id, slug: community.slug, name: community.name,
             description: community.description, avatar_key: community.avatar_key,
             visibility: community.visibility, join_mode: community.join_mode,
             is_online: community.is_online, location_name: community.location_name,
-            website: community.website, member_count: community.member_count,
+            member_count: community.member_count,
             hobbies: communityHobbies,
             upcoming_plan_count: upcomingPlanCount,
           },
@@ -6748,7 +6752,7 @@ app.patch("/communities/:slug", async (c) => {
     if (body.chat_enabled !== undefined) { updates.push("chat_enabled"); vals.push(body.chat_enabled !== false); }
     if (body.is_online !== undefined) { updates.push("is_online"); vals.push(body.is_online === true); }
     if (body.website !== undefined) { updates.push("website"); vals.push(body.website ? String(body.website).trim().slice(0, 500) : null); }
-    if (body.join_link !== undefined) { updates.push("join_link"); vals.push(body.join_link ? String(body.join_link).trim().slice(0, 500) : null); }
+    if (body.discord_url !== undefined) { updates.push("discord_url"); vals.push(body.discord_url ? String(body.discord_url).trim().slice(0, 500) : null); }
     if (body.location_name !== undefined) { updates.push("location_name"); vals.push(body.location_name ? String(body.location_name).trim().slice(0, 200) : null); }
     if (body.location_address !== undefined) { updates.push("location_address"); vals.push(body.location_address ? String(body.location_address).trim().slice(0, 500) : null); }
     if (body.location_lat !== undefined) { updates.push("location_lat"); vals.push(body.location_lat != null ? Number(body.location_lat) : null); }
@@ -6787,7 +6791,7 @@ app.patch("/communities/:slug", async (c) => {
     if (fieldMap.chat_enabled !== undefined) await sql`UPDATE newchums.communities SET chat_enabled = ${fieldMap.chat_enabled as boolean}, updated_at = now() WHERE id = ${cid}`;
     if (fieldMap.is_online !== undefined) await sql`UPDATE newchums.communities SET is_online = ${fieldMap.is_online as boolean}, updated_at = now() WHERE id = ${cid}`;
     if (fieldMap.website !== undefined) await sql`UPDATE newchums.communities SET website = ${fieldMap.website as string | null}, updated_at = now() WHERE id = ${cid}`;
-    if (fieldMap.join_link !== undefined) await sql`UPDATE newchums.communities SET join_link = ${fieldMap.join_link as string | null}, updated_at = now() WHERE id = ${cid}`;
+    if (fieldMap.discord_url !== undefined) await sql`UPDATE newchums.communities SET discord_url = ${fieldMap.discord_url as string | null}, updated_at = now() WHERE id = ${cid}`;
     if (fieldMap.location_name !== undefined) await sql`UPDATE newchums.communities SET location_name = ${fieldMap.location_name as string | null}, updated_at = now() WHERE id = ${cid}`;
     if (fieldMap.location_address !== undefined) await sql`UPDATE newchums.communities SET location_address = ${fieldMap.location_address as string | null}, updated_at = now() WHERE id = ${cid}`;
     if (fieldMap.location_lat !== undefined) await sql`UPDATE newchums.communities SET location_lat = ${fieldMap.location_lat as number | null}, updated_at = now() WHERE id = ${cid}`;
@@ -8625,6 +8629,12 @@ app.get("/events/explore", async (c) => {
       WHERE e.status = 'published'
         AND e.starts_at >= ${now.toISOString()}
         AND (COALESCE(e.is_qa, false) = false OR ${viewerIsSuperAdmin})
+        -- Community members-only gate. Semantically the same rule is applied
+        -- in processEventMatchDigest's UNION branches (see membersOnlyGate);
+        -- the extra er_hid RSVP-bypass branch here is deliberate — Explore
+        -- needs to keep the plan visible to a RSVP'd non-member, whereas the
+        -- digest already suppresses plans the recipient has an RSVP on. If
+        -- you change the hide_from_explore gate, update both sites together.
         AND (
           COALESCE(e.hide_from_explore, false) = false
           OR (e.community_id IS NOT NULL AND EXISTS (
@@ -13982,6 +13992,23 @@ async function processEventMatchDigest(
 ) {
   if (!env.POSTMARK_TEMPLATE_EVENT_MATCH_DIGEST) return;
 
+  // Community members-only gate, shared between the public and chums_only
+  // UNION branches below. A community-linked plan with hide_from_explore=true
+  // is only delivered to active members of that community — same semantic
+  // rule as the Explore-feed query at the other site (search for cm_viewer).
+  // The Explore query additionally allows an RSVP-bypass branch; the digest
+  // omits that because it separately suppresses any plan the recipient
+  // already has an RSVP on.
+  const membersOnlyGate = sql`(
+    COALESCE(e.hide_from_explore, false) = false
+    OR (e.community_id IS NOT NULL AND EXISTS (
+      SELECT 1 FROM newchums.community_members cm_digest
+      WHERE cm_digest.community_id = e.community_id
+        AND cm_digest.user_id = eu.user_id
+        AND cm_digest.status = 'active'
+    ))
+  )`;
+
   const rows = (await sql`
     WITH eligible_users AS (
       SELECT
@@ -14081,6 +14108,8 @@ async function processEventMatchDigest(
                 OR LOWER(ei_dedup.email) = LOWER(eu.email)
               )
           )
+          -- Community members-only gate (see membersOnlyGate above).
+          AND ${membersOnlyGate}
           AND 6371 * acos(
             LEAST(1.0, GREATEST(-1.0,
               cos(radians(eu.home_lat)) * cos(radians(e.location_lat)) *
@@ -14131,6 +14160,8 @@ async function processEventMatchDigest(
                 OR LOWER(ei_dedup.email) = LOWER(eu.email)
               )
           )
+          -- Community members-only gate (see membersOnlyGate above).
+          AND ${membersOnlyGate}
           AND 6371 * acos(
             LEAST(1.0, GREATEST(-1.0,
               cos(radians(eu.home_lat)) * cos(radians(e.location_lat)) *
