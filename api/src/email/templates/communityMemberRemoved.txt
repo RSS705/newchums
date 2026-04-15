@@ -1,0 +1,19 @@
+A community membership update
+
+Hi {{recipientName}},
+
+You've been removed from {{communityName}} on NewChums. You'll no longer see its plans, members, or activity.
+{{#removalReason}}
+
+Reason from the community owner: "{{.}}"
+{{/removalReason}}
+
+There are plenty of other communities to explore on NewChums.
+
+Browse communities: https://newchums.com/communities
+
+---
+
+You're receiving this because you were a member of a community on NewChums.
+
+© {{year}} {{productName}}

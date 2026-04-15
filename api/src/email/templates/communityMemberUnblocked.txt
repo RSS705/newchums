@@ -1,0 +1,13 @@
+You can rejoin a community
+
+Hi {{recipientName}},
+
+Good news — you've been unblocked from {{communityName}} on NewChums. You can request to join again whenever you're ready. You won't be added automatically.
+
+View community: {{communityUrl}}
+
+---
+
+You're receiving this because a community on NewChums unblocked you.
+
+© {{year}} {{productName}}

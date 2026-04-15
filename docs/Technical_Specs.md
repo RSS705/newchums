@@ -354,6 +354,9 @@ The local `.html` and `.txt` files are the source of truth; the Postmark dashboa
 | `communityJoinRequest` | `POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST` | 44111064 |
 | `communityJoinApproved` | `POSTMARK_TEMPLATE_COMMUNITY_JOIN_APPROVED` | 44111212 |
 | `communityJoinDeclined` | `POSTMARK_TEMPLATE_COMMUNITY_JOIN_DECLINED` | 44111205 |
+| `communityMemberRemoved` | `POSTMARK_TEMPLATE_COMMUNITY_MEMBER_REMOVED` | 44452043 |
+| `communityMemberUnblocked` | `POSTMARK_TEMPLATE_COMMUNITY_MEMBER_UNBLOCKED` | 44470363 |
+| `communityJoinRequestReopened` | `POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST_REOPENED` | 44470744 |
 | `concernReportAlert` | `POSTMARK_TEMPLATE_CONCERN_REPORT` | 44107767 |
 | `guestVerifyCode` | `POSTMARK_TEMPLATE_GUEST_VERIFY` | 44041128 |
 | `emailChangeConfirm` | `POSTMARK_TEMPLATE_EMAIL_CHANGE_CONFIRM` | 43739983 |
@@ -1185,8 +1188,11 @@ Uses the shared media upload pipeline (`POST /media/init` → `PUT /upload/:toke
 | Community join request (to owner) | `POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST` | User requests to join an approval_required community |
 | Community join approved (to requester) | `POSTMARK_TEMPLATE_COMMUNITY_JOIN_APPROVED` | Owner approves a join request |
 | Community join declined (to requester) | `POSTMARK_TEMPLATE_COMMUNITY_JOIN_DECLINED` | Owner declines a join request |
+| Community member removed (to removed user) | `POSTMARK_TEMPLATE_COMMUNITY_MEMBER_REMOVED` | Owner/super admin removes a member via the Members tab. The action is a remove-and-block: the user's `community_members` row flips to `status='removed'`, which blocks any rejoin attempt server-side. Optional `removalReason` is included when provided. |
+| Community member unblocked (to unblocked user) | `POSTMARK_TEMPLATE_COMMUNITY_MEMBER_UNBLOCKED` | Owner/super admin lifts the block via the Members tab's "Blocked" list. The `community_members` row is **deleted** — the user becomes a plain non-member and can request to join again on their own. No automatic re-add. |
+| Community join-request reopened (to previously-denied user) | `POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST_REOPENED` | Owner/super admin clicks **Undo denial** on the Requests tab's "Previously denied" list (declines within the 30-day cooldown). The declined `community_join_requests` row is **deleted**, lifting the cooldown. The user is notified but **not** added; they must submit a fresh request. |
 
-Template source files: `api/src/email/templates/communityJoinRequest.*`, `communityJoinApproved.*`, `communityJoinDeclined.*`.
+Template source files: `api/src/email/templates/communityJoinRequest.*`, `communityJoinApproved.*`, `communityJoinDeclined.*`, `communityMemberRemoved.*`, `communityMemberUnblocked.*`, `communityJoinRequestReopened.*`.
 
 **Share tokens (private communities):**
 
@@ -1356,7 +1362,7 @@ Core tables include:
 - `newchums.user_objective_completions` (migration 054), tracks per-user objective completion. Columns: `id` (UUID PK), `user_id` (FK), `objective_key` (TEXT), `completed_at` (TIMESTAMPTZ). Unique constraint on `(user_id, objective_key)`.
 - `newchums.users.tutorial_nudges_off` (migration 054), `BOOLEAN NOT NULL DEFAULT false`; when true, tutorial nudges are permanently suppressed for the user.
 - `newchums.communities` (migration 055, extended 059, 078), community entity. Columns: `id` (UUID PK), `slug` (TEXT UNIQUE), `name`, `description`, `avatar_key`, `banner_key`, `visibility` (public/private), `join_mode` (open/approval_required), `chat_enabled` (boolean, default true, deferred), `is_online` (boolean, default false, migration 078), `website` (text, max 500, migration 078), `join_link` (text, max 500, migration 078), `location_name`, `location_address`, `location_lat`, `location_lng`, `owner_user_id` (FK), `status` (active/closed, default active, migration 059), `created_at`, `updated_at`. Indexed on `slug` (unique) and `owner_user_id`.
-- `newchums.community_members` (migration 055), membership records. Columns: `id` (UUID PK), `community_id` (FK, CASCADE), `user_id` (FK, CASCADE), `role` (owner/member), `status` (active/pending/removed), `created_at`. Unique on `(community_id, user_id)`. Indexed on `user_id`.
+- `newchums.community_members` (migration 055, extended 081), membership records. Columns: `id` (UUID PK), `community_id` (FK, CASCADE), `user_id` (FK, CASCADE), `role` (owner/member), `status` (active/pending/removed), `created_at`, `removal_reason` (text, nullable, max 500 chars, migration 081), `removed_at` (TIMESTAMPTZ, nullable, migration 081), `removed_by_user_id` (FK users.id, nullable, migration 081). Unique on `(community_id, user_id)`. Indexed on `user_id`. Remove-and-block sets `status='removed'` (row survives; the Members tab "Blocked" section and the POST /join guard both read it). Unblock **deletes the row outright** — the user becomes a plain non-member and may request to join again on their own.
 - `newchums.community_join_requests` (migration 055, extended 079), join request records. Columns: `id` (UUID PK), `community_id` (FK, CASCADE), `user_id` (FK, CASCADE), `status` (pending/approved/declined/withdrawn), `reviewed_by_user_id` (FK), `message` (text, nullable, max 500 chars, migration 079), `created_at`, `reviewed_at`. Unique partial index on `(community_id, user_id) WHERE status = 'pending'`.
 - `newchums.community_interests` (migration 078), hobby/interest tagging for communities. Columns: `community_id` (FK, CASCADE), `interest_id` (FK, CASCADE). Composite PK. Indexed on `interest_id`.
 - `newchums.events.community_id` (migration 055), `UUID NULL` FK → `communities(id)` ON DELETE SET NULL. Associates a plan with 0 or 1 community. Indexed where not null.

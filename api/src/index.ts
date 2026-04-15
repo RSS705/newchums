@@ -43,6 +43,9 @@ import {
   sendCommunityJoinRequestEmail,
   sendCommunityJoinApprovedEmail,
   sendCommunityJoinDeclinedEmail,
+  sendCommunityMemberRemovedEmail,
+  sendCommunityMemberUnblockedEmail,
+  sendCommunityJoinRequestReopenedEmail,
 } from "./email/send";
 import { canAccessInternalTestRoute, notFound } from "./internalAccess";
 import { nameToSlug, slugToName, validateInterestName } from "./interests";
@@ -64,6 +67,7 @@ import {
   type UserMetricsMap,
 } from "./lib/chumPreferences";
 import { checkContactRateLimit } from "./lib/contactRateLimit";
+import { htmlToPlainText } from "./lib/htmlToPlainText";
 import { validateCleanText } from "./lib/contentSafety";
 import { sanitizeDescriptionHtml } from "./lib/sanitizeHtml";
 import { verifyTurnstileToken } from "./lib/turnstile";
@@ -6492,6 +6496,32 @@ app.get("/communities/:slug", async (c) => {
         SELECT 1 FROM newchums.community_members WHERE community_id = ${community.id} AND user_id = ${userId} AND status = 'active' LIMIT 1
       `) as unknown[];
       if (memberRows.length === 0) {
+        // If the viewer was previously removed from this community, we block
+        // any join / request-to-join path (enforced server-side in POST /join
+        // too). Surfaced on the restricted view so the UI can explain it.
+        const removedRows = (await sql`
+          SELECT removal_reason FROM newchums.community_members
+          WHERE community_id = ${community.id} AND user_id = ${userId} AND status = 'removed'
+          LIMIT 1
+        `) as { removal_reason: string | null }[];
+        if (removedRows.length > 0) {
+          return c.json({
+            ok: true,
+            community: {
+              id: community.id, slug: community.slug, name: community.name,
+              description: community.description, avatar_key: community.avatar_key,
+              visibility: community.visibility, join_mode: community.join_mode,
+              is_online: community.is_online, location_name: community.location_name,
+              website: community.website, member_count: community.member_count,
+              hobbies: communityHobbies,
+            },
+            viewerMembership: null,
+            viewerRemoved: true,
+            viewerRemovedReason: removedRows[0].removal_reason ?? null,
+            restricted: true,
+          });
+        }
+
         // These three queries are independent of each other — run in parallel.
         // Partial unique index on (community_id, user_id) WHERE status='pending'
         // guarantees at most one pending row. The declined query uses the most
@@ -6567,11 +6597,15 @@ app.get("/communities/:slug", async (c) => {
 
     let viewerMembership: { role: string; status: string } | null = null;
     let viewerPendingRequest = false;
+    let viewerRemoved = false;
     if (userId) {
       const memberRows = (await sql`
-        SELECT role, status FROM newchums.community_members WHERE community_id = ${community.id} AND user_id = ${userId} AND status = 'active' LIMIT 1
+        SELECT role, status FROM newchums.community_members
+        WHERE community_id = ${community.id} AND user_id = ${userId} AND status IN ('active', 'removed')
+        LIMIT 1
       `) as { role: string; status: string }[];
-      if (memberRows[0]) viewerMembership = memberRows[0];
+      if (memberRows[0]?.status === "active") viewerMembership = memberRows[0];
+      else if (memberRows[0]?.status === "removed") viewerRemoved = true;
       else {
         const pendingRows = (await sql`SELECT 1 FROM newchums.community_join_requests WHERE community_id = ${community.id} AND user_id = ${userId} AND status = 'pending' LIMIT 1`) as unknown[];
         viewerPendingRequest = pendingRows.length > 0;
@@ -6582,6 +6616,7 @@ app.get("/communities/:slug", async (c) => {
     const isOwnerOrAdmin = isSuperAdmin || (viewerMembership?.role === "owner");
 
     let pendingRequests: Record<string, unknown>[] = [];
+    let declinedRequests: Record<string, unknown>[] = [];
     if (isOwnerOrAdmin && community.join_mode === "approval_required") {
       const rawRequests = (await sql`
         SELECT cjr.id, cjr.user_id, cjr.created_at, cjr.message, u.name, u.username, u.avatar_key, u.avatar_updated_at
@@ -6591,6 +6626,38 @@ app.get("/communities/:slug", async (c) => {
         ORDER BY cjr.created_at ASC
       `) as { id: string; user_id: string; created_at: string; message: string | null; name: string | null; username: string | null; avatar_key: string | null; avatar_updated_at: string | null }[];
       pendingRequests = rawRequests.map((r) => ({
+        ...r,
+        avatar_url: buildAvatarUrl(r.user_id, r.avatar_key, r.avatar_updated_at, c.env.MEDIA_BUCKET),
+      }));
+
+      // Declined requests still inside the cooldown window, excluding users
+      // who have since re-requested or joined / been blocked by other paths.
+      // Only these are actionable via "Undo denial" — once the cooldown
+      // lapses the user can request again on their own.
+      const cooldownInterval = `${COMMUNITY_JOIN_REQUEST_DECLINED_COOLDOWN_DAYS} days`;
+      const rawDeclined = (await sql`
+        SELECT cjr.id, cjr.user_id, cjr.created_at, cjr.reviewed_at, cjr.message,
+               u.name, u.username, u.avatar_key, u.avatar_updated_at
+        FROM newchums.community_join_requests cjr
+        JOIN newchums.users u ON u.id = cjr.user_id
+        WHERE cjr.community_id = ${community.id}
+          AND cjr.status = 'declined'
+          AND COALESCE(cjr.reviewed_at, cjr.created_at) >= NOW() - ${cooldownInterval}::interval
+          AND NOT EXISTS (
+            SELECT 1 FROM newchums.community_join_requests cjr2
+            WHERE cjr2.community_id = cjr.community_id
+              AND cjr2.user_id = cjr.user_id
+              AND cjr2.status IN ('pending', 'approved')
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM newchums.community_members cm
+            WHERE cm.community_id = cjr.community_id
+              AND cm.user_id = cjr.user_id
+          )
+        ORDER BY cjr.reviewed_at DESC NULLS LAST, cjr.created_at DESC
+        LIMIT 100
+      `) as { id: string; user_id: string; created_at: string; reviewed_at: string | null; message: string | null; name: string | null; username: string | null; avatar_key: string | null; avatar_updated_at: string | null }[];
+      declinedRequests = rawDeclined.map((r) => ({
         ...r,
         avatar_url: buildAvatarUrl(r.user_id, r.avatar_key, r.avatar_updated_at, c.env.MEDIA_BUCKET),
       }));
@@ -6613,7 +6680,9 @@ app.get("/communities/:slug", async (c) => {
       },
       viewerMembership,
       viewerPendingRequest,
+      viewerRemoved,
       pendingRequests: isOwnerOrAdmin ? pendingRequests : undefined,
+      declinedRequests: isOwnerOrAdmin ? declinedRequests : undefined,
       shareToken,
       restricted: false,
     });
@@ -6805,10 +6874,14 @@ app.post("/communities/:id/join", async (c) => {
     if (!communityRows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     const community = communityRows[0];
 
-    const existingMember = (await sql`
-      SELECT 1 FROM newchums.community_members WHERE community_id = ${communityId} AND user_id = ${userId} AND status = 'active' LIMIT 1
-    `) as unknown[];
-    if (existingMember.length > 0) return c.json({ ok: true, status: "already_member" });
+    const existingMemberRows = (await sql`
+      SELECT status FROM newchums.community_members WHERE community_id = ${communityId} AND user_id = ${userId} LIMIT 1
+    `) as { status: string }[];
+    if (existingMemberRows[0]?.status === "active") return c.json({ ok: true, status: "already_member" });
+    // A removed member can't rejoin, regardless of community visibility or
+    // join_mode. Returning ok:true with a distinct status lets the client
+    // surface a banner instead of treating it like an error.
+    if (existingMemberRows[0]?.status === "removed") return c.json({ ok: true, status: "removed" });
 
     if (community.join_mode === "approval_required") {
       // Partial unique index on (community_id, user_id) WHERE status='pending'
@@ -6971,7 +7044,8 @@ app.get("/communities/:id/members", async (c) => {
     }
 
     const members = (await sql`
-      SELECT cm.id, cm.user_id, cm.role, cm.created_at, u.name, u.username, u.avatar_key, u.avatar_updated_at
+      SELECT cm.id, cm.user_id, cm.role, cm.status, cm.created_at, cm.removed_at, cm.removal_reason,
+             u.name, u.username, u.avatar_key, u.avatar_updated_at
       FROM newchums.community_members cm
       JOIN newchums.users u ON u.id = cm.user_id
       WHERE cm.community_id = ${communityId} AND cm.status = 'active'
@@ -6984,7 +7058,26 @@ app.get("/communities/:id/members", async (c) => {
       avatar_url: buildAvatarUrl(String(m.user_id), m.avatar_key as string | null, m.avatar_updated_at as string | null, c.env.MEDIA_BUCKET),
     }));
 
-    return c.json({ ok: true, members: membersWithAvatars });
+    // Only the owner (or super admin) needs history of removed members.
+    // Everyone else sees just the active roster.
+    const ownerRows = (await sql`SELECT owner_user_id FROM newchums.communities WHERE id = ${communityId} LIMIT 1`) as { owner_user_id: string }[];
+    const isOwner = !!userId && userId === ownerRows[0]?.owner_user_id;
+    const removedMembers = (isOwner || isSuperAdmin)
+      ? ((await sql`
+          SELECT cm.id, cm.user_id, cm.role, cm.status, cm.created_at, cm.removed_at, cm.removal_reason,
+                 u.name, u.username, u.avatar_key, u.avatar_updated_at
+          FROM newchums.community_members cm
+          JOIN newchums.users u ON u.id = cm.user_id
+          WHERE cm.community_id = ${communityId} AND cm.status = 'removed'
+          ORDER BY cm.removed_at DESC NULLS LAST, cm.created_at DESC
+          LIMIT 100
+        `) as Record<string, unknown>[]).map((m) => ({
+          ...m,
+          avatar_url: buildAvatarUrl(String(m.user_id), m.avatar_key as string | null, m.avatar_updated_at as string | null, c.env.MEDIA_BUCKET),
+        }))
+      : [];
+
+    return c.json({ ok: true, members: membersWithAvatars, removedMembers });
   } catch (err) {
     console.error("[GET /communities/:id/members]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
@@ -7002,16 +7095,118 @@ app.post("/communities/:id/members/:userId/remove", async (c) => {
   if (!userRows[0]) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
   const isSuperAdmin = userRows[0].role === "super_admin";
 
+  let removalReason: string | null = null;
   try {
-    const communityRows = (await sql`SELECT id, owner_user_id FROM newchums.communities WHERE id = ${communityId} LIMIT 1`) as { id: string; owner_user_id: string }[];
-    if (!communityRows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-    if (communityRows[0].owner_user_id !== userRows[0].id && !isSuperAdmin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
-    if (targetUserId === communityRows[0].owner_user_id) return c.json({ ok: false, error: "CANNOT_REMOVE_OWNER" }, 400);
+    const body = await c.req.json();
+    if (body && typeof body.reason === "string") {
+      const trimmed = body.reason.trim().slice(0, 500);
+      if (trimmed.length > 0) removalReason = trimmed;
+    }
+  } catch { /* body optional */ }
 
-    await sql`UPDATE newchums.community_members SET status = 'removed' WHERE community_id = ${communityId} AND user_id = ${targetUserId}`;
+  try {
+    const communityRows = (await sql`SELECT id, name, slug, owner_user_id FROM newchums.communities WHERE id = ${communityId} LIMIT 1`) as { id: string; name: string; slug: string; owner_user_id: string }[];
+    if (!communityRows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    const community = communityRows[0];
+    if (community.owner_user_id !== userRows[0].id && !isSuperAdmin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+    if (targetUserId === community.owner_user_id) return c.json({ ok: false, error: "CANNOT_REMOVE_OWNER" }, 400);
+
+    // Row must already exist (unique on (community_id, user_id)); an UPDATE
+    // is enough. Also records who removed them + when for later history.
+    const updated = (await sql`
+      UPDATE newchums.community_members
+      SET status = 'removed',
+          removal_reason = ${removalReason},
+          removed_at = NOW(),
+          removed_by_user_id = ${userRows[0].id}
+      WHERE community_id = ${communityId} AND user_id = ${targetUserId}
+      RETURNING 1
+    `) as unknown[];
+    if (updated.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+
+    // In-app notification + email to the removed user. Both are best-effort
+    // — a failure here must not undo the removal.
+    const targetRows = (await sql`SELECT email, name FROM newchums.users WHERE id = ${targetUserId} LIMIT 1`) as { email: string; name: string | null }[];
+    const target = targetRows[0];
+    if (target) {
+      try {
+        await sql`
+          INSERT INTO newchums.notifications (user_id, type, actor_user_id, entity_id, metadata)
+          VALUES (${targetUserId}, 'community_member_removed', ${userRows[0].id}, ${communityId}, ${JSON.stringify({ communityName: community.name, communitySlug: community.slug })})
+        `;
+      } catch { /* noop */ }
+
+      const recipientName = target.name?.trim() || "there";
+      c.executionCtx.waitUntil(
+        sendCommunityMemberRemovedEmail(c.env, {
+          to: target.email,
+          recipientName,
+          communityName: community.name,
+          communityUrl: `${c.env.WEB_BASE_URL}/communities/${community.slug}`,
+          removalReason,
+        }).catch(() => { /* email failures are swallowed; removal itself succeeded */ }),
+      );
+    }
+
     return c.json({ ok: true });
   } catch (err) {
     console.error("[POST /communities/:id/members/:userId/remove]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /communities/:id/members/:userId/unblock, lift a prior remove+block.
+ *  Deletes the community_members row outright — the user is back to being a
+ *  plain non-member and may request to join again on their own. Crucially
+ *  this does NOT auto-re-add them; the owner is just opening the door. */
+app.post("/communities/:id/members/:userId/unblock", async (c) => {
+  const communityId = c.req.param("id");
+  const targetUserId = c.req.param("userId");
+  const payload = await requireAuth(c);
+  if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const sql = getSql(c.env);
+  const userRows = (await sql`SELECT id, role FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string; role: string | null }[];
+  if (!userRows[0]) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const isSuperAdmin = userRows[0].role === "super_admin";
+
+  try {
+    const communityRows = (await sql`SELECT id, name, slug, owner_user_id FROM newchums.communities WHERE id = ${communityId} LIMIT 1`) as { id: string; name: string; slug: string; owner_user_id: string }[];
+    if (!communityRows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    const community = communityRows[0];
+    if (community.owner_user_id !== userRows[0].id && !isSuperAdmin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+    const deleted = (await sql`
+      DELETE FROM newchums.community_members
+      WHERE community_id = ${communityId} AND user_id = ${targetUserId} AND status = 'removed'
+      RETURNING 1
+    `) as unknown[];
+    if (deleted.length === 0) return c.json({ ok: false, error: "NOT_BLOCKED" }, 404);
+
+    // In-app notification + email — both best-effort.
+    const targetRows = (await sql`SELECT email, name FROM newchums.users WHERE id = ${targetUserId} LIMIT 1`) as { email: string; name: string | null }[];
+    const target = targetRows[0];
+    try {
+      await sql`
+        INSERT INTO newchums.notifications (user_id, type, actor_user_id, entity_id, metadata)
+        VALUES (${targetUserId}, 'community_member_unblocked', ${userRows[0].id}, ${communityId}, ${JSON.stringify({ communityName: community.name, communitySlug: community.slug })})
+      `;
+    } catch { /* noop */ }
+
+    if (target) {
+      const recipientName = target.name?.trim() || "there";
+      c.executionCtx.waitUntil(
+        sendCommunityMemberUnblockedEmail(c.env, {
+          to: target.email,
+          recipientName,
+          communityName: community.name,
+          communityUrl: `${c.env.WEB_BASE_URL}/communities/${community.slug}`,
+        }).catch(() => { /* email failure doesn't undo the unblock */ }),
+      );
+    }
+
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[POST /communities/:id/members/:userId/unblock]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });
@@ -7084,6 +7279,66 @@ app.put("/communities/:id/join-requests/:requestId", async (c) => {
     return c.json({ ok: true, status: newStatus });
   } catch (err) {
     console.error("[PUT /communities/:id/join-requests/:requestId]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /communities/:id/join-requests/:requestId/undo-decline, reverse a
+ *  prior decline while the 30-day cooldown is still active. Deletes the
+ *  declined row so the cooldown no longer applies — the requester can submit
+ *  a fresh request on their own, but is NOT automatically added. */
+app.post("/communities/:id/join-requests/:requestId/undo-decline", async (c) => {
+  const communityId = c.req.param("id");
+  const requestId = c.req.param("requestId");
+  const payload = await requireAuth(c);
+  if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const sql = getSql(c.env);
+  const userRows = (await sql`SELECT id, role FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string; role: string | null }[];
+  if (!userRows[0]) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const isSuperAdmin = userRows[0].role === "super_admin";
+
+  try {
+    const communityRows = (await sql`SELECT id, name, slug, owner_user_id FROM newchums.communities WHERE id = ${communityId} LIMIT 1`) as { id: string; name: string; slug: string; owner_user_id: string }[];
+    if (!communityRows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    const community = communityRows[0];
+    if (community.owner_user_id !== userRows[0].id && !isSuperAdmin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+    const reqRows = (await sql`
+      SELECT id, user_id, status FROM newchums.community_join_requests
+      WHERE id = ${requestId} AND community_id = ${communityId}
+      LIMIT 1
+    `) as { id: string; user_id: string; status: string }[];
+    if (!reqRows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    if (reqRows[0].status !== "declined") return c.json({ ok: false, error: "NOT_DECLINED" }, 409);
+
+    await sql`DELETE FROM newchums.community_join_requests WHERE id = ${requestId}`;
+
+    const targetUserId = reqRows[0].user_id;
+    const targetRows = (await sql`SELECT email, name FROM newchums.users WHERE id = ${targetUserId} LIMIT 1`) as { email: string; name: string | null }[];
+    const target = targetRows[0];
+
+    try {
+      await sql`
+        INSERT INTO newchums.notifications (user_id, type, actor_user_id, entity_id, metadata)
+        VALUES (${targetUserId}, 'community_join_request_reopened', ${userRows[0].id}, ${communityId}, ${JSON.stringify({ communityName: community.name, communitySlug: community.slug })})
+      `;
+    } catch { /* noop */ }
+
+    if (target) {
+      const recipientName = target.name?.trim() || "there";
+      c.executionCtx.waitUntil(
+        sendCommunityJoinRequestReopenedEmail(c.env, {
+          to: target.email,
+          recipientName,
+          communityName: community.name,
+          communityUrl: `${c.env.WEB_BASE_URL}/communities/${community.slug}`,
+        }).catch(() => { /* email failure doesn't undo the action */ }),
+      );
+    }
+
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[POST /communities/:id/join-requests/:requestId/undo-decline]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });
@@ -10349,7 +10604,14 @@ app.patch("/events/:id", async (c) => {
       });
 
     if ((before.description ?? null) !== description)
-      changes.push({ fieldName: "Description", oldValue: truncate(before.description, 150), newValue: truncate(description, 150) });
+      changes.push({
+        fieldName: "Description",
+        // Description is rich-text HTML; convert to plain text so the
+        // "What changed" block in the event-changed email doesn't render
+        // literal tags.
+        oldValue: truncate(htmlToPlainText(before.description) || null, 150),
+        newValue: truncate(htmlToPlainText(description) || null, 150),
+      });
 
     if (before.max_seats !== maxSeats)
       changes.push({

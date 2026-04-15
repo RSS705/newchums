@@ -1,0 +1,13 @@
+You can request to join again
+
+Hi {{recipientName}},
+
+Good news — the community owner at {{communityName}} reopened your ability to request to join. You won't be added automatically, but you can submit a fresh request whenever you're ready.
+
+View community: {{communityUrl}}
+
+---
+
+You're receiving this because a community on NewChums reopened your ability to request to join.
+
+© {{year}} {{productName}}

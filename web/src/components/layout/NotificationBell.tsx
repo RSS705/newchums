@@ -5,6 +5,8 @@ import EventNoteRoundedIcon from "@mui/icons-material/EventNoteRounded";
 import NotificationsOutlinedIcon from "@mui/icons-material/NotificationsOutlined";
 import NotificationsRoundedIcon from "@mui/icons-material/NotificationsRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
+import BlockRoundedIcon from "@mui/icons-material/BlockRounded";
+import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import Box from "@mui/material/Box";
 import CircularProgress from "@mui/material/CircularProgress";
 import Divider from "@mui/material/Divider";
@@ -215,6 +217,8 @@ function notificationText(n: AppNotification, viewerHandle: string | null): {
       };
     }
     case "community_join_request_approved": {
+      // Strip the actor so the community owner can't be identified. Same
+      // rationale as the declined / removed / unblocked cases.
       const communityName = n.metadata?.communityName as string | undefined;
       const communitySlug = n.metadata?.communitySlug as string | undefined;
       const communityHref = communitySlug ? `/communities/${communitySlug}` : null;
@@ -227,17 +231,78 @@ function notificationText(n: AppNotification, viewerHandle: string | null): {
         </Link>
       ) : communityName ? <strong>{communityName}</strong> : null;
       return {
-        actorLabel,
-        actorHref,
-        body: communityLink ? <>{" approved your request to join "}{communityLink}!</> : " approved your community join request!",
+        actorLabel: "Community update",
+        actorHref: null,
+        body: communityLink
+          ? <>{": your request to join "}{communityLink}{" was approved!"}</>
+          : ": your community join request was approved!",
       };
     }
     case "community_join_request_declined": {
+      // Strip the actor so the community owner can't be identified. Same
+      // rationale as the community_member_removed / _unblocked cases.
       const communityName = n.metadata?.communityName as string | undefined;
       return {
-        actorLabel,
-        actorHref,
-        body: communityName ? <>{" declined your request to join "}<strong>{communityName}</strong>.</> : " declined your community join request.",
+        actorLabel: "Community update",
+        actorHref: null,
+        body: communityName
+          ? <>{": your request to join "}<strong>{communityName}</strong>{" was declined."}</>
+          : ": your community join request was declined.",
+      };
+    }
+    case "community_member_removed": {
+      // Deliberately strip the actor's identity so community owners can't be
+      // identified (and harassed) via these notifications. The notification
+      // reads as a generic "Community update" with the community name in the
+      // body. Avatar is also overridden in the row below.
+      const communityName = n.metadata?.communityName as string | undefined;
+      return {
+        actorLabel: "Community update",
+        actorHref: null,
+        body: communityName ? <>{": you were removed from "}<strong>{communityName}</strong>.</> : ": you were removed from a community.",
+      };
+    }
+    case "community_member_unblocked":
+    case "community_member_reinstated": {
+      // "reinstated" is the legacy type name from the previous implementation
+      // of this feature. Kept as an alias so any stale rows still render.
+      const communityName = n.metadata?.communityName as string | undefined;
+      const communitySlug = n.metadata?.communitySlug as string | undefined;
+      const communityHref = communitySlug ? `/communities/${communitySlug}` : null;
+      const communityLink = communityName && communityHref ? (
+        <Link href={communityHref} style={{ fontWeight: 600, color: "inherit", textDecoration: "none" }}
+          onMouseOver={(e) => { (e.target as HTMLElement).style.textDecoration = "underline"; }}
+          onMouseOut={(e) => { (e.target as HTMLElement).style.textDecoration = "none"; }}
+        >
+          {communityName}
+        </Link>
+      ) : communityName ? <strong>{communityName}</strong> : null;
+      return {
+        actorLabel: "Community update",
+        actorHref: null,
+        body: communityLink
+          ? <>{": you\u2019ve been unblocked from "}{communityLink}{". You can request to join again."}</>
+          : ": you\u2019ve been unblocked from a community. You can request to join again.",
+      };
+    }
+    case "community_join_request_reopened": {
+      const communityName = n.metadata?.communityName as string | undefined;
+      const communitySlug = n.metadata?.communitySlug as string | undefined;
+      const communityHref = communitySlug ? `/communities/${communitySlug}` : null;
+      const communityLink = communityName && communityHref ? (
+        <Link href={communityHref} style={{ fontWeight: 600, color: "inherit", textDecoration: "none" }}
+          onMouseOver={(e) => { (e.target as HTMLElement).style.textDecoration = "underline"; }}
+          onMouseOut={(e) => { (e.target as HTMLElement).style.textDecoration = "none"; }}
+        >
+          {communityName}
+        </Link>
+      ) : communityName ? <strong>{communityName}</strong> : null;
+      return {
+        actorLabel: "Community update",
+        actorHref: null,
+        body: communityLink
+          ? <>{": your earlier request to join "}{communityLink}{" was reopened. You can request to join again."}</>
+          : ": your earlier request to join a community was reopened. You can request to join again.",
       };
     }
     default:
@@ -293,7 +358,9 @@ function NotificationRow({
         />
       )}
 
-      {/* Actor avatar or event icon for system notifications */}
+      {/* Actor avatar or generic icon for system / moderation notifications.
+          community_member_removed + community_member_reinstated intentionally
+          hide the actor so the owner can't be identified / harassed. */}
       <Box sx={{ flexShrink: 0 }}>
         {notification.type === "confirmation_requested" ? (
           actorHref ? (
@@ -330,6 +397,14 @@ function NotificationRow({
               <EventNoteRoundedIcon sx={{ fontSize: 20 }} />
             </Box>
           )
+        ) : notification.type === "community_member_removed" || notification.type === "community_join_request_declined" ? (
+          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", width: 36, height: 36, borderRadius: "50%", bgcolor: "action.hover", color: "text.secondary" }}>
+            <BlockRoundedIcon sx={{ fontSize: 20 }} />
+          </Box>
+        ) : notification.type === "community_member_unblocked" || notification.type === "community_member_reinstated" || notification.type === "community_join_request_reopened" || notification.type === "community_join_request_approved" ? (
+          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", width: 36, height: 36, borderRadius: "50%", bgcolor: "primary.main", color: "#fff" }}>
+            <CheckRoundedIcon sx={{ fontSize: 20 }} />
+          </Box>
         ) : actorHref ? (
           <Box component={Link} href={actorHref} sx={{ display: "block", textDecoration: "none" }}>
             <UserAvatar

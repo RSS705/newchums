@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   Box, Typography, Stack, Button, Chip, Avatar, CircularProgress,
   Divider, IconButton, Tooltip, Tab, Tabs, Grid, TextField,
+  Dialog, DialogTitle, DialogContent, DialogActions,
 } from "@mui/material";
 import AssignmentIndRoundedIcon from "@mui/icons-material/AssignmentIndRounded";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
@@ -66,6 +67,9 @@ type Member = {
   username: string | null;
   avatar_url: string | null;
   created_at: string;
+  status?: string;
+  removed_at?: string | null;
+  removal_reason?: string | null;
 };
 
 type ApiEvent = Record<string, unknown>;
@@ -78,6 +82,7 @@ type JoinRequest = {
   avatar_url: string | null;
   message: string | null;
   created_at: string;
+  reviewed_at?: string | null;
 };
 
 export default function CommunityDetailClient() {
@@ -103,11 +108,16 @@ export default function CommunityDetailClient() {
   const [viewerPendingRequestRefreshable, setViewerPendingRequestRefreshable] = useState(false);
   const [viewerPendingRequestDaysUntilRefreshable, setViewerPendingRequestDaysUntilRefreshable] = useState<number | null>(null);
   const [viewerDeclinedRequest, setViewerDeclinedRequest] = useState(false);
+  const [viewerRemoved, setViewerRemoved] = useState(false);
+  const [viewerRemovedReason, setViewerRemovedReason] = useState<string | null>(null);
   const [viewerDeclinedDaysUntilRetriable, setViewerDeclinedDaysUntilRetriable] = useState<number | null>(null);
   const viewerDeclinedRetriable = viewerDeclinedRequest && viewerDeclinedDaysUntilRetriable === null;
   const [restricted, setRestricted] = useState(false);
   const [shareToken, setShareToken] = useState<string | null>(null);
   const [pendingRequests, setPendingRequests] = useState<JoinRequest[]>([]);
+  const [declinedRequests, setDeclinedRequests] = useState<JoinRequest[]>([]);
+  const [undoDeclineTarget, setUndoDeclineTarget] = useState<JoinRequest | null>(null);
+  const [undoDeclineSubmitting, setUndoDeclineSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [tabIndex, setTabIndex] = useState(0);
 
@@ -118,8 +128,13 @@ export default function CommunityDetailClient() {
   // mounting and the useEffect kicking off the fetch.
   const [eventsFetched, setEventsFetched] = useState(false);
   const [members, setMembers] = useState<Member[]>([]);
+  const [removedMembers, setRemovedMembers] = useState<Member[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
   const [membersFetched, setMembersFetched] = useState(false);
+  // Confirmation dialog state for member removal.
+  const [removeMemberTarget, setRemoveMemberTarget] = useState<Member | null>(null);
+  const [removeMemberReason, setRemoveMemberReason] = useState("");
+  const [removeMemberSubmitting, setRemoveMemberSubmitting] = useState(false);
   const [joining, setJoining] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [joinRequestMessage, setJoinRequestMessage] = useState("");
@@ -185,6 +200,8 @@ export default function CommunityDetailClient() {
               : null
           );
           setViewerDeclinedRequest(data.viewerDeclinedRequest ?? false);
+          setViewerRemoved(data.viewerRemoved === true);
+          setViewerRemovedReason(typeof data.viewerRemovedReason === "string" ? data.viewerRemovedReason : null);
           setViewerDeclinedDaysUntilRetriable(
             typeof data.viewerDeclinedDaysUntilRetriable === "number"
               ? data.viewerDeclinedDaysUntilRetriable
@@ -193,6 +210,7 @@ export default function CommunityDetailClient() {
           setRestricted(data.restricted ?? false);
           setShareToken(data.shareToken ?? null);
           setPendingRequests(data.pendingRequests ?? []);
+          setDeclinedRequests(Array.isArray(data.declinedRequests) ? data.declinedRequests : []);
         }
       }
     } catch { /* noop */ }
@@ -217,7 +235,10 @@ export default function CommunityDetailClient() {
     try {
       const res = await apiFetch(`/communities/${community.id}/members`, { auth: true });
       const data = await res.json();
-      if (data.ok) setMembers(data.members);
+      if (data.ok) {
+        setMembers(data.members);
+        setRemovedMembers(Array.isArray(data.removedMembers) ? data.removedMembers : []);
+      }
     } catch { /* noop */ }
     setMembersLoading(false);
     setMembersFetched(true);
@@ -319,6 +340,9 @@ export default function CommunityDetailClient() {
               : "You can't request to join this community yet."
           );
           fetchCommunity();
+        } else if (data.status === "removed") {
+          toast.info("You've been removed from this community and can't rejoin.");
+          fetchCommunity();
         } else if (data.status === "already_member") {
           toast.info("You're already a member");
         }
@@ -352,6 +376,9 @@ export default function CommunityDetailClient() {
         toast.success(action === "approve" ? "Approved!" : "Declined");
         setPendingRequests((prev) => prev.filter((r) => r.id !== requestId));
         if (action === "approve") fetchMembers();
+        // Decline: refetch the community so the "Previously denied" section
+        // picks up the new row without requiring a manual refresh.
+        if (action === "decline") fetchCommunity();
       }
     } catch { toast.error("Something went wrong"); }
   };
@@ -368,13 +395,66 @@ export default function CommunityDetailClient() {
     }
   };
 
-  const handleRemoveMember = async (userId: string) => {
-    if (!community) return;
+  const handleConfirmRemoveMember = async () => {
+    if (!community || !removeMemberTarget) return;
+    setRemoveMemberSubmitting(true);
     try {
-      const res = await apiFetch(`/communities/${community.id}/members/${userId}/remove`, { auth: true, method: "POST" });
+      const reason = removeMemberReason.trim();
+      const res = await apiFetch(`/communities/${community.id}/members/${removeMemberTarget.user_id}/remove`, {
+        auth: true,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(reason.length > 0 ? { reason } : {}),
+      });
       const data = await res.json();
-      if (data.ok) { toast.success("Member removed"); fetchMembers(); fetchCommunity(); }
+      if (data.ok) {
+        toast.success("Member removed");
+        setRemoveMemberTarget(null);
+        setRemoveMemberReason("");
+        fetchMembers();
+        fetchCommunity();
+      } else {
+        toast.error("Could not remove member");
+      }
     } catch { toast.error("Something went wrong"); }
+    setRemoveMemberSubmitting(false);
+  };
+
+  const [unblockMemberTarget, setUnblockMemberTarget] = useState<Member | null>(null);
+  const [unblockSubmitting, setUnblockSubmitting] = useState(false);
+  const handleConfirmUnblockMember = async () => {
+    if (!community || !unblockMemberTarget) return;
+    setUnblockSubmitting(true);
+    try {
+      const res = await apiFetch(`/communities/${community.id}/members/${unblockMemberTarget.user_id}/unblock`, { auth: true, method: "POST" });
+      const data = await res.json();
+      if (data.ok) {
+        toast.success("Member unblocked");
+        setUnblockMemberTarget(null);
+        fetchMembers();
+        fetchCommunity();
+      } else {
+        toast.error("Could not unblock member");
+      }
+    } catch { toast.error("Something went wrong"); }
+    setUnblockSubmitting(false);
+  };
+
+  const handleConfirmUndoDecline = async () => {
+    if (!community || !undoDeclineTarget) return;
+    setUndoDeclineSubmitting(true);
+    try {
+      const res = await apiFetch(`/communities/${community.id}/join-requests/${undoDeclineTarget.id}/undo-decline`, { auth: true, method: "POST" });
+      const data = await res.json();
+      if (data.ok) {
+        toast.success("Denial undone. The user can request to join again.");
+        setUndoDeclineTarget(null);
+        setDeclinedRequests((prev) => prev.filter((r) => r.id !== undoDeclineTarget.id));
+      } else {
+        toast.error("Could not undo the denial");
+      }
+    } catch { toast.error("Something went wrong"); }
+    setUndoDeclineSubmitting(false);
   };
 
   const createPlanHref = useMemo(() => {
@@ -499,17 +579,22 @@ export default function CommunityDetailClient() {
                 />
               )}
 
+              {/* Meta stack: location/online on its own line, website on a
+                  separate line below so a long address doesn't push the link
+                  off to the right. */}
               {(community.is_online || community.location_name || community.website) && (
-                <Stack direction="row" spacing={1.5} flexWrap="wrap" alignItems="center" useFlexGap>
+                <Stack spacing={0.5}>
                   {community.is_online ? (
                     <Stack direction="row" spacing={0.5} alignItems="center">
                       <LanguageRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
                       <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>Online</Typography>
                     </Stack>
                   ) : community.location_name ? (
-                    <Stack direction="row" spacing={0.5} alignItems="center">
-                      <PlaceRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
-                      <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>{community.location_name}</Typography>
+                    <Stack direction="row" spacing={0.5} alignItems="flex-start">
+                      <PlaceRoundedIcon sx={{ fontSize: 14, color: "text.disabled", mt: "3px", flexShrink: 0 }} />
+                      <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem", lineHeight: 1.5 }}>
+                        {community.location_name}
+                      </Typography>
                     </Stack>
                   ) : null}
                   {community.website && (
@@ -523,17 +608,14 @@ export default function CommunityDetailClient() {
                       alignItems="center"
                       onClick={(e) => e.stopPropagation()}
                       sx={{
-                        px: 1, py: 0.375, borderRadius: 1.5,
-                        border: "1px solid",
-                        borderColor: "divider",
+                        alignSelf: "flex-start",
                         color: "primary.main",
                         textDecoration: "none",
-                        transition: "background-color 120ms, border-color 120ms",
-                        "&:hover": { bgcolor: "primary.light", borderColor: "primary.light" },
+                        "&:hover .visit-label": { textDecoration: "underline" },
                       }}
                     >
                       <LinkRoundedIcon sx={{ fontSize: 14 }} />
-                      <Typography component="span" variant="body2" sx={{ fontSize: "0.8125rem", fontWeight: 600 }}>
+                      <Typography className="visit-label" component="span" variant="body2" sx={{ fontSize: "0.8125rem", fontWeight: 600 }}>
                         Visit website
                       </Typography>
                     </Stack>
@@ -544,54 +626,96 @@ export default function CommunityDetailClient() {
           </Stack>
         </AppCard>
 
-        {/* Non-numeric preview so a low member/plan count doesn't deflate the page */}
-        <AppCard>
-          <Stack spacing={2.5}>
-            <Stack direction="row" spacing={2} alignItems="center">
-              <Box
-                sx={{
-                  width: 40, height: 40, borderRadius: 2,
-                  bgcolor: "primary.light",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  flexShrink: 0,
-                }}
-              >
-                <LockRoundedIcon sx={{ fontSize: 20, color: "primary.main" }} />
-              </Box>
-              <Box sx={{ minWidth: 0 }}>
-                <Typography variant="body1" fontWeight={700} sx={{ lineHeight: 1.3 }}>
-                  Inside this community
+        {/* Non-numeric preview so a low member/plan count doesn't deflate the
+            page. Suppressed for removed viewers — they're not being asked to
+            join, so "what's inside" reads as rubbing it in. */}
+        {!viewerRemoved && (
+          <AppCard>
+            <Stack spacing={2.5}>
+              <Stack direction="row" spacing={2} alignItems="center">
+                <Box
+                  sx={{
+                    width: 40, height: 40, borderRadius: 2,
+                    bgcolor: "primary.light",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  <LockRoundedIcon sx={{ fontSize: 20, color: "primary.main" }} />
+                </Box>
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography variant="body1" fontWeight={700} sx={{ lineHeight: 1.3 }}>
+                    Inside this community
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Approved members unlock everything below.
+                  </Typography>
+                </Box>
+              </Stack>
+
+              <Stack spacing={1.25}>
+                <MemberBenefitRow
+                  tone="primary"
+                  icon={<EventNoteRoundedIcon sx={{ fontSize: 18 }} />}
+                  title="Upcoming plans"
+                  subtitle="See and RSVP to community plans as they&rsquo;re scheduled."
+                />
+                <MemberBenefitRow
+                  tone="success"
+                  icon={<PeopleRoundedIcon sx={{ fontSize: 18 }} />}
+                  title="Member directory"
+                  subtitle="Browse profiles and connect with people who share your interests."
+                />
+                <MemberBenefitRow
+                  tone="warning"
+                  icon={<MailOutlineRoundedIcon sx={{ fontSize: 18 }} />}
+                  title="Community updates"
+                  subtitle="Get notified when new plans open up or members join."
+                />
+              </Stack>
+            </Stack>
+          </AppCard>
+        )}
+
+        {viewerRemoved ? (
+          <Box
+            sx={{
+              p: 2.5, borderRadius: 2,
+              border: "1px solid", borderColor: "divider",
+              bgcolor: "action.hover",
+            }}
+          >
+            <Stack direction="row" spacing={1.5} alignItems="flex-start">
+              <BlockRoundedIcon sx={{ color: "text.secondary", mt: "2px" }} />
+              <Box>
+                <Typography variant="body2" fontWeight={600} sx={{ mb: 0.25 }}>
+                  You&rsquo;ve been removed from this community
                 </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  Approved members unlock everything below.
+                <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+                  You can&rsquo;t rejoin.
                 </Typography>
+                {viewerRemovedReason && (
+                  <Box sx={{ mt: 1.25, pl: 1.25, borderLeft: "2px solid", borderColor: "divider" }}>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ display: "block", mb: 0.25, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600, fontSize: "0.6875rem" }}
+                    >
+                      Reason from the community owner
+                    </Typography>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ display: "block", lineHeight: 1.55, fontStyle: "italic" }}
+                    >
+                      &ldquo;{viewerRemovedReason}&rdquo;
+                    </Typography>
+                  </Box>
+                )}
               </Box>
             </Stack>
-
-            <Stack spacing={1.25}>
-              <MemberBenefitRow
-                tone="primary"
-                icon={<EventNoteRoundedIcon sx={{ fontSize: 18 }} />}
-                title="Upcoming plans"
-                subtitle="See and RSVP to community plans as they&rsquo;re scheduled."
-              />
-              <MemberBenefitRow
-                tone="success"
-                icon={<PeopleRoundedIcon sx={{ fontSize: 18 }} />}
-                title="Member directory"
-                subtitle="Browse profiles and connect with people who share your interests."
-              />
-              <MemberBenefitRow
-                tone="warning"
-                icon={<MailOutlineRoundedIcon sx={{ fontSize: 18 }} />}
-                title="Community updates"
-                subtitle="Get notified when new plans open up or members join."
-              />
-            </Stack>
-          </Stack>
-        </AppCard>
-
-        {viewerPendingRequest ? (
+          </Box>
+        ) : viewerPendingRequest ? (
           <PendingRequestStatusBlock
             sentLabel={viewerPendingRequestSentLabel}
             refreshable={viewerPendingRequestRefreshable}
@@ -757,68 +881,84 @@ export default function CommunityDetailClient() {
                 dangerouslySetInnerHTML={{ __html: community.description }}
               />
             )}
-            <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center" useFlexGap>
-              <Stack direction="row" spacing={0.5} alignItems="center">
-                <PeopleRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
-                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, fontSize: "0.8125rem" }}>
-                  {community.member_count} {community.member_count === 1 ? "member" : "members"}
-                </Typography>
-              </Stack>
-              {community.is_online ? (
-                <>
-                  <Typography variant="body2" color="text.disabled">·</Typography>
-                  <Stack direction="row" spacing={0.5} alignItems="center">
-                    <LanguageRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
-                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
-                      Online
-                    </Typography>
-                  </Stack>
-                </>
-              ) : community.location_name ? (
-                <>
-                  <Typography variant="body2" color="text.disabled">·</Typography>
-                  <Stack direction="row" spacing={0.5} alignItems="center">
-                    <PlaceRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
-                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
-                      {community.location_name}
-                    </Typography>
-                  </Stack>
-                </>
-              ) : null}
-              {community.website && (
-                <>
-                  <Typography variant="body2" color="text.disabled">·</Typography>
-                  <Typography
-                    component="a"
-                    href={community.website.startsWith("http") ? community.website : `https://${community.website}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    variant="body2"
-                    sx={{ fontSize: "0.8125rem", color: "primary.main", fontWeight: 500, textDecoration: "none", "&:hover": { textDecoration: "underline" } }}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    Website
+            {/* Meta stack: info row (member count + online/location) on top,
+                actionable links (website / join link) on their own lines below
+                so a long address doesn't push them off to the right. */}
+            <Stack spacing={0.5}>
+              <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center" useFlexGap>
+                <Stack direction="row" spacing={0.5} alignItems="center">
+                  <PeopleRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
+                  <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, fontSize: "0.8125rem" }}>
+                    {community.member_count} {community.member_count === 1 ? "member" : "members"}
                   </Typography>
-                </>
+                </Stack>
+                {community.is_online ? (
+                  <>
+                    <Typography variant="body2" color="text.disabled">·</Typography>
+                    <Stack direction="row" spacing={0.5} alignItems="center">
+                      <LanguageRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
+                      <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
+                        Online
+                      </Typography>
+                    </Stack>
+                  </>
+                ) : community.location_name ? (
+                  <>
+                    <Typography variant="body2" color="text.disabled">·</Typography>
+                    <Stack direction="row" spacing={0.5} alignItems="flex-start">
+                      <PlaceRoundedIcon sx={{ fontSize: 14, color: "text.disabled", mt: "3px", flexShrink: 0 }} />
+                      <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem", lineHeight: 1.5 }}>
+                        {community.location_name}
+                      </Typography>
+                    </Stack>
+                  </>
+                ) : null}
+              </Stack>
+              {community.website && (
+                <Stack
+                  component="a"
+                  href={community.website.startsWith("http") ? community.website : `https://${community.website}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  direction="row"
+                  spacing={0.5}
+                  alignItems="center"
+                  onClick={(e) => e.stopPropagation()}
+                  sx={{
+                    alignSelf: "flex-start",
+                    color: "primary.main",
+                    textDecoration: "none",
+                    "&:hover .visit-label": { textDecoration: "underline" },
+                  }}
+                >
+                  <LinkRoundedIcon sx={{ fontSize: 14 }} />
+                  <Typography className="visit-label" component="span" variant="body2" sx={{ fontSize: "0.8125rem", fontWeight: 600 }}>
+                    Visit website
+                  </Typography>
+                </Stack>
               )}
               {community.is_online && community.join_link && (
-                <>
-                  <Typography variant="body2" color="text.disabled">·</Typography>
-                  <Stack direction="row" spacing={0.5} alignItems="center">
-                    <LinkRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
-                    <Typography
-                      component="a"
-                      href={community.join_link.startsWith("http") ? community.join_link : `https://${community.join_link}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      variant="body2"
-                      sx={{ fontSize: "0.8125rem", color: "primary.main", fontWeight: 500, textDecoration: "none", "&:hover": { textDecoration: "underline" } }}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      Join link
-                    </Typography>
-                  </Stack>
-                </>
+                <Stack
+                  component="a"
+                  href={community.join_link.startsWith("http") ? community.join_link : `https://${community.join_link}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  direction="row"
+                  spacing={0.5}
+                  alignItems="center"
+                  onClick={(e) => e.stopPropagation()}
+                  sx={{
+                    alignSelf: "flex-start",
+                    color: "primary.main",
+                    textDecoration: "none",
+                    "&:hover .join-label": { textDecoration: "underline" },
+                  }}
+                >
+                  <LinkRoundedIcon sx={{ fontSize: 14 }} />
+                  <Typography className="join-label" component="span" variant="body2" sx={{ fontSize: "0.8125rem", fontWeight: 600 }}>
+                    Join link
+                  </Typography>
+                </Stack>
               )}
             </Stack>
           </Box>
@@ -827,7 +967,18 @@ export default function CommunityDetailClient() {
         <Divider sx={{ my: 2 }} />
 
         <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap>
-          {!isMember && !viewerPendingRequest && (
+          {!isMember && viewerRemoved && (
+            <Tooltip title="You can't rejoin this community. Contact the community owner if you believe this was a mistake.">
+              <Chip
+                icon={<BlockRoundedIcon />}
+                label="You were removed from this community"
+                variant="outlined"
+                size="small"
+                sx={{ borderColor: "divider", color: "text.secondary" }}
+              />
+            </Tooltip>
+          )}
+          {!isMember && !viewerPendingRequest && !viewerRemoved && (
             <Button
               variant="contained"
               onClick={handleJoin}
@@ -1005,10 +1156,14 @@ export default function CommunityDetailClient() {
                         {isOwner && m.role !== "owner" && (
                           <Button
                             size="small" variant="outlined" color="error"
-                            onClick={(e) => { e.stopPropagation(); handleRemoveMember(m.user_id); }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setRemoveMemberTarget(m);
+                              setRemoveMemberReason("");
+                            }}
                             sx={{ textTransform: "none", fontSize: "0.75rem", borderRadius: 1.5 }}
                           >
-                            Remove
+                            Remove &amp; Block
                           </Button>
                         )}
                       </Stack>
@@ -1016,6 +1171,66 @@ export default function CommunityDetailClient() {
                   );
                 })}
               </Stack>
+            )}
+
+            {/* Removed members — visible to owner/super admin only. Separated
+                from the active list so the primary roster stays clean. */}
+            {isOwner && removedMembers.length > 0 && (
+              <Box sx={{ mt: 4 }}>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ display: "block", mb: 1, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600 }}
+                >
+                  Blocked ({removedMembers.length})
+                </Typography>
+                <Stack spacing={1.5}>
+                  {removedMembers.map((m) => {
+                    const handle = m.username?.replace(/^@/, "") ?? null;
+                    return (
+                      <AppCard key={m.id} sx={{ opacity: 0.75, bgcolor: "action.hover" }}>
+                        <Stack direction="row" alignItems="flex-start" spacing={2}>
+                          <Avatar
+                            src={m.avatar_url ? `${getAvatarBaseUrl()}${m.avatar_url}` : undefined}
+                            sx={{ width: 40, height: 40, bgcolor: "grey.300", fontSize: "0.9rem" }}
+                          >
+                            {(m.name || m.username || "?").charAt(0).toUpperCase()}
+                          </Avatar>
+                          <Box
+                            sx={{ flex: 1, minWidth: 0, cursor: handle ? "pointer" : "default" }}
+                            onClick={() => { if (handle) router.push(`/u/${handle}`); }}
+                          >
+                            <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: "wrap" }}>
+                              <Typography variant="body2" fontWeight={600} noWrap sx={{ textDecoration: "line-through" }}>
+                                {m.name || m.username || "Unknown"}
+                              </Typography>
+                              <Chip label="Blocked" size="small" variant="outlined" sx={{ height: 20, fontSize: "0.6875rem", borderColor: "divider" }} />
+                            </Stack>
+                            {handle && <Typography variant="caption" color="text.secondary">@{handle}</Typography>}
+                            {m.removal_reason && (
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                                sx={{ display: "block", mt: 0.5, fontStyle: "italic", lineHeight: 1.5 }}
+                              >
+                                &ldquo;{m.removal_reason}&rdquo;
+                              </Typography>
+                            )}
+                          </Box>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={(e) => { e.stopPropagation(); setUnblockMemberTarget(m); }}
+                            sx={{ textTransform: "none", fontSize: "0.75rem", borderRadius: 1.5, flexShrink: 0 }}
+                          >
+                            Unblock
+                          </Button>
+                        </Stack>
+                      </AppCard>
+                    );
+                  })}
+                </Stack>
+              </Box>
             )}
           </>
         )}
@@ -1105,9 +1320,199 @@ export default function CommunityDetailClient() {
                 })}
               </Stack>
             )}
+
+            {/* Previously denied — declines still inside the 30-day cooldown
+                window. Owner can undo a denial here if it was a mistake. */}
+            {declinedRequests.length > 0 && (
+              <Box sx={{ mt: 4 }}>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ display: "block", mb: 1, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600 }}
+                >
+                  Previously denied ({declinedRequests.length})
+                </Typography>
+                <Stack spacing={1.5}>
+                  {declinedRequests.map((req) => {
+                    const handle = req.username?.replace(/^@/, "") ?? null;
+                    const declinedAt = req.reviewed_at ? new Date(req.reviewed_at) : null;
+                    const timeAgo = declinedAt ? (() => {
+                      const diffMs = Date.now() - declinedAt.getTime();
+                      const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
+                      if (diffDays < 1) return "today";
+                      if (diffDays === 1) return "1 day ago";
+                      if (diffDays < 30) return `${diffDays} days ago`;
+                      return declinedAt.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+                    })() : null;
+                    return (
+                      <AppCard key={req.id} sx={{ opacity: 0.85, bgcolor: "action.hover" }}>
+                        <Stack spacing={1.25}>
+                          <Stack direction="row" alignItems="center" spacing={2}>
+                            <Avatar
+                              src={req.avatar_url ? `${getAvatarBaseUrl()}${req.avatar_url}` : undefined}
+                              sx={{ width: 40, height: 40, bgcolor: "grey.300", fontSize: "0.9rem" }}
+                            >
+                              {(req.name || req.username || "?").charAt(0).toUpperCase()}
+                            </Avatar>
+                            <Box sx={{ flex: 1, minWidth: 0 }}>
+                              <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: "wrap" }}>
+                                <Typography variant="body2" fontWeight={600} noWrap>
+                                  {req.name || req.username || "Unknown"}
+                                </Typography>
+                                <Chip label="Denied" size="small" variant="outlined" sx={{ height: 20, fontSize: "0.6875rem", borderColor: "divider" }} />
+                              </Stack>
+                              <Stack direction="row" spacing={0.5} alignItems="center">
+                                {handle && <Typography variant="caption" color="text.secondary">@{handle}</Typography>}
+                                {handle && timeAgo && <Typography variant="caption" color="text.disabled">·</Typography>}
+                                {timeAgo && <Typography variant="caption" color="text.disabled">denied {timeAgo}</Typography>}
+                              </Stack>
+                            </Box>
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              onClick={(e) => { e.stopPropagation(); setUndoDeclineTarget(req); }}
+                              sx={{ textTransform: "none", fontSize: "0.75rem", borderRadius: 1.5, flexShrink: 0 }}
+                            >
+                              Undo denial
+                            </Button>
+                          </Stack>
+                          {req.message && (
+                            <Box sx={{ ml: 7, pl: 1.5, borderLeft: "2px solid", borderColor: "divider" }}>
+                              <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic", lineHeight: 1.5 }}>
+                                &ldquo;{req.message}&rdquo;
+                              </Typography>
+                            </Box>
+                          )}
+                        </Stack>
+                      </AppCard>
+                    );
+                  })}
+                </Stack>
+              </Box>
+            )}
           </>
         )}
       </Box>
+
+      {/* Remove member confirmation */}
+      <Dialog
+        open={!!removeMemberTarget}
+        onClose={() => { if (!removeMemberSubmitting) { setRemoveMemberTarget(null); setRemoveMemberReason(""); } }}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 700 }}>Remove and block member</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ mb: 2 }}>
+            This will remove{" "}
+            <strong>
+              {removeMemberTarget?.name || (removeMemberTarget?.username ? `@${removeMemberTarget.username.replace(/^@/, "")}` : "this member")}
+            </strong>{" "}
+            from <strong>{community.name}</strong> and <strong>block them from rejoining</strong>. They&rsquo;ll lose access to the community&rsquo;s plans and members, and will receive an email letting them know. You can unblock them later from the Blocked list.
+          </Typography>
+          <TextField
+            label="Reason (optional)"
+            placeholder="Shared with the removed member in their email"
+            value={removeMemberReason}
+            onChange={(e) => setRemoveMemberReason(e.target.value.slice(0, 500))}
+            fullWidth
+            multiline
+            rows={2}
+            size="small"
+            inputProps={{ maxLength: 500 }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button
+            onClick={() => { setRemoveMemberTarget(null); setRemoveMemberReason(""); }}
+            disabled={removeMemberSubmitting}
+            sx={{ textTransform: "none" }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={handleConfirmRemoveMember}
+            disabled={removeMemberSubmitting}
+            sx={{ textTransform: "none", fontWeight: 600 }}
+          >
+            {removeMemberSubmitting ? <CircularProgress size={18} color="inherit" /> : "Remove & Block"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Unblock member confirmation */}
+      <Dialog
+        open={!!unblockMemberTarget}
+        onClose={() => { if (!unblockSubmitting) setUnblockMemberTarget(null); }}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 700 }}>Unblock member</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">
+            This will unblock{" "}
+            <strong>
+              {unblockMemberTarget?.name || (unblockMemberTarget?.username ? `@${unblockMemberTarget.username.replace(/^@/, "")}` : "this member")}
+            </strong>{" "}
+            from <strong>{community.name}</strong>. They&rsquo;ll be able to request to join again, but they <strong>won&rsquo;t be re-added automatically</strong>. They&rsquo;ll receive an email letting them know they can rejoin.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button
+            onClick={() => setUnblockMemberTarget(null)}
+            disabled={unblockSubmitting}
+            sx={{ textTransform: "none" }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleConfirmUnblockMember}
+            disabled={unblockSubmitting}
+            sx={{ textTransform: "none", fontWeight: 600 }}
+          >
+            {unblockSubmitting ? <CircularProgress size={18} color="inherit" /> : "Unblock member"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Undo-denial confirmation */}
+      <Dialog
+        open={!!undoDeclineTarget}
+        onClose={() => { if (!undoDeclineSubmitting) setUndoDeclineTarget(null); }}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 700 }}>Undo denial</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">
+            This will undo your earlier denial of{" "}
+            <strong>
+              {undoDeclineTarget?.name || (undoDeclineTarget?.username ? `@${undoDeclineTarget.username.replace(/^@/, "")}` : "this person")}
+            </strong>
+            &rsquo;s request to join <strong>{community.name}</strong>. They&rsquo;ll be able to request to join again, but they <strong>won&rsquo;t be added automatically</strong>. They&rsquo;ll receive an email letting them know.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button
+            onClick={() => setUndoDeclineTarget(null)}
+            disabled={undoDeclineSubmitting}
+            sx={{ textTransform: "none" }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleConfirmUndoDecline}
+            disabled={undoDeclineSubmitting}
+            sx={{ textTransform: "none", fontWeight: 600 }}
+          >
+            {undoDeclineSubmitting ? <CircularProgress size={18} color="inherit" /> : "Undo denial"}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Stack>
   );
 }
@@ -1166,13 +1571,14 @@ function PendingRequestStatusBlock({
         </Box>
       </Stack>
 
-      <Stack direction="row" spacing={1} alignItems="flex-start" sx={{ pl: { xs: 0, sm: 4.5 }, mb: refreshable ? 2 : 1 }}>
-        <MailOutlineRoundedIcon sx={{ fontSize: 16, color: "text.secondary", mt: "3px" }} />
-        <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-          The community owner will review your request. You&rsquo;ll receive an email when it&rsquo;s
-          approved or declined.
-        </Typography>
-      </Stack>
+      <Typography
+        variant="body2"
+        color="text.secondary"
+        sx={{ pl: { xs: 0, sm: 4.5 }, mb: refreshable ? 2 : 1, lineHeight: 1.6 }}
+      >
+        The community owner will review your request. You&rsquo;ll receive an email when it&rsquo;s
+        approved or declined.
+      </Typography>
 
       {refreshable ? (
         <Stack spacing={1.5} sx={{ pl: { xs: 0, sm: 4.5 } }}>

@@ -4,6 +4,7 @@ import {
   renderContactSubmissionHtml,
   renderContactSubmissionText,
 } from "./templates/contactSubmission";
+import { htmlToPlainText } from "../lib/htmlToPlainText";
 
 type EmailPayloadBase = {
   to: string;
@@ -632,9 +633,13 @@ export function formatEventMatchSeatLine(params: {
 }
 
 function buildMatchPlanCardHtml(plan: EventMatchPlanItem): string {
-  const descSnippet = plan.description.length > 120
-    ? escapeHtml(plan.description.slice(0, 117)) + "..."
-    : escapeHtml(plan.description);
+  // Descriptions come from the Tiptap rich-text editor and include tags like
+  // <p>…</p>. Strip to plain text before slicing/escaping so the digest card
+  // doesn't render literal "&lt;p&gt;…&lt;/p&gt;" to the recipient.
+  const descText = htmlToPlainText(plan.description);
+  const descSnippet = descText.length > 120
+    ? escapeHtml(descText.slice(0, 117)) + "..."
+    : escapeHtml(descText);
 
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 10px; border: 1px solid #E5E7EB; border-radius: 10px; overflow: hidden;">
   <tr><td style="background-color: #E65B13; height: 3px; font-size: 0; line-height: 0;">&nbsp;</td></tr>
@@ -662,9 +667,10 @@ function buildMatchPlanCardHtml(plan: EventMatchPlanItem): string {
 }
 
 function buildMatchPlanCardText(plan: EventMatchPlanItem): string {
-  const descSnippet = plan.description.length > 120
-    ? plan.description.slice(0, 117) + "..."
-    : plan.description;
+  const descText = htmlToPlainText(plan.description);
+  const descSnippet = descText.length > 120
+    ? descText.slice(0, 117) + "..."
+    : descText;
   const lines = [`- ${plan.title}`];
   if (descSnippet) lines.push(`  ${descSnippet}`);
   lines.push(`  Date: ${plan.date}`);
@@ -1175,5 +1181,67 @@ export const sendCommunityJoinDeclinedEmail = async (
     From: env.EMAIL_FROM, To: to,
     TemplateId: env.POSTMARK_TEMPLATE_COMMUNITY_JOIN_DECLINED,
     TemplateModel: { productName: "NewChums", userName, communityName },
+  });
+};
+
+export const sendCommunityMemberRemovedEmail = async (
+  env: Bindings,
+  { to, recipientName, communityName, communityUrl, removalReason }: {
+    to: string; recipientName: string; communityName: string; communityUrl: string;
+    removalReason?: string | null;
+  }
+) => {
+  if (!env.POSTMARK_TEMPLATE_COMMUNITY_MEMBER_REMOVED) return;
+  return sendPostmarkTemplateEmail(env, {
+    From: env.EMAIL_FROM, To: to,
+    TemplateId: env.POSTMARK_TEMPLATE_COMMUNITY_MEMBER_REMOVED,
+    TemplateModel: {
+      productName: "NewChums",
+      recipientName,
+      communityName,
+      communityUrl,
+      removalReason: hasContent(removalReason) ? removalReason : null,
+      year: new Date().getFullYear(),
+    },
+  });
+};
+
+export const sendCommunityMemberUnblockedEmail = async (
+  env: Bindings,
+  { to, recipientName, communityName, communityUrl }: {
+    to: string; recipientName: string; communityName: string; communityUrl: string;
+  }
+) => {
+  if (!env.POSTMARK_TEMPLATE_COMMUNITY_MEMBER_UNBLOCKED) return;
+  return sendPostmarkTemplateEmail(env, {
+    From: env.EMAIL_FROM, To: to,
+    TemplateId: env.POSTMARK_TEMPLATE_COMMUNITY_MEMBER_UNBLOCKED,
+    TemplateModel: {
+      productName: "NewChums",
+      recipientName,
+      communityName,
+      communityUrl,
+      year: new Date().getFullYear(),
+    },
+  });
+};
+
+export const sendCommunityJoinRequestReopenedEmail = async (
+  env: Bindings,
+  { to, recipientName, communityName, communityUrl }: {
+    to: string; recipientName: string; communityName: string; communityUrl: string;
+  }
+) => {
+  if (!env.POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST_REOPENED) return;
+  return sendPostmarkTemplateEmail(env, {
+    From: env.EMAIL_FROM, To: to,
+    TemplateId: env.POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST_REOPENED,
+    TemplateModel: {
+      productName: "NewChums",
+      recipientName,
+      communityName,
+      communityUrl,
+      year: new Date().getFullYear(),
+    },
   });
 };

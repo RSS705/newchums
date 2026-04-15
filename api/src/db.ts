@@ -64,6 +64,12 @@ export type Bindings = {
   POSTMARK_TEMPLATE_COMMUNITY_JOIN_APPROVED?: string;
   /** Postmark template ID for community join declined notification (template 44111205) */
   POSTMARK_TEMPLATE_COMMUNITY_JOIN_DECLINED?: string;
+  /** Postmark template ID for community member removed notification (template 44452043) */
+  POSTMARK_TEMPLATE_COMMUNITY_MEMBER_REMOVED?: string;
+  /** Postmark template ID for community member unblocked notification (template 44470363) */
+  POSTMARK_TEMPLATE_COMMUNITY_MEMBER_UNBLOCKED?: string;
+  /** Postmark template ID for community join-request reopened notification (template 44470744) */
+  POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST_REOPENED?: string;
   SENTRY_DSN: string;
   APP_ENV?: string;
   ENVIRONMENT?: string;
