@@ -103,6 +103,8 @@ export default function CommunityDetailClient() {
   const [viewerPendingRequestRefreshable, setViewerPendingRequestRefreshable] = useState(false);
   const [viewerPendingRequestDaysUntilRefreshable, setViewerPendingRequestDaysUntilRefreshable] = useState<number | null>(null);
   const [viewerDeclinedRequest, setViewerDeclinedRequest] = useState(false);
+  const [viewerDeclinedDaysUntilRetriable, setViewerDeclinedDaysUntilRetriable] = useState<number | null>(null);
+  const viewerDeclinedRetriable = viewerDeclinedRequest && viewerDeclinedDaysUntilRetriable === null;
   const [restricted, setRestricted] = useState(false);
   const [shareToken, setShareToken] = useState<string | null>(null);
   const [pendingRequests, setPendingRequests] = useState<JoinRequest[]>([]);
@@ -183,6 +185,11 @@ export default function CommunityDetailClient() {
               : null
           );
           setViewerDeclinedRequest(data.viewerDeclinedRequest ?? false);
+          setViewerDeclinedDaysUntilRetriable(
+            typeof data.viewerDeclinedDaysUntilRetriable === "number"
+              ? data.viewerDeclinedDaysUntilRetriable
+              : null
+          );
           setRestricted(data.restricted ?? false);
           setShareToken(data.shareToken ?? null);
           setPendingRequests(data.pendingRequests ?? []);
@@ -304,6 +311,14 @@ export default function CommunityDetailClient() {
               ? `You can send another request in ${days} ${days === 1 ? "day" : "days"}.`
               : "You already have a pending request."
           );
+        } else if (data.status === "declined_cooldown") {
+          const days = typeof data.daysRemaining === "number" ? data.daysRemaining : null;
+          toast.info(
+            days
+              ? `You can request to join again in ${days} ${days === 1 ? "day" : "days"}.`
+              : "You can't request to join this community yet."
+          );
+          fetchCommunity();
         } else if (data.status === "already_member") {
           toast.info("You're already a member");
         }
@@ -484,91 +499,164 @@ export default function CommunityDetailClient() {
                 />
               )}
 
-              <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center" useFlexGap>
-                <Stack direction="row" spacing={0.5} alignItems="center">
-                  <PeopleRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
-                  <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, fontSize: "0.8125rem" }}>
-                    {community.member_count} {community.member_count === 1 ? "member" : "members"}
-                  </Typography>
-                </Stack>
-                {community.is_online ? (
-                  <>
-                    <Typography variant="body2" color="text.disabled">·</Typography>
+              {(community.is_online || community.location_name || community.website) && (
+                <Stack direction="row" spacing={1.5} flexWrap="wrap" alignItems="center" useFlexGap>
+                  {community.is_online ? (
                     <Stack direction="row" spacing={0.5} alignItems="center">
                       <LanguageRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
                       <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>Online</Typography>
                     </Stack>
-                  </>
-                ) : community.location_name ? (
-                  <>
-                    <Typography variant="body2" color="text.disabled">·</Typography>
+                  ) : community.location_name ? (
                     <Stack direction="row" spacing={0.5} alignItems="center">
                       <PlaceRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
                       <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>{community.location_name}</Typography>
                     </Stack>
-                  </>
-                ) : null}
-                {community.website && (
-                  <>
-                    <Typography variant="body2" color="text.disabled">·</Typography>
-                    <Typography
+                  ) : null}
+                  {community.website && (
+                    <Stack
                       component="a"
                       href={community.website.startsWith("http") ? community.website : `https://${community.website}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      variant="body2"
-                      sx={{ fontSize: "0.8125rem", color: "primary.main", fontWeight: 500, textDecoration: "none", "&:hover": { textDecoration: "underline" } }}
+                      direction="row"
+                      spacing={0.5}
+                      alignItems="center"
                       onClick={(e) => e.stopPropagation()}
+                      sx={{
+                        px: 1, py: 0.375, borderRadius: 1.5,
+                        border: "1px solid",
+                        borderColor: "divider",
+                        color: "primary.main",
+                        textDecoration: "none",
+                        transition: "background-color 120ms, border-color 120ms",
+                        "&:hover": { bgcolor: "primary.light", borderColor: "primary.light" },
+                      }}
                     >
-                      Website
-                    </Typography>
-                  </>
-                )}
-              </Stack>
+                      <LinkRoundedIcon sx={{ fontSize: 14 }} />
+                      <Typography component="span" variant="body2" sx={{ fontSize: "0.8125rem", fontWeight: 600 }}>
+                        Visit website
+                      </Typography>
+                    </Stack>
+                  )}
+                </Stack>
+              )}
             </Box>
           </Stack>
+        </AppCard>
 
-          <Divider sx={{ my: 2 }} />
+        {/* Non-numeric preview so a low member/plan count doesn't deflate the page */}
+        <AppCard>
+          <Stack spacing={2.5}>
+            <Stack direction="row" spacing={2} alignItems="center">
+              <Box
+                sx={{
+                  width: 40, height: 40, borderRadius: 2,
+                  bgcolor: "primary.light",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <LockRoundedIcon sx={{ fontSize: 20, color: "primary.main" }} />
+              </Box>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="body1" fontWeight={700} sx={{ lineHeight: 1.3 }}>
+                  Inside this community
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Approved members unlock everything below.
+                </Typography>
+              </Box>
+            </Stack>
 
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            This is a private community. Plans and members are only visible to approved members.
-          </Typography>
+            <Stack spacing={1.25}>
+              <MemberBenefitRow
+                tone="primary"
+                icon={<EventNoteRoundedIcon sx={{ fontSize: 18 }} />}
+                title="Upcoming plans"
+                subtitle="See and RSVP to community plans as they&rsquo;re scheduled."
+              />
+              <MemberBenefitRow
+                tone="success"
+                icon={<PeopleRoundedIcon sx={{ fontSize: 18 }} />}
+                title="Member directory"
+                subtitle="Browse profiles and connect with people who share your interests."
+              />
+              <MemberBenefitRow
+                tone="warning"
+                icon={<MailOutlineRoundedIcon sx={{ fontSize: 18 }} />}
+                title="Community updates"
+                subtitle="Get notified when new plans open up or members join."
+              />
+            </Stack>
+          </Stack>
+        </AppCard>
 
-          {viewerPendingRequest ? (
-            <PendingRequestStatusBlock
-              sentLabel={viewerPendingRequestSentLabel}
-              refreshable={viewerPendingRequestRefreshable}
-              daysUntilRefreshable={viewerPendingRequestDaysUntilRefreshable}
-              joinRequestMessage={joinRequestMessage}
-              onChangeMessage={setJoinRequestMessage}
-              onRefresh={handleJoin}
-              refreshing={joining}
-            />
-          ) : viewerDeclinedRequest ? (
-            <Box
-              sx={{
-                p: 2,
-                borderRadius: 2,
-                border: "1px solid",
-                borderColor: "divider",
-                bgcolor: "action.hover",
-              }}
-            >
-              <Stack direction="row" spacing={1.5} alignItems="flex-start">
-                <BlockRoundedIcon sx={{ color: "text.secondary", mt: "2px" }} />
-                <Box>
-                  <Typography variant="body2" fontWeight={600} sx={{ mb: 0.25 }}>
-                    Your request was declined
+        {viewerPendingRequest ? (
+          <PendingRequestStatusBlock
+            sentLabel={viewerPendingRequestSentLabel}
+            refreshable={viewerPendingRequestRefreshable}
+            daysUntilRefreshable={viewerPendingRequestDaysUntilRefreshable}
+            joinRequestMessage={joinRequestMessage}
+            onChangeMessage={setJoinRequestMessage}
+            onRefresh={handleJoin}
+            refreshing={joining}
+          />
+        ) : (viewerDeclinedRequest && !viewerDeclinedRetriable) ? (
+          <Box
+            sx={{
+              p: 2.5, borderRadius: 2,
+              border: "1px solid", borderColor: "divider",
+              bgcolor: "action.hover",
+            }}
+          >
+            <Stack direction="row" spacing={1.5} alignItems="flex-start">
+              <BlockRoundedIcon sx={{ color: "text.secondary", mt: "2px" }} />
+              <Box>
+                <Typography variant="body2" fontWeight={600} sx={{ mb: 0.25 }}>
+                  Your request wasn&rsquo;t accepted
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+                  The community owner chose not to approve this request.
+                </Typography>
+                {viewerDeclinedDaysUntilRetriable !== null && (
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ display: "block", mt: 1, lineHeight: 1.6, fontStyle: "italic" }}
+                  >
+                    You&rsquo;ll be able to request to join again in{" "}
+                    {viewerDeclinedDaysUntilRetriable}{" "}
+                    {viewerDeclinedDaysUntilRetriable === 1 ? "day" : "days"}.
                   </Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-                    The community owner declined your request. Reach out to them directly if you
-                    believe this was a mistake.
+                )}
+              </Box>
+            </Stack>
+          </Box>
+        ) : (
+          <AppCard>
+            <Stack spacing={2}>
+              <Stack direction="row" spacing={2} alignItems="center">
+                <Box
+                  sx={{
+                    width: 40, height: 40, borderRadius: 2,
+                    bgcolor: "primary.light",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  <AssignmentIndRoundedIcon sx={{ fontSize: 20, color: "primary.main" }} />
+                </Box>
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography variant="body1" fontWeight={700} sx={{ lineHeight: 1.3 }}>
+                    {viewerDeclinedRequest ? "Try again" : "Request to join"}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {viewerDeclinedRequest
+                      ? "Your previous request wasn\u2019t accepted, but the cooldown has passed. You can send a new request now."
+                      : "The owner reviews every request. You\u2019ll get an email once they respond."}
                   </Typography>
                 </Box>
               </Stack>
-            </Box>
-          ) : (
-            <Stack spacing={2}>
               <TextField
                 value={joinRequestMessage}
                 onChange={(e) => setJoinRequestMessage(e.target.value.slice(0, 500))}
@@ -592,13 +680,8 @@ export default function CommunityDetailClient() {
                 </Button>
               </Box>
             </Stack>
-          )}
-        </AppCard>
-
-        <LockedPreviewCard
-          memberCount={community.member_count}
-          upcomingPlanCount={community.upcoming_plan_count ?? 0}
-        />
+          </AppCard>
+        )}
       </Stack>
     );
   }
@@ -1134,96 +1217,40 @@ function PendingRequestStatusBlock({
   );
 }
 
-type LockedPreviewCardProps = {
-  memberCount: number;
-  upcomingPlanCount: number;
-};
-
-/** Locked-preview panel rendered beneath the restricted preview card. Makes
- *  the private-community page feel alive by showing real counts for
- *  upcoming plans and active members, without leaking any of the underlying
- *  detail (names, plan titles, dates, etc). The tabs are visually suggestive
- *  of the full member experience but are not interactive. */
-function LockedPreviewCard({ memberCount, upcomingPlanCount }: LockedPreviewCardProps) {
-  return (
-    <AppCard>
-      <Stack spacing={2.5}>
-        <Stack direction="row" spacing={2} alignItems="center">
-          <Box
-            sx={{
-              width: 40,
-              height: 40,
-              borderRadius: 2,
-              bgcolor: "action.hover",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-            }}
-          >
-            <LockRoundedIcon sx={{ fontSize: 20, color: "text.secondary" }} />
-          </Box>
-          <Box sx={{ minWidth: 0 }}>
-            <Typography variant="body1" fontWeight={700}>
-              Members-only content
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              Join to see plans, members, and community activity.
-            </Typography>
-          </Box>
-        </Stack>
-
-        <Stack
-          direction={{ xs: "column", sm: "row" }}
-          spacing={1.5}
-          sx={{ "& > *": { flex: 1 } }}
-        >
-          <LockedPreviewTile
-            icon={<EventNoteRoundedIcon sx={{ fontSize: 20, color: "text.disabled" }} />}
-            label="Upcoming plans"
-            value={upcomingPlanCount}
-          />
-          <LockedPreviewTile
-            icon={<PeopleRoundedIcon sx={{ fontSize: 20, color: "text.disabled" }} />}
-            label="Active members"
-            value={memberCount}
-          />
-        </Stack>
-      </Stack>
-    </AppCard>
-  );
-}
-
-function LockedPreviewTile({
+/** Deliberately avoids raw counts so a quiet community doesn't feel empty
+ *  to a prospective member. */
+function MemberBenefitRow({
   icon,
-  label,
-  value,
+  title,
+  subtitle,
+  tone = "primary",
 }: {
   icon: React.ReactNode;
-  label: string;
-  value: number;
+  title: string;
+  subtitle: string;
+  tone?: "primary" | "success" | "warning";
 }) {
   return (
-    <Box
-      sx={{
-        p: 2,
-        borderRadius: 2,
-        border: "1px solid",
-        borderColor: "divider",
-        display: "flex",
-        alignItems: "center",
-        gap: 1.5,
-      }}
-    >
-      {icon}
+    <Stack direction="row" spacing={1.5} alignItems="flex-start" sx={{ py: 0.25 }}>
+      <Box
+        sx={{
+          width: 28, height: 28, borderRadius: 1.5,
+          bgcolor: `${tone}.light`,
+          color: `${tone}.main`,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          flexShrink: 0, mt: "2px",
+        }}
+      >
+        {icon}
+      </Box>
       <Box sx={{ minWidth: 0 }}>
-        <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.2 }}>
-          {label}
+        <Typography variant="body2" fontWeight={600} sx={{ lineHeight: 1.3 }}>
+          {title}
         </Typography>
-        <Typography variant="h6" fontWeight={700} sx={{ lineHeight: 1.2 }}>
-          {value}
+        <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.5 }}>
+          {subtitle}
         </Typography>
       </Box>
-    </Box>
+    </Stack>
   );
 }

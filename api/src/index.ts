@@ -6165,6 +6165,28 @@ const COMMUNITY_SLUG_RE = /^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$/;
  *  response so the UI can show the countdown. */
 const COMMUNITY_JOIN_REQUEST_COOLDOWN_DAYS = 7;
 
+/** Longer than the pending-refresh cooldown because an owner has already
+ *  actively rejected the requester — re-asking sooner reads as pestering. */
+const COMMUNITY_JOIN_REQUEST_DECLINED_COOLDOWN_DAYS = 30;
+
+/** Shared cooldown math for community-join-request timestamps. Returns
+ *  whether the cooldown has elapsed and, if not, how many whole days remain
+ *  (floor of 1 so a still-active cooldown never renders as "0 days"). */
+function joinRequestCooldownState(
+  tsRaw: string | Date | null | undefined,
+  cooldownDays: number
+): { elapsed: boolean; daysRemaining: number | null } {
+  if (tsRaw == null) return { elapsed: true, daysRemaining: null };
+  const tsMs = typeof tsRaw === "string" ? Date.parse(tsRaw) : tsRaw.getTime();
+  const ageMs = Date.now() - tsMs;
+  const cooldownMs = cooldownDays * 24 * 60 * 60 * 1000;
+  if (ageMs >= cooldownMs) return { elapsed: true, daysRemaining: null };
+  return {
+    elapsed: false,
+    daysRemaining: Math.max(1, Math.ceil((cooldownMs - ageMs) / (24 * 60 * 60 * 1000))),
+  };
+}
+
 /** POST /communities, create a community */
 app.post("/communities", async (c) => {
   const payload = await requireAuth(c);
@@ -6470,63 +6492,53 @@ app.get("/communities/:slug", async (c) => {
         SELECT 1 FROM newchums.community_members WHERE community_id = ${community.id} AND user_id = ${userId} AND status = 'active' LIMIT 1
       `) as unknown[];
       if (memberRows.length === 0) {
-        // Pull the pending request's created_at so we can surface both the
-        // "sent N days ago" age in the UI and the refreshable-eligibility
-        // derived below. The partial unique index on (community_id, user_id)
-        // WHERE status='pending' guarantees at most one row.
-        const pendingRows = (await sql`
-          SELECT created_at FROM newchums.community_join_requests
-          WHERE community_id = ${community.id} AND user_id = ${userId} AND status = 'pending'
-          LIMIT 1
-        `) as { created_at: string | Date }[];
-        const declinedRows = (await sql`
-          SELECT 1 FROM newchums.community_join_requests WHERE community_id = ${community.id} AND user_id = ${userId} AND status = 'declined' LIMIT 1
-        `) as unknown[];
-        // Plan count for the locked-preview experience. Matches the filter
-        // used elsewhere for community plan counts: future, published,
-        // non-QA (super admins are a separate branch earlier in the
-        // endpoint, so this is always the non-admin path).
-        const planCountRows = (await sql`
-          SELECT COUNT(*)::int AS cnt FROM newchums.events e
-          WHERE e.community_id = ${community.id}
-            AND e.status = 'published'
-            AND e.starts_at >= NOW()
-            AND COALESCE(e.is_qa, false) = false
-        `) as { cnt: number }[];
+        // These three queries are independent of each other — run in parallel.
+        // Partial unique index on (community_id, user_id) WHERE status='pending'
+        // guarantees at most one pending row. The declined query uses the most
+        // recent row because a user may have multiple declines over time.
+        const [pendingRows, declinedRows, planCountRows] = await Promise.all([
+          sql`
+            SELECT created_at FROM newchums.community_join_requests
+            WHERE community_id = ${community.id} AND user_id = ${userId} AND status = 'pending'
+            LIMIT 1
+          ` as Promise<{ created_at: string | Date }[]>,
+          sql`
+            SELECT reviewed_at, created_at FROM newchums.community_join_requests
+            WHERE community_id = ${community.id} AND user_id = ${userId} AND status = 'declined'
+            ORDER BY COALESCE(reviewed_at, created_at) DESC
+            LIMIT 1
+          ` as Promise<{ reviewed_at: string | Date | null; created_at: string | Date }[]>,
+          sql`
+            SELECT COUNT(*)::int AS cnt FROM newchums.events e
+            WHERE e.community_id = ${community.id}
+              AND e.status = 'published'
+              AND e.starts_at >= NOW()
+              AND COALESCE(e.is_qa, false) = false
+          ` as Promise<{ cnt: number }[]>,
+        ]);
         const upcomingPlanCount = planCountRows[0]?.cnt ?? 0;
 
-        // Compute pending-request age + refresh eligibility. "Refreshable"
-        // means the existing request has been pending for at least
-        // COMMUNITY_JOIN_REQUEST_COOLDOWN_DAYS and the UI may show a
-        // "Send another request" action that re-triggers owner
-        // notifications. See AGENTS.md for the lifecycle and cooldown rule.
         const pendingCreatedAt = pendingRows[0]?.created_at ?? null;
         const pendingCreatedAtIso = pendingCreatedAt
           ? typeof pendingCreatedAt === "string"
             ? pendingCreatedAt
             : pendingCreatedAt.toISOString()
           : null;
-        const pendingAgeMs = pendingCreatedAtIso ? Date.now() - new Date(pendingCreatedAtIso).getTime() : null;
-        const cooldownMs = COMMUNITY_JOIN_REQUEST_COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
-        const refreshable = pendingAgeMs !== null && pendingAgeMs >= cooldownMs;
-        // Days remaining until the viewer can re-request, so the client
-        // doesn't have to re-derive it from createdAt during render (which
-        // trips the react-hooks/purity lint rule and, more importantly,
-        // ties the UI to the client clock). Null when refreshable is
-        // already true or when there's no pending request at all.
-        const pendingDaysUntilRefreshable =
-          pendingAgeMs !== null && pendingAgeMs < cooldownMs
-            ? Math.max(1, Math.ceil((cooldownMs - pendingAgeMs) / (24 * 60 * 60 * 1000)))
-            : null;
-        // Pre-formatted "sent N days ago" label so the card's age line
-        // stays accurate without client-side Date.now() during render.
+        const pendingCooldown = joinRequestCooldownState(pendingCreatedAtIso, COMMUNITY_JOIN_REQUEST_COOLDOWN_DAYS);
+        // Pre-formatted so the card's age line doesn't depend on the client clock.
         const pendingSentLabel = (() => {
-          if (pendingAgeMs === null) return null;
-          const days = Math.floor(pendingAgeMs / (24 * 60 * 60 * 1000));
+          if (!pendingCreatedAtIso) return null;
+          const ageMs = Date.now() - new Date(pendingCreatedAtIso).getTime();
+          const days = Math.floor(ageMs / (24 * 60 * 60 * 1000));
           if (days < 1) return "Sent today";
           if (days === 1) return "Sent 1 day ago";
           return `Sent ${days} days ago`;
         })();
+
+        // reviewed_at is set on decline; fall back to created_at for any
+        // historical rows predating the reviewed_at column being populated.
+        const declinedTsRaw = declinedRows[0]?.reviewed_at ?? declinedRows[0]?.created_at ?? null;
+        const declinedCooldown = joinRequestCooldownState(declinedTsRaw, COMMUNITY_JOIN_REQUEST_DECLINED_COOLDOWN_DAYS);
 
         return c.json({
           ok: true,
@@ -6543,10 +6555,11 @@ app.get("/communities/:slug", async (c) => {
           viewerPendingRequest: pendingRows.length > 0,
           viewerPendingRequestCreatedAt: pendingCreatedAtIso,
           viewerPendingRequestSentLabel: pendingSentLabel,
-          viewerPendingRequestRefreshable: refreshable,
-          viewerPendingRequestDaysUntilRefreshable: pendingDaysUntilRefreshable,
+          viewerPendingRequestRefreshable: pendingCooldown.elapsed && pendingRows.length > 0,
+          viewerPendingRequestDaysUntilRefreshable: pendingCooldown.daysRemaining,
           viewerPendingRequestCooldownDays: COMMUNITY_JOIN_REQUEST_COOLDOWN_DAYS,
           viewerDeclinedRequest: declinedRows.length > 0,
+          viewerDeclinedDaysUntilRetriable: declinedCooldown.daysRemaining,
           restricted: true,
         });
       }
@@ -6798,11 +6811,8 @@ app.post("/communities/:id/join", async (c) => {
     if (existingMember.length > 0) return c.json({ ok: true, status: "already_member" });
 
     if (community.join_mode === "approval_required") {
-      // Look up any existing pending request so we can decide between
-      // "already pending (cooldown not met)", "refreshed (cooldown met)",
-      // and "new pending (no prior pending row)". The partial unique index
-      // on (community_id, user_id) WHERE status='pending' guarantees at
-      // most one row here.
+      // Partial unique index on (community_id, user_id) WHERE status='pending'
+      // guarantees at most one row.
       const existingReq = (await sql`
         SELECT id, created_at FROM newchums.community_join_requests
         WHERE community_id = ${communityId} AND user_id = ${userId} AND status = 'pending'
@@ -6812,30 +6822,20 @@ app.post("/communities/:id/join", async (c) => {
       let requestAction: "pending" | "refreshed" = "pending";
 
       if (existingReq.length > 0) {
-        const createdAt = existingReq[0].created_at;
-        const createdAtMs = typeof createdAt === "string" ? Date.parse(createdAt) : createdAt.getTime();
-        const ageMs = Date.now() - createdAtMs;
-        const cooldownMs = COMMUNITY_JOIN_REQUEST_COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
-
-        if (ageMs < cooldownMs) {
-          // Cooldown not yet met. Surface how many days remain so the UI
-          // can show an accurate "available in N days" message instead of
-          // rendering a stale button.
-          const daysRemaining = Math.max(1, Math.ceil((cooldownMs - ageMs) / (24 * 60 * 60 * 1000)));
+        const pendingCooldown = joinRequestCooldownState(existingReq[0].created_at, COMMUNITY_JOIN_REQUEST_COOLDOWN_DAYS);
+        if (!pendingCooldown.elapsed) {
           return c.json({
             ok: true,
             status: "already_pending",
             cooldownDays: COMMUNITY_JOIN_REQUEST_COOLDOWN_DAYS,
-            daysRemaining,
+            daysRemaining: pendingCooldown.daysRemaining,
           });
         }
 
-        // Cooldown met: refresh the existing row in place. One row per
-        // (community, user) pending request is the right invariant, so we
-        // don't want a second insert. Bumping created_at makes the request
-        // look fresh on the owner's Requests tab and lets the notification
-        // + email fire again, which is the whole point of this path (the
-        // owner may have missed the first one).
+        // Cooldown met: bump created_at + message on the existing row so the
+        // owner's Requests tab re-sorts it to the top and the notification +
+        // email fire again (owner may have missed the first one). The
+        // pending-only partial unique index makes a second insert invalid.
         await sql`
           UPDATE newchums.community_join_requests
           SET created_at = NOW(), message = ${joinMessage}
@@ -6843,6 +6843,30 @@ app.post("/communities/:id/join", async (c) => {
         `;
         requestAction = "refreshed";
       } else {
+        // No pending request — but check for a recent decline first. The
+        // decline cooldown stops a user from re-submitting immediately after
+        // a rejection.
+        const recentDeclined = (await sql`
+          SELECT reviewed_at, created_at FROM newchums.community_join_requests
+          WHERE community_id = ${communityId} AND user_id = ${userId} AND status = 'declined'
+          ORDER BY COALESCE(reviewed_at, created_at) DESC
+          LIMIT 1
+        `) as { reviewed_at: string | Date | null; created_at: string | Date }[];
+        if (recentDeclined.length > 0) {
+          const declinedCooldown = joinRequestCooldownState(
+            recentDeclined[0].reviewed_at ?? recentDeclined[0].created_at,
+            COMMUNITY_JOIN_REQUEST_DECLINED_COOLDOWN_DAYS
+          );
+          if (!declinedCooldown.elapsed) {
+            return c.json({
+              ok: true,
+              status: "declined_cooldown",
+              cooldownDays: COMMUNITY_JOIN_REQUEST_DECLINED_COOLDOWN_DAYS,
+              daysRemaining: declinedCooldown.daysRemaining,
+            });
+          }
+        }
+
         await sql`
           INSERT INTO newchums.community_join_requests (community_id, user_id, message)
           VALUES (${communityId}, ${userId}, ${joinMessage})

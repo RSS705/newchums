@@ -5223,8 +5223,13 @@ export default function EventDetailClient() {
                         sx={{ fontWeight: 500, fontSize: "0.6875rem" }}
                       />
                     )}
-                    {/* Overflow menu trigger — shown for other attendees (chum/remove actions), for self (hide name), and for guests (host remove) */}
-                    {(viewerUserId || (event.isHost && r.isGuest)) && (
+                    {/* Overflow menu trigger — only when at least one menu item would render for this row */}
+                    {(
+                      (viewerUserId && r.userId === viewerUserId) ||
+                      (r.handle && r.userId !== viewerUserId) ||
+                      (viewerUserId && r.userId !== viewerUserId && !r.isGuest) ||
+                      (event.isHost && !isCanceled && !isPast && r.userId !== event.hostUserId && (r.status === "going" || r.status === "maybe"))
+                    ) && (
                       <IconButton
                         size="small"
                         onClick={(e) => {
