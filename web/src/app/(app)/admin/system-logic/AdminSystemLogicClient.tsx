@@ -156,7 +156,7 @@ export default function AdminSystemLogicClient() {
         <Bullet>
           <strong>Minimum not met (auto-cancel policy):</strong> If a plan has a <strong>24-hour attendance check</strong> enabled
           with fallback policy <strong>auto-cancel</strong>, and the confirmed count is below the minimum at cutoff time, the plan
-          is canceled and all Going/Maybe attendees are notified by email &mdash; including guest attendees, who are emailed at
+          is canceled and all Going/Maybe attendees are notified by email, including guest attendees, who are emailed at
           their invite address. Guest confirmations count toward the minimum on equal footing with registered-user confirmations.
         </Bullet>
         <Bullet>
@@ -444,7 +444,7 @@ export default function AdminSystemLogicClient() {
           Score is hard-clamped to <strong>[0, 100]</strong>. In practice only attendance penalties (below) push scores close to 0.
         </Bullet>
         <Bullet>
-          <strong>Changing your answer is allowed.</strong> Re-submitting overwrites the stored response, but the metric gets <em>another</em> nudge &mdash; metrics evolve forward only and are never retroactively recomputed.
+          <strong>Changing your answer is allowed.</strong> Re-submitting overwrites the stored response, but the metric gets <em>another</em> nudge, since metrics evolve forward only and are never retroactively recomputed.
         </Bullet>
         <Bullet>
           <strong>Hosting Skills is host-only:</strong> the prompt may only be submitted for the plan&rsquo;s host. Attempting to send it for any other attendee returns a 400.
@@ -470,7 +470,7 @@ export default function AdminSystemLogicClient() {
           </Box>
         </Bullet>
         <Bullet>
-          <strong>Reporter confidence:</strong> a <strong>host</strong> report applies the full penalty (confidence 1.0). A <strong>non-host</strong> report applies <strong>75%</strong> of the penalty (confidence 0.75) until <strong>corroborated</strong> by a second attendee filing the same issue type for the same person on the same plan &mdash; at that point both reports are bumped to confidence 1.0 and the prior report&rsquo;s applied penalty is back-adjusted to the full amount.
+          <strong>Reporter confidence:</strong> a <strong>host</strong> report applies the full penalty (confidence 1.0). A <strong>non-host</strong> report applies <strong>75%</strong> of the penalty (confidence 0.75) until <strong>corroborated</strong> by a second attendee filing the same issue type for the same person on the same plan. At that point both reports are bumped to confidence 1.0 and the prior report&rsquo;s applied penalty is back-adjusted to the full amount.
         </Bullet>
         <Bullet>
           <strong>Disputes</strong> (raised by the reviewed person) flag the issue for moderator review and back-adjust the applied penalty if the issue is dismissed or downgraded. The reporter is never told who disputed.
@@ -505,7 +505,7 @@ export default function AdminSystemLogicClient() {
           A reviewer leaving feedback on a past plan can optionally write a short
           (<strong>up to 280 characters</strong>) <strong>shout-out</strong> for one other participant.
           Shout-outs sit alongside the normal feedback prompts in the per-attendee feedback card and are
-          purely additive &mdash; they do <em>not</em> affect any user metric or scoring.
+          purely additive; they do <em>not</em> affect any user metric or scoring.
         </Bullet>
         <Bullet>
           One shout-out per <strong>(plan, sender, recipient)</strong> tuple. Enforced by a unique constraint
@@ -526,11 +526,11 @@ export default function AdminSystemLogicClient() {
         <Bullet>
           <strong>Approved:</strong> a moderator approves it. The recipient gets a <strong>bell notification only</strong>
           (no email) and the shout-out appears in their <strong>private &ldquo;Shout-outs received&rdquo; section on /profile</strong>.
-          The slot is now <strong>locked</strong> &mdash; the sender cannot edit it further.
+          The slot is now <strong>locked</strong>, so the sender cannot edit it further.
         </Bullet>
         <Bullet>
           <strong>Rejected:</strong> a moderator rejects it. <strong>No notification fires.</strong> The recipient
-          never sees it. The slot is locked &mdash; the sender cannot re-try a rejected shout-out (they would
+          never sees it. The slot is locked, so the sender cannot re-try a rejected shout-out (they would
           need admin help, or use the safety/conduct flow if something serious is going on).
         </Bullet>
 
@@ -559,8 +559,7 @@ export default function AdminSystemLogicClient() {
           as other admin tabs.
         </Bullet>
         <Bullet>
-          Approve and reject are <strong>single-click actions</strong> in the table &mdash; no confirm dialog &mdash;
-          to keep the queue fast. Each row can be expanded inline to read the full message.
+          Approve and reject are <strong>single-click actions</strong> in the table (no confirm dialog) to keep the queue fast. Each row can be expanded inline to read the full message.
         </Bullet>
         <Bullet>
           Submitted shout-outs pass the same <code>validateCleanText</code> safety check used for hobby names,
@@ -908,14 +907,14 @@ export default function AdminSystemLogicClient() {
         </Bullet>
         <Bullet>
           <strong>Invited non-members can still participate.</strong> Community restriction is a discovery gate, not a participation gate. A non-member who
-          is directly invited &mdash; by the host, by a Going attendee (when &ldquo;Let Going attendees invite others&rdquo; is on), or via a valid share/invite/participation
-          token &mdash; can open the plan, RSVP, and see it in their &ldquo;Your Plans&rdquo; tab. This is intentional: community membership controls what non-members
+          is directly invited (by the host, by a Going attendee when &ldquo;Let Going attendees invite others&rdquo; is on, or via a valid share/invite/participation
+          token) can open the plan, RSVP, and see it in their &ldquo;Your Plans&rdquo; tab. This is intentional: community membership controls what non-members
           <em> find</em>, not whether they can join a specific plan they&rsquo;ve been given direct access to.
         </Bullet>
         <Bullet>
           <strong>Daily plan digest</strong> (Postmark template 44018889) honors the same members-only gate. When a plan is community-linked and &ldquo;Only
           show this plan to community members&rdquo; is on, the digest additionally requires the recipient to be an active community member. This is layered
-          on top of the existing hobby / distance / visibility / QA / already-connected suppression rules &mdash; it narrows digest eligibility, never broadens
+          on top of the existing hobby / distance / visibility / QA / already-connected suppression rules; it narrows digest eligibility, never broadens
           it. Super admins don&rsquo;t bypass this gate: a super admin who isn&rsquo;t in the community still won&rsquo;t receive a community-members-only
           plan in their digest.
         </Bullet>

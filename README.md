@@ -13,8 +13,8 @@ NewChums is a live, deployed product, not a prototype. The current system includ
 - **Event/plan creation and discovery**: users create gatherings around hobbies, invite people, set visibility (invite-only / chums-only / public), manage RSVPs (context-aware going / maybe / can't make it / suggest another time), and edit or cancel plans. Banner images with gradient presets or custom uploads. 24-hour attendance check (people who marked Going are asked to confirm they are still coming, with minimum confirmed attendees, fallback policies, cron-based reminders and cutoff processing). Per-plan participant group chat with real-time WebSocket delivery. Host-controlled plan locking to stabilize attendee lists. Request-to-join with host approval flow. Plan-change email notifications to attendees (edits, locks, cancellations).
 - **Explore feed**: personalized discovery feed with hobby-based ranking, sort options (upcoming / newest), location-aware ordering, hobby filtering, time-range chips, text search, session state persistence, and a local-signal footer showing nearby active-user counts for relevant hobbies.
 - **Your Plans**: tabbed view of upcoming/past plans the user hosts or has joined, with unread chat indicators.
-- **Chums**: one-way saved-people system with search, email invite flow, mutual indicators, privacy controls, and private per-chum notes. Birthday display (month/day only, respecting privacy settings).
-- **Profiles**: editable profiles with hobbies, location, travel distance, bio, gender, profile theme, avatar upload, and public profile pages (`/u/handle`). Public attendance record section (Going follow-through, follow-through rate, attendance checks answered, plans attended, plans hosted, host completion rate).
+- **Chums**: two-part saved-people system. **On NewChums** covers on-platform users (search, mutual indicators, privacy controls, per-chum notes, birthday display). **Private Contacts** covers off-platform people tracked for planning (one-way, no notification, auto-promoted to On NewChums when the contact signs up with a matching email).
+- **Profiles**: editable profiles with hobbies, location, travel distance, bio, gender, profile theme, avatar upload, and public profile pages (`/u/handle`). Public attendance record section (Going follow-through, Shows up, Attendance checks answered, Plans attended, Plans hosted, Host follow-through).
 - **Settings**: notification preferences (13 email toggles), privacy toggles, email/password change, account deletion.
 - **Admin**: interests moderation (soft delete, merge, restore, default sort newest-first, category combo-box) and user account management (search, suspend/unsuspend). Requires `super_admin` role.
 - **QA plans**: plans can be marked as QA by super admins. QA plans are invisible to normal users but fully functional for super admins, including feeds, emails, cron jobs, notifications, and chat. Excluded from KPIs and the public explore feed. Used for production-safe end-to-end testing.
@@ -28,7 +28,9 @@ NewChums is a live, deployed product, not a prototype. The current system includ
 
 ### What's Partially Built or Evolving
 
-- **Event chat**: per-plan participant group chat is implemented with real-time WebSocket delivery via Cloudflare Durable Objects. Unread indicators in bell and plan cards, plus daily digest email. Future enhancements (reactions, threads, attachments) are not yet built.
+- **Plan feedback and matching**: post-plan feedback with hidden-metric scoring and chum preferences (Phase 1+2 implemented). Inbound matching filtering and compatibility notes on plan details are not yet wired.
+- **Plan chat enhancements**: the per-plan group chat ships with real-time WebSocket delivery, unread indicators, and daily digest email. Reactions, threads, and attachments are not built.
+- **Community chat**: schema toggle exists but community-level chat is not implemented. Planned as a Community Pro feature.
 
 ---
 
@@ -48,7 +50,7 @@ Users → Cloudflare Edge → Web Worker (Next.js via OpenNext) → API Worker (
 | Auth | Auth.js (JWT sessions) | Google OAuth + Credentials |
 | Email | Postmark | Transactional emails |
 | Real-time | Cloudflare Durable Objects | WebSocket relay for plan chat (ChatRoom, Hibernation API) |
-| Scheduled tasks | Cloudflare Cron Triggers | Hourly 24-hour attendance check processing + daily unread-chat digest email |
+| Scheduled tasks | Cloudflare Cron Triggers | Hourly handler runs 24-hour attendance check processing, no-attendee auto-cancel, post-plan feedback emails, event match digest, local badge computation, and (once per day) the unread-chat digest |
 | Storage | Cloudflare R2 | Avatar and banner media |
 | Observability | Sentry + Axiom + Google Analytics | Error tracking, API logs, analytics |
 

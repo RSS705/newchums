@@ -81,9 +81,9 @@ Matcher includes `/api/auth/*` (OAuth flow), excludes static assets.
 
 NewChums is defining organizer subscription behavior now, before any billing flow exists. The current product direction is:
 
-- **Free** — baseline user and community functionality
-- **Super Host** — advanced **plan / event-level** capabilities for a user anywhere they host
-- **Community Pro** — advanced **community-level** capabilities for communities owned by that user, and it **includes Super Host benefits**
+- **Free**, baseline user and community functionality
+- **Super Host**, advanced **plan / event-level** capabilities for a user anywhere they host
+- **Community Pro**, advanced **community-level** capabilities for communities owned by that user, and it **includes Super Host benefits**
 
 Current rules:
 - Plans are assigned manually through internal admin tooling for now.
