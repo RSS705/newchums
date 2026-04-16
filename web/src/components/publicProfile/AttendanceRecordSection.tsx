@@ -342,7 +342,7 @@ export default function AttendanceRecordSection({ userId, isOwner, displayName, 
                   tooltipTitle={
                     ft!.display === "-"
                       ? "No plan commitments yet"
-                      : `Followed through on ${record!.followThrough.numerator} of ${record!.followThrough.denominator} plan${record!.followThrough.denominator === 1 ? "" : "s"} they committed to attend`
+                      : `Showed up to ${record!.followThrough.numerator} of ${record!.followThrough.denominator} plan${record!.followThrough.denominator === 1 ? "" : "s"} they attended`
                   }
                 />
                 <MetricCard

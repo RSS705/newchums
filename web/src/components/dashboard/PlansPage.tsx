@@ -57,6 +57,10 @@ export default function PlansPage() {
   const canceledList = (isPast ? past : upcoming).filter((e) => e.status === "canceled");
   const hosted = activeList.filter((e) => e.isHost);
   const joined = activeList.filter((e) => !e.isHost);
+  // Tab counters reflect only active plans — canceled plans have their own
+  // collapsed section and shouldn't inflate the Upcoming / Past tab counts.
+  const upcomingActiveCount = upcoming.filter((e) => e.status !== "canceled").length;
+  const pastActiveCount = past.filter((e) => e.status !== "canceled").length;
 
   return (
     <Stack spacing={{ xs: 3, sm: 4 }}>
@@ -104,8 +108,8 @@ export default function PlansPage() {
           textColor="primary"
           indicatorColor="primary"
         >
-          <Tab label={`Upcoming${upcoming.length > 0 ? ` (${upcoming.length})` : ""}`} />
-          <Tab label={`Past${past.length > 0 ? ` (${past.length})` : ""}`} />
+          <Tab label={`Upcoming${upcomingActiveCount > 0 ? ` (${upcomingActiveCount})` : ""}`} />
+          <Tab label={`Past${pastActiveCount > 0 ? ` (${pastActiveCount})` : ""}`} />
         </Tabs>
       </Box>
 

@@ -615,12 +615,24 @@ app.get("/public/users/:userId/attendance-record", async (c) => {
       });
     }
 
-    // Computes both follow-through metrics from the same base scan:
-    // - followed_through: still "going" AND no attendance issues (measures actually showing up)
-    // - going_kept: still "going" regardless of attendance issues (measures commitment honoured)
-    // Includes both hosted and attended plans — the host committed to being there too.
+    // Two distinct reliability metrics derived from one base scan:
+    //
+    // Going follow-through: of plans the user committed to (committed_at set),
+    //   how many they're still 'going' on. Captures backing out (Going→Maybe
+    //   or Going→Can't make it) ahead of the event.
+    //
+    // Shows up: of plans the user *stayed* committed to (still 'going' at
+    //   query time), how many they were NOT reported as a no-show / very-late
+    //   on. Merely backing out ahead of time neither helps nor hurts this
+    //   metric — the plan leaves both sides of the ratio. Only an attendance
+    //   issue against a still-'going' RSVP moves the needle.
+    //
+    // Includes both hosted and attended plans — the host is expected to show
+    // up too. QA and cancelled plans are filtered out.
     const followThrough = (await sql`
       SELECT
+        COUNT(*)::int AS total_committed,
+        COUNT(*) FILTER (WHERE r.status = 'going')::int AS going_kept,
         COUNT(*) FILTER (
           WHERE r.status = 'going'
           AND NOT EXISTS (
@@ -630,9 +642,7 @@ app.get("/public/users/:userId/attendance-record", async (c) => {
               AND ai.issue_type IN ('no_show', 'very_late')
               AND COALESCE(ai.status, 'active') != 'dismissed'
           )
-        )::int AS followed_through,
-        COUNT(*) FILTER (WHERE r.status = 'going')::int AS going_kept,
-        COUNT(*)::int AS total_committed
+        )::int AS shown_up
       FROM newchums.event_rsvps r
       JOIN newchums.events e ON e.id = r.event_id
       WHERE r.user_id = ${targetUserId}
@@ -640,7 +650,7 @@ app.get("/public/users/:userId/attendance-record", async (c) => {
         AND e.status != 'canceled'
         AND COALESCE(e.is_qa, false) = false
         AND e.starts_at < ${now}
-    `) as { followed_through: number; going_kept: number; total_committed: number }[];
+    `) as { total_committed: number; going_kept: number; shown_up: number }[];
 
     const confirmation = (await sql`
       SELECT
@@ -681,9 +691,13 @@ app.get("/public/users/:userId/attendance-record", async (c) => {
           numerator: followThrough[0]?.going_kept ?? 0,
           denominator: followThrough[0]?.total_committed ?? 0,
         },
+        // "Shows up" denominator is the count of plans the user STAYED
+        // committed to (still 'going' at query time) — same as goingKept —
+        // so backing out before the event drops the plan from both sides
+        // rather than penalizing this metric.
         followThrough: {
-          numerator: followThrough[0]?.followed_through ?? 0,
-          denominator: followThrough[0]?.total_committed ?? 0,
+          numerator: followThrough[0]?.shown_up ?? 0,
+          denominator: followThrough[0]?.going_kept ?? 0,
         },
         confirmationRate: {
           numerator: confirmation[0]?.responded ?? 0,
