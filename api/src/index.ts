@@ -665,8 +665,11 @@ app.get("/public/users/:userId/attendance-record", async (c) => {
         AND EXISTS (
           SELECT 1 FROM newchums.event_rsvps er
           WHERE er.event_id = e.id
-            AND er.user_id != e.host_user_id
-            AND er.committed_at IS NOT NULL
+            AND er.user_id IS DISTINCT FROM e.host_user_id
+            AND (
+              er.committed_at IS NOT NULL
+              OR (er.user_id IS NULL AND er.status = 'going')
+            )
         )
         AND COALESCE(e.cancellation_reason, '') != 'no_attendees'
     `) as { completed: number; total_hosted: number }[];
@@ -5120,7 +5123,12 @@ app.get("/admin/kpis/growth-loop", async (c) => {
         FROM fe
         WHERE EXISTS (
           SELECT 1 FROM newchums.event_rsvps er
-          WHERE er.event_id = fe.id AND er.user_id != fe.host_user_id AND er.committed_at IS NOT NULL
+          WHERE er.event_id = fe.id
+            AND er.user_id IS DISTINCT FROM fe.host_user_id
+            AND (
+              er.committed_at IS NOT NULL
+              OR (er.user_id IS NULL AND er.status = 'going')
+            )
         )
         AND COALESCE(fe.cancellation_reason, '') != 'no_attendees'
       )
@@ -13931,6 +13939,18 @@ async function processAttendanceAssurance(
           WHERE er.event_id = ${ev.id} AND er.status IN ('going', 'maybe')
         `) as Array<{ user_id: string; email: string; name: string | null; username: string | null }>;
 
+        // Guest attendees also need to hear that the plan was cancelled. They
+        // have no user account — emailed directly with no unsubscribe token
+        // (they aren't subscribed to anything). Excluded from QA isolation.
+        const guestAttendees = ev.is_qa ? [] : (await sql`
+          SELECT er.guest_email, er.guest_name
+          FROM newchums.event_rsvps er
+          WHERE er.event_id = ${ev.id}
+            AND er.user_id IS NULL
+            AND er.guest_email IS NOT NULL
+            AND er.status IN ('going', 'maybe')
+        `) as Array<{ guest_email: string; guest_name: string | null }>;
+
         const tz = ev.timezone || "UTC";
         const cancelEventDate = formatEventDate(ev.starts_at, tz);
         const cancelEventLocation = ev.location_type === "online" ? (ev.online_link || "Online") : [ev.location_name, ev.location_address].filter(Boolean).join(", ") || "";
@@ -13948,6 +13968,17 @@ async function processAttendanceAssurance(
               confirmedCount, minRequired,
               eventDate: cancelEventDate, eventLocation: cancelEventLocation,
               unsubscribeUrl: `${env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
+            });
+          } catch { /* noop */ }
+        }
+
+        for (const guest of guestAttendees) {
+          try {
+            const recipientName = guest.guest_name?.trim() || guest.guest_email.split("@")[0] || "there";
+            await sendPlanAutoCancelledEmail(env, {
+              to: guest.guest_email, recipientName, eventTitle: ev.title,
+              confirmedCount, minRequired,
+              eventDate: cancelEventDate, eventLocation: cancelEventLocation,
             });
           } catch { /* noop */ }
         }
@@ -14484,7 +14515,9 @@ async function processPlanFeedbackEmails(
 async function cancelNoAttendeePlans(sql: ReturnType<typeof getSql>) {
   // Find published plans that have started (within the last 2 hours to avoid
   // retroactively cancelling old plans) where the host is the only participant
-  //, i.e. no one else RSVP'd "going".
+  //, i.e. no one else RSVP'd "going". Guest RSVPs (user_id IS NULL) count as
+  // attendees — IS DISTINCT FROM treats NULL as distinct from the host UUID so
+  // a plan with 3 going guests is not treated as host-only.
   const abandoned = (await sql`
     SELECT e.id
     FROM newchums.events e
@@ -14494,7 +14527,7 @@ async function cancelNoAttendeePlans(sql: ReturnType<typeof getSql>) {
       AND NOT EXISTS (
         SELECT 1 FROM newchums.event_rsvps er
         WHERE er.event_id = e.id
-          AND er.user_id != e.host_user_id
+          AND er.user_id IS DISTINCT FROM e.host_user_id
           AND er.status = 'going'
       )
   `) as { id: string }[];
@@ -14568,8 +14601,11 @@ async function computeLocalBadges(sql: ReturnType<typeof getSql>) {
       AND EXISTS (
         SELECT 1 FROM newchums.event_rsvps er
         WHERE er.event_id = e.id
-          AND er.user_id != e.host_user_id
-          AND er.committed_at IS NOT NULL
+          AND er.user_id IS DISTINCT FROM e.host_user_id
+          AND (
+            er.committed_at IS NOT NULL
+            OR (er.user_id IS NULL AND er.status = 'going')
+          )
       )
     GROUP BY e.host_user_id
     HAVING COUNT(DISTINCT e.id) >= ${BADGE_MIN_THRESHOLD}

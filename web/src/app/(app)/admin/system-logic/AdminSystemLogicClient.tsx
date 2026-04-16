@@ -147,14 +147,17 @@ export default function AdminSystemLogicClient() {
 
       <CollapsibleSection title="Plan auto-cancellation" subtitle="When plans are automatically canceled by the system">
         <Bullet>
-          <strong>No attendees:</strong> If a published plan&rsquo;s start time passes and the host is the <strong>only Going
-          attendee</strong>, the plan is automatically canceled with reason &ldquo;no_attendees.&rdquo; No email is sent , 
-          this is a silent cleanup for plans that effectively never happened.
+          <strong>No attendees:</strong> If a published plan&rsquo;s start time passes and <strong>no one other than the host</strong> is
+          Going, the plan is automatically canceled with reason &ldquo;no_attendees.&rdquo; No email is sent ,
+          this is a silent cleanup for plans that effectively never happened. <strong>Guest attendees count:</strong> a guest RSVP
+          (someone who responded to an email invite without creating an account) is a real attendee for this check, so a plan with
+          the host plus three guests Going is <em>not</em> host-only and will not be auto-canceled.
         </Bullet>
         <Bullet>
           <strong>Minimum not met (auto-cancel policy):</strong> If a plan has a <strong>24-hour attendance check</strong> enabled
           with fallback policy <strong>auto-cancel</strong>, and the confirmed count is below the minimum at cutoff time, the plan
-          is canceled and all Going/Maybe attendees are notified by email.
+          is canceled and all Going/Maybe attendees are notified by email &mdash; including guest attendees, who are emailed at
+          their invite address. Guest confirmations count toward the minimum on equal footing with registered-user confirmations.
         </Bullet>
         <Bullet>
           <strong>Host cancellation:</strong> The host can cancel at any time from the plan page. All Going/Maybe attendees are notified.

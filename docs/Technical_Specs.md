@@ -853,14 +853,17 @@ The Attendance Assurance system is a two-stage commitment flow built on top of R
 - **Confirmation lifecycle:** `pending` → `confirmed` | `declined` | `expired`. Distinct from RSVP status; RSVP history is preserved.
 - **Host configuration:** min confirmed attendees (includes host), fallback policy (`proceed` / `notify_host` / `auto_cancel`).
 - **Cron processing (hourly):** Sends initial confirmation requests 24h before, follow-up reminders at 12h and 3h, processes cutoff 2h before event.
-- **Email flow:** Confirmation request emails with secure one-click confirm/decline links (JWT-based). Plan-at-risk emails to hosts when minimum not met.
+- **Email flow:** Confirmation request emails with secure one-click confirm/decline links (JWT-based). Plan-at-risk emails to hosts when minimum not met. On `auto_cancel`, cancellation notifications go to all registered attendees *and* to all guest attendees (via `guest_email`), so guests hear that a plan they RSVP'd to was called off.
+- **Guests count:** Guest RSVPs (user_id IS NULL, guest_email set) receive confirmation request emails, and their `confirmed` rows in `event_confirmations` count toward `min_confirmed_attendees` on the same footing as registered users.
 - **In-app confirmation:** Logged-in users can confirm/decline directly on the plan details page when the confirmation window is open.
 - **Viability display:** Plan details page shows real-time confirmation status, viability assessment, and per-attendee confirmation state in the "Who's in" section.
 - **RSVP integration:** Changing RSVP to "Can't make it" automatically sets confirmation to declined. Changing to "Going" during an open window creates a pending confirmation.
 
 **Auto-cancel: no attendees (implemented):**
 
-The hourly cron handler includes `cancelNoAttendeePlans()` which auto-cancels published plans where the host is the only "going" attendee and the plan start time has passed (within a 2-hour window to avoid reprocessing old plans). Sets `status = 'canceled'` and `cancellation_reason = 'no_attendees'`. No email notifications are sent for this auto-cancel; it is a silent cleanup for plans that effectively never happened.
+The hourly cron handler includes `cancelNoAttendeePlans()` which auto-cancels published plans where the host is the only "going" participant and the plan start time has passed (within a 2-hour window to avoid reprocessing old plans). Sets `status = 'canceled'` and `cancellation_reason = 'no_attendees'`. No email notifications are sent for this auto-cancel; it is a silent cleanup for plans that effectively never happened.
+
+**Guest attendees count.** "Host is the only participant" means nobody *other than the host* has a `going` RSVP — registered *or* guest. Guest RSVPs (`event_rsvps.user_id IS NULL`, identified by `guest_email`) count as attendees for viability, cancellation, host follow-through, and host-badge eligibility. The SQL pattern used for "someone other than the host has RSVP'd" is `er.user_id IS DISTINCT FROM e.host_user_id`, so NULL guest rows are correctly treated as non-host attendees. Any new attendee-counting query in lifecycle logic must follow the same rule: a plain `user_id != host_user_id` comparison silently drops guests and must not be used.
 
 **Attendance Record (implemented):**
 
