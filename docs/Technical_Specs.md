@@ -104,6 +104,33 @@ The `users` table has a `role TEXT NULL` column (migration 015). The only suppor
 
 **Admin web pages:** `/admin/interests` (interests moderation) and `/admin/chums` (user account management + suspension). Server components check `role = 'super_admin'` and return 404 for non-admins.
 
+### Organizer subscription planning (no billing yet)
+
+NewChums is defining organizer subscription behavior **before** payment processing exists. The current goal is to establish stable product boundaries and backend access rules now, then add billing later only after the value is proven.
+
+**Current plans:**
+
+| Plan | Scope | Purpose |
+|------|-------|---------|
+| `free` | User-level | Baseline user and community functionality |
+| `super_host` | User-level | Advanced **plan / event-level** functionality anywhere the user hosts |
+| `community_pro` | User-level | Advanced **community-level** functionality for communities owned by the user, and it **includes Super Host benefits** |
+
+**Current product rules:**
+- Plans are assigned manually through internal admin tooling for now. There is **no billing flow yet**.
+- `community_pro` should be treated as covering **up to 5 owned communities** for now.
+- There is **no separate Founding Access layer**. Early pilot access is handled by manually assigning `super_host` or `community_pro`.
+- While a premium feature is still under construction, it may remain restricted with **super-admin-only** or **QA-only** gating until it is ready.
+- Premium functionality should be hidden when unavailable in normal product UI rather than surfaced as locked tabs inside core workflows.
+
+**Feature access strategy:**
+- Product plans are the user-facing bundles.
+- Individual premium capabilities may still be implemented internally as distinct modules or checks.
+- The backend should resolve effective access from the user's assigned plan plus any temporary internal override needed during development.
+
+**Strategic scope guardrail:**
+Communities should first become the **smallest organizer operating system that creates obvious value**: a public-facing hub, membership, plans, communication, legitimacy, and easy sharing. NewChums should not overbuild communities into a full ERP or vertical-specific platform unless real organizer demand clearly justifies that move.
+
 ---
 
 ## 6) Canonical Host and Middleware
@@ -1073,7 +1100,7 @@ Shared UI components: `OnboardingProgress` (step indicator + progress bar), `Ste
 
 ### Communities
 
-Community pages where users can join, browse, and create plans together. The communities discovery feed supports distance-based filtering, hobby personalization, and search, similar to the Explore feed for plans.
+Community pages where users can join, browse, and create plans together. The communities discovery feed supports distance-based filtering, hobby personalization, and search, similar to the Explore feed for plans. Community subscription access is currently driven from the **owner's user plan**, not from billing or a community-side checkout flow.
 
 **Schema (migration 055, extended by 059, 078):**
 
@@ -1160,6 +1187,7 @@ This is the authoritative contract for how plans appear in the **Explore feed** 
 - Plan `visibility` (`public` / `chums_only` / `invite_only`) applies in both Explore and the community feed. `visibility` controls discoverability only; direct URL access to a published plan is governed by the plan's access-state rules (see §11).
 - Chum-preference filtering and plan-level `pref_overrides` still apply in Explore.
 - Super admins bypass the `is_qa = false` clause in every community- and explore-related plan query. Normal users never see QA plans in any feed, notification, or email.
+- **Community membership is a discovery gate, not a participation gate.** `hide_from_explore` and community `visibility` narrow what non-members *find*; they never block a non-member from viewing or RSVPing to a specific plan they were directly invited to or reached via a valid share/invite/participation token. Specifically: `POST /events/:id/invite` (host or Going-attendee invite with `allow_attendee_invites`), `POST /events/:id/rsvp` (registered), `POST /events/:id/email-rsvp` (guest invite-token), and `POST /events/:id/public-rsvp/confirm-code` (share-token) all deliberately omit any community-membership check — the invite or token itself is the grant. Once a non-member has an RSVP or invite row, `GET /events/mine` and the Explore RSVP-bypass both include the plan normally, so their "Your Plans" tab and Explore feed behave like any other joined plan. Do not add a community-membership gate to any of these endpoints.
 
 **Enforcement points (kept in sync).**
 

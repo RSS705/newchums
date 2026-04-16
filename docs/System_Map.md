@@ -77,7 +77,24 @@ Matcher includes `/api/auth/*` (OAuth flow), excludes static assets.
 
 ---
 
-## 3) API Boundary, What Lives Where
+## 3) Organizer subscription direction (pre-billing)
+
+NewChums is defining organizer subscription behavior now, before any billing flow exists. The current product direction is:
+
+- **Free** — baseline user and community functionality
+- **Super Host** — advanced **plan / event-level** capabilities for a user anywhere they host
+- **Community Pro** — advanced **community-level** capabilities for communities owned by that user, and it **includes Super Host benefits**
+
+Current rules:
+- Plans are assigned manually through internal admin tooling for now.
+- `community_pro` should be treated as covering **up to 5 owned communities** for now.
+- There is no separate Founding Access layer. Early pilots are handled by manually assigning `super_host` or `community_pro`.
+- Premium features should be hidden when unavailable in normal UI.
+- Unfinished premium work may stay behind super-admin or QA-only gates until ready.
+
+This keeps the product model stable while avoiding premature checkout, billing state, and downgrade complexity.
+
+## 4) API Boundary, What Lives Where
 
 The following flows run in the API worker; the web app calls the API via `NEXT_PUBLIC_API_BASE_URL`:
 
@@ -132,12 +149,13 @@ The following flows run in the API worker; the web app calls the API via `NEXT_P
 | Admin, plans | `GET /admin/plans`, `POST /admin/plans/:id/remove` | Bearer JWT + `super_admin` role |
 | Admin, roadmap | `GET /admin/roadmap`, `POST /admin/roadmap/:id/status`, `POST /admin/roadmap/:id/merge`, `POST /admin/roadmap/:id/edit`, `POST /admin/roadmap/:id/remove`, `POST /admin/roadmap/:id/restore`, `DELETE /admin/roadmap/comments/:id` | Bearer JWT + `super_admin` role |
 | Communities | `POST /communities`, `GET /communities`, `GET /communities/slug-available`, `GET /communities/:slug`, `PATCH /communities/:slug`, `POST /communities/:slug/close`, `DELETE /communities/:slug`, `POST /communities/:id/join`, `POST /communities/:id/leave`, `GET /communities/:id/members`, `POST /communities/:id/members/:userId/remove`, `PUT /communities/:id/join-requests/:requestId`, `GET /communities/:id/join-requests`, `GET /communities/:id/events` | Bearer JWT |
+| Organizer plans / premium access | Not yet a public billing surface. Planned internal admin controls will assign `free`, `super_host`, or `community_pro` at the user level; backend access resolution should derive community-level premium access from the owner's assigned plan. | Internal / super_admin only (planned) |
 | Admin, communities | `GET /admin/communities`, `POST /admin/communities/:id/remove` | Bearer JWT + `super_admin` role |
 | Diagnostics | `GET /`, `GET /health`, `GET /health/env`, `GET /health/db`, `GET /db/ping`, `GET /db/postgis` | none |
 
 ### Plan feeds, community linkage, and "Only show this plan to community members"
 
-**Core principle:** Community linkage is organizational context, not audience expansion. Linking a plan to a community never widens its audience beyond what the plan's base `visibility` setting allows.
+**Core principle:** Community linkage is organizational context, not audience expansion. Linking a plan to a community never widens its audience beyond what the plan's base `visibility` setting allows. Separately, premium community modules are intended to follow the owner's assigned organizer plan, not the viewer's membership status alone.
 
 Two distinct feeds surface plans; the per-plan `hide_from_explore` toggle (UI label: "Only show this plan to community members") gates Explore only.
 
@@ -161,6 +179,12 @@ Toggle states (per plan, shown only when a community is selected and `visibility
 - **ON (`hide_from_explore=true`):** community feed unchanged (base `visibility` still applies); in Explore the plan is limited to viewers who would already satisfy the matrix as active community members or RSVP'd viewers.
 
 Community `visibility` (`public` / `private`) gates the community page and plan feed **endpoint**, not individual-plan Explore visibility. A public plan in a private community with the toggle off still appears in Explore for non-members. Full contract: `AGENTS.md` → Plan Feed and Community Visibility Contract; `docs/Technical_Specs.md` → Communities → Plan Feeds, Community Linkage, and "Only show this plan to community members" Toggle.
+
+### Community premium direction
+
+- **Community chat** is still unimplemented and is intended to become a **Community Pro** feature.
+- Community Pro should be understood as a cleaner extension of community ownership rather than a separate community-type system. Avoid branching the product into rigid community verticals.
+- The near-term community goal remains the smallest organizer operating system that creates obvious value: a shareable public hub, membership, plans, communication, legitimacy, and easy sharing.
 
 ### QA plan isolation
 

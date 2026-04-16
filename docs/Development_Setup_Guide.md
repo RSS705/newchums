@@ -7,7 +7,7 @@ For architectural invariants and contracts, see `docs/Technical_Specs.md`.
 For diagrams and flows, see `docs/System_Map.md`.
 For product direction, terminology, and agent governance, see `AGENTS.md`.
 
-**System Logic (super admin):** The web app exposes a **System Logic** tab (`/admin/system-logic`) with short, user-facing explanations of how plans, emails, and digests work. When you change behavior that affects those flows, **review and update that page in the same change set** so it stays accurate. Style: key logic, plain language, concise; see `AGENTS.md` (System Logic section).
+**System Logic (super admin):** The web app exposes a **System Logic** tab (`/admin/system-logic`) with short, admin-facing explanations of major product behavior. Keep it concise and current, but do **not** treat it as a substitute for the repo docs. `AGENTS.md`, `Technical_Specs.md`, and `System_Map.md` remain the primary durable sources of truth; the System Logic tab is a quick operational summary. Review it in the same change set when important user-visible behavior changes.
 
 ---
 
@@ -25,6 +25,8 @@ For product direction, terminology, and agent governance, see `AGENTS.md`.
 - **Notifications:** In-app bell with unread state for chum, event, and join-request notification types. Unread chat indicators derived from per-plan read tracking. 14 email notification types with per-type Settings toggles and tokenized email unsubscribe links.
 - **Scheduled tasks:** Cloudflare Cron Trigger (`0 * * * *` UTC, hourly) processes 24-hour attendance checks (confirmation requests, reminders, cutoff) and daily unread-chat digest email.
 - **Admin:** Interests moderation (default sort newest-first, category combo-box for structured-but-flexible categorization) + user account management (super_admin only).
+- **Subscriptions and premium rollout:** Billing is **not** implemented yet. Organizer-facing access is planned around three manually assigned user plans: `free`, `super_host`, and `community_pro`. `community_pro` includes `super_host` benefits and is intended to cover up to 5 owned communities. Premium work can stay behind super-admin or QA-only gating until ready.
+- **Communities:** Community create/browse/detail flows are live. Community chat is **not** implemented yet and is intended to be a `community_pro` feature when added.
 - **Profiles:** Edit profile page and public profile page include live Attendance Record section (Going follow-through, follow-through rate, attendance checks answered, plans attended, plans hosted, host completion rate).
 - **Legal:** Privacy Policy (`/privacy`) and Terms of Use (`/terms`) pages. Required legal acceptance checkbox on signup (credentials and OAuth). Acceptance metadata stored on users table.
 - **Public site:** Homepage (updated copy, gradient event cards, screenshot placeholders), How it Works (updated copy, screenshot placeholders), Science of Friendship, Safety Center, Contact, all sharing `LandingLayout`. Footer includes Terms of Use and Privacy Policy links.

@@ -907,6 +907,12 @@ export default function AdminSystemLogicClient() {
           general Explore otherwise. Direct URL access is unaffected, that is governed by the plan&rsquo;s own visibility.
         </Bullet>
         <Bullet>
+          <strong>Invited non-members can still participate.</strong> Community restriction is a discovery gate, not a participation gate. A non-member who
+          is directly invited &mdash; by the host, by a Going attendee (when &ldquo;Let Going attendees invite others&rdquo; is on), or via a valid share/invite/participation
+          token &mdash; can open the plan, RSVP, and see it in their &ldquo;Your Plans&rdquo; tab. This is intentional: community membership controls what non-members
+          <em> find</em>, not whether they can join a specific plan they&rsquo;ve been given direct access to.
+        </Bullet>
+        <Bullet>
           <strong>Daily plan digest</strong> (Postmark template 44018889) honors the same members-only gate. When a plan is community-linked and &ldquo;Only
           show this plan to community members&rdquo; is on, the digest additionally requires the recipient to be an active community member. This is layered
           on top of the existing hobby / distance / visibility / QA / already-connected suppression rules &mdash; it narrows digest eligibility, never broadens
