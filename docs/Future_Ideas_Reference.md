@@ -121,7 +121,7 @@ This document is meant to:
 - Paid events should feel operationally complete, but should not swallow the higher-value subscription benefits.
 - Control how the plan appears publicly.
 
-### Power Host Subscription Ideas
+### Super Host Subscription Ideas
 
 - This tier should be built around **saving serious hosts time**.
 - Duplicate / copy past events quickly.

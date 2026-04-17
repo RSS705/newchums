@@ -54,6 +54,8 @@ export default function CreateCommunityClient() {
   const [access, setAccess] = useState<"open" | "private">("open");
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [capDialogOpen, setCapDialogOpen] = useState(false);
+  const [capMessage, setCapMessage] = useState("");
 
   // Logo state
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
@@ -198,6 +200,12 @@ export default function CreateCommunityClient() {
         }
         toast.success("Community created!");
         router.push(`/communities/${data.community.slug}`);
+      } else if (data.error === "COMMUNITY_CAP_REACHED") {
+        setCapMessage(
+          data.message ||
+            "You can own up to 5 active communities. Close one before creating another.",
+        );
+        setCapDialogOpen(true);
       } else {
         if (data.field) {
           const fieldErrs = { [data.field]: data.message ?? "Validation error" };
@@ -529,6 +537,22 @@ export default function CreateCommunityClient() {
           </AppButton>
           <AppButton variant="contained" onClick={handleCropSave}>
             Save
+          </AppButton>
+        </DialogActions>
+      </Dialog>
+
+      {/* Community ownership cap dialog */}
+      <Dialog open={capDialogOpen} onClose={() => setCapDialogOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Community limit reached</DialogTitle>
+        <DialogContent>
+          <Typography variant="body1">{capMessage}</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            You can close an existing community from its settings, which frees up a slot.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <AppButton onClick={() => setCapDialogOpen(false)} sx={{ textTransform: "none" }}>
+            Got it
           </AppButton>
         </DialogActions>
       </Dialog>

@@ -873,6 +873,10 @@ export default function AdminSystemLogicClient() {
         <Bullet>
           The owner <strong>cannot leave</strong> their own community, they must transfer ownership first (not yet implemented as a UI action).
         </Bullet>
+        <Bullet>
+          <strong>Ownership cap:</strong> any user may own up to <strong>5 active communities</strong>. Creating a 6th
+          is blocked with a dialog. Closing a community frees the slot. Applies to all users regardless of plan.
+        </Bullet>
 
         <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
           Plans and communities
@@ -954,6 +958,67 @@ export default function AdminSystemLogicClient() {
         <Bullet>
           <strong>Deferred.</strong> The schema has a <code style={{ fontSize: "0.85em" }}>chat_enabled</code> column but there is no community-level chat
           implementation yet. Plan-level chat (per-plan group chat) still works normally for plans within a community.
+        </Bullet>
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Subscription plans" subtitle="How organizer subscription plans work and how access is resolved">
+        <Typography variant="body2" fontWeight={600} sx={{ mt: 0.5, mb: 0.5 }}>
+          Plans
+        </Typography>
+        <Bullet>
+          <strong>Free:</strong> Baseline user and community functionality. Every user starts here.
+        </Bullet>
+        <Bullet>
+          <strong>Super Host:</strong> Advanced <strong>plan / event-level</strong> functionality for the user, anywhere they host.
+        </Bullet>
+        <Bullet>
+          <strong>Community Pro:</strong> Advanced <strong>community-level</strong> functionality for communities the user owns, and it
+          <strong> includes all Super Host benefits</strong>.
+        </Bullet>
+
+        <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
+          How access works
+        </Typography>
+        <Bullet>
+          Plans are assigned at the <strong>user level</strong>, not at the community level.
+        </Bullet>
+        <Bullet>
+          A community <strong>inherits Community Pro access from its owner</strong>. If the owner has Community Pro,
+          the communities they own gain access to premium community features. If the owner is downgraded, those
+          communities lose that access.
+        </Bullet>
+        <Bullet>
+          <strong>All users are capped at 5 active owned communities</strong>, regardless of plan. Enforced when a
+          user tries to create a 6th community, the API refuses and the Create Community form shows a simple dialog
+          explaining the limit. Closing an existing community frees a slot. Community Pro covers all 5 for users
+          who have it.
+        </Bullet>
+        <Bullet>
+          <strong>Super Host access</strong> is granted by either <strong>super_host</strong> or <strong>community_pro</strong>.
+          Community Pro includes Super Host.
+        </Bullet>
+
+        <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
+          Admin controls
+        </Typography>
+        <Bullet>
+          Super admins can view and change any user&rsquo;s subscription plan from the <strong>Users</strong> tab (inline dropdown).
+        </Bullet>
+        <Bullet>
+          Plan changes are logged in a <strong>history table</strong> for audit.
+        </Bullet>
+        <Bullet>
+          There is <strong>no billing, checkout, or self-service upgrade flow</strong> yet. Plans are managed internally through admin tooling.
+        </Bullet>
+
+        <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
+          Premium feature visibility
+        </Typography>
+        <Bullet>
+          When a premium feature is <strong>unavailable</strong> to the viewer, it should be <strong>hidden</strong> from the UI rather than shown as locked.
+        </Bullet>
+        <Bullet>
+          Unfinished premium features may remain behind <strong>super-admin-only</strong> or <strong>QA-only</strong> gating until ready for broader rollout.
         </Bullet>
       </CollapsibleSection>
 

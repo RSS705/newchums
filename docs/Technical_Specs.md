@@ -104,9 +104,11 @@ The `users` table has a `role TEXT NULL` column (migration 015). The only suppor
 
 **Admin web pages:** `/admin/interests` (interests moderation) and `/admin/chums` (user account management + suspension). Server components check `role = 'super_admin'` and return 404 for non-admins.
 
-### Organizer subscription planning (no billing yet)
+### Organizer subscription plans (implemented, no billing yet)
 
-NewChums is defining organizer subscription behavior **before** payment processing exists. The current goal is to establish stable product boundaries and backend access rules now, then add billing later only after the value is proven.
+NewChums defines organizer subscription behavior **before** payment processing exists. The goal is to establish stable product boundaries and backend access rules now, then add billing later only after the value is proven.
+
+**Schema:** `users.subscription_plan TEXT NOT NULL DEFAULT 'free'` (migration 083). Constrained to `('free', 'super_host', 'community_pro')`. Sparse index on non-free plans. Change history tracked in `subscription_plan_history` table (audit trail with `old_plan`, `new_plan`, `assigned_by`, `assigned_at`).
 
 **Current plans:**
 
@@ -116,17 +118,33 @@ NewChums is defining organizer subscription behavior **before** payment processi
 | `super_host` | User-level | Advanced **plan / event-level** functionality anywhere the user hosts |
 | `community_pro` | User-level | Advanced **community-level** functionality for communities owned by the user, and it **includes Super Host benefits** |
 
+**Access resolution (implemented):**
+- `hasSuperHostAccess(plan)`: returns `true` when plan is `super_host` or `community_pro`.
+- `hasCommunityProAccess(plan)`: returns `true` when plan is `community_pro`.
+- `communityInheritsProAccess(sql, communityId)`: joins `communities.owner_user_id` to `users.subscription_plan` and checks for `community_pro`.
+- Helpers live in `api/src/lib/subscriptionAccess.ts`.
+- `GET /profile` returns `subscription_plan` alongside `role`.
+
+**Community Pro inheritance:**
+- A community inherits Community Pro access from its **owner's** plan. If the owner has `community_pro`, the communities they own gain premium community features.
+- A user may own **at most 5 active communities**, regardless of plan. Enforced in `POST /communities` via `countOwnedCommunities()` (counts non-closed communities owned by the user). Attempting to create a 6th returns HTTP 403 with `error: "COMMUNITY_CAP_REACHED"`; the Create Community form surfaces this as a simple dialog. Closing an existing community frees up a slot. Community Pro therefore covers all five of a Community Pro user's owned communities.
+
+**Admin controls:**
+- Super admins can view and change any user's subscription plan from the **Users** tab (`/admin/chums`) via an inline dropdown.
+- API endpoint: `PATCH /admin/users/:id/subscription-plan` (body: `{ plan: "free" | "super_host" | "community_pro" }`).
+- All changes are logged to `subscription_plan_history`.
+
 **Current product rules:**
-- Plans are assigned manually through internal admin tooling for now. There is **no billing flow yet**.
-- `community_pro` should be treated as covering **up to 5 owned communities** for now.
+- Plans are assigned through internal admin tooling. There is **no billing, checkout, or self-service upgrade flow yet**.
 - There is **no separate Founding Access layer**. Early pilot access is handled by manually assigning `super_host` or `community_pro`.
+- **Community ownership cap:** all users are limited to 5 active owned communities (see "Community Pro inheritance" above). Enforced at creation time.
 - While a premium feature is still under construction, it may remain restricted with **super-admin-only** or **QA-only** gating until it is ready.
 - Premium functionality should be hidden when unavailable in normal product UI rather than surfaced as locked tabs inside core workflows.
 
 **Feature access strategy:**
 - Product plans are the user-facing bundles.
 - Individual premium capabilities may still be implemented internally as distinct modules or checks.
-- The backend should resolve effective access from the user's assigned plan plus any temporary internal override needed during development.
+- The backend resolves effective access from the user's assigned plan plus any temporary internal override needed during development.
 
 **Strategic scope guardrail:**
 Communities should first become the **smallest organizer operating system that creates obvious value**: a public-facing hub, membership, plans, communication, legitimacy, and easy sharing. NewChums should not overbuild communities into a full ERP or vertical-specific platform unless real organizer demand clearly justifies that move.
@@ -571,11 +589,12 @@ The interest system underpins personalization across plans, communities, and dis
 
 ### Admin, user accounts (super_admin only)
 
-- `GET /admin/users`, list all user accounts. Query params: `q` (search email/handle/name/userId). Returns: `id`, `created_at`, `email`, `username`, `name`, `role`, `is_suspended`, `suspended_at`.
+- `GET /admin/users`, list all user accounts. Query params: `q` (search email/handle/name/userId). Returns: `id`, `created_at`, `email`, `username`, `name`, `role`, `subscription_plan`, `is_suspended`, `suspended_at`.
 - `POST /admin/users/:id/suspend`, suspend a user. Stores `suspended_at`, `suspended_by_user_id`. Cannot self-suspend.
 - `POST /admin/users/:id/unsuspend`, clear suspension fields.
+- `PATCH /admin/users/:id/subscription-plan`, update a user's subscription plan. Body: `{ plan: "free" | "super_host" | "community_pro" }`. Logs change to `subscription_plan_history`.
 
-**Web page:** `/admin/chums`, table with search, sort, status chips, suspend/unsuspend actions with confirmation dialogs. Sidebar tab and page header label: **"Users"**.
+**Web page:** `/admin/chums`, table with search, sort, status chips, inline subscription plan dropdown, suspend/unsuspend actions with confirmation dialogs. Sidebar tab and page header label: **"Users"**.
 
 **Suspension enforcement:** credentials login rejected with `AccountSuspended`; OAuth sign-in redirected to `/login?error=AccountSuspended`; all authenticated API requests from suspended users return `403 USER_SUSPENDED`; signup with a suspended email returns `409 EMAIL_SUSPENDED`.
 
@@ -1100,7 +1119,7 @@ Shared UI components: `OnboardingProgress` (step indicator + progress bar), `Ste
 
 ### Communities
 
-Community pages where users can join, browse, and create plans together. The communities discovery feed supports distance-based filtering, hobby personalization, and search, similar to the Explore feed for plans. Community subscription access is currently driven from the **owner's user plan**, not from billing or a community-side checkout flow.
+Community pages where users can join, browse, and create plans together. The communities discovery feed supports distance-based filtering, hobby personalization, and search, similar to the Explore feed for plans. Community subscription access is inherited from the **owner's `subscription_plan`** (see section 5): if the owner has `community_pro`, their owned communities gain premium community features. Resolved at runtime via `communityInheritsProAccess()` in `api/src/lib/subscriptionAccess.ts`.
 
 **Schema (migration 055, extended by 059, 078):**
 

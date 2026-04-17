@@ -12,7 +12,9 @@ import DialogTitle from "@mui/material/DialogTitle";
 import IconButton from "@mui/material/IconButton";
 import InputAdornment from "@mui/material/InputAdornment";
 import Link from "@mui/material/Link";
+import MenuItem from "@mui/material/MenuItem";
 import Paper from "@mui/material/Paper";
+import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
 import Table from "@mui/material/Table";
 import TableBody from "@mui/material/TableBody";
@@ -32,6 +34,14 @@ import NextLink from "next/link";
 import { AppButton, useToast } from "@/components/ui";
 import { apiFetch } from "@/lib/apiClient";
 
+type SubscriptionPlan = "free" | "super_host" | "community_pro";
+
+const PLAN_LABELS: Record<SubscriptionPlan, string> = {
+  free: "Free",
+  super_host: "Super Host",
+  community_pro: "Community Pro",
+};
+
 type UserRow = {
   id: string;
   created_at: string | null;
@@ -40,6 +50,7 @@ type UserRow = {
   username: string | null;
   name: string | null;
   role: string | null;
+  subscription_plan: SubscriptionPlan;
   is_suspended: boolean;
   suspended_at: string | null;
 };
@@ -72,6 +83,9 @@ export default function AdminChumsClient() {
   const [confirmRow, setConfirmRow] = useState<UserRow | null>(null);
   const [confirmAction, setConfirmAction] = useState<"suspend" | "unsuspend">("suspend");
   const [actionSubmitting, setActionSubmitting] = useState(false);
+
+  // Track which user is currently having their plan changed (for loading state)
+  const [planUpdatingId, setPlanUpdatingId] = useState<string | null>(null);
 
   const toast = useToast();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -142,6 +156,33 @@ export default function AdminChumsClient() {
     setConfirmRow(null);
   }
 
+  async function handlePlanChange(userId: string, newPlan: SubscriptionPlan) {
+    setPlanUpdatingId(userId);
+    try {
+      const res = await apiFetch(`/admin/users/${userId}/subscription-plan`, {
+        auth: true,
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan: newPlan }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setRows((prev) =>
+          prev.map((r) => (r.id === userId ? { ...r, subscription_plan: newPlan } : r)),
+        );
+        if (data.changed) {
+          toast.success(`Plan updated to ${PLAN_LABELS[newPlan]}`);
+        }
+      } else {
+        toast.error(data.error?.message ?? "Failed to update plan");
+      }
+    } catch {
+      toast.error("Failed to update plan");
+    } finally {
+      setPlanUpdatingId(null);
+    }
+  }
+
   async function handleActionConfirm() {
     if (!confirmRow) return;
     setActionSubmitting(true);
@@ -187,14 +228,14 @@ export default function AdminChumsClient() {
           Users
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          View all registered users, search by email, handle, or name, and suspend or unsuspend accounts.
+          View all registered users, search by email, handle, or name, and manage accounts and subscription plans.
         </Typography>
       </Box>
 
       {/* Search */}
       <TextField
         size="small"
-        placeholder="Search by email, handle, or name…"
+        placeholder="Search by email, handle, or name..."
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         InputProps={{
@@ -254,6 +295,7 @@ export default function AdminChumsClient() {
                     Email
                   </TableSortLabel>
                 </TableCell>
+                <TableCell sx={{ fontWeight: 600, display: { xs: "none", md: "table-cell" } }}>Plan</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
                 <TableCell sx={{ fontWeight: 600 }} align="right">
                   Actions
@@ -263,13 +305,13 @@ export default function AdminChumsClient() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={6} align="center" sx={{ py: 5 }}>
+                  <TableCell colSpan={7} align="center" sx={{ py: 5 }}>
                     <CircularProgress size={28} />
                   </TableCell>
                 </TableRow>
               ) : sorted.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} align="center" sx={{ py: 5 }}>
+                  <TableCell colSpan={7} align="center" sx={{ py: 5 }}>
                     <Typography variant="body2" color="text.secondary">
                       {debouncedSearch ? "No users match your search." : "No users found."}
                     </Typography>
@@ -324,6 +366,19 @@ export default function AdminChumsClient() {
                       >
                         {row.email}
                       </Typography>
+                    </TableCell>
+                    <TableCell sx={{ display: { xs: "none", md: "table-cell" } }}>
+                      <Select
+                        size="small"
+                        value={row.subscription_plan ?? "free"}
+                        disabled={planUpdatingId === row.id}
+                        onChange={(e) => handlePlanChange(row.id, e.target.value as SubscriptionPlan)}
+                        sx={{ fontSize: "0.8125rem", minWidth: 130 }}
+                      >
+                        <MenuItem value="free">Free</MenuItem>
+                        <MenuItem value="super_host">Super Host</MenuItem>
+                        <MenuItem value="community_pro">Community Pro</MenuItem>
+                      </Select>
                     </TableCell>
                     <TableCell>
                       <Chip

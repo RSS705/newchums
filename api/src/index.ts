@@ -67,6 +67,12 @@ import {
   type UserMetricsMap,
 } from "./lib/chumPreferences";
 import { checkContactRateLimit } from "./lib/contactRateLimit";
+import {
+  countOwnedCommunities,
+  isValidSubscriptionPlan,
+  MAX_OWNED_COMMUNITIES,
+  type SubscriptionPlan,
+} from "./lib/subscriptionAccess";
 import { htmlToPlainText } from "./lib/htmlToPlainText";
 import { validateCleanText } from "./lib/contentSafety";
 import { sanitizeDescriptionHtml } from "./lib/sanitizeHtml";
@@ -2235,7 +2241,7 @@ app.get("/profile", async (c) => {
       (payload as { name?: string | null }).name,
     );
     const userRows = (await sql`
-      SELECT name, username, email, date_of_birth, gender, profile_theme, avatar_key, avatar_updated_at, role,
+      SELECT name, username, email, date_of_birth, gender, profile_theme, avatar_key, avatar_updated_at, role, subscription_plan,
         (password_hash IS NOT NULL) AS has_password,
         COALESCE(is_hidden_from_search, false) AS is_hidden_from_search,
         COALESCE(is_hidden_from_external_indexing, false) AS is_hidden_from_external_indexing,
@@ -2255,6 +2261,7 @@ app.get("/profile", async (c) => {
       avatar_key: string | null;
       avatar_updated_at: string | Date | null;
       role: string | null;
+      subscription_plan: string;
       has_password: boolean;
       is_hidden_from_search: boolean;
       is_hidden_from_external_indexing: boolean;
@@ -2314,6 +2321,7 @@ app.get("/profile", async (c) => {
     const isHiddenShoutouts = userInfo?.is_hidden_shoutouts ?? false;
     const tutorialNudgesOff = userInfo?.tutorial_nudges_off ?? false;
     const role = userInfo?.role ?? null;
+    const subscriptionPlan = userInfo?.subscription_plan ?? "free";
     const gender = userInfo?.gender ?? null;
     const profileTheme = userInfo?.profile_theme ?? null;
 
@@ -2347,6 +2355,7 @@ app.get("/profile", async (c) => {
           is_hidden_shoutouts: isHiddenShoutouts,
           tutorial_nudges_off: tutorialNudgesOff,
           role,
+          subscription_plan: subscriptionPlan,
         },
       });
     }
@@ -2379,6 +2388,7 @@ app.get("/profile", async (c) => {
         is_hidden_shoutouts: isHiddenShoutouts,
         tutorial_nudges_off: tutorialNudgesOff,
         role,
+        subscription_plan: subscriptionPlan,
       },
     });
   } catch (err) {
@@ -3931,6 +3941,7 @@ type AdminUserRow = {
   username: string | null;
   name: string | null;
   role: string | null;
+  subscription_plan: string;
   is_suspended: boolean;
   suspended_at: string | null;
 };
@@ -3946,7 +3957,7 @@ app.get("/admin/users", async (c) => {
 
     const rows = likePattern
       ? ((await sql`
-          SELECT id, created_at, last_active_at, email, username, name, role, is_suspended, suspended_at
+          SELECT id, created_at, last_active_at, email, username, name, role, subscription_plan, is_suspended, suspended_at
           FROM users
           WHERE
             LOWER(email) LIKE ${likePattern}
@@ -3956,7 +3967,7 @@ app.get("/admin/users", async (c) => {
           ORDER BY created_at DESC NULLS LAST
         `) as AdminUserRow[])
       : ((await sql`
-          SELECT id, created_at, last_active_at, email, username, name, role, is_suspended, suspended_at
+          SELECT id, created_at, last_active_at, email, username, name, role, subscription_plan, is_suspended, suspended_at
           FROM users
           ORDER BY created_at DESC NULLS LAST
         `) as AdminUserRow[]);
@@ -4051,6 +4062,61 @@ app.post("/admin/users/:id/unsuspend", async (c) => {
     return c.json({ ok: true });
   } catch (err) {
     console.error("[POST /admin/users/:id/unsuspend]", err);
+    return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
+  }
+});
+
+// ─── PATCH /admin/users/:id/subscription-plan ───────────────────────────────
+
+app.patch("/admin/users/:id/subscription-plan", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  const id = c.req.param("id");
+  if (!id) return c.json({ ok: false, error: { code: "INVALID_INPUT", message: "id required" } }, 400);
+
+  let plan: string;
+  try {
+    const body = await c.req.json<{ plan?: string }>();
+    plan = typeof body.plan === "string" ? body.plan.trim() : "";
+  } catch {
+    return c.json({ ok: false, error: { code: "INVALID_INPUT", message: "JSON body required" } }, 400);
+  }
+
+  if (!isValidSubscriptionPlan(plan)) {
+    return c.json(
+      { ok: false, error: { code: "INVALID_PLAN", message: "Plan must be free, super_host, or community_pro" } },
+      400,
+    );
+  }
+
+  try {
+    const sql = getSql(c.env);
+
+    const existing = (await sql`
+      SELECT id, subscription_plan FROM users WHERE id = ${id} LIMIT 1
+    `) as { id: string; subscription_plan: string }[];
+    if (existing.length === 0) {
+      return c.json({ ok: false, error: { code: "NOT_FOUND" } }, 404);
+    }
+
+    const oldPlan = existing[0].subscription_plan;
+    if (oldPlan === plan) {
+      return c.json({ ok: true, subscription_plan: plan, changed: false });
+    }
+
+    await sql`
+      UPDATE users SET subscription_plan = ${plan} WHERE id = ${id}
+    `;
+
+    await sql`
+      INSERT INTO subscription_plan_history (user_id, old_plan, new_plan, assigned_by)
+      VALUES (${id}, ${oldPlan}, ${plan}, ${admin.id})
+    `;
+
+    return c.json({ ok: true, subscription_plan: plan, changed: true });
+  } catch (err) {
+    console.error("[PATCH /admin/users/:id/subscription-plan]", err);
     return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
   }
 });
@@ -6219,6 +6285,20 @@ app.post("/communities", async (c) => {
   if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
   const sql = getSql(c.env);
   const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+
+  const ownedCount = await countOwnedCommunities(sql, userId);
+  if (ownedCount >= MAX_OWNED_COMMUNITIES) {
+    return c.json(
+      {
+        ok: false,
+        error: "COMMUNITY_CAP_REACHED",
+        message: `You can own up to ${MAX_OWNED_COMMUNITIES} active communities. Close one before creating another.`,
+        limit: MAX_OWNED_COMMUNITIES,
+        owned: ownedCount,
+      },
+      403,
+    );
+  }
 
   let body: Record<string, unknown>;
   try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }

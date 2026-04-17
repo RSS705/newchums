@@ -77,18 +77,24 @@ Matcher includes `/api/auth/*` (OAuth flow), excludes static assets.
 
 ---
 
-## 3) Organizer subscription direction (pre-billing)
+## 3) Organizer subscription plans (implemented, no billing yet)
 
-NewChums is defining organizer subscription behavior now, before any billing flow exists. The current product direction is:
+NewChums defines organizer subscription behavior now, before any billing flow exists.
 
-- **Free**, baseline user and community functionality
+- **Free**, baseline user and community functionality (default for all users)
 - **Super Host**, advanced **plan / event-level** capabilities for a user anywhere they host
 - **Community Pro**, advanced **community-level** capabilities for communities owned by that user, and it **includes Super Host benefits**
 
+Implementation:
+- `users.subscription_plan TEXT NOT NULL DEFAULT 'free'` (migration 083), constrained to `('free', 'super_host', 'community_pro')`.
+- Access helpers: `api/src/lib/subscriptionAccess.ts` exports `hasSuperHostAccess()`, `hasCommunityProAccess()`, `communityInheritsProAccess()`, `getUserSubscriptionPlan()`, `countOwnedCommunities()`.
+- `GET /profile` returns `subscription_plan`.
+- Admin: `PATCH /admin/users/:id/subscription-plan` with inline dropdown in the Users tab. Changes logged to `subscription_plan_history`.
+
 Current rules:
-- Plans are assigned manually through internal admin tooling for now.
-- `community_pro` should be treated as covering **up to 5 owned communities** for now.
-- There is no separate Founding Access layer. Early pilots are handled by manually assigning `super_host` or `community_pro`.
+- Plans are assigned through internal admin tooling. No billing, checkout, or self-service upgrade flow yet.
+- **All users** are capped at **5 active owned communities**. Enforced in `POST /communities`; the Create Community UI shows a dialog when the cap is hit. Closing a community frees a slot. `community_pro` covers all 5 for Community Pro users.
+- No separate Founding Access layer. Early pilots use manual `super_host` or `community_pro` assignment.
 - Premium features should be hidden when unavailable in normal UI.
 - Unfinished premium work may stay behind super-admin or QA-only gates until ready.
 
@@ -142,14 +148,14 @@ The following flows run in the API worker; the web app calls the API via `NEXT_P
 | UI state | `PUT /share-link-modal-dismiss` | Bearer JWT |
 | Roadmap | `GET /roadmap`, `GET /roadmap/:id`, `POST /roadmap`, `PUT /roadmap/:id`, `DELETE /roadmap/:id`, `POST /roadmap/:id/vote`, `POST /roadmap/:id/follow`, `POST /roadmap/:id/comment`, `GET /roadmap/:id/attachment` | Bearer JWT. List and detail endpoints filter out "received" status items unless viewer is author or super_admin. Anonymous submissions (`is_anonymous`) show `@anonymous` publicly; admin endpoints always show real author. Statuses: received, needs_clarification, in_progress, planned, completed, not_planned. |
 | Admin, interests | `GET /admin/interests`, `GET /admin/interests/categories`, `PATCH /admin/interests/:id`, `DELETE /admin/interests/:id`, `POST /admin/interests/:id/restore`, `POST /admin/interests/merge` | Bearer JWT + `super_admin` role |
-| Admin, users | `GET /admin/users`, `POST /admin/users/:id/suspend`, `POST /admin/users/:id/unsuspend`, `GET /admin/users/:id/diagnostics`, `PUT /admin/users/:id/metrics` | Bearer JWT + `super_admin` role |
+| Admin, users | `GET /admin/users`, `POST /admin/users/:id/suspend`, `POST /admin/users/:id/unsuspend`, `PATCH /admin/users/:id/subscription-plan`, `GET /admin/users/:id/diagnostics`, `PUT /admin/users/:id/metrics` | Bearer JWT + `super_admin` role |
 | Admin, safety | `PUT /admin/attendance-issues/:id/status`, `GET /admin/concern-reports`, `PUT /admin/concern-reports/:id/status` | Bearer JWT + `super_admin` role |
 | Admin, shout-outs | `GET /admin/shoutouts`, `POST /admin/shoutouts/:id/status` (approve/reject; approval inserts a `shoutout_received` notification for the recipient, no email; the bell deep-links to `/u/<handle>#shoutouts`) | Bearer JWT + `super_admin` role |
 | Admin, dashboard | `GET /admin/badge-counts`, `POST /admin/mark-viewed`, `GET /admin/kpis`, `GET /admin/kpis/growth-loop/filters`, `GET /admin/kpis/growth-loop`, `GET /admin/objectives/kpi` | Bearer JWT + `super_admin` role |
 | Admin, plans | `GET /admin/plans`, `POST /admin/plans/:id/remove` | Bearer JWT + `super_admin` role |
 | Admin, roadmap | `GET /admin/roadmap`, `POST /admin/roadmap/:id/status`, `POST /admin/roadmap/:id/merge`, `POST /admin/roadmap/:id/edit`, `POST /admin/roadmap/:id/remove`, `POST /admin/roadmap/:id/restore`, `DELETE /admin/roadmap/comments/:id` | Bearer JWT + `super_admin` role |
 | Communities | `POST /communities`, `GET /communities`, `GET /communities/slug-available`, `GET /communities/:slug`, `PATCH /communities/:slug`, `POST /communities/:slug/close`, `DELETE /communities/:slug`, `POST /communities/:id/join`, `POST /communities/:id/leave`, `GET /communities/:id/members`, `POST /communities/:id/members/:userId/remove`, `PUT /communities/:id/join-requests/:requestId`, `GET /communities/:id/join-requests`, `GET /communities/:id/events` | Bearer JWT |
-| Organizer plans / premium access | Not yet a public billing surface. Planned internal admin controls will assign `free`, `super_host`, or `community_pro` at the user level; backend access resolution should derive community-level premium access from the owner's assigned plan. | Internal / super_admin only (planned) |
+| Organizer plans / premium access | `PATCH /admin/users/:id/subscription-plan` assigns `free`, `super_host`, or `community_pro` at the user level; community-level premium access is derived from the owner's plan via `communityInheritsProAccess()`. | Bearer JWT + `super_admin` role |
 | Admin, communities | `GET /admin/communities`, `POST /admin/communities/:id/remove` | Bearer JWT + `super_admin` role |
 | Diagnostics | `GET /`, `GET /health`, `GET /health/env`, `GET /health/db`, `GET /db/ping`, `GET /db/postgis` | none |
 
@@ -182,7 +188,8 @@ Community `visibility` (`public` / `private`) gates the community page and plan 
 
 ### Community premium direction
 
-- **Community chat** is still unimplemented and is intended to become a **Community Pro** feature.
+- The subscription/access framework is **implemented** (migration 083, `api/src/lib/subscriptionAccess.ts`). Communities inherit `community_pro` from their owner's plan. No premium features are wired to the framework yet.
+- **Community chat** is still unimplemented and is intended to become the first **Community Pro** feature.
 - Community Pro should be understood as a cleaner extension of community ownership rather than a separate community-type system. Avoid branching the product into rigid community verticals.
 - The near-term community goal remains the smallest organizer operating system that creates obvious value: a shareable public hub, membership, plans, communication, legitimacy, and easy sharing.
 
