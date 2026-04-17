@@ -64,7 +64,7 @@ export default function SignupClient() {
   const [homeAddress, setHomeAddress] = React.useState("");
   const [homeLat, setHomeLat] = React.useState<number | null>(null);
   const [homeLng, setHomeLng] = React.useState<number | null>(null);
-  const [travelRadiusKm, setTravelRadiusKm] = React.useState(200);
+  const [travelRadiusKm, setTravelRadiusKm] = React.useState(50);
 
   // Shared
   const [error, setError] = React.useState<string | null>(null);

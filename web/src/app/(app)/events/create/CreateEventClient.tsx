@@ -28,7 +28,7 @@ import Cropper, { type Area } from "react-easy-crop";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
 import RichTextEditor from "@/components/ui/RichTextEditor";
-import PlacesAutocompleteInput from "@/components/common/PlacesAutocompleteInput";
+import PlacesAutocompleteInput, { formatPlaceDisplay } from "@/components/common/PlacesAutocompleteInput";
 import { apiFetch, getApiBaseUrl } from "@/lib/apiClient";
 import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
 import { notifyObjectivesChanged } from "@/components/objectives/NextStepNudge";
@@ -834,16 +834,7 @@ export default function CreateEventClient() {
                     }
                   }}
                   onPlaceSelect={(result) => {
-                    // Match the community form's pattern: combine venue and
-                    // address when they're distinct (e.g. "Starbucks, 123
-                    // Main St, ..."), otherwise prefer the full formatted
-                    // address so plain street picks don't drop the city/
-                    // region. Previously `result.name || result.formattedAddress`
-                    // stored only the short street segment for address picks.
-                    const displayName = result.name && result.formattedAddress && !result.formattedAddress.startsWith(result.name)
-                      ? `${result.name}, ${result.formattedAddress}`
-                      : (result.formattedAddress || result.name || "");
-                    setLocationName(displayName);
+                    setLocationName(formatPlaceDisplay(result));
                     setLocationAddress(result.formattedAddress);
                     setLocationPlaceId(result.placeId);
                     setLocationLat(result.lat);

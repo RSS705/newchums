@@ -645,18 +645,25 @@ export default function EventDetailClient() {
       return;
     }
     const rsvpStatus = pendingRsvpRef.current;
-    pendingRsvpRef.current = null;
 
-    // All RSVPs require authentication post-guest-removal. If the viewer
-    // arrived via an email link while logged out, bounce them through /login
-    // and back to the plan so the pending RSVP re-applies after sign-in.
+    // All RSVPs require authentication post-guest-removal. Two cases:
+    //   1. Viewer is already logged in → fire the RSVP automatically so the
+    //      "Going" button from the invite email lands immediately.
+    //   2. Viewer is logged out → do nothing here. Leave the pending status
+    //      in `pendingRsvpRef` so the lightweight-signup card (rendered
+    //      below when isAuthenticated === false) can fold the `?rsvp=...`
+    //      back into its magic-link `next` URL. After the magic-link click
+    //      returns the user to `/events/[id]?invite_token=...&rsvp=...` as
+    //      an authenticated user, this effect re-fires via the fresh
+    //      searchParams and runs the authenticated branch. No redirect to
+    //      /login — that was the pre-guest-removal path and it flickered
+    //      the plan page away from invitees who don't yet have an account.
     getAuthToken().then((token) => {
       if (token) {
+        pendingRsvpRef.current = null;
         handleRsvp(rsvpStatus);
-      } else {
-        const returnUrl = `/events/${eventId}?rsvp=${rsvpStatus}`;
-        router.push(`/login?next=${encodeURIComponent(returnUrl)}`);
       }
+      // else: keep pendingRsvpRef set; the signup card reads it below.
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event]);
@@ -2601,7 +2608,19 @@ export default function EventDetailClient() {
             </Stack>
           ) : isAuthenticated === false ? (
             <PlanSignupCard
-              planUrlWithTokens={`/events/${eventId}${buildTokenSuffix()}`}
+              planUrlWithTokens={(() => {
+                // Preserve the invitee's RSVP intent through the magic-link
+                // round-trip. If the user clicked "Going" from the invite
+                // email (?rsvp=going), we want that to auto-apply after
+                // they finish signing up — so fold it into the URL the
+                // magic-link returns to, alongside any share/invite token.
+                const params = new URLSearchParams();
+                if (inviteTokenRef.current) params.set("invite_token", inviteTokenRef.current);
+                else if (shareTokenRef.current) params.set("share_token", shareTokenRef.current);
+                if (pendingRsvpRef.current) params.set("rsvp", pendingRsvpRef.current);
+                const qs = params.toString();
+                return qs ? `/events/${eventId}?${qs}` : `/events/${eventId}`;
+              })()}
               planTitle={event.title}
             />
           ) : (

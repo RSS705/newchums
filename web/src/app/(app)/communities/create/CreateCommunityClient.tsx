@@ -20,7 +20,7 @@ import PhotoCameraRoundedIcon from "@mui/icons-material/PhotoCameraRounded";
 import Cropper, { type Area } from "react-easy-crop";
 import { AppCard, AppButton, AppTextField, useToast } from "@/components/ui";
 import RichTextEditor from "@/components/ui/RichTextEditor";
-import PlacesAutocompleteInput from "@/components/common/PlacesAutocompleteInput";
+import PlacesAutocompleteInput, { formatPlaceDisplay } from "@/components/common/PlacesAutocompleteInput";
 import HobbyPickerField, { type HobbyOption } from "@/components/common/HobbyPickerField";
 import { apiFetch, getApiBaseUrl } from "@/lib/apiClient";
 import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
@@ -395,19 +395,7 @@ export default function CreateCommunityClient() {
                   }
                 }}
                 onPlaceSelect={(result) => {
-                  // When the pick has a distinct venue/business name (not a
-                  // prefix of the formatted address — e.g. "Starbucks, 123
-                  // Main St, ..."), combine both so the venue context isn't
-                  // lost. For plain address picks the formatted address
-                  // already starts with the "name" Google gives back (street
-                  // segment), so prefer the FULL formatted address — using
-                  // `result.name` alone drops the city/region/country and
-                  // produces the short "2117 Linkway Blvd" regression the
-                  // saved form previously exhibited.
-                  const displayName = result.name && result.formattedAddress && !result.formattedAddress.startsWith(result.name)
-                    ? `${result.name}, ${result.formattedAddress}`
-                    : (result.formattedAddress || result.name || "");
-                  setLocationName(displayName);
+                  setLocationName(formatPlaceDisplay(result));
                   setLocationAddress(result.formattedAddress);
                   setLocationLat(result.lat);
                   setLocationLng(result.lng);

@@ -7,6 +7,7 @@ import {
 } from "@/lib/authRedirect";
 import { getGreetingName } from "@/lib/greeting";
 import { getOrCreateAppUser } from "@/lib/user";
+import { jwtVerify } from "jose";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -16,6 +17,23 @@ import { redirect } from "next/navigation";
 // server can short-circuit before any HTML is rendered (avoiding the brief
 // flash of the public-preview shell on the way to /login).
 const AUTH_REQUIRED_EVENT_SECTIONS = new Set(["feedback", "chat", "confirmation"]);
+
+// Decode (and verify) an invite_token JWT to detect whether the invited
+// recipient is an existing user (uid present) vs an off-platform email
+// (em present). Returns null on any parse/verify failure — the client will
+// then fall back to the normal flow (render the signup card).
+async function peekInviteTokenUserId(token: string): Promise<string | null> {
+  const secret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
+  if (!secret) return null;
+  try {
+    const { payload } = await jwtVerify(token, new TextEncoder().encode(secret));
+    if (payload.purpose !== "invite_rsvp") return null;
+    const uid = payload.uid;
+    return typeof uid === "string" && uid.length > 0 ? uid : null;
+  } catch {
+    return null;
+  }
+}
 
 export default async function AppLayout({
   children,
@@ -42,6 +60,19 @@ export default async function AppLayout({
         : null;
       if (sectionParam && AUTH_REQUIRED_EVENT_SECTIONS.has(sectionParam)) {
         redirect(`/login?next=${encodeURIComponent(requestedPath)}`);
+      }
+      // Invite email short-circuit: if the invite_token identifies an
+      // existing account (uid in payload), send the logged-out visitor
+      // straight to /login so they don't see the plan flash on the way.
+      // For off-platform invitees (email-only token) we fall through to
+      // the public preview + signup card.
+      const inviteMatch = search.match(/[?&]invite_token=([^&]+)/);
+      const inviteToken = inviteMatch ? decodeURIComponent(inviteMatch[1]) : null;
+      if (inviteToken) {
+        const uid = await peekInviteTokenUserId(inviteToken);
+        if (uid) {
+          redirect(`/login?next=${encodeURIComponent(requestedPath)}`);
+        }
       }
       return <AppShell>{children}</AppShell>;
     }

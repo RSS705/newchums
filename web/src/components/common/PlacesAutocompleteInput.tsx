@@ -20,6 +20,66 @@ export type PlaceResult = {
   area: string | null;
 };
 
+// Common street-suffix abbreviations. Used to decide whether the Google
+// result's `name` is just a long-form of the first segment of the formatted
+// address (e.g. name="Riverbend Road", formatted="Riverbend Rd, London,
+// ON, Canada"). When it is, we drop `name` to avoid producing a duplicated
+// "Riverbend Road, Riverbend Rd, London, ..." display string.
+const STREET_SUFFIX_ALIASES: Record<string, string> = {
+  road: "rd",
+  street: "st",
+  avenue: "ave",
+  boulevard: "blvd",
+  drive: "dr",
+  lane: "ln",
+  court: "ct",
+  place: "pl",
+  highway: "hwy",
+  parkway: "pkwy",
+  terrace: "ter",
+  trail: "trl",
+  circle: "cir",
+  crescent: "cres",
+  square: "sq",
+  route: "rte",
+  expressway: "expy",
+  freeway: "fwy",
+};
+
+function normalizeStreetLabel(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[.,]/g, "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => STREET_SUFFIX_ALIASES[w] ?? w)
+    .join(" ");
+}
+
+/**
+ * Build a user-facing display string for a picked place.
+ *
+ * - For venues / landmarks (name clearly distinct from the address's first
+ *   segment), prepends the name: "Starbucks, 123 Main St, London, ON".
+ * - For plain street-address picks where Google returns the street name as
+ *   `name` and the first segment of `formattedAddress` as the same street
+ *   with abbreviated suffix (Road↔Rd, Street↔St, etc.), we skip the
+ *   prepend and use just the formatted address. Prevents the duplicated
+ *   "Riverbend Road, Riverbend Rd, London, ..." we'd otherwise produce.
+ */
+export function formatPlaceDisplay(result: Pick<PlaceResult, "name" | "formattedAddress">): string {
+  const formatted = result.formattedAddress ?? "";
+  const name = (result.name ?? "").trim();
+  if (!name) return formatted;
+  if (!formatted) return name;
+  const firstSegment = formatted.split(",")[0].trim();
+  if (formatted.startsWith(name)) return formatted;
+  if (normalizeStreetLabel(firstSegment) === normalizeStreetLabel(name)) {
+    return formatted;
+  }
+  return `${name}, ${formatted}`;
+}
+
 export type PlacesAutocompleteInputProps = {
   value: string;
   onChange: (value: string) => void;

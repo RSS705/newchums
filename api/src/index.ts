@@ -2720,18 +2720,23 @@ app.put("/profile", async (c) => {
       "travel_radius_km" in body && body.travel_radius_km != null
         ? Number(body.travel_radius_km)
         : (existing?.travel_radius_km ?? null);
+    // Upper bound matches the "Anywhere" option in
+    // web/src/config/travelRadius.ts (ANYWHERE_RADIUS_KM = 20000). The
+    // discovery endpoints (/communities, /events/explore) treat any value
+    // ≥ 20000 as "no distance filter"; rejecting it here was blocking users
+    // who picked "Anywhere" from Edit Profile.
     if (
       travel_radius_km != null &&
       (!Number.isFinite(travel_radius_km) ||
       travel_radius_km < 1 ||
-      travel_radius_km > 200)
+      travel_radius_km > 20000)
     ) {
       return c.json(
         {
           ok: false,
           error: {
             code: "INVALID_INPUT",
-            message: "travel_radius_km must be between 1 and 200",
+            message: "travel_radius_km must be between 1 and 20000",
           },
         },
         400,

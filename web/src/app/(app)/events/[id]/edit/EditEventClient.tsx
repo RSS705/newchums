@@ -31,7 +31,7 @@ import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
 import ListItemText from "@mui/material/ListItemText";
 import HobbyPickerField, { type HobbyOption } from "@/components/common/HobbyPickerField";
 import { pickerFieldTabKeyDown } from "@/components/fields/pickerTabNav";
-import PlacesAutocompleteInput from "@/components/common/PlacesAutocompleteInput";
+import PlacesAutocompleteInput, { formatPlaceDisplay } from "@/components/common/PlacesAutocompleteInput";
 import { loadGooglePlacesScript } from "@/lib/loadGooglePlaces";
 import { scrollToFirstError } from "@/lib/scrollToFirstError";
 import {
@@ -743,13 +743,7 @@ export default function EditEventClient() {
                     }
                   }}
                   onPlaceSelect={(result) => {
-                    // See matching comment in CreateEventClient: combine
-                    // venue + address when distinct, otherwise prefer the
-                    // full formatted address.
-                    const displayName = result.name && result.formattedAddress && !result.formattedAddress.startsWith(result.name)
-                      ? `${result.name}, ${result.formattedAddress}`
-                      : (result.formattedAddress || result.name || "");
-                    setLocationName(displayName);
+                    setLocationName(formatPlaceDisplay(result));
                     setLocationAddress(result.formattedAddress);
                     setLocationPlaceId(result.placeId);
                     setLocationLat(result.lat);

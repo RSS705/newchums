@@ -445,7 +445,11 @@ export default function ProfileClient() {
       toast.error(`Bio must be ${MAX_BIO_LENGTH} characters or less`);
       return;
     }
-    if (travelRadiusKm < 1 || travelRadiusKm > 200) {
+    // Validate against the dropdown's actual option set so adding / renaming
+    // options (e.g. the 20000-km "Anywhere" option) doesn't silently break
+    // submission. The prior `> 200` cap predated the "Anywhere" option and
+    // was rejecting that selection on save.
+    if (!TRAVEL_RADIUS_OPTIONS.some((o) => o.value === travelRadiusKm)) {
       toast.error("Please select a valid travel radius");
       return;
     }

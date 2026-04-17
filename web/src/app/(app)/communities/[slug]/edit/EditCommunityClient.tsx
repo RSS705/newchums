@@ -20,7 +20,7 @@ import PhotoCameraRoundedIcon from "@mui/icons-material/PhotoCameraRounded";
 import Cropper, { type Area } from "react-easy-crop";
 import { AppCard, AppButton, AppTextField, useToast } from "@/components/ui";
 import RichTextEditor from "@/components/ui/RichTextEditor";
-import PlacesAutocompleteInput from "@/components/common/PlacesAutocompleteInput";
+import PlacesAutocompleteInput, { formatPlaceDisplay } from "@/components/common/PlacesAutocompleteInput";
 import HobbyPickerField, { type HobbyOption } from "@/components/common/HobbyPickerField";
 import { apiFetch, getApiBaseUrl, getAvatarBaseUrl } from "@/lib/apiClient";
 import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
@@ -402,14 +402,7 @@ export default function EditCommunityClient() {
                   }
                 }}
                 onPlaceSelect={(result) => {
-                  // See matching comment in CreateCommunityClient: combine
-                  // venue + address when they're distinct, otherwise prefer
-                  // the full formatted address so the saved display matches
-                  // what the user picks.
-                  const displayName = result.name && result.formattedAddress && !result.formattedAddress.startsWith(result.name)
-                    ? `${result.name}, ${result.formattedAddress}`
-                    : (result.formattedAddress || result.name || "");
-                  setLocationName(displayName);
+                  setLocationName(formatPlaceDisplay(result));
                   setLocationAddress(result.formattedAddress);
                   setLocationLat(result.lat);
                   setLocationLng(result.lng);
