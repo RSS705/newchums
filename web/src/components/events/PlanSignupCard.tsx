@@ -9,6 +9,7 @@ import FormHelperText from "@mui/material/FormHelperText";
 import Link from "@mui/material/Link";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+import MarkEmailReadRoundedIcon from "@mui/icons-material/MarkEmailReadRounded";
 import { AppButton, AppCard, AppTextField } from "@/components/ui";
 import NCDatePicker from "@/components/fields/NCDatePicker";
 import TurnstileWidget from "@/components/contact/TurnstileWidget";
@@ -156,18 +157,40 @@ export default function PlanSignupCard({
 
   if (status.kind === "check_your_email") {
     return (
-      <AppCard sx={{ width: "100%" }}>
-        <Stack spacing={1.5}>
-          <Typography variant="h6" fontWeight={600}>
+      <AppCard
+        sx={{
+          width: "100%",
+          background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
+          borderColor: "primary.light",
+        }}
+      >
+        <Stack spacing={2} alignItems="center" sx={{ py: 1, textAlign: "center" }}>
+          <Box
+            sx={{
+              width: 64,
+              height: 64,
+              borderRadius: "50%",
+              bgcolor: "primary.main",
+              color: "#fff",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: "0 4px 14px rgba(230, 91, 19, 0.35)",
+            }}
+          >
+            <MarkEmailReadRoundedIcon sx={{ fontSize: 32 }} />
+          </Box>
+          <Typography
+            variant="h5"
+            fontWeight={700}
+            sx={{ fontSize: { xs: "1.25rem", sm: "1.375rem" } }}
+          >
             Check your email
           </Typography>
-          <Typography variant="body1" color="text.secondary">
-            We sent a confirmation link to <strong>{status.email}</strong>. Click it to
-            finish and return to {planTitle ? <strong>{planTitle}</strong> : "the plan"}.
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            If you opened this page on a different device, just continue there after
-            clicking the link. Closing this tab is fine.
+          <Typography variant="body1" color="text.primary">
+            We sent a confirmation link to <strong>{status.email}</strong>. Click it
+            to finish and return to{" "}
+            {planTitle ? <strong>{planTitle}</strong> : "the plan"}.
           </Typography>
         </Stack>
       </AppCard>
@@ -177,18 +200,16 @@ export default function PlanSignupCard({
   return (
     <AppCard sx={{ width: "100%" }}>
       <Stack spacing={2}>
-        <Box>
-          <Typography variant="h6" fontWeight={600}>
-            Join to RSVP
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Quick sign-up. We&rsquo;ll email you a link to confirm and send you back to
-            the plan.
-          </Typography>
-        </Box>
+        <Typography
+          variant="h5"
+          fontWeight={700}
+          sx={{ fontSize: { xs: "1.25rem", sm: "1.375rem" } }}
+        >
+          Complete the form below to RSVP
+        </Typography>
 
         <AppTextField
-          label="Email"
+          label="Your Email"
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
@@ -268,7 +289,7 @@ export default function PlanSignupCard({
           }
           fullWidth
         >
-          {status.kind === "submitting" ? "Sending..." : "Send me a confirmation email"}
+          {status.kind === "submitting" ? "Submitting..." : "Submit"}
         </AppButton>
 
         {showSignInHint && (

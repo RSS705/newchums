@@ -14,7 +14,7 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import dayjs from "dayjs";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Cropper, { type Area } from "react-easy-crop";
 import { apiFetch, getApiBaseUrl, getAvatarBaseUrl } from "@/lib/apiClient";
@@ -96,6 +96,7 @@ export default function ProfileClient() {
 
   const toast = useToast();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const checkHandleAvailable = useCallback(async (h: string): Promise<"idle" | "available" | "unavailable"> => {
@@ -203,6 +204,24 @@ export default function ProfileClient() {
   useEffect(() => {
     loadGooglePlacesScript().catch(() => {});
   }, []);
+
+  // Deep-link focus: when the page is opened with ?focus=location (from the
+  // "Add your location for better results" prompts on Explore / Communities),
+  // scroll the Location card into view once the profile has finished loading.
+  // Runs exactly once per mount on the first non-loading render.
+  const focusScrolledRef = useRef(false);
+  useEffect(() => {
+    if (loading || focusScrolledRef.current) return;
+    if (searchParams.get("focus") !== "location") return;
+    focusScrolledRef.current = true;
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        document
+          .getElementById("profile-section-location")
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 150);
+    });
+  }, [loading, searchParams]);
 
   const interestSlugsSet = useMemo(
     () => new Set(interestItems.map((i) => i.slug.toLowerCase())),
@@ -528,6 +547,15 @@ export default function ProfileClient() {
       notifyObjectivesChanged();
       if (typeof window !== "undefined") {
         window.dispatchEvent(new Event("nc:profile-changed"));
+        // Return the user to the top of the profile form after a successful
+        // save. If they arrived via ?focus=location, also drop the query
+        // param so a subsequent reload doesn't re-scroll to Location.
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        if (searchParams.get("focus")) {
+          const url = new URL(window.location.href);
+          url.searchParams.delete("focus");
+          window.history.replaceState({}, "", url.pathname + url.search);
+        }
       }
       router.refresh();
     } finally {
@@ -749,7 +777,7 @@ export default function ProfileClient() {
         </Stack>
       </AppCard>
 
-      <AppCard sx={{ borderRadius: { xs: 2.5, sm: 3 }, overflow: "hidden" }}>
+      <AppCard id="profile-section-location" sx={{ borderRadius: { xs: 2.5, sm: 3 }, overflow: "hidden" }}>
         <Stack spacing={2.5}>
           <Box>
             <Typography variant="h6" fontWeight={700} sx={{ fontSize: { xs: "1.0625rem", sm: "1.125rem" } }}>

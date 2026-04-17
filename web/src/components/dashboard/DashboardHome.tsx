@@ -555,7 +555,7 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
           </Box>
           <Button
             component={Link}
-            href="/profile"
+            href="/profile?focus=location"
             variant="outlined"
             size="small"
             sx={{ textTransform: "none", fontWeight: 600, whiteSpace: "nowrap", borderRadius: 2.5 }}

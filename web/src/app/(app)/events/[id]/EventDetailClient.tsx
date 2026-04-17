@@ -662,6 +662,17 @@ export default function EventDetailClient() {
       if (token) {
         pendingRsvpRef.current = null;
         handleRsvp(rsvpStatus);
+        // Focus the RSVP / "You're going" confirmation card so the user
+        // lands directly on their response state rather than at the top
+        // of the plan. Matches the deep-link behaviour of ?section=... on
+        // other transactional emails (24h check, feedback, chat).
+        requestAnimationFrame(() => {
+          setTimeout(() => {
+            document
+              .getElementById("plan-section-confirmation")
+              ?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }, 150);
+        });
       }
       // else: keep pendingRsvpRef set; the signup card reads it below.
     });
@@ -2614,12 +2625,15 @@ export default function EventDetailClient() {
                 // email (?rsvp=going), we want that to auto-apply after
                 // they finish signing up — so fold it into the URL the
                 // magic-link returns to, alongside any share/invite token.
+                // Also include `section=confirmation` so the landing view
+                // scrolls to the "Are you in?" / "You're going" card
+                // instead of the top of the plan.
                 const params = new URLSearchParams();
                 if (inviteTokenRef.current) params.set("invite_token", inviteTokenRef.current);
                 else if (shareTokenRef.current) params.set("share_token", shareTokenRef.current);
                 if (pendingRsvpRef.current) params.set("rsvp", pendingRsvpRef.current);
-                const qs = params.toString();
-                return qs ? `/events/${eventId}?${qs}` : `/events/${eventId}`;
+                params.set("section", "confirmation");
+                return `/events/${eventId}?${params.toString()}`;
               })()}
               planTitle={event.title}
             />
@@ -2773,7 +2787,11 @@ export default function EventDetailClient() {
                 </Stack>
               ) : (
                 <>
-                  <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
+                  <Typography
+                    variant="h5"
+                    fontWeight={700}
+                    sx={{ mb: 2, fontSize: { xs: "1.25rem", sm: "1.375rem" } }}
+                  >
                     {event.isInvited ? "Can you make it?" : "Are you in?"}
                   </Typography>
                   {isFull && !event.lockedAt ? (

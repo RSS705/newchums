@@ -2,8 +2,11 @@
 
 import * as React from "react";
 import { signIn } from "next-auth/react";
+import Box from "@mui/material/Box";
+import CircularProgress from "@mui/material/CircularProgress";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+import CelebrationRoundedIcon from "@mui/icons-material/CelebrationRounded";
 import AuthSplitLayout from "@/components/layout/AuthSplitLayout";
 import { AppButton, AppCard } from "@/components/ui";
 
@@ -106,10 +109,45 @@ export default function MagicClient({ email, token, next, alreadySignedInSameEma
   // "loading"
   return (
     <AuthSplitLayout>
-      <AppCard sx={{ width: "100%", maxWidth: 450 }}>
-        <Typography variant="body1" color="text.secondary">
-          Confirming your sign-in&hellip;
-        </Typography>
+      <AppCard
+        sx={{
+          width: "100%",
+          maxWidth: 450,
+          background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
+          borderColor: "primary.light",
+        }}
+      >
+        <Stack spacing={2.5} alignItems="center" sx={{ py: 2, textAlign: "center" }}>
+          <Box sx={{ position: "relative", width: 72, height: 72 }}>
+            <CircularProgress
+              size={72}
+              thickness={3}
+              sx={{ color: "primary.main", position: "absolute", inset: 0 }}
+            />
+            <Box
+              sx={{
+                position: "absolute",
+                inset: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "primary.main",
+              }}
+            >
+              <CelebrationRoundedIcon sx={{ fontSize: 32 }} />
+            </Box>
+          </Box>
+          <Typography
+            variant="h5"
+            fontWeight={700}
+            sx={{ fontSize: { xs: "1.25rem", sm: "1.375rem" } }}
+          >
+            Almost there&hellip;
+          </Typography>
+          <Typography variant="body1" color="text.primary">
+            Getting your account ready and taking you back to the plan.
+          </Typography>
+        </Stack>
       </AppCard>
     </AuthSplitLayout>
   );
