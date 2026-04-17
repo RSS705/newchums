@@ -282,8 +282,13 @@ export default function CreateEventClient() {
       errs.hobby = "Add at least one hobby so people can find this plan";
     if (!dateValue || !dateValue.isValid()) errs.date = "Pick a date";
     if (!timeValue || !timeValue.isValid()) errs.time = "Pick a time";
-    if (locationType === "in_person" && !locationName.trim() && !locationAddress.trim())
-      errs.location = "Add a venue or address";
+    if (locationType === "in_person") {
+      if (!locationName.trim() && !locationAddress.trim()) {
+        errs.location = "Add a venue or address";
+      } else if (locationLat == null || locationLng == null) {
+        errs.location = "Please pick a location from the suggestions";
+      }
+    }
     if (maxSeats && (isNaN(Number(maxSeats)) || Number(maxSeats) < 1))
       errs.maxSeats = "Must be a positive number";
     setErrors(errs);
@@ -829,7 +834,16 @@ export default function CreateEventClient() {
                     }
                   }}
                   onPlaceSelect={(result) => {
-                    setLocationName(result.name || result.formattedAddress);
+                    // Match the community form's pattern: combine venue and
+                    // address when they're distinct (e.g. "Starbucks, 123
+                    // Main St, ..."), otherwise prefer the full formatted
+                    // address so plain street picks don't drop the city/
+                    // region. Previously `result.name || result.formattedAddress`
+                    // stored only the short street segment for address picks.
+                    const displayName = result.name && result.formattedAddress && !result.formattedAddress.startsWith(result.name)
+                      ? `${result.name}, ${result.formattedAddress}`
+                      : (result.formattedAddress || result.name || "");
+                    setLocationName(displayName);
                     setLocationAddress(result.formattedAddress);
                     setLocationPlaceId(result.placeId);
                     setLocationLat(result.lat);

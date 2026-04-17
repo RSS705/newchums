@@ -22,9 +22,7 @@ export type Bindings = {
   POSTMARK_TEMPLATE_INVITE?: string;
   /** Event email template IDs, optional until Postmark templates are created */
   POSTMARK_TEMPLATE_EVENT_INVITE?: string;
-  POSTMARK_TEMPLATE_EVENT_UPDATED?: string;
   POSTMARK_TEMPLATE_EVENT_CANCELED?: string;
-  POSTMARK_TEMPLATE_EVENT_REMINDER?: string;
   POSTMARK_TEMPLATE_EVENT_RSVP_UPDATE?: string;
   /** Postmark template ID for host leave notification (template 43921920) */
   POSTMARK_TEMPLATE_EVENT_LEAVE?: string;
@@ -40,8 +38,6 @@ export type Bindings = {
   POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST?: string;
   /** Postmark template ID for registered-user attendance confirmation request */
   POSTMARK_TEMPLATE_CONFIRMATION_REQUEST_USER?: string;
-  /** Postmark template ID for guest attendance confirmation request */
-  POSTMARK_TEMPLATE_CONFIRMATION_REQUEST_GUEST?: string;
   /** Postmark template ID for plan-at-risk host notification */
   POSTMARK_TEMPLATE_PLAN_AT_RISK?: string;
   /** Postmark template ID for auto-cancelled plan attendee notification, set after creating the Postmark template */
@@ -52,8 +48,19 @@ export type Bindings = {
   POSTMARK_TEMPLATE_ROADMAP_UPDATE?: string;
   /** Postmark template ID for daily event-match digest email (template 44018889) */
   POSTMARK_TEMPLATE_EVENT_MATCH_DIGEST?: string;
-  /** Postmark template ID for public RSVP email verification code (template 44041128) */
-  POSTMARK_TEMPLATE_GUEST_VERIFY?: string;
+  /**
+   * Postmark template ID for the lightweight-signup magic link email sent when
+   * an unauthenticated visitor starts signing up from the plan page.
+   * Email tokens are hashed rows in `email_verification_tokens` (15-minute TTL).
+   */
+  POSTMARK_TEMPLATE_MAGIC_LINK_SIGNUP?: string;
+  /**
+   * Postmark template ID for the "someone tried to sign up with this email"
+   * notice sent when the submitted email already belongs to a verified account.
+   * Contains a link to `/login?next=<plan url>` so the returning user lands back
+   * on the plan after sign-in.
+   */
+  POSTMARK_TEMPLATE_PLAN_SIGNIN?: string;
   /** Postmark template ID for post-plan feedback reminder (template 44091936) */
   POSTMARK_TEMPLATE_PLAN_FEEDBACK?: string;
   /** Postmark template ID for concern report admin alert (template 44107767) */

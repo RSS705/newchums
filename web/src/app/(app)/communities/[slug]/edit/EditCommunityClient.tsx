@@ -179,7 +179,13 @@ export default function EditCommunityClient() {
     if (!name.trim()) errs.name = "Give your community a name";
     if (!description.trim() || description.replace(/<[^>]*>/g, "").trim().length === 0) errs.description = "Add a description so people know what this community is about";
     if (selectedHobbies.length === 0) errs.hobby = "Add at least one hobby so people can find this community";
-    if (!isOnline && !locationName.trim() && !locationAddress.trim()) errs.location = "Add a location for your community";
+    if (!isOnline) {
+      if (!locationName.trim()) {
+        errs.location = "Add a location for your community";
+      } else if (locationLat == null || locationLng == null) {
+        errs.location = "Please pick a location from the suggestions";
+      }
+    }
     return errs;
   };
 
@@ -385,6 +391,10 @@ export default function EditCommunityClient() {
                 value={locationName}
                 onChange={(v) => {
                   setLocationName(v);
+                  // See matching comment in CreateCommunityClient: the
+                  // Places component only emits pick-verified or cleared
+                  // values, so we only drop coords when the field is
+                  // explicitly emptied.
                   if (!v.trim()) {
                     setLocationAddress("");
                     setLocationLat(null);
@@ -392,10 +402,14 @@ export default function EditCommunityClient() {
                   }
                 }}
                 onPlaceSelect={(result) => {
-                  const name = result.name && result.formattedAddress && !result.formattedAddress.startsWith(result.name)
+                  // See matching comment in CreateCommunityClient: combine
+                  // venue + address when they're distinct, otherwise prefer
+                  // the full formatted address so the saved display matches
+                  // what the user picks.
+                  const displayName = result.name && result.formattedAddress && !result.formattedAddress.startsWith(result.name)
                     ? `${result.name}, ${result.formattedAddress}`
-                    : (result.name || result.formattedAddress);
-                  setLocationName(name);
+                    : (result.formattedAddress || result.name || "");
+                  setLocationName(displayName);
                   setLocationAddress(result.formattedAddress);
                   setLocationLat(result.lat);
                   setLocationLng(result.lng);

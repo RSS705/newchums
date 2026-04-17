@@ -301,8 +301,13 @@ export default function EditEventClient() {
     if (hobbies.length === 0) errs.hobby = "Add at least one hobby so people can find this plan";
     if (!dateValue?.isValid()) errs.date = "Pick a date";
     if (!timeValue?.isValid()) errs.time = "Pick a time";
-    if (locationType === "in_person" && !locationName.trim() && !locationAddress.trim())
-      errs.location = "Add a venue or address";
+    if (locationType === "in_person") {
+      if (!locationName.trim() && !locationAddress.trim()) {
+        errs.location = "Add a venue or address";
+      } else if (locationLat == null || locationLng == null) {
+        errs.location = "Please pick a location from the suggestions";
+      }
+    }
     setErrors(errs);
     return errs;
   };
@@ -738,7 +743,13 @@ export default function EditEventClient() {
                     }
                   }}
                   onPlaceSelect={(result) => {
-                    setLocationName(result.name || result.formattedAddress);
+                    // See matching comment in CreateEventClient: combine
+                    // venue + address when distinct, otherwise prefer the
+                    // full formatted address.
+                    const displayName = result.name && result.formattedAddress && !result.formattedAddress.startsWith(result.name)
+                      ? `${result.name}, ${result.formattedAddress}`
+                      : (result.formattedAddress || result.name || "");
+                    setLocationName(displayName);
                     setLocationAddress(result.formattedAddress);
                     setLocationPlaceId(result.placeId);
                     setLocationLat(result.lat);

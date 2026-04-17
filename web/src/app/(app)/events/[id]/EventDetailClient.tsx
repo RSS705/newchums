@@ -79,6 +79,7 @@ import {
 import { isDuplicate, nameToSlug } from "@/lib/interestUtils";
 import { notifyObjectivesChanged } from "@/components/objectives/NextStepNudge";
 import PlanFeedback from "@/components/events/PlanFeedback";
+import PlanSignupCard from "@/components/events/PlanSignupCard";
 
 /** Meeting URLs pasted without a scheme should still open in the browser. */
 function normalizeMeetingLinkHref(raw: string): string {
@@ -127,9 +128,6 @@ type EventDetail = {
   reserveSeats: boolean;
   isInvited: boolean;
   hasRsvp: boolean;
-  guestInvite?: boolean;
-  guestEmail?: string;
-  guestRsvpStatus?: string | null;
   goingCount?: number;
   maybeCount?: number;
   // Attendance assurance
@@ -140,7 +138,6 @@ type EventDetail = {
   confirmedCount: number;
   pendingConfirmationCount: number;
   myConfirmationStatus: string | null;
-  guestConfirmToken?: string | null;
   planViability: string | null;
   community?: { id: string; slug: string; name: string } | null;
   hideFromExplore?: boolean;
@@ -155,8 +152,6 @@ type RsvpEntry = {
   note: string | null;
   avatarUrl?: string | null;
   confirmationStatus?: string | null;
-  isGuest?: boolean;
-  guestEmail?: string | null;
   prefNotes?: string[] | null;
   isChumSaved?: boolean;
   hideName?: boolean;
@@ -169,7 +164,6 @@ type AltTimeEntry = {
   suggestedAt: string;
   endsAt: string | null;
   note: string | null;
-  guestEmail?: string | null;
 };
 type InviteEntry = {
   userId: string | null;
@@ -178,7 +172,7 @@ type InviteEntry = {
   handle?: string | null;
 };
 type RemoveTarget =
-  | { type: "rsvp"; userId: string; name: string; guestEmail?: string | null }
+  | { type: "rsvp"; userId: string; name: string }
   | { type: "invite"; userId: string | null; email: string | null; name: string };
 type SearchResult = {
   userId: string;
@@ -283,8 +277,6 @@ export default function EventDetailClient() {
   const [rsvpDialogOpen, setRsvpDialogOpen] = useState(false);
   const [rsvpDialogStatus, setRsvpDialogStatus] = useState<string>("");
   const [rsvpDialogMessage, setRsvpDialogMessage] = useState("");
-  // Tracks RSVP status set via email invite token (unauthenticated flow)
-  const [emailRsvpStatus, setEmailRsvpStatus] = useState<string | null>(null);
   // Attendance assurance
   const [confirmSubmitting, setConfirmSubmitting] = useState(false);
   // Local override for confirmation status, provides immediate UI feedback before refresh() completes
@@ -355,8 +347,8 @@ export default function EventDetailClient() {
     }
   }, [bannerUseFallback]);
 
-  // Copy link, builds a share URL with the share token so recipients get
-  // guest access (not just the public preview).
+  // Copy link, builds a share URL with the share token so recipients see
+  // full plan detail + the lightweight signup card (not just the public preview).
   const handleCopyLink = useCallback(async () => {
     const base = `${window.location.origin}/events/${eventId}`;
     const url = shareToken ? `${base}?share_token=${encodeURIComponent(shareToken)}` : base;
@@ -406,57 +398,6 @@ export default function EventDetailClient() {
   // second round-trip.
   const [prefetchedFeedback, setPrefetchedFeedback] = useState<unknown>(null);
 
-  // ── Public RSVP (share-link visitors) ──────────────────────────────────
-  type PubStep = "email" | "code" | "rsvp";
-  const [pubStep, setPubStep] = useState<PubStep>("email");
-  const [pubEmail, setPubEmail] = useState("");
-  const [pubName, setPubName] = useState("");
-  const [pubChallenge, setPubChallenge] = useState<string | null>(null);
-  const [pubCode, setPubCode] = useState("");
-  const [pubSubmitting, setPubSubmitting] = useState(false);
-  const [pubError, setPubError] = useState<string | null>(null);
-  const participationTokenRef = useRef<string | null>(null);
-  const [pubRsvpStatus, setPubRsvpStatus] = useState<string | null>(null);
-
-  // Cross-event email pre-fill from any prior public RSVP localStorage entry
-  useEffect(() => {
-    try {
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key?.startsWith("nc_pub_")) {
-          const raw = localStorage.getItem(key);
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            if (parsed.email) {
-              setPubEmail(parsed.email);
-              break;
-            }
-          }
-        }
-      }
-    } catch {
-      /* localStorage unavailable */
-    }
-  }, []);
-
-  // Restore participation token for this event from localStorage
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(`nc_pub_${eventId}`);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed.token) {
-          participationTokenRef.current = parsed.token;
-          if (parsed.email) setPubEmail(parsed.email);
-          if (parsed.status) setPubRsvpStatus(parsed.status);
-          setPubStep("rsvp");
-        }
-      }
-    } catch {
-      /* noop */
-    }
-  }, [eventId]);
-
   // Restore invite token for this event from localStorage (survives page reloads)
   useEffect(() => {
     try {
@@ -505,7 +446,6 @@ export default function EventDetailClient() {
       if (data.viewerUserId) setViewerUserId(data.viewerUserId);
       if (data.viewerEmail) setViewerEmail(data.viewerEmail);
       if (data.shareLinkModalDismissed != null) setShareLinkModalDismissed(data.shareLinkModalDismissed);
-      if (data.event?.guestConfirmToken) guestConfirmTokenRef.current = data.event.guestConfirmToken;
       // Clear local confirmation override once server state arrives
       setLocalConfirmStatus(null);
     },
@@ -513,13 +453,9 @@ export default function EventDetailClient() {
   );
 
   const buildTokenSuffix = useCallback(() => {
-    const tok = inviteTokenRef.current ?? participationTokenRef.current ?? shareTokenRef.current;
+    const tok = inviteTokenRef.current ?? shareTokenRef.current;
     if (!tok) return "";
-    const key = inviteTokenRef.current
-      ? "invite_token"
-      : participationTokenRef.current
-        ? "participation_token"
-        : "share_token";
+    const key = inviteTokenRef.current ? "invite_token" : "share_token";
     return `?${key}=${encodeURIComponent(tok)}`;
   }, []);
 
@@ -625,12 +561,17 @@ export default function EventDetailClient() {
     load();
   }, [load]);
 
-  // Persistent invite token, survives for the component lifecycle so guests
-  // can re-RSVP and access invite-only events without auth.
+  // Persistent invite token, survives for the component lifecycle so an
+  // unauthenticated invitee can view the plan (including invite-only /
+  // chums-only ones) and carry the invite context through the lightweight
+  // signup flow. After signup + magic-link sign-in, the matching
+  // event_invites row is adopted by their new user_id.
   // Initialized from URL so the first data fetch includes it.
   const inviteTokenRef = useRef<string | null>(searchParams.get("invite_token"));
 
-  // Share token, from Copy Link share URLs. Grants guest access without an invite.
+  // Share token, from Copy Link share URLs. Grants view access to non-public
+  // plans without an invite. RSVPing still requires authentication (via the
+  // lightweight signup card shown to logged-out visitors).
   const shareTokenRef = useRef<string | null>(searchParams.get("share_token"));
 
   // Email link context hint (?context=host_review or ?context=request_approved)
@@ -641,18 +582,12 @@ export default function EventDetailClient() {
 
   // Auto-RSVP from email link (?rsvp=going&invite_token=xxx)
   const pendingRsvpRef = useRef<string | null>(null);
-  // Guest confirmation from email link (?guest_confirm_token=xxx&action=confirm|decline)
-  const pendingGuestConfirmRef = useRef<{ token: string; action: string } | null>(null);
-  // Guest confirmation token for in-page use (from API response)
-  const guestConfirmTokenRef = useRef<string | null>(null);
   useEffect(() => {
     const rsvpParam = searchParams.get("rsvp");
     const inviteTokenParam = searchParams.get("invite_token");
     const shareTokenParam = searchParams.get("share_token");
     const contextParam = searchParams.get("context");
     const sectionParam = searchParams.get("section");
-    const guestConfirmTokenParam = searchParams.get("guest_confirm_token");
-    const guestConfirmActionParam = searchParams.get("action");
     if (inviteTokenParam) {
       inviteTokenRef.current = inviteTokenParam;
       try {
@@ -665,9 +600,6 @@ export default function EventDetailClient() {
     if (rsvpParam && VALID_RSVP_PARAMS.includes(rsvpParam as (typeof VALID_RSVP_PARAMS)[number])) {
       pendingRsvpRef.current = rsvpParam;
     }
-    if (guestConfirmTokenParam && guestConfirmActionParam && (guestConfirmActionParam === "confirm" || guestConfirmActionParam === "decline")) {
-      pendingGuestConfirmRef.current = { token: guestConfirmTokenParam, action: guestConfirmActionParam };
-    }
     if (contextParam) setEmailContext(contextParam);
     if (sectionParam) pendingSectionRef.current = sectionParam;
     if (
@@ -675,8 +607,7 @@ export default function EventDetailClient() {
       inviteTokenParam ||
       shareTokenParam ||
       contextParam ||
-      sectionParam ||
-      guestConfirmTokenParam
+      sectionParam
     ) {
       const url = new URL(window.location.href);
       url.searchParams.delete("rsvp");
@@ -684,8 +615,6 @@ export default function EventDetailClient() {
       url.searchParams.delete("share_token");
       url.searchParams.delete("context");
       url.searchParams.delete("section");
-      url.searchParams.delete("guest_confirm_token");
-      url.searchParams.delete("action");
       window.history.replaceState({}, "", url.pathname + url.search);
     }
   }, [searchParams]);
@@ -709,41 +638,6 @@ export default function EventDetailClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event, isAuthenticated]);
 
-  // Auto-confirm from guest email link (?guest_confirm_token=xxx&action=confirm|decline)
-  useEffect(() => {
-    if (!event || !pendingGuestConfirmRef.current) return;
-    const { token, action } = pendingGuestConfirmRef.current;
-    pendingGuestConfirmRef.current = null;
-
-    (async () => {
-      setConfirmSubmitting(true);
-      try {
-        const res = await apiFetch(`/events/${eventId}/guest-confirm`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token, action }),
-        });
-        const data = (await res.json()) as {
-          ok: boolean;
-          status?: string;
-          error?: string;
-          message?: string;
-        };
-        if (data.ok) {
-          setLocalConfirmStatus(action === "confirm" ? "confirmed" : "declined");
-          toast.success(action === "confirm" ? "Attendance confirmed!" : "Response recorded");
-          refresh();
-        } else {
-          toast.error(data.message ?? "This link has expired or is invalid.");
-        }
-      } catch {
-        toast.error("Network error");
-      }
-      setConfirmSubmitting(false);
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [event]);
-
   useEffect(() => {
     if (!event || !pendingRsvpRef.current) return;
     if (event.status === "canceled") {
@@ -751,54 +645,19 @@ export default function EventDetailClient() {
       return;
     }
     const rsvpStatus = pendingRsvpRef.current;
-    const inviteToken = inviteTokenRef.current;
     pendingRsvpRef.current = null;
 
-    if (inviteToken) {
-      // Token-based RSVP, works without login (registered users + guest invitees)
-      (async () => {
-        setRsvpSubmitting(true);
-        try {
-          const res = await apiFetch(`/events/${eventId}/email-rsvp`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ invite_token: inviteToken, status: rsvpStatus }),
-          });
-          const data = (await res.json()) as {
-            ok: boolean;
-            error?: string;
-            message?: string;
-            isGuest?: boolean;
-          };
-          if (data.ok) {
-            setEmailRsvpStatus(rsvpStatus);
-            toast.success(
-              rsvpStatus === "going"
-                ? "You're going!"
-                : rsvpStatus === "maybe"
-                  ? "Marked as maybe"
-                  : "Response recorded"
-            );
-            refresh();
-          } else {
-            toast.error(data.message ?? "Something went wrong");
-          }
-        } catch {
-          toast.error("Network error");
-        }
-        setRsvpSubmitting(false);
-      })();
-    } else {
-      // Logged-in RSVP, requires auth
-      getAuthToken().then((token) => {
-        if (token) {
-          handleRsvp(rsvpStatus);
-        } else {
-          const returnUrl = `/events/${eventId}?rsvp=${rsvpStatus}`;
-          router.push(`/login?next=${encodeURIComponent(returnUrl)}`);
-        }
-      });
-    }
+    // All RSVPs require authentication post-guest-removal. If the viewer
+    // arrived via an email link while logged out, bounce them through /login
+    // and back to the plan so the pending RSVP re-applies after sign-in.
+    getAuthToken().then((token) => {
+      if (token) {
+        handleRsvp(rsvpStatus);
+      } else {
+        const returnUrl = `/events/${eventId}?rsvp=${rsvpStatus}`;
+        router.push(`/login?next=${encodeURIComponent(returnUrl)}`);
+      }
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event]);
 
@@ -1170,197 +1029,6 @@ export default function EventDetailClient() {
     setConfirmSubmitting(false);
   };
 
-  const handleGuestConfirmAction = async (action: "confirm" | "decline") => {
-    if (!guestConfirmTokenRef.current) return;
-    setConfirmSubmitting(true);
-    try {
-      const res = await apiFetch(`/events/${eventId}/guest-confirm`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: guestConfirmTokenRef.current, action }),
-      });
-      const data = (await res.json()) as { ok: boolean; error?: string; message?: string };
-      if (data.ok) {
-        setLocalConfirmStatus(action === "confirm" ? "confirmed" : "declined");
-        toast.success(action === "confirm" ? "Attendance confirmed!" : "Response recorded");
-        refresh();
-      } else {
-        toast.error(data.message ?? "Something went wrong");
-      }
-    } catch {
-      toast.error("Network error");
-    }
-    setConfirmSubmitting(false);
-  };
-
-  const handleGuestRsvp = async (status: string) => {
-    if (!inviteTokenRef.current) return;
-    setRsvpSubmitting(true);
-    try {
-      const res = await apiFetch(`/events/${eventId}/email-rsvp`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ invite_token: inviteTokenRef.current, status }),
-      });
-      const data = (await res.json()) as { ok: boolean; error?: string; message?: string };
-      if (data.ok) {
-        setEmailRsvpStatus(status);
-        toast.success(
-          status === "going"
-            ? "You're going!"
-            : status === "maybe"
-              ? "Marked as maybe"
-              : "Response recorded"
-        );
-        refresh();
-      } else {
-        toast.error(data.message ?? "Something went wrong");
-      }
-    } catch {
-      toast.error("Network error");
-    }
-    setRsvpSubmitting(false);
-  };
-
-  // ── Public RSVP handlers ────────────────────────────────────────────────
-  const handlePubRequestCode = async () => {
-    const email = pubEmail.trim().toLowerCase();
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setPubError("Please enter a valid email address");
-      return;
-    }
-    setPubSubmitting(true);
-    setPubError(null);
-    try {
-      const reqBody: Record<string, string> = { email };
-      if (shareTokenRef.current) reqBody.share_token = shareTokenRef.current;
-      const res = await apiFetch(`/events/${eventId}/public-rsvp/request-code`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(reqBody),
-      });
-      const data = (await res.json()) as {
-        ok: boolean;
-        challenge?: string;
-        existing_account?: boolean;
-        error?: string;
-        message?: string;
-      };
-      if (!data.ok) {
-        setPubError(data.message ?? "Something went wrong");
-        setPubSubmitting(false);
-        return;
-      }
-      if (data.existing_account) {
-        setPubError("An account with this email already exists. Please sign in instead.");
-        setPubSubmitting(false);
-        return;
-      }
-      setPubChallenge(data.challenge ?? null);
-      setPubStep("code");
-    } catch {
-      setPubError("Network error. Please try again.");
-    }
-    setPubSubmitting(false);
-  };
-
-  const handlePubConfirmCode = async () => {
-    const code = pubCode.trim();
-    if (!code || code.length !== 6) {
-      setPubError("Please enter the 6-digit code");
-      return;
-    }
-    setPubSubmitting(true);
-    setPubError(null);
-    try {
-      const res = await apiFetch(`/events/${eventId}/public-rsvp/confirm-code`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ challenge: pubChallenge, code, name: pubName.trim() || undefined }),
-      });
-      const data = (await res.json()) as {
-        ok: boolean;
-        token?: string;
-        email?: string;
-        error?: string;
-        message?: string;
-      };
-      if (!data.ok) {
-        setPubError(data.message ?? "Incorrect or expired code");
-        setPubSubmitting(false);
-        return;
-      }
-      participationTokenRef.current = data.token ?? null;
-      try {
-        localStorage.setItem(
-          `nc_pub_${eventId}`,
-          JSON.stringify({ token: data.token, email: data.email })
-        );
-      } catch {
-        /* noop */
-      }
-      setPubStep("rsvp");
-    } catch {
-      setPubError("Network error. Please try again.");
-    }
-    setPubSubmitting(false);
-  };
-
-  // Auto-submit when the 6th digit is entered
-  const pubAutoSubmitRef = useRef(false);
-  useEffect(() => {
-    if (pubCode.length === 6 && pubStep === "code" && !pubSubmitting) {
-      if (pubAutoSubmitRef.current) return;
-      pubAutoSubmitRef.current = true;
-      handlePubConfirmCode();
-    } else {
-      pubAutoSubmitRef.current = false;
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pubCode]);
-
-  const handlePubRsvp = async (status: string) => {
-    if (!participationTokenRef.current) return;
-    setPubSubmitting(true);
-    setPubError(null);
-    try {
-      const res = await apiFetch(`/events/${eventId}/email-rsvp`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          participation_token: participationTokenRef.current,
-          status,
-          guest_name: pubName.trim() || undefined,
-        }),
-      });
-      const data = (await res.json()) as { ok: boolean; error?: string; message?: string };
-      if (data.ok) {
-        setPubRsvpStatus(status);
-        try {
-          localStorage.setItem(
-            `nc_pub_${eventId}`,
-            JSON.stringify({ token: participationTokenRef.current, email: pubEmail, status })
-          );
-        } catch {
-          /* noop */
-        }
-        toast.success(
-          status === "going"
-            ? "You're going!"
-            : status === "maybe"
-              ? "Marked as maybe"
-              : "Response recorded"
-        );
-        refresh();
-      } else {
-        setPubError(data.message ?? "Something went wrong");
-      }
-    } catch {
-      setPubError("Network error. Please try again.");
-    }
-    setPubSubmitting(false);
-  };
-
   const openRsvpDialog = (status: string) => {
     setRsvpDialogStatus(status);
     setRsvpDialogMessage("");
@@ -1519,23 +1187,12 @@ export default function EventDetailClient() {
     if (!event) return;
     setQuickConfirming(true);
     try {
-      const guestToken = inviteTokenRef.current ?? participationTokenRef.current;
-      const useGuestEndpoint = !viewerUserId && !!guestToken;
-      const tokenBody = inviteTokenRef.current
-        ? { invite_token: inviteTokenRef.current }
-        : { participation_token: participationTokenRef.current };
-      const res = useGuestEndpoint
-        ? await apiFetch(`/events/${eventId}/guest-alt-time`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ...tokenBody, suggested_at: event.startsAt, note: "Proposed time works" }),
-          })
-        : await apiFetch(`/events/${eventId}/alt-time`, {
-            auth: true,
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ suggested_at: event.startsAt, note: "Proposed time works" }),
-          });
+      const res = await apiFetch(`/events/${eventId}/alt-time`, {
+        auth: true,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ suggested_at: event.startsAt, note: "Proposed time works" }),
+      });
       const data = (await res.json()) as { ok: boolean; message?: string };
       if (data.ok) {
         toast.success("Response recorded!");
@@ -1611,8 +1268,6 @@ export default function EventDetailClient() {
           refresh();
         } else toast.error(data.message ?? "Error");
       } else {
-        const guestToken = inviteTokenRef.current ?? participationTokenRef.current;
-        const useGuestEndpoint = !viewerUserId && !!guestToken;
         let created = 0;
         for (let i = 0; i < dayCount; i++) {
           const day = altStartDate.add(i, "day");
@@ -1626,26 +1281,12 @@ export default function EventDetailClient() {
             endH != null && endM != null
               ? day.hour(endH).minute(endM).second(0).millisecond(0).toISOString()
               : null;
-          const tokenBody = inviteTokenRef.current
-            ? { invite_token: inviteTokenRef.current }
-            : { participation_token: participationTokenRef.current };
-          const res = useGuestEndpoint
-            ? await apiFetch(`/events/${eventId}/guest-alt-time`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  ...tokenBody,
-                  suggested_at: suggestedAt,
-                  ends_at: endsAt,
-                  note: noteVal,
-                }),
-              })
-            : await apiFetch(`/events/${eventId}/alt-time`, {
-                auth: true,
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ suggested_at: suggestedAt, ends_at: endsAt, note: noteVal }),
-              });
+          const res = await apiFetch(`/events/${eventId}/alt-time`, {
+            auth: true,
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ suggested_at: suggestedAt, ends_at: endsAt, note: noteVal }),
+          });
           const data = (await res.json()) as { ok: boolean; message?: string };
           if (!data.ok) {
             toast.error(data.message ?? "Error");
@@ -1760,9 +1401,7 @@ export default function EventDetailClient() {
               email: removeTarget.email,
               reason: removeReason.trim() || null,
             }
-          : removeTarget.guestEmail
-            ? { guest_email: removeTarget.guestEmail, reason: removeReason.trim() || null }
-            : { user_id: removeTarget.userId, reason: removeReason.trim() || null };
+          : { user_id: removeTarget.userId, reason: removeReason.trim() || null };
       const res = await apiFetch(endpoint, {
         auth: true,
         method: "POST",
@@ -1798,7 +1437,7 @@ export default function EventDetailClient() {
 
   // Toggle save/remove chum from the attendee overflow menu
   const handleToggleChum = async (r: RsvpEntry) => {
-    if (!viewerUserId || r.userId === viewerUserId || r.isGuest) return;
+    if (!viewerUserId || r.userId === viewerUserId) return;
     setChumToggling(true);
     try {
       if (r.isChumSaved) {
@@ -2160,11 +1799,8 @@ export default function EventDetailClient() {
   const pendingJoinRequests = event.isHost
     ? joinRequests.filter((jr) => jr.status === "pending")
     : [];
-  // Guest invite: the viewer arrived via a valid invite token but has no NewChums account
-  const isGuestInvite = event.guestInvite === true;
   // Effective confirmation status: local override (immediate) takes priority over server state
   const effectiveConfirmStatus = localConfirmStatus ?? event.myConfirmationStatus;
-  const guestRsvpStatus = emailRsvpStatus ?? event.guestRsvpStatus ?? null;
 
   // Invite-only gate: logged-in users who are not invited and don't have a share/invite token
   // cannot RSVP. They see an informational message instead of RSVP buttons.
@@ -2173,25 +1809,19 @@ export default function EventDetailClient() {
     !event.isHost &&
     !event.isInvited &&
     !event.hasRsvp &&
-    !emailRsvpStatus &&
-    !isGuestInvite &&
     !shareTokenRef.current &&
-    !participationTokenRef.current &&
     isAuthenticated !== false;
 
   // Show request-to-join CTA instead of RSVP buttons when approval is required,
-  // user is not the host, not invited, has no existing RSVP, and hasn't just RSVP'd via email token.
-  // Share-link visitors skip this, they use the public RSVP flow (email verification) instead.
+  // user is not the host, not invited, and has no existing RSVP.
+  // Unauthenticated share-link visitors see the lightweight signup card instead.
   const showRequestToJoin =
     !showInviteOnlyGate &&
     event.requireApproval &&
     !event.isHost &&
     !event.isInvited &&
     !event.hasRsvp &&
-    !emailRsvpStatus &&
-    !isGuestInvite &&
-    !shareTokenRef.current &&
-    !participationTokenRef.current;
+    !shareTokenRef.current;
 
   const viewerRsvp = viewerUserId ? rsvps.find((r) => r.userId === viewerUserId) : null;
   const viewerRsvpStatus = viewerRsvp?.status ?? null;
@@ -2341,11 +1971,7 @@ export default function EventDetailClient() {
           )}
           {event.requireApproval && !isCanceled && (
             <Tooltip
-              title={
-                isGuestInvite
-                  ? "This plan requires approval, but you're invited -- no approval needed."
-                  : "The host must approve each person before they can join this plan."
-              }
+              title="The host must approve each person before they can join this plan."
               placement="top"
               arrow
             >
@@ -2740,239 +2366,6 @@ export default function EventDetailClient() {
                 Sign in
               </Button>
             </Stack>
-          ) : !pubRsvpStatus &&
-            ((isGuestInvite && guestRsvpStatus) || (emailRsvpStatus && !isGuestInvite)) ? (
-            <Stack spacing={2} sx={{ py: 1 }}>
-              <Stack spacing={1.5} alignItems="center">
-                <CheckCircleRoundedIcon sx={{ fontSize: 36, color: "success.main" }} />
-                <Typography variant="h6" fontWeight={600}>
-                  {(guestRsvpStatus ?? emailRsvpStatus) === "going"
-                    ? "You're going!"
-                    : (guestRsvpStatus ?? emailRsvpStatus) === "maybe"
-                      ? "Marked as maybe"
-                      : "Response recorded"}
-                </Typography>
-              </Stack>
-              {isGuestInvite && inviteTokenRef.current ? (
-                <>
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ textAlign: "center", lineHeight: 1.6 }}
-                  >
-                    {(guestRsvpStatus ?? emailRsvpStatus) === "going"
-                      ? "You'll get updates about this plan via email."
-                      : (guestRsvpStatus ?? emailRsvpStatus) === "maybe"
-                        ? "We'll keep you posted if anything changes."
-                        : "Thanks for letting the host know."}
-                  </Typography>
-                  <Divider sx={{ my: 0.5 }} />
-                  <Stack
-                    direction={{ xs: "column", sm: "row" }}
-                    spacing={1}
-                    justifyContent="center"
-                  >
-                    {guestRsvpStatus !== "going" && (
-                      <AppButton
-                        size="small"
-                        onClick={() => handleGuestRsvp("going")}
-                        disabled={rsvpSubmitting}
-                      >
-                        Going
-                      </AppButton>
-                    )}
-                    {guestRsvpStatus !== "maybe" && (
-                      <AppButton
-                        size="small"
-                        variant="outlined"
-                        onClick={() => handleGuestRsvp("maybe")}
-                        disabled={rsvpSubmitting}
-                      >
-                        Maybe
-                      </AppButton>
-                    )}
-                    {guestRsvpStatus !== "cant_make_it" && (
-                      <AppButton
-                        size="small"
-                        variant="outlined"
-                        color="inherit"
-                        onClick={() => handleGuestRsvp("cant_make_it")}
-                        disabled={rsvpSubmitting}
-                      >
-                        Can&apos;t make it
-                      </AppButton>
-                    )}
-                  </Stack>
-                  {/* Guest attendance confirmation UI */}
-                  {event.confirmationWindowOpen &&
-                    guestRsvpStatus === "going" &&
-                    guestConfirmTokenRef.current && (
-                    <>
-                      <Divider sx={{ my: 0.5 }} />
-                      {effectiveConfirmStatus === "confirmed" ? (
-                        <Stack spacing={1} alignItems="center">
-                          <CheckCircleRoundedIcon sx={{ fontSize: 20, color: "success.main" }} />
-                          <Typography variant="body2" fontWeight={600}>
-                            You&apos;re confirmed for this plan
-                          </Typography>
-                          <AppButton
-                            size="small"
-                            variant="outlined"
-                            color="inherit"
-                            onClick={() => handleGuestConfirmAction("decline")}
-                            disabled={confirmSubmitting}
-                          >
-                            Change to can&apos;t make it
-                          </AppButton>
-                        </Stack>
-                      ) : effectiveConfirmStatus === "declined" ? (
-                        <Stack spacing={1} alignItems="center">
-                          <InfoOutlinedIcon sx={{ fontSize: 20, color: "text.secondary" }} />
-                          <Typography variant="body2" fontWeight={600}>
-                            You&apos;ve indicated you can&apos;t make it
-                          </Typography>
-                          <AppButton
-                            size="small"
-                            onClick={() => handleGuestConfirmAction("confirm")}
-                            disabled={confirmSubmitting}
-                          >
-                            Change to confirmed
-                          </AppButton>
-                        </Stack>
-                      ) : (
-                        <Stack spacing={1.5}>
-                          <Stack
-                            spacing={1}
-                            sx={{
-                              p: 2,
-                              bgcolor: "warning.50",
-                              borderRadius: 2,
-                              border: "1px solid",
-                              borderColor: "warning.200",
-                            }}
-                          >
-                            <Typography variant="subtitle2" fontWeight={700}>
-                              Attendance check: are you still coming?
-                            </Typography>
-                            {event.confirmationCutoffAt && (
-                              <Typography variant="caption" color="text.secondary">
-                                Please confirm by{" "}
-                                {new Date(event.confirmationCutoffAt).toLocaleString(undefined, {
-                                  weekday: "short",
-                                  month: "short",
-                                  day: "numeric",
-                                  hour: "numeric",
-                                  minute: "2-digit",
-                                })}
-                              </Typography>
-                            )}
-                          </Stack>
-                          <Stack direction="row" spacing={1.5}>
-                            <AppButton
-                              onClick={() => handleGuestConfirmAction("confirm")}
-                              disabled={confirmSubmitting}
-                              sx={{ flex: 1 }}
-                            >
-                              I&apos;m still coming
-                            </AppButton>
-                            <AppButton
-                              onClick={() => handleGuestConfirmAction("decline")}
-                              disabled={confirmSubmitting}
-                              variant="outlined"
-                              color="inherit"
-                              sx={{ flex: 1 }}
-                            >
-                              I can&apos;t make it
-                            </AppButton>
-                          </Stack>
-                        </Stack>
-                      )}
-                    </>
-                  )}
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ mt: 2, display: "block", textAlign: "center" }}
-                  >
-                    Have an account?{" "}
-                    <Link
-                      href={`/login?next=${encodeURIComponent(`/events/${eventId}`)}`}
-                      style={{ color: "inherit", fontWeight: 600 }}
-                    >
-                      Sign in
-                    </Link>{" "}
-                    for the full experience, or{" "}
-                    <Link
-                      href={`/signup?next=${encodeURIComponent(`/events/${eventId}`)}${event.guestEmail ? `&email=${encodeURIComponent(event.guestEmail)}` : ""}`}
-                      style={{ color: "inherit", fontWeight: 600 }}
-                    >
-                      sign up
-                    </Link>{" "}
-                    for free.
-                  </Typography>
-                </>
-              ) : (
-                <>
-                  <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center" }}>
-                    {(guestRsvpStatus ?? emailRsvpStatus) === "going"
-                      ? "Your attendance has been confirmed. Sign in to see the full plan details and chat."
-                      : (guestRsvpStatus ?? emailRsvpStatus) === "maybe"
-                        ? "You've been marked as maybe. Sign in to update your response or see the full plan details."
-                        : "Your response has been recorded. Sign in to see the full plan details."}
-                  </Typography>
-                  <Button
-                    component={Link}
-                    href={`/login?next=${encodeURIComponent(`/events/${eventId}`)}`}
-                    variant="contained"
-                    color="primary"
-                    size="medium"
-                    sx={{
-                      alignSelf: "center",
-                      mt: 0.5,
-                      textTransform: "none",
-                      fontWeight: 600,
-                      borderRadius: 2,
-                      boxShadow: "none",
-                      "&:hover": { boxShadow: "none", opacity: 0.92 },
-                    }}
-                  >
-                    Sign in
-                  </Button>
-                </>
-              )}
-            </Stack>
-          ) : isGuestInvite && inviteTokenRef.current ? (
-            <>
-              <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
-                You&apos;re invited!
-              </Typography>
-              <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
-                <AppButton
-                  onClick={() => handleGuestRsvp("going")}
-                  disabled={rsvpSubmitting}
-                  sx={{ flex: 1 }}
-                >
-                  Going
-                </AppButton>
-                <AppButton
-                  onClick={() => handleGuestRsvp("maybe")}
-                  disabled={rsvpSubmitting}
-                  variant="outlined"
-                  sx={{ flex: 1 }}
-                >
-                  Maybe
-                </AppButton>
-                <AppButton
-                  onClick={() => handleGuestRsvp("cant_make_it")}
-                  disabled={rsvpSubmitting}
-                  variant="outlined"
-                  color="inherit"
-                  sx={{ flex: 1 }}
-                >
-                  Can&apos;t make it
-                </AppButton>
-              </Stack>
-            </>
           ) : showRequestToJoin ? (
             <>
               <Typography variant="h6" fontWeight={600} sx={{ mb: 1 }}>
@@ -3207,295 +2600,10 @@ export default function EventDetailClient() {
               </Stack>
             </Stack>
           ) : isAuthenticated === false ? (
-            pubRsvpStatus ? (
-              <>
-                <Stack spacing={1.5} alignItems="center" sx={{ py: 1 }}>
-                  <CheckCircleRoundedIcon sx={{ fontSize: 36, color: "success.main" }} />
-                  <Typography variant="h6" fontWeight={600}>
-                    {pubRsvpStatus === "going"
-                      ? "You're going!"
-                      : pubRsvpStatus === "maybe"
-                        ? "Marked as maybe"
-                        : "Response recorded"}
-                  </Typography>
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ textAlign: "center", lineHeight: 1.6 }}
-                  >
-                    {pubRsvpStatus === "going"
-                      ? "You'll get updates about this plan via email."
-                      : pubRsvpStatus === "maybe"
-                        ? "We'll keep you posted if anything changes."
-                        : "Thanks for letting the host know."}
-                  </Typography>
-                </Stack>
-                <Divider sx={{ my: 1.5 }} />
-                <Stack direction={{ xs: "column", sm: "row" }} spacing={1} justifyContent="center">
-                  {pubRsvpStatus !== "going" && (
-                    <AppButton
-                      size="small"
-                      onClick={() => handlePubRsvp("going")}
-                      disabled={pubSubmitting}
-                    >
-                      Going
-                    </AppButton>
-                  )}
-                  {pubRsvpStatus !== "maybe" && (
-                    <AppButton
-                      size="small"
-                      variant="outlined"
-                      onClick={() => handlePubRsvp("maybe")}
-                      disabled={pubSubmitting}
-                    >
-                      Maybe
-                    </AppButton>
-                  )}
-                  {pubRsvpStatus !== "cant_make_it" && (
-                    <AppButton
-                      size="small"
-                      variant="outlined"
-                      color="inherit"
-                      onClick={() => handlePubRsvp("cant_make_it")}
-                      disabled={pubSubmitting}
-                    >
-                      Can&apos;t make it
-                    </AppButton>
-                  )}
-                </Stack>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ mt: 2, display: "block", textAlign: "center" }}
-                >
-                  Have an account?{" "}
-                  <Link
-                    href={`/login?next=${encodeURIComponent(`/events/${eventId}`)}`}
-                    style={{ color: "inherit", fontWeight: 600 }}
-                  >
-                    Sign in
-                  </Link>{" "}
-                  to join the conversation.
-                </Typography>
-              </>
-            ) : pubStep === "email" ? (
-              <>
-                <Typography variant="h6" fontWeight={600} sx={{ mb: 0.5 }}>
-                  Interested in this plan?
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.6 }}>
-                  Enter your email to RSVP. We&apos;ll send a quick verification code.
-                </Typography>
-                <Stack spacing={1.5}>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    type="email"
-                    placeholder="Your email"
-                    value={pubEmail}
-                    onChange={(e) => {
-                      setPubEmail(e.target.value);
-                      setPubError(null);
-                    }}
-                    disabled={pubSubmitting}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        handlePubRequestCode();
-                      }
-                    }}
-                    sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
-                    InputProps={{
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <EmailRoundedIcon sx={{ fontSize: 18, color: "text.disabled" }} />
-                        </InputAdornment>
-                      ),
-                    }}
-                  />
-                  <TextField
-                    fullWidth
-                    size="small"
-                    placeholder="Your name (optional)"
-                    value={pubName}
-                    onChange={(e) => setPubName(e.target.value.slice(0, 100))}
-                    disabled={pubSubmitting}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        handlePubRequestCode();
-                      }
-                    }}
-                    sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
-                  />
-                  {pubError && (
-                    <Typography variant="body2" color="error" sx={{ fontSize: "0.8125rem" }}>
-                      {pubError}
-                    </Typography>
-                  )}
-                  <AppButton
-                    onClick={handlePubRequestCode}
-                    disabled={pubSubmitting || !pubEmail.trim()}
-                  >
-                    {pubSubmitting ? "Sending…" : "Send verification code"}
-                  </AppButton>
-                </Stack>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ mt: 2, display: "block", textAlign: "center", lineHeight: 1.6 }}
-                >
-                  Already have an account?{" "}
-                  <Link
-                    href={`/login?next=${encodeURIComponent(`/events/${eventId}`)}`}
-                    style={{ color: "inherit", fontWeight: 600 }}
-                  >
-                    Sign in
-                  </Link>
-                </Typography>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ mt: 0.5, display: "block", textAlign: "center", lineHeight: 1.6 }}
-                >
-                  Or{" "}
-                  <Link
-                    href={`/signup?next=${encodeURIComponent(`/events/${eventId}`)}`}
-                    style={{ color: "inherit", fontWeight: 600 }}
-                  >
-                    create an account
-                  </Link>{" "}
-                  for full access to chat, notifications, and more.
-                </Typography>
-              </>
-            ) : pubStep === "code" ? (
-              <>
-                <Typography variant="h6" fontWeight={600} sx={{ mb: 0.5 }}>
-                  Check your email
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.6 }}>
-                  We sent a 6-digit code to <strong>{pubEmail}</strong>.
-                </Typography>
-                <Stack spacing={1.5}>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    placeholder="Enter 6-digit code"
-                    value={pubCode}
-                    onChange={(e) => {
-                      setPubCode(e.target.value.replace(/\D/g, "").slice(0, 6));
-                      setPubError(null);
-                    }}
-                    disabled={pubSubmitting}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        handlePubConfirmCode();
-                      }
-                    }}
-                    inputProps={{
-                      inputMode: "numeric",
-                      maxLength: 6,
-                      style: {
-                        letterSpacing: "0.25em",
-                        fontWeight: 600,
-                        textAlign: "center",
-                        fontSize: "1.25rem",
-                      },
-                    }}
-                    sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
-                  />
-                  {pubError && (
-                    <Typography variant="body2" color="error" sx={{ fontSize: "0.8125rem" }}>
-                      {pubError}
-                    </Typography>
-                  )}
-                  <AppButton
-                    onClick={handlePubConfirmCode}
-                    disabled={pubSubmitting || pubCode.length !== 6}
-                  >
-                    {pubSubmitting ? "Verifying…" : "Verify"}
-                  </AppButton>
-                  <Typography
-                    variant="caption"
-                    component="button"
-                    onClick={() => {
-                      setPubStep("email");
-                      setPubCode("");
-                      setPubChallenge(null);
-                      setPubError(null);
-                    }}
-                    sx={{
-                      background: "none",
-                      border: "none",
-                      padding: 0,
-                      cursor: "pointer",
-                      color: "text.secondary",
-                      textDecoration: "underline",
-                      textUnderlineOffset: "3px",
-                      alignSelf: "center",
-                      "&:hover": { color: "text.primary" },
-                    }}
-                  >
-                    Use a different email
-                  </Typography>
-                </Stack>
-              </>
-            ) : (
-              <>
-                <Typography variant="h6" fontWeight={600} sx={{ mb: 0.5 }}>
-                  You&apos;re verified
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.6 }}>
-                  RSVP to let the host know you&apos;re interested.
-                </Typography>
-                {pubError && (
-                  <Typography variant="body2" color="error" sx={{ fontSize: "0.8125rem", mb: 1 }}>
-                    {pubError}
-                  </Typography>
-                )}
-                <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
-                  <AppButton
-                    onClick={() => handlePubRsvp("going")}
-                    disabled={pubSubmitting}
-                    sx={{ flex: 1 }}
-                  >
-                    Going
-                  </AppButton>
-                  <AppButton
-                    onClick={() => handlePubRsvp("maybe")}
-                    disabled={pubSubmitting}
-                    variant="outlined"
-                    sx={{ flex: 1 }}
-                  >
-                    Maybe
-                  </AppButton>
-                  <AppButton
-                    onClick={() => handlePubRsvp("cant_make_it")}
-                    disabled={pubSubmitting}
-                    variant="outlined"
-                    color="inherit"
-                    sx={{ flex: 1 }}
-                  >
-                    Can&apos;t make it
-                  </AppButton>
-                </Stack>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ mt: 2, display: "block", textAlign: "center" }}
-                >
-                  Have an account?{" "}
-                  <Link
-                    href={`/login?next=${encodeURIComponent(`/events/${eventId}`)}`}
-                    style={{ color: "inherit", fontWeight: 600 }}
-                  >
-                    Sign in
-                  </Link>{" "}
-                  to join the conversation.
-                </Typography>
-              </>
-            )
+            <PlanSignupCard
+              planUrlWithTokens={`/events/${eventId}${buildTokenSuffix()}`}
+              planTitle={event.title}
+            />
           ) : (
             <div id="plan-section-confirmation">
               {/* Confirmation UI when window is open */}
@@ -4337,9 +3445,7 @@ export default function EventDetailClient() {
             event.isHost ||
             viewerRsvpStatus === "going" ||
             viewerRsvpStatus === "maybe" ||
-            event.isInvited ||
-            isGuestInvite ||
-            !!participationTokenRef.current;
+            event.isInvited;
           const isAvailMode = event.altTimesMode === "availability";
           type OverlapWindow = { startMs: number; endMs: number; entries: AltTimeEntry[] };
 
@@ -4348,9 +3454,7 @@ export default function EventDetailClient() {
 
           const viewerHasSuggested = viewerUserId
             ? altTimes.some((e) => e.userId === viewerUserId)
-            : event.guestEmail
-              ? altTimes.some((e) => e.guestEmail === event.guestEmail)
-              : false;
+            : false;
 
           const byDay = altTimes.reduce<Record<string, AltTimeEntry[]>>((acc, entry) => {
             const dayKey = new Date(entry.suggestedAt).toDateString();
@@ -4441,17 +3545,12 @@ export default function EventDetailClient() {
             d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 
           // --- Group response summary ---
-          // Derive who has responded: collect unique user IDs and guest emails from altTimes
+          // Derive who has responded: collect unique user IDs from altTimes.
           const respondedUserIds = new Set(altTimes.filter((e) => e.userId).map((e) => e.userId));
-          const respondedGuestEmails = new Set(altTimes.filter((e) => e.guestEmail).map((e) => e.guestEmail!));
           // Participants = going + maybe RSVPs (the people who should respond)
           const participants = rsvps.filter((r) => r.status === "going" || r.status === "maybe");
-          const respondedParticipants = participants.filter((p) =>
-            p.isGuest ? (p.guestEmail ? respondedGuestEmails.has(p.guestEmail) : false) : respondedUserIds.has(p.userId)
-          );
-          const pendingParticipants = participants.filter((p) =>
-            p.isGuest ? (p.guestEmail ? !respondedGuestEmails.has(p.guestEmail) : true) : !respondedUserIds.has(p.userId)
-          );
+          const respondedParticipants = participants.filter((p) => respondedUserIds.has(p.userId));
+          const pendingParticipants = participants.filter((p) => !respondedUserIds.has(p.userId));
 
           return (
             <AppCard id="plan-section-availability">
@@ -5071,49 +4170,12 @@ export default function EventDetailClient() {
                               overflow: "hidden",
                               textOverflow: "ellipsis",
                               whiteSpace: "nowrap",
-                              color: r.isGuest ? "text.secondary" : "text.primary",
+                              color: "text.primary",
                             }}
                           >
-                            {r.isGuest && (!r.name || r.name === r.guestEmail) ? (r.guestEmail ?? r.name) : r.name}
+                            {r.name}
                           </Typography>
-                          {r.isGuest && (
-                          <Tooltip
-                            title="Joined via invite link without a NewChums account. Profile and chum features aren't available for guests yet."
-                            arrow
-                            placement="top"
-                            enterTouchDelay={0}
-                          >
-                            <Chip
-                              label="Guest"
-                              size="small"
-                              variant="outlined"
-                              sx={{
-                                height: 20,
-                                fontSize: "0.6875rem",
-                                fontWeight: 600,
-                                color: "text.disabled",
-                                borderColor: "divider",
-                                cursor: "help",
-                                flexShrink: 0,
-                              }}
-                            />
-                            </Tooltip>
-                          )}
                         </Stack>
-                        {r.isGuest && r.guestEmail && r.name && r.name !== r.guestEmail && (
-                          <Typography
-                            variant="caption"
-                            color="text.secondary"
-                            sx={{
-                              display: "block",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {r.guestEmail}
-                          </Typography>
-                        )}
                       </Box>
                     )}
                   </Box>
@@ -5155,7 +4217,7 @@ export default function EventDetailClient() {
                         />
                       </Tooltip>
                     ) : r.status === "going" && event.confirmationWindowOpen && r.confirmationStatus !== "confirmed" && r.confirmationStatus !== "declined" ? (
-                      /* Merged badge: Going + Pending/no confirmation (covers guests with no confirmation record and registered users with pending status) */
+                      /* Merged badge: Going + Pending/no confirmation (covers attendees with no confirmation record yet and attendees with an explicit pending status) */
                       <Tooltip title="This person said they're going but hasn't responded to the 24-hour attendance check yet" arrow placement="top" enterTouchDelay={0}>
                         <Chip
                           icon={<AccessTimeRoundedIcon sx={{ fontSize: "1rem !important" }} />}
@@ -5227,7 +4289,7 @@ export default function EventDetailClient() {
                     {(
                       (viewerUserId && r.userId === viewerUserId) ||
                       (r.handle && r.userId !== viewerUserId) ||
-                      (viewerUserId && r.userId !== viewerUserId && !r.isGuest) ||
+                      (viewerUserId && r.userId !== viewerUserId) ||
                       (event.isHost && !isCanceled && !isPast && r.userId !== event.hostUserId && (r.status === "going" || r.status === "maybe"))
                     ) && (
                       <IconButton
@@ -5745,7 +4807,7 @@ export default function EventDetailClient() {
           </MenuItem>
         )}
         {/* Add to / Remove from Chums */}
-        {attendeeMenuTarget && viewerUserId && attendeeMenuTarget.userId !== viewerUserId && !attendeeMenuTarget.isGuest && (
+        {attendeeMenuTarget && viewerUserId && attendeeMenuTarget.userId !== viewerUserId && (
           <MenuItem
             disabled={chumToggling}
             onClick={() => attendeeMenuTarget && handleToggleChum(attendeeMenuTarget)}
@@ -5770,7 +4832,6 @@ export default function EventDetailClient() {
                 type: "rsvp",
                 userId: attendeeMenuTarget.userId,
                 name: attendeeMenuTarget.name,
-                guestEmail: attendeeMenuTarget.guestEmail ?? null,
               });
               setRemoveReason("");
               setRemoveDialogOpen(true);

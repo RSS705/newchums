@@ -156,7 +156,16 @@ export default function CreateCommunityClient() {
     if (!name.trim()) errs.name = "Give your community a name";
     if (!description.trim() || description.replace(/<[^>]*>/g, "").trim().length === 0) errs.description = "Add a description so people know what this community is about";
     if (selectedHobbies.length === 0) errs.hobby = "Add at least one hobby so people can find this community";
-    if (!isOnline && !locationName.trim() && !locationAddress.trim()) errs.location = "Add a location for your community";
+    if (!isOnline) {
+      if (!locationName.trim()) {
+        errs.location = "Add a location for your community";
+      } else if (locationLat == null || locationLng == null) {
+        // Typed text without picking from the suggestions list leaves us
+        // with no coordinates, which silently breaks distance filtering in
+        // the discovery feed. Require the user to pick a suggestion.
+        errs.location = "Please pick a location from the suggestions";
+      }
+    }
     return errs;
   };
 
@@ -373,6 +382,12 @@ export default function CreateCommunityClient() {
                 value={locationName}
                 onChange={(v) => {
                   setLocationName(v);
+                  // The component guarantees its own value only emits after
+                  // a Google Places pick or a blur-revert (which restores
+                  // the last verified pick). An empty value means the user
+                  // deliberately cleared the field, so drop the coords too;
+                  // in every other case, keep the coords set by the last
+                  // onPlaceSelect.
                   if (!v.trim()) {
                     setLocationAddress("");
                     setLocationLat(null);
@@ -380,12 +395,19 @@ export default function CreateCommunityClient() {
                   }
                 }}
                 onPlaceSelect={(result) => {
-                  // Combine venue name with address so the full location is
-                  // visible on the community detail page and plan prefill.
-                  const name = result.name && result.formattedAddress && !result.formattedAddress.startsWith(result.name)
+                  // When the pick has a distinct venue/business name (not a
+                  // prefix of the formatted address — e.g. "Starbucks, 123
+                  // Main St, ..."), combine both so the venue context isn't
+                  // lost. For plain address picks the formatted address
+                  // already starts with the "name" Google gives back (street
+                  // segment), so prefer the FULL formatted address — using
+                  // `result.name` alone drops the city/region/country and
+                  // produces the short "2117 Linkway Blvd" regression the
+                  // saved form previously exhibited.
+                  const displayName = result.name && result.formattedAddress && !result.formattedAddress.startsWith(result.name)
                     ? `${result.name}, ${result.formattedAddress}`
-                    : (result.name || result.formattedAddress);
-                  setLocationName(name);
+                    : (result.formattedAddress || result.name || "");
+                  setLocationName(displayName);
                   setLocationAddress(result.formattedAddress);
                   setLocationLat(result.lat);
                   setLocationLng(result.lng);

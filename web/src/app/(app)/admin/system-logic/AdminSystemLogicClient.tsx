@@ -148,16 +148,13 @@ export default function AdminSystemLogicClient() {
       <CollapsibleSection title="Plan auto-cancellation" subtitle="When plans are automatically canceled by the system">
         <Bullet>
           <strong>No attendees:</strong> If a published plan&rsquo;s start time passes and <strong>no one other than the host</strong> is
-          Going, the plan is automatically canceled with reason &ldquo;no_attendees.&rdquo; No email is sent ,
-          this is a silent cleanup for plans that effectively never happened. <strong>Guest attendees count:</strong> a guest RSVP
-          (someone who responded to an email invite without creating an account) is a real attendee for this check, so a plan with
-          the host plus three guests Going is <em>not</em> host-only and will not be auto-canceled.
+          Going, the plan is automatically canceled with reason &ldquo;no_attendees.&rdquo; No email is sent &mdash;
+          this is a silent cleanup for plans that effectively never happened.
         </Bullet>
         <Bullet>
           <strong>Minimum not met (auto-cancel policy):</strong> If a plan has a <strong>24-hour attendance check</strong> enabled
           with fallback policy <strong>auto-cancel</strong>, and the confirmed count is below the minimum at cutoff time, the plan
-          is canceled and all Going/Maybe attendees are notified by email, including guest attendees, who are emailed at
-          their invite address. Guest confirmations count toward the minimum on equal footing with registered-user confirmations.
+          is canceled and all Going/Maybe attendees are notified by email.
         </Bullet>
         <Bullet>
           <strong>Host cancellation:</strong> The host can cancel at any time from the plan page. All Going/Maybe attendees are notified.
@@ -236,42 +233,37 @@ export default function AdminSystemLogicClient() {
         </Bullet>
       </CollapsibleSection>
 
-      <CollapsibleSection title="Plan sharing and guest participation" subtitle="How share links and public access work">
+      <CollapsibleSection title="Plan sharing and lightweight join" subtitle="How share links, invite emails, and lightweight signup work">
         <Bullet>
-          <strong>Plain URL vs share link:</strong> A <strong>plain URL</strong> (<code>/events/[id]</code>) shows a <strong>public preview</strong> only , 
-          basic plan info, approximate location, attendee counts, and a sign-in prompt. No RSVP flow is available.
-          The <strong>Copy Link</strong> button produces a <strong>share link</strong> (<code>/events/[id]?share_token=xxx</code>) that grants guest access.
+          <strong>Plain URL vs share link:</strong> A <strong>plain URL</strong> (<code>/events/[id]</code>) shows a <strong>public preview</strong> only &mdash;
+          basic plan info, approximate location, attendee counts, and a sign-in prompt. No RSVP flow is available for non-public plans without a token.
+          The <strong>Copy Link</strong> button produces a <strong>share link</strong> (<code>/events/[id]?share_token=xxx</code>) that grants preview access
+          to non-public plans so the recipient can see the full plan page.
         </Bullet>
         <Bullet>
-          <strong>Who it&rsquo;s for:</strong> Someone without a NewChums account who receives a plan&rsquo;s <strong>share link</strong> (from Copy Link) or
-          an <strong>invite email</strong>.
+          <strong>Lightweight signup card:</strong> Logged-out visitors on a share or invite link see a simple &ldquo;Join to RSVP&rdquo; card with
+          three fields: <strong>email</strong>, <strong>date of birth</strong> (18+ required), and a <strong>Terms/Privacy checkbox</strong>.
+          Submitting sends a one-click confirmation email. Clicking the link in that email creates the NewChums account (or signs them in, if the email already has an account),
+          returns them to the same plan page, and unlocks RSVP, chat, and alt-times as a normal authenticated user.
         </Bullet>
         <Bullet>
-          <strong>Flow:</strong> They enter their <strong>email</strong> (and optionally their name). We send a <strong>6-digit verification code</strong> to that
-          email. After entering the code, they can <strong>RSVP</strong> (Going / Maybe / Can&rsquo;t make it).
+          <strong>Account creation details:</strong> We don&rsquo;t ask for a name or password. A fun username is auto-generated
+          (e.g. <code>HappyOtter273</code>) and the user can change it later in Settings. Legal acceptance and DOB are captured at submit time;
+          the magic link never re-prompts. Link TTL: <strong>15 minutes</strong>. Turnstile and per-IP/per-email rate limits protect the endpoint.
         </Bullet>
         <Bullet>
-          <strong>If the email already has an account:</strong> We prompt them to <strong>sign in</strong> instead of sending a code.
+          <strong>Existing account path:</strong> If the submitted email already has a verified account, the lightweight signup form redirects to
+          <code>/login?next=&lt;plan url&gt;</code> so the user signs in and lands back on the plan. No new account is created; any DOB/legal they
+          entered on the form is discarded.
         </Bullet>
         <Bullet>
-          <strong>Identity:</strong> The visitor gets a signed <strong>participation token</strong> (valid 30 days) stored in their browser. This token is tied to
-          their verified email and the specific plan. It works the same way an invite token works for invited guests.
-        </Bullet>
-        <Bullet>
-          <strong>Account linking:</strong> If they later create a NewChums account with the same email, their RSVP and any alternate-time suggestions are
-          automatically linked to their new account the next time they view the plan.
-        </Bullet>
-        <Bullet>
-          <strong>Cross-plan convenience:</strong> If they&rsquo;ve verified on one plan, their email is pre-filled when they visit another plan via share link (a
-          new code is still required).
-        </Bullet>
-        <Bullet>
-          <strong>Share links work for any plan:</strong> Share links carry a signed token, so they work for <strong>public</strong>, <strong>chums-only</strong>,
-          and <strong>invite-only</strong> plans alike. Without a share or invite token, non-public plans show only the public preview.
+          <strong>Email invites:</strong> Invite emails link to <code>/events/[id]?invite_token=xxx</code>. If the invitee doesn&rsquo;t have an account yet,
+          the same lightweight signup card appears with their email pre-filled. Once they confirm via magic link, the invite row adopts their new
+          <code>user_id</code> and they appear as invited on the plan.
         </Bullet>
         <Bullet>
           <strong>Share link modal:</strong> The first time a user clicks <strong>Share plan link</strong>, a modal explains what
-          recipients can do (view, RSVP, share availability). A &ldquo;Don&rsquo;t show this again&rdquo; checkbox persists
+          recipients can do (view, join to RSVP, share availability). A &ldquo;Don&rsquo;t show this again&rdquo; checkbox persists
           the dismissal to the database (<code>share_link_modal_dismissed</code>). After dismissal, only a toast is shown.
         </Bullet>
         <Bullet>
@@ -281,31 +273,25 @@ export default function AdminSystemLogicClient() {
         <Bullet>
           <strong>Time flexibility in invites:</strong> When a plan has alt-times enabled, the invite email
           <strong>automatically</strong> includes a note asking the recipient to share availability or suggest a time
-          (depending on the plan&rsquo;s alt-times mode). There is no manual toggle, it&rsquo;s determined by the
-          plan settings.
+          (depending on the plan&rsquo;s alt-times mode).
         </Bullet>
         <Bullet>
           <strong>Availability deadline:</strong> When a plan uses <strong>Request availability</strong> mode, the host can
           optionally set a deadline by which attendees should submit their availability. Shown in create/edit forms, plan details,
-          and invite emails. Must be before the plan start time. Automatically cleared when the mode changes away from availability.
-          Adding, changing, or removing the deadline triggers the normal plan-updated attendee notification.
+          and invite emails. Must be before the plan start time.
         </Bullet>
         <Bullet>
           <strong>Quick availability confirm:</strong> In <strong>Request availability</strong> mode, attendees see a
-          prominent &ldquo;This time works for me&rdquo; button to confirm the proposed plan time with one click. This creates
-          a standard availability entry matching the plan&rsquo;s start time (with note &ldquo;Proposed time works&rdquo;),
-          so it participates normally in overlap calculations. Works for both logged-in users and guest invitees.
+          prominent &ldquo;This time works for me&rdquo; button to confirm the proposed plan time with one click.
         </Bullet>
         <Bullet>
           <strong>Group response summary:</strong> In <strong>Request availability</strong> mode, a concise summary shows
-          which Going/Maybe attendees have responded and who is still pending. Responded attendees show a green check chip;
-          pending attendees show a dashed outline chip. Visible to all plan attendees.
+          which Going/Maybe attendees have responded and who is still pending.
         </Bullet>
         <Bullet>
           <strong>Email deep-linking:</strong> Email CTAs that target a specific section of the plan page (e.g. feedback,
-          chat) include a <code>?section=</code> query param. The plan page scrolls to that section after loading.
-          If the section requires authentication and the user is logged out, a sign-in prompt is shown instead,
-          preserving the deep-link destination through the login flow.
+          chat) include a <code>?section=</code> query param. If the section requires authentication and the user is logged out,
+          a sign-in prompt is shown instead, preserving the deep-link destination through the login flow.
         </Bullet>
         <Bullet>
           <strong>Self-invite prevention:</strong> A user cannot invite their own email address. The invite form shows an inline

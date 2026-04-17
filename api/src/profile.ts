@@ -3,7 +3,7 @@
  */
 
 export async function ensureAppUserId(
-  sql: ReturnType<import("./db").getSql>,
+  sql: ReturnType<typeof import("./db").getSql>,
   email: string,
   name?: string | null
 ): Promise<string> {
@@ -14,14 +14,7 @@ export async function ensureAppUserId(
     SELECT id FROM newchums.users WHERE email = ${normalized} LIMIT 1
   `) as { id: string }[];
   if (existing.length > 0) {
-    // Adopt any orphaned guest records on login (cheap no-op if none exist)
-    const uid = existing[0].id;
-    try {
-      await sql`UPDATE newchums.event_rsvps SET user_id = ${uid}, guest_email = NULL, guest_name = NULL WHERE guest_email = ${normalized} AND user_id IS NULL`;
-      await sql`UPDATE newchums.event_invites SET user_id = ${uid} WHERE LOWER(email) = ${normalized} AND user_id IS NULL AND NOT EXISTS (SELECT 1 FROM newchums.event_invites i2 WHERE i2.event_id = event_invites.event_id AND i2.user_id = ${uid})`;
-      await sql`UPDATE newchums.event_alt_times SET user_id = ${uid}, guest_email = NULL WHERE guest_email = ${normalized} AND user_id IS NULL`;
-    } catch { /* non-fatal */ }
-    return uid;
+    return existing[0].id;
   }
 
   let newUserId: string | null = null;
@@ -56,33 +49,9 @@ export async function ensureAppUserId(
     throw new Error("Failed to ensure app user");
   }
 
-  // Adopt orphaned guest records: migrate guest RSVPs, invites, and alt-times
-  // that match this email to the new user account.
-  try {
-    await sql`
-      UPDATE newchums.event_rsvps
-      SET user_id = ${newUserId}, guest_email = NULL, guest_name = NULL
-      WHERE guest_email = ${normalized} AND user_id IS NULL
-    `;
-    await sql`
-      UPDATE newchums.event_invites
-      SET user_id = ${newUserId}
-      WHERE LOWER(email) = ${normalized} AND user_id IS NULL
-        AND NOT EXISTS (
-          SELECT 1 FROM newchums.event_invites i2
-          WHERE i2.event_id = event_invites.event_id AND i2.user_id = ${newUserId}
-        )
-    `;
-    await sql`
-      UPDATE newchums.event_alt_times
-      SET user_id = ${newUserId}, guest_email = NULL
-      WHERE guest_email = ${normalized} AND user_id IS NULL
-    `;
-  } catch (adoptErr) {
-    console.error("[ensureAppUserId] guest record adoption failed (non-fatal):", adoptErr);
-  }
-
   // Auto-link: promote Private Contacts whose email matches this new user
+  // (mutual-chum replacement path: when the invited-off-platform person signs
+  // up, the inviter's Private Contact entry flips to On NewChums).
   try {
     await sql`
       UPDATE newchums.user_contacts

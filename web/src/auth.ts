@@ -68,6 +68,77 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return { id: user.id, email: user.email, name: user.name };
       },
     }),
+    /**
+     * Magic-link provider for lightweight plan-signup flow.
+     *
+     * Clients call signIn("magic-link", { email, token, ... }). The authorize
+     * callback POSTs to the API's /auth/magic-link/consume which atomically
+     * marks the one-time token used, flips email_verified_at if needed, and
+     * returns the user record. The API is the source of truth for token
+     * validation; this provider is a thin bridge that converts the successful
+     * response into a NextAuth session.
+     */
+    Credentials({
+      id: "magic-link",
+      name: "Magic Link",
+      credentials: {
+        email: { label: "Email", type: "email" },
+        token: { label: "Token", type: "text" },
+      },
+      async authorize(credentials) {
+        const emailRaw = credentials?.email;
+        const tokenRaw = credentials?.token;
+        if (typeof emailRaw !== "string" || typeof tokenRaw !== "string") return null;
+
+        const email = emailRaw.trim().toLowerCase();
+        const token = tokenRaw.trim();
+        if (!email || !token) return null;
+
+        const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
+        if (!apiBase) {
+          console.error("[magic-link] NEXT_PUBLIC_API_BASE_URL not configured");
+          const err = new CredentialsSignin("Verification service unavailable. Please try again later.");
+          err.code = "MagicLinkInvalid";
+          throw err;
+        }
+
+        let res: Response;
+        try {
+          res = await fetch(`${apiBase}/auth/magic-link/consume`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, token }),
+          });
+        } catch {
+          const err = new CredentialsSignin("Verification service unavailable. Please try again later.");
+          err.code = "MagicLinkInvalid";
+          throw err;
+        }
+
+        const data = (await res.json().catch(() => null)) as
+          | { ok: true; user: { id: string; email: string; name: string | null } }
+          | { ok: false; error?: string }
+          | null;
+        if (!data || !("ok" in data)) {
+          const err = new CredentialsSignin("This link is no longer valid. Please request a new one.");
+          err.code = "MagicLinkInvalid";
+          throw err;
+        }
+        if (!data.ok) {
+          if (data.error === "ACCOUNT_SUSPENDED") {
+            const err = new CredentialsSignin("Your account has been suspended. Please contact support.");
+            err.code = "MagicLinkAccountSuspended";
+            throw err;
+          }
+          // INVALID_OR_EXPIRED and anything else we don't recognise.
+          const err = new CredentialsSignin("This link has expired or already been used. Please request a new one.");
+          err.code = "MagicLinkExpired";
+          throw err;
+        }
+
+        return { id: data.user.id, email: data.user.email, name: data.user.name };
+      },
+    }),
   ],
   session: { strategy: "jwt" },
   callbacks: {

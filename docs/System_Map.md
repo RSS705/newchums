@@ -129,10 +129,11 @@ The following flows run in the API worker; the web app calls the API via `NEXT_P
 | Chums | `GET /chums`, `GET /chums/search`, `GET /chums/check/:userId`, `POST /chums/:userId`, `POST /chums/private`, `DELETE /chums/:id`, `PATCH /chums/:contactId/note` | Bearer JWT |
 | Chum invites | `POST /chums/invite`, `POST /chums/invite/accept` | Bearer JWT |
 | Public Chums | `GET /public/users/:handle/chums` | none |
-| Events (plans) | `POST /events`, `GET /events/mine`, `GET /events/:id` (optional auth, returns `accessState` + `shareToken`), `GET /events/explore` (auth), `GET /events/explore/public` (no auth), `PATCH /events/:id`, `POST /events/:id/cancel` | Bearer JWT (detail: optional; accepts `invite_token` / `participation_token` / `share_token`); explore/public: no auth |
+| Events (plans) | `POST /events`, `GET /events/mine`, `GET /events/:id` (optional auth, returns `accessState` + `shareToken`), `GET /events/explore` (auth), `GET /events/explore/public` (no auth), `PATCH /events/:id`, `POST /events/:id/cancel` | Bearer JWT (detail: optional; accepts `invite_token` or `share_token`); explore/public: no auth |
+| Lightweight plan signup | `POST /auth/plan-signup/request`, `POST /auth/magic-link/consume` | none (rate-limited + Turnstile) |
 | Explore support | `GET /explore/local-signal` | Bearer JWT |
-| Plan RSVP | `POST /events/:id/rsvp`, `POST /events/:id/email-rsvp`, `POST /events/:id/public-rsvp/request-code`, `POST /events/:id/public-rsvp/confirm-code`, `POST /events/:id/confirm`, `POST /events/:id/guest-confirm` | Bearer JWT / token-based |
-| Plan alt times | `POST /events/:id/alt-time`, `PATCH /events/:id/alt-time/:altTimeId`, `DELETE /events/:id/alt-time/:altTimeId`, `POST /events/:id/guest-alt-time`, `POST /events/:id/promote-alt-time` | Bearer JWT |
+| Plan RSVP | `POST /events/:id/rsvp`, `POST /events/:id/confirm` | Bearer JWT |
+| Plan alt times | `POST /events/:id/alt-time`, `PATCH /events/:id/alt-time/:altTimeId`, `DELETE /events/:id/alt-time/:altTimeId`, `POST /events/:id/promote-alt-time` | Bearer JWT |
 | Plan attendee mgmt | `POST /events/:id/invite`, `POST /events/:id/remove-attendee`, `POST /events/:id/remove-invite`, `POST /events/:id/reserve-seats`, `POST /events/:id/toggle-attendee-invites` | Bearer JWT (host only) |
 | Plan join requests | `POST /events/:id/join-request`, `POST /events/:id/join-request/:requestId/approve`, `POST /events/:id/join-request/:requestId/decline`, `POST /events/:id/join-request/:requestId/withdraw` | Bearer JWT |
 | Plan lock | `POST /events/:id/lock` | Bearer JWT (host only) |
@@ -299,20 +300,20 @@ Visit /events/[id]
 ├── No auth, no token → accessState: "public"
 │   └── Limited preview (title, description, date, hobby, host, counts, approximate location)
 │       └── CTA: Sign in / Create account
-│       └── No email RSVP flow
+│       └── No RSVP flow
 ├── ?share_token=xxx (Copy Link) → accessState: "invite"
-│   └── Full detail + email RSVP flow (email verification → participation token → RSVP)
+│   └── Full plan detail (read-only) + lightweight-signup card
+│       └── Submit email + DOB + legal → magic-link email → click to create account, sign in, return to plan
 ├── ?invite_token=xxx (invite email) → accessState: "invite"
-│   └── Full detail + guest RSVP buttons
-├── ?participation_token=xxx (returning guest) → accessState: "invite"
-│   └── Full detail + existing guest RSVP state
+│   └── Full plan detail (read-only) + lightweight-signup card (email pre-filled)
+│       └── On magic-link completion, matching event_invites row is adopted onto the new user
 ├── Logged in, not attending → accessState: "authenticated"
 │   └── Full detail, can RSVP or request to join
 └── Logged in + host or RSVP → accessState: "attending"
     └── Full detail + chat, host controls, exact location
 ```
 
-**Share link flow:** Copy Link → generates `/events/[id]?share_token=xxx` → recipient opens link → API validates token → `accessState: "invite"` → email RSVP flow available. Without a valid token, plain `/events/[id]` shows public preview only.
+**Share-link flow (post-migration 084):** Copy Link → generates `/events/[id]?share_token=xxx` → recipient opens link → API validates token → `accessState: "invite"` → plan preview + lightweight signup card. After magic-link click, they return as an authenticated user and RSVP normally via `POST /events/:id/rsvp`. The former guest participation endpoints (`POST /events/:id/email-rsvp`, `/public-rsvp/request-code`, `/public-rsvp/confirm-code`, `/guest-confirm`, `/guest-alt-time`) have been removed.
 
 ---
 

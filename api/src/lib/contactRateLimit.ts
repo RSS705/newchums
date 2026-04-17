@@ -1,31 +1,39 @@
 /**
- * Per-IP rate limit for contact form submissions.
- * 5 submissions per 10 minutes.
- * Uses KV for state; if KV is not configured, allows (degraded mode for local dev).
+ * Generic sliding-window rate limiter backed by Cloudflare KV.
+ *
+ * Originally written for the contact form; also reused by the lightweight
+ * plan-signup endpoint (per-IP and per-email). If KV is not configured,
+ * permits the request (degraded mode for local dev).
  */
 
-const WINDOW_MS = 10 * 60 * 1000; // 10 minutes
-const MAX_PER_WINDOW = 5;
-
-export async function checkContactRateLimit(
+export async function checkRateLimit(
   kv: KVNamespace | undefined,
-  ip: string
+  bucketKey: string,
+  limit: number,
+  windowMs: number,
 ): Promise<{ allowed: boolean }> {
   if (!kv) return { allowed: true };
 
-  const key = `contact:${ip}`;
-  const raw = await kv.get(key);
+  const raw = await kv.get(bucketKey);
   const now = Date.now();
   let timestamps: number[] = raw ? (JSON.parse(raw) as number[]) : [];
-  timestamps = timestamps.filter((t) => now - t < WINDOW_MS);
+  timestamps = timestamps.filter((t) => now - t < windowMs);
 
-  if (timestamps.length >= MAX_PER_WINDOW) {
+  if (timestamps.length >= limit) {
     return { allowed: false };
   }
 
   timestamps.push(now);
-  await kv.put(key, JSON.stringify(timestamps), {
-    expirationTtl: Math.ceil(WINDOW_MS / 1000) + 60, // 11 min to be safe
+  await kv.put(bucketKey, JSON.stringify(timestamps), {
+    expirationTtl: Math.ceil(windowMs / 1000) + 60,
   });
   return { allowed: true };
+}
+
+/** Contact form: 5 submissions per 10 minutes per IP. */
+export async function checkContactRateLimit(
+  kv: KVNamespace | undefined,
+  ip: string,
+): Promise<{ allowed: boolean }> {
+  return checkRateLimit(kv, `contact:${ip}`, 5, 10 * 60 * 1000);
 }

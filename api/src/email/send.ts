@@ -172,18 +172,6 @@ export const sendChumInviteEmail = async (
 // These require Postmark templates to be created. If the template ID env var
 // is not set, the send is silently skipped (noop). This lets the event system
 // run without email infrastructure blocking core functionality.
-//
-// TEMPLATES TO CREATE IN POSTMARK:
-//   1. Event Invite         , POSTMARK_TEMPLATE_EVENT_INVITE
-//      Model: productName, recipientName, hostName, eventTitle, eventDate, eventUrl
-//   2. Event Updated        , POSTMARK_TEMPLATE_EVENT_UPDATED
-//      Model: productName, recipientName, eventTitle, changeDescription, eventUrl
-//   3. Event Canceled       , POSTMARK_TEMPLATE_EVENT_CANCELED
-//      Model: productName, recipientName, hostName, eventTitle, eventDate
-//   4. Event Reminder       , POSTMARK_TEMPLATE_EVENT_REMINDER
-//      Model: productName, recipientName, eventTitle, eventDate, eventLocation, eventUrl
-//   5. RSVP Update to Host  , POSTMARK_TEMPLATE_EVENT_RSVP_UPDATE
-//      Model: productName, hostName, attendeeName, eventTitle, rsvpStatus, eventUrl
 
 export const sendEventInviteEmail = async (
   env: Bindings,
@@ -211,21 +199,6 @@ export const sendEventInviteEmail = async (
       customMessage: hasContent(customMessage) ? customMessage : null,
       year: new Date().getFullYear(),
     },
-  });
-};
-
-export const sendEventUpdatedEmail = async (
-  env: Bindings,
-  { to, recipientName, eventTitle, changeDescription, eventUrl }: {
-    to: string; recipientName: string;
-    eventTitle: string; changeDescription: string; eventUrl: string;
-  }
-) => {
-  if (!env.POSTMARK_TEMPLATE_EVENT_UPDATED) return;
-  return sendPostmarkTemplateEmail(env, {
-    From: env.EMAIL_FROM, To: to,
-    TemplateId: env.POSTMARK_TEMPLATE_EVENT_UPDATED,
-    TemplateModel: { productName: "NewChums", recipientName, eventTitle, changeDescription, eventUrl },
   });
 };
 
@@ -334,21 +307,6 @@ export const sendEventCanceledEmail = async (
     From: env.EMAIL_FROM, To: to,
     TemplateId: env.POSTMARK_TEMPLATE_EVENT_CANCELED,
     TemplateModel: { productName: "NewChums", recipientName, hostName, eventTitle, eventDate },
-  });
-};
-
-export const sendEventReminderEmail = async (
-  env: Bindings,
-  { to, recipientName, eventTitle, eventDate, eventLocation, eventUrl }: {
-    to: string; recipientName: string;
-    eventTitle: string; eventDate: string; eventLocation: string; eventUrl: string;
-  }
-) => {
-  if (!env.POSTMARK_TEMPLATE_EVENT_REMINDER) return;
-  return sendPostmarkTemplateEmail(env, {
-    From: env.EMAIL_FROM, To: to,
-    TemplateId: env.POSTMARK_TEMPLATE_EVENT_REMINDER,
-    TemplateModel: { productName: "NewChums", recipientName, eventTitle, eventDate, eventLocation, eventUrl },
   });
 };
 
@@ -714,20 +672,50 @@ export const sendEventMatchDigestEmail = async (
   });
 };
 
-// ── Guest verification code email ────────────────────────────────────────
+// ── Lightweight-signup magic link email ──────────────────────────────────
+//
+// Sent when an unauthenticated visitor starts signing up from the plan page.
+// The confirmUrl points at `/auth/magic?...` which consumes a one-time token
+// from `email_verification_tokens`, signs them in, and returns them to the
+// plan URL carried in `next`.
 
-export const sendGuestVerifyCodeEmail = async (
+export const sendMagicLinkSignupEmail = async (
   env: Bindings,
-  { to, code, planTitle }: { to: string; code: string; planTitle: string },
+  { to, confirmUrl, planTitle }: { to: string; confirmUrl: string; planTitle: string },
 ) => {
-  if (!env.POSTMARK_TEMPLATE_GUEST_VERIFY) return;
+  if (!env.POSTMARK_TEMPLATE_MAGIC_LINK_SIGNUP) return;
   return sendPostmarkTemplateEmail(env, {
     From: env.EMAIL_FROM,
     To: to,
-    TemplateId: env.POSTMARK_TEMPLATE_GUEST_VERIFY,
+    TemplateId: env.POSTMARK_TEMPLATE_MAGIC_LINK_SIGNUP,
     TemplateModel: {
       productName: "NewChums",
-      code,
+      confirmUrl,
+      planTitle,
+    },
+    TrackLinks: "None",
+    TrackOpens: false,
+  });
+};
+
+// ── Plan-signin notice for existing accounts ─────────────────────────────
+//
+// Sent when someone submits the plan-signup form with an email that already
+// belongs to a verified account. Contains a link to /login?next=<plan url>
+// so they can sign in and return to the plan. No token; no DB writes.
+
+export const sendPlanSigninEmail = async (
+  env: Bindings,
+  { to, loginUrl, planTitle }: { to: string; loginUrl: string; planTitle: string },
+) => {
+  if (!env.POSTMARK_TEMPLATE_PLAN_SIGNIN) return;
+  return sendPostmarkTemplateEmail(env, {
+    From: env.EMAIL_FROM,
+    To: to,
+    TemplateId: env.POSTMARK_TEMPLATE_PLAN_SIGNIN,
+    TemplateModel: {
+      productName: "NewChums",
+      loginUrl,
       planTitle,
     },
     TrackLinks: "None",
@@ -795,60 +783,6 @@ export const sendConfirmationRequestEmail = async (
       isReminder: isReminder || isFinal,
       isFinal: !!isFinal,
       unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
-      year: new Date().getFullYear(),
-    },
-  });
-};
-
-export const sendGuestConfirmationRequestEmail = async (
-  env: Bindings,
-  { to, recipientName, eventTitle, eventDate, eventLocation, eventUrl, confirmUrl, declineUrl, viewUrl, isReminder, isFinal, deadline }: {
-    to: string; recipientName: string;
-    eventTitle: string; eventDate: string; eventLocation?: string; eventUrl: string;
-    confirmUrl: string; declineUrl: string; viewUrl: string;
-    isReminder: boolean; isFinal: boolean;
-    deadline: string;
-  }
-) => {
-  if (!env.POSTMARK_TEMPLATE_CONFIRMATION_REQUEST_GUEST) return;
-
-  const stage: "initial" | "reminder" | "final" = isFinal ? "final" : isReminder ? "reminder" : "initial";
-
-  const headingMap = {
-    initial: "Confirm your attendance",
-    reminder: "Quick check: are you still coming?",
-    final: "Last call: are you still coming?",
-  } as const;
-
-  const bodyMap = {
-    initial: "Your plan is coming up soon. Please confirm whether you're still in so the host can plan ahead.",
-    reminder: "Your plan is later today. Please let the host know whether you're still in so they can plan ahead.",
-    final: "Your plan starts soon. Please respond now so the host knows who to expect.",
-  } as const;
-
-  // Button text ("I'm still coming" / "I can't make it") is hard-coded
-  // directly in the Postmark template HTML — no template variables needed.
-  // This eliminates the recurring empty-button bug caused by variable name
-  // drift between the code and the Postmark hosted template.
-  return sendPostmarkTemplateEmail(env, {
-    From: env.EMAIL_FROM, To: to,
-    TemplateId: env.POSTMARK_TEMPLATE_CONFIRMATION_REQUEST_GUEST,
-    TemplateModel: {
-      productName: "NewChums",
-      heading: headingMap[stage],
-      greeting: `Hi ${recipientName},`,
-      bodyText: bodyMap[stage],
-      recipientName,
-      eventTitle,
-      eventDate,
-      eventLocation: hasContent(eventLocation) ? eventLocation : null,
-      eventUrl,
-      confirmUrl,
-      declineUrl,
-      viewUrl,
-      deadline,
-      isReminder: isReminder || isFinal,
-      isFinal: !!isFinal,
       year: new Date().getFullYear(),
     },
   });

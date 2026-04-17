@@ -30,10 +30,8 @@ import {
   sendUnreadChatDigestEmail,
   sendEventMatchDigestEmail,
   formatEventMatchSeatLine,
-  sendGuestVerifyCodeEmail,
   sendVerificationEmail,
   sendConfirmationRequestEmail,
-  sendGuestConfirmationRequestEmail,
   sendPlanAtRiskEmail,
   sendPlanAutoCancelledEmail,
   sendPlanRemovedByAdminEmail,
@@ -46,6 +44,8 @@ import {
   sendCommunityMemberRemovedEmail,
   sendCommunityMemberUnblockedEmail,
   sendCommunityJoinRequestReopenedEmail,
+  sendMagicLinkSignupEmail,
+  sendPlanSigninEmail,
 } from "./email/send";
 import { canAccessInternalTestRoute, notFound } from "./internalAccess";
 import { nameToSlug, slugToName, validateInterestName } from "./interests";
@@ -66,7 +66,7 @@ import {
   resolveEffectiveHostPrefs,
   type UserMetricsMap,
 } from "./lib/chumPreferences";
-import { checkContactRateLimit } from "./lib/contactRateLimit";
+import { checkContactRateLimit, checkRateLimit } from "./lib/contactRateLimit";
 import {
   countOwnedCommunities,
   isValidSubscriptionPlan,
@@ -94,6 +94,7 @@ import {
   verifyUploadToken,
 } from "./media";
 import {
+  generateFunUsername,
   normalizeUsernameDisplay,
   normalizeUsernameForUniq,
   validateUsername,
@@ -682,10 +683,7 @@ app.get("/public/users/:userId/attendance-record", async (c) => {
           SELECT 1 FROM newchums.event_rsvps er
           WHERE er.event_id = e.id
             AND er.user_id IS DISTINCT FROM e.host_user_id
-            AND (
-              er.committed_at IS NOT NULL
-              OR (er.user_id IS NULL AND er.status = 'going')
-            )
+            AND er.committed_at IS NOT NULL
         )
         AND COALESCE(e.cancellation_reason, '') != 'no_attendees'
     `) as { completed: number; total_hosted: number }[];
@@ -1002,12 +1000,18 @@ app.post("/auth/signup", async (c) => {
         }
       }
 
-      // Adopt orphaned guest records (RSVPs, invites, alt-times, confirmations) for this email
+      // Adopt any pending email-only invites matching this email so the new user
+      // shows up as "invited" on plans they were invited to before signing up.
       try {
-        await sql`UPDATE newchums.event_rsvps SET user_id = ${newUserId}, guest_email = NULL, guest_name = NULL WHERE guest_email = ${normalizedEmail} AND user_id IS NULL`;
-        await sql`UPDATE newchums.event_invites SET user_id = ${newUserId} WHERE LOWER(email) = ${normalizedEmail} AND user_id IS NULL AND NOT EXISTS (SELECT 1 FROM newchums.event_invites i2 WHERE i2.event_id = event_invites.event_id AND i2.user_id = ${newUserId})`;
-        await sql`UPDATE newchums.event_alt_times SET user_id = ${newUserId}, guest_email = NULL WHERE guest_email = ${normalizedEmail} AND user_id IS NULL`;
-        await sql`UPDATE newchums.event_confirmations SET user_id = ${newUserId}, guest_email = NULL WHERE guest_email = ${normalizedEmail} AND user_id IS NULL AND NOT EXISTS (SELECT 1 FROM newchums.event_confirmations ec2 WHERE ec2.event_id = event_confirmations.event_id AND ec2.user_id = ${newUserId})`;
+        await sql`
+          UPDATE newchums.event_invites
+          SET user_id = ${newUserId}
+          WHERE LOWER(email) = ${normalizedEmail} AND user_id IS NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM newchums.event_invites i2
+              WHERE i2.event_id = event_invites.event_id AND i2.user_id = ${newUserId}
+            )
+        `;
       } catch { /* non-fatal */ }
     }
     return c.json({ ok: true }, 201);
@@ -1303,6 +1307,307 @@ app.post("/auth/email-verify/mark-oauth", async (c) => {
     WHERE email = ${normalized} AND email_verified_at IS NULL
   `;
   return c.json({ ok: true });
+});
+
+// ---- Lightweight plan signup (magic link) ----
+//
+// Replaces the old guest participation flow. Unauthenticated visitors on a
+// plan's share/invite link fill in email + DOB + legal-acceptance checkbox
+// and submit to this endpoint. The server either:
+//   - redirects existing accounts to /login via a notice email
+//   - creates a new user row and emails a one-time magic link that signs
+//     them in and returns them to the plan URL
+//
+// Magic-link tokens live in the existing `email_verification_tokens` table
+// (15-minute TTL, hashed with hashResetToken, single-use).
+
+/** Server-pinned current legal versions. Clients must not set these. */
+const CURRENT_TERMS_VERSION = "2026-03-17";
+const CURRENT_PRIVACY_VERSION = "2026-03-17";
+const MAGIC_LINK_EXPIRY_MS = 15 * 60 * 1000; // 15 minutes
+const PLAN_SIGNUP_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
+const PLAN_SIGNUP_RATE_LIMIT_PER_IP = 10;
+const PLAN_SIGNUP_RATE_LIMIT_PER_EMAIL = 3;
+
+/** Sanitize the `next` URL to a relative same-origin path; fallback to "/". */
+function sanitizePlanSignupNext(raw: unknown): string {
+  if (typeof raw !== "string") return "/";
+  const trimmed = raw.trim();
+  if (!trimmed) return "/";
+  // Must be a relative path starting with "/", and must not be protocol-relative ("//...")
+  if (!trimmed.startsWith("/") || trimmed.startsWith("//")) return "/";
+  return trimmed;
+}
+
+app.post("/auth/plan-signup/request", async (c) => {
+  let body: {
+    email?: string;
+    date_of_birth?: string;
+    accepted_legal?: boolean;
+    turnstile_token?: string;
+    next?: string;
+  };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ ok: false, error: "INVALID_JSON" }, 400);
+  }
+
+  const email = body.email?.trim().toLowerCase();
+  const dob = body.date_of_birth?.trim() ?? "";
+  const acceptedLegal = body.accepted_legal === true;
+  const turnstileToken = typeof body.turnstile_token === "string" ? body.turnstile_token : "";
+  const next = sanitizePlanSignupNext(body.next);
+
+  if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
+    return c.json({ ok: false, error: "INVALID_EMAIL" }, 400);
+  }
+  if (!acceptedLegal) {
+    return c.json({ ok: false, error: "LEGAL_REQUIRED" }, 400);
+  }
+  const parts = parseDateOnly(dob);
+  if (!parts) {
+    return c.json({ ok: false, error: "INVALID_DATE" }, 400);
+  }
+  const today = new Date();
+  const birth = new Date(parts.y, parts.m - 1, parts.d);
+  const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  if (birth > todayMidnight) {
+    return c.json({ ok: false, error: "FUTURE_DATE" }, 400);
+  }
+  if (!isAtLeast18(dob)) {
+    return c.json(
+      {
+        ok: false,
+        error: "UNDERAGE",
+        message: "NewChums is currently available to people 18 and older.",
+      },
+      400,
+    );
+  }
+  const parsedDob = `${parts.y}-${String(parts.m).padStart(2, "0")}-${String(parts.d).padStart(2, "0")}`;
+
+  const requestIp =
+    c.req.header("CF-Connecting-IP") ??
+    c.req.header("X-Forwarded-For")?.split(",")[0]?.trim() ??
+    "unknown";
+
+  // Rate-limit both by IP and by email so bots can't sweep either axis.
+  const ipLimit = await checkRateLimit(
+    c.env.CONTACT_RATELIMIT_KV,
+    `plan-signup:ip:${requestIp}`,
+    PLAN_SIGNUP_RATE_LIMIT_PER_IP,
+    PLAN_SIGNUP_RATE_LIMIT_WINDOW_MS,
+  );
+  if (!ipLimit.allowed) {
+    return c.json({ ok: false, error: "RATE_LIMITED" }, 429);
+  }
+  const emailLimit = await checkRateLimit(
+    c.env.CONTACT_RATELIMIT_KV,
+    `plan-signup:email:${email}`,
+    PLAN_SIGNUP_RATE_LIMIT_PER_EMAIL,
+    PLAN_SIGNUP_RATE_LIMIT_WINDOW_MS,
+  );
+  if (!emailLimit.allowed) {
+    return c.json({ ok: false, error: "RATE_LIMITED" }, 429);
+  }
+
+  // Turnstile: unauthenticated endpoint. Required when the secret is configured.
+  if (c.env.TURNSTILE_SECRET_KEY) {
+    if (!turnstileToken) {
+      return c.json({ ok: false, error: "TURNSTILE_REQUIRED" }, 400);
+    }
+    const verifyResult = await verifyTurnstileToken(turnstileToken, c.env.TURNSTILE_SECRET_KEY, requestIp);
+    if (!verifyResult.success) {
+      return c.json({ ok: false, error: "TURNSTILE_FAILED" }, 400);
+    }
+  }
+
+  const sql = getSql(c.env);
+
+  // Pull plan title for email context, if `next` points at a plan URL.
+  // Failure to resolve is non-fatal; email just uses "a plan" as a fallback.
+  let planTitle = "a plan";
+  try {
+    const planIdMatch = next.match(/^\/events\/([a-zA-Z0-9-]+)(?:[/?].*)?$/);
+    if (planIdMatch?.[1]) {
+      const rows = (await sql`
+        SELECT title FROM newchums.events WHERE id = ${planIdMatch[1]} LIMIT 1
+      `) as { title: string | null }[];
+      if (rows[0]?.title) planTitle = rows[0].title;
+    }
+  } catch {
+    // ignore; planTitle remains "a plan"
+  }
+
+  // Branch on account state.
+  const existing = (await sql`
+    SELECT id, email_verified_at, is_suspended
+    FROM newchums.users
+    WHERE email = ${email}
+    LIMIT 1
+  `) as { id: string; email_verified_at: string | null; is_suspended: boolean }[];
+
+  if (existing.length > 0 && existing[0].email_verified_at) {
+    // Verified existing account: no DB writes, no magic link. Send a signin-notice
+    // email pointing at /login?next=<plan>. Client redirects to the same URL.
+    if (existing[0].is_suspended) {
+      // Uniform response for suspended accounts — don't leak suspension state to a stranger.
+      return c.json({ ok: true, state: "existing_account", next });
+    }
+    const loginUrl = `${c.env.WEB_BASE_URL}/login?next=${encodeURIComponent(next)}`;
+    try {
+      await sendPlanSigninEmail(c.env, { to: email, loginUrl, planTitle });
+    } catch (err) {
+      console.error("[plan-signup] sendPlanSigninEmail failed", err);
+      // Still return existing_account; client will redirect to /login and the user can log in without the email.
+    }
+    return c.json({ ok: true, state: "existing_account", next });
+  }
+
+  // New or unverified account: create/update user row and issue a magic-link token.
+  let userId: string;
+  if (existing.length > 0 && !existing[0].email_verified_at) {
+    // Abandoned credential signup or previous lightweight-signup that didn't complete.
+    // Refresh DOB + legal fields so an attacker can't rotate under-age / over-age submissions.
+    userId = existing[0].id;
+    await sql`
+      UPDATE newchums.users
+      SET date_of_birth = ${parsedDob},
+          accepted_terms_version = ${CURRENT_TERMS_VERSION},
+          accepted_privacy_version = ${CURRENT_PRIVACY_VERSION},
+          accepted_legal_at = NOW()
+      WHERE id = ${userId}
+    `;
+  } else {
+    // Fresh account.
+    const username = await generateFunUsername(sql);
+    const usernameNorm = username.toLowerCase();
+    const inserted = (await sql`
+      INSERT INTO newchums.users (
+        email, username, username_norm, date_of_birth, email_verified_at, password_hash,
+        accepted_terms_version, accepted_privacy_version, accepted_legal_at
+      )
+      VALUES (
+        ${email}, ${username}, ${usernameNorm}, ${parsedDob}, NULL, NULL,
+        ${CURRENT_TERMS_VERSION}, ${CURRENT_PRIVACY_VERSION}, NOW()
+      )
+      RETURNING id
+    `) as { id: string }[];
+    userId = inserted[0]?.id;
+    if (!userId) {
+      console.error("[plan-signup] INSERT returned no id");
+      return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+    }
+    // Create a minimal user_profile row so later /profile updates have something to UPDATE.
+    try {
+      const defaultPrefsJson = getDefaultPrefsJson();
+      await sql`
+        INSERT INTO user_profile (
+          user_id, home_city, home_lat, home_lng, home_location, travel_radius_km,
+          email_chat_digest, email_new_events, bio, notification_prefs
+        )
+        VALUES (
+          ${userId}, NULL, NULL, NULL, NULL, NULL,
+          true, true, NULL, ${defaultPrefsJson}::jsonb
+        )
+      `;
+    } catch (err) {
+      // user_profile row is auxiliary; failure here shouldn't block signup.
+      console.error("[plan-signup] user_profile insert failed (non-fatal)", err);
+    }
+  }
+
+  // Invalidate any prior pending tokens for this user, then mint a fresh one.
+  await sql`
+    UPDATE newchums.email_verification_tokens
+    SET used_at = NOW()
+    WHERE user_id = ${userId} AND used_at IS NULL
+  `;
+  const rawToken = generateResetToken();
+  const tokenHash = await hashResetToken(rawToken);
+  const expiresAt = new Date(Date.now() + MAGIC_LINK_EXPIRY_MS);
+  await sql`
+    INSERT INTO newchums.email_verification_tokens (user_id, token_hash, expires_at)
+    VALUES (${userId}, ${tokenHash}, ${expiresAt})
+  `;
+
+  const confirmUrl = `${c.env.WEB_BASE_URL}/auth/magic?token=${encodeURIComponent(rawToken)}&email=${encodeURIComponent(email)}&next=${encodeURIComponent(next)}`;
+  try {
+    await sendMagicLinkSignupEmail(c.env, { to: email, confirmUrl, planTitle });
+  } catch (err) {
+    console.error("[plan-signup] sendMagicLinkSignupEmail failed", err);
+    // Roll back the token so a failed send doesn't leave a dead-end row active.
+    await sql`
+      UPDATE newchums.email_verification_tokens
+      SET used_at = NOW()
+      WHERE user_id = ${userId} AND token_hash = ${tokenHash}
+    `;
+    return c.json({ ok: false, error: "EMAIL_SEND_FAILED" }, 500);
+  }
+
+  return c.json({ ok: true, state: "pending", next });
+});
+
+/**
+ * Consume a magic-link token. Called by the web-side `magic-link` Credentials
+ * provider from Auth.js. On success:
+ *   - marks the token row `used_at = NOW()`
+ *   - sets `email_verified_at = NOW()` on the user (idempotent)
+ *   - returns `{ok:true, user:{id, email, name, is_suspended}}` so the Credentials
+ *     provider can build the session record and signal `AccountSuspended` if needed
+ */
+app.post("/auth/magic-link/consume", async (c) => {
+  let body: { email?: string; token?: string };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ ok: false, error: "INVALID_JSON" }, 400);
+  }
+  const email = body.email?.trim().toLowerCase();
+  const tokenRaw = body.token?.trim();
+  if (!email || !tokenRaw) {
+    return c.json({ ok: false, error: "INVALID_INPUT" }, 400);
+  }
+
+  const sql = getSql(c.env);
+  const users = (await sql`
+    SELECT id, email, name, is_suspended
+    FROM newchums.users
+    WHERE email = ${email}
+    LIMIT 1
+  `) as { id: string; email: string; name: string | null; is_suspended: boolean }[];
+  if (users.length === 0) {
+    return c.json({ ok: false, error: "INVALID_OR_EXPIRED" }, 400);
+  }
+  const user = users[0];
+
+  const tokenHash = await hashResetToken(tokenRaw);
+  const tokens = (await sql`
+    SELECT id
+    FROM newchums.email_verification_tokens
+    WHERE user_id = ${user.id}
+      AND token_hash = ${tokenHash}
+      AND used_at IS NULL
+      AND expires_at > NOW()
+    LIMIT 1
+  `) as { id: string }[];
+  if (tokens.length === 0) {
+    return c.json({ ok: false, error: "INVALID_OR_EXPIRED" }, 400);
+  }
+
+  if (user.is_suspended) {
+    // Do not mark the token used — suspended users shouldn't burn a token.
+    return c.json({ ok: false, error: "ACCOUNT_SUSPENDED" }, 403);
+  }
+
+  await sql`UPDATE newchums.email_verification_tokens SET used_at = NOW() WHERE id = ${tokens[0].id}`;
+  await sql`UPDATE newchums.users SET email_verified_at = COALESCE(email_verified_at, NOW()) WHERE id = ${user.id}`;
+
+  return c.json({
+    ok: true,
+    user: { id: user.id, email: user.email, name: user.name, is_suspended: false },
+  });
 });
 
 // ---- Email change ----
@@ -1876,89 +2181,6 @@ async function verifyInviteToken(
   }
 }
 
-// Public RSVP participation tokens, issued after email verification via 6-digit code.
-// Structurally similar to invite tokens but with purpose "public_rsvp".
-// Valid for 30 days (same as invite tokens).
-
-const CHALLENGE_TOKEN_EXPIRY_SECONDS = 10 * 60; // 10 minutes
-
-async function hmacDigest(secret: string, message: string): Promise<string> {
-  const enc = new TextEncoder();
-  const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const sig = await crypto.subtle.sign("HMAC", key, enc.encode(message));
-  return btoa(String.fromCharCode(...new Uint8Array(sig)));
-}
-
-async function createChallengeToken(
-  secret: string,
-  payload: { email: string; eventId: string; code: string },
-): Promise<string> {
-  const digest = await hmacDigest(secret, `${payload.email}|${payload.eventId}|${payload.code}`);
-  const exp = Math.floor(Date.now() / 1000) + CHALLENGE_TOKEN_EXPIRY_SECONDS;
-  return new SignJWT({ em: payload.email, eid: payload.eventId, d: digest, purpose: "guest_challenge" })
-    .setProtectedHeader({ alg: "HS256" })
-    .setExpirationTime(exp)
-    .sign(new TextEncoder().encode(secret));
-}
-
-async function verifyChallengeToken(
-  token: string,
-  secret: string,
-  submittedCode: string,
-): Promise<{ email: string; eventId: string } | null> {
-  try {
-    const { payload } = await jwtVerify(token, new TextEncoder().encode(secret));
-    if (payload.purpose !== "guest_challenge") return null;
-    const email = payload.em as string | undefined;
-    const eventId = payload.eid as string | undefined;
-    const storedDigest = payload.d as string | undefined;
-    if (!email || !eventId || !storedDigest) return null;
-    const expectedDigest = await hmacDigest(secret, `${email}|${eventId}|${submittedCode}`);
-    if (storedDigest !== expectedDigest) return null;
-    return { email, eventId };
-  } catch {
-    return null;
-  }
-}
-
-async function createParticipationToken(
-  secret: string,
-  payload: { eventId: string; email: string; name?: string },
-): Promise<string> {
-  const exp = Math.floor(Date.now() / 1000) + INVITE_TOKEN_EXPIRY_SECONDS;
-  return new SignJWT({
-    eid: payload.eventId,
-    em: payload.email,
-    nm: payload.name ?? undefined,
-    purpose: "public_rsvp",
-  })
-    .setProtectedHeader({ alg: "HS256" })
-    .setExpirationTime(exp)
-    .sign(new TextEncoder().encode(secret));
-}
-
-/** Verify a token with purpose "invite_rsvp", "public_rsvp", or "share". */
-function verifyParticipationOrInviteToken(
-  token: string,
-  secret: string,
-): Promise<{ eventId: string; userId?: string; email?: string; purpose: string; name?: string } | null> {
-  return jwtVerify(token, new TextEncoder().encode(secret))
-    .then(({ payload }) => {
-      const purpose = payload.purpose as string | undefined;
-      if (purpose !== "invite_rsvp" && purpose !== "public_rsvp" && purpose !== "share") return null;
-      const eventId = payload.eid as string | undefined;
-      if (!eventId) return null;
-      return {
-        eventId,
-        userId: payload.uid as string | undefined,
-        email: payload.em as string | undefined,
-        purpose,
-        name: payload.nm as string | undefined,
-      };
-    })
-    .catch(() => null);
-}
-
 // Share tokens, plan-level tokens for Copy Link / share URLs.
 // Not user-specific; anyone with the token can view the full plan detail
 // and use the public RSVP flow. Deterministic per event (no expiry).
@@ -1981,10 +2203,6 @@ async function createShareToken(eventId: string, secret: string): Promise<string
 async function verifyShareToken(token: string, eventId: string, secret: string): Promise<boolean> {
   const expected = await createShareToken(eventId, secret);
   return token === expected;
-}
-
-function generateSixDigitCode(): string {
-  return String(Math.floor(100000 + Math.random() * 900000));
 }
 
 // Unsubscribe tokens, allow one-click email preference opt-out without requiring login.
@@ -2015,39 +2233,6 @@ async function verifyUnsubscribeToken(
     const key = payload.key as string | undefined;
     if (!userId || !key) return null;
     return { userId, key };
-  } catch {
-    return null;
-  }
-}
-
-// Guest confirmation tokens: allow one-click attendance confirmation from email
-// for guest attendees (no account). Token encodes eventId + guest email.
-// Valid for 7 days.
-const GUEST_CONFIRMATION_TOKEN_EXPIRY_SECONDS = 7 * 24 * 60 * 60;
-
-async function createGuestConfirmationToken(
-  secret: string,
-  eventId: string,
-  email: string,
-): Promise<string> {
-  const exp = Math.floor(Date.now() / 1000) + GUEST_CONFIRMATION_TOKEN_EXPIRY_SECONDS;
-  return new SignJWT({ eid: eventId, em: email, purpose: "guest_confirmation" })
-    .setProtectedHeader({ alg: "HS256" })
-    .setExpirationTime(exp)
-    .sign(new TextEncoder().encode(secret));
-}
-
-async function verifyGuestConfirmationToken(
-  token: string,
-  secret: string,
-): Promise<{ eventId: string; email: string } | null> {
-  try {
-    const { payload } = await jwtVerify(token, new TextEncoder().encode(secret));
-    if (payload.purpose !== "guest_confirmation") return null;
-    const eventId = payload.eid as string | undefined;
-    const email = payload.em as string | undefined;
-    if (!eventId || !email) return null;
-    return { eventId, email };
   } catch {
     return null;
   }
@@ -5205,10 +5390,7 @@ app.get("/admin/kpis/growth-loop", async (c) => {
           SELECT 1 FROM newchums.event_rsvps er
           WHERE er.event_id = fe.id
             AND er.user_id IS DISTINCT FROM fe.host_user_id
-            AND (
-              er.committed_at IS NOT NULL
-              OR (er.user_id IS NULL AND er.status = 'going')
-            )
+            AND er.committed_at IS NOT NULL
         )
         AND COALESCE(fe.cancellation_reason, '') != 'no_attendees'
       )
@@ -6341,11 +6523,22 @@ app.post("/communities", async (c) => {
 
   const locationName = body.location_name ? String(body.location_name).trim().slice(0, 200) : null;
   const locationAddress = body.location_address ? String(body.location_address).trim().slice(0, 500) : null;
-  const locationLat = body.location_lat != null ? Number(body.location_lat) : null;
-  const locationLng = body.location_lng != null ? Number(body.location_lng) : null;
+  const locationLat = body.location_lat != null && Number.isFinite(Number(body.location_lat)) ? Number(body.location_lat) : null;
+  const locationLng = body.location_lng != null && Number.isFinite(Number(body.location_lng)) ? Number(body.location_lng) : null;
 
-  if (!isOnline && !locationName && !locationAddress)
-    return c.json({ ok: false, error: "VALIDATION", message: "Location is required for in-person communities", field: "location" }, 400);
+  if (!isOnline) {
+    if (!locationName && !locationAddress) {
+      return c.json({ ok: false, error: "VALIDATION", message: "Location is required for in-person communities", field: "location" }, 400);
+    }
+    // Require coordinates from a Google Places pick. Without these, the
+    // community can't be placed on the distance filter used by the
+    // Communities discovery feed — which previously meant communities
+    // with only typed text ended up with stale coordinates from a prior
+    // unrelated pick, so they appeared at the wrong location.
+    if (locationLat == null || locationLng == null) {
+      return c.json({ ok: false, error: "VALIDATION", message: "Please pick a location from the suggestions", field: "location" }, 400);
+    }
+  }
 
   // Hobbies/interests are required
   const interestItems = Array.isArray(body.interest_items) ? body.interest_items as { slug: string; name: string }[] : [];
@@ -6374,8 +6567,16 @@ app.post("/communities", async (c) => {
         if (!slugVal || !nameVal) continue;
         const existing = (await sql`SELECT id FROM newchums.interests WHERE slug = ${slugVal} AND is_deleted = false LIMIT 1`) as { id: string }[];
         if (existing[0]) { interestIds.push(existing[0].id); continue; }
-        const inserted = (await sql`INSERT INTO newchums.interests (name, slug) VALUES (${nameVal}, ${slugVal}) ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name RETURNING id`) as { id: string }[];
-        if (inserted[0]) interestIds.push(inserted[0].id);
+        // Insert a fresh interest. `category` is NOT NULL so we must supply an
+        // empty string; `is_seed = false` marks it as user-created. ON CONFLICT
+        // DO NOTHING means a slug that exists but is soft-deleted is left alone
+        // (admins soft-delete inappropriate hobbies; users shouldn't resurrect
+        // them by re-submitting the same slug). Matches the plan-side pattern.
+        try {
+          await sql`INSERT INTO newchums.interests (name, category, slug, sort_order, is_seed, created_by_user_id) VALUES (${nameVal}, '', ${slugVal}, 0, false, ${userId}) ON CONFLICT (slug) DO NOTHING`;
+        } catch { /* ignore concurrent insert race */ }
+        const fetched = (await sql`SELECT id FROM newchums.interests WHERE LOWER(slug) = LOWER(${slugVal}) AND is_deleted = false LIMIT 1`) as { id: string }[];
+        if (fetched[0]) interestIds.push(fetched[0].id);
       }
       if (interestIds.length > 0) {
         await sql`INSERT INTO newchums.community_interests (community_id, interest_id) SELECT ${community.id}, UNNEST(${interestIds}::uuid[]) ON CONFLICT DO NOTHING`;
@@ -6857,9 +7058,38 @@ app.patch("/communities/:slug", async (c) => {
     if (body.discord_url !== undefined) { updates.push("discord_url"); vals.push(body.discord_url ? String(body.discord_url).trim().slice(0, 500) : null); }
     if (body.location_name !== undefined) { updates.push("location_name"); vals.push(body.location_name ? String(body.location_name).trim().slice(0, 200) : null); }
     if (body.location_address !== undefined) { updates.push("location_address"); vals.push(body.location_address ? String(body.location_address).trim().slice(0, 500) : null); }
-    if (body.location_lat !== undefined) { updates.push("location_lat"); vals.push(body.location_lat != null ? Number(body.location_lat) : null); }
-    if (body.location_lng !== undefined) { updates.push("location_lng"); vals.push(body.location_lng != null ? Number(body.location_lng) : null); }
+    if (body.location_lat !== undefined) { updates.push("location_lat"); vals.push(body.location_lat != null && Number.isFinite(Number(body.location_lat)) ? Number(body.location_lat) : null); }
+    if (body.location_lng !== undefined) { updates.push("location_lng"); vals.push(body.location_lng != null && Number.isFinite(Number(body.location_lng)) ? Number(body.location_lng) : null); }
     if (body.avatar_key !== undefined) { updates.push("avatar_key"); vals.push(body.avatar_key ? String(body.avatar_key) : null); }
+
+    // Enforce location consistency. If the patch touches online/location,
+    // the resulting state (merge of existing row + patched fields) must
+    // have coordinates when offline. This mirrors the POST /communities
+    // check and prevents text-only edits from leaving stale or missing
+    // lat/lng that silently break the distance filter in discovery.
+    const touchesLocation =
+      body.is_online !== undefined ||
+      body.location_name !== undefined ||
+      body.location_address !== undefined ||
+      body.location_lat !== undefined ||
+      body.location_lng !== undefined;
+    if (touchesLocation) {
+      const current = (await sql`
+        SELECT is_online, location_lat, location_lng
+        FROM newchums.communities WHERE id = ${community.id} LIMIT 1
+      `) as { is_online: boolean; location_lat: number | null; location_lng: number | null }[];
+      const curr = current[0];
+      const finalIsOnline = body.is_online !== undefined ? body.is_online === true : (curr?.is_online ?? false);
+      const finalLat = body.location_lat !== undefined
+        ? (body.location_lat != null && Number.isFinite(Number(body.location_lat)) ? Number(body.location_lat) : null)
+        : (curr?.location_lat ?? null);
+      const finalLng = body.location_lng !== undefined
+        ? (body.location_lng != null && Number.isFinite(Number(body.location_lng)) ? Number(body.location_lng) : null)
+        : (curr?.location_lng ?? null);
+      if (!finalIsOnline && (finalLat == null || finalLng == null)) {
+        return c.json({ ok: false, error: "VALIDATION", message: "Please pick a location from the suggestions", field: "location" }, 400);
+      }
+    }
 
     // Handle interest_items update (replace all community interests)
     if (Array.isArray(body.interest_items)) {
@@ -6873,8 +7103,16 @@ app.patch("/communities/:slug", async (c) => {
         if (!slugVal || !nameVal) continue;
         const existing = (await sql`SELECT id FROM newchums.interests WHERE slug = ${slugVal} AND is_deleted = false LIMIT 1`) as { id: string }[];
         if (existing[0]) { interestIds.push(existing[0].id); continue; }
-        const inserted = (await sql`INSERT INTO newchums.interests (name, slug) VALUES (${nameVal}, ${slugVal}) ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name RETURNING id`) as { id: string }[];
-        if (inserted[0]) interestIds.push(inserted[0].id);
+        // Insert a fresh interest. `category` is NOT NULL so we must supply an
+        // empty string; `is_seed = false` marks it as user-created. ON CONFLICT
+        // DO NOTHING means a slug that exists but is soft-deleted is left alone
+        // (admins soft-delete inappropriate hobbies; users shouldn't resurrect
+        // them by re-submitting the same slug). Matches the plan-side pattern.
+        try {
+          await sql`INSERT INTO newchums.interests (name, category, slug, sort_order, is_seed, created_by_user_id) VALUES (${nameVal}, '', ${slugVal}, 0, false, ${userId}) ON CONFLICT (slug) DO NOTHING`;
+        } catch { /* ignore concurrent insert race */ }
+        const fetched = (await sql`SELECT id FROM newchums.interests WHERE LOWER(slug) = LOWER(${slugVal}) AND is_deleted = false LIMIT 1`) as { id: string }[];
+        if (fetched[0]) interestIds.push(fetched[0].id);
       }
       await sql`DELETE FROM newchums.community_interests WHERE community_id = ${community.id}`;
       if (interestIds.length > 0) {
@@ -7895,8 +8133,18 @@ app.post("/events", async (c) => {
   const locationName = body.location_name ? String(body.location_name).trim().slice(0, 200) : null;
   const locationAddress = body.location_address ? String(body.location_address).trim().slice(0, 500) : null;
   const locationPlaceId = body.location_place_id ? String(body.location_place_id) : null;
-  const locationLat = body.location_lat != null ? Number(body.location_lat) : null;
-  const locationLng = body.location_lng != null ? Number(body.location_lng) : null;
+  const locationLat = body.location_lat != null && Number.isFinite(Number(body.location_lat)) ? Number(body.location_lat) : null;
+  const locationLng = body.location_lng != null && Number.isFinite(Number(body.location_lng)) ? Number(body.location_lng) : null;
+
+  // In-person plans need real coordinates so the Explore / digest distance
+  // filters can place them. Freeform typed text with no Google Places pick
+  // would otherwise store null lat/lng and silently vanish from discovery
+  // for everyone with a travel radius. Mirrors the guard on POST
+  // /communities.
+  if (locationType === "in_person" && (locationLat == null || locationLng == null)) {
+    return c.json({ ok: false, error: "VALIDATION", message: "Please pick a location from the suggestions", field: "location" }, 400);
+  }
+
   const locationVisibility =
     locationType === "in_person"
       ? (VALID_LOCATION_VISIBILITY.includes(String(body.location_visibility ?? "exact_everyone") as typeof VALID_LOCATION_VISIBILITY[number])
@@ -8969,75 +9217,50 @@ app.get("/events/:id", async (c) => {
     shareLinkModalDismissed = flagRows[0]?.share_link_modal_dismissed ?? false;
   }
 
-  // Token-based access for email invite recipients, public RSVP participants, or share-link visitors
-  const inviteTokenParam = c.req.query("invite_token") ?? c.req.query("participation_token") ?? null;
+  // Token-based access for email invite recipients or share-link visitors.
+  // Invite tokens are signed JWTs; share tokens are short deterministic HMACs.
+  // Unauthenticated visitors see the plan preview + lightweight signup card;
+  // after magic-link confirmation they return here as a real authenticated user.
+  const inviteTokenParam = c.req.query("invite_token") ?? null;
   const shareTokenParam = c.req.query("share_token") ?? null;
-  let tokenGuestEmail: string | null = null;
+  let tokenInviteEmail: string | null = null;
   let tokenGrantsAccess = false;
-  let tokenPurpose: string | null = null;
   if (inviteTokenParam) {
-    const decoded = await verifyParticipationOrInviteToken(inviteTokenParam, c.env.NEXTAUTH_SECRET);
+    const decoded = await verifyInviteToken(inviteTokenParam, c.env.NEXTAUTH_SECRET);
     if (decoded && decoded.eventId === eventId) {
       tokenGrantsAccess = true;
-      tokenPurpose = decoded.purpose ?? null;
       if (!userId) {
         if (decoded.email) {
-          tokenGuestEmail = decoded.email.toLowerCase();
+          tokenInviteEmail = decoded.email.toLowerCase();
         } else if (decoded.userId) {
           // Invite token for a registered user opened while not logged in,
-          // resolve their email so the guest-invite path can identify them.
+          // resolve their email so we can prefill the signup/login flow.
           const tokenUserRows = (await sql`SELECT email FROM newchums.users WHERE id = ${decoded.userId} LIMIT 1`) as { email: string }[];
-          if (tokenUserRows[0]) tokenGuestEmail = tokenUserRows[0].email.toLowerCase();
+          if (tokenUserRows[0]) tokenInviteEmail = tokenUserRows[0].email.toLowerCase();
         }
       }
     }
   } else if (shareTokenParam) {
-    // Try short HMAC token first, then fall back to legacy JWT
     if (await verifyShareToken(shareTokenParam, eventId, c.env.NEXTAUTH_SECRET)) {
       tokenGrantsAccess = true;
-    } else {
-      const decoded = await verifyParticipationOrInviteToken(shareTokenParam, c.env.NEXTAUTH_SECRET);
-      if (decoded && decoded.eventId === eventId) {
-        tokenGrantsAccess = true;
-        if (!userId && decoded.email) tokenGuestEmail = decoded.email.toLowerCase();
-      }
     }
   }
 
-  // Adopt orphaned guest records: when a logged-in user views an event,
-  // migrate any guest RSVP / invite / alt-time rows that match their email.
+  // Adopt email-only invites when a logged-in user views an event: if their
+  // account matches an email-invite row, claim it so they appear as invited.
+  // This is the lightweight-signup landing case: the user was invited by email
+  // before they had an account; now they do, and we attach the invite.
   if (userId && authPayload?.email) {
     const userEmail = (authPayload.email as string).toLowerCase();
     try {
-      // Claim guest RSVP (only if no user-based RSVP already exists)
-      await sql`
-        UPDATE newchums.event_rsvps
-        SET user_id = ${userId}, guest_email = NULL, guest_name = NULL
-        WHERE event_id = ${eventId} AND guest_email = ${userEmail} AND user_id IS NULL
-          AND NOT EXISTS (SELECT 1 FROM newchums.event_rsvps r2 WHERE r2.event_id = ${eventId} AND r2.user_id = ${userId})
-      `;
-      // Claim email-only invite
       await sql`
         UPDATE newchums.event_invites
         SET user_id = ${userId}
         WHERE event_id = ${eventId} AND LOWER(email) = ${userEmail} AND user_id IS NULL
           AND NOT EXISTS (SELECT 1 FROM newchums.event_invites i2 WHERE i2.event_id = ${eventId} AND i2.user_id = ${userId})
       `;
-      // Claim guest alt-time suggestions
-      await sql`
-        UPDATE newchums.event_alt_times
-        SET user_id = ${userId}, guest_email = NULL
-        WHERE event_id = ${eventId} AND guest_email = ${userEmail} AND user_id IS NULL
-      `;
-      // Claim guest confirmation records
-      await sql`
-        UPDATE newchums.event_confirmations
-        SET user_id = ${userId}, guest_email = NULL
-        WHERE event_id = ${eventId} AND guest_email = ${userEmail} AND user_id IS NULL
-          AND NOT EXISTS (SELECT 1 FROM newchums.event_confirmations ec2 WHERE ec2.event_id = ${eventId} AND ec2.user_id = ${userId})
-      `;
     } catch (adoptErr) {
-      console.error("[GET /events/:id] guest record adoption error (non-fatal):", adoptErr);
+      console.error("[GET /events/:id] invite adoption error (non-fatal):", adoptErr);
     }
   }
 
@@ -9056,8 +9279,9 @@ app.get("/events/:id", async (c) => {
     const event = rows[0];
 
     // QA plan isolation: only super admins or valid token holders can access QA plans.
-    // Tokenized access (share_token, invite_token, participation_token) is allowed so
-    // that intentionally shared QA plans can be tested through the full guest flow.
+    // Tokenized access (share_token or invite_token) is allowed so that intentionally
+    // shared QA plans can be previewed by non-admin testers, who still complete the
+    // lightweight signup flow before RSVPing.
     if (event.is_qa && !tokenGrantsAccess) {
       if (!userId) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
       const viewerIsSuperAdmin = await checkIsSuperAdmin(sql, userId);
@@ -9196,13 +9420,13 @@ app.get("/events/:id", async (c) => {
     }
 
     const rsvps = (await sql`
-      SELECT er.status, er.note, er.user_id, er.guest_email, er.guest_name, er.hide_name,
+      SELECT er.status, er.note, er.user_id, er.hide_name,
              u.name, u.username, u.avatar_key, u.avatar_updated_at
       FROM newchums.event_rsvps er
-      LEFT JOIN newchums.users u ON u.id = er.user_id
+      JOIN newchums.users u ON u.id = er.user_id
       WHERE er.event_id = ${eventId}
       ORDER BY er.created_at ASC
-    `) as Array<{ status: string; note: string | null; user_id: string | null; guest_email: string | null; guest_name: string | null; hide_name: boolean; name: string | null; username: string | null; avatar_key: string | null; avatar_updated_at: string | Date | null }>;
+    `) as Array<{ status: string; note: string | null; user_id: string; hide_name: boolean; name: string | null; username: string | null; avatar_key: string | null; avatar_updated_at: string | Date | null }>;
 
     // Batch chum-status lookup: which RSVP'd users has the viewer already saved?
     const chumSavedSet = new Set<string>();
@@ -9219,12 +9443,12 @@ app.get("/events/:id", async (c) => {
     }
 
     const altTimes = (await sql`
-      SELECT eat.id, eat.suggested_at, eat.ends_at, eat.note, eat.user_id, eat.guest_email, u.name, u.username
+      SELECT eat.id, eat.suggested_at, eat.ends_at, eat.note, eat.user_id, u.name, u.username
       FROM newchums.event_alt_times eat
-      LEFT JOIN newchums.users u ON u.id = eat.user_id
+      JOIN newchums.users u ON u.id = eat.user_id
       WHERE eat.event_id = ${eventId}
       ORDER BY eat.created_at ASC
-    `) as Array<{ id: string; suggested_at: string; ends_at: string | null; note: string | null; user_id: string | null; guest_email: string | null; name: string | null; username: string | null }>;
+    `) as Array<{ id: string; suggested_at: string; ends_at: string | null; note: string | null; user_id: string; name: string | null; username: string | null }>;
 
     const invites = (await sql`
       SELECT ei.user_id, ei.email, u.name, u.username
@@ -9265,16 +9489,18 @@ app.get("/events/:id", async (c) => {
       `) as typeof joinRequests;
     }
 
-    // Check if current viewer is invited (needed by frontend for request-to-join gating)
+    // Check if current viewer is invited (needed by frontend for request-to-join gating).
+    // For unauthenticated invite-token visitors we resolve against the token's email;
+    // they'll become attached to this invite row after completing lightweight signup.
     const isInvited = userId
       ? ((await sql`SELECT 1 FROM newchums.event_invites WHERE event_id = ${eventId} AND user_id = ${userId} LIMIT 1`) as unknown[]).length > 0
-      : (tokenGuestEmail && tokenPurpose === "invite_rsvp")
-        ? ((await sql`SELECT 1 FROM newchums.event_invites WHERE event_id = ${eventId} AND LOWER(email) = ${tokenGuestEmail} LIMIT 1`) as unknown[]).length > 0
+      : tokenInviteEmail
+        ? ((await sql`SELECT 1 FROM newchums.event_invites WHERE event_id = ${eventId} AND LOWER(email) = ${tokenInviteEmail} LIMIT 1`) as unknown[]).length > 0
         : false;
 
     // Attendance assurance, confirmation state
     const requiresConfirmation = event.require_reconfirmation === true;
-    let confirmations: Array<{ user_id: string | null; guest_email: string | null; status: string; responded_at: string | null }> = [];
+    let confirmations: Array<{ user_id: string; status: string; responded_at: string | null }> = [];
     let confirmationWindowOpen = false;
     let confirmationCutoffAt: string | null = null;
     let confirmedCount = 0;
@@ -9292,7 +9518,7 @@ app.get("/events/:id", async (c) => {
       confirmationWindowOpen = Date.now() >= windowOpensAt && event.status === "published";
 
       confirmations = (await sql`
-        SELECT user_id, guest_email, status, responded_at
+        SELECT user_id, status, responded_at
         FROM newchums.event_confirmations
         WHERE event_id = ${eventId}
       `) as typeof confirmations;
@@ -9301,8 +9527,6 @@ app.get("/events/:id", async (c) => {
       pendingConfirmationCount = confirmations.filter((c) => c.status === "pending").length;
       if (userId) {
         myConfirmationStatus = confirmations.find((c) => c.user_id === userId)?.status ?? null;
-      } else if (tokenGuestEmail) {
-        myConfirmationStatus = confirmations.find((c) => c.guest_email === tokenGuestEmail)?.status ?? null;
       }
 
       const minRequired = event.min_confirmed_attendees ? Number(event.min_confirmed_attendees) : null;
@@ -9318,8 +9542,7 @@ app.get("/events/:id", async (c) => {
     }
 
     // Build confirmation lookup for enriching rsvps
-    const confirmationByUserId = new Map(confirmations.filter((c) => c.user_id).map((c) => [c.user_id, c.status]));
-    const confirmationByGuestEmail = new Map(confirmations.filter((c) => c.guest_email).map((c) => [c.guest_email, c.status]));
+    const confirmationByUserId = new Map(confirmations.map((c) => [c.user_id, c.status]));
 
     // Generate a share token so the "Copy link" button produces URLs with access context.
     // Only generated for non-public access states; public visitors don't get share tokens.
@@ -9408,11 +9631,6 @@ app.get("/events/:id", async (c) => {
         reserveSeats: event.reserve_seats === true,
         isInvited,
         hasRsvp,
-        guestInvite: tokenGuestEmail ? true : undefined,
-        guestEmail: tokenGuestEmail || undefined,
-        guestRsvpStatus: tokenGuestEmail
-          ? (rsvps.find((r) => !r.user_id && r.guest_email === tokenGuestEmail)?.status ?? null)
-          : undefined,
         // Attendance assurance
         minConfirmedAttendees: event.min_confirmed_attendees ? Number(event.min_confirmed_attendees) : null,
         fallbackPolicy: requiresConfirmation ? (event.fallback_policy ?? "notify_host") : null,
@@ -9421,9 +9639,6 @@ app.get("/events/:id", async (c) => {
         confirmedCount,
         pendingConfirmationCount,
         myConfirmationStatus,
-        guestConfirmToken: (tokenGuestEmail && confirmationWindowOpen && myConfirmationStatus)
-          ? await createGuestConfirmationToken(c.env.NEXTAUTH_SECRET, eventId, tokenGuestEmail)
-          : undefined,
         planViability,
         prefOverrides: isHost ? (event.pref_overrides ?? null) : undefined,
         community: communityInfo,
@@ -9434,37 +9649,32 @@ app.get("/events/:id", async (c) => {
       // to protect user privacy. Attending viewers (host, RSVP'd) see real names.
       rsvps: rsvps.map((r) => {
         const rHandle = r.username?.replace(/^@/, "") ?? null;
-        const rPrefNotes = r.user_id ? (attendeePrefNotes.get(r.user_id) ?? null) : null;
+        const rPrefNotes = attendeePrefNotes.get(r.user_id) ?? null;
         const nameHidden = r.hide_name === true;
         const displayName = nameHidden
           ? (rHandle || "Someone")
           : accessState === "attending"
-            ? (r.name?.trim() || rHandle || r.guest_name || r.guest_email || "Someone")
-            : (rHandle || r.guest_name || r.guest_email || "Someone");
+            ? (r.name?.trim() || rHandle || "Someone")
+            : (rHandle || "Someone");
         return {
-          userId: r.user_id ?? r.guest_email ?? "guest",
+          userId: r.user_id,
           name: displayName,
           handle: rHandle ? `@${rHandle}` : null,
           status: r.status,
           note: r.note,
-          avatarUrl: r.user_id ? buildAvatarUrl(r.user_id, r.avatar_key, r.avatar_updated_at, c.env.MEDIA_BUCKET) : null,
-          isGuest: !r.user_id,
-          guestEmail: r.guest_email ?? null,
-          confirmationStatus: r.user_id
-            ? (confirmationByUserId.get(r.user_id) ?? null)
-            : (r.guest_email ? (confirmationByGuestEmail.get(r.guest_email) ?? null) : null),
+          avatarUrl: buildAvatarUrl(r.user_id, r.avatar_key, r.avatar_updated_at, c.env.MEDIA_BUCKET),
+          confirmationStatus: confirmationByUserId.get(r.user_id) ?? null,
           ...(rPrefNotes ? { prefNotes: rPrefNotes } : {}),
-          ...(userId && r.user_id && r.user_id !== userId ? { isChumSaved: chumSavedSet.has(r.user_id) } : {}),
+          ...(userId && r.user_id !== userId ? { isChumSaved: chumSavedSet.has(r.user_id) } : {}),
           // Only tell the viewer about their own hide_name state
           ...(userId && r.user_id === userId ? { hideName: nameHidden } : {}),
         };
       }),
       altTimes: altTimes.map((a) => {
         const aHandle = a.username?.replace(/^@/, "") ?? null;
-        const guestLabel = a.guest_email ? a.guest_email.split("@")[0] : null;
         const displayName = accessState === "attending"
-          ? (a.name?.trim() || aHandle || guestLabel || "Someone")
-          : (aHandle || guestLabel || "Someone");
+          ? (a.name?.trim() || aHandle || "Someone")
+          : (aHandle || "Someone");
         return {
           id: a.id,
           userId: a.user_id,
@@ -9473,7 +9683,6 @@ app.get("/events/:id", async (c) => {
           suggestedAt: a.suggested_at,
           endsAt: a.ends_at,
           note: a.note,
-          guestEmail: a.guest_email ?? null,
         };
       }),
       invites: invites.map((inv) => {
@@ -9683,636 +9892,6 @@ app.post("/events/:id/hide-name", async (c) => {
     return c.json({ ok: true, hideName: rows[0].hide_name });
   } catch (err) {
     console.error("[POST /events/:id/hide-name]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
-  }
-});
-
-/** POST /events/:id/email-rsvp, RSVP via signed invite token or public participation token (no login required) */
-app.post("/events/:id/email-rsvp", async (c) => {
-  const eventId = c.req.param("id");
-  let body: Record<string, unknown>;
-  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
-
-  const token = body.invite_token ? String(body.invite_token) : body.participation_token ? String(body.participation_token) : null;
-  const guestName = body.guest_name ? String(body.guest_name).trim().slice(0, 100) : null;
-  const status = body.status ? String(body.status) : null;
-  if (!token) return c.json({ ok: false, error: "MISSING_TOKEN" }, 400);
-  if (!status || !VALID_RSVP_STATUS.includes(status as typeof VALID_RSVP_STATUS[number]))
-    return c.json({ ok: false, error: "INVALID_STATUS" }, 400);
-
-  const decoded = await verifyParticipationOrInviteToken(token, c.env.NEXTAUTH_SECRET);
-  if (!decoded || decoded.eventId !== eventId)
-    return c.json({ ok: false, error: "INVALID_TOKEN", message: "This link has expired or is invalid." }, 403);
-
-  const isPublicRsvp = decoded.purpose === "public_rsvp";
-  const sql = getSql(c.env);
-
-  try {
-    const ev = (await sql`SELECT id, host_user_id, status, max_seats, title, locked_at, require_approval, reserve_seats, visibility, starts_at, timezone, location_type, location_name, location_address, online_link FROM newchums.events WHERE id = ${eventId} AND status = 'published'`) as { id: string; host_user_id: string; status: string; max_seats: number | null; title: string; locked_at: string | null; require_approval: boolean; reserve_seats: boolean; visibility: string; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; online_link: string | null }[];
-    if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-    const event = ev[0];
-
-    let userId: string | null = decoded.userId ?? null;
-    const guestEmail = decoded.email?.toLowerCase() ?? null;
-    if (!userId && guestEmail) {
-      const userRows = (await sql`SELECT id FROM newchums.users WHERE email = ${guestEmail} LIMIT 1`) as { id: string }[];
-      userId = userRows[0]?.id ?? null;
-    }
-
-    const isGuest = !userId && !!guestEmail;
-
-    if (!userId && !guestEmail)
-      return c.json({ ok: false, error: "INVALID_TOKEN", message: "This invite link is invalid." }, 400);
-
-    if (userId && event.host_user_id === userId)
-      return c.json({ ok: false, error: "VALIDATION", message: "Hosts cannot RSVP to their own plan" }, 400);
-
-    // For invite tokens, verify invitee is actually invited; public_rsvp tokens skip this check
-    if (!isPublicRsvp) {
-      const invited = userId
-        ? (await sql`SELECT 1 FROM newchums.event_invites WHERE event_id = ${eventId} AND user_id = ${userId} LIMIT 1`) as unknown[]
-        : (await sql`SELECT 1 FROM newchums.event_invites WHERE event_id = ${eventId} AND email = ${guestEmail} LIMIT 1`) as unknown[];
-      if (invited.length === 0)
-        return c.json({ ok: false, error: "NOT_INVITED", message: "This invite link is no longer valid." }, 403);
-    }
-
-    if (isGuest) {
-      // Guest RSVP path, no user account
-      const existingGuest = (await sql`SELECT id FROM newchums.event_rsvps WHERE event_id = ${eventId} AND guest_email = ${guestEmail} AND user_id IS NULL`) as { id: string }[];
-
-      if (event.locked_at && existingGuest.length === 0)
-        return c.json({ ok: false, error: "EVENT_LOCKED", message: "This plan is locked and not accepting new participants" }, 403);
-
-      if (status === "going" && event.max_seats) {
-        const goingCount = (await sql`SELECT COUNT(*)::int AS c FROM newchums.event_rsvps WHERE event_id = ${eventId} AND status = 'going'`) as { c: number }[];
-        if (goingCount[0].c >= event.max_seats)
-          return c.json({ ok: false, error: "EVENT_FULL", message: "This plan is full" }, 409);
-      }
-
-      const resolvedGuestName = guestName || decoded.name || guestEmail;
-      if (existingGuest.length > 0) {
-        await sql`UPDATE newchums.event_rsvps SET status = ${status}, guest_name = COALESCE(${guestName}, guest_name), updated_at = NOW() WHERE event_id = ${eventId} AND guest_email = ${guestEmail} AND user_id IS NULL`;
-      } else {
-        await sql`INSERT INTO newchums.event_rsvps (event_id, user_id, guest_email, guest_name, status) VALUES (${eventId}, ${null}, ${guestEmail}, ${resolvedGuestName}, ${status})`;
-      }
-    } else {
-      // Registered user RSVP path
-      const existingRsvp = (await sql`SELECT id FROM newchums.event_rsvps WHERE event_id = ${eventId} AND user_id = ${userId}`) as { id: string }[];
-
-      if (event.locked_at && existingRsvp.length === 0)
-        return c.json({ ok: false, error: "EVENT_LOCKED", message: "This plan is locked and not accepting new participants" }, 403);
-
-      if (status === "going" && event.max_seats) {
-        const goingCount = (await sql`SELECT COUNT(*)::int AS c FROM newchums.event_rsvps WHERE event_id = ${eventId} AND status = 'going'`) as { c: number }[];
-        let occupiedSeats = goingCount[0].c;
-        if (event.reserve_seats) {
-          const reservedCount = (await sql`
-            SELECT COUNT(*)::int AS c FROM newchums.event_invites ei
-            WHERE ei.event_id = ${eventId}
-              AND ei.user_id IS NOT NULL
-              AND (
-                NOT EXISTS (SELECT 1 FROM newchums.event_rsvps er WHERE er.event_id = ${eventId} AND er.user_id = ei.user_id)
-                OR EXISTS (SELECT 1 FROM newchums.event_rsvps er2 WHERE er2.event_id = ${eventId} AND er2.user_id = ei.user_id AND er2.status = 'maybe')
-              )
-          `) as { c: number }[];
-          occupiedSeats += reservedCount[0].c;
-        }
-        if (occupiedSeats >= event.max_seats)
-          return c.json({ ok: false, error: "EVENT_FULL", message: "This plan is full" }, 409);
-      }
-
-      const inviteCommittedAt = status === "going" ? new Date().toISOString() : null;
-      await sql`
-        INSERT INTO newchums.event_rsvps (event_id, user_id, status, committed_at)
-        VALUES (${eventId}, ${userId}, ${status}, ${inviteCommittedAt})
-        ON CONFLICT (event_id, user_id) DO UPDATE SET status = ${status}, updated_at = NOW(),
-          committed_at = COALESCE(newchums.event_rsvps.committed_at, EXCLUDED.committed_at)
-      `;
-    }
-
-    // Notify the host
-    const attendeeName = isGuest
-      ? (guestEmail ?? "Someone")
-      : await (async () => {
-          const rows = (await sql`SELECT name, username FROM newchums.users WHERE id = ${userId}`) as { name: string | null; username: string | null }[];
-          return rows[0]?.name?.trim() || rows[0]?.username?.replace(/^@/, "") || "Someone";
-        })();
-
-    const statusLabel = status === "going" ? "Going" : status === "maybe" ? "Maybe" : "Can't make it";
-    if (userId) {
-      await sql`
-        INSERT INTO newchums.notifications (user_id, type, actor_user_id, entity_id, metadata)
-        VALUES (${event.host_user_id}, 'event_rsvp', ${userId}, ${eventId}, ${JSON.stringify({ eventTitle: event.title, rsvpStatus: statusLabel })})
-      `;
-    }
-
-    try {
-      const hostUser = (await sql`SELECT email, name, username FROM newchums.users WHERE id = ${event.host_user_id}`) as { email: string; name: string | null; username: string | null }[];
-      if (hostUser.length > 0) {
-        const hostProfileRows = (await sql`SELECT notification_prefs FROM user_profile WHERE user_id = ${event.host_user_id} LIMIT 1`) as { notification_prefs: unknown }[];
-        const hostPrefs = normalizeNotificationPrefs(hostProfileRows[0]?.notification_prefs);
-        const hostName = hostUser[0].name?.trim() || hostUser[0].username?.replace(/^@/, "") || "there";
-        const eventUrl = `${c.env.WEB_BASE_URL}/events/${eventId}`;
-        const emailRsvpDate = formatEventDate(event.starts_at, event.timezone || "UTC");
-        const emailRsvpLocation = event.location_type === "online" ? (event.online_link || "Online") : [event.location_name, event.location_address].filter(Boolean).join(", ") || "";
-        const emailArgs = { to: hostUser[0].email, hostName, attendeeName, eventTitle: event.title, eventUrl, eventDate: emailRsvpDate, eventLocation: emailRsvpLocation };
-
-        if (status === "going" && hostPrefs.items.host_join?.enabled !== false) {
-          await sendEventJoinEmail(c.env, emailArgs);
-        }
-        if (status === "maybe" && hostPrefs.items.host_maybe?.enabled !== false) {
-          await sendEventMaybeEmail(c.env, emailArgs);
-        }
-        if (status === "cant_make_it" && hostPrefs.items.host_leave?.enabled !== false) {
-          await sendEventLeaveEmail(c.env, emailArgs);
-        }
-      }
-    } catch { /* noop */ }
-
-    return c.json({ ok: true, status, isGuest });
-  } catch (err) {
-    console.error("[POST /events/:id/email-rsvp]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
-  }
-});
-
-// ─── Public RSVP (share-link visitors) ────────────────────────────────────────
-
-/** POST /events/:id/public-rsvp/request-code, send a 6-digit verification code to the visitor's email */
-app.post("/events/:id/public-rsvp/request-code", async (c) => {
-  const eventId = c.req.param("id");
-  let body: Record<string, unknown>;
-  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
-
-  const rawEmail = body.email ? String(body.email).trim().toLowerCase() : null;
-  if (!rawEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail))
-    return c.json({ ok: false, error: "VALIDATION", message: "Please enter a valid email address" }, 400);
-
-  // Validate share token if provided, allows the public RSVP flow for
-  // non-public-visibility plans when the user has a valid share link.
-  const shareTokenParam = typeof body.share_token === "string" ? body.share_token : null;
-  let hasShareAccess = false;
-  if (shareTokenParam) {
-    if (await verifyShareToken(shareTokenParam, eventId, c.env.NEXTAUTH_SECRET)) {
-      hasShareAccess = true;
-    } else {
-      const decoded = await verifyParticipationOrInviteToken(shareTokenParam, c.env.NEXTAUTH_SECRET);
-      if (decoded && decoded.eventId === eventId) hasShareAccess = true;
-    }
-  }
-
-  const sql = getSql(c.env);
-
-  try {
-    const ev = (await sql`SELECT id, title, status, visibility FROM newchums.events WHERE id = ${eventId}`) as { id: string; title: string; status: string; visibility: string }[];
-    if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-    const event = ev[0];
-    if (event.status !== "published") return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-
-    // Without a valid share token, require the plan to have public visibility
-    if (!hasShareAccess && event.visibility !== "public")
-      return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-
-    const existingUser = (await sql`SELECT id FROM newchums.users WHERE email = ${rawEmail} LIMIT 1`) as { id: string }[];
-    if (existingUser.length > 0) return c.json({ ok: true, existing_account: true });
-
-    const code = generateSixDigitCode();
-    const challenge = await createChallengeToken(c.env.NEXTAUTH_SECRET!, { email: rawEmail, eventId, code });
-
-    await sendGuestVerifyCodeEmail(c.env, { to: rawEmail, code, planTitle: event.title });
-
-    return c.json({ ok: true, challenge });
-  } catch (err) {
-    console.error("[POST /events/:id/public-rsvp/request-code]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
-  }
-});
-
-/** POST /events/:id/public-rsvp/confirm-code, verify the 6-digit code and issue a participation token */
-app.post("/events/:id/public-rsvp/confirm-code", async (c) => {
-  const eventId = c.req.param("id");
-  let body: Record<string, unknown>;
-  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
-
-  const challenge = body.challenge ? String(body.challenge) : null;
-  const code = body.code ? String(body.code).trim() : null;
-  const name = body.name ? String(body.name).trim().slice(0, 100) : undefined;
-  if (!challenge || !code) return c.json({ ok: false, error: "VALIDATION", message: "Challenge and code are required" }, 400);
-
-  try {
-    const verified = await verifyChallengeToken(challenge, c.env.NEXTAUTH_SECRET!, code);
-    if (!verified || verified.eventId !== eventId)
-      return c.json({ ok: false, error: "INVALID_CODE", message: "Incorrect or expired code. Please try again." }, 403);
-
-    const token = await createParticipationToken(c.env.NEXTAUTH_SECRET!, {
-      eventId,
-      email: verified.email,
-      name,
-    });
-
-    return c.json({ ok: true, token, email: verified.email });
-  } catch (err) {
-    console.error("[POST /events/:id/public-rsvp/confirm-code]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
-  }
-});
-
-/** POST /events/:id/confirm, logged-in user confirms or declines attendance */
-app.post("/events/:id/confirm", async (c) => {
-  const payload = await requireAuth(c);
-  if (!payload?.email || typeof payload.email !== "string")
-    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
-
-  const sql = getSql(c.env);
-  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
-  const eventId = c.req.param("id");
-
-  let body: Record<string, unknown>;
-  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
-
-  const action = typeof body.action === "string" ? body.action : null;
-  if (!action || !["confirm", "decline"].includes(action))
-    return c.json({ ok: false, error: "INVALID_ACTION", message: "Action must be 'confirm' or 'decline'." }, 400);
-
-  try {
-    const ev = (await sql`
-      SELECT id, status, host_user_id, require_reconfirmation, starts_at,
-             confirmation_window_hours, confirmation_cutoff_hours
-      FROM newchums.events WHERE id = ${eventId} AND status = 'published'
-    `) as { id: string; status: string; host_user_id: string; require_reconfirmation: boolean; starts_at: string; confirmation_window_hours: number; confirmation_cutoff_hours: number }[];
-    if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-
-    const newStatus = action === "confirm" ? "confirmed" : "declined";
-
-    const updated = (await sql`
-      UPDATE newchums.event_confirmations
-      SET status = ${newStatus}, responded_at = NOW(), updated_at = NOW()
-      WHERE event_id = ${eventId} AND user_id = ${userId}
-        AND status IN ('pending', 'expired')
-      RETURNING id, status
-    `) as { id: string; status: string }[];
-
-    if (updated.length === 0) {
-      const existing = (await sql`SELECT status FROM newchums.event_confirmations WHERE event_id = ${eventId} AND user_id = ${userId}`) as { status: string }[];
-      if (existing.length > 0 && existing[0].status === newStatus) {
-        await markConfirmationRequestedNotificationsRead(sql, userId, eventId);
-        return c.json({ ok: true, status: newStatus, alreadySet: true });
-      }
-
-      if (ev[0].require_reconfirmation) {
-        const startsAtMs = new Date(ev[0].starts_at).getTime();
-        const windowHours = Number(ev[0].confirmation_window_hours) || 24;
-        const windowOpensAt = startsAtMs - windowHours * 60 * 60 * 1000;
-        const isWindowOpen = Date.now() >= windowOpensAt;
-
-        if (isWindowOpen) {
-          const isGoingOrHost = ev[0].host_user_id === userId || ((await sql`
-            SELECT status FROM newchums.event_rsvps WHERE event_id = ${eventId} AND user_id = ${userId}
-          `) as { status: string }[]).some((r) => r.status === "going");
-
-          if (isGoingOrHost) {
-            await sql`
-              INSERT INTO newchums.event_confirmations (event_id, user_id, status, responded_at)
-              VALUES (${eventId}, ${userId}, ${newStatus}, NOW())
-              ON CONFLICT (event_id, user_id) DO UPDATE
-              SET status = ${newStatus}, responded_at = NOW(), updated_at = NOW()
-            `;
-            await markConfirmationRequestedNotificationsRead(sql, userId, eventId);
-            return c.json({ ok: true, status: newStatus });
-          }
-        }
-      }
-
-      return c.json({ ok: false, error: "NO_CONFIRMATION", message: "No pending confirmation found for this plan." }, 404);
-    }
-
-    // If host declines, that's effectively a cancel intent, but don't auto-cancel here.
-    // The host can use the cancel flow separately.
-
-    await markConfirmationRequestedNotificationsRead(sql, userId, eventId);
-    return c.json({ ok: true, status: newStatus });
-  } catch (err) {
-    console.error("[POST /events/:id/confirm]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
-  }
-});
-
-/** POST /events/:id/guest-confirm — token-based attendance confirmation for guest attendees (no login required) */
-app.post("/events/:id/guest-confirm", async (c) => {
-  const eventId = c.req.param("id");
-  let body: Record<string, unknown>;
-  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
-
-  const token = typeof body.token === "string" ? body.token.trim() : null;
-  const action = typeof body.action === "string" ? body.action : null;
-  if (!token) return c.json({ ok: false, error: "MISSING_TOKEN" }, 400);
-  if (!action || !["confirm", "decline"].includes(action))
-    return c.json({ ok: false, error: "INVALID_ACTION" }, 400);
-
-  const decoded = await verifyGuestConfirmationToken(token, c.env.NEXTAUTH_SECRET);
-  if (!decoded || decoded.eventId !== eventId)
-    return c.json({ ok: false, error: "INVALID_TOKEN", message: "This link has expired or is invalid." }, 403);
-
-  const sql = getSql(c.env);
-  const guestEmail = decoded.email.toLowerCase();
-  const newStatus = action === "confirm" ? "confirmed" : "declined";
-
-  try {
-    const ev = (await sql`
-      SELECT id, status, require_reconfirmation, starts_at,
-             confirmation_window_hours, confirmation_cutoff_hours
-      FROM newchums.events WHERE id = ${eventId} AND status = 'published'
-    `) as { id: string; status: string; require_reconfirmation: boolean; starts_at: string; confirmation_window_hours: number; confirmation_cutoff_hours: number }[];
-    if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-
-    // Check if the guest email has since registered; if so, update by user_id
-    const userRows = (await sql`SELECT id FROM newchums.users WHERE email = ${guestEmail} LIMIT 1`) as { id: string }[];
-    if (userRows.length > 0) {
-      const userId = userRows[0].id;
-      const updated = (await sql`
-        UPDATE newchums.event_confirmations
-        SET status = ${newStatus}, responded_at = NOW(), updated_at = NOW()
-        WHERE event_id = ${eventId} AND user_id = ${userId}
-          AND status IN ('pending', 'expired', 'confirmed', 'declined')
-          AND status != ${newStatus}
-        RETURNING id, status
-      `) as { id: string; status: string }[];
-      if (updated.length > 0) return c.json({ ok: true, status: newStatus });
-      const existing = (await sql`SELECT status FROM newchums.event_confirmations WHERE event_id = ${eventId} AND user_id = ${userId}`) as { status: string }[];
-      if (existing.length > 0 && existing[0].status === newStatus)
-        return c.json({ ok: true, status: newStatus, alreadySet: true });
-    }
-
-    // Guest path: update by guest_email (allow changing between confirmed/declined)
-    const updated = (await sql`
-      UPDATE newchums.event_confirmations
-      SET status = ${newStatus}, responded_at = NOW(), updated_at = NOW()
-      WHERE event_id = ${eventId} AND guest_email = ${guestEmail}
-        AND status IN ('pending', 'expired', 'confirmed', 'declined')
-        AND status != ${newStatus}
-      RETURNING id, status
-    `) as { id: string; status: string }[];
-
-    if (updated.length > 0) return c.json({ ok: true, status: newStatus });
-
-    // Idempotent check
-    const existing = (await sql`SELECT status FROM newchums.event_confirmations WHERE event_id = ${eventId} AND guest_email = ${guestEmail}`) as { status: string }[];
-    if (existing.length > 0 && existing[0].status === newStatus)
-      return c.json({ ok: true, status: newStatus, alreadySet: true });
-
-    // No existing row; create one if window is open and guest has a going RSVP
-    if (ev[0].require_reconfirmation) {
-      const startsAtMs = new Date(ev[0].starts_at).getTime();
-      const windowHours = Number(ev[0].confirmation_window_hours) || 24;
-      const windowOpensAt = startsAtMs - windowHours * 60 * 60 * 1000;
-      if (Date.now() >= windowOpensAt) {
-        const hasRsvp = (await sql`SELECT 1 FROM newchums.event_rsvps WHERE event_id = ${eventId} AND guest_email = ${guestEmail} AND user_id IS NULL AND status = 'going' LIMIT 1`) as unknown[];
-        if (hasRsvp.length > 0) {
-          await sql`
-            INSERT INTO newchums.event_confirmations (event_id, user_id, guest_email, status, responded_at)
-            VALUES (${eventId}, ${null}, ${guestEmail}, ${newStatus}, NOW())
-            ON CONFLICT DO NOTHING
-          `;
-          return c.json({ ok: true, status: newStatus });
-        }
-      }
-    }
-
-    return c.json({ ok: false, error: "NO_CONFIRMATION", message: "No pending confirmation found." }, 404);
-  } catch (err) {
-    console.error("[POST /events/:id/guest-confirm]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
-  }
-});
-
-/** PATCH /events/:id/alt-time/:altTimeId, edit own alternate time entry */
-app.patch("/events/:id/alt-time/:altTimeId", async (c) => {
-  const payload = await requireAuth(c);
-  if (!payload?.email || typeof payload.email !== "string")
-    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
-
-  const sql = getSql(c.env);
-  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
-  const altTimeId = c.req.param("altTimeId");
-
-  let body: Record<string, unknown>;
-  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
-
-  try {
-    const row = (await sql`SELECT id, user_id, suggested_at, ends_at, note FROM newchums.event_alt_times WHERE id = ${altTimeId}`) as { id: string; user_id: string; suggested_at: string; ends_at: string | null; note: string | null }[];
-    if (row.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-    if (row[0].user_id !== userId) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
-
-    let suggestedAt: Date | null = null;
-    if (body.suggested_at != null) {
-      suggestedAt = new Date(String(body.suggested_at));
-      if (isNaN(suggestedAt.getTime())) return c.json({ ok: false, error: "VALIDATION", message: "Invalid start date/time", field: "suggested_at" }, 400);
-    }
-
-    let endsAt: Date | null | undefined = undefined;
-    if (body.ends_at !== undefined) {
-      if (body.ends_at === null || body.ends_at === "") {
-        endsAt = null;
-      } else {
-        endsAt = new Date(String(body.ends_at));
-        if (isNaN(endsAt.getTime())) return c.json({ ok: false, error: "VALIDATION", message: "Invalid end date/time", field: "ends_at" }, 400);
-      }
-    }
-
-    const effectiveStart = suggestedAt ?? new Date(row[0].suggested_at);
-    const effectiveEnd = endsAt !== undefined ? endsAt : (row[0].ends_at ? new Date(row[0].ends_at) : null);
-    if (effectiveEnd && effectiveEnd.getTime() <= effectiveStart.getTime())
-      return c.json({ ok: false, error: "VALIDATION", message: "End time must be after start time", field: "ends_at" }, 400);
-
-    const finalNote = body.note !== undefined ? (body.note ? String(body.note).trim().slice(0, 500) : null) : row[0].note;
-
-    await sql`
-      UPDATE newchums.event_alt_times SET
-        suggested_at = ${suggestedAt ? suggestedAt.toISOString() : row[0].suggested_at},
-        ends_at      = ${endsAt !== undefined ? (endsAt ? endsAt.toISOString() : null) : row[0].ends_at},
-        note         = ${finalNote}
-      WHERE id = ${altTimeId}
-    `;
-
-    return c.json({ ok: true });
-  } catch (err) {
-    console.error("[PATCH /events/:id/alt-time/:altTimeId]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
-  }
-});
-
-/** DELETE /events/:id/alt-time/:altTimeId, delete own entry (or host can delete any) */
-app.delete("/events/:id/alt-time/:altTimeId", async (c) => {
-  const payload = await requireAuth(c);
-  if (!payload?.email || typeof payload.email !== "string")
-    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
-
-  const sql = getSql(c.env);
-  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
-  const eventId = c.req.param("id");
-  const altTimeId = c.req.param("altTimeId");
-
-  try {
-    const row = (await sql`
-      SELECT eat.id, eat.user_id, e.host_user_id
-      FROM newchums.event_alt_times eat
-      JOIN newchums.events e ON e.id = eat.event_id
-      WHERE eat.id = ${altTimeId} AND eat.event_id = ${eventId}
-    `) as { id: string; user_id: string; host_user_id: string }[];
-    if (row.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-    if (row[0].user_id !== userId && row[0].host_user_id !== userId)
-      return c.json({ ok: false, error: "FORBIDDEN" }, 403);
-
-    await sql`DELETE FROM newchums.event_alt_times WHERE id = ${altTimeId}`;
-    return c.json({ ok: true });
-  } catch (err) {
-    console.error("[DELETE /events/:id/alt-time/:altTimeId]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
-  }
-});
-
-/** POST /events/:id/alt-time, add an alternate time */
-app.post("/events/:id/alt-time", async (c) => {
-  const payload = await requireAuth(c);
-  if (!payload?.email || typeof payload.email !== "string")
-    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
-
-  const sql = getSql(c.env);
-  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
-  const eventId = c.req.param("id");
-
-  let body: Record<string, unknown>;
-  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
-
-  const suggestedAt = body.suggested_at ? String(body.suggested_at) : null;
-  if (!suggestedAt) return c.json({ ok: false, error: "VALIDATION", message: "Start date/time is required", field: "suggested_at" }, 400);
-
-  const suggestedDate = new Date(suggestedAt);
-  if (isNaN(suggestedDate.getTime())) return c.json({ ok: false, error: "VALIDATION", message: "Invalid date/time", field: "suggested_at" }, 400);
-
-  let endsAtDate: Date | null = null;
-  if (body.ends_at) {
-    endsAtDate = new Date(String(body.ends_at));
-    if (isNaN(endsAtDate.getTime())) return c.json({ ok: false, error: "VALIDATION", message: "Invalid end date/time", field: "ends_at" }, 400);
-    if (endsAtDate.getTime() <= suggestedDate.getTime())
-      return c.json({ ok: false, error: "VALIDATION", message: "End time must be after start time", field: "ends_at" }, 400);
-  }
-
-  const note = body.note ? String(body.note).trim().slice(0, 500) : null;
-
-  try {
-    const ev = (await sql`SELECT id, host_user_id, allow_alt_times, title FROM newchums.events WHERE id = ${eventId} AND status = 'published'`) as { id: string; host_user_id: string; allow_alt_times: boolean; title: string }[];
-    if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-    if (!ev[0].allow_alt_times) return c.json({ ok: false, error: "VALIDATION", message: "This plan does not accept alternate times" }, 400);
-
-    const isHost = ev[0].host_user_id === userId;
-    if (!isHost) {
-      const hasRelation = (await sql`
-        SELECT 1 FROM newchums.event_rsvps WHERE event_id = ${eventId} AND user_id = ${userId}
-        UNION ALL
-        SELECT 1 FROM newchums.event_invites WHERE event_id = ${eventId} AND user_id = ${userId}
-        LIMIT 1
-      `) as unknown[];
-      if (hasRelation.length === 0)
-        return c.json({ ok: false, error: "FORBIDDEN", message: "You must be part of this plan to add alternate times" }, 403);
-    }
-
-    await sql`
-      INSERT INTO newchums.event_alt_times (event_id, user_id, suggested_at, ends_at, note)
-      VALUES (${eventId}, ${userId}, ${suggestedDate.toISOString()}, ${endsAtDate ? endsAtDate.toISOString() : null}, ${note})
-    `;
-
-    const participants = (await sql`
-      SELECT DISTINCT u.id
-      FROM (
-        SELECT user_id AS id FROM newchums.event_rsvps
-        WHERE event_id = ${eventId} AND status IN ('going', 'maybe')
-        UNION
-        SELECT ${ev[0].host_user_id}::uuid AS id
-      ) sub
-      JOIN newchums.users u ON u.id = sub.id
-      WHERE sub.id != ${userId}
-    `) as { id: string }[];
-
-    if (participants.length > 0) {
-      const meta = JSON.stringify({ eventTitle: ev[0].title, suggestedAt: suggestedDate.toISOString() });
-      for (const p of participants) {
-        await sql`
-          INSERT INTO newchums.notifications (user_id, type, actor_user_id, entity_id, metadata)
-          VALUES (${p.id}, 'event_alt_time', ${userId}, ${eventId}, ${meta})
-        `;
-      }
-    }
-
-    return c.json({ ok: true });
-  } catch (err) {
-    console.error("[POST /events/:id/alt-time]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
-  }
-});
-
-/** POST /events/:id/guest-alt-time, guest (invite-token or participation token) alternate time suggestion */
-app.post("/events/:id/guest-alt-time", async (c) => {
-  const eventId = c.req.param("id");
-  let body: Record<string, unknown>;
-  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
-
-  const token = body.invite_token ? String(body.invite_token) : body.participation_token ? String(body.participation_token) : null;
-  if (!token) return c.json({ ok: false, error: "MISSING_TOKEN" }, 400);
-
-  const decoded = await verifyParticipationOrInviteToken(token, c.env.NEXTAUTH_SECRET);
-  if (!decoded || decoded.eventId !== eventId)
-    return c.json({ ok: false, error: "INVALID_TOKEN", message: "This link has expired or is invalid." }, 403);
-
-  const isPublicRsvp = decoded.purpose === "public_rsvp";
-  const guestEmail = decoded.email?.toLowerCase() ?? null;
-  if (!guestEmail)
-    return c.json({ ok: false, error: "INVALID_TOKEN", message: "This invite link is invalid." }, 400);
-
-  const suggestedAt = body.suggested_at ? String(body.suggested_at) : null;
-  if (!suggestedAt) return c.json({ ok: false, error: "VALIDATION", message: "Start date/time is required", field: "suggested_at" }, 400);
-  const suggestedDate = new Date(suggestedAt);
-  if (isNaN(suggestedDate.getTime())) return c.json({ ok: false, error: "VALIDATION", message: "Invalid date/time", field: "suggested_at" }, 400);
-
-  let endsAtDate: Date | null = null;
-  if (body.ends_at) {
-    endsAtDate = new Date(String(body.ends_at));
-    if (isNaN(endsAtDate.getTime())) return c.json({ ok: false, error: "VALIDATION", message: "Invalid end date/time", field: "ends_at" }, 400);
-    if (endsAtDate.getTime() <= suggestedDate.getTime())
-      return c.json({ ok: false, error: "VALIDATION", message: "End time must be after start time", field: "ends_at" }, 400);
-  }
-
-  const note = body.note ? String(body.note).trim().slice(0, 500) : null;
-  const sql = getSql(c.env);
-
-  try {
-    const ev = (await sql`SELECT id, host_user_id, allow_alt_times, title FROM newchums.events WHERE id = ${eventId} AND status = 'published'`) as { id: string; host_user_id: string; allow_alt_times: boolean; title: string }[];
-    if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-    if (!ev[0].allow_alt_times) return c.json({ ok: false, error: "VALIDATION", message: "This plan does not accept alternate times" }, 400);
-
-    // For invite tokens, verify invitee is invited; public RSVP tokens need an existing RSVP instead
-    if (isPublicRsvp) {
-      const hasRsvp = (await sql`SELECT 1 FROM newchums.event_rsvps WHERE event_id = ${eventId} AND guest_email = ${guestEmail} AND user_id IS NULL LIMIT 1`) as unknown[];
-      if (hasRsvp.length === 0)
-        return c.json({ ok: false, error: "FORBIDDEN", message: "You must RSVP before suggesting alternate times" }, 403);
-    } else {
-      const guestInvited = (await sql`SELECT 1 FROM newchums.event_invites WHERE event_id = ${eventId} AND email = ${guestEmail} LIMIT 1`) as unknown[];
-      if (guestInvited.length === 0)
-        return c.json({ ok: false, error: "FORBIDDEN", message: "You must be invited to suggest alternate times" }, 403);
-    }
-
-    const guestAltCount = (await sql`SELECT COUNT(*)::int AS c FROM newchums.event_alt_times WHERE event_id = ${eventId} AND guest_email = ${guestEmail} AND user_id IS NULL`) as { c: number }[];
-    if (guestAltCount[0].c >= 10)
-      return c.json({ ok: false, error: "VALIDATION", message: "You can suggest up to 10 alternate times" }, 400);
-
-    await sql`
-      INSERT INTO newchums.event_alt_times (event_id, user_id, guest_email, suggested_at, ends_at, note)
-      VALUES (${eventId}, ${null}, ${guestEmail}, ${suggestedDate.toISOString()}, ${endsAtDate ? endsAtDate.toISOString() : null}, ${note})
-    `;
-
-    return c.json({ ok: true });
-  } catch (err) {
-    console.error("[POST /events/:id/guest-alt-time]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });
@@ -10547,8 +10126,16 @@ app.patch("/events/:id", async (c) => {
       patchLocationName = body.location_name ? String(body.location_name).trim().slice(0, 200) : null;
       patchLocationAddress = body.location_address ? String(body.location_address).trim().slice(0, 500) : null;
       patchLocationPlaceId = body.location_place_id ? String(body.location_place_id) : null;
-      patchLocationLat = body.location_lat != null ? Number(body.location_lat) : null;
-      patchLocationLng = body.location_lng != null ? Number(body.location_lng) : null;
+      patchLocationLat = body.location_lat != null && Number.isFinite(Number(body.location_lat)) ? Number(body.location_lat) : null;
+      patchLocationLng = body.location_lng != null && Number.isFinite(Number(body.location_lng)) ? Number(body.location_lng) : null;
+
+      // In-person plans must have resolvable coordinates (see matching
+      // guard on POST /events). Without lat/lng the Explore and digest
+      // distance filters drop the plan from everyone's feed.
+      if (lt === "in_person" && (patchLocationLat == null || patchLocationLng == null)) {
+        return c.json({ ok: false, error: "VALIDATION", message: "Please pick a location from the suggestions", field: "location" }, 400);
+      }
+
       patchLocationVisibility = lt === "in_person"
         ? (VALID_LOCATION_VISIBILITY.includes(String(body.location_visibility ?? "exact_everyone") as typeof VALID_LOCATION_VISIBILITY[number])
             ? String(body.location_visibility)
@@ -10869,9 +10456,8 @@ app.post("/events/:id/remove-attendee", async (c) => {
   try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
 
   const targetUserId = body.user_id ? String(body.user_id) : null;
-  const targetGuestEmail = body.guest_email ? String(body.guest_email).toLowerCase().trim() : null;
-  if (!targetUserId && !targetGuestEmail)
-    return c.json({ ok: false, error: "VALIDATION", message: "user_id or guest_email is required" }, 400);
+  if (!targetUserId)
+    return c.json({ ok: false, error: "VALIDATION", message: "user_id is required" }, 400);
   const reason = body.reason ? String(body.reason).trim().slice(0, 500) : null;
 
   try {
@@ -10885,20 +10471,9 @@ app.post("/events/:id/remove-attendee", async (c) => {
     if (new Date(event.starts_at) < new Date())
       return c.json({ ok: false, error: "VALIDATION", message: "Attendees cannot be removed from past events" }, 400);
 
-    if (targetUserId && targetUserId === userId)
+    if (targetUserId === userId)
       return c.json({ ok: false, error: "VALIDATION", message: "You cannot remove yourself from your own plan" }, 400);
 
-    // Guest RSVP removal (email-only, no account)
-    if (targetGuestEmail) {
-      const rsvpRows = (await sql`SELECT id, status FROM newchums.event_rsvps WHERE event_id = ${eventId} AND guest_email = ${targetGuestEmail} AND user_id IS NULL`) as { id: string; status: string }[];
-      if (rsvpRows.length === 0)
-        return c.json({ ok: false, error: "NOT_FOUND", message: "This person is not an attendee of this plan" }, 404);
-
-      await sql`DELETE FROM newchums.event_rsvps WHERE event_id = ${eventId} AND guest_email = ${targetGuestEmail} AND user_id IS NULL`;
-      return c.json({ ok: true });
-    }
-
-    // Registered user RSVP removal
     const rsvpRows = (await sql`SELECT id, status FROM newchums.event_rsvps WHERE event_id = ${eventId} AND user_id = ${targetUserId}`) as { id: string; status: string }[];
     if (rsvpRows.length === 0)
       return c.json({ ok: false, error: "NOT_FOUND", message: "This person is not an attendee of this plan" }, 404);
@@ -13772,52 +13347,6 @@ async function processAttendanceAssurance(
         } catch { /* noop, don't let one email failure stop the batch */ }
       }
 
-      // Guest attendees: create confirmation rows and send emails
-      const goingGuests = (await sql`
-        SELECT er.guest_email, er.guest_name,
-               COALESCE(ec.reminder_count, 0) AS reminder_count
-        FROM newchums.event_rsvps er
-        LEFT JOIN newchums.event_confirmations ec
-          ON ec.event_id = er.event_id AND ec.guest_email = er.guest_email
-        WHERE er.event_id = ${ev.id} AND er.status = 'going'
-          AND er.user_id IS NULL AND er.guest_email IS NOT NULL
-      `) as Array<{ guest_email: string; guest_name: string | null; reminder_count: number }>;
-
-      for (const guest of goingGuests) {
-        await sql`
-          INSERT INTO newchums.event_confirmations (event_id, user_id, guest_email, status)
-          VALUES (${ev.id}, ${null}, ${guest.guest_email}, 'pending')
-          ON CONFLICT (event_id, guest_email) WHERE guest_email IS NOT NULL DO NOTHING
-        `;
-      }
-
-      for (const guest of goingGuests) {
-        // Idempotency: skip guests who already received the initial email on a
-        // prior cron attempt.
-        if (guest.reminder_count >= 1) continue;
-        try {
-          const recipientName = guest.guest_name?.trim() || guest.guest_email.split("@")[0] || "there";
-
-          const guestToken = await createGuestConfirmationToken(env.NEXTAUTH_SECRET, ev.id, guest.guest_email);
-          const confirmUrl = `${eventUrl}?guest_confirm_token=${encodeURIComponent(guestToken)}&action=confirm`;
-          const declineUrl = `${eventUrl}?guest_confirm_token=${encodeURIComponent(guestToken)}&action=decline`;
-          const viewToken = await createInviteToken(env.NEXTAUTH_SECRET, ev.id, undefined, guest.guest_email);
-          const viewUrl = `${eventUrl}?invite_token=${encodeURIComponent(viewToken)}`;
-
-          await sendGuestConfirmationRequestEmail(env, {
-            to: guest.guest_email, recipientName, eventTitle: ev.title, eventDate,
-            eventLocation, eventUrl, confirmUrl, declineUrl, viewUrl,
-            isReminder: false, isFinal: false, deadline,
-          });
-
-          await sql`
-            UPDATE newchums.event_confirmations
-            SET reminder_count = 1, last_reminder_at = NOW(), updated_at = NOW()
-            WHERE event_id = ${ev.id} AND guest_email = ${guest.guest_email}
-          `;
-        } catch { /* noop */ }
-      }
-
       // Mark the event as processed for Phase 1. Stamped at the very end of the
       // per-event block so that a throw in any of the steps above leaves
       // confirmation_sent_at NULL and the next cron tick retries the event. The
@@ -13933,46 +13462,6 @@ async function processAttendanceAssurance(
         } catch { /* noop */ }
       }
 
-      // Guest reminders (allowed for QA plans since guests were intentionally invited)
-      {
-        const pendingGuests = (await sql`
-          SELECT ec.guest_email, ec.reminder_count, er.guest_name
-          FROM newchums.event_confirmations ec
-          JOIN newchums.event_rsvps er
-            ON er.event_id = ec.event_id
-            AND er.guest_email = ec.guest_email
-            AND er.user_id IS NULL
-          WHERE ec.event_id = ${ev.id}
-            AND ec.status = 'pending'
-            AND ec.guest_email IS NOT NULL
-            AND ec.reminder_count < ${targetReminderCount + 1}
-        `) as Array<{ guest_email: string; reminder_count: number; guest_name: string | null }>;
-
-        for (const guest of pendingGuests) {
-          if (guest.reminder_count >= targetReminderCount + 1) continue;
-          try {
-            const recipientName = guest.guest_name?.trim() || guest.guest_email.split("@")[0] || "there";
-
-            const guestToken = await createGuestConfirmationToken(env.NEXTAUTH_SECRET, ev.id, guest.guest_email);
-            const confirmUrl = `${eventUrl}?guest_confirm_token=${encodeURIComponent(guestToken)}&action=confirm`;
-            const declineUrl = `${eventUrl}?guest_confirm_token=${encodeURIComponent(guestToken)}&action=decline`;
-            const viewToken = await createInviteToken(env.NEXTAUTH_SECRET, ev.id, undefined, guest.guest_email);
-            const viewUrl = `${eventUrl}?invite_token=${encodeURIComponent(viewToken)}`;
-
-            await sendGuestConfirmationRequestEmail(env, {
-              to: guest.guest_email, recipientName, eventTitle: ev.title, eventDate,
-              eventLocation, eventUrl, confirmUrl, declineUrl, viewUrl,
-              isReminder: true, isFinal, deadline,
-            });
-
-            await sql`
-              UPDATE newchums.event_confirmations
-              SET reminder_count = ${targetReminderCount + 1}, last_reminder_at = NOW(), updated_at = NOW()
-              WHERE event_id = ${ev.id} AND guest_email = ${guest.guest_email}
-            `;
-          } catch { /* noop */ }
-        }
-      }
     } catch (err) {
       console.error(`[attendance-assurance] reminder failed for event ${ev.id}:`, err);
     }
@@ -14033,18 +13522,6 @@ async function processAttendanceAssurance(
           WHERE er.event_id = ${ev.id} AND er.status IN ('going', 'maybe')
         `) as Array<{ user_id: string; email: string; name: string | null; username: string | null }>;
 
-        // Guest attendees also need to hear that the plan was cancelled. They
-        // have no user account — emailed directly with no unsubscribe token
-        // (they aren't subscribed to anything). Excluded from QA isolation.
-        const guestAttendees = ev.is_qa ? [] : (await sql`
-          SELECT er.guest_email, er.guest_name
-          FROM newchums.event_rsvps er
-          WHERE er.event_id = ${ev.id}
-            AND er.user_id IS NULL
-            AND er.guest_email IS NOT NULL
-            AND er.status IN ('going', 'maybe')
-        `) as Array<{ guest_email: string; guest_name: string | null }>;
-
         const tz = ev.timezone || "UTC";
         const cancelEventDate = formatEventDate(ev.starts_at, tz);
         const cancelEventLocation = ev.location_type === "online" ? (ev.online_link || "Online") : [ev.location_name, ev.location_address].filter(Boolean).join(", ") || "";
@@ -14066,16 +13543,6 @@ async function processAttendanceAssurance(
           } catch { /* noop */ }
         }
 
-        for (const guest of guestAttendees) {
-          try {
-            const recipientName = guest.guest_name?.trim() || guest.guest_email.split("@")[0] || "there";
-            await sendPlanAutoCancelledEmail(env, {
-              to: guest.guest_email, recipientName, eventTitle: ev.title,
-              confirmedCount, minRequired,
-              eventDate: cancelEventDate, eventLocation: cancelEventLocation,
-            });
-          } catch { /* noop */ }
-        }
       } else if (ev.fallback_policy === "notify_host") {
         const hostUser = (await sql`SELECT email, name, username FROM newchums.users WHERE id = ${ev.host_user_id}`) as { email: string; name: string | null; username: string | null }[];
         if (hostUser.length > 0) {
@@ -14609,9 +14076,8 @@ async function processPlanFeedbackEmails(
 async function cancelNoAttendeePlans(sql: ReturnType<typeof getSql>) {
   // Find published plans that have started (within the last 2 hours to avoid
   // retroactively cancelling old plans) where the host is the only participant
-  //, i.e. no one else RSVP'd "going". Guest RSVPs (user_id IS NULL) count as
-  // attendees — IS DISTINCT FROM treats NULL as distinct from the host UUID so
-  // a plan with 3 going guests is not treated as host-only.
+  // — i.e. no one else RSVP'd "going". `IS DISTINCT FROM` is kept as defensive
+  // NULL-safety even though user_id is now NOT NULL post-guest-removal.
   const abandoned = (await sql`
     SELECT e.id
     FROM newchums.events e
@@ -14696,10 +14162,7 @@ async function computeLocalBadges(sql: ReturnType<typeof getSql>) {
         SELECT 1 FROM newchums.event_rsvps er
         WHERE er.event_id = e.id
           AND er.user_id IS DISTINCT FROM e.host_user_id
-          AND (
-            er.committed_at IS NOT NULL
-            OR (er.user_id IS NULL AND er.status = 'going')
-          )
+          AND er.committed_at IS NOT NULL
       )
     GROUP BY e.host_user_id
     HAVING COUNT(DISTINCT e.id) >= ${BADGE_MIN_THRESHOLD}

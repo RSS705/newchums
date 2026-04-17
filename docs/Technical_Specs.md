@@ -238,7 +238,8 @@ Users manage notification preferences in **Settings** (`/settings`). Each notifi
 
 | Purpose | Postmark template |
 |---------|-------------------|
-| Guest verification code (public RSVP) | `POSTMARK_TEMPLATE_GUEST_VERIFY` (template 44041128) |
+| Lightweight-signup magic link | `POSTMARK_TEMPLATE_MAGIC_LINK_SIGNUP` (template 44523927) |
+| Plan-signin notice (email already has an account) | `POSTMARK_TEMPLATE_PLAN_SIGNIN` (template 44523947) |
 
 Defaults are applied at account creation (credentials signup, OAuth) and backfilled for existing users with missing keys. GET normalizes stored prefs and optionally persists backfilled values.
 
@@ -391,7 +392,6 @@ The local `.html` and `.txt` files are the source of truth; the Postmark dashboa
 | `planAutoCancelled` | `POSTMARK_TEMPLATE_PLAN_AUTO_CANCELLED` | 44165043 |
 | `planRemovedByAdmin` | `POSTMARK_TEMPLATE_PLAN_REMOVED` | 43998481 |
 | `confirmationRequestUser` | `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST_USER` | 44415561 |
-| `confirmationRequestGuest` | `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST_GUEST` | 44415587 |
 | `unreadChatDigest` | `POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST` | 43975299 |
 | `eventMatchDigest` | `POSTMARK_TEMPLATE_EVENT_MATCH_DIGEST` | 44018889 |
 | `planFeedback` | `POSTMARK_TEMPLATE_PLAN_FEEDBACK` | 44091936 |
@@ -403,7 +403,8 @@ The local `.html` and `.txt` files are the source of truth; the Postmark dashboa
 | `communityMemberUnblocked` | `POSTMARK_TEMPLATE_COMMUNITY_MEMBER_UNBLOCKED` | 44470363 |
 | `communityJoinRequestReopened` | `POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST_REOPENED` | 44470744 |
 | `concernReportAlert` | `POSTMARK_TEMPLATE_CONCERN_REPORT` | 44107767 |
-| `guestVerifyCode` | `POSTMARK_TEMPLATE_GUEST_VERIFY` | 44041128 |
+| `magicLinkSignup` | `POSTMARK_TEMPLATE_MAGIC_LINK_SIGNUP` | 44523927 |
+| `planSignin` | `POSTMARK_TEMPLATE_PLAN_SIGNIN` | 44523947 |
 | `emailChangeConfirm` | `POSTMARK_TEMPLATE_EMAIL_CHANGE_CONFIRM` | 43739983 |
 | `emailChangeNotifyOld` | `POSTMARK_TEMPLATE_EMAIL_CHANGE_NOTIFY_OLD` | 43740027 |
 | `emailChangeSuccess` | `POSTMARK_TEMPLATE_EMAIL_CHANGE_SUCCESS` | 43740066 |
@@ -418,39 +419,37 @@ Hosts can remove attendees with status "going" or "maybe" from their plans via `
 
 The `host_attendee_removals` table tracks: `event_id`, `host_user_id`, `removed_user_id`, `status_at_removal`, and `created_at`. Hosts cannot remove themselves or attendees with "can't make it" status (since they're already not attending).
 
-### Guest RSVP for email-only invitees
+### Lightweight plan signup (magic link, replaces guest participation)
 
-When a host invites someone by email who does not have a NewChums account, that person can still RSVP and view the plan without signing up. The flow works via the invite token (JWT, 30-day expiry) embedded in the invite email.
+Guest participation (unauthenticated users with nullable `user_id` + `guest_email`) has been removed (migration 084). In its place, unauthenticated visitors who land on a plan via a share or invite link see a **"Join to RSVP" card** that collects three fields — email, date of birth (18+), and Terms/Privacy acceptance — and emails them a one-click confirmation link. Clicking the link creates a normal NewChums account (or signs them in if the email already exists), returns them to the plan, and unlocks RSVP, chat, and alt-times as a fully authenticated user.
 
-**How it works:**
-- `POST /events/:id/email-rsvp`, accepts `invite_token` (invite flow) or `participation_token` (public RSVP flow). When the token's email has no matching user account, a guest RSVP is created with `user_id = NULL` and `guest_email` set. The guest can change their RSVP using on-page buttons. Public RSVP tokens are only accepted for public-visibility events and skip the invite-record check.
-- `GET /events/:id`, accepts an optional `invite_token` or `participation_token` query param. A valid token grants read access (invite tokens additionally grant access to invite-only and chums-only events). The response includes `guestInvite: true` and `guestRsvpStatus` so the frontend can render appropriate UI.
-- The invite email's "View plan" link includes the invite token, so guests can revisit the plan page from the email at any time during the 30-day token window.
-- Guest RSVPs appear in the attendee list with their email as the display name and no avatar.
-- Migration 035 adds `guest_email TEXT NULL` and `guest_name TEXT NULL` to `event_rsvps` and makes `user_id` nullable, with a partial unique index on `(event_id, guest_email)` for guest rows.
-- Host notification emails are sent for guest RSVPs the same way as for registered users.
+**Endpoints:**
 
-### Public plan participation (share-link RSVP without account)
+- `POST /auth/plan-signup/request` (unauthenticated). Body: `{ email, date_of_birth, accepted_legal, turnstile_token, next }`. Validates email format, 18+ (via `isAtLeast18`), Turnstile, and legal-acceptance boolean. Server pins the current legal versions (clients can't forge them). Rate-limited per IP and per email via `checkRateLimit`. Branches on account state:
+  - **No account / unverified account** → creates or refreshes the user row (auto-generated fun username via `generateFunUsername`, legal versions pinned, `email_verified_at = NULL`, `password_hash = NULL`, DOB set), invalidates any prior unused `email_verification_tokens` rows for that user, issues a fresh hashed token with **15-minute TTL**, emails the magic link. Returns `{ ok: true, state: "pending" }`.
+  - **Verified account exists** → no DB writes. Sends a plan-signin notice pointing at `/login?next=<safe_next>`. Returns `{ ok: true, state: "existing_account", next }`. The client redirects to the login flow.
+- `POST /auth/magic-link/consume` (unauthenticated). Body: `{ email, token }`. Verifies the token against `email_verification_tokens` (shared table with credential-signup email verification), marks the row `used_at = NOW()`, sets `email_verified_at = NOW()`, and returns the user record for the Auth.js `magic-link` Credentials provider to build a session from. Rejects suspended users without consuming the token.
 
-Visitors without an account can RSVP to **public** plans via a share link. The flow uses email verification to establish identity without requiring full account creation.
+**Magic-link consumption on the web side** — `/auth/magic` page (server component) reads `?token`, `?email`, `?next` from the URL, checks current session:
+- Already signed in as the same email → idempotent redirect to `next`.
+- Signed in as a different email → `WrongSessionPanel` interstitial ("Sign out first") to prevent hijack.
+- Not signed in → `MagicClient` calls `signIn("magic-link", { email, token, redirect: true, redirectTo: next })`. NextAuth's second Credentials provider (`magic-link`, registered alongside the password provider in `web/src/auth.ts`) POSTs to `/auth/magic-link/consume` via `NEXT_PUBLIC_API_BASE_URL`.
 
-**How it works:**
-1. `POST /events/:id/public-rsvp/request-code`, visitor submits their email. If the email belongs to an existing account, the response returns `{ existing_account: true }` and the frontend prompts sign-in. Otherwise, a 6-digit code is emailed and a **challenge token** (JWT, 10-minute expiry, HMAC-signed code digest) is returned.
-2. `POST /events/:id/public-rsvp/confirm-code`, visitor submits the code + challenge token. On success, a **participation token** is issued (JWT, 30-day expiry, purpose `public_rsvp`) containing `eventId`, `email`, and optional `name`.
-3. `POST /events/:id/email-rsvp`, accepts `{ participation_token, status, guest_name? }` in addition to the existing `invite_token` flow. Creates or updates a guest RSVP (`user_id = NULL`, `guest_email` set) the same way as email-invite guests.
-4. `GET /events/:id`, accepts `participation_token` query param (same as `invite_token`). Grants read access and returns guest RSVP status.
-5. `POST /events/:id/guest-alt-time`, accepts `participation_token` (requires existing RSVP rather than invite record).
+**Username auto-generation** — `generateFunUsername(sql)` in `api/src/username.ts` picks `<Adjective><Animal><###>` from curated lists in `api/src/data/usernameWords.ts` (e.g. `HappyOtter273`), validates against `USERNAME_REGEX` and `validateCleanText`, checks uniqueness against `username_norm`, and retries up to 10 times. Falls back to `Chum` + 6 hex chars.
 
-**Security:**
-- Challenge token uses HMAC digest so the 6-digit code cannot be extracted from the JWT.
-- 10-minute expiry + Cloudflare infrastructure-level rate limiting make brute force impractical (no server-side state needed).
-- Participation token mirrors invite token structure but with purpose `public_rsvp`; only accepted for public-visibility events.
+**Token surface after removal of guest model:**
 
-**Account linking:** When a user later creates an account with the same email and views the plan (`GET /events/:id`), orphaned guest records (RSVPs, invites, alt-times) are automatically adopted, same mechanism used for email-invite guests.
+| Token | Purpose | Lifetime | Stored as |
+|-------|---------|----------|-----------|
+| `invite_token` (JWT, `purpose: invite_rsvp`) | View grant for invited email recipient; carries the invite row's identity so the invitee's new `user_id` can adopt the invite row after lightweight signup | 30 days | Signed JWT only |
+| `share_token` (HMAC, deterministic per event) | View grant for share-link visitors. Does not grant RSVP — the lightweight signup card does. | No expiry (deterministic) | Short base64url HMAC in the URL |
+| Magic-link token | Single-use confirmation token for lightweight signup / sign-in | 15 min | Hashed row in `email_verification_tokens`, linked to `user_id` |
 
-**Cross-event email pre-fill:** The frontend stores participation tokens in `localStorage` as `nc_pub_{eventId}`. When visiting a new public plan, any existing `nc_pub_*` entry provides email pre-fill (a new verification code is still required).
+The prior `participation_token` (JWT, purpose `public_rsvp`), `guest_challenge` (10-min HMAC-signed code), `guest_confirmation` (JWT, purpose `guest_confirmation`), and 6-digit verification code have all been removed.
 
-**Email template:** Postmark template 44041128 (`POSTMARK_TEMPLATE_GUEST_VERIFY`). Variables: `code`, `planTitle`, `productName`.
+**Email template:** `POSTMARK_TEMPLATE_MAGIC_LINK_SIGNUP` (template 44523927) for new-account confirmation, `POSTMARK_TEMPLATE_PLAN_SIGNIN` (template 44523947) for existing-account sign-in notices. Source HTML/text live in `api/src/email/templates/magicLinkSignup.{html,txt}` and `planSignin.{html,txt}`.
+
+**Invite-email adoption flow** — when a host invites an off-platform email via `POST /events/:id/invite`, the email link lands the invitee on `/events/[id]?invite_token=...`. Logged-out visitors see the same lightweight-signup card with their email pre-fill. After magic-link click, the `GET /events/:id` handler adopts any matching `event_invites` row (`WHERE LOWER(email) = <user email> AND user_id IS NULL`) onto their new `user_id` so they show as invited and bypass any join-approval gate.
 
 ### Plan details viewer/access state model
 
@@ -458,8 +457,8 @@ The `GET /events/:id` endpoint returns an `accessState` field that determines ho
 
 | State | Condition | Experience |
 |-------|-----------|------------|
-| `"public"` | No auth, no valid token | Limited preview: title, date, approximate location, attendance counts. CTA to sign in. |
-| `"invite"` | No auth, valid invite/participation/share token | Full plan details with RSVP buttons, availability tools, attendee list. |
+| `"public"` | No auth, no valid token | Limited preview: title, date, approximate location, attendance counts. CTA to sign in or create an account. |
+| `"invite"` | No auth, valid `invite_token` or `share_token` | Full plan details (no RSVP buttons), plus the lightweight-signup card so the visitor can complete signup and come back fully authenticated. |
 | `"authenticated"` | Logged in, not host, no RSVP | Full plan details with RSVP buttons. |
 | `"attending"` | Logged in, is host or has RSVP | Full plan details with host/attendee controls. |
 
@@ -468,30 +467,22 @@ The `GET /events/:id` endpoint returns an `accessState` field that determines ho
 | Token | Purpose | Created when | Expiry | Stored in |
 |-------|---------|--------------|--------|-----------|
 | `invite_token` | `invite_rsvp` | Host invites someone | 30 days | `localStorage` as `nc_inv_{eventId}` |
-| `participation_token` | `public_rsvp` | Guest completes email verification | 30 days | `localStorage` as `nc_pub_{eventId}` |
 | `share_token` | Share link access | Deterministic HMAC per event | None | URL only (deterministic) |
 
-Invite and participation tokens are persisted in `localStorage` so that page reloads do not degrade the viewer's access state. When a token-backed API call returns `accessState: "public"` (indicating the token is expired/invalid), the localStorage entry is cleared.
+The `invite_token` is persisted in `localStorage` so that page reloads do not degrade the viewer's access state. When a token-backed API call returns `accessState: "public"` (indicating the token is expired/invalid), the localStorage entry is cleared. `share_token` lives only in the URL.
 
-**Approval-required plans and invited guests:**
-- Invited guests (via `invite_token`) bypass the host-approval requirement. They can RSVP directly.
-- The frontend gates this via `isGuestInvite` (true when the API returns `guestInvite: true`).
-- The API also returns `isInvited: true` for token-based guest invitees (not just authenticated users).
-- The "Approval required" tooltip adjusts for invited guests to say "no approval needed."
+**RSVP requires authentication.** All RSVP / alt-time / confirmation / chat actions require a logged-in user. Unauthenticated visitors see the plan preview plus a Lightweight signup card (see the "Lightweight plan signup" section above). Once they click the magic link they return as an authenticated user and the normal RSVP flow unlocks.
 
-**Availability/alternate times for invited guests:**
-- Invited guests can suggest alternate times via `POST /events/:id/guest-alt-time` using their invite token.
-- Invite-token guests do not need to RSVP first to suggest times (unlike participation-token guests, who must RSVP first).
-- The `canSuggest` check includes `isGuestInvite` and `participationTokenRef`, ensuring the form renders for all token-backed viewers.
+**Invite adoption on first authenticated load.** The first time a newly-authenticated user opens a plan page that had an email-only invite matching their address, `GET /events/:id` runs an idempotent `UPDATE event_invites SET user_id = $uid WHERE LOWER(email) = $email AND user_id IS NULL` so the row is adopted onto their account. They then appear as invited (`isInvited: true`) and bypass any host-approval requirement.
 
 **Email deep-linking (`?section=` query param):**
-- Email CTAs can include `?section=feedback`, `?section=chat`, `?section=availability`, or `?section=attendees` to scroll the plan page to a specific section.
+- Email CTAs can include `?section=feedback`, `?section=chat`, `?section=availability`, `?section=attendees`, or `?section=confirmation` to scroll the plan page to a specific section.
 - The param is extracted on load, cleaned from the URL, and triggers `scrollIntoView` on a corresponding `id="plan-section-{name}"` anchor after event data renders.
-- Auth-required sections are listed in `AUTH_REQUIRED_SECTIONS` (currently `feedback`, `chat`) at the top of `web/src/app/(app)/events/[id]/EventDetailClient.tsx`.
-- If the section requires authentication and the visitor has no auth token, the events client redirects them to `/login?next=/events/{id}?section={name}` **before** calling the plan endpoint. This avoids landing on the public preview path (which has no feedback form) or a "Plan not found" fallback. After signing in, Auth.js returns the user to the same plan + section, and the existing `scrollIntoView` logic opens the right section automatically.
+- Auth-required sections are listed in `AUTH_REQUIRED_SECTIONS` at the top of `web/src/app/(app)/events/[id]/EventDetailClient.tsx`.
+- If the section requires authentication and the visitor has no auth token, the events client redirects them to `/login?next=/events/{id}?section={name}` **before** calling the plan endpoint. After signing in, Auth.js returns the user to the same plan + section, and the existing `scrollIntoView` logic opens the right section automatically.
 - Logged-in viewers continue to load the plan normally; the redirect only fires when `getAuthToken()` returns null.
 
-> **Agent guidance:** Invite-token-backed viewers must be treated as a distinct state. Do not assume all non-authenticated viewers are generic public visitors. Any change to public plan details rendering should verify behavior across all four access states.
+> **Agent guidance:** The `invite` state is distinct from `public` — the visitor holds a valid token but is not authenticated. The plan preview is visible but RSVP is gated behind the lightweight signup card. Do not conflate `invite` with `public`; changes to plan-details rendering should verify behavior across all four access states.
 
 ### Account deletion
 
@@ -715,11 +706,10 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 |-------|-------------|
 | `POST /events` | Create event. Validates title, starts_at, location_type, visibility. Accepts `invitees[]` array of `{ user_id?, email? }`, `require_reconfirmation`, `require_approval`, `allow_attendee_invites` (default true), `allow_alt_times` (default true), `alt_times_mode` (suggest/availability), `availability_deadline_at` (must be before starts_at, availability mode only), `reserve_seats`, `max_seats` (1-500), `pref_overrides` (JSONB), `community_id` (UUID, user must be active member), `hide_from_explore`. Published events send invite notifications and emails. |
 | `GET /events/mine?filter=upcoming\|past` | List events the user hosts, is invited to, or has RSVP'd. Includes going/maybe counts, host info, RSVP status, `has_unread_chat` flag. Host name uses `@username` priority. |
-| `GET /events/:id` | Event detail with RSVP list, alternate time suggestions, join requests, and attendance assurance state. Optional auth. Accepts query params: `invite_token`, `participation_token`, `share_token`. Returns `accessState` (`public` \| `invite` \| `authenticated` \| `attending`) and `shareToken` (for non-public states). Public access returns limited preview (counts only, no individual RSVPs). Full response includes `requireReconfirmation`, `lockedAt`, `requireApproval`, `isInvited`, `hasRsvp`, `confirmationWindowOpen`, `confirmationCutoffAt`, `confirmedCount`, `pendingConfirmationCount`, `myConfirmationStatus`, `planViability`, and per-RSVP `confirmationStatus`. Join requests: full list for host, own request only for non-hosts. |
+| `GET /events/:id` | Event detail with RSVP list, alternate time suggestions, join requests, and attendance assurance state. Optional auth. Accepts query params: `invite_token`, `share_token`. Returns `accessState` (`public` \| `invite` \| `authenticated` \| `attending`) and `shareToken` (for non-public states). Public access returns limited preview (counts only, no individual RSVPs). Full response includes `requireReconfirmation`, `lockedAt`, `requireApproval`, `isInvited`, `hasRsvp`, `confirmationWindowOpen`, `confirmationCutoffAt`, `confirmedCount`, `pendingConfirmationCount`, `myConfirmationStatus`, `planViability`, and per-RSVP `confirmationStatus`. Join requests: full list for host, own request only for non-hosts. On first authenticated load, idempotently adopts any matching email-only `event_invites` row (`WHERE LOWER(email) = <user email> AND user_id IS NULL`) onto the user's account. |
 | `PATCH /events/:id` | Edit event (host only). Accepts: `title`, `description`, `starts_at`, `max_seats`, `visibility`, `require_reconfirmation`, `require_approval`, `allow_alt_times`, `alt_times_mode`, `availability_deadline_at`, `allow_attendee_invites`, `reserve_seats`, `pref_overrides`, `community_id`, `hide_from_explore`, `timezone`, `interest_items`. Returns `{ ok: true }`. Sends plan-changed notifications to Going/Maybe attendees when meaningful fields change (title, date, description, capacity, visibility, confirmation settings, availability deadline). Automatically clears `availability_deadline_at` when mode switches away from availability. |
 | `POST /events/:id/rsvp` | RSVP to an event, `{ status: "going"\|"maybe"\|"cant_make_it", note? }`. Capacity enforcement for going status. Locked plans reject new RSVPs (`EVENT_LOCKED` error) but allow existing participants to change status. Plans with `require_approval` reject non-invited users who have no existing RSVP (`APPROVAL_REQUIRED` error). Notifies host via in-app notification and email. UI: "Can't make it" button only shown when user is invited or has an existing RSVP; heading text is context-aware ("Can you make it?" for invited users, "Are you in?" otherwise). |
 | `POST /events/:id/alt-time` | Suggest alternate time, `{ suggested_at, note? }`. Only if event.allow_alt_times. Notifies host. Auth required. |
-| `POST /events/:id/guest-alt-time` | Guest alternate time suggestion via invite token or participation token, `{ invite_token|participation_token, suggested_at, ends_at?, note? }`. No auth required. Validates token; invite tokens require an invite record, participation tokens require an existing RSVP. Enforces 10-suggestion limit per guest. Stores with `user_id = NULL, guest_email = ...` (migration 043). |
 | `POST /events/:id/cancel` | Cancel event (host only). Notifies all attendees via in-app notification and email. |
 | `POST /events/:id/invite` | Add invitees to published event. Host can always invite; Going attendees can invite when `allow_attendee_invites` is true. Automatically includes a time-flexibility note in the invite email when `allow_alt_times` is enabled (wording varies by `alt_times_mode`: availability or suggest). Accepts optional `message` (string, max 500 chars) for a personal note included in the invite email. Rejects self-invites (invitee email matches inviter email) with `SELF_INVITE` error. `invited_by` column tracks who sent each invite. Sends notifications and invite emails with inviter's display name. **Cross-key dedup:** before insert, an email-only invitee whose address matches an existing user is normalized to that user's `user_id` (and `email` is cleared) so the row lands in canonical form. The handler then checks for any pre-existing invite via either identity column (incoming `user_id` against existing rows by `user_id` OR by the user's email; incoming email against existing rows by `email` OR by the user_id of any user with that email). Duplicates are silently skipped, no second invite email is sent, and the response is `{ ok: true, added, alreadyInvited }` so the client can surface a clear "already invited" toast. The same email→user_id normalization is applied at plan creation (`POST /events`) so creation-time invites land in canonical form too. Pending invites are visible to all viewers in the plan-details "Who's in" section, not only the host, so attendee-sent invites are surfaced to the rest of the group. |
 | `PUT /share-link-modal-dismiss` | Permanently dismiss the share-link first-use info modal for the authenticated user. Sets `share_link_modal_dismissed = true` on the user record. |
@@ -732,9 +722,7 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 | `POST /events/:id/chat/read` | Mark chat as read. Upserts `last_read_at` in `event_chat_reads`. |
 | `GET /events/:id/chat/ws` | WebSocket upgrade endpoint. Authenticates via `?token=` query param (JWT), verifies chat access, then forwards to the ChatRoom Durable Object. Returns 101 on success. |
 | `POST /events/:id/lock` | Toggle plan lock (host only). Sets or clears `locked_at` on the event. Returns updated `lockedAt`. |
-| `POST /events/:id/confirm` | Confirm or decline attendance (auth required). Body: `{ action: "confirm" \| "decline" }`. Upserts `event_confirmations` record. Available when confirmation window is open. On success, marks unread `confirmation_requested` bell notifications for that user and plan as read. |
-| ~~`POST /events/:id/email-confirm`~~ | **Removed.** Formerly token-based attendance confirmation from email links. Registered user confirmation emails now use the login-required `?section=confirmation` deep-link pattern (same as feedback), and confirmation is handled via `POST /events/:id/confirm` after login. |
-| `POST /events/:id/guest-confirm` | Token-based attendance confirmation for guest attendees (no login required). Body: `{ token, action: "confirm" \| "decline" }`. Verifies signed JWT (`purpose: "guest_confirmation"`), updates `event_confirmations` by guest_email. Allows changing between confirmed/declined during the active window. Handles guest-to-user migration if the guest has since registered. Idempotent. |
+| `POST /events/:id/confirm` | Confirm or decline attendance (auth required). Body: `{ action: "confirm" \| "decline" }`. Upserts `event_confirmations` record. Available when confirmation window is open. On success, marks unread `confirmation_requested` bell notifications for that user and plan as read. All attendees are authenticated users post-migration 084; confirmation emails deep-link to `?section=confirmation` and require login. |
 | `POST /events/:id/join-request` | Submit a join request (requires `require_approval` to be on). Body: `{ message? }`. Validates not-host, not-invited, not-already-RSVP'd, no duplicate pending request. Notifies host via in-app notification and email (template 43906440). |
 | `POST /events/:id/join-request/:requestId/approve` | Approve a join request (host only). Body: `{ message? }`. Checks seat capacity. Marks request approved, adds user as Going RSVP. Notifies requester via in-app notification and email (template 43906609). |
 | `POST /events/:id/join-request/:requestId/decline` | Decline a join request (host only). Body: `{ message? }`. Marks request declined. Notifies requester via in-app notification and email (template 43906703). |
@@ -742,8 +730,8 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 | `POST /events/:id/feedback` | Submit/update feedback. Body: `{ entries: [{ revieweeUserId, prompt, response }] }`. Prompts: reliability, sociability, presentation, match_quality, hosting_skills (host-only). Responses: agree, maybe, disagree. Upserts on conflict. |
 | `POST /events/:id/attendance-issue` | Report attendance issue. Body: `{ reportedUserId, issueType }`. Types: no_show, late_cancel, very_late. One report per type per pair per plan. |
 | `POST /events/:id/conduct-report` | Report conduct/safety concern. Body: `{ reportedUserId, reason, details? }`. Reasons: rude_aggressive, harassment, boundary_issue, discriminatory, unsafe_intoxicated, disruptive, property_damage, other. |
-| `POST /events/:id/public-rsvp/request-code` | Share-link email verification. Body: `{ email, share_token? }`. If email belongs to existing account, returns `{ existing_account: true }`. Otherwise sends 6-digit code via Postmark template 44041128 and returns `{ challenge }` (JWT, 10-min expiry). Without a valid `share_token`, requires the plan to have public visibility; with a valid share token, works for any published plan. |
-| `POST /events/:id/public-rsvp/confirm-code` | Verify the 6-digit code. Body: `{ challenge, code, name? }`. On success returns `{ token }`, a participation token (JWT, 30-day expiry, purpose `public_rsvp`). |
+
+**Unauthenticated share-link / invite-link signup** is handled by `POST /auth/plan-signup/request` + `POST /auth/magic-link/consume` (see "Lightweight plan signup" section above). These endpoints replaced the retired `POST /events/:id/email-rsvp`, `POST /events/:id/public-rsvp/request-code`, `POST /events/:id/public-rsvp/confirm-code`, `POST /events/:id/guest-confirm`, and `POST /events/:id/guest-alt-time` endpoints (migration 084, guest participation removed).
 
 **Important: Hono route ordering.** `GET /events/explore/public` and `GET /events/explore` must be registered **before** `GET /events/:id` in the route table. Otherwise, Hono interprets "explore" as a UUID `:id`, resulting in a database error.
 
@@ -765,25 +753,24 @@ Every request to `GET /events/:id` resolves to one of four access states. The ac
 |-------|-----------|------------|
 | **`attending`** | Logged in + host or has RSVP | Full detail: RSVPs, invites, alt-times, join requests, chat access, exact location (per `location_visibility`), attendance assurance, host controls |
 | **`authenticated`** | Logged in, not attending | Full detail minus host-only controls. Own join request only. Can RSVP or request to join. |
-| **`invite`** | Valid `invite_token`, `participation_token`, or `share_token`, not logged in | Full detail with guest hints (`guestInvite`, `guestEmail`, `guestRsvpStatus`). Guest RSVP via email verification flow. |
+| **`invite`** | Valid `invite_token` or `share_token`, not logged in | Full plan detail (read-only). Lightweight-signup card replaces the RSVP buttons; the visitor completes signup/sign-in via magic link and comes back as an authenticated user. |
 | **`public`** | No auth, no token | Limited preview: title, description, date, hobby, host name, location (approximate only), attendee counts (going/maybe, no individual RSVPs). No RSVP flow. CTA to sign in or create account. |
 
 **Precedence:** `attending` > `authenticated` > `invite` > `public`. A logged-in user with an invite token who is already attending resolves to `attending`.
 
 **Share tokens (plan-level access links):**
 
-Share tokens are plan-level JWTs (`purpose: "share"`) that grant guest access to a plan's full detail view and the email RSVP flow. Unlike invite tokens, share tokens are not user-specific and have no expiry.
+Share tokens are short deterministic HMACs (not JWTs) that grant preview access to a plan's full detail view. They are not user-specific and have no expiry. RSVPing still requires authentication — visitors complete the lightweight signup flow first.
 
-- Generated server-side via `createShareToken(eventId, secret)`.
+- Generated server-side via `createShareToken(eventId, secret)` (HMAC, base64url, 16 chars).
 - Included in `GET /events/:id` responses for non-public access states as `shareToken`.
 - The **Copy Link** button builds the share URL as `/events/[id]?share_token=xxx`.
-- The `share_token` query param is verified by `verifyParticipationOrInviteToken` (same verifier as invite/participation tokens).
-- The `public-rsvp/request-code` endpoint accepts an optional `share_token` body param to allow the email RSVP flow on non-public-visibility plans.
+- Verified by `verifyShareToken(token, eventId, secret)`.
 
-**URL distinction (public vs share):**
+**URL distinction (public vs share vs invite):**
 - Plain URL `/events/[id]` → `accessState: "public"` → limited preview, no RSVP.
-- Share URL `/events/[id]?share_token=xxx` → `accessState: "invite"` → full detail with guest RSVP.
-- Invite URL `/events/[id]?invite_token=xxx` → `accessState: "invite"` → full detail with guest RSVP.
+- Share URL `/events/[id]?share_token=xxx` → `accessState: "invite"` (for unauthenticated visitors) → full plan detail + lightweight signup card.
+- Invite URL `/events/[id]?invite_token=xxx` → `accessState: "invite"` (for unauthenticated visitors) → full plan detail + lightweight signup card pre-filled with the invited email; after magic-link click, the matching `event_invites` row is adopted onto the new user's account.
 
 **Public access data restrictions:**
 - Individual RSVP entries are not returned (only aggregate counts)
@@ -899,8 +886,7 @@ The Attendance Assurance system is a two-stage commitment flow built on top of R
 - **Confirmation lifecycle:** `pending` → `confirmed` | `declined` | `expired`. Distinct from RSVP status; RSVP history is preserved.
 - **Host configuration:** min confirmed attendees (includes host), fallback policy (`proceed` / `notify_host` / `auto_cancel`).
 - **Cron processing (hourly):** Sends initial confirmation requests 24h before, follow-up reminders at 12h and 3h, processes cutoff 2h before event.
-- **Email flow:** Confirmation request emails with secure one-click confirm/decline links (JWT-based). Plan-at-risk emails to hosts when minimum not met. On `auto_cancel`, cancellation notifications go to all registered attendees *and* to all guest attendees (via `guest_email`), so guests hear that a plan they RSVP'd to was called off.
-- **Guests count:** Guest RSVPs (user_id IS NULL, guest_email set) receive confirmation request emails, and their `confirmed` rows in `event_confirmations` count toward `min_confirmed_attendees` on the same footing as registered users.
+- **Email flow:** Confirmation request emails deep-link to `/events/:id?section=confirmation`. Recipients sign in if needed, then confirm or decline via `POST /events/:id/confirm`. Plan-at-risk emails to hosts when minimum not met. On `auto_cancel`, cancellation notifications go to all attendees. All attendees are authenticated users post-migration 084 — the previous guest-email fan-out no longer exists.
 - **In-app confirmation:** Logged-in users can confirm/decline directly on the plan details page when the confirmation window is open.
 - **Viability display:** Plan details page shows real-time confirmation status, viability assessment, and per-attendee confirmation state in the "Who's in" section.
 - **RSVP integration:** Changing RSVP to "Can't make it" automatically sets confirmation to declined. Changing to "Going" during an open window creates a pending confirmation.
@@ -909,7 +895,7 @@ The Attendance Assurance system is a two-stage commitment flow built on top of R
 
 The hourly cron handler includes `cancelNoAttendeePlans()` which auto-cancels published plans where the host is the only "going" participant and the plan start time has passed (within a 2-hour window to avoid reprocessing old plans). Sets `status = 'canceled'` and `cancellation_reason = 'no_attendees'`. No email notifications are sent for this auto-cancel; it is a silent cleanup for plans that effectively never happened.
 
-**Guest attendees count.** "Host is the only participant" means nobody *other than the host* has a `going` RSVP, registered *or* guest. Guest RSVPs (`event_rsvps.user_id IS NULL`, identified by `guest_email`) count as attendees for viability, cancellation, host follow-through, and host-badge eligibility. The SQL pattern used for "someone other than the host has RSVP'd" is `er.user_id IS DISTINCT FROM e.host_user_id`, so NULL guest rows are correctly treated as non-host attendees. Any new attendee-counting query in lifecycle logic must follow the same rule: a plain `user_id != host_user_id` comparison silently drops guests and must not be used.
+**Defensive SQL pattern.** Attendee-counting queries use `er.user_id IS DISTINCT FROM e.host_user_id` rather than a plain `!=`. Post-migration 084 `event_rsvps.user_id` is `NOT NULL`, but the `IS DISTINCT FROM` pattern remains as cheap NULL-safety in case a future schema change reintroduces nullability. Any new attendee-counting lifecycle query should follow the same pattern.
 
 **Attendance Record (implemented):**
 
@@ -1206,7 +1192,7 @@ This is the authoritative contract for how plans appear in the **Explore feed** 
 - Plan `visibility` (`public` / `chums_only` / `invite_only`) applies in both Explore and the community feed. `visibility` controls discoverability only; direct URL access to a published plan is governed by the plan's access-state rules (see §11).
 - Chum-preference filtering and plan-level `pref_overrides` still apply in Explore.
 - Super admins bypass the `is_qa = false` clause in every community- and explore-related plan query. Normal users never see QA plans in any feed, notification, or email.
-- **Community membership is a discovery gate, not a participation gate.** `hide_from_explore` and community `visibility` narrow what non-members *find*; they never block a non-member from viewing or RSVPing to a specific plan they were directly invited to or reached via a valid share/invite/participation token. Specifically: `POST /events/:id/invite` (host or Going-attendee invite with `allow_attendee_invites`), `POST /events/:id/rsvp` (registered), `POST /events/:id/email-rsvp` (guest invite-token), and `POST /events/:id/public-rsvp/confirm-code` (share-token) all deliberately omit any community-membership check, since the invite or token itself is the grant. Once a non-member has an RSVP or invite row, `GET /events/mine` and the Explore RSVP-bypass both include the plan normally, so their "Your Plans" tab and Explore feed behave like any other joined plan. Do not add a community-membership gate to any of these endpoints.
+- **Community membership is a discovery gate, not a participation gate.** `hide_from_explore` and community `visibility` narrow what non-members *find*; they never block a non-member from viewing or RSVPing to a specific plan they were directly invited to or reached via a valid share/invite token. Specifically: `POST /events/:id/invite` (host or Going-attendee invite with `allow_attendee_invites`) and `POST /events/:id/rsvp` (authenticated) deliberately omit any community-membership check, since the invite or RSVP action itself is the grant. Unauthenticated share/invite link visitors reach the plan preview, complete the lightweight signup flow, and then RSVP normally as authenticated users. Once a non-member has an RSVP or invite row, `GET /events/mine` and the Explore RSVP-bypass both include the plan normally. Do not add a community-membership gate to any of these endpoints.
 
 **Enforcement points (kept in sync).**
 
@@ -1397,14 +1383,14 @@ Core tables include:
 - `newchums.events.require_approval` (migration 030), `BOOLEAN NOT NULL DEFAULT FALSE`; when true, non-invited users must request to join and be approved by the host
 - `newchums.event_join_requests` (migration 030), join request records; columns: `id` (UUID PK), `event_id` (FK), `user_id` (FK), `status` (pending/approved/declined), `message` (TEXT NULL), `host_message` (TEXT NULL), `decided_at` (TIMESTAMPTZ NULL), `created_at`; unique partial index on `(event_id, user_id) WHERE status = 'pending'`
 - `newchums.host_attendee_removals` (migration 034), tracks host-initiated attendee removals; columns: `event_id`, `host_user_id`, `removed_user_id`, `status_at_removal`, `created_at`
-- `newchums.event_rsvps` guest columns (migration 035), `user_id` made nullable, added `guest_email TEXT NULL`, `guest_name TEXT NULL`, partial unique index on `(event_id, guest_email)` for guest rows
+- `newchums.event_rsvps` guest columns (migration 035, **superseded by 084**). Originally made `user_id` nullable and added `guest_email TEXT NULL`, `guest_name TEXT NULL` + partial unique index for guest rows. Migration 084 dropped those columns, deleted orphan guest rows, and restored `user_id NOT NULL`.
 - `newchums.user_profile.chat_digest_sent_at` (migration 037), `TIMESTAMPTZ NULL`; tracks when the daily unread-chat digest email was last sent to each user, enforcing once-per-day sending
 - `newchums.events` attendance assurance columns (migration 039), `min_confirmed_attendees INT NULL`, `confirmation_window_hours INT NOT NULL DEFAULT 24`, `confirmation_cutoff_hours INT NOT NULL DEFAULT 2`, `fallback_policy TEXT NOT NULL DEFAULT 'proceed'`, `confirmation_sent_at TIMESTAMPTZ NULL`, `cutoff_processed_at TIMESTAMPTZ NULL`
 - `newchums.event_confirmations` (migration 039), final attendance confirmation records; columns: `id` (UUID PK), `event_id` (FK), `user_id` (FK), `status` (pending/confirmed/declined/expired), `responded_at`, `reminder_count`, `last_reminder_at`, `created_at`, `updated_at`; unique constraint on `(event_id, user_id)`
 - `newchums.users` legal acceptance columns (migration 040), `accepted_terms_version TEXT NULL`, `accepted_privacy_version TEXT NULL`, `accepted_legal_at TIMESTAMPTZ NULL`
 - `newchums.event_rsvps.committed_at` (migration 041), `TIMESTAMPTZ NULL`; records when a user first committed (RSVP'd going) for accurate follow-through tracking; backfilled from `created_at` for existing going RSVPs; indexed on `(user_id, committed_at)` where not null
 - `newchums.events.allow_attendee_invites` (migration 042), `BOOLEAN NOT NULL DEFAULT true`; when true, Going attendees can invite others to the plan; host can toggle at any time via `POST /events/:id/toggle-attendee-invites`
-- `newchums.event_alt_times` guest support (migration 043), `user_id` made nullable, added `guest_email TEXT NULL`; mirrors event_rsvps guest pattern; allows unauthenticated invitees to suggest alternate times via invite token
+- `newchums.event_alt_times` guest support (migration 043, **superseded by 084**). Originally mirrored the 035 guest pattern. Migration 084 dropped `guest_email`, deleted orphan rows, and restored `user_id NOT NULL`.
 - `newchums.plan_feedback` (migration 049), per-attendee feedback responses. Columns: `id` (UUID PK), `plan_id` (FK), `reviewer_user_id` (FK), `reviewee_user_id` (FK), `prompt` (reliability/sociability/presentation/match_quality/hosting_skills), `response` (agree/maybe/disagree), `created_at`. Unique on `(plan_id, reviewer_user_id, reviewee_user_id, prompt)`.
 - `newchums.attendance_issues` (migration 049), structured attendance problem reports. Columns: `id` (UUID PK), `plan_id` (FK), `reporter_user_id` (FK), `reported_user_id` (FK), `issue_type` (no_show/late_cancel/very_late), `created_at`. Unique on `(plan_id, reporter_user_id, reported_user_id, issue_type)`.
 - `newchums.conduct_reports` (migration 049, extended 053), safety/behavioral concern reports. Columns: `id` (UUID PK), `plan_id` (FK), `reporter_user_id` (FK), `reported_user_id` (FK), `reason`, `details` (TEXT NULL), `status` (new/reviewed/closed, migration 053), `created_at`.
@@ -1422,7 +1408,7 @@ Core tables include:
 - `newchums.events.alt_times_mode` (migration 057), `TEXT NOT NULL DEFAULT 'suggest'`. Host-controlled presentation mode for the alternate times feature: `'suggest'` (default, current behavior) or `'availability'` (collaborative scheduling framing). Same underlying `event_alt_times` engine; only attendee-facing copy differs.
 - `newchums.users.share_link_modal_dismissed` (migration 062), `BOOLEAN NOT NULL DEFAULT false`; when true, the share-link first-use info modal is permanently dismissed for the user.
 - `newchums.events.availability_deadline_at` (migration 063), `TIMESTAMPTZ NULL`. Optional deadline by which attendees should submit their availability when the plan uses "Request availability" mode (`alt_times_mode = 'availability'`). Must be before `starts_at`. Automatically cleared when the plan's mode changes away from availability.
-- `newchums.events.is_qa` (migration 065), `BOOLEAN NOT NULL DEFAULT false`. Marks a plan as a QA/testing plan. QA plans are invisible to normal users but fully functional for super admins. Normal users see 404 on direct access, and QA plans are excluded from all feeds, emails, notifications, and cron processing for non-admins. Super admins see QA plans in feeds and receive cron-driven emails/notifications normally. QA plans are excluded from KPI metrics and the public explore feed. **Exception**: valid tokenized access (share_token, invite_token, participation_token) bypasses the QA gate so that intentionally shared QA plans can be tested through the full guest flow. Email-only (guest) invites are also allowed for QA plans. Partial index `idx_events_is_qa` for efficient filtering.
+- `newchums.events.is_qa` (migration 065), `BOOLEAN NOT NULL DEFAULT false`. Marks a plan as a QA/testing plan. QA plans are invisible to normal users but fully functional for super admins. Normal users see 404 on direct access, and QA plans are excluded from all feeds, emails, notifications, and cron processing for non-admins. Super admins see QA plans in feeds and receive cron-driven emails/notifications normally. QA plans are excluded from KPI metrics and the public explore feed. **Exception**: valid tokenized access (share_token or invite_token) bypasses the QA gate so that intentionally shared QA plans can be previewed by non-admins for testing, and email-only invites are allowed on QA plans (the invited recipient still completes the lightweight signup flow to RSVP). Partial index `idx_events_is_qa` for efficient filtering.
 - `newchums.roadmap_items.status` CHECK constraint updated (migration 066) to add `'planned'` status. Valid values are now: `'received'`, `'needs_clarification'`, `'in_progress'`, `'planned'`, `'completed'`, `'not_planned'`. Items with `received` status are only visible to the author and super admins on the public roadmap endpoints (`GET /roadmap`, `GET /roadmap/:id`, `GET /roadmap/:id/attachment`); once a super admin changes the status to any other value the item becomes publicly visible (unless `is_private` is also set, see migration 072).
 - `newchums.roadmap_items.is_private` (migration 072), `BOOLEAN NOT NULL DEFAULT false`. Privacy gate that is independent of `status`. When true, the item (and its attachment) is only visible to the author and super admins, regardless of status. Lets a super admin advance an item through the workflow (e.g. set to `'planned'`) while keeping items containing personal information out of public view. Toggled via the admin Edit dialog (`POST /admin/roadmap/:id/edit` accepts `is_private`). The two visibility gates are OR'd: an item is hidden from non-author non-admin viewers iff `(status = 'received' OR is_private = true)`. The public roadmap list and item detail pages display a "Private" chip next to the status badge for the author so they understand the item is restricted.
 - `newchums.roadmap_items.is_anonymous` (migration 067), `BOOLEAN NOT NULL DEFAULT false`. When true, public API responses (`GET /roadmap`, `GET /roadmap/:id`) replace the author username with `"anonymous"` and omit `author_user_id`. Admin endpoints (`GET /admin/roadmap`) always return the real author. The submit form (`POST /roadmap`) accepts an `is_anonymous` boolean. The admin table shows an "Anon" badge next to the real author for anonymous submissions.
@@ -1432,6 +1418,9 @@ Core tables include:
 - `newchums.users.is_hidden_shoutouts` (migration 074), `BOOLEAN NOT NULL DEFAULT false`. **Section-level** visibility toggle for the public-profile shout-outs section. When true, the Shout-outs section is hidden from non-owner viewers on `/u/<handle>`; the owner still sees the section here in a dimmed preview with a "Section hidden from visitors (Settings → Privacy)" caption. **Settable only from Settings → Privacy ("Hide shout-outs from my public profile"),** which writes through `PUT /profile`. There is intentionally no inline control for this flag on the public profile; the inline control on the public profile is per-card (see migration 076). Replaces the previous private "Shout-outs received" section on `/profile` and the `GET /profile/shoutouts` endpoint, both of which were removed when this column shipped.
 - `newchums.shoutouts.hidden_by_recipient` (migration 076), `BOOLEAN NOT NULL DEFAULT false`. **Per-card** visibility toggle the recipient can flip from the inline icon button on each shout-out card on their public profile. Independent from the section-level `users.is_hidden_shoutouts` flag (migration 074); both dimensions are respected. When true, `GET /public/users/:handle/shoutouts` excludes the row for non-owner viewers entirely, while the owner still receives it with `hiddenByRecipient: true` so the card can render in a dimmed preview state alongside the "Show this shout-out" icon. Togglable via `PATCH /shoutouts/:id` with body `{ hidden: boolean }`, recipient-only (auth required, 403 otherwise). The inline UI is a subtle eye / eye-off `IconButton` at the top-right of each card with tooltips "Hide this shout-out" / "Show this shout-out", visible only when the viewer is the profile owner.
 - `newchums.event_invites` single-identity cleanup (migration 075). Adds `CHECK ((user_id IS NULL) <> (email IS NULL))` as `event_invites_single_identity` so every row has exactly one recipient identity column populated. Migration first normalizes any legacy rows that had both columns set (clearing `email` and keeping `user_id`), then deletes email-only rows whose address matches an existing user who already has a user_id-keyed invite on the same event (to prevent a duplicate under the `(event_id, user_id)` unique index), then resolves the remaining email-only rows to `user_id` when the email matches a user account. Mirrors the same email -> user_id normalization the application performs on new inserts (POST `/events`, POST `/events/:id/invite`). The constraint is added via a DO block keyed on `pg_constraint.conname` so the migration is idempotent. Partial unique indexes from migration 024 are preserved as-is; the cross-key case still requires the application-side SELECT-before-INSERT check.
+- `newchums.event_confirmations` guest support (migration 077, **superseded by 084**). Originally made `user_id` nullable and added `guest_email TEXT NULL` with dual partial unique indexes (one for registered users, one for guests). Migration 084 dropped the guest column, deleted orphan rows, and restored `user_id NOT NULL`.
+- `newchums.users.subscription_plan` + `newchums.subscription_plan_history` (migration 083). See §5 "Organizer subscription plans" for the full access-resolution model.
+- **Guest participation removal (migration 084).** Destructive consolidation that drops the guest participation model entirely: deletes any orphan guest rows from `event_rsvps`, `event_confirmations`, `event_alt_times`; drops the `guest_email` / `guest_name` columns and the guest-specific partial indexes; restores `user_id NOT NULL` on all three tables. Migration includes a pre-flight count that aborts if more than ~100 guest rows exist. From this point on, every attendee/confirmation/alt-time row belongs to an authenticated user; unauthenticated visitors become real accounts via the lightweight signup flow (see §8 "Lightweight plan signup").
 
 PostGIS is available for geo queries.
 
