@@ -4,17 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Box from "@mui/material/Box";
 import Collapse from "@mui/material/Collapse";
 import Fade from "@mui/material/Fade";
-import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
 import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
-import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import CheckCircleOutlineRoundedIcon from "@mui/icons-material/CheckCircleOutlineRounded";
 import ExpandLessRoundedIcon from "@mui/icons-material/ExpandLessRounded";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
-import HelpOutlineRoundedIcon from "@mui/icons-material/HelpOutlineRounded";
-import { AppCard, useToast } from "@/components/ui";
+import { AppCard, HelpTooltip, useToast } from "@/components/ui";
 import { apiFetch } from "@/lib/apiClient";
 
 type Level = "open" | "preferred" | "important" | "required";
@@ -169,11 +166,7 @@ export default function ChumPreferencesSection() {
                 <Typography variant="subtitle2" fontWeight={600}>
                   {m.title}
                 </Typography>
-                <Tooltip title={m.tooltip} arrow placement="top" enterTouchDelay={0}>
-                  <IconButton size="small" sx={{ p: 0.25, color: "text.disabled" }}>
-                    <HelpOutlineRoundedIcon sx={{ fontSize: 16 }} />
-                  </IconButton>
-                </Tooltip>
+                <HelpTooltip title={m.tooltip} />
               </Stack>
               <ToggleButtonGroup
                 value={prefs[m.key]}
@@ -217,16 +210,7 @@ export default function ChumPreferencesSection() {
               <Typography variant="subtitle2" fontWeight={600}>
                 Age range
               </Typography>
-              <Tooltip
-                title="Match plans whose host and attendees are close in age to you. Privacy-safe — exact ages are never shown."
-                arrow
-                placement="top"
-                enterTouchDelay={0}
-              >
-                <IconButton size="small" sx={{ p: 0.25, color: "text.disabled" }}>
-                  <HelpOutlineRoundedIcon sx={{ fontSize: 16 }} />
-                </IconButton>
-              </Tooltip>
+              <HelpTooltip title="Match plans whose host and attendees are close in age to you. Privacy-safe — exact ages are never shown." />
             </Stack>
             <ToggleButtonGroup
               value={ageYearsToOption(prefs.age)}

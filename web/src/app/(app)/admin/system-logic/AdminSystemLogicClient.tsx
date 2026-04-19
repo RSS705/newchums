@@ -154,7 +154,9 @@ export default function AdminSystemLogicClient() {
         <Bullet>
           <strong>Minimum not met (auto-cancel policy):</strong> If a plan has a <strong>24-hour attendance check</strong> enabled
           with fallback policy <strong>auto-cancel</strong>, and the confirmed count is below the minimum at cutoff time, the plan
-          is canceled and all Going/Maybe attendees are notified by email.
+          is canceled and all Going/Maybe attendees are notified by email. After the cutoff, the plan detail page keeps showing per-attendee
+          confirmation badges (Going &amp; Confirmed vs. Going - Didn&apos;t confirm) so the reason for cancellation is visible rather than
+          being hidden once the window closes. The cancellation banner also surfaces the confirmed count against the minimum.
         </Bullet>
         <Bullet>
           <strong>Host cancellation:</strong> The host can cancel at any time from the plan page. All Going/Maybe attendees are notified.

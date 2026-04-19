@@ -588,8 +588,7 @@ export default function CreateEventClient() {
             )}
           </Stack>
           <Typography variant="caption" color="text.secondary">
-            Colour themes are free. Custom photos: JPEG, PNG, or WebP up to 20 MB, we&apos;ll
-            compress it automatically.
+            Custom photos: JPEG, PNG, or WebP up to 20 MB, we&apos;ll compress it automatically.
           </Typography>
         </Stack>
       </AppCard>
@@ -1037,7 +1036,16 @@ export default function CreateEventClient() {
           color="inherit"
           onClick={() => {
             const selectedCommunity = selectedCommunityId ? myCommunities.find((c) => c.id === selectedCommunityId) : null;
-            router.push(selectedCommunity?.slug ? `/communities/${selectedCommunity.slug}` : "/plans");
+            const target = selectedCommunity?.slug ? `/communities/${selectedCommunity.slug}` : "/plans";
+            router.push(target, { scroll: true });
+            // iOS Safari (and a few Android browsers) sometimes restore the
+            // previous scroll position on SPA navigation even when the
+            // router asks for a fresh scroll. Force the target page to
+            // land at the top on the next frame so Cancel reliably
+            // returns the viewer to the top of the community page.
+            requestAnimationFrame(() => {
+              window.scrollTo({ top: 0, left: 0 });
+            });
           }}
           disabled={submitting}
           sx={{ minWidth: { xs: "100%", sm: 140 }, borderRadius: 2.5, textTransform: "none" }}

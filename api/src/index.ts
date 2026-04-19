@@ -6799,7 +6799,38 @@ app.get("/communities/:slug", async (c) => {
     `) as { name: string; slug: string }[];
 
     if (community.visibility === "private" && !isSuperAdmin) {
-      if (!userId) return c.json({ ok: false, error: "PRIVATE_COMMUNITY" }, 403);
+      // Logged-out viewers get a restricted public-style preview of private
+      // communities so the slug URL is shareable (e.g. for posters and QR
+      // codes) without exposing members, plans, website, or Discord links.
+      // Same shape as the non-member restricted response, minus any viewer-
+      // specific state (pending/declined/removed) which can't apply to an
+      // anonymous viewer.
+      if (!userId) {
+        const planCountRows = (await sql`
+          SELECT COUNT(*)::int AS cnt FROM newchums.events e
+          WHERE e.community_id = ${community.id}
+            AND e.status = 'published'
+            AND e.starts_at >= NOW()
+            AND COALESCE(e.is_qa, false) = false
+        `) as { cnt: number }[];
+        const upcomingPlanCount = planCountRows[0]?.cnt ?? 0;
+        return c.json({
+          ok: true,
+          community: {
+            id: community.id, slug: community.slug, name: community.name,
+            description: community.description, avatar_key: community.avatar_key,
+            visibility: community.visibility, join_mode: community.join_mode,
+            is_online: community.is_online, location_name: community.location_name,
+            member_count: community.member_count,
+            hobbies: communityHobbies,
+            upcoming_plan_count: upcomingPlanCount,
+          },
+          viewerMembership: null,
+          viewerPendingRequest: false,
+          viewerDeclinedRequest: false,
+          restricted: true,
+        });
+      }
       const memberRows = (await sql`
         SELECT 1 FROM newchums.community_members WHERE community_id = ${community.id} AND user_id = ${userId} AND status = 'active' LIMIT 1
       `) as unknown[];
@@ -9507,6 +9538,11 @@ app.get("/events/:id", async (c) => {
     const requiresConfirmation = event.require_reconfirmation === true;
     let confirmations: Array<{ user_id: string; status: string; responded_at: string | null }> = [];
     let confirmationWindowOpen = false;
+    // confirmationsIssued stays true once Phase 1 has fired, independent of the
+    // event's current status. The plan-detail UI reads it to decide whether
+    // per-attendee confirmation badges are meaningful (needed post-cancellation
+    // so users can see who didn't confirm and understand why the plan auto-canceled).
+    let confirmationsIssued = false;
     let confirmationCutoffAt: string | null = null;
     let confirmedCount = 0;
     let pendingConfirmationCount = 0;
@@ -9521,6 +9557,7 @@ app.get("/events/:id", async (c) => {
       const cutoffAt = startsAtMs - cutoffHours * 60 * 60 * 1000;
       confirmationCutoffAt = new Date(cutoffAt).toISOString();
       confirmationWindowOpen = Date.now() >= windowOpensAt && event.status === "published";
+      confirmationsIssued = event.confirmation_sent_at != null;
 
       confirmations = (await sql`
         SELECT user_id, status, responded_at
@@ -9640,6 +9677,7 @@ app.get("/events/:id", async (c) => {
         minConfirmedAttendees: event.min_confirmed_attendees ? Number(event.min_confirmed_attendees) : null,
         fallbackPolicy: requiresConfirmation ? (event.fallback_policy ?? "notify_host") : null,
         confirmationWindowOpen,
+        confirmationsIssued,
         confirmationCutoffAt,
         confirmedCount,
         pendingConfirmationCount,
@@ -9817,6 +9855,17 @@ app.post("/events/:id/rsvp", async (c) => {
           UPDATE newchums.event_confirmations
           SET status = 'declined', responded_at = NOW(), updated_at = NOW()
           WHERE event_id = ${eventId} AND user_id = ${userId} AND status IN ('pending', 'confirmed')
+        `;
+      } else if (status === "maybe") {
+        // Going -> Maybe softens the commitment. A prior 'confirmed' status is
+        // no longer valid for min_confirmed_attendees counting, so roll it back
+        // to 'pending' (responded_at cleared). 'declined' and 'expired' rows
+        // stay as they are: both capture an explicit or lifecycle-final state
+        // that shouldn't silently undo itself when the RSVP softens.
+        await sql`
+          UPDATE newchums.event_confirmations
+          SET status = 'pending', responded_at = NULL, updated_at = NOW()
+          WHERE event_id = ${eventId} AND user_id = ${userId} AND status = 'confirmed'
         `;
       } else if (status === "going") {
         const hasConfirmation = (await sql`
@@ -10729,6 +10778,11 @@ app.post("/events/:id/remove-attendee", async (c) => {
     const statusAtRemoval = rsvpRows[0].status;
 
     await sql`DELETE FROM newchums.event_rsvps WHERE event_id = ${eventId} AND user_id = ${targetUserId}`;
+
+    // Also clear any attendance-check confirmation row so a stale 'confirmed'
+    // status doesn't keep contributing to min_confirmed_attendees after the
+    // removed user has been taken off the plan.
+    await sql`DELETE FROM newchums.event_confirmations WHERE event_id = ${eventId} AND user_id = ${targetUserId}`;
 
     await sql`
       INSERT INTO newchums.host_attendee_removals (event_id, host_user_id, removed_user_id, status_at_removal, reason)
@@ -13479,6 +13533,332 @@ app.delete("/admin/roadmap/comments/:id", async (c) => {
     return c.json({ ok: true });
   } catch (err) {
     console.error("[DELETE /admin/roadmap/comments/:id]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+// ─── QR redirect management (super admin + public resolve) ───────────────────
+//
+// Internal redirect layer so printed QR codes stay useful even when their
+// destination changes. The public slug is `/qr/{code}` served by a Next.js
+// route handler, which calls the scan endpoint below for resolution + scan
+// logging, then issues a 302. Validation + logging live in the API so the
+// business rules don't leak into the web layer.
+
+const QR_CODE_MAX_LEN = 64;
+const QR_TITLE_MAX_LEN = 200;
+const QR_DEST_MAX_LEN = 2048;
+const QR_NOTES_MAX_LEN = 2000;
+const QR_CODE_REGEX = /^[A-Z0-9][A-Z0-9_-]{1,63}$/;
+
+/** Validate a destination URL submitted by a super admin. Rejects anything
+ *  that isn't an absolute http/https URL so we can't ship a poster that
+ *  redirects to `javascript:` or `data:` schemes. Returns the normalized
+ *  URL string on success, or null on failure. */
+function validateQrDestinationUrl(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.length > QR_DEST_MAX_LEN) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+  return parsed.toString();
+}
+
+function normalizeQrCode(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim().toUpperCase();
+  if (!QR_CODE_REGEX.test(trimmed)) return null;
+  return trimmed;
+}
+
+type QrRedirectRow = {
+  id: string;
+  code: string;
+  title: string;
+  destination_url: string;
+  notes: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  created_by: string;
+};
+
+/** GET /admin/qr-redirects — list, with per-record scan summary. */
+app.get("/admin/qr-redirects", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  const sql = getSql(c.env);
+  try {
+    const q = c.req.query("q")?.trim().toUpperCase() || null;
+    const likePattern = q ? `%${q}%` : null;
+    const rows = likePattern
+      ? (await sql`
+          SELECT r.id, r.code, r.title, r.destination_url, r.notes, r.is_active,
+                 r.created_at, r.updated_at, r.created_by,
+                 COALESCE(s.scan_count, 0)::int AS scan_count,
+                 s.last_scanned_at
+          FROM newchums.qr_redirects r
+          LEFT JOIN (
+            SELECT qr_redirect_id,
+                   COUNT(*) AS scan_count,
+                   MAX(scanned_at) AS last_scanned_at
+            FROM newchums.qr_redirect_scans
+            GROUP BY qr_redirect_id
+          ) s ON s.qr_redirect_id = r.id
+          WHERE r.code LIKE ${likePattern} OR UPPER(r.title) LIKE ${likePattern}
+          ORDER BY r.created_at DESC
+          LIMIT 500
+        `) as (QrRedirectRow & { scan_count: number; last_scanned_at: string | null })[]
+      : (await sql`
+          SELECT r.id, r.code, r.title, r.destination_url, r.notes, r.is_active,
+                 r.created_at, r.updated_at, r.created_by,
+                 COALESCE(s.scan_count, 0)::int AS scan_count,
+                 s.last_scanned_at
+          FROM newchums.qr_redirects r
+          LEFT JOIN (
+            SELECT qr_redirect_id,
+                   COUNT(*) AS scan_count,
+                   MAX(scanned_at) AS last_scanned_at
+            FROM newchums.qr_redirect_scans
+            GROUP BY qr_redirect_id
+          ) s ON s.qr_redirect_id = r.id
+          ORDER BY r.created_at DESC
+          LIMIT 500
+        `) as (QrRedirectRow & { scan_count: number; last_scanned_at: string | null })[];
+    return c.json({ ok: true, items: rows });
+  } catch (err) {
+    console.error("[GET /admin/qr-redirects]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /admin/qr-redirects — create a new redirect. */
+app.post("/admin/qr-redirects", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  const sql = getSql(c.env);
+  try {
+    const body = await c.req.json() as {
+      code?: unknown; title?: unknown; destination_url?: unknown;
+      notes?: unknown; is_active?: unknown;
+    };
+    const code = normalizeQrCode(body.code);
+    if (!code) return c.json({ ok: false, error: "INVALID_CODE", message: "Code must be 2–64 chars of A–Z, 0–9, '-' or '_' and start with an alphanumeric." }, 400);
+    const title = typeof body.title === "string" ? body.title.trim() : "";
+    if (!title || title.length > QR_TITLE_MAX_LEN) return c.json({ ok: false, error: "INVALID_TITLE" }, 400);
+    const destination = validateQrDestinationUrl(body.destination_url);
+    if (!destination) return c.json({ ok: false, error: "INVALID_DESTINATION", message: "Destination must be an absolute http(s) URL." }, 400);
+    const notes = typeof body.notes === "string" ? body.notes.trim().slice(0, QR_NOTES_MAX_LEN) : null;
+    const isActive = body.is_active !== false;
+
+    const existing = (await sql`SELECT id FROM newchums.qr_redirects WHERE code = ${code} LIMIT 1`) as { id: string }[];
+    if (existing.length > 0) return c.json({ ok: false, error: "CODE_TAKEN", message: "A QR redirect with that code already exists." }, 409);
+
+    const inserted = (await sql`
+      INSERT INTO newchums.qr_redirects (code, title, destination_url, notes, is_active, created_by)
+      VALUES (${code}, ${title}, ${destination}, ${notes}, ${isActive}, ${admin.id})
+      RETURNING id, code, title, destination_url, notes, is_active, created_at, updated_at, created_by
+    `) as QrRedirectRow[];
+    return c.json({ ok: true, item: inserted[0] });
+  } catch (err) {
+    console.error("[POST /admin/qr-redirects]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** GET /admin/qr-redirects/:id — single record plus recent scan history. */
+app.get("/admin/qr-redirects/:id", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  const sql = getSql(c.env);
+  const id = c.req.param("id");
+  try {
+    const rows = (await sql`
+      SELECT id, code, title, destination_url, notes, is_active, created_at, updated_at, created_by
+      FROM newchums.qr_redirects WHERE id = ${id} LIMIT 1
+    `) as QrRedirectRow[];
+    if (!rows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+
+    const [summary] = (await sql`
+      SELECT COUNT(*)::int AS scan_count, MAX(scanned_at) AS last_scanned_at
+      FROM newchums.qr_redirect_scans WHERE qr_redirect_id = ${id}
+    `) as { scan_count: number; last_scanned_at: string | null }[];
+
+    const recentScans = (await sql`
+      SELECT id, scanned_at, user_agent, referer, country
+      FROM newchums.qr_redirect_scans
+      WHERE qr_redirect_id = ${id}
+      ORDER BY scanned_at DESC
+      LIMIT 50
+    `) as { id: string; scanned_at: string; user_agent: string | null; referer: string | null; country: string | null }[];
+
+    return c.json({
+      ok: true,
+      item: rows[0],
+      scan_count: summary?.scan_count ?? 0,
+      last_scanned_at: summary?.last_scanned_at ?? null,
+      recent_scans: recentScans,
+    });
+  } catch (err) {
+    console.error("[GET /admin/qr-redirects/:id]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** PATCH /admin/qr-redirects/:id — update fields. Accepts any subset. */
+app.patch("/admin/qr-redirects/:id", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  const sql = getSql(c.env);
+  const id = c.req.param("id");
+  try {
+    const body = await c.req.json() as {
+      code?: unknown; title?: unknown; destination_url?: unknown;
+      notes?: unknown; is_active?: unknown;
+    };
+    const existing = (await sql`SELECT id, code FROM newchums.qr_redirects WHERE id = ${id} LIMIT 1`) as { id: string; code: string }[];
+    if (!existing[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+
+    let nextCode: string | null = null;
+    if (body.code !== undefined) {
+      nextCode = normalizeQrCode(body.code);
+      if (!nextCode) return c.json({ ok: false, error: "INVALID_CODE" }, 400);
+      if (nextCode !== existing[0].code) {
+        const dup = (await sql`SELECT id FROM newchums.qr_redirects WHERE code = ${nextCode} AND id != ${id} LIMIT 1`) as { id: string }[];
+        if (dup.length > 0) return c.json({ ok: false, error: "CODE_TAKEN" }, 409);
+      }
+    }
+
+    let nextTitle: string | null = null;
+    if (body.title !== undefined) {
+      if (typeof body.title !== "string") return c.json({ ok: false, error: "INVALID_TITLE" }, 400);
+      nextTitle = body.title.trim();
+      if (!nextTitle || nextTitle.length > QR_TITLE_MAX_LEN) return c.json({ ok: false, error: "INVALID_TITLE" }, 400);
+    }
+
+    let nextDest: string | null = null;
+    if (body.destination_url !== undefined) {
+      nextDest = validateQrDestinationUrl(body.destination_url);
+      if (!nextDest) return c.json({ ok: false, error: "INVALID_DESTINATION" }, 400);
+    }
+
+    // notes: null clears, string sets
+    const touchesNotes = body.notes !== undefined;
+    const nextNotes = touchesNotes
+      ? (typeof body.notes === "string" ? body.notes.trim().slice(0, QR_NOTES_MAX_LEN) || null : null)
+      : null;
+
+    const touchesActive = body.is_active !== undefined;
+    const nextActive = touchesActive ? (body.is_active !== false) : null;
+
+    const updated = (await sql`
+      UPDATE newchums.qr_redirects
+      SET
+        code = COALESCE(${nextCode}, code),
+        title = COALESCE(${nextTitle}, title),
+        destination_url = COALESCE(${nextDest}, destination_url),
+        notes = CASE WHEN ${touchesNotes}::boolean THEN ${nextNotes} ELSE notes END,
+        is_active = CASE WHEN ${touchesActive}::boolean THEN ${nextActive}::boolean ELSE is_active END,
+        updated_at = NOW()
+      WHERE id = ${id}
+      RETURNING id, code, title, destination_url, notes, is_active, created_at, updated_at, created_by
+    `) as QrRedirectRow[];
+    return c.json({ ok: true, item: updated[0] });
+  } catch (err) {
+    console.error("[PATCH /admin/qr-redirects/:id]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** DELETE /admin/qr-redirects/:id — hard delete; scans cascade. */
+app.delete("/admin/qr-redirects/:id", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  const sql = getSql(c.env);
+  const id = c.req.param("id");
+  try {
+    const existing = (await sql`SELECT id FROM newchums.qr_redirects WHERE id = ${id} LIMIT 1`) as { id: string }[];
+    if (!existing[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    await sql`DELETE FROM newchums.qr_redirects WHERE id = ${id}`;
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[DELETE /admin/qr-redirects/:id]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** DELETE /admin/qr-redirects/:id/scans/:scanId — remove a single scan row.
+ *  Hard delete, no confirmation on the server side (the UI matches). Used
+ *  mainly to keep the scan table tidy during testing. */
+app.delete("/admin/qr-redirects/:id/scans/:scanId", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  const sql = getSql(c.env);
+  const redirectId = c.req.param("id");
+  const scanId = c.req.param("scanId");
+  try {
+    const existing = (await sql`
+      SELECT id FROM newchums.qr_redirect_scans
+      WHERE id = ${scanId} AND qr_redirect_id = ${redirectId}
+      LIMIT 1
+    `) as { id: string }[];
+    if (!existing[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    await sql`DELETE FROM newchums.qr_redirect_scans WHERE id = ${scanId}`;
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[DELETE /admin/qr-redirects/:id/scans/:scanId]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /public/qr/:code/scan — resolve a code + log the scan. Called by the
+ *  Next.js /qr/[code] route handler (server-side) so the web layer stays a
+ *  thin pass-through. Returns the destination URL when active, or
+ *  { ok: false, error: "NOT_FOUND" | "INACTIVE" } so the caller can route to
+ *  a sensible fallback page instead of a broken destination. Scan metadata
+ *  (user-agent, referer, country) is trusted from the caller — this route is
+ *  not exposed on the public API contract beyond the /qr/ path.
+ *
+ *  No auth: QR codes are designed to be scanned by anyone.
+ */
+app.post("/public/qr/:code/scan", async (c) => {
+  const sql = getSql(c.env);
+  const code = normalizeQrCode(c.req.param("code"));
+  if (!code) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+  try {
+    const rows = (await sql`
+      SELECT id, destination_url, is_active
+      FROM newchums.qr_redirects WHERE code = ${code} LIMIT 1
+    `) as { id: string; destination_url: string; is_active: boolean }[];
+    if (!rows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    if (!rows[0].is_active) return c.json({ ok: false, error: "INACTIVE" }, 410);
+
+    let meta: { userAgent?: unknown; referer?: unknown; country?: unknown } = {};
+    try { meta = await c.req.json(); } catch { /* metadata is optional */ }
+
+    const ua = typeof meta.userAgent === "string" ? meta.userAgent.slice(0, 500) : null;
+    const ref = typeof meta.referer === "string" ? meta.referer.slice(0, 500) : null;
+    const country = typeof meta.country === "string" ? meta.country.slice(0, 8) : null;
+
+    // Log opportunistically. Never block the redirect on a log write failure —
+    // a working redirect matters more than a perfect scan count.
+    try {
+      await sql`
+        INSERT INTO newchums.qr_redirect_scans (qr_redirect_id, user_agent, referer, country)
+        VALUES (${rows[0].id}, ${ua}, ${ref}, ${country})
+      `;
+    } catch (logErr) {
+      console.error("[POST /public/qr/:code/scan] scan-log failed", logErr);
+    }
+
+    return c.json({ ok: true, destinationUrl: rows[0].destination_url });
+  } catch (err) {
+    console.error("[POST /public/qr/:code/scan]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });

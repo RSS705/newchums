@@ -134,6 +134,10 @@ type EventDetail = {
   minConfirmedAttendees: number | null;
   fallbackPolicy: string | null;
   confirmationWindowOpen: boolean;
+  // True once the confirmation cycle has been issued for this plan (Phase 1
+  // ran). Stays true after the window closes or the plan is canceled, so the
+  // UI can keep surfacing who confirmed and who didn't.
+  confirmationsIssued?: boolean;
   confirmationCutoffAt: string | null;
   confirmedCount: number;
   pendingConfirmationCount: number;
@@ -2077,6 +2081,12 @@ export default function EventDetailClient() {
                     ? "No one else was able to join this time around, but don't let that discourage you. The right plan is out there."
                     : null}
             </Typography>
+            {event.cancellationReason === "min_attendees_not_met" && event.minConfirmedAttendees && (
+              <Typography variant="body2" sx={{ opacity: 0.8 }}>
+                {event.confirmedCount} of {event.minConfirmedAttendees}{" "}
+                {event.minConfirmedAttendees === 1 ? "person" : "people"} confirmed by the deadline.
+              </Typography>
+            )}
             {event.canceledAt && (
               <Typography variant="body2" sx={{ opacity: 0.7 }}>
                 Canceled on{" "}
@@ -4137,7 +4147,7 @@ export default function EventDetailClient() {
             {event.maxSeats
               ? ` · ${Math.max(0, event.maxSeats - goingCount - reservedSeatCount)} seat${event.maxSeats - goingCount - reservedSeatCount === 1 ? "" : "s"} remaining`
               : ""}
-            {event.confirmationWindowOpen && event.confirmedCount > 0
+            {event.requireReconfirmation && (event.confirmationWindowOpen || event.confirmationsIssued) && event.confirmedCount > 0
               ? ` · ${event.confirmedCount} confirmed`
               : ""}
           </Typography>
@@ -4236,7 +4246,7 @@ export default function EventDetailClient() {
                         />
                       </Tooltip>
                     )}
-                    {r.status === "going" && event.confirmationWindowOpen && r.confirmationStatus === "confirmed" ? (
+                    {r.status === "going" && event.requireReconfirmation && (event.confirmationWindowOpen || event.confirmationsIssued) && r.confirmationStatus === "confirmed" ? (
                       /* Merged badge: Going + Confirmed */
                       <Tooltip title="This person confirmed they are still coming via the 24-hour attendance check" arrow placement="top" enterTouchDelay={0}>
                         <Chip
@@ -4253,8 +4263,24 @@ export default function EventDetailClient() {
                           }}
                         />
                       </Tooltip>
+                    ) : r.status === "going" && event.requireReconfirmation && event.confirmationsIssued && !event.confirmationWindowOpen && (r.confirmationStatus === "expired" || r.confirmationStatus === "pending" || r.confirmationStatus == null) ? (
+                      /* After the confirmation cycle finished (window closed or plan canceled): show explicit "didn't confirm" for Going attendees who never responded, so the reason for a min_attendees_not_met cancellation is visible. */
+                      <Tooltip title="This person said they were going but didn't respond to the 24-hour attendance check in time" arrow placement="top" enterTouchDelay={0}>
+                        <Chip
+                          icon={<InfoOutlinedIcon sx={{ fontSize: "1rem !important" }} />}
+                          label="Going - Didn't confirm"
+                          size="small"
+                          color="warning"
+                          variant="outlined"
+                          sx={{
+                            fontWeight: 600,
+                            fontSize: "0.8125rem",
+                            "& .MuiChip-icon": { color: "inherit", opacity: 0.85 },
+                          }}
+                        />
+                      </Tooltip>
                     ) : r.status === "going" && event.confirmationWindowOpen && r.confirmationStatus !== "confirmed" && r.confirmationStatus !== "declined" ? (
-                      /* Merged badge: Going + Pending/no confirmation (covers attendees with no confirmation record yet and attendees with an explicit pending status) */
+                      /* Merged badge: Going + Pending/no confirmation during the open window */
                       <Tooltip title="This person said they're going but hasn't responded to the 24-hour attendance check yet" arrow placement="top" enterTouchDelay={0}>
                         <Chip
                           icon={<AccessTimeRoundedIcon sx={{ fontSize: "1rem !important" }} />}

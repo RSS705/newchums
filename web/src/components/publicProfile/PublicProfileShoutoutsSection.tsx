@@ -250,12 +250,23 @@ export default function PublicProfileShoutoutsSection({
           }}
         >
           {items.map((s) => {
-            const profileHref = s.sender.username
-              ? `/u/${s.sender.username.replace(/^@/, "")}`
+            const senderHandle = s.sender.username
+              ? s.sender.username.replace(/^@/, "")
               : null;
+            const profileHref = senderHandle ? `/u/${senderHandle}` : null;
             const planHref = `/events/${s.planId}`;
             const cardHidden = s.hiddenByRecipient;
             const isToggling = togglingIds.has(s.id);
+            // Logged-out viewers only see the sender's handle, not their
+            // real name. Keeps /u/<handle> from being a name-lookup surface
+            // for anyone who hasn't signed in. Falls back to a neutral
+            // "NewChums member" label for the rare sender without a handle.
+            const senderLabel = viewerLoggedIn
+              ? s.sender.displayName
+              : (senderHandle ? `@${senderHandle}` : "NewChums member");
+            const senderInitial = viewerLoggedIn
+              ? (s.sender.displayName[0]?.toUpperCase() ?? "?")
+              : ((senderHandle || "?")[0]?.toUpperCase() ?? "?");
             return (
               <Box
                 key={s.id}
@@ -285,7 +296,7 @@ export default function PublicProfileShoutoutsSection({
                     src={`${avatarBase}/users/${s.sender.userId}/avatar`}
                     sx={{ width: 36, height: 36, fontSize: "0.9375rem", flexShrink: 0, mt: 0.25 }}
                   >
-                    {s.sender.displayName[0]?.toUpperCase()}
+                    {senderInitial}
                   </Avatar>
                   <Box sx={{ flex: 1, minWidth: 0 }}>
                     <Stack
@@ -305,7 +316,7 @@ export default function PublicProfileShoutoutsSection({
                           "&:hover": profileHref ? { textDecoration: "underline" } : {},
                         }}
                       >
-                        {s.sender.displayName}
+                        {senderLabel}
                       </Typography>
                       <Typography variant="caption" sx={{ color: "text.disabled", fontSize: "0.75rem" }}>
                         on{" "}

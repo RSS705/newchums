@@ -46,7 +46,14 @@ export default async function AppLayout({
   const requestedPath = getRequestedPathFromHeaders(requestHeaders);
 
   // Allow unauthenticated users to view event detail pages (public preview)
-  const isPublicRoute = /^\/?(\(app\)\/)?events\/[^/]+/.test(requestedPath);
+  // and community detail pages by slug. The community slug URL is the
+  // canonical public / shareable destination for a community (including
+  // posters and QR codes). Public communities render the full detail view;
+  // private communities render a restricted preview — the API enforces the
+  // privacy contract (no members, plans, website, or Discord link leak).
+  const isPublicRoute =
+    /^\/?(\(app\)\/)?events\/[^/]+/.test(requestedPath) ||
+    /^\/?(\(app\)\/)?communities\/[^/]+\/?$/.test(requestedPath);
 
   if (!session) {
     if (isPublicRoute) {

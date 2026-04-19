@@ -565,7 +565,17 @@ export default function AppShell({ children, user }: AppShellProps) {
                 alignItems: "start",
               }}
             >
-              {/* Desktop: floating nav card */}
+              {/* Desktop: floating nav card. `top: 0` + `overflow: hidden`
+               *  matches the original alignment so the card's first row
+               *  lines up with the page header next to it. The internal
+               *  scroll affordance (wheel-scroll the sidebar on hover,
+               *  useful once enough entries are added that the card is
+               *  taller than the viewport — super-admin users first) is
+               *  handled by the inner <Box> below instead of by giving
+               *  the Paper itself `maxHeight` + `overflowY`, which had
+               *  the side-effect of nudging the card down a chunk on
+               *  first paint.
+               */}
               <Paper
                 variant="outlined"
                 sx={{
@@ -581,7 +591,40 @@ export default function AppShell({ children, user }: AppShellProps) {
                   boxShadow: "0 1px 4px rgba(0,0,0,0.04), 0 2px 8px rgba(0,0,0,0.02)",
                 }}
               >
-                <NavCardContent />
+                {/* The inner scroll container must clip its own scrollbar
+                 *  chrome at the card's rounded corners. `overflow: hidden`
+                 *  on an ancestor is not enough — Chromium / WebKit render
+                 *  scrollbars on top of the parent's border-radius clip in
+                 *  several versions. `clipPath: inset(... round Xpx)`
+                 *  applies a geometric clip that does cover scrollbars, so
+                 *  the thumb + track never poke past the rounded corners.
+                 *  The radius matches Paper's `borderRadius: 3` (24px) in
+                 *  the MUI theme.
+                 */}
+                <Box
+                  sx={{
+                    maxHeight: {
+                      md: `calc(100vh - ${HEADER_MIN_HEIGHT.xs}px)`,
+                      lg: `calc(100vh - ${HEADER_MIN_HEIGHT.lg}px)`,
+                    },
+                    overflowY: "auto",
+                    overflowX: "hidden",
+                    clipPath: "inset(0 round 24px)",
+                    scrollbarWidth: "thin",
+                    scrollbarColor: "rgba(0,0,0,0.22) transparent",
+                    "&::-webkit-scrollbar": { width: "6px" },
+                    "&::-webkit-scrollbar-track": { background: "transparent" },
+                    "&::-webkit-scrollbar-thumb": {
+                      backgroundColor: "rgba(0,0,0,0.22)",
+                      borderRadius: "3px",
+                    },
+                    "&::-webkit-scrollbar-thumb:hover": {
+                      backgroundColor: "rgba(0,0,0,0.32)",
+                    },
+                  }}
+                >
+                  <NavCardContent />
+                </Box>
               </Paper>
 
               {/* Page content */}

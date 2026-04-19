@@ -26,7 +26,7 @@ import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
 import Link from "next/link";
 import { AppCard, useToast } from "@/components/ui";
 import EventCard, { type PlanEvent } from "@/components/events/EventCard";
-import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
+import { apiFetch, getAuthToken, getAvatarBaseUrl } from "@/lib/apiClient";
 import { effectiveCategorySet } from "@/lib/interestUtils";
 
 type CommunityData = {
@@ -115,7 +115,6 @@ export default function CommunityDetailClient() {
   const [viewerDeclinedDaysUntilRetriable, setViewerDeclinedDaysUntilRetriable] = useState<number | null>(null);
   const viewerDeclinedRetriable = viewerDeclinedRequest && viewerDeclinedDaysUntilRetriable === null;
   const [restricted, setRestricted] = useState(false);
-  const [shareToken, setShareToken] = useState<string | null>(null);
   const [pendingRequests, setPendingRequests] = useState<JoinRequest[]>([]);
   const [declinedRequests, setDeclinedRequests] = useState<JoinRequest[]>([]);
   const [undoDeclineTarget, setUndoDeclineTarget] = useState<JoinRequest | null>(null);
@@ -142,6 +141,11 @@ export default function CommunityDetailClient() {
   const [joinRequestMessage, setJoinRequestMessage] = useState("");
   const [isClosed, setIsClosed] = useState(false);
   const [viewerHobbyItems, setViewerHobbyItems] = useState<{ slug: string; name: string; category?: string | null }[]>([]);
+  // null until the first auth probe resolves, then true/false. The slug URL
+  // is the canonical public / shareable destination for a community, so
+  // logged-out viewers are expected — we branch on this flag to render a
+  // sign-in CTA instead of member-only actions (join/leave/start plan/edit).
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
   const mapApiEvent = useCallback((ev: ApiEvent): PlanEvent => {
     const hostUsername = (ev.hostUsername as string)?.replace(/^@/, "");
@@ -184,7 +188,14 @@ export default function CommunityDetailClient() {
 
   const fetchCommunity = useCallback(async () => {
     try {
-      const res = await apiFetch(`/communities/${slug}`, { auth: true });
+      // Resolve auth state once up front so every follow-up fetch (plans,
+      // members, profile) can skip the token probe when logged out. Without
+      // this, apiFetch with auth:true hits /api/auth/api-token once per
+      // call for a signed-out viewer, producing noisy 401s in the console.
+      const token = await getAuthToken();
+      const useAuth = !!token;
+      setIsAuthenticated(useAuth);
+      const res = await apiFetch(`/communities/${slug}`, { auth: useAuth });
       const data = await res.json();
       if (data.ok) {
         if (data.community?.status === "closed") {
@@ -210,7 +221,6 @@ export default function CommunityDetailClient() {
               : null
           );
           setRestricted(data.restricted ?? false);
-          setShareToken(data.shareToken ?? null);
           setPendingRequests(data.pendingRequests ?? []);
           setDeclinedRequests(Array.isArray(data.declinedRequests) ? data.declinedRequests : []);
         }
@@ -223,19 +233,19 @@ export default function CommunityDetailClient() {
     if (!community) return;
     setEventsLoading(true);
     try {
-      const res = await apiFetch(`/communities/${community.id}/events`, { auth: true });
+      const res = await apiFetch(`/communities/${community.id}/events`, { auth: isAuthenticated === true });
       const data = await res.json();
       if (data.ok) setEvents((data.events as ApiEvent[]).map(mapApiEvent));
     } catch { /* noop */ }
     setEventsLoading(false);
     setEventsFetched(true);
-  }, [community, mapApiEvent]);
+  }, [community, isAuthenticated, mapApiEvent]);
 
   const fetchMembers = useCallback(async () => {
     if (!community) return;
     setMembersLoading(true);
     try {
-      const res = await apiFetch(`/communities/${community.id}/members`, { auth: true });
+      const res = await apiFetch(`/communities/${community.id}/members`, { auth: isAuthenticated === true });
       const data = await res.json();
       if (data.ok) {
         setMembers(data.members);
@@ -244,11 +254,14 @@ export default function CommunityDetailClient() {
     } catch { /* noop */ }
     setMembersLoading(false);
     setMembersFetched(true);
-  }, [community]);
+  }, [community, isAuthenticated]);
 
   useEffect(() => { fetchCommunity(); }, [fetchCommunity]);
 
   useEffect(() => {
+    // /profile is authed-only; the hobby chip match highlight is a logged-in
+    // affordance, so skip the call entirely when signed out.
+    if (isAuthenticated !== true) return;
     (async () => {
       try {
         const res = await apiFetch("/profile", { auth: true });
@@ -258,7 +271,7 @@ export default function CommunityDetailClient() {
         }
       } catch { /* noop */ }
     })();
-  }, []);
+  }, [isAuthenticated]);
 
   const viewerHobbyCategories = useMemo(() => {
     if (!viewerHobbyItems.length) return undefined;
@@ -386,9 +399,11 @@ export default function CommunityDetailClient() {
   };
 
   const handleShare = async () => {
-    const url = shareToken
-      ? `${window.location.origin}/communities/${slug}?share_token=${shareToken}`
-      : `${window.location.origin}/communities/${slug}`;
+    // The slug URL is the canonical public / shareable destination for a
+    // community. Any viewer (logged in or not) can open it and see either
+    // the full detail page (public) or a restricted preview (private), so
+    // the raw URL is all we need — no share_token appended.
+    const url = `${window.location.origin}/communities/${slug}`;
     try {
       await navigator.clipboard.writeText(url);
       toast.success("Link copied to clipboard");
@@ -703,7 +718,9 @@ export default function CommunityDetailClient() {
           </AppCard>
         )}
 
-        {viewerRemoved ? (
+        {isAuthenticated === false ? (
+          <SignInToJoinCard slug={slug} variant="request" />
+        ) : viewerRemoved ? (
           <Box
             sx={{
               p: 2.5, borderRadius: 2,
@@ -1004,7 +1021,17 @@ export default function CommunityDetailClient() {
               />
             </Tooltip>
           )}
-          {!isMember && !viewerPendingRequest && !viewerRemoved && (
+          {!isMember && !viewerPendingRequest && !viewerRemoved && isAuthenticated === false && (
+            <Button
+              component={Link}
+              href={`/login?next=${encodeURIComponent(`/communities/${slug}`)}`}
+              variant="contained"
+              sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
+            >
+              {community.join_mode === "approval_required" ? "Sign in to request to join" : "Sign in to join"}
+            </Button>
+          )}
+          {!isMember && !viewerPendingRequest && !viewerRemoved && isAuthenticated !== false && (
             <Button
               variant="contained"
               onClick={handleJoin}
@@ -1160,6 +1187,17 @@ export default function CommunityDetailClient() {
               <Stack spacing={1.5}>
                 {members.map((m) => {
                   const handle = m.username?.replace(/^@/, "") ?? null;
+                  // Logged-out viewers only see handles. Real names stay
+                  // scoped to signed-in members so the public slug URL
+                  // doesn't become a name-scraping surface for anyone
+                  // who shares or scans a community QR code.
+                  const hideRealName = isAuthenticated === false;
+                  const primaryLabel = hideRealName
+                    ? (handle ? `@${handle}` : "NewChums member")
+                    : (m.name || m.username || "Unknown");
+                  const avatarInitial = hideRealName
+                    ? ((handle || "?").charAt(0).toUpperCase())
+                    : ((m.name || m.username || "?").charAt(0).toUpperCase());
                   return (
                     <AppCard key={m.id} sx={{ transition: "box-shadow 0.15s", "&:hover": { boxShadow: "0 2px 12px rgba(0,0,0,0.06)" } }}>
                       <Stack direction="row" alignItems="center" spacing={2}>
@@ -1167,14 +1205,14 @@ export default function CommunityDetailClient() {
                           src={m.avatar_url ? `${getAvatarBaseUrl()}${m.avatar_url}` : undefined}
                           sx={{ width: 40, height: 40, bgcolor: "grey.300", fontSize: "0.9rem" }}
                         >
-                          {(m.name || m.username || "?").charAt(0).toUpperCase()}
+                          {avatarInitial}
                         </Avatar>
                         <Box
                           sx={{ flex: 1, minWidth: 0, cursor: handle ? "pointer" : "default" }}
                           onClick={() => { if (handle) router.push(`/u/${handle}`); }}
                         >
-                          <Typography variant="body2" fontWeight={600} noWrap>{m.name || m.username || "Unknown"}</Typography>
-                          {handle && <Typography variant="caption" color="text.secondary">@{handle}</Typography>}
+                          <Typography variant="body2" fontWeight={600} noWrap>{primaryLabel}</Typography>
+                          {!hideRealName && handle && <Typography variant="caption" color="text.secondary">@{handle}</Typography>}
                         </Box>
                         {m.role === "owner" && (
                           <Chip label="Owner" size="small" color="primary" variant="outlined" />
@@ -1646,6 +1684,65 @@ function PendingRequestStatusBlock({
         </Typography>
       ) : null}
     </Box>
+  );
+}
+
+/** Sign-in CTA rendered in place of the join / request-to-join card when a
+ *  logged-out viewer reaches the slug URL (the canonical public / shareable
+ *  destination for a community). `variant` picks the copy — "request" for
+ *  private communities that gate membership behind approval, "join" for
+ *  open communities. `next` carries the viewer back to this page after
+ *  sign-in so the post-login landing feels intentional. */
+function SignInToJoinCard({
+  slug,
+  variant,
+}: {
+  slug: string;
+  variant: "request" | "join";
+}) {
+  const next = `/communities/${slug}`;
+  const href = `/login?next=${encodeURIComponent(next)}`;
+  const title = variant === "request" ? "Sign in to request to join" : "Sign in to join";
+  const subtitle =
+    variant === "request"
+      ? "Create a free NewChums account or sign in, then send a request to the owner."
+      : "Create a free NewChums account or sign in to join this community.";
+  const buttonLabel = variant === "request" ? "Sign in to continue" : "Sign in to join";
+  return (
+    <AppCard>
+      <Stack spacing={2}>
+        <Stack direction="row" spacing={2} alignItems="center">
+          <Box
+            sx={{
+              width: 40, height: 40, borderRadius: 2,
+              bgcolor: "primary.light",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            <AssignmentIndRoundedIcon sx={{ fontSize: 20, color: "primary.main" }} />
+          </Box>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="body1" fontWeight={700} sx={{ lineHeight: 1.3 }}>
+              {title}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {subtitle}
+            </Typography>
+          </Box>
+        </Stack>
+        <Box>
+          <Button
+            component={Link}
+            href={href}
+            variant="contained"
+            sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
+          >
+            {buttonLabel}
+          </Button>
+        </Box>
+      </Stack>
+    </AppCard>
   );
 }
 
