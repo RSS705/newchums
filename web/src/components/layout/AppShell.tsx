@@ -570,7 +570,7 @@ export default function AppShell({ children, user }: AppShellProps) {
                *  lines up with the page header next to it. The internal
                *  scroll affordance (wheel-scroll the sidebar on hover,
                *  useful once enough entries are added that the card is
-               *  taller than the viewport — super-admin users first) is
+               *  taller than the viewport, super-admin users first) is
                *  handled by the inner <Box> below instead of by giving
                *  the Paper itself `maxHeight` + `overflowY`, which had
                *  the side-effect of nudging the card down a chunk on
@@ -591,15 +591,15 @@ export default function AppShell({ children, user }: AppShellProps) {
                   boxShadow: "0 1px 4px rgba(0,0,0,0.04), 0 2px 8px rgba(0,0,0,0.02)",
                 }}
               >
-                {/* The inner scroll container must clip its own scrollbar
-                 *  chrome at the card's rounded corners. `overflow: hidden`
-                 *  on an ancestor is not enough — Chromium / WebKit render
-                 *  scrollbars on top of the parent's border-radius clip in
-                 *  several versions. `clipPath: inset(... round Xpx)`
-                 *  applies a geometric clip that does cover scrollbars, so
-                 *  the thumb + track never poke past the rounded corners.
-                 *  The radius matches Paper's `borderRadius: 3` (24px) in
-                 *  the MUI theme.
+                {/* Inner scroll container. Scrollbar chrome is hidden via
+                 *  the standard `scrollbarWidth: none` + `::-webkit-scrollbar
+                 *  display: none` recipe used elsewhere in the app, so the
+                 *  nav scrolls naturally without painting a visible thumb
+                 *  or track. `clipPath` is retained to geometrically clip
+                 *  anything that might otherwise paint over the card's
+                 *  rounded corners (keeps the shell defensive if the
+                 *  scrollbar is ever re-enabled). Radius matches Paper's
+                 *  `borderRadius: 3` (24px) in the MUI theme.
                  */}
                 <Box
                   sx={{
@@ -610,17 +610,8 @@ export default function AppShell({ children, user }: AppShellProps) {
                     overflowY: "auto",
                     overflowX: "hidden",
                     clipPath: "inset(0 round 24px)",
-                    scrollbarWidth: "thin",
-                    scrollbarColor: "rgba(0,0,0,0.22) transparent",
-                    "&::-webkit-scrollbar": { width: "6px" },
-                    "&::-webkit-scrollbar-track": { background: "transparent" },
-                    "&::-webkit-scrollbar-thumb": {
-                      backgroundColor: "rgba(0,0,0,0.22)",
-                      borderRadius: "3px",
-                    },
-                    "&::-webkit-scrollbar-thumb:hover": {
-                      backgroundColor: "rgba(0,0,0,0.32)",
-                    },
+                    scrollbarWidth: "none",
+                    "&::-webkit-scrollbar": { display: "none" },
                   }}
                 >
                   <NavCardContent />

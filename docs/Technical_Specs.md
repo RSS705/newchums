@@ -421,7 +421,7 @@ The `host_attendee_removals` table tracks: `event_id`, `host_user_id`, `removed_
 
 ### Lightweight plan signup (magic link, replaces guest participation)
 
-Guest participation (unauthenticated users with nullable `user_id` + `guest_email`) has been removed (migration 084). In its place, unauthenticated visitors who land on a plan via a share or invite link see a **"Join to RSVP" card** that collects three fields — email, date of birth (18+), and Terms/Privacy acceptance — and emails them a one-click confirmation link. Clicking the link creates a normal NewChums account (or signs them in if the email already exists), returns them to the plan, and unlocks RSVP, chat, and alt-times as a fully authenticated user.
+Guest participation (unauthenticated users with nullable `user_id` + `guest_email`) has been removed (migration 084). In its place, unauthenticated visitors who land on a plan via a share or invite link see a **"Join to RSVP" card** that collects three fields, email, date of birth (18+), and Terms/Privacy acceptance, and emails them a one-click confirmation link. Clicking the link creates a normal NewChums account (or signs them in if the email already exists), returns them to the plan, and unlocks RSVP, chat, and alt-times as a fully authenticated user.
 
 **Endpoints:**
 
@@ -430,26 +430,26 @@ Guest participation (unauthenticated users with nullable `user_id` + `guest_emai
   - **Verified account exists** → no DB writes. Sends a plan-signin notice pointing at `/login?next=<safe_next>`. Returns `{ ok: true, state: "existing_account", next }`. The client redirects to the login flow.
 - `POST /auth/magic-link/consume` (unauthenticated). Body: `{ email, token }`. Verifies the token against `email_verification_tokens` (shared table with credential-signup email verification), marks the row `used_at = NOW()`, sets `email_verified_at = NOW()`, and returns the user record for the Auth.js `magic-link` Credentials provider to build a session from. Rejects suspended users without consuming the token.
 
-**Magic-link consumption on the web side** — `/auth/magic` page (server component) reads `?token`, `?email`, `?next` from the URL, checks current session:
+**Magic-link consumption on the web side**, `/auth/magic` page (server component) reads `?token`, `?email`, `?next` from the URL, checks current session:
 - Already signed in as the same email → idempotent redirect to `next`.
 - Signed in as a different email → `WrongSessionPanel` interstitial ("Sign out first") to prevent hijack.
 - Not signed in → `MagicClient` calls `signIn("magic-link", { email, token, redirect: true, redirectTo: next })`. NextAuth's second Credentials provider (`magic-link`, registered alongside the password provider in `web/src/auth.ts`) POSTs to `/auth/magic-link/consume` via `NEXT_PUBLIC_API_BASE_URL`.
 
-**Username auto-generation** — `generateFunUsername(sql)` in `api/src/username.ts` picks `<Adjective><Animal><###>` from curated lists in `api/src/data/usernameWords.ts` (e.g. `HappyOtter273`), validates against `USERNAME_REGEX` and `validateCleanText`, checks uniqueness against `username_norm`, and retries up to 10 times. Falls back to `Chum` + 6 hex chars.
+**Username auto-generation**, `generateFunUsername(sql)` in `api/src/username.ts` picks `<Adjective><Animal><###>` from curated lists in `api/src/data/usernameWords.ts` (e.g. `HappyOtter273`), validates against `USERNAME_REGEX` and `validateCleanText`, checks uniqueness against `username_norm`, and retries up to 10 times. Falls back to `Chum` + 6 hex chars.
 
 **Token surface after removal of guest model:**
 
 | Token | Purpose | Lifetime | Stored as |
 |-------|---------|----------|-----------|
 | `invite_token` (JWT, `purpose: invite_rsvp`) | View grant for invited email recipient; carries the invite row's identity so the invitee's new `user_id` can adopt the invite row after lightweight signup | 30 days | Signed JWT only |
-| `share_token` (HMAC, deterministic per event) | View grant for share-link visitors. Does not grant RSVP — the lightweight signup card does. | No expiry (deterministic) | Short base64url HMAC in the URL |
+| `share_token` (HMAC, deterministic per event) | View grant for share-link visitors. Does not grant RSVP, the lightweight signup card does. | No expiry (deterministic) | Short base64url HMAC in the URL |
 | Magic-link token | Single-use confirmation token for lightweight signup / sign-in | 15 min | Hashed row in `email_verification_tokens`, linked to `user_id` |
 
 The prior `participation_token` (JWT, purpose `public_rsvp`), `guest_challenge` (10-min HMAC-signed code), `guest_confirmation` (JWT, purpose `guest_confirmation`), and 6-digit verification code have all been removed.
 
 **Email template:** `POSTMARK_TEMPLATE_MAGIC_LINK_SIGNUP` (template 44523927) for new-account confirmation, `POSTMARK_TEMPLATE_PLAN_SIGNIN` (template 44523947) for existing-account sign-in notices. Source HTML/text live in `api/src/email/templates/magicLinkSignup.{html,txt}` and `planSignin.{html,txt}`.
 
-**Invite-email adoption flow** — when a host invites an off-platform email via `POST /events/:id/invite`, the email link lands the invitee on `/events/[id]?invite_token=...`. Logged-out visitors see the same lightweight-signup card with their email pre-fill. After magic-link click, the `GET /events/:id` handler adopts any matching `event_invites` row (`WHERE LOWER(email) = <user email> AND user_id IS NULL`) onto their new `user_id` so they show as invited and bypass any join-approval gate.
+**Invite-email adoption flow**, when a host invites an off-platform email via `POST /events/:id/invite`, the email link lands the invitee on `/events/[id]?invite_token=...`. Logged-out visitors see the same lightweight-signup card with their email pre-fill. After magic-link click, the `GET /events/:id` handler adopts any matching `event_invites` row (`WHERE LOWER(email) = <user email> AND user_id IS NULL`) onto their new `user_id` so they show as invited and bypass any join-approval gate.
 
 ### Plan details viewer/access state model
 
@@ -482,7 +482,7 @@ The `invite_token` is persisted in `localStorage` so that page reloads do not de
 - If the section requires authentication and the visitor has no auth token, the events client redirects them to `/login?next=/events/{id}?section={name}` **before** calling the plan endpoint. After signing in, Auth.js returns the user to the same plan + section, and the existing `scrollIntoView` logic opens the right section automatically.
 - Logged-in viewers continue to load the plan normally; the redirect only fires when `getAuthToken()` returns null.
 
-> **Agent guidance:** The `invite` state is distinct from `public` — the visitor holds a valid token but is not authenticated. The plan preview is visible but RSVP is gated behind the lightweight signup card. Do not conflate `invite` with `public`; changes to plan-details rendering should verify behavior across all four access states.
+> **Agent guidance:** The `invite` state is distinct from `public`, the visitor holds a valid token but is not authenticated. The plan preview is visible but RSVP is gated behind the lightweight signup card. Do not conflate `invite` with `public`; changes to plan-details rendering should verify behavior across all four access states.
 
 ### Account deletion
 
@@ -760,7 +760,7 @@ Every request to `GET /events/:id` resolves to one of four access states. The ac
 
 **Share tokens (plan-level access links):**
 
-Share tokens are short deterministic HMACs (not JWTs) that grant preview access to a plan's full detail view. They are not user-specific and have no expiry. RSVPing still requires authentication — visitors complete the lightweight signup flow first.
+Share tokens are short deterministic HMACs (not JWTs) that grant preview access to a plan's full detail view. They are not user-specific and have no expiry. RSVPing still requires authentication, visitors complete the lightweight signup flow first.
 
 - Generated server-side via `createShareToken(eventId, secret)` (HMAC, base64url, 16 chars).
 - Included in `GET /events/:id` responses for non-public access states as `shareToken`.
@@ -886,7 +886,7 @@ The Attendance Assurance system is a two-stage commitment flow built on top of R
 - **Confirmation lifecycle:** `pending` → `confirmed` | `declined` | `expired`. Distinct from RSVP status; RSVP history is preserved.
 - **Host configuration:** min confirmed attendees (includes host), fallback policy (`proceed` / `notify_host` / `auto_cancel`).
 - **Cron processing (hourly):** Sends initial confirmation requests 24h before, follow-up reminders at 12h and 3h, processes cutoff 2h before event.
-- **Email flow:** Confirmation request emails deep-link to `/events/:id?section=confirmation`. Recipients sign in if needed, then confirm or decline via `POST /events/:id/confirm`. Plan-at-risk emails to hosts when minimum not met. On `auto_cancel`, cancellation notifications go to all attendees. All attendees are authenticated users post-migration 084 — the previous guest-email fan-out no longer exists.
+- **Email flow:** Confirmation request emails deep-link to `/events/:id?section=confirmation`. Recipients sign in if needed, then confirm or decline via `POST /events/:id/confirm`. Plan-at-risk emails to hosts when minimum not met. On `auto_cancel`, cancellation notifications go to all attendees. All attendees are authenticated users post-migration 084, the previous guest-email fan-out no longer exists.
 - **In-app confirmation:** Logged-in users can confirm/decline directly on the plan details page when the confirmation window is open.
 - **Viability display:** Plan details page shows real-time confirmation status, viability assessment, and per-attendee confirmation state in the "Who's in" section.
 - **Post-cancellation display:** Per-attendee confirmation badges (Going & Confirmed / Going - Didn't confirm) keep rendering after the window closes, including on plans auto-canceled for `min_attendees_not_met`, so the reason for cancellation stays visible rather than collapsing every attendee back to a plain "Going" chip. The plan-detail API exposes `confirmationsIssued` (true once `confirmation_sent_at` is set); the UI uses it as the gate for confirmation badges instead of the narrower `confirmationWindowOpen` flag, which flips false the moment `status !== 'published'`. The cancellation banner also surfaces the final confirmed count against the minimum. Confirmation endpoints continue to check `status = 'published'`, so no new confirmations can land on a canceled plan.
@@ -1132,7 +1132,7 @@ Community pages where users can join, browse, and create plans together. The com
 | `POST /communities` | Create a community. Validates name, slug (3-50 chars), description (required). Accepts unified `access` field (`"open"` or `"private"`) which maps to the DB columns: open = `visibility=public, join_mode=open`; private = `visibility=private, join_mode=approval_required`. Also accepts legacy `visibility`/`join_mode` for backward compatibility. Requires at least one hobby (`interest_items`). Requires location for offline communities (`is_online = false`). Accepts `is_online`, `website`, `discord_url`. Creator becomes owner + member. Links hobbies via `community_interests`. |
 | `GET /communities` | Discovery feed. Query params: `mine=1` (user's communities, ignores distance), `q` (search), `lat`/`lng`/`radius_km` (distance filtering for offline communities; online communities bypass distance), `hobby` (filter by hobby slug via effective category matching), `personalize` (0 to disable hobby-match ranking). Returns `member_count`, `hobby_match_count`, `distance_km`, `hobbies` array, `hasMore`. Default ordering: hobby_match_count DESC, distance ASC (with location) or member_count DESC (without). |
 | `GET /communities/slug-available` | Check slug availability. |
-| `GET /communities/:slug` | Community detail. **Auth optional** — the slug URL is the canonical public / shareable destination for a community (see **Canonical community URL** below) and this endpoint mirrors that: logged-in viewers get full detail (membership, plans metadata, website, Discord link if private-and-member), logged-out viewers get either the full public view (for `visibility = 'public'` communities) or the same restricted preview a logged-in non-member would get (for `visibility = 'private'`). The privacy contract is identical across authenticated and anonymous non-members: no member list, no plan details, no `website`, and no `discord_url` leak. Returns full community info including `is_online`, `website`, `discord_url`, `hobbies` array, member_count, viewer's membership role/status, pending join request status. **Private communities** return a preview for non-members (name, description, avatar, hobbies, location, member count, visibility, plus `upcoming_plan_count` so the locked preview can surface a real number without leaking plan detail) with `restricted: true`; plans, members, `website`, and `discord_url` are hidden from non-members to keep those links scoped to approved members only. Non-member responses also include `viewerPendingRequestSentLabel` (pre-formatted "Sent N days ago" string), `viewerPendingRequestRefreshable` (boolean; true once the pending request has aged past the cooldown), `viewerPendingRequestDaysUntilRefreshable` (number or null), and `viewerPendingRequestCooldownDays` (echoes the server-side constant) so the client can render the pending-state card without doing any time math of its own. Anonymous-viewer responses omit those viewer-specific fields — there is no viewer identity to key them on. Owner/admin sees pending join requests with message and avatar URLs. |
+| `GET /communities/:slug` | Community detail. **Auth optional**, the slug URL is the canonical public / shareable destination for a community (see **Canonical community URL** below) and this endpoint mirrors that: logged-in viewers get full detail (membership, plans metadata, website, Discord link if private-and-member), logged-out viewers get either the full public view (for `visibility = 'public'` communities) or the same restricted preview a logged-in non-member would get (for `visibility = 'private'`). The privacy contract is identical across authenticated and anonymous non-members: no member list, no plan details, no `website`, and no `discord_url` leak. Returns full community info including `is_online`, `website`, `discord_url`, `hobbies` array, member_count, viewer's membership role/status, pending join request status. **Private communities** return a preview for non-members (name, description, avatar, hobbies, location, member count, visibility, plus `upcoming_plan_count` so the locked preview can surface a real number without leaking plan detail) with `restricted: true`; plans, members, `website`, and `discord_url` are hidden from non-members to keep those links scoped to approved members only. Non-member responses also include `viewerPendingRequestSentLabel` (pre-formatted "Sent N days ago" string), `viewerPendingRequestRefreshable` (boolean; true once the pending request has aged past the cooldown), `viewerPendingRequestDaysUntilRefreshable` (number or null), and `viewerPendingRequestCooldownDays` (echoes the server-side constant) so the client can render the pending-state card without doing any time math of its own. Anonymous-viewer responses omit those viewer-specific fields, there is no viewer identity to key them on. Owner/admin sees pending join requests with message and avatar URLs. |
 | `PATCH /communities/:slug` | Update community (owner or super admin). Accepts unified `access` field (`"open"` or `"private"`, preferred) or legacy `visibility`/`join_mode`. Also: name, description (required), chat_enabled, `is_online`, `website`, `discord_url`, location fields, avatar_key, `interest_items` (replaces all community hobbies; at least one required). |
 | `POST /communities/:slug/close` | Soft-close a community (owner or super admin). Sets `status = 'closed'`, nullifies `community_id` on linked events. Community data is preserved but hidden from listings. Irreversible. Migration 059 adds the `status` column. |
 | `DELETE /communities/:slug` | Hard-delete community (owner or super admin). Cascades to members, join requests; events have `community_id` set to NULL. |
@@ -1242,14 +1242,16 @@ https://<host>/communities/{slug}
 
 This is the URL that posters, QR codes, social shares, and external write-ups should point at. The same URL works for everyone:
 
-- **Public communities** — any viewer (logged in or not) sees the full detail page: header, hobbies, location / online badge, member count, website, Discord link, community plan feed, and member roster. Logged-out viewers see a **"Sign in to join"** CTA in place of the join button; the `next` query param on `/login` returns them to this same slug URL after sign-in.
-- **Private communities** — any viewer who is not an active member sees the same restricted preview: header, hobbies, location / online badge, member count, `upcoming_plan_count` (non-QA, upcoming, published), description, and a locked-preview card listing what membership unlocks. The server omits `website`, `discord_url`, plan detail, and member detail from this response. Logged-out viewers see a **"Sign in to request to join"** CTA in place of the join-request form; the request flow itself still requires authentication.
-- **Closed communities** — any viewer sees the minimal closed-community response; the `/communities/[slug]` page renders a **"This community has been closed"** card. Super admins still see the full detail view.
-- **Members / owners / super admins** — unchanged: full detail, members, plans, and owner-only tabs (Requests for private-community owners).
+- **Public communities**, any viewer (logged in or not) sees the full detail page: header, hobbies, location / online badge, member count, website, Discord link, community plan feed, and member roster. Logged-out viewers see a **"Sign in to join"** CTA in place of the join button; the `next` query param on `/login` returns them to this same slug URL after sign-in.
+- **Private communities**, any viewer who is not an active member sees the same restricted preview: header, hobbies, location / online badge, member count, `upcoming_plan_count` (non-QA, upcoming, published), description, and a locked-preview card listing what membership unlocks. The server omits `website`, `discord_url`, plan detail, and member detail from this response. Logged-out viewers see a **"Sign in to request to join"** CTA in place of the join-request form; the request flow itself still requires authentication.
+- **Closed communities**, any viewer sees the minimal closed-community response; the `/communities/[slug]` page renders a **"This community has been closed"** card. Super admins still see the full detail view.
+- **Members / owners / super admins**, unchanged: full detail, members, plans, and owner-only tabs (Requests for private-community owners).
 
 The route `/communities/[slug]` is carved out as a public route in the `(app)` layout (alongside `/events/[id]`), which is what allows it to render to logged-out visitors without an auth redirect. Manual subpaths like `/communities/[slug]/edit` remain authenticated-only.
 
-QR codes and posters should be generated from this URL directly — do not invent a parallel "preview" or marketing-only route.
+**Auth-required tabs on the slug route:** the layout inspects the `tab` query param on logged-out visits and short-circuits to `/login?next=...` when the tab is owner-only. This is how the community-join-request email's "Review request" CTA (`/communities/{slug}?tab=requests`) works for logged-out recipients: they go through login first, then land directly on the Requests tab once authenticated. The auth-required-tab set lives in `AUTH_REQUIRED_COMMUNITY_TABS` in `web/src/app/(app)/layout.tsx` and currently contains only `requests`; the public Plans and Members tabs are unaffected. This mirrors the `AUTH_REQUIRED_EVENT_SECTIONS` pattern used for event-detail email CTAs.
+
+QR codes and posters should be generated from this URL directly, do not invent a parallel "preview" or marketing-only route.
 
 **Share tokens (private communities, legacy):**
 
@@ -1263,7 +1265,7 @@ A share token (JWT, purpose `community_share`) is still computed server-side and
 |-------|-----------|-------------|
 | `/communities` | `CommunitiesListClient` | Community discovery feed with search, All/Yours scope, distance filtering, hobby filtering, personalization toggle, location nudge, load-more pagination. Distance filtering hides offline communities outside travel radius; online communities bypass distance. Yours ignores distance. |
 | `/communities/create` | `CreateCommunityClient` | Create a new community. Rich text description (Tiptap), required hobbies (HobbyPickerField), online/offline toggle, location (required for offline, PlacesAutocompleteInput), website, join link (online), visibility, join mode. Validation with scroll-to-first-error. Matches plan form structure. |
-| `/communities/[slug]` | `CommunityDetailClient` | Community detail with hobby chips, online/offline badge, website link, Discord link, rich text description, members, community plans feed, join/leave, join-request management (owner). **Public / shareable route** — the `(app)` layout whitelists this path so logged-out visitors reach the page directly. Public communities render the full view; private communities render the same restricted preview the API serves to non-members (no plan detail, no member detail, no website / Discord leak). The join / request-to-join affordance switches to a **Sign in** CTA that returns the viewer here via `/login?next=...` after authentication. |
+| `/communities/[slug]` | `CommunityDetailClient` | Community detail with hobby chips, online/offline badge, website link, Discord link, rich text description, members, community plans feed, join/leave, join-request management (owner). **Public / shareable route**, the `(app)` layout whitelists this path so logged-out visitors reach the page directly. Public communities render the full view; private communities render the same restricted preview the API serves to non-members (no plan detail, no member detail, no website / Discord leak). The join / request-to-join affordance switches to a **Sign in** CTA that returns the viewer here via `/login?next=...` after authentication. |
 | `/communities/[slug]/edit` | `EditCommunityClient` | Edit community settings (owner). Same form structure as create, pre-populated. Includes close community action. |
 | `/admin/communities` | `AdminCommunitiesClient` | Super admin community management, list, search, remove |
 
@@ -1276,11 +1278,11 @@ Internal redirect layer so printed QR codes (posters, cards) stay useful when th
 | Table | Purpose |
 |-------|---------|
 | `newchums.qr_redirects` | One row per printed code. Columns: `id`, `code` (UNIQUE, `CHECK code ~ '^[A-Z0-9][A-Z0-9_-]{1,63}$'`), `title`, `destination_url`, `notes`, `is_active`, `created_by` (FK users), `created_at`, `updated_at`. Codes are stored UPPERCASE so posters scanned or typed lowercase still resolve. |
-| `newchums.qr_redirect_scans` | Lightweight scan log. Columns: `id`, `qr_redirect_id` (FK CASCADE), `scanned_at`, `user_agent` (≤500 chars), `referer` (≤500 chars), `country` (CF-IPCountry, ≤8 chars). **No raw IP stored** — country alone is sufficient for the operational questions we care about today and keeps this out of full-analytics scope. |
+| `newchums.qr_redirect_scans` | Lightweight scan log. Columns: `id`, `qr_redirect_id` (FK CASCADE), `scanned_at`, `user_agent` (≤500 chars), `referer` (≤500 chars), `country` (CF-IPCountry, ≤8 chars). **No raw IP stored**, country alone is sufficient for the operational questions we care about today and keeps this out of full-analytics scope. |
 
 **Public route** (`web/src/app/qr/[code]/route.ts`, Next.js route handler):
 
-- `GET /qr/{code}` — server-side. Extracts `user-agent`, `referer`, and `CF-IPCountry` from the incoming request, calls `POST /public/qr/:code/scan` on the API worker for resolution + scan log, then issues a 302 to the resolved destination. Unknown or inactive codes (or any upstream failure) 302 to `/` as a graceful fallback so posters never dead-end on a raw error. No auth — QR codes are designed to be scanned by anyone. Outside both `(app)` and `(public)` route groups so no layout wraps the redirect.
+- `GET /qr/{code}`, server-side. Extracts `user-agent`, `referer`, and `CF-IPCountry` from the incoming request, calls `POST /public/qr/:code/scan` on the API worker for resolution + scan log, then issues a 302 to the resolved destination. Unknown or inactive codes (or any upstream failure) 302 to `/` as a graceful fallback so posters never dead-end on a raw error. No auth, QR codes are designed to be scanned by anyone. Outside both `(app)` and `(public)` route groups so no layout wraps the redirect.
 
 **API endpoints (auth required unless noted):**
 
@@ -1291,7 +1293,7 @@ Internal redirect layer so printed QR codes (posters, cards) stay useful when th
 | `GET /admin/qr-redirects/:id` | Super admin. Single record + totals (`scan_count`, `last_scanned_at`) and the 50 most recent scans. |
 | `PATCH /admin/qr-redirects/:id` | Super admin. Partial update. Any field can be omitted; changing the code uniqueness-checks against other rows. |
 | `DELETE /admin/qr-redirects/:id` | Super admin. Hard delete. Scans cascade. Posters using that code now redirect to `/`. |
-| `POST /public/qr/:code/scan` | **No auth.** Called by the `/qr/[code]` route handler. Returns `{ ok: true, destinationUrl }` for active records, `{ ok: false, error: "NOT_FOUND" }` (404) for missing codes, `{ ok: false, error: "INACTIVE" }` (410) for inactive. Logs a scan row opportunistically — a log write failure never blocks the redirect. |
+| `POST /public/qr/:code/scan` | **No auth.** Called by the `/qr/[code]` route handler. Returns `{ ok: true, destinationUrl }` for active records, `{ ok: false, error: "NOT_FOUND" }` (404) for missing codes, `{ ok: false, error: "INACTIVE" }` (410) for inactive. Logs a scan row opportunistically, a log write failure never blocks the redirect. |
 
 **Security**
 
@@ -1311,7 +1313,7 @@ Internal redirect layer so printed QR codes (posters, cards) stay useful when th
 1. Super admin creates a record in `/admin/qr-redirects` with a code they want to print (e.g. `S004-P002`) and an initial destination (can be the homepage if the final target isn't picked yet).
 2. The admin copies the public URL (`https://newchums.com/qr/S004-P002`) and generates a QR image from that URL using their preferred tool.
 3. Posters ship with the QR code.
-4. If the destination needs to change (store closes, campaign pivots, community slug changes), the admin opens the detail page and updates `destination_url` — no reprint required.
+4. If the destination needs to change (store closes, campaign pivots, community slug changes), the admin opens the detail page and updates `destination_url`, no reprint required.
 5. To retire a poster without reprinting, toggle `is_active` off; the code falls back to the homepage until reassigned.
 6. The scan log on the detail page answers "has this poster been scanned, roughly from where, and when?" without reaching into full analytics.
 

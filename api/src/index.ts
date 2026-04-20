@@ -1289,6 +1289,20 @@ app.get("/auth/email-verify/status", async (c) => {
   return c.json({ verified: !!rows[0].email_verified_at, exists: true });
 });
 
+// Public suggestion endpoint used by the signup form to pre-fill the username
+// field. Uses the same <Adjective><Animal><###> generator as lightweight
+// plan-signup, and checks uniqueness against username_norm before returning.
+app.get("/auth/username/suggest", async (c) => {
+  const sql = getSql(c.env);
+  try {
+    const username = await generateFunUsername(sql);
+    return c.json({ ok: true, username });
+  } catch (err) {
+    console.error("[auth/username/suggest] generateFunUsername failed", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
 app.post("/auth/email-verify/mark-oauth", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string") {

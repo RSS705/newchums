@@ -53,6 +53,7 @@ export default function SignupClient() {
 
   // Step 2: Identity
   const [username, setUsername] = React.useState("");
+  const [usernameSuggested, setUsernameSuggested] = React.useState(false);
   const [dateOfBirth, setDateOfBirth] = React.useState("");
   const [usernameError, setUsernameError] = React.useState<string | null>(null);
   const [dateOfBirthError, setDateOfBirthError] = React.useState<string | null>(null);
@@ -169,6 +170,29 @@ export default function SignupClient() {
   };
 
   const [checkingEmail, setCheckingEmail] = React.useState(false);
+
+  // Pre-populate the username field with a fun <Adjective><Animal><###>
+  // suggestion so the user doesn't stall brainstorming on step 2. The field
+  // is still editable and the user can replace it freely.
+  const usernameRef = React.useRef(username);
+  usernameRef.current = username;
+  const usernameFetchedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (usernameFetchedRef.current) return;
+    usernameFetchedRef.current = true;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch("/auth/username/suggest");
+        const data = (await res.json()) as { ok?: boolean; username?: string };
+        if (cancelled || !data.ok || !data.username) return;
+        if (usernameRef.current) return; // user already typed something
+        setUsername(data.username);
+        setUsernameSuggested(true);
+      } catch { /* non-fatal: user can type one */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const handleStep1Next = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -518,12 +542,13 @@ export default function SignupClient() {
                 <Stack component="form" spacing={0} onSubmit={handleStep2Next}>
                   <AuthField
                     id="signup-username"
-                    label="Username"
+                    label="Username (we picked one, edit if you like)"
                     type="text"
                     noTopMargin
                     value={username}
                     onChange={(e) => {
                       setUsername(e.target.value.replace(/\s/g, ""));
+                      setUsernameSuggested(false);
                       setUsernameError(null);
                     }}
                     onBlur={() => {
@@ -541,7 +566,10 @@ export default function SignupClient() {
                     }}
                     required
                     helperText={
-                      usernameError ?? "Your unique handle (letters, numbers, underscores)."
+                      usernameError ??
+                      (usernameSuggested
+                        ? "This is just a suggestion. Feel free to change it."
+                        : "Your unique handle (letters, numbers, underscores).")
                     }
                     error={Boolean(usernameError)}
                     inputProps={{ autoComplete: "username" }}
