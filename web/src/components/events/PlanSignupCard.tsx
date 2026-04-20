@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
 import Checkbox from "@mui/material/Checkbox";
 import CircularProgress from "@mui/material/CircularProgress";
 import FormControlLabel from "@mui/material/FormControlLabel";
@@ -10,6 +11,7 @@ import Link from "@mui/material/Link";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import MarkEmailReadRoundedIcon from "@mui/icons-material/MarkEmailReadRounded";
+import LockPersonRoundedIcon from "@mui/icons-material/LockPersonRounded";
 import { AppButton, AppCard, AppTextField } from "@/components/ui";
 import NCDatePicker from "@/components/fields/NCDatePicker";
 import TurnstileWidget from "@/components/contact/TurnstileWidget";
@@ -30,6 +32,7 @@ type Props = {
 type Status =
   | { kind: "idle" }
   | { kind: "submitting" }
+  | { kind: "existing_account"; email: string; loginUrl: string }
   | { kind: "check_your_email"; email: string }
   | { kind: "error"; message: string };
 
@@ -37,10 +40,16 @@ type Status =
  * Lightweight plan-signup card. Shown on the plan details page when an
  * unauthenticated visitor arrives via a share or invite token. Collects
  * email + DOB + legal acceptance in a single form, then either:
- *   - routes to /login?next=... when the email already belongs to a
- *     verified account
+ *   - shows an "existing account" panel with a Sign in CTA back to /login
+ *     (with email prefilled and the plan URL preserved via `next`) when the
+ *     email already belongs to a verified account,
  *   - flips into a "check your email" confirmation state when a new
- *     magic link was issued
+ *     magic link was issued for a fresh / unverified account.
+ *
+ * The flow never collects a password: the magic link sent by the server
+ * signs the user in and routes them back to the plan. They can set a
+ * password later from Settings, or use "Forgot password" any time to
+ * establish one.
  */
 export default function PlanSignupCard({
   planUrlWithTokens,
@@ -144,8 +153,12 @@ export default function PlanSignupCard({
       }
 
       if (data.state === "existing_account") {
-        // Existing verified account: route to /login so they can sign in and come back.
-        window.location.href = `/login?next=${encodeURIComponent(data.next)}`;
+        // Surface an inline explanation rather than hard-redirecting to /login
+        // so the user isn't bounced without context. The button still lands
+        // them on /login with `next` preserved so post-auth returns to the
+        // plan. Email is prefilled for a one-click sign-in.
+        const loginUrl = `/login?next=${encodeURIComponent(data.next)}&email=${encodeURIComponent(trimmedEmail)}`;
+        setStatus({ kind: "existing_account", email: trimmedEmail, loginUrl });
         return;
       }
       // state === "pending"
@@ -188,10 +201,77 @@ export default function PlanSignupCard({
             Check your email
           </Typography>
           <Typography variant="body1" color="text.primary">
-            We sent a confirmation link to <strong>{status.email}</strong>. Click it
-            to finish and return to{" "}
-            {planTitle ? <strong>{planTitle}</strong> : "the plan"}.
+            We sent a verification link to <strong>{status.email}</strong>.
+            Open it to finish setting up your account, then you&apos;ll land
+            back on{" "}
+            {planTitle ? <strong>{planTitle}</strong> : "the plan"} where you
+            can choose your RSVP.
           </Typography>
+          <Typography variant="caption" color="text.secondary">
+            Didn&apos;t see it? Check your spam or promotions folder.
+          </Typography>
+        </Stack>
+      </AppCard>
+    );
+  }
+
+  if (status.kind === "existing_account") {
+    return (
+      <AppCard
+        sx={{
+          width: "100%",
+          background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
+          borderColor: "primary.light",
+        }}
+      >
+        <Stack spacing={2} alignItems="center" sx={{ py: 1, textAlign: "center" }}>
+          <Box
+            sx={{
+              width: 64,
+              height: 64,
+              borderRadius: "50%",
+              bgcolor: "primary.main",
+              color: "#fff",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: "0 4px 14px rgba(230, 91, 19, 0.35)",
+            }}
+          >
+            <LockPersonRoundedIcon sx={{ fontSize: 32 }} />
+          </Box>
+          <Typography
+            variant="h5"
+            fontWeight={700}
+            sx={{ fontSize: { xs: "1.25rem", sm: "1.375rem" } }}
+          >
+            You already have a NewChums account
+          </Typography>
+          <Typography variant="body1" color="text.primary">
+            Sign in as <strong>{status.email}</strong> to RSVP
+            {planTitle ? <> for <strong>{planTitle}</strong></> : null}.
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            We&apos;ve also emailed you a sign-in link in case that&apos;s
+            easier. Either way, you&apos;ll come straight back to this plan.
+          </Typography>
+          <AppButton
+            variant="contained"
+            fullWidth
+            onClick={() => {
+              window.location.href = status.loginUrl;
+            }}
+          >
+            Sign in to continue
+          </AppButton>
+          <Button
+            variant="text"
+            size="small"
+            onClick={() => setStatus({ kind: "idle" })}
+            sx={{ textTransform: "none", color: "text.secondary" }}
+          >
+            Use a different email
+          </Button>
         </Stack>
       </AppCard>
     );
@@ -200,40 +280,45 @@ export default function PlanSignupCard({
   return (
     <AppCard sx={{ width: "100%" }}>
       <Stack spacing={2}>
-        <Typography
-          variant="h5"
-          fontWeight={700}
-          sx={{ fontSize: { xs: "1.25rem", sm: "1.375rem" } }}
-        >
-          Complete the form below to RSVP
-        </Typography>
+        <Box>
+          <Typography
+            variant="h5"
+            fontWeight={700}
+            sx={{ fontSize: { xs: "1.25rem", sm: "1.375rem" }, mb: 0.5 }}
+          >
+            {planTitle ? `RSVP to ${planTitle}` : "RSVP to this plan"}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Just your email and date of birth to get you in. We&apos;ll send a
+            one-click link to verify your address and bring you right back to
+            this plan to RSVP. You can set a password once you&apos;re in.
+          </Typography>
+        </Box>
 
         <AppTextField
-          label="Your Email"
+          label="Your email"
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           error={Boolean(fieldErrors.email)}
-          helperText={fieldErrors.email}
+          helperText={fieldErrors.email ?? null}
           fullWidth
           autoComplete="email"
           disabled={status.kind === "submitting"}
         />
 
-        <Box>
-          <NCDatePicker
-            label="Date of birth"
-            value={dob}
-            onChange={setDob}
-            error={Boolean(fieldErrors.dob)}
-            helperText={
-              fieldErrors.dob ??
-              "We ask for your date of birth because NewChums is currently limited to people 18 and older."
-            }
-            disabled={status.kind === "submitting"}
-            noTopMargin
-          />
-        </Box>
+        <NCDatePicker
+          label="Date of birth"
+          value={dob}
+          onChange={setDob}
+          error={Boolean(fieldErrors.dob)}
+          helperText={
+            fieldErrors.dob ??
+            "NewChums is currently limited to people 18 and older."
+          }
+          disabled={status.kind === "submitting"}
+          noTopMargin
+        />
 
         <Box>
           <FormControlLabel
@@ -289,7 +374,7 @@ export default function PlanSignupCard({
           }
           fullWidth
         >
-          {status.kind === "submitting" ? "Submitting..." : "Submit"}
+          {status.kind === "submitting" ? "Sending your link..." : "Email me a sign-in link"}
         </AppButton>
 
         {showSignInHint && (

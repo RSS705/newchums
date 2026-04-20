@@ -533,7 +533,7 @@ export default function EventDetailClient() {
       // Wait for the parallel feedback fetch (if any) before flipping
       // loading=false. This is the small delta that lets <PlanFeedback>
       // render its content on first paint instead of after a follow-up
-      // round-trip — eliminating the form pop-in flicker on email links.
+      // round-trip, eliminating the form pop-in flicker on email links.
       if (sectionParam === "feedback") {
         try {
           const fb = await feedbackPromise;
@@ -660,7 +660,7 @@ export default function EventDetailClient() {
     //      returns the user to `/events/[id]?invite_token=...&rsvp=...` as
     //      an authenticated user, this effect re-fires via the fresh
     //      searchParams and runs the authenticated branch. No redirect to
-    //      /login — that was the pre-guest-removal path and it flickered
+    //      /login, that was the pre-guest-removal path and it flickered
     //      the plan page away from invitees who don't yet have an account.
     getAuthToken().then((token) => {
       if (token) {
@@ -1463,7 +1463,7 @@ export default function EventDetailClient() {
     setChumToggling(true);
     try {
       if (r.isChumSaved) {
-        // Remove chum — DELETE /chums/:userId removes by linked_user_id
+        // Remove chum, DELETE /chums/:userId removes by linked_user_id
         const res = await apiFetch(`/chums/${r.userId}`, { auth: true, method: "DELETE" });
         const data = (await res.json()) as { ok: boolean };
         if (data.ok) {
@@ -1473,7 +1473,7 @@ export default function EventDetailClient() {
           toast.error("Couldn't update Chums. Please try again.");
         }
       } else {
-        // Add to Chums — POST /chums/:userId
+        // Add to Chums, POST /chums/:userId
         const res = await apiFetch(`/chums/${r.userId}`, { auth: true, method: "POST" });
         const data = (await res.json()) as { ok: boolean };
         if (data.ok) {
@@ -1548,7 +1548,7 @@ export default function EventDetailClient() {
           >
             contact@newchums.com
           </MuiLink>{" "}
-          and we'll take a look.
+          and we&apos;ll take a look.
         </Typography>
       </Stack>
     );
@@ -1801,7 +1801,7 @@ export default function EventDetailClient() {
   // Invitees who haven't RSVP'd yet (shown with "Invited" status in Who's in).
   // Visible to all participants (host, attendees, anyone with plan access)
   // so that an invite sent by an attendee shows up for the rest of the
-  // group too — not just for the host. The set is the same regardless of
+  // group too, not just for the host. The set is the same regardless of
   // who created each invite; we no longer narrow by `invited_by` on the
   // client. Server-side access control on GET /events/:id is what
   // determines whether the viewer can see the plan at all.
@@ -2633,7 +2633,7 @@ export default function EventDetailClient() {
                 // Preserve the invitee's RSVP intent through the magic-link
                 // round-trip. If the user clicked "Going" from the invite
                 // email (?rsvp=going), we want that to auto-apply after
-                // they finish signing up — so fold it into the URL the
+                // they finish signing up, so fold it into the URL the
                 // magic-link returns to, alongside any share/invite token.
                 // Also include `section=confirmation` so the landing view
                 // scrolls to the "Are you in?" / "You're going" card
@@ -2855,19 +2855,17 @@ export default function EventDetailClient() {
                         >
                           Maybe
                         </AppButton>
-                        {(event.isInvited || event.hasRsvp) && (
-                          <AppButton
-                            onClick={() => openRsvpDialog("cant_make_it")}
-                            disabled={
-                              rsvpSubmitting || (!!event.lockedAt && chatAccessible !== true)
-                            }
-                            variant="outlined"
-                            color="inherit"
-                            sx={{ flex: 1 }}
-                          >
-                            Can&apos;t make it
-                          </AppButton>
-                        )}
+                        <AppButton
+                          onClick={() => openRsvpDialog("cant_make_it")}
+                          disabled={
+                            rsvpSubmitting || (!!event.lockedAt && chatAccessible !== true)
+                          }
+                          variant="outlined"
+                          color="inherit"
+                          sx={{ flex: 1 }}
+                        >
+                          Can&apos;t make it
+                        </AppButton>
                       </Stack>
                     </>
                   )}
@@ -4348,7 +4346,7 @@ export default function EventDetailClient() {
                         sx={{ fontWeight: 500, fontSize: "0.6875rem" }}
                       />
                     )}
-                    {/* Overflow menu trigger — only when at least one menu item would render for this row */}
+                    {/* Overflow menu trigger, only when at least one menu item would render for this row */}
                     {(
                       (viewerUserId && r.userId === viewerUserId) ||
                       (r.handle && r.userId !== viewerUserId) ||
@@ -4476,7 +4474,7 @@ export default function EventDetailClient() {
                         color="info"
                         sx={{ fontWeight: 600, fontSize: "0.75rem", "& .MuiChip-label": { pr: 1.25 }, "& .MuiChip-icon": { ml: 1 } }}
                       />
-                      {/* Overflow menu for pending invites — show when there's at least one action */}
+                      {/* Overflow menu for pending invites, show when there's at least one action */}
                       {(invProfileHref || (event.isHost && !isCanceled && !isPast && inv.userId !== null)) && (
                         <IconButton
                           size="small"

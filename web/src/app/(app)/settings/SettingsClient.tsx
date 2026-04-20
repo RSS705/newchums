@@ -29,6 +29,7 @@ export default function SettingsClient() {
   const [changeEmailError, setChangeEmailError] = useState<string | null>(null);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [hasPassword, setHasPassword] = useState(true);
+  const [passwordSetupPending, setPasswordSetupPending] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -59,6 +60,7 @@ export default function SettingsClient() {
       if (data.ok && data.profile) {
         setEmail(data.profile.email ?? "");
         setHasPassword(data.profile.has_password ?? true);
+        setPasswordSetupPending(data.profile.password_setup_pending ?? false);
         setIsHiddenFromSearch(data.profile.is_hidden_from_search ?? false);
         setIsHiddenFromExternalIndexing(data.profile.is_hidden_from_external_indexing ?? false);
         setIsHiddenAge(data.profile.is_hidden_age ?? false);
@@ -283,7 +285,7 @@ export default function SettingsClient() {
       </Box>
 
       {/* Account */}
-      <AppCard>
+      <AppCard id="account">
         <Stack spacing={2.5}>
           <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>Account</Typography>
           <AppTextField
@@ -295,32 +297,63 @@ export default function SettingsClient() {
           <Button variant="outlined" size="small" onClick={() => setChangeEmailOpen(true)} sx={{ textTransform: "none", borderRadius: 2.5, alignSelf: "flex-start" }}>
             Change email
           </Button>
-          <AppTextField
-            label="Password"
-            value="••••••••"
-            disabled
-            type="password"
-            InputProps={{
-              readOnly: true,
-            }}
-            helperText="Your password is hidden for security"
-          />
-          <Button variant="outlined" size="small" onClick={() => setChangePasswordOpen(true)} sx={{ textTransform: "none", borderRadius: 2.5, alignSelf: "flex-start" }}>
-            Change password
-          </Button>
-          <Box sx={{ mt: 1 }}>
-            <Link
-              href={email ? `/forgot-password?email=${encodeURIComponent(email)}` : "/forgot-password"}
-              style={{ textDecoration: "none" }}
+          {passwordSetupPending ? (
+            <Box
+              sx={{
+                bgcolor: "primary.50",
+                border: 1,
+                borderColor: "primary.100",
+                borderRadius: 2,
+                p: 2,
+              }}
             >
-              <Typography variant="body2" color="primary" component="span" sx={{ textDecoration: "underline" }}>
-                Forgot your password?
+              <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 0.5 }}>
+                Finish setting up your account
               </Typography>
-            </Link>
-            <Typography variant="body2" color="text.secondary" component="span" sx={{ ml: 0.5 }}>
-              We&apos;ll email you a reset link.
-            </Typography>
-          </Box>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                Your account was created from a plan invite and doesn&apos;t
+                have a password yet. Set one so you can sign in with email and
+                password next time.
+              </Typography>
+              <Button
+                variant="contained"
+                size="small"
+                onClick={() => setChangePasswordOpen(true)}
+                sx={{ textTransform: "none", borderRadius: 2.5 }}
+              >
+                Set a password
+              </Button>
+            </Box>
+          ) : (
+            <>
+              <AppTextField
+                label="Password"
+                value="••••••••"
+                disabled
+                type="password"
+                InputProps={{
+                  readOnly: true,
+                }}
+                helperText="Your password is hidden for security"
+              />
+              <Button variant="outlined" size="small" onClick={() => setChangePasswordOpen(true)} sx={{ textTransform: "none", borderRadius: 2.5, alignSelf: "flex-start" }}>
+                Change password
+              </Button>
+              <Box sx={{ mt: 1 }}>
+                <Link
+                  href={email ? `/forgot-password?email=${encodeURIComponent(email)}` : "/forgot-password"}
+                  style={{ textDecoration: "none" }}
+                >
+                  <Typography variant="body2" color="primary" component="span" sx={{ textDecoration: "underline" }}>
+                    Forgot your password?
+                  </Typography>
+                </Link>
+                <Typography variant="body2" color="text.secondary" component="span" sx={{ ml: 0.5 }}>
+                  We&apos;ll email you a reset link.
+                </Typography>
+              </Box>
+            </>
+          )}
         </Stack>
       </AppCard>
 
@@ -478,12 +511,12 @@ export default function SettingsClient() {
         <DialogContent sx={{ px: { xs: 2, sm: 3 }, pb: { xs: 0, sm: 1.5 } }}>
           {changeEmailSuccess ? (
             <Typography color="text.secondary">
-              Check your new email to confirm the change. We've also sent a notification to your current email.
+              Check your new email to confirm the change. We&apos;ve also sent a notification to your current email.
             </Typography>
           ) : (
             <Stack spacing={2} sx={{ mt: 1 }}>
               <Typography color="text.secondary" variant="body2">
-                We'll send a confirmation link to your new email. Your current email will also receive a notification.
+                We&apos;ll send a confirmation link to your new email. Your current email will also receive a notification.
               </Typography>
               <AppTextField
                 label="New email"
@@ -583,32 +616,38 @@ export default function SettingsClient() {
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle sx={{ px: { xs: 2, sm: 3 } }}>Change password</DialogTitle>
+        <DialogTitle sx={{ px: { xs: 2, sm: 3 } }}>
+          {passwordSetupPending ? "Set a password" : "Change password"}
+        </DialogTitle>
         <DialogContent sx={{ px: { xs: 2, sm: 3 }, pb: { xs: 0, sm: 1.5 } }}>
-          {!hasPassword ? (
+          {!hasPassword && !passwordSetupPending ? (
             <Typography color="text.secondary">
-              This account signs in with Google. Password changes aren't available.
+              This account signs in with Google. Password changes aren&apos;t available.
             </Typography>
           ) : (
             <Stack spacing={{ xs: 1.5, sm: 2 }} sx={{ mt: { xs: 0.5, sm: 1 } }}>
               <Typography color="text.secondary" variant="body2">
-                You'll stay signed in.
+                {passwordSetupPending
+                  ? "This is a first-time setup, so there's no existing password to enter. You'll stay signed in."
+                  : "You'll stay signed in."}
               </Typography>
+              {!passwordSetupPending && (
+                <AppTextField
+                  label="Current password"
+                  type="password"
+                  value={currentPassword}
+                  onChange={(e) => {
+                    setCurrentPassword(e.target.value);
+                    setCurrentPasswordError(null);
+                  }}
+                  helperText={currentPasswordError ?? " "}
+                  error={Boolean(currentPasswordError)}
+                  disabled={changePasswordSubmitting}
+                  autoComplete="current-password"
+                />
+              )}
               <AppTextField
-                label="Current password"
-                type="password"
-                value={currentPassword}
-                onChange={(e) => {
-                  setCurrentPassword(e.target.value);
-                  setCurrentPasswordError(null);
-                }}
-                helperText={currentPasswordError ?? " "}
-                error={Boolean(currentPasswordError)}
-                disabled={changePasswordSubmitting}
-                autoComplete="current-password"
-              />
-              <AppTextField
-                label="New password"
+                label={passwordSetupPending ? "Password" : "New password"}
                 type="password"
                 value={newPassword}
                 onChange={(e) => {
@@ -621,7 +660,7 @@ export default function SettingsClient() {
                 autoComplete="new-password"
               />
               <AppTextField
-                label="Confirm new password"
+                label={passwordSetupPending ? "Confirm password" : "Confirm new password"}
                 type="password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
@@ -650,20 +689,20 @@ export default function SettingsClient() {
             pb: { xs: 2, sm: 3 },
           }}
         >
-          {hasPassword && (
+          {(hasPassword || passwordSetupPending) && (
             <AppButton
               variant="contained"
               sx={{ width: { xs: "100%", sm: "auto" } }}
               disabled={
                 changePasswordSubmitting ||
-                !currentPassword.trim() ||
+                (!passwordSetupPending && !currentPassword.trim()) ||
                 !newPassword.trim() ||
                 newPassword !== confirmPassword ||
                 newPassword.length < 8
               }
               onClick={async () => {
                 if (
-                  !currentPassword.trim() ||
+                  (!passwordSetupPending && !currentPassword.trim()) ||
                   !newPassword.trim() ||
                   newPassword.length < 8 ||
                   newPassword !== confirmPassword
@@ -674,14 +713,23 @@ export default function SettingsClient() {
                 setCurrentPasswordError(null);
                 setNewPasswordError(null);
                 try {
-                  const res = await apiFetch("/account/password-change", {
-                    method: "POST",
-                    auth: true,
-                    body: JSON.stringify({
-                      currentPassword: currentPassword.trim(),
-                      newPassword: newPassword.trim(),
-                    }),
-                  });
+                  // First-time setup uses a dedicated endpoint that skips the
+                  // current-password check (the account has never had one);
+                  // subsequent changes go through the standard flow.
+                  const res = passwordSetupPending
+                    ? await apiFetch("/auth/password/set", {
+                        method: "POST",
+                        auth: true,
+                        body: JSON.stringify({ password: newPassword.trim() }),
+                      })
+                    : await apiFetch("/account/password-change", {
+                        method: "POST",
+                        auth: true,
+                        body: JSON.stringify({
+                          currentPassword: currentPassword.trim(),
+                          newPassword: newPassword.trim(),
+                        }),
+                      });
                   const data = (await res.json()) || {};
                   if (!res.ok || !data.ok) {
                     const code = data.code ?? data.error;
@@ -697,7 +745,14 @@ export default function SettingsClient() {
                     }
                     return;
                   }
-                  toast.success("Password updated");
+                  toast.success(passwordSetupPending ? "Password set" : "Password updated");
+                  // Flip local state so the reminder card collapses and the
+                  // normal change-password controls become available going
+                  // forward. The banner re-reads from /profile on next load.
+                  if (passwordSetupPending) {
+                    setPasswordSetupPending(false);
+                    setHasPassword(true);
+                  }
                   setChangePasswordOpen(false);
                   setCurrentPassword("");
                   setNewPassword("");

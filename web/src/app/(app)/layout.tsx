@@ -122,7 +122,7 @@ export default async function AppLayout({
     return <AppShell>{children}</AppShell>;
   }
 
-  const { username, date_of_birth, name, role, is_suspended } = await getOrCreateAppUser(
+  const { username, date_of_birth, name, role, is_suspended, password_setup_pending } = await getOrCreateAppUser(
     email,
     (session.user as { name?: string | null })?.name
   );
@@ -151,7 +151,10 @@ export default async function AppLayout({
   return (
     <>
       <MarkOAuthVerified session={session} />
-      <AppShell user={{ name: greetingName, role }}>
+      <AppShell
+        user={{ name: greetingName, role }}
+        passwordSetupPending={password_setup_pending}
+      >
         {children}
       </AppShell>
     </>

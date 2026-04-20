@@ -28,11 +28,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!email || !password) return null;
 
         const rows = (await sql`
-          SELECT id, email, name, password_hash, email_verified_at, is_suspended
+          SELECT id, email, name, password_hash, password_setup_pending, email_verified_at, is_suspended
           FROM users
           WHERE email = ${email}
           LIMIT 1
-        `) as { id: string; email: string; name: string | null; password_hash: string | null; email_verified_at: string | null; is_suspended: boolean }[];
+        `) as { id: string; email: string; name: string | null; password_hash: string | null; password_setup_pending: boolean | null; email_verified_at: string | null; is_suspended: boolean }[];
 
         const user = rows[0];
         if (!user) {
@@ -41,8 +41,21 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           throw err;
         }
         if (!user.password_hash) {
-          const err = new CredentialsSignin("Sign in with Google instead.");
-          err.code = "OAuthAccount";
+          // Disambiguate two states that look the same at the column level:
+          //
+          //   1. password_setup_pending = TRUE: lightweight-signup user who
+          //      never set a password. The login page should offer them a
+          //      one-click sign-in link instead of a dead-end error.
+          //   2. Otherwise: Google-OAuth-only account (or an older account
+          //      that never went through lightweight signup). Steer them
+          //      to Google or "Forgot password" which doubles as set-a-password.
+          if (user.password_setup_pending) {
+            const err = new CredentialsSignin("Your password hasn't been set yet. Send yourself a sign-in link to finish setup.");
+            err.code = "PasswordSetupPending";
+            throw err;
+          }
+          const err = new CredentialsSignin("No password on file. Use 'Forgot password' to set one, or sign in with Google.");
+          err.code = "NoPasswordOnFile";
           throw err;
         }
 

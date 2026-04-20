@@ -631,10 +631,10 @@ app.get("/public/users/:userId/attendance-record", async (c) => {
     // Shows up: of plans the user *stayed* committed to (still 'going' at
     //   query time), how many they were NOT reported as a no-show / very-late
     //   on. Merely backing out ahead of time neither helps nor hurts this
-    //   metric — the plan leaves both sides of the ratio. Only an attendance
+    //   metric, the plan leaves both sides of the ratio. Only an attendance
     //   issue against a still-'going' RSVP moves the needle.
     //
-    // Includes both hosted and attended plans — the host is expected to show
+    // Includes both hosted and attended plans, the host is expected to show
     // up too. QA and cancelled plans are filtered out.
     const followThrough = (await sql`
       SELECT
@@ -696,7 +696,7 @@ app.get("/public/users/:userId/attendance-record", async (c) => {
           denominator: followThrough[0]?.total_committed ?? 0,
         },
         // "Shows up" denominator is the count of plans the user STAYED
-        // committed to (still 'going' at query time) — same as goingKept —
+        // committed to (still 'going' at query time), same as goingKept;
         // so backing out before the event drops the plan from both sides
         // rather than penalizing this metric.
         followThrough: {
@@ -1082,9 +1082,13 @@ app.post("/auth/password-reset/request", async (c) => {
   if (!user) {
     return c.json({ ok: false, error: "EMAIL_NOT_FOUND" }, 404);
   }
-  if (!user.password_hash) {
-    return c.json({ ok: false, error: "OAUTH_ACCOUNT", message: "This account uses Google sign-in. We cannot reset its password. Please sign in with Google instead." }, 409);
-  }
+  // Intentionally allow accounts with password_hash IS NULL to proceed. That
+  // state covers both Google-OAuth-only accounts and lightweight plan-signup
+  // accounts (which never collect a password at RSVP time), and in both
+  // cases letting the reset flow set a password is the right recovery path:
+  // lightweight users get a way back in without another plan-signup link,
+  // and Google users gain an optional second sign-in method alongside Google
+  // without disturbing their existing flow.
 
   await sql`
     UPDATE password_reset_tokens SET used_at = NOW()
@@ -1142,7 +1146,14 @@ app.post("/auth/password-reset/confirm", async (c) => {
   }
 
   const passwordHash = hashSync(password, 10);
-  await sql`UPDATE users SET password_hash = ${passwordHash} WHERE id = ${record.user_id}`;
+  // Setting a password via reset also closes out any pending lightweight-
+  // signup setup state so the product stops nudging the user to finish.
+  await sql`
+    UPDATE users
+    SET password_hash = ${passwordHash},
+        password_setup_pending = FALSE
+    WHERE id = ${record.user_id}
+  `;
   await sql`UPDATE password_reset_tokens SET used_at = NOW() WHERE id = ${record.id}`;
   await sql`
     UPDATE password_reset_tokens SET used_at = NOW()
@@ -1376,6 +1387,9 @@ app.post("/auth/plan-signup/request", async (c) => {
   if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
     return c.json({ ok: false, error: "INVALID_EMAIL" }, 400);
   }
+  // Intentionally no password collection here. This endpoint creates a
+  // real account but flags password_setup_pending = TRUE so the product
+  // can prompt the user to finish setup after they land back on the plan.
   if (!acceptedLegal) {
     return c.json({ ok: false, error: "LEGAL_REQUIRED" }, 400);
   }
@@ -1466,7 +1480,7 @@ app.post("/auth/plan-signup/request", async (c) => {
     // Verified existing account: no DB writes, no magic link. Send a signin-notice
     // email pointing at /login?next=<plan>. Client redirects to the same URL.
     if (existing[0].is_suspended) {
-      // Uniform response for suspended accounts — don't leak suspension state to a stranger.
+      // Uniform response for suspended accounts, don't leak suspension state to a stranger.
       return c.json({ ok: true, state: "existing_account", next });
     }
     const loginUrl = `${c.env.WEB_BASE_URL}/login?next=${encodeURIComponent(next)}`;
@@ -1484,6 +1498,8 @@ app.post("/auth/plan-signup/request", async (c) => {
   if (existing.length > 0 && !existing[0].email_verified_at) {
     // Abandoned credential signup or previous lightweight-signup that didn't complete.
     // Refresh DOB + legal fields so an attacker can't rotate under-age / over-age submissions.
+    // password_setup_pending is left untouched so a user mid-setup is not
+    // demoted out of their pending state by a re-submission.
     userId = existing[0].id;
     await sql`
       UPDATE newchums.users
@@ -1494,16 +1510,20 @@ app.post("/auth/plan-signup/request", async (c) => {
       WHERE id = ${userId}
     `;
   } else {
-    // Fresh account.
+    // Fresh account. No password is collected here; the user is flagged
+    // password_setup_pending so the product nudges them to set one after
+    // they land back on the plan.
     const username = await generateFunUsername(sql);
     const usernameNorm = username.toLowerCase();
     const inserted = (await sql`
       INSERT INTO newchums.users (
         email, username, username_norm, date_of_birth, email_verified_at, password_hash,
+        password_setup_pending,
         accepted_terms_version, accepted_privacy_version, accepted_legal_at
       )
       VALUES (
         ${email}, ${username}, ${usernameNorm}, ${parsedDob}, NULL, NULL,
+        TRUE,
         ${CURRENT_TERMS_VERSION}, ${CURRENT_PRIVACY_VERSION}, NOW()
       )
       RETURNING id
@@ -1564,6 +1584,166 @@ app.post("/auth/plan-signup/request", async (c) => {
 });
 
 /**
+ * Request a sign-in magic link for accounts where password setup is still
+ * pending. Intended for the legacy return-visit case: a user created via
+ * the lightweight plan-entry flow never set a password, and now they're
+ * trying to sign in. Rather than leave them stuck on the password form
+ * with a confusing error, the login page surfaces a "send me a sign-in
+ * link" action that calls this endpoint.
+ *
+ * For any other account state (password set, or account does not exist)
+ * the endpoint returns ok regardless so we don't reveal account existence
+ * to a stranger probing emails; only pending accounts actually receive
+ * an email.
+ *
+ * Rate limits mirror plan-signup so a bad actor can't sweep either axis.
+ */
+app.post("/auth/signin-link/request", async (c) => {
+  let body: { email?: string; turnstile_token?: string; next?: string };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ ok: false, error: "INVALID_JSON" }, 400);
+  }
+  const email = body.email?.trim().toLowerCase();
+  const turnstileToken = typeof body.turnstile_token === "string" ? body.turnstile_token : "";
+  const next = sanitizePlanSignupNext(body.next);
+
+  if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
+    return c.json({ ok: false, error: "INVALID_EMAIL" }, 400);
+  }
+
+  const requestIp =
+    c.req.header("CF-Connecting-IP") ??
+    c.req.header("X-Forwarded-For")?.split(",")[0]?.trim() ??
+    "unknown";
+  const ipLimit = await checkRateLimit(
+    c.env.CONTACT_RATELIMIT_KV,
+    `signin-link:ip:${requestIp}`,
+    PLAN_SIGNUP_RATE_LIMIT_PER_IP,
+    PLAN_SIGNUP_RATE_LIMIT_WINDOW_MS,
+  );
+  if (!ipLimit.allowed) return c.json({ ok: false, error: "RATE_LIMITED" }, 429);
+  const emailLimit = await checkRateLimit(
+    c.env.CONTACT_RATELIMIT_KV,
+    `signin-link:email:${email}`,
+    PLAN_SIGNUP_RATE_LIMIT_PER_EMAIL,
+    PLAN_SIGNUP_RATE_LIMIT_WINDOW_MS,
+  );
+  if (!emailLimit.allowed) return c.json({ ok: false, error: "RATE_LIMITED" }, 429);
+
+  if (c.env.TURNSTILE_SECRET_KEY) {
+    if (!turnstileToken) return c.json({ ok: false, error: "TURNSTILE_REQUIRED" }, 400);
+    const verifyResult = await verifyTurnstileToken(turnstileToken, c.env.TURNSTILE_SECRET_KEY, requestIp);
+    if (!verifyResult.success) return c.json({ ok: false, error: "TURNSTILE_FAILED" }, 400);
+  }
+
+  const sql = getSql(c.env);
+  const rows = (await sql`
+    SELECT id, is_suspended, password_setup_pending
+    FROM newchums.users
+    WHERE email = ${email}
+    LIMIT 1
+  `) as { id: string; is_suspended: boolean; password_setup_pending: boolean }[];
+
+  // Only issue a link for real pending accounts. For any other state (no
+  // account, password set, suspended) return ok silently so an attacker
+  // can't distinguish pending from non-pending via the response.
+  const user = rows[0];
+  if (!user || user.is_suspended || !user.password_setup_pending) {
+    return c.json({ ok: true });
+  }
+
+  await sql`
+    UPDATE newchums.email_verification_tokens SET used_at = NOW()
+    WHERE user_id = ${user.id} AND used_at IS NULL
+  `;
+  const rawToken = generateResetToken();
+  const tokenHash = await hashResetToken(rawToken);
+  const expiresAt = new Date(Date.now() + MAGIC_LINK_EXPIRY_MS);
+  await sql`
+    INSERT INTO newchums.email_verification_tokens (user_id, token_hash, expires_at)
+    VALUES (${user.id}, ${tokenHash}, ${expiresAt})
+  `;
+
+  const confirmUrl = `${c.env.WEB_BASE_URL}/auth/magic?token=${encodeURIComponent(rawToken)}&email=${encodeURIComponent(email)}&next=${encodeURIComponent(next)}`;
+  try {
+    await sendMagicLinkSignupEmail(c.env, { to: email, confirmUrl, planTitle: "NewChums" });
+  } catch (err) {
+    console.error("[signin-link] sendMagicLinkSignupEmail failed", err);
+    await sql`
+      UPDATE newchums.email_verification_tokens
+      SET used_at = NOW()
+      WHERE user_id = ${user.id} AND token_hash = ${tokenHash}
+    `;
+    return c.json({ ok: false, error: "EMAIL_SEND_FAILED" }, 500);
+  }
+
+  return c.json({ ok: true });
+});
+
+/**
+ * First-time password setup for lightweight-signup accounts. Unlike
+ * /auth/profile/change-password this does not require a current password,
+ * because the whole point of password_setup_pending = TRUE is that the
+ * account has never had one. The endpoint is only willing to set a
+ * password when:
+ *   - the caller is authenticated, and
+ *   - the account is currently flagged password_setup_pending.
+ *
+ * On success we hash + store the password and flip the flag off. Any
+ * outstanding sign-in-link tokens are invalidated so a stale magic
+ * link can't act as a backdoor after the user has a real credential.
+ */
+app.post("/auth/password/set", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+  let body: { password?: string };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ ok: false, error: "INVALID_JSON" }, 400);
+  }
+  const password = typeof body.password === "string" ? body.password : "";
+  if (!password || password.length < 8) {
+    return c.json({ ok: false, error: "INVALID_PASSWORD", message: "Password must be at least 8 characters." }, 400);
+  }
+
+  const sql = getSql(c.env);
+  const normalized = payload.email.trim().toLowerCase();
+  const rows = (await sql`
+    SELECT id, password_setup_pending
+    FROM newchums.users
+    WHERE email = ${normalized}
+    LIMIT 1
+  `) as { id: string; password_setup_pending: boolean }[];
+  const user = rows[0];
+  if (!user) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+  if (!user.password_setup_pending) {
+    // The account is not in pending state. Refuse to bypass the current-
+    // password requirement; the caller should use the normal change-password
+    // flow instead.
+    return c.json({ ok: false, error: "ALREADY_SET", message: "This account already has a password. Use change password instead." }, 409);
+  }
+
+  const passwordHash = hashSync(password, 10);
+  await sql`
+    UPDATE newchums.users
+    SET password_hash = ${passwordHash},
+        password_setup_pending = FALSE
+    WHERE id = ${user.id}
+  `;
+  await sql`
+    UPDATE newchums.email_verification_tokens
+    SET used_at = NOW()
+    WHERE user_id = ${user.id} AND used_at IS NULL
+  `;
+  return c.json({ ok: true });
+});
+
+/**
  * Consume a magic-link token. Called by the web-side `magic-link` Credentials
  * provider from Auth.js. On success:
  *   - marks the token row `used_at = NOW()`
@@ -1611,7 +1791,7 @@ app.post("/auth/magic-link/consume", async (c) => {
   }
 
   if (user.is_suspended) {
-    // Do not mark the token used — suspended users shouldn't burn a token.
+    // Do not mark the token used, suspended users shouldn't burn a token.
     return c.json({ ok: false, error: "ACCOUNT_SUSPENDED" }, 403);
   }
 
@@ -2442,6 +2622,7 @@ app.get("/profile", async (c) => {
     const userRows = (await sql`
       SELECT name, username, email, date_of_birth, gender, profile_theme, avatar_key, avatar_updated_at, role, subscription_plan,
         (password_hash IS NOT NULL) AS has_password,
+        COALESCE(password_setup_pending, false) AS password_setup_pending,
         COALESCE(is_hidden_from_search, false) AS is_hidden_from_search,
         COALESCE(is_hidden_from_external_indexing, false) AS is_hidden_from_external_indexing,
         COALESCE(is_hidden_age, false) AS is_hidden_age,
@@ -2462,6 +2643,7 @@ app.get("/profile", async (c) => {
       role: string | null;
       subscription_plan: string;
       has_password: boolean;
+      password_setup_pending: boolean;
       is_hidden_from_search: boolean;
       is_hidden_from_external_indexing: boolean;
       is_hidden_age: boolean;
@@ -2512,6 +2694,7 @@ app.get("/profile", async (c) => {
         : null;
 
     const hasPassword = userInfo?.has_password ?? false;
+    const passwordSetupPending = userInfo?.password_setup_pending ?? false;
     const isHiddenFromSearch = userInfo?.is_hidden_from_search ?? false;
     const isHiddenFromExternalIndexing = userInfo?.is_hidden_from_external_indexing ?? false;
     const isHiddenAge = userInfo?.is_hidden_age ?? false;
@@ -2546,6 +2729,7 @@ app.get("/profile", async (c) => {
           email_new_events: true,
           avatar_url: avatarUrl,
           has_password: hasPassword,
+          password_setup_pending: passwordSetupPending,
           is_hidden_from_search: isHiddenFromSearch,
           is_hidden_from_external_indexing: isHiddenFromExternalIndexing,
           is_hidden_age: isHiddenAge,
@@ -2579,6 +2763,7 @@ app.get("/profile", async (c) => {
         email_new_events: profile.email_new_events,
         avatar_url: avatarUrl,
         has_password: hasPassword,
+        password_setup_pending: passwordSetupPending,
         is_hidden_from_search: isHiddenFromSearch,
         is_hidden_from_external_indexing: isHiddenFromExternalIndexing,
         is_hidden_age: isHiddenAge,
@@ -6459,7 +6644,7 @@ const COMMUNITY_SLUG_RE = /^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$/;
 const COMMUNITY_JOIN_REQUEST_COOLDOWN_DAYS = 7;
 
 /** Longer than the pending-refresh cooldown because an owner has already
- *  actively rejected the requester — re-asking sooner reads as pestering. */
+ *  actively rejected the requester, re-asking sooner reads as pestering. */
 const COMMUNITY_JOIN_REQUEST_DECLINED_COOLDOWN_DAYS = 30;
 
 /** Shared cooldown math for community-join-request timestamps. Returns
@@ -6551,7 +6736,7 @@ app.post("/communities", async (c) => {
     }
     // Require coordinates from a Google Places pick. Without these, the
     // community can't be placed on the distance filter used by the
-    // Communities discovery feed — which previously meant communities
+    // Communities discovery feed, which previously meant communities
     // with only typed text ended up with stale coordinates from a prior
     // unrelated pick, so they appeared at the wrong location.
     if (locationLat == null || locationLng == null) {
@@ -6878,7 +7063,7 @@ app.get("/communities/:slug", async (c) => {
           });
         }
 
-        // These three queries are independent of each other — run in parallel.
+        // These three queries are independent of each other, run in parallel.
         // Partial unique index on (community_id, user_id) WHERE status='pending'
         // guarantees at most one pending row. The declined query uses the most
         // recent row because a user may have multiple declines over time.
@@ -6989,7 +7174,7 @@ app.get("/communities/:slug", async (c) => {
 
       // Declined requests still inside the cooldown window, excluding users
       // who have since re-requested or joined / been blocked by other paths.
-      // Only these are actionable via "Undo denial" — once the cooldown
+      // Only these are actionable via "Undo denial", once the cooldown
       // lapses the user can request again on their own.
       const cooldownInterval = `${COMMUNITY_JOIN_REQUEST_DECLINED_COOLDOWN_DAYS} days`;
       const rawDeclined = (await sql`
@@ -7310,7 +7495,7 @@ app.post("/communities/:id/join", async (c) => {
         `;
         requestAction = "refreshed";
       } else {
-        // No pending request — but check for a recent decline first. The
+        // No pending request, but check for a recent decline first. The
         // decline cooldown stops a user from re-submitting immediately after
         // a rejection.
         const recentDeclined = (await sql`
@@ -7519,7 +7704,7 @@ app.post("/communities/:id/members/:userId/remove", async (c) => {
     if (updated.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
 
     // In-app notification + email to the removed user. Both are best-effort
-    // — a failure here must not undo the removal.
+    //, a failure here must not undo the removal.
     const targetRows = (await sql`SELECT email, name FROM newchums.users WHERE id = ${targetUserId} LIMIT 1`) as { email: string; name: string | null }[];
     const target = targetRows[0];
     if (target) {
@@ -7550,7 +7735,7 @@ app.post("/communities/:id/members/:userId/remove", async (c) => {
 });
 
 /** POST /communities/:id/members/:userId/unblock, lift a prior remove+block.
- *  Deletes the community_members row outright — the user is back to being a
+ *  Deletes the community_members row outright, the user is back to being a
  *  plain non-member and may request to join again on their own. Crucially
  *  this does NOT auto-re-add them; the owner is just opening the door. */
 app.post("/communities/:id/members/:userId/unblock", async (c) => {
@@ -7576,7 +7761,7 @@ app.post("/communities/:id/members/:userId/unblock", async (c) => {
     `) as unknown[];
     if (deleted.length === 0) return c.json({ ok: false, error: "NOT_BLOCKED" }, 404);
 
-    // In-app notification + email — both best-effort.
+    // In-app notification + email, both best-effort.
     const targetRows = (await sql`SELECT email, name FROM newchums.users WHERE id = ${targetUserId} LIMIT 1`) as { email: string; name: string | null }[];
     const target = targetRows[0];
     try {
@@ -7679,7 +7864,7 @@ app.put("/communities/:id/join-requests/:requestId", async (c) => {
 
 /** POST /communities/:id/join-requests/:requestId/undo-decline, reverse a
  *  prior decline while the 30-day cooldown is still active. Deletes the
- *  declined row so the cooldown no longer applies — the requester can submit
+ *  declined row so the cooldown no longer applies, the requester can submit
  *  a fresh request on their own, but is NOT automatically added. */
 app.post("/communities/:id/join-requests/:requestId/undo-decline", async (c) => {
   const communityId = c.req.param("id");
@@ -8725,7 +8910,7 @@ app.get("/events/explore/public", async (c) => {
   }
 });
 
-/** GET /explore/local-signal — lightweight support signal for the bottom of the
+/** GET /explore/local-signal, lightweight support signal for the bottom of the
  *  logged-in Explore feed. Returns one local-interest line when the count meets
  *  the minimum threshold.
  *
@@ -9031,7 +9216,7 @@ app.get("/events/explore", async (c) => {
         AND (COALESCE(e.is_qa, false) = false OR ${viewerIsSuperAdmin})
         -- Community members-only gate. Semantically the same rule is applied
         -- in processEventMatchDigest's UNION branches (see membersOnlyGate);
-        -- the extra er_hid RSVP-bypass branch here is deliberate — Explore
+        -- the extra er_hid RSVP-bypass branch here is deliberate, Explore
         -- needs to keep the plan visible to a RSVP'd non-member, whereas the
         -- digest already suppresses plans the recipient has an RSVP on. If
         -- you change the hide_from_explore gate, update both sites together.
@@ -9796,14 +9981,68 @@ app.post("/events/:id/rsvp", async (c) => {
   const note = body.note ? String(body.note).trim().slice(0, 500) : null;
 
   try {
-    const ev = (await sql`SELECT id, host_user_id, visibility, status, max_seats, title, locked_at, require_approval, reserve_seats, require_reconfirmation, confirmation_sent_at, starts_at, timezone, location_type, location_name, location_address, online_link, is_qa FROM newchums.events WHERE id = ${eventId} AND status = 'published'`) as { id: string; host_user_id: string; visibility: string; status: string; max_seats: number | null; title: string; locked_at: string | null; require_approval: boolean; reserve_seats: boolean; require_reconfirmation: boolean; confirmation_sent_at: string | null; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; online_link: string | null; is_qa: boolean }[];
+    // Fetch the plan without the publish-status filter first so we can give
+    // a targeted error when RSVP is blocked because of plan state (draft or
+    // canceled) rather than masking it behind a generic NOT_FOUND, which
+    // made it look like the plan itself had disappeared.
+    const ev = (await sql`SELECT id, host_user_id, visibility, status, max_seats, title, locked_at, canceled_at, require_approval, reserve_seats, require_reconfirmation, confirmation_sent_at, starts_at, timezone, location_type, location_name, location_address, online_link, is_qa FROM newchums.events WHERE id = ${eventId}`) as { id: string; host_user_id: string; visibility: string; status: string; max_seats: number | null; title: string; locked_at: string | null; canceled_at: string | null; require_approval: boolean; reserve_seats: boolean; require_reconfirmation: boolean; confirmation_sent_at: string | null; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; online_link: string | null; is_qa: boolean }[];
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     const event = ev[0];
+    if (event.status === "canceled" || event.canceled_at) {
+      return c.json({ ok: false, error: "EVENT_CANCELED", message: "This plan has been canceled." }, 409);
+    }
+    if (event.status !== "published") {
+      return c.json({ ok: false, error: "EVENT_NOT_PUBLISHED", message: "This plan isn't accepting RSVPs yet." }, 409);
+    }
 
-    // QA plan isolation
+    // QA plan isolation. Mirrors the GET /events/:id policy: super admins
+    // always see the plan, and non-admin visitors may only RSVP when they
+    // got here through a legitimate path. GET accepts a valid share_token
+    // or invite_token in the URL; the POST accepts the same in the body,
+    // OR an existing invite row (adopted onto the user's account), OR an
+    // existing RSVP. Without any of those, reject with NOT_FOUND so we
+    // don't leak existence of QA plans to random authenticated users.
     if (event.is_qa) {
       const isSuperAdmin = await checkIsSuperAdmin(sql, userId);
-      if (!isSuperAdmin) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+      if (!isSuperAdmin) {
+        let qaAccessGranted = false;
+
+        const shareToken = typeof body.share_token === "string" ? body.share_token : null;
+        if (shareToken) {
+          qaAccessGranted = await verifyShareToken(shareToken, eventId, c.env.NEXTAUTH_SECRET);
+        }
+        if (!qaAccessGranted) {
+          const inviteToken = typeof body.invite_token === "string" ? body.invite_token : null;
+          if (inviteToken) {
+            const decoded = await verifyInviteToken(inviteToken, c.env.NEXTAUTH_SECRET);
+            qaAccessGranted = decoded?.eventId === eventId;
+          }
+        }
+        if (!qaAccessGranted) {
+          // Prior invite adoption (GET /events/:id) may have already linked
+          // this user to an event_invites row; that counts as legitimate
+          // access here so the token is not required on every subsequent
+          // RSVP action.
+          const inviteRows = (await sql`
+            SELECT 1 FROM newchums.event_invites
+            WHERE event_id = ${eventId} AND user_id = ${userId}
+            LIMIT 1
+          `) as unknown[];
+          if (inviteRows.length > 0) qaAccessGranted = true;
+        }
+        if (!qaAccessGranted) {
+          const rsvpRows = (await sql`
+            SELECT 1 FROM newchums.event_rsvps
+            WHERE event_id = ${eventId} AND user_id = ${userId}
+            LIMIT 1
+          `) as unknown[];
+          if (rsvpRows.length > 0) qaAccessGranted = true;
+        }
+
+        if (!qaAccessGranted) {
+          return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+        }
+      }
     }
 
     if (event.host_user_id === userId) return c.json({ ok: false, error: "VALIDATION", message: "Hosts cannot RSVP to their own event" }, 400);
@@ -13275,7 +13514,7 @@ app.get("/admin/roadmap", async (c) => {
   // "removed" is a synthetic status that maps to the existing `is_removed`
   // soft-delete flag, not a real status enum value. By default the admin view
   // hides removed items so they only appear when the admin explicitly filters
-  // by "Removed" — matching the behavior the community-facing roadmap has
+  // by "Removed", matching the behavior the community-facing roadmap has
   // always had (`WHERE is_removed = false`).
   const removedFilter =
     statusFilter === "removed"
@@ -13602,7 +13841,7 @@ type QrRedirectRow = {
   created_by: string;
 };
 
-/** GET /admin/qr-redirects — list, with per-record scan summary. */
+/** GET /admin/qr-redirects, list, with per-record scan summary. */
 app.get("/admin/qr-redirects", async (c) => {
   const admin = await requireSuperAdmin(c);
   if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
@@ -13651,7 +13890,7 @@ app.get("/admin/qr-redirects", async (c) => {
   }
 });
 
-/** POST /admin/qr-redirects — create a new redirect. */
+/** POST /admin/qr-redirects, create a new redirect. */
 app.post("/admin/qr-redirects", async (c) => {
   const admin = await requireSuperAdmin(c);
   if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
@@ -13685,7 +13924,7 @@ app.post("/admin/qr-redirects", async (c) => {
   }
 });
 
-/** GET /admin/qr-redirects/:id — single record plus recent scan history. */
+/** GET /admin/qr-redirects/:id, single record plus recent scan history. */
 app.get("/admin/qr-redirects/:id", async (c) => {
   const admin = await requireSuperAdmin(c);
   if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
@@ -13724,7 +13963,7 @@ app.get("/admin/qr-redirects/:id", async (c) => {
   }
 });
 
-/** PATCH /admin/qr-redirects/:id — update fields. Accepts any subset. */
+/** PATCH /admin/qr-redirects/:id, update fields. Accepts any subset. */
 app.patch("/admin/qr-redirects/:id", async (c) => {
   const admin = await requireSuperAdmin(c);
   if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
@@ -13789,7 +14028,7 @@ app.patch("/admin/qr-redirects/:id", async (c) => {
   }
 });
 
-/** DELETE /admin/qr-redirects/:id — hard delete; scans cascade. */
+/** DELETE /admin/qr-redirects/:id, hard delete; scans cascade. */
 app.delete("/admin/qr-redirects/:id", async (c) => {
   const admin = await requireSuperAdmin(c);
   if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
@@ -13806,7 +14045,7 @@ app.delete("/admin/qr-redirects/:id", async (c) => {
   }
 });
 
-/** DELETE /admin/qr-redirects/:id/scans/:scanId — remove a single scan row.
+/** DELETE /admin/qr-redirects/:id/scans/:scanId, remove a single scan row.
  *  Hard delete, no confirmation on the server side (the UI matches). Used
  *  mainly to keep the scan table tidy during testing. */
 app.delete("/admin/qr-redirects/:id/scans/:scanId", async (c) => {
@@ -13830,12 +14069,12 @@ app.delete("/admin/qr-redirects/:id/scans/:scanId", async (c) => {
   }
 });
 
-/** POST /public/qr/:code/scan — resolve a code + log the scan. Called by the
+/** POST /public/qr/:code/scan, resolve a code + log the scan. Called by the
  *  Next.js /qr/[code] route handler (server-side) so the web layer stays a
  *  thin pass-through. Returns the destination URL when active, or
  *  { ok: false, error: "NOT_FOUND" | "INACTIVE" } so the caller can route to
  *  a sensible fallback page instead of a broken destination. Scan metadata
- *  (user-agent, referer, country) is trusted from the caller — this route is
+ *  (user-agent, referer, country) is trusted from the caller, this route is
  *  not exposed on the public API contract beyond the /qr/ path.
  *
  *  No auth: QR codes are designed to be scanned by anyone.
@@ -13859,7 +14098,7 @@ app.post("/public/qr/:code/scan", async (c) => {
     const ref = typeof meta.referer === "string" ? meta.referer.slice(0, 500) : null;
     const country = typeof meta.country === "string" ? meta.country.slice(0, 8) : null;
 
-    // Log opportunistically. Never block the redirect on a log write failure —
+    // Log opportunistically. Never block the redirect on a log write failure;
     // a working redirect matters more than a perfect scan count.
     try {
       await sql`
@@ -14033,7 +14272,7 @@ async function processAttendanceAssurance(
       const deadline = formatEventDate(cutoffAt.toISOString(), tz);
       const eventDate = formatEventDate(ev.starts_at, tz);
       const eventUrl = `${env.WEB_BASE_URL}/events/${ev.id}`;
-      // Privacy-conscious location for the email body — see Phase 1 above.
+      // Privacy-conscious location for the email body, see Phase 1 above.
       let eventLocation = "";
       if (ev.location_type === "online") {
         eventLocation = "Online";
@@ -14228,7 +14467,7 @@ async function processEventMatchDigest(
 
   // Community members-only gate, shared between the public and chums_only
   // UNION branches below. A community-linked plan with hide_from_explore=true
-  // is only delivered to active members of that community — same semantic
+  // is only delivered to active members of that community, same semantic
   // rule as the Explore-feed query at the other site (search for cm_viewer).
   // The Explore query additionally allows an RSVP-bypass branch; the digest
   // omits that because it separately suppresses any plan the recipient
@@ -14718,7 +14957,7 @@ async function processPlanFeedbackEmails(
 async function cancelNoAttendeePlans(sql: ReturnType<typeof getSql>) {
   // Find published plans that have started (within the last 2 hours to avoid
   // retroactively cancelling old plans) where the host is the only participant
-  // — i.e. no one else RSVP'd "going". `IS DISTINCT FROM` is kept as defensive
+  //, i.e. no one else RSVP'd "going". `IS DISTINCT FROM` is kept as defensive
   // NULL-safety even though user_id is now NOT NULL post-guest-removal.
   const abandoned = (await sql`
     SELECT e.id

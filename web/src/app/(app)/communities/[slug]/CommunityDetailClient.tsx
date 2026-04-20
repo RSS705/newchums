@@ -6,10 +6,13 @@ import {
   Box, Typography, Stack, Button, Chip, Avatar, CircularProgress,
   Divider, IconButton, Tooltip, Tab, Tabs, Grid, TextField,
   Dialog, DialogTitle, DialogContent, DialogActions,
+  Menu, MenuItem, ListItemIcon, ListItemText,
 } from "@mui/material";
 import AssignmentIndRoundedIcon from "@mui/icons-material/AssignmentIndRounded";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
+import MoreVertRoundedIcon from "@mui/icons-material/MoreVertRounded";
+import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
 import LanguageRoundedIcon from "@mui/icons-material/LanguageRounded";
 import LinkRoundedIcon from "@mui/icons-material/LinkRounded";
 import PeopleRoundedIcon from "@mui/icons-material/PeopleRounded";
@@ -138,12 +141,17 @@ export default function CommunityDetailClient() {
   const [removeMemberSubmitting, setRemoveMemberSubmitting] = useState(false);
   const [joining, setJoining] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  // Leave action is tucked into a member-actions overflow menu rather than
+  // sitting in the primary button row, and gated behind a confirmation
+  // dialog so it can't be triggered by an accidental click.
+  const [memberActionsAnchor, setMemberActionsAnchor] = useState<HTMLElement | null>(null);
+  const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
   const [joinRequestMessage, setJoinRequestMessage] = useState("");
   const [isClosed, setIsClosed] = useState(false);
   const [viewerHobbyItems, setViewerHobbyItems] = useState<{ slug: string; name: string; category?: string | null }[]>([]);
   // null until the first auth probe resolves, then true/false. The slug URL
   // is the canonical public / shareable destination for a community, so
-  // logged-out viewers are expected — we branch on this flag to render a
+  // logged-out viewers are expected, we branch on this flag to render a
   // sign-in CTA instead of member-only actions (join/leave/start plan/edit).
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
@@ -372,8 +380,13 @@ export default function CommunityDetailClient() {
     try {
       const res = await apiFetch(`/communities/${community.id}/leave`, { auth: true, method: "POST" });
       const data = await res.json();
-      if (data.ok) { toast.success("You've left the community"); fetchCommunity(); }
-      else toast.error(data.message || "Cannot leave");
+      if (data.ok) {
+        setLeaveConfirmOpen(false);
+        toast.success("You've left the community");
+        fetchCommunity();
+      } else {
+        toast.error(data.message || "Cannot leave");
+      }
     } catch { toast.error("Something went wrong"); }
     setLeaving(false);
   };
@@ -402,7 +415,7 @@ export default function CommunityDetailClient() {
     // The slug URL is the canonical public / shareable destination for a
     // community. Any viewer (logged in or not) can open it and see either
     // the full detail page (public) or a restricted preview (private), so
-    // the raw URL is all we need — no share_token appended.
+    // the raw URL is all we need, no share_token appended.
     const url = `${window.location.origin}/communities/${slug}`;
     try {
       await navigator.clipboard.writeText(url);
@@ -668,7 +681,7 @@ export default function CommunityDetailClient() {
         </AppCard>
 
         {/* Non-numeric preview so a low member/plan count doesn't deflate the
-            page. Suppressed for removed viewers — they're not being asked to
+            page. Suppressed for removed viewers, they're not being asked to
             join, so "what's inside" reads as rubbing it in. */}
         {!viewerRemoved && (
           <AppCard>
@@ -1076,15 +1089,135 @@ export default function CommunityDetailClient() {
             </Button>
           )}
           {isMember && !isOwner && (
-            <Button
-              variant="text" size="small" onClick={handleLeave} disabled={leaving}
-              sx={{ textTransform: "none", fontWeight: 500, color: "text.secondary", fontSize: "0.8125rem", ml: "auto !important" }}
-            >
-              {leaving ? <CircularProgress size={16} color="inherit" /> : "Leave"}
-            </Button>
+            // Overflow menu (three-dot icon) for the member-level destructive
+            // action. Keeps the primary action row focused on Start a plan /
+            // Share link / Edit, while still giving the member a discoverable
+            // path to leave. Mirrors the attendee-row overflow menu pattern
+            // from EventDetailClient.
+            <Tooltip title="More actions">
+              <IconButton
+                aria-label="More community actions"
+                onClick={(e) => setMemberActionsAnchor(e.currentTarget)}
+                size="small"
+                sx={{
+                  ml: "auto !important",
+                  color: "text.secondary",
+                  "&:hover": { color: "text.primary" },
+                }}
+              >
+                <MoreVertRoundedIcon sx={{ fontSize: "1.125rem" }} />
+              </IconButton>
+            </Tooltip>
           )}
         </Stack>
       </AppCard>
+
+      {/* Member overflow menu (non-owner members). Currently only hosts the
+       *  Leave action; structured as a menu so future member-level actions
+       *  can land here without re-doing the layout.
+       */}
+      <Menu
+        anchorEl={memberActionsAnchor}
+        open={Boolean(memberActionsAnchor)}
+        onClose={() => setMemberActionsAnchor(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+        transformOrigin={{ vertical: "top", horizontal: "right" }}
+        slotProps={{
+          paper: {
+            sx: { minWidth: 200, borderRadius: 2.5, mt: 0.5 },
+          },
+        }}
+      >
+        <MenuItem
+          onClick={() => {
+            setMemberActionsAnchor(null);
+            setLeaveConfirmOpen(true);
+          }}
+          sx={{ color: "error.main" }}
+        >
+          <ListItemIcon sx={{ color: "inherit" }}>
+            <LogoutRoundedIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Leave community</ListItemText>
+        </MenuItem>
+      </Menu>
+
+      {/* Leave-community confirmation */}
+      <Dialog
+        open={leaveConfirmOpen}
+        onClose={() => {
+          if (!leaving) setLeaveConfirmOpen(false);
+        }}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ px: { xs: 2, sm: 3 } }}>
+          Leave {community?.name ?? "this community"}?
+        </DialogTitle>
+        <DialogContent sx={{ px: { xs: 2, sm: 3 }, pb: { xs: 0, sm: 1.5 } }}>
+          <Stack spacing={1.25} sx={{ mt: 0.5 }}>
+            <Typography variant="body2" color="text.secondary">
+              Any plans you&apos;ve RSVP&apos;d to will stay on your
+              schedule.
+            </Typography>
+            {community?.visibility === "private" ? (
+              <Typography variant="body2" color="text.secondary">
+                Because this is a private community, rejoining later means
+                sending a new request to the owner.
+              </Typography>
+            ) : (
+              <Typography variant="body2" color="text.secondary">
+                You can rejoin any time from this page.
+              </Typography>
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions
+          sx={{
+            display: "flex",
+            flexDirection: { xs: "column", sm: "row" },
+            alignItems: { xs: "stretch", sm: "center" },
+            justifyContent: { xs: "stretch", sm: "flex-end" },
+            gap: { xs: 1, sm: 1 },
+            pt: { xs: 1, sm: 1.5 },
+            px: { xs: 2, sm: 3 },
+            pb: { xs: 2, sm: 3 },
+          }}
+        >
+          <Button
+            variant="outlined"
+            onClick={() => setLeaveConfirmOpen(false)}
+            disabled={leaving}
+            sx={{
+              textTransform: "none",
+              fontWeight: 600,
+              borderRadius: 2.5,
+              width: { xs: "100%", sm: "auto" },
+            }}
+          >
+            Stay
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={handleLeave}
+            disabled={leaving}
+            sx={{
+              textTransform: "none",
+              fontWeight: 600,
+              borderRadius: 2.5,
+              boxShadow: "none",
+              width: { xs: "100%", sm: "auto" },
+              "&:hover": { boxShadow: "none", opacity: 0.92 },
+            }}
+            startIcon={
+              leaving ? <CircularProgress size={16} color="inherit" /> : <LogoutRoundedIcon />
+            }
+          >
+            {leaving ? "Leaving…" : "Leave community"}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Tabs */}
       <Box>
@@ -1237,7 +1370,7 @@ export default function CommunityDetailClient() {
               </Stack>
             )}
 
-            {/* Removed members — visible to owner/super admin only. Separated
+            {/* Removed members, visible to owner/super admin only. Separated
                 from the active list so the primary roster stays clean. */}
             {isOwner && removedMembers.length > 0 && (
               <Box sx={{ mt: 4 }}>
@@ -1385,7 +1518,7 @@ export default function CommunityDetailClient() {
               </Stack>
             )}
 
-            {/* Previously denied — declines still inside the 30-day cooldown
+            {/* Previously denied, declines still inside the 30-day cooldown
                 window. Owner can undo a denial here if it was a mistake. */}
             {declinedRequests.length > 0 && (
               <Box sx={{ mt: 4 }}>
@@ -1689,7 +1822,7 @@ function PendingRequestStatusBlock({
 
 /** Sign-in CTA rendered in place of the join / request-to-join card when a
  *  logged-out viewer reaches the slug URL (the canonical public / shareable
- *  destination for a community). `variant` picks the copy — "request" for
+ *  destination for a community). `variant` picks the copy, "request" for
  *  private communities that gate membership behind approval, "join" for
  *  open communities. `next` carries the viewer back to this page after
  *  sign-in so the post-login landing feels intentional. */

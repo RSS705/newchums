@@ -39,6 +39,7 @@ import SiteHeader, { HEADER_MIN_HEIGHT } from "@/components/layout/SiteHeader";
 import MarketingNavSection from "@/components/layout/MarketingNavSection";
 import LandingFooter from "@/components/landing/LandingFooter";
 import NotificationBell from "@/components/layout/NotificationBell";
+import PasswordSetupBanner from "@/components/layout/PasswordSetupBanner";
 
 export type AppShellUser = {
   name?: string | null;
@@ -62,11 +63,16 @@ type AppShellProps = {
   children: React.ReactNode;
   /** User data for sidebar welcome; omit when unknown */
   user?: AppShellUser | null;
+  /** When true, show the "finish setting up your account" banner above the
+   *  shell. Resolved server-side from the user row's password_setup_pending
+   *  column so we don't need a client round-trip to decide whether to
+   *  render it. */
+  passwordSetupPending?: boolean;
 };
 
 type NavProfile = { avatar_url?: string | null; name?: string | null; username?: string | null; role?: string | null };
 
-export default function AppShell({ children, user }: AppShellProps) {
+export default function AppShell({ children, user, passwordSetupPending }: AppShellProps) {
   const pathname = usePathname();
   const router = useRouter();
   const isAuthenticated = Boolean(user);
@@ -543,6 +549,7 @@ export default function AppShell({ children, user }: AppShellProps) {
           pb: 0,
         }}
       >
+        {isAuthenticated && passwordSetupPending && <PasswordSetupBanner />}
         <Box
           sx={{
             flex: 1,
