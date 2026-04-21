@@ -26,6 +26,11 @@ import { apiFetch, getApiBaseUrl } from "@/lib/apiClient";
 import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
 import { loadGooglePlacesScript } from "@/lib/loadGooglePlaces";
 import { scrollToFirstError } from "@/lib/scrollToFirstError";
+import {
+  CommunityBannerEditor,
+  OperatingHoursEditor,
+  type OperatingHours,
+} from "@/components/communities";
 
 function slugify(text: string): string {
   return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 50);
@@ -67,6 +72,17 @@ export default function CreateCommunityClient() {
   const [logoBlob, setLogoBlob] = useState<Blob | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Operating hours (optional, free for all plans).
+  const [operatingHours, setOperatingHours] = useState<OperatingHours | null>(null);
+
+  // Community banner (optional, Community Pro only). We resolve the creator's
+  // plan from /profile; banner upload UI stays hidden for non-Pro users so
+  // there are no upgrade nags in the normal create flow. The banner, if
+  // present, is uploaded after the community is created (same pattern as the
+  // community logo).
+  const [hasCommunityPro, setHasCommunityPro] = useState(false);
+  const [bannerBlob, setBannerBlob] = useState<Blob | null>(null);
+
   // Field refs for scroll-to-first-error
   const fieldRefs = useRef<Record<string, HTMLElement | null>>({});
   const setFieldRef = useCallback(
@@ -78,6 +94,26 @@ export default function CreateCommunityClient() {
     loadGooglePlacesScript().catch((err) => {
       console.warn("[CreateCommunityClient] Google Places script failed to load:", err);
     });
+  }, []);
+
+  // Resolve creator's plan to decide whether to surface the banner uploader.
+  // Non-Pro users see no upload UI at all, no locked controls, no upgrade
+  // nags. A super admin pretending to create a community for someone else
+  // would still get their own subscription plan here, that's the same
+  // trade-off the backend finalize handler makes (the Pro check there is on
+  // the owner's plan, which during create *is* the creator).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch("/profile", { auth: true });
+        if (!res.ok) return;
+        const d = await res.json();
+        if (cancelled || !d.ok) return;
+        if (d.profile?.subscription_plan === "community_pro") setHasCommunityPro(true);
+      } catch { /* non-fatal */ }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -151,6 +187,26 @@ export default function CreateCommunityClient() {
     } catch { /* best-effort */ }
   };
 
+  const uploadCommunityBanner = async (communityId: string) => {
+    if (!bannerBlob) return;
+    const contentType = bannerBlob.type || "image/webp";
+    try {
+      const initRes = await apiFetch("/media/init", {
+        auth: true, method: "POST",
+        body: JSON.stringify({ purpose: "community_banner", contentType, contentLength: bannerBlob.size }),
+      });
+      const initData = await initRes.json() as { ok?: boolean; uploadUrl?: string; objectKey?: string };
+      if (!initData.ok || !initData.uploadUrl || !initData.objectKey) return;
+      const uploadUrl = `${getApiBaseUrl()}${initData.uploadUrl}`;
+      const uploadRes = await fetch(uploadUrl, { method: "PUT", body: bannerBlob, headers: { "Content-Type": contentType }, credentials: "omit" });
+      if (!uploadRes.ok) return;
+      await apiFetch("/media/finalize", {
+        auth: true, method: "POST",
+        body: JSON.stringify({ objectKey: initData.objectKey, purpose: "community_banner", communityId }),
+      });
+    } catch { /* best-effort */ }
+  };
+
   const validate = (): Record<string, string> => {
     const errs: Record<string, string> = {};
     if (!name.trim()) errs.name = "Give your community a name";
@@ -200,12 +256,14 @@ export default function CreateCommunityClient() {
           location_lat: isOnline ? null : locationLat,
           location_lng: isOnline ? null : locationLng,
           interest_items: selectedHobbies.map((h) => ({ slug: h.slug, name: h.name })),
+          operating_hours: operatingHours,
         }),
       });
       const data = await res.json();
       if (data.ok) {
-        if (logoBlob && data.community?.id) {
-          await uploadCommunityLogo(data.community.id);
+        if (data.community?.id) {
+          if (logoBlob) await uploadCommunityLogo(data.community.id);
+          if (bannerBlob && hasCommunityPro) await uploadCommunityBanner(data.community.id);
         }
         toast.success("Community created!");
         router.push(`/communities/${data.community.slug}`);
@@ -250,6 +308,18 @@ export default function CreateCommunityClient() {
           Bring people together around a shared interest or location. You can always update the details later.
         </Typography>
       </Box>
+
+      {/* Banner (Community Pro only). Hidden entirely for non-Pro creators,
+          the spec is explicit about no locked controls or upgrade nags. */}
+      {hasCommunityPro && (
+        <AppCard>
+          <CommunityBannerEditor
+            existingBannerUrl={null}
+            pendingBlob={bannerBlob}
+            onChangePendingBlob={setBannerBlob}
+          />
+        </AppCard>
+      )}
 
       {/* Basic details */}
       <AppCard>
@@ -431,6 +501,9 @@ export default function CreateCommunityClient() {
           />
         </Stack>
       </AppCard>
+
+      {/* Operating hours (optional, free for all communities) */}
+      <OperatingHoursEditor value={operatingHours} onChange={setOperatingHours} />
 
       {/* Access */}
       <AppCard>

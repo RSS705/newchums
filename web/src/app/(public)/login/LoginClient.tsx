@@ -134,7 +134,7 @@ export default function LoginClient() {
               return;
             }
             if (code === "OAuthAccount" || code === "NoPasswordOnFile") {
-              setError("No password on file for this email. Use \u201cForgot password?\u201d below to set one, or sign in with Google.");
+              setError("This account doesn\u2019t have a password yet. Use \u201cForgot password?\u201d below to set one, or sign in with Google.");
               return;
             }
             if (code === "PasswordSetupPending") {

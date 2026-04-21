@@ -3,11 +3,12 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
-  Box, Typography, Stack, Button, Chip, Avatar, CircularProgress,
+  Box, Typography, Stack, Button, Chip, Avatar, AvatarGroup, CircularProgress,
   Divider, IconButton, Tooltip, Tab, Tabs, Grid, TextField,
   Dialog, DialogTitle, DialogContent, DialogActions,
   Menu, MenuItem, ListItemIcon, ListItemText,
 } from "@mui/material";
+import ArchiveRoundedIcon from "@mui/icons-material/ArchiveRounded";
 import AssignmentIndRoundedIcon from "@mui/icons-material/AssignmentIndRounded";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
@@ -31,6 +32,7 @@ import { AppCard, useToast } from "@/components/ui";
 import EventCard, { type PlanEvent } from "@/components/events/EventCard";
 import { apiFetch, getAuthToken, getAvatarBaseUrl } from "@/lib/apiClient";
 import { effectiveCategorySet } from "@/lib/interestUtils";
+import { OperatingHoursInline, type OperatingHours } from "@/components/communities";
 
 type CommunityData = {
   id: string;
@@ -50,6 +52,13 @@ type CommunityData = {
   location_lat: number | null;
   location_lng: number | null;
   avatar_key: string | null;
+  /** Wide hero image, Community Pro feature. May appear on every detail
+   *  surface (public, restricted, logged-in) when set. */
+  banner_key: string | null;
+  /** Day-by-day open/close times, free for all communities. Omitted from
+   *  the restricted (private non-member) response so private operational
+   *  details don't leak publicly. */
+  operating_hours?: OperatingHours | null;
   owner_user_id: string;
   owner_name: string | null;
   owner_username: string | null;
@@ -288,9 +297,13 @@ export default function CommunityDetailClient() {
 
   useEffect(() => {
     if (!community || restricted) return;
-    if (tabIndex === 0) fetchEvents();
-    else if (tabIndex === 1) fetchMembers();
-  }, [community, restricted, tabIndex, fetchEvents, fetchMembers]);
+    // Plans and members are both needed up-front, plans for the default tab,
+    // members for the inline public member preview above the tabs. Fetching
+    // both on mount means tab switches feel instant and the page renders a
+    // lived-in snapshot immediately instead of waiting for a tab click.
+    fetchEvents();
+    fetchMembers();
+  }, [community, restricted, fetchEvents, fetchMembers]);
 
   // Apply an incoming ?tab=<name> query param to tabIndex exactly once, the
   // first time we know enough about the viewer to evaluate eligibility
@@ -509,33 +522,124 @@ export default function CommunityDetailClient() {
   }
 
   if (isClosed) {
+    // Deliberate end-state for a community whose owner soft-closed it.
+    // Composed as a full-page empty state rather than a floating card so
+    // it reads as "this is the page" instead of "this is a modal on top
+    // of the page." Server response is intentionally minimal
+    // (id/slug/name/status only, see GET /communities/:slug) so no plan,
+    // member, hobby, or link data is reachable here. Typography rhythm,
+    // icon-badge treatment, and motion follow docs/UI_Patterns.md.
     return (
-      <Stack spacing={{ xs: 3, sm: 4 }}>
-        <AppCard>
-          <Stack spacing={2.5} alignItems="center" sx={{ py: { xs: 4, sm: 5 } }}>
-            <BlockRoundedIcon sx={{ fontSize: 56, color: "text.disabled", opacity: 0.5 }} />
-            <Box sx={{ textAlign: "center" }}>
-              <Typography
-                component="h1"
-                sx={{ fontSize: { xs: "1.5rem", sm: "1.75rem" }, fontWeight: 700, lineHeight: 1.25, letterSpacing: "-0.02em", mb: 0.5 }}
-              >
-                {community.name}
-              </Typography>
-              <Typography variant="body1" color="text.secondary">
-                This community has been closed by its owner.
-              </Typography>
-            </Box>
+      <Box
+        sx={{
+          maxWidth: 560,
+          mx: "auto",
+          px: { xs: 2, sm: 3 },
+          py: { xs: 5, sm: 9 },
+          textAlign: "center",
+        }}
+      >
+        <Stack spacing={3} alignItems="center">
+          <Box
+            sx={{
+              width: { xs: 84, sm: 96 },
+              height: { xs: 84, sm: 96 },
+              borderRadius: "50%",
+              bgcolor: "action.hover",
+              color: "text.secondary",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow:
+                "0 2px 10px rgba(0,0,0,0.04), inset 0 0 0 1px rgba(0,0,0,0.04)",
+            }}
+          >
+            <ArchiveRoundedIcon sx={{ fontSize: { xs: 38, sm: 44 } }} />
+          </Box>
+
+          <Chip
+            label="No longer active"
+            size="small"
+            sx={{
+              height: 22,
+              fontSize: "0.6875rem",
+              fontWeight: 600,
+              letterSpacing: 0.3,
+              textTransform: "uppercase",
+              bgcolor: "action.hover",
+              color: "text.secondary",
+              borderRadius: 1.5,
+            }}
+          />
+
+          <Stack spacing={1.25} alignItems="center" sx={{ width: "100%" }}>
+            <Typography
+              component="h1"
+              sx={{
+                fontSize: { xs: "1.5rem", sm: "1.875rem" },
+                fontWeight: 700,
+                lineHeight: 1.2,
+                letterSpacing: "-0.02em",
+                wordBreak: "break-word",
+                maxWidth: 480,
+              }}
+            >
+              {community.name}
+            </Typography>
+            <Typography
+              variant="body1"
+              color="text.secondary"
+              sx={{ lineHeight: 1.6, maxWidth: 420, fontSize: { xs: "0.9375rem", sm: "1rem" } }}
+            >
+              The owner closed this community. Its plans and members are no longer available.
+            </Typography>
+          </Stack>
+
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            spacing={1.25}
+            sx={{ pt: 1, width: { xs: "100%", sm: "auto" } }}
+          >
             <Button
               component={Link}
               href="/communities"
-              variant="outlined"
-              sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, borderColor: "divider", color: "text.secondary" }}
+              variant="contained"
+              sx={{
+                textTransform: "none",
+                fontWeight: 600,
+                borderRadius: 2.5,
+                px: 3,
+                py: 1,
+                boxShadow: "none",
+                transition: "opacity 140ms ease, transform 140ms ease",
+                "&:hover": {
+                  boxShadow: "none",
+                  opacity: 0.94,
+                  transform: "translateY(-1px)",
+                },
+              }}
             >
               Browse communities
             </Button>
+            <Button
+              component={Link}
+              href="/"
+              variant="text"
+              sx={{
+                textTransform: "none",
+                fontWeight: 600,
+                borderRadius: 2.5,
+                px: 2,
+                color: "text.secondary",
+                transition: "color 140ms ease, background-color 140ms ease",
+                "&:hover": { color: "text.primary", bgcolor: "action.hover" },
+              }}
+            >
+              Back home
+            </Button>
           </Stack>
-        </AppCard>
-      </Stack>
+        </Stack>
+      </Box>
     );
   }
 
@@ -544,18 +648,29 @@ export default function CommunityDetailClient() {
 
   if (restricted) {
     return (
-      <Stack spacing={{ xs: 3, sm: 4 }}>
+      <Stack spacing={{ xs: 2, sm: 3 }}>
+        {/* Banner hero renders on the restricted landing too; it's visual
+            only and never carries plan/member info, so it respects the
+            privacy contract. Omitted when no banner is set. */}
+        {community.banner_key && (
+          <CommunityBannerHero
+            communityId={community.id}
+            name={community.name}
+            bannerKey={community.banner_key}
+          />
+        )}
+
         {/* Preview header */}
         <AppCard>
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={2.5} alignItems={{ sm: "flex-start" }}>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ sm: "flex-start" }}>
             <Avatar
               variant="rounded"
               src={community.avatar_key ? `${getAvatarBaseUrl()}/communities/${community.id}/avatar` : undefined}
               sx={{
-                width: 64, height: 64,
+                width: 56, height: 56,
                 borderRadius: 2.5,
                 bgcolor: "primary.main", color: "primary.contrastText",
-                fontWeight: 700, fontSize: "1.5rem",
+                fontWeight: 700, fontSize: "1.375rem",
               }}
             >
               {community.name.charAt(0).toUpperCase()}
@@ -867,18 +982,29 @@ export default function CommunityDetailClient() {
   }
 
   return (
-    <Stack spacing={{ xs: 3, sm: 4 }}>
+    <Stack spacing={{ xs: 2, sm: 3 }}>
+      {/* Community Pro banner hero. Renders above the header card on the
+          full detail view; hidden when no banner is set so non-Pro
+          communities keep their existing look. */}
+      {community.banner_key && (
+        <CommunityBannerHero
+          communityId={community.id}
+          name={community.name}
+          bannerKey={community.banner_key}
+        />
+      )}
+
       {/* Header card */}
       <AppCard>
-        <Stack direction={{ xs: "column", sm: "row" }} spacing={2.5} alignItems={{ sm: "flex-start" }}>
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ sm: "flex-start" }}>
           <Avatar
             variant="rounded"
             src={community.avatar_key ? `${getAvatarBaseUrl()}/communities/${community.id}/avatar` : undefined}
             sx={{
-              width: 64, height: 64,
+              width: 56, height: 56,
               borderRadius: 2.5,
               bgcolor: "primary.main", color: "primary.contrastText",
-              fontWeight: 700, fontSize: "1.5rem",
+              fontWeight: 700, fontSize: "1.375rem",
             }}
           >
             {community.name.charAt(0).toUpperCase()}
@@ -887,7 +1013,7 @@ export default function CommunityDetailClient() {
             <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
               <Typography
                 component="h1"
-                sx={{ fontSize: { xs: "1.5rem", sm: "1.75rem" }, fontWeight: 700, lineHeight: 1.25, letterSpacing: "-0.02em" }}
+                sx={{ fontSize: { xs: "1.5rem", sm: "1.75rem" }, fontWeight: 700, lineHeight: 1.2, letterSpacing: "-0.02em" }}
                 noWrap
               >
                 {community.name}
@@ -904,7 +1030,7 @@ export default function CommunityDetailClient() {
             </Stack>
             {/* Hobby chips */}
             {community.hobbies && community.hobbies.length > 0 && (
-              <Stack direction="row" gap={0.5} flexWrap="wrap" useFlexGap sx={{ mb: 1 }}>
+              <Stack direction="row" gap={0.5} flexWrap="wrap" useFlexGap sx={{ mb: 0.75 }}>
                 {community.hobbies.map((h) => {
                   const isMatch = viewerHobbyCategories?.has(h.name.toLowerCase()) || viewerHobbyCategories?.has(h.slug.toLowerCase());
                   return (
@@ -933,7 +1059,7 @@ export default function CommunityDetailClient() {
               <Typography
                 variant="body1"
                 color="text.secondary"
-                sx={{ mb: 1.5, lineHeight: 1.6, "& p": { m: 0 }, "& a": { color: "primary.main" } }}
+                sx={{ mb: 1, lineHeight: 1.55, "& p": { m: 0 }, "& a": { color: "primary.main" } }}
                 dangerouslySetInnerHTML={{ __html: community.description }}
               />
             )}
@@ -970,6 +1096,12 @@ export default function CommunityDetailClient() {
                   </>
                 ) : null}
               </Stack>
+              {/* Operating hours: one small meta row with a popover for the
+                  full schedule. Keeps hours discoverable without letting
+                  them push plans below the fold. Renders nothing when no
+                  hours are set, and is unreachable on restricted private-
+                  community responses (API omits `operating_hours`). */}
+              <OperatingHoursInline hours={community.operating_hours} />
               {community.website && (
                 <Stack
                   component="a"
@@ -1016,11 +1148,26 @@ export default function CommunityDetailClient() {
                   </Typography>
                 </Stack>
               )}
+              {/* Inline member preview: folded into the meta stack instead
+                  of living as its own AppCard above the tabs, keeps the
+                  top-of-page stack shorter without losing the lived-in
+                  signal. Same privacy contract as before (usernames only
+                  for logged-out viewers, never rendered on the restricted
+                  private-community branch). */}
+              {members.length > 0 && (
+                <CommunityMemberPreview
+                  members={members}
+                  totalCount={community.member_count}
+                  hideRealName={isAuthenticated === false}
+                  onSeeAll={() => setTabIndex(1)}
+                  onOpenProfile={(handle) => router.push(`/u/${handle}`)}
+                />
+              )}
             </Stack>
           </Box>
         </Stack>
 
-        <Divider sx={{ my: 2 }} />
+        <Divider sx={{ my: 1.5 }} />
 
         <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap>
           {!isMember && viewerRemoved && (
@@ -1035,13 +1182,18 @@ export default function CommunityDetailClient() {
             </Tooltip>
           )}
           {!isMember && !viewerPendingRequest && !viewerRemoved && isAuthenticated === false && (
+            // Welcoming CTA for cold / QR traffic: the button invites the viewer
+            // in rather than assuming they already have an account. Clicking
+            // still routes through `/login?next=...` (sign-in or sign-up are
+            // both reachable from there), so the underlying auth flow and
+            // return destination are unchanged.
             <Button
               component={Link}
               href={`/login?next=${encodeURIComponent(`/communities/${slug}`)}`}
               variant="contained"
               sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
             >
-              {community.join_mode === "approval_required" ? "Sign in to request to join" : "Sign in to join"}
+              {community.join_mode === "approval_required" ? "Request to join" : "Join this community"}
             </Button>
           )}
           {!isMember && !viewerPendingRequest && !viewerRemoved && isAuthenticated !== false && (
@@ -1051,7 +1203,7 @@ export default function CommunityDetailClient() {
               disabled={joining}
               sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
             >
-              {joining ? <CircularProgress size={18} color="inherit" /> : community.join_mode === "approval_required" ? "Request to join" : "Join community"}
+              {joining ? <CircularProgress size={18} color="inherit" /> : community.join_mode === "approval_required" ? "Request to join" : "Join this community"}
             </Button>
           )}
           {viewerPendingRequest && !isMember && (
@@ -1236,7 +1388,7 @@ export default function CommunityDetailClient() {
             const nextHref = url.pathname + (url.search || "") + (url.hash || "");
             router.replace(nextHref, { scroll: false });
           }}
-          sx={{ mb: 2.5 }}
+          sx={{ mb: 2 }}
         >
           <Tab
             label={`Plans${events.length > 0 ? ` (${events.length})` : ""}`}
@@ -1267,16 +1419,14 @@ export default function CommunityDetailClient() {
               <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}><CircularProgress size={28} /></Box>
             ) : events.length === 0 ? (
               <AppCard>
-                <Stack spacing={2} alignItems="center" sx={{ py: { xs: 5, sm: 6 } }}>
+                <Stack spacing={2} alignItems="center" sx={{ py: { xs: 5, sm: 6 }, px: { xs: 2, sm: 3 } }}>
                   <EventNoteRoundedIcon sx={{ fontSize: 56, color: "text.disabled", opacity: 0.5 }} />
-                  <Box sx={{ textAlign: "center" }}>
+                  <Box sx={{ textAlign: "center", maxWidth: 420 }}>
                     <Typography variant="h6" fontWeight={600} sx={{ mb: 0.5 }}>
-                      No upcoming plans yet
+                      No plans posted yet
                     </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      {isMember
-                        ? "Be the first to organize something for this community."
-                        : "Plans from this community will appear here."}
+                    <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+                      Upcoming plans from this community will appear here.
                     </Typography>
                   </Box>
                   {isMember && (
@@ -1835,12 +1985,12 @@ function SignInToJoinCard({
 }) {
   const next = `/communities/${slug}`;
   const href = `/login?next=${encodeURIComponent(next)}`;
-  const title = variant === "request" ? "Sign in to request to join" : "Sign in to join";
-  const subtitle =
-    variant === "request"
-      ? "Create a free NewChums account or sign in, then send a request to the owner."
-      : "Create a free NewChums account or sign in to join this community.";
-  const buttonLabel = variant === "request" ? "Sign in to continue" : "Sign in to join";
+  // Calm, account-agnostic copy. Cold / QR traffic may not have a NewChums
+  // account yet, the subtitle frames sign-up as the natural next step without
+  // selling the value of membership on top of it.
+  const title = variant === "request" ? "Request to join this community" : "Join this community";
+  const subtitle = "Sign in or create a free NewChums account to continue.";
+  const buttonLabel = variant === "request" ? "Request to join" : "Join this community";
   return (
     <AppCard>
       <Stack spacing={2}>
@@ -1914,5 +2064,149 @@ function MemberBenefitRow({
         </Typography>
       </Box>
     </Stack>
+  );
+}
+
+/** Compact "signs of life" strip now folded inline into the header card's
+ *  meta stack. Surfaces up to four overlapping avatars + a short handle
+ *  list + a "See all" link to the Members tab. Tighter than the old
+ *  standalone AppCard version so the top-of-page stack stays short.
+ *  Privacy contract unchanged: logged-out viewers (hideRealName) only
+ *  ever see `@username`, never the real `name` field. Never renders on
+ *  the restricted preview; the API doesn't expose members there. */
+function CommunityMemberPreview({
+  members,
+  totalCount,
+  hideRealName,
+  onSeeAll,
+  onOpenProfile,
+}: {
+  members: Member[];
+  totalCount: number;
+  hideRealName: boolean;
+  onSeeAll: () => void;
+  onOpenProfile: (handle: string) => void;
+}) {
+  const shown = members.slice(0, 4);
+  const handles = shown
+    .map((m) => m.username?.replace(/^@/, ""))
+    .filter((h): h is string => !!h);
+  const remaining = Math.max(0, totalCount - shown.length);
+  return (
+    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mt: 0.25 }}>
+      <AvatarGroup
+        max={4}
+        sx={{
+          "& .MuiAvatar-root": {
+            width: 24, height: 24,
+            fontSize: "0.7rem", fontWeight: 600,
+            borderColor: "background.paper",
+            borderWidth: 1.5,
+          },
+        }}
+      >
+        {shown.map((m) => {
+          const handle = m.username?.replace(/^@/, "") ?? null;
+          const initialSource = hideRealName
+            ? (handle || "?")
+            : (m.name || m.username || "?");
+          return (
+            <Avatar
+              key={m.id}
+              src={m.avatar_url ? `${getAvatarBaseUrl()}${m.avatar_url}` : undefined}
+              onClick={() => { if (handle) onOpenProfile(handle); }}
+              sx={{
+                bgcolor: "grey.300",
+                cursor: handle ? "pointer" : "default",
+              }}
+            >
+              {initialSource.charAt(0).toUpperCase()}
+            </Avatar>
+          );
+        })}
+      </AvatarGroup>
+      {handles.length > 0 && (
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          sx={{ fontSize: "0.8125rem", lineHeight: 1.5, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+        >
+          {handles.slice(0, 2).map((h) => `@${h}`).join(", ")}
+          {remaining > 0 && ` and ${remaining} other${remaining === 1 ? "" : "s"}`}
+        </Typography>
+      )}
+      <Typography
+        component="button"
+        type="button"
+        variant="body2"
+        onClick={onSeeAll}
+        sx={{
+          fontSize: "0.8125rem",
+          fontWeight: 600,
+          color: "primary.main",
+          bgcolor: "transparent",
+          border: 0,
+          p: 0,
+          cursor: "pointer",
+          "&:hover": { textDecoration: "underline" },
+        }}
+      >
+        See all
+      </Typography>
+    </Stack>
+  );
+}
+
+/** Wide hero image above the header card. Rendered on every detail surface
+ *  (public, restricted, logged-in) whenever a banner is set, it's visual
+ *  only and carries no plan/member info, so the privacy contract is
+ *  preserved.
+ *
+ *  The server sends the banner bytes with `Cache-Control: public,
+ *  max-age=86400`, so without a cache-buster the browser keeps serving a
+ *  stale image after the owner replaces their banner. `bannerKey` is the
+ *  R2 object key (which bakes in a timestamp) and changes on every new
+ *  upload, so using its tail as a `?v=` query param gives every viewer a
+ *  fresh URL exactly when (and only when) the banner actually changes.
+ *  The API route ignores the query string, it resolves the banner from
+ *  the community row in the DB. */
+function CommunityBannerHero({
+  communityId,
+  name,
+  bannerKey,
+}: {
+  communityId: string;
+  name: string;
+  bannerKey: string | null;
+}) {
+  const version = bannerKey ? bannerKey.split("/").pop() || "" : "";
+  const src = version
+    ? `${getAvatarBaseUrl()}/communities/${communityId}/banner?v=${encodeURIComponent(version)}`
+    : `${getAvatarBaseUrl()}/communities/${communityId}/banner`;
+  return (
+    <Box
+      sx={{
+        width: "100%",
+        // 5:1 keeps the banner reading as a hero strip without swallowing
+        // the top of the page; matches the crop aspect the editor now
+        // produces so new uploads render exactly as the user framed them.
+        aspectRatio: "5 / 1",
+        borderRadius: { xs: 2, sm: 2.5 },
+        overflow: "hidden",
+        bgcolor: "action.hover",
+        position: "relative",
+      }}
+    >
+      {/* Raw <img> is intentional: the URL is an authenticated backend
+          media route; Next.js Image would need remotePatterns config for
+          the API worker and adds nothing at this size. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt={`${name} banner`}
+        loading="lazy"
+        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+      />
+    </Box>
   );
 }

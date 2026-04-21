@@ -26,6 +26,11 @@ import { apiFetch, getApiBaseUrl, getAvatarBaseUrl } from "@/lib/apiClient";
 import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
 import { loadGooglePlacesScript } from "@/lib/loadGooglePlaces";
 import { scrollToFirstError } from "@/lib/scrollToFirstError";
+import {
+  CommunityBannerEditor,
+  OperatingHoursEditor,
+  type OperatingHours,
+} from "@/components/communities";
 
 const FIELD_ORDER = ["name", "description", "hobby", "location", "website"] as const;
 
@@ -70,6 +75,21 @@ export default function EditCommunityClient() {
   const [closing, setClosing] = useState(false);
   const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
 
+  // Operating hours (free for all plans)
+  const [operatingHours, setOperatingHours] = useState<OperatingHours | null>(null);
+
+  // Banner (Community Pro only). `viewerHasProBannerAccess` comes from the
+  // GET /communities/:slug response; the server resolves it from the
+  // community owner's subscription_plan so super admins editing on behalf of
+  // a Pro owner also see the uploader. Non-Pro owners see nothing.
+  const [viewerHasProBannerAccess, setViewerHasProBannerAccess] = useState(false);
+  const [existingBannerKey, setExistingBannerKey] = useState<string | null>(null);
+  const [bannerBlob, setBannerBlob] = useState<Blob | null>(null);
+  const [bannerRemoving, setBannerRemoving] = useState(false);
+  // Cache-bust the banner preview URL whenever we upload or remove so the
+  // browser doesn't keep serving the old R2 image from its cache.
+  const [bannerRefreshTs, setBannerRefreshTs] = useState<number>(() => Date.now());
+
   // Field refs for scroll-to-first-error
   const fieldRefs = useRef<Record<string, HTMLElement | null>>({});
   const setFieldRef = useCallback(
@@ -101,6 +121,9 @@ export default function EditCommunityClient() {
         setLocationLat(c.location_lat ?? null);
         setLocationLng(c.location_lng ?? null);
         setExistingAvatarKey(c.avatar_key ?? null);
+        setExistingBannerKey(c.banner_key ?? null);
+        setOperatingHours(c.operating_hours ?? null);
+        setViewerHasProBannerAccess(data.viewerHasProBannerAccess === true);
         setIsOwner(data.viewerMembership?.role === "owner");
         // Load hobbies
         if (Array.isArray(c.hobbies)) {
@@ -189,6 +212,59 @@ export default function EditCommunityClient() {
     return errs;
   };
 
+  const uploadBanner = async () => {
+    if (!bannerBlob || !communityId) return false;
+    const contentType = bannerBlob.type || "image/webp";
+    try {
+      const initRes = await apiFetch("/media/init", {
+        auth: true, method: "POST",
+        body: JSON.stringify({ purpose: "community_banner", contentType, contentLength: bannerBlob.size }),
+      });
+      const initData = await initRes.json() as { ok?: boolean; uploadUrl?: string; objectKey?: string };
+      if (!initData.ok || !initData.uploadUrl || !initData.objectKey) { toast.error("Banner upload failed"); return false; }
+      const uploadUrl = `${getApiBaseUrl()}${initData.uploadUrl}`;
+      const uploadRes = await fetch(uploadUrl, { method: "PUT", body: bannerBlob, headers: { "Content-Type": contentType }, credentials: "omit" });
+      if (!uploadRes.ok) { toast.error("Banner upload failed"); return false; }
+      const finalizeRes = await apiFetch("/media/finalize", {
+        auth: true, method: "POST",
+        body: JSON.stringify({ objectKey: initData.objectKey, purpose: "community_banner", communityId }),
+      });
+      const finalizeData = await finalizeRes.json() as { ok?: boolean; error?: string; message?: string };
+      if (!finalizeData.ok) {
+        toast.error(finalizeData.message || "Banner upload failed");
+        return false;
+      }
+      setExistingBannerKey(initData.objectKey!);
+      setBannerBlob(null);
+      setBannerRefreshTs(Date.now());
+      return true;
+    } catch {
+      toast.error("Banner upload failed");
+      return false;
+    }
+  };
+
+  const handleRemoveBanner = async () => {
+    if (!existingBannerKey || bannerRemoving) return;
+    setBannerRemoving(true);
+    try {
+      const res = await apiFetch(`/communities/${slug}`, {
+        auth: true, method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ banner_key: null }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setExistingBannerKey(null);
+        setBannerRefreshTs(Date.now());
+        toast.success("Banner removed");
+      } else {
+        toast.error(data.message || "Could not remove banner");
+      }
+    } catch { toast.error("Something went wrong"); }
+    setBannerRemoving(false);
+  };
+
   const handleSave = async () => {
     const errs = validate();
     if (Object.keys(errs).length > 0) {
@@ -201,6 +277,7 @@ export default function EditCommunityClient() {
     setSaving(true);
     try {
       if (logoBlob) await uploadLogo();
+      if (bannerBlob && viewerHasProBannerAccess) await uploadBanner();
 
       const res = await apiFetch(`/communities/${slug}`, {
         auth: true, method: "PATCH",
@@ -217,6 +294,7 @@ export default function EditCommunityClient() {
           location_lat: isOnline ? null : locationLat,
           location_lng: isOnline ? null : locationLng,
           interest_items: selectedHobbies.map((h) => ({ slug: h.slug, name: h.name })),
+          operating_hours: operatingHours,
         }),
       });
       const data = await res.json();
@@ -283,6 +361,24 @@ export default function EditCommunityClient() {
           Update your community details. Changes are saved when you click Save.
         </Typography>
       </Box>
+
+      {/* Banner (Community Pro only). Hidden entirely for non-Pro owners,
+          no locked controls, no upgrade nag. */}
+      {viewerHasProBannerAccess && (
+        <AppCard>
+          <CommunityBannerEditor
+            existingBannerUrl={
+              existingBannerKey && communityId
+                ? `${getAvatarBaseUrl()}/communities/${communityId}/banner?v=${bannerRefreshTs}`
+                : null
+            }
+            pendingBlob={bannerBlob}
+            onChangePendingBlob={setBannerBlob}
+            onRemoveExisting={handleRemoveBanner}
+            removing={bannerRemoving}
+          />
+        </AppCard>
+      )}
 
       {/* Basic details */}
       <AppCard>
@@ -438,6 +534,9 @@ export default function EditCommunityClient() {
           />
         </Stack>
       </AppCard>
+
+      {/* Operating hours (optional, free for all communities) */}
+      <OperatingHoursEditor value={operatingHours} onChange={setOperatingHours} />
 
       {/* Access */}
       <AppCard>

@@ -54,7 +54,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             err.code = "PasswordSetupPending";
             throw err;
           }
-          const err = new CredentialsSignin("No password on file. Use 'Forgot password' to set one, or sign in with Google.");
+          const err = new CredentialsSignin("This account doesn't have a password yet. Use 'Forgot password' to set one, or sign in with Google.");
           err.code = "NoPasswordOnFile";
           throw err;
         }

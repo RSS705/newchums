@@ -1002,7 +1002,6 @@ export default function CreateEventClient() {
           since invite_only plans never appear in Explore or community feeds.
           See AGENTS.md -> Plan Feed and Community Visibility Contract. */}
       <CommunityLinkSection
-        mode="add"
         visibility={visibility}
         myCommunities={myCommunities as SharedMyCommunity[]}
         selectedCommunityId={selectedCommunityId}

@@ -69,6 +69,7 @@ import {
 import { checkContactRateLimit, checkRateLimit } from "./lib/contactRateLimit";
 import {
   countOwnedCommunities,
+  hasCommunityProAccess,
   isValidSubscriptionPlan,
   MAX_OWNED_COMMUNITIES,
   type SubscriptionPlan,
@@ -86,6 +87,7 @@ import {
 } from "./lib/notificationPrefs";
 import {
   MAX_AVATAR_BYTES,
+  MAX_COMMUNITY_BANNER_BYTES,
   MAX_EVENT_BANNER_BYTES,
   MAX_ROADMAP_ATTACHMENT_BYTES,
   buildObjectKey,
@@ -3245,7 +3247,12 @@ app.post("/media/init", async (c) => {
       contentType?: string;
       contentLength?: number;
     };
-    const purpose = (body.purpose ?? "avatar") as "avatar" | "event_banner" | "roadmap_attachment";
+    const purpose = (body.purpose ?? "avatar") as
+      | "avatar"
+      | "event_banner"
+      | "roadmap_attachment"
+      | "community_avatar"
+      | "community_banner";
     const contentType = (body.contentType ?? "").trim().toLowerCase();
     const contentLength = typeof body.contentLength === "number" ? body.contentLength : 0;
 
@@ -3276,7 +3283,11 @@ app.post("/media/init", async (c) => {
       c.env.NEXTAUTH_SECRET,
     );
 
-    const maxBytes = purpose === "roadmap_attachment" ? MAX_ROADMAP_ATTACHMENT_BYTES : purpose === "event_banner" ? MAX_EVENT_BANNER_BYTES : MAX_AVATAR_BYTES;
+    const maxBytes =
+      purpose === "roadmap_attachment" ? MAX_ROADMAP_ATTACHMENT_BYTES :
+      purpose === "community_banner" ? MAX_COMMUNITY_BANNER_BYTES :
+      purpose === "event_banner" ? MAX_EVENT_BANNER_BYTES :
+      MAX_AVATAR_BYTES;
     return c.json({
       ok: true,
       uploadToken,
@@ -3336,7 +3347,12 @@ app.post("/media/finalize", async (c) => {
   try {
     const body = (await c.req.json()) as { objectKey?: string; purpose?: string; eventId?: string; communityId?: string };
     const objectKey = (body.objectKey ?? "").trim();
-    const purpose = (body.purpose ?? "avatar") as "avatar" | "event_banner" | "roadmap_attachment" | "community_avatar";
+    const purpose = (body.purpose ?? "avatar") as
+      | "avatar"
+      | "event_banner"
+      | "roadmap_attachment"
+      | "community_avatar"
+      | "community_banner";
 
     const sql = getSql(c.env);
     const appUserId = await ensureAppUserId(
@@ -3397,6 +3413,42 @@ app.post("/media/finalize", async (c) => {
       if (cm[0].owner_user_id !== appUserId && !isSuperAdmin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
       await sql`UPDATE newchums.communities SET avatar_key = ${objectKey}, updated_at = now() WHERE id = ${communityId}`;
       return c.json({ ok: true, avatarUrl: `/communities/${communityId}/avatar?v=${Date.now()}` });
+    }
+
+    if (purpose === "community_banner") {
+      // Community banner is a Community Pro feature. Gated on the community
+      // owner's subscription plan, not the uploader's (super admins can
+      // still manage on behalf of the owner, same pattern as community
+      // avatar). Non-Pro owners calling this endpoint get 403, the web form
+      // hides the upload UI for them so this is only reached by direct API
+      // callers or stale clients.
+      const expectedPrefix = `community_banners/${appUserId}/`;
+      if (!objectKey.startsWith(expectedPrefix)) {
+        return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+      }
+      const communityId = body.communityId?.trim();
+      if (!communityId) {
+        return c.json({ ok: false, error: "MISSING_COMMUNITY_ID" }, 400);
+      }
+      const obj = await c.env.MEDIA_BUCKET.head(objectKey);
+      if (!obj) {
+        return c.json({ ok: false, error: "OBJECT_NOT_FOUND" }, 404);
+      }
+      const cm = (await sql`
+        SELECT c.id, c.owner_user_id, u.subscription_plan
+        FROM newchums.communities c
+        JOIN newchums.users u ON u.id = c.owner_user_id
+        WHERE c.id = ${communityId}
+        LIMIT 1
+      `) as { id: string; owner_user_id: string; subscription_plan: string | null }[];
+      if (cm.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+      const isSuperAdmin = ((await sql`SELECT role FROM newchums.users WHERE id = ${appUserId} LIMIT 1`) as { role: string | null }[])[0]?.role === "super_admin";
+      if (cm[0].owner_user_id !== appUserId && !isSuperAdmin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+      if (!hasCommunityProAccess(cm[0].subscription_plan) && !isSuperAdmin) {
+        return c.json({ ok: false, error: "PRO_REQUIRED", message: "Community banners are a Community Pro feature." }, 403);
+      }
+      await sql`UPDATE newchums.communities SET banner_key = ${objectKey}, updated_at = now() WHERE id = ${communityId}`;
+      return c.json({ ok: true, bannerUrl: `/communities/${communityId}/banner?v=${Date.now()}` });
     }
 
     if (!objectKey.startsWith("avatars/")) {
@@ -3521,6 +3573,32 @@ app.get("/communities/:communityId/avatar", async (c) => {
     const avatarKey = rows[0]?.avatar_key ?? null;
     if (!avatarKey) return c.notFound();
     const obj = await c.env.MEDIA_BUCKET.get(avatarKey);
+    if (!obj) return c.notFound();
+    const headers = new Headers();
+    headers.set("Content-Type", obj.httpMetadata?.contentType ?? "image/jpeg");
+    headers.set("Cache-Control", "public, max-age=86400");
+    return new Response(obj.body, { headers, status: 200 });
+  } catch {
+    return c.notFound();
+  }
+});
+
+/**
+ * Public serving endpoint for the community banner image. Mirrors the
+ * /avatar endpoint; no auth required because the banner is intentionally
+ * visible on all community detail surfaces (public, restricted private
+ * landing, and logged-in). The Community Pro gate lives on the upload /
+ * finalize path, once a banner is stored we just serve the bytes.
+ */
+app.get("/communities/:communityId/banner", async (c) => {
+  const communityId = c.req.param("communityId");
+  if (!communityId || !c.env.MEDIA_BUCKET) return c.notFound();
+  try {
+    const sql = getSql(c.env);
+    const rows = (await sql`SELECT banner_key FROM newchums.communities WHERE id = ${communityId} LIMIT 1`) as { banner_key: string | null }[];
+    const bannerKey = rows[0]?.banner_key ?? null;
+    if (!bannerKey) return c.notFound();
+    const obj = await c.env.MEDIA_BUCKET.get(bannerKey);
     if (!obj) return c.notFound();
     const headers = new Headers();
     headers.set("Content-Type", obj.httpMetadata?.contentType ?? "image/jpeg");
@@ -6665,6 +6743,62 @@ function joinRequestCooldownState(
   };
 }
 
+/** Weekday codes used as the keys on `communities.operating_hours`. Order
+ *  matches the conventional Mon-Sun week we render on the detail page. */
+const OPERATING_HOURS_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
+type OperatingHoursDay = typeof OPERATING_HOURS_DAYS[number];
+
+/** Zero-padded 24-hour `HH:MM` format. Close may be before open (overnight). */
+const OPERATING_HOURS_TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+type OperatingHoursEntry =
+  | { closed: true }
+  | { open: string; close: string };
+
+type OperatingHours = Partial<Record<OperatingHoursDay, OperatingHoursEntry>>;
+
+/**
+ * Parse and validate a community `operating_hours` payload.
+ *
+ * Accepts `null` or `undefined` (means "no hours") and returns them as-is
+ * so callers can distinguish "clear existing hours" from "leave unchanged".
+ * For object payloads, unknown day keys are dropped and each day is
+ * normalized to either `{ closed: true }` or `{ open, close }` with
+ * zero-padded `HH:MM` times. Returns `{ error }` with a human-readable
+ * message when any day entry is malformed so the API can surface a 400.
+ *
+ * An empty object (no recognized days after filtering) is stored as `null`
+ * so a community without hours stays in one canonical shape in the DB.
+ */
+function parseOperatingHours(raw: unknown): { ok: true; value: OperatingHours | null } | { ok: false; error: string } {
+  if (raw === null || raw === undefined) return { ok: true, value: null };
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    return { ok: false, error: "Operating hours must be an object keyed by weekday" };
+  }
+  const out: OperatingHours = {};
+  for (const day of OPERATING_HOURS_DAYS) {
+    const entry = (raw as Record<string, unknown>)[day];
+    if (entry === undefined || entry === null) continue;
+    if (typeof entry !== "object" || Array.isArray(entry)) {
+      return { ok: false, error: `Invalid entry for ${day}` };
+    }
+    const e = entry as Record<string, unknown>;
+    if (e.closed === true) {
+      out[day] = { closed: true };
+      continue;
+    }
+    const openRaw = typeof e.open === "string" ? e.open.trim() : "";
+    const closeRaw = typeof e.close === "string" ? e.close.trim() : "";
+    if (!openRaw && !closeRaw) continue; // treat empty entry as "not set"
+    if (!OPERATING_HOURS_TIME_RE.test(openRaw) || !OPERATING_HOURS_TIME_RE.test(closeRaw)) {
+      return { ok: false, error: `Invalid time for ${day}; use HH:MM 24-hour format` };
+    }
+    out[day] = { open: openRaw, close: closeRaw };
+  }
+  // Normalize empty object to null so the DB stores one canonical "no hours" shape.
+  return { ok: true, value: Object.keys(out).length === 0 ? null : out };
+}
+
 /** POST /communities, create a community */
 app.post("/communities", async (c) => {
   const payload = await requireAuth(c);
@@ -6749,13 +6883,18 @@ app.post("/communities", async (c) => {
   if (interestItems.length === 0)
     return c.json({ ok: false, error: "VALIDATION", message: "Add at least one hobby so people can find this community", field: "hobby" }, 400);
 
+  // Optional operating hours. Omitting or sending null = no published hours.
+  const hoursParse = parseOperatingHours(body.operating_hours);
+  if (!hoursParse.ok) return c.json({ ok: false, error: "VALIDATION", message: hoursParse.error, field: "operating_hours" }, 400);
+  const operatingHours = hoursParse.value;
+
   try {
     const existing = (await sql`SELECT id FROM newchums.communities WHERE slug = ${slug}`) as { id: string }[];
     if (existing.length > 0) return c.json({ ok: false, error: "SLUG_TAKEN", message: "That handle is already taken" }, 409);
 
     const rows = (await sql`
-      INSERT INTO newchums.communities (name, slug, description, visibility, join_mode, chat_enabled, is_online, website, discord_url, location_name, location_address, location_lat, location_lng, owner_user_id)
-      VALUES (${name}, ${slug}, ${description}, ${visibility}, ${joinMode}, ${chatEnabled}, ${isOnline}, ${website}, ${discordUrl}, ${locationName}, ${locationAddress}, ${locationLat}, ${locationLng}, ${userId})
+      INSERT INTO newchums.communities (name, slug, description, visibility, join_mode, chat_enabled, is_online, website, discord_url, location_name, location_address, location_lat, location_lng, owner_user_id, operating_hours)
+      VALUES (${name}, ${slug}, ${description}, ${visibility}, ${joinMode}, ${chatEnabled}, ${isOnline}, ${website}, ${discordUrl}, ${locationName}, ${locationAddress}, ${locationLat}, ${locationLng}, ${userId}, ${operatingHours ? JSON.stringify(operatingHours) : null}::jsonb)
       RETURNING id, slug, created_at
     `) as { id: string; slug: string; created_at: string }[];
     const community = rows[0];
@@ -6971,6 +7110,7 @@ app.get("/communities/:slug", async (c) => {
   try {
     const rows = (await sql`
       SELECT c.*, ou.name AS owner_name, ou.username AS owner_username, ou.avatar_key AS owner_avatar_key, ou.avatar_updated_at AS owner_avatar_updated_at,
+        ou.subscription_plan AS owner_subscription_plan,
         (SELECT COUNT(*)::int FROM newchums.community_members cm WHERE cm.community_id = c.id AND cm.status = 'active') AS member_count
       FROM newchums.communities c
       JOIN newchums.users ou ON ou.id = c.owner_user_id
@@ -7018,11 +7158,16 @@ app.get("/communities/:slug", async (c) => {
           community: {
             id: community.id, slug: community.slug, name: community.name,
             description: community.description, avatar_key: community.avatar_key,
+            // Banner renders on the restricted landing so the page feels
+            // finished; it's visual only, no plan/member info leaks through.
+            banner_key: community.banner_key,
             visibility: community.visibility, join_mode: community.join_mode,
             is_online: community.is_online, location_name: community.location_name,
             member_count: community.member_count,
             hobbies: communityHobbies,
             upcoming_plan_count: upcomingPlanCount,
+            // Operating hours are intentionally omitted here; see restricted-
+            // response privacy rule in Technical_Specs.md.
           },
           viewerMembership: null,
           viewerPendingRequest: false,
@@ -7051,10 +7196,12 @@ app.get("/communities/:slug", async (c) => {
             community: {
               id: community.id, slug: community.slug, name: community.name,
               description: community.description, avatar_key: community.avatar_key,
+              banner_key: community.banner_key,
               visibility: community.visibility, join_mode: community.join_mode,
               is_online: community.is_online, location_name: community.location_name,
               member_count: community.member_count,
               hobbies: communityHobbies,
+              // operating_hours intentionally omitted on restricted responses.
             },
             viewerMembership: null,
             viewerRemoved: true,
@@ -7113,10 +7260,12 @@ app.get("/communities/:slug", async (c) => {
 
         return c.json({
           ok: true,
-          // Private-community non-members don't see website / discord_url.
+          // Private-community non-members don't see website / discord_url
+          // or operating_hours (same restricted-response rule).
           community: {
             id: community.id, slug: community.slug, name: community.name,
             description: community.description, avatar_key: community.avatar_key,
+            banner_key: community.banner_key,
             visibility: community.visibility, join_mode: community.join_mode,
             is_online: community.is_online, location_name: community.location_name,
             member_count: community.member_count,
@@ -7213,16 +7362,30 @@ app.get("/communities/:slug", async (c) => {
         .sign(new TextEncoder().encode(c.env.NEXTAUTH_SECRET));
     }
 
+    // Strip the owner_subscription_plan column from the spread, it's a
+    // server-side join artifact we don't want leaking to the client. It's
+    // already been used to compute viewer_has_pro_banner_access below.
+    const { owner_subscription_plan, ...communityCols } = community as Record<string, unknown>;
+    void owner_subscription_plan;
+
+    // Pro banner access reflects the community owner's plan (Community Pro).
+    // Only the owner or a super admin can edit the banner; non-owner members
+    // don't need the flag but we still expose it so the detail page's edit
+    // affordance can hide cleanly. Logged-out viewers never see edit UI.
+    const viewerHasProBannerAccess = !!(isOwnerOrAdmin &&
+      (isSuperAdmin || hasCommunityProAccess(community.owner_subscription_plan as string | null)));
+
     return c.json({
       ok: true,
       community: {
-        ...community,
+        ...communityCols,
         owner_avatar_url: ownerAvatarUrl,
         hobbies: communityHobbies,
       },
       viewerMembership,
       viewerPendingRequest,
       viewerRemoved,
+      viewerHasProBannerAccess,
       pendingRequests: isOwnerOrAdmin ? pendingRequests : undefined,
       declinedRequests: isOwnerOrAdmin ? declinedRequests : undefined,
       shareToken,
@@ -7296,6 +7459,20 @@ app.patch("/communities/:slug", async (c) => {
     if (body.location_lat !== undefined) { updates.push("location_lat"); vals.push(body.location_lat != null && Number.isFinite(Number(body.location_lat)) ? Number(body.location_lat) : null); }
     if (body.location_lng !== undefined) { updates.push("location_lng"); vals.push(body.location_lng != null && Number.isFinite(Number(body.location_lng)) ? Number(body.location_lng) : null); }
     if (body.avatar_key !== undefined) { updates.push("avatar_key"); vals.push(body.avatar_key ? String(body.avatar_key) : null); }
+    if (body.banner_key !== undefined) {
+      // Only accept explicit clear (null) via PATCH. Setting a key goes
+      // through /media/finalize so the Pro gate and R2-object existence
+      // are checked there, bypassing it via a raw PATCH is not allowed.
+      if (body.banner_key !== null) {
+        return c.json({ ok: false, error: "VALIDATION", message: "Set a banner via /media/finalize; PATCH only accepts null to clear it.", field: "banner_key" }, 400);
+      }
+      updates.push("banner_key"); vals.push(null);
+    }
+    if (body.operating_hours !== undefined) {
+      const parsed = parseOperatingHours(body.operating_hours);
+      if (!parsed.ok) return c.json({ ok: false, error: "VALIDATION", message: parsed.error, field: "operating_hours" }, 400);
+      updates.push("operating_hours"); vals.push(parsed.value);
+    }
 
     // Enforce location consistency. If the patch touches online/location,
     // the resulting state (merge of existing row + patched fields) must
@@ -7372,6 +7549,11 @@ app.patch("/communities/:slug", async (c) => {
     if (fieldMap.location_lat !== undefined) await sql`UPDATE newchums.communities SET location_lat = ${fieldMap.location_lat as number | null}, updated_at = now() WHERE id = ${cid}`;
     if (fieldMap.location_lng !== undefined) await sql`UPDATE newchums.communities SET location_lng = ${fieldMap.location_lng as number | null}, updated_at = now() WHERE id = ${cid}`;
     if (fieldMap.avatar_key !== undefined) await sql`UPDATE newchums.communities SET avatar_key = ${fieldMap.avatar_key as string | null}, updated_at = now() WHERE id = ${cid}`;
+    if (fieldMap.banner_key !== undefined) await sql`UPDATE newchums.communities SET banner_key = ${fieldMap.banner_key as string | null}, updated_at = now() WHERE id = ${cid}`;
+    if (fieldMap.operating_hours !== undefined) {
+      const hours = fieldMap.operating_hours as OperatingHours | null;
+      await sql`UPDATE newchums.communities SET operating_hours = ${hours ? JSON.stringify(hours) : null}::jsonb, updated_at = now() WHERE id = ${cid}`;
+    }
 
     return c.json({ ok: true });
   } catch (err) {
@@ -8200,6 +8382,117 @@ app.post("/admin/communities/:id/remove", async (c) => {
     return c.json({ ok: true });
   } catch (err) {
     console.error("[POST /admin/communities/:id/remove]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/**
+ * POST /admin/communities/:id/change-owner, super admin reassigns ownership.
+ *
+ * Ownership is stored in two places for historical reasons:
+ *   - `communities.owner_user_id` (authoritative FK)
+ *   - `community_members` row with `role = 'owner', status = 'active'`
+ *
+ * This endpoint keeps both in sync. The old owner stays in the community as
+ * a regular active member (role demoted to 'member'); the new owner is
+ * reactivated if previously removed, upserted if not already a member, and
+ * has any pending/declined join requests for this community cleared so a
+ * stale request row can't confuse future lifecycle logic. No-ops when the
+ * target user is already the owner.
+ *
+ * Community Pro status follows the new owner's subscription plan. If the
+ * incoming owner is not on Community Pro, any existing banner stays visible
+ * (banner_key is untouched) but can no longer be edited or replaced until
+ * someone with Pro is the owner again; the Pro gate lives at the media
+ * finalize path, not here.
+ */
+app.post("/admin/communities/:id/change-owner", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  const communityId = c.req.param("id");
+  const sql = getSql(c.env);
+
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+  const newOwnerId = typeof body.userId === "string" ? body.userId.trim() : "";
+  if (!newOwnerId) return c.json({ ok: false, error: "VALIDATION", message: "userId is required", field: "userId" }, 400);
+
+  try {
+    const communityRows = (await sql`
+      SELECT id, owner_user_id, name FROM newchums.communities WHERE id = ${communityId} LIMIT 1
+    `) as { id: string; owner_user_id: string; name: string }[];
+    if (!communityRows[0]) return c.json({ ok: false, error: "NOT_FOUND", message: "Community not found" }, 404);
+    const community = communityRows[0];
+
+    if (community.owner_user_id === newOwnerId) {
+      return c.json({ ok: true, status: "no_change" });
+    }
+
+    // Verify the incoming owner exists and is not suspended. A suspended
+    // account shouldn't be promoted to owner; super admin can unsuspend
+    // first if that's the actual intent.
+    const userRows = (await sql`
+      SELECT id, COALESCE(is_suspended, false) AS is_suspended
+      FROM newchums.users WHERE id = ${newOwnerId} LIMIT 1
+    `) as { id: string; is_suspended: boolean }[];
+    if (!userRows[0]) return c.json({ ok: false, error: "USER_NOT_FOUND", message: "New owner user not found" }, 404);
+    if (userRows[0].is_suspended) {
+      return c.json({ ok: false, error: "USER_SUSPENDED", message: "Cannot assign ownership to a suspended user" }, 400);
+    }
+
+    const oldOwnerId = community.owner_user_id;
+
+    // 1. Flip the authoritative FK first so any concurrent read sees the
+    //    new owner even if the membership updates below fail midway.
+    await sql`UPDATE newchums.communities SET owner_user_id = ${newOwnerId}, updated_at = now() WHERE id = ${communityId}`;
+
+    // 2. Demote the old owner's membership row to 'member'. Row is always
+    //    present in practice (POST /communities inserts one on create);
+    //    if it somehow isn't, the UPDATE is a no-op and the old owner is
+    //    simply not a member anymore, which matches the "owner left the
+    //    community behind" edge case.
+    await sql`
+      UPDATE newchums.community_members
+      SET role = 'member'
+      WHERE community_id = ${communityId} AND user_id = ${oldOwnerId}
+    `;
+
+    // 3. Upsert the new owner's membership row. If they had a 'removed'
+    //    row, reactivate it; if they're already an active member, promote
+    //    them; otherwise insert fresh. Super admin overriding a removal
+    //    is intentional, the alternative (requiring unblock first) adds
+    //    friction without adding real safety.
+    const existingMember = (await sql`
+      SELECT id, status FROM newchums.community_members
+      WHERE community_id = ${communityId} AND user_id = ${newOwnerId}
+      LIMIT 1
+    `) as { id: string; status: string }[];
+    if (existingMember[0]) {
+      await sql`
+        UPDATE newchums.community_members
+        SET role = 'owner', status = 'active', removed_at = NULL, removal_reason = NULL
+        WHERE id = ${existingMember[0].id}
+      `;
+    } else {
+      await sql`
+        INSERT INTO newchums.community_members (community_id, user_id, role, status)
+        VALUES (${communityId}, ${newOwnerId}, 'owner', 'active')
+      `;
+    }
+
+    // 4. Withdraw any pending join request the new owner had for this
+    //    community, they're now the owner, the request is moot. Declined
+    //    rows stay in place for auditing, they don't block anything once
+    //    the user is a full owner.
+    await sql`
+      UPDATE newchums.community_join_requests
+      SET status = 'withdrawn', reviewed_at = now()
+      WHERE community_id = ${communityId} AND user_id = ${newOwnerId} AND status = 'pending'
+    `;
+
+    return c.json({ ok: true, status: "changed", oldOwnerId, newOwnerId });
+  } catch (err) {
+    console.error("[POST /admin/communities/:id/change-owner]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });
@@ -10605,9 +10898,9 @@ app.patch("/events/:id", async (c) => {
       SELECT id, host_user_id, status, title, description, starts_at, timezone, max_seats, visibility,
              require_reconfirmation, min_confirmed_attendees, fallback_policy, alt_times_mode, availability_deadline_at,
              location_type, location_name, location_address, location_place_id, location_lat, location_lng,
-             location_visibility, location_area, online_link
+             location_visibility, location_area, online_link, community_id
       FROM newchums.events WHERE id = ${eventId}
-    `) as { id: string; host_user_id: string; status: string; title: string; description: string | null; starts_at: string; timezone: string | null; max_seats: number | null; visibility: string; require_reconfirmation: boolean; min_confirmed_attendees: number | null; fallback_policy: string; alt_times_mode: string | null; availability_deadline_at: string | null; location_type: string; location_name: string | null; location_address: string | null; location_place_id: string | null; location_lat: number | null; location_lng: number | null; location_visibility: string; location_area: string | null; online_link: string | null }[];
+    `) as { id: string; host_user_id: string; status: string; title: string; description: string | null; starts_at: string; timezone: string | null; max_seats: number | null; visibility: string; require_reconfirmation: boolean; min_confirmed_attendees: number | null; fallback_policy: string; alt_times_mode: string | null; availability_deadline_at: string | null; location_type: string; location_name: string | null; location_address: string | null; location_place_id: string | null; location_lat: number | null; location_lng: number | null; location_visibility: string; location_area: string | null; online_link: string | null; community_id: string | null }[];
     if (rows.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     if (rows[0].host_user_id !== userId) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
     if (rows[0].status === "canceled") return c.json({ ok: false, error: "VALIDATION", message: "Cannot edit a canceled plan" }, 400);
@@ -10721,8 +11014,11 @@ app.patch("/events/:id", async (c) => {
         : patchHideFromExploreRaw;
     // Mirror the POST /events guard: if the caller is attaching the plan to a
     // community (set or change), require them to be an active member. Clearing
-    // the link (null) is always allowed; no-op is a no-op.
-    if (patchCommunityId) {
+    // the link (null) is always allowed; a no-op that reuses the existing
+    // community_id is also allowed so a host who later left the community
+    // can still edit their plan's other fields without being forced to
+    // detach. Only a *change* to a different community triggers the check.
+    if (patchCommunityId && patchCommunityId !== rows[0].community_id) {
       try {
         const cmRows = (await sql`
           SELECT 1 FROM newchums.community_members

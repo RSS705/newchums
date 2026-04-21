@@ -27,6 +27,7 @@ import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import LockRoundedIcon from "@mui/icons-material/LockRounded";
 import OpenInNewRoundedIcon from "@mui/icons-material/OpenInNewRounded";
 import SearchIcon from "@mui/icons-material/Search";
+import SwapHorizRoundedIcon from "@mui/icons-material/SwapHorizRounded";
 import NextLink from "next/link";
 import { useToast } from "@/components/ui";
 import { apiFetch } from "@/lib/apiClient";
@@ -39,12 +40,21 @@ type CommunityRow = {
   join_mode: string;
   status: string;
   location_name: string | null;
+  owner_user_id: string;
   owner_name: string | null;
   owner_username: string | null;
   owner_email: string | null;
   member_count: number;
   plan_count: number;
   created_at: string;
+};
+
+type AdminUserRow = {
+  id: string;
+  email: string;
+  username: string | null;
+  name: string | null;
+  is_suspended: boolean;
 };
 
 type SortField = "created_at" | "name" | "member_count" | "plan_count";
@@ -74,6 +84,16 @@ export default function AdminCommunitiesClient() {
 
   const [removeTarget, setRemoveTarget] = useState<CommunityRow | null>(null);
   const [removeSubmitting, setRemoveSubmitting] = useState(false);
+
+  // Change-owner dialog state. One dialog handles both the search + pick
+  // and the confirm step; no intermediate state worth splitting out.
+  const [changeOwnerTarget, setChangeOwnerTarget] = useState<CommunityRow | null>(null);
+  const [changeOwnerQuery, setChangeOwnerQuery] = useState("");
+  const [changeOwnerResults, setChangeOwnerResults] = useState<AdminUserRow[]>([]);
+  const [changeOwnerSearching, setChangeOwnerSearching] = useState(false);
+  const [changeOwnerPicked, setChangeOwnerPicked] = useState<AdminUserRow | null>(null);
+  const [changeOwnerSubmitting, setChangeOwnerSubmitting] = useState(false);
+  const changeOwnerDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchCommunities = useCallback(async (q?: string) => {
     setLoading(true);
@@ -139,6 +159,99 @@ export default function AdminCommunitiesClient() {
       toast.error("Something went wrong");
     }
     setRemoveSubmitting(false);
+  };
+
+  const openChangeOwner = (c: CommunityRow) => {
+    setChangeOwnerTarget(c);
+    setChangeOwnerQuery("");
+    setChangeOwnerResults([]);
+    setChangeOwnerPicked(null);
+  };
+
+  const closeChangeOwner = () => {
+    if (changeOwnerSubmitting) return;
+    setChangeOwnerTarget(null);
+    setChangeOwnerQuery("");
+    setChangeOwnerResults([]);
+    setChangeOwnerPicked(null);
+  };
+
+  const handleChangeOwnerQuery = (val: string) => {
+    setChangeOwnerQuery(val);
+    setChangeOwnerPicked(null);
+    if (changeOwnerDebounceRef.current) clearTimeout(changeOwnerDebounceRef.current);
+    const q = val.trim();
+    if (!q) {
+      setChangeOwnerResults([]);
+      setChangeOwnerSearching(false);
+      return;
+    }
+    setChangeOwnerSearching(true);
+    changeOwnerDebounceRef.current = setTimeout(async () => {
+      try {
+        const res = await apiFetch(`/admin/users?q=${encodeURIComponent(q)}`, { auth: true });
+        const data = await res.json();
+        if (data.ok && Array.isArray(data.users)) {
+          // Cap the rendered list so the dialog stays usable; the server
+          // returns the full match set, we only need the first handful.
+          setChangeOwnerResults((data.users as AdminUserRow[]).slice(0, 10));
+        } else {
+          setChangeOwnerResults([]);
+        }
+      } catch {
+        setChangeOwnerResults([]);
+      }
+      setChangeOwnerSearching(false);
+    }, 300);
+  };
+
+  const handleConfirmChangeOwner = async () => {
+    if (!changeOwnerTarget || !changeOwnerPicked) return;
+    if (changeOwnerPicked.id === changeOwnerTarget.owner_user_id) {
+      toast.info("That user is already the owner");
+      return;
+    }
+    setChangeOwnerSubmitting(true);
+    try {
+      const res = await apiFetch(`/admin/communities/${changeOwnerTarget.id}/change-owner`, {
+        auth: true,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: changeOwnerPicked.id }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        toast.success(`Owner changed for "${changeOwnerTarget.name}"`);
+        // Patch the row in place so the new owner is immediately visible
+        // in the table without refetching.
+        setCommunities((prev) => prev.map((c) =>
+          c.id === changeOwnerTarget.id
+            ? {
+                ...c,
+                owner_user_id: changeOwnerPicked.id,
+                owner_name: changeOwnerPicked.name,
+                owner_username: changeOwnerPicked.username,
+                owner_email: changeOwnerPicked.email,
+              }
+            : c
+        ));
+        setChangeOwnerTarget(null);
+        setChangeOwnerQuery("");
+        setChangeOwnerResults([]);
+        setChangeOwnerPicked(null);
+      } else if (data.error === "USER_SUSPENDED") {
+        toast.error("That user is suspended. Unsuspend them before assigning ownership.");
+      } else if (data.error === "USER_NOT_FOUND") {
+        toast.error("That user no longer exists");
+      } else if (data.error === "NOT_FOUND") {
+        toast.error("This community no longer exists");
+      } else {
+        toast.error(data.message || "Could not change owner");
+      }
+    } catch {
+      toast.error("Something went wrong");
+    }
+    setChangeOwnerSubmitting(false);
   };
 
   return (
@@ -289,6 +402,11 @@ export default function AdminCommunitiesClient() {
                           <OpenInNewRoundedIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
+                      <Tooltip title="Change owner">
+                        <IconButton size="small" onClick={() => openChangeOwner(c)}>
+                          <SwapHorizRoundedIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
                       <Tooltip title="Remove community">
                         <IconButton size="small" color="error" onClick={() => setRemoveTarget(c)}>
                           <DeleteOutlineRoundedIcon fontSize="small" />
@@ -317,6 +435,145 @@ export default function AdminCommunitiesClient() {
           </Button>
           <Button variant="contained" color="error" onClick={handleRemove} disabled={removeSubmitting} sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}>
             {removeSubmitting ? "Removing…" : "Remove community"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Change owner dialog */}
+      <Dialog open={!!changeOwnerTarget} onClose={closeChangeOwner} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontWeight: 700 }}>Change community owner</DialogTitle>
+        <DialogContent>
+          {changeOwnerTarget && (
+            <Stack spacing={2} sx={{ mt: 0.5 }}>
+              <Box>
+                <Typography variant="body2" color="text.secondary">
+                  Community
+                </Typography>
+                <Typography variant="body1" fontWeight={600}>
+                  {changeOwnerTarget.name}
+                </Typography>
+              </Box>
+              <Box>
+                <Typography variant="body2" color="text.secondary">
+                  Current owner
+                </Typography>
+                <Typography variant="body2">
+                  {changeOwnerTarget.owner_name || changeOwnerTarget.owner_username?.replace(/^@/, "") || "(unnamed)"}
+                  {changeOwnerTarget.owner_email ? ` · ${changeOwnerTarget.owner_email}` : ""}
+                </Typography>
+              </Box>
+              <TextField
+                autoFocus
+                size="small"
+                placeholder="Search users by email, username, or name"
+                value={changeOwnerQuery}
+                onChange={(e) => handleChangeOwnerQuery(e.target.value)}
+                slotProps={{
+                  input: {
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchIcon sx={{ fontSize: 20, color: "text.disabled" }} />
+                      </InputAdornment>
+                    ),
+                  },
+                }}
+              />
+              {changeOwnerQuery.trim() !== "" && (
+                <Box
+                  sx={{
+                    border: "1px solid",
+                    borderColor: "divider",
+                    borderRadius: 1.5,
+                    maxHeight: 260,
+                    overflowY: "auto",
+                  }}
+                >
+                  {changeOwnerSearching ? (
+                    <Box sx={{ display: "flex", justifyContent: "center", py: 2 }}>
+                      <CircularProgress size={20} />
+                    </Box>
+                  ) : changeOwnerResults.length === 0 ? (
+                    <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
+                      No matching users.
+                    </Typography>
+                  ) : (
+                    changeOwnerResults.map((u) => {
+                      const selected = changeOwnerPicked?.id === u.id;
+                      const isCurrent = u.id === changeOwnerTarget.owner_user_id;
+                      const disabled = isCurrent || u.is_suspended;
+                      return (
+                        <Box
+                          key={u.id}
+                          onClick={disabled ? undefined : () => setChangeOwnerPicked(u)}
+                          sx={{
+                            px: 1.5,
+                            py: 1,
+                            cursor: disabled ? "default" : "pointer",
+                            bgcolor: selected ? "action.selected" : "transparent",
+                            opacity: disabled ? 0.55 : 1,
+                            borderBottom: "1px solid",
+                            borderColor: "divider",
+                            "&:last-child": { borderBottom: 0 },
+                            "&:hover": disabled ? {} : { bgcolor: "action.hover" },
+                          }}
+                        >
+                          <Stack direction="row" justifyContent="space-between" alignItems="center">
+                            <Box sx={{ minWidth: 0 }}>
+                              <Typography variant="body2" fontWeight={600} noWrap>
+                                {u.name || u.username?.replace(/^@/, "") || "(unnamed)"}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary" noWrap>
+                                {u.email}
+                                {u.username ? ` · @${u.username.replace(/^@/, "")}` : ""}
+                              </Typography>
+                            </Box>
+                            {isCurrent && (
+                              <Chip label="Current owner" size="small" variant="outlined" sx={{ ml: 1, fontSize: "0.6875rem" }} />
+                            )}
+                            {!isCurrent && u.is_suspended && (
+                              <Chip label="Suspended" size="small" color="error" variant="outlined" sx={{ ml: 1, fontSize: "0.6875rem" }} />
+                            )}
+                          </Stack>
+                        </Box>
+                      );
+                    })
+                  )}
+                </Box>
+              )}
+              {changeOwnerPicked && (
+                <Box
+                  sx={{
+                    p: 1.5,
+                    borderRadius: 1.5,
+                    bgcolor: "action.hover",
+                  }}
+                >
+                  <Typography variant="body2" color="text.secondary">
+                    New owner
+                  </Typography>
+                  <Typography variant="body2" fontWeight={600}>
+                    {changeOwnerPicked.name || changeOwnerPicked.username?.replace(/^@/, "") || "(unnamed)"}
+                    {changeOwnerPicked.email ? ` · ${changeOwnerPicked.email}` : ""}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.75, lineHeight: 1.5 }}>
+                    The current owner will stay in the community as a regular member. The new owner will be added or reactivated if needed, and any pending join request they had will be withdrawn.
+                  </Typography>
+                </Box>
+              )}
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={closeChangeOwner} disabled={changeOwnerSubmitting} sx={{ textTransform: "none" }}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleConfirmChangeOwner}
+            disabled={changeOwnerSubmitting || !changeOwnerPicked}
+            sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
+          >
+            {changeOwnerSubmitting ? "Changing…" : "Change owner"}
           </Button>
         </DialogActions>
       </Dialog>

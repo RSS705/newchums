@@ -7,6 +7,7 @@ import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
 import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
 import WavingHandRoundedIcon from "@mui/icons-material/WavingHandRounded";
 import FeedbackRoundedIcon from "@mui/icons-material/FeedbackRounded";
+import CardMembershipRoundedIcon from "@mui/icons-material/CardMembershipRounded";
 import {
   AppBar,
   Badge,
@@ -486,6 +487,17 @@ export default function AppShell({ children, user, passwordSetupPending }: AppSh
                     <SettingsRoundedIcon fontSize="small" />
                   </ListItemIcon>
                   Settings
+                </MenuItem>
+                <MenuItem
+                  onClick={() => {
+                    setAccountMenuAnchor(null);
+                    router.push("/your-plan");
+                  }}
+                >
+                  <ListItemIcon>
+                    <CardMembershipRoundedIcon fontSize="small" />
+                  </ListItemIcon>
+                  Your Plan
                 </MenuItem>
                 <MenuItem
                   onClick={() => {

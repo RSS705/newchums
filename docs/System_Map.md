@@ -126,6 +126,7 @@ The following flows run in the API worker; the web app calls the API via `NEXT_P
 | Avatar image | `GET /users/:userId/avatar` | public |
 | Event banner image | `GET /events/:eventId/banner` | public |
 | Community avatar image | `GET /communities/:communityId/avatar` | public |
+| Community banner image | `GET /communities/:communityId/banner` | public |
 | Chums | `GET /chums`, `GET /chums/search`, `GET /chums/check/:userId`, `POST /chums/:userId`, `POST /chums/private`, `DELETE /chums/:id`, `PATCH /chums/:contactId/note` | Bearer JWT |
 | Chum invites | `POST /chums/invite`, `POST /chums/invite/accept` | Bearer JWT |
 | Public Chums | `GET /public/users/:handle/chums` | none |

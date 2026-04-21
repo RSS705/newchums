@@ -39,6 +39,7 @@ import {
   ExtraOptionsSection,
   MatchingPreferencesSection,
   QAPlanSection,
+  type MyCommunity as SharedMyCommunity,
 } from "@/components/events/planForm";
 
 // Visual top-to-bottom order of validation-bearing fields. Drives the
@@ -98,10 +99,17 @@ export default function EditEventClient() {
   const [prefDisableAll, setPrefDisableAll] = useState(false);
   const [prefDisabledMetrics, setPrefDisabledMetrics] = useState<Record<string, boolean>>({});
 
-  // Community association
-  const [communityId, setCommunityId] = useState<string | null>(null);
-  const [communityName, setCommunityName] = useState<string | null>(null);
+  // Community association. Mirrors the Add Plan form: `myCommunities` is
+  // the dropdown's option list, `selectedCommunityId` is the current choice.
+  // `initialCommunityId` is the community linked when the event loaded;
+  // PATCH only ships `community_id` when the selection actually changed, so
+  // an unchanged save never triggers the server-side "must be a member"
+  // validation for a host who has since left that community.
+  const [myCommunities, setMyCommunities] = useState<SharedMyCommunity[]>([]);
+  const [selectedCommunityId, setSelectedCommunityId] = useState<string | null>(null);
+  const [initialCommunityId, setInitialCommunityId] = useState<string | null>(null);
   const [hideFromExplore, setHideFromExplore] = useState(false);
+  const [initialHideFromExplore, setInitialHideFromExplore] = useState(false);
 
   // Notification control for this edit
   const [notifyAttendees, setNotifyAttendees] = useState(true);
@@ -203,10 +211,18 @@ export default function EditEventClient() {
 
         // Community association
         if (ev.community) {
-          setCommunityId(ev.community.id);
-          setCommunityName(ev.community.name);
+          setSelectedCommunityId(ev.community.id);
+          setInitialCommunityId(ev.community.id);
+          // Seed the dropdown with the currently-linked community so the user
+          // always sees it, even if they're no longer an active member (in
+          // which case the /communities?mine=1 fetch below would omit it).
+          // `myCommunities` is then replaced (not merged) once that fetch
+          // resolves, we re-seed the linked community there if needed.
+          setMyCommunities([{ id: ev.community.id, name: ev.community.name }]);
         }
-        if (ev.hideFromExplore !== undefined) setHideFromExplore(ev.hideFromExplore === true);
+        const initialHide = ev.hideFromExplore === true;
+        setHideFromExplore(initialHide);
+        setInitialHideFromExplore(initialHide);
         if (ev.isQa) setIsQa(true);
 
         if (ev.bannerKey) {
@@ -262,11 +278,48 @@ export default function EditEventClient() {
   // Visibility Contract.
   useEffect(() => {
     if (visibility === "invite_only") {
-      setCommunityId(null);
-      setCommunityName(null);
+      setSelectedCommunityId(null);
       setHideFromExplore(false);
     }
   }, [visibility]);
+
+  // Fetch the viewer's communities to populate the Community section's
+  // dropdown. Runs once on mount so the user can re-parent (or detach) the
+  // plan during edit. If the plan is linked to a community the user no
+  // longer belongs to, we keep the seeded single-entry list from the event
+  // load and skip the merge so the UI still renders the current linkage.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch("/communities?mine=1&limit=50", { auth: true });
+        if (!res.ok) return;
+        const d = await res.json();
+        if (cancelled || !d.ok || !Array.isArray(d.communities)) return;
+        const list: SharedMyCommunity[] = d.communities.map((c: Record<string, unknown>) => ({
+          id: String(c.id),
+          slug: String(c.slug ?? ""),
+          name: String(c.name ?? ""),
+          is_online: c.is_online === true,
+          location_name: (c.location_name as string) ?? null,
+          location_address: (c.location_address as string) ?? null,
+          location_lat: c.location_lat != null ? Number(c.location_lat) : null,
+          location_lng: c.location_lng != null ? Number(c.location_lng) : null,
+        }));
+        setMyCommunities((prev) => {
+          // If the plan is linked to a community that isn't in the fresh
+          // list (host has left it, for example), preserve the seeded entry
+          // so the user can still see the linkage and detach it.
+          const linked = prev.find((c) => c.id === initialCommunityId);
+          if (linked && !list.some((c) => c.id === linked.id)) {
+            return [...list, linked];
+          }
+          return list;
+        });
+      } catch { /* non-fatal */ }
+    })();
+    return () => { cancelled = true; };
+  }, [initialCommunityId]);
 
   const buildPrefOverrides = (): PrefOverrides => {
     if (prefDisableAll) return { disabled: true };
@@ -348,8 +401,18 @@ export default function EditEventClient() {
           fallback_policy: requireReconfirmation ? fallbackPolicy : "notify_host",
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           pref_overrides: buildPrefOverrides(),
-          community_id: communityId || null,
-          hide_from_explore: hideFromExplore,
+          // Only send community linkage fields when they actually changed.
+          // That way an unrelated edit (title, date, etc.) by a host who has
+          // since left the linked community doesn't re-trigger the server's
+          // "you must be a member" validation on the unchanged id. Clearing
+          // or switching the linkage still sends the new value and is
+          // validated as normal.
+          ...(selectedCommunityId !== initialCommunityId
+            ? { community_id: selectedCommunityId || null }
+            : {}),
+          ...(hideFromExplore !== initialHideFromExplore
+            ? { hide_from_explore: hideFromExplore }
+            : {}),
           ...(isSuperAdmin ? { is_qa: isQa } : {}),
           location_type: locationType,
           location_name: locationName.trim() || null,
@@ -870,10 +933,10 @@ export default function EditEventClient() {
           since invite_only plans never appear in Explore or community feeds.
           See AGENTS.md -> Plan Feed and Community Visibility Contract. */}
       <CommunityLinkSection
-        mode="edit"
         visibility={visibility}
-        communityId={communityId}
-        communityName={communityName}
+        myCommunities={myCommunities}
+        selectedCommunityId={selectedCommunityId}
+        onChangeSelectedCommunityId={setSelectedCommunityId}
         hideFromExplore={hideFromExplore}
         onChangeHideFromExplore={setHideFromExplore}
       />

@@ -27,7 +27,7 @@ export type NavItem = {
 export const appNavItems: NavItem[] = [
   { label: "Explore", href: "/", icon: ExploreRoundedIcon },
   { label: "Your Plans", href: "/plans", icon: EventNoteRoundedIcon },
-  { label: "Communities", href: "/communities", icon: ForumRoundedIcon, tag: "Beta" },
+  { label: "Communities", href: "/communities", icon: ForumRoundedIcon },
   { label: "Your Chums", href: "/chum-groups", icon: GroupsRoundedIcon },
   { label: "Profile", href: "/profile", icon: PersonRoundedIcon },
   { label: "Give Feedback", href: "/roadmap", icon: FeedbackRoundedIcon },

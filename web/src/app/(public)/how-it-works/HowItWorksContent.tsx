@@ -217,7 +217,6 @@ const FEATURE_SECTIONS: FeatureSection[] = [
     subtitle: "Find plans that match your interests and location. Join communities to see what people near you are organizing.",
     accentColor: "#1565c0",
     imageOnLeft: false,
-    beta: true,
     images: [
       { src: "/images/how-it-works/discover-explore.png", placeholder: "Screenshot: Explore feed", Icon: ExploreRoundedIcon },
       { src: "/images/how-it-works/discover-digest.png", placeholder: "Screenshot: Match digest email", Icon: MailOutlineRoundedIcon },
