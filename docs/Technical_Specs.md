@@ -1304,51 +1304,68 @@ A share token (JWT, purpose `community_share`) is still computed server-side and
 
 ### QR Redirects
 
-Internal redirect layer so printed QR codes (posters, cards) stay useful when their destination changes. Super admins manage records in `/admin/qr-redirects`; the public surface is `https://newchums.com/qr/{code}`.
+Internal redirect layer so printed QR codes (posters, cards) stay useful when their destination changes. Super admins manage records in `/admin/qr-redirects`; the public surface is `https://newchums.com/qr/{code}`. The admin surface is positioned as a **lightweight QR inventory tool**: which codes exist, which store each one was given to, what kind of printed asset it is (card vs. poster), whether it has ever been scanned, and how the scan-count rules keep counts trustworthy.
 
-**Schema (migration 085):**
+**Schema (migration 085 + 088):**
 
 | Table | Purpose |
 |-------|---------|
-| `newchums.qr_redirects` | One row per printed code. Columns: `id`, `code` (UNIQUE, `CHECK code ~ '^[A-Z0-9][A-Z0-9_-]{1,63}$'`), `title`, `destination_url`, `notes`, `is_active`, `created_by` (FK users), `created_at`, `updated_at`. Codes are stored UPPERCASE so posters scanned or typed lowercase still resolve. |
+| `newchums.qr_redirects` | One row per printed code. Columns: `id`, `code` (UNIQUE, `CHECK code ~ '^[A-Z0-9][A-Z0-9_-]{1,63}$'`), `title`, `destination_url`, `notes`, `is_active`, `media_type` (NULL or `'card'`/`'poster'`, constrained by `qr_redirects_media_type_known` CHECK), `assigned_store` (free-form string, NULL = unassigned), `campaign_variant` (free-form tag for the creative/ad design), `created_by` (FK users), `created_at`, `updated_at`. Codes are stored UPPERCASE so posters scanned or typed lowercase still resolve. Filter indexes on `media_type` and `assigned_store`. |
 | `newchums.qr_redirect_scans` | Lightweight scan log. Columns: `id`, `qr_redirect_id` (FK CASCADE), `scanned_at`, `user_agent` (≤500 chars), `referer` (≤500 chars), `country` (CF-IPCountry, ≤8 chars). **No raw IP stored**, country alone is sufficient for the operational questions we care about today and keeps this out of full-analytics scope. |
+
+`media_type` is intentionally a small CHECK-constrained vocabulary so the admin filter can list options without a separate lookup query. Extend the CHECK in a follow-up migration when adding a new media type (don't add freeform values).
 
 **Public route** (`web/src/app/qr/[code]/route.ts`, Next.js route handler):
 
-- `GET /qr/{code}`, server-side. Extracts `user-agent`, `referer`, and `CF-IPCountry` from the incoming request, calls `POST /public/qr/:code/scan` on the API worker for resolution + scan log, then issues a 302 to the resolved destination. Unknown or inactive codes (or any upstream failure) 302 to `/` as a graceful fallback so posters never dead-end on a raw error. No auth, QR codes are designed to be scanned by anyone. Outside both `(app)` and `(public)` route groups so no layout wraps the redirect.
+- `GET /qr/{code}`, server-side. Extracts `user-agent`, `referer`, and `CF-IPCountry` from the incoming request, calls `POST /public/qr/:code/scan` on the API worker for resolution + scan log, then issues a 302 to the resolved destination. Sends `Cache-Control: no-store` so an upstream cache cannot replay the redirect or mask future real scans. Unknown or inactive codes (or any upstream failure) 302 to `/` as a graceful fallback so posters never dead-end on a raw error. No auth, QR codes are designed to be scanned by anyone. Outside both `(app)` and `(public)` route groups so no layout wraps the redirect.
+- `HEAD /qr/{code}`, server-side. Same resolution path but passes `skipLog: true` to the API so the scan endpoint does not insert a log row. Browsers, link-preview tools, and the macOS QuickLook QR preview routinely issue HEAD before GET; without an explicit handler Next.js routes HEAD to the GET handler, which would double-count every real scan. The 302 still tells the caller where the URL points.
 
 **API endpoints (auth required unless noted):**
 
 | Route | Description |
 |-------|-------------|
-| `GET /admin/qr-redirects` | Super admin. List all records with per-row `scan_count` and `last_scanned_at`. Supports `q` search (matches code or title, case-insensitive). |
-| `POST /admin/qr-redirects` | Super admin. Create a record. Validates code shape, title length, and `destination_url` (must parse as URL with `http`/`https` scheme). `409 CODE_TAKEN` on duplicate code. |
+| `GET /admin/qr-redirects` | Super admin. List all records with per-row `scan_count`, `last_scanned_at`, `media_type`, `assigned_store`, `campaign_variant`. Supports `q` search (matches code, title, or `assigned_store`, case-insensitive). Result set capped at 500 rows; filtering, sorting, and pagination are done client-side off the same payload. |
+| `POST /admin/qr-redirects` | Super admin. Create a record. Validates code shape, title length, and `destination_url` (must parse as URL with `http`/`https` scheme). Accepts `media_type` (must be one of the known values, empty/null clears), `assigned_store` (≤200 chars, empty/null = unassigned), `campaign_variant` (≤64 chars). `409 CODE_TAKEN` on duplicate code. |
 | `GET /admin/qr-redirects/:id` | Super admin. Single record + totals (`scan_count`, `last_scanned_at`) and the 50 most recent scans. |
-| `PATCH /admin/qr-redirects/:id` | Super admin. Partial update. Any field can be omitted; changing the code uniqueness-checks against other rows. |
+| `PATCH /admin/qr-redirects/:id` | Super admin. Partial update. Any field can be omitted; changing the code uniqueness-checks against other rows. The three operational metadata fields (`media_type`, `assigned_store`, `campaign_variant`) follow the same convention as `notes`: explicit `null` (or empty string after trim) clears the value, an absent key leaves it untouched. |
 | `DELETE /admin/qr-redirects/:id` | Super admin. Hard delete. Scans cascade. Posters using that code now redirect to `/`. |
-| `POST /public/qr/:code/scan` | **No auth.** Called by the `/qr/[code]` route handler. Returns `{ ok: true, destinationUrl }` for active records, `{ ok: false, error: "NOT_FOUND" }` (404) for missing codes, `{ ok: false, error: "INACTIVE" }` (410) for inactive. Logs a scan row opportunistically, a log write failure never blocks the redirect. |
+| `DELETE /admin/qr-redirects/:id/scans/:scanId` | Super admin. Hard delete a single scan row, used to keep the scan table tidy during testing. |
+| `POST /public/qr/:code/scan` | **No auth.** Called by the `/qr/[code]` route handler. Returns `{ ok: true, destinationUrl }` for active records, `{ ok: false, error: "NOT_FOUND" }` (404) for missing codes, `{ ok: false, error: "INACTIVE" }` (410) for inactive. Logs a scan row opportunistically subject to the dedupe rules below; a log write failure never blocks the redirect. |
+
+**Scan-count trustworthiness (dedupe contract)**
+
+A naive 1:1 "every request is a scan" model triple-counted real scans in practice (browser HEAD pre-flight + GET, share previews, double-tap). The scan endpoint applies three layers, in order, before inserting a row:
+
+1. **`skipLog` opt-out from the caller.** The Next.js HEAD handler always sets `skipLog: true`. The destination still resolves, no row is written.
+2. **Bot / preview UA filter.** If the inbound `userAgent` matches any known link-preview / unfurler / generic crawler substring (Slackbot, Discordbot, TelegramBot, Twitterbot, FacebookExternalHit, LinkedInBot, WhatsApp, Skype, Googlebot, Bingbot, Embedly, RedditBot, Pinterest, Ahrefs, SEMrush, headless Chrome, curl, wget, Python-requests, node-fetch, etc.), the redirect resolves but no row is logged. Real Chrome / Safari / Firefox / iOS / Android UAs do not match any of these substrings.
+3. **Short-window dedupe.** If a row from the same `(qr_redirect_id, user_agent, country)` was inserted within the last `QR_SCAN_DEDUPE_WINDOW_SECONDS` (currently 30s), the new request collapses into the prior row and no new row is written. Chosen to absorb HEAD-then-GET, double-taps, and immediate share-preview retries while still counting a legitimate "user revisits the poster a minute later" as a fresh scan.
+
+These rules are documented inside `POST /public/qr/:code/scan` in `api/src/index.ts` and surfaced as a one-line caveat above the recent-scans table on the admin detail page so operators understand what is and isn't being counted. The redirect itself is never affected by any of these rules; only the scan log is.
 
 **Security**
 
-- `destination_url` is parsed with the WHATWG `URL` constructor and must use scheme `http` or `https`; anything else (`javascript:`, `data:`, etc.) is rejected with `INVALID_DESTINATION`.
+- `destination_url` is parsed with the WHATWG `URL` constructor and must use scheme `http` or `https`; anything else (`javascript:`, `data:`, etc.) is rejected with `INVALID_DESTINATION`. The same validation applies on both create and update.
 - The public scan endpoint accepts scan metadata from the caller but is only reached via the Next.js `/qr/[code]` route, which derives the values from inbound request headers. No user-session state is touched.
 - Codes are normalized to UPPERCASE on write and resolve, and constrained to `[A-Z0-9][A-Z0-9_-]{1,63}` by both a runtime regex and a Postgres `CHECK` constraint.
+- `media_type` is constrained to the known set (`'card'`, `'poster'`) by both a runtime check and a DB `CHECK` constraint; `assigned_store` and `campaign_variant` are free-form but length-capped (200 / 64 chars).
 
 **Web pages:**
 
 | Route | Component | Description |
 |-------|-----------|-------------|
-| `/admin/qr-redirects` | `AdminQrRedirectsClient` | Super-admin list with search, per-row Copy / Open public URL, and a New QR code dialog. |
-| `/admin/qr-redirects/[id]` | `AdminQrRedirectDetailClient` | Single-code detail with public URL, destination, notes, totals, recent-scan table (up to 50), inline active toggle, Edit dialog, Delete dialog. |
+| `/admin/qr-redirects` | `AdminQrRedirectsClient` | Super-admin inventory table. Sortable headers (Code, Title, Media, Store, Scans, Last scan, Status). Server search across code / title / store. Client-side filter dropdowns: media (Card / Poster), store (Unassigned + every known value), usage (Used / Unused), status (Active / Inactive). Per-row inline Edit (opens the same `QrFormDialog` used for Create), Copy public URL, Open public URL. Summary pills above the table show Total / Used / Unused / Unassigned / Active / Inactive counts. Destination URL is intentionally **not** a column; it remains visible and editable on the detail page and in the inline Edit dialog. |
+| `/admin/qr-redirects/[id]` | `AdminQrRedirectDetailClient` | Single-code detail. Header chip strip (Active, Media, Scans summary), live toggle, Edit / Delete buttons. Field grid covers Public QR URL, Destination URL, Media type, Assigned store, Variant, Notes, Total scans, Last scan, Created, Last updated. Recent-scan table (up to 50) with per-row delete; one-line caveat above explains the dedupe rules. |
+| `QrFormDialog` (`web/src/app/(app)/admin/qr-redirects/QrFormDialog.tsx`) | Shared between list-row inline Edit and detail-page Edit, also used for Create. Single source of truth for the QR form fields (Code, Title, Media type, Variant, Assigned store with Autocomplete suggestions from existing values, Destination URL, Notes, Active toggle). |
 
 **Operational workflow**
 
-1. Super admin creates a record in `/admin/qr-redirects` with a code they want to print (e.g. `S004-P002`) and an initial destination (can be the homepage if the final target isn't picked yet).
-2. The admin copies the public URL (`https://newchums.com/qr/S004-P002`) and generates a QR image from that URL using their preferred tool.
-3. Posters ship with the QR code.
-4. If the destination needs to change (store closes, campaign pivots, community slug changes), the admin opens the detail page and updates `destination_url`, no reprint required.
-5. To retire a poster without reprinting, toggle `is_active` off; the code falls back to the homepage until reassigned.
-6. The scan log on the detail page answers "has this poster been scanned, roughly from where, and when?" without reaching into full analytics.
+1. Super admin creates a record in `/admin/qr-redirects` with a code they want to print (e.g. `C001-01` for a card, `S001-02` for a poster), picks the media type, optionally tags the campaign variant, and sets an initial destination (can be the homepage if the final target isn't picked yet).
+2. The admin copies the public URL (`https://newchums.com/qr/C001-01`) and generates a QR image from that URL using their preferred tool.
+3. Posters / proxy cards ship with the QR code.
+4. When a code is handed out, the admin opens the row's inline Edit and sets `assigned_store` to the receiving store. The list view's Store filter and Unassigned summary then make it obvious which codes are still available for future use.
+5. If the destination needs to change (store closes, campaign pivots, community slug changes), the admin opens the row's inline Edit (or the detail page) and updates `destination_url`; no reprint required.
+6. To retire a poster without reprinting, toggle `is_active` off; the code falls back to the homepage until reactivated.
+7. The list view answers "which codes are unused?" (Used filter = Unused) and "how is each store / each variant performing?" (sort by Scans, group by Store / Variant). The detail page's scan log answers "has this poster been scanned, roughly from where, and when?" without reaching into full analytics.
 
 ### Diagnostics
 

@@ -14098,7 +14098,85 @@ const QR_CODE_MAX_LEN = 64;
 const QR_TITLE_MAX_LEN = 200;
 const QR_DEST_MAX_LEN = 2048;
 const QR_NOTES_MAX_LEN = 2000;
+const QR_STORE_MAX_LEN = 200;
+const QR_VARIANT_MAX_LEN = 64;
 const QR_CODE_REGEX = /^[A-Z0-9][A-Z0-9_-]{1,63}$/;
+const QR_MEDIA_TYPES = ["card", "poster"] as const;
+type QrMediaType = (typeof QR_MEDIA_TYPES)[number];
+
+/** Window (seconds) in which repeat scans from the same code + UA + country
+ *  collapse into the prior log row instead of being inserted as new ones.
+ *  Designed for the most common duplicate-source pattern: a real user double-
+ *  taps the QR (camera fires twice, browser hits the redirect twice), or an
+ *  unfurler / preview bot retries within a few seconds. The destination URL
+ *  the user lands on is unchanged, only the scan log is deduped. */
+const QR_SCAN_DEDUPE_WINDOW_SECONDS = 30;
+
+/** User-agent substrings that identify link-preview / unfurler / crawler
+ *  traffic we don't want to count as scans. We still resolve the redirect
+ *  for these clients so previews work, we just don't insert a scan row.
+ *  Substrings are matched case-insensitively against the full UA string. */
+const QR_BOT_UA_SUBSTRINGS = [
+  "slackbot",
+  "discordbot",
+  "telegrambot",
+  "twitterbot",
+  "facebookexternalhit",
+  "facebot",
+  "linkedinbot",
+  "whatsapp",
+  "skypeuripreview",
+  "googlebot",
+  "bingbot",
+  "duckduckbot",
+  "yandexbot",
+  "baiduspider",
+  "applebot",
+  "embedly",
+  "redditbot",
+  "pinterest",
+  "msnbot",
+  "ahrefsbot",
+  "semrushbot",
+  "mj12bot",
+  "petalbot",
+  "headlesschrome",
+  "phantomjs",
+  "curl/",
+  "wget/",
+  "python-requests",
+  "node-fetch",
+];
+
+/** Returns true if the UA looks like a bot/preview crawler we should not log
+ *  as a scan. Conservative on purpose, real Chrome/Safari/Firefox UAs do not
+ *  match any of these substrings. */
+function looksLikeBotUserAgent(ua: string | null): boolean {
+  if (!ua) return false;
+  const lower = ua.toLowerCase();
+  for (const needle of QR_BOT_UA_SUBSTRINGS) {
+    if (lower.includes(needle)) return true;
+  }
+  return false;
+}
+
+function normalizeMediaType(raw: unknown): QrMediaType | null | "INVALID" {
+  // null/empty string => clear; valid known value => set; anything else => sentinel
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw !== "string") return "INVALID";
+  const trimmed = raw.trim().toLowerCase();
+  if (!trimmed) return null;
+  if ((QR_MEDIA_TYPES as readonly string[]).includes(trimmed)) return trimmed as QrMediaType;
+  return "INVALID";
+}
+
+function normalizeFreeFormString(raw: unknown, maxLen: number): string | null {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  return trimmed.slice(0, maxLen);
+}
 
 /** Validate a destination URL submitted by a super admin. Rejects anything
  *  that isn't an absolute http/https URL so we can't ship a poster that
@@ -14132,12 +14210,20 @@ type QrRedirectRow = {
   destination_url: string;
   notes: string | null;
   is_active: boolean;
+  media_type: QrMediaType | null;
+  assigned_store: string | null;
+  campaign_variant: string | null;
   created_at: string;
   updated_at: string;
   created_by: string;
 };
 
-/** GET /admin/qr-redirects, list, with per-record scan summary. */
+/** GET /admin/qr-redirects, list, with per-record scan summary. The `q`
+ *  search term is matched case-insensitively against `code`, `title`, and
+ *  `assigned_store` so the admin search box is one box covering the three
+ *  fields someone is most likely to type. Filtering by media_type / store /
+ *  active / used is done client-side off the same payload, the result set is
+ *  bounded to 500 rows which is plenty for the QR inventory. */
 app.get("/admin/qr-redirects", async (c) => {
   const admin = await requireSuperAdmin(c);
   if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
@@ -14148,6 +14234,7 @@ app.get("/admin/qr-redirects", async (c) => {
     const rows = likePattern
       ? (await sql`
           SELECT r.id, r.code, r.title, r.destination_url, r.notes, r.is_active,
+                 r.media_type, r.assigned_store, r.campaign_variant,
                  r.created_at, r.updated_at, r.created_by,
                  COALESCE(s.scan_count, 0)::int AS scan_count,
                  s.last_scanned_at
@@ -14159,12 +14246,15 @@ app.get("/admin/qr-redirects", async (c) => {
             FROM newchums.qr_redirect_scans
             GROUP BY qr_redirect_id
           ) s ON s.qr_redirect_id = r.id
-          WHERE r.code LIKE ${likePattern} OR UPPER(r.title) LIKE ${likePattern}
+          WHERE r.code LIKE ${likePattern}
+             OR UPPER(r.title) LIKE ${likePattern}
+             OR UPPER(COALESCE(r.assigned_store, '')) LIKE ${likePattern}
           ORDER BY r.created_at DESC
           LIMIT 500
         `) as (QrRedirectRow & { scan_count: number; last_scanned_at: string | null })[]
       : (await sql`
           SELECT r.id, r.code, r.title, r.destination_url, r.notes, r.is_active,
+                 r.media_type, r.assigned_store, r.campaign_variant,
                  r.created_at, r.updated_at, r.created_by,
                  COALESCE(s.scan_count, 0)::int AS scan_count,
                  s.last_scanned_at
@@ -14195,6 +14285,7 @@ app.post("/admin/qr-redirects", async (c) => {
     const body = await c.req.json() as {
       code?: unknown; title?: unknown; destination_url?: unknown;
       notes?: unknown; is_active?: unknown;
+      media_type?: unknown; assigned_store?: unknown; campaign_variant?: unknown;
     };
     const code = normalizeQrCode(body.code);
     if (!code) return c.json({ ok: false, error: "INVALID_CODE", message: "Code must be 2–64 chars of A–Z, 0–9, '-' or '_' and start with an alphanumeric." }, 400);
@@ -14202,16 +14293,29 @@ app.post("/admin/qr-redirects", async (c) => {
     if (!title || title.length > QR_TITLE_MAX_LEN) return c.json({ ok: false, error: "INVALID_TITLE" }, 400);
     const destination = validateQrDestinationUrl(body.destination_url);
     if (!destination) return c.json({ ok: false, error: "INVALID_DESTINATION", message: "Destination must be an absolute http(s) URL." }, 400);
-    const notes = typeof body.notes === "string" ? body.notes.trim().slice(0, QR_NOTES_MAX_LEN) : null;
+    const notes = typeof body.notes === "string" ? body.notes.trim().slice(0, QR_NOTES_MAX_LEN) || null : null;
     const isActive = body.is_active !== false;
+
+    const mediaType = normalizeMediaType(body.media_type);
+    if (mediaType === "INVALID") return c.json({ ok: false, error: "INVALID_MEDIA_TYPE", message: "Media type must be 'card', 'poster', or empty." }, 400);
+    const assignedStore = normalizeFreeFormString(body.assigned_store, QR_STORE_MAX_LEN);
+    const campaignVariant = normalizeFreeFormString(body.campaign_variant, QR_VARIANT_MAX_LEN);
 
     const existing = (await sql`SELECT id FROM newchums.qr_redirects WHERE code = ${code} LIMIT 1`) as { id: string }[];
     if (existing.length > 0) return c.json({ ok: false, error: "CODE_TAKEN", message: "A QR redirect with that code already exists." }, 409);
 
     const inserted = (await sql`
-      INSERT INTO newchums.qr_redirects (code, title, destination_url, notes, is_active, created_by)
-      VALUES (${code}, ${title}, ${destination}, ${notes}, ${isActive}, ${admin.id})
-      RETURNING id, code, title, destination_url, notes, is_active, created_at, updated_at, created_by
+      INSERT INTO newchums.qr_redirects (
+        code, title, destination_url, notes, is_active,
+        media_type, assigned_store, campaign_variant, created_by
+      )
+      VALUES (
+        ${code}, ${title}, ${destination}, ${notes}, ${isActive},
+        ${mediaType}, ${assignedStore}, ${campaignVariant}, ${admin.id}
+      )
+      RETURNING id, code, title, destination_url, notes, is_active,
+                media_type, assigned_store, campaign_variant,
+                created_at, updated_at, created_by
     `) as QrRedirectRow[];
     return c.json({ ok: true, item: inserted[0] });
   } catch (err) {
@@ -14228,7 +14332,9 @@ app.get("/admin/qr-redirects/:id", async (c) => {
   const id = c.req.param("id");
   try {
     const rows = (await sql`
-      SELECT id, code, title, destination_url, notes, is_active, created_at, updated_at, created_by
+      SELECT id, code, title, destination_url, notes, is_active,
+             media_type, assigned_store, campaign_variant,
+             created_at, updated_at, created_by
       FROM newchums.qr_redirects WHERE id = ${id} LIMIT 1
     `) as QrRedirectRow[];
     if (!rows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
@@ -14259,7 +14365,12 @@ app.get("/admin/qr-redirects/:id", async (c) => {
   }
 });
 
-/** PATCH /admin/qr-redirects/:id, update fields. Accepts any subset. */
+/** PATCH /admin/qr-redirects/:id, update fields. Accepts any subset. The
+ *  three operational metadata fields (`media_type`, `assigned_store`,
+ *  `campaign_variant`) follow the same convention as `notes`: explicit
+ *  `null` (or empty string after trim) clears the value, an absent key
+ *  leaves it untouched. This lets the admin "unassign" a code from a store
+ *  by editing the field to empty without needing a dedicated endpoint. */
 app.patch("/admin/qr-redirects/:id", async (c) => {
   const admin = await requireSuperAdmin(c);
   if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
@@ -14269,6 +14380,7 @@ app.patch("/admin/qr-redirects/:id", async (c) => {
     const body = await c.req.json() as {
       code?: unknown; title?: unknown; destination_url?: unknown;
       notes?: unknown; is_active?: unknown;
+      media_type?: unknown; assigned_store?: unknown; campaign_variant?: unknown;
     };
     const existing = (await sql`SELECT id, code FROM newchums.qr_redirects WHERE id = ${id} LIMIT 1`) as { id: string; code: string }[];
     if (!existing[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
@@ -14305,6 +14417,20 @@ app.patch("/admin/qr-redirects/:id", async (c) => {
     const touchesActive = body.is_active !== undefined;
     const nextActive = touchesActive ? (body.is_active !== false) : null;
 
+    const touchesMedia = body.media_type !== undefined;
+    let nextMedia: QrMediaType | null = null;
+    if (touchesMedia) {
+      const parsed = normalizeMediaType(body.media_type);
+      if (parsed === "INVALID") return c.json({ ok: false, error: "INVALID_MEDIA_TYPE" }, 400);
+      nextMedia = parsed;
+    }
+
+    const touchesStore = body.assigned_store !== undefined;
+    const nextStore = touchesStore ? normalizeFreeFormString(body.assigned_store, QR_STORE_MAX_LEN) : null;
+
+    const touchesVariant = body.campaign_variant !== undefined;
+    const nextVariant = touchesVariant ? normalizeFreeFormString(body.campaign_variant, QR_VARIANT_MAX_LEN) : null;
+
     const updated = (await sql`
       UPDATE newchums.qr_redirects
       SET
@@ -14313,9 +14439,14 @@ app.patch("/admin/qr-redirects/:id", async (c) => {
         destination_url = COALESCE(${nextDest}, destination_url),
         notes = CASE WHEN ${touchesNotes}::boolean THEN ${nextNotes} ELSE notes END,
         is_active = CASE WHEN ${touchesActive}::boolean THEN ${nextActive}::boolean ELSE is_active END,
+        media_type = CASE WHEN ${touchesMedia}::boolean THEN ${nextMedia} ELSE media_type END,
+        assigned_store = CASE WHEN ${touchesStore}::boolean THEN ${nextStore} ELSE assigned_store END,
+        campaign_variant = CASE WHEN ${touchesVariant}::boolean THEN ${nextVariant} ELSE campaign_variant END,
         updated_at = NOW()
       WHERE id = ${id}
-      RETURNING id, code, title, destination_url, notes, is_active, created_at, updated_at, created_by
+      RETURNING id, code, title, destination_url, notes, is_active,
+                media_type, assigned_store, campaign_variant,
+                created_at, updated_at, created_by
     `) as QrRedirectRow[];
     return c.json({ ok: true, item: updated[0] });
   } catch (err) {
@@ -14374,6 +14505,25 @@ app.delete("/admin/qr-redirects/:id/scans/:scanId", async (c) => {
  *  not exposed on the public API contract beyond the /qr/ path.
  *
  *  No auth: QR codes are designed to be scanned by anyone.
+ *
+ *  Scan-count trustworthiness:
+ *
+ *    1. **Bot / preview filter.** If the inbound UA matches any known
+ *       link-preview / unfurler / generic crawler substring, we still resolve
+ *       the redirect (so previews keep working) but we do NOT insert a scan
+ *       row. Without this, sharing a QR URL in Slack/Discord/iMessage tripled
+ *       the count for a single real-world scan.
+ *
+ *    2. **Short-window dedupe.** If a scan from the same code + UA + country
+ *       was logged within the last QR_SCAN_DEDUPE_WINDOW_SECONDS, treat the
+ *       new request as the same scan and skip the insert. This collapses the
+ *       browser's HEAD-then-GET pre-check pattern and a real user double-
+ *       tapping the camera. We deliberately do NOT extend the window beyond
+ *       ~30s, otherwise a legitimate "user revisits the poster a minute
+ *       later" would be silently dropped, which is real engagement.
+ *
+ *  Both behaviors are intentionally conservative. The `redirect` itself is
+ *  never affected, only what we record in the scan log.
  */
 app.post("/public/qr/:code/scan", async (c) => {
   const sql = getSql(c.env);
@@ -14387,22 +14537,46 @@ app.post("/public/qr/:code/scan", async (c) => {
     if (!rows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     if (!rows[0].is_active) return c.json({ ok: false, error: "INACTIVE" }, 410);
 
-    let meta: { userAgent?: unknown; referer?: unknown; country?: unknown } = {};
+    let meta: { userAgent?: unknown; referer?: unknown; country?: unknown; skipLog?: unknown } = {};
     try { meta = await c.req.json(); } catch { /* metadata is optional */ }
 
     const ua = typeof meta.userAgent === "string" ? meta.userAgent.slice(0, 500) : null;
     const ref = typeof meta.referer === "string" ? meta.referer.slice(0, 500) : null;
     const country = typeof meta.country === "string" ? meta.country.slice(0, 8) : null;
+    // The Next.js handler sets skipLog: true for HEAD pre-flights so they
+    // can resolve without ever reaching the dedupe layer.
+    const callerSkipLog = meta.skipLog === true;
+
+    const shouldLog = !callerSkipLog && !looksLikeBotUserAgent(ua);
 
     // Log opportunistically. Never block the redirect on a log write failure;
     // a working redirect matters more than a perfect scan count.
-    try {
-      await sql`
-        INSERT INTO newchums.qr_redirect_scans (qr_redirect_id, user_agent, referer, country)
-        VALUES (${rows[0].id}, ${ua}, ${ref}, ${country})
-      `;
-    } catch (logErr) {
-      console.error("[POST /public/qr/:code/scan] scan-log failed", logErr);
+    if (shouldLog) {
+      try {
+        // Short-window dedupe: skip insert if an identical (code, UA, country)
+        // scan landed within QR_SCAN_DEDUPE_WINDOW_SECONDS. We compare on the
+        // exact UA string the caller sent (after our 500-char truncation),
+        // which is good enough to collapse the common "HEAD then GET" /
+        // "double-tap" pattern without dropping unrelated scans that happen
+        // to share a country.
+        const recent = (await sql`
+          SELECT id FROM newchums.qr_redirect_scans
+          WHERE qr_redirect_id = ${rows[0].id}
+            AND scanned_at > NOW() - (${QR_SCAN_DEDUPE_WINDOW_SECONDS}::int * INTERVAL '1 second')
+            AND user_agent IS NOT DISTINCT FROM ${ua}
+            AND country IS NOT DISTINCT FROM ${country}
+          ORDER BY scanned_at DESC
+          LIMIT 1
+        `) as { id: string }[];
+        if (recent.length === 0) {
+          await sql`
+            INSERT INTO newchums.qr_redirect_scans (qr_redirect_id, user_agent, referer, country)
+            VALUES (${rows[0].id}, ${ua}, ${ref}, ${country})
+          `;
+        }
+      } catch (logErr) {
+        console.error("[POST /public/qr/:code/scan] scan-log failed", logErr);
+      }
     }
 
     return c.json({ ok: true, destinationUrl: rows[0].destination_url });

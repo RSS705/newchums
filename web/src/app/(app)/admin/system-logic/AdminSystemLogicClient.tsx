@@ -148,7 +148,7 @@ export default function AdminSystemLogicClient() {
       <CollapsibleSection title="Plan auto-cancellation" subtitle="When plans are automatically canceled by the system">
         <Bullet>
           <strong>No attendees:</strong> If a published plan&rsquo;s start time passes and <strong>no one other than the host</strong> is
-          Going, the plan is automatically canceled with reason &ldquo;no_attendees.&rdquo; No email is sent &mdash;
+          Going, the plan is automatically canceled with reason &ldquo;no_attendees.&rdquo; No email is sent;
           this is a silent cleanup for plans that effectively never happened.
         </Bullet>
         <Bullet>
@@ -237,7 +237,7 @@ export default function AdminSystemLogicClient() {
 
       <CollapsibleSection title="Plan sharing and lightweight join" subtitle="How share links, invite emails, and lightweight signup work">
         <Bullet>
-          <strong>Plain URL vs share link:</strong> A <strong>plain URL</strong> (<code>/events/[id]</code>) shows a <strong>public preview</strong> only &mdash;
+          <strong>Plain URL vs share link:</strong> A <strong>plain URL</strong> (<code>/events/[id]</code>) shows a <strong>public preview</strong> only:
           basic plan info, approximate location, attendee counts, and a sign-in prompt. No RSVP flow is available for non-public plans without a token.
           The <strong>Copy Link</strong> button produces a <strong>share link</strong> (<code>/events/[id]?share_token=xxx</code>) that grants preview access
           to non-public plans so the recipient can see the full plan page.
@@ -1007,6 +1007,61 @@ export default function AdminSystemLogicClient() {
         </Bullet>
         <Bullet>
           Unfinished premium features may remain behind <strong>super-admin-only</strong> or <strong>QA-only</strong> gating until ready for broader rollout.
+        </Bullet>
+      </CollapsibleSection>
+
+      <CollapsibleSection title="QR codes" subtitle="Printed QR posters and proxy cards as a small inventory">
+        <Bullet>
+          Each <strong>QR code</strong> is a row in the admin <strong>QR Codes</strong> tab and a public URL of the form{" "}
+          <code>https://newchums.com/qr/CODE</code>. The redirect lives at the same URL forever; we can change where it points without reprinting the poster.
+        </Bullet>
+        <Bullet>
+          A row carries operational metadata: <strong>Media type</strong> (Card or Poster), <strong>Assigned store</strong> (free-form, blank means not yet
+          handed out), <strong>Variant</strong> (an optional tag for which ad design is on the back), <strong>Active</strong> (off makes the code redirect
+          to the homepage), and the destination URL.
+        </Bullet>
+
+        <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
+          What &ldquo;used vs unused&rdquo; means
+        </Typography>
+        <Bullet>
+          A code is <strong>used</strong> the moment its scan count is at least 1. The list view&rsquo;s <strong>Usage</strong> filter and the{" "}
+          <strong>Never scanned</strong> chip make this obvious without opening each row.
+        </Bullet>
+        <Bullet>
+          A code is <strong>unassigned</strong> when no store is set. Use the <strong>Store</strong> filter (Unassigned) to find codes still available to
+          hand out.
+        </Bullet>
+
+        <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
+          Why scan counts can be trusted
+        </Typography>
+        <Bullet>
+          Browsers and link previews routinely hit the URL more than once for a single human scan (a <strong>HEAD</strong> pre-flight, then a{" "}
+          <strong>GET</strong>; or a Slack / iMessage / Discord unfurler crawling the link). The scan endpoint applies three rules so the count reflects
+          real human scans:
+        </Bullet>
+        <Bullet>
+          <strong>HEAD requests don&rsquo;t count.</strong> The redirect still resolves so the preview works, but no scan row is written.
+        </Bullet>
+        <Bullet>
+          <strong>Known bots / unfurlers don&rsquo;t count.</strong> Slackbot, Discordbot, Twitterbot, FacebookExternalHit, WhatsApp, LinkedInBot, search
+          crawlers, headless Chrome, curl, wget, and similar are filtered out by user agent.
+        </Bullet>
+        <Bullet>
+          <strong>Repeat scans within 30 seconds collapse.</strong> The same device hitting the URL twice in quick succession (camera double-fire,
+          accidental retap) is recorded once. A real revisit a minute or more later still counts.
+        </Bullet>
+        <Bullet>
+          The <strong>redirect itself is never affected</strong> by these rules. They only change what we log.
+        </Bullet>
+
+        <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
+          Inactive codes
+        </Typography>
+        <Bullet>
+          Toggling <strong>Active</strong> off makes the public URL redirect to the homepage instead of the destination, so a poster in the wild can be
+          retired without reprinting. The row&rsquo;s scan history is preserved.
         </Bullet>
       </CollapsibleSection>
 

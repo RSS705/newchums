@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
@@ -12,9 +13,7 @@ import DialogContentText from "@mui/material/DialogContentText";
 import DialogTitle from "@mui/material/DialogTitle";
 import Divider from "@mui/material/Divider";
 import FormControlLabel from "@mui/material/FormControlLabel";
-import Grid from "@mui/material/Grid";
 import IconButton from "@mui/material/IconButton";
-import MuiLink from "@mui/material/Link";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import Switch from "@mui/material/Switch";
@@ -24,29 +23,22 @@ import TableCell from "@mui/material/TableCell";
 import TableContainer from "@mui/material/TableContainer";
 import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
-import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
+import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
+import CreditCardRoundedIcon from "@mui/icons-material/CreditCardRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
+import ImageRoundedIcon from "@mui/icons-material/ImageRounded";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import OpenInNewRoundedIcon from "@mui/icons-material/OpenInNewRounded";
 import NextLink from "next/link";
 import { useRouter } from "next/navigation";
-import { AppCard, useToast } from "@/components/ui";
+import { useToast } from "@/components/ui";
 import { apiFetch } from "@/lib/apiClient";
 import { copyQrPublicUrl, formatQrScanWhen, qrPublicUrlFor } from "../qrUrl";
-
-type QrRedirect = {
-  id: string;
-  code: string;
-  title: string;
-  destination_url: string;
-  notes: string | null;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-};
+import { QrFormDialog, type QrMediaType, type QrRedirectRow } from "../QrFormDialog";
 
 type ScanRow = {
   id: string;
@@ -56,12 +48,15 @@ type ScanRow = {
   country: string | null;
 };
 
+const MEDIA_LABELS: Record<QrMediaType, string> = {
+  card: "Card",
+  poster: "Poster",
+};
+
 export default function AdminQrRedirectDetailClient({ id }: { id: string }) {
   const router = useRouter();
   const toast = useToast();
-  const [item, setItem] = useState<QrRedirect | null>(null);
-  const [scanCount, setScanCount] = useState(0);
-  const [lastScanAt, setLastScanAt] = useState<string | null>(null);
+  const [item, setItem] = useState<QrRedirectRow | null>(null);
   const [scans, setScans] = useState<ScanRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
@@ -81,15 +76,17 @@ export default function AdminQrRedirectDetailClient({ id }: { id: string }) {
       }
       const data = (await res.json()) as {
         ok?: boolean;
-        item?: QrRedirect;
+        item?: Omit<QrRedirectRow, "scan_count" | "last_scanned_at">;
         scan_count?: number;
         last_scanned_at?: string | null;
         recent_scans?: ScanRow[];
       };
       if (data.ok && data.item) {
-        setItem(data.item);
-        setScanCount(data.scan_count ?? 0);
-        setLastScanAt(data.last_scanned_at ?? null);
+        setItem({
+          ...data.item,
+          scan_count: data.scan_count ?? 0,
+          last_scanned_at: data.last_scanned_at ?? null,
+        } as QrRedirectRow);
         setScans(Array.isArray(data.recent_scans) ? data.recent_scans : []);
       }
     } catch {
@@ -105,7 +102,6 @@ export default function AdminQrRedirectDetailClient({ id }: { id: string }) {
   const handleToggleActive = async (next: boolean) => {
     if (!item) return;
     const prev = item.is_active;
-    // Optimistic flip so the switch responds immediately.
     setItem({ ...item, is_active: next });
     try {
       const res = await apiFetch(`/admin/qr-redirects/${item.id}`, {
@@ -128,13 +124,13 @@ export default function AdminQrRedirectDetailClient({ id }: { id: string }) {
   };
 
   const handleDeleteScan = async (scanId: string) => {
-    // Optimistic remove so the row vanishes immediately. This is a testing/
-    // housekeeping action; if the server rejects we restore the row and
-    // surface the error. No confirmation modal on purpose — the user
-    // explicitly asked for a one-click delete.
+    // Optimistic remove. Testing/housekeeping action; if the server rejects
+    // we restore the row and surface the error. No confirmation modal on
+    // purpose, the user explicitly asked for a one-click delete.
+    if (!item) return;
     const previous = scans;
     setScans((prev) => prev.filter((s) => s.id !== scanId));
-    setScanCount((prev) => Math.max(0, prev - 1));
+    setItem({ ...item, scan_count: Math.max(0, (item.scan_count ?? 0) - 1) });
     try {
       const res = await apiFetch(`/admin/qr-redirects/${id}/scans/${scanId}`, {
         auth: true,
@@ -143,16 +139,14 @@ export default function AdminQrRedirectDetailClient({ id }: { id: string }) {
       const data = (await res.json()) as { ok?: boolean };
       if (!res.ok || !data.ok) {
         setScans(previous);
-        setScanCount(previous.length);
+        setItem({ ...item, scan_count: previous.length });
         toast.error("Couldn't delete scan");
         return;
       }
-      // Refresh the summary so last_scanned_at reflects reality after the
-      // most recent row is removed.
       fetchItem();
     } catch {
       setScans(previous);
-      setScanCount(previous.length);
+      setItem({ ...item, scan_count: previous.length });
       toast.error("Couldn't delete scan");
     }
   };
@@ -178,222 +172,47 @@ export default function AdminQrRedirectDetailClient({ id }: { id: string }) {
 
   if (loading || !item) {
     return (
-      <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
+      <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}>
         <CircularProgress size={28} />
       </Box>
     );
   }
 
+  const used = (item.scan_count ?? 0) > 0;
+
   return (
     <Stack spacing={3}>
-      <Box>
-        <MuiLink
-          component={NextLink}
-          href="/admin/qr-redirects"
-          underline="hover"
-          sx={{
-            display: "inline-block",
-            mb: 0.75,
-            fontSize: "0.8125rem",
-            fontWeight: 600,
-            color: "primary.main",
-          }}
-        >
-          QR Codes
-        </MuiLink>
-        <Typography variant="h5" fontWeight={700} sx={{ mb: 0.5, fontFamily: "monospace" }}>
-          {item.code}
-        </Typography>
-        <Typography variant="body1" color="text.secondary">
-          {item.title}
-        </Typography>
-      </Box>
-
-      <AppCard>
-        <Stack spacing={2}>
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ sm: "center" }}>
-            <Chip
-              label={item.is_active ? "Active" : "Inactive"}
-              size="small"
-              color={item.is_active ? "success" : "default"}
-              variant={item.is_active ? "filled" : "outlined"}
-              sx={{ fontWeight: 600 }}
-            />
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={item.is_active}
-                  onChange={(_, v) => handleToggleActive(v)}
-                />
-              }
-              label={item.is_active ? "Redirect is live" : "Redirect falls back to homepage"}
-              sx={{ m: 0 }}
-            />
-            <Box sx={{ flex: 1 }} />
-            <Button
-              startIcon={<EditRoundedIcon />}
-              variant="outlined"
-              size="small"
-              onClick={() => setEditOpen(true)}
-              sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
-            >
-              Edit
-            </Button>
-            <Button
-              startIcon={<DeleteOutlineRoundedIcon />}
-              variant="outlined"
-              color="error"
-              size="small"
-              onClick={() => setDeleteOpen(true)}
-              sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
-            >
-              Delete
-            </Button>
-          </Stack>
-
-          <Divider />
-
-          <Grid container spacing={2}>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <FieldLabel>Public QR URL</FieldLabel>
-              <Stack direction="row" alignItems="center" spacing={0.5}>
-                <Typography
-                  component="a"
-                  href={shareUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  variant="body2"
-                  sx={{ fontFamily: "monospace", color: "primary.main", wordBreak: "break-all" }}
-                >
-                  {shareUrl}
-                </Typography>
-                <Tooltip title="Copy public URL" arrow>
-                  <IconButton size="small" onClick={() => copyQrPublicUrl(item.code, toast)}>
-                    <ContentCopyRoundedIcon sx={{ fontSize: 18 }} />
-                  </IconButton>
-                </Tooltip>
-                <Tooltip title="Open public URL" arrow>
-                  <IconButton size="small" component="a" href={shareUrl} target="_blank" rel="noopener noreferrer">
-                    <OpenInNewRoundedIcon sx={{ fontSize: 18 }} />
-                  </IconButton>
-                </Tooltip>
-              </Stack>
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <FieldLabel>Destination URL</FieldLabel>
-              <Typography
-                component="a"
-                href={item.destination_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                variant="body2"
-                sx={{ color: "primary.main", wordBreak: "break-all" }}
-              >
-                {item.destination_url}
-              </Typography>
-            </Grid>
-            {item.notes && (
-              <Grid size={12}>
-                <FieldLabel>Notes</FieldLabel>
-                <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: "pre-wrap" }}>
-                  {item.notes}
-                </Typography>
-              </Grid>
-            )}
-            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-              <FieldLabel>Total scans</FieldLabel>
-              <Typography variant="h6" fontWeight={700}>{scanCount}</Typography>
-            </Grid>
-            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-              <FieldLabel>Last scan</FieldLabel>
-              <Typography variant="body2">{formatQrScanWhen(lastScanAt)}</Typography>
-            </Grid>
-            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-              <FieldLabel>Created</FieldLabel>
-              <Typography variant="body2">{formatDateTime(item.created_at)}</Typography>
-            </Grid>
-            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-              <FieldLabel>Last updated</FieldLabel>
-              <Typography variant="body2">{formatDateTime(item.updated_at)}</Typography>
-            </Grid>
-          </Grid>
-        </Stack>
-      </AppCard>
-
-      <Box>
-        <Typography variant="h6" fontWeight={700} sx={{ mb: 1 }}>
-          Recent scans
-        </Typography>
-        <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2 }}>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell sx={{ fontWeight: 700 }}>When</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>Country</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>Referer</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>User agent</TableCell>
-                <TableCell sx={{ fontWeight: 700, width: 48 }} align="right" />
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {scans.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5} align="center" sx={{ py: 4, color: "text.secondary" }}>
-                    No scans yet.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                scans.map((s) => (
-                  <TableRow key={s.id}>
-                    <TableCell>
-                      <Tooltip title={formatDateTime(s.scanned_at)} arrow>
-                        <span>{formatQrScanWhen(s.scanned_at)}</span>
-                      </Tooltip>
-                    </TableCell>
-                    <TableCell>{s.country || "—"}</TableCell>
-                    <TableCell sx={{ maxWidth: 240 }}>
-                      <Typography
-                        variant="body2"
-                        sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                      >
-                        {s.referer || "—"}
-                      </Typography>
-                    </TableCell>
-                    <TableCell sx={{ maxWidth: 320 }}>
-                      <Typography
-                        variant="body2"
-                        sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                      >
-                        {s.user_agent || "—"}
-                      </Typography>
-                    </TableCell>
-                    <TableCell align="right" sx={{ py: 0.5 }}>
-                      <Tooltip title="Delete scan" arrow>
-                        <IconButton
-                          size="small"
-                          onClick={() => handleDeleteScan(s.id)}
-                          aria-label="Delete scan"
-                          sx={{ color: "text.disabled", "&:hover": { color: "error.main" } }}
-                        >
-                          <DeleteOutlineRoundedIcon sx={{ fontSize: 18 }} />
-                        </IconButton>
-                      </Tooltip>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
-          Showing up to 50 most recent scans.
-        </Typography>
-      </Box>
-
-      <QrEditDialog
-        open={editOpen}
-        onClose={() => setEditOpen(false)}
+      <HeaderBlock
         item={item}
+        onEdit={() => setEditOpen(true)}
+        onDelete={() => setDeleteOpen(true)}
+      />
+
+      <StatusCard
+        item={item}
+        onToggleActive={handleToggleActive}
+      />
+
+      <StatsStrip
+        scanCount={item.scan_count ?? 0}
+        lastScannedAt={item.last_scanned_at}
+        createdAt={item.created_at}
+        updatedAt={item.updated_at}
+        used={used}
+      />
+
+      <DetailsCard item={item} shareUrl={shareUrl} />
+
+      <RecentScansSection
+        scans={scans}
+        onDeleteScan={handleDeleteScan}
+      />
+
+      <QrFormDialog
+        mode="edit"
+        open={editOpen}
+        item={item}
+        onClose={() => setEditOpen(false)}
         onSaved={(updated) => {
           setItem(updated);
           setEditOpen(false);
@@ -425,26 +244,590 @@ export default function AdminQrRedirectDetailClient({ id }: { id: string }) {
   );
 }
 
-function FieldLabel({ children }: { children: React.ReactNode }) {
+/** Page header. Back link, monospace code as the identity, title as the
+ *  human-readable caption, and right-aligned edit / delete actions. Matches
+ *  the pattern in AdminUserDiagnosticsClient where the back affordance sits
+ *  inline with the title block rather than on its own row. */
+function HeaderBlock({
+  item,
+  onEdit,
+  onDelete,
+}: {
+  item: QrRedirectRow;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
   return (
-    <Typography
-      variant="caption"
+    <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ sm: "flex-end" }}>
+      <Stack direction="row" alignItems="flex-start" spacing={1.5} sx={{ flex: 1, minWidth: 0 }}>
+        <Tooltip title="Back to QR codes" arrow>
+          <IconButton
+            component={NextLink}
+            href="/admin/qr-redirects"
+            size="small"
+            sx={{
+              mt: 0.25,
+              color: "text.secondary",
+              "&:hover": { color: "primary.main", bgcolor: "action.hover" },
+            }}
+            aria-label="Back to QR codes"
+          >
+            <ArrowBackRoundedIcon />
+          </IconButton>
+        </Tooltip>
+        <Box sx={{ minWidth: 0 }}>
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5, flexWrap: "wrap" }}>
+            <Typography
+              component="h1"
+              sx={{
+                fontFamily: "monospace",
+                fontSize: { xs: "1.625rem", sm: "1.875rem" },
+                fontWeight: 700,
+                letterSpacing: "-0.01em",
+                lineHeight: 1.15,
+                color: "text.primary",
+              }}
+            >
+              {item.code}
+            </Typography>
+            {item.media_type && (
+              <MediaChip mediaType={item.media_type} />
+            )}
+          </Stack>
+          <Typography
+            variant="body1"
+            color="text.secondary"
+            sx={{ fontSize: { xs: "0.875rem", sm: "0.9375rem" } }}
+          >
+            {item.title}
+          </Typography>
+        </Box>
+      </Stack>
+      <Stack direction="row" spacing={1} sx={{ flexShrink: 0 }}>
+        <Button
+          startIcon={<EditRoundedIcon />}
+          variant="outlined"
+          size="small"
+          onClick={onEdit}
+          sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
+        >
+          Edit
+        </Button>
+        <Button
+          startIcon={<DeleteOutlineRoundedIcon />}
+          variant="outlined"
+          color="error"
+          size="small"
+          onClick={onDelete}
+          sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
+        >
+          Delete
+        </Button>
+      </Stack>
+    </Stack>
+  );
+}
+
+/** Redirect-state card. Two jobs: (1) surface whether the redirect is
+ *  currently live or falling back to the homepage, (2) make toggling that
+ *  state a one-click action. We intentionally don't bury the toggle inside a
+ *  chip row; it's the single most operationally significant control on the
+ *  page. Copy, Open, and the destination URL all live here too because that
+ *  is the same beat: "what does this code do right now?". */
+function StatusCard({
+  item,
+  onToggleActive,
+}: {
+  item: QrRedirectRow;
+  onToggleActive: (next: boolean) => void;
+}) {
+  const toast = useToast();
+  const shareUrl = qrPublicUrlFor(item.code);
+  return (
+    <Paper
+      variant="outlined"
       sx={{
-        display: "block",
-        mb: 0.25,
-        textTransform: "uppercase",
-        letterSpacing: 0.5,
-        fontWeight: 700,
-        color: "text.secondary",
+        borderRadius: 2,
+        borderColor: item.is_active ? "success.main" : "divider",
+        bgcolor: item.is_active ? "success.light" : "grey.100",
+        transition: "background-color 120ms ease, border-color 120ms ease",
       }}
     >
-      {children}
-    </Typography>
+      <Stack
+        direction={{ xs: "column", md: "row" }}
+        spacing={{ xs: 1.5, md: 3 }}
+        alignItems={{ md: "center" }}
+        sx={{ px: { xs: 2, sm: 2.5 }, py: 1.75 }}
+      >
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
+            <Box
+              sx={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                bgcolor: item.is_active ? "success.main" : "text.disabled",
+                boxShadow: item.is_active ? "0 0 0 3px rgba(5, 150, 105, 0.15)" : "none",
+              }}
+            />
+            <Typography
+              variant="caption"
+              sx={{
+                fontWeight: 700,
+                textTransform: "uppercase",
+                letterSpacing: 0.6,
+                color: item.is_active ? "success.dark" : "text.secondary",
+              }}
+            >
+              {item.is_active ? "Redirect is live" : "Falling back to homepage"}
+            </Typography>
+          </Stack>
+          <Stack direction="row" alignItems="center" spacing={0.5} sx={{ flexWrap: "wrap" }}>
+            <Typography
+              component="a"
+              href={shareUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              sx={{
+                fontFamily: "monospace",
+                fontSize: { xs: "0.8125rem", sm: "0.875rem" },
+                color: "primary.dark",
+                wordBreak: "break-all",
+                "&:hover": { textDecoration: "underline" },
+              }}
+            >
+              {shareUrl}
+            </Typography>
+            <Tooltip title="Copy public URL" arrow>
+              <IconButton
+                size="small"
+                onClick={() => copyQrPublicUrl(item.code, toast)}
+                sx={{ color: "text.secondary", "&:hover": { color: "primary.main" } }}
+              >
+                <ContentCopyRoundedIcon sx={{ fontSize: 16 }} />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Open public URL" arrow>
+              <IconButton
+                size="small"
+                component="a"
+                href={shareUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                sx={{ color: "text.secondary", "&:hover": { color: "primary.main" } }}
+              >
+                <OpenInNewRoundedIcon sx={{ fontSize: 16 }} />
+              </IconButton>
+            </Tooltip>
+          </Stack>
+        </Box>
+        <FormControlLabel
+          control={
+            <Switch
+              checked={item.is_active}
+              onChange={(_, v) => onToggleActive(v)}
+              color="success"
+            />
+          }
+          label={
+            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+              {item.is_active ? "Active" : "Inactive"}
+            </Typography>
+          }
+          sx={{ m: 0, flexShrink: 0 }}
+        />
+      </Stack>
+    </Paper>
+  );
+}
+
+/** Four-cell numeric strip: total scans, last scan, created, updated.
+ *  Mirrors the `Plan stats` strip on `AdminUserDiagnosticsClient` so the
+ *  admin surfaces share a consistent "key numbers at a glance" rhythm. */
+function StatsStrip({
+  scanCount,
+  lastScannedAt,
+  createdAt,
+  updatedAt,
+  used,
+}: {
+  scanCount: number;
+  lastScannedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  used: boolean;
+}) {
+  return (
+    <Paper variant="outlined" sx={{ borderRadius: 2, px: { xs: 2, sm: 2.5 }, py: 1.75 }}>
+      <Stack
+        direction="row"
+        divider={<Divider orientation="vertical" flexItem sx={{ mx: { xs: 1.25, sm: 3 } }} />}
+        sx={{ overflowX: "auto" }}
+      >
+        <StatCell
+          label="Total scans"
+          primary={scanCount.toString()}
+          muted={!used}
+          primarySize="h"
+        />
+        <StatCell
+          label="Last scan"
+          primary={used ? formatQrScanWhen(lastScannedAt) : "Never"}
+          secondary={used && lastScannedAt ? formatDateTime(lastScannedAt) : undefined}
+          muted={!used}
+        />
+        <StatCell
+          label="Created"
+          primary={formatDate(createdAt)}
+          secondary={formatTimeOfDay(createdAt)}
+        />
+        <StatCell
+          label="Last updated"
+          primary={formatDate(updatedAt)}
+          secondary={formatTimeOfDay(updatedAt)}
+        />
+      </Stack>
+    </Paper>
+  );
+}
+
+function StatCell({
+  label,
+  primary,
+  secondary,
+  muted,
+  primarySize = "md",
+}: {
+  label: string;
+  primary: string;
+  secondary?: string;
+  muted?: boolean;
+  primarySize?: "h" | "md";
+}) {
+  return (
+    <Box sx={{ minWidth: 92, flexShrink: 0 }}>
+      <Typography
+        variant="caption"
+        sx={{
+          display: "block",
+          textTransform: "uppercase",
+          letterSpacing: 0.6,
+          fontSize: "0.6875rem",
+          fontWeight: 600,
+          color: "text.secondary",
+          lineHeight: 1.4,
+        }}
+      >
+        {label}
+      </Typography>
+      <Typography
+        sx={{
+          fontSize: primarySize === "h" ? "1.375rem" : "1rem",
+          fontWeight: 700,
+          lineHeight: 1.25,
+          color: muted ? "text.disabled" : "text.primary",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {primary}
+      </Typography>
+      {secondary && (
+        <Typography variant="caption" color="text.disabled" sx={{ display: "block", fontSize: "0.75rem" }}>
+          {secondary}
+        </Typography>
+      )}
+    </Box>
+  );
+}
+
+/** Metadata card. Horizontal label/value rows rather than the previous
+ *  Grid of boxes, read top-to-bottom as a scannable dl. Divider between
+ *  rows keeps density high without a boxy feel. */
+function DetailsCard({ item, shareUrl }: { item: QrRedirectRow; shareUrl: string }) {
+  return (
+    <Paper variant="outlined" sx={{ borderRadius: 2, overflow: "hidden" }}>
+      <Box sx={{ px: { xs: 2, sm: 2.5 }, pt: 2, pb: 1.25 }}>
+        <Typography variant="subtitle2" fontWeight={700} sx={{ fontSize: "0.8125rem", textTransform: "uppercase", letterSpacing: 0.6, color: "text.secondary" }}>
+          Details
+        </Typography>
+      </Box>
+      <Divider />
+      <Stack divider={<Divider flexItem />}>
+        <DetailRow label="Destination">
+          <Typography
+            component="a"
+            href={item.destination_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            variant="body2"
+            sx={{
+              color: "primary.dark",
+              wordBreak: "break-all",
+              "&:hover": { textDecoration: "underline" },
+            }}
+          >
+            {item.destination_url}
+          </Typography>
+        </DetailRow>
+        <DetailRow label="Public URL" muted>
+          <Typography
+            component="a"
+            href={shareUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            variant="body2"
+            sx={{
+              fontFamily: "monospace",
+              color: "text.secondary",
+              wordBreak: "break-all",
+              fontSize: "0.8125rem",
+              "&:hover": { color: "primary.main", textDecoration: "underline" },
+            }}
+          >
+            {shareUrl}
+          </Typography>
+        </DetailRow>
+        <DetailRow label="Media type">
+          {item.media_type ? (
+            <MediaChip mediaType={item.media_type} />
+          ) : (
+            <Typography variant="body2" color="text.disabled">Unspecified</Typography>
+          )}
+        </DetailRow>
+        <DetailRow label="Assigned store">
+          {item.assigned_store ? (
+            <Typography variant="body2" fontWeight={500}>{item.assigned_store}</Typography>
+          ) : (
+            <Typography variant="body2" color="text.disabled" sx={{ fontStyle: "italic" }}>
+              Unassigned
+            </Typography>
+          )}
+        </DetailRow>
+        <DetailRow label="Variant">
+          {item.campaign_variant ? (
+            <Typography variant="body2" fontWeight={500}>{item.campaign_variant}</Typography>
+          ) : (
+            <Typography variant="body2" color="text.disabled">None</Typography>
+          )}
+        </DetailRow>
+        {item.notes && (
+          <DetailRow label="Notes">
+            <Typography variant="body2" color="text.primary" sx={{ whiteSpace: "pre-wrap", lineHeight: 1.55 }}>
+              {item.notes}
+            </Typography>
+          </DetailRow>
+        )}
+      </Stack>
+    </Paper>
+  );
+}
+
+function DetailRow({
+  label,
+  muted,
+  children,
+}: {
+  label: string;
+  muted?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <Stack
+      direction={{ xs: "column", sm: "row" }}
+      spacing={{ xs: 0.5, sm: 3 }}
+      alignItems={{ sm: "flex-start" }}
+      sx={{ px: { xs: 2, sm: 2.5 }, py: 1.5, opacity: muted ? 0.85 : 1 }}
+    >
+      <Typography
+        variant="caption"
+        sx={{
+          minWidth: { sm: 140 },
+          fontSize: "0.75rem",
+          fontWeight: 600,
+          textTransform: "uppercase",
+          letterSpacing: 0.5,
+          color: "text.secondary",
+          pt: { sm: 0.25 },
+        }}
+      >
+        {label}
+      </Typography>
+      <Box sx={{ flex: 1, minWidth: 0 }}>{children}</Box>
+    </Stack>
+  );
+}
+
+/** Recent scans section. Section header + caveat + table. The caveat moves
+ *  into a quiet inline info box rather than floating as a paragraph because
+ *  it reads as a rule the user should trust, not as body copy. */
+function RecentScansSection({
+  scans,
+  onDeleteScan,
+}: {
+  scans: ScanRow[];
+  onDeleteScan: (id: string) => void;
+}) {
+  return (
+    <Stack spacing={1.5}>
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ sm: "baseline" }}>
+        <Typography component="h2" variant="h6" fontWeight={700} sx={{ fontSize: "1.125rem" }}>
+          Recent scans
+        </Typography>
+        <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.75rem" }}>
+          Up to the last 50
+        </Typography>
+      </Stack>
+
+      <Alert
+        severity="info"
+        icon={<InfoOutlinedIcon sx={{ fontSize: 18 }} />}
+        sx={{
+          py: 0.5,
+          borderRadius: 2,
+          bgcolor: "info.light",
+          color: "text.secondary",
+          border: 1,
+          borderColor: "divider",
+          "& .MuiAlert-icon": { color: "info.dark", py: 0.5 },
+          "& .MuiAlert-message": { py: 0.5, fontSize: "0.8125rem" },
+        }}
+      >
+        Repeat scans from the same device within 30 seconds are merged. Known link-preview bots
+        (Slack, Discord, iMessage, search crawlers) are filtered and never counted.
+      </Alert>
+
+      <Paper variant="outlined" sx={{ borderRadius: 2, overflow: "hidden" }}>
+        <TableContainer>
+          <Table size="small">
+            <TableHead>
+              <TableRow
+                sx={{
+                  "& th": {
+                    fontWeight: 700,
+                    fontSize: "0.6875rem",
+                    textTransform: "uppercase",
+                    letterSpacing: 0.6,
+                    color: "text.secondary",
+                    py: 1.25,
+                    bgcolor: "grey.50",
+                  },
+                }}
+              >
+                <TableCell>When</TableCell>
+                <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>Country</TableCell>
+                <TableCell sx={{ display: { xs: "none", md: "table-cell" } }}>Referer</TableCell>
+                <TableCell>User agent</TableCell>
+                <TableCell sx={{ width: 48 }} align="right" />
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {scans.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} align="center" sx={{ py: 6, borderBottom: 0 }}>
+                    <Stack spacing={0.75} alignItems="center">
+                      <Typography variant="body2" color="text.secondary">
+                        No scans yet.
+                      </Typography>
+                      <Typography variant="caption" color="text.disabled">
+                        Scan counts appear the first time a real device scans this code.
+                      </Typography>
+                    </Stack>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                scans.map((s) => (
+                  <TableRow
+                    key={s.id}
+                    hover
+                    sx={{
+                      "& td": { py: 1.25, fontSize: "0.8125rem" },
+                      "&:last-child td": { borderBottom: 0 },
+                    }}
+                  >
+                    <TableCell sx={{ whiteSpace: "nowrap", color: "text.primary", fontWeight: 500 }}>
+                      <Tooltip title={formatDateTime(s.scanned_at)} arrow>
+                        <span>{formatQrScanWhen(s.scanned_at)}</span>
+                      </Tooltip>
+                    </TableCell>
+                    <TableCell sx={{ display: { xs: "none", sm: "table-cell" }, color: "text.secondary" }}>
+                      {s.country ? (
+                        <Typography component="span" sx={{ fontFamily: "monospace", fontSize: "0.75rem" }}>
+                          {s.country}
+                        </Typography>
+                      ) : (
+                        <Typography component="span" color="text.disabled">-</Typography>
+                      )}
+                    </TableCell>
+                    <TableCell sx={{ display: { xs: "none", md: "table-cell" }, maxWidth: 220, color: "text.secondary" }}>
+                      <Typography
+                        variant="body2"
+                        sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "0.8125rem" }}
+                      >
+                        {s.referer || "-"}
+                      </Typography>
+                    </TableCell>
+                    <TableCell sx={{ maxWidth: 320, color: "text.secondary" }}>
+                      <Typography
+                        variant="body2"
+                        sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "0.8125rem" }}
+                      >
+                        {s.user_agent || "-"}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="right" sx={{ py: 0.5, pr: 1 }}>
+                      <Tooltip title="Delete scan" arrow>
+                        <IconButton
+                          size="small"
+                          onClick={() => onDeleteScan(s.id)}
+                          aria-label="Delete scan"
+                          sx={{
+                            color: "text.disabled",
+                            borderRadius: 1.25,
+                            "&:hover": { color: "error.main", bgcolor: "action.hover" },
+                          }}
+                        >
+                          <DeleteOutlineRoundedIcon sx={{ fontSize: 18 }} />
+                        </IconButton>
+                      </Tooltip>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Paper>
+    </Stack>
+  );
+}
+
+/** Soft-filled media-type chip shared between the header row and the
+ *  DetailsCard row so the two views can't drift visually. */
+function MediaChip({ mediaType }: { mediaType: QrMediaType }) {
+  const isCard = mediaType === "card";
+  return (
+    <Chip
+      icon={isCard
+        ? <CreditCardRoundedIcon sx={{ fontSize: "14px !important", ml: "6px !important" }} />
+        : <ImageRoundedIcon sx={{ fontSize: "14px !important", ml: "6px !important" }} />}
+      label={MEDIA_LABELS[mediaType]}
+      size="small"
+      sx={{
+        height: 24,
+        fontSize: "0.75rem",
+        fontWeight: 600,
+        borderRadius: "999px",
+        color: isCard ? "info.dark" : "secondary.dark",
+        bgcolor: isCard ? "info.light" : "secondary.light",
+        border: "1px solid transparent",
+        "& .MuiChip-icon": { color: "inherit" },
+      }}
+    />
   );
 }
 
 function formatDateTime(iso: string | null): string {
-  if (!iso) return "—";
+  if (!iso) return "-";
   try {
     return new Date(iso).toLocaleString(undefined, {
       month: "short",
@@ -454,139 +837,31 @@ function formatDateTime(iso: string | null): string {
       minute: "2-digit",
     });
   } catch {
-    return "—";
+    return "-";
   }
 }
 
-function QrEditDialog({
-  open,
-  onClose,
-  item,
-  onSaved,
-}: {
-  open: boolean;
-  onClose: () => void;
-  item: QrRedirect;
-  onSaved: (updated: QrRedirect) => void;
-}) {
-  const toast = useToast();
-  const [code, setCode] = useState(item.code);
-  const [title, setTitle] = useState(item.title);
-  const [destination, setDestination] = useState(item.destination_url);
-  const [notes, setNotes] = useState(item.notes ?? "");
-  const [isActive, setIsActive] = useState(item.is_active);
-  const [submitting, setSubmitting] = useState(false);
+function formatDate(iso: string | null): string {
+  if (!iso) return "-";
+  try {
+    return new Date(iso).toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  } catch {
+    return "-";
+  }
+}
 
-  // Hydrate form state from the current record whenever the dialog opens.
-  // setState-in-effect is intentional: the reset is triggered by a prop
-  // change (`open` → true, or the item being swapped out), which is the
-  // sync-with-external-trigger pattern this rule is meant to allow.
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    if (open) {
-      setCode(item.code);
-      setTitle(item.title);
-      setDestination(item.destination_url);
-      setNotes(item.notes ?? "");
-      setIsActive(item.is_active);
-    }
-  }, [open, item]);
-  /* eslint-enable react-hooks/set-state-in-effect */
-
-  const handleSubmit = async () => {
-    if (submitting) return;
-    setSubmitting(true);
-    try {
-      const res = await apiFetch(`/admin/qr-redirects/${item.id}`, {
-        auth: true,
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          code: code.trim(),
-          title: title.trim(),
-          destination_url: destination.trim(),
-          notes: notes.trim() || null,
-          is_active: isActive,
-        }),
-      });
-      const data = (await res.json()) as {
-        ok?: boolean;
-        item?: QrRedirect;
-        error?: string;
-        message?: string;
-      };
-      if (!res.ok || !data.ok || !data.item) {
-        toast.error(data.message || data.error || "Couldn't save changes");
-        setSubmitting(false);
-        return;
-      }
-      toast.success("Saved");
-      onSaved(data.item);
-    } catch {
-      toast.error("Couldn't save changes");
-    }
-    setSubmitting(false);
-  };
-
-  return (
-    <Dialog open={open} onClose={() => { if (!submitting) onClose(); }} maxWidth="sm" fullWidth>
-      <DialogTitle sx={{ fontWeight: 700 }}>Edit QR code</DialogTitle>
-      <DialogContent>
-        <Stack spacing={2} sx={{ mt: 0.5 }}>
-          <TextField
-            label="Code"
-            value={code}
-            onChange={(e) => setCode(e.target.value.toUpperCase())}
-            helperText="Changing the code updates the public URL. Old posters will redirect to the homepage."
-            fullWidth
-            size="small"
-            inputProps={{ maxLength: 64, style: { fontFamily: "monospace" } }}
-          />
-          <TextField
-            label="Title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            fullWidth
-            size="small"
-            inputProps={{ maxLength: 200 }}
-          />
-          <TextField
-            label="Destination URL"
-            value={destination}
-            onChange={(e) => setDestination(e.target.value)}
-            helperText="Must be an absolute http(s) URL."
-            fullWidth
-            size="small"
-            inputProps={{ maxLength: 2048 }}
-          />
-          <TextField
-            label="Notes"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Print run, contact, reassignment notes"
-            fullWidth
-            size="small"
-            multiline
-            minRows={2}
-            inputProps={{ maxLength: 2000 }}
-          />
-          <FormControlLabel
-            control={<Switch checked={isActive} onChange={(_, v) => setIsActive(v)} />}
-            label={isActive ? "Active" : "Inactive (falls back to the homepage)"}
-          />
-        </Stack>
-      </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 2 }}>
-        <Button onClick={onClose} disabled={submitting} sx={{ textTransform: "none" }}>Cancel</Button>
-        <Button
-          variant="contained"
-          onClick={handleSubmit}
-          disabled={submitting}
-          sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
-        >
-          {submitting ? <CircularProgress size={18} color="inherit" /> : "Save"}
-        </Button>
-      </DialogActions>
-    </Dialog>
-  );
+function formatTimeOfDay(iso: string | null): string | undefined {
+  if (!iso) return undefined;
+  try {
+    return new Date(iso).toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  } catch {
+    return undefined;
+  }
 }
