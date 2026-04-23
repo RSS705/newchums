@@ -27,11 +27,17 @@ import Typography from "@mui/material/Typography";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import CreditCardRoundedIcon from "@mui/icons-material/CreditCardRounded";
+import DeleteSweepRoundedIcon from "@mui/icons-material/DeleteSweepRounded";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import FilterListRoundedIcon from "@mui/icons-material/FilterListRounded";
 import ImageRoundedIcon from "@mui/icons-material/ImageRounded";
 import OpenInNewRoundedIcon from "@mui/icons-material/OpenInNewRounded";
 import SearchIcon from "@mui/icons-material/Search";
+import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogContentText from "@mui/material/DialogContentText";
+import DialogTitle from "@mui/material/DialogTitle";
 import NextLink from "next/link";
 import { useToast } from "@/components/ui";
 import { apiFetch } from "@/lib/apiClient";
@@ -76,6 +82,8 @@ export default function AdminQrRedirectsClient() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
+  const [clearScansOpen, setClearScansOpen] = useState(false);
+  const [clearingScans, setClearingScans] = useState(false);
   const [editTarget, setEditTarget] = useState<QrRedirectRow | null>(null);
 
   const [mediaFilter, setMediaFilter] = useState<MediaFilter>("all");
@@ -117,6 +125,37 @@ export default function AdminQrRedirectsClient() {
   const handleSearch = (val: string) => {
     setSearch(val);
     fetchItems(val);
+  };
+
+  const handleClearAllScans = async () => {
+    if (clearingScans) return;
+    setClearingScans(true);
+    try {
+      const res = await apiFetch("/admin/qr-redirect-scans", {
+        auth: true,
+        method: "DELETE",
+      });
+      const data = (await res.json()) as { ok?: boolean; deleted?: number };
+      if (!res.ok || !data.ok) {
+        toast.error("Couldn't clear scans");
+        return;
+      }
+      const count = data.deleted ?? 0;
+      toast.success(
+        count === 0
+          ? "No scans to clear"
+          : count === 1
+            ? "Cleared 1 scan"
+            : `Cleared ${count.toLocaleString()} scans`,
+      );
+      setClearScansOpen(false);
+      // Refresh the list so each row's scan count + last-scan label
+      // reflects the reset state.
+      await fetchItems(search);
+    } catch {
+      toast.error("Couldn't clear scans");
+    }
+    setClearingScans(false);
   };
 
   const handleSort = (field: SortField) => {
@@ -254,14 +293,35 @@ export default function AdminQrRedirectsClient() {
             where they went, and how each is performing.
           </Typography>
         </Box>
-        <Button
-          variant="contained"
-          startIcon={<AddRoundedIcon />}
-          onClick={() => setCreateOpen(true)}
-          sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, alignSelf: { xs: "stretch", sm: "center" } }}
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          spacing={1}
+          alignSelf={{ xs: "stretch", sm: "center" }}
+          sx={{ flexShrink: 0 }}
         >
-          New QR code
-        </Button>
+          <Tooltip
+            title="Wipes every scan log across every QR code. Intended for pre-launch testing when the inventory is being validated poster-by-poster. QR codes, destinations, and assignments are unaffected."
+            arrow
+          >
+            <Button
+              variant="outlined"
+              color="error"
+              startIcon={<DeleteSweepRoundedIcon />}
+              onClick={() => setClearScansOpen(true)}
+              sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
+            >
+              Clear all scans
+            </Button>
+          </Tooltip>
+          <Button
+            variant="contained"
+            startIcon={<AddRoundedIcon />}
+            onClick={() => setCreateOpen(true)}
+            sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
+          >
+            New QR code
+          </Button>
+        </Stack>
       </Stack>
 
       <SummaryStrip totals={totals} />
@@ -505,6 +565,41 @@ export default function AdminQrRedirectsClient() {
         }}
         knownStores={knownStores}
       />
+
+      <Dialog
+        open={clearScansOpen}
+        onClose={() => { if (!clearingScans) setClearScansOpen(false); }}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 700 }}>Clear all scans?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            This removes every scan log across every QR code. The QR codes, their destinations, and store assignments are unaffected, only the scan history is wiped. Intended for pre-launch testing when the inventory is being validated poster by poster.
+          </DialogContentText>
+          <DialogContentText sx={{ mt: 1.5, fontWeight: 600, color: "error.main" }}>
+            This can&rsquo;t be undone.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button
+            onClick={() => setClearScansOpen(false)}
+            disabled={clearingScans}
+            sx={{ textTransform: "none" }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={handleClearAllScans}
+            disabled={clearingScans}
+            sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
+          >
+            {clearingScans ? <CircularProgress size={18} color="inherit" /> : "Clear all scans"}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Stack>
   );
 }

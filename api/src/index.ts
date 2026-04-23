@@ -14710,6 +14710,32 @@ app.delete("/admin/qr-redirects/:id/scans/:scanId", async (c) => {
   }
 });
 
+/** DELETE /admin/qr-redirect-scans, wipe every scan row across every QR
+ *  code. Destructive but reversible only by re-scanning; intended for
+ *  pre-launch testing when operators are validating every printed
+ *  poster and card, which otherwise leaves hundreds of real test scans
+ *  on the inventory. The client gates this behind a confirm dialog.
+ *
+ *  Uses a sibling resource path (`qr-redirect-scans`) rather than the
+ *  nested `qr-redirects/:id/scans` convention so the URL can never be
+ *  mis-routed through the `:id` parameter match. Returns the number of
+ *  deleted rows so the success toast can be specific.
+ */
+app.delete("/admin/qr-redirect-scans", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  const sql = getSql(c.env);
+  try {
+    const deletedRows = (await sql`
+      DELETE FROM newchums.qr_redirect_scans RETURNING id
+    `) as { id: string }[];
+    return c.json({ ok: true, deleted: deletedRows.length });
+  } catch (err) {
+    console.error("[DELETE /admin/qr-redirect-scans]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
 /** POST /public/qr/:code/scan, resolve a code + log the scan. Called by the
  *  Next.js /qr/[code] route handler (server-side) so the web layer stays a
  *  thin pass-through. Returns the destination URL when active, or
