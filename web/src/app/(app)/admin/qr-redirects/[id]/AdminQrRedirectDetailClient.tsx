@@ -43,9 +43,14 @@ import { QrFormDialog, type QrMediaType, type QrRedirectRow } from "../QrFormDia
 type ScanRow = {
   id: string;
   scanned_at: string;
-  user_agent: string | null;
-  referer: string | null;
   country: string | null;
+  city: string | null;
+  region: string | null;
+  // Neon returns NUMERIC as a string to preserve precision; we accept either
+  // for resilience against driver / serialization changes.
+  latitude: string | number | null;
+  longitude: string | number | null;
+  timezone: string | null;
 };
 
 const MEDIA_LABELS: Record<QrMediaType, string> = {
@@ -58,6 +63,9 @@ export default function AdminQrRedirectDetailClient({ id }: { id: string }) {
   const toast = useToast();
   const [item, setItem] = useState<QrRedirectRow | null>(null);
   const [scans, setScans] = useState<ScanRow[]>([]);
+  const [scanHasMore, setScanHasMore] = useState(false);
+  const [scanPageSize, setScanPageSize] = useState(25);
+  const [loadingMoreScans, setLoadingMoreScans] = useState(false);
   const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -80,6 +88,8 @@ export default function AdminQrRedirectDetailClient({ id }: { id: string }) {
         scan_count?: number;
         last_scanned_at?: string | null;
         recent_scans?: ScanRow[];
+        scan_page_size?: number;
+        scan_has_more?: boolean;
       };
       if (data.ok && data.item) {
         setItem({
@@ -88,6 +98,10 @@ export default function AdminQrRedirectDetailClient({ id }: { id: string }) {
           last_scanned_at: data.last_scanned_at ?? null,
         } as QrRedirectRow);
         setScans(Array.isArray(data.recent_scans) ? data.recent_scans : []);
+        if (typeof data.scan_page_size === "number" && data.scan_page_size > 0) {
+          setScanPageSize(data.scan_page_size);
+        }
+        setScanHasMore(data.scan_has_more === true);
       }
     } catch {
       toast.error("Failed to load QR code");
@@ -96,6 +110,30 @@ export default function AdminQrRedirectDetailClient({ id }: { id: string }) {
   }, [id, router, toast]);
 
   useEffect(() => { fetchItem(); }, [fetchItem]);
+
+  const handleLoadMoreScans = useCallback(async () => {
+    if (loadingMoreScans) return;
+    setLoadingMoreScans(true);
+    try {
+      const res = await apiFetch(
+        `/admin/qr-redirects/${id}/scans?offset=${scans.length}&limit=${scanPageSize}`,
+        { auth: true },
+      );
+      if (!res.ok) throw new Error("request failed");
+      const data = (await res.json()) as {
+        ok?: boolean;
+        scans?: ScanRow[];
+        has_more?: boolean;
+      };
+      if (data.ok && Array.isArray(data.scans)) {
+        setScans((prev) => [...prev, ...data.scans!]);
+        setScanHasMore(data.has_more === true);
+      }
+    } catch {
+      toast.error("Couldn't load more scans");
+    }
+    setLoadingMoreScans(false);
+  }, [id, scans.length, scanPageSize, loadingMoreScans, toast]);
 
   const shareUrl = useMemo(() => (item ? qrPublicUrlFor(item.code) : ""), [item]);
 
@@ -205,6 +243,9 @@ export default function AdminQrRedirectDetailClient({ id }: { id: string }) {
 
       <RecentScansSection
         scans={scans}
+        hasMore={scanHasMore}
+        loadingMore={loadingMoreScans}
+        onLoadMore={handleLoadMoreScans}
         onDeleteScan={handleDeleteScan}
       />
 
@@ -659,24 +700,33 @@ function DetailRow({
 
 /** Recent scans section. Section header + caveat + table. The caveat moves
  *  into a quiet inline info box rather than floating as a paragraph because
- *  it reads as a rule the user should trust, not as body copy. */
+ *  it reads as a rule the user should trust, not as body copy.
+ *
+ *  Columns are intentionally lean: a precise timestamp (down to the second,
+ *  in the viewer's local time) and a best-effort location. The raw user-
+ *  agent and HTTP referer were dropped because (1) modern browsers ship a
+ *  reduced UA string ("Linux; Android 10; K") that carries almost no device
+ *  information, and (2) mobile camera apps opening the redirect never set a
+ *  referer, so that column was consistently blank. Both fields are still
+ *  captured and used server-side for dedupe. */
 function RecentScansSection({
   scans,
+  hasMore,
+  loadingMore,
+  onLoadMore,
   onDeleteScan,
 }: {
   scans: ScanRow[];
+  hasMore: boolean;
+  loadingMore: boolean;
+  onLoadMore: () => void;
   onDeleteScan: (id: string) => void;
 }) {
   return (
     <Stack spacing={1.5}>
-      <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ sm: "baseline" }}>
-        <Typography component="h2" variant="h6" fontWeight={700} sx={{ fontSize: "1.125rem" }}>
-          Recent scans
-        </Typography>
-        <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.75rem" }}>
-          Up to the last 50
-        </Typography>
-      </Stack>
+      <Typography component="h2" variant="h6" fontWeight={700} sx={{ fontSize: "1.125rem" }}>
+        Recent scans
+      </Typography>
 
       <Alert
         severity="info"
@@ -714,16 +764,14 @@ function RecentScansSection({
                 }}
               >
                 <TableCell>When</TableCell>
-                <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>Country</TableCell>
-                <TableCell sx={{ display: { xs: "none", md: "table-cell" } }}>Referer</TableCell>
-                <TableCell>User agent</TableCell>
+                <TableCell>Location</TableCell>
                 <TableCell sx={{ width: 48 }} align="right" />
               </TableRow>
             </TableHead>
             <TableBody>
               {scans.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} align="center" sx={{ py: 6, borderBottom: 0 }}>
+                  <TableCell colSpan={3} align="center" sx={{ py: 6, borderBottom: 0 }}>
                     <Stack spacing={0.75} alignItems="center">
                       <Typography variant="body2" color="text.secondary">
                         No scans yet.
@@ -740,39 +788,17 @@ function RecentScansSection({
                     key={s.id}
                     hover
                     sx={{
-                      "& td": { py: 1.25, fontSize: "0.8125rem" },
+                      "& td": { py: 1.25, fontSize: "0.8125rem", verticalAlign: "top" },
                       "&:last-child td": { borderBottom: 0 },
                     }}
                   >
                     <TableCell sx={{ whiteSpace: "nowrap", color: "text.primary", fontWeight: 500 }}>
-                      <Tooltip title={formatDateTime(s.scanned_at)} arrow>
-                        <span>{formatQrScanWhen(s.scanned_at)}</span>
+                      <Tooltip title={formatQrScanWhen(s.scanned_at)} arrow>
+                        <span>{formatScanTimestamp(s.scanned_at)}</span>
                       </Tooltip>
                     </TableCell>
-                    <TableCell sx={{ display: { xs: "none", sm: "table-cell" }, color: "text.secondary" }}>
-                      {s.country ? (
-                        <Typography component="span" sx={{ fontFamily: "monospace", fontSize: "0.75rem" }}>
-                          {s.country}
-                        </Typography>
-                      ) : (
-                        <Typography component="span" color="text.disabled">-</Typography>
-                      )}
-                    </TableCell>
-                    <TableCell sx={{ display: { xs: "none", md: "table-cell" }, maxWidth: 220, color: "text.secondary" }}>
-                      <Typography
-                        variant="body2"
-                        sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "0.8125rem" }}
-                      >
-                        {s.referer || "-"}
-                      </Typography>
-                    </TableCell>
-                    <TableCell sx={{ maxWidth: 320, color: "text.secondary" }}>
-                      <Typography
-                        variant="body2"
-                        sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "0.8125rem" }}
-                      >
-                        {s.user_agent || "-"}
-                      </Typography>
+                    <TableCell sx={{ color: "text.secondary", maxWidth: 320 }}>
+                      <ScanLocationCell scan={s} />
                     </TableCell>
                     <TableCell align="right" sx={{ py: 0.5, pr: 1 }}>
                       <Tooltip title="Delete scan" arrow>
@@ -797,8 +823,80 @@ function RecentScansSection({
           </Table>
         </TableContainer>
       </Paper>
+
+      {hasMore && (
+        <Box sx={{ display: "flex", justifyContent: "center", pt: 0.5 }}>
+          {loadingMore ? (
+            <CircularProgress size={24} />
+          ) : (
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={onLoadMore}
+              sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, px: 3 }}
+            >
+              Load more
+            </Button>
+          )}
+        </Box>
+      )}
     </Stack>
   );
+}
+
+/** Renders the location cell: city and region on the first line (whichever
+ *  are present), country on the second, and a lat/lng pair with a Google
+ *  Maps link beneath when coordinates are available. All fields are
+ *  independent, any subset can be missing. */
+function ScanLocationCell({ scan }: { scan: ScanRow }) {
+  const lat = toFiniteNumber(scan.latitude);
+  const lng = toFiniteNumber(scan.longitude);
+  const hasCoords = lat !== null && lng !== null;
+  const placeLine = [scan.city, scan.region].filter(Boolean).join(", ");
+  const countryLine = scan.country || null;
+  const hasAny = placeLine || countryLine || hasCoords;
+
+  if (!hasAny) {
+    return <Typography component="span" color="text.disabled">-</Typography>;
+  }
+
+  return (
+    <Stack spacing={0.25}>
+      {placeLine && (
+        <Typography variant="body2" sx={{ color: "text.primary", fontSize: "0.8125rem", fontWeight: 500 }}>
+          {placeLine}
+        </Typography>
+      )}
+      {countryLine && (
+        <Typography variant="caption" sx={{ color: "text.secondary", fontFamily: "monospace", fontSize: "0.6875rem" }}>
+          {countryLine}
+        </Typography>
+      )}
+      {hasCoords && (
+        <Typography
+          component="a"
+          href={`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          variant="caption"
+          sx={{
+            fontSize: "0.6875rem",
+            color: "primary.main",
+            textDecoration: "none",
+            "&:hover": { textDecoration: "underline" },
+          }}
+        >
+          {lat!.toFixed(4)}, {lng!.toFixed(4)}
+        </Typography>
+      )}
+    </Stack>
+  );
+}
+
+function toFiniteNumber(raw: string | number | null | undefined): number | null {
+  if (raw === null || raw === undefined) return null;
+  const n = typeof raw === "number" ? raw : Number(raw);
+  return Number.isFinite(n) ? n : null;
 }
 
 /** Soft-filled media-type chip shared between the header row and the
@@ -835,6 +933,25 @@ function formatDateTime(iso: string | null): string {
       year: "numeric",
       hour: "numeric",
       minute: "2-digit",
+    });
+  } catch {
+    return "-";
+  }
+}
+
+/** Full local timestamp down to the second for the scan log table. Shown
+ *  directly in the cell (no relative-time abbreviation) so each row carries
+ *  the specific when/where the admin is looking for. */
+function formatScanTimestamp(iso: string | null): string {
+  if (!iso) return "-";
+  try {
+    return new Date(iso).toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      second: "2-digit",
     });
   } catch {
     return "-";

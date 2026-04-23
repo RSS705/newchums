@@ -1306,12 +1306,12 @@ A share token (JWT, purpose `community_share`) is still computed server-side and
 
 Internal redirect layer so printed QR codes (posters, cards) stay useful when their destination changes. Super admins manage records in `/admin/qr-redirects`; the public surface is `https://newchums.com/qr/{code}`. The admin surface is positioned as a **lightweight QR inventory tool**: which codes exist, which store each one was given to, what kind of printed asset it is (card vs. poster), whether it has ever been scanned, and how the scan-count rules keep counts trustworthy.
 
-**Schema (migration 085 + 088):**
+**Schema (migration 085 + 088 + 089):**
 
 | Table | Purpose |
 |-------|---------|
 | `newchums.qr_redirects` | One row per printed code. Columns: `id`, `code` (UNIQUE, `CHECK code ~ '^[A-Z0-9][A-Z0-9_-]{1,63}$'`), `title`, `destination_url`, `notes`, `is_active`, `media_type` (NULL or `'card'`/`'poster'`, constrained by `qr_redirects_media_type_known` CHECK), `assigned_store` (free-form string, NULL = unassigned), `campaign_variant` (free-form tag for the creative/ad design), `created_by` (FK users), `created_at`, `updated_at`. Codes are stored UPPERCASE so posters scanned or typed lowercase still resolve. Filter indexes on `media_type` and `assigned_store`. |
-| `newchums.qr_redirect_scans` | Lightweight scan log. Columns: `id`, `qr_redirect_id` (FK CASCADE), `scanned_at`, `user_agent` (≤500 chars), `referer` (≤500 chars), `country` (CF-IPCountry, ≤8 chars). **No raw IP stored**, country alone is sufficient for the operational questions we care about today and keeps this out of full-analytics scope. |
+| `newchums.qr_redirect_scans` | Lightweight scan log. Columns: `id`, `qr_redirect_id` (FK CASCADE), `scanned_at`, `user_agent` (≤500 chars, used for server-side dedupe; no longer surfaced in the admin UI because modern browsers ship a reduced UA string that carries almost no device info), `referer` (≤500 chars, stored but not surfaced; mobile-camera scans never set a referer), `country` (CF-IPCountry, ≤8 chars), `city`, `region`, `latitude` / `longitude` (NUMERIC(8,5)), `timezone` (all CF-resolved via migration 089). **No raw IP stored**; the city-level geo is the Cloudflare-resolved approximation, not the client IP. |
 
 `media_type` is intentionally a small CHECK-constrained vocabulary so the admin filter can list options without a separate lookup query. Extend the CHECK in a follow-up migration when adding a new media type (don't add freeform values).
 

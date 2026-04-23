@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 /** Public QR redirect route handler.
  *
@@ -53,6 +54,11 @@ type ScanInvocation = {
   userAgent: string | null;
   referer: string | null;
   country: string | null;
+  city: string | null;
+  region: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  timezone: string | null;
   /** When true the API resolves the code but does NOT insert a scan row.
    *  Used for HEAD pre-flights so previews / unfurlers don't inflate counts. */
   skipLog: boolean;
@@ -75,6 +81,11 @@ async function resolveDestination(args: ScanInvocation, fallbackUrl: string): Pr
         userAgent: args.userAgent,
         referer: args.referer,
         country: args.country,
+        city: args.city,
+        region: args.region,
+        latitude: args.latitude,
+        longitude: args.longitude,
+        timezone: args.timezone,
         skipLog: args.skipLog,
       }),
       // Disable Next's caching: every scan is a distinct event and must
@@ -105,14 +116,58 @@ function noStoreRedirect(url: string): NextResponse {
   return res;
 }
 
-function extractScanContext(request: Request): { userAgent: string | null; referer: string | null; country: string | null } {
+type ScanContext = {
+  userAgent: string | null;
+  referer: string | null;
+  country: string | null;
+  city: string | null;
+  region: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  timezone: string | null;
+};
+
+function parseGeoNumber(raw: unknown): number | null {
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const n = Number(trimmed);
+  return Number.isFinite(n) ? n : null;
+}
+
+function extractScanContext(request: Request): ScanContext {
+  // Cloudflare adds `cf-ipcountry` on every Worker request. The richer
+  // location headers (`cf-ipcity`, `cf-region`, `cf-iplatitude`,
+  // `cf-iplongitude`, `cf-timezone`) are added when the "Add visitor
+  // location headers" managed transform is enabled in the CF dashboard.
+  // `request.cf` (via `getCloudflareContext`) exposes the same data
+  // regardless of that toggle, so we read from both and take the first
+  // non-null. Absent in local dev, that's fine, we just log nulls.
+  let cf: Record<string, unknown> | undefined;
+  try {
+    cf = getCloudflareContext({ async: false }).cf as Record<string, unknown> | undefined;
+  } catch {
+    // Outside a CF request context (local dev, tests). Fall back to headers.
+  }
+
+  const fromCf = (key: string): string | null => {
+    const v = cf?.[key];
+    if (typeof v === "string") return v || null;
+    if (typeof v === "number") return String(v);
+    return null;
+  };
+  const header = (name: string): string | null => request.headers.get(name);
+
   return {
-    userAgent: request.headers.get("user-agent"),
-    referer: request.headers.get("referer"),
-    // Cloudflare adds this header on every request that reaches the worker
-    // (and on requests that hit the Next.js deployment via Cloudflare's
-    // edge). Absent in local dev, that's fine, it just logs as null.
-    country: request.headers.get("cf-ipcountry"),
+    userAgent: header("user-agent"),
+    referer: header("referer"),
+    country: fromCf("country") ?? header("cf-ipcountry"),
+    city: fromCf("city") ?? header("cf-ipcity"),
+    region: fromCf("region") ?? header("cf-region"),
+    latitude: parseGeoNumber(fromCf("latitude") ?? header("cf-iplatitude")),
+    longitude: parseGeoNumber(fromCf("longitude") ?? header("cf-iplongitude")),
+    timezone: fromCf("timezone") ?? header("cf-timezone"),
   };
 }
 

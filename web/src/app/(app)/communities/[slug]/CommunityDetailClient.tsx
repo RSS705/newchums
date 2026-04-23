@@ -88,6 +88,76 @@ type Member = {
 
 type ApiEvent = Record<string, unknown>;
 
+// Collapses the community description to 3 lines with a Show more/less
+// toggle. Only surfaces the toggle when the text actually overflows the
+// clamp, so short descriptions render unchanged. We observe size changes so
+// images loading in or the column reflowing doesn't strand us in a stale
+// overflow verdict.
+function ExpandableDescription({ html, sx }: { html: string; sx?: object }) {
+  const [expanded, setExpanded] = useState(false);
+  const [overflows, setOverflows] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const check = () => {
+      if (expanded) return;
+      setOverflows(el.scrollHeight - el.clientHeight > 1);
+    };
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [html, expanded]);
+
+  return (
+    <Box sx={sx}>
+      <Typography
+        ref={ref}
+        component="div"
+        variant="body1"
+        color="text.secondary"
+        sx={{
+          lineHeight: 1.6,
+          "& p": { m: 0 },
+          "& a": { color: "primary.main" },
+          ...(expanded
+            ? {}
+            : {
+                display: "-webkit-box",
+                WebkitLineClamp: 3,
+                WebkitBoxOrient: "vertical",
+                overflow: "hidden",
+              }),
+        }}
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+      {overflows && (
+        <Typography
+          component="button"
+          type="button"
+          variant="body2"
+          onClick={() => setExpanded((v) => !v)}
+          sx={{
+            mt: 0.5,
+            p: 0,
+            border: 0,
+            bgcolor: "transparent",
+            cursor: "pointer",
+            color: "primary.main",
+            fontSize: "0.8125rem",
+            fontWeight: 600,
+            "&:hover": { textDecoration: "underline" },
+          }}
+        >
+          {expanded ? "Show less" : "Show more"}
+        </Typography>
+      )}
+    </Box>
+  );
+}
+
 type JoinRequest = {
   id: string;
   user_id: string;
@@ -716,12 +786,7 @@ export default function CommunityDetailClient() {
               )}
 
               {community.description && (
-                <Typography
-                  variant="body1"
-                  color="text.secondary"
-                  sx={{ mb: 1.5, lineHeight: 1.6, "& p": { m: 0 }, "& a": { color: "primary.main" } }}
-                  dangerouslySetInnerHTML={{ __html: community.description }}
-                />
+                <ExpandableDescription html={community.description} sx={{ mb: 1.5 }} />
               )}
 
               {/* Meta stack: location/online on its own line, external links
@@ -1056,12 +1121,7 @@ export default function CommunityDetailClient() {
             )}
 
             {community.description && (
-              <Typography
-                variant="body1"
-                color="text.secondary"
-                sx={{ mb: 1, lineHeight: 1.55, "& p": { m: 0 }, "& a": { color: "primary.main" } }}
-                dangerouslySetInnerHTML={{ __html: community.description }}
-              />
+              <ExpandableDescription html={community.description} sx={{ mb: 1 }} />
             )}
             {/* Meta stack: info row (member count + online/location) on top,
                 actionable links (website / join link) on their own lines below

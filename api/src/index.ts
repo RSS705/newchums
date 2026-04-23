@@ -14112,6 +14112,24 @@ type QrMediaType = (typeof QR_MEDIA_TYPES)[number];
  *  the user lands on is unchanged, only the scan log is deduped. */
 const QR_SCAN_DEDUPE_WINDOW_SECONDS = 30;
 
+/** Default page size for the admin scan log. Chosen to keep the first render
+ *  dense without dragging the page-one payload past a sensible size. */
+const QR_SCAN_PAGE_SIZE = 25;
+/** Hard cap on the `limit` query param for the paginated scan log. Keeps a
+ *  stray `?limit=100000` from fetching the entire table. */
+const QR_SCAN_MAX_PAGE_SIZE = 200;
+
+type QrScanRow = {
+  id: string;
+  scanned_at: string;
+  country: string | null;
+  city: string | null;
+  region: string | null;
+  latitude: string | number | null;
+  longitude: string | number | null;
+  timezone: string | null;
+};
+
 /** User-agent substrings that identify link-preview / unfurler / crawler
  *  traffic we don't want to count as scans. We still resolve the redirect
  *  for these clients so previews work, we just don't insert a scan row.
@@ -14324,7 +14342,10 @@ app.post("/admin/qr-redirects", async (c) => {
   }
 });
 
-/** GET /admin/qr-redirects/:id, single record plus recent scan history. */
+/** GET /admin/qr-redirects/:id, single record plus the first page of scans.
+ *  Scan pagination is driven by `GET /admin/qr-redirects/:id/scans`; this
+ *  endpoint returns the first page so the initial render is a single round
+ *  trip. */
 app.get("/admin/qr-redirects/:id", async (c) => {
   const admin = await requireSuperAdmin(c);
   if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
@@ -14345,12 +14366,12 @@ app.get("/admin/qr-redirects/:id", async (c) => {
     `) as { scan_count: number; last_scanned_at: string | null }[];
 
     const recentScans = (await sql`
-      SELECT id, scanned_at, user_agent, referer, country
+      SELECT id, scanned_at, country, city, region, latitude, longitude, timezone
       FROM newchums.qr_redirect_scans
       WHERE qr_redirect_id = ${id}
       ORDER BY scanned_at DESC
-      LIMIT 50
-    `) as { id: string; scanned_at: string; user_agent: string | null; referer: string | null; country: string | null }[];
+      LIMIT ${QR_SCAN_PAGE_SIZE}
+    `) as QrScanRow[];
 
     return c.json({
       ok: true,
@@ -14358,9 +14379,61 @@ app.get("/admin/qr-redirects/:id", async (c) => {
       scan_count: summary?.scan_count ?? 0,
       last_scanned_at: summary?.last_scanned_at ?? null,
       recent_scans: recentScans,
+      scan_page_size: QR_SCAN_PAGE_SIZE,
+      scan_has_more: (summary?.scan_count ?? 0) > recentScans.length,
     });
   } catch (err) {
     console.error("[GET /admin/qr-redirects/:id]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** GET /admin/qr-redirects/:id/scans?offset=N&limit=M
+ *
+ *  Paginated scan log. The list view caps `limit` at QR_SCAN_MAX_PAGE_SIZE
+ *  so a malicious/typo caller can't ask for 100k rows in one shot. The
+ *  response carries `has_more` (derived from `total`) so the client can
+ *  render a Load-more affordance without a separate count request. */
+app.get("/admin/qr-redirects/:id/scans", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  const sql = getSql(c.env);
+  const id = c.req.param("id");
+  const limitRaw = Number(c.req.query("limit"));
+  const offsetRaw = Number(c.req.query("offset"));
+  const limit = Number.isFinite(limitRaw) && limitRaw > 0
+    ? Math.min(Math.floor(limitRaw), QR_SCAN_MAX_PAGE_SIZE)
+    : QR_SCAN_PAGE_SIZE;
+  const offset = Number.isFinite(offsetRaw) && offsetRaw > 0 ? Math.floor(offsetRaw) : 0;
+  try {
+    const exists = (await sql`SELECT id FROM newchums.qr_redirects WHERE id = ${id} LIMIT 1`) as { id: string }[];
+    if (!exists[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+
+    const [countRow] = (await sql`
+      SELECT COUNT(*)::int AS total
+      FROM newchums.qr_redirect_scans
+      WHERE qr_redirect_id = ${id}
+    `) as { total: number }[];
+    const total = countRow?.total ?? 0;
+
+    const scans = (await sql`
+      SELECT id, scanned_at, country, city, region, latitude, longitude, timezone
+      FROM newchums.qr_redirect_scans
+      WHERE qr_redirect_id = ${id}
+      ORDER BY scanned_at DESC
+      LIMIT ${limit} OFFSET ${offset}
+    `) as QrScanRow[];
+
+    return c.json({
+      ok: true,
+      scans,
+      total,
+      limit,
+      offset,
+      has_more: offset + scans.length < total,
+    });
+  } catch (err) {
+    console.error("[GET /admin/qr-redirects/:id/scans]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });
@@ -14537,12 +14610,37 @@ app.post("/public/qr/:code/scan", async (c) => {
     if (!rows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     if (!rows[0].is_active) return c.json({ ok: false, error: "INACTIVE" }, 410);
 
-    let meta: { userAgent?: unknown; referer?: unknown; country?: unknown; skipLog?: unknown } = {};
+    let meta: {
+      userAgent?: unknown;
+      referer?: unknown;
+      country?: unknown;
+      city?: unknown;
+      region?: unknown;
+      latitude?: unknown;
+      longitude?: unknown;
+      timezone?: unknown;
+      skipLog?: unknown;
+    } = {};
     try { meta = await c.req.json(); } catch { /* metadata is optional */ }
 
     const ua = typeof meta.userAgent === "string" ? meta.userAgent.slice(0, 500) : null;
     const ref = typeof meta.referer === "string" ? meta.referer.slice(0, 500) : null;
     const country = typeof meta.country === "string" ? meta.country.slice(0, 8) : null;
+    // City / region / timezone are CF-supplied strings; cap generously so a
+    // malicious caller can't blow out the row size. Coordinates arrive as
+    // numbers but we accept numeric strings defensively and clamp the DB
+    // NUMERIC(8,5) range to a safe float before inserting.
+    const city = typeof meta.city === "string" ? meta.city.slice(0, 200) : null;
+    const region = typeof meta.region === "string" ? meta.region.slice(0, 200) : null;
+    const timezone = typeof meta.timezone === "string" ? meta.timezone.slice(0, 100) : null;
+    const pickLatLon = (raw: unknown, bound: number): number | null => {
+      const n = typeof raw === "number" ? raw : typeof raw === "string" && raw.trim() ? Number(raw) : null;
+      if (n === null || !Number.isFinite(n)) return null;
+      if (n < -bound || n > bound) return null;
+      return Math.round(n * 1e5) / 1e5;
+    };
+    const latitude = pickLatLon(meta.latitude, 90);
+    const longitude = pickLatLon(meta.longitude, 180);
     // The Next.js handler sets skipLog: true for HEAD pre-flights so they
     // can resolve without ever reaching the dedupe layer.
     const callerSkipLog = meta.skipLog === true;
@@ -14570,8 +14668,10 @@ app.post("/public/qr/:code/scan", async (c) => {
         `) as { id: string }[];
         if (recent.length === 0) {
           await sql`
-            INSERT INTO newchums.qr_redirect_scans (qr_redirect_id, user_agent, referer, country)
-            VALUES (${rows[0].id}, ${ua}, ${ref}, ${country})
+            INSERT INTO newchums.qr_redirect_scans
+              (qr_redirect_id, user_agent, referer, country, city, region, latitude, longitude, timezone)
+            VALUES
+              (${rows[0].id}, ${ua}, ${ref}, ${country}, ${city}, ${region}, ${latitude}, ${longitude}, ${timezone})
           `;
         }
       } catch (logErr) {

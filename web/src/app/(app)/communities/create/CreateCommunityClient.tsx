@@ -75,12 +75,14 @@ export default function CreateCommunityClient() {
   // Operating hours (optional, free for all plans).
   const [operatingHours, setOperatingHours] = useState<OperatingHours | null>(null);
 
-  // Community banner (optional, Community Pro only). We resolve the creator's
-  // plan from /profile; banner upload UI stays hidden for non-Pro users so
-  // there are no upgrade nags in the normal create flow. The banner, if
-  // present, is uploaded after the community is created (same pattern as the
-  // community logo).
-  const [hasCommunityPro, setHasCommunityPro] = useState(false);
+  // Community banner (optional, Community Pro feature). We resolve the
+  // creator's plan from /profile; banner upload UI stays hidden for non-Pro
+  // users so there are no upgrade nags in the normal create flow. Super
+  // admins also see the uploader regardless of their own plan to match the
+  // edit form's behavior (the /media/finalize handler allows either a Pro
+  // owner or a super admin). The banner, if present, is uploaded after the
+  // community is created (same pattern as the community logo).
+  const [canUploadBanner, setCanUploadBanner] = useState(false);
   const [bannerBlob, setBannerBlob] = useState<Blob | null>(null);
 
   // Field refs for scroll-to-first-error
@@ -96,12 +98,10 @@ export default function CreateCommunityClient() {
     });
   }, []);
 
-  // Resolve creator's plan to decide whether to surface the banner uploader.
-  // Non-Pro users see no upload UI at all, no locked controls, no upgrade
-  // nags. A super admin pretending to create a community for someone else
-  // would still get their own subscription plan here, that's the same
-  // trade-off the backend finalize handler makes (the Pro check there is on
-  // the owner's plan, which during create *is* the creator).
+  // Resolve creator's plan (and role) to decide whether to surface the
+  // banner uploader. Non-eligible users see no upload UI at all, no locked
+  // controls, no upgrade nags. Super admins see the uploader regardless of
+  // their own plan, mirroring the edit form and the /media/finalize gate.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -110,7 +110,9 @@ export default function CreateCommunityClient() {
         if (!res.ok) return;
         const d = await res.json();
         if (cancelled || !d.ok) return;
-        if (d.profile?.subscription_plan === "community_pro") setHasCommunityPro(true);
+        const isPro = d.profile?.subscription_plan === "community_pro";
+        const isSuperAdmin = d.profile?.role === "super_admin";
+        if (isPro || isSuperAdmin) setCanUploadBanner(true);
       } catch { /* non-fatal */ }
     })();
     return () => { cancelled = true; };
@@ -263,7 +265,7 @@ export default function CreateCommunityClient() {
       if (data.ok) {
         if (data.community?.id) {
           if (logoBlob) await uploadCommunityLogo(data.community.id);
-          if (bannerBlob && hasCommunityPro) await uploadCommunityBanner(data.community.id);
+          if (bannerBlob && canUploadBanner) await uploadCommunityBanner(data.community.id);
         }
         toast.success("Community created!");
         router.push(`/communities/${data.community.slug}`);
@@ -309,9 +311,10 @@ export default function CreateCommunityClient() {
         </Typography>
       </Box>
 
-      {/* Banner (Community Pro only). Hidden entirely for non-Pro creators,
-          the spec is explicit about no locked controls or upgrade nags. */}
-      {hasCommunityPro && (
+      {/* Banner (Community Pro, or super admin). Hidden entirely for anyone
+          else, the spec is explicit about no locked controls or upgrade
+          nags. */}
+      {canUploadBanner && (
         <AppCard>
           <CommunityBannerEditor
             existingBannerUrl={null}
