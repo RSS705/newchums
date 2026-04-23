@@ -165,7 +165,12 @@ function ContactRow({
               {contact.displayName}
             </Typography>
           )}
-          <Stack direction="row" alignItems="center" spacing={1.25} flexWrap="wrap">
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            alignItems={{ xs: "flex-start", sm: "center" }}
+            spacing={{ xs: 0.25, sm: 1.25 }}
+            flexWrap="wrap"
+          >
             {handle && (
               <Typography variant="body2" color="text.secondary" sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {handle}
@@ -173,7 +178,19 @@ function ContactRow({
             )}
             {birthdayLabel && (
               <Tooltip title="Birthday (month & day only)" placement="top" arrow>
-                <Stack direction="row" alignItems="center" spacing={0.4} sx={{ color: "text.disabled", flexShrink: 0 }}>
+                {/* On mobile the birthday sits on its own line below the
+                    handle (column layout above). A negative left margin
+                    the width of the icon + its 0.4 spacing (~16px) lets
+                    the cake icon hang into the gutter beside the avatar,
+                    so the "Apr 11" text lines up with the handle and the
+                    private note. On desktop the stack is inline with the
+                    handle as before, so no offset is needed. */}
+                <Stack
+                  direction="row"
+                  alignItems="center"
+                  spacing={0.4}
+                  sx={{ color: "text.disabled", flexShrink: 0, ml: { xs: "-16px", sm: 0 } }}
+                >
                   <CakeOutlinedIcon sx={{ fontSize: 13 }} />
                   <Typography variant="caption" sx={{ lineHeight: 1, letterSpacing: 0.1 }}>
                     {birthdayLabel}
@@ -210,7 +227,7 @@ function ContactRow({
       </Box>
 
       {editingNote && (
-        <Box sx={{ mt: 1.25, ml: { xs: 0, sm: "60px" } }}>
+        <Box sx={{ mt: 1.25, ml: { xs: "56px", sm: "60px" } }}>
           <TextField
             value={noteText}
             onChange={(e) => setNoteText(e.target.value)}
@@ -240,7 +257,7 @@ function ContactRow({
       )}
 
       {!editingNote && contact.note && (
-        <Box sx={{ mt: 0.75, ml: { xs: 0, sm: "60px" } }}>
+        <Box sx={{ mt: 0.75, ml: { xs: "56px", sm: "60px" } }}>
           <Typography
             variant="caption"
             color="text.secondary"
@@ -374,7 +391,7 @@ function PrivateContactRow({
       </Box>
 
       {editingNote && (
-        <Box sx={{ mt: 1.25, ml: { xs: 0, sm: "60px" } }}>
+        <Box sx={{ mt: 1.25, ml: { xs: "56px", sm: "60px" } }}>
           <TextField
             value={noteText}
             onChange={(e) => setNoteText(e.target.value)}
@@ -404,7 +421,7 @@ function PrivateContactRow({
       )}
 
       {!editingNote && contact.note && (
-        <Box sx={{ mt: 0.75, ml: { xs: 0, sm: "60px" } }}>
+        <Box sx={{ mt: 0.75, ml: { xs: "56px", sm: "60px" } }}>
           <Typography
             variant="caption"
             color="text.secondary"

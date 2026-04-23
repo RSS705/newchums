@@ -730,22 +730,38 @@ export default function CommunityDetailClient() {
           />
         )}
 
-        {/* Preview header */}
+        {/* Preview header. Same CSS-grid structure as the full detail
+         *  header so the mobile layout (body spans full width below the
+         *  avatar + title row) stays consistent across both views. */}
         <AppCard>
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ sm: "flex-start" }}>
+          <Box
+            sx={{
+              display: "grid",
+              gridTemplateColumns: "auto 1fr",
+              gridTemplateAreas: {
+                xs: '"avatar title" "body body"',
+                sm: '"avatar title" "avatar body"',
+              },
+              columnGap: { xs: 1.5, sm: 2 },
+              rowGap: { xs: 1.5, sm: 0 },
+            }}
+          >
             <Avatar
               variant="rounded"
               src={community.avatar_key ? `${getAvatarBaseUrl()}/communities/${community.id}/avatar` : undefined}
               sx={{
-                width: 56, height: 56,
+                gridArea: "avatar",
+                alignSelf: "flex-start",
+                width: { xs: 48, sm: 56 }, height: { xs: 48, sm: 56 },
                 borderRadius: 2.5,
                 bgcolor: "primary.main", color: "primary.contrastText",
-                fontWeight: 700, fontSize: "1.375rem",
+                fontWeight: 700, fontSize: { xs: "1.125rem", sm: "1.375rem" },
+                flexShrink: 0,
               }}
             >
               {community.name.charAt(0).toUpperCase()}
             </Avatar>
-            <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Box sx={{ gridArea: "title", minWidth: 0, alignSelf: "flex-start" }}>
               <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
                 <Typography
                   component="h1"
@@ -765,7 +781,7 @@ export default function CommunityDetailClient() {
 
               {/* Hobby chips */}
               {community.hobbies && community.hobbies.length > 0 && (
-                <Stack direction="row" gap={0.5} flexWrap="wrap" useFlexGap sx={{ mb: 1 }}>
+                <Stack direction="row" gap={0.5} flexWrap="wrap" useFlexGap>
                   {community.hobbies.map((h) => {
                     const isMatch = viewerHobbyCategories?.has(h.name.toLowerCase()) || viewerHobbyCategories?.has(h.slug.toLowerCase());
                     return (
@@ -784,7 +800,8 @@ export default function CommunityDetailClient() {
                   })}
                 </Stack>
               )}
-
+            </Box>
+            <Box sx={{ gridArea: "body", minWidth: 0 }}>
               {community.description && (
                 <ExpandableDescription html={community.description} sx={{ mb: 1.5 }} />
               )}
@@ -796,68 +813,73 @@ export default function CommunityDetailClient() {
               {(community.is_online || community.location_name || community.website || community.discord_url) && (
                 <Stack spacing={0.5}>
                   {community.is_online ? (
-                    <Stack direction="row" spacing={0.5} alignItems="center">
+                    <Stack direction="row" spacing={0.5} alignItems="center" useFlexGap>
                       <LanguageRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
                       <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>Online</Typography>
                     </Stack>
                   ) : community.location_name ? (
-                    <Stack direction="row" spacing={0.5} alignItems="flex-start">
+                    <Stack direction="row" spacing={0.5} alignItems="flex-start" useFlexGap>
                       <PlaceRoundedIcon sx={{ fontSize: 14, color: "text.disabled", mt: "3px", flexShrink: 0 }} />
                       <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem", lineHeight: 1.5 }}>
                         {community.location_name}
                       </Typography>
                     </Stack>
                   ) : null}
-                  {community.website && (
-                    <Stack
-                      component="a"
-                      href={community.website.startsWith("http") ? community.website : `https://${community.website}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      direction="row"
-                      spacing={0.5}
-                      alignItems="center"
-                      onClick={(e) => e.stopPropagation()}
-                      sx={{
-                        alignSelf: "flex-start",
-                        color: "primary.main",
-                        textDecoration: "none",
-                        "&:hover .visit-label": { textDecoration: "underline" },
-                      }}
-                    >
-                      <LinkRoundedIcon sx={{ fontSize: 14 }} />
-                      <Typography className="visit-label" component="span" variant="body2" sx={{ fontSize: "0.8125rem", fontWeight: 600 }}>
-                        Visit website
-                      </Typography>
-                    </Stack>
-                  )}
-                  {community.discord_url && (
-                    <Stack
-                      component="a"
-                      href={community.discord_url.startsWith("http") ? community.discord_url : `https://${community.discord_url}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      direction="row"
-                      spacing={0.5}
-                      alignItems="center"
-                      onClick={(e) => e.stopPropagation()}
-                      sx={{
-                        alignSelf: "flex-start",
-                        color: "primary.main",
-                        textDecoration: "none",
-                        "&:hover .discord-label": { textDecoration: "underline" },
-                      }}
-                    >
-                      <LinkRoundedIcon sx={{ fontSize: 14 }} />
-                      <Typography className="discord-label" component="span" variant="body2" sx={{ fontSize: "0.8125rem", fontWeight: 600 }}>
-                        Discord Server
-                      </Typography>
+                  {(community.website || community.discord_url) && (
+                    // Website + Discord share a row so two short labels don't
+                    // consume two whole meta lines. Matches the pattern used
+                    // in the full detail header.
+                    <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
+                      {community.website && (
+                        <Stack
+                          component="a"
+                          href={community.website.startsWith("http") ? community.website : `https://${community.website}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          direction="row"
+                          spacing={0.5}
+                          alignItems="center"
+                          onClick={(e) => e.stopPropagation()}
+                          sx={{
+                            color: "primary.main",
+                            textDecoration: "none",
+                            "&:hover .visit-label": { textDecoration: "underline" },
+                          }}
+                        >
+                          <LinkRoundedIcon sx={{ fontSize: 14 }} />
+                          <Typography className="visit-label" component="span" variant="body2" sx={{ fontSize: "0.8125rem", fontWeight: 600 }}>
+                            Visit website
+                          </Typography>
+                        </Stack>
+                      )}
+                      {community.discord_url && (
+                        <Stack
+                          component="a"
+                          href={community.discord_url.startsWith("http") ? community.discord_url : `https://${community.discord_url}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          direction="row"
+                          spacing={0.5}
+                          alignItems="center"
+                          onClick={(e) => e.stopPropagation()}
+                          sx={{
+                            color: "primary.main",
+                            textDecoration: "none",
+                            "&:hover .discord-label": { textDecoration: "underline" },
+                          }}
+                        >
+                          <LinkRoundedIcon sx={{ fontSize: 14 }} />
+                          <Typography className="discord-label" component="span" variant="body2" sx={{ fontSize: "0.8125rem", fontWeight: 600 }}>
+                            Discord Server
+                          </Typography>
+                        </Stack>
+                      )}
                     </Stack>
                   )}
                 </Stack>
               )}
             </Box>
-          </Stack>
+          </Box>
         </AppCard>
 
         {/* Non-numeric preview so a low member/plan count doesn't deflate the
@@ -1059,22 +1081,43 @@ export default function CommunityDetailClient() {
         />
       )}
 
-      {/* Header card */}
+      {/* Header card.
+       *
+       *  Layout is a 2-column CSS grid:
+       *    - Desktop (sm+): avatar in column 1 (spanning both rows), title +
+       *      chips in column 2 row 1, description + meta stack in column 2
+       *      row 2. Matches the prior flex layout visually.
+       *    - Mobile (xs): avatar in column 1 row 1, title + chips in column 2
+       *      row 1, but the body row spans both columns so the description
+       *      and meta rows use the full card width instead of being pinned
+       *      to the right of a 48px avatar column on narrow screens.
+       */}
       <AppCard>
-        <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ sm: "flex-start" }}>
+        <Box
+          sx={{
+            display: "grid",
+            gridTemplateColumns: "auto 1fr",
+            gridTemplateAreas: '"avatar title" "body body"',
+            columnGap: { xs: 1.5, sm: 2 },
+            rowGap: 1.5,
+          }}
+        >
           <Avatar
             variant="rounded"
             src={community.avatar_key ? `${getAvatarBaseUrl()}/communities/${community.id}/avatar` : undefined}
             sx={{
-              width: 56, height: 56,
+              gridArea: "avatar",
+              alignSelf: "flex-start",
+              width: { xs: 48, sm: 56 }, height: { xs: 48, sm: 56 },
               borderRadius: 2.5,
               bgcolor: "primary.main", color: "primary.contrastText",
-              fontWeight: 700, fontSize: "1.375rem",
+              fontWeight: 700, fontSize: { xs: "1.125rem", sm: "1.375rem" },
+              flexShrink: 0,
             }}
           >
             {community.name.charAt(0).toUpperCase()}
           </Avatar>
-          <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Box sx={{ gridArea: "title", minWidth: 0, alignSelf: "flex-start" }}>
             <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
               <Typography
                 component="h1"
@@ -1095,7 +1138,7 @@ export default function CommunityDetailClient() {
             </Stack>
             {/* Hobby chips */}
             {community.hobbies && community.hobbies.length > 0 && (
-              <Stack direction="row" gap={0.5} flexWrap="wrap" useFlexGap sx={{ mb: 0.75 }}>
+              <Stack direction="row" gap={0.5} flexWrap="wrap" useFlexGap>
                 {community.hobbies.map((h) => {
                   const isMatch = viewerHobbyCategories?.has(h.name.toLowerCase()) || viewerHobbyCategories?.has(h.slug.toLowerCase());
                   return (
@@ -1119,7 +1162,8 @@ export default function CommunityDetailClient() {
                 })}
               </Stack>
             )}
-
+          </Box>
+          <Box sx={{ gridArea: "body", minWidth: 0 }}>
             {community.description && (
               <ExpandableDescription html={community.description} sx={{ mb: 1 }} />
             )}
@@ -1127,7 +1171,17 @@ export default function CommunityDetailClient() {
                 actionable links (website / join link) on their own lines below
                 so a long address doesn't push them off to the right. */}
             <Stack spacing={0.5}>
-              <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center" useFlexGap>
+              {/* Member count + online/location. Horizontal on desktop with
+                  a middot separator; on mobile we switch to a column so a
+                  long address can't wrap and leave a dangling separator at
+                  the end of the member-count line. */}
+              <Stack
+                direction={{ xs: "column", sm: "row" }}
+                spacing={{ xs: 0.5, sm: 1 }}
+                alignItems={{ xs: "flex-start", sm: "center" }}
+                flexWrap="wrap"
+                useFlexGap
+              >
                 <Stack direction="row" spacing={0.5} alignItems="center">
                   <PeopleRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
                   <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, fontSize: "0.8125rem" }}>
@@ -1135,25 +1189,25 @@ export default function CommunityDetailClient() {
                   </Typography>
                 </Stack>
                 {community.is_online ? (
-                  <>
-                    <Typography variant="body2" color="text.disabled">·</Typography>
-                    <Stack direction="row" spacing={0.5} alignItems="center">
-                      <LanguageRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
-                      <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
-                        Online
-                      </Typography>
-                    </Stack>
-                  </>
+                  // useFlexGap uses CSS `gap` instead of sibling-margin for
+                  // spacing, which is the only way a `display: none` dot on
+                  // xs doesn't leave a ghost 4px margin in front of the icon
+                  // and offset it relative to the members icon above.
+                  <Stack direction="row" spacing={0.5} alignItems="center" useFlexGap>
+                    <Typography variant="body2" color="text.disabled" sx={{ display: { xs: "none", sm: "inline" } }}>·</Typography>
+                    <LanguageRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
+                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
+                      Online
+                    </Typography>
+                  </Stack>
                 ) : community.location_name ? (
-                  <>
-                    <Typography variant="body2" color="text.disabled">·</Typography>
-                    <Stack direction="row" spacing={0.5} alignItems="flex-start">
-                      <PlaceRoundedIcon sx={{ fontSize: 14, color: "text.disabled", mt: "3px", flexShrink: 0 }} />
-                      <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem", lineHeight: 1.5 }}>
-                        {community.location_name}
-                      </Typography>
-                    </Stack>
-                  </>
+                  <Stack direction="row" spacing={0.5} alignItems="flex-start" useFlexGap>
+                    <Typography variant="body2" color="text.disabled" sx={{ display: { xs: "none", sm: "inline" }, lineHeight: 1.5 }}>·</Typography>
+                    <PlaceRoundedIcon sx={{ fontSize: 14, color: "text.disabled", mt: "3px", flexShrink: 0 }} />
+                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem", lineHeight: 1.5 }}>
+                      {community.location_name}
+                    </Typography>
+                  </Stack>
                 ) : null}
               </Stack>
               {/* Operating hours: one small meta row with a popover for the
@@ -1162,50 +1216,56 @@ export default function CommunityDetailClient() {
                   hours are set, and is unreachable on restricted private-
                   community responses (API omits `operating_hours`). */}
               <OperatingHoursInline hours={community.operating_hours} />
-              {community.website && (
-                <Stack
-                  component="a"
-                  href={community.website.startsWith("http") ? community.website : `https://${community.website}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  direction="row"
-                  spacing={0.5}
-                  alignItems="center"
-                  onClick={(e) => e.stopPropagation()}
-                  sx={{
-                    alignSelf: "flex-start",
-                    color: "primary.main",
-                    textDecoration: "none",
-                    "&:hover .visit-label": { textDecoration: "underline" },
-                  }}
-                >
-                  <LinkRoundedIcon sx={{ fontSize: 14 }} />
-                  <Typography className="visit-label" component="span" variant="body2" sx={{ fontSize: "0.8125rem", fontWeight: 600 }}>
-                    Visit website
-                  </Typography>
-                </Stack>
-              )}
-              {community.discord_url && (
-                <Stack
-                  component="a"
-                  href={community.discord_url.startsWith("http") ? community.discord_url : `https://${community.discord_url}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  direction="row"
-                  spacing={0.5}
-                  alignItems="center"
-                  onClick={(e) => e.stopPropagation()}
-                  sx={{
-                    alignSelf: "flex-start",
-                    color: "primary.main",
-                    textDecoration: "none",
-                    "&:hover .discord-label": { textDecoration: "underline" },
-                  }}
-                >
-                  <LinkRoundedIcon sx={{ fontSize: 14 }} />
-                  <Typography className="discord-label" component="span" variant="body2" sx={{ fontSize: "0.8125rem", fontWeight: 600 }}>
-                    Discord Server
-                  </Typography>
+              {(community.website || community.discord_url) && (
+                // Website + Discord on a shared row so two short link labels
+                // don't waste a whole meta line each. flexWrap + useFlexGap
+                // keeps them gracefully stacking when the labels or viewport
+                // don't allow both inline.
+                <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
+                  {community.website && (
+                    <Stack
+                      component="a"
+                      href={community.website.startsWith("http") ? community.website : `https://${community.website}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      direction="row"
+                      spacing={0.5}
+                      alignItems="center"
+                      onClick={(e) => e.stopPropagation()}
+                      sx={{
+                        color: "primary.main",
+                        textDecoration: "none",
+                        "&:hover .visit-label": { textDecoration: "underline" },
+                      }}
+                    >
+                      <LinkRoundedIcon sx={{ fontSize: 14 }} />
+                      <Typography className="visit-label" component="span" variant="body2" sx={{ fontSize: "0.8125rem", fontWeight: 600 }}>
+                        Visit website
+                      </Typography>
+                    </Stack>
+                  )}
+                  {community.discord_url && (
+                    <Stack
+                      component="a"
+                      href={community.discord_url.startsWith("http") ? community.discord_url : `https://${community.discord_url}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      direction="row"
+                      spacing={0.5}
+                      alignItems="center"
+                      onClick={(e) => e.stopPropagation()}
+                      sx={{
+                        color: "primary.main",
+                        textDecoration: "none",
+                        "&:hover .discord-label": { textDecoration: "underline" },
+                      }}
+                    >
+                      <LinkRoundedIcon sx={{ fontSize: 14 }} />
+                      <Typography className="discord-label" component="span" variant="body2" sx={{ fontSize: "0.8125rem", fontWeight: 600 }}>
+                        Discord Server
+                      </Typography>
+                    </Stack>
+                  )}
                 </Stack>
               )}
               {/* Inline member preview: folded into the meta stack instead
@@ -1225,7 +1285,7 @@ export default function CommunityDetailClient() {
               )}
             </Stack>
           </Box>
-        </Stack>
+        </Box>
 
         <Divider sx={{ my: 1.5 }} />
 
@@ -1247,11 +1307,15 @@ export default function CommunityDetailClient() {
             // still routes through `/login?next=...` (sign-in or sign-up are
             // both reachable from there), so the underlying auth flow and
             // return destination are unchanged.
+            //
+            // Full-width on xs so the secondary actions (Share link, Edit,
+            // overflow menu) cleanly share the row below instead of elbowing
+            // a stray button onto its own third row.
             <Button
               component={Link}
               href={`/login?next=${encodeURIComponent(`/communities/${slug}`)}`}
               variant="contained"
-              sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
+              sx={{ width: { xs: "100%", sm: "auto" }, textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
             >
               {community.join_mode === "approval_required" ? "Request to join" : "Join this community"}
             </Button>
@@ -1261,7 +1325,7 @@ export default function CommunityDetailClient() {
               variant="contained"
               onClick={handleJoin}
               disabled={joining}
-              sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
+              sx={{ width: { xs: "100%", sm: "auto" }, textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
             >
               {joining ? <CircularProgress size={18} color="inherit" /> : community.join_mode === "approval_required" ? "Request to join" : "Join this community"}
             </Button>
@@ -1275,7 +1339,7 @@ export default function CommunityDetailClient() {
               href={createPlanHref}
               variant="contained"
               startIcon={<AddCircleRoundedIcon />}
-              sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
+              sx={{ width: { xs: "100%", sm: "auto" }, textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
             >
               Start a plan
             </Button>
@@ -1303,16 +1367,16 @@ export default function CommunityDetailClient() {
           {isMember && !isOwner && (
             // Overflow menu (three-dot icon) for the member-level destructive
             // action. Keeps the primary action row focused on Start a plan /
-            // Share link / Edit, while still giving the member a discoverable
-            // path to leave. Mirrors the attendee-row overflow menu pattern
-            // from EventDetailClient.
+            // Share link while still giving the member a discoverable path
+            // to leave. Sits inline with the other buttons rather than being
+            // pushed to the right edge, on narrow mobile widths the push-
+            // right variant stranded the icon on its own second row.
             <Tooltip title="More actions">
               <IconButton
                 aria-label="More community actions"
                 onClick={(e) => setMemberActionsAnchor(e.currentTarget)}
                 size="small"
                 sx={{
-                  ml: "auto !important",
                   color: "text.secondary",
                   "&:hover": { color: "text.primary" },
                 }}

@@ -270,7 +270,11 @@ export default function CommunitiesListClient() {
         }}
       >
         <Stack spacing={1.5}>
-          {/* Search + scope + filter toggle */}
+          {/* Search + scope + filter toggle. On xs the search field shares
+              its row with the All / Yours toggle and the filter icon drops
+              to the secondary row below where it shares space with the
+              Personalized chip. Desktop keeps all three inline on row 1
+              and shows the Personalized chip on its own row below. */}
           <Stack direction="row" spacing={1} alignItems="center">
             <TextField
               id="communities-search-input"
@@ -299,27 +303,82 @@ export default function CommunitiesListClient() {
               exclusive
               onChange={(_, v) => { if (v) setView(v); }}
               size="small"
+              sx={{ flexShrink: 0 }}
             >
               <ToggleButton value="all" sx={{ textTransform: "none", px: 2, borderRadius: 2 }}>All</ToggleButton>
               <ToggleButton value="mine" sx={{ textTransform: "none", px: 2, borderRadius: 2 }}>Yours</ToggleButton>
             </ToggleButtonGroup>
-            <IconButton
-              onClick={() => setFiltersOpen((p) => !p)}
-              sx={{
-                border: "1px solid",
-                borderColor: filtersOpen ? "primary.main" : "divider",
-                borderRadius: 2,
-                color: filtersOpen ? "primary.main" : "text.secondary",
-                bgcolor: filtersOpen ? "primary.light" : "transparent",
-              }}
-            >
-              <TuneRoundedIcon fontSize="small" />
-            </IconButton>
+            {/* Desktop-only inline slot for the filter-tune icon. The
+                mobile render drops it to the secondary row below (paired
+                with the Personalized chip) so the search field keeps a
+                readable width on narrow phones. */}
+            <Box sx={{ display: { xs: "none", sm: "flex" }, flexShrink: 0 }}>
+              <IconButton
+                onClick={() => setFiltersOpen((p) => !p)}
+                sx={{
+                  border: "1px solid",
+                  borderColor: filtersOpen ? "primary.main" : "divider",
+                  borderRadius: 2,
+                  color: filtersOpen ? "primary.main" : "text.secondary",
+                  bgcolor: filtersOpen ? "primary.light" : "transparent",
+                }}
+              >
+                <TuneRoundedIcon fontSize="small" />
+              </IconButton>
+            </Box>
           </Stack>
 
-          {/* Personalized chip (only render row when there's content) */}
+          {/* Mobile secondary row: Personalized chip (when applicable) on
+              the left and the filter-tune icon right-aligned. Always
+              rendered on xs so the filter icon has a home even when the
+              Personalized chip isn't shown. */}
+          <Stack
+            direction="row"
+            alignItems="center"
+            gap={0.75}
+            sx={{ display: { xs: "flex", sm: "none" } }}
+          >
+            {hasHobbies && view === "all" && (
+              <Tooltip title={personalizeEnabled ? "Communities matching your hobbies are shown first. Click to turn off." : "Hobby personalization is off. Click to turn on."} arrow>
+                <Chip
+                  icon={<AutoAwesomeRoundedIcon sx={{ fontSize: "0.9375rem !important" }} />}
+                  label="Personalized"
+                  size="small"
+                  variant={personalizeEnabled ? "filled" : "outlined"}
+                  onClick={() => setPersonalizeEnabled((v) => !v)}
+                  sx={{
+                    borderRadius: 2,
+                    fontWeight: 500,
+                    fontSize: "0.8125rem",
+                    cursor: "pointer",
+                    ...(personalizeEnabled
+                      ? { bgcolor: "primary.light", color: "primary.dark", borderColor: "primary.light", "& .MuiChip-icon": { color: "primary.main" } }
+                      : { borderColor: "divider", color: "text.secondary", "& .MuiChip-icon": { color: "text.secondary" } }),
+                    "&:hover": { bgcolor: personalizeEnabled ? "primary.light" : "action.hover" },
+                  }}
+                />
+              </Tooltip>
+            )}
+            <Box sx={{ ml: "auto" }}>
+              <IconButton
+                onClick={() => setFiltersOpen((p) => !p)}
+                sx={{
+                  border: "1px solid",
+                  borderColor: filtersOpen ? "primary.main" : "divider",
+                  borderRadius: 2,
+                  color: filtersOpen ? "primary.main" : "text.secondary",
+                  bgcolor: filtersOpen ? "primary.light" : "transparent",
+                }}
+              >
+                <TuneRoundedIcon fontSize="small" />
+              </IconButton>
+            </Box>
+          </Stack>
+
+          {/* Desktop-only Personalized chip row. Hidden on xs because the
+              chip rides the secondary row above alongside the filter icon. */}
           {hasHobbies && view === "all" && (
-            <Stack direction="row" gap={0.75} alignItems="center">
+            <Stack direction="row" gap={0.75} alignItems="center" sx={{ display: { xs: "none", sm: "flex" } }}>
               <Tooltip title={personalizeEnabled ? "Communities matching your hobbies are shown first. Click to turn off." : "Hobby personalization is off. Click to turn on."} arrow>
                 <Chip
                   icon={<AutoAwesomeRoundedIcon sx={{ fontSize: "0.9375rem !important" }} />}
@@ -459,20 +518,40 @@ export default function CommunitiesListClient() {
                   }}
                   onClick={() => router.push(`/communities/${c.slug}`)}
                 >
-                  <Stack direction="row" spacing={2} alignItems="flex-start">
+                  {/* Layout mirrors the detail-page header: avatar + title on
+                      row 1, description + meta as a full-width body on row 2
+                      on mobile so long descriptions / addresses aren't pinned
+                      to the narrow right column. On desktop the body still
+                      sits beside the avatar (avatar spans both rows) to keep
+                      the card density we had before. */}
+                  <Box
+                    sx={{
+                      display: "grid",
+                      gridTemplateColumns: "auto 1fr",
+                      gridTemplateAreas: {
+                        xs: '"avatar title" "body body"',
+                        sm: '"avatar title" "avatar body"',
+                      },
+                      columnGap: { xs: 1.5, sm: 2 },
+                      rowGap: { xs: 1, sm: 0.75 },
+                    }}
+                  >
                     <Avatar
                       variant="rounded"
                       src={c.avatar_key ? `${getAvatarBaseUrl()}/communities/${c.id}/avatar` : undefined}
                       sx={{
+                        gridArea: "avatar",
+                        alignSelf: "flex-start",
                         width: 48, height: 48,
                         borderRadius: 2,
                         bgcolor: "primary.main", color: "primary.contrastText",
                         fontWeight: 700, fontSize: "1.1rem",
+                        flexShrink: 0,
                       }}
                     >
                       {c.name.charAt(0).toUpperCase()}
                     </Avatar>
-                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Box sx={{ gridArea: "title", minWidth: 0, alignSelf: "flex-start" }}>
                       <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mb: 0.25 }}>
                         <Typography fontWeight={700} sx={{ fontSize: "1.0625rem", lineHeight: 1.35 }} noWrap>
                           {c.name}
@@ -490,7 +569,7 @@ export default function CommunitiesListClient() {
 
                       {/* Hobby chips */}
                       {hobbies.length > 0 && (
-                        <Stack direction="row" gap={0.5} flexWrap="wrap" useFlexGap sx={{ mb: 0.75 }}>
+                        <Stack direction="row" gap={0.5} flexWrap="wrap" useFlexGap>
                           {hobbies.slice(0, 5).map((h) => {
                             const isMatch = viewerHobbyCategories?.has(h.name.toLowerCase()) || viewerHobbyCategories?.has(h.slug.toLowerCase());
                             return (
@@ -519,13 +598,17 @@ export default function CommunitiesListClient() {
                           )}
                         </Stack>
                       )}
-
+                    </Box>
+                    <Box sx={{ gridArea: "body", minWidth: 0 }}>
                       {c.description && (
                         <Typography variant="body2" color="text.secondary" sx={{ mb: 0.75, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
                           {c.description.replace(/<[^>]*>/g, "")}
                         </Typography>
                       )}
 
+                      {/* Meta row: dots between items are hidden on xs so a
+                          wrapped location doesn't leave a dangling separator
+                          at the end of the previous line on narrow mobile. */}
                       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
                         <Stack direction="row" spacing={0.5} alignItems="center">
                           <PeopleRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
@@ -534,50 +617,53 @@ export default function CommunitiesListClient() {
                           </Typography>
                         </Stack>
                         {c.upcoming_plan_count > 0 && (
-                          <>
-                            <Typography variant="body2" color="text.disabled">·</Typography>
-                            <Stack direction="row" spacing={0.5} alignItems="center">
-                              <EventNoteRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
-                              <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
-                                {c.upcoming_plan_count} upcoming {c.upcoming_plan_count === 1 ? "plan" : "plans"}
-                              </Typography>
-                            </Stack>
-                          </>
+                          <Stack direction="row" spacing={0.5} alignItems="center" useFlexGap>
+                            <Typography variant="body2" color="text.disabled" sx={{ display: { xs: "none", sm: "inline" } }}>·</Typography>
+                            <EventNoteRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
+                            <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
+                              {c.upcoming_plan_count} upcoming {c.upcoming_plan_count === 1 ? "plan" : "plans"}
+                            </Typography>
+                          </Stack>
                         )}
                         {c.is_online ? (
-                          <>
-                            <Typography variant="body2" color="text.disabled">·</Typography>
-                            <Stack direction="row" spacing={0.5} alignItems="center">
-                              <LanguageRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
-                              <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
-                                Online
-                              </Typography>
-                            </Stack>
-                          </>
+                          <Stack direction="row" spacing={0.5} alignItems="center" useFlexGap>
+                            <Typography variant="body2" color="text.disabled" sx={{ display: { xs: "none", sm: "inline" } }}>·</Typography>
+                            <LanguageRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
+                            <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
+                              Online
+                            </Typography>
+                          </Stack>
                         ) : c.location_name ? (
-                          <>
-                            <Typography variant="body2" color="text.disabled">·</Typography>
-                            <Stack direction="row" spacing={0.5} alignItems="center">
-                              <PlaceRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
-                              <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
-                                {c.location_name}
-                              </Typography>
-                            </Stack>
+                          // Location + distance chip. The icon + text are kept
+                          // in a single flex item anchored to the top so long
+                          // addresses wrap cleanly beneath the icon instead of
+                          // stranding the icon on its own row. `minWidth: 0`
+                          // lets the typography shrink and break at word
+                          // boundaries within the inner flex. `useFlexGap`
+                          // swaps Stack's sibling-margin for CSS gap so the
+                          // `display: none` dot on xs doesn't leave a stub
+                          // margin ahead of the icon.
+                          <Stack direction="row" spacing={0.5} alignItems="flex-start" useFlexGap sx={{ minWidth: 0, flex: { xs: "1 1 100%", sm: "0 1 auto" } }}>
+                            <Typography variant="body2" color="text.disabled" sx={{ display: { xs: "none", sm: "inline" }, lineHeight: 1.5 }}>·</Typography>
+                            <PlaceRoundedIcon sx={{ fontSize: 14, color: "text.disabled", flexShrink: 0, mt: "3px" }} />
+                            <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem", lineHeight: 1.5, minWidth: 0 }}>
+                              {c.location_name}
+                            </Typography>
                             {c.distance_km != null && (
                               <Chip
                                 label={c.distance_km < 1 ? "< 1 km" : `${Math.round(c.distance_km)} km`}
                                 size="small"
-                                sx={{ height: 20, fontSize: "0.6875rem", fontWeight: 500, borderRadius: 1, bgcolor: "grey.100", color: "text.secondary" }}
+                                sx={{ height: 20, fontSize: "0.6875rem", fontWeight: 500, borderRadius: 1, bgcolor: "grey.100", color: "text.secondary", flexShrink: 0, mt: "1px" }}
                               />
                             )}
-                          </>
+                          </Stack>
                         ) : null}
                         {c.join_mode === "approval_required" && (
                           <Chip label="Approval required" size="small" color="warning" variant="outlined" sx={{ height: 20, fontSize: "0.6875rem" }} />
                         )}
                       </Stack>
                     </Box>
-                  </Stack>
+                  </Box>
                 </AppCard>
               );
             })}
