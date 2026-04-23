@@ -238,7 +238,8 @@ export default function AdminSystemLogicClient() {
       <CollapsibleSection title="Plan sharing and lightweight join" subtitle="How share links, invite emails, and lightweight signup work">
         <Bullet>
           <strong>Plain URL vs share link:</strong> A <strong>plain URL</strong> (<code>/events/[id]</code>) shows a <strong>public preview</strong> only:
-          basic plan info, approximate location, attendee counts, and a sign-in prompt. No RSVP flow is available for non-public plans without a token.
+          basic plan info, approximate location, attendee counts, an anonymized <strong>Who&rsquo;s in</strong> row (generic &ldquo;Host&rdquo; / &ldquo;Attendee N&rdquo; rows driven off the public going count, no handles or profile links exposed),
+          a locked <strong>Can&rsquo;t make this time?</strong> preview for alt-time suggestions, and a sign-in prompt. No RSVP flow is available for non-public plans without a token.
           The <strong>Copy Link</strong> button produces a <strong>share link</strong> (<code>/events/[id]?share_token=xxx</code>) that grants preview access
           to non-public plans so the recipient can see the full plan page.
         </Bullet>

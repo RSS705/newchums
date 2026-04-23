@@ -5,13 +5,17 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { headerNavLinks } from "@/config/nav";
+import { headerNavLinks, type HeaderNavLink } from "@/config/nav";
 
 type MarketingNavSectionProps = {
   /** Called when a link is clicked (e.g. to close drawer) */
   onLinkClick?: () => void;
   /** Section header text; default "More Goodness" */
   sectionTitle?: string;
+  /** Nav link set; defaults to the marketing-only list. Logged-out layouts
+   *  pass `publicHeaderNavLinks` so the drawer mirrors the public header's
+   *  extra "Communities" entry. */
+  navLinks?: readonly HeaderNavLink[];
 };
 
 /**
@@ -19,7 +23,7 @@ type MarketingNavSectionProps = {
  * Used in AppShell (logged-in drawer) and LandingLayout (logged-out drawer).
  * Typography slightly larger for improved mobile readability.
  */
-export default function MarketingNavSection({ onLinkClick, sectionTitle = "More Goodness" }: MarketingNavSectionProps) {
+export default function MarketingNavSection({ onLinkClick, sectionTitle = "More Goodness", navLinks = headerNavLinks }: MarketingNavSectionProps) {
   const pathname = usePathname();
 
   return (
@@ -39,7 +43,7 @@ export default function MarketingNavSection({ onLinkClick, sectionTitle = "More 
         {sectionTitle}
       </Typography>
       <Stack spacing={0.25}>
-        {headerNavLinks.map((link) => {
+        {navLinks.map((link) => {
           const isActive = pathname === link.href;
           return (
             <Link

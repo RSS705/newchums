@@ -48,8 +48,31 @@ export const superAdminNavItems: NavItem[] = [
   { label: "Roadmap", href: "/admin/roadmap", icon: MapRoundedIcon },
 ];
 
-export const headerNavLinks = [
+export type HeaderNavLink = { label: string; href: string };
+
+/** Marketing-only nav shown in the site header for every viewer. Logged-in
+ *  users don't get any product links here because the left sidebar already
+ *  carries those. Kept as a plain array (not a tuple) so the logged-out
+ *  variant below can be composed from it with a spread. */
+export const headerNavLinks: HeaderNavLink[] = [
   { label: "How it Works", href: "/how-it-works" },
   { label: "Science of Friendship", href: "/science-of-friendship" },
   { label: "Safety Center", href: "/safety-center" },
-] as const;
+];
+
+/** Logged-out nav: marketing links plus a "Communities" entry so non-
+ *  authenticated visitors can discover public communities from the top nav
+ *  the same way they can browse public plans from the landing Explore feed.
+ *  Kept out of the logged-in header because authenticated users already
+ *  have Communities in the left sidebar; showing it twice would be noise.
+ *
+ *  Sequenced after Science of Friendship so the two "learn about the
+ *  product" links (How it Works, Science of Friendship) stay paired, and
+ *  Communities sits alongside Safety Center as the "things you can do /
+ *  see on the app" half of the row. */
+export const publicHeaderNavLinks: HeaderNavLink[] = [
+  { label: "How it Works", href: "/how-it-works" },
+  { label: "Science of Friendship", href: "/science-of-friendship" },
+  { label: "Communities", href: "/communities" },
+  { label: "Safety Center", href: "/safety-center" },
+];

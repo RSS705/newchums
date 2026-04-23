@@ -83,10 +83,11 @@ export default function AdminQrRedirectsClient() {
   const [usageFilter, setUsageFilter] = useState<UsageFilter>("all");
   const [storeFilter, setStoreFilter] = useState<StoreFilter>("all");
 
-  // Default sort: most recently created first, matches the legacy behavior so
-  // a fresh visit feels familiar.
-  const [sortField, setSortField] = useState<SortField>("created_at");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
+  // Default sort: alphabetical by Code (A → Z). Codes are the user-facing
+  // identifier printed on each poster / card, so finding a specific one is
+  // the most common task when this table loads.
+  const [sortField, setSortField] = useState<SortField>("code");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   const fetchItems = useCallback(async (q?: string) => {
     setLoading(true);

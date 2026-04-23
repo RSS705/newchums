@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Autocomplete from "@mui/material/Autocomplete";
+import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
@@ -51,6 +52,9 @@ import NotificationsRoundedIcon from "@mui/icons-material/NotificationsRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import SendRoundedIcon from "@mui/icons-material/SendRounded";
 import PeopleOutlineRoundedIcon from "@mui/icons-material/PeopleOutlineRounded";
+import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
+import PersonRoundedIcon from "@mui/icons-material/PersonRounded";
+import ScheduleRoundedIcon from "@mui/icons-material/ScheduleRounded";
 import MoreVertRoundedIcon from "@mui/icons-material/MoreVertRounded";
 import OpenInNewRoundedIcon from "@mui/icons-material/OpenInNewRounded";
 import PersonAddRoundedIcon from "@mui/icons-material/PersonAddRounded";
@@ -1601,42 +1605,90 @@ export default function EventDetailClient() {
           </Box>
         )}
 
-        <Box>
+        {/* Hero header. Adapts the Participant hero card pattern from
+            `docs/UI_Patterns.md` (gradient wash + primary.light border)
+            to an event-level hero: title, hobby chips, host / community
+            line. Gives the page a confident top section rather than a
+            bare stack of text, matching the warmth the logged-in view
+            carries via its attendee and chat cards. */}
+        <Paper
+          variant="outlined"
+          sx={{
+            borderRadius: 3,
+            borderColor: "primary.light",
+            p: { xs: 2.5, sm: 3 },
+            backgroundImage: "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
+          }}
+        >
           {pubHobbies.length > 0 && (
             <Stack
               direction="row"
               alignItems="center"
               flexWrap="wrap"
               useFlexGap
-              sx={{ mb: 1, gap: 0.75 }}
+              sx={{ mb: 1.25, gap: 0.75 }}
             >
               {pubHobbies.map((h) => (
                 <Chip
                   key={h.slug}
                   label={h.name}
                   size="small"
-                  variant="outlined"
-                  sx={{ borderRadius: 2, fontWeight: 500, fontSize: "0.8rem" }}
+                  sx={{
+                    borderRadius: 2,
+                    fontWeight: 600,
+                    fontSize: "0.75rem",
+                    height: 24,
+                    bgcolor: "primary.light",
+                    color: "primary.dark",
+                    border: "1px solid",
+                    borderColor: "primary.light",
+                  }}
                 />
               ))}
             </Stack>
           )}
-          <Typography variant="h4" fontWeight={700} sx={{ mb: 0.5 }}>
+          <Typography
+            variant="h4"
+            component="h1"
+            fontWeight={700}
+            sx={{ mb: 0.75, lineHeight: 1.15, letterSpacing: "-0.01em" }}
+          >
             {event.title}
           </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Hosted by {event.hostName}
-          </Typography>
-          {event.community && (
-            <Chip
-              label={event.community.name}
-              size="small"
-              variant="outlined"
-              sx={{ mt: 0.5, cursor: "pointer" }}
-              onClick={() => router.push(`/communities/${event.community!.slug}`)}
-            />
-          )}
-        </Box>
+          <Stack
+            direction="row"
+            spacing={0.75}
+            alignItems="center"
+            flexWrap="wrap"
+            useFlexGap
+            sx={{ columnGap: 0.75, rowGap: 0.5 }}
+          >
+            <Typography variant="body2" color="text.secondary">
+              Hosted by <Box component="span" sx={{ color: "text.primary", fontWeight: 600 }}>{event.hostName}</Box>
+            </Typography>
+            {event.community && (
+              <>
+                <Typography variant="body2" color="text.disabled">·</Typography>
+                <Chip
+                  label={event.community.name}
+                  size="small"
+                  variant="outlined"
+                  sx={{
+                    height: 22,
+                    fontSize: "0.6875rem",
+                    fontWeight: 500,
+                    borderRadius: 1.5,
+                    borderColor: "divider",
+                    color: "text.secondary",
+                    cursor: "pointer",
+                    "&:hover": { borderColor: "primary.main", color: "primary.main" },
+                  }}
+                  onClick={() => router.push(`/communities/${event.community!.slug}`)}
+                />
+              </>
+            )}
+          </Stack>
+        </Paper>
 
         {pubIsCanceled && (
           <Paper
@@ -1659,53 +1711,117 @@ export default function EventDetailClient() {
           </Paper>
         )}
 
+        {/* Overview card. Icons sit inside small primary-tinted badges so
+            the meta rows have a consistent anchor on the left and read as
+            "at a glance" items, not a bulleted list. Description gets its
+            own subtle divider for a sharper hierarchy. */}
         <AppCard>
           <Stack spacing={2}>
             <Stack direction="row" spacing={1.5} alignItems="center">
-              <AccessTimeRoundedIcon sx={{ color: "text.secondary", fontSize: 20 }} />
-              <Typography variant="body1">{formatDateTime(event.startsAt)}</Typography>
+              <Box
+                sx={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: "50%",
+                  bgcolor: "primary.light",
+                  color: "primary.dark",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <AccessTimeRoundedIcon sx={{ fontSize: 18 }} />
+              </Box>
+              <Typography variant="body1" fontWeight={500}>{formatDateTime(event.startsAt)}</Typography>
             </Stack>
             {event.locationType === "in_person" && (
-              <Stack direction="row" spacing={1.5} alignItems="center">
-                <PlaceRoundedIcon sx={{ color: "text.secondary", fontSize: 20 }} />
-                <Box>
-                  <Typography variant="body1">{pubLocationDisplay}</Typography>
+              <Stack direction="row" spacing={1.5} alignItems="flex-start">
+                <Box
+                  sx={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: "50%",
+                    bgcolor: "primary.light",
+                    color: "primary.dark",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                    mt: "2px",
+                  }}
+                >
+                  <PlaceRoundedIcon sx={{ fontSize: 18 }} />
+                </Box>
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography variant="body1" fontWeight={500}>{pubLocationDisplay}</Typography>
                   {event.locationArea && (
-                    <Typography variant="caption" color="text.secondary">
-                      Approximate area shown, sign in to see exact address
-                    </Typography>
+                    <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mt: 0.25 }}>
+                      <LockOutlinedIcon sx={{ fontSize: 13, color: "text.disabled" }} />
+                      <Typography variant="caption" color="text.secondary">
+                        Approximate area shown. Sign in to see the exact address.
+                      </Typography>
+                    </Stack>
                   )}
                 </Box>
               </Stack>
             )}
             {event.locationType === "online" && (
               <Stack direction="row" spacing={1.5} alignItems="center">
-                <LinkRoundedIcon sx={{ color: "text.secondary", fontSize: 20 }} />
+                <Box
+                  sx={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: "50%",
+                    bgcolor: "primary.light",
+                    color: "primary.dark",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  <LinkRoundedIcon sx={{ fontSize: 18 }} />
+                </Box>
                 {event.onlineLink?.trim() ? (
                   <MuiLink
                     href={normalizeMeetingLinkHref(event.onlineLink)}
                     target="_blank"
                     rel="noopener noreferrer"
                     variant="body1"
-                    sx={{ wordBreak: "break-word" }}
+                    sx={{ wordBreak: "break-word", fontWeight: 500 }}
                   >
                     {pubLocationDisplay}
                   </MuiLink>
                 ) : (
-                  <Typography variant="body1">{pubLocationDisplay}</Typography>
+                  <Typography variant="body1" fontWeight={500}>{pubLocationDisplay}</Typography>
                 )}
               </Stack>
             )}
             <Stack direction="row" spacing={1.5} alignItems="center">
-              <PeopleOutlineRoundedIcon sx={{ color: "text.secondary", fontSize: 20 }} />
-              <Typography variant="body1">
+              <Box
+                sx={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: "50%",
+                  bgcolor: "primary.light",
+                  color: "primary.dark",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <PeopleOutlineRoundedIcon sx={{ fontSize: 18 }} />
+              </Box>
+              <Typography variant="body1" fontWeight={500}>
                 {pubGoingCount} going{pubMaybeCount > 0 ? ` · ${pubMaybeCount} maybe` : ""}
                 {event.maxSeats != null ? ` · ${event.maxSeats} max` : ""}
               </Typography>
             </Stack>
             {event.description && (
               <>
-                <Divider />
+                <Divider sx={{ borderColor: "divider", opacity: 0.6 }} />
                 <RichTextContent html={event.description} size="body2" />
               </>
             )}
@@ -1714,12 +1830,22 @@ export default function EventDetailClient() {
 
         {/* Approximate-area map for in-person plans. We only show this when
             the host has a real approximate area; the iframe pins a
-            neighbourhood-level search rather than coords, so the exact venue
-            is never revealed. */}
+            neighbourhood-level search rather than coords, so the exact
+            venue is never revealed. The header row and lock-tagged
+            caption give the card its own identity so it doesn't read as
+            an anonymous iframe dropped onto the page. */}
         {event.locationType === "in_person" &&
           event.locationArea &&
           process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY && (
             <AppCard sx={{ p: 0, overflow: "hidden" }}>
+              <Box sx={{ px: { xs: 2, sm: 2.5 }, py: 1.5, borderBottom: "1px solid", borderColor: "divider" }}>
+                <Stack direction="row" spacing={1.25} alignItems="center">
+                  <PlaceRoundedIcon sx={{ fontSize: 18, color: "primary.dark" }} />
+                  <Typography variant="subtitle2" fontWeight={700} sx={{ fontSize: "0.875rem" }}>
+                    Around the plan
+                  </Typography>
+                </Stack>
+              </Box>
               <Box
                 component="iframe"
                 src={`https://www.google.com/maps/embed/v1/place?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&q=${encodeURIComponent(event.locationArea)}&zoom=13`}
@@ -1733,24 +1859,241 @@ export default function EventDetailClient() {
               />
               <Box
                 sx={{
-                  px: 2,
+                  px: { xs: 2, sm: 2.5 },
                   py: 1.25,
                   borderTop: "1px solid",
                   borderColor: "divider",
-                  textAlign: "center",
+                  bgcolor: "grey.50",
                 }}
               >
-                <Typography variant="caption" color="text.secondary" sx={{ fontStyle: "italic" }}>
-                  Map shows approximate area only
-                </Typography>
+                <Stack direction="row" spacing={0.75} alignItems="center" justifyContent="center">
+                  <LockOutlinedIcon sx={{ fontSize: 13, color: "text.disabled" }} />
+                  <Typography variant="caption" color="text.secondary">
+                    Neighbourhood only, exact venue shared after sign-in.
+                  </Typography>
+                </Stack>
               </Box>
             </AppCard>
           )}
 
+        {/* Anonymized "Who's in" preview. Drives the count + a handful of
+            role-labelled rows purely off `goingCount`, which is already
+            a public field. No handles, names, avatars, or profile links
+            are exposed; the rows deliberately read as a gated preview
+            ("Host", "Attendee 1", ...) rather than a censored list with
+            blurred identities.
+            Avatars get the white-ring + soft-shadow treatment from the
+            Participant hero card so the module feels human, the host
+            avatar gets a deeper primary tint so it reads as the plan
+            owner at a glance, and the sign-in hint sits in a soft well
+            inside the card so it feels like a signed footer rather than
+            a floating caption. */}
+        {!pubIsCanceled && (() => {
+          const pubMaxRows = 5;
+          const pubExtraVisible = Math.max(0, Math.min(pubGoingCount, pubMaxRows - 1));
+          const pubOverflow = Math.max(0, pubGoingCount - pubExtraVisible);
+          return (
+            <AppCard>
+              <Stack spacing={2}>
+                <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
+                  <Stack direction="row" spacing={1.25} alignItems="center">
+                    <GroupsRoundedIcon sx={{ fontSize: 20, color: "primary.dark" }} />
+                    <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
+                      Who&apos;s in
+                    </Typography>
+                  </Stack>
+                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem", fontWeight: 500 }}>
+                    {pubGoingCount} going{pubMaybeCount > 0 ? ` · ${pubMaybeCount} maybe` : ""}
+                  </Typography>
+                </Stack>
+
+                <Stack spacing={1.5}>
+                  <Stack direction="row" spacing={1.5} alignItems="center">
+                    <Avatar
+                      sx={{
+                        width: 40,
+                        height: 40,
+                        bgcolor: "primary.light",
+                        color: "primary.dark",
+                        border: "2px solid #fff",
+                        boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+                      }}
+                    >
+                      <PersonRoundedIcon sx={{ fontSize: 22 }} />
+                    </Avatar>
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        Host
+                      </Typography>
+                    </Box>
+                    <Chip
+                      label="Host"
+                      size="small"
+                      sx={{
+                        height: 20,
+                        fontSize: "0.6875rem",
+                        fontWeight: 600,
+                        borderRadius: 1,
+                        bgcolor: "primary.main",
+                        color: "primary.contrastText",
+                      }}
+                    />
+                  </Stack>
+
+                  {Array.from({ length: pubExtraVisible }).map((_, i) => (
+                    <Stack key={i} direction="row" spacing={1.5} alignItems="center">
+                      <Avatar
+                        sx={{
+                          width: 40,
+                          height: 40,
+                          bgcolor: "grey.100",
+                          color: "text.disabled",
+                          border: "2px solid #fff",
+                          boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
+                        }}
+                      >
+                        <PersonRoundedIcon sx={{ fontSize: 22 }} />
+                      </Avatar>
+                      <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                        Attendee {i + 1}
+                      </Typography>
+                    </Stack>
+                  ))}
+
+                  {pubGoingCount === 0 && (
+                    <Typography variant="body2" color="text.secondary" sx={{ pl: 7 }}>
+                      No one else has RSVP&apos;d yet. Be the first.
+                    </Typography>
+                  )}
+
+                  {pubOverflow > 0 && (
+                    <Typography variant="caption" color="text.secondary" sx={{ pl: 7, fontWeight: 500 }}>
+                      +{pubOverflow} more going
+                    </Typography>
+                  )}
+                </Stack>
+
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 0.75,
+                    px: 1.5,
+                    py: 1,
+                    borderRadius: 2,
+                    bgcolor: "grey.50",
+                    border: "1px solid",
+                    borderColor: "divider",
+                  }}
+                >
+                  <LockOutlinedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
+                  <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.4 }}>
+                    Sign in to see who&apos;s going, message attendees, and RSVP.
+                  </Typography>
+                </Box>
+              </Stack>
+            </AppCard>
+          );
+        })()}
+
+        {/* Locked "Suggest a different time" preview. Shaped as a feature
+            preview (icon badge + Preview chip + explainer + gated CTA)
+            rather than a disabled module so a logged-out visitor can see
+            this is a real capability the product offers, not an empty
+            state. Hidden for canceled or past plans. */}
         {!pubIsCanceled && !pubIsPast && (
           <AppCard>
-            <Stack spacing={2} sx={{ py: 1 }}>
-              <Typography variant="h6" fontWeight={600}>
+            <Stack spacing={1.75}>
+              <Stack direction="row" spacing={1.75} alignItems="center">
+                <Box
+                  sx={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: "50%",
+                    bgcolor: "primary.light",
+                    color: "primary.dark",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  <ScheduleRoundedIcon sx={{ fontSize: 22 }} />
+                </Box>
+                <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                  <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
+                    Can&apos;t make this time?
+                  </Typography>
+                  <Chip
+                    label="Preview"
+                    size="small"
+                    sx={{
+                      height: 20,
+                      fontSize: "0.6875rem",
+                      fontWeight: 600,
+                      borderRadius: 1,
+                      bgcolor: "grey.100",
+                      color: "text.secondary",
+                      border: "1px solid",
+                      borderColor: "divider",
+                    }}
+                  />
+                </Stack>
+              </Stack>
+              <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+                Members can suggest alternative times that work better for them. Sign in to propose a new time, or RSVP as &quot;maybe&quot; to keep the host in the loop.
+              </Typography>
+              <Box>
+                <Button
+                  component={Link}
+                  href={`/login?next=${encodeURIComponent(`/events/${eventId}`)}`}
+                  variant="outlined"
+                  size="small"
+                  sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
+                >
+                  Sign in to suggest a time
+                </Button>
+              </Box>
+            </Stack>
+          </AppCard>
+        )}
+
+        {/* Final CTA. Uses the same warm gradient + primary.light border
+            as the top hero so the page opens and closes with the same
+            visual weight. Icon badge on the left matches the community
+            nudge pattern on the logged-in communities page. */}
+        {!pubIsCanceled && !pubIsPast && (
+          <Paper
+            variant="outlined"
+            sx={{
+              borderRadius: 3,
+              borderColor: "primary.light",
+              p: { xs: 2.5, sm: 3 },
+              backgroundImage: "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
+              display: "flex",
+              flexDirection: { xs: "column", sm: "row" },
+              alignItems: { xs: "flex-start", sm: "center" },
+              gap: { xs: 2, sm: 2.5 },
+            }}
+          >
+            <Box
+              sx={{
+                width: 52,
+                height: 52,
+                borderRadius: "50%",
+                bgcolor: "primary.main",
+                color: "primary.contrastText",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+                boxShadow: "0 2px 10px rgba(234, 88, 12, 0.25)",
+              }}
+            >
+              <GroupsRoundedIcon sx={{ fontSize: 26 }} />
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography variant="h6" fontWeight={700} sx={{ mb: 0.5, fontSize: "1.0625rem" }}>
                 Interested in this plan?
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
@@ -1758,32 +2101,42 @@ export default function EventDetailClient() {
                   ? "Sign in or create a free account to request to join this plan."
                   : "Sign in or create a free account to RSVP, chat with attendees, and get updates."}
               </Typography>
-              <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
-                <Button
-                  component={Link}
-                  href={`/login?next=${encodeURIComponent(`/events/${eventId}`)}`}
-                  variant="contained"
-                  sx={{
-                    textTransform: "none",
-                    fontWeight: 600,
-                    borderRadius: 2.5,
-                    boxShadow: "none",
-                    "&:hover": { boxShadow: "none", opacity: 0.92 },
-                  }}
-                >
-                  Sign in
-                </Button>
-                <Button
-                  component={Link}
-                  href={`/signup?next=${encodeURIComponent(`/events/${eventId}`)}`}
-                  variant="outlined"
-                  sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5 }}
-                >
-                  Create an account
-                </Button>
-              </Stack>
+            </Box>
+            <Stack
+              direction={{ xs: "row", sm: "row" }}
+              spacing={1}
+              sx={{ flexShrink: 0, width: { xs: "100%", sm: "auto" } }}
+            >
+              <Button
+                component={Link}
+                href={`/login?next=${encodeURIComponent(`/events/${eventId}`)}`}
+                variant="contained"
+                sx={{
+                  textTransform: "none",
+                  fontWeight: 600,
+                  borderRadius: 2.5,
+                  boxShadow: "none",
+                  flex: { xs: 1, sm: "0 0 auto" },
+                  "&:hover": { boxShadow: "none", opacity: 0.92 },
+                }}
+              >
+                Sign in
+              </Button>
+              <Button
+                component={Link}
+                href={`/signup?next=${encodeURIComponent(`/events/${eventId}`)}`}
+                variant="outlined"
+                sx={{
+                  textTransform: "none",
+                  fontWeight: 600,
+                  borderRadius: 2.5,
+                  flex: { xs: 1, sm: "0 0 auto" },
+                }}
+              >
+                Create an account
+              </Button>
             </Stack>
-          </AppCard>
+          </Paper>
         )}
       </Stack>
     );

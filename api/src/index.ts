@@ -7085,6 +7085,147 @@ app.get("/communities", async (c) => {
   }
 });
 
+/** GET /public/communities, logged-out discovery feed.
+ *
+ *  Powers the public `/communities` page for non-authenticated visitors, the
+ *  community equivalent of the public `/events/explore/public` feed. The
+ *  response shape is intentionally a lean subset of `GET /communities` so
+ *  the existing community-card JSX keeps working for both logged-in and
+ *  logged-out renders without branching on shape.
+ *
+ *  Privacy contract (the reason this is a separate endpoint):
+ *    - ONLY returns `visibility = 'public'` communities. Private
+ *      communities are fully excluded from the public discovery list,
+ *      public search, and any public browsing surface.
+ *    - Only `status = 'active'` communities; closed ones are hidden
+ *      everywhere in discovery.
+ *    - Never emits viewer-scoped fields (`viewer_role`,
+ *      `hobby_match_count`), since there is no viewer.
+ *    - Returns `distance_km` only when the caller supplied a usable
+ *      `lat` / `lng` pair (from the manual Places picker on the page).
+ *      No raw coordinates are leaked beyond what the community already
+ *      publishes via `location_name`.
+ *
+ *  Supported query params (all optional):
+ *    q           Case-insensitive match against `name` or `slug`.
+ *    lat, lng    Viewer-entered location coordinates (from the page's
+ *                manual Places picker, never a geolocation API).
+ *    radius_km   Distance cap for *offline* communities only; online
+ *                communities bypass distance regardless. Defaults to
+ *                200km to match the authenticated feed's default.
+ *    hobby       Single hobby slug filter. Matches on effective hobby
+ *                category (same normalization as the authenticated feed)
+ *                so a hobby slug like `mtg` matches a community tagged
+ *                under any variant in the same category.
+ *    limit       Clamped to [1, 50], default 20.
+ *    offset      Non-negative, default 0.
+ */
+app.get("/public/communities", async (c) => {
+  const sql = getSql(c.env);
+  const search = c.req.query("q")?.trim() ?? null;
+  const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 20), 1), 50);
+  const offset = Math.max(Number(c.req.query("offset") ?? 0), 0);
+  const lat = c.req.query("lat") ? Number(c.req.query("lat")) : null;
+  const lng = c.req.query("lng") ? Number(c.req.query("lng")) : null;
+  const hasLocation =
+    lat !== null && lng !== null && Number.isFinite(lat) && Number.isFinite(lng);
+  const radiusKm = Math.min(Math.max(Number(c.req.query("radius_km") ?? 200), 1), 20000);
+  const hobbySlug = c.req.query("hobby") ?? null;
+
+  try {
+    const q = search ? `%${search}%` : null;
+
+    const distanceExpr = hasLocation
+      ? sql`CASE
+          WHEN c.location_lat IS NOT NULL AND c.location_lng IS NOT NULL THEN
+            6371 * acos(
+              LEAST(1.0, GREATEST(-1.0,
+                cos(radians(${lat})) * cos(radians(c.location_lat)) *
+                cos(radians(c.location_lng) - radians(${lng})) +
+                sin(radians(${lat})) * sin(radians(c.location_lat))
+              ))
+            )
+          ELSE NULL
+        END`
+      : sql`NULL`;
+
+    // Distance filter matches the authenticated feed: only excludes
+    // offline communities outside radius; online communities pass through
+    // regardless of viewer location (they're location-agnostic).
+    const distanceFilter = hasLocation && radiusKm < 20000
+      ? sql`AND (
+          c.is_online = true
+          OR c.location_lat IS NULL OR c.location_lng IS NULL
+          OR 6371 * acos(
+            LEAST(1.0, GREATEST(-1.0,
+              cos(radians(${lat})) * cos(radians(c.location_lat)) *
+              cos(radians(c.location_lng) - radians(${lng})) +
+              sin(radians(${lat})) * sin(radians(c.location_lat))
+            ))
+          ) <= ${radiusKm}
+        )`
+      : sql``;
+
+    const hobbyFilter = hobbySlug
+      ? sql`AND EXISTS (
+          SELECT 1 FROM newchums.interests ii_pick
+          WHERE ii_pick.slug = ${hobbySlug} AND ii_pick.is_deleted = false
+            AND EXISTS (
+              SELECT 1 FROM newchums.community_interests ci4
+              JOIN newchums.interests ii4 ON ii4.id = ci4.interest_id AND ii4.is_deleted = false
+              WHERE ci4.community_id = c.id
+                AND LOWER(COALESCE(NULLIF(TRIM(ii4.category), ''), ii4.name))
+                  = LOWER(COALESCE(NULLIF(TRIM(ii_pick.category), ''), ii_pick.name))
+            )
+        )`
+      : sql``;
+
+    // No viewer to personalize against. Public discovery orders by
+    // location proximity when the viewer has entered a location, then
+    // alphabetically by name so the list reads as browseable rather than
+    // "biggest communities first". Alphabetical order is case-
+    // insensitive (`LOWER(c.name)`) so capitalization quirks don't
+    // scatter the list. `created_at DESC` is a last-resort tiebreak for
+    // the rare same-name / same-distance case.
+    const orderClause = hasLocation
+      ? sql`distance_km ASC NULLS LAST, LOWER(c.name) ASC, c.created_at DESC`
+      : sql`LOWER(c.name) ASC, c.created_at DESC`;
+
+    const communities = (await sql`
+      SELECT c.id, c.slug, c.name, c.description, c.visibility, c.join_mode, c.avatar_key, c.banner_key,
+        c.location_name, c.owner_user_id, c.created_at, c.is_online,
+        (SELECT COUNT(*)::int FROM newchums.community_members cm WHERE cm.community_id = c.id AND cm.status = 'active') AS member_count,
+        NULL::text AS viewer_role,
+        (SELECT COUNT(*)::int FROM newchums.events e
+         WHERE e.community_id = c.id
+           AND e.status = 'published'
+           AND e.starts_at >= NOW()
+           AND COALESCE(e.is_qa, false) = false
+           AND COALESCE(e.hide_from_explore, false) = false
+           AND e.visibility = 'public') AS upcoming_plan_count,
+        0::int AS hobby_match_count,
+        ${distanceExpr} AS distance_km,
+        (SELECT COALESCE(json_agg(json_build_object('name', ii.name, 'slug', ii.slug)), '[]'::json)
+         FROM newchums.community_interests ci3
+         JOIN newchums.interests ii ON ii.id = ci3.interest_id AND ii.is_deleted = false
+         WHERE ci3.community_id = c.id) AS hobbies
+      FROM newchums.communities c
+      WHERE COALESCE(c.status, 'active') = 'active'
+        AND c.visibility = 'public'
+        ${q ? sql`AND (c.name ILIKE ${q} OR c.slug ILIKE ${q})` : sql``}
+        ${distanceFilter}
+        ${hobbyFilter}
+      ORDER BY ${orderClause}
+      LIMIT ${limit} OFFSET ${offset}
+    `) as Record<string, unknown>[];
+    const hasMore = communities.length === limit;
+    return c.json({ ok: true, communities, hasMore });
+  } catch (err) {
+    console.error("[GET /public/communities]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
 /** GET /communities/slug-available, check slug availability */
 app.get("/communities/slug-available", async (c) => {
   const slug = (c.req.query("slug") ?? "").trim().toLowerCase();

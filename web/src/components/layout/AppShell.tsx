@@ -33,7 +33,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import * as React from "react";
 import { signOut } from "next-auth/react";
-import { appNavItems, superAdminNavItems, createEventHref } from "@/config/nav";
+import { appNavItems, superAdminNavItems, createEventHref, publicHeaderNavLinks } from "@/config/nav";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import UserAvatar from "@/components/common/UserAvatar";
 import SiteHeader, { HEADER_MIN_HEIGHT } from "@/components/layout/SiteHeader";
@@ -176,6 +176,7 @@ export default function AppShell({ children, user, passwordSetupPending }: AppSh
           }}
         >
           <SiteHeader
+            navLinks={publicHeaderNavLinks}
             rightSide={
               <Stack direction="row" spacing={1} alignItems="center">
                 <Button

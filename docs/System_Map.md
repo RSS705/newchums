@@ -157,6 +157,7 @@ The following flows run in the API worker; the web app calls the API via `NEXT_P
 | Admin, plans | `GET /admin/plans`, `POST /admin/plans/:id/remove` | Bearer JWT + `super_admin` role |
 | Admin, roadmap | `GET /admin/roadmap`, `POST /admin/roadmap/:id/status`, `POST /admin/roadmap/:id/merge`, `POST /admin/roadmap/:id/edit`, `POST /admin/roadmap/:id/remove`, `POST /admin/roadmap/:id/restore`, `DELETE /admin/roadmap/comments/:id` | Bearer JWT + `super_admin` role |
 | Communities | `POST /communities`, `GET /communities`, `GET /communities/slug-available`, `GET /communities/:slug`, `PATCH /communities/:slug`, `POST /communities/:slug/close`, `DELETE /communities/:slug`, `POST /communities/:id/join`, `POST /communities/:id/leave`, `GET /communities/:id/members`, `POST /communities/:id/members/:userId/remove`, `PUT /communities/:id/join-requests/:requestId`, `GET /communities/:id/join-requests`, `GET /communities/:id/events` | Bearer JWT |
+| Public communities (logged-out discovery) | `GET /public/communities` | none. Public-only (`visibility = 'public'`) discovery feed, the community equivalent of `GET /events/explore/public`. Powers the logged-out render of `/communities`. Private communities are filtered out entirely. |
 | Organizer plans / premium access | `PATCH /admin/users/:id/subscription-plan` assigns `free`, `super_host`, or `community_pro` at the user level; community-level premium access is derived from the owner's plan via `communityInheritsProAccess()`. | Bearer JWT + `super_admin` role |
 | Admin, communities | `GET /admin/communities`, `POST /admin/communities/:id/remove` | Bearer JWT + `super_admin` role |
 | Diagnostics | `GET /`, `GET /health`, `GET /health/env`, `GET /health/db`, `GET /db/ping`, `GET /db/postgis` | none |
@@ -265,7 +266,7 @@ After the SQL selects candidate (recipient, plan) pairs, **chum preference filte
 ```
 Visit newchums.com → Homepage (LandingLayout)
 ├── Public Explore feed, browse real public plans (search, time filter, pagination)
-│   └── Click plan → Public plan details (limited preview, no RSVP)
+│   └── Click plan → Public plan details (preview with anonymized "Who's in" + locked alt-time section; no RSVP)
 ├── Browse: How it Works, Science of Friendship, Safety Center
 ├── Contact form
 ├── Sign up (multi-step: credentials + legal acceptance → username/DOB → hobbies → location) → Email verification → Dashboard
@@ -374,6 +375,8 @@ Wrangler config is code-managed so deploys do not wipe routes or override canoni
 | `/onboarding/username` | Onboarding: set username |
 | `/onboarding/date-of-birth` | Onboarding: set date of birth |
 | `/u/[handle]` | Public profile (works logged-in or out; logged-out viewers see reduced info: username only, no name/age/reliability) |
+| `/communities` (logged out) | Public Communities discovery feed (public-only `visibility` via `/public/communities`). Lives physically in `(app)/communities/page.tsx` and is allowlisted in the `(app)` layout so logged-out visitors render without an auth redirect; the page renders `PublicCommunitiesExplore` when there is no session and `CommunitiesListClient` when there is. |
+| `/communities/[slug]` | Public community detail page (works logged-in or out; privacy contract enforced by `GET /communities/:slug`) |
 | `/events/[id]` (logged out) | Plan detail, public preview with limited info and sign-in CTA |
 | `/roadmap` | Public product roadmap, vote and follow items. Items with "Received" status are only visible to the author and super admins; once reviewed and moved to another status they appear publicly. |
 | `/roadmap/[id]` | Roadmap item detail, comments, voting. Returns 404 for "Received" items unless viewer is the author or a super admin. |

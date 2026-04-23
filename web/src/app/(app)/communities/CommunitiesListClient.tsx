@@ -1,9 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import Autocomplete from "@mui/material/Autocomplete";
-import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
@@ -20,40 +18,17 @@ import Typography from "@mui/material/Typography";
 import AddCircleRoundedIcon from "@mui/icons-material/AddCircleRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import EditLocationRoundedIcon from "@mui/icons-material/EditLocationRounded";
-import EventNoteRoundedIcon from "@mui/icons-material/EventNoteRounded";
-import LanguageRoundedIcon from "@mui/icons-material/LanguageRounded";
-import LockRoundedIcon from "@mui/icons-material/LockRounded";
-import PeopleRoundedIcon from "@mui/icons-material/PeopleRounded";
-import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
 import Link from "next/link";
 import { AppCard, EmptyState } from "@/components/ui";
+import PeopleRoundedIcon from "@mui/icons-material/PeopleRounded";
 import DistanceSelect from "@/components/common/DistanceSelect";
-import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
+import { apiFetch } from "@/lib/apiClient";
 import { effectiveCategorySet } from "@/lib/interestUtils";
+import CommunityListCard, { type CommunityListItem as Community } from "./CommunityListCard";
 
 type HobbyOption = { slug: string; name: string };
-
-type Community = {
-  id: string;
-  slug: string;
-  name: string;
-  description: string | null;
-  visibility: string;
-  join_mode: string;
-  avatar_key: string | null;
-  member_count: number;
-  location_name: string | null;
-  owner_user_id: string;
-  created_at: string;
-  is_online: boolean;
-  viewer_role: string | null;
-  upcoming_plan_count: number;
-  hobby_match_count: number;
-  distance_km: number | null;
-  hobbies: { name: string; slug: string }[] | null;
-};
 
 type ProfileData = {
   home_city: string | null;
@@ -66,7 +41,6 @@ type ProfileData = {
 const PAGE_SIZE = 20;
 
 export default function CommunitiesListClient() {
-  const router = useRouter();
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [communities, setCommunities] = useState<Community[]>([]);
   const [hasMore, setHasMore] = useState(false);
@@ -506,167 +480,14 @@ export default function CommunitiesListClient() {
       ) : communities.length > 0 ? (
         <>
           <Stack spacing={2}>
-            {communities.map((c) => {
-              const hobbies = Array.isArray(c.hobbies) ? c.hobbies : [];
-              return (
-                <AppCard
-                  key={c.id}
-                  sx={{
-                    cursor: "pointer",
-                    transition: "box-shadow 0.15s, transform 0.15s",
-                    "&:hover": { boxShadow: "0 4px 16px rgba(0,0,0,0.08)", transform: "translateY(-1px)" },
-                  }}
-                  onClick={() => router.push(`/communities/${c.slug}`)}
-                >
-                  {/* Layout mirrors the detail-page header: avatar + title on
-                      row 1, description + meta as a full-width body on row 2
-                      on mobile so long descriptions / addresses aren't pinned
-                      to the narrow right column. On desktop the body still
-                      sits beside the avatar (avatar spans both rows) to keep
-                      the card density we had before. */}
-                  <Box
-                    sx={{
-                      display: "grid",
-                      gridTemplateColumns: "auto 1fr",
-                      gridTemplateAreas: {
-                        xs: '"avatar title" "body body"',
-                        sm: '"avatar title" "avatar body"',
-                      },
-                      columnGap: { xs: 1.5, sm: 2 },
-                      rowGap: { xs: 1, sm: 0.75 },
-                    }}
-                  >
-                    <Avatar
-                      variant="rounded"
-                      src={c.avatar_key ? `${getAvatarBaseUrl()}/communities/${c.id}/avatar` : undefined}
-                      sx={{
-                        gridArea: "avatar",
-                        alignSelf: "flex-start",
-                        width: 48, height: 48,
-                        borderRadius: 2,
-                        bgcolor: "primary.main", color: "primary.contrastText",
-                        fontWeight: 700, fontSize: "1.1rem",
-                        flexShrink: 0,
-                      }}
-                    >
-                      {c.name.charAt(0).toUpperCase()}
-                    </Avatar>
-                    <Box sx={{ gridArea: "title", minWidth: 0, alignSelf: "flex-start" }}>
-                      <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mb: 0.25 }}>
-                        <Typography fontWeight={700} sx={{ fontSize: "1.0625rem", lineHeight: 1.35 }} noWrap>
-                          {c.name}
-                        </Typography>
-                        {c.visibility === "private" && (
-                          <LockRoundedIcon sx={{ fontSize: 15, color: "text.disabled" }} />
-                        )}
-                        {c.viewer_role === "owner" && (
-                          <Chip label="Owner" size="small" sx={{ height: 20, fontSize: "0.6875rem", fontWeight: 600, borderRadius: 1, bgcolor: "primary.light", color: "primary.dark" }} />
-                        )}
-                        {c.viewer_role === "member" && view === "all" && (
-                          <Chip label="Joined" size="small" variant="outlined" sx={{ height: 20, fontSize: "0.6875rem", fontWeight: 500, borderRadius: 1, borderColor: "divider", color: "text.secondary" }} />
-                        )}
-                      </Stack>
-
-                      {/* Hobby chips */}
-                      {hobbies.length > 0 && (
-                        <Stack direction="row" gap={0.5} flexWrap="wrap" useFlexGap>
-                          {hobbies.slice(0, 5).map((h) => {
-                            const isMatch = viewerHobbyCategories?.has(h.name.toLowerCase()) || viewerHobbyCategories?.has(h.slug.toLowerCase());
-                            return (
-                              <Chip
-                                key={h.slug}
-                                label={h.name}
-                                size="small"
-                                color={isMatch ? "primary" : "default"}
-                                variant={isMatch ? "filled" : "outlined"}
-                                sx={{
-                                  height: 22,
-                                  fontSize: "0.6875rem",
-                                  fontWeight: 500,
-                                  borderRadius: 1.5,
-                                  ...(isMatch
-                                    ? { bgcolor: "primary.light", color: "primary.dark" }
-                                    : { borderColor: "divider", color: "text.secondary" }),
-                                }}
-                              />
-                            );
-                          })}
-                          {hobbies.length > 5 && (
-                            <Typography variant="caption" color="text.secondary" sx={{ lineHeight: "22px" }}>
-                              +{hobbies.length - 5} more
-                            </Typography>
-                          )}
-                        </Stack>
-                      )}
-                    </Box>
-                    <Box sx={{ gridArea: "body", minWidth: 0 }}>
-                      {c.description && (
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 0.75, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-                          {c.description.replace(/<[^>]*>/g, "")}
-                        </Typography>
-                      )}
-
-                      {/* Meta row: dots between items are hidden on xs so a
-                          wrapped location doesn't leave a dangling separator
-                          at the end of the previous line on narrow mobile. */}
-                      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-                        <Stack direction="row" spacing={0.5} alignItems="center">
-                          <PeopleRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
-                          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, fontSize: "0.8125rem" }}>
-                            {c.member_count} {c.member_count === 1 ? "member" : "members"}
-                          </Typography>
-                        </Stack>
-                        {c.upcoming_plan_count > 0 && (
-                          <Stack direction="row" spacing={0.5} alignItems="center" useFlexGap>
-                            <Typography variant="body2" color="text.disabled" sx={{ display: { xs: "none", sm: "inline" } }}>·</Typography>
-                            <EventNoteRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
-                            <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
-                              {c.upcoming_plan_count} upcoming {c.upcoming_plan_count === 1 ? "plan" : "plans"}
-                            </Typography>
-                          </Stack>
-                        )}
-                        {c.is_online ? (
-                          <Stack direction="row" spacing={0.5} alignItems="center" useFlexGap>
-                            <Typography variant="body2" color="text.disabled" sx={{ display: { xs: "none", sm: "inline" } }}>·</Typography>
-                            <LanguageRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
-                            <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
-                              Online
-                            </Typography>
-                          </Stack>
-                        ) : c.location_name ? (
-                          // Location + distance chip. The icon + text are kept
-                          // in a single flex item anchored to the top so long
-                          // addresses wrap cleanly beneath the icon instead of
-                          // stranding the icon on its own row. `minWidth: 0`
-                          // lets the typography shrink and break at word
-                          // boundaries within the inner flex. `useFlexGap`
-                          // swaps Stack's sibling-margin for CSS gap so the
-                          // `display: none` dot on xs doesn't leave a stub
-                          // margin ahead of the icon.
-                          <Stack direction="row" spacing={0.5} alignItems="flex-start" useFlexGap sx={{ minWidth: 0, flex: { xs: "1 1 100%", sm: "0 1 auto" } }}>
-                            <Typography variant="body2" color="text.disabled" sx={{ display: { xs: "none", sm: "inline" }, lineHeight: 1.5 }}>·</Typography>
-                            <PlaceRoundedIcon sx={{ fontSize: 14, color: "text.disabled", flexShrink: 0, mt: "3px" }} />
-                            <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem", lineHeight: 1.5, minWidth: 0 }}>
-                              {c.location_name}
-                            </Typography>
-                            {c.distance_km != null && (
-                              <Chip
-                                label={c.distance_km < 1 ? "< 1 km" : `${Math.round(c.distance_km)} km`}
-                                size="small"
-                                sx={{ height: 20, fontSize: "0.6875rem", fontWeight: 500, borderRadius: 1, bgcolor: "grey.100", color: "text.secondary", flexShrink: 0, mt: "1px" }}
-                              />
-                            )}
-                          </Stack>
-                        ) : null}
-                        {c.join_mode === "approval_required" && (
-                          <Chip label="Approval required" size="small" color="warning" variant="outlined" sx={{ height: 20, fontSize: "0.6875rem" }} />
-                        )}
-                      </Stack>
-                    </Box>
-                  </Box>
-                </AppCard>
-              );
-            })}
+            {communities.map((c) => (
+              <CommunityListCard
+                key={c.id}
+                community={c}
+                viewerHobbyCategories={viewerHobbyCategories}
+                showJoinedChip={view === "all"}
+              />
+            ))}
           </Stack>
 
           {/* Load more */}

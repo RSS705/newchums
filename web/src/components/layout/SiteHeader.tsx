@@ -9,7 +9,7 @@ import Toolbar from "@mui/material/Toolbar";
 import type { ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import BrandLogo from "@/components/BrandLogo";
-import { headerNavLinks } from "@/config/nav";
+import { headerNavLinks, type HeaderNavLink } from "@/config/nav";
 
 /**
  * Shared header used by both public (LandingLayout) and logged-in (AppShell).
@@ -23,11 +23,16 @@ export type SiteHeaderProps = {
   rightSide: ReactNode;
   /** Optional mobile menu button (hamburger) – shown only when provided */
   mobileMenuButton?: ReactNode;
+  /** Desktop nav links. Defaults to the marketing-only set; the logged-out
+   *  layouts pass `publicHeaderNavLinks` to add a "Communities" entry for
+   *  non-authenticated visitors. */
+  navLinks?: readonly HeaderNavLink[];
 };
 
 export default function SiteHeader({
   rightSide,
   mobileMenuButton,
+  navLinks = headerNavLinks,
 }: SiteHeaderProps) {
   const pathname = usePathname();
 
@@ -72,7 +77,7 @@ export default function SiteHeader({
         <Stack
           component="nav"
           direction="row"
-          spacing={3}
+          spacing={2}
           sx={{
             position: "absolute",
             left: "50%",
@@ -80,7 +85,7 @@ export default function SiteHeader({
             display: { xs: "none", md: "flex" },
           }}
         >
-          {headerNavLinks.map((link) => {
+          {navLinks.map((link) => {
             const isActive = pathname === link.href;
             return (
               <Button
@@ -90,8 +95,17 @@ export default function SiteHeader({
                 color="inherit"
                 variant="text"
                 sx={{
+                  // `whiteSpace: nowrap` stops multi-word labels like "Science
+                  // of Friendship" from breaking across two lines when the row
+                  // is dense. `minWidth: 0` neutralizes MUI Button's default
+                  // 64px min-width so each button hugs its own text (the Stack
+                  // spacing handles the breathing room). Tighter `px` keeps
+                  // the hover-state pill from ballooning around short labels.
                   fontSize: "inherit",
                   textTransform: "none",
+                  whiteSpace: "nowrap",
+                  minWidth: 0,
+                  px: 1.25,
                   color: isActive ? "primary.main" : "inherit",
                   fontWeight: isActive ? 700 : undefined,
                   position: "relative",

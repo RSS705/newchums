@@ -16,6 +16,7 @@ import * as React from "react";
 import { signOut } from "next-auth/react";
 import SiteHeader, { HEADER_MIN_HEIGHT } from "@/components/layout/SiteHeader";
 import MarketingNavSection from "@/components/layout/MarketingNavSection";
+import { publicHeaderNavLinks } from "@/config/nav";
 import LandingFooter from "./LandingFooter";
 
 const LOGGED_OUT_DRAWER_WIDTH = 260;
@@ -69,6 +70,7 @@ export default function LandingLayout({
         }}
       >
         <SiteHeader
+          navLinks={publicHeaderNavLinks}
           mobileMenuButton={
             <IconButton
               aria-label="open navigation"
@@ -178,7 +180,11 @@ export default function LandingLayout({
           )}
         </Box>
         <Divider sx={{ borderColor: "divider", opacity: 0.6 }} />
-        <MarketingNavSection sectionTitle="Learn More" onLinkClick={() => setMobileOpen(false)} />
+        <MarketingNavSection
+          sectionTitle="Learn More"
+          navLinks={publicHeaderNavLinks}
+          onLinkClick={() => setMobileOpen(false)}
+        />
       </Drawer>
 
       <Box component="main" sx={{ flex: 1 }}>
