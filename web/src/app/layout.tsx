@@ -25,10 +25,53 @@ const gabarito = Gabarito({
 });
 
 export const metadata: Metadata = {
-  title: "NewChums",
-  description: "NewChums",
+  // `metadataBase` lets every per-page metadata export use relative image
+  // URLs and still produce absolute URLs in OG/Twitter cards. Canonical
+  // host is newchums.com (the www variant 301-redirects to apex via
+  // middleware, so OAuth PKCE cookies and social-share URLs stay on one
+  // origin).
+  metadataBase: new URL("https://newchums.com"),
+  title: {
+    default: "NewChums",
+    template: "%s | NewChums",
+  },
+  description:
+    "NewChums helps you organize gatherings around shared hobbies and interests. One place for your plans, invites, and RSVPs so more real-life get-togethers actually happen.",
+  applicationName: "NewChums",
+  // Explicit default; authenticated app routes, admin routes, auth flows,
+  // utility endpoints, and hidden profiles / private communities override
+  // this to noindex via per-page metadata or generateMetadata.
+  robots: {
+    index: true,
+    follow: true,
+  },
   icons: {
     icon: "/icon-black.png",
+    apple: "/icon-black.png",
+  },
+  openGraph: {
+    type: "website",
+    siteName: "NewChums",
+    title: "NewChums",
+    description:
+      "Organize gatherings around shared hobbies and interests. One place for your plans, invites, and RSVPs so more real-life get-togethers actually happen.",
+    url: "https://newchums.com",
+    locale: "en_US",
+    images: [
+      {
+        url: "/logo-horizontal-black.png",
+        width: 3791,
+        height: 1575,
+        alt: "NewChums",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "NewChums",
+    description:
+      "Organize gatherings around shared hobbies and interests. One place for your plans, invites, and RSVPs.",
+    images: ["/logo-horizontal-black.png"],
   },
 };
 
