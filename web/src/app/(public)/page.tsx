@@ -9,9 +9,25 @@ import LandingPageContent from "./LandingPageContent";
 import LandingLayout from "@/components/landing/LandingLayout";
 
 export const metadata: Metadata = {
-  title: "NewChums | Start, share, and join hobby-based plans nearby",
+  // Absolute override: the root layout's title.template would otherwise
+  // produce "NewChums | ... | NewChums". The homepage deserves the full
+  // positioning in both the title and the OG/Twitter cards.
+  title: { absolute: "NewChums | Start, share, and join hobby-based plans nearby" },
   description:
     "One place for your plans. Create them, share invites, or discover gatherings near you, around the things you enjoy.",
+  alternates: { canonical: "/" },
+  openGraph: {
+    title: "NewChums | Start, share, and join hobby-based plans nearby",
+    description:
+      "One place for your plans. Create them, share invites, or discover gatherings near you, around the things you enjoy.",
+    url: "/",
+    type: "website",
+  },
+  twitter: {
+    title: "NewChums | Start, share, and join hobby-based plans nearby",
+    description:
+      "One place for your plans. Create them, share invites, or discover gatherings near you, around the things you enjoy.",
+  },
 };
 
 export default async function RootPage() {

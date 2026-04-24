@@ -6,7 +6,9 @@ import MagicClient from "./MagicClient";
 import WrongSessionPanel from "./WrongSessionPanel";
 
 export const metadata: Metadata = {
-  title: "Confirming sign-in | NewChums",
+  title: "Confirming sign-in",
+  description: "Confirming your NewChums sign-in.",
+  robots: { index: false, follow: false },
 };
 
 type SearchParams = {

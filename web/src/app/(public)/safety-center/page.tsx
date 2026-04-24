@@ -4,9 +4,16 @@ import LandingLayout from "@/components/landing/LandingLayout";
 import SafetyCenterContent from "./SafetyCenterContent";
 
 export const metadata: Metadata = {
-  title: "Safety Center | NewChums",
+  title: "Safety Center",
   description:
     "Simple, practical guidance for more comfortable gatherings on NewChums.",
+  alternates: { canonical: "/safety-center" },
+  openGraph: {
+    title: "Safety Center",
+    description:
+      "Simple, practical guidance for more comfortable gatherings on NewChums.",
+    url: "/safety-center",
+  },
 };
 
 export default async function SafetyCenterPage() {

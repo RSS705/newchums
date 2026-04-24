@@ -4,7 +4,16 @@ import CommunitiesListClient from "./CommunitiesListClient";
 import PublicCommunitiesExplore from "./PublicCommunitiesExplore";
 
 export const metadata: Metadata = {
-  title: "Communities | NewChums",
+  title: "Communities",
+  description:
+    "Discover communities on NewChums. Browse public hobby groups and clubs near you and see the plans they're running.",
+  // Override the (app)/layout.tsx noindex default: this page is public
+  // (see the file-level comment above and the isPublicRoute regex in
+  // (app)/layout.tsx) and should be indexable. The API enforces privacy
+  // by only returning visibility='public' communities to logged-out
+  // viewers via GET /public/communities.
+  robots: { index: true, follow: true },
+  alternates: { canonical: "/communities" },
 };
 
 /**

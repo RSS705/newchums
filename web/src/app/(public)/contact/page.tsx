@@ -9,8 +9,14 @@ import LandingLayout from "@/components/landing/LandingLayout";
 import ContactView from "@/components/contact/ContactView";
 
 export const metadata: Metadata = {
-  title: "Contact | NewChums",
-  description: "Contact NewChums - we'd love to hear from you.",
+  title: "Contact",
+  description: "Get in touch with the NewChums team. Questions, feedback, or partnership ideas welcome.",
+  alternates: { canonical: "/contact" },
+  openGraph: {
+    title: "Contact NewChums",
+    description: "Get in touch with the NewChums team.",
+    url: "/contact",
+  },
 };
 
 export default async function ContactPage() {

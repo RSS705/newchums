@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { auth } from "@/auth";
 import AppShell from "@/components/layout/AppShell";
 import MarkOAuthVerified from "@/components/auth/MarkOAuthVerified";
@@ -10,6 +11,20 @@ import { getOrCreateAppUser } from "@/lib/user";
 import { jwtVerify } from "jose";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+
+// Default every (app) route to noindex so authenticated surfaces, admin,
+// edit forms, and onboarding-like internal pages are never crawled. The
+// three publicly-accessible routes under (app) -- /events/[id],
+// /communities, /communities/[slug] -- override this in their own page
+// metadata (static or via generateMetadata) back to index/follow. The
+// /u/[handle] route lives under (public) with its own conditional
+// noindex; no cascade concern there.
+export const metadata: Metadata = {
+  robots: {
+    index: false,
+    follow: false,
+  },
+};
 
 // Sections that an event-detail email link can deep-link into and that
 // require an authenticated viewer. Must stay in sync with

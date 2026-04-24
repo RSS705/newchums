@@ -4,9 +4,10 @@ import LandingLayout from "@/components/landing/LandingLayout";
 import TermsContent from "./TermsContent";
 
 export const metadata: Metadata = {
-  title: "Terms of Use | NewChums",
+  title: "Terms of Use",
   description:
     "Terms of Use governing your access to and use of the NewChums platform.",
+  alternates: { canonical: "/terms" },
 };
 
 export default async function TermsPage() {

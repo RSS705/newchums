@@ -8,7 +8,8 @@ import { getSafeRedirectPath } from "@/lib/authRedirect";
 
 /** Do NOT add runtime="edge" - OpenNext CF shims it to empty, causing 500 errors. */
 export const metadata: Metadata = {
-  title: "Choose Username | NewChums",
+  title: "Choose a username",
+  robots: { index: false, follow: false },
 };
 
 export default async function OnboardingUsernamePage({

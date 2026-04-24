@@ -4,9 +4,16 @@ import LandingLayout from "@/components/landing/LandingLayout";
 import ScienceOfFriendshipContent from "./ScienceOfFriendshipContent";
 
 export const metadata: Metadata = {
-  title: "The Science of Friendship | NewChums",
+  title: "The Science of Friendship",
   description:
     "Friendship isn't just luck. Learn how proximity, repetition, and disclosure help people connect, and how NewChums recreates those conditions.",
+  alternates: { canonical: "/science-of-friendship" },
+  openGraph: {
+    title: "The Science of Friendship",
+    description:
+      "Friendship isn't just luck. Learn how proximity, repetition, and disclosure help people connect, and how NewChums recreates those conditions.",
+    url: "/science-of-friendship",
+  },
 };
 
 export default async function ScienceOfFriendshipPage() {

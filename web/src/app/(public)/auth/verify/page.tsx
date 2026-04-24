@@ -3,7 +3,9 @@ import { Suspense } from "react";
 import VerifyClient from "./VerifyClient";
 
 export const metadata: Metadata = {
-  title: "Verify Email | NewChums",
+  title: "Verify your email",
+  description: "Verify your NewChums email address.",
+  robots: { index: false, follow: false },
 };
 
 export default function VerifyPage() {

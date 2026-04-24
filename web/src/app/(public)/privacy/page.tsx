@@ -4,9 +4,10 @@ import LandingLayout from "@/components/landing/LandingLayout";
 import PrivacyContent from "./PrivacyContent";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy | NewChums",
+  title: "Privacy Policy",
   description:
     "How NewChums collects, uses, and protects your personal information.",
+  alternates: { canonical: "/privacy" },
 };
 
 export default async function PrivacyPage() {

@@ -8,9 +8,16 @@ import LandingLayout from "@/components/landing/LandingLayout";
 import RoadmapClient from "./RoadmapClient";
 
 export const metadata: Metadata = {
-  title: "Community Roadmap | NewChums",
+  title: "Community Roadmap",
   description:
     "See what's coming next for NewChums. Submit ideas, vote on features, and help shape the future of the platform.",
+  alternates: { canonical: "/roadmap" },
+  openGraph: {
+    title: "NewChums Community Roadmap",
+    description:
+      "See what's coming next for NewChums. Submit ideas, vote on features, and help shape the future of the platform.",
+    url: "/roadmap",
+  },
 };
 
 export default async function RoadmapPage() {
