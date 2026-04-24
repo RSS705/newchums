@@ -75,6 +75,12 @@ import {
   type SubscriptionPlan,
 } from "./lib/subscriptionAccess";
 import { htmlToPlainText } from "./lib/htmlToPlainText";
+import {
+  buildEmailEventLocation,
+  deriveApproxArea,
+  type EmailLocationInput,
+  type EmailLocationRole,
+} from "./lib/locationFormat";
 import { validateCleanText } from "./lib/contentSafety";
 import { sanitizeDescriptionHtml } from "./lib/sanitizeHtml";
 import { verifyTurnstileToken } from "./lib/turnstile";
@@ -8688,22 +8694,6 @@ function formatEventMatchDigestLocation(p: {
  *   "2295 Kains Rd, London, ON N6K 5E2, Canada"        → "London, ON"
  *   "123 Main St, Toronto, ON M5H 1A1, Canada"         → "Toronto, ON"
  */
-function deriveApproxArea(address: string | null): string | null {
-  if (!address) return null;
-  const skipCountry = new Set(["canada", "united states", "usa", "united kingdom", "uk", "australia", "new zealand"]);
-  const stripped = address
-    .replace(/\b[A-Z]\d[A-Z]\s*\d[A-Z]\d\b/g, "")  // Canadian postal codes
-    .replace(/\b\d{5}(-\d{4})?\b/g, "");             // US zip codes
-  const parts = stripped
-    .split(",")
-    .map((s) => s.trim())
-    .filter((p) => p && !skipCountry.has(p.toLowerCase()));
-  if (parts.length === 0) return null;
-  // Skip first segment (street address); everything else is area/city/province
-  const areaParts = parts.length > 1 ? parts.slice(1) : parts;
-  return areaParts.filter(Boolean).join(", ") || null;
-}
-
 /** POST /events, create a new event/plan */
 app.post("/events", async (c) => {
   const payload = await requireAuth(c);
@@ -8971,6 +8961,20 @@ app.post("/events", async (c) => {
       // QA plans: only send invite emails/notifications to super admin invitees
       const qaInviteAdminIds = isQa ? await batchLoadSuperAdminIds(sql, inviteeUserIds) : null;
 
+      // Privacy-safe location string for invite emails. Invitees have NOT
+      // joined yet, so the `not_joined` role intentionally hides the exact
+      // address when the plan's visibility is exact_joined_only or
+      // approximate_only.
+      const invitePlanForLoc: EmailLocationInput = {
+        location_type: locationType,
+        location_visibility: locationVisibility,
+        location_name: locationName,
+        location_address: locationAddress,
+        location_area: locationArea,
+        online_link: onlineLink,
+      };
+      const inviteEmailLocation = buildEmailEventLocation(invitePlanForLoc, "not_joined");
+
       for (const inv of invitees.slice(0, 50)) {
         let invUserId = inv.user_id ? String(inv.user_id) : null;
         let invEmail = inv.email ? String(inv.email).trim().toLowerCase() : null;
@@ -9022,7 +9026,7 @@ app.post("/events", async (c) => {
                     hostName,
                     eventTitle: title,
                     eventDate: formatEventDate(startsDate.toISOString(), timezone),
-                    eventLocation: locationType === "online" ? (onlineLink || "Online") : buildLocationDisplay(locationName, locationAddress),
+                    eventLocation: inviteEmailLocation,
                     eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
                     inviteToken: iToken,
                     unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
@@ -9039,7 +9043,7 @@ app.post("/events", async (c) => {
                 hostName,
                 eventTitle: title,
                 eventDate: formatEventDate(startsDate.toISOString(), timezone),
-                eventLocation: locationType === "online" ? (onlineLink || "Online") : buildLocationDisplay(locationName, locationAddress),
+                eventLocation: inviteEmailLocation,
                 eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
                 inviteToken: iToken,
               });
@@ -10419,7 +10423,7 @@ app.post("/events/:id/rsvp", async (c) => {
     // a targeted error when RSVP is blocked because of plan state (draft or
     // canceled) rather than masking it behind a generic NOT_FOUND, which
     // made it look like the plan itself had disappeared.
-    const ev = (await sql`SELECT id, host_user_id, visibility, status, max_seats, title, locked_at, canceled_at, require_approval, reserve_seats, require_reconfirmation, confirmation_sent_at, starts_at, timezone, location_type, location_name, location_address, online_link, is_qa FROM newchums.events WHERE id = ${eventId}`) as { id: string; host_user_id: string; visibility: string; status: string; max_seats: number | null; title: string; locked_at: string | null; canceled_at: string | null; require_approval: boolean; reserve_seats: boolean; require_reconfirmation: boolean; confirmation_sent_at: string | null; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; online_link: string | null; is_qa: boolean }[];
+    const ev = (await sql`SELECT id, host_user_id, visibility, status, max_seats, title, locked_at, canceled_at, require_approval, reserve_seats, require_reconfirmation, confirmation_sent_at, starts_at, timezone, location_type, location_name, location_address, location_visibility, location_area, online_link, is_qa FROM newchums.events WHERE id = ${eventId}`) as { id: string; host_user_id: string; visibility: string; status: string; max_seats: number | null; title: string; locked_at: string | null; canceled_at: string | null; require_approval: boolean; reserve_seats: boolean; require_reconfirmation: boolean; confirmation_sent_at: string | null; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; location_visibility: string | null; location_area: string | null; online_link: string | null; is_qa: boolean }[];
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     const event = ev[0];
     if (event.status === "canceled" || event.canceled_at) {
@@ -10584,7 +10588,19 @@ app.post("/events/:id/rsvp", async (c) => {
         const attendeeName = attendeeUser[0]?.name?.trim() || attendeeUser[0]?.username?.replace(/^@/, "") || "Someone";
         const eventUrl = `${c.env.WEB_BASE_URL}/events/${eventId}`;
         const rsvpEventDate = formatEventDate(event.starts_at, event.timezone || "UTC");
-        const rsvpEventLocation = event.location_type === "online" ? (event.online_link || "Online") : [event.location_name, event.location_address].filter(Boolean).join(", ") || "";
+        // Recipient is the host, so they always see exact regardless of
+        // location_visibility (they own the plan).
+        const rsvpEventLocation = buildEmailEventLocation(
+          {
+            location_type: event.location_type,
+            location_visibility: event.location_visibility,
+            location_name: event.location_name,
+            location_address: event.location_address,
+            location_area: event.location_area,
+            online_link: event.online_link,
+          },
+          "host",
+        );
         const baseEmailArgs = { to: hostUser[0].email, hostName, attendeeName, eventTitle: event.title, eventUrl, attendeeMessage: note, eventDate: rsvpEventDate, eventLocation: rsvpEventLocation };
 
         if (status === "going" && hostPrefs.items.host_join?.enabled !== false) {
@@ -10951,13 +10967,17 @@ async function notifyAttendeesPlanChanged(
 
   // Fetch event details for date/location display in the email
   const evRows = (await sql`
-    SELECT starts_at, timezone, location_type, location_name, location_address, online_link, COALESCE(is_qa, false) AS is_qa
+    SELECT starts_at, timezone, location_type, location_name, location_address, location_visibility, location_area, online_link, COALESCE(is_qa, false) AS is_qa
     FROM newchums.events WHERE id = ${eventId} LIMIT 1
-  `) as { starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; online_link: string | null; is_qa: boolean }[];
+  `) as { starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; location_visibility: string | null; location_area: string | null; online_link: string | null; is_qa: boolean }[];
   const ev = evRows[0];
   const eventDate = ev ? formatEventDate(ev.starts_at, ev.timezone || "UTC") : "";
+  // Recipients of this email are attending non-host users (WHERE status IN
+  // ('going', 'maybe') AND user_id != hostUserId). They've joined, so they
+  // get exact address for exact_everyone / exact_joined_only plans and
+  // approximate only for approximate_only plans, mirroring the plan page.
   const eventLocation = ev
-    ? ev.location_type === "online" ? (ev.online_link || "Online") : [ev.location_name, ev.location_address].filter(Boolean).join(", ") || ""
+    ? buildEmailEventLocation(ev, "joined")
     : "";
 
   const hostRows = (await sql`
@@ -11448,7 +11468,7 @@ app.post("/events/:id/remove-attendee", async (c) => {
   const reason = body.reason ? String(body.reason).trim().slice(0, 500) : null;
 
   try {
-    const ev = (await sql`SELECT id, host_user_id, title, status, starts_at, timezone, location_type, location_name, location_address, online_link FROM newchums.events WHERE id = ${eventId}`) as { id: string; host_user_id: string; title: string; status: string; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; online_link: string | null }[];
+    const ev = (await sql`SELECT id, host_user_id, title, status, starts_at, timezone, location_type, location_name, location_address, location_visibility, location_area, online_link FROM newchums.events WHERE id = ${eventId}`) as { id: string; host_user_id: string; title: string; status: string; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; location_visibility: string | null; location_area: string | null; online_link: string | null }[];
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     const event = ev[0];
 
@@ -11495,7 +11515,12 @@ app.post("/events/:id/remove-attendee", async (c) => {
             eventTitle: event.title,
             eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
             eventDate: formatEventDate(event.starts_at, event.timezone || "UTC"),
-            eventLocation: event.location_type === "online" ? (event.online_link || "Online") : [event.location_name, event.location_address].filter(Boolean).join(", ") || "",
+            // Removed attendees are treated like declined requesters: once
+            // access is revoked, the email uses approximate area only
+            // regardless of visibility. The user may already know the
+            // exact address from their prior attending state, but the
+            // removal email itself should not re-surface it.
+            eventLocation: buildEmailEventLocation(event, "declined"),
             removalReason: reason,
             unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
           });
@@ -11531,7 +11556,7 @@ app.post("/events/:id/remove-invite", async (c) => {
   const reason = body.reason ? String(body.reason).trim().slice(0, 500) : null;
 
   try {
-    const ev = (await sql`SELECT id, host_user_id, title, starts_at, timezone, location_type, location_name, location_address, online_link FROM newchums.events WHERE id = ${eventId}`) as { id: string; host_user_id: string; title: string; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; online_link: string | null }[];
+    const ev = (await sql`SELECT id, host_user_id, title, starts_at, timezone, location_type, location_name, location_address, location_visibility, location_area, online_link FROM newchums.events WHERE id = ${eventId}`) as { id: string; host_user_id: string; title: string; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; location_visibility: string | null; location_area: string | null; online_link: string | null }[];
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     const event = ev[0];
 
@@ -11569,7 +11594,10 @@ app.post("/events/:id/remove-invite", async (c) => {
     // Send notification email
     const hostUser = (await sql`SELECT name, username FROM newchums.users WHERE id = ${userId}`) as { name: string | null; username: string | null }[];
     const hostName = hostUser[0]?.name?.trim() || hostUser[0]?.username?.replace(/^@/, "") || "the host";
-    const eventLocation = event.location_type === "online" ? (event.online_link || "Online") : [event.location_name, event.location_address].filter(Boolean).join(", ") || "";
+    // Invite target never joined the plan; they're in the "declined" role
+    // for location-privacy purposes. Approximate area only regardless of
+    // plan visibility.
+    const eventLocation = buildEmailEventLocation(event, "declined");
 
     if (targetUserId) {
       // Registered user: look up their details and check notification prefs
@@ -11631,7 +11659,7 @@ app.post("/events/:id/invite", async (c) => {
   try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
 
   try {
-    const ev = (await sql`SELECT id, host_user_id, title, starts_at, status, timezone, location_type, location_name, location_address, online_link, allow_attendee_invites, allow_alt_times, alt_times_mode, availability_deadline_at FROM newchums.events WHERE id = ${eventId}`) as { id: string; host_user_id: string; title: string; starts_at: string; status: string; timezone: string; location_type: string; location_name: string | null; location_address: string | null; online_link: string | null; allow_attendee_invites: boolean; allow_alt_times: boolean; alt_times_mode: string | null; availability_deadline_at: string | null }[];
+    const ev = (await sql`SELECT id, host_user_id, title, starts_at, status, timezone, location_type, location_name, location_address, location_visibility, location_area, online_link, allow_attendee_invites, allow_alt_times, alt_times_mode, availability_deadline_at FROM newchums.events WHERE id = ${eventId}`) as { id: string; host_user_id: string; title: string; starts_at: string; status: string; timezone: string; location_type: string; location_name: string | null; location_address: string | null; location_visibility: string | null; location_area: string | null; online_link: string | null; allow_attendee_invites: boolean; allow_alt_times: boolean; alt_times_mode: string | null; availability_deadline_at: string | null }[];
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
 
     const isHost = ev[0].host_user_id === userId;
@@ -11643,9 +11671,11 @@ app.post("/events/:id/invite", async (c) => {
         return c.json({ ok: false, error: "FORBIDDEN", message: "Only Going attendees can invite others to this plan" }, 403);
     }
 
-    const inviteLocationDisplay = ev[0].location_type === "online"
-      ? (ev[0].online_link || "Online")
-      : buildLocationDisplay(ev[0].location_name, ev[0].location_address);
+    // Invitees have NOT joined yet, so emails show approximate area for
+    // exact_joined_only and approximate_only plans. This applies whether
+    // the inviter is the host or a Going attendee; the recipient's role
+    // is what matters.
+    const inviteLocationDisplay = buildEmailEventLocation(ev[0], "not_joined");
 
     const invitees = Array.isArray(body.invitees) ? (body.invitees as Array<{ user_id?: string; email?: string }>) : [];
     const customMessage = typeof body.message === "string" ? body.message.slice(0, 500).trim() : "";
@@ -12159,9 +12189,9 @@ app.post("/events/:id/join-request", async (c) => {
 
   try {
     const ev = (await sql`
-      SELECT id, host_user_id, title, status, require_approval, locked_at, max_seats, starts_at, timezone, location_type, location_name, location_address, online_link
+      SELECT id, host_user_id, title, status, require_approval, locked_at, max_seats, starts_at, timezone, location_type, location_name, location_address, location_visibility, location_area, online_link
       FROM newchums.events WHERE id = ${eventId}
-    `) as { id: string; host_user_id: string; title: string; status: string; require_approval: boolean; locked_at: string | null; max_seats: number | null; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; online_link: string | null }[];
+    `) as { id: string; host_user_id: string; title: string; status: string; require_approval: boolean; locked_at: string | null; max_seats: number | null; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; location_visibility: string | null; location_area: string | null; online_link: string | null }[];
     if (ev.length === 0 || ev[0].status !== "published")
       return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     const event = ev[0];
@@ -12223,7 +12253,8 @@ app.post("/events/:id/join-request", async (c) => {
             requestMessage: message || "",
             eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}?context=host_review`,
             eventDate: formatEventDate(event.starts_at, event.timezone || "UTC"),
-            eventLocation: event.location_type === "online" ? (event.online_link || "Online") : [event.location_name, event.location_address].filter(Boolean).join(", ") || "",
+            // Recipient is the host: always sees exact.
+            eventLocation: buildEmailEventLocation(event, "host"),
             unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
           }).catch(() => {})
         );
@@ -12254,8 +12285,8 @@ app.post("/events/:id/join-request/:requestId/approve", async (c) => {
 
   try {
     const ev = (await sql`
-      SELECT id, host_user_id, title, max_seats, starts_at, timezone, location_type, location_name, location_address, online_link FROM newchums.events WHERE id = ${eventId} AND status = 'published'
-    `) as { id: string; host_user_id: string; title: string; max_seats: number | null; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; online_link: string | null }[];
+      SELECT id, host_user_id, title, max_seats, starts_at, timezone, location_type, location_name, location_address, location_visibility, location_area, online_link FROM newchums.events WHERE id = ${eventId} AND status = 'published'
+    `) as { id: string; host_user_id: string; title: string; max_seats: number | null; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; location_visibility: string | null; location_area: string | null; online_link: string | null }[];
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     if (ev[0].host_user_id !== userId) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
 
@@ -12315,7 +12346,11 @@ app.post("/events/:id/join-request/:requestId/approve", async (c) => {
             hostMessage,
             eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}?context=request_approved`,
             eventDate: formatEventDate(ev[0].starts_at, ev[0].timezone || "UTC"),
-            eventLocation: ev[0].location_type === "online" ? (ev[0].online_link || "Online") : [ev[0].location_name, ev[0].location_address].filter(Boolean).join(", ") || "",
+            // Recipient has just joined (RSVP row is created as 'going'
+            // right above this block). Role = "joined": they see exact
+            // address for exact_everyone / exact_joined_only plans and
+            // approximate only for approximate_only plans.
+            eventLocation: buildEmailEventLocation(ev[0], "joined"),
             unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
           }).catch(() => {})
         );
@@ -12346,8 +12381,8 @@ app.post("/events/:id/join-request/:requestId/decline", async (c) => {
 
   try {
     const ev = (await sql`
-      SELECT id, host_user_id, title, starts_at, timezone, location_type, location_name, location_address, online_link FROM newchums.events WHERE id = ${eventId} AND status = 'published'
-    `) as { id: string; host_user_id: string; title: string; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; online_link: string | null }[];
+      SELECT id, host_user_id, title, starts_at, timezone, location_type, location_name, location_address, location_visibility, location_area, online_link FROM newchums.events WHERE id = ${eventId} AND status = 'published'
+    `) as { id: string; host_user_id: string; title: string; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; location_visibility: string | null; location_area: string | null; online_link: string | null }[];
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     if (ev[0].host_user_id !== userId) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
 
@@ -12392,7 +12427,10 @@ app.post("/events/:id/join-request/:requestId/decline", async (c) => {
             hostMessage,
             eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
             eventDate: formatEventDate(ev[0].starts_at, ev[0].timezone || "UTC"),
-            eventLocation: ev[0].location_type === "online" ? (ev[0].online_link || "Online") : [ev[0].location_name, ev[0].location_address].filter(Boolean).join(", ") || "",
+            // Declined requester: approximate area only, regardless of
+            // plan visibility. A declined user must not receive the exact
+            // address via email even if the plan is exact_everyone.
+            eventLocation: buildEmailEventLocation(ev[0], "declined"),
             unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
           }).catch(() => {})
         );
@@ -14868,7 +14906,7 @@ async function processAttendanceAssurance(
   const eventsNeedingInitialSend = (await sql`
     SELECT e.id, e.host_user_id, e.title, e.starts_at, e.timezone,
            e.confirmation_window_hours, e.confirmation_cutoff_hours,
-           e.location_type, e.location_name, e.location_address, e.location_area, e.online_link,
+           e.location_type, e.location_name, e.location_address, e.location_visibility, e.location_area, e.online_link,
            COALESCE(e.is_qa, false) AS is_qa
     FROM newchums.events e
     WHERE e.require_reconfirmation = true
@@ -14881,7 +14919,8 @@ async function processAttendanceAssurance(
     timezone: string | null; confirmation_window_hours: number;
     confirmation_cutoff_hours: number; location_type: string;
     location_name: string | null; location_address: string | null;
-    location_area: string | null; online_link: string | null; is_qa: boolean;
+    location_visibility: string | null; location_area: string | null;
+    online_link: string | null; is_qa: boolean;
   }>;
 
   for (const ev of eventsNeedingInitialSend) {
@@ -14909,16 +14948,6 @@ async function processAttendanceAssurance(
       const deadline = formatEventDate(cutoffAt.toISOString(), tz);
       const eventDate = formatEventDate(ev.starts_at, tz);
       const eventUrl = `${env.WEB_BASE_URL}/events/${ev.id}`;
-      // Privacy-conscious location for the email body: never include the full
-      // street address. Online → "Online". In-person → venue name + city/area
-      // (mirrors the feedback email treatment so the family stays consistent).
-      let eventLocation = "";
-      if (ev.location_type === "online") {
-        eventLocation = "Online";
-      } else {
-        const area = ev.location_area || deriveApproxArea(ev.location_address) || "";
-        eventLocation = [ev.location_name, area].filter(Boolean).join(", ");
-      }
 
       const goingUserIds = goingRsvps.map((a) => a.user_id);
       const prefsMap = await batchLoadNotificationPrefs(sql, goingUserIds);
@@ -14942,6 +14971,11 @@ async function processAttendanceAssurance(
           const ctaUrl = `${eventUrl}?section=confirmation`;
           const isHost = att.user_id === ev.host_user_id;
           const recipientName = att.name?.trim() || att.username?.replace(/^@/, "") || "there";
+
+          // Location per plan-page rule: host always sees exact, joined
+          // attendees see exact for exact_everyone / exact_joined_only and
+          // approximate for approximate_only.
+          const eventLocation = buildEmailEventLocation(ev, isHost ? "host" : "joined");
 
           const unsubToken = await createUnsubscribeToken(env.NEXTAUTH_SECRET, att.user_id, "attendance_confirmation");
           const unsubscribeUrl = `${env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`;
@@ -14980,7 +15014,7 @@ async function processAttendanceAssurance(
   const eventsWithPending = (await sql`
     SELECT DISTINCT e.id, e.host_user_id, e.title, e.starts_at, e.timezone,
            e.confirmation_cutoff_hours, e.location_type, e.location_name,
-           e.location_address, e.location_area, e.online_link,
+           e.location_address, e.location_visibility, e.location_area, e.online_link,
            COALESCE(e.is_qa, false) AS is_qa
     FROM newchums.events e
     WHERE e.require_reconfirmation = true
@@ -14996,8 +15030,8 @@ async function processAttendanceAssurance(
     id: string; host_user_id: string; title: string; starts_at: string;
     timezone: string | null; confirmation_cutoff_hours: number;
     location_type: string; location_name: string | null;
-    location_address: string | null; location_area: string | null;
-    online_link: string | null; is_qa: boolean;
+    location_address: string | null; location_visibility: string | null;
+    location_area: string | null; online_link: string | null; is_qa: boolean;
   }>;
 
   for (const ev of eventsWithPending) {
@@ -15009,14 +15043,6 @@ async function processAttendanceAssurance(
       const deadline = formatEventDate(cutoffAt.toISOString(), tz);
       const eventDate = formatEventDate(ev.starts_at, tz);
       const eventUrl = `${env.WEB_BASE_URL}/events/${ev.id}`;
-      // Privacy-conscious location for the email body, see Phase 1 above.
-      let eventLocation = "";
-      if (ev.location_type === "online") {
-        eventLocation = "Online";
-      } else {
-        const area = ev.location_area || deriveApproxArea(ev.location_address) || "";
-        eventLocation = [ev.location_name, area].filter(Boolean).join(", ");
-      }
 
       // ~12h before: send first follow-up (reminder_count = 1)
       // ~3h before: send final reminder (reminder_count = 2)
@@ -15058,6 +15084,9 @@ async function processAttendanceAssurance(
           const isHost = att.user_id === ev.host_user_id;
           const recipientName = att.name?.trim() || att.username?.replace(/^@/, "") || "there";
 
+          // Location per plan-page rule, same as Phase 1.
+          const eventLocation = buildEmailEventLocation(ev, isHost ? "host" : "joined");
+
           const unsubToken = await createUnsubscribeToken(env.NEXTAUTH_SECRET, att.user_id, "attendance_confirmation");
           const unsubscribeUrl = `${env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`;
 
@@ -15089,7 +15118,7 @@ async function processAttendanceAssurance(
   const eventsAtCutoff = (await sql`
     SELECT e.id, e.host_user_id, e.title, e.starts_at, e.timezone,
            e.confirmation_cutoff_hours, e.min_confirmed_attendees, e.fallback_policy,
-           e.location_type, e.location_name, e.location_address, e.online_link,
+           e.location_type, e.location_name, e.location_address, e.location_visibility, e.location_area, e.online_link,
            COALESCE(e.is_qa, false) AS is_qa
     FROM newchums.events e
     WHERE e.require_reconfirmation = true
@@ -15103,7 +15132,8 @@ async function processAttendanceAssurance(
     timezone: string | null; confirmation_cutoff_hours: number;
     min_confirmed_attendees: number | null; fallback_policy: string;
     location_type: string; location_name: string | null;
-    location_address: string | null; online_link: string | null;
+    location_address: string | null; location_visibility: string | null;
+    location_area: string | null; online_link: string | null;
     is_qa: boolean;
   }>;
 
@@ -15142,7 +15172,6 @@ async function processAttendanceAssurance(
 
         const tz = ev.timezone || "UTC";
         const cancelEventDate = formatEventDate(ev.starts_at, tz);
-        const cancelEventLocation = ev.location_type === "online" ? (ev.online_link || "Online") : [ev.location_name, ev.location_address].filter(Boolean).join(", ") || "";
 
         // QA plans: only notify super admin attendees
         const qaCancelAdminIds = ev.is_qa ? await batchLoadSuperAdminIds(sql, attendees.map((a) => a.user_id)) : null;
@@ -15151,9 +15180,16 @@ async function processAttendanceAssurance(
           if (qaCancelAdminIds && !qaCancelAdminIds.has(att.user_id)) continue;
           try {
             const recipientName = att.name?.trim() || att.username?.replace(/^@/, "") || "there";
+            // Location per plan-page rule: recipient was a going/maybe
+            // attendee at the moment of auto-cancel. Role = "joined"
+            // (or "host" if they happen to be the host, who's in the
+            // attendees set too).
+            const isHost = att.user_id === ev.host_user_id;
+            const cancelEventLocation = buildEmailEventLocation(ev, isHost ? "host" : "joined");
             const unsubToken = await createUnsubscribeToken(env.NEXTAUTH_SECRET, att.user_id, "event_changed_canceled");
             await sendPlanAutoCancelledEmail(env, {
               to: att.email, recipientName, eventTitle: ev.title,
+              eventUrl: `${env.WEB_BASE_URL}/events/${ev.id}`,
               confirmedCount, minRequired,
               eventDate: cancelEventDate, eventLocation: cancelEventLocation,
               unsubscribeUrl: `${env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
@@ -15168,7 +15204,8 @@ async function processAttendanceAssurance(
             const hostName = hostUser[0].name?.trim() || hostUser[0].username?.replace(/^@/, "") || "there";
             const tz = ev.timezone || "UTC";
             const eventDate = formatEventDate(ev.starts_at, tz);
-            const eventLocation = ev.location_type === "online" ? (ev.online_link || "Online") : [ev.location_name, ev.location_address].filter(Boolean).join(", ") || "";
+            // Recipient is the host: always sees exact.
+            const eventLocation = buildEmailEventLocation(ev, "host");
             const unsubToken = await createUnsubscribeToken(env.NEXTAUTH_SECRET, ev.host_user_id, "attendance_confirmation");
             await sendPlanAtRiskEmail(env, {
               to: hostUser[0].email, hostName, eventTitle: ev.title,
@@ -15597,7 +15634,7 @@ async function processPlanFeedbackEmails(
   const plans = (await sql`
     SELECT e.id, e.title, e.host_user_id,
            e.starts_at, e.timezone,
-           e.location_type, e.location_name, e.location_address, e.location_area, e.online_link,
+           e.location_type, e.location_name, e.location_address, e.location_visibility, e.location_area, e.online_link,
            COALESCE(e.is_qa, false) AS is_qa
     FROM newchums.events e
     WHERE e.status = 'published'
@@ -15605,7 +15642,7 @@ async function processPlanFeedbackEmails(
       AND e.feedback_email_sent_at IS NULL
     ORDER BY e.starts_at ASC
     LIMIT 20
-  `) as { id: string; title: string; host_user_id: string; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; location_area: string | null; online_link: string | null; is_qa: boolean }[];
+  `) as { id: string; title: string; host_user_id: string; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; location_visibility: string | null; location_area: string | null; online_link: string | null; is_qa: boolean }[];
 
   if (plans.length === 0) return;
 
@@ -15616,16 +15653,6 @@ async function processPlanFeedbackEmails(
   for (const plan of plans) {
     const tz = plan.timezone || "UTC";
     const planDate = formatEventDate(plan.starts_at, tz);
-    // Privacy-conscious location for the feedback email: never include the
-    // street address. Online → "Online". In-person → venue name + city/area
-    // (falls back to derived area or just the venue/area on its own).
-    let planLocation = "";
-    if (plan.location_type === "online") {
-      planLocation = "Online";
-    } else {
-      const area = plan.location_area || deriveApproxArea(plan.location_address) || "";
-      planLocation = [plan.location_name, area].filter(Boolean).join(", ");
-    }
 
     const recipients = (await sql`
       SELECT u.id, u.email, u.name, up.notification_prefs
@@ -15659,6 +15686,13 @@ async function processPlanFeedbackEmails(
         }
       } catch { /* skip token on failure */ }
 
+      // Location per plan-page rule. Host always sees exact. Going
+      // attendees see exact for exact_everyone / exact_joined_only,
+      // approximate for approximate_only.
+      const planLocation = buildEmailEventLocation(
+        plan,
+        r.id === plan.host_user_id ? "host" : "joined",
+      );
       emailPromises.push(
         sendPlanFeedbackEmail(env, {
           to: r.email,

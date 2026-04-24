@@ -248,7 +248,7 @@ export const sendEventChangedEmail = async (
     updated:  "Plan -- Updated",
   };
   const ctaMap = {
-    canceled: "Explore other plans",
+    canceled: "View plan details",
     locked:   "View plan",
     updated:  "View updated plan",
   };
@@ -285,7 +285,11 @@ export const sendEventChangedEmail = async (
       eventTitle,
       eventDate:     eventDate || "",
       eventLocation: hasContent(eventLocation) ? eventLocation : null,
-      ctaUrl:        changeType === "canceled" ? "https://newchums.com" : eventUrl,
+      // Canceled plans now link to the plan detail page so the recipient
+      // can see the cancellation banner and reason (for auto-cancel this
+      // includes the confirmed / minimum counts). Previously sent to the
+      // site homepage, which dropped that context.
+      ctaUrl:        eventUrl,
       ctaText:       ctaMap[changeType],
       changesBlockHtml,
       changesBlockText,
@@ -757,7 +761,7 @@ export const sendConfirmationRequestEmail = async (
   } as const;
 
   // Button text ("View plan and confirm") is hard-coded directly in the
-  // Postmark template HTML — no template variable needed. This matches the
+  // Postmark template HTML, no template variable needed. This matches the
   // pattern used by every other working email template and eliminates the
   // recurring empty-button bug caused by variable name drift between the
   // code and the Postmark hosted template.
@@ -823,9 +827,10 @@ export const sendPlanAtRiskEmail = async (
 
 export const sendPlanAutoCancelledEmail = async (
   env: Bindings,
-  { to, recipientName, eventTitle, confirmedCount, minRequired, eventDate, eventLocation, unsubscribeUrl }: {
+  { to, recipientName, eventTitle, eventUrl, confirmedCount, minRequired, eventDate, eventLocation, unsubscribeUrl }: {
     to: string; recipientName: string;
     eventTitle: string;
+    eventUrl: string;
     confirmedCount: number; minRequired: number;
     eventDate?: string; eventLocation?: string;
     unsubscribeUrl?: string;
@@ -844,8 +849,10 @@ export const sendPlanAutoCancelledEmail = async (
         eventDate: eventDate || "",
         eventLocation: hasContent(eventLocation) ? eventLocation : null,
         reasonText: `Only ${confirmedCount} of ${minRequired} required attendees confirmed`,
-        ctaUrl: "https://newchums.com",
-        ctaText: "Browse other plans",
+        // Point attendees at the plan detail page (which surfaces the cancelled state)
+        // rather than the homepage, so they land on the context they already know.
+        ctaUrl: eventUrl,
+        ctaText: "View plan details",
         unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
         year: new Date().getFullYear(),
       },
@@ -855,7 +862,7 @@ export const sendPlanAutoCancelledEmail = async (
   if (!env.POSTMARK_TEMPLATE_EVENT_CHANGED) return;
   return sendEventChangedEmail(env, {
     to, recipientName, eventTitle,
-    eventUrl: "https://newchums.com",
+    eventUrl,
     changeType: "canceled",
     changes: [{ fieldName: "Reason", oldValue: `${confirmedCount} of ${minRequired} confirmed`, newValue: "Auto-cancelled -- minimum attendance not met" }],
     unsubscribeUrl,
