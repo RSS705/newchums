@@ -603,6 +603,7 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
         placeholder="Search requests..."
         value={searchInput}
         onChange={(e) => handleSearchChange(e.target.value)}
+        inputProps={{ "aria-label": "Search roadmap requests" }}
         InputProps={{
           startAdornment: (
             <InputAdornment position="start">
@@ -612,6 +613,9 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
           endAdornment: searchInput ? (
             <InputAdornment position="end">
               <ClearRoundedIcon
+                role="button"
+                tabIndex={0}
+                aria-label="Clear search"
                 sx={{
                   fontSize: 16,
                   color: "text.disabled",
@@ -621,6 +625,13 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
                 onClick={() => {
                   setSearchInput("");
                   setSearch("");
+                }}
+                onKeyDown={(e: React.KeyboardEvent) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setSearchInput("");
+                    setSearch("");
+                  }
                 }}
               />
             </InputAdornment>

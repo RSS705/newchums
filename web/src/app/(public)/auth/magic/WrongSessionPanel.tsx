@@ -16,7 +16,7 @@ type Props = {
 /**
  * Interstitial shown when a user clicks a magic link for a different email
  * than the one they're currently signed in as. We explicitly do not swap
- * sessions silently — an attacker-supplied link shouldn't be able to force
+ * sessions silently, an attacker-supplied link shouldn't be able to force
  * a signed-in victim into a new identity mid-browsing.
  */
 export default function WrongSessionPanel({ signedInEmail, linkEmail, next, token }: Props) {

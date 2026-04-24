@@ -440,8 +440,8 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                 <Box component="span" sx={{ fontWeight: 700 }}>
                   Life&apos;s short.
                 </Box>{" "}
-                Don&apos;t waste it staring at screens. Create an account, invite friends, meet new
-                friends, actually be with people.
+                Don&apos;t waste it staring at screens. Create an account, plan a gathering, invite
+                people, actually spend time together.
               </Typography>
 
               <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ pt: 0.5 }}>
@@ -1028,7 +1028,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                 mb: 2,
               }}
             >
-              A great way to meet new people, too
+              A great way to connect over shared hobbies
             </Typography>
             <Typography
               variant="h5"
@@ -1163,7 +1163,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                         <Box sx={{ position: "relative", width: "100%", height: "100%" }}>
                           <Image
                             src={imageSrc}
-                            alt=""
+                            alt={title}
                             fill
                             sizes="(max-width: 600px) 100vw, 33vw"
                             style={{ objectFit: "contain" }}
