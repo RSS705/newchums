@@ -35,13 +35,23 @@ export const sendPostmarkTemplateEmail = async (
     TemplateModel: templateModel,
   };
 
-  console.log(
-    "[postmark] template:",
-    payload.TemplateId,
-    "keys:",
-    Object.keys(templateModel).sort().join(", ")
-  );
-  console.log("[postmark] full TemplateModel:", JSON.stringify(templateModel));
+  // Verbose template logging is gated to non-production only. The template
+  // model carries unsubscribe tokens, magic-link tokens, invite tokens,
+  // user-generated join-request messages, recipient emails/names, and
+  // plan/event titles; Cloudflare Workers logs are tailable and can be
+  // archived, so none of this should land in production logs. The raw
+  // email helper below uses the same gate. Errors still log fully so
+  // real incidents remain diagnosable.
+  const isDev = env.APP_ENV === "development";
+  if (isDev) {
+    console.log(
+      "[postmark] template:",
+      payload.TemplateId,
+      "keys:",
+      Object.keys(templateModel).sort().join(", ")
+    );
+    console.log("[postmark] full TemplateModel:", JSON.stringify(templateModel));
+  }
 
   const response = await fetch("https://api.postmarkapp.com/email/withTemplate", {
     method: "POST",
@@ -60,11 +70,16 @@ export const sendPostmarkTemplateEmail = async (
     const message = errorData?.Message
       ? `Postmark request failed: ${errorData.Message}`
       : `Postmark request failed with status ${response.status}`;
+    // Error responses do not contain the template model, but they do
+    // contain the Postmark MessageID and ErrorCode which we want for
+    // incident triage, so this stays unconditional.
     console.error("[postmark] error response:", JSON.stringify(responseBody));
     throw new Error(message);
   }
 
-  console.log("[postmark] success response:", JSON.stringify(responseBody));
+  if (isDev) {
+    console.log("[postmark] success response:", JSON.stringify(responseBody));
+  }
   return responseBody;
 };
 
