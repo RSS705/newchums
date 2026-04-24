@@ -168,13 +168,30 @@ export default async function AppLayout({
     return <AppShell>{children}</AppShell>;
   }
 
-  const { username, date_of_birth, name, role, is_suspended, password_setup_pending } = await getOrCreateAppUser(
+  const { username, date_of_birth, name, role, is_suspended, password_setup_pending, accepted_legal_at } = await getOrCreateAppUser(
     email,
     (session.user as { name?: string | null })?.name
   );
 
   if (is_suspended) {
     redirect("/login?error=AccountSuspended");
+  }
+
+  // Legal-acceptance gate. Credentials signup writes legal acceptance on
+  // the same INSERT that creates the user, so credentials accounts always
+  // land here with accepted_legal_at set. Google OAuth signup relies on
+  // sessionStorage surviving the OAuth redirect for the post-login
+  // /auth/record-legal-acceptance POST, which fails silently on mobile
+  // Safari / strict tracking-protection configs. This gate catches that
+  // case, and any future path where acceptance is missing for any other
+  // reason, by sending the user to a small interstitial BEFORE the
+  // DOB/username onboarding step. Users whose acceptance is already
+  // recorded pass through with no prompt.
+  const legalAcceptanceMissing = !accepted_legal_at;
+  if (legalAcceptanceMissing && requestedPathname !== "/onboarding/accept-legal") {
+    redirect(
+      `/onboarding/accept-legal?returnTo=${encodeURIComponent(requestedPath)}`,
+    );
   }
 
   const needsOnboarding =

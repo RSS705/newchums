@@ -13,6 +13,19 @@ function normalizeDateOfBirth(val: unknown): string | null {
   return null;
 }
 
+/** Normalize accepted_legal_at (Date | string | null) to an ISO string or null. */
+function normalizeAcceptedLegalAt(val: unknown): string | null {
+  if (val == null) return null;
+  if (typeof val === "string") {
+    const t = val.trim();
+    return t === "" ? null : t;
+  }
+  if (val instanceof Date && !isNaN(val.getTime())) {
+    return val.toISOString();
+  }
+  return null;
+}
+
 type AppUser = {
   id: string;
   username: string | null;
@@ -24,12 +37,32 @@ type AppUser = {
    *  and the user hasn't set a password yet. Drives the in-app "finish
    *  setting up your account" nudge. */
   password_setup_pending: boolean;
+  /** ISO timestamp of the user's most recent legal-acceptance record, or
+   *  null if the user has never accepted Terms / Privacy. Populated by
+   *  credentials signup at INSERT time, by Google-OAuth post-login via
+   *  /auth/record-legal-acceptance, and by the accept-legal onboarding
+   *  interstitial for users whose acceptance was lost (e.g. mobile Safari
+   *  clearing sessionStorage during the OAuth redirect). The (app)
+   *  layout reads this to decide whether to send the user to the
+   *  interstitial before onboarding/username. */
+  accepted_legal_at: string | null;
 };
 
-type AppUserRaw = Omit<AppUser, "date_of_birth" | "password_setup_pending"> & {
+type AppUserRaw = Omit<AppUser, "date_of_birth" | "password_setup_pending" | "accepted_legal_at"> & {
   date_of_birth: unknown;
   password_setup_pending?: boolean | null;
+  accepted_legal_at: unknown;
 };
+
+function hydrateAppUser(row: AppUserRaw): AppUser {
+  return {
+    ...row,
+    is_suspended: Boolean(row.is_suspended),
+    date_of_birth: normalizeDateOfBirth(row.date_of_birth),
+    password_setup_pending: Boolean(row.password_setup_pending),
+    accepted_legal_at: normalizeAcceptedLegalAt(row.accepted_legal_at),
+  };
+}
 
 /**
  * Ensure user exists in DB by email (creates with email, name, username=null, date_of_birth=null if new).
@@ -45,19 +78,15 @@ export async function getOrCreateAppUser(
 
   const existing = (await sql`
     SELECT id, username, date_of_birth, name, role, is_suspended,
-           COALESCE(password_setup_pending, false) AS password_setup_pending
+           COALESCE(password_setup_pending, false) AS password_setup_pending,
+           accepted_legal_at
     FROM users
     WHERE email = ${normalized}
     LIMIT 1
   `) as AppUserRaw[];
 
   if (existing.length > 0) {
-    return {
-      ...existing[0],
-      is_suspended: Boolean(existing[0].is_suspended),
-      date_of_birth: normalizeDateOfBirth(existing[0].date_of_birth),
-      password_setup_pending: Boolean(existing[0].password_setup_pending),
-    };
+    return hydrateAppUser(existing[0]);
   }
 
   try {
@@ -65,16 +94,12 @@ export async function getOrCreateAppUser(
       INSERT INTO users (email, name, email_verified_at)
       VALUES (${normalized}, ${name ?? null}, now())
       RETURNING id, username, date_of_birth, name, role, is_suspended,
-               COALESCE(password_setup_pending, false) AS password_setup_pending
+               COALESCE(password_setup_pending, false) AS password_setup_pending,
+               accepted_legal_at
     `) as AppUserRaw[];
 
     if (inserted.length > 0) {
-      return {
-        ...inserted[0],
-        is_suspended: Boolean(inserted[0].is_suspended),
-        date_of_birth: normalizeDateOfBirth(inserted[0].date_of_birth),
-        password_setup_pending: Boolean(inserted[0].password_setup_pending),
-      };
+      return hydrateAppUser(inserted[0]);
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -86,18 +111,14 @@ export async function getOrCreateAppUser(
     ) {
       const retry = (await sql`
         SELECT id, username, date_of_birth, name, role, is_suspended,
-               COALESCE(password_setup_pending, false) AS password_setup_pending
+               COALESCE(password_setup_pending, false) AS password_setup_pending,
+               accepted_legal_at
         FROM users
         WHERE email = ${normalized}
         LIMIT 1
       `) as AppUserRaw[];
       if (retry.length > 0) {
-        return {
-          ...retry[0],
-          is_suspended: Boolean(retry[0].is_suspended),
-          date_of_birth: normalizeDateOfBirth(retry[0].date_of_birth),
-          password_setup_pending: Boolean(retry[0].password_setup_pending),
-        };
+        return hydrateAppUser(retry[0]);
       }
     }
     throw err;
@@ -105,19 +126,15 @@ export async function getOrCreateAppUser(
 
   const fallback = (await sql`
     SELECT id, username, date_of_birth, name, role, is_suspended,
-           COALESCE(password_setup_pending, false) AS password_setup_pending
+           COALESCE(password_setup_pending, false) AS password_setup_pending,
+           accepted_legal_at
     FROM users
     WHERE email = ${normalized}
     LIMIT 1
   `) as AppUserRaw[];
 
   if (fallback.length > 0) {
-    return {
-      ...fallback[0],
-      is_suspended: Boolean(fallback[0].is_suspended),
-      date_of_birth: normalizeDateOfBirth(fallback[0].date_of_birth),
-      password_setup_pending: Boolean(fallback[0].password_setup_pending),
-    };
+    return hydrateAppUser(fallback[0]);
   }
   throw new Error("Failed to get or create app user");
 }
