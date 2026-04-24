@@ -88,6 +88,8 @@ type Member = {
 
 type ApiEvent = Record<string, unknown>;
 
+type LocalSignal = { hobbyName: string; count: number };
+
 // Collapses the community description to 3 lines with a Show more/less
 // toggle. Only surfaces the toggle when the text actually overflows the
 // clamp, so short descriptions render unchanged. We observe size changes so
@@ -233,6 +235,7 @@ export default function CommunityDetailClient() {
   // logged-out viewers are expected, we branch on this flag to render a
   // sign-in CTA instead of member-only actions (join/leave/start plan/edit).
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [localSignal, setLocalSignal] = useState<LocalSignal | null>(null);
 
   const mapApiEvent = useCallback((ev: ApiEvent): PlanEvent => {
     const hostUsername = (ev.hostUsername as string)?.replace(/^@/, "");
@@ -364,6 +367,24 @@ export default function CommunityDetailClient() {
     if (!viewerHobbyItems.length) return undefined;
     return effectiveCategorySet(viewerHobbyItems);
   }, [viewerHobbyItems]);
+
+  // Mirror the explore feed's local-interest signal so the community detail
+  // ends with the same "N active people near you are into X" line. Kept
+  // community-agnostic: we pass no hobby filter, so the backend picks based
+  // on the viewer's own hobbies (same as the unfiltered explore feed).
+  useEffect(() => {
+    if (isAuthenticated !== true) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch("/explore/local-signal", { auth: true });
+        if (cancelled) return;
+        const data = (await res.json()) as { ok: boolean; signal: LocalSignal | null };
+        if (data.ok) setLocalSignal(data.signal);
+      } catch { /* degrade silently */ }
+    })();
+    return () => { cancelled = true; };
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (!community || restricted) return;
@@ -1864,6 +1885,33 @@ export default function CommunityDetailClient() {
           </>
         )}
       </Box>
+
+      {/* Local interest signal. Same copy/layout as the explore feed's
+          footer: surfaces one hobby the viewer shares with active people
+          in their area. Community-agnostic for now; the backend picks
+          the hobby from the viewer's own interests. */}
+      {localSignal && (
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 1,
+            pt: 2,
+            pb: 1,
+          }}
+        >
+          <PeopleRoundedIcon sx={{ fontSize: 16, color: "text.disabled" }} />
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            sx={{ fontSize: "0.8125rem", fontWeight: 500 }}
+          >
+            {localSignal.count} active {localSignal.count === 1 ? "person" : "people"} near you{" "}
+            {localSignal.count === 1 ? "is" : "are"} into {localSignal.hobbyName}
+          </Typography>
+        </Box>
+      )}
 
       {/* Remove member confirmation */}
       <Dialog
