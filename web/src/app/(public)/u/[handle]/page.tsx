@@ -16,28 +16,76 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const { handle } = await params;
   const handleNorm = handle?.trim().toLowerCase() ?? "";
   const base = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "");
-  const metadata: Metadata = {
-    title: "Profile | NewChums",
-    description: "View profile on NewChums.",
+  const fallback: Metadata = {
+    title: handleNorm ? `@${handleNorm}` : "Profile",
+    description: "A profile on NewChums.",
+    robots: { index: true, follow: true },
   };
-  if (base && handleNorm) {
-    try {
-      const res = await fetch(
-        `${base}/public/users/${encodeURIComponent(handleNorm)}`,
-        { cache: "no-store" }
-      );
-      const data = (await res.json()) as {
-        ok?: boolean;
-        user?: { is_hidden_from_external_indexing?: boolean };
+  if (!base || !handleNorm) return fallback;
+  try {
+    // The public endpoint returns a privacy-safe projection for logged-out
+    // callers: displayName is @username only (never real name), age and
+    // gender are null, email never appears. We may freely surface handle,
+    // bio, hobbies, and avatar in metadata. Real name is intentionally not
+    // read from this response even if it were available.
+    const res = await fetch(
+      `${base}/public/users/${encodeURIComponent(handleNorm)}`,
+      { cache: "no-store" },
+    );
+    if (!res.ok) return fallback;
+    const data = (await res.json()) as {
+      ok?: boolean;
+      user?: {
+        handle?: string | null;
+        bio?: string | null;
+        avatarUrl?: string | null;
+        hobbies?: Array<{ name: string }>;
+        is_hidden_from_external_indexing?: boolean;
       };
-      if (data.ok && data.user?.is_hidden_from_external_indexing) {
-        return { ...metadata, robots: "noindex, nofollow" };
-      }
-    } catch {
-      // Fall through to default metadata
-    }
+    };
+    const u = data.ok ? data.user : null;
+    if (!u) return fallback;
+
+    const displayHandle = (u.handle || `@${handleNorm}`).replace(/^@?/, "@");
+    const hobbyNames = (u.hobbies ?? []).map((h) => h.name).filter(Boolean);
+    const hobbyBit = hobbyNames.length > 0
+      ? `Interests: ${hobbyNames.slice(0, 5).join(", ")}.`
+      : "";
+    const bioBit = (u.bio || "").trim().slice(0, 160);
+    const description = [bioBit, hobbyBit].filter(Boolean).join(" ").slice(0, 240)
+      || `${displayHandle} on NewChums.`;
+
+    const canonicalPath = `/u/${encodeURIComponent(handleNorm)}`;
+    const imageUrl = u.avatarUrl ? `${base}${u.avatarUrl}` : undefined;
+    const respectHide = u.is_hidden_from_external_indexing === true;
+
+    return {
+      title: displayHandle,
+      description,
+      // Respect the account's hidden-from-external-indexing preference,
+      // which lives on the user's profile settings. Shareable link
+      // previews still render (the page is public), we just don't feed
+      // search engines.
+      robots: respectHide
+        ? { index: false, follow: false }
+        : { index: true, follow: true },
+      alternates: { canonical: canonicalPath },
+      openGraph: {
+        title: displayHandle,
+        description,
+        url: canonicalPath,
+        type: "profile",
+        ...(imageUrl ? { images: [imageUrl] } : {}),
+      },
+      twitter: {
+        title: displayHandle,
+        description,
+        ...(imageUrl ? { images: [imageUrl] } : {}),
+      },
+    };
+  } catch {
+    return fallback;
   }
-  return metadata;
 }
 
 export default async function PublicProfilePage({ params }: PageProps) {
