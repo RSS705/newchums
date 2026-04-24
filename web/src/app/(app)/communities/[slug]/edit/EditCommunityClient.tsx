@@ -87,8 +87,16 @@ export default function EditCommunityClient() {
   const [bannerBlob, setBannerBlob] = useState<Blob | null>(null);
   const [bannerRemoving, setBannerRemoving] = useState(false);
   // Cache-bust the banner preview URL whenever we upload or remove so the
-  // browser doesn't keep serving the old R2 image from its cache.
-  const [bannerRefreshTs, setBannerRefreshTs] = useState<number>(() => Date.now());
+  // browser doesn't keep serving the old R2 image from its cache. Initial
+  // value is 0 (not Date.now()) so SSR and the initial client render emit
+  // the same `?v=0` src attribute; a post-mount effect replaces it with
+  // a real timestamp. Using Date.now() as the useState initializer causes
+  // a hydration mismatch (React #418) because the server and client
+  // evaluate it at different moments.
+  const [bannerRefreshTs, setBannerRefreshTs] = useState<number>(0);
+  useEffect(() => {
+    setBannerRefreshTs(Date.now());
+  }, []);
 
   // Field refs for scroll-to-first-error
   const fieldRefs = useRef<Record<string, HTMLElement | null>>({});

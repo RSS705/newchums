@@ -64,8 +64,19 @@ export default function CreateEventClient() {
   const [selectedHobbies, setSelectedHobbies] = useState<HobbyOption[]>([]);
   const [maxSeats, setMaxSeats] = useState("");
 
-  const [dateValue, setDateValue] = useState<Dayjs | null>(() => dayjs());
-  const [timeValue, setTimeValue] = useState<Dayjs | null>(() => dayjs());
+  // Start null on SSR and the initial client render so both sides emit
+  // the same empty picker markup. A post-mount effect populates the
+  // defaults to "now", which keeps today's date as the default
+  // date/time for the form while avoiding a hydration mismatch (React
+  // #418) from server `dayjs()` and client `dayjs()` producing
+  // different timestamps.
+  const [dateValue, setDateValue] = useState<Dayjs | null>(null);
+  const [timeValue, setTimeValue] = useState<Dayjs | null>(null);
+  useEffect(() => {
+    const now = dayjs();
+    setDateValue(now);
+    setTimeValue(now);
+  }, []);
 
   const [locationType, setLocationType] = useState<"in_person" | "online">("in_person");
   const [locationName, setLocationName] = useState("");
