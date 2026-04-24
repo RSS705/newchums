@@ -10,6 +10,7 @@ import Grid from "@mui/material/Grid";
 import IconButton from "@mui/material/IconButton";
 import InputAdornment from "@mui/material/InputAdornment";
 import Paper from "@mui/material/Paper";
+import Skeleton from "@mui/material/Skeleton";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
@@ -336,14 +337,57 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
         >
           Explore
         </Typography>
-        <Typography variant="body1" color="text.secondary" sx={{ fontSize: { xs: "0.875rem", sm: "0.9375rem" } }}>
-          {hasLocation
-            ? `Discover plans and gatherings${locationLabel ? ` near ${locationLabel}` : ""}`
-            : "Find plans around the hobbies you enjoy"}
-        </Typography>
+        {loading ? (
+          // Hold the subtitle until the first events fetch resolves so
+          // `hasLocation` and `locationLabel` have settled. Otherwise the
+          // user sees the "Find plans around..." fallback for ~200ms and
+          // then a pop to "Discover plans and gatherings near [City]",
+          // which is the "address appearing" part of the staggered load
+          // reported on the Explore tab.
+          <Skeleton
+            variant="text"
+            width={260}
+            sx={{ fontSize: { xs: "0.875rem", sm: "0.9375rem" }, maxWidth: "100%" }}
+          />
+        ) : (
+          <Typography variant="body1" color="text.secondary" sx={{ fontSize: { xs: "0.875rem", sm: "0.9375rem" } }}>
+            {hasLocation
+              ? `Discover plans and gatherings${locationLabel ? ` near ${locationLabel}` : ""}`
+              : "Find plans around the hobbies you enjoy"}
+          </Typography>
+        )}
       </Box>
 
       {/* ── Filter bar ──────────────────────────────────────────────── */}
+      {loading ? (
+        // Skeleton that matches the real filter row's outer frame and rough
+        // chip layout so the page doesn't visibly shift when loading ends.
+        // Prevents the "personalize chip pops in once profile loads" and
+        // "hobby Autocomplete populates" micro-pops from compounding with
+        // the subtitle-and-cards transition.
+        <Paper
+          variant="outlined"
+          sx={{
+            p: { xs: 1.5, sm: 2 },
+            borderRadius: 3,
+            borderColor: "grey.200",
+            bgcolor: "background.paper",
+            boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+          }}
+        >
+          <Stack spacing={1.5}>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Skeleton variant="rounded" height={40} sx={{ flex: 1, borderRadius: 2 }} />
+              <Skeleton variant="rounded" width={40} height={40} sx={{ borderRadius: 2 }} />
+            </Stack>
+            <Stack direction="row" gap={0.75} alignItems="center" sx={{ flexWrap: { xs: "nowrap", sm: "wrap" } }}>
+              {[72, 88, 96, 88, 112, 56, 88, 104].map((w, i) => (
+                <Skeleton key={i} variant="rounded" width={w} height={24} sx={{ borderRadius: 2, flexShrink: 0 }} />
+              ))}
+            </Stack>
+          </Stack>
+        </Paper>
+      ) : (
       <Paper
         variant="outlined"
         sx={{
@@ -526,6 +570,7 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
           )}
         </Stack>
       </Paper>
+      )}
 
       {/* ── Location nudge ──────────────────────────────────────────── */}
       {profile !== null && !hasLocation && (

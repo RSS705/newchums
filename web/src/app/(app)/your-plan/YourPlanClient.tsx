@@ -22,35 +22,8 @@ import { apiFetch } from "@/lib/apiClient";
  */
 type PlanKey = "free" | "super_host" | "community_pro";
 
-/**
- * Cached last-known plan key. Hydrating from this on mount lets returning
- * viewers skip the Free-by-default flicker that used to briefly highlight
- * the wrong card before `/profile` resolved. We still overwrite from the
- * authoritative fetch, so the cache is purely a first-paint aid.
- */
-const PLAN_CACHE_KEY = "nc_your_plan:last_plan";
-
 function isPlanKey(value: unknown): value is PlanKey {
   return value === "free" || value === "super_host" || value === "community_pro";
-}
-
-function readCachedPlan(): PlanKey | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(PLAN_CACHE_KEY);
-    return isPlanKey(raw) ? raw : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeCachedPlan(plan: PlanKey) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(PLAN_CACHE_KEY, plan);
-  } catch {
-    /* ignore quota / disabled storage */
-  }
 }
 
 type PlanInfo = {
@@ -120,11 +93,15 @@ function getPlan(key: PlanKey): PlanInfo {
 }
 
 export default function YourPlanClient() {
-  // Hydrate from the localStorage cache on mount so returning viewers
-  // paint the correct plan immediately. First-time visitors start with
-  // `null` and render a short Skeleton in the hero until /profile
-  // resolves, instead of wrongly claiming "Free" and then flipping.
-  const [currentPlan, setCurrentPlan] = useState<PlanKey | null>(() => readCachedPlan());
+  // Always start as `null` so the hero renders a Skeleton until /profile
+  // resolves. A prior version hydrated from a localStorage cache to paint
+  // the "last known plan" immediately, but that produced a visible flash
+  // whenever the cached value and the authoritative plan disagreed (e.g.
+  // the user was upgraded / downgraded between visits), which surfaced as
+  // "the page loads with a plan selected, then switches to the actual
+  // plan." Skipping the cache costs ~200ms of skeleton but avoids the
+  // mid-paint swap and matches the "unified load" behavior elsewhere.
+  const [currentPlan, setCurrentPlan] = useState<PlanKey | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -137,9 +114,8 @@ export default function YourPlanClient() {
         const raw = data.profile?.subscription_plan;
         if (isPlanKey(raw)) {
           setCurrentPlan(raw);
-          writeCachedPlan(raw);
         }
-      } catch { /* leave any cached value in place */ }
+      } catch { /* noop; hero stays in the loading skeleton state */ }
     })();
     return () => { cancelled = true; };
   }, []);
