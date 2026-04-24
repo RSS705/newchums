@@ -49,8 +49,35 @@ export type AppShellUser = {
 
 const navCardWidth = 260;
 
-/** Survives remounts; prevents avatar flash when navigating between pages */
-let cachedAvatarUrl: string | null = null;
+/** localStorage key for the cross-navigation avatar-URL cache. Using
+ *  localStorage instead of a module-level `let` is deliberate: module state
+ *  inside a Cloudflare Worker isolate is shared across requests AND read
+ *  during SSR, which produces hydration mismatches (React error #418) when
+ *  the server renders one snapshot of the variable and the client hydrates
+ *  with a different one. localStorage is strictly client-side, so every
+ *  SSR render sees the same value (null) every caller's browser sees on
+ *  first paint. Mirrors the `nc_your_plan:last_plan` pattern in
+ *  YourPlanClient. */
+const AVATAR_CACHE_KEY = "nc_app_shell:avatar_url";
+
+function readCachedAvatarUrl(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(AVATAR_CACHE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedAvatarUrl(url: string | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (url) window.localStorage.setItem(AVATAR_CACHE_KEY, url);
+    else window.localStorage.removeItem(AVATAR_CACHE_KEY);
+  } catch {
+    /* ignore quota / disabled storage */
+  }
+}
 
 function isNavItemActive(pathname: string, href: string) {
   if (href === "/") return pathname === "/";
@@ -81,10 +108,20 @@ export default function AppShell({ children, user, passwordSetupPending }: AppSh
   const [accountMenuAnchor, setAccountMenuAnchor] = React.useState<null | HTMLElement>(null);
   const [navProfile, setNavProfile] = React.useState<NavProfile | null>(null);
   const [adminBadges, setAdminBadges] = React.useState<Record<string, number>>({});
+  // Start null on both server and client so the initial render matches. An
+  // effect below lifts the real value out of localStorage after mount, at
+  // which point a client-only re-render paints the cached avatar without
+  // causing a hydration mismatch on the first frame.
+  const [cachedAvatarUrl, setCachedAvatarUrl] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    setCachedAvatarUrl(readCachedAvatarUrl());
+  }, []);
 
   React.useEffect(() => {
     if (!user) {
-      cachedAvatarUrl = null;
+      writeCachedAvatarUrl(null);
+      setCachedAvatarUrl(null);
       return;
     }
     let cancelled = false;
@@ -93,11 +130,11 @@ export default function AppShell({ children, user, passwordSetupPending }: AppSh
       .then((data: { ok?: boolean; profile?: NavProfile & { email?: string } }) => {
         if (!cancelled && data.ok && data.profile) {
           setNavProfile(data.profile);
-          if (data.profile.avatar_url) {
-            cachedAvatarUrl = `${getAvatarBaseUrl()}${data.profile.avatar_url}`;
-          } else {
-            cachedAvatarUrl = null;
-          }
+          const resolvedAvatar = data.profile.avatar_url
+            ? `${getAvatarBaseUrl()}${data.profile.avatar_url}`
+            : null;
+          writeCachedAvatarUrl(resolvedAvatar);
+          setCachedAvatarUrl(resolvedAvatar);
 
           // Consume any pending invite token stored before a Google OAuth redirect.
           // Only runs once: token is removed from sessionStorage before the request fires.
@@ -514,7 +551,8 @@ export default function AppShell({ children, user, passwordSetupPending }: AppSh
                 <MenuItem
                   onClick={async () => {
                     setAccountMenuAnchor(null);
-                    cachedAvatarUrl = null;
+                    writeCachedAvatarUrl(null);
+                    setCachedAvatarUrl(null);
                     await signOut({ redirectTo: "/" });
                   }}
                 >

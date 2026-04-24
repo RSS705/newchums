@@ -420,6 +420,10 @@ If business logic, database access, or mutation logic appears inside the Web Wor
 
 - API deploys via Wrangler.
 
+### Post-sign-in navigation
+
+After `signIn(..., { redirect: false })` succeeds, use a full browser navigation (`window.location.assign(target)`), **never** `router.replace` / `router.push`. Next.js App Router caches the `(app)/layout.tsx` RSC per route segment; a client-side navigation reuses the layout output that was rendered pre-login (session null, unauthed shell) because the segment is "unchanged" from the client's perspective. The user ends up on their destination page with fresh authed page content rendered inside a stale unauthed `(app)` shell until the next hard refresh, which presents as a silent logout ("I clicked Start a plan and got logged out" / "opened Profile and saw Sign in in the header"). Google OAuth and the magic-link handler are safe because they go through a full-page redirect (`redirect: true` or `window.location.href`); only the credentials path needed an explicit fix. This rule applies to any future post-auth transition: credential sign-in, lightweight signup, email-change confirmation, new magic link, etc. If session identity changes, hard-navigate.
+
 ---
 
 ## Agent Authority Clause

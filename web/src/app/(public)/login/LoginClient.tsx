@@ -155,7 +155,17 @@ export default function LoginClient() {
             );
             return;
           }
-          router.replace(redirectTarget);
+          // Full browser navigation on successful credentials sign-in. A
+          // client-side `router.replace` reuses Next.js's Router Cache,
+          // which was populated BEFORE login with the unauthenticated
+          // (app) layout; the server is never consulted again so the
+          // authed shell never re-renders, and the user keeps seeing the
+          // logged-out sidebar/header until they hard-refresh. Google
+          // OAuth already works correctly because it goes through a full
+          // /api/auth/callback/* redirect, which naturally invalidates the
+          // Router Cache; credentials login with redirect:false does not,
+          // so we force a full load here to match that behavior.
+          window.location.assign(redirectTarget);
         }}
       >
         <AuthField

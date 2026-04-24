@@ -52,6 +52,16 @@ export default async function AppLayout({
 
   const requestHeaders = await headers();
   const requestedPath = getRequestedPathFromHeaders(requestHeaders);
+  // Strip the query string for route-matching. `requestedPath` carries
+  // the full path+query so section/tab/invite_token parsing below still
+  // works, but the isPublicRoute regexes need to match against the
+  // pathname alone. Next.js RSC fetches append `?_rsc=<hash>` to
+  // client-side navigation requests, and without this split the lookahead
+  // in the events / communities regexes sees `create?_rsc=…` and falls
+  // through instead of excluding `create`, which re-introduces the
+  // "unauthed shell at /events/create" symptom on client-side navigations
+  // even though a full page load at /events/create is correctly excluded.
+  const requestedPathname = requestedPath.split("?")[0];
 
   // Allow unauthenticated users to view event detail pages (public preview),
   // community detail pages by slug, AND the `/communities` discovery index.
@@ -62,10 +72,20 @@ export default async function AppLayout({
   // server-side). Public communities render the full detail view; private
   // communities render a restricted preview; the API enforces the privacy
   // contract (no members, plans, website, or Discord link leak).
+  //
+  // The `[^/]+` segment after `/events/` and `/communities/` previously
+  // also matched `/events/create`, `/communities/create`, and nested edit
+  // pages (e.g. `/events/[id]/edit`). Those are authenticated-only flows,
+  // and allowing them through this branch silently rendered the logged-out
+  // shell whenever `auth()` returned null on an authed-only surface, which
+  // presented to the user as "I clicked Start a plan and got logged out."
+  // Exclude `create` explicitly and require the dynamic segment to be the
+  // terminal path component (optional trailing slash). Everything else
+  // that doesn't match here falls through to the normal /login redirect.
   const isPublicRoute =
-    /^\/?(\(app\)\/)?events\/[^/]+/.test(requestedPath) ||
-    /^\/?(\(app\)\/)?communities\/?$/.test(requestedPath) ||
-    /^\/?(\(app\)\/)?communities\/[^/]+\/?$/.test(requestedPath);
+    /^\/?(\(app\)\/)?events\/(?!create(\/|$))[^/]+\/?$/.test(requestedPathname) ||
+    /^\/?(\(app\)\/)?communities\/?$/.test(requestedPathname) ||
+    /^\/?(\(app\)\/)?communities\/(?!create(\/|$))[^/]+\/?$/.test(requestedPathname);
 
   if (!session) {
     if (isPublicRoute) {
@@ -119,7 +139,14 @@ export default async function AppLayout({
 
   const email = (session.user as { email?: string })?.email;
   if (!email || typeof email !== "string") {
-    return <AppShell>{children}</AppShell>;
+    // Session exists but the token lost its email field. On a public route
+    // we can still render the logged-out preview; on an authed route
+    // redirect to /login so the viewer never sees the unauthed shell on an
+    // authed surface (it looks like a silent logout).
+    if (isPublicRoute) {
+      return <AppShell>{children}</AppShell>;
+    }
+    redirect(`/login?next=${encodeURIComponent(requestedPath)}`);
   }
 
   if (requestedPath === "/onboarding/username") {
