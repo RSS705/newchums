@@ -430,6 +430,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
 
               <Typography
                 variant="h5"
+                component="p"
                 fontWeight={400}
                 sx={{
                   color: "grey.800",
@@ -623,6 +624,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
             </Typography>
             <Typography
               variant="h5"
+              component="p"
               fontWeight={500}
               sx={{
                 fontSize: { xs: "1.05rem", sm: "1.2rem", md: "1.3rem" },
@@ -867,6 +869,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
             </Typography>
             <Typography
               variant="h5"
+              component="p"
               fontWeight={500}
               sx={{
                 fontSize: { xs: "1.05rem", sm: "1.15rem", md: "1.25rem" },
@@ -963,6 +966,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
             </Typography>
             <Typography
               variant="h5"
+              component="p"
               fontWeight={500}
               sx={{
                 fontSize: { xs: "1.05rem", sm: "1.15rem", md: "1.25rem" },
@@ -1032,6 +1036,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
             </Typography>
             <Typography
               variant="h5"
+              component="p"
               fontWeight={500}
               sx={{
                 fontSize: { xs: "1.05rem", sm: "1.2rem" },
@@ -1226,6 +1231,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
             </Typography>
             <Typography
               variant="h5"
+              component="p"
               fontWeight={500}
               sx={{
                 fontSize: { xs: "1.05rem", sm: "1.2rem" },

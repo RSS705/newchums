@@ -39,7 +39,11 @@ export default function MagicClient({ email, token, next, alreadySignedInSameEma
     }
 
     if (alreadySignedInSameEmail) {
-      window.location.href = next;
+      // Full browser navigation so the (app) layout re-runs and picks up
+      // the existing session without the Router Cache serving a stale
+      // pre-auth render. Matches the pattern used by the credentials
+      // login path in LoginClient.tsx.
+      window.location.assign(next);
       return;
     }
 

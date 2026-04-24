@@ -57,23 +57,30 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     // Private (including the restricted-response branch) and closed
     // communities: shareable link preview, but not indexed. Public
     // communities: full description, indexable.
-    const noindex =
+    const isPrivate =
       c.visibility === "private" || c.status === "closed" || c.restricted === true;
+    const noindex = isPrivate;
 
     const name = (c.name || "").trim() || "Community";
-    // For restricted responses (private-community non-members) the API
-    // already suppresses most fields. Use only the already-public ones
-    // (name, hobbies are on the restricted response, description is on
-    // restricted per the AGENTS.md contract and was observed in the
-    // audit). A plain community-only description is still privacy-safe.
+    // For private / restricted / closed communities we deliberately do
+    // NOT surface the community's description (or any location or
+    // online/offline hints) in metadata, even though the page itself
+    // renders some of those fields. QR posters and direct shares should
+    // still produce a polished link preview (name + generic copy +
+    // banner/avatar), but a conservative posture for private
+    // communities means the owner's description text never leaks into
+    // third-party caches, social scrapers, or unfurl services. Public
+    // communities use their real description.
     const rawDescription = (c.description || "").trim();
-    const description = rawDescription
-      ? rawDescription.slice(0, 240)
-      : (c.is_online
+    const description = isPrivate
+      ? "View this private community on NewChums."
+      : rawDescription
+        ? rawDescription.slice(0, 240)
+        : c.is_online
           ? `${name} is an online community on NewChums.`
           : c.location_name
             ? `${name} is a community on NewChums based in ${c.location_name}.`
-            : `${name} is a community on NewChums.`);
+            : `${name} is a community on NewChums.`;
 
     const canonicalPath = `/communities/${encodeURIComponent(slug)}`;
     const communityId = c.id;

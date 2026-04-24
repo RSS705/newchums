@@ -6,10 +6,13 @@ import type { MetadataRoute } from "next";
  *
  *  Allowed paths are the public marketing surfaces, public community
  *  discovery, public plan and community detail URLs, public profiles,
- *  and the public roadmap. Everything else -- authenticated app
- *  surfaces, admin, edit forms, auth flows, onboarding, utility
- *  endpoints, the QR redirect route, the Sentry test route, the
- *  internal design-system preview, the API proxy -- is disallowed.
+ *  and the public roadmap. Everything else is disallowed:
+ *  authenticated app surfaces, admin, edit forms, auth flows,
+ *  onboarding, utility endpoints (unsubscribe, Sentry test), the
+ *  internal design-system preview, the API proxy, and the
+ *  /qr/[code] redirect route. The QR route in particular is a
+ *  redirect handler (not a content page) and should never appear in
+ *  search results; it carries its own Cache-Control: no-store header.
  *  Per-page robots directives (set by (app)/layout.tsx's noindex
  *  cascade and by generateMetadata on private / hidden dynamic pages)
  *  give a second layer of defense if any page is reached anyway. */
