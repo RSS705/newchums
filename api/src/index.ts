@@ -6118,7 +6118,12 @@ app.get("/chums/search", async (c) => {
     }
 
     // ── Name / handle search path ─────────────────────────────────────────────
-    const likePattern = `%${q.toLowerCase()}%`;
+    // ILIKE + BTRIM so legacy rows with stray whitespace still match. Ordering
+    // ranks prefix matches (name then handle) above substring hits so typing
+    // "Oliv" surfaces "Olivia" before "Polivia".
+    const qLower = q.toLowerCase();
+    const likePattern = `%${qLower}%`;
+    const prefixPattern = `${qLower}%`;
     const rows = (await sql`
       SELECT u.id, u.name, u.username, u.avatar_key, u.avatar_updated_at,
              (uc.linked_user_id IS NOT NULL) AS is_saved
@@ -6130,10 +6135,16 @@ app.get("/chums/search", async (c) => {
         AND COALESCE(u.is_hidden_from_search, false) = false
         AND COALESCE(u.is_suspended, false) = false
         AND (
-          LOWER(COALESCE(u.name, '')) LIKE ${likePattern}
-          OR LOWER(COALESCE(u.username, '')) LIKE ${likePattern}
+          BTRIM(COALESCE(u.name, '')) ILIKE ${likePattern}
+          OR COALESCE(u.username, '') ILIKE ${likePattern}
         )
-      ORDER BY u.name ASC NULLS LAST
+      ORDER BY
+        CASE
+          WHEN BTRIM(COALESCE(u.name, '')) ILIKE ${prefixPattern} THEN 0
+          WHEN COALESCE(u.username, '') ILIKE ${prefixPattern} THEN 1
+          ELSE 2
+        END,
+        u.name ASC NULLS LAST
       LIMIT 10
     `) as {
       id: string;
