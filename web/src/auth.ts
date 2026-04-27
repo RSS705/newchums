@@ -50,7 +50,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           //      that never went through lightweight signup). Steer them
           //      to Google or "Forgot password" which doubles as set-a-password.
           if (user.password_setup_pending) {
-            const err = new CredentialsSignin("Your password hasn't been set yet. Send yourself a sign-in link to finish setup.");
+            const err = new CredentialsSignin("Your password hasn't been set yet. We're sending a one-click sign-in link to your email so you can finish setup.");
             err.code = "PasswordSetupPending";
             throw err;
           }

@@ -27,6 +27,11 @@ export default function LoginClient() {
   const [suspended, setSuspended] = React.useState(false);
   const [pendingSetup, setPendingSetup] = React.useState(false);
   const [linkStatus, setLinkStatus] = React.useState<"idle" | "sending" | "sent" | "error">("idle");
+  // Latch that says "fire the sign-in link as soon as we have everything we
+  // need." Set when the credentials submit returns PasswordSetupPending so
+  // the user doesn't have to click a separate button; cleared the instant
+  // the actual fetch runs so we don't auto-fire on every re-render.
+  const [autoSendPending, setAutoSendPending] = React.useState(false);
   const [turnstileToken, setTurnstileToken] = React.useState<string | null>(null);
   const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
@@ -53,6 +58,43 @@ export default function LoginClient() {
       signOut({ redirect: false });
     }
   }, [emailChanged]);
+
+  const sendSigninLink = React.useCallback(async () => {
+    setLinkStatus("sending");
+    try {
+      const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
+      const res = await fetch(`${apiBase}/auth/signin-link/request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          next: redirectTarget,
+          turnstile_token: turnstileToken ?? "",
+        }),
+      });
+      if (res.ok) {
+        setLinkStatus("sent");
+        setError(null);
+      } else {
+        setLinkStatus("error");
+        setError("We couldn't send the sign-in link. Try resending below.");
+      }
+    } catch {
+      setLinkStatus("error");
+      setError("We couldn't send the sign-in link. Try resending below.");
+    }
+  }, [email, redirectTarget, turnstileToken]);
+
+  // Auto-fire the sign-in link once PasswordSetupPending was reported and we
+  // have a Turnstile token (when Turnstile is configured). The latch is
+  // cleared synchronously so this effect doesn't re-trigger on the next
+  // render after `sendSigninLink` updates from new closure values.
+  React.useEffect(() => {
+    if (!autoSendPending) return;
+    if (turnstileSiteKey && !turnstileToken) return;
+    setAutoSendPending(false);
+    void sendSigninLink();
+  }, [autoSendPending, turnstileSiteKey, turnstileToken, sendSigninLink]);
 
   const formContent = (
     <Stack spacing={2.5}>
@@ -139,10 +181,14 @@ export default function LoginClient() {
             }
             if (code === "PasswordSetupPending") {
               // Account was created via the lightweight plan-entry flow and
-              // never had a password set. Offer them a fresh magic sign-in
-              // link so they can return and finish setup.
+              // never had a password set. Auto-send a fresh magic sign-in
+              // link so the user gets the email without an extra click;
+              // the form swaps to a "sent" / resend state once the request
+              // completes (and waits for Turnstile when configured).
               setPendingSetup(true);
-              setError("Your password hasn\u2019t been set yet. We can send you a one-click sign-in link so you can finish setup.");
+              setLinkStatus("sending");
+              setAutoSendPending(true);
+              setError("Your password hasn\u2019t been set yet. We\u2019re sending a one-click sign-in link to your email so you can finish setup.");
               return;
             }
             if (code === "InvalidPassword") {
@@ -180,6 +226,7 @@ export default function LoginClient() {
             setSuspended(false);
             setPendingSetup(false);
             setLinkStatus("idle");
+            setAutoSendPending(false);
             setTurnstileToken(null);
           }}
           required
@@ -196,6 +243,7 @@ export default function LoginClient() {
             setSuspended(false);
             setPendingSetup(false);
             setLinkStatus("idle");
+            setAutoSendPending(false);
             setTurnstileToken(null);
           }}
           required
@@ -288,14 +336,38 @@ export default function LoginClient() {
                   The link is valid for 15 minutes. Didn&apos;t see it? Check
                   your spam or promotions folder.
                 </Typography>
+                <Typography
+                  component="button"
+                  type="button"
+                  onClick={() => {
+                    // Triggers another send. The status flip to "sending"
+                    // re-renders the parent ternary back to the button
+                    // branch, so the user briefly sees the inline button
+                    // again before the success card returns.
+                    void sendSigninLink();
+                  }}
+                  variant="caption"
+                  sx={{
+                    background: "none",
+                    border: "none",
+                    p: 0,
+                    cursor: "pointer",
+                    color: "primary.main",
+                    fontWeight: 500,
+                    textDecoration: "none",
+                    "&:hover": { textDecoration: "underline" },
+                  }}
+                >
+                  Resend the sign-in link
+                </Typography>
               </Stack>
             </Box>
           ) : (
             <Stack spacing={1.5} alignItems="center">
-              {/* Same Turnstile policy as the plan-signup card: when the
-               *  site key is configured we require a token here too, since
-               *  the signin-link endpoint is unauthenticated and gated on
-               *  Turnstile server-side. */}
+              {/* Turnstile renders here so the auto-send can grab a token
+               *  the moment Turnstile resolves. When TURNSTILE_SECRET_KEY
+               *  is unset (dev), the auto-send fires immediately. The
+               *  resend button below uses the same gating. */}
               {turnstileSiteKey && (
                 <TurnstileWidget
                   siteKey={turnstileSiteKey}
@@ -311,32 +383,12 @@ export default function LoginClient() {
                   !email.trim() ||
                   (Boolean(turnstileSiteKey) && !turnstileToken)
                 }
-                onClick={async (event) => {
+                onClick={(event) => {
                   event.preventDefault();
-                  setLinkStatus("sending");
-                  try {
-                    const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
-                    const res = await fetch(`${apiBase}/auth/signin-link/request`, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        email: email.trim().toLowerCase(),
-                        next: redirectTarget,
-                        turnstile_token: turnstileToken ?? "",
-                      }),
-                    });
-                    if (res.ok) {
-                      setLinkStatus("sent");
-                      setError(null);
-                    } else {
-                      setLinkStatus("error");
-                    }
-                  } catch {
-                    setLinkStatus("error");
-                  }
+                  void sendSigninLink();
                 }}
               >
-                {linkStatus === "sending" ? "Sending..." : "Email me a sign-in link"}
+                {linkStatus === "sending" ? "Sending…" : "Resend the sign-in link"}
               </AppButton>
               {linkStatus === "error" && (
                 <Typography variant="caption" color="error">

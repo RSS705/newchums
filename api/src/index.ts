@@ -4607,6 +4607,66 @@ app.patch("/admin/users/:id/subscription-plan", async (c) => {
   }
 });
 
+// ─── PATCH /admin/users/:id/role ─────────────────────────────────────────────
+//
+// Toggles a user's role between 'super_admin' and regular (NULL). Used by the
+// Admin column on the super-admin Users tab.
+
+app.patch("/admin/users/:id/role", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  const id = c.req.param("id");
+  if (!id) return c.json({ ok: false, error: { code: "INVALID_INPUT", message: "id required" } }, 400);
+
+  // Body: { role: 'super_admin' } promotes, { role: null } demotes. Anything
+  // else is rejected; the role column is intentionally narrow today.
+  let role: string | null;
+  try {
+    const body = await c.req.json<{ role?: string | null }>();
+    if (body.role === null || body.role === undefined || body.role === "") {
+      role = null;
+    } else if (typeof body.role === "string" && body.role === "super_admin") {
+      role = "super_admin";
+    } else {
+      return c.json(
+        { ok: false, error: { code: "INVALID_ROLE", message: "Role must be 'super_admin' or null" } },
+        400,
+      );
+    }
+  } catch {
+    return c.json({ ok: false, error: { code: "INVALID_INPUT", message: "JSON body required" } }, 400);
+  }
+
+  try {
+    const sql = getSql(c.env);
+    const existing = (await sql`
+      SELECT id, role FROM users WHERE id = ${id} LIMIT 1
+    `) as { id: string; role: string | null }[];
+    if (existing.length === 0) {
+      return c.json({ ok: false, error: { code: "NOT_FOUND" } }, 404);
+    }
+
+    const oldRole = existing[0].role;
+    if (oldRole === role) {
+      return c.json({ ok: true, role, changed: false });
+    }
+
+    // Prevent admins from demoting themselves out of admin and locking
+    // themselves out of admin tooling. Promotion (would never apply since
+    // you'd already be super_admin) is also a no-op safely.
+    if (id === admin.id && oldRole === "super_admin" && role !== "super_admin") {
+      return c.json({ ok: false, error: { code: "CANNOT_DEMOTE_SELF" } }, 400);
+    }
+
+    await sql`UPDATE users SET role = ${role} WHERE id = ${id}`;
+    return c.json({ ok: true, role, changed: true });
+  } catch (err) {
+    console.error("[PATCH /admin/users/:id/role]", err);
+    return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
+  }
+});
+
 // ─── Admin user diagnostics (chum metrics / feedback inspection) ─────────────
 
 /** GET /admin/users/:id/diagnostics, super-admin-only per-user metric diagnostics */

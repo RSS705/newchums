@@ -4849,8 +4849,11 @@ export default function EventDetailClient() {
         </AppCard>
       )}
 
-      {/* Plan Chat */}
-      {chatAccessible === true && !isCanceled && (
+      {/* Plan Chat. `chatEligible` is the live source of truth (host or
+          "going" RSVP). `chatAccessible` only confirms the prior fetch
+          succeeded; on its own it stays true after the user toggles their
+          RSVP to maybe/can't, leaving the card visible but unresponsive. */}
+      {chatEligible && chatAccessible === true && !isCanceled && (
         <AppCard id="plan-section-chat">
           <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
             <Typography

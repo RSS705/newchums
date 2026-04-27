@@ -16,6 +16,7 @@ import MenuItem from "@mui/material/MenuItem";
 import Paper from "@mui/material/Paper";
 import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
+import Switch from "@mui/material/Switch";
 import Table from "@mui/material/Table";
 import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
@@ -86,6 +87,9 @@ export default function AdminChumsClient() {
 
   // Track which user is currently having their plan changed (for loading state)
   const [planUpdatingId, setPlanUpdatingId] = useState<string | null>(null);
+
+  // Track which user is currently having their role toggled.
+  const [roleUpdatingId, setRoleUpdatingId] = useState<string | null>(null);
 
   const toast = useToast();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -180,6 +184,43 @@ export default function AdminChumsClient() {
       toast.error("Failed to update plan");
     } finally {
       setPlanUpdatingId(null);
+    }
+  }
+
+  async function handleAdminToggle(row: UserRow, makeAdmin: boolean) {
+    setRoleUpdatingId(row.id);
+    const nextRole = makeAdmin ? "super_admin" : null;
+    try {
+      const res = await apiFetch(`/admin/users/${row.id}/role`, {
+        auth: true,
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: nextRole }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setRows((prev) =>
+          prev.map((r) => (r.id === row.id ? { ...r, role: nextRole } : r)),
+        );
+        if (data.changed) {
+          toast.success(
+            makeAdmin
+              ? `${row.username ?? row.email} is now a Super Admin`
+              : `${row.username ?? row.email} is no longer a Super Admin`,
+          );
+        }
+      } else {
+        const code = data.error?.code ?? data.error;
+        if (code === "CANNOT_DEMOTE_SELF") {
+          toast.error("You can't remove your own Super Admin role");
+        } else {
+          toast.error("Failed to update role");
+        }
+      }
+    } catch {
+      toast.error("Failed to update role");
+    } finally {
+      setRoleUpdatingId(null);
     }
   }
 
@@ -296,6 +337,7 @@ export default function AdminChumsClient() {
                   </TableSortLabel>
                 </TableCell>
                 <TableCell sx={{ fontWeight: 600, display: { xs: "none", md: "table-cell" } }}>Plan</TableCell>
+                <TableCell sx={{ fontWeight: 600, display: { xs: "none", md: "table-cell" } }} align="center">Admin</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
                 <TableCell sx={{ fontWeight: 600 }} align="right">
                   Actions
@@ -305,13 +347,13 @@ export default function AdminChumsClient() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={7} align="center" sx={{ py: 5 }}>
+                  <TableCell colSpan={8} align="center" sx={{ py: 5 }}>
                     <CircularProgress size={28} />
                   </TableCell>
                 </TableRow>
               ) : sorted.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} align="center" sx={{ py: 5 }}>
+                  <TableCell colSpan={8} align="center" sx={{ py: 5 }}>
                     <Typography variant="body2" color="text.secondary">
                       {debouncedSearch ? "No users match your search." : "No users found."}
                     </Typography>
@@ -379,6 +421,19 @@ export default function AdminChumsClient() {
                         <MenuItem value="super_host">Super Host</MenuItem>
                         <MenuItem value="community_pro">Community Pro</MenuItem>
                       </Select>
+                    </TableCell>
+                    <TableCell sx={{ display: { xs: "none", md: "table-cell" } }} align="center">
+                      <Tooltip title={row.role === "super_admin" ? "Remove Super Admin role" : "Grant Super Admin role"}>
+                        <span>
+                          <Switch
+                            size="small"
+                            checked={row.role === "super_admin"}
+                            disabled={roleUpdatingId === row.id}
+                            onChange={(e) => handleAdminToggle(row, e.target.checked)}
+                            inputProps={{ "aria-label": `Toggle Super Admin for ${row.username ?? row.email}` }}
+                          />
+                        </span>
+                      </Tooltip>
                     </TableCell>
                     <TableCell>
                       <Chip
