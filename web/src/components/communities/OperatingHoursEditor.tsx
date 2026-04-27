@@ -1,11 +1,13 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Box from "@mui/material/Box";
 import Checkbox from "@mui/material/Checkbox";
+import Collapse from "@mui/material/Collapse";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import { TimePicker } from "@mui/x-date-pickers/TimePicker";
 import dayjs, { type Dayjs } from "dayjs";
 import { AppCard } from "@/components/ui";
@@ -24,11 +26,6 @@ type Props = {
   onChange: (next: OperatingHours | null) => void;
 };
 
-/**
- * Convert a stored `"HH:MM"` string to a Dayjs anchored to today, the shape
- * TimePicker expects. Invalid or empty strings return null so the picker
- * renders as empty (placeholder) rather than a bogus time.
- */
 function hhmmToDayjs(hhmm: string): Dayjs | null {
   if (!hhmm) return null;
   const [h, m] = hhmm.split(":").map((n) => Number(n));
@@ -36,10 +33,14 @@ function hhmmToDayjs(hhmm: string): Dayjs | null {
   return dayjs().hour(h).minute(m).second(0).millisecond(0);
 }
 
-/** Convert a picker Dayjs back to the stored zero-padded 24-hour `"HH:MM"`. */
 function dayjsToHhmm(d: Dayjs | null): string {
   if (!d || !d.isValid()) return "";
   return d.format("HH:mm");
+}
+
+function hasAnyHours(value: OperatingHours | null): boolean {
+  if (!value) return false;
+  return OPERATING_HOURS_DAY_CODES.some((d) => value[d] !== undefined);
 }
 
 /**
@@ -49,12 +50,27 @@ function dayjsToHhmm(d: Dayjs | null): string {
  * checkbox immediately adjacent so it reads as part of the same row (no
  * far-right detachment from a flex spacer).
  *
+ * Wrapped in a collapsible header so the form feels light by default. Auto-
+ * expands once in edit mode when an existing community is loaded with hours
+ * already set, so organizers can see what they have without an extra click.
+ *
  * Intentionally minimal: one open/close pair per day, closed flag,
  * optional per day. No split shifts, no multiple windows, no holiday
  * overrides.
  */
 export default function OperatingHoursEditor({ value, onChange }: Props) {
   const hours: OperatingHours = value ?? {};
+
+  const [open, setOpen] = useState(false);
+  // One-shot auto-expand for edit-mode loads that already have hours saved.
+  // After it fires once, manual collapse/expand is fully under user control.
+  const autoOpenedRef = useRef(false);
+  useEffect(() => {
+    if (!autoOpenedRef.current && hasAnyHours(value)) {
+      autoOpenedRef.current = true;
+      setOpen(true);
+    }
+  }, [value]);
 
   // Per-day memory of the most recent open/close pair. Kept in a ref (not
   // in the stored value and not in React state) so toggling Closed on then
@@ -67,8 +83,6 @@ export default function OperatingHoursEditor({ value, onChange }: Props) {
 
   const updateDay = (day: OperatingHoursDay, patch: (prev: OperatingHours) => OperatingHours) => {
     const next = patch({ ...hours });
-    // Normalize empty object back to null so the caller stores one canonical
-    // "no hours" shape.
     const hasAny = OPERATING_HOURS_DAY_CODES.some((d) => next[d] !== undefined);
     onChange(hasAny ? next : null);
   };
@@ -76,8 +90,6 @@ export default function OperatingHoursEditor({ value, onChange }: Props) {
   const handleClosedToggle = (day: OperatingHoursDay, closed: boolean) => {
     updateDay(day, (prev) => {
       if (closed) {
-        // Capture any currently-entered times before overwriting the entry
-        // with the closed flag, so unchecking Closed can restore them.
         const current = prev[day];
         if (isOpenEntry(current) && (current.open || current.close)) {
           rememberedRef.current[day] = { open: current.open, close: current.close };
@@ -88,7 +100,6 @@ export default function OperatingHoursEditor({ value, onChange }: Props) {
         if (remembered && (remembered.open || remembered.close)) {
           prev[day] = { open: remembered.open, close: remembered.close };
         } else {
-          // No prior times to restore, return to the "not set" state.
           delete prev[day];
         }
       }
@@ -102,9 +113,6 @@ export default function OperatingHoursEditor({ value, onChange }: Props) {
       const current = prev[day];
       const base = isOpenEntry(current) ? current : { open: "", close: "" };
       const updated = { ...base, [field]: nextTime };
-      // Remember the latest open/close pair on every edit. If the user
-      // later checks Closed, unchecking it restores exactly what they
-      // typed last, not a stale snapshot.
       if (updated.open || updated.close) {
         rememberedRef.current[day] = { open: updated.open, close: updated.close };
       }
@@ -119,17 +127,39 @@ export default function OperatingHoursEditor({ value, onChange }: Props) {
 
   return (
     <AppCard>
-      <Stack spacing={2}>
-        <Box>
+      <Box
+        onClick={() => setOpen((prev) => !prev)}
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setOpen((prev) => !prev);
+          }
+        }}
+        sx={{ display: "flex", alignItems: "flex-start", cursor: "pointer", userSelect: "none", gap: 1 }}
+      >
+        <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
-            Hours
+            Hours <Typography component="span" variant="body2" color="text.secondary" fontWeight={400}>(optional)</Typography>
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            Optional. Leave a day blank if you don&rsquo;t want to publish hours for it.
+            Add operating hours if your community has regular meeting times or open hours.
           </Typography>
         </Box>
+        <ExpandMoreRoundedIcon
+          sx={{
+            mt: 0.25,
+            transform: open ? "rotate(180deg)" : "rotate(0deg)",
+            transition: "transform 0.2s",
+            color: "text.secondary",
+          }}
+        />
+      </Box>
 
-        <Stack spacing={0.75}>
+      <Collapse in={open} unmountOnExit>
+        <Stack spacing={0.75} sx={{ pt: 2 }}>
           {OPERATING_HOURS_DAY_CODES.map((day) => {
             const entry = hours[day];
             const closed = isClosedEntry(entry);
@@ -150,10 +180,6 @@ export default function OperatingHoursEditor({ value, onChange }: Props) {
                   {OPERATING_HOURS_DAY_LABELS[day]}
                 </Typography>
                 {closed ? (
-                  // Closed state gets a single explicit pill instead of two
-                  // greyed-out pickers, reads as "closed" at a glance and
-                  // matches the width the two pickers would have taken so
-                  // rows don't visibly jump when toggled.
                   <Box
                     sx={{
                       width: { xs: "100%", sm: 328 },
@@ -218,16 +244,13 @@ export default function OperatingHoursEditor({ value, onChange }: Props) {
                   }
                   label="Closed"
                   slotProps={{ typography: { variant: "body2" } }}
-                  // No flex:1 on the preceding group, so the Closed control
-                  // sits immediately after the pickers / closed pill instead
-                  // of being pushed to the far right edge of the card.
                   sx={{ m: 0 }}
                 />
               </Stack>
             );
           })}
         </Stack>
-      </Stack>
+      </Collapse>
     </AppCard>
   );
 }
