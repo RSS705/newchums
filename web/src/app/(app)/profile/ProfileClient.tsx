@@ -189,7 +189,7 @@ export default function ProfileClient() {
   }, [fetchData]);
 
   // Silently re-fetch profile data when the user returns to a previously idle
-  // browser tab — but only when there are no unsaved changes.
+  // browser tab, but only when there are no unsaved changes.
   const isDirtyRef = useRef<() => boolean>(() => false);
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -880,10 +880,12 @@ export default function ProfileClient() {
         accept="image/jpeg,image/png,image/webp"
         style={{ display: "none" }}
         onChange={(e) => {
-          const file = e.target.files?.[0];
+          const input = e.target;
+          const file = input.files?.[0];
           if (!file) return;
           if (!ALLOWED_AVATAR_TYPES.includes(file.type)) {
             toast.error("Please use JPEG, PNG, or WebP.");
+            input.value = "";
             return;
           }
           const url = URL.createObjectURL(file);
@@ -891,6 +893,9 @@ export default function ProfileClient() {
           setCropZoom(1);
           setCropPosition({ x: 0, y: 0 });
           setCroppedAreaPixels(null);
+          // Reset so re-selecting the same file always fires change again,
+          // even if the cropper is dismissed without uploading.
+          input.value = "";
         }}
       />
       <Dialog
