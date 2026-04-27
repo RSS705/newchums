@@ -4419,6 +4419,11 @@ app.post("/admin/interests/:id/restore", async (c) => {
 
 // ─── GET /admin/users ─────────────────────────────────────────────────────────
 
+// Returns user rows enriched with the signals needed by the Super Admin Users
+// tab to spot people stuck in the signup / RSVP funnel:
+//   - email_verified_at, password_setup_pending, has_password: setup state
+//   - rsvp_count, hosted_count: plan activity (any RSVP or hosted plan)
+// All counts come from existing tables; no schema additions are required.
 type AdminUserRow = {
   id: string;
   created_at: string | null;
@@ -4430,6 +4435,11 @@ type AdminUserRow = {
   subscription_plan: string;
   is_suspended: boolean;
   suspended_at: string | null;
+  email_verified_at: string | null;
+  password_setup_pending: boolean;
+  has_password: boolean;
+  rsvp_count: number;
+  hosted_count: number;
 };
 
 app.get("/admin/users", async (c) => {
@@ -4443,19 +4453,31 @@ app.get("/admin/users", async (c) => {
 
     const rows = likePattern
       ? ((await sql`
-          SELECT id, created_at, last_active_at, email, username, name, role, subscription_plan, is_suspended, suspended_at
-          FROM users
+          SELECT
+            u.id, u.created_at, u.last_active_at, u.email, u.username, u.name, u.role, u.subscription_plan,
+            u.is_suspended, u.suspended_at, u.email_verified_at,
+            COALESCE(u.password_setup_pending, false) AS password_setup_pending,
+            (u.password_hash IS NOT NULL) AS has_password,
+            COALESCE((SELECT COUNT(*)::int FROM newchums.event_rsvps r WHERE r.user_id = u.id), 0) AS rsvp_count,
+            COALESCE((SELECT COUNT(*)::int FROM newchums.events e WHERE e.host_user_id = u.id), 0) AS hosted_count
+          FROM users u
           WHERE
-            LOWER(email) LIKE ${likePattern}
-            OR LOWER(COALESCE(username, '')) LIKE ${likePattern}
-            OR LOWER(COALESCE(name, '')) LIKE ${likePattern}
-            OR CAST(id AS TEXT) LIKE ${likePattern}
-          ORDER BY created_at DESC NULLS LAST
+            LOWER(u.email) LIKE ${likePattern}
+            OR LOWER(COALESCE(u.username, '')) LIKE ${likePattern}
+            OR LOWER(COALESCE(u.name, '')) LIKE ${likePattern}
+            OR CAST(u.id AS TEXT) LIKE ${likePattern}
+          ORDER BY u.created_at DESC NULLS LAST
         `) as AdminUserRow[])
       : ((await sql`
-          SELECT id, created_at, last_active_at, email, username, name, role, subscription_plan, is_suspended, suspended_at
-          FROM users
-          ORDER BY created_at DESC NULLS LAST
+          SELECT
+            u.id, u.created_at, u.last_active_at, u.email, u.username, u.name, u.role, u.subscription_plan,
+            u.is_suspended, u.suspended_at, u.email_verified_at,
+            COALESCE(u.password_setup_pending, false) AS password_setup_pending,
+            (u.password_hash IS NOT NULL) AS has_password,
+            COALESCE((SELECT COUNT(*)::int FROM newchums.event_rsvps r WHERE r.user_id = u.id), 0) AS rsvp_count,
+            COALESCE((SELECT COUNT(*)::int FROM newchums.events e WHERE e.host_user_id = u.id), 0) AS hosted_count
+          FROM users u
+          ORDER BY u.created_at DESC NULLS LAST
         `) as AdminUserRow[]);
 
     return c.json({ ok: true, users: rows });

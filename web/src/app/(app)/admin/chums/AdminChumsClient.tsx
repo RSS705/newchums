@@ -54,10 +54,92 @@ type UserRow = {
   subscription_plan: SubscriptionPlan;
   is_suspended: boolean;
   suspended_at: string | null;
+  email_verified_at: string | null;
+  password_setup_pending: boolean;
+  has_password: boolean;
+  rsvp_count: number;
+  hosted_count: number;
 };
 
 type SortField = "created_at" | "username" | "name" | "email";
 type SortDir = "asc" | "desc";
+
+type SetupStatus =
+  | "suspended"
+  | "email_unverified"
+  | "password_pending"
+  | "no_plan_activity"
+  | "active";
+
+type SetupStatusInfo = {
+  key: SetupStatus;
+  label: string;
+  tooltip: string;
+  color: "default" | "primary" | "success" | "error" | "warning" | "info";
+  variant: "filled" | "outlined";
+};
+
+function deriveSetupStatus(row: UserRow): SetupStatusInfo {
+  if (row.is_suspended) {
+    return {
+      key: "suspended",
+      label: "Suspended",
+      tooltip: "Account is suspended. Login is blocked.",
+      color: "error",
+      variant: "outlined",
+    };
+  }
+  if (!row.email_verified_at) {
+    return {
+      key: "email_unverified",
+      label: "Email unverified",
+      tooltip:
+        "User submitted their email but never clicked the magic link. Likely dropped off before verification.",
+      color: "error",
+      variant: "filled",
+    };
+  }
+  if (row.password_setup_pending) {
+    return {
+      key: "password_pending",
+      label: "Password setup pending",
+      tooltip:
+        "Lightweight plan signup completed verification but has not set a password yet.",
+      color: "warning",
+      variant: "filled",
+    };
+  }
+  if (row.rsvp_count === 0 && row.hosted_count === 0) {
+    return {
+      key: "no_plan_activity",
+      label: "No plan activity",
+      tooltip:
+        "Verified account with no RSVPs and no hosted plans. May have signed up from a share or invite link without RSVPing.",
+      color: "default",
+      variant: "filled",
+    };
+  }
+  return {
+    key: "active",
+    label: "Active",
+    tooltip: "Verified, password set, and has plan activity.",
+    color: "success",
+    variant: "filled",
+  };
+}
+
+function formatPlanActivity(row: UserRow): string {
+  const total = row.rsvp_count + row.hosted_count;
+  if (total === 0) return "No plan activity";
+  const parts: string[] = [];
+  if (row.rsvp_count > 0) {
+    parts.push(`${row.rsvp_count} RSVP${row.rsvp_count === 1 ? "" : "s"}`);
+  }
+  if (row.hosted_count > 0) {
+    parts.push(`${row.hosted_count} hosted`);
+  }
+  return parts.join(" · ");
+}
 
 function formatDate(iso: string | null): string {
   if (!iso) return "-";
@@ -373,7 +455,7 @@ export default function AdminChumsClient() {
                         {formatDate(row.created_at)}
                       </Typography>
                       <Typography variant="caption" color="text.disabled">
-                        Last login: {formatDate(row.last_active_at)}
+                        Last active: {formatDate(row.last_active_at)}
                       </Typography>
                     </TableCell>
                     <TableCell>
@@ -436,13 +518,30 @@ export default function AdminChumsClient() {
                       </Tooltip>
                     </TableCell>
                     <TableCell>
-                      <Chip
-                        label={row.is_suspended ? "Suspended" : "Active"}
-                        size="small"
-                        color={row.is_suspended ? "error" : "success"}
-                        variant={row.is_suspended ? "outlined" : "filled"}
-                        sx={{ fontSize: "0.75rem" }}
-                      />
+                      {(() => {
+                        const status = deriveSetupStatus(row);
+                        const activity = formatPlanActivity(row);
+                        const noActivity = row.rsvp_count + row.hosted_count === 0;
+                        return (
+                          <Stack spacing={0.25} alignItems="flex-start">
+                            <Tooltip title={status.tooltip} placement="top">
+                              <Chip
+                                label={status.label}
+                                size="small"
+                                color={status.color}
+                                variant={status.variant}
+                                sx={{ fontSize: "0.75rem" }}
+                              />
+                            </Tooltip>
+                            <Typography
+                              variant="caption"
+                              color={noActivity ? "text.disabled" : "text.secondary"}
+                            >
+                              {activity}
+                            </Typography>
+                          </Stack>
+                        );
+                      })()}
                     </TableCell>
                     <TableCell align="right">
                       <Stack direction="row" spacing={0.5} justifyContent="flex-end">

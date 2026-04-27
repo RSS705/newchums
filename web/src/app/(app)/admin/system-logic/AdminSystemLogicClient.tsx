@@ -491,6 +491,21 @@ export default function AdminSystemLogicClient() {
           Super admins can mark an account suspended. Login is refused with an <em>AccountSuspended</em> error; the user sees a suspended message
           rather than landing in the app.
         </Bullet>
+
+        <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
+          Funnel visibility in the Users tab
+        </Typography>
+        <Bullet>
+          The Users table shows a setup-status chip per row, derived from existing fields (no extra tracking). Priority order:
+          <strong> Suspended</strong> &rsaquo; <strong>Email unverified</strong> (<code>email_verified_at IS NULL</code>) &rsaquo;
+          <strong> Password setup pending</strong> (<code>password_setup_pending = true</code>) &rsaquo;
+          <strong> No plan activity</strong> (verified, has password, zero RSVPs and zero hosted plans) &rsaquo; <strong>Active</strong>.
+        </Bullet>
+        <Bullet>
+          A small subtitle under the chip shows plan activity (e.g. <em>3 RSVPs &middot; 1 hosted</em> or <em>No plan activity</em>) so a stuck
+          lightweight signup is obvious at a glance. <em>Email unverified</em> and <em>Password setup pending</em> are the funnel drop-off signals
+          for share / invite-link visitors.
+        </Bullet>
       </CollapsibleSection>
 
       <CollapsibleSection title="Subscriptions and premium access" subtitle="Free, Super Host, Community Pro, what&rsquo;s actually gated today">
