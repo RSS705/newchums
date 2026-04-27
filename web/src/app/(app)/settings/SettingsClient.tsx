@@ -46,6 +46,7 @@ export default function SettingsClient() {
   const [isHiddenChumList, setIsHiddenChumList] = useState(false);
   const [isHiddenFromChumLists, setIsHiddenFromChumLists] = useState(false);
   const [isHiddenShoutouts, setIsHiddenShoutouts] = useState(false);
+  const [isHiddenCommunities, setIsHiddenCommunities] = useState(false);
   const [tutorialNudgesOff, setTutorialNudgesOff] = useState(false);
   const [privacyLoading, setPrivacyLoading] = useState(false);
   const privacySaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -67,6 +68,7 @@ export default function SettingsClient() {
         setIsHiddenChumList(data.profile.is_hidden_chum_list ?? false);
         setIsHiddenFromChumLists(data.profile.is_hidden_from_chum_lists ?? false);
         setIsHiddenShoutouts(data.profile.is_hidden_shoutouts ?? false);
+        setIsHiddenCommunities(data.profile.is_hidden_communities ?? false);
         setTutorialNudgesOff(data.profile.tutorial_nudges_off ?? false);
       }
     } finally {
@@ -167,6 +169,7 @@ export default function SettingsClient() {
       hiddenChumList: boolean,
       hiddenFromChumLists: boolean,
       hiddenShoutouts: boolean,
+      hiddenCommunities: boolean,
     ) => {
       setPrivacyLoading(true);
       try {
@@ -180,6 +183,7 @@ export default function SettingsClient() {
             is_hidden_chum_list: hiddenChumList,
             is_hidden_from_chum_lists: hiddenFromChumLists,
             is_hidden_shoutouts: hiddenShoutouts,
+            is_hidden_communities: hiddenCommunities,
           }),
         });
         const data = await res.json();
@@ -205,11 +209,12 @@ export default function SettingsClient() {
       hiddenChumList: boolean,
       hiddenFromChumLists: boolean,
       hiddenShoutouts: boolean,
+      hiddenCommunities: boolean,
     ) => {
       if (privacySaveTimeoutRef.current) clearTimeout(privacySaveTimeoutRef.current);
       privacySaveTimeoutRef.current = setTimeout(() => {
         privacySaveTimeoutRef.current = null;
-        persistPrivacy(hiddenFromSearch, hiddenFromExternalIndexing, hiddenAge, hiddenChumList, hiddenFromChumLists, hiddenShoutouts);
+        persistPrivacy(hiddenFromSearch, hiddenFromExternalIndexing, hiddenAge, hiddenChumList, hiddenFromChumLists, hiddenShoutouts, hiddenCommunities);
       }, 500);
     },
     [persistPrivacy]
@@ -217,32 +222,37 @@ export default function SettingsClient() {
 
   const setPrivacyHiddenFromSearch = (enabled: boolean) => {
     setIsHiddenFromSearch(enabled);
-    schedulePrivacySave(enabled, isHiddenFromExternalIndexing, isHiddenAge, isHiddenChumList, isHiddenFromChumLists, isHiddenShoutouts);
+    schedulePrivacySave(enabled, isHiddenFromExternalIndexing, isHiddenAge, isHiddenChumList, isHiddenFromChumLists, isHiddenShoutouts, isHiddenCommunities);
   };
 
   const setPrivacyHiddenFromExternalIndexing = (enabled: boolean) => {
     setIsHiddenFromExternalIndexing(enabled);
-    schedulePrivacySave(isHiddenFromSearch, enabled, isHiddenAge, isHiddenChumList, isHiddenFromChumLists, isHiddenShoutouts);
+    schedulePrivacySave(isHiddenFromSearch, enabled, isHiddenAge, isHiddenChumList, isHiddenFromChumLists, isHiddenShoutouts, isHiddenCommunities);
   };
 
   const setPrivacyHiddenAge = (enabled: boolean) => {
     setIsHiddenAge(enabled);
-    schedulePrivacySave(isHiddenFromSearch, isHiddenFromExternalIndexing, enabled, isHiddenChumList, isHiddenFromChumLists, isHiddenShoutouts);
+    schedulePrivacySave(isHiddenFromSearch, isHiddenFromExternalIndexing, enabled, isHiddenChumList, isHiddenFromChumLists, isHiddenShoutouts, isHiddenCommunities);
   };
 
   const setPrivacyHiddenChumList = (enabled: boolean) => {
     setIsHiddenChumList(enabled);
-    schedulePrivacySave(isHiddenFromSearch, isHiddenFromExternalIndexing, isHiddenAge, enabled, isHiddenFromChumLists, isHiddenShoutouts);
+    schedulePrivacySave(isHiddenFromSearch, isHiddenFromExternalIndexing, isHiddenAge, enabled, isHiddenFromChumLists, isHiddenShoutouts, isHiddenCommunities);
   };
 
   const setPrivacyHiddenFromChumLists = (enabled: boolean) => {
     setIsHiddenFromChumLists(enabled);
-    schedulePrivacySave(isHiddenFromSearch, isHiddenFromExternalIndexing, isHiddenAge, isHiddenChumList, enabled, isHiddenShoutouts);
+    schedulePrivacySave(isHiddenFromSearch, isHiddenFromExternalIndexing, isHiddenAge, isHiddenChumList, enabled, isHiddenShoutouts, isHiddenCommunities);
   };
 
   const setPrivacyHiddenShoutouts = (enabled: boolean) => {
     setIsHiddenShoutouts(enabled);
-    schedulePrivacySave(isHiddenFromSearch, isHiddenFromExternalIndexing, isHiddenAge, isHiddenChumList, isHiddenFromChumLists, enabled);
+    schedulePrivacySave(isHiddenFromSearch, isHiddenFromExternalIndexing, isHiddenAge, isHiddenChumList, isHiddenFromChumLists, enabled, isHiddenCommunities);
+  };
+
+  const setPrivacyHiddenCommunities = (enabled: boolean) => {
+    setIsHiddenCommunities(enabled);
+    schedulePrivacySave(isHiddenFromSearch, isHiddenFromExternalIndexing, isHiddenAge, isHiddenChumList, isHiddenFromChumLists, isHiddenShoutouts, enabled);
   };
 
   useEffect(() => {
@@ -428,6 +438,14 @@ export default function SettingsClient() {
             description="The Shout-outs section won't appear on your public profile. Notes you've already received are still kept on your account."
             enabled={isHiddenShoutouts}
             onToggle={setPrivacyHiddenShoutouts}
+            showDivider={true}
+            disabled={privacyLoading}
+          />
+          <PrivacyToggleRow
+            title="Hide my communities from my public profile"
+            description="The Communities section won't appear on your public profile."
+            enabled={isHiddenCommunities}
+            onToggle={setPrivacyHiddenCommunities}
             showDivider={true}
             disabled={privacyLoading}
           />

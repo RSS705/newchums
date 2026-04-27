@@ -130,6 +130,7 @@ The following flows run in the API worker; the web app calls the API via `NEXT_P
 | Chums | `GET /chums`, `GET /chums/search`, `GET /chums/check/:userId`, `POST /chums/:userId`, `POST /chums/private`, `DELETE /chums/:id`, `PATCH /chums/:contactId/note` | Bearer JWT |
 | Chum invites | `POST /chums/invite`, `POST /chums/invite/accept` | Bearer JWT |
 | Public Chums | `GET /public/users/:handle/chums` | none |
+| Public Communities | `GET /public/users/:handle/communities` | none. Lists the profile owner's active community memberships (closed communities and non-active memberships excluded). Returns `{ ok: true, communities: [], hidden: true }` when the owner has set `users.is_hidden_communities = true`. Private communities appear in the list when the owner is a member; click-through to `/communities/:slug` still applies normal access rules. |
 | Events (plans) | `POST /events`, `GET /events/mine`, `GET /events/:id` (optional auth, returns `accessState` + `shareToken`), `GET /events/explore` (auth), `GET /events/explore/public` (no auth), `PATCH /events/:id`, `POST /events/:id/cancel` | Bearer JWT (detail: optional; accepts `invite_token` or `share_token`); explore/public: no auth |
 | Lightweight plan signup | `POST /auth/plan-signup/request`, `POST /auth/magic-link/consume` | none (rate-limited + Turnstile) |
 | Explore support | `GET /explore/local-signal` | Bearer JWT |

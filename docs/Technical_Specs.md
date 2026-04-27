@@ -532,8 +532,9 @@ Users manage privacy preferences in **Settings** (`/settings`). Stored in the `u
 | `is_hidden_age` | Hide my age | Age field is not shown on the public profile (even for logged-in viewers). |
 | `is_hidden_chum_list` | Hide my connections from my public profile | When ON, the Connections section is not rendered on the user's public profile. Private contact lists are unaffected. |
 | `is_hidden_from_chum_lists` | Hide me from appearing on other people's connection lists | When ON, the user is excluded from `GET /public/users/:handle/chums` responses. They still appear on private contact lists of users who have already added them. |
+| `is_hidden_communities` | Hide my communities from my public profile | When ON, `GET /public/users/:handle/communities` returns `{ ok: true, communities: [], hidden: true }` and the Communities section does not render on the user's public profile. Their actual community memberships are unaffected. |
 
-**Implementation notes:** UI: `web/src/app/(app)/settings/PrivacyToggleRow.tsx`, `SettingsClient.tsx`. API: `GET /profile` and `PUT /profile` in `api/src/index.ts`. Schema: migrations 013 (`is_hidden_from_search`, `is_hidden_from_external_indexing`), 014 (`is_hidden_age`), 020 (`is_hidden_chum_list`, `is_hidden_from_chum_lists`).
+**Implementation notes:** UI: `web/src/app/(app)/settings/PrivacyToggleRow.tsx`, `SettingsClient.tsx`. API: `GET /profile` and `PUT /profile` in `api/src/index.ts`. Schema: migrations 013 (`is_hidden_from_search`, `is_hidden_from_external_indexing`), 014 (`is_hidden_age`), 020 (`is_hidden_chum_list`, `is_hidden_from_chum_lists`), 090 (`is_hidden_communities`).
 
 **Logged-out viewer privacy rules:**
 

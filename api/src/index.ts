@@ -326,7 +326,8 @@ app.get("/public/users/:handle", async (c) => {
         COALESCE(u.is_hidden_age, false) AS is_hidden_age,
         COALESCE(u.is_hidden_from_external_indexing, false) AS is_hidden_from_external_indexing,
         COALESCE(u.is_hidden_chum_list, false) AS is_hidden_chum_list,
-        COALESCE(u.is_hidden_shoutouts, false) AS is_hidden_shoutouts
+        COALESCE(u.is_hidden_shoutouts, false) AS is_hidden_shoutouts,
+        COALESCE(u.is_hidden_communities, false) AS is_hidden_communities
       FROM newchums.users u
       WHERE u.username_norm = ${handleNorm}
         AND u.username IS NOT NULL
@@ -344,6 +345,7 @@ app.get("/public/users/:handle", async (c) => {
       is_hidden_from_external_indexing: boolean;
       is_hidden_chum_list: boolean;
       is_hidden_shoutouts: boolean;
+      is_hidden_communities: boolean;
     }>;
     const user = userRows[0];
     if (!user) {
@@ -399,6 +401,7 @@ app.get("/public/users/:handle", async (c) => {
         is_hidden_from_external_indexing: user.is_hidden_from_external_indexing ?? false,
         is_hidden_chum_list: user.is_hidden_chum_list ?? false,
         is_hidden_shoutouts: user.is_hidden_shoutouts ?? false,
+        is_hidden_communities: user.is_hidden_communities ?? false,
       },
     });
   } catch (err) {
@@ -2637,6 +2640,7 @@ app.get("/profile", async (c) => {
         COALESCE(is_hidden_chum_list, false) AS is_hidden_chum_list,
         COALESCE(is_hidden_from_chum_lists, false) AS is_hidden_from_chum_lists,
         COALESCE(is_hidden_shoutouts, false) AS is_hidden_shoutouts,
+        COALESCE(is_hidden_communities, false) AS is_hidden_communities,
         COALESCE(tutorial_nudges_off, false) AS tutorial_nudges_off
       FROM newchums.users WHERE id = ${appUserId} LIMIT 1
     `) as Array<{
@@ -2658,6 +2662,7 @@ app.get("/profile", async (c) => {
       is_hidden_chum_list: boolean;
       is_hidden_from_chum_lists: boolean;
       is_hidden_shoutouts: boolean;
+      is_hidden_communities: boolean;
       tutorial_nudges_off: boolean;
     }>;
     const userInfo = userRows[0];
@@ -2709,6 +2714,7 @@ app.get("/profile", async (c) => {
     const isHiddenChumList = userInfo?.is_hidden_chum_list ?? false;
     const isHiddenFromChumLists = userInfo?.is_hidden_from_chum_lists ?? false;
     const isHiddenShoutouts = userInfo?.is_hidden_shoutouts ?? false;
+    const isHiddenCommunities = userInfo?.is_hidden_communities ?? false;
     const tutorialNudgesOff = userInfo?.tutorial_nudges_off ?? false;
     const role = userInfo?.role ?? null;
     const subscriptionPlan = userInfo?.subscription_plan ?? "free";
@@ -2744,6 +2750,7 @@ app.get("/profile", async (c) => {
           is_hidden_chum_list: isHiddenChumList,
           is_hidden_from_chum_lists: isHiddenFromChumLists,
           is_hidden_shoutouts: isHiddenShoutouts,
+          is_hidden_communities: isHiddenCommunities,
           tutorial_nudges_off: tutorialNudgesOff,
           role,
           subscription_plan: subscriptionPlan,
@@ -2778,6 +2785,7 @@ app.get("/profile", async (c) => {
         is_hidden_chum_list: isHiddenChumList,
         is_hidden_from_chum_lists: isHiddenFromChumLists,
         is_hidden_shoutouts: isHiddenShoutouts,
+        is_hidden_communities: isHiddenCommunities,
         tutorial_nudges_off: tutorialNudgesOff,
         role,
         subscription_plan: subscriptionPlan,
@@ -2832,6 +2840,7 @@ app.put("/profile", async (c) => {
       is_hidden_chum_list?: boolean;
       is_hidden_from_chum_lists?: boolean;
       is_hidden_shoutouts?: boolean;
+      is_hidden_communities?: boolean;
     };
 
     if ("date_of_birth" in body && body.date_of_birth !== undefined) {
@@ -3116,6 +3125,10 @@ app.put("/profile", async (c) => {
     if ("is_hidden_shoutouts" in body && body.is_hidden_shoutouts !== undefined) {
       const val = body.is_hidden_shoutouts === true;
       txQueries.push(sql`UPDATE newchums.users SET is_hidden_shoutouts = ${val} WHERE id = ${appUserId}`);
+    }
+    if ("is_hidden_communities" in body && body.is_hidden_communities !== undefined) {
+      const val = body.is_hidden_communities === true;
+      txQueries.push(sql`UPDATE newchums.users SET is_hidden_communities = ${val} WHERE id = ${appUserId}`);
     }
     if ("gender" in body && body.gender !== undefined) {
       const genderVal = body.gender != null && body.gender !== "" ? String(body.gender) : null;
@@ -6716,6 +6729,75 @@ app.get("/public/users/:handle/chums", async (c) => {
     return c.json({ ok: true, chums, total, hasMore: offset + limit < total });
   } catch (err) {
     console.error("[GET /public/users/:handle/chums]", err);
+    return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
+  }
+});
+
+/** GET /public/users/:handle/communities, public-facing list of the profile
+ *  owner's active community memberships. Respects users.is_hidden_communities.
+ *  Auth optional. Closed communities and non-active memberships are excluded.
+ *  For private communities, only safe preview-style fields are returned (the
+ *  same surface area /communities/:slug already exposes on its restricted
+ *  response): id, slug, name, avatar_url, visibility, is_online, member_count,
+ *  hobby tags. Click-through to /communities/[slug] still enforces normal
+ *  community access rules. */
+app.get("/public/users/:handle/communities", async (c) => {
+  const handleParam = c.req.param("handle")?.trim();
+  if (!handleParam) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+  const handleNorm = handleParam.toLowerCase().trim();
+  try {
+    const sql = getSql(c.env);
+    const ownerRows = (await sql`
+      SELECT id, COALESCE(is_hidden_communities, false) AS is_hidden_communities
+      FROM newchums.users
+      WHERE username_norm = ${handleNorm} AND username IS NOT NULL
+      LIMIT 1
+    `) as { id: string; is_hidden_communities: boolean }[];
+    const owner = ownerRows[0];
+    if (!owner) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    if (owner.is_hidden_communities) {
+      return c.json({ ok: true, communities: [], hidden: true });
+    }
+    const rows = (await sql`
+      SELECT c.id, c.slug, c.name, c.avatar_key, c.visibility, c.is_online,
+        (SELECT COUNT(*)::int FROM newchums.community_members cm2
+          WHERE cm2.community_id = c.id AND cm2.status = 'active') AS member_count,
+        (SELECT COALESCE(json_agg(json_build_object('name', ii.name, 'slug', ii.slug)
+                                  ORDER BY ii.sort_order, ii.name), '[]'::json)
+          FROM newchums.community_interests ci
+          JOIN newchums.interests ii ON ii.id = ci.interest_id AND ii.is_deleted = false
+          WHERE ci.community_id = c.id) AS hobbies
+      FROM newchums.community_members cm
+      JOIN newchums.communities c ON c.id = cm.community_id
+      WHERE cm.user_id = ${owner.id}
+        AND cm.status = 'active'
+        AND COALESCE(c.status, 'active') = 'active'
+      ORDER BY c.name ASC
+    `) as Array<{
+      id: string;
+      slug: string;
+      name: string;
+      avatar_key: string | null;
+      visibility: string;
+      is_online: boolean | null;
+      member_count: number;
+      hobbies: { name: string; slug: string }[] | null;
+    }>;
+    const communities = rows.map((r) => ({
+      id: r.id,
+      slug: r.slug,
+      name: r.name,
+      avatarUrl: r.avatar_key && c.env.MEDIA_BUCKET
+        ? `/communities/${r.id}/avatar?v=0`
+        : null,
+      visibility: r.visibility,
+      isOnline: r.is_online === true,
+      memberCount: r.member_count,
+      hobbies: Array.isArray(r.hobbies) ? r.hobbies : [],
+    }));
+    return c.json({ ok: true, communities });
+  } catch (err) {
+    console.error("[GET /public/users/:handle/communities]", err);
     return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
   }
 });

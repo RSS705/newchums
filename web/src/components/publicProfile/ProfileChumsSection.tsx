@@ -1,8 +1,7 @@
 "use client";
 
 import Box from "@mui/material/Box";
-import Button from "@mui/material/Button";
-import CircularProgress from "@mui/material/CircularProgress";
+import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
@@ -79,8 +78,6 @@ export default function ProfileChumsSection({ ownerHandle, viewerLoggedIn }: Pro
     fetchPage(page);
   }, [fetchPage, page]);
 
-  // Return nothing while loading, on error, or when there are no chums.
-  // The AppCard wrapper lives here so we never render an empty card.
   if (
     fetchState.status === "loading" ||
     fetchState.status === "error" ||
@@ -95,16 +92,31 @@ export default function ProfileChumsSection({ ownerHandle, viewerLoggedIn }: Pro
 
   return (
     <AppCard sx={{ borderRadius: { xs: 2, sm: 2.5 }, overflow: "hidden" }}>
-      <Stack spacing={1.5}>
-        <Typography variant="h6" fontWeight={700} sx={{ fontSize: { xs: "1.0625rem", sm: "1.125rem" } }}>
-          Chums
-        </Typography>
+      <Stack spacing={2}>
+        <Stack direction="row" alignItems="baseline" spacing={1}>
+          <Typography variant="h6" fontWeight={700} sx={{ fontSize: { xs: "1.0625rem", sm: "1.125rem" } }}>
+            Chums
+          </Typography>
+          {/* Subtle total-count badge differentiates the section header from
+              Communities (which omits a count, since rows enumerate visibly). */}
+          <Typography
+            variant="caption"
+            sx={{
+              color: "text.secondary",
+              fontVariantNumeric: "tabular-nums",
+              fontSize: "0.8125rem",
+            }}
+          >
+            {total}
+          </Typography>
+        </Stack>
 
         <Box
           sx={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(80px, 1fr))",
-            gap: { xs: 1.5, sm: 2 },
+            gridTemplateColumns: "repeat(auto-fill, minmax(96px, 1fr))",
+            columnGap: { xs: 2, sm: 2.5 },
+            rowGap: { xs: 2.25, sm: 2.5 },
           }}
         >
           {chums.map((chum) => {
@@ -113,7 +125,7 @@ export default function ProfileChumsSection({ ownerHandle, viewerLoggedIn }: Pro
             const displayLabel = chum.handle ?? chum.displayName;
 
             const inner = (
-              <Stack spacing={0.5} alignItems="center">
+              <Stack spacing={0.75} alignItems="center">
                 <UserAvatar
                   src={chum.avatarUrl ? `${avatarBaseUrl}${chum.avatarUrl}` : null}
                   name={chum.displayName}
@@ -121,9 +133,10 @@ export default function ProfileChumsSection({ ownerHandle, viewerLoggedIn }: Pro
                   size={64}
                 />
                 <Typography
-                  variant="caption"
-                  fontWeight={600}
                   sx={{
+                    fontSize: "0.8125rem",
+                    fontWeight: 500,
+                    lineHeight: 1.3,
                     textAlign: "center",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
@@ -147,15 +160,17 @@ export default function ProfileChumsSection({ ownerHandle, viewerLoggedIn }: Pro
                     sx={{
                       display: "block",
                       textDecoration: "none",
-                      borderRadius: 1,
-                      p: 0.5,
+                      borderRadius: 1.5,
+                      px: 0.5,
+                      py: 0.75,
+                      transition: "background-color 0.15s ease",
                       "&:hover": { bgcolor: "action.hover" },
                     }}
                   >
                     {inner}
                   </Box>
                 ) : (
-                  <Box sx={{ p: 0.5 }}>{inner}</Box>
+                  <Box sx={{ px: 0.5, py: 0.75 }}>{inner}</Box>
                 )}
               </Box>
             );
@@ -163,30 +178,51 @@ export default function ProfileChumsSection({ ownerHandle, viewerLoggedIn }: Pro
         </Box>
 
         {totalPages > 1 && (
-          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ pt: 0.5 }}>
-            <Button
-              variant="text"
-              size="small"
-              startIcon={<ChevronLeftRoundedIcon />}
-              disabled={!hasPrev}
-              onClick={() => setPage((p) => p - 1)}
-              sx={{ color: "text.secondary", fontSize: "0.8125rem" }}
+          <Stack
+            direction="row"
+            alignItems="center"
+            justifyContent="flex-end"
+            spacing={0.5}
+            sx={{ mt: 0.5 }}
+          >
+            <Typography
+              variant="caption"
+              sx={{
+                color: "text.secondary",
+                fontVariantNumeric: "tabular-nums",
+                px: 0.5,
+              }}
             >
-              Previous
-            </Button>
-            <Typography variant="caption" color="text.secondary">
               {page + 1} / {totalPages}
             </Typography>
-            <Button
-              variant="text"
+            <IconButton
               size="small"
-              endIcon={<ChevronRightRoundedIcon />}
+              disabled={!hasPrev}
+              onClick={() => setPage((p) => p - 1)}
+              aria-label="Previous page"
+              sx={{
+                width: 28,
+                height: 28,
+                color: "text.secondary",
+                "&:hover": { color: "text.primary" },
+              }}
+            >
+              <ChevronLeftRoundedIcon sx={{ fontSize: "1.125rem" }} />
+            </IconButton>
+            <IconButton
+              size="small"
               disabled={!hasMore}
               onClick={() => setPage((p) => p + 1)}
-              sx={{ color: "text.secondary", fontSize: "0.8125rem" }}
+              aria-label="Next page"
+              sx={{
+                width: 28,
+                height: 28,
+                color: "text.secondary",
+                "&:hover": { color: "text.primary" },
+              }}
             >
-              Next
-            </Button>
+              <ChevronRightRoundedIcon sx={{ fontSize: "1.125rem" }} />
+            </IconButton>
           </Stack>
         )}
       </Stack>

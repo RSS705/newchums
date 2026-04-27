@@ -13,6 +13,7 @@ import AttendanceRecordSection from "./AttendanceRecordSection";
 import ProfileHeaderSection from "./ProfileHeaderSection";
 import ProfileBioSection from "./ProfileBioSection";
 import ProfileChumsSection from "./ProfileChumsSection";
+import ProfileCommunitiesSection from "./ProfileCommunitiesSection";
 import ProfileHobbiesSection from "./ProfileHobbiesSection";
 import PublicProfileShoutoutsSection from "./PublicProfileShoutoutsSection";
 
@@ -28,6 +29,7 @@ export type PublicProfileUser = {
   avatarUrl: string | null;
   is_hidden_chum_list: boolean;
   is_hidden_shoutouts: boolean;
+  is_hidden_communities: boolean;
 };
 
 export type ChumAction = {
@@ -215,6 +217,14 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
       {/* Public connections section, self-contained card, hidden if owner toggled it off or list is empty */}
       {ownerHandleSlug && !user.is_hidden_chum_list && (
         <ProfileChumsSection ownerHandle={ownerHandleSlug} viewerLoggedIn={viewerLoggedIn} />
+      )}
+
+      {/* Communities section, self-contained card, hidden if owner toggled it off,
+          if the user has no active memberships, or all of theirs are in closed
+          communities. Click-through to /communities/[slug] respects existing
+          private-community access rules. */}
+      {ownerHandleSlug && !user.is_hidden_communities && (
+        <ProfileCommunitiesSection ownerHandle={ownerHandleSlug} viewerLoggedIn={viewerLoggedIn} />
       )}
 
       {/* Sign-in / sign-up CTA for logged-out viewers */}
