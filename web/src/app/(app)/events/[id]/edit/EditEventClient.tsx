@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type WheelEvent } from "react";
 import Box from "@mui/material/Box";
 import CircularProgress from "@mui/material/CircularProgress";
 import Dialog from "@mui/material/Dialog";
@@ -677,7 +677,11 @@ export default function EditEventClient() {
             type="number"
             value={maxSeats}
             onChange={(e) => setMaxSeats(e.target.value)}
-            inputProps={{ min: 1 }}
+            // Disable scroll-wheel value changes, see CreateEventClient seat field for context.
+            inputProps={{
+              min: 1,
+              onWheel: (e: WheelEvent<HTMLInputElement>) => e.currentTarget.blur(),
+            }}
             helperText="Include yourself in the count"
           />
           {maxSeats && Number(maxSeats) >= 1 && (

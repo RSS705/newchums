@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type WheelEvent } from "react";
 import Box from "@mui/material/Box";
 
 import CircularProgress from "@mui/material/CircularProgress";
@@ -652,7 +652,15 @@ export default function CreateEventClient() {
                 error={!!errors.maxSeats}
                 helperText={errors.maxSeats ?? "Include yourself in the count"}
                 type="number"
-                inputProps={{ min: 1, max: 500 }}
+                // Disable scroll-wheel value changes. Browsers' default behaviour for
+                // type=number is to decrement/increment on wheel events while focused,
+                // which has silently set seats to 1 (the min) when hosts scrolled the
+                // page after typing a value. Blurring on wheel preserves what they typed.
+                inputProps={{
+                  min: 1,
+                  max: 500,
+                  onWheel: (e: WheelEvent<HTMLInputElement>) => e.currentTarget.blur(),
+                }}
                 sx={{ minWidth: { xs: "100%", sm: 260 } }}
               />
             </Box>

@@ -201,11 +201,10 @@ export default function PlanSignupCard({
             Check your email
           </Typography>
           <Typography variant="body1" color="text.primary">
-            We sent a verification link to <strong>{status.email}</strong>.
-            Open it to finish setting up your account, then you&apos;ll land
-            back on{" "}
-            {planTitle ? <strong>{planTitle}</strong> : "the plan"} where you
-            can choose your RSVP.
+            Open the link we sent to <strong>{status.email}</strong>.
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            You&apos;ll come right back here after verifying.
           </Typography>
           <Typography variant="caption" color="text.secondary">
             Didn&apos;t see it? Check your spam or promotions folder.
@@ -289,9 +288,7 @@ export default function PlanSignupCard({
             {planTitle ? `RSVP to ${planTitle}` : "RSVP to this plan"}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Just your email and date of birth to get you in. We&apos;ll send a
-            one-click link to verify your address and bring you right back to
-            this plan to RSVP. You can set a password once you&apos;re in.
+            Enter your email and birthday to continue.
           </Typography>
         </Box>
 
@@ -374,7 +371,7 @@ export default function PlanSignupCard({
           }
           fullWidth
         >
-          {status.kind === "submitting" ? "Sending your link..." : "Email me a sign-in link"}
+          {status.kind === "submitting" ? "Sending..." : "Continue to RSVP"}
         </AppButton>
 
         {showSignInHint && (

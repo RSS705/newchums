@@ -78,6 +78,7 @@ import { htmlToPlainText } from "./lib/htmlToPlainText";
 import {
   buildEmailEventLocation,
   deriveApproxArea,
+  joinNameAndAddress,
   type EmailLocationInput,
   type EmailLocationRole,
 } from "./lib/locationFormat";
@@ -8826,15 +8827,11 @@ const VALID_LOCATION_TYPE = ["in_person", "online"] as const;
 const VALID_LOCATION_VISIBILITY = ["exact_everyone", "exact_joined_only", "approximate_only"] as const;
 const VALID_RSVP_STATUS = ["going", "maybe", "cant_make_it"] as const;
 
-/** Build location display without duplicating street/address when name is a prefix of address. */
+/** Build location display without duplicating overlap between name and address.
+ *  Falls back to "TBD" when neither field is populated. The dedupe rules live
+ *  in joinNameAndAddress so emails and UI formatters share one implementation. */
 function buildLocationDisplay(name: string | null, address: string | null): string {
-  const n = name?.trim();
-  const a = address?.trim();
-  if (!n && !a) return "TBD";
-  if (!a) return n!;
-  if (!n) return a;
-  if (a === n || a.startsWith(n + ", ") || a.startsWith(n + " ")) return a;
-  return `${n}, ${a}`;
+  return joinNameAndAddress(name, address) || "TBD";
 }
 
 /** Location line for event-match digest emails, aligns with GET /events/:id display rules (non-host). */
@@ -10073,20 +10070,25 @@ app.get("/events/:id", async (c) => {
   const shareTokenParam = c.req.query("share_token") ?? null;
   let tokenInviteEmail: string | null = null;
   let tokenGrantsAccess = false;
+  // Email the invite_token was issued for, when known. Captured for both
+  // authed and unauthed viewers so it can drive (a) prefill on the
+  // lightweight signup card and (b) post-signup invite adoption when the
+  // user signed up with a different address than the host invited them at.
+  let inviteTokenEmail: string | null = null;
   if (inviteTokenParam) {
     const decoded = await verifyInviteToken(inviteTokenParam, c.env.NEXTAUTH_SECRET);
     if (decoded && decoded.eventId === eventId) {
       tokenGrantsAccess = true;
-      if (!userId) {
-        if (decoded.email) {
-          tokenInviteEmail = decoded.email.toLowerCase();
-        } else if (decoded.userId) {
-          // Invite token for a registered user opened while not logged in,
-          // resolve their email so we can prefill the signup/login flow.
-          const tokenUserRows = (await sql`SELECT email FROM newchums.users WHERE id = ${decoded.userId} LIMIT 1`) as { email: string }[];
-          if (tokenUserRows[0]) tokenInviteEmail = tokenUserRows[0].email.toLowerCase();
-        }
+      if (decoded.email) {
+        inviteTokenEmail = decoded.email.toLowerCase();
+      } else if (decoded.userId) {
+        // Invite token for a registered user. Resolve their email so we can
+        // prefill the signup/login flow when unauthenticated, and use the
+        // same email below for cross-email adoption when authenticated.
+        const tokenUserRows = (await sql`SELECT email FROM newchums.users WHERE id = ${decoded.userId} LIMIT 1`) as { email: string }[];
+        if (tokenUserRows[0]) inviteTokenEmail = tokenUserRows[0].email.toLowerCase();
       }
+      if (!userId) tokenInviteEmail = inviteTokenEmail;
     }
   } else if (shareTokenParam) {
     if (await verifyShareToken(shareTokenParam, eventId, c.env.NEXTAUTH_SECRET)) {
@@ -10094,19 +10096,46 @@ app.get("/events/:id", async (c) => {
     }
   }
 
-  // Adopt email-only invites when a logged-in user views an event: if their
-  // account matches an email-invite row, claim it so they appear as invited.
-  // This is the lightweight-signup landing case: the user was invited by email
-  // before they had an account; now they do, and we attach the invite.
+  // Adopt email-only invites when a logged-in user views an event with a
+  // valid invite path. Two adoption paths:
+  //   1. The user's account email matches an email-only invite row (the
+  //      common case: lightweight-signup with the same address the host
+  //      invited).
+  //   2. The viewer holds a valid invite_token but signed up with a
+  //      different email than the token was issued for (typo, multiple
+  //      addresses, forwarded link). The signed token is itself proof
+  //      the host extended an invite that this account is now using, so
+  //      we mirror the email-only row into a user-bound row. The
+  //      original email-only row stays untouched so the address it was
+  //      sent to can still claim it later.
   if (userId && authPayload?.email) {
     const userEmail = (authPayload.email as string).toLowerCase();
     try {
+      // (1) Account-email match.
       await sql`
         UPDATE newchums.event_invites
         SET user_id = ${userId}
         WHERE event_id = ${eventId} AND LOWER(email) = ${userEmail} AND user_id IS NULL
           AND NOT EXISTS (SELECT 1 FROM newchums.event_invites i2 WHERE i2.event_id = ${eventId} AND i2.user_id = ${userId})
       `;
+
+      // (2) Invite-token email differs from the signed-in email. INSERT a
+      //     parallel user-bound row so the viewer is recognised as invited
+      //     by the SELECT-by-user_id checks below and by the RSVP gate.
+      //     SELECT confirms a real email-only row exists for the token's
+      //     email so a forged or stale token can never manufacture access.
+      //     ON CONFLICT DO NOTHING handles the (event_id, user_id) partial
+      //     unique index so a returning viewer does not duplicate.
+      if (inviteTokenEmail && inviteTokenEmail !== userEmail) {
+        await sql`
+          INSERT INTO newchums.event_invites (event_id, user_id, email, invited_by)
+          SELECT ${eventId}, ${userId}, NULL, invited_by
+          FROM newchums.event_invites
+          WHERE event_id = ${eventId} AND LOWER(email) = ${inviteTokenEmail} AND user_id IS NULL
+          LIMIT 1
+          ON CONFLICT DO NOTHING
+        `;
+      }
     } catch (adoptErr) {
       console.error("[GET /events/:id] invite adoption error (non-fatal):", adoptErr);
     }
@@ -10446,6 +10475,11 @@ app.get("/events/:id", async (c) => {
       prefNote,
       viewerUserId: userId ?? null,
       viewerEmail: authPayload?.email ? (authPayload.email as string).toLowerCase() : null,
+      // Email the invite_token was issued for, exposed only to unauthenticated
+      // viewers so the lightweight signup card can prefill it. Once the user
+      // is authenticated this field is dropped (their session already has the
+      // canonical email and there's nothing to prefill).
+      inviteeEmail: !userId ? tokenInviteEmail : null,
       shareLinkModalDismissed,
       event: {
         id: event.id,
@@ -10667,14 +10701,26 @@ app.post("/events/:id/rsvp", async (c) => {
         return c.json({ ok: false, error: "EVENT_LOCKED", message: "This plan is locked and not accepting new participants" }, 403);
     }
 
-    // Invite-only gate: non-invited users cannot RSVP to invite-only plans
-    // A valid share_token in the request body bypasses this gate (user accessed via share link)
+    // Invite-only gate: non-invited users cannot RSVP to invite-only plans.
+    // Bypassed by a valid share_token (came in via Copy Link) or a valid
+    // invite_token (came in via the email-invite link). The invite_token
+    // bypass mirrors the QA-plan check above and is the safety net for the
+    // email-mismatch case where GET adoption couldn't link the row but the
+    // viewer still holds a valid signed invite.
     if (event.visibility === "invite_only" && existingRsvp.length === 0) {
       const invited = (await sql`SELECT 1 FROM newchums.event_invites WHERE event_id = ${eventId} AND user_id = ${userId} LIMIT 1`) as unknown[];
       if (invited.length === 0) {
         const shareToken = typeof body.share_token === "string" ? body.share_token : null;
         const hasValidShareToken = shareToken ? await verifyShareToken(shareToken, eventId, c.env.NEXTAUTH_SECRET) : false;
-        if (!hasValidShareToken)
+        let hasValidInviteToken = false;
+        if (!hasValidShareToken) {
+          const inviteToken = typeof body.invite_token === "string" ? body.invite_token : null;
+          if (inviteToken) {
+            const decoded = await verifyInviteToken(inviteToken, c.env.NEXTAUTH_SECRET);
+            hasValidInviteToken = decoded?.eventId === eventId;
+          }
+        }
+        if (!hasValidShareToken && !hasValidInviteToken)
           return c.json({ ok: false, error: "INVITE_ONLY", message: "This plan is invite only. Ask the host for a share link or invite." }, 403);
       }
     }
@@ -11252,8 +11298,25 @@ app.patch("/events/:id", async (c) => {
     const startsAt = new Date(startsAtRaw);
     if (isNaN(startsAt.getTime())) return c.json({ ok: false, error: "VALIDATION", message: "Invalid date/time", field: "starts_at" }, 400);
 
-    const rawMaxSeats = body.max_seats != null ? Number(body.max_seats) : null;
-    const maxSeats = rawMaxSeats != null && !isNaN(rawMaxSeats) && rawMaxSeats >= 1 ? Math.floor(rawMaxSeats) : null;
+    // max_seats handling on PATCH:
+    // 1. If the field is missing from the body, preserve the existing value (no-op clear).
+    //    Previously the SQL always overwrote with the computed value, so a partial PATCH
+    //    that didn't include max_seats would silently wipe it.
+    // 2. If the field is present but null, that's an explicit "no limit" clear.
+    // 3. If the field is present and numeric, validate strictly and reject invalid values
+    //    instead of silently coercing them to null. Matches POST /events behaviour.
+    const maxSeatsProvided = "max_seats" in body;
+    let maxSeats: number | null = rows[0].max_seats;
+    if (maxSeatsProvided) {
+      if (body.max_seats == null) {
+        maxSeats = null;
+      } else {
+        const rawMaxSeats = Number(body.max_seats);
+        if (isNaN(rawMaxSeats) || rawMaxSeats < 1 || rawMaxSeats > 500)
+          return c.json({ ok: false, error: "VALIDATION", message: "Seats must be between 1 and 500", field: "max_seats" }, 400);
+        maxSeats = Math.floor(rawMaxSeats);
+      }
+    }
 
     const VALID_VISIBILITIES = ["public", "chums_only", "invite_only"];
     const visibility = body.visibility && VALID_VISIBILITIES.includes(String(body.visibility))
@@ -15619,7 +15682,8 @@ async function processEventMatchDigest(
         'goingCount', m.going_count,
         'pendingInviteNoRsvpCount', m.pending_invite_no_rsvp_count,
         'maybeInviteeCount', m.maybe_invitee_count,
-        'prefOverrides', e.pref_overrides
+        'prefOverrides', e.pref_overrides,
+        'isQa', COALESCE(e.is_qa, false)
       ) ORDER BY m.starts_at) AS plans
     FROM matching m
     JOIN newchums.events e ON e.id = m.event_id
@@ -15647,6 +15711,7 @@ async function processEventMatchDigest(
       pendingInviteNoRsvpCount: number;
       maybeInviteeCount: number;
       prefOverrides: unknown;
+      isQa: boolean;
     }[];
   }[];
 
@@ -15745,6 +15810,22 @@ async function processEventMatchDigest(
         });
       }
 
+      // QA plans are intentionally hidden from the unauthenticated
+      // /events/:id route (the API returns 404 for non-super-admin viewers
+      // and for any logged-out viewer). A bare /events/:id link in the
+      // digest email therefore lands a logged-out super-admin recipient on
+      // a "Plan not found" page even though the digest only sent them the
+      // QA plan because they are a super admin. Routing the QA-plan CTA
+      // through /login?next=/events/:id keeps the recipient gated, and
+      // after sign-in the existing safe-redirect helper returns them to
+      // the plan where their session can satisfy QA isolation. Non-QA
+      // plans keep the direct link so the public preview is reachable
+      // for cold readers.
+      const planPath = `/events/${p.eventId}`;
+      const url = p.isQa
+        ? `${env.WEB_BASE_URL}/login?next=${encodeURIComponent(planPath)}`
+        : `${env.WEB_BASE_URL}${planPath}`;
+
       return {
         title: p.title,
         description: p.description,
@@ -15763,7 +15844,7 @@ async function processEventMatchDigest(
           pendingInviteNoRsvpCount: Number(p.pendingInviteNoRsvpCount ?? 0) || 0,
           maybeInviteeCount: Number(p.maybeInviteeCount ?? 0) || 0,
         }),
-        url: `${env.WEB_BASE_URL}/events/${p.eventId}`,
+        url,
       };
     });
 

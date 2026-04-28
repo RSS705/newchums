@@ -1,5 +1,6 @@
 "use client";
 
+import { type WheelEvent } from "react";
 import Box from "@mui/material/Box";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import MenuItem from "@mui/material/MenuItem";
@@ -95,7 +96,12 @@ export default function ExtraOptionsSection(props: Props) {
                 placeholder="e.g. 4 (including you)"
                 value={props.minConfirmedAttendees}
                 onChange={(e) => props.onChangeMinConfirmedAttendees(e.target.value)}
-                inputProps={{ min: 1, max: 500 }}
+                // Disable scroll-wheel value changes; see CreateEventClient seat field for context.
+                inputProps={{
+                  min: 1,
+                  max: 500,
+                  onWheel: (e: WheelEvent<HTMLInputElement>) => e.currentTarget.blur(),
+                }}
               />
               <Typography
                 variant="caption"

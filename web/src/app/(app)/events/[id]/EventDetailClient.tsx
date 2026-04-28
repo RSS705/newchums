@@ -277,6 +277,11 @@ export default function EventDetailClient() {
   const [invites, setInvites] = useState<InviteEntry[]>([]);
   const [viewerUserId, setViewerUserId] = useState<string | null>(null);
   const [viewerEmail, setViewerEmail] = useState<string | null>(null);
+  // Email the invite_token was issued for, exposed by GET /events/:id only to
+  // unauthenticated viewers so the lightweight signup card can prefill the
+  // email field. Keeps the new account's address aligned with the invite row
+  // so post-signup adoption attaches the user to the correct invite.
+  const [inviteeEmail, setInviteeEmail] = useState<string | null>(null);
   const [prefNote, setPrefNote] = useState<string[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -436,6 +441,7 @@ export default function EventDetailClient() {
       prefNote?: string[] | null;
       viewerUserId?: string | null;
       viewerEmail?: string | null;
+      inviteeEmail?: string | null;
       shareLinkModalDismissed?: boolean;
       event: EventDetail;
       rsvps: RsvpEntry[];
@@ -453,6 +459,7 @@ export default function EventDetailClient() {
       setJoinRequests(data.joinRequests ?? []);
       if (data.viewerUserId) setViewerUserId(data.viewerUserId);
       if (data.viewerEmail) setViewerEmail(data.viewerEmail);
+      setInviteeEmail(data.inviteeEmail ?? null);
       if (data.shareLinkModalDismissed != null) setShareLinkModalDismissed(data.shareLinkModalDismissed);
       // Clear local confirmation override once server state arrives
       setLocalConfirmStatus(null);
@@ -1005,7 +1012,15 @@ export default function EventDetailClient() {
         auth: true,
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status, ...(shareTokenRef.current ? { share_token: shareTokenRef.current } : {}) }),
+        body: JSON.stringify({
+          status,
+          // Pass through whichever access token brought the viewer here so the
+          // server's invite-only gate can confirm legitimate access even when
+          // GET-side adoption hasn't run (or didn't link the row, e.g. a
+          // post-signup email mismatch).
+          ...(shareTokenRef.current ? { share_token: shareTokenRef.current } : {}),
+          ...(inviteTokenRef.current ? { invite_token: inviteTokenRef.current } : {}),
+        }),
       });
       const data = (await res.json()) as {
         ok: boolean;
@@ -1071,7 +1086,15 @@ export default function EventDetailClient() {
         auth: true,
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status, note, ...(shareTokenRef.current ? { share_token: shareTokenRef.current } : {}) }),
+        body: JSON.stringify({
+          status,
+          note,
+          // Mirrors handleRsvp: pass through the invite/share token so the
+          // server can verify legitimate access without requiring GET-side
+          // adoption to have linked the user yet.
+          ...(shareTokenRef.current ? { share_token: shareTokenRef.current } : {}),
+          ...(inviteTokenRef.current ? { invite_token: inviteTokenRef.current } : {}),
+        }),
       });
       const data = (await res.json()) as {
         ok: boolean;
@@ -2999,6 +3022,14 @@ export default function EventDetailClient() {
                 return `/events/${eventId}?${params.toString()}`;
               })()}
               planTitle={event.title}
+              // Prefill the email the invite_token was issued for so the new
+              // account is created with the address the host invited and the
+              // post-signup invite adoption matches by email. Without this,
+              // a typo or alternate inbox at signup would leave the new
+              // account unattached to the invite row and the viewer would
+              // hit the invite-only lock after returning from the magic
+              // link.
+              prefillEmail={inviteeEmail ?? undefined}
             />
           ) : (
             <div id="plan-section-confirmation">
@@ -3977,14 +4008,26 @@ export default function EventDetailClient() {
               >
                 {isAvailMode
                   ? canSuggest
-                    ? "The host wants to find a time that works for everyone. Confirm the proposed time or share other times you're free."
+                    ? viewerHasSuggested
+                      ? event.availabilityDeadlineAt
+                        ? `You've shared your availability. You can still add or edit times until ${new Date(
+                            event.availabilityDeadlineAt
+                          ).toLocaleString(undefined, {
+                            weekday: "short",
+                            month: "short",
+                            day: "numeric",
+                            hour: "numeric",
+                            minute: "2-digit",
+                          })}.`
+                        : "You've shared your availability. You can still add or edit times whenever you like."
+                      : "The host wants to find a time that works for everyone. Confirm the proposed time or share other times you're free."
                     : "The host wants to find a start time that works for everyone. Join to share your availability."
                   : canSuggest
                     ? "The host is open to alternative start times for this plan. Suggest one below and everyone in the plan can see it."
                     : "The host is open to alternative start times for this plan. Join to suggest your own."}
               </Typography>
 
-              {isAvailMode && event.availabilityDeadlineAt && (
+              {isAvailMode && !viewerHasSuggested && event.availabilityDeadlineAt && (
                 <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mb: 1.5 }}>
                   <AccessTimeRoundedIcon sx={{ fontSize: 16, color: "warning.main" }} />
                   <Typography
@@ -4006,43 +4049,46 @@ export default function EventDetailClient() {
               )}
 
               {/* --- Your response status + quick actions (availability mode only) --- */}
-              {isAvailMode && canSuggest && (
+              {isAvailMode && canSuggest && !viewerHasSuggested && (
                 <Box
                   sx={{
                     mb: 2,
                     pl: 2,
                     borderLeft: "3px solid",
-                    borderColor: viewerHasSuggested ? "success.main" : "warning.main",
+                    borderColor: "warning.main",
                   }}
                 >
                   <Stack spacing={1}>
                     <Stack direction="row" alignItems="center" spacing={1}>
-                      {viewerHasSuggested ? (
-                        <CheckCircleRoundedIcon sx={{ fontSize: 18, color: "success.main" }} />
-                      ) : (
-                        <Box sx={{ width: 18, height: 18, borderRadius: "50%", border: "2px solid", borderColor: "warning.main", flexShrink: 0 }} />
-                      )}
+                      <Box
+                        sx={{
+                          width: 18,
+                          height: 18,
+                          borderRadius: "50%",
+                          border: "2px solid",
+                          borderColor: "warning.main",
+                          flexShrink: 0,
+                        }}
+                      />
                       <Typography variant="body2" fontWeight={600}>
-                        {viewerHasSuggested ? "You've shared your availability" : "You haven't responded yet"}
+                        {"You haven't responded yet"}
                       </Typography>
                     </Stack>
                     <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap" }}>
-                      {!viewerHasSuggested && (
-                        <Button
-                          variant="contained"
-                          size="small"
-                          color="success"
-                          disabled={quickConfirming}
-                          onClick={handleQuickConfirm}
-                          startIcon={<CheckCircleRoundedIcon sx={{ fontSize: 16 }} />}
-                          sx={{ textTransform: "none", fontWeight: 600 }}
-                        >
-                          {quickConfirming ? "Saving..." : "This time works for me"}
-                        </Button>
-                      )}
+                      <Button
+                        variant="contained"
+                        size="small"
+                        color="success"
+                        disabled={quickConfirming}
+                        onClick={handleQuickConfirm}
+                        startIcon={<CheckCircleRoundedIcon sx={{ fontSize: 16 }} />}
+                        sx={{ textTransform: "none", fontWeight: 600 }}
+                      >
+                        {quickConfirming ? "Saving..." : "This time works for me"}
+                      </Button>
                       <Button
                         size="small"
-                        variant={viewerHasSuggested ? "outlined" : "text"}
+                        variant="text"
                         onClick={() => {
                           setAltEditingId(null);
                           if (!altStartDate && event) {
@@ -4053,10 +4099,31 @@ export default function EventDetailClient() {
                         }}
                         sx={{ textTransform: "none" }}
                       >
-                        {viewerHasSuggested ? "+ Add more availability" : "Share other times"}
+                        Share other times
                       </Button>
                     </Stack>
                   </Stack>
+                </Box>
+              )}
+
+              {/* --- Compact secondary action when viewer has already responded --- */}
+              {isAvailMode && canSuggest && viewerHasSuggested && (
+                <Box sx={{ mb: 2 }}>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => {
+                      setAltEditingId(null);
+                      if (!altStartDate && event) {
+                        setAltStartDate(dayjs(event.startsAt));
+                        setAltStartTime(dayjs(event.startsAt));
+                      }
+                      setShowAltTimeForm(true);
+                    }}
+                    sx={{ textTransform: "none" }}
+                  >
+                    + Add another time
+                  </Button>
                 </Box>
               )}
 
@@ -4078,36 +4145,51 @@ export default function EventDetailClient() {
                 </Button>
               )}
 
-              {/* --- Group response summary (availability mode, visible to all attendees) --- */}
-              {isAvailMode && participants.length > 0 && (
-                <Box sx={{ mb: 2 }}>
-                  <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ mb: 0.5, display: "block", fontSize: "0.75rem" }}>
-                    Responses ({respondedParticipants.length}/{participants.length})
-                  </Typography>
-                  <Stack direction="row" sx={{ flexWrap: "wrap", gap: 0.5 }}>
-                    {respondedParticipants.map((p) => (
-                      <Chip
-                        key={p.userId}
-                        label={p.name.split(" ")[0]}
-                        size="small"
-                        icon={<CheckCircleRoundedIcon sx={{ fontSize: "0.875rem !important" }} />}
-                        color="success"
-                        variant="outlined"
-                        sx={{ height: 24, fontSize: "0.75rem" }}
-                      />
-                    ))}
-                    {pendingParticipants.map((p) => (
-                      <Chip
-                        key={p.userId}
-                        label={p.name.split(" ")[0]}
-                        size="small"
-                        variant="outlined"
-                        sx={{ height: 24, fontSize: "0.75rem", opacity: 0.5, borderStyle: "dashed" }}
-                      />
-                    ))}
-                  </Stack>
-                </Box>
-              )}
+              {/* --- Group response summary (availability mode, visible to all attendees) ---
+                  Hidden when the viewer is the only participant and has already responded:
+                  the helper text and their availability card already make that clear, so the
+                  "Responses (1/1)" line and self-chip would just duplicate the user's identity. */}
+              {isAvailMode &&
+                participants.length > 0 &&
+                !(participants.length === 1 && viewerHasSuggested) && (
+                  <Box sx={{ mb: 2 }}>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{
+                        mb: 0.5,
+                        display: "block",
+                        fontSize: "0.75rem",
+                        fontWeight: viewerHasSuggested ? 500 : 600,
+                        opacity: viewerHasSuggested ? 0.75 : 1,
+                      }}
+                    >
+                      Responses ({respondedParticipants.length}/{participants.length})
+                    </Typography>
+                    <Stack direction="row" sx={{ flexWrap: "wrap", gap: 0.5 }}>
+                      {respondedParticipants.map((p) => (
+                        <Chip
+                          key={p.userId}
+                          label={p.name.split(" ")[0]}
+                          size="small"
+                          icon={<CheckCircleRoundedIcon sx={{ fontSize: "0.875rem !important" }} />}
+                          color="success"
+                          variant="outlined"
+                          sx={{ height: 24, fontSize: "0.75rem" }}
+                        />
+                      ))}
+                      {pendingParticipants.map((p) => (
+                        <Chip
+                          key={p.userId}
+                          label={p.name.split(" ")[0]}
+                          size="small"
+                          variant="outlined"
+                          sx={{ height: 24, fontSize: "0.75rem", opacity: 0.5, borderStyle: "dashed" }}
+                        />
+                      ))}
+                    </Stack>
+                  </Box>
+                )}
 
               <Box ref={altTimeScrollRef} sx={{ maxHeight: 420, overflowY: "auto" }}>
                 {/* --- Availability form (shared by both modes) --- */}

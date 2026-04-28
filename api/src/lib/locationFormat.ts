@@ -49,6 +49,44 @@ export type EmailLocationInput = {
 };
 
 /**
+ * Combine a venue/place name and a postal address into a single display
+ * string without duplicating overlapping segments. Three overlap shapes
+ * are handled:
+ *
+ *  1. Exact equality. `name === address` returns the value once.
+ *  2. Address starts with the name (e.g. plain street pick where Google
+ *     returned just the street as `name`, "123 Main St", and the
+ *     formatted address as "123 Main St, City, State"): we return the
+ *     address since it already includes the name.
+ *  3. Name ends with the address (e.g. the Add/Edit Plan forms store the
+ *     autocomplete input's combined display string in `location_name` -
+ *     "Gamers Emporium, 1634 Hyde Park Rd, London, ON N6H 0L5, Canada" -
+ *     while `location_address` holds just the formatted address; without
+ *     this branch the previous join produced
+ *     "Gamers Emporium, 1634 Hyde Park Rd, ..., 1634 Hyde Park Rd, ..."):
+ *     we return the name as the already-complete presentation.
+ *
+ * Both inputs are nullable. Callers decide what to do with the empty-string
+ * result; this helper is intentionally agnostic about fallback labels like
+ * "TBD" so it can be used from email and UI formatters that render empty
+ * locations differently.
+ */
+export function joinNameAndAddress(
+  name: string | null | undefined,
+  address: string | null | undefined,
+): string {
+  const n = (name ?? "").trim();
+  const a = (address ?? "").trim();
+  if (!n && !a) return "";
+  if (!a) return n;
+  if (!n) return a;
+  if (a === n) return a;
+  if (a.startsWith(n + ", ") || a.startsWith(n + " ")) return a;
+  if (n.endsWith(", " + a) || n.endsWith(" " + a)) return n;
+  return `${n}, ${a}`;
+}
+
+/**
  * Strip street-level detail out of a full postal address and return the
  * "city, region" suffix. Kept in sync with the plan detail page's
  * approximate-area derivation. Pre-existing logic previously lived in
@@ -131,13 +169,10 @@ export function buildEmailEventLocation(
     return visibility === "exact_everyone";
   })();
 
-  const venue = (plan.location_name || "").trim();
-
   if (allowExact) {
-    const address = (plan.location_address || "").trim();
-    return [venue, address].filter(Boolean).join(", ");
+    return joinNameAndAddress(plan.location_name, plan.location_address);
   }
 
   const derivedArea = (plan.location_area || "").trim() || deriveApproxArea(plan.location_address) || "";
-  return [venue, derivedArea].filter(Boolean).join(", ");
+  return joinNameAndAddress(plan.location_name, derivedArea);
 }

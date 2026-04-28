@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildEmailEventLocation,
   deriveApproxArea,
+  joinNameAndAddress,
   type EmailLocationInput,
   type EmailLocationRole,
 } from "../locationFormat";
@@ -24,6 +25,48 @@ const online = (overrides: Partial<EmailLocationInput> = {}): EmailLocationInput
   location_area: null,
   online_link: "https://meet.example.com/abc",
   ...overrides,
+});
+
+describe("joinNameAndAddress", () => {
+  it("returns empty when both inputs are missing", () => {
+    expect(joinNameAndAddress(null, null)).toBe("");
+    expect(joinNameAndAddress("", "")).toBe("");
+    expect(joinNameAndAddress(undefined, undefined)).toBe("");
+  });
+
+  it("returns the populated side when only one is present", () => {
+    expect(joinNameAndAddress("Cafe", null)).toBe("Cafe");
+    expect(joinNameAndAddress(null, "123 Main St")).toBe("123 Main St");
+  });
+
+  it("returns once when both sides are equal", () => {
+    expect(joinNameAndAddress("123 Main St", "123 Main St")).toBe("123 Main St");
+  });
+
+  it("returns address alone when address starts with the name (plain street pick)", () => {
+    expect(joinNameAndAddress("123 Main St", "123 Main St, Toronto, ON")).toBe(
+      "123 Main St, Toronto, ON",
+    );
+  });
+
+  it("returns name alone when name already ends with the address (combined-display row)", () => {
+    // Reproduces the Add/Edit form storing the autocomplete display string in
+    // location_name while location_address holds the formatted address. The
+    // previous join produced two copies of the postal address.
+    const name = "Gamers Emporium, 1634 Hyde Park Rd, London, ON N6H 0L5, Canada";
+    const address = "1634 Hyde Park Rd, London, ON N6H 0L5, Canada";
+    expect(joinNameAndAddress(name, address)).toBe(name);
+  });
+
+  it("joins distinct name and address with a comma", () => {
+    expect(joinNameAndAddress("Main Street Cafe", "123 Main Street, Toronto, ON")).toBe(
+      "Main Street Cafe, 123 Main Street, Toronto, ON",
+    );
+  });
+
+  it("trims surrounding whitespace before deciding", () => {
+    expect(joinNameAndAddress("  Cafe  ", "  Cafe, Toronto  ")).toBe("Cafe, Toronto");
+  });
 });
 
 describe("deriveApproxArea", () => {
@@ -136,6 +179,21 @@ describe("buildEmailEventLocation", () => {
         location_visibility: "approximate_only",
       });
       expect(buildEmailEventLocation(plan, "joined")).toBe("Main Street Cafe");
+    });
+
+    it("does not duplicate the address when location_name already contains it", () => {
+      // The Add/Edit forms currently store the autocomplete's combined
+      // display string in location_name. Without dedupe, emails would read
+      // "Venue, 123 Main St, City, Venue, 123 Main St, City". The shared
+      // joinNameAndAddress helper collapses the overlap.
+      const plan = inPerson({
+        location_name: "Gamers Emporium, 1634 Hyde Park Rd, London, ON N6H 0L5, Canada",
+        location_address: "1634 Hyde Park Rd, London, ON N6H 0L5, Canada",
+        location_area: "London, ON",
+      });
+      expect(buildEmailEventLocation(plan, "host")).toBe(
+        "Gamers Emporium, 1634 Hyde Park Rd, London, ON N6H 0L5, Canada",
+      );
     });
 
     it("treats unknown visibility as exact_everyone (schema default)", () => {
