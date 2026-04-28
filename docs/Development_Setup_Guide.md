@@ -107,6 +107,11 @@ Event email templates (active, set in `wrangler.toml` vars):
 - `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST` (template 43984465, 24-hour attendance check request/reminder)
 - `POSTMARK_TEMPLATE_PLAN_AT_RISK` (template 43984947, plan at risk notification to host)
 
+Auth/lightweight-signup email templates (active, set in `wrangler.toml` vars):
+- `POSTMARK_TEMPLATE_MAGIC_LINK_SIGNUP` (template 44523927, lightweight-signup confirmation link from a plan invite/share page)
+- `POSTMARK_TEMPLATE_PLAN_SIGNIN` (template 44523947, plan-signup notice when the email already has a verified account)
+- `POSTMARK_TEMPLATE_SIGNIN_LINK` (template 44802964, return-visit sign-in link for `password_setup_pending` accounts; copy is "Sign in to NewChums", distinct from the signup confirmation template)
+
 Event email templates (scaffolded, sends noop if not set):
 - `POSTMARK_TEMPLATE_EVENT_INVITE`
 - `POSTMARK_TEMPLATE_EVENT_REMINDER`

@@ -727,6 +727,35 @@ export const sendPlanSigninEmail = async (
   });
 };
 
+// ── Return-visit sign-in link (password setup pending) ──────────────────
+//
+// Sent by `POST /auth/signin-link/request` to lightweight-signup accounts
+// that haven't set a password yet. The copy is intentionally framed as
+// "sign back in", not as a fresh signup confirmation, so the recipient
+// isn't told to "create an account" they already have. The confirmUrl
+// points at `/auth/magic?...` and consumes a one-time token from
+// `email_verification_tokens`. After consume, the user is redirected to
+// `/settings#account` so they land where they can finish setting a
+// password (the PasswordSetupBanner stays visible until they do).
+
+export const sendSigninLinkEmail = async (
+  env: Bindings,
+  { to, confirmUrl }: { to: string; confirmUrl: string },
+) => {
+  if (!env.POSTMARK_TEMPLATE_SIGNIN_LINK) return;
+  return sendPostmarkTemplateEmail(env, {
+    From: env.EMAIL_FROM,
+    To: to,
+    TemplateId: env.POSTMARK_TEMPLATE_SIGNIN_LINK,
+    TemplateModel: {
+      productName: "NewChums",
+      confirmUrl,
+    },
+    TrackLinks: "None",
+    TrackOpens: false,
+  });
+};
+
 // ── Attendance assurance emails ─────────────────────────────────────────
 
 export const sendConfirmationRequestEmail = async (

@@ -46,6 +46,7 @@ import {
   sendCommunityJoinRequestReopenedEmail,
   sendMagicLinkSignupEmail,
   sendPlanSigninEmail,
+  sendSigninLinkEmail,
 } from "./email/send";
 import { canAccessInternalTestRoute, notFound } from "./internalAccess";
 import { nameToSlug, slugToName, validateInterestName } from "./interests";
@@ -1619,7 +1620,14 @@ app.post("/auth/signin-link/request", async (c) => {
   }
   const email = body.email?.trim().toLowerCase();
   const turnstileToken = typeof body.turnstile_token === "string" ? body.turnstile_token : "";
-  const next = sanitizePlanSignupNext(body.next);
+  // Ignore any client-supplied `next` for this flow. The recipient is a
+  // lightweight-signup user who never set a password; landing them on the
+  // Explore feed (the default) means they'd just hit the same problem
+  // again on next sign-out. Hard-coding `/settings#account` here drops
+  // them on the password-setup section so the PasswordSetupBanner's CTA
+  // and the in-page "Set a password" form are both immediately visible
+  // and they can finish setup in one step.
+  const next = "/settings#account";
 
   if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
     return c.json({ ok: false, error: "INVALID_EMAIL" }, 400);
@@ -1679,10 +1687,16 @@ app.post("/auth/signin-link/request", async (c) => {
   `;
 
   const confirmUrl = `${c.env.WEB_BASE_URL}/auth/magic?token=${encodeURIComponent(rawToken)}&email=${encodeURIComponent(email)}&next=${encodeURIComponent(next)}`;
+  // Use the dedicated sign-in-link template instead of the lightweight-
+  // signup confirmation template. The two flows look the same on the wire
+  // (both consume an email_verification_tokens row) but the recipient's
+  // mental model is different: this is a returning account, not a fresh
+  // signup, so "Confirm to finish signing up" / "create your NewChums
+  // account" copy was misleading. See sendSigninLinkEmail in send.ts.
   try {
-    await sendMagicLinkSignupEmail(c.env, { to: email, confirmUrl, planTitle: "NewChums" });
+    await sendSigninLinkEmail(c.env, { to: email, confirmUrl });
   } catch (err) {
-    console.error("[signin-link] sendMagicLinkSignupEmail failed", err);
+    console.error("[signin-link] sendSigninLinkEmail failed", err);
     await sql`
       UPDATE newchums.email_verification_tokens
       SET used_at = NOW()

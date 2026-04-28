@@ -472,7 +472,9 @@ export default function AdminSystemLogicClient() {
         </Bullet>
         <Bullet>
           <strong>Email me a sign-in link</strong> appears at <code>/login</code> when the email on file has no password yet (typical for lightweight
-          signups). It sends a magic link.
+          signups). It sends a dedicated &ldquo;Sign in to NewChums&rdquo; email (Postmark template 44802964, distinct from the lightweight-signup
+          confirmation template) and lands the recipient on <code>/settings#account</code> after sign-in so they can finish setting a password in
+          one step.
         </Bullet>
         <Bullet>
           <strong>Wrong session:</strong> clicking a magic link while signed in as a different account signs out the current session and completes

@@ -61,6 +61,16 @@ export type Bindings = {
    * on the plan after sign-in.
    */
   POSTMARK_TEMPLATE_PLAN_SIGNIN?: string;
+  /**
+   * Postmark template ID for the dedicated return-visit sign-in link email.
+   * Sent by `POST /auth/signin-link/request` to lightweight-signup accounts
+   * still in `password_setup_pending = TRUE`. The link lands on
+   * `/auth/magic` like other magic-link flows; on consume the user is
+   * routed to `/settings#account` so they can finish setting a password.
+   * Distinct from POSTMARK_TEMPLATE_MAGIC_LINK_SIGNUP, whose copy frames
+   * the email as a fresh signup confirmation.
+   */
+  POSTMARK_TEMPLATE_SIGNIN_LINK?: string;
   /** Postmark template ID for post-plan feedback reminder (template 44091936) */
   POSTMARK_TEMPLATE_PLAN_FEEDBACK?: string;
   /** Postmark template ID for concern report admin alert (template 44107767) */
