@@ -8,14 +8,14 @@ export default function TermsContent() {
   return (
     <LegalPageContent
       title="Terms of Use"
-      effectiveDateLine="Effective Date: [MONTH DAY, YEAR]"
-      lastUpdatedLine="Last Updated: [MONTH DAY, YEAR]"
+      effectiveDateLine="Effective Date: April 1, 2026"
+      lastUpdatedLine="Last Updated: April 1, 2026"
       intro={
         <>
           These Terms of Use (&ldquo;Terms&rdquo;) govern your use of the NewChums website, apps,
           features, and related services (collectively, the &ldquo;Service&rdquo;).
           <br /><br />
-          NewChums is operated by <strong>[LEGAL ENTITY NAME / &ldquo;Our Module&rdquo; placeholder]</strong>{" "}
+          NewChums is operated by <strong>OurModule</strong>{" "}
           (&ldquo;NewChums,&rdquo; &ldquo;we,&rdquo; &ldquo;us,&rdquo; or &ldquo;our&rdquo;).
           <br /><br />
           By accessing or using NewChums, you agree to these Terms. If you do not agree, do not use the Service.
@@ -415,7 +415,13 @@ export default function TermsContent() {
                 </MuiLink>
               </Typography>
               <Typography variant="body1">
-                <strong>Mailing Address:</strong> [INSERT BUSINESS OR MAILING ADDRESS]
+                <strong>Mailing Address:</strong>
+                <br />
+                OurModule
+                <br />
+                PO BOX 1875
+                <br />
+                LONDON ON N6H 1V0
               </Typography>
             </>
           ),

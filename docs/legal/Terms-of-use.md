@@ -1,11 +1,11 @@
 # Terms of Use
 
-**Effective Date:** [MONTH DAY, YEAR]  
-**Last Updated:** [MONTH DAY, YEAR]
+**Effective Date:** April 1, 2026  
+**Last Updated:** April 1, 2026
 
 These Terms of Use (“Terms”) govern your use of the NewChums website, apps, features, and related services (collectively, the “Service”).
 
-NewChums is operated by **[LEGAL ENTITY NAME / “Our Module” placeholder]** (“NewChums,” “we,” “us,” or “our”).
+NewChums is operated by **OurModule** (“NewChums,” “we,” “us,” or “our”).
 
 By accessing or using NewChums, you agree to these Terms. If you do not agree, do not use the Service.
 
@@ -201,5 +201,9 @@ We may update these Terms from time to time. If we make material changes, we may
 
 Questions about these Terms may be sent to:
 
-**Email:** contact@newchums.com  
-**Mailing Address:** [INSERT BUSINESS OR MAILING ADDRESS]
+**Email:** contact@newchums.com
+
+**Mailing Address:**  
+OurModule  
+PO BOX 1875  
+LONDON ON N6H 1V0

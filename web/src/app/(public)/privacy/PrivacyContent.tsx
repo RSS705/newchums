@@ -8,11 +8,11 @@ export default function PrivacyContent() {
   return (
     <LegalPageContent
       title="Privacy Policy"
-      effectiveDateLine="Effective Date: [MONTH DAY, YEAR]"
-      lastUpdatedLine="Last Updated: [MONTH DAY, YEAR]"
+      effectiveDateLine="Effective Date: April 1, 2026"
+      lastUpdatedLine="Last Updated: April 1, 2026"
       intro={
         <>
-          NewChums is operated by <strong>[LEGAL ENTITY NAME / &ldquo;Our Module&rdquo; placeholder]</strong>{" "}
+          NewChums is operated by <strong>OurModule</strong>{" "}
           (&ldquo;NewChums,&rdquo; &ldquo;we,&rdquo; &ldquo;us,&rdquo; or &ldquo;our&rdquo;).
           <br /><br />
           This Privacy Policy explains how we collect, use, disclose, and protect personal information
@@ -22,7 +22,13 @@ export default function PrivacyContent() {
           If you have questions about this Privacy Policy or our privacy practices, you can contact us at:{" "}
           <MuiLink href="mailto:contact@newchums.com" color="primary">contact@newchums.com</MuiLink>
           <br />
-          <strong>Mailing Address:</strong> [INSERT BUSINESS OR MAILING ADDRESS]
+          <strong>Mailing Address:</strong>
+          <br />
+          OurModule
+          <br />
+          PO BOX 1875
+          <br />
+          LONDON ON N6H 1V0
         </>
       }
       sections={[
@@ -379,7 +385,13 @@ export default function PrivacyContent() {
                 </MuiLink>
               </Typography>
               <Typography variant="body1">
-                <strong>Mailing Address:</strong> [INSERT BUSINESS OR MAILING ADDRESS]
+                <strong>Mailing Address:</strong>
+                <br />
+                OurModule
+                <br />
+                PO BOX 1875
+                <br />
+                LONDON ON N6H 1V0
               </Typography>
             </>
           ),

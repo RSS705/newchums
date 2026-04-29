@@ -1,16 +1,20 @@
 # Privacy Policy
 
-**Effective Date:** [MONTH DAY, YEAR]  
-**Last Updated:** [MONTH DAY, YEAR]
+**Effective Date:** April 1, 2026  
+**Last Updated:** April 1, 2026
 
-NewChums is operated by **[LEGAL ENTITY NAME / “Our Module” placeholder]** (“NewChums,” “we,” “us,” or “our”).
+NewChums is operated by **OurModule** (“NewChums,” “we,” “us,” or “our”).
 
 This Privacy Policy explains how we collect, use, disclose, and protect personal information when you use the NewChums website, apps, features, and related services (collectively, the “Service”).
 
 If you have questions about this Privacy Policy or our privacy practices, you can contact us at:
 
-**Email:** contact@newchums.com  
-**Mailing Address:** [INSERT BUSINESS OR MAILING ADDRESS]
+**Email:** contact@newchums.com
+
+**Mailing Address:**  
+OurModule  
+PO BOX 1875  
+LONDON ON N6H 1V0
 
 ## 1. Who Can Use NewChums
 
@@ -189,5 +193,9 @@ We may update this Privacy Policy from time to time. If we make material changes
 
 If you have questions, requests, or concerns about this Privacy Policy or our privacy practices, contact us at:
 
-**Email:** contact@newchums.com  
-**Mailing Address:** [INSERT BUSINESS OR MAILING ADDRESS]
+**Email:** contact@newchums.com
+
+**Mailing Address:**  
+OurModule  
+PO BOX 1875  
+LONDON ON N6H 1V0
