@@ -378,7 +378,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
             variant="overline"
             sx={{ color: "primary.main", fontWeight: 700, letterSpacing: "0.12em", fontSize: "0.7rem", display: "block", mb: 2 }}
           >
-            How this works
+            How NewChums works
           </Typography>
           <Typography
             component="h1"
@@ -386,7 +386,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
             fontWeight={800}
             sx={{ fontSize: { xs: "2.5rem", sm: "3.25rem", md: "4rem" }, lineHeight: 1.15, mb: 3 }}
           >
-            The best tool for making plans actually happen
+            From the first idea to the day you meet up
           </Typography>
           <Box sx={{ width: 48, height: 3, bgcolor: "secondary.main", borderRadius: 1, mb: { xs: 3.5, sm: 4.5 } }} />
           <Typography
@@ -395,8 +395,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
             color="text.primary"
             sx={{ lineHeight: 1.7, fontSize: { xs: "1.0625rem", sm: "1.25rem" }, mb: 2 }}
           >
-            NewChums handles the entire lifecycle of a plan, from the first idea
-            through inviting people, confirming attendance, coordinating details, and following up afterward.
+            Whether you run a community or you&apos;re hosting a one-off, NewChums supports the whole flow: posting plans, inviting people, collecting RSVPs, finding the best time, confirming attendance, and following up after.
           </Typography>
           <Typography
             variant="h5"

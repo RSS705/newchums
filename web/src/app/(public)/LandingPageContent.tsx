@@ -22,14 +22,28 @@ import ChatRoundedIcon from "@mui/icons-material/ChatRounded";
 import EventAvailableRoundedIcon from "@mui/icons-material/EventAvailableRounded";
 import MailOutlineRoundedIcon from "@mui/icons-material/MailOutlineRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
+import CampaignRoundedIcon from "@mui/icons-material/CampaignRounded";
+import HowToRegRoundedIcon from "@mui/icons-material/HowToRegRounded";
+import EmojiPeopleRoundedIcon from "@mui/icons-material/EmojiPeopleRounded";
+import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
+import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
 import PublicExploreFeed from "@/components/landing/PublicExploreFeed";
 
 /**
  * Full public homepage content for logged-out visitors.
- * Sections: Hero -> Public Explore -> How It Works -> Features -> Meet People -> Why This Works -> CTA
+ * Sections: Hero -> Public Explore -> For Organizers -> How It Works -> Features ->
+ * Meet People -> Why This Works -> CTA
  *
- * Messaging hierarchy: (1) organize and join hobby-based plans around what you enjoy,
- * (2) clear details and easy follow-through, (3) social upside via shared interests.
+ * Messaging hierarchy (pilot positioning, oriented toward local hobby
+ * communities, clubs, and game stores):
+ *   (1) Help your community make more plans happen.
+ *   (2) Make plans visible, reduce RSVP friction, help newcomers join in.
+ *   (3) Member side: find local plans that match your hobbies and a way
+ *       into a community.
+ * The "For Organizers" section sits directly under the public Explore feed
+ * so a store owner / club leader / Discord admin sees the wedge value
+ * within the first scroll. Member value still has its own dedicated
+ * section further down.
  */
 
 const SECTION_SPACING = { py: { xs: 5, sm: 8, md: 10 } };
@@ -99,8 +113,8 @@ const HOW_IT_WORKS_STEPS = [
     step: 1,
     accentColor: "#E65B13",
     Icon: CalendarMonthRoundedIcon,
-    title: "Create a plan",
-    body: "Pick an activity and set the details.",
+    title: "Set up a community or plan",
+    body: "Make a community page for your group, or post a one-off plan. Either way you choose the activity, the where, and the when.",
     placeholder: "Screenshot, Create plan flow",
     imageSrc: "/images/home/how-step-create.png",
   },
@@ -108,8 +122,8 @@ const HOW_IT_WORKS_STEPS = [
     step: 2,
     accentColor: "#1565c0",
     Icon: MailOutlineRoundedIcon,
-    title: "Invite people",
-    body: "Share a link, send email invites, or even leave it open to new people nearby.",
+    title: "Share what's happening",
+    body: "Send invite links, copy a share link for your group chat, or let nearby people with matching hobbies discover it.",
     placeholder: "Screenshot, Invite view",
     imageSrc: "/images/home/how-step-invite.png",
   },
@@ -117,8 +131,8 @@ const HOW_IT_WORKS_STEPS = [
     step: 3,
     accentColor: "#2e7d32",
     Icon: EventAvailableRoundedIcon,
-    title: "Gather responses",
-    body: "Collect RSVPs, find the best time, and coordinate the details.",
+    title: "Collect RSVPs and join requests",
+    body: "Track who's coming, gather everyone's availability, and approve newcomers when you want a light vetting step.",
     placeholder: "Screenshot, RSVP & availability",
     imageSrc: "/images/home/how-step-responses.png",
   },
@@ -126,8 +140,8 @@ const HOW_IT_WORKS_STEPS = [
     step: 4,
     accentColor: "#7c3aed",
     Icon: PeopleRoundedIcon,
-    title: "Meet up",
-    body: "Everyone's confirmed, the details are set. Time to go.",
+    title: "Meet up and keep momentum",
+    body: "Confirmation reminders, plan chat, and post-plan feedback help follow-through become the default, not the exception.",
     placeholder: "Screenshot, Plan details",
     imageSrc: "/images/home/how-step-meetup.png",
   },
@@ -156,6 +170,46 @@ const MEET_PEOPLE_CALLOUTS: {
     Icon: VerifiedUserRoundedIcon,
     title: "Your chum preferences are remembered",
     body: "Matching is based on shared hobbies, location, and the social preferences you set. The right people find the right plans.",
+  },
+];
+
+// Organizer-value cards. Wired to surfaces that already exist:
+//   - "Make plans visible"     -> public community pages, public Explore feed, hobby matching
+//   - "Reduce RSVP friction"   -> RSVP buttons, request-to-join, 24-hour attendance check
+//   - "Help newcomers join in" -> public community slug URL, lightweight signup card
+//   - "Keep organizers in control" -> approval-required, invite-only, host lock, share link
+// All four reference behavior that is implemented today (see AGENTS.md
+// "Incomplete Areas" table for status). Do not add cards for features
+// that aren't shipped, the homepage is honest-claims territory.
+const ORGANIZER_VALUE_CARDS: {
+  Icon: typeof CampaignRoundedIcon;
+  accentColor: string;
+  title: string;
+  body: string;
+}[] = [
+  {
+    Icon: CampaignRoundedIcon,
+    accentColor: "#E65B13",
+    title: "Make plans visible",
+    body: "Give your community a public page where every upcoming gathering shows up in one place. Members and nearby people with matching hobbies can find what's happening without digging through chats.",
+  },
+  {
+    Icon: HowToRegRoundedIcon,
+    accentColor: "#1565c0",
+    title: "Reduce RSVP friction",
+    body: "Built-in RSVPs, request-to-join, and a 24-hour attendance check so you know who's actually coming. Less back-and-forth in group chat, fewer no-shows on the day.",
+  },
+  {
+    Icon: EmojiPeopleRoundedIcon,
+    accentColor: "#2e7d32",
+    title: "Help newcomers join in",
+    body: "Share one link and a curious newcomer can preview the community, sign up in seconds, and request to join a plan. No app download, no waiting on a moderator to add them to a chat.",
+  },
+  {
+    Icon: TuneRoundedIcon,
+    accentColor: "#7c3aed",
+    title: "Keep organizers in control",
+    body: "Choose public, members-only, or invite-only per plan. Approve requests when you want to vet new players. Lock a plan when seats are full. The defaults are sensible, the toggles are yours.",
   },
 ];
 
@@ -390,8 +444,14 @@ function FeatureCard({
 
 export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?: boolean }) {
   const [meetPeopleImageErrors, setMeetPeopleImageErrors] = useState<Set<string>>(new Set());
+  // Hero image is wired to a community-themed placeholder path that may not
+  // exist on disk yet (see comment near the <img> below). When the file is
+  // missing, the onError handler swaps to a warm icon-block fallback so the
+  // page never shows a broken image during the pilot rollout.
+  const [heroImageErrored, setHeroImageErrored] = useState(false);
 
   const heroReveal = useReveal(0.05);
+  const organizersReveal = useReveal();
   const howReveal = useReveal();
   const featuresTopReveal = useReveal();
   const featuresBotReveal = useReveal();
@@ -421,11 +481,11 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                   display: "block",
                 }}
               >
-                Start, share, and join plans nearby
+                For local hobby communities, clubs, and game stores
               </Typography>
 
               <Typography component="h1" variant="h1" sx={{ mt: "0 !important" }}>
-                Get off your phone and organize something
+                Help your community make more plans happen
               </Typography>
 
               <Typography
@@ -438,11 +498,11 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                   fontSize: "1.2rem",
                 }}
               >
+                NewChums gives your community a simple place to{" "}
                 <Box component="span" sx={{ fontWeight: 700 }}>
-                  Life&apos;s short.
+                  post plans, collect RSVPs, invite people,
                 </Box>{" "}
-                Don&apos;t waste it staring at screens. Create an account, plan a gathering, invite
-                people, actually spend time together.
+                and help members find local gatherings that match their hobbies.
               </Typography>
 
               <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ pt: 0.5 }}>
@@ -450,7 +510,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                   <>
                     <Button
                       component={Link}
-                      href="/events"
+                      href="/communities"
                       variant="contained"
                       color="primary"
                       size="large"
@@ -467,11 +527,11 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                         ...BTN_HOVER,
                       }}
                     >
-                      Browse gatherings
+                      Browse communities
                     </Button>
                     <Button
                       component={Link}
-                      href="/profile"
+                      href="/events"
                       variant="outlined"
                       color="primary"
                       size="large"
@@ -486,14 +546,14 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                         ...BTN_HOVER,
                       }}
                     >
-                      My profile
+                      Browse plans
                     </Button>
                   </>
                 ) : (
                   <>
                     <Button
                       component={Link}
-                      href="/signup"
+                      href="/communities"
                       variant="contained"
                       color="primary"
                       size="large"
@@ -510,11 +570,11 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                         ...BTN_HOVER,
                       }}
                     >
-                      Do something
+                      Browse communities
                     </Button>
                     <Button
                       component="a"
-                      href="#how-it-works"
+                      href="#for-organizers"
                       variant="outlined"
                       color="primary"
                       size="large"
@@ -529,7 +589,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                         ...BTN_HOVER,
                       }}
                     >
-                      Explain it to me
+                      For organizers
                     </Button>
                   </>
                 )}
@@ -537,7 +597,17 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
             </Stack>
           </Grid>
 
-          {/* Right: hero image */}
+          {/* Right: hero image.
+              Placeholder path, deliberately wired ahead of the asset:
+                /public/images/home/community-hero.png
+              Recommended specs: 1200x800 (or 1400x900) PNG or WebP, light or
+              transparent background, light/warm composition that works on
+              the homepage's white background. Visual concept: a warm hobby
+              or game community gathering, people around a table, a store /
+              community board, calendar / plans energy. Avoid generic
+              corporate networking visuals. Until the file is placed, the
+              onError handler swaps to a warm icon-block fallback so the
+              page never shows a broken image. */}
           <Grid
             size={{ xs: 12, md: 6 }}
             sx={{
@@ -547,25 +617,243 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
               overflow: "visible",
             }}
           >
-            <Box
-              component="img"
-              src="/images/home/Phone-Exploding.png"
-              alt="Get off your phone and organize a gathering"
-              sx={{
-                height: "100%",
-                width: "auto",
-                maxWidth: "100%",
-                objectFit: "contain",
-                display: "block",
-                transform: "scale(1.25)",
-              }}
-            />
+            {heroImageErrored ? (
+              <Box
+                role="img"
+                aria-label="Local hobby community gathering"
+                sx={{
+                  width: "100%",
+                  aspectRatio: "3 / 2",
+                  borderRadius: 4,
+                  background: (theme) =>
+                    `linear-gradient(135deg, #FCECC3 0%, ${theme.palette.background.paper} 100%)`,
+                  border: "1px solid",
+                  borderColor: "rgba(230,91,19,0.18)",
+                  boxShadow: "0 8px 32px rgba(230,91,19,0.10)",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 1.5,
+                  p: 4,
+                }}
+              >
+                <GroupsRoundedIcon sx={{ fontSize: 96, color: "primary.main", opacity: 0.85 }} />
+                <Typography
+                  variant="body1"
+                  fontWeight={600}
+                  sx={{ color: "text.secondary", textAlign: "center", maxWidth: 320 }}
+                >
+                  Your community, in one place.
+                </Typography>
+              </Box>
+            ) : (
+              <Box
+                component="img"
+                src="/images/home/community-hero.png"
+                alt="A local hobby community making plans together"
+                onError={() => setHeroImageErrored(true)}
+                sx={{
+                  height: "100%",
+                  width: "auto",
+                  maxWidth: "100%",
+                  objectFit: "contain",
+                  display: "block",
+                }}
+              />
+            )}
           </Grid>
         </Grid>
       </Box>
 
       {/* ── Section 1.1: Public Explore Feed ── */}
       {!isLoggedIn && <PublicExploreFeed />}
+
+      {/* ── Section: For Organizers ──
+          Pilot-positioning section. Anchored from the top nav
+          ("For Organizers" -> /#for-organizers). Speaks directly to
+          local store owners, club leaders, and Discord/Facebook group
+          admins. Card data lives in ORGANIZER_VALUE_CARDS at the top
+          of this file. Visual treatment is the same accent-bordered
+          card pattern used by "Why NewChums works" so the section
+          reads as a peer of the rest of the page rather than a
+          retrofitted block. */}
+      <Box
+        component="section"
+        id="for-organizers"
+        ref={organizersReveal.ref}
+        sx={{
+          ...SECTION_SPACING,
+          mx: { xs: -2, sm: -3 },
+          px: { xs: 2, sm: 3 },
+          backgroundColor: (theme) => (theme.palette.mode === "light" ? "#F6F7F9" : "grey.900"),
+          // The for-organizers anchor needs scroll-margin so the sticky
+          // site header doesn't cover the heading on hash navigation.
+          scrollMarginTop: { xs: 72, md: 88 },
+        }}
+      >
+        <Box maxWidth={1100} mx="auto">
+          <Box
+            sx={{
+              textAlign: "center",
+              mb: { xs: 4, sm: 6 },
+              ...REVEAL_SX(organizersReveal.visible),
+            }}
+          >
+            <Typography
+              variant="overline"
+              sx={{
+                color: "secondary.main",
+                fontWeight: 700,
+                letterSpacing: "0.12em",
+                fontSize: "0.7rem",
+                display: "block",
+                mb: 1.5,
+              }}
+            >
+              For organizers
+            </Typography>
+            <Typography
+              component="h2"
+              variant="h2"
+              fontWeight={800}
+              sx={{
+                fontSize: { xs: "1.85rem", sm: "2.5rem", md: "2.75rem" },
+                lineHeight: 1.15,
+                letterSpacing: "-0.025em",
+                mb: 2,
+              }}
+            >
+              Built for the people who keep communities moving
+            </Typography>
+            <Typography
+              variant="h5"
+              component="p"
+              fontWeight={500}
+              sx={{
+                fontSize: { xs: "1.05rem", sm: "1.2rem" },
+                lineHeight: 1.6,
+                color: "text.secondary",
+                maxWidth: 620,
+                mx: "auto",
+              }}
+            >
+              Game stores, hobby clubs, league captains, Discord and Facebook group admins. If
+              you&apos;re the person turning &ldquo;we should do something&rdquo; into actual plans,
+              NewChums is built to make that part easier.
+            </Typography>
+          </Box>
+
+          <Grid container spacing={{ xs: 3, sm: 3.5 }}>
+            {ORGANIZER_VALUE_CARDS.map(({ Icon, accentColor, title, body }, i) => (
+              <Grid key={title} size={{ xs: 12, sm: 6 }}>
+                <Box
+                  sx={{
+                    height: "100%",
+                    backgroundColor: "background.paper",
+                    borderTop: "3px solid",
+                    borderColor: accentColor,
+                    borderRadius: 3,
+                    p: { xs: 3, sm: 3.5 },
+                    boxShadow: (theme) =>
+                      theme.palette.mode === "light" ? "0 2px 8px rgba(0,0,0,0.06)" : "none",
+                    display: "flex",
+                    flexDirection: "column",
+                    ...CARD_HOVER,
+                    ...REVEAL_SX(organizersReveal.visible, 0.08 * i),
+                  }}
+                >
+                  <Box
+                    sx={{
+                      width: 48,
+                      height: 48,
+                      borderRadius: 2.5,
+                      bgcolor: `${accentColor}10`,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      mb: 2,
+                    }}
+                  >
+                    <Icon sx={{ fontSize: 24, color: accentColor }} />
+                  </Box>
+                  <Typography
+                    variant="h6"
+                    component="h3"
+                    fontWeight={700}
+                    sx={{
+                      mb: 1.25,
+                      fontSize: { xs: "1.0625rem", sm: "1.125rem" },
+                      lineHeight: 1.35,
+                    }}
+                  >
+                    {title}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.7 }}>
+                    {body}
+                  </Typography>
+                </Box>
+              </Grid>
+            ))}
+          </Grid>
+
+          <Box
+            sx={{
+              mt: { xs: 5, sm: 6 },
+              textAlign: "center",
+              ...REVEAL_SX(organizersReveal.visible, 0.4),
+            }}
+          >
+            <Stack
+              direction={{ xs: "column", sm: "row" }}
+              spacing={2}
+              justifyContent="center"
+              alignItems="center"
+            >
+              <Button
+                component={Link}
+                href={isLoggedIn ? "/communities/create" : "/signup"}
+                variant="contained"
+                color="primary"
+                size="large"
+                sx={{
+                  px: 4,
+                  py: 1.5,
+                  fontWeight: 700,
+                  fontSize: "1.0625rem",
+                  borderRadius: 2.5,
+                  textTransform: "none",
+                  minWidth: { xs: "100%", sm: 220 },
+                  boxShadow: "0 4px 16px rgba(230,91,19,0.25)",
+                  "&:hover": { boxShadow: "0 6px 24px rgba(230,91,19,0.35)" },
+                  ...BTN_HOVER,
+                }}
+              >
+                {isLoggedIn ? "Start a community" : "Create a free account"}
+              </Button>
+              <Button
+                component={Link}
+                href="/communities"
+                variant="outlined"
+                color="primary"
+                size="large"
+                sx={{
+                  px: 4,
+                  py: 1.5,
+                  fontWeight: 600,
+                  fontSize: "1.0625rem",
+                  borderRadius: 2.5,
+                  textTransform: "none",
+                  minWidth: { xs: "100%", sm: 220 },
+                  ...BTN_HOVER,
+                }}
+              >
+                See active communities
+              </Button>
+            </Stack>
+          </Box>
+        </Box>
+      </Box>
 
       {/* ── Section: How It Works ── */}
       <Box
@@ -630,11 +918,11 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                 fontSize: { xs: "1.05rem", sm: "1.2rem", md: "1.3rem" },
                 lineHeight: 1.6,
                 color: "text.secondary",
-                maxWidth: 480,
+                maxWidth: 520,
                 mx: "auto",
               }}
             >
-              Getting together shouldn&apos;t be painful.
+              Whether you run a community or you&apos;re hosting a one-off, the same four steps get you from idea to gathering.
             </Typography>
           </Box>
 
@@ -875,11 +1163,11 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                 fontSize: { xs: "1.05rem", sm: "1.15rem", md: "1.25rem" },
                 lineHeight: 1.6,
                 color: "text.secondary",
-                maxWidth: 540,
+                maxWidth: 600,
                 mx: "auto",
               }}
             >
-              Let NewChums find the best time for your plans, and control who sees what.
+              Pick the best time with everyone&apos;s input, and control exactly who sees what for each plan.
             </Typography>
           </Box>
 
@@ -962,7 +1250,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                 mb: 2,
               }}
             >
-              Easier communication
+              Coordination without the back-and-forth
             </Typography>
             <Typography
               variant="h5"
@@ -972,12 +1260,11 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                 fontSize: { xs: "1.05rem", sm: "1.15rem", md: "1.25rem" },
                 lineHeight: 1.6,
                 color: "text.secondary",
-                maxWidth: 540,
+                maxWidth: 600,
                 mx: "auto",
               }}
             >
-              Chat, automated reminders, 24-hour confirmation requests, and easy inviting all in one
-              place.
+              Plan chat, automated reminders, 24-hour attendance checks, and easy inviting so plans don&apos;t get lost across Discord, Facebook, and group texts.
             </Typography>
           </Box>
 
@@ -1032,7 +1319,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                 mb: 2,
               }}
             >
-              A great way to connect over shared hobbies
+              For people looking for their hobby community
             </Typography>
             <Typography
               variant="h5"
@@ -1042,11 +1329,11 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                 fontSize: { xs: "1.05rem", sm: "1.2rem" },
                 lineHeight: 1.6,
                 color: "text.secondary",
-                maxWidth: 580,
+                maxWidth: 620,
                 mx: "auto",
               }}
             >
-              Not every plan has to be with people you already know.
+              Find local plans and communities that match what you actually enjoy doing.
             </Typography>
           </Box>
 
@@ -1058,27 +1345,23 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
           >
             <Grid size={{ xs: 12, md: 6 }} sx={REVEAL_SX(meetReveal.visible, 0.1)}>
               <Typography variant="body1" sx={{ lineHeight: 1.85, mb: 3, color: "text.primary" }}>
-                When you create a plan on NewChums,{" "}
+                Browse{" "}
                 <Box component="span" sx={{ fontWeight: 700 }}>
-                  you decide who can join
-                </Box>
-                . Keep it private for your friends, open it up to new people, or both, it&apos;s up
-                to you.
+                  nearby plans and communities
+                </Box>{" "}
+                that fit your hobbies. RSVP to a board game night, request to join a community for
+                your local pottery group, jump into the plan chat once you&apos;re in.
               </Typography>
               <Typography
                 variant="body1"
                 sx={{ lineHeight: 1.85, mb: { xs: 3, sm: 4 }, color: "text.primary" }}
               >
+                Set your hobbies and the kind of plans you enjoy, and{" "}
                 <Box component="span" sx={{ fontWeight: 700 }}>
-                  Public plans
+                  matching gatherings come to you
                 </Box>{" "}
-                are where it gets interesting. When someone nearby shares your hobbies and fits your
-                preferences,{" "}
-                <Box component="span" sx={{ fontWeight: 700 }}>
-                  they&apos;ll hear about your plan
-                </Box>
-                . And you&apos;ll hear about theirs. No cold introductions, no awkward swiping, just
-                real people showing up to do something they already enjoy.
+                instead of you trawling group chats. New to the area or new to the hobby? Public
+                community pages are an easy first step in.
               </Typography>
               {!isLoggedIn && (
                 <Button
@@ -1326,8 +1609,8 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                   fontSize: { xs: "0.975rem", sm: "1.05rem" },
                 }}
               >
-                There&apos;s real research behind why shared activities, smaller groups, and
-                repeated contact lead to stronger friendships.
+                There&apos;s real research behind why shared activities, smaller gatherings, and
+                repeated contact help communities show up consistently.
               </Typography>
               <Button
                 component={Link}
@@ -1345,7 +1628,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                   ...BTN_HOVER,
                 }}
               >
-                Read the science behind it
+                Read the research
               </Button>
             </Box>
           </Box>
@@ -1389,7 +1672,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
               fontWeight: 600,
             }}
           >
-            Ready to make better plans?
+            Ready to make your community easier to join?
           </Typography>
           <Typography
             component="h2"
@@ -1402,13 +1685,13 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
               color: "inherit",
             }}
           >
-            DO SOMETHING!
+            Let&apos;s make plans happen
           </Typography>
           <Typography
             variant="body1"
-            sx={{ mb: { xs: 6, sm: 8 }, opacity: 0.8, lineHeight: 1.75, maxWidth: 480, mx: "auto" }}
+            sx={{ mb: { xs: 6, sm: 8 }, opacity: 0.85, lineHeight: 1.75, maxWidth: 520, mx: "auto" }}
           >
-            Sign up, add the hobbies you enjoy, and start organizing and discovering plans.
+            Create a free account, explore local plans, or start building a home for your hobby community.
           </Typography>
           <Divider
             sx={{
@@ -1418,28 +1701,58 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
               mx: "auto",
             }}
           />
-          <Button
-            component={Link}
-            href={isLoggedIn ? "/" : "/signup"}
-            variant="contained"
-            color="onPrimary"
-            size="large"
-            sx={{
-              px: { xs: 5, sm: 6 },
-              py: 1.75,
-              fontSize: "1.0625rem",
-              fontWeight: 600,
-              textTransform: "none",
-              borderRadius: 2.5,
-              minWidth: { xs: "100%", sm: 240 },
-              maxWidth: { xs: "none", sm: 320 },
-              boxShadow: "0 2px 12px rgba(0,0,0,0.15)",
-              "&:hover": { boxShadow: "0 4px 20px rgba(0,0,0,0.2)" },
-              ...BTN_HOVER,
-            }}
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            spacing={2}
+            justifyContent="center"
+            alignItems="center"
           >
-            {isLoggedIn ? "Explore NewChums" : "Alright, I'm in"}
-          </Button>
+            <Button
+              component={Link}
+              href={isLoggedIn ? "/" : "/signup"}
+              variant="contained"
+              color="onPrimary"
+              size="large"
+              sx={{
+                px: { xs: 5, sm: 6 },
+                py: 1.75,
+                fontSize: "1.0625rem",
+                fontWeight: 700,
+                textTransform: "none",
+                borderRadius: 2.5,
+                minWidth: { xs: "100%", sm: 240 },
+                boxShadow: "0 2px 12px rgba(0,0,0,0.15)",
+                "&:hover": { boxShadow: "0 4px 20px rgba(0,0,0,0.2)" },
+                ...BTN_HOVER,
+              }}
+            >
+              {isLoggedIn ? "Explore NewChums" : "Create a free account"}
+            </Button>
+            <Button
+              component={Link}
+              href="/communities"
+              variant="outlined"
+              size="large"
+              sx={{
+                px: { xs: 5, sm: 6 },
+                py: 1.75,
+                fontSize: "1.0625rem",
+                fontWeight: 600,
+                textTransform: "none",
+                borderRadius: 2.5,
+                minWidth: { xs: "100%", sm: 240 },
+                color: "white",
+                borderColor: "rgba(255,255,255,0.6)",
+                "&:hover": {
+                  borderColor: "white",
+                  backgroundColor: "rgba(255,255,255,0.08)",
+                },
+                ...BTN_HOVER,
+              }}
+            >
+              Browse communities
+            </Button>
+          </Stack>
         </Box>
       </Box>
     </Box>

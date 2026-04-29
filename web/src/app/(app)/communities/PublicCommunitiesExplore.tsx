@@ -202,7 +202,7 @@ export default function PublicCommunitiesExplore() {
           Communities
         </Typography>
         <Typography variant="body1" color="text.secondary" sx={{ fontSize: { xs: "0.875rem", sm: "0.9375rem" } }}>
-          Browse public communities on NewChums. Click in to see what they&apos;re about, or sign up to join.
+          Local hobby clubs, game stores, and groups across NewChums. Click in to see what they&apos;re about and the plans they have coming up, or sign up to join one.
         </Typography>
       </Box>
 
@@ -421,7 +421,7 @@ export default function PublicCommunitiesExplore() {
                 Want to join or start one?
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-                Sign up to join a community, RSVP to plans, and meet other members.
+                Sign up to join a community, RSVP to plans, or set one up for your own group.
               </Typography>
             </Box>
             <Stack

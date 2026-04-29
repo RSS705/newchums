@@ -187,6 +187,12 @@ export default function LandingLayout({
         />
       </Drawer>
 
+      {/* No top padding here. The fixed AppBar's clearance is handled
+          globally by `#app-scroll-root { margin-top: var(--header-h) }`
+          in `web/src/app/globals.css`, which pushes the entire layout
+          (including this main) below the header at the right responsive
+          height (64px on xs/sm/md, 80px on lg+). Adding pt here would
+          double the offset. */}
       <Box component="main" sx={{ flex: 1 }}>
         <LandingContainer>{children}</LandingContainer>
       </Box>

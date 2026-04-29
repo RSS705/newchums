@@ -242,7 +242,14 @@ export default function AppShell({ children, user, passwordSetupPending }: AppSh
 
         <Box
           component="main"
-          sx={{ flexGrow: 1, display: "flex", flexDirection: "column" }}
+          sx={{
+            flexGrow: 1,
+            display: "flex",
+            flexDirection: "column",
+            // No top padding here. The fixed AppBar's clearance is
+            // handled globally by `#app-scroll-root { margin-top:
+            // var(--header-h) }` in globals.css.
+          }}
         >
           <Box sx={{ flex: 1, pb: { xs: 0, md: 4 } }}>
             <Container maxWidth="lg" sx={{ pt: { xs: 3, sm: 4 }, pb: { xs: 2, sm: 3 }, px: { xs: 2, sm: 3 } }}>
@@ -526,17 +533,27 @@ export default function AppShell({ children, user, passwordSetupPending }: AppSh
                   </ListItemIcon>
                   Settings
                 </MenuItem>
-                <MenuItem
-                  onClick={() => {
-                    setAccountMenuAnchor(null);
-                    router.push("/your-plan");
-                  }}
-                >
-                  <ListItemIcon>
-                    <CardMembershipRoundedIcon fontSize="small" />
-                  </ListItemIcon>
-                  Your Plan
-                </MenuItem>
+                {/* Your Plan is super-admin only for the pilot. The page
+                    explains tiers (Free / Super Host / Community Pro) but
+                    plans aren't user-actionable yet (no billing, no
+                    self-serve upgrade), so showing it to every user reads
+                    as a sales tease for nothing they can do. Once the
+                    plan surface develops further, drop the gate. The
+                    /your-plan route is still reachable by direct URL for
+                    super admins who want to preview the page. */}
+                {isSuperAdmin && (
+                  <MenuItem
+                    onClick={() => {
+                      setAccountMenuAnchor(null);
+                      router.push("/your-plan");
+                    }}
+                  >
+                    <ListItemIcon>
+                      <CardMembershipRoundedIcon fontSize="small" />
+                    </ListItemIcon>
+                    Your Plan
+                  </MenuItem>
+                )}
                 <MenuItem
                   onClick={() => {
                     setAccountMenuAnchor(null);
@@ -598,6 +615,12 @@ export default function AppShell({ children, user, passwordSetupPending }: AppSh
           display: "flex",
           flexDirection: "column",
           pb: 0,
+          // No top padding here. The fixed AppBar's clearance is handled
+          // globally by `#app-scroll-root { margin-top: var(--header-h) }`
+          // in globals.css. The sidebar's <Toolbar> spacer (see Drawer
+          // above) is for the sidebar's own internal layout; the main
+          // column doesn't need a matching spacer because scroll-root
+          // already offsets the whole page.
         }}
       >
         {isAuthenticated && passwordSetupPending && <PasswordSetupBanner />}

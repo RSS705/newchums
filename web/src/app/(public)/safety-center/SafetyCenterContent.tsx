@@ -169,8 +169,7 @@ export default function SafetyCenterContent({ isLoggedIn = false }: { isLoggedIn
             color="text.primary"
             sx={{ lineHeight: 1.7, fontSize: { xs: "1.0625rem", sm: "1.25rem" }, mb: 2.5 }}
           >
-            NewChums is built around shared interests and comfortable, low-pressure gatherings.
-            A few simple habits make every meetup more enjoyable, for you and everyone else.
+            NewChums is built for local hobby communities and the people who attend their plans. A few simple habits make every gathering safer and more enjoyable, for hosts, organizers, and attendees alike.
           </Typography>
           <Typography
             variant="h5"
@@ -178,7 +177,7 @@ export default function SafetyCenterContent({ isLoggedIn = false }: { isLoggedIn
             color="text.secondary"
             sx={{ lineHeight: 1.7, fontSize: { xs: "1.0625rem", sm: "1.125rem" }, mb: { xs: 4, sm: 5 } }}
           >
-            This page gathers practical guidance to help you organise and attend gatherings with confidence.
+            This page gathers practical guidance to help you run, attend, and welcome people into gatherings with confidence.
           </Typography>
 
           {/* CTAs */}

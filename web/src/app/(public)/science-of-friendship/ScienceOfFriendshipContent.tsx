@@ -83,8 +83,7 @@ export default function ScienceOfFriendshipContent({ isLoggedIn = false }: { isL
             color="text.primary"
             sx={{ lineHeight: 1.7, fontSize: { xs: "1.0625rem", sm: "1.25rem" } }}
           >
-            NewChums was built around a simple idea: if we recreate those conditions, friendship
-            becomes much more likely.
+            The same conditions also help communities show up consistently. NewChums was built around a simple idea: if we recreate those conditions, both individual friendships and the local communities they grow inside become much more likely.
           </Typography>
         </Stack>
 

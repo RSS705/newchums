@@ -66,13 +66,14 @@ export const headerNavLinks: HeaderNavLink[] = [
  *  Kept out of the logged-in header because authenticated users already
  *  have Communities in the left sidebar; showing it twice would be noise.
  *
- *  Sequenced after Science of Friendship so the two "learn about the
- *  product" links (How it Works, Science of Friendship) stay paired, and
- *  Communities sits alongside Safety Center as the "things you can do /
- *  see on the app" half of the row. */
+ *  Science of Friendship is intentionally not in the primary nav for the
+ *  pilot. The page itself still exists, is reachable from the in-page CTA
+ *  inside the "Why NewChums works" homepage section, and remains in the
+ *  footer. The homepage's "For Organizers" section (id `for-organizers`)
+ *  is similarly unlinked from the top nav, the in-page hero CTA on the
+ *  homepage routes there. */
 export const publicHeaderNavLinks: HeaderNavLink[] = [
   { label: "How it Works", href: "/how-it-works" },
-  { label: "Science of Friendship", href: "/science-of-friendship" },
   { label: "Communities", href: "/communities" },
   { label: "Safety Center", href: "/safety-center" },
 ];
