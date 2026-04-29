@@ -234,17 +234,17 @@ export default function CommunityListCard({
           </Typography>
         </Stack>
       ) : c.location_name ? (
-        <Stack direction="row" spacing={0.5} alignItems="flex-start" useFlexGap sx={{ minWidth: 0, flex: { xs: "1 1 100%", sm: "0 1 auto" } }}>
-          <Typography variant="body2" color="text.disabled" sx={{ display: { xs: "none", sm: "inline" }, lineHeight: 1.5 }}>·</Typography>
-          <PlaceRoundedIcon sx={{ fontSize: 14, color: "text.disabled", flexShrink: 0, mt: "3px" }} />
-          <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem", lineHeight: 1.5, minWidth: 0 }}>
+        <Stack direction="row" spacing={0.5} alignItems="center" useFlexGap sx={{ minWidth: 0, flex: { xs: "1 1 100%", sm: "0 1 auto" } }}>
+          <Typography variant="body2" color="text.disabled" sx={{ display: { xs: "none", sm: "inline" } }}>·</Typography>
+          <PlaceRoundedIcon sx={{ fontSize: 14, color: "text.disabled", flexShrink: 0 }} />
+          <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem", minWidth: 0 }}>
             {c.location_name}
           </Typography>
           {c.distance_km != null && (
             <Chip
               label={c.distance_km < 1 ? "< 1 km" : `${Math.round(c.distance_km)} km`}
               size="small"
-              sx={{ height: 20, fontSize: "0.6875rem", fontWeight: 500, borderRadius: 1, bgcolor: "grey.100", color: "text.secondary", flexShrink: 0, mt: "1px" }}
+              sx={{ height: 20, fontSize: "0.6875rem", fontWeight: 500, borderRadius: 1, bgcolor: "grey.100", color: "text.secondary", flexShrink: 0 }}
             />
           )}
         </Stack>

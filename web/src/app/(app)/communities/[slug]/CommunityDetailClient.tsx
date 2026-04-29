@@ -839,9 +839,9 @@ export default function CommunityDetailClient() {
                       <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>Online</Typography>
                     </Stack>
                   ) : community.location_name ? (
-                    <Stack direction="row" spacing={0.5} alignItems="flex-start" useFlexGap>
-                      <PlaceRoundedIcon sx={{ fontSize: 14, color: "text.disabled", mt: "3px", flexShrink: 0 }} />
-                      <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem", lineHeight: 1.5 }}>
+                    <Stack direction="row" spacing={0.5} alignItems="center" useFlexGap>
+                      <PlaceRoundedIcon sx={{ fontSize: 14, color: "text.disabled", flexShrink: 0 }} />
+                      <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
                         {community.location_name}
                       </Typography>
                     </Stack>
@@ -1222,10 +1222,10 @@ export default function CommunityDetailClient() {
                     </Typography>
                   </Stack>
                 ) : community.location_name ? (
-                  <Stack direction="row" spacing={0.5} alignItems="flex-start" useFlexGap>
-                    <Typography variant="body2" color="text.disabled" sx={{ display: { xs: "none", sm: "inline" }, lineHeight: 1.5 }}>·</Typography>
-                    <PlaceRoundedIcon sx={{ fontSize: 14, color: "text.disabled", mt: "3px", flexShrink: 0 }} />
-                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem", lineHeight: 1.5 }}>
+                  <Stack direction="row" spacing={0.5} alignItems="center" useFlexGap>
+                    <Typography variant="body2" color="text.disabled" sx={{ display: { xs: "none", sm: "inline" } }}>·</Typography>
+                    <PlaceRoundedIcon sx={{ fontSize: 14, color: "text.disabled", flexShrink: 0 }} />
+                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
                       {community.location_name}
                     </Typography>
                   </Stack>
