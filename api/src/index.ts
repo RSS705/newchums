@@ -10739,11 +10739,41 @@ app.post("/events/:id/rsvp", async (c) => {
       }
     }
 
-    // Require-approval gate: non-invited users without an existing RSVP must go through the request flow
+    // Require-approval gate: non-invited users without an existing RSVP must
+    // go through the request flow.
+    //
+    // Bypassed (in priority order) when ANY of the following is true:
+    //   (a) an `event_invites` row exists for the user, set by either a direct
+    //       host invite or by `invite_token` adoption inside GET /events/:id;
+    //   (b) the request body carries a valid host-generated `share_token` for
+    //       this plan (Copy Link share path); or
+    //   (c) the request body carries a valid `invite_token` for this plan
+    //       (the email-mismatch safety net, mirrors the invite_only gate
+    //       above where GET-side adoption couldn't link the row).
+    //
+    // All three represent host-extended access. Without (a), (b) or (c), a
+    // logged-in user discovering an approval-required plan via Explore /
+    // community / direct URL still has to send a join request. This mirrors
+    // the bypass set used by the `invite_only` gate immediately above so the
+    // two gates behave consistently.
     if (event.require_approval && existingRsvp.length === 0) {
       const invited = (await sql`SELECT 1 FROM newchums.event_invites WHERE event_id = ${eventId} AND user_id = ${userId} LIMIT 1`) as unknown[];
-      if (invited.length === 0)
-        return c.json({ ok: false, error: "APPROVAL_REQUIRED", message: "This plan requires host approval before joining" }, 403);
+      if (invited.length === 0) {
+        const shareToken = typeof body.share_token === "string" ? body.share_token : null;
+        const hasValidShareToken = shareToken
+          ? await verifyShareToken(shareToken, eventId, c.env.NEXTAUTH_SECRET)
+          : false;
+        let hasValidInviteToken = false;
+        if (!hasValidShareToken) {
+          const inviteToken = typeof body.invite_token === "string" ? body.invite_token : null;
+          if (inviteToken) {
+            const decoded = await verifyInviteToken(inviteToken, c.env.NEXTAUTH_SECRET);
+            hasValidInviteToken = decoded?.eventId === eventId;
+          }
+        }
+        if (!hasValidShareToken && !hasValidInviteToken)
+          return c.json({ ok: false, error: "APPROVAL_REQUIRED", message: "This plan requires host approval before joining" }, 403);
+      }
     }
 
     if (status === "going" && event.max_seats) {
@@ -12503,7 +12533,13 @@ app.post("/events/:id/join-request", async (c) => {
             requesterName,
             eventTitle: event.title,
             requestMessage: message || "",
-            eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}?context=host_review`,
+            // `?section=join-requests` is the auth-required marker the web
+            // (app)/layout reads to redirect logged-out viewers through /login
+            // first, then back to the host's "Join requests" card. This is the
+            // pattern that fixes the "Plan not found" symptom on QA plans
+            // (where the public-preview path 404s) and on private plans where
+            // a logged-out host has no view permission.
+            eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}?section=join-requests`,
             eventDate: formatEventDate(event.starts_at, event.timezone || "UTC"),
             // Recipient is the host: always sees exact.
             eventLocation: buildEmailEventLocation(event, "host"),
@@ -12596,7 +12632,11 @@ app.post("/events/:id/join-request/:requestId/approve", async (c) => {
             hostName,
             eventTitle: ev[0].title,
             hostMessage,
-            eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}?context=request_approved`,
+            // `?section=attendees` triggers the same auth-redirect pattern as
+            // join-requests (see AUTH_REQUIRED_EVENT_SECTIONS in
+            // web/src/app/(app)/layout.tsx) so a logged-out approved viewer
+            // is sent through /login first, then scrolls to Who's in.
+            eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}?section=attendees`,
             eventDate: formatEventDate(ev[0].starts_at, ev[0].timezone || "UTC"),
             // Recipient has just joined (RSVP row is created as 'going'
             // right above this block). Role = "joined": they see exact

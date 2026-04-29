@@ -157,8 +157,13 @@ export default function AdminSystemLogicClient() {
           Request-to-join (approval-required plans)
         </Typography>
         <Bullet>
-          When the host enables approval, anyone who isn&rsquo;t already invited or RSVP&rsquo;d must submit a short message to request a spot.
-          The host approves or declines from the plan page.
+          When the host enables approval, anyone reaching the plan via random discovery (Explore, community, plain URL) must submit a short
+          message to request a spot. The host approves or declines from the plan page.
+        </Bullet>
+        <Bullet>
+          <strong>Bypassed by host-extended access:</strong> existing RSVPs, direct invites, valid <code>invite_token</code> (email links), and
+          valid <code>share_token</code> (Copy Link) all skip Request-to-join and go straight to the normal RSVP buttons. The host generated
+          the share link, so its holder is treated as host-granted access. The same bypass set applies to invite-only visibility.
         </Bullet>
         <Bullet>
           <strong>Approve:</strong> adds the requester as Going (capacity-checked) and sends an approval email.

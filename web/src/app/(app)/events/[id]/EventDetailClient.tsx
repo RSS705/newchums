@@ -64,6 +64,8 @@ import BookmarkRemoveRoundedIcon from "@mui/icons-material/BookmarkRemoveRounded
 import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
 import CancelRoundedIcon from "@mui/icons-material/CancelRounded";
 import FlagRoundedIcon from "@mui/icons-material/FlagRounded";
+import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
+import HourglassEmptyRoundedIcon from "@mui/icons-material/HourglassEmptyRounded";
 import HistoryRoundedIcon from "@mui/icons-material/HistoryRounded";
 import VisibilityOffRoundedIcon from "@mui/icons-material/VisibilityOffRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
@@ -252,8 +254,25 @@ const VALID_RSVP_PARAMS = ["going", "maybe", "cant_make_it"] as const;
 
 // Sections from email deep-links (?section=...) that require an authenticated
 // viewer. Logged-out visitors hitting these are redirected through /login first
-// and returned to the same plan + section after signing in.
-const AUTH_REQUIRED_SECTIONS: readonly string[] = ["feedback", "chat", "confirmation"];
+// and returned to the same plan + section after signing in. Keep in sync with
+// AUTH_REQUIRED_EVENT_SECTIONS in web/src/app/(app)/layout.tsx (the layout
+// short-circuits on the server before any HTML renders; this client-side list
+// is the safety net + scroll-target gate).
+//
+// "join-requests" is the host-side "Review request" deep-link target; when a
+// logged-out host (often a super admin for QA plans, where the public-preview
+// path 404s) clicks the email, this routes them through /login first instead
+// of letting them land on a "Plan not found" message.
+//
+// "attendees" is the requester-side "approved" email deep-link; after login
+// the viewer scrolls to the Who's in card where they can confirm their RSVP.
+const AUTH_REQUIRED_SECTIONS: readonly string[] = [
+  "feedback",
+  "chat",
+  "confirmation",
+  "join-requests",
+  "attendees",
+];
 
 const PREF_NOTE_LABELS: Record<string, string> = {
   reliability: "reliability",
@@ -424,6 +443,25 @@ export default function EventDetailClient() {
     }
   }, [eventId]);
 
+  // Restore share token for this event from localStorage. Required so the
+  // host-generated Copy Link grant survives the lightweight-signup round-trip
+  // (the URL is scrubbed of `?share_token=...` after first capture and is no
+  // longer present when the user lands back on the plan after authenticating).
+  // Mirrors the invite_token path above. The server-side gates (invite_only
+  // and require_approval) re-verify the token on every RSVP, so persisting
+  // it client-side never weakens the access check.
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(`nc_share_${eventId}`);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed.token) shareTokenRef.current = parsed.token;
+      }
+    } catch {
+      /* noop */
+    }
+  }, [eventId]);
+
   // Join request state
   const [joinRequests, setJoinRequests] = useState<JoinRequest[]>([]);
   const [joinRequestMessage, setJoinRequestMessage] = useState("");
@@ -529,11 +567,22 @@ export default function EventDetailClient() {
         return;
       }
       const data = await res.json();
-      // If the API returned "public" despite having an invite token, the token is expired/invalid
+      // If the API returned "public" despite having a token, that token is
+      // expired/invalid (or simply for a different plan). Clear it from
+      // local state and storage so a stale value can't keep masking the
+      // public-preview path. Same logic for invite_token and share_token.
       if (data.accessState === "public" && inviteTokenRef.current) {
         inviteTokenRef.current = null;
         try {
           localStorage.removeItem(`nc_inv_${eventId}`);
+        } catch {
+          /* noop */
+        }
+      }
+      if (data.accessState === "public" && shareTokenRef.current) {
+        shareTokenRef.current = null;
+        try {
+          localStorage.removeItem(`nc_share_${eventId}`);
         } catch {
           /* noop */
         }
@@ -611,7 +660,17 @@ export default function EventDetailClient() {
         /* noop */
       }
     }
-    if (shareTokenParam) shareTokenRef.current = shareTokenParam;
+    if (shareTokenParam) {
+      shareTokenRef.current = shareTokenParam;
+      // Persist so the grant survives the lightweight-signup round-trip
+      // (URL is cleaned a few lines below; without persistence the ref
+      // would reset to null when the user returns after authenticating).
+      try {
+        localStorage.setItem(`nc_share_${eventId}`, JSON.stringify({ token: shareTokenParam }));
+      } catch {
+        /* noop */
+      }
+    }
     if (rsvpParam && VALID_RSVP_PARAMS.includes(rsvpParam as (typeof VALID_RSVP_PARAMS)[number])) {
       pendingRsvpRef.current = rsvpParam;
     }
@@ -2772,17 +2831,21 @@ export default function EventDetailClient() {
             </Stack>
           ) : showRequestToJoin ? (
             <>
-              <Typography variant="h6" fontWeight={600} sx={{ mb: 1 }}>
+              <Typography
+                variant="h5"
+                fontWeight={700}
+                sx={{ mb: 0.5, fontSize: { xs: "1.25rem", sm: "1.375rem" } }}
+              >
                 Want to join?
               </Typography>
               <Stack
                 direction="row"
                 alignItems="center"
                 spacing={1}
-                sx={{ mb: 2, p: 1.5, bgcolor: "grey.50", borderRadius: 2 }}
+                sx={{ mb: 2, mt: 1, p: 1.5, bgcolor: "grey.50", borderRadius: 2 }}
               >
                 <InfoOutlinedIcon sx={{ fontSize: 18, color: "text.secondary" }} />
-                <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
+                <Typography variant="body2" color="text.secondary">
                   The host reviews each request before adding you to the plan.
                 </Typography>
               </Stack>
@@ -2795,139 +2858,195 @@ export default function EventDetailClient() {
                   sx={{ mb: 2, p: 1.5, bgcolor: "grey.100", borderRadius: 2 }}
                 >
                   <LockRoundedIcon sx={{ fontSize: 18, color: "text.secondary" }} />
-                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
+                  <Typography variant="body2" color="text.secondary">
                     This plan is locked and not accepting new participants.
                   </Typography>
                 </Stack>
               )}
 
               {userJoinRequest ? (
-                <Box sx={{ p: 2, border: "1px solid", borderColor: "divider", borderRadius: 2 }}>
-                  <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
-                    {userJoinRequest.status === "pending" && (
-                      <Chip
-                        label="Pending"
-                        size="small"
-                        color="warning"
-                        variant="outlined"
-                        sx={{ fontWeight: 600, fontSize: "0.8125rem" }}
-                      />
-                    )}
-                    {userJoinRequest.status === "approved" && (
-                      <Chip
-                        icon={<CheckCircleRoundedIcon sx={{ fontSize: "1rem !important" }} />}
-                        label="Approved"
-                        size="small"
-                        color="success"
-                        variant="filled"
-                        sx={{ fontWeight: 600, fontSize: "0.8125rem" }}
-                      />
-                    )}
-                    {userJoinRequest.status === "declined" && (
-                      <Chip
-                        label="Declined"
-                        size="small"
-                        color="error"
-                        variant="outlined"
-                        sx={{ fontWeight: 600, fontSize: "0.8125rem" }}
-                      />
-                    )}
-                    {userJoinRequest.status === "withdrawn" && (
-                      <Chip
-                        label="Withdrawn"
-                        size="small"
-                        variant="outlined"
-                        sx={{
-                          fontWeight: 600,
-                          fontSize: "0.8125rem",
-                          color: "text.secondary",
-                          borderColor: "grey.400",
-                        }}
-                      />
-                    )}
-                  </Stack>
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ fontSize: "0.8125rem", lineHeight: 1.6 }}
+                withdrawConfirmId === userJoinRequest.id ? (
+                  // Withdraw confirmation: a deliberately distinct, warning-tinted
+                  // card so the user is unmistakably in a "confirm a destructive
+                  // action" state, not just a slightly different version of the
+                  // pending status. Kept inline (not a modal) to match the rest of
+                  // the plan-detail UI which prefers in-card confirmations.
+                  <Box
+                    sx={{
+                      p: 2.5,
+                      border: "1px solid",
+                      borderColor: "warning.main",
+                      borderRadius: 2,
+                      bgcolor: "warning.50",
+                    }}
                   >
-                    {userJoinRequest.status === "pending" &&
-                      "Your request is waiting for the host to review it."}
-                    {userJoinRequest.status === "approved" &&
-                      "You've been approved and added to this plan as Going."}
-                    {userJoinRequest.status === "declined" &&
-                      "The host has declined your request to join this plan."}
-                    {userJoinRequest.status === "withdrawn" &&
-                      "You withdrew your request to join this plan."}
-                  </Typography>
-                  {userJoinRequest.message && (
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        mt: 1,
-                        fontSize: "0.8125rem",
-                        fontStyle: "italic",
-                        color: "text.secondary",
-                      }}
-                    >
-                      Your message: &ldquo;{userJoinRequest.message}&rdquo;
-                    </Typography>
-                  )}
-                  {userJoinRequest.hostMessage && (
-                    <Typography variant="body2" sx={{ mt: 1, fontSize: "0.8125rem" }}>
-                      Host message: &ldquo;{userJoinRequest.hostMessage}&rdquo;
-                    </Typography>
-                  )}
-                  {userJoinRequest.status === "pending" && (
-                    <Box sx={{ mt: 1.5 }}>
-                      {withdrawConfirmId === userJoinRequest.id ? (
-                        <Stack spacing={1}>
-                          <Typography
-                            variant="body2"
-                            color="text.secondary"
-                            sx={{ fontSize: "0.8125rem" }}
+                    <Stack direction="row" spacing={1.5} alignItems="flex-start">
+                      <WarningAmberRoundedIcon
+                        sx={{ color: "warning.main", fontSize: 28, flexShrink: 0, mt: 0.25 }}
+                      />
+                      <Stack spacing={1.5} sx={{ flex: 1 }}>
+                        <Typography variant="subtitle1" fontWeight={700}>
+                          Withdraw your request?
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          This permanently withdraws your request to join &ldquo;{event.title}&rdquo;.
+                          The host will be notified and you&apos;ll need to send a new request to
+                          try again.
+                        </Typography>
+                        <Stack
+                          direction={{ xs: "column-reverse", sm: "row" }}
+                          spacing={1}
+                          sx={{ pt: 0.5 }}
+                        >
+                          <Button
+                            variant="outlined"
+                            onClick={() => setWithdrawConfirmId(null)}
+                            disabled={withdrawSubmitting}
+                            sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
                           >
-                            Are you sure? This will permanently withdraw your request and cannot be
-                            undone. The host will be notified.
-                          </Typography>
-                          <Stack direction="row" spacing={1}>
-                            <Button
-                              size="small"
-                              variant="outlined"
-                              color="error"
-                              onClick={() => handleWithdrawRequest(userJoinRequest.id)}
-                              disabled={withdrawSubmitting}
-                              sx={{ textTransform: "none", fontSize: "0.8125rem" }}
-                            >
-                              {withdrawSubmitting ? "Withdrawing..." : "Yes, withdraw"}
-                            </Button>
-                            <Button
-                              size="small"
-                              onClick={() => setWithdrawConfirmId(null)}
-                              disabled={withdrawSubmitting}
-                              sx={{ textTransform: "none", fontSize: "0.8125rem" }}
-                            >
-                              Cancel
-                            </Button>
-                          </Stack>
+                            Keep request
+                          </Button>
+                          <Button
+                            variant="contained"
+                            color="error"
+                            onClick={() => handleWithdrawRequest(userJoinRequest.id)}
+                            disabled={withdrawSubmitting}
+                            startIcon={
+                              withdrawSubmitting ? (
+                                <CircularProgress size={14} color="inherit" />
+                              ) : null
+                            }
+                            sx={{
+                              textTransform: "none",
+                              fontWeight: 600,
+                              borderRadius: 2,
+                              boxShadow: "none",
+                              "&:hover": { boxShadow: "none", opacity: 0.92 },
+                            }}
+                          >
+                            {withdrawSubmitting ? "Withdrawing…" : "Yes, withdraw"}
+                          </Button>
                         </Stack>
-                      ) : (
+                      </Stack>
+                    </Stack>
+                  </Box>
+                ) : (
+                  <Box sx={{ p: 2.5, border: "1px solid", borderColor: "divider", borderRadius: 2 }}>
+                    <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 1.5 }}>
+                      {userJoinRequest.status === "pending" && (
+                        <Chip
+                          icon={<HourglassEmptyRoundedIcon sx={{ fontSize: "1rem !important" }} />}
+                          label="Pending host review"
+                          color="warning"
+                          variant="filled"
+                          sx={{ fontWeight: 600, height: 28, "& .MuiChip-icon": { color: "inherit" } }}
+                        />
+                      )}
+                      {userJoinRequest.status === "approved" && (
+                        <Chip
+                          icon={<CheckCircleRoundedIcon sx={{ fontSize: "1rem !important" }} />}
+                          label="Approved"
+                          color="success"
+                          variant="filled"
+                          sx={{ fontWeight: 600, height: 28 }}
+                        />
+                      )}
+                      {userJoinRequest.status === "declined" && (
+                        <Chip
+                          label="Declined"
+                          color="error"
+                          variant="outlined"
+                          sx={{ fontWeight: 600, height: 28 }}
+                        />
+                      )}
+                      {userJoinRequest.status === "withdrawn" && (
+                        <Chip
+                          label="Withdrawn"
+                          variant="outlined"
+                          sx={{
+                            fontWeight: 600,
+                            height: 28,
+                            color: "text.secondary",
+                            borderColor: "grey.400",
+                          }}
+                        />
+                      )}
+                    </Stack>
+                    <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+                      {userJoinRequest.status === "pending" &&
+                        "Your request is waiting for the host to review it. We'll let you know as soon as they decide."}
+                      {userJoinRequest.status === "approved" &&
+                        "You've been approved and added to this plan as Going."}
+                      {userJoinRequest.status === "declined" &&
+                        "The host has declined your request to join this plan."}
+                      {userJoinRequest.status === "withdrawn" &&
+                        "You withdrew your request to join this plan."}
+                    </Typography>
+                    {userJoinRequest.message && (
+                      <Box
+                        sx={{
+                          mt: 1.5,
+                          p: 1.5,
+                          bgcolor: "grey.50",
+                          borderRadius: 2,
+                          borderLeft: "3px solid",
+                          borderColor: "grey.300",
+                        }}
+                      >
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}
+                        >
+                          Your message
+                        </Typography>
+                        <Typography variant="body2" sx={{ mt: 0.25, lineHeight: 1.6 }}>
+                          {userJoinRequest.message}
+                        </Typography>
+                      </Box>
+                    )}
+                    {userJoinRequest.hostMessage && (
+                      <Box
+                        sx={{
+                          mt: 1.5,
+                          p: 1.5,
+                          bgcolor: "grey.50",
+                          borderRadius: 2,
+                          borderLeft: "3px solid",
+                          borderColor: "primary.light",
+                        }}
+                      >
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}
+                        >
+                          Host message
+                        </Typography>
+                        <Typography variant="body2" sx={{ mt: 0.25, lineHeight: 1.6 }}>
+                          {userJoinRequest.hostMessage}
+                        </Typography>
+                      </Box>
+                    )}
+                    {userJoinRequest.status === "pending" && (
+                      <Box sx={{ mt: 2 }}>
                         <Button
-                          size="small"
-                          color="inherit"
+                          variant="text"
+                          color="error"
                           onClick={() => setWithdrawConfirmId(userJoinRequest.id)}
+                          startIcon={<DeleteOutlineRoundedIcon sx={{ fontSize: 18 }} />}
                           sx={{
                             textTransform: "none",
-                            fontSize: "0.8125rem",
-                            color: "text.secondary",
+                            fontWeight: 600,
+                            px: 1,
                           }}
                         >
                           Withdraw request
                         </Button>
-                      )}
-                    </Box>
-                  )}
-                </Box>
+                      </Box>
+                    )}
+                  </Box>
+                )
               ) : !event.lockedAt ? (
                 isAuthenticated === false ? (
                   <Stack spacing={1.5}>
@@ -3650,7 +3769,7 @@ export default function EventDetailClient() {
 
       {/* Join requests (host only) */}
       {event.isHost && !isCanceled && event.requireApproval && joinRequests.length > 0 && (
-        <AppCard>
+        <AppCard id="plan-section-join-requests">
           <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 0.5 }}>
             <Typography
               variant="h5"

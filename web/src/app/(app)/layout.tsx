@@ -31,7 +31,23 @@ export const metadata: Metadata = {
 // AUTH_REQUIRED_SECTIONS in EventDetailClient.tsx, duplicated here so the
 // server can short-circuit before any HTML is rendered (avoiding the brief
 // flash of the public-preview shell on the way to /login).
-const AUTH_REQUIRED_EVENT_SECTIONS = new Set(["feedback", "chat", "confirmation"]);
+//
+// "join-requests" covers the host-side "Review request" email CTA. Without
+// this redirect, a logged-out host clicking the email lands on the public
+// preview path; for QA plans that path 404s ("Plan not found") because QA
+// plans require super-admin auth at the API. Routing through /login first
+// preserves QA-plan isolation (the API still rejects non-super-admins after
+// login) while letting authorised hosts reach the section they were sent to.
+//
+// "attendees" covers the requester-side "approved" email CTA, after login
+// the viewer scrolls to the Who's in card.
+const AUTH_REQUIRED_EVENT_SECTIONS = new Set([
+  "feedback",
+  "chat",
+  "confirmation",
+  "join-requests",
+  "attendees",
+]);
 
 // Community tabs that an email CTA can deep-link into and that require an
 // authenticated viewer. Mirrors the event-section pattern above, same
