@@ -412,7 +412,8 @@ If business logic, database access, or mutation logic appears inside the Web Wor
 ## Deployment & Runtime Notes
 
 - Web Worker runs on Cloudflare Workers (OpenNext).
-- Do NOT add `export const runtime = "edge"` to routes. OpenNext CF shims the edge runtime to an empty module, causing 500 Internal Server Error. Workers already run at the edge.
+- Do NOT add `export const runtime = "edge"` to **page or route handlers**. OpenNext CF shims the edge runtime to an empty module on those, causing 500 Internal Server Error. Workers already run at the edge.
+- The **middleware file** at [`web/src/middleware.ts`](web/src/middleware.ts) is the one exception: it MUST declare `export const runtime = "experimental-edge"`. Without that, Next.js 16 defaults middleware to the Node runtime (and the newer `proxy.ts` convention forces Node runtime; `proxy.ts` is therefore unusable here until OpenNext-Cloudflare adds Node-runtime middleware support). OpenNext's Cloudflare adapter only knows how to bundle Edge middleware, so a Node-runtime build silently ships a Worker with no middleware wired at all. The user-visible symptom in production was: every logged-out visit to a public `(app)` route (`/communities`, `/events/[id]`, etc.) redirected to `/login?next=%2F` because `x-request-path` was never set and the layout's `getRequestedPathFromHeaders` fell back to `/`. [`web/scripts/patch-functions-config.js`](web/scripts/patch-functions-config.js) runs as a defensive deploy guard that fails the deploy if the middleware regresses to Node-runtime.
 
 - Validate builds before deploy:
 

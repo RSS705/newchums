@@ -2,6 +2,38 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 /**
+ * Why this is `middleware.ts`, not `proxy.ts`.
+ *
+ * Next.js 16 introduced `proxy.ts` as the future replacement. We migrated
+ * to it briefly, then reverted, because Next 16 hard-codes `proxy.ts` to
+ * the Node runtime (Next's own build error: "Proxy always runs on Node.js
+ * runtime") and OpenNext's Cloudflare adapter only knows how to bundle
+ * Edge-runtime middleware. The combination silently shipped a Worker with
+ * NO middleware wired at all, `x-request-path` never got set in
+ * production, and `(app)/layout.tsx`'s `getRequestedPathFromHeaders` fell
+ * through to its default `/`. Net effect: any logged-out visit to a
+ * public `(app)` route (`/communities`, `/events/[id]`) hit
+ * `/login?next=%2F`. See `web/scripts/patch-functions-config.js` for the
+ * manifest-level details.
+ *
+ * `middleware.ts` with `export const runtime = "edge"` still works in
+ * Next 16 (with a deprecation warning the convention will go away in a
+ * future major). Once OpenNext for Cloudflare adds Node-runtime proxy
+ * support, we can re-migrate. Until then, this is the canonical Edge-
+ * middleware entry point.
+ *
+ * AGENTS.md's "do NOT add `export const runtime = 'edge'` to routes" rule
+ * is about page/route handlers (where OpenNext shims edge to an empty
+ * module). Middleware is a different surface: OpenNext explicitly builds
+ * an Edge bundle for it, so this declaration is REQUIRED here.
+ */
+// Next 16 wants `experimental-edge`, not `edge`, on middleware.
+// The "experimental" prefix is misleading; it's been the supported value
+// since the convention split from page-route runtime declarations. If a
+// future Next release renames it, the build error is loud and obvious.
+export const runtime = "experimental-edge";
+
+/**
  * Canonical host redirect: www → non-www.
  * MUST run before Auth.js so PKCE code_verifier matches across signin and callback.
  * Flow: User hits www.newchums.com → 301 to newchums.com → Auth.js runs on canonical host.
@@ -34,7 +66,7 @@ function isPotentiallyCacheablePath(pathname: string): boolean {
   return false;
 }
 
-export function proxy(request: NextRequest) {
+export function middleware(request: NextRequest) {
   const redirect = canonicalRedirect(request);
   if (redirect) {
     return redirect;
