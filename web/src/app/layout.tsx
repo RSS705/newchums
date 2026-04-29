@@ -27,8 +27,8 @@ const gabarito = Gabarito({
 export const metadata: Metadata = {
   // `metadataBase` lets every per-page metadata export use relative image
   // URLs and still produce absolute URLs in OG/Twitter cards. Canonical
-  // host is newchums.com (the www variant 301-redirects to apex via
-  // middleware, so OAuth PKCE cookies and social-share URLs stay on one
+  // host is newchums.com (the www variant 301-redirects to apex via the
+  // proxy file, so OAuth PKCE cookies and social-share URLs stay on one
   // origin).
   metadataBase: new URL("https://newchums.com"),
   title: {

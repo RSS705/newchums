@@ -72,7 +72,7 @@ This ensures:
 - PKCE `code_verifier` cookie is present on callback
 - `AUTH_URL` / `NEXTAUTH_URL` remain `https://newchums.com`
 
-Middleware: `web/src/middleware.ts`
+Proxy: `web/src/proxy.ts` (Next.js 16 `proxy` file convention; previously `middleware.ts`).
 Matcher includes `/api/auth/*` (OAuth flow), excludes static assets.
 
 ---

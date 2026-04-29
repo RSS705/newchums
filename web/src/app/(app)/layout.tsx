@@ -127,7 +127,7 @@ export default async function AppLayout({
         const tabParam = tabMatch ? decodeURIComponent(tabMatch[1]) : null;
         if (tabParam && AUTH_REQUIRED_COMMUNITY_TABS.has(tabParam)) {
           // Ensure the tab survives the login round-trip. Depending on
-          // whether middleware has populated x-request-path vs falling back
+          // whether the proxy has populated x-request-path vs falling back
           // to framework headers, requestedPath may or may not already
           // carry the query string, so re-attach search if it does not.
           const nextTarget = requestedPath.includes("?") ? requestedPath : requestedPath + search;

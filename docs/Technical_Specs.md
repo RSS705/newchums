@@ -165,7 +165,7 @@ If sign-in starts on `www.newchums.com` and callback lands on `newchums.com`, th
 
 ### Implementation
 
-Middleware at `web/src/middleware.ts` runs before Auth.js.
+The Next.js proxy file at `web/src/proxy.ts` (formerly `middleware.ts`, renamed for the Next.js 16 `proxy` convention) runs before Auth.js.
 Any request to a host starting with `www.` is 301-redirected to the same path + query on the non-www host.
 
 - Matcher includes `/api/auth/*` so OAuth flows always land on canonical host.
