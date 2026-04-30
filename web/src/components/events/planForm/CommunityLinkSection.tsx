@@ -8,6 +8,7 @@ import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
 import Switch from "@mui/material/Switch";
 import Typography from "@mui/material/Typography";
+import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
 import { AppCard } from "@/components/ui";
 
 export type MyCommunity = {
@@ -59,14 +60,39 @@ export default function CommunityLinkSection(props: Props) {
   return (
     <AppCard>
       <Stack spacing={2}>
-        <Box>
-          <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
-            Community
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            Linked plans appear in the community and in explore by default.
-          </Typography>
-        </Box>
+        <Stack direction="row" spacing={1.5} alignItems="center">
+          <Box
+            sx={{
+              width: 40,
+              height: 40,
+              borderRadius: "50%",
+              bgcolor: "primary.light",
+              color: "primary.main",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            <GroupsRoundedIcon sx={{ fontSize: 22 }} />
+          </Box>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography
+              variant="h6"
+              fontWeight={700}
+              sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
+            >
+              Community
+            </Typography>
+            <Typography
+              variant="caption"
+              color="text.disabled"
+              sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
+            >
+              Linked plans appear in the community and in explore by default.
+            </Typography>
+          </Box>
+        </Stack>
 
         <FormControl fullWidth size="medium">
           <Select

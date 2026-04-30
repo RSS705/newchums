@@ -15,8 +15,14 @@ import DialogTitle from "@mui/material/DialogTitle";
 import DialogContent from "@mui/material/DialogContent";
 import DialogActions from "@mui/material/DialogActions";
 import Button from "@mui/material/Button";
+import Paper from "@mui/material/Paper";
 import Slider from "@mui/material/Slider";
+import EditRoundedIcon from "@mui/icons-material/EditRounded";
+import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
+import PersonOutlineRoundedIcon from "@mui/icons-material/PersonOutlineRounded";
 import PhotoCameraRoundedIcon from "@mui/icons-material/PhotoCameraRounded";
+import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
+import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
 import Cropper, { type Area } from "react-easy-crop";
 import { AppCard, AppButton, AppTextField, useToast } from "@/components/ui";
 import RichTextEditor from "@/components/ui/RichTextEditor";
@@ -350,25 +356,72 @@ export default function EditCommunityClient() {
   }
 
   return (
-    <Stack spacing={{ xs: 2.5, sm: 4 }}>
-      {/* Header */}
-      <Box>
-        <Typography
-          component="h1"
-          sx={{
-            fontSize: { xs: "1.75rem", sm: "2rem" },
-            fontWeight: 700,
-            lineHeight: 1.25,
-            letterSpacing: "-0.02em",
-            mb: 0.75,
-          }}
-        >
-          Edit community
-        </Typography>
-        <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-          Update your community details. Changes are saved when you click Save.
-        </Typography>
-      </Box>
+    <Stack spacing={{ xs: 3, sm: 4 }}>
+      {/* Header. Warm-wash hero matching the Create community form so
+          the two flows feel like the same product, plus the rest of
+          the polished surfaces across the app. */}
+      <Paper
+        variant="outlined"
+        sx={{
+          p: { xs: 2.5, sm: 3.5 },
+          borderRadius: 4,
+          borderColor: "primary.light",
+          background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
+        }}
+      >
+        <Stack spacing={1.25}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Box
+              sx={{
+                width: 28,
+                height: 28,
+                borderRadius: "50%",
+                bgcolor: "primary.main",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <EditRoundedIcon sx={{ color: "primary.contrastText", fontSize: 18 }} />
+            </Box>
+            <Typography
+              sx={{
+                fontSize: "0.6875rem",
+                fontWeight: 700,
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                color: "primary.dark",
+              }}
+            >
+              Manage community
+            </Typography>
+          </Stack>
+          <Typography
+            component="h1"
+            sx={{
+              fontSize: { xs: "1.875rem", sm: "2.375rem" },
+              fontWeight: 700,
+              lineHeight: 1.15,
+              letterSpacing: "-0.025em",
+              color: "text.primary",
+            }}
+          >
+            Edit community
+          </Typography>
+          <Typography
+            variant="body1"
+            color="text.secondary"
+            sx={{
+              fontSize: { xs: "0.9375rem", sm: "1rem" },
+              lineHeight: 1.6,
+              maxWidth: 560,
+            }}
+          >
+            Update your community details. Changes are saved when you click Save.
+          </Typography>
+        </Stack>
+      </Paper>
 
       {/* Banner (Community Pro only). Hidden entirely for non-Pro owners,
           no locked controls, no upgrade nag. */}
@@ -391,9 +444,39 @@ export default function EditCommunityClient() {
       {/* Basic details */}
       <AppCard>
         <Stack spacing={2.5}>
-          <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
-            About your community
-          </Typography>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: "50%",
+                bgcolor: "primary.light",
+                color: "primary.main",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <PersonOutlineRoundedIcon sx={{ fontSize: 22 }} />
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography
+                variant="h6"
+                fontWeight={700}
+                sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
+              >
+                About your community
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.disabled"
+                sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
+              >
+                Logo, name, description, and the hobbies it&apos;s about.
+              </Typography>
+            </Box>
+          </Stack>
 
           {/* Logo (inline) */}
           <Box>
@@ -476,9 +559,39 @@ export default function EditCommunityClient() {
       {/* Location and type */}
       <AppCard>
         <Stack spacing={2.5}>
-          <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
-            Location and type
-          </Typography>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: "50%",
+                bgcolor: "primary.light",
+                color: "primary.main",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <PlaceRoundedIcon sx={{ fontSize: 22 }} />
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography
+                variant="h6"
+                fontWeight={700}
+                sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
+              >
+                Location and type
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.disabled"
+                sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
+              >
+                Where the community is based, plus website and Discord links.
+              </Typography>
+            </Box>
+          </Stack>
 
           <RadioGroup
             row
@@ -549,14 +662,39 @@ export default function EditCommunityClient() {
       {/* Access */}
       <AppCard>
         <Stack spacing={2}>
-          <Box>
-            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
-              Access
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              Private communities require your approval before someone can join.
-            </Typography>
-          </Box>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: "50%",
+                bgcolor: "primary.light",
+                color: "primary.main",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <LockOutlinedIcon sx={{ fontSize: 22 }} />
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography
+                variant="h6"
+                fontWeight={700}
+                sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
+              >
+                Access
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.disabled"
+                sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
+              >
+                Private communities require your approval before someone can join.
+              </Typography>
+            </Box>
+          </Stack>
 
           <RadioGroup
             value={access}
@@ -594,19 +732,47 @@ export default function EditCommunityClient() {
 
       {/* Close community (owner only) */}
       {isOwner && (
-        <AppCard>
-          <Stack spacing={1.5}>
-            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem", color: "error.main" }}>
-              Close community
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Closing this community hides it from listings and removes it from linked plans. Members can still see that it existed. This cannot be undone.
-            </Typography>
+        <AppCard sx={{ borderColor: "error.light", borderWidth: 1, borderStyle: "solid" }}>
+          <Stack spacing={2}>
+            <Stack direction="row" spacing={1.5} alignItems="center">
+              <Box
+                sx={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: "50%",
+                  bgcolor: "error.light",
+                  color: "error.dark",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <WarningAmberRoundedIcon sx={{ fontSize: 22 }} />
+              </Box>
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography
+                  variant="h6"
+                  fontWeight={700}
+                  color="error.dark"
+                  sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
+                >
+                  Close community
+                </Typography>
+                <Typography
+                  variant="caption"
+                  color="text.disabled"
+                  sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
+                >
+                  Closing this community hides it from listings and removes it from linked plans. Members can still see that it existed. This cannot be undone.
+                </Typography>
+              </Box>
+            </Stack>
             <Box>
               <Button
                 variant="outlined" color="error" size="small"
                 onClick={() => setCloseConfirmOpen(true)}
-                sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
+                sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, alignSelf: "flex-start" }}
               >
                 Close this community
               </Button>
@@ -634,7 +800,17 @@ export default function EditCommunityClient() {
         <AppButton
           onClick={handleSave}
           disabled={saving || !name.trim()}
-          sx={{ minWidth: { xs: "100%", sm: 200 }, py: 1.5, borderRadius: 2.5, fontWeight: 600, textTransform: "none", fontSize: "1rem" }}
+          sx={{
+            minWidth: { xs: "100%", sm: 200 },
+            py: 1.5,
+            borderRadius: 2.5,
+            fontWeight: 700,
+            textTransform: "none",
+            fontSize: "0.9375rem",
+            boxShadow: "0 4px 14px rgba(230, 91, 19, 0.25)",
+            "&:hover": { boxShadow: "0 6px 18px rgba(230, 91, 19, 0.32)", opacity: 0.96 },
+            "&.Mui-disabled": { boxShadow: "none" },
+          }}
         >
           {saving ? <CircularProgress size={22} color="inherit" /> : "Save changes"}
         </AppButton>

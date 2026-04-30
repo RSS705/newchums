@@ -15,8 +15,13 @@ import DialogTitle from "@mui/material/DialogTitle";
 import DialogContent from "@mui/material/DialogContent";
 import DialogActions from "@mui/material/DialogActions";
 import Button from "@mui/material/Button";
+import Paper from "@mui/material/Paper";
 import Slider from "@mui/material/Slider";
+import AddCircleRoundedIcon from "@mui/icons-material/AddCircleRounded";
+import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
+import PersonOutlineRoundedIcon from "@mui/icons-material/PersonOutlineRounded";
 import PhotoCameraRoundedIcon from "@mui/icons-material/PhotoCameraRounded";
+import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
 import Cropper, { type Area } from "react-easy-crop";
 import { AppCard, AppButton, AppTextField, useToast } from "@/components/ui";
 import RichTextEditor from "@/components/ui/RichTextEditor";
@@ -291,25 +296,72 @@ export default function CreateCommunityClient() {
   };
 
   return (
-    <Stack spacing={{ xs: 2.5, sm: 4 }}>
-      {/* Header */}
-      <Box>
-        <Typography
-          component="h1"
-          sx={{
-            fontSize: { xs: "1.75rem", sm: "2rem" },
-            fontWeight: 700,
-            lineHeight: 1.25,
-            letterSpacing: "-0.02em",
-            mb: 0.75,
-          }}
-        >
-          Create a community
-        </Typography>
-        <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-          Bring people together around a shared interest or location. You can always update the details later.
-        </Typography>
-      </Box>
+    <Stack spacing={{ xs: 3, sm: 4 }}>
+      {/* Header. Warm-wash hero matching the rest of the polished
+          surfaces, including the Create plan form so the two creation
+          flows feel like the same product. */}
+      <Paper
+        variant="outlined"
+        sx={{
+          p: { xs: 2.5, sm: 3.5 },
+          borderRadius: 4,
+          borderColor: "primary.light",
+          background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
+        }}
+      >
+        <Stack spacing={1.25}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Box
+              sx={{
+                width: 28,
+                height: 28,
+                borderRadius: "50%",
+                bgcolor: "primary.main",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <AddCircleRoundedIcon sx={{ color: "primary.contrastText", fontSize: 18 }} />
+            </Box>
+            <Typography
+              sx={{
+                fontSize: "0.6875rem",
+                fontWeight: 700,
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                color: "primary.dark",
+              }}
+            >
+              New community
+            </Typography>
+          </Stack>
+          <Typography
+            component="h1"
+            sx={{
+              fontSize: { xs: "1.875rem", sm: "2.375rem" },
+              fontWeight: 700,
+              lineHeight: 1.15,
+              letterSpacing: "-0.025em",
+              color: "text.primary",
+            }}
+          >
+            Create a community
+          </Typography>
+          <Typography
+            variant="body1"
+            color="text.secondary"
+            sx={{
+              fontSize: { xs: "0.9375rem", sm: "1rem" },
+              lineHeight: 1.6,
+              maxWidth: 560,
+            }}
+          >
+            Bring people together around a shared interest or location. You can always update the details later.
+          </Typography>
+        </Stack>
+      </Paper>
 
       {/* Banner (Community Pro, or super admin). Hidden entirely for anyone
           else, the spec is explicit about no locked controls or upgrade
@@ -327,9 +379,39 @@ export default function CreateCommunityClient() {
       {/* Basic details */}
       <AppCard>
         <Stack spacing={2.5}>
-          <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
-            About your community
-          </Typography>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: "50%",
+                bgcolor: "primary.light",
+                color: "primary.main",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <PersonOutlineRoundedIcon sx={{ fontSize: 22 }} />
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography
+                variant="h6"
+                fontWeight={700}
+                sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
+              >
+                About your community
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.disabled"
+                sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
+              >
+                Logo, name, handle, description, and the hobbies it&apos;s about.
+              </Typography>
+            </Box>
+          </Stack>
 
           {/* Logo (inline) */}
           <Box>
@@ -436,9 +518,39 @@ export default function CreateCommunityClient() {
       {/* Location and type */}
       <AppCard>
         <Stack spacing={2.5}>
-          <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
-            Location and type
-          </Typography>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: "50%",
+                bgcolor: "primary.light",
+                color: "primary.main",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <PlaceRoundedIcon sx={{ fontSize: 22 }} />
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography
+                variant="h6"
+                fontWeight={700}
+                sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
+              >
+                Location and type
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.disabled"
+                sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
+              >
+                Where the community is based, or whether it gathers online.
+              </Typography>
+            </Box>
+          </Stack>
 
           <RadioGroup
             row
@@ -511,14 +623,39 @@ export default function CreateCommunityClient() {
       {/* Access */}
       <AppCard>
         <Stack spacing={2}>
-          <Box>
-            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
-              Access
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              Private communities require your approval before someone can join.
-            </Typography>
-          </Box>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: "50%",
+                bgcolor: "primary.light",
+                color: "primary.main",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <LockOutlinedIcon sx={{ fontSize: 22 }} />
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography
+                variant="h6"
+                fontWeight={700}
+                sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
+              >
+                Access
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.disabled"
+                sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
+              >
+                Private communities require your approval before someone can join.
+              </Typography>
+            </Box>
+          </Stack>
 
           <RadioGroup
             value={access}
@@ -573,7 +710,17 @@ export default function CreateCommunityClient() {
         <AppButton
           onClick={handleSubmit}
           disabled={saving || !name.trim() || slug.length < 3 || slugAvailable === false}
-          sx={{ minWidth: { xs: "100%", sm: 200 }, py: 1.5, borderRadius: 2.5, fontWeight: 600, textTransform: "none", fontSize: "1rem" }}
+          sx={{
+            minWidth: { xs: "100%", sm: 200 },
+            py: 1.5,
+            borderRadius: 2.5,
+            fontWeight: 700,
+            textTransform: "none",
+            fontSize: "0.9375rem",
+            boxShadow: "0 4px 14px rgba(230, 91, 19, 0.25)",
+            "&:hover": { boxShadow: "0 6px 18px rgba(230, 91, 19, 0.32)", opacity: 0.96 },
+            "&.Mui-disabled": { boxShadow: "none" },
+          }}
         >
           {saving ? <CircularProgress size={22} color="inherit" /> : "Create community"}
         </AppButton>

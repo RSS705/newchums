@@ -97,6 +97,14 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  // One-shot flag flipped to true once the initial /profile + /interests
+  // calls have resolved (regardless of whether the events fetch has come
+  // back yet). Used to gate the subtitle and filter-bar skeletons so they
+  // only show on first load, not on every subsequent filter-triggered
+  // re-fetch. Without this, clicking a filter chip would briefly swap the
+  // subtitle Typography for a Skeleton of a different height, shifting
+  // the page even though the resulting subtitle text is identical.
+  const [initialReady, setInitialReady] = useState(false);
 
   const [searchText, setSearchText] = useState("");
   const [searchInputValue, setSearchInputValue] = useState("");
@@ -206,6 +214,7 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
       setSelectedHobby(sh);
       setSort(s);
       setPersonalizeEnabled(pe);
+      setInitialReady(true);
 
       readyRef.current = true;
       initializedRef.current = true;
@@ -392,13 +401,15 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
             >
               {greetingName ? `Welcome back, ${greetingName}` : "Explore"}
             </Typography>
-            {loading ? (
-              // Hold the subtitle until the first events fetch resolves so
-              // `hasLocation` and `locationLabel` have settled. Otherwise
-              // the user sees the "Find plans around..." fallback for
-              // ~200ms and then a pop to "Discover plans and gatherings
-              // near [City]", which is the "address appearing" part of
-              // the staggered load.
+            {!initialReady ? (
+              // Hold the subtitle until /profile resolves so `hasLocation`
+              // and `locationLabel` have settled. After the initial load
+              // we keep showing the real subtitle through subsequent
+              // filter-triggered re-fetches, since the subtitle text only
+              // depends on profile (which doesn't change) and not on the
+              // events fetch. Gating on `!initialReady` instead of
+              // `loading` prevents a layout-shifting Skeleton swap on
+              // every filter chip click.
               <Skeleton
                 variant="text"
                 width={300}
@@ -444,12 +455,15 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
       </Paper>
 
       {/* ── Filter bar ──────────────────────────────────────────────── */}
-      {loading ? (
+      {!initialReady ? (
         // Skeleton that matches the real filter row's outer frame and rough
         // chip layout so the page doesn't visibly shift when loading ends.
         // Prevents the "personalize chip pops in once profile loads" and
         // "hobby Autocomplete populates" micro-pops from compounding with
-        // the subtitle-and-cards transition.
+        // the subtitle-and-cards transition. Gated on `!initialReady`
+        // (one-shot init flag) rather than `loading` so subsequent
+        // filter-triggered re-fetches don't replace the real filter bar
+        // with a skeleton on every chip click.
         <Paper
           variant="outlined"
           sx={{

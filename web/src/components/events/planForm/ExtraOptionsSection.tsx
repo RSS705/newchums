@@ -9,6 +9,7 @@ import Stack from "@mui/material/Stack";
 import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
 import { AppCard, HelpTooltip } from "@/components/ui";
 
 export type FallbackPolicy = "notify_host" | "proceed" | "auto_cancel";
@@ -69,9 +70,39 @@ export default function ExtraOptionsSection(props: Props) {
   return (
     <AppCard>
       <Stack spacing={2.5}>
-        <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
-          Extra options
-        </Typography>
+        <Stack direction="row" spacing={1.5} alignItems="center">
+          <Box
+            sx={{
+              width: 40,
+              height: 40,
+              borderRadius: "50%",
+              bgcolor: "primary.light",
+              color: "primary.main",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            <TuneRoundedIcon sx={{ fontSize: 22 }} />
+          </Box>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography
+              variant="h6"
+              fontWeight={700}
+              sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
+            >
+              Extra options
+            </Typography>
+            <Typography
+              variant="caption"
+              color="text.disabled"
+              sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
+            >
+              Attendance checks, approvals, and other host controls.
+            </Typography>
+          </Box>
+        </Stack>
 
         <TooltipToggleRow
           checked={props.requireReconfirmation}

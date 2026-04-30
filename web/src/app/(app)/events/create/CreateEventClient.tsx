@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type WheelEvent } from "react";
 import Box from "@mui/material/Box";
+import Paper from "@mui/material/Paper";
 
 import CircularProgress from "@mui/material/CircularProgress";
 import Dialog from "@mui/material/Dialog";
@@ -19,8 +20,14 @@ import Slider from "@mui/material/Slider";
 import Stack from "@mui/material/Stack";
 import Switch from "@mui/material/Switch";
 import Typography from "@mui/material/Typography";
+import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
+import AddCircleRoundedIcon from "@mui/icons-material/AddCircleRounded";
 import AddPhotoAlternateRoundedIcon from "@mui/icons-material/AddPhotoAlternateRounded";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
+import EventNoteRoundedIcon from "@mui/icons-material/EventNoteRounded";
+import ImageRoundedIcon from "@mui/icons-material/ImageRounded";
+import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
+import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { TimePicker } from "@mui/x-date-pickers/TimePicker";
 import dayjs, { type Dayjs } from "dayjs";
@@ -454,38 +461,109 @@ export default function CreateEventClient() {
   };
 
   return (
-    <Stack spacing={{ xs: 2.5, sm: 4 }}>
-      {/* Header */}
-      <Box>
-        <Typography
-          component="h1"
-          sx={{
-            fontSize: { xs: "1.75rem", sm: "2rem" },
-            fontWeight: 700,
-            lineHeight: 1.25,
-            letterSpacing: "-0.02em",
-            mb: 0.75,
-          }}
-        >
-          Start a plan
-        </Typography>
-        <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-          Organize a gathering around something you enjoy. Keep it simple, you can always update
-          later.
-        </Typography>
-      </Box>
+    <Stack spacing={{ xs: 3, sm: 4 }}>
+      {/* Header. Warm-wash hero matching the rest of the polished
+          surfaces (Explore, Your Plans, Communities, Profile, Settings,
+          Roadmap, Contact, etc.). */}
+      <Paper
+        variant="outlined"
+        sx={{
+          p: { xs: 2.5, sm: 3.5 },
+          borderRadius: 4,
+          borderColor: "primary.light",
+          background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
+        }}
+      >
+        <Stack spacing={1.25}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Box
+              sx={{
+                width: 28,
+                height: 28,
+                borderRadius: "50%",
+                bgcolor: "primary.main",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <AddCircleRoundedIcon sx={{ color: "primary.contrastText", fontSize: 18 }} />
+            </Box>
+            <Typography
+              sx={{
+                fontSize: "0.6875rem",
+                fontWeight: 700,
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                color: "primary.dark",
+              }}
+            >
+              New plan
+            </Typography>
+          </Stack>
+          <Typography
+            component="h1"
+            sx={{
+              fontSize: { xs: "1.875rem", sm: "2.375rem" },
+              fontWeight: 700,
+              lineHeight: 1.15,
+              letterSpacing: "-0.025em",
+              color: "text.primary",
+            }}
+          >
+            Start a plan
+          </Typography>
+          <Typography
+            variant="body1"
+            color="text.secondary"
+            sx={{
+              fontSize: { xs: "0.9375rem", sm: "1rem" },
+              lineHeight: 1.6,
+              maxWidth: 560,
+            }}
+          >
+            Organize a gathering around something you enjoy. Keep it simple, you can always update later.
+          </Typography>
+        </Stack>
+      </Paper>
 
       {/* Banner image */}
       <AppCard>
         <Stack spacing={2}>
-          <Box>
-            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
-              Banner image
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              Pick a colour theme or upload your own photo.
-            </Typography>
-          </Box>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: "50%",
+                bgcolor: "primary.light",
+                color: "primary.main",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <ImageRoundedIcon sx={{ fontSize: 22 }} />
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography
+                variant="h6"
+                fontWeight={700}
+                sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
+              >
+                Banner image
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.disabled"
+                sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
+              >
+                Pick a colour theme or upload your own photo.
+              </Typography>
+            </Box>
+          </Stack>
 
           {/* Preset swatches */}
           <Stack direction="row" flexWrap="wrap" gap={1} useFlexGap>
@@ -607,9 +685,39 @@ export default function CreateEventClient() {
       {/* Basic details */}
       <AppCard>
         <Stack spacing={2.5}>
-          <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
-            What&apos;s the plan?
-          </Typography>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: "50%",
+                bgcolor: "primary.light",
+                color: "primary.main",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <EventNoteRoundedIcon sx={{ fontSize: 22 }} />
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography
+                variant="h6"
+                fontWeight={700}
+                sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
+              >
+                What&apos;s the plan?
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.disabled"
+                sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
+              >
+                Title, description, and the hobbies it&apos;s about.
+              </Typography>
+            </Box>
+          </Stack>
 
           <Box ref={setFieldRef("title")} sx={{ scrollMarginTop: 96 }}>
             <AppTextField
@@ -685,9 +793,39 @@ export default function CreateEventClient() {
       {/* Date & time */}
       <AppCard>
         <Stack spacing={2.5}>
-          <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
-            When?
-          </Typography>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: "50%",
+                bgcolor: "primary.light",
+                color: "primary.main",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <AccessTimeRoundedIcon sx={{ fontSize: 22 }} />
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography
+                variant="h6"
+                fontWeight={700}
+                sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
+              >
+                When?
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.disabled"
+                sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
+              >
+                Date, time, and how flexible you want to be.
+              </Typography>
+            </Box>
+          </Stack>
 
           <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
             <Box ref={setFieldRef("date")} sx={{ flex: 1, scrollMarginTop: 96 }}>
@@ -823,9 +961,39 @@ export default function CreateEventClient() {
       {/* Location */}
       <AppCard>
         <Stack spacing={2.5}>
-          <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
-            Where?
-          </Typography>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: "50%",
+                bgcolor: "primary.light",
+                color: "primary.main",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <PlaceRoundedIcon sx={{ fontSize: 22 }} />
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography
+                variant="h6"
+                fontWeight={700}
+                sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
+              >
+                Where?
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.disabled"
+                sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
+              >
+                In-person address or an online meeting link.
+              </Typography>
+            </Box>
+          </Stack>
 
           <RadioGroup
             row
@@ -940,15 +1108,39 @@ export default function CreateEventClient() {
       {/* Visibility */}
       <AppCard>
         <Stack spacing={2}>
-          <Box>
-            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
-              Who can see this?
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              Controls who can find this plan and who may get notified about it, in the app or by
-              email.
-            </Typography>
-          </Box>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: "50%",
+                bgcolor: "primary.light",
+                color: "primary.main",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <VisibilityRoundedIcon sx={{ fontSize: 22 }} />
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography
+                variant="h6"
+                fontWeight={700}
+                sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
+              >
+                Who can see this?
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.disabled"
+                sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
+              >
+                Controls who can find this plan and who may get notified about it.
+              </Typography>
+            </Box>
+          </Stack>
 
           <RadioGroup
             value={visibility}
@@ -1077,9 +1269,12 @@ export default function CreateEventClient() {
             minWidth: { xs: "100%", sm: 200 },
             py: 1.5,
             borderRadius: 2.5,
-            fontWeight: 600,
+            fontWeight: 700,
             textTransform: "none",
-            fontSize: "1rem",
+            fontSize: "0.9375rem",
+            boxShadow: "0 4px 14px rgba(230, 91, 19, 0.25)",
+            "&:hover": { boxShadow: "0 6px 18px rgba(230, 91, 19, 0.32)", opacity: 0.96 },
+            "&.Mui-disabled": { boxShadow: "none" },
           }}
         >
           {submitting ? <CircularProgress size={22} color="inherit" /> : "Publish plan"}

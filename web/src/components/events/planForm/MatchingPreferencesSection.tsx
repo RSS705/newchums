@@ -7,6 +7,7 @@ import Stack from "@mui/material/Stack";
 import Switch from "@mui/material/Switch";
 import Typography from "@mui/material/Typography";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
+import FilterAltRoundedIcon from "@mui/icons-material/FilterAltRounded";
 import { AppCard } from "@/components/ui";
 
 /** Metrics surfaced in the per-plan override UI. Kept separate from the full
@@ -43,21 +44,53 @@ export default function MatchingPreferencesSection({
 }: Props) {
   return (
     <AppCard>
-      <Box
+      <Stack
+        direction="row"
+        spacing={1.5}
+        alignItems="center"
         onClick={onToggleOpen}
-        sx={{ display: "flex", alignItems: "center", cursor: "pointer", userSelect: "none" }}
+        sx={{ cursor: "pointer", userSelect: "none" }}
       >
-        <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem", flex: 1 }}>
-          Matching preferences for this plan
-        </Typography>
+        <Box
+          sx={{
+            width: 40,
+            height: 40,
+            borderRadius: "50%",
+            bgcolor: "primary.light",
+            color: "primary.main",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+          }}
+        >
+          <FilterAltRoundedIcon sx={{ fontSize: 22 }} />
+        </Box>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography
+            variant="h6"
+            fontWeight={700}
+            sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
+          >
+            Matching preferences for this plan
+          </Typography>
+          <Typography
+            variant="caption"
+            color="text.disabled"
+            sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
+          >
+            Relax filtering for this plan without changing your profile settings.
+          </Typography>
+        </Box>
         <ExpandMoreRoundedIcon
           sx={{
             transform: open ? "rotate(180deg)" : "rotate(0deg)",
             transition: "transform 0.2s",
             color: "text.secondary",
+            flexShrink: 0,
           }}
         />
-      </Box>
+      </Stack>
 
       <Collapse in={open}>
         <Stack spacing={2} sx={{ pt: 2 }}>
