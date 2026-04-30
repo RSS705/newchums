@@ -6,7 +6,6 @@ import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import CircularProgress from "@mui/material/CircularProgress";
 import Grid from "@mui/material/Grid";
-import IconButton from "@mui/material/IconButton";
 import InputAdornment from "@mui/material/InputAdornment";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
@@ -16,6 +15,7 @@ import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
 import PeopleRoundedIcon from "@mui/icons-material/PeopleRounded";
 import ForumRoundedIcon from "@mui/icons-material/ForumRounded";
+import ExploreRoundedIcon from "@mui/icons-material/ExploreRounded";
 import Link from "next/link";
 import { AppCard, EmptyState } from "@/components/ui";
 import DistanceSelect from "@/components/common/DistanceSelect";
@@ -185,50 +185,107 @@ export default function PublicCommunitiesExplore() {
     setRadiusKm(DEFAULT_RADIUS_KM);
   };
 
-  return (
-    <Stack spacing={{ xs: 2.5, sm: 3.5 }}>
-      {/* Header */}
-      <Box>
-        <Typography
-          component="h1"
-          sx={{
-            fontSize: { xs: "1.75rem", sm: "2rem" },
-            fontWeight: 700,
-            lineHeight: 1.25,
-            letterSpacing: "-0.02em",
-            mb: 0.5,
-          }}
-        >
-          Communities
-        </Typography>
-        <Typography variant="body1" color="text.secondary" sx={{ fontSize: { xs: "0.875rem", sm: "0.9375rem" } }}>
-          Local hobby clubs, game stores, and groups across NewChums. Click in to see what they&apos;re about and the plans they have coming up, or sign up to join one.
-        </Typography>
-      </Box>
+  // Active-filter count drives the small dot/badge on the Filters button so
+  // the viewer can tell at a glance whether collapsing the panel hides any
+  // committed filters. Search lives on the main row and the Near input
+  // lives inside the panel, so anything that would change the result set
+  // is counted here.
+  const activeFilterCount =
+    (selectedHobby ? 1 : 0) +
+    (pickedLocation ? 1 : 0) +
+    (radiusKm !== DEFAULT_RADIUS_KM ? 1 : 0);
 
-      {/* Filter bar. Shape mirrors the authenticated filter bar so the two
-          surfaces feel continuous, minus the "All / Yours" toggle and the
-          Personalized chip (both require a signed-in viewer). */}
+  return (
+    <Stack spacing={{ xs: 3, sm: 4 }}>
+      {/* Header. Lifted from a plain title block to an outlined hero card
+          with a soft warm wash so the page reads as a curated directory
+          rather than a database listing. The gradient + eyebrow + larger
+          H1 mirror the participant hero card pattern in UI_Patterns.md
+          (warm gradient as a presence cue, not a brand recolor). */}
       <Paper
         variant="outlined"
         sx={{
-          p: { xs: 1.5, sm: 2 },
+          p: { xs: 2.5, sm: 4 },
+          borderRadius: 4,
+          borderColor: "primary.light",
+          background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
+        }}
+      >
+        <Stack spacing={1.25}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Box
+              sx={{
+                width: 28,
+                height: 28,
+                borderRadius: "50%",
+                bgcolor: "primary.main",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <ExploreRoundedIcon sx={{ color: "primary.contrastText", fontSize: 18 }} />
+            </Box>
+            <Typography
+              sx={{
+                fontSize: "0.6875rem",
+                fontWeight: 700,
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                color: "primary.dark",
+              }}
+            >
+              Discover
+            </Typography>
+          </Stack>
+          <Typography
+            component="h1"
+            sx={{
+              fontSize: { xs: "2rem", sm: "2.5rem" },
+              fontWeight: 700,
+              lineHeight: 1.15,
+              letterSpacing: "-0.025em",
+              color: "text.primary",
+            }}
+          >
+            Local communities on NewChums
+          </Typography>
+          <Typography
+            variant="body1"
+            color="text.secondary"
+            sx={{
+              fontSize: { xs: "0.9375rem", sm: "1rem" },
+              lineHeight: 1.6,
+              maxWidth: 640,
+            }}
+          >
+            Browse hobby clubs, game stores, and groups in your area. Tap a community to see what it&apos;s about and the plans it has coming up, or sign up to join one.
+          </Typography>
+        </Stack>
+      </Paper>
+
+      {/* Discovery controls. Reads as a primary tool rather than a plain
+          input row: a more present search field, a clearly-labeled
+          Filters button with an active-filter dot, and a panel that
+          opens beneath. Functional shape of the controls (debounced
+          search, manual location, hobby, distance, clear) is unchanged
+          from the previous implementation. */}
+      <Paper
+        variant="outlined"
+        sx={{
+          p: { xs: 1.75, sm: 2.25 },
           borderRadius: 3,
           borderColor: "grey.200",
           bgcolor: "background.paper",
           boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
         }}
       >
-        <Stack spacing={1.5}>
-          {/* Search + filter toggle. Unlike the authenticated filter bar
-              there is no "All / Yours" toggle competing for row space, so
-              the tune icon stays inline with the search field at every
-              breakpoint, a cleaner row than the mobile wrap-to-second-row
-              pattern we use on the authenticated surface. */}
-          <Stack direction="row" spacing={1} alignItems="center">
+        <Stack spacing={1.75}>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ xs: "stretch", sm: "center" }}>
             <TextField
               id="public-communities-search-input"
-              placeholder="Search communities..."
+              placeholder="Search communities by name, hobby, or place..."
               value={searchInputValue}
               onChange={(e) => {
                 const v = e.target.value;
@@ -236,40 +293,89 @@ export default function PublicCommunitiesExplore() {
                 if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
                 searchDebounceRef.current = setTimeout(() => setSearchText(v), 200);
               }}
-              size="small"
               fullWidth
               variant="outlined"
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
-                    <SearchRoundedIcon fontSize="small" color="action" />
+                    <SearchRoundedIcon sx={{ fontSize: 22, color: "text.secondary" }} />
                   </InputAdornment>
                 ),
               }}
-              sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
+              sx={{
+                "& .MuiOutlinedInput-root": {
+                  borderRadius: 2.5,
+                  fontSize: "1rem",
+                  bgcolor: "background.default",
+                  "& fieldset": { borderColor: "grey.200" },
+                  "&:hover fieldset": { borderColor: "grey.300" },
+                },
+                "& .MuiOutlinedInput-input": {
+                  py: { xs: 1.25, sm: 1.5 },
+                },
+              }}
             />
-            <IconButton
+            <Button
               onClick={() => setFiltersOpen((p) => !p)}
-              aria-label="Toggle filters"
+              aria-expanded={filtersOpen}
+              aria-controls="public-communities-filters-panel"
+              startIcon={<TuneRoundedIcon />}
               sx={{
                 flexShrink: 0,
+                textTransform: "none",
+                fontWeight: 600,
+                borderRadius: 2.5,
                 border: "1px solid",
-                borderColor: filtersOpen ? "primary.main" : "divider",
-                borderRadius: 2,
-                color: filtersOpen ? "primary.main" : "text.secondary",
+                borderColor: filtersOpen || activeFilterCount > 0 ? "primary.main" : "grey.200",
+                color: filtersOpen || activeFilterCount > 0 ? "primary.main" : "text.secondary",
                 bgcolor: filtersOpen ? "primary.light" : "transparent",
+                px: { xs: 2, sm: 2.25 },
+                py: { xs: 1, sm: 1.25 },
+                justifyContent: { xs: "center", sm: "flex-start" },
+                "&:hover": {
+                  bgcolor: filtersOpen ? "primary.light" : "grey.50",
+                  borderColor: "primary.main",
+                },
               }}
             >
-              <TuneRoundedIcon fontSize="small" />
-            </IconButton>
+              <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 0.75 }}>
+                Filters
+                {activeFilterCount > 0 && (
+                  <Box
+                    component="span"
+                    sx={{
+                      minWidth: 18,
+                      height: 18,
+                      px: 0.625,
+                      borderRadius: "999px",
+                      bgcolor: "primary.main",
+                      color: "primary.contrastText",
+                      fontSize: "0.6875rem",
+                      fontWeight: 700,
+                      lineHeight: 1,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    {activeFilterCount}
+                  </Box>
+                )}
+              </Box>
+            </Button>
           </Stack>
 
           {filtersOpen && (
             <Stack
+              id="public-communities-filters-panel"
               direction={{ xs: "column", sm: "row" }}
               spacing={1.5}
               alignItems={{ xs: "stretch", sm: "flex-end" }}
-              sx={{ pt: 0.5 }}
+              sx={{
+                pt: 1.75,
+                borderTop: "1px solid",
+                borderColor: "grey.100",
+              }}
             >
               {/* Manual location entry. Typing without committing a Places
                   suggestion resets the pick (and the distance filter)
@@ -332,15 +438,6 @@ export default function PublicCommunitiesExplore() {
                   )}
                 />
               </Box>
-              {isFiltered && (
-                <Button
-                  size="medium"
-                  onClick={clearAllFilters}
-                  sx={{ textTransform: "none", whiteSpace: "nowrap", flexShrink: 0, mb: "1px" }}
-                >
-                  Clear filters
-                </Button>
-              )}
             </Stack>
           )}
         </Stack>
@@ -353,6 +450,21 @@ export default function PublicCommunitiesExplore() {
         </Box>
       ) : communities.length > 0 ? (
         <>
+          {/* When filters are active, surface a discreet Clear filters
+              link above the grid so the viewer has a one-click reset
+              without reopening the panel. */}
+          {isFiltered && (
+            <Stack direction="row" justifyContent="flex-end" sx={{ px: 0.5 }}>
+              <Button
+                size="small"
+                onClick={clearAllFilters}
+                sx={{ textTransform: "none", fontWeight: 600, color: "text.secondary" }}
+              >
+                Clear filters
+              </Button>
+            </Stack>
+          )}
+
           {/* Responsive 1/2-column grid. Goes 2-up at md so desktop reads
               as a browseable discovery board rather than a long single-
               column scroll; drops to 1-up below md so narrow phones keep
@@ -385,21 +497,22 @@ export default function PublicCommunitiesExplore() {
 
           {/* Calm, one-line sign-up nudge. Intentionally not a sales banner,
               the CTA to join any specific community lives on the detail
-              page where the user already has context. The icon badge on
-              the left matches the location-nudge pattern on the
-              authenticated communities page so the two surfaces read as
-              the same product. */}
+              page where the user already has context. The warm-wash
+              gradient ties the footer back to the page header so the
+              page reads as one curated directory shell from top to
+              bottom rather than a list with a banner pinned underneath. */}
           <Paper
             variant="outlined"
             sx={{
-              p: { xs: 2.5, sm: 3 },
+              p: { xs: 2.75, sm: 3.25 },
               borderRadius: 3,
-              borderColor: "secondary.light",
-              bgcolor: "rgba(244, 180, 0, 0.035)",
+              borderColor: "primary.light",
+              background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
               display: "flex",
               flexDirection: { xs: "column", sm: "row" },
               alignItems: { xs: "flex-start", sm: "center" },
               gap: { xs: 1.5, sm: 2.5 },
+              mt: { xs: 1.5, sm: 2.5 },
             }}
           >
             <Box
@@ -407,14 +520,15 @@ export default function PublicCommunitiesExplore() {
                 width: 44,
                 height: 44,
                 borderRadius: "50%",
-                bgcolor: "secondary.light",
+                bgcolor: "primary.main",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 flexShrink: 0,
+                boxShadow: "0 2px 8px rgba(230, 91, 19, 0.18)",
               }}
             >
-              <ForumRoundedIcon sx={{ color: "secondary.dark", fontSize: 22 }} />
+              <ForumRoundedIcon sx={{ color: "primary.contrastText", fontSize: 22 }} />
             </Box>
             <Box sx={{ flex: 1, minWidth: 0 }}>
               <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 0.25, fontSize: "1rem" }}>

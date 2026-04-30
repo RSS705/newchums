@@ -208,17 +208,29 @@ export default function CommunityListCard({
     </Typography>
   );
 
+  // Meta row is locked to a single line so cards in a grid keep a
+  // predictable height and don't get tall when the location string is a
+  // full street address (e.g. game stores). Counts and chips are
+  // `flexShrink: 0` so they always render fully; the location is the
+  // flexible item with `minWidth: 0` + `noWrap` Typography so an over-long
+  // address ellipses gracefully instead of pushing the row to wrap.
   const metaEl = (
-    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-      <Stack direction="row" spacing={0.5} alignItems="center">
+    <Stack
+      direction="row"
+      spacing={1}
+      alignItems="center"
+      useFlexGap
+      sx={{ flexWrap: "nowrap", minWidth: 0, overflow: "hidden" }}
+    >
+      <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0 }}>
         <PeopleRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
         <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, fontSize: "0.8125rem" }}>
           {c.member_count} {c.member_count === 1 ? "member" : "members"}
         </Typography>
       </Stack>
       {c.upcoming_plan_count > 0 && (
-        <Stack direction="row" spacing={0.5} alignItems="center" useFlexGap>
-          <Typography variant="body2" color="text.disabled" sx={{ display: { xs: "none", sm: "inline" } }}>·</Typography>
+        <Stack direction="row" spacing={0.5} alignItems="center" useFlexGap sx={{ flexShrink: 0 }}>
+          <Typography variant="body2" color="text.disabled">·</Typography>
           <EventNoteRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
           <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
             {c.upcoming_plan_count} upcoming {c.upcoming_plan_count === 1 ? "plan" : "plans"}
@@ -226,18 +238,23 @@ export default function CommunityListCard({
         </Stack>
       )}
       {c.is_online ? (
-        <Stack direction="row" spacing={0.5} alignItems="center" useFlexGap>
-          <Typography variant="body2" color="text.disabled" sx={{ display: { xs: "none", sm: "inline" } }}>·</Typography>
+        <Stack direction="row" spacing={0.5} alignItems="center" useFlexGap sx={{ flexShrink: 0 }}>
+          <Typography variant="body2" color="text.disabled">·</Typography>
           <LanguageRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
           <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
             Online
           </Typography>
         </Stack>
       ) : c.location_name ? (
-        <Stack direction="row" spacing={0.5} alignItems="center" useFlexGap sx={{ minWidth: 0, flex: { xs: "1 1 100%", sm: "0 1 auto" } }}>
-          <Typography variant="body2" color="text.disabled" sx={{ display: { xs: "none", sm: "inline" } }}>·</Typography>
+        <Stack direction="row" spacing={0.5} alignItems="center" useFlexGap sx={{ minWidth: 0, flex: 1, overflow: "hidden" }}>
+          <Typography variant="body2" color="text.disabled" sx={{ flexShrink: 0 }}>·</Typography>
           <PlaceRoundedIcon sx={{ fontSize: 14, color: "text.disabled", flexShrink: 0 }} />
-          <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem", minWidth: 0 }}>
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            noWrap
+            sx={{ fontSize: "0.8125rem", minWidth: 0, flex: 1 }}
+          >
             {c.location_name}
           </Typography>
           {c.distance_km != null && (
@@ -250,7 +267,7 @@ export default function CommunityListCard({
         </Stack>
       ) : null}
       {c.join_mode === "approval_required" && (
-        <Chip label="Approval required" size="small" color="warning" variant="outlined" sx={{ height: 20, fontSize: "0.6875rem" }} />
+        <Chip label="Approval required" size="small" color="warning" variant="outlined" sx={{ height: 20, fontSize: "0.6875rem", flexShrink: 0 }} />
       )}
     </Stack>
   );
@@ -271,7 +288,14 @@ export default function CommunityListCard({
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",
-          boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
+          // Subtle 1px border + a slightly stronger resting shadow give
+          // each card a crisp edge against the page background without
+          // pushing into "heavy outlined card" territory. The hover lift
+          // below is what carries the strong emphasis; resting state stays
+          // calm so a grid of many cards doesn't feel cluttered.
+          border: "1px solid",
+          borderColor: "grey.200",
+          boxShadow: "0 1px 2px rgba(0, 0, 0, 0.04), 0 2px 6px rgba(0, 0, 0, 0.05)",
           transition: "box-shadow 0.22s ease, transform 0.18s ease, border-color 0.22s ease",
           "& > .MuiCardContent-root": {
             flex: 1,
