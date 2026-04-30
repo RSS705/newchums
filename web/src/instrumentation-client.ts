@@ -11,6 +11,18 @@ Sentry.init({
   // rationale and for the guidance on attaching safe user context
   // manually when an incident actually needs it.
   sendDefaultPii: false,
+
+  // Suppress noise from the Facebook/Meta Android in-app browser. When a
+  // user opens a NewChums link from the FB/IG app, Meta injects its own
+  // JS bridge ("navigation_performance_logger_android",
+  // enableDidUserTypeOnKeyboardLogging, FBNav* metrics). If the WebView
+  // tears down the underlying Java object mid-call, the bridge throws
+  // "Java object is gone" into the page, which Sentry then captures as
+  // if it were an app error. None of these symbols exist in NewChums
+  // code, so we drop them. Both signals are kept narrow on purpose so
+  // genuine app errors are still reported.
+  ignoreErrors: [/enableDidUserTypeOnKeyboardLogging/],
+  denyUrls: [/^app:\/\/navigation_performance_logger_android/],
 });
 
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;
