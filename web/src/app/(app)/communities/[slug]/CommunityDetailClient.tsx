@@ -1526,6 +1526,8 @@ export default function CommunityDetailClient() {
             // on the same surface and a copy-pasted link matches what the
             // sharer was looking at. router.replace keeps this out of the
             // browser history so the back button doesn't tab-walk.
+            // `scroll: false` keeps the viewer at the tab section instead
+            // of jumping to the page top on every tab switch.
             const next = v === 2 ? "requests" : v === 1 ? "members" : null;
             const url = new URL(window.location.href);
             if (next) url.searchParams.set("tab", next);

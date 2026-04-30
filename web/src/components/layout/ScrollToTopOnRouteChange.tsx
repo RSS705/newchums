@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 
 /**
@@ -23,16 +23,17 @@ import { useEffect } from "react";
  *   - Skip when the URL carries a `#hash` so the browser's native
  *     scroll-to-anchor on hash navigation isn't overridden. That's how
  *     the homepage's `#for-organizers` style anchors keep working.
+ *   - Only fires on pathname changes. Search-param-only updates (tab
+ *     switches that sync `?tab=…` to the URL, deep-link cleanup that
+ *     strips `?section=…` / `?invite_token=…` / `?focus=…`, etc.) must
+ *     preserve the viewer's scroll position. Pages that need to scroll
+ *     on a search-param change own that behavior locally (e.g.
+ *     EventDetailClient's `scrollIntoView` for `?section=` deep links).
  *   - "auto" behavior, not "smooth". Page-load scroll resets should
  *     feel instant; smooth scrolling between routes reads as broken.
  */
 export default function ScrollToTopOnRouteChange() {
   const pathname = usePathname();
-  // Tracking searchParams so a query-only change (?tab=…, ?section=…)
-  // also re-fires the reset. Section-deep-link pages like /events/[id]
-  // do their own anchor scrolling on top of this, so an extra reset
-  // first is harmless and keeps the default landing position consistent.
-  const searchParams = useSearchParams();
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -45,7 +46,7 @@ export default function ScrollToTopOnRouteChange() {
     }
     // Mobile (and any other case where html/window is the scroll target).
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
-  }, [pathname, searchParams]);
+  }, [pathname]);
 
   return null;
 }
