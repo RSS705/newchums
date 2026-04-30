@@ -2,11 +2,14 @@
 
 import Box from "@mui/material/Box";
 import Grid from "@mui/material/Grid";
+import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { useCallback, useState } from "react";
 import Link from "next/link";
 import CheckCircleOutlineRoundedIcon from "@mui/icons-material/CheckCircleOutlineRounded";
+import EditNoteRoundedIcon from "@mui/icons-material/EditNoteRounded";
+import MailOutlineRoundedIcon from "@mui/icons-material/MailOutlineRounded";
 import { apiFetch } from "@/lib/apiClient";
 import { CONTACT_SUBJECT_OPTIONS } from "@/lib/contact";
 import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
@@ -137,19 +140,61 @@ export default function ContactView({
   if (success) {
     return (
       <Stack spacing={{ xs: 3, sm: 4 }} sx={{ width: "100%" }}>
-        <Box sx={{ textAlign: { xs: "center", sm: "left" } }}>
-          <Typography
-            component="h1"
-            sx={{
-              fontSize: { xs: "1.75rem", sm: "2rem" },
-              fontWeight: 700,
-              lineHeight: 1.25,
-              letterSpacing: "-0.02em",
-            }}
-          >
-            Contact
-          </Typography>
-        </Box>
+        {/* Success hero. Warm-wash matching the form-page hero so the
+            two states feel like the same surface, just at a different
+            point in the flow. */}
+        <Paper
+          variant="outlined"
+          sx={{
+            p: { xs: 2.5, sm: 3.5 },
+            borderRadius: 4,
+            borderColor: "primary.light",
+            background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
+          }}
+        >
+          <Stack spacing={1.25}>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Box
+                sx={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: "50%",
+                  bgcolor: "primary.main",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <MailOutlineRoundedIcon sx={{ color: "primary.contrastText", fontSize: 18 }} />
+              </Box>
+              <Typography
+                sx={{
+                  fontSize: "0.6875rem",
+                  fontWeight: 700,
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                  color: "primary.dark",
+                }}
+              >
+                Get in touch
+              </Typography>
+            </Stack>
+            <Typography
+              component="h1"
+              sx={{
+                fontSize: { xs: "1.875rem", sm: "2.375rem" },
+                fontWeight: 700,
+                lineHeight: 1.15,
+                letterSpacing: "-0.025em",
+                color: "text.primary",
+              }}
+            >
+              Contact us
+            </Typography>
+          </Stack>
+        </Paper>
+
         <AppCard
           component="section"
           aria-live="polite"
@@ -163,33 +208,47 @@ export default function ContactView({
                 ? "0 1px 3px rgba(0,0,0,0.08)"
                 : "0 1px 3px rgba(0,0,0,0.2)",
             borderTop: "4px solid",
-            borderTopColor: "secondary.main",
+            borderTopColor: "success.main",
           }}
         >
-          <Stack spacing={2}>
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
-              <CheckCircleOutlineRoundedIcon
-                sx={{ fontSize: 32, color: "success.main" }}
-                aria-hidden
-              />
-              <Typography
-                component="h2"
+          <Stack spacing={2.5}>
+            <Stack direction="row" spacing={1.5} alignItems="center">
+              <Box
                 sx={{
-                  fontSize: { xs: "1.25rem", sm: "1.375rem" },
-                  fontWeight: 700,
-                  color: "text.primary",
-                  letterSpacing: "-0.01em",
+                  width: 40,
+                  height: 40,
+                  borderRadius: "50%",
+                  bgcolor: "success.light",
+                  color: "success.dark",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
                 }}
               >
-                Message received
-              </Typography>
-            </Box>
-            <Stack spacing={1.25}>
+                <CheckCircleOutlineRoundedIcon sx={{ fontSize: 22 }} aria-hidden />
+              </Box>
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography
+                  component="h2"
+                  variant="h6"
+                  fontWeight={700}
+                  sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
+                >
+                  Message received
+                </Typography>
+                <Typography
+                  variant="caption"
+                  color="text.disabled"
+                  sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
+                >
+                  We typically reply within 1-2 business days.
+                </Typography>
+              </Box>
+            </Stack>
+            <Stack spacing={1}>
               <Typography color="text.secondary" sx={{ fontSize: "0.9375rem", lineHeight: 1.5 }}>
                 Thanks for reaching out, we&apos;ve got your message.
-              </Typography>
-              <Typography color="text.secondary" sx={{ fontSize: "0.9375rem", lineHeight: 1.5 }}>
-                We typically reply within 1–2 business days.
               </Typography>
               {submittedEmail && (
                 <Typography color="text.secondary" sx={{ fontSize: "0.9375rem", lineHeight: 1.5 }}>
@@ -201,7 +260,7 @@ export default function ContactView({
                 </Typography>
               )}
             </Stack>
-            <Box sx={{ pt: 1 }}>
+            <Box sx={{ pt: 0.5 }}>
               <AppButton
                 component={Link}
                 href="/"
@@ -212,7 +271,10 @@ export default function ContactView({
                   alignSelf: "flex-start",
                   borderRadius: 2.5,
                   textTransform: "none",
-                  "&:hover": { backgroundColor: "primary.dark" },
+                  fontWeight: 700,
+                  fontSize: "0.9375rem",
+                  boxShadow: "0 4px 14px rgba(230, 91, 19, 0.25)",
+                  "&:hover": { boxShadow: "0 6px 18px rgba(230, 91, 19, 0.32)", opacity: 0.96 },
                 }}
               >
                 {isLoggedIn ? "Back to exploring" : "Back to home"}
@@ -226,40 +288,117 @@ export default function ContactView({
 
   return (
     <Stack spacing={{ xs: 3, sm: 4 }}>
-      <Box sx={{ textAlign: { xs: "center", sm: "left" } }}>
-        <Typography
-          component="h1"
-          sx={{
-            fontSize: { xs: "1.75rem", sm: "2rem" },
-            fontWeight: 700,
-            lineHeight: 1.25,
-            letterSpacing: "-0.02em",
-          }}
-        >
-          Contact
-        </Typography>
-        <Typography
-          color="text.secondary"
-          sx={{ fontSize: { xs: "0.875rem", sm: "0.9375rem" }, mt: 1 }}
-        >
-          Have a question, idea, or something to report? Reach us at{" "}
+      {/* Header. Warm-wash hero matching the rest of the polished
+          surfaces (Explore, Your Plans, Communities, Your Chums,
+          Profile, Settings, Roadmap). Eyebrow + larger H1 mirror the
+          discovery-header pattern in docs/UI_Patterns.md. */}
+      <Paper
+        variant="outlined"
+        sx={{
+          p: { xs: 2.5, sm: 3.5 },
+          borderRadius: 4,
+          borderColor: "primary.light",
+          background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
+        }}
+      >
+        <Stack spacing={1.25}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Box
+              sx={{
+                width: 28,
+                height: 28,
+                borderRadius: "50%",
+                bgcolor: "primary.main",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <MailOutlineRoundedIcon sx={{ color: "primary.contrastText", fontSize: 18 }} />
+            </Box>
+            <Typography
+              sx={{
+                fontSize: "0.6875rem",
+                fontWeight: 700,
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                color: "primary.dark",
+              }}
+            >
+              Get in touch
+            </Typography>
+          </Stack>
           <Typography
-            component="a"
-            href="mailto:contact@newchums.com"
-            sx={{ color: "primary.main", fontWeight: 500, textDecoration: "none" }}
+            component="h1"
+            sx={{
+              fontSize: { xs: "1.875rem", sm: "2.375rem" },
+              fontWeight: 700,
+              lineHeight: 1.15,
+              letterSpacing: "-0.025em",
+              color: "text.primary",
+            }}
           >
-            contact@newchums.com
+            Contact us
           </Typography>
-          .
-        </Typography>
-      </Box>
+          <Typography
+            variant="body1"
+            color="text.secondary"
+            sx={{
+              fontSize: { xs: "0.9375rem", sm: "1rem" },
+              lineHeight: 1.6,
+              maxWidth: 560,
+            }}
+          >
+            Have a question, idea, or something to report? Use the form below or email us at{" "}
+            <Typography
+              component="a"
+              href="mailto:contact@newchums.com"
+              sx={{ color: "primary.dark", fontWeight: 600, textDecoration: "none", "&:hover": { textDecoration: "underline" } }}
+            >
+              contact@newchums.com
+            </Typography>
+            .
+          </Typography>
+        </Stack>
+      </Paper>
 
       <AppCard sx={{ borderRadius: { xs: 2, sm: 2.5 }, overflow: "hidden" }}>
         <form onSubmit={handleSubmit} noValidate>
           <Stack spacing={2}>
-            <Typography variant="h6" sx={{ fontSize: { xs: "1rem", sm: "1.125rem" } }}>
-              Contact form
-            </Typography>
+            <Stack direction="row" spacing={1.5} alignItems="center">
+              <Box
+                sx={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: "50%",
+                  bgcolor: "primary.light",
+                  color: "primary.main",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <EditNoteRoundedIcon sx={{ fontSize: 22 }} />
+              </Box>
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography
+                  variant="h6"
+                  fontWeight={700}
+                  sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
+                >
+                  Send a message
+                </Typography>
+                <Typography
+                  variant="caption"
+                  color="text.disabled"
+                  sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
+                >
+                  We typically reply within 1-2 business days.
+                </Typography>
+              </Box>
+            </Stack>
             {/* Honeypot */}
             <Box component="div" aria-hidden="true" sx={{ position: "absolute", left: -9999, overflow: "hidden" }}>
               <label htmlFor="contact-website">Website</label>
@@ -355,12 +494,17 @@ export default function ContactView({
                   fullWidth
                   size="large"
                   sx={{
-                    py: { xs: 1.25, sm: 1 },
+                    py: { xs: 1.5, sm: 1.25 },
                     borderRadius: 2.5,
                     textTransform: "none",
+                    fontWeight: 700,
+                    fontSize: "0.9375rem",
+                    boxShadow: "0 4px 14px rgba(230, 91, 19, 0.25)",
+                    "&:hover": { boxShadow: "0 6px 18px rgba(230, 91, 19, 0.32)", opacity: 0.96 },
+                    "&.Mui-disabled": { boxShadow: "none" },
                   }}
                 >
-                  {submitting ? "Sending…" : "Submit"}
+                  {submitting ? "Sending..." : "Submit"}
                 </AppButton>
               </Grid>
             </Grid>

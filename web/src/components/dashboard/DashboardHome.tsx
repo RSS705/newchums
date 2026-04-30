@@ -7,7 +7,6 @@ import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import Grid from "@mui/material/Grid";
-import IconButton from "@mui/material/IconButton";
 import InputAdornment from "@mui/material/InputAdornment";
 import Paper from "@mui/material/Paper";
 import Skeleton from "@mui/material/Skeleton";
@@ -321,42 +320,128 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
     clearExploreState();
   };
 
+  // Active-filter count for the labeled Filters button. Only counts what
+  // sits BEHIND the panel toggle (distance + hobby) so the pill reads as
+  // "you have N filters hidden behind this button". Time/sort/personalize
+  // are surfaced inline on the chip row below and don't need to be
+  // double-counted here.
+  const activeFilterCount =
+    (selectedHobby ? 1 : 0) +
+    (hasLocation && radiusKm !== defaultRadiusKm ? 1 : 0);
+
   return (
-    <Stack spacing={{ xs: 2.5, sm: 3.5 }}>
-      {/* ── Header ──────────────────────────────────────────────────── */}
-      <Box>
-        <Typography
-          component="h1"
-          sx={{
-            mb: 0.5,
-            lineHeight: 1.25,
-            fontSize: { xs: "1.75rem", sm: "2rem" },
-            letterSpacing: "-0.02em",
-            fontWeight: 700,
-          }}
+    <Stack spacing={{ xs: 3, sm: 4 }}>
+      {/* ── Header. Lifted from a plain title block to an outlined hero
+          card with a soft warm wash so the page reads as a curated
+          discovery surface rather than a database listing. Eyebrow +
+          large H1 mirror the discovery-header pattern in
+          docs/UI_Patterns.md. The "Start a plan" CTA on the right gives
+          the page a clear primary action even when the feed is dense. */}
+      <Paper
+        variant="outlined"
+        sx={{
+          p: { xs: 2.5, sm: 3.5 },
+          borderRadius: 4,
+          borderColor: "primary.light",
+          background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
+        }}
+      >
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          spacing={{ xs: 2, sm: 3 }}
+          alignItems={{ xs: "stretch", sm: "flex-end" }}
+          justifyContent="space-between"
         >
-          Explore
-        </Typography>
-        {loading ? (
-          // Hold the subtitle until the first events fetch resolves so
-          // `hasLocation` and `locationLabel` have settled. Otherwise the
-          // user sees the "Find plans around..." fallback for ~200ms and
-          // then a pop to "Discover plans and gatherings near [City]",
-          // which is the "address appearing" part of the staggered load
-          // reported on the Explore tab.
-          <Skeleton
-            variant="text"
-            width={260}
-            sx={{ fontSize: { xs: "0.875rem", sm: "0.9375rem" }, maxWidth: "100%" }}
-          />
-        ) : (
-          <Typography variant="body1" color="text.secondary" sx={{ fontSize: { xs: "0.875rem", sm: "0.9375rem" } }}>
-            {hasLocation
-              ? `Discover plans and gatherings${locationLabel ? ` near ${locationLabel}` : ""}`
-              : "Find plans around the hobbies you enjoy"}
-          </Typography>
-        )}
-      </Box>
+          <Stack spacing={1.25} sx={{ flex: 1, minWidth: 0 }}>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Box
+                sx={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: "50%",
+                  bgcolor: "primary.main",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <ExploreRoundedIcon sx={{ color: "primary.contrastText", fontSize: 18 }} />
+              </Box>
+              <Typography
+                sx={{
+                  fontSize: "0.6875rem",
+                  fontWeight: 700,
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                  color: "primary.dark",
+                }}
+              >
+                Discover
+              </Typography>
+            </Stack>
+            <Typography
+              component="h1"
+              sx={{
+                fontSize: { xs: "1.875rem", sm: "2.375rem" },
+                fontWeight: 700,
+                lineHeight: 1.15,
+                letterSpacing: "-0.025em",
+                color: "text.primary",
+              }}
+            >
+              {greetingName ? `Welcome back, ${greetingName}` : "Explore"}
+            </Typography>
+            {loading ? (
+              // Hold the subtitle until the first events fetch resolves so
+              // `hasLocation` and `locationLabel` have settled. Otherwise
+              // the user sees the "Find plans around..." fallback for
+              // ~200ms and then a pop to "Discover plans and gatherings
+              // near [City]", which is the "address appearing" part of
+              // the staggered load.
+              <Skeleton
+                variant="text"
+                width={300}
+                sx={{ fontSize: { xs: "0.9375rem", sm: "1rem" }, maxWidth: "100%" }}
+              />
+            ) : (
+              <Typography
+                variant="body1"
+                color="text.secondary"
+                sx={{
+                  fontSize: { xs: "0.9375rem", sm: "1rem" },
+                  lineHeight: 1.6,
+                  maxWidth: 560,
+                }}
+              >
+                {hasLocation
+                  ? `Plans and gatherings${locationLabel ? ` near ${locationLabel}` : ""}, hand-picked around the hobbies you enjoy.`
+                  : "Find plans and gatherings around the hobbies you enjoy."}
+              </Typography>
+            )}
+          </Stack>
+          <Button
+            component={Link}
+            href="/events/create"
+            variant="contained"
+            startIcon={<AddCircleRoundedIcon />}
+            sx={{
+              flexShrink: 0,
+              alignSelf: { xs: "stretch", sm: "flex-end" },
+              textTransform: "none",
+              fontWeight: 700,
+              borderRadius: 2.5,
+              px: 3,
+              py: 1.125,
+              fontSize: "0.9375rem",
+              boxShadow: "0 4px 14px rgba(230, 91, 19, 0.25)",
+              "&:hover": { boxShadow: "0 6px 18px rgba(230, 91, 19, 0.32)", opacity: 0.96 },
+            }}
+          >
+            Start a plan
+          </Button>
+        </Stack>
+      </Paper>
 
       {/* ── Filter bar ──────────────────────────────────────────────── */}
       {loading ? (
@@ -368,17 +453,17 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
         <Paper
           variant="outlined"
           sx={{
-            p: { xs: 1.5, sm: 2 },
+            p: { xs: 1.75, sm: 2.25 },
             borderRadius: 3,
             borderColor: "grey.200",
             bgcolor: "background.paper",
             boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
           }}
         >
-          <Stack spacing={1.5}>
-            <Stack direction="row" spacing={1} alignItems="center">
-              <Skeleton variant="rounded" height={40} sx={{ flex: 1, borderRadius: 2 }} />
-              <Skeleton variant="rounded" width={40} height={40} sx={{ borderRadius: 2 }} />
+          <Stack spacing={1.75}>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ xs: "stretch", sm: "center" }}>
+              <Skeleton variant="rounded" height={48} sx={{ flex: 1, borderRadius: 2.5 }} />
+              <Skeleton variant="rounded" width={120} height={48} sx={{ borderRadius: 2.5, flexShrink: 0 }} />
             </Stack>
             <Stack direction="row" gap={0.75} alignItems="center" sx={{ flexWrap: { xs: "nowrap", sm: "wrap" } }}>
               {[72, 88, 96, 88, 112, 56, 88, 104].map((w, i) => (
@@ -391,19 +476,23 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
       <Paper
         variant="outlined"
         sx={{
-          p: { xs: 1.5, sm: 2 },
+          p: { xs: 1.75, sm: 2.25 },
           borderRadius: 3,
           borderColor: "grey.200",
           bgcolor: "background.paper",
           boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
         }}
       >
-        <Stack spacing={1.5}>
-          {/* Search + sort + filter toggle */}
-          <Stack direction="row" spacing={1} alignItems="center">
+        <Stack spacing={1.75}>
+          {/* Search + Filters toggle. Bigger search field with primary
+              presence; labeled Filters button (not a bare icon) with an
+              active-count pill so the viewer can tell at a glance whether
+              the panel hides any committed filters. Matches the discovery
+              filter shell pattern in docs/UI_Patterns.md. */}
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ xs: "stretch", sm: "center" }}>
             <TextField
               id="explore-search-input"
-              placeholder="Search plans…"
+              placeholder="Search plans by title, hobby, or place..."
               value={searchInputValue}
               onChange={(e) => {
                 const v = e.target.value;
@@ -411,30 +500,76 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
                 if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
                 searchDebounceRef.current = setTimeout(() => setSearchText(v), 200);
               }}
-              size="small"
               fullWidth
               variant="outlined"
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
-                    <SearchRoundedIcon fontSize="small" color="action" />
+                    <SearchRoundedIcon sx={{ fontSize: 22, color: "text.secondary" }} />
                   </InputAdornment>
                 ),
               }}
-              sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
-            />
-            <IconButton
-              onClick={() => setFiltersOpen((p) => !p)}
               sx={{
+                "& .MuiOutlinedInput-root": {
+                  borderRadius: 2.5,
+                  fontSize: "1rem",
+                  bgcolor: "background.default",
+                  "& fieldset": { borderColor: "grey.200" },
+                  "&:hover fieldset": { borderColor: "grey.300" },
+                },
+                "& .MuiOutlinedInput-input": {
+                  py: { xs: 1.25, sm: 1.5 },
+                },
+              }}
+            />
+            <Button
+              onClick={() => setFiltersOpen((p) => !p)}
+              aria-expanded={filtersOpen}
+              aria-controls="explore-filters-panel"
+              startIcon={<TuneRoundedIcon />}
+              sx={{
+                flexShrink: 0,
+                textTransform: "none",
+                fontWeight: 600,
+                borderRadius: 2.5,
                 border: "1px solid",
-                borderColor: filtersOpen ? "primary.main" : "divider",
-                borderRadius: 2,
-                color: filtersOpen ? "primary.main" : "text.secondary",
+                borderColor: filtersOpen || activeFilterCount > 0 ? "primary.main" : "grey.200",
+                color: filtersOpen || activeFilterCount > 0 ? "primary.main" : "text.secondary",
                 bgcolor: filtersOpen ? "primary.light" : "transparent",
+                px: { xs: 2, sm: 2.25 },
+                py: { xs: 1, sm: 1.25 },
+                justifyContent: { xs: "center", sm: "flex-start" },
+                "&:hover": {
+                  bgcolor: filtersOpen ? "primary.light" : "grey.50",
+                  borderColor: "primary.main",
+                },
               }}
             >
-              <TuneRoundedIcon fontSize="small" />
-            </IconButton>
+              <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 0.75 }}>
+                Filters
+                {activeFilterCount > 0 && (
+                  <Box
+                    component="span"
+                    sx={{
+                      minWidth: 18,
+                      height: 18,
+                      px: 0.625,
+                      borderRadius: "999px",
+                      bgcolor: "primary.main",
+                      color: "primary.contrastText",
+                      fontSize: "0.6875rem",
+                      fontWeight: 700,
+                      lineHeight: 1,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    {activeFilterCount}
+                  </Box>
+                )}
+              </Box>
+            </Button>
           </Stack>
 
           {/* Time + sort chips */}
@@ -517,10 +652,15 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
           {/* Expanded filters */}
           {filtersOpen && (
             <Stack
+              id="explore-filters-panel"
               direction={{ xs: "column", sm: "row" }}
               spacing={1.5}
               alignItems={{ xs: "stretch", sm: "flex-end" }}
-              sx={{ pt: 0.5 }}
+              sx={{
+                pt: 1.75,
+                borderTop: "1px solid",
+                borderColor: "grey.100",
+              }}
             >
               <DistanceSelect
                 value={radiusKm}
@@ -579,20 +719,32 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
           sx={{
             p: { xs: 2.5, sm: 3 },
             borderRadius: 3,
-            borderColor: "secondary.light",
-            bgcolor: "rgba(244, 180, 0, 0.035)",
+            borderColor: "primary.light",
+            background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
             display: "flex",
             flexDirection: { xs: "column", sm: "row" },
             alignItems: { xs: "flex-start", sm: "center" },
-            gap: 2,
+            gap: { xs: 1.5, sm: 2.5 },
           }}
         >
-          <Box sx={{ width: 44, height: 44, borderRadius: "50%", bgcolor: "secondary.light", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            <EditLocationRoundedIcon sx={{ color: "secondary.dark", fontSize: 22 }} />
+          <Box
+            sx={{
+              width: 44,
+              height: 44,
+              borderRadius: "50%",
+              bgcolor: "primary.main",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+              boxShadow: "0 2px 8px rgba(230, 91, 19, 0.18)",
+            }}
+          >
+            <EditLocationRoundedIcon sx={{ color: "primary.contrastText", fontSize: 22 }} />
           </Box>
-          <Box sx={{ flex: 1 }}>
-            <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.25 }}>
-              Add your location for better results
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 0.25, fontSize: "1rem" }}>
+              Set your location for better results
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
               We&apos;ll prioritize plans and gatherings near you. You can also set how far you&apos;re willing to travel.
@@ -601,9 +753,17 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
           <Button
             component={Link}
             href="/profile?focus=location"
-            variant="outlined"
-            size="small"
-            sx={{ textTransform: "none", fontWeight: 600, whiteSpace: "nowrap", borderRadius: 2.5 }}
+            variant="contained"
+            sx={{
+              flexShrink: 0,
+              textTransform: "none",
+              fontWeight: 600,
+              whiteSpace: "nowrap",
+              borderRadius: 2.5,
+              boxShadow: "none",
+              alignSelf: { xs: "stretch", sm: "auto" },
+              "&:hover": { boxShadow: "none", opacity: 0.92 },
+            }}
           >
             Update profile
           </Button>
@@ -647,53 +807,79 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
           )}
         </>
       ) : (
-        /* ── Empty state ──────────────────────────────────────────── */
-        <EmptyState
-          icon={<ExploreRoundedIcon sx={{ fontSize: 56 }} />}
-          title={isFiltered ? "Nothing matched this time" : "No upcoming plans nearby yet"}
-          description={
-            isFiltered
-              ? "Try widening the time window, removing a hobby filter, or clearing filters to see more plans."
-              : hasLocation
-                ? "There aren't any public plans in your area right now. Check back soon or start one yourself."
-                : !hasHobbies
-                  ? "Add a few hobbies to your profile so we can show you relevant plans nearby."
-                  : "Plans are just getting started in your area. Start one and invite people around a hobby you enjoy."
-          }
-          action={
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
-              {isFiltered && (
-                <Button
-                  variant="outlined"
-                  onClick={clearAllFilters}
-                  sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3 }}
-                >
-                  Clear all filters
-                </Button>
-              )}
-              {!hasLocation && (
+        /* ── Empty state. Wrapped in an outlined Paper with a soft warm
+              icon orb so the empty surface still feels like part of the
+              page rather than orphaned helper text. ─────────────────── */
+        <Paper
+          variant="outlined"
+          sx={{
+            borderRadius: 3,
+            borderColor: "grey.200",
+            bgcolor: "background.paper",
+            boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+          }}
+        >
+          <EmptyState
+            icon={
+              <Box
+                sx={{
+                  width: 72,
+                  height: 72,
+                  borderRadius: "50%",
+                  bgcolor: "primary.light",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <ExploreRoundedIcon sx={{ fontSize: 36, color: "primary.main" }} />
+              </Box>
+            }
+            title={isFiltered ? "Nothing matched this time" : "No upcoming plans nearby yet"}
+            description={
+              isFiltered
+                ? "Try widening the time window, removing a hobby filter, or clearing filters to see more plans."
+                : hasLocation
+                  ? "There aren't any public plans in your area right now. Check back soon or start one yourself."
+                  : !hasHobbies
+                    ? "Add a few hobbies to your profile so we can show you relevant plans nearby."
+                    : "Plans are just getting started in your area. Start one and invite people around a hobby you enjoy."
+            }
+            action={
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                {isFiltered && (
+                  <Button
+                    variant="outlined"
+                    onClick={clearAllFilters}
+                    sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3 }}
+                  >
+                    Clear all filters
+                  </Button>
+                )}
+                {!hasLocation && (
+                  <Button
+                    component={Link}
+                    href="/profile"
+                    variant="outlined"
+                    startIcon={<EditLocationRoundedIcon />}
+                    sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3 }}
+                  >
+                    Set your location
+                  </Button>
+                )}
                 <Button
                   component={Link}
-                  href="/profile"
-                  variant="outlined"
-                  startIcon={<EditLocationRoundedIcon />}
-                  sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3 }}
+                  href="/events/create"
+                  variant="contained"
+                  startIcon={<AddCircleRoundedIcon />}
+                  sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
                 >
-                  Set your location
+                  Start a plan
                 </Button>
-              )}
-              <Button
-                component={Link}
-                href="/events/create"
-                variant="contained"
-                startIcon={<AddCircleRoundedIcon />}
-                sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3 }}
-              >
-                Start a plan
-              </Button>
-            </Stack>
-          }
-        />
+              </Stack>
+            }
+          />
+        </Paper>
       )}
 
       {/* ── Local interest signal ──────────────────────────────────── */}

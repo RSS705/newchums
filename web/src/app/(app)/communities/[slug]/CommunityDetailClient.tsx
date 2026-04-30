@@ -753,8 +753,18 @@ export default function CommunityDetailClient() {
 
         {/* Preview header. Same CSS-grid structure as the full detail
          *  header so the mobile layout (body spans full width below the
-         *  avatar + title row) stays consistent across both views. */}
-        <AppCard>
+         *  avatar + title row) stays consistent across both views. The
+         *  warm-wash + primary.light border treatment matches the full
+         *  detail view's no-banner header so the page feels like the same
+         *  product whether the viewer is approved or still locked out. */}
+        <AppCard
+          sx={community.banner_key ? undefined : {
+            background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
+            border: "1px solid",
+            borderColor: "primary.light",
+            boxShadow: "none",
+          }}
+        >
           <Box
             sx={{
               display: "grid",
@@ -763,8 +773,8 @@ export default function CommunityDetailClient() {
                 xs: '"avatar title" "body body"',
                 sm: '"avatar title" "avatar body"',
               },
-              columnGap: { xs: 1.5, sm: 2 },
-              rowGap: { xs: 1.5, sm: 0 },
+              columnGap: { xs: 1.75, sm: 2.5 },
+              rowGap: { xs: 1.75, sm: 1 },
             }}
           >
             <Avatar
@@ -773,21 +783,32 @@ export default function CommunityDetailClient() {
               sx={{
                 gridArea: "avatar",
                 alignSelf: "flex-start",
-                width: { xs: 48, sm: 56 }, height: { xs: 48, sm: 56 },
+                width: { xs: 60, sm: 72 }, height: { xs: 60, sm: 72 },
                 borderRadius: 2.5,
-                bgcolor: "primary.main", color: "primary.contrastText",
-                fontWeight: 700, fontSize: { xs: "1.125rem", sm: "1.375rem" },
+                bgcolor: community.avatar_key ? "grey.100" : "primary.main",
+                color: "primary.contrastText",
+                fontWeight: 700, fontSize: { xs: "1.5rem", sm: "1.75rem" },
                 flexShrink: 0,
+                border: "3px solid #fff",
+                boxShadow: "0 2px 10px rgba(0,0,0,0.08)",
               }}
             >
               {community.name.charAt(0).toUpperCase()}
             </Avatar>
             <Box sx={{ gridArea: "title", minWidth: 0, alignSelf: "flex-start" }}>
-              <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
+              <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.75 }}>
                 <Typography
                   component="h1"
-                  sx={{ fontSize: { xs: "1.5rem", sm: "1.75rem" }, fontWeight: 700, lineHeight: 1.25, letterSpacing: "-0.02em" }}
-                  noWrap
+                  sx={{
+                    fontSize: { xs: "1.625rem", sm: "2.125rem" },
+                    fontWeight: 700,
+                    lineHeight: 1.15,
+                    letterSpacing: "-0.025em",
+                    minWidth: 0,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
                 >
                   {community.name}
                 </Typography>
@@ -796,9 +817,48 @@ export default function CommunityDetailClient() {
                   label="Private"
                   size="small"
                   variant="outlined"
-                  sx={{ height: 22, fontSize: "0.6875rem", fontWeight: 500, borderRadius: 1.5, borderColor: "divider", color: "text.secondary" }}
+                  sx={{ flexShrink: 0, height: 22, fontSize: "0.6875rem", fontWeight: 500, borderRadius: 1.5, borderColor: "divider", color: "text.secondary" }}
                 />
               </Stack>
+
+              {/* "Run by" owner identity row. Same trust signal as the full
+                  detail header; suppressed when owner data is missing. */}
+              {community.owner_username && (
+                <Stack
+                  direction="row"
+                  alignItems="center"
+                  spacing={0.875}
+                  sx={{ mb: 1 }}
+                >
+                  <Avatar
+                    src={community.owner_avatar_url ? `${getAvatarBaseUrl()}${community.owner_avatar_url}` : undefined}
+                    sx={{ width: 22, height: 22, fontSize: "0.6875rem", bgcolor: "grey.300" }}
+                  >
+                    {(community.owner_name || community.owner_username || "?").charAt(0).toUpperCase()}
+                  </Avatar>
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ fontSize: "0.8125rem", lineHeight: 1.4 }}
+                  >
+                    Run by{" "}
+                    <Typography
+                      component={Link}
+                      href={`/u/${community.owner_username.replace(/^@/, "")}`}
+                      onClick={(e) => e.stopPropagation()}
+                      sx={{
+                        fontSize: "0.8125rem",
+                        fontWeight: 600,
+                        color: "primary.dark",
+                        textDecoration: "none",
+                        "&:hover": { textDecoration: "underline" },
+                      }}
+                    >
+                      @{community.owner_username.replace(/^@/, "")}
+                    </Typography>
+                  </Typography>
+                </Stack>
+              )}
 
               {/* Hobby chips */}
               {community.hobbies && community.hobbies.length > 0 && (
@@ -814,7 +874,7 @@ export default function CommunityDetailClient() {
                         variant={isMatch ? "filled" : "outlined"}
                         sx={{
                           height: 24, fontSize: "0.75rem", fontWeight: 500, borderRadius: 1.5,
-                          ...(isMatch ? { bgcolor: "primary.light", color: "primary.dark" } : { borderColor: "divider", color: "text.secondary" }),
+                          ...(isMatch ? { bgcolor: "primary.light", color: "primary.dark" } : { borderColor: "divider", color: "text.secondary", bgcolor: "background.paper" }),
                         }}
                       />
                     );
@@ -827,25 +887,37 @@ export default function CommunityDetailClient() {
                 <ExpandableDescription html={community.description} sx={{ mb: 1.5 }} />
               )}
 
-              {/* Meta stack: location/online on its own line, external links
-                  on their own lines below. website and discord_url are
-                  omitted by the API for non-members of private communities,
-                  so the conditional checks also act as the privacy gate. */}
-              {(community.is_online || community.location_name || community.website || community.discord_url) && (
-                <Stack spacing={0.5}>
-                  {community.is_online ? (
-                    <Stack direction="row" spacing={0.5} alignItems="center" useFlexGap>
-                      <LanguageRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
-                      <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>Online</Typography>
-                    </Stack>
-                  ) : community.location_name ? (
-                    <Stack direction="row" spacing={0.5} alignItems="center" useFlexGap>
-                      <PlaceRoundedIcon sx={{ fontSize: 14, color: "text.disabled", flexShrink: 0 }} />
-                      <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
-                        {community.location_name}
-                      </Typography>
-                    </Stack>
-                  ) : null}
+              {/* Meta stack: members (always visible, hint of life on a
+                  locked card), location/online on its own line, external
+                  links below. website and discord_url are omitted by the
+                  API for non-members of private communities, so those
+                  conditional checks act as the privacy gate. */}
+              <Stack spacing={0.5}>
+                <Stack direction="row" spacing={0.5} alignItems="center">
+                  <PeopleRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
+                  <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, fontSize: "0.8125rem" }}>
+                    {community.member_count} {community.member_count === 1 ? "member" : "members"}
+                    {(community.upcoming_plan_count ?? 0) > 0 && (
+                      <>
+                        {" "}<Box component="span" sx={{ color: "text.disabled" }}>·</Box>{" "}
+                        {community.upcoming_plan_count} upcoming {community.upcoming_plan_count === 1 ? "plan" : "plans"}
+                      </>
+                    )}
+                  </Typography>
+                </Stack>
+                {community.is_online ? (
+                  <Stack direction="row" spacing={0.5} alignItems="center" useFlexGap>
+                    <LanguageRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
+                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>Online</Typography>
+                  </Stack>
+                ) : community.location_name ? (
+                  <Stack direction="row" spacing={0.5} alignItems="center" useFlexGap>
+                    <PlaceRoundedIcon sx={{ fontSize: 14, color: "text.disabled", flexShrink: 0 }} />
+                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
+                      {community.location_name}
+                    </Typography>
+                  </Stack>
+                ) : null}
                   {(community.website || community.discord_url) && (
                     // Website + Discord share a row so two short labels don't
                     // consume two whole meta lines. Matches the pattern used
@@ -898,7 +970,6 @@ export default function CommunityDetailClient() {
                     </Stack>
                   )}
                 </Stack>
-              )}
             </Box>
           </Box>
         </AppCard>
@@ -907,24 +978,30 @@ export default function CommunityDetailClient() {
             page. Suppressed for removed viewers, they're not being asked to
             join, so "what's inside" reads as rubbing it in. */}
         {!viewerRemoved && (
-          <AppCard>
+          <AppCard
+            sx={{
+              border: "1px solid",
+              borderColor: "grey.200",
+              boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+            }}
+          >
             <Stack spacing={2.5}>
               <Stack direction="row" spacing={2} alignItems="center">
                 <Box
                   sx={{
-                    width: 40, height: 40, borderRadius: 2,
+                    width: 44, height: 44, borderRadius: 2,
                     bgcolor: "primary.light",
                     display: "flex", alignItems: "center", justifyContent: "center",
                     flexShrink: 0,
                   }}
                 >
-                  <LockRoundedIcon sx={{ fontSize: 20, color: "primary.main" }} />
+                  <LockRoundedIcon sx={{ fontSize: 22, color: "primary.main" }} />
                 </Box>
                 <Box sx={{ minWidth: 0 }}>
-                  <Typography variant="body1" fontWeight={700} sx={{ lineHeight: 1.3 }}>
+                  <Typography variant="body1" fontWeight={700} sx={{ lineHeight: 1.3, fontSize: "1.0625rem" }}>
                     Inside this community
                   </Typography>
-                  <Typography variant="caption" color="text.secondary">
+                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
                     Approved members unlock everything below.
                   </Typography>
                 </Box>
@@ -1112,15 +1189,28 @@ export default function CommunityDetailClient() {
        *      row 1, but the body row spans both columns so the description
        *      and meta rows use the full card width instead of being pinned
        *      to the right of a 48px avatar column on narrow screens.
+       *
+       *  When no banner is set above, the card gets a soft warm-wash
+       *  background + primary.light border so the page has a clear hero
+       *  moment instead of opening on a flat white card. When a banner IS
+       *  set, the card stays neutral so the banner above carries the
+       *  hero moment by itself.
        */}
-      <AppCard>
+      <AppCard
+        sx={community.banner_key ? undefined : {
+          background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
+          border: "1px solid",
+          borderColor: "primary.light",
+          boxShadow: "none",
+        }}
+      >
         <Box
           sx={{
             display: "grid",
             gridTemplateColumns: "auto 1fr",
             gridTemplateAreas: '"avatar title" "body body"',
-            columnGap: { xs: 1.5, sm: 2 },
-            rowGap: 1.5,
+            columnGap: { xs: 1.75, sm: 2.5 },
+            rowGap: { xs: 1.75, sm: 2 },
           }}
         >
           <Avatar
@@ -1129,21 +1219,32 @@ export default function CommunityDetailClient() {
             sx={{
               gridArea: "avatar",
               alignSelf: "flex-start",
-              width: { xs: 48, sm: 56 }, height: { xs: 48, sm: 56 },
+              width: { xs: 60, sm: 72 }, height: { xs: 60, sm: 72 },
               borderRadius: 2.5,
-              bgcolor: "primary.main", color: "primary.contrastText",
-              fontWeight: 700, fontSize: { xs: "1.125rem", sm: "1.375rem" },
+              bgcolor: community.avatar_key ? "grey.100" : "primary.main",
+              color: "primary.contrastText",
+              fontWeight: 700, fontSize: { xs: "1.5rem", sm: "1.75rem" },
               flexShrink: 0,
+              border: "3px solid #fff",
+              boxShadow: "0 2px 10px rgba(0,0,0,0.08)",
             }}
           >
             {community.name.charAt(0).toUpperCase()}
           </Avatar>
           <Box sx={{ gridArea: "title", minWidth: 0, alignSelf: "flex-start" }}>
-            <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
+            <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.75 }}>
               <Typography
                 component="h1"
-                sx={{ fontSize: { xs: "1.5rem", sm: "1.75rem" }, fontWeight: 700, lineHeight: 1.2, letterSpacing: "-0.02em" }}
-                noWrap
+                sx={{
+                  fontSize: { xs: "1.625rem", sm: "2.125rem" },
+                  fontWeight: 700,
+                  lineHeight: 1.15,
+                  letterSpacing: "-0.025em",
+                  minWidth: 0,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
               >
                 {community.name}
               </Typography>
@@ -1153,10 +1254,52 @@ export default function CommunityDetailClient() {
                   label="Private"
                   size="small"
                   variant="outlined"
-                  sx={{ height: 22, fontSize: "0.6875rem", fontWeight: 500, borderRadius: 1.5, borderColor: "divider", color: "text.secondary" }}
+                  sx={{ flexShrink: 0, height: 22, fontSize: "0.6875rem", fontWeight: 500, borderRadius: 1.5, borderColor: "divider", color: "text.secondary" }}
                 />
               )}
             </Stack>
+            {/* "Run by" owner identity row. Surfaces the community lead at
+                the top of the page so the community feels lived in, not a
+                disembodied page. Tap-target leads to the public profile
+                when a handle is available. Suppressed when owner data is
+                missing or the viewer is themselves the owner (the Owner
+                state is communicated by the action row instead). */}
+            {community.owner_username && !isOwner && (
+              <Stack
+                direction="row"
+                alignItems="center"
+                spacing={0.875}
+                sx={{ mb: 1 }}
+              >
+                <Avatar
+                  src={community.owner_avatar_url ? `${getAvatarBaseUrl()}${community.owner_avatar_url}` : undefined}
+                  sx={{ width: 22, height: 22, fontSize: "0.6875rem", bgcolor: "grey.300" }}
+                >
+                  {(community.owner_name || community.owner_username || "?").charAt(0).toUpperCase()}
+                </Avatar>
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ fontSize: "0.8125rem", lineHeight: 1.4 }}
+                >
+                  Run by{" "}
+                  <Typography
+                    component={Link}
+                    href={`/u/${community.owner_username.replace(/^@/, "")}`}
+                    onClick={(e) => e.stopPropagation()}
+                    sx={{
+                      fontSize: "0.8125rem",
+                      fontWeight: 600,
+                      color: "primary.dark",
+                      textDecoration: "none",
+                      "&:hover": { textDecoration: "underline" },
+                    }}
+                  >
+                    @{community.owner_username.replace(/^@/, "")}
+                  </Typography>
+                </Typography>
+              </Stack>
+            )}
             {/* Hobby chips */}
             {community.hobbies && community.hobbies.length > 0 && (
               <Stack direction="row" gap={0.5} flexWrap="wrap" useFlexGap>
@@ -1176,7 +1319,7 @@ export default function CommunityDetailClient() {
                         borderRadius: 1.5,
                         ...(isMatch
                           ? { bgcolor: "primary.light", color: "primary.dark" }
-                          : { borderColor: "divider", color: "text.secondary" }),
+                          : { borderColor: "divider", color: "text.secondary", bgcolor: "background.paper" }),
                       }}
                     />
                   );
@@ -1308,104 +1451,167 @@ export default function CommunityDetailClient() {
           </Box>
         </Box>
 
-        <Divider sx={{ my: 1.5 }} />
+        <Divider sx={{ my: { xs: 2, sm: 2.25 }, borderColor: "rgba(0,0,0,0.06)" }} />
 
-        <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap>
-          {!isMember && viewerRemoved && (
-            <Tooltip title="You can't rejoin this community. Contact the community owner if you believe this was a mistake.">
-              <Chip
-                icon={<BlockRoundedIcon />}
-                label="You were removed from this community"
-                variant="outlined"
-                size="small"
-                sx={{ borderColor: "divider", color: "text.secondary" }}
-              />
-            </Tooltip>
-          )}
-          {!isMember && !viewerPendingRequest && !viewerRemoved && isAuthenticated === false && (
-            // Welcoming CTA for cold / QR traffic: the button invites the viewer
-            // in rather than assuming they already have an account. Clicking
-            // still routes through `/login?next=...` (sign-in or sign-up are
-            // both reachable from there), so the underlying auth flow and
-            // return destination are unchanged.
-            //
-            // Full-width on xs so the secondary actions (Share link, Edit,
-            // overflow menu) cleanly share the row below instead of elbowing
-            // a stray button onto its own third row.
-            <Button
-              component={Link}
-              href={`/login?next=${encodeURIComponent(`/communities/${slug}`)}`}
-              variant="contained"
-              sx={{ width: { xs: "100%", sm: "auto" }, textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
-            >
-              {community.join_mode === "approval_required" ? "Request to join" : "Join this community"}
-            </Button>
-          )}
-          {!isMember && !viewerPendingRequest && !viewerRemoved && isAuthenticated !== false && (
-            <Button
-              variant="contained"
-              onClick={handleJoin}
-              disabled={joining}
-              sx={{ width: { xs: "100%", sm: "auto" }, textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
-            >
-              {joining ? <CircularProgress size={18} color="inherit" /> : community.join_mode === "approval_required" ? "Request to join" : "Join this community"}
-            </Button>
-          )}
-          {viewerPendingRequest && !isMember && (
-            <Chip icon={<HourglassEmptyRoundedIcon />} label="Request pending" color="warning" variant="outlined" size="small" />
-          )}
-          {isMember && (
-            <Button
-              component={Link}
-              href={createPlanHref}
-              variant="contained"
-              startIcon={<AddCircleRoundedIcon />}
-              sx={{ width: { xs: "100%", sm: "auto" }, textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
-            >
-              Start a plan
-            </Button>
-          )}
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<ContentCopyRoundedIcon sx={{ fontSize: 16 }} />}
-            onClick={handleShare}
-            sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, borderColor: "divider", color: "text.secondary" }}
-          >
-            Share link
-          </Button>
-          {isOwner && (
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<EditRoundedIcon sx={{ fontSize: 16 }} />}
-              onClick={() => router.push(`/communities/${slug}/edit`)}
-              sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, borderColor: "divider", color: "text.secondary" }}
-            >
-              Edit
-            </Button>
-          )}
-          {isMember && !isOwner && (
-            // Overflow menu (three-dot icon) for the member-level destructive
-            // action. Keeps the primary action row focused on Start a plan /
-            // Share link while still giving the member a discoverable path
-            // to leave. Sits inline with the other buttons rather than being
-            // pushed to the right edge, on narrow mobile widths the push-
-            // right variant stranded the icon on its own second row.
-            <Tooltip title="More actions">
-              <IconButton
-                aria-label="More community actions"
-                onClick={(e) => setMemberActionsAnchor(e.currentTarget)}
-                size="small"
+        {/* Action row. Primary action (Join / Start a plan / sign-in CTA)
+            sits on the left at full visual weight; secondary actions
+            (Share link, Edit, Leave overflow) cluster on the right with
+            quieter styling. The flex `1` spacer between them keeps the
+            two clusters anchored on desktop while letting them collapse
+            naturally on mobile. */}
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          spacing={{ xs: 1.25, sm: 1.5 }}
+          alignItems={{ xs: "stretch", sm: "center" }}
+          useFlexGap
+        >
+          <Stack direction="row" spacing={1} alignItems="center" useFlexGap sx={{ flex: 1, minWidth: 0 }}>
+            {!isMember && viewerRemoved && (
+              <Tooltip title="You can't rejoin this community. Contact the community owner if you believe this was a mistake.">
+                <Chip
+                  icon={<BlockRoundedIcon />}
+                  label="You were removed from this community"
+                  variant="outlined"
+                  size="small"
+                  sx={{ borderColor: "divider", color: "text.secondary" }}
+                />
+              </Tooltip>
+            )}
+            {!isMember && !viewerPendingRequest && !viewerRemoved && isAuthenticated === false && (
+              // Welcoming CTA for cold / QR traffic: the button invites the
+              // viewer in rather than assuming they already have an account.
+              // Clicking still routes through `/login?next=...` so the
+              // underlying auth flow and return destination are unchanged.
+              <Button
+                component={Link}
+                href={`/login?next=${encodeURIComponent(`/communities/${slug}`)}`}
+                variant="contained"
+                size="large"
                 sx={{
-                  color: "text.secondary",
-                  "&:hover": { color: "text.primary" },
+                  width: { xs: "100%", sm: "auto" },
+                  textTransform: "none",
+                  fontWeight: 700,
+                  borderRadius: 2.5,
+                  px: 3.5,
+                  py: 1.125,
+                  fontSize: "0.9375rem",
+                  boxShadow: "0 4px 14px rgba(230, 91, 19, 0.25)",
+                  "&:hover": { boxShadow: "0 6px 18px rgba(230, 91, 19, 0.32)", opacity: 0.96 },
                 }}
               >
-                <MoreVertRoundedIcon sx={{ fontSize: "1.125rem" }} />
-              </IconButton>
+                {community.join_mode === "approval_required" ? "Request to join" : "Join this community"}
+              </Button>
+            )}
+            {!isMember && !viewerPendingRequest && !viewerRemoved && isAuthenticated !== false && (
+              <Button
+                variant="contained"
+                size="large"
+                onClick={handleJoin}
+                disabled={joining}
+                sx={{
+                  width: { xs: "100%", sm: "auto" },
+                  textTransform: "none",
+                  fontWeight: 700,
+                  borderRadius: 2.5,
+                  px: 3.5,
+                  py: 1.125,
+                  fontSize: "0.9375rem",
+                  boxShadow: "0 4px 14px rgba(230, 91, 19, 0.25)",
+                  "&:hover": { boxShadow: "0 6px 18px rgba(230, 91, 19, 0.32)", opacity: 0.96 },
+                }}
+              >
+                {joining ? <CircularProgress size={18} color="inherit" /> : community.join_mode === "approval_required" ? "Request to join" : "Join this community"}
+              </Button>
+            )}
+            {viewerPendingRequest && !isMember && (
+              <Chip icon={<HourglassEmptyRoundedIcon />} label="Request pending" color="warning" variant="outlined" size="small" />
+            )}
+            {isMember && (
+              <Button
+                component={Link}
+                href={createPlanHref}
+                variant="contained"
+                size="large"
+                startIcon={<AddCircleRoundedIcon />}
+                sx={{
+                  width: { xs: "100%", sm: "auto" },
+                  textTransform: "none",
+                  fontWeight: 700,
+                  borderRadius: 2.5,
+                  px: 3.5,
+                  py: 1.125,
+                  fontSize: "0.9375rem",
+                  boxShadow: "0 4px 14px rgba(230, 91, 19, 0.25)",
+                  "&:hover": { boxShadow: "0 6px 18px rgba(230, 91, 19, 0.32)", opacity: 0.96 },
+                }}
+              >
+                Start a plan
+              </Button>
+            )}
+          </Stack>
+
+          <Stack
+            direction="row"
+            spacing={1}
+            alignItems="center"
+            useFlexGap
+            sx={{
+              flexShrink: 0,
+              justifyContent: { xs: "flex-start", sm: "flex-end" },
+            }}
+          >
+            <Tooltip title="Copy a link to this community">
+              <Button
+                variant="text"
+                size="small"
+                startIcon={<ContentCopyRoundedIcon sx={{ fontSize: 16 }} />}
+                onClick={handleShare}
+                sx={{
+                  textTransform: "none",
+                  fontWeight: 600,
+                  borderRadius: 2,
+                  color: "text.secondary",
+                  "&:hover": { bgcolor: "action.hover", color: "text.primary" },
+                }}
+              >
+                Share
+              </Button>
             </Tooltip>
-          )}
+            {isOwner && (
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<EditRoundedIcon sx={{ fontSize: 16 }} />}
+                onClick={() => router.push(`/communities/${slug}/edit`)}
+                sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, borderColor: "divider", color: "text.secondary" }}
+              >
+                Edit
+              </Button>
+            )}
+            {isMember && !isOwner && (
+              // Overflow menu (three-dot icon) for the member-level destructive
+              // action. Keeps the primary action row focused on Start a plan
+              // while still giving members a discoverable path to leave.
+              <Tooltip title="More actions">
+                <IconButton
+                  aria-label="More community actions"
+                  onClick={(e) => setMemberActionsAnchor(e.currentTarget)}
+                  size="small"
+                  sx={{
+                    color: "text.secondary",
+                    border: "1px solid",
+                    borderColor: "divider",
+                    borderRadius: 2,
+                    width: 32,
+                    height: 32,
+                    "&:hover": { color: "text.primary", bgcolor: "action.hover" },
+                  }}
+                >
+                  <MoreVertRoundedIcon sx={{ fontSize: "1.125rem" }} />
+                </IconButton>
+              </Tooltip>
+            )}
+          </Stack>
         </Stack>
       </AppCard>
 
@@ -1516,7 +1722,10 @@ export default function CommunityDetailClient() {
         </DialogActions>
       </Dialog>
 
-      {/* Tabs */}
+      {/* Tabs. Custom indicator (3px primary bar) and elevated active
+          state so the section navigation reads as a real navigation
+          surface rather than a thin underline. The bottom hairline gives
+          the tab strip a clear baseline against the tab content below. */}
       <Box>
         <Tabs
           value={tabIndex}
@@ -1535,45 +1744,150 @@ export default function CommunityDetailClient() {
             const nextHref = url.pathname + (url.search || "") + (url.hash || "");
             router.replace(nextHref, { scroll: false });
           }}
-          sx={{ mb: 2 }}
+          variant="scrollable"
+          scrollButtons={false}
+          sx={{
+            mb: { xs: 2, sm: 2.5 },
+            borderBottom: "1px solid",
+            borderColor: "divider",
+            minHeight: 52,
+            "& .MuiTabs-indicator": {
+              height: 3,
+              borderTopLeftRadius: 2,
+              borderTopRightRadius: 2,
+              backgroundColor: "primary.main",
+            },
+          }}
         >
           <Tab
             label={`Plans${events.length > 0 ? ` (${events.length})` : ""}`}
             icon={<EventNoteRoundedIcon sx={{ fontSize: 18 }} />}
             iconPosition="start"
-            sx={{ textTransform: "none", minHeight: 48, fontWeight: 600 }}
+            sx={{
+              textTransform: "none",
+              minHeight: 52,
+              fontWeight: 600,
+              fontSize: "0.9375rem",
+              color: "text.secondary",
+              "&.Mui-selected": { color: "primary.main", fontWeight: 700 },
+              "&:hover": { color: "text.primary", bgcolor: "action.hover" },
+              borderTopLeftRadius: 8,
+              borderTopRightRadius: 8,
+              transition: "color 0.15s ease, background-color 0.15s ease",
+            }}
           />
           <Tab
             label={`Members${community.member_count > 0 ? ` (${community.member_count})` : ""}`}
             icon={<PeopleRoundedIcon sx={{ fontSize: 18 }} />}
             iconPosition="start"
-            sx={{ textTransform: "none", minHeight: 48, fontWeight: 600 }}
+            sx={{
+              textTransform: "none",
+              minHeight: 52,
+              fontWeight: 600,
+              fontSize: "0.9375rem",
+              color: "text.secondary",
+              "&.Mui-selected": { color: "primary.main", fontWeight: 700 },
+              "&:hover": { color: "text.primary", bgcolor: "action.hover" },
+              borderTopLeftRadius: 8,
+              borderTopRightRadius: 8,
+              transition: "color 0.15s ease, background-color 0.15s ease",
+            }}
           />
           {isOwner && community.visibility === "private" && (
             <Tab
               label={`Requests${pendingRequests.length > 0 ? ` (${pendingRequests.length})` : ""}`}
               icon={<AssignmentIndRoundedIcon sx={{ fontSize: 18 }} />}
               iconPosition="start"
-              sx={{ textTransform: "none", minHeight: 48, fontWeight: 600 }}
+              sx={{
+                textTransform: "none",
+                minHeight: 52,
+                fontWeight: 600,
+                fontSize: "0.9375rem",
+                color: "text.secondary",
+                "&.Mui-selected": { color: "primary.main", fontWeight: 700 },
+                "&:hover": { color: "text.primary", bgcolor: "action.hover" },
+                borderTopLeftRadius: 8,
+                borderTopRightRadius: 8,
+                transition: "color 0.15s ease, background-color 0.15s ease",
+              }}
             />
           )}
         </Tabs>
 
         {/* Plans tab */}
         {tabIndex === 0 && (
-          <>
+          <Stack spacing={{ xs: 2, sm: 2.5 }}>
+            {events.length > 0 && (
+              <Stack
+                direction="row"
+                justifyContent="space-between"
+                alignItems="center"
+                sx={{ px: 0.25 }}
+              >
+                <Box>
+                  <Typography
+                    sx={{
+                      fontSize: { xs: "1.0625rem", sm: "1.125rem" },
+                      fontWeight: 700,
+                      lineHeight: 1.3,
+                    }}
+                  >
+                    Upcoming plans
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem", mt: 0.125 }}>
+                    {events.length === 1
+                      ? "1 plan from this community"
+                      : `${events.length} plans from this community`}
+                  </Typography>
+                </Box>
+                {isMember && (
+                  <Button
+                    component={Link}
+                    href={createPlanHref}
+                    variant="text"
+                    size="small"
+                    startIcon={<AddCircleRoundedIcon sx={{ fontSize: 18 }} />}
+                    sx={{
+                      textTransform: "none",
+                      fontWeight: 600,
+                      borderRadius: 2,
+                      color: "primary.main",
+                      display: { xs: "none", sm: "inline-flex" },
+                      "&:hover": { bgcolor: "action.hover" },
+                    }}
+                  >
+                    New plan
+                  </Button>
+                )}
+              </Stack>
+            )}
+
             {(!eventsFetched || eventsLoading) && events.length === 0 ? (
               <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}><CircularProgress size={28} /></Box>
             ) : events.length === 0 ? (
               <AppCard>
                 <Stack spacing={2} alignItems="center" sx={{ py: { xs: 5, sm: 6 }, px: { xs: 2, sm: 3 } }}>
-                  <EventNoteRoundedIcon sx={{ fontSize: 56, color: "text.disabled", opacity: 0.5 }} />
+                  <Box
+                    sx={{
+                      width: 64,
+                      height: 64,
+                      borderRadius: "50%",
+                      bgcolor: "primary.light",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <EventNoteRoundedIcon sx={{ fontSize: 32, color: "primary.main" }} />
+                  </Box>
                   <Box sx={{ textAlign: "center", maxWidth: 420 }}>
-                    <Typography variant="h6" fontWeight={600} sx={{ mb: 0.5 }}>
+                    <Typography variant="h6" fontWeight={700} sx={{ mb: 0.5 }}>
                       No plans posted yet
                     </Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-                      Upcoming plans from this community will appear here.
+                      {isMember
+                        ? "Be the first to start a plan. Members get notified as soon as something is on the calendar."
+                        : "Upcoming plans from this community will appear here."}
                     </Typography>
                   </Box>
                   {isMember && (
@@ -1598,7 +1912,7 @@ export default function CommunityDetailClient() {
                 ))}
               </Grid>
             )}
-          </>
+          </Stack>
         )}
 
         {/* Members tab */}
@@ -1613,59 +1927,195 @@ export default function CommunityDetailClient() {
                   <Typography variant="body1" color="text.secondary">No members to show.</Typography>
                 </Stack>
               </AppCard>
-            ) : (
-              <Stack spacing={1.5}>
-                {members.map((m) => {
-                  const handle = m.username?.replace(/^@/, "") ?? null;
-                  // Logged-out viewers only see handles. Real names stay
-                  // scoped to signed-in members so the public slug URL
-                  // doesn't become a name-scraping surface for anyone
-                  // who shares or scans a community QR code.
-                  const hideRealName = isAuthenticated === false;
-                  const primaryLabel = hideRealName
-                    ? (handle ? `@${handle}` : "NewChums member")
-                    : (m.name || m.username || "Unknown");
-                  const avatarInitial = hideRealName
-                    ? ((handle || "?").charAt(0).toUpperCase())
-                    : ((m.name || m.username || "?").charAt(0).toUpperCase());
-                  return (
-                    <AppCard key={m.id} sx={{ transition: "box-shadow 0.15s", "&:hover": { boxShadow: "0 2px 12px rgba(0,0,0,0.06)" } }}>
-                      <Stack direction="row" alignItems="center" spacing={2}>
-                        <Avatar
-                          src={m.avatar_url ? `${getAvatarBaseUrl()}${m.avatar_url}` : undefined}
-                          sx={{ width: 40, height: 40, bgcolor: "grey.300", fontSize: "0.9rem" }}
-                        >
-                          {avatarInitial}
-                        </Avatar>
+            ) : (() => {
+              // Logged-out viewers only see handles. Real names stay
+              // scoped to signed-in members so the public slug URL
+              // doesn't become a name-scraping surface for anyone who
+              // shares or scans a community QR code.
+              const hideRealName = isAuthenticated === false;
+              const owner = members.find((m) => m.role === "owner") ?? null;
+              const others = members.filter((m) => m.role !== "owner");
+              return (
+                <Stack spacing={{ xs: 2, sm: 2.5 }}>
+                  {owner && (
+                    // Owner spotlight. Lifts the community lead out of the
+                    // grid below so the page reads as "this is who runs the
+                    // community" before the rest of the roster, with a
+                    // subtle warm wash + primary.light border that ties
+                    // back to the page header treatment.
+                    (() => {
+                      const handle = owner.username?.replace(/^@/, "") ?? null;
+                      const primaryLabel = hideRealName
+                        ? (handle ? `@${handle}` : "NewChums member")
+                        : (owner.name || owner.username || "Unknown");
+                      const avatarInitial = hideRealName
+                        ? ((handle || "?").charAt(0).toUpperCase())
+                        : ((owner.name || owner.username || "?").charAt(0).toUpperCase());
+                      return (
                         <Box
-                          sx={{ flex: 1, minWidth: 0, cursor: handle ? "pointer" : "default" }}
-                          onClick={() => { if (handle) router.push(`/u/${handle}`); }}
+                          sx={{
+                            p: { xs: 2, sm: 2.5 },
+                            borderRadius: 3,
+                            border: "1px solid",
+                            borderColor: "primary.light",
+                            background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
+                          }}
                         >
-                          <Typography variant="body2" fontWeight={600} noWrap>{primaryLabel}</Typography>
-                          {!hideRealName && handle && <Typography variant="caption" color="text.secondary">@{handle}</Typography>}
+                          <Stack direction="row" alignItems="center" spacing={{ xs: 1.75, sm: 2 }}>
+                            <Avatar
+                              src={owner.avatar_url ? `${getAvatarBaseUrl()}${owner.avatar_url}` : undefined}
+                              sx={{
+                                width: { xs: 48, sm: 56 },
+                                height: { xs: 48, sm: 56 },
+                                bgcolor: "primary.main",
+                                color: "primary.contrastText",
+                                fontSize: { xs: "1.125rem", sm: "1.25rem" },
+                                fontWeight: 700,
+                                border: "2px solid #fff",
+                                boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+                              }}
+                            >
+                              {avatarInitial}
+                            </Avatar>
+                            <Box
+                              sx={{ flex: 1, minWidth: 0, cursor: handle ? "pointer" : "default" }}
+                              onClick={() => { if (handle) router.push(`/u/${handle}`); }}
+                            >
+                              <Stack direction="row" spacing={0.75} alignItems="center" sx={{ mb: 0.25 }}>
+                                <Typography
+                                  sx={{
+                                    fontSize: "0.6875rem",
+                                    fontWeight: 700,
+                                    letterSpacing: "0.1em",
+                                    textTransform: "uppercase",
+                                    color: "primary.dark",
+                                  }}
+                                >
+                                  Community lead
+                                </Typography>
+                              </Stack>
+                              <Typography
+                                sx={{
+                                  fontSize: { xs: "1rem", sm: "1.0625rem" },
+                                  fontWeight: 700,
+                                  lineHeight: 1.3,
+                                  color: "text.primary",
+                                }}
+                                noWrap
+                              >
+                                {primaryLabel}
+                              </Typography>
+                              {!hideRealName && handle && (
+                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
+                                  @{handle}
+                                </Typography>
+                              )}
+                            </Box>
+                          </Stack>
                         </Box>
-                        {m.role === "owner" && (
-                          <Chip label="Owner" size="small" color="primary" variant="outlined" />
-                        )}
-                        {isOwner && m.role !== "owner" && (
-                          <Button
-                            size="small" variant="outlined" color="error"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setRemoveMemberTarget(m);
-                              setRemoveMemberReason("");
-                            }}
-                            sx={{ textTransform: "none", fontSize: "0.75rem", borderRadius: 1.5 }}
-                          >
-                            Remove &amp; Block
-                          </Button>
-                        )}
-                      </Stack>
-                    </AppCard>
-                  );
-                })}
-              </Stack>
-            )}
+                      );
+                    })()
+                  )}
+
+                  {others.length > 0 && (
+                    <Box>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{
+                          display: "block",
+                          mb: 1.25,
+                          textTransform: "uppercase",
+                          letterSpacing: 0.5,
+                          fontWeight: 700,
+                          fontSize: "0.6875rem",
+                        }}
+                      >
+                        Members ({others.length})
+                      </Typography>
+                      <Grid container spacing={{ xs: 1.5, sm: 2 }}>
+                        {others.map((m) => {
+                          const handle = m.username?.replace(/^@/, "") ?? null;
+                          const primaryLabel = hideRealName
+                            ? (handle ? `@${handle}` : "NewChums member")
+                            : (m.name || m.username || "Unknown");
+                          const avatarInitial = hideRealName
+                            ? ((handle || "?").charAt(0).toUpperCase())
+                            : ((m.name || m.username || "?").charAt(0).toUpperCase());
+                          return (
+                            <Grid key={m.id} size={{ xs: 12, sm: 6 }}>
+                              <Box
+                                sx={{
+                                  p: { xs: 1.5, sm: 1.75 },
+                                  borderRadius: 2.5,
+                                  border: "1px solid",
+                                  borderColor: "grey.200",
+                                  bgcolor: "background.paper",
+                                  height: "100%",
+                                  transition: "border-color 0.15s, box-shadow 0.15s, transform 0.15s",
+                                  "&:hover": {
+                                    borderColor: "primary.light",
+                                    boxShadow: "0 2px 10px rgba(0,0,0,0.05)",
+                                    transform: "translateY(-1px)",
+                                  },
+                                }}
+                              >
+                                <Stack direction="row" alignItems="center" spacing={1.5}>
+                                  <Avatar
+                                    src={m.avatar_url ? `${getAvatarBaseUrl()}${m.avatar_url}` : undefined}
+                                    sx={{ width: 40, height: 40, bgcolor: "grey.300", fontSize: "0.9rem", fontWeight: 600 }}
+                                  >
+                                    {avatarInitial}
+                                  </Avatar>
+                                  <Box
+                                    sx={{ flex: 1, minWidth: 0, cursor: handle ? "pointer" : "default" }}
+                                    onClick={() => { if (handle) router.push(`/u/${handle}`); }}
+                                  >
+                                    <Typography variant="body2" fontWeight={600} noWrap sx={{ fontSize: "0.9375rem" }}>
+                                      {primaryLabel}
+                                    </Typography>
+                                    {!hideRealName && handle && (
+                                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.75rem" }}>
+                                        @{handle}
+                                      </Typography>
+                                    )}
+                                  </Box>
+                                  {isOwner && (
+                                    <Tooltip title="Remove and block this member">
+                                      <Button
+                                        size="small"
+                                        variant="text"
+                                        color="error"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setRemoveMemberTarget(m);
+                                          setRemoveMemberReason("");
+                                        }}
+                                        sx={{
+                                          textTransform: "none",
+                                          fontSize: "0.75rem",
+                                          fontWeight: 600,
+                                          borderRadius: 1.5,
+                                          minWidth: "auto",
+                                          px: 1.25,
+                                          flexShrink: 0,
+                                        }}
+                                      >
+                                        Remove
+                                      </Button>
+                                    </Tooltip>
+                                  )}
+                                </Stack>
+                              </Box>
+                            </Grid>
+                          );
+                        })}
+                      </Grid>
+                    </Box>
+                  )}
+                </Stack>
+              );
+            })()}
 
             {/* Removed members, visible to owner/super admin only. Separated
                 from the active list so the primary roster stays clean. */}
@@ -1915,6 +2365,15 @@ export default function CommunityDetailClient() {
         </Box>
       )}
 
+      {/* Logged-out signup footer. Mirrors the calm warm-wash CTA on the
+          /communities discovery page so a public visitor lands on a clear
+          sign-up nudge whether they entered through discovery, a QR
+          poster, or a direct share link. Suppressed for authed viewers
+          (the action row above already handles their state). */}
+      {isAuthenticated === false && (
+        <CommunitySignupFooter slug={slug} communityName={community.name} />
+      )}
+
       {/* Remove member confirmation */}
       <Dialog
         open={!!removeMemberTarget}
@@ -2035,6 +2494,91 @@ export default function CommunityDetailClient() {
         </DialogActions>
       </Dialog>
     </Stack>
+  );
+}
+
+/** Calm, end-of-page sign-up nudge for logged-out viewers reaching the
+ *  community detail page (slug URL is the public share destination, so
+ *  cold/QR traffic is expected). Mirrors the warm-wash footer on the
+ *  /communities discovery page so the two surfaces feel like one
+ *  product. The CTA buttons route through `/login?next=...` so the
+ *  viewer lands back on this community after authenticating. */
+function CommunitySignupFooter({ slug, communityName }: { slug: string; communityName: string }) {
+  const next = `/communities/${slug}`;
+  const loginHref = `/login?next=${encodeURIComponent(next)}`;
+  return (
+    <Box
+      sx={{
+        mt: { xs: 2, sm: 3 },
+        p: { xs: 2.75, sm: 3.25 },
+        borderRadius: 3,
+        border: "1px solid",
+        borderColor: "primary.light",
+        background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
+        display: "flex",
+        flexDirection: { xs: "column", sm: "row" },
+        alignItems: { xs: "flex-start", sm: "center" },
+        gap: { xs: 1.5, sm: 2.5 },
+      }}
+    >
+      <Box
+        sx={{
+          width: 44,
+          height: 44,
+          borderRadius: "50%",
+          bgcolor: "primary.main",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+          boxShadow: "0 2px 8px rgba(230, 91, 19, 0.18)",
+        }}
+      >
+        <PeopleRoundedIcon sx={{ color: "primary.contrastText", fontSize: 22 }} />
+      </Box>
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 0.25, fontSize: "1rem" }}>
+          Join {communityName} on NewChums
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+          Sign up free to RSVP to plans, meet other members, and get notified when something is on the calendar.
+        </Typography>
+      </Box>
+      <Stack
+        direction="row"
+        spacing={1}
+        sx={{ flexShrink: 0, width: { xs: "100%", sm: "auto" } }}
+      >
+        <Button
+          component={Link}
+          href={`/signup?next=${encodeURIComponent(next)}`}
+          variant="contained"
+          sx={{
+            textTransform: "none",
+            fontWeight: 600,
+            borderRadius: 2.5,
+            boxShadow: "none",
+            flex: { xs: 1, sm: "0 0 auto" },
+            "&:hover": { boxShadow: "none", opacity: 0.92 },
+          }}
+        >
+          Sign up
+        </Button>
+        <Button
+          component={Link}
+          href={loginHref}
+          variant="outlined"
+          sx={{
+            textTransform: "none",
+            fontWeight: 600,
+            borderRadius: 2.5,
+            flex: { xs: 1, sm: "0 0 auto" },
+          }}
+        >
+          Sign in
+        </Button>
+      </Stack>
+    </Box>
   );
 }
 

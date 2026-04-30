@@ -235,6 +235,17 @@ export default function AttendanceRecordSection({ userId, isOwner, displayName, 
     return () => { cancelled = true; };
   }, [userId, viewerLoggedIn]);
 
+  // Render the loading skeleton while the fetch is in flight. Once the
+  // fetch resolves, if the API returned no record (network error, 4xx,
+  // user-not-found, etc.) we render nothing and bow out: this card is a
+  // supplemental dossier section and the rest of the profile is fully
+  // functional without it. Bowing out also avoids the previous crash
+  // path where `formatRate(record!.x)` would throw when `record` was
+  // null but the metric grid still tried to render.
+  if (!loading && !record) {
+    return null;
+  }
+
   const gft = record ? formatRate(record.goingFollowThrough) : null;
   const ft = record ? formatRate(record.followThrough) : null;
   const cr = record ? formatRate(record.confirmationRate) : null;
@@ -246,7 +257,7 @@ export default function AttendanceRecordSection({ userId, isOwner, displayName, 
 
   return (
     <AppCard sx={{ overflow: "hidden" }}>
-      <Stack spacing={2.5}>
+      <Stack spacing={1.75}>
         {/* Header */}
         <Stack direction="row" spacing={1.5} alignItems="center">
           <Box
@@ -274,7 +285,7 @@ export default function AttendanceRecordSection({ userId, isOwner, displayName, 
             <Typography
               variant="caption"
               color="text.disabled"
-              sx={{ fontSize: "0.6875rem" }}
+              sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
             >
               Based on all-time activity
             </Typography>
@@ -304,7 +315,7 @@ export default function AttendanceRecordSection({ userId, isOwner, displayName, 
             </Box>
           </Stack>
         ) : (
-          <Stack spacing={2.5}>
+          <Stack spacing={2}>
             {/* Reliability, hidden from logged-out viewers */}
             {!reliabilityHidden && (
             <Box>
@@ -312,7 +323,7 @@ export default function AttendanceRecordSection({ userId, isOwner, displayName, 
                 variant="body2"
                 fontWeight={700}
                 color="text.secondary"
-                sx={{ fontSize: "0.75rem", letterSpacing: "0.04em", textTransform: "uppercase", mb: 1, display: "block" }}
+                sx={{ fontSize: "0.75rem", letterSpacing: "0.04em", textTransform: "uppercase", mb: 0.75, display: "block" }}
               >
                 Reliability
               </Typography>
@@ -375,7 +386,7 @@ export default function AttendanceRecordSection({ userId, isOwner, displayName, 
                 variant="body2"
                 fontWeight={700}
                 color="text.secondary"
-                sx={{ fontSize: "0.75rem", letterSpacing: "0.04em", textTransform: "uppercase", mb: 1, display: "block" }}
+                sx={{ fontSize: "0.75rem", letterSpacing: "0.04em", textTransform: "uppercase", mb: 0.75, display: "block" }}
               >
                 Activity
               </Typography>

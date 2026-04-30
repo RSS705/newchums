@@ -13,6 +13,7 @@ import FavoriteRoundedIcon from "@mui/icons-material/FavoriteRounded";
 import LightbulbRoundedIcon from "@mui/icons-material/LightbulbRounded";
 import LocationOnRoundedIcon from "@mui/icons-material/LocationOnRounded";
 import PeopleRoundedIcon from "@mui/icons-material/PeopleRounded";
+import ShieldOutlinedIcon from "@mui/icons-material/ShieldOutlined";
 
 /**
  * Marketing page content. Layout provides Container, this component uses maxWidth
@@ -126,20 +127,36 @@ export default function SafetyCenterContent({ isLoggedIn = false }: { isLoggedIn
       {/* ── Section 1: Hero ── */}
       <Box component="section" sx={{ ...SECTION_SPACING, mb: { xs: 2, sm: 4 } }}>
         <Stack alignItems="center" textAlign="center" maxWidth={CONTENT_MAX_WIDTH} mx="auto" px={{ xs: 1, sm: 0 }}>
-          {/* Eyebrow */}
-          <Typography
-            variant="overline"
-            sx={{
-              color: "primary.main",
-              fontWeight: 700,
-              letterSpacing: "0.12em",
-              fontSize: "0.7rem",
-              display: "block",
-              mb: 2,
-            }}
-          >
-            Community guidance
-          </Typography>
+          {/* Eyebrow. Orb-row pattern matching the other public marketing
+              pages (homepage hero, How it works hero) so the public surfaces
+              all share the same visual rhythm. */}
+          <Stack direction="row" spacing={1} alignItems="center" justifyContent="center" sx={{ mb: 2 }}>
+            <Box
+              sx={{
+                width: 28,
+                height: 28,
+                borderRadius: "50%",
+                bgcolor: "primary.main",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <ShieldOutlinedIcon sx={{ color: "primary.contrastText", fontSize: 18 }} />
+            </Box>
+            <Typography
+              sx={{
+                color: "primary.dark",
+                fontWeight: 700,
+                letterSpacing: "0.12em",
+                fontSize: "0.7rem",
+                textTransform: "uppercase",
+              }}
+            >
+              Community guidance
+            </Typography>
+          </Stack>
 
           {/* Heading */}
           <Typography

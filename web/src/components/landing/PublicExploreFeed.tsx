@@ -11,6 +11,7 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import InputAdornment from "@mui/material/InputAdornment";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
+import ExploreRoundedIcon from "@mui/icons-material/ExploreRounded";
 import Link from "next/link";
 import EventCard from "@/components/events/EventCard";
 import type { PlanEvent } from "@/components/events/EventCard";
@@ -102,17 +103,33 @@ export default function PublicExploreFeed() {
   return (
     <Box component="section" sx={{ py: { xs: 5, sm: 7, md: 9 } }}>
       <Stack spacing={1} sx={{ mb: { xs: 3, sm: 4 } }}>
-        <Typography
-          variant="overline"
-          sx={{
-            color: "secondary.main",
-            fontWeight: 700,
-            letterSpacing: "0.12em",
-            fontSize: "0.7rem",
-          }}
-        >
-          Discover plans
-        </Typography>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Box
+            sx={{
+              width: 28,
+              height: 28,
+              borderRadius: "50%",
+              bgcolor: "primary.main",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            <ExploreRoundedIcon sx={{ color: "primary.contrastText", fontSize: 18 }} />
+          </Box>
+          <Typography
+            sx={{
+              color: "primary.dark",
+              fontWeight: 700,
+              letterSpacing: "0.12em",
+              fontSize: "0.7rem",
+              textTransform: "uppercase",
+            }}
+          >
+            Discover plans
+          </Typography>
+        </Stack>
         <Typography component="h2" variant="h3" fontWeight={700}>
           See what people are organizing
         </Typography>

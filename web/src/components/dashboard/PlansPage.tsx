@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import CircularProgress from "@mui/material/CircularProgress";
 import Collapse from "@mui/material/Collapse";
 import Grid from "@mui/material/Grid";
+import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import Tab from "@mui/material/Tab";
 import Tabs from "@mui/material/Tabs";
@@ -57,61 +57,157 @@ export default function PlansPage() {
   const canceledList = (isPast ? past : upcoming).filter((e) => e.status === "canceled");
   const hosted = activeList.filter((e) => e.isHost);
   const joined = activeList.filter((e) => !e.isHost);
-  // Tab counters reflect only active plans — canceled plans have their own
+  // Tab counters reflect only active plans; canceled plans have their own
   // collapsed section and shouldn't inflate the Upcoming / Past tab counts.
   const upcomingActiveCount = upcoming.filter((e) => e.status !== "canceled").length;
   const pastActiveCount = past.filter((e) => e.status !== "canceled").length;
 
   return (
     <Stack spacing={{ xs: 3, sm: 4 }}>
-      {/* Header */}
-      <Stack
-        direction={{ xs: "column", sm: "row" }}
-        alignItems={{ xs: "flex-start", sm: "center" }}
-        justifyContent="space-between"
-        spacing={2}
+      {/* Header. Warm-wash hero matching the Explore page so the two
+          primary logged-in surfaces read as one product. Eyebrow +
+          large H1 mirror the discovery-header pattern in
+          docs/UI_Patterns.md. The "Start a plan" CTA on the right is
+          the page's primary action and gets the warm-tinted shadow. */}
+      <Paper
+        variant="outlined"
+        sx={{
+          p: { xs: 2.5, sm: 3.5 },
+          borderRadius: 4,
+          borderColor: "primary.light",
+          background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
+        }}
       >
-        <Box>
-          <Typography
-            component="h1"
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          spacing={{ xs: 2, sm: 3 }}
+          alignItems={{ xs: "stretch", sm: "flex-end" }}
+          justifyContent="space-between"
+        >
+          <Stack spacing={1.25} sx={{ flex: 1, minWidth: 0 }}>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Box
+                sx={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: "50%",
+                  bgcolor: "primary.main",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <CalendarMonthRoundedIcon sx={{ color: "primary.contrastText", fontSize: 18 }} />
+              </Box>
+              <Typography
+                sx={{
+                  fontSize: "0.6875rem",
+                  fontWeight: 700,
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                  color: "primary.dark",
+                }}
+              >
+                Your schedule
+              </Typography>
+            </Stack>
+            <Typography
+              component="h1"
+              sx={{
+                fontSize: { xs: "1.875rem", sm: "2.375rem" },
+                fontWeight: 700,
+                lineHeight: 1.15,
+                letterSpacing: "-0.025em",
+                color: "text.primary",
+              }}
+            >
+              Your Plans
+            </Typography>
+            <Typography
+              variant="body1"
+              color="text.secondary"
+              sx={{
+                fontSize: { xs: "0.9375rem", sm: "1rem" },
+                lineHeight: 1.6,
+                maxWidth: 560,
+              }}
+            >
+              Plans you&apos;re hosting or taking part in, all in one place.
+            </Typography>
+          </Stack>
+          <Button
+            component={Link}
+            href="/events/create"
+            variant="contained"
+            startIcon={<AddCircleRoundedIcon />}
             sx={{
-              mb: 0.5,
-              lineHeight: 1.25,
-              fontSize: { xs: "1.75rem", sm: "2rem" },
-              letterSpacing: "-0.02em",
+              flexShrink: 0,
+              alignSelf: { xs: "stretch", sm: "flex-end" },
+              textTransform: "none",
               fontWeight: 700,
+              borderRadius: 2.5,
+              px: 3,
+              py: 1.125,
+              fontSize: "0.9375rem",
+              boxShadow: "0 4px 14px rgba(230, 91, 19, 0.25)",
+              "&:hover": { boxShadow: "0 6px 18px rgba(230, 91, 19, 0.32)", opacity: 0.96 },
             }}
           >
-            Your Plans
-          </Typography>
-          <Typography variant="body1" color="text.secondary" sx={{ fontSize: { xs: "0.875rem", sm: "0.9375rem" } }}>
-            Plans you&apos;re hosting or taking part in.
-          </Typography>
-        </Box>
-        <Button
-          component={Link}
-          href="/events/create"
-          variant="contained"
-          color="primary"
-          startIcon={<AddCircleRoundedIcon />}
-          sx={{ px: 3, py: 1.25, fontWeight: 600, textTransform: "none", whiteSpace: "nowrap", borderRadius: 2.5 }}
-        >
-          Start a plan
-        </Button>
-      </Stack>
+            Start a plan
+          </Button>
+        </Stack>
+      </Paper>
 
-      {/* Tabs */}
-      <Box sx={{ borderBottom: 1, borderColor: "divider" }}>
-        <Tabs
-          value={tab}
-          onChange={(_, v) => { setTab(v); setCanceledOpen(false); }}
-          textColor="primary"
-          indicatorColor="primary"
-        >
-          <Tab label={`Upcoming${upcomingActiveCount > 0 ? ` (${upcomingActiveCount})` : ""}`} />
-          <Tab label={`Past${pastActiveCount > 0 ? ` (${pastActiveCount})` : ""}`} />
-        </Tabs>
-      </Box>
+      {/* Tabs. Custom 3px primary indicator, font-size 0.9375rem, color
+          shifts from text.secondary inactive to primary.main bold active.
+          Matches the styled tabs on the community detail page. */}
+      <Tabs
+        value={tab}
+        onChange={(_, v) => { setTab(v); setCanceledOpen(false); }}
+        sx={{
+          borderBottom: "1px solid",
+          borderColor: "divider",
+          minHeight: 52,
+          "& .MuiTabs-indicator": {
+            height: 3,
+            borderTopLeftRadius: 2,
+            borderTopRightRadius: 2,
+            backgroundColor: "primary.main",
+          },
+        }}
+      >
+        <Tab
+          label={`Upcoming${upcomingActiveCount > 0 ? ` (${upcomingActiveCount})` : ""}`}
+          sx={{
+            textTransform: "none",
+            minHeight: 52,
+            fontWeight: 600,
+            fontSize: "0.9375rem",
+            color: "text.secondary",
+            "&.Mui-selected": { color: "primary.main", fontWeight: 700 },
+            "&:hover": { color: "text.primary", bgcolor: "action.hover" },
+            borderTopLeftRadius: 8,
+            borderTopRightRadius: 8,
+            transition: "color 0.15s ease, background-color 0.15s ease",
+          }}
+        />
+        <Tab
+          label={`Past${pastActiveCount > 0 ? ` (${pastActiveCount})` : ""}`}
+          sx={{
+            textTransform: "none",
+            minHeight: 52,
+            fontWeight: 600,
+            fontSize: "0.9375rem",
+            color: "text.secondary",
+            "&.Mui-selected": { color: "primary.main", fontWeight: 700 },
+            "&:hover": { color: "text.primary", bgcolor: "action.hover" },
+            borderTopLeftRadius: 8,
+            borderTopRightRadius: 8,
+            transition: "color 0.15s ease, background-color 0.15s ease",
+          }}
+        />
+      </Tabs>
 
       {/* Loading */}
       {loading && (
@@ -161,30 +257,56 @@ export default function PlansPage() {
             </Box>
           )}
 
-          {/* Empty state */}
+          {/* Empty state. Wrapped in an outlined Paper with a soft warm
+              icon orb so the empty surface still feels like part of the
+              page rather than orphaned helper text. */}
           {hosted.length === 0 && joined.length === 0 && (
-            <EmptyState
-              icon={<CalendarMonthRoundedIcon sx={{ fontSize: 56 }} />}
-              title={isPast ? "No past plans yet" : "No upcoming plans"}
-              description={
-                isPast
-                  ? "Once you attend or host a gathering, it'll show up here so you can look back on the good times."
-                  : "Start a plan around something you enjoy, or keep an eye out for an invite from someone you know."
-              }
-              action={
-                !isPast ? (
-                  <Button
-                    component={Link}
-                    href="/events/create"
-                    variant="contained"
-                    startIcon={<AddCircleRoundedIcon />}
-                    sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3 }}
+            <Paper
+              variant="outlined"
+              sx={{
+                borderRadius: 3,
+                borderColor: "grey.200",
+                bgcolor: "background.paper",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+              }}
+            >
+              <EmptyState
+                icon={
+                  <Box
+                    sx={{
+                      width: 72,
+                      height: 72,
+                      borderRadius: "50%",
+                      bgcolor: "primary.light",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
                   >
-                    Start a plan
-                  </Button>
-                ) : undefined
-              }
-            />
+                    <CalendarMonthRoundedIcon sx={{ fontSize: 36, color: "primary.main" }} />
+                  </Box>
+                }
+                title={isPast ? "No past plans yet" : "No upcoming plans"}
+                description={
+                  isPast
+                    ? "Once you attend or host a gathering, it'll show up here so you can look back on the good times."
+                    : "Start a plan around something you enjoy, or keep an eye out for an invite from someone you know."
+                }
+                action={
+                  !isPast ? (
+                    <Button
+                      component={Link}
+                      href="/events/create"
+                      variant="contained"
+                      startIcon={<AddCircleRoundedIcon />}
+                      sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
+                    >
+                      Start a plan
+                    </Button>
+                  ) : undefined
+                }
+              />
+            </Paper>
           )}
 
           {/* Canceled plans, collapsed by default, shown on both tabs */}

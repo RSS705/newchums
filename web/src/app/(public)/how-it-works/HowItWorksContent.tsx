@@ -374,12 +374,33 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
       {/* ═══════════════ Section 1: Hero ═══════════════ */}
       <Box component="section" sx={{ py: { xs: 5, sm: 8, md: 10 } }}>
         <Stack alignItems="center" textAlign="center" maxWidth={CONTENT_MAX_WIDTH} mx="auto" px={{ xs: 1, sm: 0 }}>
-          <Typography
-            variant="overline"
-            sx={{ color: "primary.main", fontWeight: 700, letterSpacing: "0.12em", fontSize: "0.7rem", display: "block", mb: 2 }}
-          >
-            How NewChums works
-          </Typography>
+          <Stack direction="row" spacing={1} alignItems="center" justifyContent="center" sx={{ mb: 2 }}>
+            <Box
+              sx={{
+                width: 28,
+                height: 28,
+                borderRadius: "50%",
+                bgcolor: "primary.main",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <ExploreRoundedIcon sx={{ color: "primary.contrastText", fontSize: 18 }} />
+            </Box>
+            <Typography
+              sx={{
+                color: "primary.dark",
+                fontWeight: 700,
+                letterSpacing: "0.12em",
+                fontSize: "0.7rem",
+                textTransform: "uppercase",
+              }}
+            >
+              How NewChums works
+            </Typography>
+          </Stack>
           <Typography
             component="h1"
             variant="h1"
@@ -548,9 +569,33 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
         <Box sx={{ position: "absolute", inset: 0, background: (theme) => theme.palette.mode === "light" ? "linear-gradient(165deg, #FFF7ED 0%, #FFFFFF 40%, #FFF7ED 100%)" : "none", zIndex: 0 }} />
         <Box maxWidth={WIDE_MAX_WIDTH} mx="auto" sx={{ position: "relative", zIndex: 1 }}>
           <Box sx={{ textAlign: "center", mb: { xs: 5, sm: 7 } }}>
-            <Typography variant="overline" sx={{ color: "primary.main", fontWeight: 700, letterSpacing: "0.12em", fontSize: "0.7rem", display: "block", mb: 1.5 }}>
-              Host controls
-            </Typography>
+            <Stack direction="row" spacing={1} alignItems="center" justifyContent="center" sx={{ mb: 1.75 }}>
+              <Box
+                sx={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: "50%",
+                  bgcolor: "primary.main",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <TuneRoundedIcon sx={{ color: "primary.contrastText", fontSize: 18 }} />
+              </Box>
+              <Typography
+                sx={{
+                  color: "primary.dark",
+                  fontWeight: 700,
+                  letterSpacing: "0.12em",
+                  fontSize: "0.7rem",
+                  textTransform: "uppercase",
+                }}
+              >
+                Host controls
+              </Typography>
+            </Stack>
             <Typography component="h2" variant="h2" fontWeight={800} sx={{ fontSize: { xs: "1.75rem", sm: "2.25rem", md: "2.75rem" }, lineHeight: 1.15, mb: 2 }}>
               Create and shape the plan
             </Typography>

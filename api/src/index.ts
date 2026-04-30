@@ -324,7 +324,7 @@ app.get("/public/users/:handle", async (c) => {
     const sql = getSql(c.env);
     const userRows = (await sql`
       SELECT u.id, u.name, u.username, u.date_of_birth, u.gender, u.profile_theme,
-        u.avatar_key, u.avatar_updated_at,
+        u.avatar_key, u.avatar_updated_at, u.created_at,
         COALESCE(u.is_hidden_age, false) AS is_hidden_age,
         COALESCE(u.is_hidden_from_external_indexing, false) AS is_hidden_from_external_indexing,
         COALESCE(u.is_hidden_chum_list, false) AS is_hidden_chum_list,
@@ -343,6 +343,7 @@ app.get("/public/users/:handle", async (c) => {
       profile_theme: string | null;
       avatar_key: string | null;
       avatar_updated_at: string | Date | null;
+      created_at: string | Date | null;
       is_hidden_age: boolean;
       is_hidden_from_external_indexing: boolean;
       is_hidden_chum_list: boolean;
@@ -388,6 +389,15 @@ app.get("/public/users/:handle", async (c) => {
       ? (user.is_hidden_age === true ? null : computeAge(dobStr))
       : null;
 
+    // Account creation date drives the "Joined {Month Year}" trust line in
+    // the public profile hero. Returned as an ISO string when present so the
+    // client doesn't have to deal with the underlying driver type variance.
+    const memberSince = user.created_at
+      ? typeof user.created_at === "string"
+        ? user.created_at
+        : (user.created_at as Date).toISOString()
+      : null;
+
     return c.json({
       ok: true,
       user: {
@@ -400,6 +410,7 @@ app.get("/public/users/:handle", async (c) => {
         bio: profile?.bio ?? null,
         hobbies: interestRows.map((r) => r.name),
         avatarUrl,
+        memberSince,
         is_hidden_from_external_indexing: user.is_hidden_from_external_indexing ?? false,
         is_hidden_chum_list: user.is_hidden_chum_list ?? false,
         is_hidden_shoutouts: user.is_hidden_shoutouts ?? false,

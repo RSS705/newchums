@@ -10,6 +10,7 @@ import {
   FormControlLabel,
   IconButton,
   InputAdornment,
+  Paper,
   Radio,
   RadioGroup,
   Skeleton,
@@ -33,6 +34,8 @@ import ChatBubbleOutlineRoundedIcon from "@mui/icons-material/ChatBubbleOutlineR
 import NotificationsActiveRoundedIcon from "@mui/icons-material/NotificationsActiveRounded";
 import NotificationsNoneRoundedIcon from "@mui/icons-material/NotificationsNoneRounded";
 import AttachFileRoundedIcon from "@mui/icons-material/AttachFileRounded";
+import LightbulbOutlinedIcon from "@mui/icons-material/LightbulbOutlined";
+import RouteRoundedIcon from "@mui/icons-material/RouteRounded";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiFetch, getApiBaseUrl } from "@/lib/apiClient";
@@ -354,53 +357,126 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
 
   return (
     <Box>
-      {/* Hero header */}
-      <Box sx={{ mb: { xs: 3, sm: 4 }, textAlign: { xs: "left", sm: "center" } }}>
-        <Typography variant="h4" fontWeight={700} gutterBottom>
-          Community Roadmap
-        </Typography>
-        <Typography
-          variant="body1"
-          color="text.secondary"
-          sx={{ maxWidth: 600, mx: "auto", lineHeight: 1.7, mb: 2.5 }}
+      {/* Hero header. Warm-wash treatment matching the rest of the
+          logged-in surfaces (Explore, Your Plans, Communities, Your
+          Chums, Profile) plus the public communities discovery page so
+          the roadmap reads as part of the same product surface for both
+          authed and unauthed visitors. Eyebrow + large H1 + subtitle on
+          the left, submit/sign-in CTA on the right. */}
+      <Paper
+        variant="outlined"
+        sx={{
+          mb: { xs: 3, sm: 4 },
+          p: { xs: 2.5, sm: 3.5 },
+          borderRadius: 4,
+          borderColor: "primary.light",
+          background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
+        }}
+      >
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          spacing={{ xs: 2, sm: 3 }}
+          alignItems={{ xs: "stretch", sm: "flex-end" }}
+          justifyContent="space-between"
         >
-          NewChums launched in 2026 and is actively shaped by our community. Every idea, bug report,
-          and suggestion helps us build the best gathering tool possible.
-        </Typography>
-        {isLoggedIn ? (
-          <Button
-            variant="contained"
-            color="primary"
-            startIcon={submitOpen ? undefined : <AddRoundedIcon />}
-            onClick={() => setSubmitOpen((v) => !v)}
-            sx={{
-              textTransform: "none",
-              fontWeight: 600,
-              borderRadius: 2,
-              boxShadow: "none",
-              "&:hover": { boxShadow: "none", opacity: 0.92 },
-            }}
-          >
-            {submitOpen ? "Close form" : "Submit feedback"}
-          </Button>
-        ) : (
-          <Button
-            component={Link}
-            href="/login?next=/roadmap"
-            variant="contained"
-            color="primary"
-            sx={{
-              textTransform: "none",
-              fontWeight: 600,
-              borderRadius: 2,
-              boxShadow: "none",
-              "&:hover": { boxShadow: "none", opacity: 0.92 },
-            }}
-          >
-            Sign in to submit feedback and vote
-          </Button>
-        )}
-      </Box>
+          <Stack spacing={1.25} sx={{ flex: 1, minWidth: 0 }}>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Box
+                sx={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: "50%",
+                  bgcolor: "primary.main",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <RouteRoundedIcon sx={{ color: "primary.contrastText", fontSize: 18 }} />
+              </Box>
+              <Typography
+                sx={{
+                  fontSize: "0.6875rem",
+                  fontWeight: 700,
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                  color: "primary.dark",
+                }}
+              >
+                What&apos;s next
+              </Typography>
+            </Stack>
+            <Typography
+              component="h1"
+              sx={{
+                fontSize: { xs: "1.875rem", sm: "2.375rem" },
+                fontWeight: 700,
+                lineHeight: 1.15,
+                letterSpacing: "-0.025em",
+                color: "text.primary",
+              }}
+            >
+              Community Roadmap
+            </Typography>
+            <Typography
+              variant="body1"
+              color="text.secondary"
+              sx={{
+                fontSize: { xs: "0.9375rem", sm: "1rem" },
+                lineHeight: 1.6,
+                maxWidth: 600,
+              }}
+            >
+              NewChums launched in 2026 and is actively shaped by our community. Every idea, bug
+              report, and suggestion helps us build the best gathering tool possible.
+            </Typography>
+          </Stack>
+          {isLoggedIn ? (
+            <Button
+              variant="contained"
+              color="primary"
+              startIcon={submitOpen ? <CloseRoundedIcon /> : <AddRoundedIcon />}
+              onClick={() => setSubmitOpen((v) => !v)}
+              sx={{
+                flexShrink: 0,
+                alignSelf: { xs: "stretch", sm: "flex-end" },
+                textTransform: "none",
+                fontWeight: 700,
+                borderRadius: 2.5,
+                px: 3,
+                py: 1.125,
+                fontSize: "0.9375rem",
+                boxShadow: "0 4px 14px rgba(230, 91, 19, 0.25)",
+                "&:hover": { boxShadow: "0 6px 18px rgba(230, 91, 19, 0.32)", opacity: 0.96 },
+              }}
+            >
+              {submitOpen ? "Close form" : "Submit feedback"}
+            </Button>
+          ) : (
+            <Button
+              component={Link}
+              href="/login?next=/roadmap"
+              variant="contained"
+              color="primary"
+              sx={{
+                flexShrink: 0,
+                alignSelf: { xs: "stretch", sm: "flex-end" },
+                textTransform: "none",
+                fontWeight: 700,
+                borderRadius: 2.5,
+                px: 3,
+                py: 1.125,
+                fontSize: "0.9375rem",
+                boxShadow: "0 4px 14px rgba(230, 91, 19, 0.25)",
+                "&:hover": { boxShadow: "0 6px 18px rgba(230, 91, 19, 0.32)", opacity: 0.96 },
+              }}
+            >
+              Sign in to submit feedback and vote
+            </Button>
+          )}
+        </Stack>
+      </Paper>
 
       {/* Inline submit form */}
       <Collapse in={submitOpen} unmountOnExit>
@@ -589,17 +665,60 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
         </Box>
       </Collapse>
 
-      {/* Tabs */}
-      <Box sx={{ borderBottom: 1, borderColor: "divider", mb: 2 }}>
-        <Tabs value={tab} onChange={(_, v) => setTab(v)}>
-          <Tab label="Active" sx={{ textTransform: "none", fontWeight: 600 }} />
-          <Tab label="Completed" sx={{ textTransform: "none", fontWeight: 600 }} />
-        </Tabs>
-      </Box>
+      {/* Tabs. Custom 3px primary indicator and elevated active state
+          matching the styled tabs on Your Plans and the community detail
+          page so the section navigation reads as a real navigation
+          surface rather than a thin underline. */}
+      <Tabs
+        value={tab}
+        onChange={(_, v) => setTab(v)}
+        sx={{
+          mb: 2.5,
+          borderBottom: "1px solid",
+          borderColor: "divider",
+          minHeight: 52,
+          "& .MuiTabs-indicator": {
+            height: 3,
+            borderTopLeftRadius: 2,
+            borderTopRightRadius: 2,
+            backgroundColor: "primary.main",
+          },
+        }}
+      >
+        <Tab
+          label="Active"
+          sx={{
+            textTransform: "none",
+            minHeight: 52,
+            fontWeight: 600,
+            fontSize: "0.9375rem",
+            color: "text.secondary",
+            "&.Mui-selected": { color: "primary.main", fontWeight: 700 },
+            "&:hover": { color: "text.primary", bgcolor: "action.hover" },
+            borderTopLeftRadius: 8,
+            borderTopRightRadius: 8,
+            transition: "color 0.15s ease, background-color 0.15s ease",
+          }}
+        />
+        <Tab
+          label="Completed"
+          sx={{
+            textTransform: "none",
+            minHeight: 52,
+            fontWeight: 600,
+            fontSize: "0.9375rem",
+            color: "text.secondary",
+            "&.Mui-selected": { color: "primary.main", fontWeight: 700 },
+            "&:hover": { color: "text.primary", bgcolor: "action.hover" },
+            borderTopLeftRadius: 8,
+            borderTopRightRadius: 8,
+            transition: "color 0.15s ease, background-color 0.15s ease",
+          }}
+        />
+      </Tabs>
 
       {/* Search */}
       <TextField
-        size="small"
         placeholder="Search requests..."
         value={searchInput}
         onChange={(e) => handleSearchChange(e.target.value)}
@@ -607,7 +726,7 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
         InputProps={{
           startAdornment: (
             <InputAdornment position="start">
-              <SearchRoundedIcon sx={{ fontSize: 18, color: "text.disabled" }} />
+              <SearchRoundedIcon sx={{ fontSize: 22, color: "text.secondary" }} />
             </InputAdornment>
           ),
           endAdornment: searchInput ? (
@@ -637,7 +756,20 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
             </InputAdornment>
           ) : null,
         }}
-        sx={{ mb: 2, maxWidth: { xs: "100%", sm: 320 } }}
+        sx={{
+          mb: 2,
+          maxWidth: { xs: "100%", sm: 360 },
+          "& .MuiOutlinedInput-root": {
+            borderRadius: 2.5,
+            fontSize: "0.9375rem",
+            bgcolor: "background.default",
+            "& fieldset": { borderColor: "grey.200" },
+            "&:hover fieldset": { borderColor: "grey.300" },
+          },
+          "& .MuiOutlinedInput-input": {
+            py: { xs: 1.125, sm: 1.25 },
+          },
+        }}
         fullWidth
       />
 
@@ -695,15 +827,66 @@ export default function RoadmapClient({ isLoggedIn }: Props) {
           ))}
         </Stack>
       ) : items.length === 0 ? (
-        <Box sx={{ textAlign: "center", py: 6, color: "text.secondary" }}>
-          <Typography variant="body1">
-            {search
-              ? "No requests match your search."
-              : tab === 0
-                ? "No active requests yet. Be the first to share an idea!"
-                : "No completed items yet. Stay tuned!"}
-          </Typography>
-        </Box>
+        <Paper
+          variant="outlined"
+          sx={{
+            borderRadius: 3,
+            borderColor: "grey.200",
+            bgcolor: "background.paper",
+            boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+          }}
+        >
+          <Stack spacing={2} alignItems="center" sx={{ py: { xs: 5, sm: 6 }, px: { xs: 2, sm: 3 } }}>
+            <Box
+              sx={{
+                width: 72,
+                height: 72,
+                borderRadius: "50%",
+                bgcolor: "primary.light",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <LightbulbOutlinedIcon sx={{ fontSize: 36, color: "primary.main" }} />
+            </Box>
+            <Box sx={{ textAlign: "center", maxWidth: 420 }}>
+              <Typography variant="h6" fontWeight={700} sx={{ mb: 0.5 }}>
+                {search
+                  ? "Nothing matched this search"
+                  : tab === 0
+                    ? "No active requests yet"
+                    : "No completed items yet"}
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+                {search
+                  ? "Try a different keyword or clear the search to see all requests."
+                  : tab === 0
+                    ? "Be the first to share an idea, bug report, or piece of feedback."
+                    : "Once we ship something, it'll show up here. Stay tuned!"}
+              </Typography>
+            </Box>
+            {!search && tab === 0 && isLoggedIn && !submitOpen && (
+              <Button
+                variant="contained"
+                color="primary"
+                startIcon={<AddRoundedIcon />}
+                onClick={() => setSubmitOpen(true)}
+                sx={{
+                  textTransform: "none",
+                  fontWeight: 600,
+                  borderRadius: 2.5,
+                  px: 3,
+                  mt: 1,
+                  boxShadow: "none",
+                  "&:hover": { boxShadow: "none", opacity: 0.92 },
+                }}
+              >
+                Submit feedback
+              </Button>
+            )}
+          </Stack>
+        </Paper>
       ) : (
         <Stack spacing={1.5}>
           {items.map((item) => (

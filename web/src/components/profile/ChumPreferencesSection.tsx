@@ -11,6 +11,7 @@ import Typography from "@mui/material/Typography";
 import CheckCircleOutlineRoundedIcon from "@mui/icons-material/CheckCircleOutlineRounded";
 import ExpandLessRoundedIcon from "@mui/icons-material/ExpandLessRounded";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
+import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
 import { AppCard, HelpTooltip, useToast } from "@/components/ui";
 import { apiFetch } from "@/lib/apiClient";
 
@@ -131,33 +132,58 @@ export default function ChumPreferencesSection() {
   return (
     <AppCard sx={{ borderRadius: { xs: 2.5, sm: 3 }, overflow: "hidden" }}>
       <Stack spacing={2}>
-        <Box>
-          <Stack direction="row" alignItems="center" justifyContent="space-between">
-            <Typography variant="h6" fontWeight={700} sx={{ fontSize: { xs: "1.0625rem", sm: "1.125rem" } }}>
+        <Stack direction="row" spacing={1.5} alignItems="center">
+          <Box
+            sx={{
+              width: 40,
+              height: 40,
+              borderRadius: "50%",
+              bgcolor: "primary.light",
+              color: "primary.main",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            <TuneRoundedIcon sx={{ fontSize: 22 }} />
+          </Box>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography
+              variant="h6"
+              fontWeight={700}
+              sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
+            >
               Your chum preferences
             </Typography>
-            <Fade in={saveStatus !== "idle"} timeout={300}>
-              <Stack direction="row" alignItems="center" spacing={0.5} sx={{ minWidth: 0 }}>
-                {saveStatus === "saving" ? (
-                  <Typography variant="caption" color="text.disabled" sx={{ fontWeight: 500 }}>
-                    Saving…
+            <Typography
+              variant="caption"
+              color="text.disabled"
+              sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
+            >
+              Tune how strict matching should be. Changes save automatically.
+            </Typography>
+          </Box>
+          <Fade in={saveStatus !== "idle"} timeout={300}>
+            <Stack direction="row" alignItems="center" spacing={0.5} sx={{ flexShrink: 0 }}>
+              {saveStatus === "saving" ? (
+                <Typography variant="caption" color="text.disabled" sx={{ fontWeight: 500 }}>
+                  Saving...
+                </Typography>
+              ) : (
+                <>
+                  <CheckCircleOutlineRoundedIcon sx={{ fontSize: 14, color: "success.main" }} />
+                  <Typography variant="caption" color="success.main" sx={{ fontWeight: 500 }}>
+                    Saved
                   </Typography>
-                ) : (
-                  <>
-                    <CheckCircleOutlineRoundedIcon sx={{ fontSize: 14, color: "success.main" }} />
-                    <Typography variant="caption" color="success.main" sx={{ fontWeight: 500 }}>
-                      Saved
-                    </Typography>
-                  </>
-                )}
-              </Stack>
-            </Fade>
-          </Stack>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-            Tune how strict matching should be. Permissive settings let more people through;
-            stricter settings filter inbound matches more aggressively. Changes save automatically.
-          </Typography>
-        </Box>
+                </>
+              )}
+            </Stack>
+          </Fade>
+        </Stack>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: -0.5 }}>
+          Permissive settings let more people through; stricter settings filter inbound matches more aggressively.
+        </Typography>
 
         <Stack spacing={2}>
           {METRICS.map((m) => (
@@ -204,13 +230,13 @@ export default function ChumPreferencesSection() {
             </Box>
           ))}
 
-          {/* Age range — relative to your own age, evaluated server-side from DOB. */}
+          {/* Age range, relative to your own age, evaluated server-side from DOB. */}
           <Box>
             <Stack direction="row" alignItems="center" spacing={0.5} sx={{ mb: 0.75 }}>
               <Typography variant="subtitle2" fontWeight={600}>
                 Age range
               </Typography>
-              <HelpTooltip title="Match plans whose host and attendees are close in age to you. Privacy-safe — exact ages are never shown." />
+              <HelpTooltip title="Match plans whose host and attendees are close in age to you. Privacy-safe; exact ages are never shown." />
             </Stack>
             <ToggleButtonGroup
               value={ageYearsToOption(prefs.age)}

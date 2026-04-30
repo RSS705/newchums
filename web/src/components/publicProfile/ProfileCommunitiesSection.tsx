@@ -7,10 +7,12 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import LockRoundedIcon from "@mui/icons-material/LockRounded";
 import PublicRoundedIcon from "@mui/icons-material/PublicRounded";
+import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import { AppCard } from "@/components/ui";
+import ProfileSectionHeader from "./ProfileSectionHeader";
 
 type PublicCommunity = {
   id: string;
@@ -81,9 +83,11 @@ export default function ProfileCommunitiesSection({ ownerHandle, viewerLoggedIn 
   return (
     <AppCard sx={{ borderRadius: { xs: 2, sm: 2.5 }, overflow: "hidden" }}>
       <Stack spacing={2}>
-        <Typography variant="h6" fontWeight={700} sx={{ fontSize: { xs: "1.0625rem", sm: "1.125rem" } }}>
-          Communities
-        </Typography>
+        <ProfileSectionHeader
+          icon={<GroupsRoundedIcon sx={{ fontSize: 20 }} />}
+          title="Communities"
+          meta={state.communities.length}
+        />
 
         {/* Spacing-only separation, no dividers, keeps the section feeling
             light next to the avatar-grid Chums section above. */}

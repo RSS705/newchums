@@ -6,7 +6,6 @@ import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
-import IconButton from "@mui/material/IconButton";
 import InputAdornment from "@mui/material/InputAdornment";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
@@ -18,10 +17,11 @@ import Typography from "@mui/material/Typography";
 import AddCircleRoundedIcon from "@mui/icons-material/AddCircleRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import EditLocationRoundedIcon from "@mui/icons-material/EditLocationRounded";
+import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
 import Link from "next/link";
-import { AppCard, EmptyState } from "@/components/ui";
+import { EmptyState } from "@/components/ui";
 import PeopleRoundedIcon from "@mui/icons-material/PeopleRounded";
 import DistanceSelect from "@/components/common/DistanceSelect";
 import { apiFetch } from "@/lib/apiClient";
@@ -188,71 +188,140 @@ export default function CommunitiesListClient() {
     setPersonalizeEnabled(true);
   };
 
-  return (
-    <Stack spacing={{ xs: 2.5, sm: 3.5 }}>
-      {/* Header */}
-      <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" alignItems={{ sm: "flex-start" }} spacing={2}>
-        <Box>
-          <Typography
-            component="h1"
-            sx={{
-              fontSize: { xs: "1.75rem", sm: "2rem" },
-              fontWeight: 700,
-              lineHeight: 1.25,
-              letterSpacing: "-0.02em",
-              mb: 0.5,
-            }}
-          >
-            Communities
-          </Typography>
-          <Typography variant="body1" color="text.secondary" sx={{ fontSize: { xs: "0.875rem", sm: "0.9375rem" } }}>
-            {hasLocation
-              ? `Find groups of people who share your interests${locationLabel ? ` near ${locationLabel}` : ""}`
-              : "Find groups of people who share your interests, or start your own."}
-          </Typography>
-        </Box>
-        <Button
-          component={Link}
-          href="/communities/create"
-          variant="contained"
-          startIcon={<AddCircleRoundedIcon />}
-          sx={{
-            borderRadius: 2.5,
-            textTransform: "none",
-            fontWeight: 600,
-            fontSize: "0.9375rem",
-            px: 3,
-            py: 1.25,
-            boxShadow: "none",
-            whiteSpace: "nowrap",
-            "&:hover": { boxShadow: "none", opacity: 0.92 },
-          }}
-        >
-          Create a community
-        </Button>
-      </Stack>
+  // Active-filter count for the labeled Filters button. Counts what sits
+  // BEHIND the panel toggle (distance + hobby) so the pill reads as "you
+  // have N filters hidden behind this button". Search and the All/Yours
+  // toggle are surfaced inline on the main row; Personalize is a chip on
+  // its own row, so they don't get double-counted here.
+  const activeFilterCount =
+    (selectedHobby ? 1 : 0) +
+    (view === "all" && hasLocation && radiusKm !== defaultRadiusKm ? 1 : 0);
 
-      {/* Filter bar */}
+  return (
+    <Stack spacing={{ xs: 3, sm: 4 }}>
+      {/* Header. Warm-wash hero matching the Explore and Your Plans
+          surfaces so the three primary logged-in pages read as one
+          product. Eyebrow + large H1 mirror the discovery-header
+          pattern in docs/UI_Patterns.md. The "Create a community" CTA
+          on the right gets the warm-tinted shadow and reads as the
+          page's primary action. */}
       <Paper
         variant="outlined"
         sx={{
-          p: { xs: 1.5, sm: 2 },
+          p: { xs: 2.5, sm: 3.5 },
+          borderRadius: 4,
+          borderColor: "primary.light",
+          background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
+        }}
+      >
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          spacing={{ xs: 2, sm: 3 }}
+          alignItems={{ xs: "stretch", sm: "flex-end" }}
+          justifyContent="space-between"
+        >
+          <Stack spacing={1.25} sx={{ flex: 1, minWidth: 0 }}>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Box
+                sx={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: "50%",
+                  bgcolor: "primary.main",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <GroupsRoundedIcon sx={{ color: "primary.contrastText", fontSize: 18 }} />
+              </Box>
+              <Typography
+                sx={{
+                  fontSize: "0.6875rem",
+                  fontWeight: 700,
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                  color: "primary.dark",
+                }}
+              >
+                Find your people
+              </Typography>
+            </Stack>
+            <Typography
+              component="h1"
+              sx={{
+                fontSize: { xs: "1.875rem", sm: "2.375rem" },
+                fontWeight: 700,
+                lineHeight: 1.15,
+                letterSpacing: "-0.025em",
+                color: "text.primary",
+              }}
+            >
+              Communities
+            </Typography>
+            <Typography
+              variant="body1"
+              color="text.secondary"
+              sx={{
+                fontSize: { xs: "0.9375rem", sm: "1rem" },
+                lineHeight: 1.6,
+                maxWidth: 560,
+              }}
+            >
+              {hasLocation
+                ? `Hobby clubs, game stores, and groups${locationLabel ? ` near ${locationLabel}` : ""}, hand-picked around the things you enjoy.`
+                : "Hobby clubs, game stores, and groups around the things you enjoy. Find one or start your own."}
+            </Typography>
+          </Stack>
+          <Button
+            component={Link}
+            href="/communities/create"
+            variant="contained"
+            startIcon={<AddCircleRoundedIcon />}
+            sx={{
+              flexShrink: 0,
+              alignSelf: { xs: "stretch", sm: "flex-end" },
+              textTransform: "none",
+              fontWeight: 700,
+              borderRadius: 2.5,
+              px: 3,
+              py: 1.125,
+              fontSize: "0.9375rem",
+              boxShadow: "0 4px 14px rgba(230, 91, 19, 0.25)",
+              "&:hover": { boxShadow: "0 6px 18px rgba(230, 91, 19, 0.32)", opacity: 0.96 },
+            }}
+          >
+            Create a community
+          </Button>
+        </Stack>
+      </Paper>
+
+      {/* Filter bar. Bigger search, labeled Filters button with active
+          count pill, and a single Personalized chip row that works at
+          every breakpoint (the previous mobile/desktop dual-render path
+          was redundant once the row below got its own breathing room).
+          Matches the discovery filter shell pattern in
+          docs/UI_Patterns.md. */}
+      <Paper
+        variant="outlined"
+        sx={{
+          p: { xs: 1.75, sm: 2.25 },
           borderRadius: 3,
           borderColor: "grey.200",
           bgcolor: "background.paper",
           boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
         }}
       >
-        <Stack spacing={1.5}>
-          {/* Search + scope + filter toggle. On xs the search field shares
-              its row with the All / Yours toggle and the filter icon drops
-              to the secondary row below where it shares space with the
-              Personalized chip. Desktop keeps all three inline on row 1
-              and shows the Personalized chip on its own row below. */}
-          <Stack direction="row" spacing={1} alignItems="center">
+        <Stack spacing={1.75}>
+          {/* Row 1: search field with primary presence. On xs it sits on
+              its own row so it keeps a readable width; on sm+ it shares
+              row 1 with the All/Yours scope toggle and the labeled
+              Filters button. */}
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ xs: "stretch", sm: "center" }}>
             <TextField
               id="communities-search-input"
-              placeholder="Search communities..."
+              placeholder="Search communities by name, hobby, or place..."
               value={searchInputValue}
               onChange={(e) => {
                 const v = e.target.value;
@@ -260,99 +329,106 @@ export default function CommunitiesListClient() {
                 if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
                 searchDebounceRef.current = setTimeout(() => setSearchText(v), 200);
               }}
-              size="small"
               fullWidth
               variant="outlined"
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
-                    <SearchRoundedIcon fontSize="small" color="action" />
+                    <SearchRoundedIcon sx={{ fontSize: 22, color: "text.secondary" }} />
                   </InputAdornment>
                 ),
               }}
-              sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
+              sx={{
+                "& .MuiOutlinedInput-root": {
+                  borderRadius: 2.5,
+                  fontSize: "1rem",
+                  bgcolor: "background.default",
+                  "& fieldset": { borderColor: "grey.200" },
+                  "&:hover fieldset": { borderColor: "grey.300" },
+                },
+                "& .MuiOutlinedInput-input": {
+                  py: { xs: 1.25, sm: 1.5 },
+                },
+              }}
             />
-            <ToggleButtonGroup
-              value={view}
-              exclusive
-              onChange={(_, v) => { if (v) setView(v); }}
-              size="small"
-              sx={{ flexShrink: 0 }}
-            >
-              <ToggleButton value="all" sx={{ textTransform: "none", px: 2, borderRadius: 2 }}>All</ToggleButton>
-              <ToggleButton value="mine" sx={{ textTransform: "none", px: 2, borderRadius: 2 }}>Yours</ToggleButton>
-            </ToggleButtonGroup>
-            {/* Desktop-only inline slot for the filter-tune icon. The
-                mobile render drops it to the secondary row below (paired
-                with the Personalized chip) so the search field keeps a
-                readable width on narrow phones. */}
-            <Box sx={{ display: { xs: "none", sm: "flex" }, flexShrink: 0 }}>
-              <IconButton
-                onClick={() => setFiltersOpen((p) => !p)}
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ flexShrink: 0 }}>
+              <ToggleButtonGroup
+                value={view}
+                exclusive
+                onChange={(_, v) => { if (v) setView(v); }}
+                size="small"
                 sx={{
-                  border: "1px solid",
-                  borderColor: filtersOpen ? "primary.main" : "divider",
-                  borderRadius: 2,
-                  color: filtersOpen ? "primary.main" : "text.secondary",
-                  bgcolor: filtersOpen ? "primary.light" : "transparent",
+                  flexShrink: 0,
+                  "& .MuiToggleButton-root": {
+                    border: "1px solid",
+                    borderColor: "grey.200",
+                  },
+                  "& .MuiToggleButton-root.Mui-selected": {
+                    borderColor: "primary.main",
+                    bgcolor: "primary.light",
+                    color: "primary.dark",
+                    fontWeight: 700,
+                    "&:hover": { bgcolor: "primary.light" },
+                  },
                 }}
               >
-                <TuneRoundedIcon fontSize="small" />
-              </IconButton>
-            </Box>
-          </Stack>
-
-          {/* Mobile secondary row: Personalized chip (when applicable) on
-              the left and the filter-tune icon right-aligned. Always
-              rendered on xs so the filter icon has a home even when the
-              Personalized chip isn't shown. */}
-          <Stack
-            direction="row"
-            alignItems="center"
-            gap={0.75}
-            sx={{ display: { xs: "flex", sm: "none" } }}
-          >
-            {hasHobbies && view === "all" && (
-              <Tooltip title={personalizeEnabled ? "Communities matching your hobbies are shown first. Click to turn off." : "Hobby personalization is off. Click to turn on."} arrow>
-                <Chip
-                  icon={<AutoAwesomeRoundedIcon sx={{ fontSize: "0.9375rem !important" }} />}
-                  label="Personalized"
-                  size="small"
-                  variant={personalizeEnabled ? "filled" : "outlined"}
-                  onClick={() => setPersonalizeEnabled((v) => !v)}
-                  sx={{
-                    borderRadius: 2,
-                    fontWeight: 500,
-                    fontSize: "0.8125rem",
-                    cursor: "pointer",
-                    ...(personalizeEnabled
-                      ? { bgcolor: "primary.light", color: "primary.dark", borderColor: "primary.light", "& .MuiChip-icon": { color: "primary.main" } }
-                      : { borderColor: "divider", color: "text.secondary", "& .MuiChip-icon": { color: "text.secondary" } }),
-                    "&:hover": { bgcolor: personalizeEnabled ? "primary.light" : "action.hover" },
-                  }}
-                />
-              </Tooltip>
-            )}
-            <Box sx={{ ml: "auto" }}>
-              <IconButton
+                <ToggleButton value="all" sx={{ textTransform: "none", px: 2, borderRadius: 2, py: 1 }}>All</ToggleButton>
+                <ToggleButton value="mine" sx={{ textTransform: "none", px: 2, borderRadius: 2, py: 1 }}>Yours</ToggleButton>
+              </ToggleButtonGroup>
+              <Button
                 onClick={() => setFiltersOpen((p) => !p)}
+                aria-expanded={filtersOpen}
+                aria-controls="communities-filters-panel"
+                startIcon={<TuneRoundedIcon />}
                 sx={{
+                  flexShrink: 0,
+                  textTransform: "none",
+                  fontWeight: 600,
+                  borderRadius: 2.5,
                   border: "1px solid",
-                  borderColor: filtersOpen ? "primary.main" : "divider",
-                  borderRadius: 2,
-                  color: filtersOpen ? "primary.main" : "text.secondary",
+                  borderColor: filtersOpen || activeFilterCount > 0 ? "primary.main" : "grey.200",
+                  color: filtersOpen || activeFilterCount > 0 ? "primary.main" : "text.secondary",
                   bgcolor: filtersOpen ? "primary.light" : "transparent",
+                  px: { xs: 1.75, sm: 2 },
+                  py: { xs: 1, sm: 1 },
+                  "&:hover": {
+                    bgcolor: filtersOpen ? "primary.light" : "grey.50",
+                    borderColor: "primary.main",
+                  },
                 }}
               >
-                <TuneRoundedIcon fontSize="small" />
-              </IconButton>
-            </Box>
+                <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 0.75 }}>
+                  Filters
+                  {activeFilterCount > 0 && (
+                    <Box
+                      component="span"
+                      sx={{
+                        minWidth: 18,
+                        height: 18,
+                        px: 0.625,
+                        borderRadius: "999px",
+                        bgcolor: "primary.main",
+                        color: "primary.contrastText",
+                        fontSize: "0.6875rem",
+                        fontWeight: 700,
+                        lineHeight: 1,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      {activeFilterCount}
+                    </Box>
+                  )}
+                </Box>
+              </Button>
+            </Stack>
           </Stack>
 
-          {/* Desktop-only Personalized chip row. Hidden on xs because the
-              chip rides the secondary row above alongside the filter icon. */}
+          {/* Personalized chip. Single render at every breakpoint, no
+              longer split between an xs-only and sm-only branch. */}
           {hasHobbies && view === "all" && (
-            <Stack direction="row" gap={0.75} alignItems="center" sx={{ display: { xs: "none", sm: "flex" } }}>
+            <Stack direction="row" gap={0.75} alignItems="center">
               <Tooltip title={personalizeEnabled ? "Communities matching your hobbies are shown first. Click to turn off." : "Hobby personalization is off. Click to turn on."} arrow>
                 <Chip
                   icon={<AutoAwesomeRoundedIcon sx={{ fontSize: "0.9375rem !important" }} />}
@@ -378,10 +454,15 @@ export default function CommunitiesListClient() {
           {/* Expanded filters */}
           {filtersOpen && (
             <Stack
+              id="communities-filters-panel"
               direction={{ xs: "column", sm: "row" }}
               spacing={1.5}
               alignItems={{ xs: "stretch", sm: "flex-end" }}
-              sx={{ pt: 0.5 }}
+              sx={{
+                pt: 1.75,
+                borderTop: "1px solid",
+                borderColor: "grey.100",
+              }}
             >
               {view === "all" && (
                 <DistanceSelect
@@ -434,27 +515,40 @@ export default function CommunitiesListClient() {
         </Stack>
       </Paper>
 
-      {/* Location nudge */}
+      {/* Location nudge. Warm-wash treatment matching Explore so the
+          two surfaces feel like the same product. */}
       {profile !== null && !hasLocation && view === "all" && (
         <Paper
           variant="outlined"
           sx={{
             p: { xs: 2.5, sm: 3 },
             borderRadius: 3,
-            borderColor: "secondary.light",
-            bgcolor: "rgba(244, 180, 0, 0.035)",
+            borderColor: "primary.light",
+            background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
             display: "flex",
             flexDirection: { xs: "column", sm: "row" },
             alignItems: { xs: "flex-start", sm: "center" },
-            gap: 2,
+            gap: { xs: 1.5, sm: 2.5 },
           }}
         >
-          <Box sx={{ width: 44, height: 44, borderRadius: "50%", bgcolor: "secondary.light", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            <EditLocationRoundedIcon sx={{ color: "secondary.dark", fontSize: 22 }} />
+          <Box
+            sx={{
+              width: 44,
+              height: 44,
+              borderRadius: "50%",
+              bgcolor: "primary.main",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+              boxShadow: "0 2px 8px rgba(230, 91, 19, 0.18)",
+            }}
+          >
+            <EditLocationRoundedIcon sx={{ color: "primary.contrastText", fontSize: 22 }} />
           </Box>
-          <Box sx={{ flex: 1 }}>
-            <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.25 }}>
-              Add your location for better results
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 0.25, fontSize: "1rem" }}>
+              Set your location for better results
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
               We&apos;ll prioritize communities near you and hide those that are too far away.
@@ -463,9 +557,17 @@ export default function CommunitiesListClient() {
           <Button
             component={Link}
             href="/profile?focus=location"
-            variant="outlined"
-            size="small"
-            sx={{ textTransform: "none", fontWeight: 600, whiteSpace: "nowrap", borderRadius: 2.5 }}
+            variant="contained"
+            sx={{
+              flexShrink: 0,
+              textTransform: "none",
+              fontWeight: 600,
+              whiteSpace: "nowrap",
+              borderRadius: 2.5,
+              boxShadow: "none",
+              alignSelf: { xs: "stretch", sm: "auto" },
+              "&:hover": { boxShadow: "none", opacity: 0.92 },
+            }}
           >
             Update profile
           </Button>
@@ -508,10 +610,34 @@ export default function CommunitiesListClient() {
           )}
         </>
       ) : (
-        /* Empty state */
-        <AppCard>
+        /* Empty state. Wrapped in an outlined Paper with a soft warm
+           icon orb so the empty surface still feels like part of the
+           page rather than orphaned helper text. */
+        <Paper
+          variant="outlined"
+          sx={{
+            borderRadius: 3,
+            borderColor: "grey.200",
+            bgcolor: "background.paper",
+            boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+          }}
+        >
           <EmptyState
-            icon={<PeopleRoundedIcon sx={{ fontSize: 56 }} />}
+            icon={
+              <Box
+                sx={{
+                  width: 72,
+                  height: 72,
+                  borderRadius: "50%",
+                  bgcolor: "primary.light",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <PeopleRoundedIcon sx={{ fontSize: 36, color: "primary.main" }} />
+              </Box>
+            }
             title={
               view === "mine"
                 ? "You haven't joined any communities yet"
@@ -553,14 +679,14 @@ export default function CommunitiesListClient() {
                   href="/communities/create"
                   variant="contained"
                   startIcon={<AddCircleRoundedIcon />}
-                  sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3 }}
+                  sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
                 >
                   Create a community
                 </Button>
               </Stack>
             }
           />
-        </AppCard>
+        </Paper>
       )}
     </Stack>
   );

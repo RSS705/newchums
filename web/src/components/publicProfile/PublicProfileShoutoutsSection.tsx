@@ -9,9 +9,11 @@ import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
+import FormatQuoteRoundedIcon from "@mui/icons-material/FormatQuoteRounded";
 import Link from "next/link";
 import { AppCard, useToast } from "@/components/ui";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
+import ProfileSectionHeader from "./ProfileSectionHeader";
 
 type ShoutoutItem = {
   id: string;
@@ -207,26 +209,18 @@ export default function PublicProfileShoutoutsSection({
     >
       <Stack spacing={2}>
         <Box>
-          <Typography
-            variant="h6"
-            fontWeight={700}
-            sx={{ fontSize: { xs: "1.0625rem", sm: "1.125rem" } }}
-          >
-            Shout-outs
-          </Typography>
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{ mt: 0.25, maxWidth: 560 }}
-          >
-            Notes from people they&rsquo;ve joined plans with.
-          </Typography>
+          <ProfileSectionHeader
+            icon={<FormatQuoteRoundedIcon sx={{ fontSize: 22 }} />}
+            title="Shout-outs"
+            subtitle="Notes from people they've joined plans with."
+            meta={items.length}
+          />
           {sectionHidden && isOwner && (
             <Typography
               variant="caption"
               sx={{
                 display: "block",
-                mt: 0.5,
+                mt: 1,
                 color: "text.disabled",
                 fontSize: "0.6875rem",
                 fontWeight: 600,

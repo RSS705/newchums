@@ -126,40 +126,90 @@ export default function YourPlanClient() {
 
   return (
     <Stack spacing={{ xs: 3, sm: 4 }}>
-      <Box sx={{ textAlign: { xs: "center", sm: "left" } }}>
-        <Typography
-          component="h1"
-          sx={{
-            fontSize: { xs: "1.75rem", sm: "2rem" },
-            fontWeight: 700,
-            lineHeight: 1.2,
-            letterSpacing: "-0.02em",
-          }}
-        >
-          Your Plan
-        </Typography>
-        <Typography
-          color="text.secondary"
-          sx={{ mt: 1, fontSize: { xs: "0.875rem", sm: "0.9375rem" }, lineHeight: 1.55 }}
-        >
-          See what&rsquo;s included in your plan and how access works on NewChums.
-        </Typography>
-      </Box>
+      {/* Header. Warm-wash hero matching the rest of the logged-in
+          surfaces (Explore, Your Plans, Communities, Your Chums,
+          Profile, Settings, Roadmap, plan/event detail). Eyebrow row
+          uses WorkspacePremiumRoundedIcon to signal "membership /
+          tier" without being upsell-y. No right-side CTA, plans are
+          currently assigned by the NewChums team and there is no
+          checkout to point at. */}
+      <Paper
+        variant="outlined"
+        sx={{
+          p: { xs: 2.5, sm: 3.5 },
+          borderRadius: 4,
+          borderColor: "primary.light",
+          background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
+        }}
+      >
+        <Stack spacing={1.25}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Box
+              sx={{
+                width: 28,
+                height: 28,
+                borderRadius: "50%",
+                bgcolor: "primary.main",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <WorkspacePremiumRoundedIcon sx={{ color: "primary.contrastText", fontSize: 18 }} />
+            </Box>
+            <Typography
+              sx={{
+                fontSize: "0.6875rem",
+                fontWeight: 700,
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                color: "primary.dark",
+              }}
+            >
+              Membership
+            </Typography>
+          </Stack>
+          <Typography
+            component="h1"
+            sx={{
+              fontSize: { xs: "1.875rem", sm: "2.375rem" },
+              fontWeight: 700,
+              lineHeight: 1.15,
+              letterSpacing: "-0.025em",
+              color: "text.primary",
+            }}
+          >
+            Your Plan
+          </Typography>
+          <Typography
+            variant="body1"
+            color="text.secondary"
+            sx={{
+              fontSize: { xs: "0.9375rem", sm: "1rem" },
+              lineHeight: 1.6,
+              maxWidth: 560,
+            }}
+          >
+            See what&rsquo;s included in your plan and how access works on NewChums.
+          </Typography>
+        </Stack>
+      </Paper>
 
-      {/* Current-plan hero. Uses the warm→white gradient + primary.light
-          border pattern from docs/UI_Patterns.md (Participant hero card):
-          the icon lives on the warm side, the text block lands on the
-          near-white side so the summary stays crisp on the warm wash.
-          Thin soft shadow lifts the card above the comparison row below. */}
+      {/* Current-plan card. Toned down from the previous warm-wash
+          treatment so we don't have two stacked warm sections (the
+          page hero already carries that), but still keeps a
+          primary.light border + thin lift so the user's current tier
+          reads as the page's primary content. The 60x60 tier icon on
+          the left is the visual anchor. */}
       <Paper
         variant="outlined"
         sx={{
           p: { xs: 2.5, sm: 3 },
           borderRadius: 3,
           borderColor: "primary.light",
-          background:
-            "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
-          boxShadow: "0 4px 18px -8px rgba(217, 119, 6, 0.18)",
+          bgcolor: "background.paper",
+          boxShadow: "0 2px 10px rgba(0,0,0,0.04)",
         }}
       >
         <Stack
@@ -172,14 +222,13 @@ export default function YourPlanClient() {
               width: 60,
               height: 60,
               borderRadius: "50%",
-              bgcolor: "background.paper",
-              color: "primary.main",
+              bgcolor: "primary.light",
+              color: "primary.dark",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               flexShrink: 0,
-              boxShadow:
-                "0 2px 10px rgba(0,0,0,0.08), inset 0 0 0 1px rgba(0,0,0,0.06)",
+              boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.04)",
             }}
           >
             <CurrentIcon sx={{ fontSize: 30 }} />
@@ -189,11 +238,12 @@ export default function YourPlanClient() {
               variant="caption"
               sx={{
                 color: "primary.dark",
-                fontWeight: 600,
+                fontWeight: 700,
                 letterSpacing: 0.5,
                 textTransform: "uppercase",
                 fontSize: "0.6875rem",
                 display: "block",
+                lineHeight: 1.35,
               }}
             >
               Your current plan
@@ -207,7 +257,7 @@ export default function YourPlanClient() {
                     fontWeight: 700,
                     letterSpacing: "-0.015em",
                     lineHeight: 1.2,
-                    mt: 0.25,
+                    mt: 0.5,
                     color: "text.primary",
                   }}
                 >
@@ -219,8 +269,7 @@ export default function YourPlanClient() {
                     lineHeight: 1.55,
                     mt: 0.5,
                     fontSize: { xs: "0.9375rem", sm: "1rem" },
-                    color: "text.primary",
-                    opacity: 0.82,
+                    color: "text.secondary",
                   }}
                 >
                   {current.summary}
@@ -228,7 +277,7 @@ export default function YourPlanClient() {
               </>
             ) : (
               <>
-                <Skeleton variant="text" width={180} height={38} sx={{ mt: 0.25 }} />
+                <Skeleton variant="text" width={180} height={38} sx={{ mt: 0.5 }} />
                 <Skeleton variant="text" width="85%" height={22} sx={{ mt: 0.5 }} />
               </>
             )}
@@ -237,14 +286,39 @@ export default function YourPlanClient() {
       </Paper>
 
       {/* All plans overview. Compact intro + three balanced cards. */}
-      <Box>
-        <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem", lineHeight: 1.3 }}>
-          All plans
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, lineHeight: 1.6 }}>
-          Every NewChums account includes the core tools for organizing and joining plans. Higher plans add advanced features as they become available.
-        </Typography>
-      </Box>
+      <Stack direction="row" spacing={1.5} alignItems="center">
+        <Box
+          sx={{
+            width: 40,
+            height: 40,
+            borderRadius: "50%",
+            bgcolor: "primary.light",
+            color: "primary.main",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+          }}
+        >
+          <AutoAwesomeRoundedIcon sx={{ fontSize: 22 }} />
+        </Box>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography
+            variant="h6"
+            fontWeight={700}
+            sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
+          >
+            All plans
+          </Typography>
+          <Typography
+            variant="caption"
+            color="text.disabled"
+            sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
+          >
+            Every NewChums account includes the core tools. Higher plans add advanced features as they become available.
+          </Typography>
+        </Box>
+      </Stack>
 
       <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems="stretch">
         {PLANS.map((p) => {

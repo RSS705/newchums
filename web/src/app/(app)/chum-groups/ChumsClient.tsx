@@ -11,14 +11,17 @@ import DialogTitle from "@mui/material/DialogTitle";
 import Divider from "@mui/material/Divider";
 import IconButton from "@mui/material/IconButton";
 import InputAdornment from "@mui/material/InputAdornment";
+import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import CakeOutlinedIcon from "@mui/icons-material/CakeOutlined";
 import EditNoteRoundedIcon from "@mui/icons-material/EditNoteRounded";
+import HandshakeRoundedIcon from "@mui/icons-material/HandshakeRounded";
 import MailOutlineRoundedIcon from "@mui/icons-material/MailOutlineRounded";
 import PeopleRoundedIcon from "@mui/icons-material/PeopleRounded";
+import PersonAddRoundedIcon from "@mui/icons-material/PersonAddRounded";
 import PersonOutlineRoundedIcon from "@mui/icons-material/PersonOutlineRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import Link from "next/link";
@@ -887,44 +890,136 @@ export default function ChumsClient() {
 
   return (
     <Stack spacing={{ xs: 3, sm: 4 }}>
-      {/* Header */}
-      <Box sx={{ textAlign: { xs: "center", sm: "left" } }}>
-        <Typography
-          component="h1"
-          sx={{ fontSize: { xs: "1.75rem", sm: "2rem" }, fontWeight: 700, lineHeight: 1.25, letterSpacing: "-0.02em" }}
-        >
-          Your Chums
-        </Typography>
-        <Typography color="text.secondary" sx={{ mt: 1, fontSize: { xs: "0.875rem", sm: "0.9375rem" } }}>
-          Keep track of people you connect with on NewChums and contacts for planning.
-        </Typography>
-      </Box>
+      {/* Header. Warm-wash hero matching the rest of the logged-in
+          surfaces (Explore, Your Plans, Communities) so all four primary
+          tabs read as one product. Eyebrow + large H1 mirror the
+          discovery-header pattern in docs/UI_Patterns.md. */}
+      <Paper
+        variant="outlined"
+        sx={{
+          p: { xs: 2.5, sm: 3.5 },
+          borderRadius: 4,
+          borderColor: "primary.light",
+          background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
+        }}
+      >
+        <Stack spacing={1.25}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Box
+              sx={{
+                width: 28,
+                height: 28,
+                borderRadius: "50%",
+                bgcolor: "primary.main",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <HandshakeRoundedIcon sx={{ color: "primary.contrastText", fontSize: 18 }} />
+            </Box>
+            <Typography
+              sx={{
+                fontSize: "0.6875rem",
+                fontWeight: 700,
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                color: "primary.dark",
+              }}
+            >
+              Your circle
+            </Typography>
+          </Stack>
+          <Typography
+            component="h1"
+            sx={{
+              fontSize: { xs: "1.875rem", sm: "2.375rem" },
+              fontWeight: 700,
+              lineHeight: 1.15,
+              letterSpacing: "-0.025em",
+              color: "text.primary",
+            }}
+          >
+            Your Chums
+          </Typography>
+          <Typography
+            variant="body1"
+            color="text.secondary"
+            sx={{
+              fontSize: { xs: "0.9375rem", sm: "1rem" },
+              lineHeight: 1.6,
+              maxWidth: 560,
+            }}
+          >
+            Keep track of people you connect with on NewChums and private contacts you plan things with.
+          </Typography>
+        </Stack>
+      </Paper>
 
       {/* Search / Add */}
       <AppCard>
         <Stack spacing={2.5}>
-          <Box>
-            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>Find people</Typography>
-            <Typography color="text.secondary" variant="body2" sx={{ mt: 0.5, lineHeight: 1.6 }}>
-              Search by name, @handle, or email.
-            </Typography>
-          </Box>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: "50%",
+                bgcolor: "primary.light",
+                color: "primary.main",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <PersonAddRoundedIcon sx={{ fontSize: 20 }} />
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography
+                variant="h6"
+                fontWeight={700}
+                sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
+              >
+                Find people
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.disabled"
+                sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
+              >
+                Search by name, @handle, or email.
+              </Typography>
+            </Box>
+          </Stack>
           <TextField
-            placeholder="Search by name, @handle, or email…"
+            placeholder="Search by name, @handle, or email..."
             value={searchQuery}
             onChange={(e) => handleSearchChange(e.target.value)}
             fullWidth
-            size="medium"
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
                   {searchLoading
                     ? <CircularProgress size={18} />
                     : isEmailInput
-                      ? <MailOutlineRoundedIcon sx={{ color: "text.secondary" }} />
-                      : <SearchRoundedIcon sx={{ color: "text.secondary" }} />}
+                      ? <MailOutlineRoundedIcon sx={{ fontSize: 22, color: "text.secondary" }} />
+                      : <SearchRoundedIcon sx={{ fontSize: 22, color: "text.secondary" }} />}
                 </InputAdornment>
               ),
+            }}
+            sx={{
+              "& .MuiOutlinedInput-root": {
+                borderRadius: 2.5,
+                fontSize: "1rem",
+                bgcolor: "background.default",
+                "& fieldset": { borderColor: "grey.200" },
+                "&:hover fieldset": { borderColor: "grey.300" },
+              },
+              "& .MuiOutlinedInput-input": {
+                py: { xs: 1.25, sm: 1.5 },
+              },
             }}
           />
 
@@ -1003,12 +1098,53 @@ export default function ChumsClient() {
       {/* Chum List */}
       <AppCard>
         <Stack spacing={2.5}>
-          <Box>
-            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>Your chum list</Typography>
-            <Typography color="text.secondary" variant="body2" sx={{ mt: 0.5, lineHeight: 1.6 }}>
-              People you&apos;ve saved. Private contacts are only visible to you.
-            </Typography>
-          </Box>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: "50%",
+                bgcolor: "primary.light",
+                color: "primary.main",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <PeopleRoundedIcon sx={{ fontSize: 20 }} />
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Stack direction="row" spacing={1} alignItems="baseline" useFlexGap>
+                <Typography
+                  variant="h6"
+                  fontWeight={700}
+                  sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
+                >
+                  Your chum list
+                </Typography>
+                {(onNewChums.length > 0 || privateContacts.length > 0) && (
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: "text.secondary",
+                      fontVariantNumeric: "tabular-nums",
+                      fontSize: "0.8125rem",
+                    }}
+                  >
+                    {onNewChums.length + privateContacts.length}
+                  </Typography>
+                )}
+              </Stack>
+              <Typography
+                variant="caption"
+                color="text.disabled"
+                sx={{ fontSize: "0.75rem", lineHeight: 1.4, display: "block" }}
+              >
+                People you&apos;ve saved. Private contacts are only visible to you.
+              </Typography>
+            </Box>
+          </Stack>
 
           {loading ? (
             <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
@@ -1016,7 +1152,21 @@ export default function ChumsClient() {
             </Box>
           ) : onNewChums.length === 0 && privateContacts.length === 0 ? (
             <EmptyState
-              icon={<PeopleRoundedIcon sx={{ fontSize: 56 }} />}
+              icon={
+                <Box
+                  sx={{
+                    width: 72,
+                    height: 72,
+                    borderRadius: "50%",
+                    bgcolor: "primary.light",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <PeopleRoundedIcon sx={{ fontSize: 36, color: "primary.main" }} />
+                </Box>
+              }
               title="No chums yet"
               description="Use the search above to find people. Chums can be invited to private plans, and having them here makes it easy to keep track of people you know."
             />

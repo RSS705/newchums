@@ -6,11 +6,13 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
 import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
+import HandshakeRoundedIcon from "@mui/icons-material/HandshakeRounded";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import { AppCard } from "@/components/ui";
 import UserAvatar from "@/components/common/UserAvatar";
+import ProfileSectionHeader from "./ProfileSectionHeader";
 
 const PAGE_SIZE = 8;
 
@@ -93,23 +95,11 @@ export default function ProfileChumsSection({ ownerHandle, viewerLoggedIn }: Pro
   return (
     <AppCard sx={{ borderRadius: { xs: 2, sm: 2.5 }, overflow: "hidden" }}>
       <Stack spacing={2}>
-        <Stack direction="row" alignItems="baseline" spacing={1}>
-          <Typography variant="h6" fontWeight={700} sx={{ fontSize: { xs: "1.0625rem", sm: "1.125rem" } }}>
-            Chums
-          </Typography>
-          {/* Subtle total-count badge differentiates the section header from
-              Communities (which omits a count, since rows enumerate visibly). */}
-          <Typography
-            variant="caption"
-            sx={{
-              color: "text.secondary",
-              fontVariantNumeric: "tabular-nums",
-              fontSize: "0.8125rem",
-            }}
-          >
-            {total}
-          </Typography>
-        </Stack>
+        <ProfileSectionHeader
+          icon={<HandshakeRoundedIcon sx={{ fontSize: 20 }} />}
+          title="Chums"
+          meta={total}
+        />
 
         <Box
           sx={{

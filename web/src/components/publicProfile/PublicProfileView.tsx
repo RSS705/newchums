@@ -7,6 +7,9 @@ import Link from "next/link";
 import Button from "@mui/material/Button";
 import PersonAddRoundedIcon from "@mui/icons-material/PersonAddRounded";
 import PersonRemoveRoundedIcon from "@mui/icons-material/PersonRemoveRounded";
+import PersonOutlineRoundedIcon from "@mui/icons-material/PersonOutlineRounded";
+import EditRoundedIcon from "@mui/icons-material/EditRounded";
+import SparklesRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import { AppCard } from "@/components/ui";
 import { getProfileCardBg } from "@/lib/profileTheme";
 import AttendanceRecordSection from "./AttendanceRecordSection";
@@ -15,6 +18,7 @@ import ProfileBioSection from "./ProfileBioSection";
 import ProfileChumsSection from "./ProfileChumsSection";
 import ProfileCommunitiesSection from "./ProfileCommunitiesSection";
 import ProfileHobbiesSection from "./ProfileHobbiesSection";
+import ProfileSectionHeader from "./ProfileSectionHeader";
 import PublicProfileShoutoutsSection from "./PublicProfileShoutoutsSection";
 
 export type PublicProfileUser = {
@@ -27,6 +31,9 @@ export type PublicProfileUser = {
   bio: string | null;
   hobbies: string[];
   avatarUrl: string | null;
+  /** Account creation timestamp (ISO string) for the "Joined {Month Year}"
+   *  trust line in the hero. Null only on legacy rows without a created_at. */
+  memberSince: string | null;
   is_hidden_chum_list: boolean;
   is_hidden_shoutouts: boolean;
   is_hidden_communities: boolean;
@@ -54,46 +61,94 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
   const cardBg = getProfileCardBg(user.profile_theme);
   const ownerHandleSlug = user.handle?.replace(/^@/, "") ?? null;
   return (
-    <Stack spacing={{ xs: 3, sm: 4 }} sx={{ width: "100%" }}>
-      <Box sx={{ textAlign: { xs: "center", sm: "left" } }}>
-        <Typography
-          component="h1"
+    <Stack spacing={{ xs: 2.5, sm: 3 }} sx={{ width: "100%" }}>
+      {/* Owner-only orientation banner. Non-owner viewers don't see a
+          generic "Profile" page heading, the profile card itself is the
+          page identity. The banner is small, warm, and ends with a quick
+          link into Settings -> Privacy so the owner can flip visibility
+          without leaving the page. */}
+      {isOwner && (
+        <Box
           sx={{
-            fontSize: { xs: "1.75rem", sm: "2rem" },
-            fontWeight: 700,
-            lineHeight: 1.25,
-            letterSpacing: "-0.02em",
+            display: "flex",
+            alignItems: "center",
+            gap: 1.5,
+            px: { xs: 1.75, sm: 2 },
+            py: { xs: 1.25, sm: 1.5 },
+            borderRadius: 2.5,
+            border: "1px solid",
+            borderColor: "primary.light",
+            background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
           }}
         >
-          Profile
-        </Typography>
-        {isOwner && (
-          <Stack spacing={0.25} sx={{ mt: 1 }}>
+          <Box
+            sx={{
+              width: 32,
+              height: 32,
+              borderRadius: "50%",
+              bgcolor: "primary.main",
+              color: "primary.contrastText",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            <SparklesRoundedIcon sx={{ fontSize: 18 }} />
+          </Box>
+          <Typography
+            color="text.secondary"
+            sx={{ fontSize: { xs: "0.8125rem", sm: "0.875rem" }, lineHeight: 1.5, flex: 1, minWidth: 0 }}
+          >
+            This is how other people see your profile. Adjust visibility in{" "}
             <Typography
-              color="text.secondary"
-              sx={{ fontSize: { xs: "0.875rem", sm: "0.9375rem" } }}
+              component={Link}
+              href="/settings#privacy"
+              variant="inherit"
+              sx={{
+                color: "primary.dark",
+                fontWeight: 600,
+                textDecoration: "none",
+                "&:hover": { textDecoration: "underline" },
+              }}
             >
-              This is how other people see your profile. You can adjust visibility in{" "}
-              <Typography
-                component={Link}
-                href="/settings#privacy"
-                variant="inherit"
-                sx={{
-                  color: "primary.main",
-                  fontWeight: 500,
-                  textDecoration: "none",
-                  "&:hover": { textDecoration: "underline" },
-                }}
-              >
-                Settings → Privacy
-              </Typography>
-              .
+              Settings &rsaquo; Privacy
             </Typography>
-          </Stack>
-        )}
-      </Box>
+            .
+          </Typography>
+          <Button
+            component={Link}
+            href="/profile"
+            variant="text"
+            size="small"
+            startIcon={<EditRoundedIcon sx={{ fontSize: 16 }} />}
+            sx={{
+              flexShrink: 0,
+              textTransform: "none",
+              fontWeight: 600,
+              borderRadius: 2,
+              color: "primary.dark",
+              display: { xs: "none", sm: "inline-flex" },
+              "&:hover": { bgcolor: "rgba(230, 91, 19, 0.08)" },
+            }}
+          >
+            Edit profile
+          </Button>
+        </Box>
+      )}
 
-      <AppCard sx={{ borderRadius: { xs: 2, sm: 2.5 }, overflow: "hidden", backgroundColor: cardBg }}>
+      <AppCard
+        sx={{
+          borderRadius: { xs: 2.5, sm: 3 },
+          overflow: "hidden",
+          backgroundColor: cardBg,
+          border: "1px solid",
+          borderColor: "grey.200",
+          boxShadow: "0 2px 10px rgba(0,0,0,0.04)",
+          p: { xs: 2.25, sm: 3 },
+          "& > .MuiCardContent-root": { p: 0, "&:last-child": { pb: 0 } },
+        }}
+      >
         <Box
           sx={{
             display: "flex",
@@ -110,6 +165,7 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
               gender={user.gender}
               avatarUrl={user.avatarUrl}
               avatarBaseUrl={avatarBaseUrl}
+              memberSince={user.memberSince}
               viewerLoggedIn={viewerLoggedIn}
             />
           </Box>
@@ -177,10 +233,11 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
 
       {user.bio && user.bio.trim() && (
         <AppCard sx={{ borderRadius: { xs: 2, sm: 2.5 }, overflow: "hidden" }}>
-          <Stack spacing={1}>
-            <Typography variant="h6" fontWeight={700} sx={{ fontSize: { xs: "1.0625rem", sm: "1.125rem" } }}>
-              About
-            </Typography>
+          <Stack spacing={1.75}>
+            <ProfileSectionHeader
+              icon={<PersonOutlineRoundedIcon sx={{ fontSize: 22 }} />}
+              title="About"
+            />
             <ProfileBioSection bio={user.bio} />
           </Stack>
         </AppCard>
@@ -227,44 +284,84 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
         <ProfileCommunitiesSection ownerHandle={ownerHandleSlug} viewerLoggedIn={viewerLoggedIn} />
       )}
 
-      {/* Sign-in / sign-up CTA for logged-out viewers */}
+      {/* Sign-in / sign-up CTA for logged-out viewers. Warm-wash + primary
+          icon orb match the discovery and community-detail footers so the
+          viewer is greeted by one consistent product surface across every
+          public-facing page. */}
       {!viewerLoggedIn && (
-        <AppCard
+        <Box
           sx={{
-            borderRadius: { xs: 2, sm: 2.5 },
-            overflow: "hidden",
-            textAlign: "center",
-            py: { xs: 3, sm: 4 },
-            px: { xs: 2.5, sm: 4 },
+            mt: { xs: 1, sm: 1.5 },
+            p: { xs: 2.75, sm: 3.25 },
+            borderRadius: 3,
+            border: "1px solid",
+            borderColor: "primary.light",
+            background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
+            display: "flex",
+            flexDirection: { xs: "column", sm: "row" },
+            alignItems: { xs: "flex-start", sm: "center" },
+            gap: { xs: 1.5, sm: 2.5 },
           }}
         >
-          <Stack spacing={1.5} alignItems="center">
-            <Typography variant="subtitle1" fontWeight={700} sx={{ fontSize: { xs: "1rem", sm: "1.0625rem" } }}>
-              Want to see the full profile?
+          <Box
+            sx={{
+              width: 44,
+              height: 44,
+              borderRadius: "50%",
+              bgcolor: "primary.main",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+              boxShadow: "0 2px 8px rgba(230, 91, 19, 0.18)",
+            }}
+          >
+            <PersonAddRoundedIcon sx={{ color: "primary.contrastText", fontSize: 22 }} />
+          </Box>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 0.25, fontSize: "1rem" }}>
+              Connect with{" "}
+              {user.handle ? `@${user.handle.replace(/^@/, "")}` : user.displayName} on NewChums
             </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 380, lineHeight: 1.6 }}>
-              Sign in to view complete profiles, connect with people, and start planning real-world gatherings.
+            <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+              Sign up free to see the full profile, save people as Chums, and start planning real-world gatherings.
             </Typography>
-            <Stack direction="row" spacing={1.5} sx={{ mt: 0.5 }}>
-              <Button
-                component={Link}
-                href="/login"
-                variant="outlined"
-                sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3 }}
-              >
-                Sign in
-              </Button>
-              <Button
-                component={Link}
-                href="/signup"
-                variant="contained"
-                sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3 }}
-              >
-                Create an account
-              </Button>
-            </Stack>
+          </Box>
+          <Stack
+            direction="row"
+            spacing={1}
+            sx={{ flexShrink: 0, width: { xs: "100%", sm: "auto" } }}
+          >
+            <Button
+              component={Link}
+              href="/signup"
+              variant="contained"
+              sx={{
+                textTransform: "none",
+                fontWeight: 600,
+                borderRadius: 2.5,
+                boxShadow: "none",
+                flex: { xs: 1, sm: "0 0 auto" },
+                "&:hover": { boxShadow: "none", opacity: 0.92 },
+              }}
+            >
+              Sign up
+            </Button>
+            <Button
+              component={Link}
+              href="/login"
+              variant="outlined"
+              sx={{
+                textTransform: "none",
+                fontWeight: 600,
+                borderRadius: 2.5,
+                flex: { xs: 1, sm: "0 0 auto" },
+              }}
+            >
+              Sign in
+            </Button>
           </Stack>
-        </AppCard>
+        </Box>
       )}
 
       {/* TODO: Future sections, XP, badges, trust metrics, unlockables, add as separate components. */}

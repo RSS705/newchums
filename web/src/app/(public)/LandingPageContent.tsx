@@ -472,12 +472,12 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
           <Grid size={{ xs: 12, md: 6 }}>
             <Stack spacing={3}>
               <Typography
-                variant="overline"
                 sx={{
-                  color: "secondary.main",
+                  color: "primary.dark",
                   fontWeight: 700,
                   letterSpacing: "0.12em",
                   fontSize: "0.7rem",
+                  textTransform: "uppercase",
                   display: "block",
                 }}
               >
@@ -700,19 +700,39 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
               ...REVEAL_SX(organizersReveal.visible),
             }}
           >
-            <Typography
-              variant="overline"
-              sx={{
-                color: "secondary.main",
-                fontWeight: 700,
-                letterSpacing: "0.12em",
-                fontSize: "0.7rem",
-                display: "block",
-                mb: 1.5,
-              }}
+            <Stack
+              direction="row"
+              spacing={1}
+              alignItems="center"
+              justifyContent="center"
+              sx={{ mb: 1.75 }}
             >
-              For organizers
-            </Typography>
+              <Box
+                sx={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: "50%",
+                  bgcolor: "primary.main",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <CampaignRoundedIcon sx={{ color: "primary.contrastText", fontSize: 18 }} />
+              </Box>
+              <Typography
+                sx={{
+                  color: "primary.dark",
+                  fontWeight: 700,
+                  letterSpacing: "0.12em",
+                  fontSize: "0.7rem",
+                  textTransform: "uppercase",
+                }}
+              >
+                For organizers
+              </Typography>
+            </Stack>
             <Typography
               component="h2"
               variant="h2"

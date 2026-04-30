@@ -8,10 +8,14 @@ import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
 import InputAdornment from "@mui/material/InputAdornment";
 import MenuItem from "@mui/material/MenuItem";
+import Paper from "@mui/material/Paper";
 import Slider from "@mui/material/Slider";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+import InterestsRoundedIcon from "@mui/icons-material/InterestsRounded";
+import PersonOutlineRoundedIcon from "@mui/icons-material/PersonOutlineRounded";
+import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
 import dayjs from "dayjs";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -577,69 +581,159 @@ export default function ProfileClient() {
   return (
     <Stack spacing={{ xs: 3, sm: 4 }}>
       <NextStepNudge />
-      <Box
+      {/* Header. Warm-wash hero matching the rest of the logged-in
+          surfaces (Explore, Your Plans, Communities, Your Chums) so all
+          five primary tabs read as one product. Eyebrow + large H1
+          mirror the discovery-header pattern in docs/UI_Patterns.md.
+          The "View public profile" CTA on the right is the page's
+          natural primary action, taking the viewer to the read-only
+          public profile at /u/<handle> to see what other people see. */}
+      <Paper
+        variant="outlined"
         sx={{
-          display: "flex",
-          flexDirection: { xs: "column", sm: "row" },
-          alignItems: { xs: "stretch", sm: "center" },
-          justifyContent: "space-between",
-          gap: 2,
+          p: { xs: 2.5, sm: 3.5 },
+          borderRadius: 4,
+          borderColor: "primary.light",
+          background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
         }}
       >
-        <Box sx={{ textAlign: { xs: "center", sm: "left" } }}>
-          <Typography
-            component="h1"
-            sx={{
-              fontSize: { xs: "1.75rem", sm: "2rem" },
-              fontWeight: 700,
-              lineHeight: 1.25,
-              letterSpacing: "-0.02em",
-            }}
-          >
-            Profile
-          </Typography>
-          <Typography
-            color="text.secondary"
-            sx={{ mt: 0.75, fontSize: { xs: "0.875rem", sm: "0.9375rem" }, lineHeight: 1.5 }}
-          >
-            Shape how you show up on NewChums. A complete profile helps people feel comfortable planning with you.
-          </Typography>
-        </Box>
-        {canViewPublic ? (
-          <AppButton
-            component={Link}
-            href={`/u/${handleForUrl}`}
-            variant="outlined"
-            size="medium"
-            sx={{
-              alignSelf: { xs: "center", sm: "flex-end" },
-              flexShrink: 0,
-              borderRadius: 2.5,
-              textTransform: "none",
-            }}
-          >
-            View public profile
-          </AppButton>
-        ) : (
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{
-              alignSelf: { xs: "center", sm: "center" },
-              fontSize: "0.8125rem",
-              fontStyle: "italic",
-            }}
-          >
-            Set a username to enable public profile preview
-          </Typography>
-        )}
-      </Box>
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          spacing={{ xs: 2, sm: 3 }}
+          alignItems={{ xs: "stretch", sm: "flex-end" }}
+          justifyContent="space-between"
+        >
+          <Stack spacing={1.25} sx={{ flex: 1, minWidth: 0 }}>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Box
+                sx={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: "50%",
+                  bgcolor: "primary.main",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <PersonOutlineRoundedIcon sx={{ color: "primary.contrastText", fontSize: 18 }} />
+              </Box>
+              <Typography
+                sx={{
+                  fontSize: "0.6875rem",
+                  fontWeight: 700,
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                  color: "primary.dark",
+                }}
+              >
+                Your profile
+              </Typography>
+            </Stack>
+            <Typography
+              component="h1"
+              sx={{
+                fontSize: { xs: "1.875rem", sm: "2.375rem" },
+                fontWeight: 700,
+                lineHeight: 1.15,
+                letterSpacing: "-0.025em",
+                color: "text.primary",
+              }}
+            >
+              Profile
+            </Typography>
+            <Typography
+              variant="body1"
+              color="text.secondary"
+              sx={{
+                fontSize: { xs: "0.9375rem", sm: "1rem" },
+                lineHeight: 1.6,
+                maxWidth: 560,
+              }}
+            >
+              Shape how you show up on NewChums. A complete profile helps people feel comfortable planning with you.
+            </Typography>
+          </Stack>
+          {canViewPublic ? (
+            <AppButton
+              component={Link}
+              href={`/u/${handleForUrl}`}
+              variant="outlined"
+              size="medium"
+              sx={{
+                flexShrink: 0,
+                alignSelf: { xs: "stretch", sm: "flex-end" },
+                borderRadius: 2.5,
+                textTransform: "none",
+                fontWeight: 600,
+                px: 3,
+                py: 1.125,
+                fontSize: "0.9375rem",
+                bgcolor: "background.paper",
+                borderColor: "primary.main",
+                color: "primary.dark",
+                "&:hover": {
+                  bgcolor: "background.paper",
+                  borderColor: "primary.main",
+                  opacity: 0.9,
+                },
+              }}
+            >
+              View public profile
+            </AppButton>
+          ) : (
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{
+                flexShrink: 0,
+                alignSelf: { xs: "stretch", sm: "center" },
+                fontSize: "0.8125rem",
+                fontStyle: "italic",
+              }}
+            >
+              Set a username to enable public profile preview
+            </Typography>
+          )}
+        </Stack>
+      </Paper>
 
       <AppCard sx={{ borderRadius: { xs: 2.5, sm: 3 }, overflow: "hidden" }}>
-        <Stack spacing={{ xs: 1, sm: 2.5 }}>
-          <Typography variant="h6" fontWeight={700} sx={{ fontSize: { xs: "1.0625rem", sm: "1.125rem" } }}>
-            About you
-          </Typography>
+        <Stack spacing={{ xs: 2, sm: 2.5 }}>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: "50%",
+                bgcolor: "primary.light",
+                color: "primary.main",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <PersonOutlineRoundedIcon sx={{ fontSize: 22 }} />
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography
+                variant="h6"
+                fontWeight={700}
+                sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
+              >
+                About you
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.disabled"
+                sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
+              >
+                Identity, bio, and how the page looks.
+              </Typography>
+            </Box>
+          </Stack>
           <Stack direction={{ xs: "column", sm: "row" }} spacing={{ xs: 2, sm: 2 }} alignItems={{ xs: "center", sm: "flex-start" }}>
             <Stack spacing={2} flex={1} minWidth={0} order={{ xs: 1, sm: 0 }}>
               <AppTextField
@@ -779,14 +873,39 @@ export default function ProfileClient() {
 
       <AppCard id="profile-section-location" sx={{ borderRadius: { xs: 2.5, sm: 3 }, overflow: "hidden" }}>
         <Stack spacing={2.5}>
-          <Box>
-            <Typography variant="h6" fontWeight={700} sx={{ fontSize: { xs: "1.0625rem", sm: "1.125rem" } }}>
-              Location
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, lineHeight: 1.5 }}>
-              Your location is used to surface nearby plans and match you with local gatherings.
-            </Typography>
-          </Box>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: "50%",
+                bgcolor: "primary.light",
+                color: "primary.main",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <PlaceRoundedIcon sx={{ fontSize: 22 }} />
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography
+                variant="h6"
+                fontWeight={700}
+                sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
+              >
+                Location
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.disabled"
+                sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
+              >
+                Used to surface nearby plans and match you with local gatherings.
+              </Typography>
+            </Box>
+          </Stack>
           <PlacesAutocompleteInput
             value={homeAddress}
             onChange={(v) => {
@@ -821,14 +940,53 @@ export default function ProfileClient() {
 
       <AppCard sx={{ borderRadius: { xs: 2.5, sm: 3 }, overflow: "hidden" }}>
         <Stack spacing={2.5}>
-          <Box>
-            <Typography variant="h6" fontWeight={700} sx={{ fontSize: { xs: "1.0625rem", sm: "1.125rem" } }}>
-              Hobbies
-            </Typography>
-            <Typography color="text.secondary" variant="body2" sx={{ mt: 0.5, lineHeight: 1.5 }}>
-              Hobbies shape which plans appear in your feed and how you're matched with gatherings.
-            </Typography>
-          </Box>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: "50%",
+                bgcolor: "primary.light",
+                color: "primary.main",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <InterestsRoundedIcon sx={{ fontSize: 22 }} />
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Stack direction="row" spacing={1} alignItems="baseline" useFlexGap>
+                <Typography
+                  variant="h6"
+                  fontWeight={700}
+                  sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
+                >
+                  Hobbies
+                </Typography>
+                {interestItems.length > 0 && (
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: "text.secondary",
+                      fontVariantNumeric: "tabular-nums",
+                      fontSize: "0.8125rem",
+                    }}
+                  >
+                    {interestItems.length}
+                  </Typography>
+                )}
+              </Stack>
+              <Typography
+                variant="caption"
+                color="text.disabled"
+                sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
+              >
+                Shape which plans appear in your feed and how you&apos;re matched with gatherings.
+              </Typography>
+            </Box>
+          </Stack>
           <HobbyPickerField
             value={interestItems}
             onChange={setInterestItems}
@@ -862,15 +1020,20 @@ export default function ProfileClient() {
             handleStatus === "checking")
         }
         sx={{
-          py: { xs: 1.25, sm: 1 },
+          py: { xs: 1.5, sm: 1.25 },
           borderRadius: 2.5,
           textTransform: "none",
+          fontWeight: 700,
+          fontSize: "0.9375rem",
+          boxShadow: "0 4px 14px rgba(230, 91, 19, 0.25)",
+          "&:hover": { boxShadow: "0 6px 18px rgba(230, 91, 19, 0.32)", opacity: 0.96 },
+          "&.Mui-disabled": { boxShadow: "none" },
         }}
       >
         {saving
-          ? "Saving…"
+          ? "Saving..."
           : handle.trim() !== (profile?.username ?? "").replace(/^@/, "") && handleStatus === "checking"
-            ? "Checking handle…"
+            ? "Checking handle..."
             : "Save profile"}
       </AppButton>
 

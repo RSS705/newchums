@@ -7,8 +7,15 @@ import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
+import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+import LightbulbOutlinedIcon from "@mui/icons-material/LightbulbOutlined";
+import MailOutlineRoundedIcon from "@mui/icons-material/MailOutlineRounded";
+import PersonOutlineRoundedIcon from "@mui/icons-material/PersonOutlineRounded";
+import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
+import ShieldOutlinedIcon from "@mui/icons-material/ShieldOutlined";
+import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
@@ -272,32 +279,110 @@ export default function SettingsClient() {
 
   return (
     <Stack spacing={{ xs: 3, sm: 4 }}>
-      <Box sx={{ textAlign: { xs: "center", sm: "left" } }}>
-        <Typography
-          component="h1"
-          sx={{
-            fontSize: { xs: "1.75rem", sm: "2rem" },
-            fontWeight: 700,
-            lineHeight: 1.25,
-            letterSpacing: "-0.02em",
-          }}
-        >
-          Settings
-        </Typography>
-        <Stack spacing={0.25} sx={{ mt: 1 }}>
+      {/* Header. Warm-wash hero matching the rest of the logged-in
+          surfaces (Explore, Your Plans, Communities, Your Chums,
+          Profile, plan detail, Roadmap) so the settings page slots
+          into the same product shell. No right-side CTA: settings is
+          a passive admin surface, the actions live inside each card. */}
+      <Paper
+        variant="outlined"
+        sx={{
+          p: { xs: 2.5, sm: 3.5 },
+          borderRadius: 4,
+          borderColor: "primary.light",
+          background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
+        }}
+      >
+        <Stack spacing={1.25}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Box
+              sx={{
+                width: 28,
+                height: 28,
+                borderRadius: "50%",
+                bgcolor: "primary.main",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <SettingsRoundedIcon sx={{ color: "primary.contrastText", fontSize: 18 }} />
+            </Box>
+            <Typography
+              sx={{
+                fontSize: "0.6875rem",
+                fontWeight: 700,
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                color: "primary.dark",
+              }}
+            >
+              Preferences
+            </Typography>
+          </Stack>
           <Typography
-            color="text.secondary"
-            sx={{ fontSize: { xs: "0.875rem", sm: "0.9375rem" } }}
+            component="h1"
+            sx={{
+              fontSize: { xs: "1.875rem", sm: "2.375rem" },
+              fontWeight: 700,
+              lineHeight: 1.15,
+              letterSpacing: "-0.025em",
+              color: "text.primary",
+            }}
           >
-            Manage your account, notifications, and preferences.
+            Settings
+          </Typography>
+          <Typography
+            variant="body1"
+            color="text.secondary"
+            sx={{
+              fontSize: { xs: "0.9375rem", sm: "1rem" },
+              lineHeight: 1.6,
+              maxWidth: 560,
+            }}
+          >
+            Manage your account, notifications, and privacy. Changes save automatically unless noted.
           </Typography>
         </Stack>
-      </Box>
+      </Paper>
 
       {/* Account */}
       <AppCard id="account">
         <Stack spacing={2.5}>
-          <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>Account</Typography>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: "50%",
+                bgcolor: "primary.light",
+                color: "primary.main",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <PersonOutlineRoundedIcon sx={{ fontSize: 22 }} />
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography
+                variant="h6"
+                fontWeight={700}
+                sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
+              >
+                Account
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.disabled"
+                sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
+              >
+                Email and password used to sign in.
+              </Typography>
+            </Box>
+          </Stack>
           <AppTextField
             label="Email"
             value={email}
@@ -370,12 +455,39 @@ export default function SettingsClient() {
       {/* Notifications */}
       <AppCard>
         <Stack spacing={2.5}>
-          <Box>
-            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>Notifications</Typography>
-            <Typography color="text.secondary" variant="body2" sx={{ mt: 0.75, lineHeight: 1.6 }}>
-              Choose which email notifications you&apos;d like to receive.
-            </Typography>
-          </Box>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: "50%",
+                bgcolor: "primary.light",
+                color: "primary.main",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <MailOutlineRoundedIcon sx={{ fontSize: 22 }} />
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography
+                variant="h6"
+                fontWeight={700}
+                sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
+              >
+                Notifications
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.disabled"
+                sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
+              >
+                Choose which email notifications you&apos;d like to receive.
+              </Typography>
+            </Box>
+          </Stack>
           {NOTIFICATION_TYPES.map((type, index) => {
             const enabled = notificationPrefs[type.key]?.enabled ?? true;
             return (
@@ -395,12 +507,39 @@ export default function SettingsClient() {
       {/* Privacy */}
       <AppCard id="privacy">
         <Stack spacing={2.5}>
-          <Box>
-            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>Privacy</Typography>
-            <Typography color="text.secondary" variant="body2" sx={{ mt: 0.75, lineHeight: 1.6 }}>
-              Control how your profile appears to others. Some options may affect your discoverability.
-            </Typography>
-          </Box>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: "50%",
+                bgcolor: "primary.light",
+                color: "primary.main",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <ShieldOutlinedIcon sx={{ fontSize: 22 }} />
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography
+                variant="h6"
+                fontWeight={700}
+                sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
+              >
+                Privacy
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.disabled"
+                sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
+              >
+                Control how your profile appears to others. Some options may affect discoverability.
+              </Typography>
+            </Box>
+          </Stack>
           <PrivacyToggleRow
             title="Hide me from NewChums search and discovery"
             description="Your profile won't appear in searches or discovery features, and others won't be able to add you through search. If you join a plan, attendees can still view your profile."
@@ -463,12 +602,39 @@ export default function SettingsClient() {
       {/* Tips & guidance */}
       <AppCard>
         <Stack spacing={2.5}>
-          <Box>
-            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>Tips &amp; guidance</Typography>
-            <Typography color="text.secondary" variant="body2" sx={{ mt: 0.75, lineHeight: 1.6 }}>
-              Control whether NewChums shows you helpful next-step tips as you use the product.
-            </Typography>
-          </Box>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: "50%",
+                bgcolor: "primary.light",
+                color: "primary.main",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <LightbulbOutlinedIcon sx={{ fontSize: 22 }} />
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography
+                variant="h6"
+                fontWeight={700}
+                sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
+              >
+                Tips &amp; guidance
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.disabled"
+                sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
+              >
+                Control whether NewChums shows helpful next-step tips as you use the product.
+              </Typography>
+            </Box>
+          </Stack>
           <PrivacyToggleRow
             title="Turn off tutorial tips"
             description="When enabled, NewChums will not show next-step guidance tips across the app. You can re-enable them at any time."
@@ -493,12 +659,40 @@ export default function SettingsClient() {
       {/* Danger zone */}
       <AppCard sx={{ borderColor: "error.light", borderWidth: 1, borderStyle: "solid" }}>
         <Stack spacing={2}>
-          <Typography variant="h6" fontWeight={700} color="error.dark" sx={{ fontSize: "1.0625rem" }}>
-            Danger zone
-          </Typography>
-          <Typography color="text.secondary" variant="body2" sx={{ lineHeight: 1.6 }}>
-            Permanently delete your account and all associated data. This action cannot be undone.
-          </Typography>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: "50%",
+                bgcolor: "error.light",
+                color: "error.dark",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <WarningAmberRoundedIcon sx={{ fontSize: 22 }} />
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography
+                variant="h6"
+                fontWeight={700}
+                color="error.dark"
+                sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
+              >
+                Danger zone
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.disabled"
+                sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
+              >
+                Permanently delete your account and all associated data. This action cannot be undone.
+              </Typography>
+            </Box>
+          </Stack>
           <Button
             variant="outlined"
             color="error"
