@@ -297,9 +297,9 @@ const EventCard = React.memo(function EventCard({
 
           {/* Community attribution */}
           {event.community && (
-            <Stack direction="row" alignItems="center" spacing={0.5} sx={{ mb: 1.75 }}>
-              <GroupsRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
-              <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.75rem" }}>
+            <Stack direction="row" alignItems="flex-start" spacing={1} sx={{ mb: 0.75 }}>
+              <GroupsRoundedIcon sx={{ fontSize: 16, color: "text.disabled", mt: "1px", flexShrink: 0, opacity: 0.85 }} />
+              <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem", lineHeight: 1.4, minWidth: 0 }}>
                 {event.community.name}
               </Typography>
             </Stack>
