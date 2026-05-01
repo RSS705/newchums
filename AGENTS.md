@@ -241,6 +241,26 @@ Unchanging rules regardless of the toggle:
 - Plan-level `visibility` governs Explore discoverability; it does not restrict direct URL access to a published plan (which is governed by the plan's access-state rules).
 - The UI label, the helper text, the stored boolean, the API payload field, and both the Explore filter and the community-feed filter must all agree. If one is changed, change the others in the same commit.
 
+### "Recently happened" social-proof feeds
+
+Three surfaces show a small section of **past public plans that already ran** as social proof: the logged-out landing page (below the public Explore feed), the logged-in Explore page (below the upcoming feed), and each community detail page (below the upcoming list). The intent is to make the app feel inhabited for visitors, store owners, and community organizers; it is **not** a personal history view.
+
+These feeds layer on top of the same visibility contract above. They never broaden audience; everything that's hidden from a viewer in upcoming Explore stays hidden in past Explore.
+
+| Surface | Endpoint | Visibility filter | QA | `hide_from_explore` |
+|---|---|---|---|---|
+| Logged-out landing + logged-in Explore | `GET /events/recently-happened/public` (auth-optional) | `visibility = 'public'` only | Always excluded (no super-admin bypass) | Excluded |
+| Community detail page | `GET /communities/:id/events?past=true` | Same visibility matrix as upcoming community feed (`public` always; `chums_only` only to host/on-NewChums chums/RSVP'd; `invite_only` never) | Excluded for normal users; super admin sees QA | Not applied (matches upcoming community feed) |
+
+Additional invariants for both:
+- `status = 'published'` (so cancellations, which flip status to `canceled`, are excluded)
+- `starts_at` strictly in the past, within a recency window (30 days for the public Explore feed, 90 days for the community feed)
+- **Participation signal**: `EXISTS (event_rsvps WHERE event_id = e.id AND user_id IS DISTINCT FROM e.host_user_id AND status = 'going')`. Plans that ran with only the host RSVP'd are not surfaced as social proof. This is the safest currently-available signal of "the plan actually happened"; the schema does not have a separate "ran" flag.
+- Past cards are visually distinct: `EventCard` rendered with `isPast` and `hideRsvp`. The date label reads "Happened today / yesterday / Apr 28" instead of upcoming language so a past card never looks joinable.
+- Past public plan cards link to `/events/:id`. The plan detail page's existing public-preview state handles past plans without modification.
+
+If the success signal needs to change (e.g. add a "did at least N people show up" filter once the schema supports it), update the predicate in both `GET /events/recently-happened/public` and the past branch of `GET /communities/:id/events` in the same change set, and update this section.
+
 ### Where the rule is enforced (update together if touching)
 
 - Stored fields: `newchums.events.hide_from_explore BOOLEAN NOT NULL DEFAULT false` and `newchums.events.community_id UUID NULL` (migration 055); plan `visibility` (`public` / `chums_only` / `invite_only`) on `newchums.events`.

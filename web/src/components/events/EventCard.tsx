@@ -67,7 +67,7 @@ type EventCardProps = {
   hideRsvp?: boolean;
 };
 
-function formatDateTime(iso: string, tz?: string | null): string {
+function formatDateTime(iso: string, tz?: string | null, isPast?: boolean): string {
   const d = new Date(iso);
   const tzOpts: Intl.DateTimeFormatOptions = tz ? { timeZone: tz } : {};
 
@@ -76,6 +76,20 @@ function formatDateTime(iso: string, tz?: string | null): string {
   // Compare calendar dates in the event's timezone (or local if unavailable)
   const eventDay = d.toLocaleDateString("en-CA", tzOpts); // YYYY-MM-DD
   const todayDay = new Date().toLocaleDateString("en-CA", tzOpts);
+
+  // Past plans get a "Happened" prefix instead of upcoming language so a
+  // social-proof card never reads as if it might still be joinable. We
+  // also skip the "Today / Tomorrow / Weekday" branches because those
+  // only make sense for plans in the future, a past plan that ran
+  // earlier today should still read "Happened Apr 28" style.
+  if (isPast) {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayDay = yesterday.toLocaleDateString("en-CA", tzOpts);
+    if (eventDay === todayDay) return `Happened today, ${timeStr}`;
+    if (eventDay === yesterdayDay) return `Happened yesterday, ${timeStr}`;
+    return `Happened ${d.toLocaleDateString(undefined, { month: "short", day: "numeric", ...tzOpts })}`;
+  }
 
   if (eventDay === todayDay) return `Today, ${timeStr}`;
 
@@ -296,7 +310,7 @@ const EventCard = React.memo(function EventCard({
             <Stack direction="row" alignItems="center" spacing={1}>
               <AccessTimeRoundedIcon sx={{ fontSize: 16, color: isPast ? "text.disabled" : "primary.main", opacity: 0.85 }} />
               <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
-                {formatDateTime(event.startsAt, event.timezone)}
+                {formatDateTime(event.startsAt, event.timezone, isPast)}
               </Typography>
             </Stack>
             <Stack direction="row" alignItems="center" spacing={1}>

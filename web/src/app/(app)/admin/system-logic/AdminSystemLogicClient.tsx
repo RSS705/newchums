@@ -75,6 +75,27 @@ export default function AdminSystemLogicClient() {
         </Bullet>
 
         <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
+          Recently happened (social proof)
+        </Typography>
+        <Bullet>
+          The logged-out homepage and the logged-in Explore page both show a small{" "}
+          <strong>Recently happened</strong> section below the main upcoming feed. It surfaces public-only plans
+          from the last 30 days that show evidence of actually having run (at least one non-host RSVP marked Going).
+          QA plans, canceled plans, chums-only and invite-only plans, and plans with the
+          &ldquo;Only show this plan to community members&rdquo; toggle on are all excluded.
+        </Bullet>
+        <Bullet>
+          Community detail pages also show a <strong>Recently happened</strong> block under their upcoming list,
+          drawn from the last 90 days. It applies the same visibility rules as the upcoming community feed
+          (public always; chums-only only to host / chums / RSVP&rsquo;d; invite-only never), so a private community&rsquo;s
+          past plans never reach non-members.
+        </Bullet>
+        <Bullet>
+          Past plan cards are visually distinct (gray banner, &ldquo;Happened today / yesterday / Apr 28&rdquo; date label,
+          no RSVP button) and link to the plan detail page so a viewer can read what happened, never RSVP retroactively.
+        </Bullet>
+
+        <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
           Add vs Edit
         </Typography>
         <Bullet>

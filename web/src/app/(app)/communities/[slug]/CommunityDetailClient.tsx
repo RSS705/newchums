@@ -30,6 +30,7 @@ import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
 import Link from "next/link";
 import { AppCard, useToast } from "@/components/ui";
 import EventCard, { type PlanEvent } from "@/components/events/EventCard";
+import RecentlyHappenedSection from "@/components/events/RecentlyHappenedSection";
 import { apiFetch, getAuthToken, getAvatarBaseUrl } from "@/lib/apiClient";
 import { effectiveCategorySet } from "@/lib/interestUtils";
 import { OperatingHoursInline, type OperatingHours } from "@/components/communities";
@@ -1911,6 +1912,25 @@ export default function CommunityDetailClient() {
                   </Grid>
                 ))}
               </Grid>
+            )}
+
+            {/* Recently happened section. Renders below the upcoming list
+                with its own heading so past gatherings can never be
+                mistaken for joinable plans. The endpoint already enforces
+                community privacy + the same visibility matrix as the
+                upcoming feed (private communities require active
+                membership / super admin to see anything; chums-only is
+                still scoped to host/chums/RSVP'd; invite-only never
+                appears). Useful especially for store / community pages
+                with few upcoming plans, since a stretch of recent
+                gatherings makes the page feel inhabited. */}
+            {community && !restricted && (
+              <RecentlyHappenedSection
+                variant="community"
+                communityId={community.id}
+                viewerHobbyCategories={viewerHobbyCategories}
+                isAuthenticated={isAuthenticated === true}
+              />
             )}
           </Stack>
         )}

@@ -289,21 +289,10 @@ export default function PublicExploreFeed() {
               >
                 {loadingMore ? "Loading..." : "Show more plans"}
               </Button>
-            ) : events.length > 0 ? (
-              <Stack spacing={1.5} alignItems="center">
-                <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center", maxWidth: 440 }}>
-                  Sign up to see more plans, get personalized recommendations, and create your own.
-                </Typography>
-                <Button
-                  component={Link}
-                  href="/signup"
-                  variant="contained"
-                  sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5 }}
-                >
-                  Create an account
-                </Button>
-              </Stack>
-            ) : null}
+            ) : null /* End-of-feed signup CTA moved to a single closing CTA
+                       below the Recently-happened section in
+                       LandingPageContent so the page tells one story:
+                       upcoming -> recently happened -> sign up. */}
           </Stack>
         </>
       )}

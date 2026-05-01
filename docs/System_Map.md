@@ -131,7 +131,7 @@ The following flows run in the API worker; the web app calls the API via `NEXT_P
 | Chum invites | `POST /chums/invite`, `POST /chums/invite/accept` | Bearer JWT |
 | Public Chums | `GET /public/users/:handle/chums` | none |
 | Public Communities | `GET /public/users/:handle/communities` | none. Lists the profile owner's active community memberships (closed communities and non-active memberships excluded). Returns `{ ok: true, communities: [], hidden: true }` when the owner has set `users.is_hidden_communities = true`. Private communities appear in the list when the owner is a member; click-through to `/communities/:slug` still applies normal access rules. |
-| Events (plans) | `POST /events`, `GET /events/mine`, `GET /events/:id` (optional auth, returns `accessState` + `shareToken`), `GET /events/explore` (auth), `GET /events/explore/public` (no auth), `PATCH /events/:id`, `POST /events/:id/cancel` | Bearer JWT (detail: optional; accepts `invite_token` or `share_token`); explore/public: no auth |
+| Events (plans) | `POST /events`, `GET /events/mine`, `GET /events/:id` (optional auth, returns `accessState` + `shareToken`), `GET /events/explore` (auth), `GET /events/explore/public` (no auth), `GET /events/recently-happened/public` (no auth, social-proof feed of recent past public plans), `PATCH /events/:id`, `POST /events/:id/cancel` | Bearer JWT (detail: optional; accepts `invite_token` or `share_token`); explore/public + recently-happened/public: no auth |
 | Lightweight plan signup | `POST /auth/plan-signup/request`, `POST /auth/magic-link/consume` | none (rate-limited + Turnstile) |
 | Explore support | `GET /explore/local-signal` | Bearer JWT |
 | Plan RSVP | `POST /events/:id/rsvp`, `POST /events/:id/confirm` | Bearer JWT |
@@ -189,6 +189,15 @@ Toggle states (per plan, shown only when a community is selected and `visibility
 - **ON (`hide_from_explore=true`):** community feed unchanged (base `visibility` still applies); in Explore the plan is limited to viewers who would already satisfy the matrix as active community members or RSVP'd viewers.
 
 Community `visibility` (`public` / `private`) gates the community page and plan feed **endpoint**, not individual-plan Explore visibility. A public plan in a private community with the toggle off still appears in Explore for non-members. Full contract: `AGENTS.md` → Plan Feed and Community Visibility Contract; `docs/Technical_Specs.md` → Communities → Plan Feeds, Community Linkage, and "Only show this plan to community members" Toggle.
+
+**"Recently happened" social-proof feeds.** Three surfaces show a small section of recent past public plans below the upcoming list:
+
+| Surface | Endpoint | Recency window |
+|---|---|---|
+| Logged-out landing + logged-in Explore | `GET /events/recently-happened/public` | last 30 days |
+| Community detail page | `GET /communities/:id/events?past=true` | last 90 days |
+
+Both apply the same visibility / QA / `hide_from_explore` filters as their upcoming counterparts (the public Explore feed and the upcoming community feed respectively). Both additionally require a participation signal, at least one **non-host RSVP marked Going**, so lonely past plans are never surfaced as social proof. Past plan cards render with `isPast` (grayscale, "Happened today / yesterday / Apr 28" label) and `hideRsvp` so they cannot be confused with joinable plans.
 
 ### Community premium direction
 

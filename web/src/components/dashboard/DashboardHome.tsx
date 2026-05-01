@@ -22,6 +22,7 @@ import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
 import Link from "next/link";
 import EventCard, { type PlanEvent } from "@/components/events/EventCard";
+import RecentlyHappenedSection from "@/components/events/RecentlyHappenedSection";
 import EventCardSkeleton from "@/components/ui/EventCardSkeleton";
 import EmptyState from "@/components/ui/EmptyState";
 import DistanceSelect from "@/components/common/DistanceSelect";
@@ -894,6 +895,20 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
             }
           />
         </Paper>
+      )}
+
+      {/* ── Recently happened (social proof, secondary section) ──────
+          Renders below the primary upcoming feed. Always shows public-only
+          past plans regardless of the viewer's community memberships, this
+          surface is intended as a "real gatherings happened recently"
+          signal, not a personal history view. Hidden entirely when there
+          are no qualifying past plans so an empty block doesn't intrude
+          on the upcoming-plans-first experience. */}
+      {!loading && initialReady && (
+        <RecentlyHappenedSection
+          variant="logged_in_explore"
+          viewerHobbyCategories={viewerHobbyCategories}
+        />
       )}
 
       {/* ── Local interest signal ──────────────────────────────────── */}

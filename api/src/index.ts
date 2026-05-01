@@ -8486,13 +8486,27 @@ app.get("/communities/:id/join-requests", async (c) => {
   }
 });
 
-/** GET /communities/:id/events, community plan feed */
+/** GET /communities/:id/events, community plan feed.
+ *
+ *  Default mode (?past omitted or false): upcoming plans (allowing a 24-hour
+ *  lookback so a plan that just ended is still visible at the top of the
+ *  feed).
+ *
+ *  Past mode (?past=true): "Recently happened" social-proof feed for the
+ *  community page, used below the upcoming list. Returns plans from the
+ *  last 90 days that are filtered to "successful" past plans (at least
+ *  one non-host RSVP marked Going). Past mode never includes plans that
+ *  start in the future. The visibility matrix and QA-isolation rules are
+ *  identical to upcoming mode; community privacy still gates the
+ *  endpoint itself, hide_from_explore is irrelevant in this feed.
+ */
 app.get("/communities/:id/events", async (c) => {
   const communityId = c.req.param("id");
   const payload = await requireAuth(c);
   const sql = getSql(c.env);
   const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 12), 1), 50);
   const offset = Math.max(Number(c.req.query("offset") ?? 0), 0);
+  const pastMode = c.req.query("past") === "true";
 
   let userId: string | null = null;
   let isSuperAdmin = false;
@@ -8513,6 +8527,22 @@ app.get("/communities/:id/events", async (c) => {
     }
 
     const communityInfo = { id: communityRows[0].id, slug: communityRows[0].slug, name: communityRows[0].name };
+
+    // Time-window filter:
+    //  - upcoming mode: plans whose start time is later than 24 hours ago
+    //    (so a plan that just ended is still visible briefly).
+    //  - past mode: plans whose start time is in the past and within the
+    //    last 90 days, with a participation signal so we don't surface
+    //    lonely past plans as social proof.
+    const timeFilter = pastMode
+      ? sql`e.starts_at < now() AND e.starts_at >= now() - interval '90 days' AND EXISTS (
+          SELECT 1 FROM newchums.event_rsvps er_signal
+          WHERE er_signal.event_id = e.id
+            AND er_signal.user_id IS DISTINCT FROM e.host_user_id
+            AND er_signal.status = 'going'
+        )`
+      : sql`e.starts_at > now() - interval '24 hours'`;
+    const orderClause = pastMode ? sql`e.starts_at DESC` : sql`e.starts_at ASC`;
 
     const events = (await sql`
       SELECT e.id, e.title, e.description, e.starts_at, e.timezone, e.location_type, e.location_name, e.location_area,
@@ -8535,7 +8565,7 @@ app.get("/communities/:id/events", async (c) => {
       FROM newchums.events e
       JOIN newchums.users u ON u.id = e.host_user_id
       LEFT JOIN newchums.event_rsvps r_viewer ON r_viewer.event_id = e.id AND r_viewer.user_id = ${userId}
-      WHERE e.community_id = ${communityId} AND e.status = 'published' AND e.starts_at > now() - interval '24 hours'
+      WHERE e.community_id = ${communityId} AND e.status = 'published' AND ${timeFilter}
         AND (COALESCE(e.is_qa, false) = false OR ${isSuperAdmin})
         -- Community linkage is organizational context only; it does not expand
         -- the audience beyond the plan's base visibility rule. See
@@ -8568,7 +8598,7 @@ app.get("/communities/:id/events", async (c) => {
             )
           ))
         )
-      ORDER BY e.starts_at ASC
+      ORDER BY ${orderClause}
       LIMIT ${limit} OFFSET ${offset}
     `) as Record<string, unknown>[];
 
@@ -10065,6 +10095,134 @@ app.get("/events/explore", async (c) => {
     return c.json({ ok: true, events, hasMore });
   } catch (err) {
     console.error("[GET /events/explore]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** GET /events/recently-happened/public, social-proof feed of recent past public plans.
+ *
+ *  No auth required. Returns a small set of public-visibility plans that
+ *  already ran in the last 30 days and that show evidence of actually
+ *  running (at least one non-host RSVP marked Going). Used by both the
+ *  logged-out landing page and the logged-in Explore page as a secondary
+ *  "Recently happened" section, so visitors, stores, and organizers can
+ *  see that real gatherings are happening through NewChums.
+ *
+ *  Privacy contract is identical to GET /events/explore/public:
+ *    - visibility = 'public' only, never chums_only or invite_only
+ *    - hide_from_explore = false (the "Only show this plan to community
+ *      members" toggle removes the plan from this social-proof feed too)
+ *    - is_qa = false (QA isolation is preserved on every surface; no
+ *      super-admin bypass here, since social proof is intended for the
+ *      normal user-visible discovery experience)
+ *    - status = 'published' (cancellation flips status to 'canceled' so
+ *      this also excludes canceled plans)
+ *    - exposes only privacy-safe fields (location_area, no exact
+ *      address / lat-lng / online link)
+ *
+ *  "Successful" signal: at least one non-host RSVP marked Going. This is
+ *  the cleanest indicator currently available in the schema; we don't
+ *  have a separate "actually ran" flag, so we treat a non-host attendee
+ *  as evidence the plan happened. Plans where only the host RSVP'd are
+ *  filtered out so we never surface lonely past plans as social proof.
+ */
+app.get("/events/recently-happened/public", async (c) => {
+  const sql = getSql(c.env);
+
+  const pageLimit = Math.min(Math.max(Number(c.req.query("limit") ?? 6), 1), 12);
+  const lookbackDays = 30;
+  const now = new Date();
+  const since = new Date(now.getTime() - lookbackDays * 24 * 60 * 60 * 1000);
+
+  try {
+    const rows = (await sql`
+      SELECT
+        e.id, e.title, e.description, e.starts_at, e.timezone, e.location_type,
+        e.location_area, e.max_seats, e.visibility, e.status, e.banner_key,
+        e.community_id,
+        COALESCE(
+          (SELECT json_agg(json_build_object('name', ii.name, 'slug', ii.slug, 'category', ii.category))
+           FROM newchums.event_interests ei2
+           JOIN newchums.interests ii ON ii.id = ei2.interest_id
+           WHERE ei2.event_id = e.id AND ii.is_deleted = false),
+          '[]'::json
+        ) AS hobbies,
+        i.name AS interest_name, i.slug AS interest_slug,
+        h.name AS host_name, h.username AS host_username,
+        co.id AS community_pk, co.slug AS community_slug, co.name AS community_name,
+        (SELECT COUNT(*)::int FROM newchums.event_rsvps er WHERE er.event_id = e.id AND er.status = 'going') AS going_count
+      FROM newchums.events e
+      LEFT JOIN newchums.interests i ON i.id = e.interest_id
+      LEFT JOIN newchums.users h ON h.id = e.host_user_id
+      LEFT JOIN newchums.communities co ON co.id = e.community_id AND COALESCE(co.status, 'active') = 'active'
+      WHERE e.status = 'published'
+        AND e.starts_at < ${now.toISOString()}
+        AND e.starts_at >= ${since.toISOString()}
+        AND e.visibility = 'public'
+        AND COALESCE(e.hide_from_explore, false) = false
+        AND COALESCE(e.is_qa, false) = false
+        AND EXISTS (
+          SELECT 1 FROM newchums.event_rsvps er_signal
+          WHERE er_signal.event_id = e.id
+            AND er_signal.user_id IS DISTINCT FROM e.host_user_id
+            AND er_signal.status = 'going'
+        )
+      ORDER BY e.starts_at DESC
+      LIMIT ${pageLimit}
+    `) as Array<{
+      id: string; title: string; description: string | null; starts_at: string; timezone: string | null;
+      location_type: string; location_area: string | null;
+      max_seats: number | null; visibility: string; status: string; banner_key: string | null;
+      community_id: string | null;
+      hobbies: Array<{ name: string; slug: string }> | string;
+      interest_name: string | null; interest_slug: string | null;
+      host_name: string | null; host_username: string | null;
+      community_pk: string | null; community_slug: string | null; community_name: string | null;
+      going_count: number;
+    }>;
+
+    const events = rows.map((r) => {
+      const parsedHobbies = typeof r.hobbies === "string" ? JSON.parse(r.hobbies) : (r.hobbies ?? []);
+      const hobbyList = Array.isArray(parsedHobbies) && parsedHobbies.length > 0
+        ? parsedHobbies as Array<{ name: string; slug: string }>
+        : r.interest_name ? [{ name: r.interest_name, slug: r.interest_slug ?? "" }] : [];
+      const locationDisplay =
+        r.location_type === "online" ? "Online"
+          : r.location_area || "General area";
+      const community = r.community_pk && r.community_slug && r.community_name
+        ? { id: r.community_pk, slug: r.community_slug, name: r.community_name }
+        : null;
+      return {
+        id: r.id,
+        title: r.title,
+        description: r.description,
+        startsAt: r.starts_at,
+        timezone: r.timezone,
+        locationType: r.location_type,
+        locationDisplay,
+        locationName: null,
+        locationAddress: null,
+        onlineLink: null,
+        maxSeats: r.max_seats,
+        visibility: r.visibility,
+        status: r.status,
+        hobby: hobbyList[0]?.name ?? null,
+        hobbySlug: hobbyList[0]?.slug ?? null,
+        hobbies: hobbyList,
+        hostName: (() => { const u = r.host_username?.replace(/^@/, ""); return u ? `@${u}` : (r.host_name?.trim() || "Someone"); })(),
+        isHost: false,
+        myRsvpStatus: null,
+        goingCount: r.going_count,
+        maybeCount: 0,
+        distanceKm: null,
+        bannerKey: r.banner_key ?? null,
+        community,
+      };
+    });
+
+    return c.json({ ok: true, events });
+  } catch (err) {
+    console.error("[GET /events/recently-happened/public]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });

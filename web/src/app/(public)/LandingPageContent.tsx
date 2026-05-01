@@ -28,6 +28,7 @@ import EmojiPeopleRoundedIcon from "@mui/icons-material/EmojiPeopleRounded";
 import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
 import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
 import PublicExploreFeed from "@/components/landing/PublicExploreFeed";
+import RecentlyHappenedSection from "@/components/events/RecentlyHappenedSection";
 
 /**
  * Full public homepage content for logged-out visitors.
@@ -668,6 +669,98 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
 
       {/* ── Section 1.1: Public Explore Feed ── */}
       {!isLoggedIn && <PublicExploreFeed />}
+
+      {/* ── Sections 1.2 + 1.3: Recently happened + closing CTA ──
+          Bundled in a single wrapper that sits tight to the upcoming
+          feed (negative top margin pulls the block up so it reads as
+          a continuation of the discovery area rather than a separate
+          mini-page). The past section uses the same grid as upcoming;
+          the closing CTA is wrapped in a soft contained panel below
+          so it feels like the natural conclusion to the plan-preview
+          area rather than floating text under a single card.
+
+          Past cards never look joinable, see RecentlyHappenedSection,
+          and the section hides itself entirely when there are no
+          qualifying past plans (the wrapper still renders so the CTA
+          remains attached to the upcoming feed). Visibility / privacy
+          rules: AGENTS.md, Plan Feed and Community Visibility
+          Contract, "Recently happened" subsection. */}
+      {!isLoggedIn && (
+        <Box
+          sx={{
+            // PublicExploreFeed has its own `py: { xs: 5, sm: 7, md: 9 }`
+            // bottom padding for visual rhythm. That's intentional for
+            // when the upcoming feed is the only block, but here it
+            // creates an awkward gap before the social-proof block.
+            // A small negative top margin re-attaches the past +
+            // CTA wrapper to the upcoming feed without having to
+            // refactor PublicExploreFeed's spacing model.
+            mt: { xs: -3, sm: -4, md: -6 },
+            mb: { xs: 4, sm: 6 },
+          }}
+        >
+          <RecentlyHappenedSection variant="public_explore" />
+
+          {/* Closing CTA panel. Soft contained card so the affordance
+              feels like an intentional conclusion to the plan-preview
+              block, not detached marketing text. Visual weight is
+              intentionally lighter than the orange Section 5 CTA so
+              it reads as a calm "want more?" rather than a hard sell. */}
+          <Box
+            sx={{
+              mt: { xs: 3.5, sm: 4.5 },
+              borderRadius: 3,
+              border: "1px solid",
+              borderColor: "grey.200",
+              bgcolor: "grey.50",
+              px: { xs: 2.5, sm: 4 },
+              py: { xs: 3, sm: 4 },
+              textAlign: "center",
+            }}
+          >
+            <Stack spacing={1.25} alignItems="center" sx={{ maxWidth: 520, mx: "auto" }}>
+              <Typography
+                component="h2"
+                sx={{
+                  fontSize: { xs: "1.125rem", sm: "1.25rem" },
+                  fontWeight: 700,
+                  lineHeight: 1.3,
+                  letterSpacing: "-0.015em",
+                }}
+              >
+                Want to see more plans near you?
+              </Typography>
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ lineHeight: 1.65, fontSize: "0.9375rem" }}
+              >
+                Sign up to get personalized recommendations, RSVP, chat with attendees, and create your own.
+              </Typography>
+              <Button
+                component={Link}
+                href="/signup"
+                variant="contained"
+                color="primary"
+                sx={{
+                  mt: 0.5,
+                  px: 3.5,
+                  py: 1.25,
+                  textTransform: "none",
+                  fontWeight: 600,
+                  borderRadius: 2.5,
+                  fontSize: "0.9375rem",
+                  boxShadow: "0 4px 14px rgba(230,91,19,0.22)",
+                  "&:hover": { boxShadow: "0 6px 18px rgba(230,91,19,0.28)" },
+                  ...BTN_HOVER,
+                }}
+              >
+                Create a free account
+              </Button>
+            </Stack>
+          </Box>
+        </Box>
+      )}
 
       {/* ── Section: For Organizers ──
           Pilot-positioning section. Anchored from the top nav
