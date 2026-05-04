@@ -5211,12 +5211,15 @@ app.get("/admin/plans", async (c) => {
         e.id, e.title, e.starts_at, e.status, e.visibility,
         e.host_user_id, e.created_at, e.canceled_at, e.max_seats,
         e.location_type, e.location_name, e.location_address,
+        e.community_id, e.hide_from_explore,
+        c.name AS community_name, c.slug AS community_slug,
         h.name AS host_name, h.username AS host_username, h.email AS host_email,
         (SELECT COUNT(*)::int FROM newchums.event_rsvps er WHERE er.event_id = e.id AND er.status = 'going') AS going_count,
         (SELECT COUNT(*)::int FROM newchums.event_rsvps er WHERE er.event_id = e.id AND er.status = 'maybe') AS maybe_count,
         (SELECT COUNT(*)::int FROM newchums.event_rsvps er WHERE er.event_id = e.id) AS total_rsvps
       FROM newchums.events e
       LEFT JOIN newchums.users h ON h.id = e.host_user_id
+      LEFT JOIN newchums.communities c ON c.id = e.community_id
       WHERE e.status != 'draft'
         ${likePattern ? sql`AND (LOWER(e.title) LIKE ${likePattern} OR LOWER(COALESCE(h.name, '')) LIKE ${likePattern} OR LOWER(COALESCE(h.email, '')) LIKE ${likePattern})` : sql``}
         ${statusFilter === "published" ? sql`AND e.status = 'published' AND e.canceled_at IS NULL` : sql``}
@@ -5229,6 +5232,8 @@ app.get("/admin/plans", async (c) => {
       id: string; title: string; starts_at: string; status: string; visibility: string;
       host_user_id: string; created_at: string; canceled_at: string | null; max_seats: number | null;
       location_type: string; location_name: string | null; location_address: string | null;
+      community_id: string | null; hide_from_explore: boolean;
+      community_name: string | null; community_slug: string | null;
       host_name: string | null; host_username: string | null; host_email: string | null;
       going_count: number; maybe_count: number; total_rsvps: number;
     }>;
@@ -5278,6 +5283,81 @@ app.post("/admin/plans/:id/remove", async (c) => {
     return c.json({ ok: true });
   } catch (err) {
     console.error("[POST /admin/plans/:id/remove]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/**
+ * PATCH /admin/plans/:id/community, super admin sets or clears a plan's
+ * community link, bypassing the host-must-be-a-member check that gates
+ * `PATCH /events/:id`. Used to hand-place a plan into a community when the
+ * host isn't (yet) in it. The host is intentionally not notified, this is a
+ * back-office override and the visible plan-change diff would just be noise.
+ *
+ * Honors the `invite_only` invariant from the Plan Feed and Community
+ * Visibility Contract: invite-only plans cannot be linked to a community,
+ * and `hide_from_explore` is only meaningful while a community is linked.
+ */
+app.patch("/admin/plans/:id/community", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  const eventId = c.req.param("id");
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+
+  const sql = getSql(c.env);
+  const rawCommunityId = "community_id" in body
+    ? (body.community_id ? String(body.community_id).trim() : null)
+    : undefined;
+  if (rawCommunityId === undefined)
+    return c.json({ ok: false, error: "VALIDATION", message: "community_id is required (use null to clear)" }, 400);
+
+  const rawHideFromExplore = "hide_from_explore" in body ? body.hide_from_explore === true : undefined;
+
+  try {
+    const rows = (await sql`
+      SELECT id, visibility, community_id FROM newchums.events WHERE id = ${eventId} LIMIT 1
+    `) as { id: string; visibility: string; community_id: string | null }[];
+    if (rows.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+
+    const ev = rows[0];
+    if (ev.visibility === "invite_only" && rawCommunityId !== null)
+      return c.json({ ok: false, error: "VALIDATION", message: "Invite-only plans cannot be linked to a community" }, 400);
+
+    if (rawCommunityId !== null) {
+      const cRows = (await sql`
+        SELECT id FROM newchums.communities WHERE id = ${rawCommunityId} LIMIT 1
+      `) as { id: string }[];
+      if (cRows.length === 0)
+        return c.json({ ok: false, error: "VALIDATION", message: "Community not found" }, 400);
+    }
+
+    // When the link is cleared, the per-plan members-only toggle stops being
+    // meaningful, mirror the column-pair invariant from PATCH /events/:id.
+    const effectiveHideFromExplore: boolean = rawCommunityId === null
+      ? false
+      : (rawHideFromExplore ?? false);
+
+    await sql`
+      UPDATE newchums.events
+      SET community_id      = ${rawCommunityId}::uuid,
+          hide_from_explore = ${effectiveHideFromExplore},
+          updated_at        = NOW()
+      WHERE id = ${eventId}
+    `;
+
+    const updated = (await sql`
+      SELECT e.id, e.community_id, e.hide_from_explore, c.name AS community_name, c.slug AS community_slug
+      FROM newchums.events e
+      LEFT JOIN newchums.communities c ON c.id = e.community_id
+      WHERE e.id = ${eventId}
+      LIMIT 1
+    `) as { id: string; community_id: string | null; hide_from_explore: boolean; community_name: string | null; community_slug: string | null }[];
+
+    return c.json({ ok: true, plan: updated[0] ?? null });
+  } catch (err) {
+    console.error("[PATCH /admin/plans/:id/community]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });
