@@ -515,6 +515,24 @@ Both `invite_token` and `share_token` are persisted in `localStorage` (keys `nc_
 
 > **Agent guidance:** The `invite` state is distinct from `public`, the visitor holds a valid token but is not authenticated. The plan preview is visible but RSVP is gated behind the lightweight signup card. Do not conflate `invite` with `public`; changes to plan-details rendering should verify behavior across all four access states.
 
+**Plan share-link previews (Open Graph / Twitter metadata):** The plan-detail route at `web/src/app/(app)/events/[id]/page.tsx` exports a `generateMetadata` that fetches `GET /events/:id`, **forwarding any `?share_token=` or `?invite_token=` query params from the request URL** so the API returns the same token-backed access state a logged-out token-bearing visitor would see. The route handler does no field redaction of its own; it consumes whichever payload the API returns and treats `data.accessState` as the authoritative gate (`"invite"` or `"attending"` = token granted access; `"public"` = unauthenticated/no-token preview).
+>
+> Privacy gates layered on top of the API response:
+> - Non-`published` plans (draft/canceled): always generic fallback + noindex regardless of token.
+> - QA plans (`is_qa`): treated like `invite_only`, rendered only when `accessState === "invite"` or `"attending"` (i.e., a valid `share_token`/`invite_token` is present). Always noindex even with token. Without a valid token, generic fallback. The API itself enforces the underlying access rule via the `tokenGrantsAccess` check in `GET /events/:id`; the route handler only consumes the response.
+> - `invite_only` plans: same token-gated pattern as QA.
+> - Tokenized URLs (`?share_token=` or `?invite_token=` present): always noindex even when we render details.
+>
+> Title and copy: OG title is shaped as `"Join this plan: {short title}"` so a Discord/Slack/iMessage unfurl clearly reads as an actionable invitation. The plan title is truncated to ~65 chars at a word boundary before the action prefix is applied, so long titles don't wrap awkwardly. The browser `<title>` stays as the bare full plan title via the root `%s | NewChums` template. OG description is `"{date} • {hobby} • {venue • city/region}. View details and RSVP on NewChums."`. Date is formatted in the plan's `timezone` (the API exposes `timezone` on both the public and invite/attending response branches; without that field the formatter falls back to UTC and silently shifts the displayed time, so any plan-detail response that surfaces date/time externally must include it). The factual portion is capped at 150 chars to leave room for the action cue without Discord truncation.
+>
+> Location handling for metadata: never includes the exact street address, even when token-backed access exposes it on the page. The route handler builds the location bit from `locationName` plus a city/region derived from `locationAddress` via a duplicated `deriveApproxArea` helper (kept in sync with `api/src/lib/locationFormat.ts`). For online plans, the meeting link is suppressed and replaced with `"Online"`. For plans with no usable location data, the location bit is omitted from the description.
+>
+> Image handling: **the route handler ships no `og:image` for plan pages.** Wide host-uploaded banners squashed badly when Discord cropped to its 16:9 unfurl box, so the previous behavior (banner as raw OG image) was retired. A 1200×630 auto-generated share card is a deferred enhancement (see "Auto-card status" below). For now, banner-bearing and banner-less plans both ship `openGraph.images: []` and `twitter.images: []` **explicitly**, which (a) overrides Next's deep-merge of the root layout's `/logo-horizontal-black.png` so the wordmark never shows up as a "giant logo" embed, and (b) gives Discord/Slack a clean text-focused embed with title + description + site name. The same explicit empty-array override applies to the generic + private fallback metadata. Twitter card is `summary` (no large image).
+>
+> Auto-card status: dynamic 1200×630 OG card generation (via `next/og` ImageResponse, an SVG route, or similar) is not currently implemented. ImageResponse + Satori on OpenNext-Cloudflare has unverified font-loading behavior and would add request-time risk; SVG-based OG images don't render reliably across all unfurlers (Twitter in particular). Hosts will not be asked to upload a second image; if/when an auto-card is added, it will be generated entirely from existing plan data.
+>
+> Generic fallback (`FALLBACK_METADATA` / `PRIVATE_FALLBACK_METADATA`): plain "NewChums" title and a single-sentence product description, no images. Used when the API can't be reached or the privacy gates fire.
+
 ### Account deletion
 
 - **Endpoint:** `DELETE /account` (auth required).
