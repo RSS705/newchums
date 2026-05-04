@@ -6896,7 +6896,7 @@ app.get("/public/users/:handle/communities", async (c) => {
       slug: r.slug,
       name: r.name,
       avatarUrl: r.avatar_key && c.env.MEDIA_BUCKET
-        ? `/communities/${r.id}/avatar?v=0`
+        ? `/communities/${r.id}/avatar?v=${encodeURIComponent(r.avatar_key.split("/").pop() ?? "")}`
         : null,
       visibility: r.visibility,
       isOnline: r.is_online === true,

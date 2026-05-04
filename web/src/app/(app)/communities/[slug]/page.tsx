@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import CommunityDetailClient from "./CommunityDetailClient";
+import { communityAvatarUrl, communityBannerUrl } from "@/lib/apiClient";
 
 type PageProps = {
   params: Promise<{ slug: string }>;
@@ -84,11 +85,11 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
     const canonicalPath = `/communities/${encodeURIComponent(slug)}`;
     const communityId = c.id;
-    const imageUrl = communityId && c.banner_key
-      ? `${base}/communities/${encodeURIComponent(communityId)}/banner`
-      : communityId && c.avatar_key
-        ? `${base}/communities/${encodeURIComponent(communityId)}/avatar`
-        : undefined;
+    const imageUrl = communityId
+      ? (communityBannerUrl(communityId, c.banner_key, base)
+          ?? communityAvatarUrl(communityId, c.avatar_key, base)
+          ?? undefined)
+      : undefined;
 
     return {
       title: name,

@@ -86,6 +86,9 @@ import { isDuplicate, nameToSlug } from "@/lib/interestUtils";
 import { notifyObjectivesChanged } from "@/components/objectives/NextStepNudge";
 import PlanFeedback from "@/components/events/PlanFeedback";
 import PlanSignupCard from "@/components/events/PlanSignupCard";
+import AvailabilityPicker, {
+  type AvailabilitySelection,
+} from "@/components/events/AvailabilityPicker";
 
 /** Meeting URLs pasted without a scheme should still open in the browser. */
 function normalizeMeetingLinkHref(raw: string): string {
@@ -313,18 +316,19 @@ export default function EventDetailClient() {
   const [confirmSubmitting, setConfirmSubmitting] = useState(false);
   // Local override for confirmation status, provides immediate UI feedback before refresh() completes
   const [localConfirmStatus, setLocalConfirmStatus] = useState<string | null>(null);
-  const [showAltTimeForm, setShowAltTimeForm] = useState(false);
-  const [altStartDate, setAltStartDate] = useState<Dayjs | null>(null);
-  const [altEndDate, setAltEndDate] = useState<Dayjs | null>(null);
-  const [altStartTime, setAltStartTime] = useState<Dayjs | null>(null);
-  const [altEndTime, setAltEndTime] = useState<Dayjs | null>(null);
-  const [altNote, setAltNote] = useState("");
+  // Edit-form state. The new picker manages its own multi-date state internally;
+  // these are only used while editing an existing alt-time entry inline.
+  const [altEditDate, setAltEditDate] = useState<Dayjs | null>(null);
+  const [altEditStartTime, setAltEditStartTime] = useState<Dayjs | null>(null);
+  const [altEditEndTime, setAltEditEndTime] = useState<Dayjs | null>(null);
+  const [altEditAnytime, setAltEditAnytime] = useState(false);
+  const [altEditNote, setAltEditNote] = useState("");
   const [altEditingId, setAltEditingId] = useState<string | null>(null);
   const [altSubmitting, setAltSubmitting] = useState(false);
   const [altDeleting, setAltDeleting] = useState<string | null>(null);
   const [promoteConfirmTime, setPromoteConfirmTime] = useState<string | null>(null);
   const [promoting, setPromoting] = useState(false);
-  const altTimeScrollRef = useRef<HTMLDivElement>(null);
+  const altEditFormRef = useRef<HTMLDivElement>(null);
 
   // Invite people state
   const [showInviteForm, setShowInviteForm] = useState(false);
@@ -1314,106 +1318,128 @@ export default function EventDetailClient() {
     setQuickConfirming(false);
   };
 
-  const resetAltForm = () => {
-    setAltStartDate(null);
-    setAltEndDate(null);
-    setAltStartTime(null);
-    setAltEndTime(null);
-    setAltNote("");
+  const resetAltEditForm = () => {
+    setAltEditDate(null);
+    setAltEditStartTime(null);
+    setAltEditEndTime(null);
+    setAltEditAnytime(false);
+    setAltEditNote("");
     setAltEditingId(null);
-    setShowAltTimeForm(false);
   };
 
-  const handleAltTimeSubmit = async () => {
-    if (!altStartDate || !altStartTime) {
-      toast.error("Please pick a date and start time");
-      return;
-    }
-
-    const dayCount =
-      altEndDate && altEndDate.isAfter(altStartDate, "day")
-        ? altEndDate.diff(altStartDate, "day") + 1
-        : 1;
-
-    if (dayCount > 14) {
-      toast.error("Date range can be at most 14 days");
-      return;
-    }
-
+  /**
+   * Send one POST per selected date. "Anytime start" is encoded as a 24h
+   * window from local-midnight to next-day local-midnight, which is a valid
+   * payload under the existing API contract and renders cleanly in the
+   * existing list/overlap logic. A specific window passes start/end as-is.
+   */
+  const handleAvailabilityShare = async (entries: AvailabilitySelection[]) => {
+    if (entries.length === 0 || !event) return;
     setAltSubmitting(true);
+    let created = 0;
     try {
-      const noteVal = altNote.trim() || null;
-      const startH = altStartTime.hour();
-      const startM = altStartTime.minute();
-      const endH = altEndTime?.hour();
-      const endM = altEndTime?.minute();
-
-      if (altEditingId) {
-        const suggestedAt = altStartDate
-          .hour(startH)
-          .minute(startM)
-          .second(0)
-          .millisecond(0)
-          .toISOString();
-        const endsAt =
-          endH != null && endM != null
-            ? altStartDate.hour(endH).minute(endM).second(0).millisecond(0).toISOString()
-            : null;
-        const res = await apiFetch(`/events/${eventId}/alt-time/${altEditingId}`, {
-          auth: true,
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ suggested_at: suggestedAt, ends_at: endsAt, note: noteVal }),
-        });
-        const data = (await res.json()) as { ok: boolean; message?: string };
-        if (data.ok) {
-          toast.success(
-            event?.altTimesMode === "availability"
-              ? "Availability updated"
-              : "Alternate time updated"
-          );
-          resetAltForm();
-          refresh();
-        } else toast.error(data.message ?? "Error");
-      } else {
-        let created = 0;
-        for (let i = 0; i < dayCount; i++) {
-          const day = altStartDate.add(i, "day");
-          const suggestedAt = day
-            .hour(startH)
-            .minute(startM)
+      for (const entry of entries) {
+        const day = entry.date.startOf("day");
+        let suggestedAt: string;
+        let endsAt: string | null;
+        if (entry.start && entry.end) {
+          suggestedAt = day
+            .hour(entry.start.hour())
+            .minute(entry.start.minute())
             .second(0)
             .millisecond(0)
             .toISOString();
-          const endsAt =
-            endH != null && endM != null
-              ? day.hour(endH).minute(endM).second(0).millisecond(0).toISOString()
-              : null;
-          const res = await apiFetch(`/events/${eventId}/alt-time`, {
-            auth: true,
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ suggested_at: suggestedAt, ends_at: endsAt, note: noteVal }),
-          });
-          const data = (await res.json()) as { ok: boolean; message?: string };
-          if (!data.ok) {
-            toast.error(data.message ?? "Error");
-            break;
-          }
-          created++;
+          endsAt = day
+            .hour(entry.end.hour())
+            .minute(entry.end.minute())
+            .second(0)
+            .millisecond(0)
+            .toISOString();
+        } else {
+          suggestedAt = day.toISOString();
+          endsAt = day.add(1, "day").toISOString();
         }
-        if (created > 0) {
-          const addedLabel =
-            event?.altTimesMode === "availability" ? "Availability" : "Alternate time";
-          toast.success(
-            created === 1
-              ? `${addedLabel} added`
-              : `${created} ${addedLabel.toLowerCase()}${created > 1 ? " entries" : ""} added`
-          );
-          resetAltForm();
-          refresh();
+        const res = await apiFetch(`/events/${eventId}/alt-time`, {
+          auth: true,
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ suggested_at: suggestedAt, ends_at: endsAt, note: null }),
+        });
+        const data = (await res.json()) as { ok: boolean; message?: string };
+        if (!data.ok) {
+          toast.error(data.message ?? "Error");
+          break;
         }
+        created++;
       }
+      if (created > 0) {
+        const addedLabel =
+          event.altTimesMode === "availability" ? "Availability" : "Alternate time";
+        toast.success(
+          created === 1
+            ? `${addedLabel} shared`
+            : `${created} ${addedLabel.toLowerCase()} entries shared`
+        );
+        refresh();
+      }
+    } catch {
+      toast.error("Network error");
+    }
+    setAltSubmitting(false);
+  };
+
+  const handleAltEditSave = async () => {
+    if (!altEditingId || !altEditDate) return;
+    if (!altEditAnytime && (!altEditStartTime || !altEditEndTime)) {
+      toast.error("Pick a time window or switch to Anytime");
+      return;
+    }
+    if (
+      !altEditAnytime &&
+      altEditStartTime &&
+      altEditEndTime &&
+      !altEditEndTime.isAfter(altEditStartTime)
+    ) {
+      toast.error("End time must be after start time");
+      return;
+    }
+    setAltSubmitting(true);
+    try {
+      const day = altEditDate.startOf("day");
+      let suggestedAt: string;
+      let endsAt: string | null;
+      if (altEditAnytime || !altEditStartTime || !altEditEndTime) {
+        suggestedAt = day.toISOString();
+        endsAt = day.add(1, "day").toISOString();
+      } else {
+        suggestedAt = day
+          .hour(altEditStartTime.hour())
+          .minute(altEditStartTime.minute())
+          .second(0)
+          .millisecond(0)
+          .toISOString();
+        endsAt = day
+          .hour(altEditEndTime.hour())
+          .minute(altEditEndTime.minute())
+          .second(0)
+          .millisecond(0)
+          .toISOString();
+      }
+      const noteVal = altEditNote.trim() || null;
+      const res = await apiFetch(`/events/${eventId}/alt-time/${altEditingId}`, {
+        auth: true,
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ suggested_at: suggestedAt, ends_at: endsAt, note: noteVal }),
+      });
+      const data = (await res.json()) as { ok: boolean; message?: string };
+      if (data.ok) {
+        toast.success(
+          event?.altTimesMode === "availability" ? "Availability updated" : "Alternate time updated"
+        );
+        resetAltEditForm();
+        refresh();
+      } else toast.error(data.message ?? "Error");
     } catch {
       toast.error("Network error");
     }
@@ -1441,17 +1467,31 @@ export default function EventDetailClient() {
   };
 
   const handleAltTimeEdit = (entry: AltTimeEntry) => {
-    setAltStartDate(dayjs(entry.suggestedAt));
-    setAltEndDate(null);
-    setAltStartTime(dayjs(entry.suggestedAt));
-    setAltEndTime(entry.endsAt ? dayjs(entry.endsAt) : null);
-    setAltNote(entry.note ?? "");
+    const start = dayjs(entry.suggestedAt);
+    const end = entry.endsAt ? dayjs(entry.endsAt) : null;
+    const isAnytime = !!end && end.diff(start, "hour", true) >= 23;
+    setAltEditDate(start.startOf("day"));
+    setAltEditAnytime(isAnytime);
+    setAltEditStartTime(isAnytime ? null : start);
+    setAltEditEndTime(isAnytime ? null : end);
+    setAltEditNote(entry.note ?? "");
     setAltEditingId(entry.id);
-    setShowAltTimeForm(true);
-    requestAnimationFrame(() => {
-      altTimeScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-    });
+    // Scroll handled by an effect on altEditingId so the form has mounted
+    // before we scrollIntoView; the previous scrollTo({top:0}) was a no-op
+    // because the wrapper Box is not a scroll container.
   };
+
+  // Scroll the inline edit form into view when entering edit mode. Without
+  // this the form mounts above the entries list and the user often misses
+  // that anything happened, especially on mobile.
+  useEffect(() => {
+    if (!altEditingId) return;
+    const el = altEditFormRef.current;
+    if (!el) return;
+    requestAnimationFrame(() => {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, [altEditingId]);
 
   const handlePromoteAltTime = async () => {
     if (!promoteConfirmTime) return;
@@ -2082,8 +2122,10 @@ export default function EventDetailClient() {
             preview (icon badge + Preview chip + explainer + gated CTA)
             rather than a disabled module so a logged-out visitor can see
             this is a real capability the product offers, not an empty
-            state. Hidden for canceled or past plans. */}
-        {!pubIsCanceled && !pubIsPast && (
+            state. Hidden for canceled or past plans, and for plans where
+            the host has disabled alternate-time suggestions, since
+            advertising the feature on those plans would be misleading. */}
+        {!pubIsCanceled && !pubIsPast && event.allowAltTimes && (
           <AppCard>
             <Stack spacing={1.75}>
               <Stack direction="row" spacing={1.75} alignItems="center">
@@ -4102,16 +4144,44 @@ export default function EventDetailClient() {
         !isCanceled &&
         !isPast &&
         (() => {
+          // Anyone who's part of this plan can both share availability and
+          // see what others have shared: the host, anyone with any RSVP state
+          // (going / maybe / cant_make_it), and anyone who's been invited.
+          // Keeping these aligned avoids edge cases where a viewer can submit
+          // an entry but then lose the ability to edit or delete it just by
+          // changing their RSVP.
           const canSuggest =
-            event.isHost ||
-            viewerRsvpStatus === "going" ||
-            viewerRsvpStatus === "maybe" ||
-            event.isInvited;
+            event.isHost || !!viewerRsvpStatus || event.isInvited;
           const isAvailMode = event.altTimesMode === "availability";
+          // Token-backed visitors (share / invite link) get visibility too:
+          // a share link implies a trusted recipient, even when there's no
+          // RSVP or invite row yet.
+          const arrivedViaToken =
+            !!inviteTokenRef.current || !!shareTokenRef.current;
+          const canSeeSharedEntries = canSuggest || arrivedViaToken;
           type OverlapWindow = { startMs: number; endMs: number; entries: AltTimeEntry[] };
 
           const fmtTime = (d: Date) =>
             d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", hour12: true });
+
+          // "Anytime start" entries are submitted as a ~24h window (local
+          // midnight to next-day local midnight in the submitter's timezone).
+          // Detect by duration alone so viewers in a different timezone still
+          // see "Anytime", not "4:00 AM - 4:00 AM".
+          const isAnytimeWindow = (startMs: number, endMs: number | null): boolean => {
+            if (endMs == null) return false;
+            return endMs - startMs >= 23 * 3600 * 1000;
+          };
+          const formatEntryWindow = (
+            suggestedAt: string,
+            endsAt: string | null
+          ): string => {
+            const startMs = new Date(suggestedAt).getTime();
+            const endMs = endsAt ? new Date(endsAt).getTime() : null;
+            if (isAnytimeWindow(startMs, endMs)) return "Anytime start";
+            const startLabel = fmtTime(new Date(startMs));
+            return endMs != null ? `${startLabel} - ${fmtTime(new Date(endMs))}` : startLabel;
+          };
 
           const viewerHasSuggested = viewerUserId
             ? altTimes.some((e) => e.userId === viewerUserId)
@@ -4213,7 +4283,32 @@ export default function EventDetailClient() {
           const respondedParticipants = participants.filter((p) => respondedUserIds.has(p.userId));
           const pendingParticipants = participants.filter((p) => !respondedUserIds.has(p.userId));
 
+          // Suppress the response summary when the viewer is the only person
+          // it would describe. Otherwise we'd render "Responses (0/1)" with
+          // their own dashed chip, which reads as self-talk.
+          const onlyViewerInParticipants =
+            participants.length === 1 &&
+            !!viewerUserId &&
+            participants[0].userId === viewerUserId;
+          const showResponseSummary =
+            isAvailMode &&
+            canSeeSharedEntries &&
+            participants.length > 0 &&
+            !onlyViewerInParticipants;
+          // Card 2 is now strictly a "what's been shared" view; the response
+          // summary lives on Card 1 (the action card) so non-empty status
+          // doesn't masquerade as shared content.
+          const sharedCardHasContent =
+            canSeeSharedEntries && (allOverlaps.length > 0 || dayGroups.length > 0);
+          const sharedCardTitle = isAvailMode ? "Shared availability" : "Suggested times";
+          const declined = viewerRsvpStatus === "cant_make_it";
+          // Helper-text bottom margin: zero when nothing will render below
+          // it, lighter in availability mode (status info comes next), heavier
+          // in suggest mode (picker comes next).
+          const helperMb = !canSuggest ? 0 : isAvailMode ? 1.5 : 2;
+
           return (
+            <Stack spacing={{ xs: 3, sm: 4 }}>
             <AppCard id="plan-section-availability">
               <Typography
                 variant="h5"
@@ -4222,22 +4317,7 @@ export default function EventDetailClient() {
               >
                 {isAvailMode ? "Share your availability" : "Suggest a different time"}
               </Typography>
-              <Typography
-                variant="body2"
-                color="text.secondary"
-                // When the viewer can't suggest and no alt times exist yet,
-                // nothing else renders below this text inside the card.
-                // Drop the bottom margin so the card isn't padded by a
-                // reservation for content that never appears.
-                sx={{
-                  mb:
-                    !canSuggest && altTimes.length === 0
-                      ? 0
-                      : isAvailMode && canSuggest
-                        ? 1.5
-                        : 2,
-                }}
-              >
+              <Typography variant="body2" color="text.secondary" sx={{ mb: helperMb }}>
                 {isAvailMode
                   ? canSuggest
                     ? viewerHasSuggested
@@ -4252,14 +4332,57 @@ export default function EventDetailClient() {
                             minute: "2-digit",
                           })}.`
                         : "You've shared your availability. You can still add or edit times whenever you like."
-                      : "The host wants to find a time that works for everyone. Confirm the proposed time or share other times you're free."
-                    : "The host wants to find a start time that works for everyone. Join to share your availability."
+                      : declined
+                        ? "The host wants to find a time that works for everyone. Pick one or more days below that could work for you instead."
+                        : "The host wants to find a time that works for everyone. Confirm the proposed time, or pick one or more days below that could work for you."
+                    : "The host wants to find a start time that works for everyone. Join to share which days work for you."
                   : canSuggest
-                    ? "The host is open to alternative start times for this plan. Suggest one below and everyone in the plan can see it."
-                    : "The host is open to alternative start times for this plan. Join to suggest your own."}
+                    ? "The host is open to other start times for this plan. Pick one or more days below."
+                    : "The host is open to other start times for this plan. Join to suggest days that could work for you."}
               </Typography>
 
-              {isAvailMode && !viewerHasSuggested && event.availabilityDeadlineAt && (
+              {/* --- Group response summary (availability mode, Going+token viewers only) --- */}
+              {showResponseSummary && (
+                <Box sx={{ mb: 2 }}>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{
+                      mb: 0.5,
+                      display: "block",
+                      fontSize: "0.75rem",
+                      fontWeight: viewerHasSuggested ? 500 : 600,
+                      opacity: viewerHasSuggested ? 0.75 : 1,
+                    }}
+                  >
+                    Responses ({respondedParticipants.length}/{participants.length})
+                  </Typography>
+                  <Stack direction="row" sx={{ flexWrap: "wrap", gap: 0.5 }}>
+                    {respondedParticipants.map((p) => (
+                      <Chip
+                        key={p.userId}
+                        label={p.name.split(" ")[0]}
+                        size="small"
+                        icon={<CheckCircleRoundedIcon sx={{ fontSize: "0.875rem !important" }} />}
+                        color="success"
+                        variant="outlined"
+                        sx={{ height: 24, fontSize: "0.75rem" }}
+                      />
+                    ))}
+                    {pendingParticipants.map((p) => (
+                      <Chip
+                        key={p.userId}
+                        label={p.name.split(" ")[0]}
+                        size="small"
+                        variant="outlined"
+                        sx={{ height: 24, fontSize: "0.75rem", opacity: 0.5, borderStyle: "dashed" }}
+                      />
+                    ))}
+                  </Stack>
+                </Box>
+              )}
+
+              {isAvailMode && canSuggest && !viewerHasSuggested && event.availabilityDeadlineAt && (
                 <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mb: 1.5 }}>
                   <AccessTimeRoundedIcon sx={{ fontSize: 16, color: "warning.main" }} />
                   <Typography
@@ -4280,8 +4403,11 @@ export default function EventDetailClient() {
                 </Stack>
               )}
 
-              {/* --- Your response status + quick actions (availability mode only) --- */}
-              {isAvailMode && canSuggest && !viewerHasSuggested && (
+              {/* --- Quick confirm: only when the listed time is still a real
+                   option for the viewer. Hidden for declined viewers, who
+                   shouldn't be nudged to confirm a time they already turned
+                   down. --- */}
+              {isAvailMode && canSuggest && !viewerHasSuggested && !declined && (
                 <Box
                   sx={{
                     mb: 2,
@@ -4318,225 +4444,122 @@ export default function EventDetailClient() {
                       >
                         {quickConfirming ? "Saving..." : "This time works for me"}
                       </Button>
-                      <Button
-                        size="small"
-                        variant="text"
-                        onClick={() => {
-                          setAltEditingId(null);
-                          if (!altStartDate && event) {
-                            setAltStartDate(dayjs(event.startsAt));
-                            setAltStartTime(dayjs(event.startsAt));
-                          }
-                          setShowAltTimeForm(true);
-                        }}
-                        sx={{ textTransform: "none" }}
-                      >
-                        Share other times
-                      </Button>
                     </Stack>
                   </Stack>
                 </Box>
               )}
 
-              {/* --- Compact secondary action when viewer has already responded --- */}
-              {isAvailMode && canSuggest && viewerHasSuggested && (
-                <Box sx={{ mb: 2 }}>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    onClick={() => {
-                      setAltEditingId(null);
-                      if (!altStartDate && event) {
-                        setAltStartDate(dayjs(event.startsAt));
-                        setAltStartTime(dayjs(event.startsAt));
-                      }
-                      setShowAltTimeForm(true);
-                    }}
-                    sx={{ textTransform: "none" }}
-                  >
-                    + Add another time
-                  </Button>
-                </Box>
-              )}
-
-              {/* --- Quick confirm for suggest mode (non-availability) --- */}
-              {!isAvailMode && canSuggest && !showAltTimeForm && (
-                <Button
-                  size="small"
-                  onClick={() => {
-                    setAltEditingId(null);
-                    if (!altStartDate && event) {
-                      setAltStartDate(dayjs(event.startsAt));
-                      setAltStartTime(dayjs(event.startsAt));
-                    }
-                    setShowAltTimeForm(true);
-                  }}
-                  sx={{ textTransform: "none", mb: altTimes.length > 0 ? 2 : 0 }}
-                >
-                  {viewerHasSuggested ? "+ Suggest another time" : "+ Suggest a time"}
-                </Button>
-              )}
-
-              {/* --- Group response summary (availability mode, visible to all attendees) ---
-                  Hidden when the viewer is the only participant and has already responded:
-                  the helper text and their availability card already make that clear, so the
-                  "Responses (1/1)" line and self-chip would just duplicate the user's identity. */}
-              {isAvailMode &&
-                participants.length > 0 &&
-                !(participants.length === 1 && viewerHasSuggested) && (
-                  <Box sx={{ mb: 2 }}>
-                    <Typography
-                      variant="caption"
-                      color="text.secondary"
-                      sx={{
-                        mb: 0.5,
-                        display: "block",
-                        fontSize: "0.75rem",
-                        fontWeight: viewerHasSuggested ? 500 : 600,
-                        opacity: viewerHasSuggested ? 0.75 : 1,
-                      }}
-                    >
-                      Responses ({respondedParticipants.length}/{participants.length})
-                    </Typography>
-                    <Stack direction="row" sx={{ flexWrap: "wrap", gap: 0.5 }}>
-                      {respondedParticipants.map((p) => (
-                        <Chip
-                          key={p.userId}
-                          label={p.name.split(" ")[0]}
-                          size="small"
-                          icon={<CheckCircleRoundedIcon sx={{ fontSize: "0.875rem !important" }} />}
-                          color="success"
-                          variant="outlined"
-                          sx={{ height: 24, fontSize: "0.75rem" }}
-                        />
-                      ))}
-                      {pendingParticipants.map((p) => (
-                        <Chip
-                          key={p.userId}
-                          label={p.name.split(" ")[0]}
-                          size="small"
-                          variant="outlined"
-                          sx={{ height: 24, fontSize: "0.75rem", opacity: 0.5, borderStyle: "dashed" }}
-                        />
-                      ))}
-                    </Stack>
-                  </Box>
-                )}
-
-              <Box ref={altTimeScrollRef} sx={{ maxHeight: 420, overflowY: "auto" }}>
-                {/* --- Availability form (shared by both modes) --- */}
-                {showAltTimeForm && (
+              {/* --- Inline edit form for an existing entry --- */}
+              {altEditingId && (
                   <Paper
+                    ref={altEditFormRef}
                     variant="outlined"
-                    sx={{ p: 2, mb: altTimes.length > 0 ? 2 : 0, borderRadius: 2 }}
+                    sx={{
+                      p: 2,
+                      mb: 1.5,
+                      borderRadius: 2,
+                      borderColor: "primary.light",
+                      // Sit below any fixed app-shell header when scrolled
+                      // into view via scrollIntoView({ block: "start" }).
+                      scrollMarginTop: 96,
+                    }}
                   >
-                    <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1.5 }}>
-                      {altEditingId
-                        ? isAvailMode
-                          ? "Edit your availability"
-                          : "Edit your suggested time"
-                        : isAvailMode
-                          ? "When are you available?"
-                          : "Suggest a different start time"}
+                    <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1.25 }}>
+                      {isAvailMode ? "Edit your availability" : "Edit your suggested time"}
                     </Typography>
-                    <Stack spacing={2}>
-                      <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-                        <Box sx={{ flex: 1 }}>
-                          <Typography
-                            variant="subtitle1"
-                            fontWeight={600}
-                            sx={{ display: "block", mb: 0.625 }}
-                          >
-                            Date
-                          </Typography>
-                          <DatePicker
-                            value={altStartDate}
-                            onChange={setAltStartDate}
-                            minDate={dayjs()}
-                            slotProps={{
-                              textField: {
-                                fullWidth: true,
-                                size: "medium",
-                                placeholder: "Pick a date",
-                                onKeyDown: pickerFieldTabKeyDown,
-                              },
+                    <Stack spacing={1.5}>
+                      <Box>
+                        <Typography
+                          variant="subtitle1"
+                          fontWeight={600}
+                          sx={{ display: "block", mb: 0.625 }}
+                        >
+                          Date
+                        </Typography>
+                        <DatePicker
+                          value={altEditDate}
+                          onChange={setAltEditDate}
+                          minDate={dayjs().startOf("day")}
+                          slotProps={{
+                            textField: {
+                              fullWidth: true,
+                              size: "small",
+                              placeholder: "Pick a date",
+                              onKeyDown: pickerFieldTabKeyDown,
+                            },
+                          }}
+                        />
+                      </Box>
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={altEditAnytime}
+                            onChange={(e) => {
+                              const v = e.target.checked;
+                              setAltEditAnytime(v);
+                              if (v) {
+                                setAltEditStartTime(null);
+                                setAltEditEndTime(null);
+                              }
                             }}
                           />
-                        </Box>
-                        {!altEditingId && (
+                        }
+                        label="Anytime start"
+                      />
+                      {!altEditAnytime && (
+                        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
                           <Box sx={{ flex: 1 }}>
                             <Typography
                               variant="subtitle1"
                               fontWeight={600}
                               sx={{ display: "block", mb: 0.625 }}
                             >
-                              Through (optional)
+                              Earliest start
                             </Typography>
-                            <DatePicker
-                              value={altEndDate}
-                              onChange={setAltEndDate}
-                              minDate={altStartDate ?? dayjs()}
-                              disabled={!altStartDate}
+                            <TimePicker
+                              value={altEditStartTime}
+                              onChange={setAltEditStartTime}
+                              format="h:mm A"
                               slotProps={{
+                                field: {
+                                  shouldRespectLeadingZeros: true,
+                                } as Record<string, unknown>,
                                 textField: {
                                   fullWidth: true,
-                                  size: "medium",
-                                  placeholder: "Same day",
+                                  size: "small",
+                                  placeholder: "Earliest",
                                   onKeyDown: pickerFieldTabKeyDown,
                                 },
                               }}
                             />
                           </Box>
-                        )}
-                      </Stack>
-                      <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-                        <Box sx={{ flex: 1 }}>
-                          <Typography
-                            variant="subtitle1"
-                            fontWeight={600}
-                            sx={{ display: "block", mb: 0.625 }}
-                          >
-                            Start time
-                          </Typography>
-                          <TimePicker
-                            value={altStartTime}
-                            onChange={setAltStartTime}
-                            format="h:mm A"
-                            slotProps={{
-                              field: { shouldRespectLeadingZeros: true } as Record<string, unknown>,
-                              textField: {
-                                fullWidth: true,
-                                size: "medium",
-                                placeholder: "Pick a time",
-                                onKeyDown: pickerFieldTabKeyDown,
-                              },
-                            }}
-                          />
-                        </Box>
-                        <Box sx={{ flex: 1 }}>
-                          <Typography
-                            variant="subtitle1"
-                            fontWeight={600}
-                            sx={{ display: "block", mb: 0.625 }}
-                          >
-                            Through (optional)
-                          </Typography>
-                          <TimePicker
-                            value={altEndTime}
-                            onChange={setAltEndTime}
-                            format="h:mm A"
-                            slotProps={{
-                              field: { shouldRespectLeadingZeros: true } as Record<string, unknown>,
-                              textField: {
-                                fullWidth: true,
-                                size: "medium",
-                                placeholder: "Pick a time",
-                                onKeyDown: pickerFieldTabKeyDown,
-                              },
-                            }}
-                          />
-                        </Box>
-                      </Stack>
+                          <Box sx={{ flex: 1 }}>
+                            <Typography
+                              variant="subtitle1"
+                              fontWeight={600}
+                              sx={{ display: "block", mb: 0.625 }}
+                            >
+                              Latest start
+                            </Typography>
+                            <TimePicker
+                              value={altEditEndTime}
+                              onChange={setAltEditEndTime}
+                              format="h:mm A"
+                              slotProps={{
+                                field: {
+                                  shouldRespectLeadingZeros: true,
+                                } as Record<string, unknown>,
+                                textField: {
+                                  fullWidth: true,
+                                  size: "small",
+                                  placeholder: "Latest",
+                                  onKeyDown: pickerFieldTabKeyDown,
+                                },
+                              }}
+                            />
+                          </Box>
+                        </Stack>
+                      )}
                       <AppTextField
                         label="Note (optional)"
                         placeholder={
@@ -4544,18 +4567,22 @@ export default function EventDetailClient() {
                             ? "e.g. Available most of the afternoon"
                             : "e.g. Friday works better for me"
                         }
-                        value={altNote}
-                        onChange={(e) => setAltNote(e.target.value)}
+                        value={altEditNote}
+                        onChange={(e) => setAltEditNote(e.target.value)}
                       />
                       <Stack direction="row" spacing={1}>
                         <AppButton
                           size="small"
-                          onClick={handleAltTimeSubmit}
+                          onClick={handleAltEditSave}
                           disabled={altSubmitting}
                         >
-                          {altSubmitting ? "Saving..." : altEditingId ? "Save" : "Add"}
+                          {altSubmitting ? "Saving..." : "Save"}
                         </AppButton>
-                        <Button size="small" onClick={resetAltForm} sx={{ textTransform: "none" }}>
+                        <Button
+                          size="small"
+                          onClick={resetAltEditForm}
+                          sx={{ textTransform: "none" }}
+                        >
                           Cancel
                         </Button>
                       </Stack>
@@ -4563,7 +4590,45 @@ export default function EventDetailClient() {
                   </Paper>
                 )}
 
-                {/* --- Best overlap --- */}
+                {/* --- Multi-date availability picker (always visible to permitted viewers) --- */}
+                {!altEditingId && canSuggest && (
+                  <AvailabilityPicker
+                      mode={isAvailMode ? "availability" : "suggest"}
+                      planStartsAt={event.startsAt}
+                      existingDayKeys={
+                        new Set(
+                          altTimes
+                            .filter((e) => e.userId === viewerUserId)
+                            .map((e) => {
+                              const d = new Date(e.suggestedAt);
+                              return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
+                                2,
+                                "0"
+                              )}-${String(d.getDate()).padStart(2, "0")}`;
+                            })
+                        )
+                      }
+                      submitting={altSubmitting}
+                      onSubmit={handleAvailabilityShare}
+                    />
+                )}
+
+            </AppCard>
+
+            {/* Card 2: review of what's been shared. Hidden entirely when there
+                is nothing to display, so non-Going viewers (and viewers in a
+                fresh plan with no submissions) don't see an empty container. */}
+            {sharedCardHasContent && (
+              <AppCard>
+                <Typography
+                  variant="h5"
+                  fontWeight={700}
+                  sx={{ mb: 1.5, fontSize: { xs: "1.25rem", sm: "1.375rem" } }}
+                >
+                  {sharedCardTitle}
+                </Typography>
+
+                {/* Best overlap */}
                 {allOverlaps.length > 0 && (
                   <Paper
                     variant="outlined"
@@ -4584,8 +4649,12 @@ export default function EventDetailClient() {
                     </Typography>
                     <Stack spacing={0} divider={<Divider />}>
                       {allOverlaps.map((ov, oi) => {
-                        const ovStart = fmtTime(new Date(ov.startMs));
                         const allRanged = ov.entries.every((e) => !!e.endsAt);
+                        const overlapIsAnytime = isAnytimeWindow(
+                          ov.startMs,
+                          allRanged ? ov.endMs : null
+                        );
+                        const ovStart = fmtTime(new Date(ov.startMs));
                         const ovEnd = allRanged ? fmtTime(new Date(ov.endMs)) : null;
                         const isBest =
                           ov.entries.length === globalBestOverlapCount &&
@@ -4606,8 +4675,12 @@ export default function EventDetailClient() {
                                 sx={{ flexWrap: "wrap" }}
                               >
                                 <Typography variant="body2" fontWeight={600} color="primary.main">
-                                  {fmtDay(ov.date)}, {ovStart}
-                                  {ovEnd ? ` - ${ovEnd}` : ""}
+                                  {fmtDay(ov.date)},{" "}
+                                  {overlapIsAnytime
+                                    ? "anytime"
+                                    : ovEnd
+                                      ? `${ovStart} - ${ovEnd}`
+                                      : ovStart}
                                 </Typography>
                                 <Chip
                                   label={`${ov.entries.length} overlap${isBest ? " -- best fit" : ""}`}
@@ -4641,7 +4714,7 @@ export default function EventDetailClient() {
                   </Paper>
                 )}
 
-                {/* --- Day-grouped entries --- */}
+                {/* Day-grouped entries */}
                 {dayGroups.length > 0 && (
                   <Stack spacing={1.5}>
                     {dayGroups.map((dg) => {
@@ -4664,10 +4737,10 @@ export default function EventDetailClient() {
                           <Stack spacing={0} divider={<Divider />}>
                             {dg.entries.map((entry) => {
                               const isOwn = entry.userId === viewerUserId;
-                              const entryStart = fmtTime(new Date(entry.suggestedAt));
-                              const entryEnd = entry.endsAt
-                                ? fmtTime(new Date(entry.endsAt))
-                                : null;
+                              const entryWindow = formatEntryWindow(
+                                entry.suggestedAt,
+                                entry.endsAt
+                              );
                               return (
                                 <Stack
                                   key={entry.id}
@@ -4684,8 +4757,7 @@ export default function EventDetailClient() {
                                       sx={{ flexWrap: "wrap" }}
                                     >
                                       <Typography variant="body2" color="text.primary">
-                                        {entryStart}
-                                        {entryEnd ? ` - ${entryEnd}` : ""}
+                                        {entryWindow}
                                       </Typography>
                                       <Typography variant="body2" color="text.disabled">
                                         &middot;
@@ -4760,8 +4832,9 @@ export default function EventDetailClient() {
                     })}
                   </Stack>
                 )}
-              </Box>
-            </AppCard>
+              </AppCard>
+            )}
+            </Stack>
           );
         })()}
 

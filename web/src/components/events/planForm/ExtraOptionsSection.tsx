@@ -182,23 +182,16 @@ export default function ExtraOptionsSection(props: Props) {
         />
 
         {props.notifyAttendees && (
-          <>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={props.notifyAttendees.value}
-                  onChange={(e) => props.notifyAttendees!.onChange(e.target.checked)}
-                />
-              }
-              label="Notify attendees about these changes"
-              sx={{ gap: 0.5 }}
-            />
-            {props.notifyAttendees.value && (
-              <Typography variant="caption" color="text.secondary" sx={{ mt: -0.5 }}>
-                Going and Maybe attendees will receive an update about any meaningful changes.
-              </Typography>
-            )}
-          </>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={props.notifyAttendees.value}
+                onChange={(e) => props.notifyAttendees!.onChange(e.target.checked)}
+              />
+            }
+            label="Notify attendees about these changes"
+            sx={{ gap: 0.5 }}
+          />
         )}
       </Stack>
     </AppCard>

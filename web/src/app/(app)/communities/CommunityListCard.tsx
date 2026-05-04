@@ -12,7 +12,7 @@ import LockRoundedIcon from "@mui/icons-material/LockRounded";
 import PeopleRoundedIcon from "@mui/icons-material/PeopleRounded";
 import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
 import { AppCard } from "@/components/ui";
-import { getAvatarBaseUrl } from "@/lib/apiClient";
+import { communityAvatarUrl } from "@/lib/apiClient";
 
 /**
  * Shared shape for a community row in any discovery feed. Matches the response
@@ -97,7 +97,7 @@ export default function CommunityListCard({
   const avatarEl = (
     <Avatar
       variant="rounded"
-      src={c.avatar_key ? `${getAvatarBaseUrl()}/communities/${c.id}/avatar` : undefined}
+      src={communityAvatarUrl(c.id, c.avatar_key) ?? undefined}
       sx={{
         alignSelf: "flex-start",
         width: isGrid ? { xs: 52, sm: 56 } : 48,

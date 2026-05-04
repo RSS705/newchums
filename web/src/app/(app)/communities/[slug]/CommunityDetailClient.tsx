@@ -31,7 +31,7 @@ import Link from "next/link";
 import { AppCard, useToast } from "@/components/ui";
 import EventCard, { type PlanEvent } from "@/components/events/EventCard";
 import RecentlyHappenedSection from "@/components/events/RecentlyHappenedSection";
-import { apiFetch, getAuthToken, getAvatarBaseUrl } from "@/lib/apiClient";
+import { apiFetch, communityAvatarUrl, communityBannerUrl, getAuthToken, getAvatarBaseUrl } from "@/lib/apiClient";
 import { effectiveCategorySet } from "@/lib/interestUtils";
 import { OperatingHoursInline, type OperatingHours } from "@/components/communities";
 
@@ -780,7 +780,7 @@ export default function CommunityDetailClient() {
           >
             <Avatar
               variant="rounded"
-              src={community.avatar_key ? `${getAvatarBaseUrl()}/communities/${community.id}/avatar` : undefined}
+              src={communityAvatarUrl(community.id, community.avatar_key) ?? undefined}
               sx={{
                 gridArea: "avatar",
                 alignSelf: "flex-start",
@@ -1216,7 +1216,7 @@ export default function CommunityDetailClient() {
         >
           <Avatar
             variant="rounded"
-            src={community.avatar_key ? `${getAvatarBaseUrl()}/communities/${community.id}/avatar` : undefined}
+            src={communityAvatarUrl(community.id, community.avatar_key) ?? undefined}
             sx={{
               gridArea: "avatar",
               alignSelf: "flex-start",
@@ -2917,10 +2917,8 @@ function CommunityBannerHero({
   name: string;
   bannerKey: string | null;
 }) {
-  const version = bannerKey ? bannerKey.split("/").pop() || "" : "";
-  const src = version
-    ? `${getAvatarBaseUrl()}/communities/${communityId}/banner?v=${encodeURIComponent(version)}`
-    : `${getAvatarBaseUrl()}/communities/${communityId}/banner`;
+  const src = communityBannerUrl(communityId, bannerKey)
+    ?? `${getAvatarBaseUrl()}/communities/${encodeURIComponent(communityId)}/banner`;
   return (
     <Box
       sx={{

@@ -35,6 +35,40 @@ export const getAvatarBaseUrl = () => getApiBaseUrl();
  * were uploaded through the production site). Returns null in production
  * where both values are identical.
  */
+/**
+ * Build a cache-busted URL for a community avatar. The serving endpoint sets
+ * Cache-Control: max-age=86400, so a re-uploaded logo would otherwise be
+ * masked by the 24h browser/edge cache on the stable `/communities/:id/avatar`
+ * URL. The R2 object key always changes on re-upload (server-generated
+ * `community_avatars/{userId}/{Date.now()}.{ext}`), so deriving the buster
+ * from `avatarKey` invalidates the cache exactly when the image actually
+ * changes. Mirrors the banner version pattern used in CommunityDetailClient.
+ */
+export const communityAvatarUrl = (
+  communityId: string,
+  avatarKey: string | null | undefined,
+  baseUrl?: string,
+): string | null => {
+  if (!avatarKey) return null;
+  const base = baseUrl ?? getAvatarBaseUrl();
+  const version = avatarKey.split("/").pop() ?? "";
+  const v = version ? `?v=${encodeURIComponent(version)}` : "";
+  return `${base}/communities/${encodeURIComponent(communityId)}/avatar${v}`;
+};
+
+/** Same idea as communityAvatarUrl, for the Pro banner image. */
+export const communityBannerUrl = (
+  communityId: string,
+  bannerKey: string | null | undefined,
+  baseUrl?: string,
+): string | null => {
+  if (!bannerKey) return null;
+  const base = baseUrl ?? getAvatarBaseUrl();
+  const version = bannerKey.split("/").pop() ?? "";
+  const v = version ? `?v=${encodeURIComponent(version)}` : "";
+  return `${base}/communities/${encodeURIComponent(communityId)}/banner${v}`;
+};
+
 export const getImageFallbackBaseUrl = (): string | null => {
   const explicit = process.env.NEXT_PUBLIC_AVATAR_BASE_URL?.replace(/\/$/, "");
   if (!explicit) return null;
