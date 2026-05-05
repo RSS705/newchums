@@ -47,7 +47,7 @@ export type PlanEvent = {
   /** Direct banner URL for static/demo images (bypasses API-based banner resolution) */
   bannerUrl?: string | null;
   hasUnreadChat?: boolean;
-  community?: { id: string; slug: string; name: string } | null;
+  communities?: Array<{ id: string; slug: string; name: string }>;
   hasPrefMismatch?: boolean;
   isQa?: boolean;
 };
@@ -291,16 +291,16 @@ const EventCard = React.memo(function EventCard({
           </Stack>
 
           {/* Host */}
-          <Typography variant="body2" color="text.secondary" sx={{ mb: event.community ? 0.5 : 1.75, fontSize: "0.8125rem" }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: event.communities && event.communities.length > 0 ? 0.5 : 1.75, fontSize: "0.8125rem" }}>
             {event.isHost ? "Hosted by you" : `Hosted by ${event.hostName}`}
           </Typography>
 
           {/* Community attribution */}
-          {event.community && (
+          {event.communities && event.communities.length > 0 && (
             <Stack direction="row" alignItems="flex-start" spacing={1} sx={{ mb: 0.75 }}>
               <GroupsRoundedIcon sx={{ fontSize: 16, color: "text.disabled", mt: "1px", flexShrink: 0, opacity: 0.85 }} />
               <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem", lineHeight: 1.4, minWidth: 0 }}>
-                {event.community.name}
+                {event.communities.map((c) => c.name).join(", ")}
               </Typography>
             </Stack>
           )}

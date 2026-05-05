@@ -143,9 +143,10 @@ export default function CreateEventClient() {
     location_lng: number | null;
   };
   const [myCommunities, setMyCommunities] = useState<MyCommunity[]>([]);
-  const [selectedCommunityId, setSelectedCommunityId] = useState<string | null>(
-    searchParams.get("community_id")
-  );
+  const [selectedCommunityIds, setSelectedCommunityIds] = useState<string[]>(() => {
+    const initial = searchParams.get("community_id");
+    return initial ? [initial] : [];
+  });
   const [hideFromExplore, setHideFromExplore] = useState(false);
 
   // QA plan (super admin only)
@@ -228,12 +229,13 @@ export default function CreateEventClient() {
 
   // When visibility switches to invite_only, clear any community linkage so
   // the form state matches what the server will store (POST /events forces
-  // community_id=null for invite_only) and the Community section disappears
-  // rather than misleading the user. Mirror of the same effect in the Edit
-  // form. See AGENTS.md -> Plan Feed and Community Visibility Contract.
+  // an empty community list for invite_only) and the Community section
+  // disappears rather than misleading the user. Mirror of the same effect in
+  // the Edit form. See AGENTS.md -> Plan Feed and Community Visibility
+  // Contract.
   useEffect(() => {
     if (visibility === "invite_only") {
-      setSelectedCommunityId(null);
+      setSelectedCommunityIds([]);
       setHideFromExplore(false);
     }
   }, [visibility]);
@@ -376,7 +378,7 @@ export default function CreateEventClient() {
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       status: "published",
       pref_overrides: buildPrefOverrides(),
-      community_id: selectedCommunityId || null,
+      community_ids: selectedCommunityIds,
       hide_from_explore: hideFromExplore,
       ...(isQa ? { is_qa: true } : {}),
     };
@@ -1215,8 +1217,8 @@ export default function CreateEventClient() {
       <CommunityLinkSection
         visibility={visibility}
         myCommunities={myCommunities as SharedMyCommunity[]}
-        selectedCommunityId={selectedCommunityId}
-        onChangeSelectedCommunityId={setSelectedCommunityId}
+        selectedCommunityIds={selectedCommunityIds}
+        onChangeSelectedCommunityIds={setSelectedCommunityIds}
         hideFromExplore={hideFromExplore}
         onChangeHideFromExplore={setHideFromExplore}
       />
@@ -1245,7 +1247,8 @@ export default function CreateEventClient() {
           variant="outlined"
           color="inherit"
           onClick={() => {
-            const selectedCommunity = selectedCommunityId ? myCommunities.find((c) => c.id === selectedCommunityId) : null;
+            const firstSelectedId = selectedCommunityIds[0] ?? null;
+            const selectedCommunity = firstSelectedId ? myCommunities.find((c) => c.id === firstSelectedId) : null;
             const target = selectedCommunity?.slug ? `/communities/${selectedCommunity.slug}` : "/plans";
             router.push(target, { scroll: true });
             // iOS Safari (and a few Android browsers) sometimes restore the

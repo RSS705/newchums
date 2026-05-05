@@ -152,7 +152,7 @@ type EventDetail = {
   pendingConfirmationCount: number;
   myConfirmationStatus: string | null;
   planViability: string | null;
-  community?: { id: string; slug: string; name: string } | null;
+  communities?: Array<{ id: string; slug: string; name: string }>;
   hideFromExplore?: boolean;
   isQa?: boolean;
 };
@@ -1778,25 +1778,28 @@ export default function EventDetailClient() {
             <Typography variant="body2" color="text.secondary">
               Hosted by <Box component="span" sx={{ color: "text.primary", fontWeight: 600 }}>{event.hostName}</Box>
             </Typography>
-            {event.community && (
+            {event.communities && event.communities.length > 0 && (
               <>
                 <Typography variant="body2" color="text.disabled">·</Typography>
-                <Chip
-                  label={event.community.name}
-                  size="small"
-                  variant="outlined"
-                  sx={{
-                    height: 22,
-                    fontSize: "0.6875rem",
-                    fontWeight: 500,
-                    borderRadius: 1.5,
-                    borderColor: "divider",
-                    color: "text.secondary",
-                    cursor: "pointer",
-                    "&:hover": { borderColor: "primary.main", color: "primary.main" },
-                  }}
-                  onClick={() => router.push(`/communities/${event.community!.slug}`)}
-                />
+                {event.communities.map((c) => (
+                  <Chip
+                    key={c.id}
+                    label={c.name}
+                    size="small"
+                    variant="outlined"
+                    sx={{
+                      height: 22,
+                      fontSize: "0.6875rem",
+                      fontWeight: 500,
+                      borderRadius: 1.5,
+                      borderColor: "divider",
+                      color: "text.secondary",
+                      cursor: "pointer",
+                      "&:hover": { borderColor: "primary.main", color: "primary.main" },
+                    }}
+                    onClick={() => router.push(`/communities/${c.slug}`)}
+                  />
+                ))}
               </>
             )}
           </Stack>
@@ -2565,26 +2568,29 @@ export default function EventDetailClient() {
                 </>
               )}
           </Typography>
-          {event.community && (
+          {event.communities && event.communities.length > 0 && (
             <>
               <Typography variant="body2" color="text.disabled">·</Typography>
-              <Chip
-                label={event.community.name}
-                size="small"
-                variant="outlined"
-                sx={{
-                  height: 22,
-                  fontSize: "0.6875rem",
-                  fontWeight: 500,
-                  borderRadius: 1.5,
-                  borderColor: "divider",
-                  color: "text.secondary",
-                  bgcolor: "background.paper",
-                  cursor: "pointer",
-                  "&:hover": { borderColor: "primary.main", color: "primary.main" },
-                }}
-                onClick={() => router.push(`/communities/${event.community!.slug}`)}
-              />
+              {event.communities.map((c) => (
+                <Chip
+                  key={c.id}
+                  label={c.name}
+                  size="small"
+                  variant="outlined"
+                  sx={{
+                    height: 22,
+                    fontSize: "0.6875rem",
+                    fontWeight: 500,
+                    borderRadius: 1.5,
+                    borderColor: "divider",
+                    color: "text.secondary",
+                    bgcolor: "background.paper",
+                    cursor: "pointer",
+                    "&:hover": { borderColor: "primary.main", color: "primary.main" },
+                  }}
+                  onClick={() => router.push(`/communities/${c.slug}`)}
+                />
+              ))}
             </>
           )}
         </Stack>

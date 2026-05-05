@@ -5211,15 +5211,20 @@ app.get("/admin/plans", async (c) => {
         e.id, e.title, e.starts_at, e.status, e.visibility,
         e.host_user_id, e.created_at, e.canceled_at, e.max_seats,
         e.location_type, e.location_name, e.location_address,
-        e.community_id, e.hide_from_explore,
-        c.name AS community_name, c.slug AS community_slug,
+        e.hide_from_explore,
         h.name AS host_name, h.username AS host_username, h.email AS host_email,
         (SELECT COUNT(*)::int FROM newchums.event_rsvps er WHERE er.event_id = e.id AND er.status = 'going') AS going_count,
         (SELECT COUNT(*)::int FROM newchums.event_rsvps er WHERE er.event_id = e.id AND er.status = 'maybe') AS maybe_count,
-        (SELECT COUNT(*)::int FROM newchums.event_rsvps er WHERE er.event_id = e.id) AS total_rsvps
+        (SELECT COUNT(*)::int FROM newchums.event_rsvps er WHERE er.event_id = e.id) AS total_rsvps,
+        COALESCE(
+          (SELECT jsonb_agg(jsonb_build_object('id', c2.id, 'slug', c2.slug, 'name', c2.name) ORDER BY c2.name)
+           FROM newchums.event_communities ec2
+           JOIN newchums.communities c2 ON c2.id = ec2.community_id
+           WHERE ec2.event_id = e.id),
+          '[]'::jsonb
+        ) AS communities
       FROM newchums.events e
       LEFT JOIN newchums.users h ON h.id = e.host_user_id
-      LEFT JOIN newchums.communities c ON c.id = e.community_id
       WHERE e.status != 'draft'
         ${likePattern ? sql`AND (LOWER(e.title) LIKE ${likePattern} OR LOWER(COALESCE(h.name, '')) LIKE ${likePattern} OR LOWER(COALESCE(h.email, '')) LIKE ${likePattern})` : sql``}
         ${statusFilter === "published" ? sql`AND e.status = 'published' AND e.canceled_at IS NULL` : sql``}
@@ -5232,10 +5237,10 @@ app.get("/admin/plans", async (c) => {
       id: string; title: string; starts_at: string; status: string; visibility: string;
       host_user_id: string; created_at: string; canceled_at: string | null; max_seats: number | null;
       location_type: string; location_name: string | null; location_address: string | null;
-      community_id: string | null; hide_from_explore: boolean;
-      community_name: string | null; community_slug: string | null;
+      hide_from_explore: boolean;
       host_name: string | null; host_username: string | null; host_email: string | null;
       going_count: number; maybe_count: number; total_rsvps: number;
+      communities: Array<{ id: string; slug: string; name: string }>;
     }>;
 
     return c.json({ ok: true, plans: rows });
@@ -5307,53 +5312,75 @@ app.patch("/admin/plans/:id/community", async (c) => {
   try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
 
   const sql = getSql(c.env);
-  const rawCommunityId = "community_id" in body
-    ? (body.community_id ? String(body.community_id).trim() : null)
+  const rawCommunityIds = "community_ids" in body
+    ? (Array.isArray(body.community_ids)
+        ? (body.community_ids as unknown[])
+            .map((v) => (typeof v === "string" ? v.trim() : ""))
+            .filter((v): v is string => !!v)
+        : [])
     : undefined;
-  if (rawCommunityId === undefined)
-    return c.json({ ok: false, error: "VALIDATION", message: "community_id is required (use null to clear)" }, 400);
+  if (rawCommunityIds === undefined)
+    return c.json({ ok: false, error: "VALIDATION", message: "community_ids is required (use [] to clear)" }, 400);
+  const dedupedCommunityIds = Array.from(new Set(rawCommunityIds)).slice(0, 10);
 
   const rawHideFromExplore = "hide_from_explore" in body ? body.hide_from_explore === true : undefined;
 
   try {
     const rows = (await sql`
-      SELECT id, visibility, community_id FROM newchums.events WHERE id = ${eventId} LIMIT 1
-    `) as { id: string; visibility: string; community_id: string | null }[];
+      SELECT id, visibility FROM newchums.events WHERE id = ${eventId} LIMIT 1
+    `) as { id: string; visibility: string }[];
     if (rows.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
 
     const ev = rows[0];
-    if (ev.visibility === "invite_only" && rawCommunityId !== null)
+    if (ev.visibility === "invite_only" && dedupedCommunityIds.length > 0)
       return c.json({ ok: false, error: "VALIDATION", message: "Invite-only plans cannot be linked to a community" }, 400);
 
-    if (rawCommunityId !== null) {
+    if (dedupedCommunityIds.length > 0) {
       const cRows = (await sql`
-        SELECT id FROM newchums.communities WHERE id = ${rawCommunityId} LIMIT 1
+        SELECT id FROM newchums.communities WHERE id = ANY(${dedupedCommunityIds}::uuid[])
       `) as { id: string }[];
-      if (cRows.length === 0)
-        return c.json({ ok: false, error: "VALIDATION", message: "Community not found" }, 400);
+      const found = new Set(cRows.map((r) => r.id));
+      const missing = dedupedCommunityIds.filter((cid) => !found.has(cid));
+      if (missing.length > 0)
+        return c.json({ ok: false, error: "VALIDATION", message: "One or more communities not found" }, 400);
     }
 
-    // When the link is cleared, the per-plan members-only toggle stops being
-    // meaningful, mirror the column-pair invariant from PATCH /events/:id.
-    const effectiveHideFromExplore: boolean = rawCommunityId === null
+    // When all links are cleared, the per-plan members-only toggle stops
+    // being meaningful, mirror the column-pair invariant from PATCH
+    // /events/:id.
+    const effectiveHideFromExplore: boolean = dedupedCommunityIds.length === 0
       ? false
       : (rawHideFromExplore ?? false);
 
     await sql`
       UPDATE newchums.events
-      SET community_id      = ${rawCommunityId}::uuid,
-          hide_from_explore = ${effectiveHideFromExplore},
+      SET hide_from_explore = ${effectiveHideFromExplore},
           updated_at        = NOW()
       WHERE id = ${eventId}
     `;
 
+    await sql`DELETE FROM newchums.event_communities WHERE event_id = ${eventId}`;
+    if (dedupedCommunityIds.length > 0) {
+      await sql`
+        INSERT INTO newchums.event_communities (event_id, community_id)
+        SELECT ${eventId}::uuid, unnest(${dedupedCommunityIds}::uuid[])
+        ON CONFLICT DO NOTHING
+      `;
+    }
+
     const updated = (await sql`
-      SELECT e.id, e.community_id, e.hide_from_explore, c.name AS community_name, c.slug AS community_slug
+      SELECT e.id, e.hide_from_explore,
+        COALESCE(
+          (SELECT jsonb_agg(jsonb_build_object('id', c.id, 'slug', c.slug, 'name', c.name) ORDER BY c.name)
+           FROM newchums.event_communities ec
+           JOIN newchums.communities c ON c.id = ec.community_id
+           WHERE ec.event_id = e.id),
+          '[]'::jsonb
+        ) AS communities
       FROM newchums.events e
-      LEFT JOIN newchums.communities c ON c.id = e.community_id
       WHERE e.id = ${eventId}
       LIMIT 1
-    `) as { id: string; community_id: string | null; hide_from_explore: boolean; community_name: string | null; community_slug: string | null }[];
+    `) as { id: string; hide_from_explore: boolean; communities: Array<{ id: string; slug: string; name: string }> }[];
 
     return c.json({ ok: true, plan: updated[0] ?? null });
   } catch (err) {
@@ -5652,7 +5679,8 @@ app.get("/admin/kpis/growth-loop/filters", async (c) => {
     `) as { id: string; name: string }[];
     const communities = (await sql`
       SELECT DISTINCT cm.id, cm.name FROM newchums.communities cm
-      JOIN newchums.events e ON e.community_id = cm.id
+      JOIN newchums.event_communities ec ON ec.community_id = cm.id
+      JOIN newchums.events e ON e.id = ec.event_id
       WHERE e.status IN ('published', 'canceled')
       ORDER BY cm.name
     `) as { id: string; name: string }[];
@@ -5687,7 +5715,7 @@ app.get("/admin/kpis/growth-loop", async (c) => {
         WHERE e.status IN ('published', 'canceled')
           AND (${city}::text IS NULL OR e.location_area ILIKE '%' || ${city} || '%')
           AND (${interestId}::text IS NULL OR EXISTS (SELECT 1 FROM newchums.event_interests ei WHERE ei.event_id = e.id AND ei.interest_id = ${interestId}::uuid))
-          AND (${communityId}::text IS NULL OR e.community_id = ${communityId}::uuid)
+          AND (${communityId}::text IS NULL OR EXISTS (SELECT 1 FROM newchums.event_communities ec_kpi WHERE ec_kpi.event_id = e.id AND ec_kpi.community_id = ${communityId}::uuid))
       ),
       invited_users AS (
         SELECT DISTINCT inv.user_id
@@ -5715,7 +5743,7 @@ app.get("/admin/kpis/growth-loop", async (c) => {
         WHERE e.status = 'published' AND e.starts_at < NOW()
           AND (${city}::text IS NULL OR e.location_area ILIKE '%' || ${city} || '%')
           AND (${interestId}::text IS NULL OR EXISTS (SELECT 1 FROM newchums.event_interests ei WHERE ei.event_id = e.id AND ei.interest_id = ${interestId}::uuid))
-          AND (${communityId}::text IS NULL OR e.community_id = ${communityId}::uuid)
+          AND (${communityId}::text IS NULL OR EXISTS (SELECT 1 FROM newchums.event_communities ec_kpi WHERE ec_kpi.event_id = e.id AND ec_kpi.community_id = ${communityId}::uuid))
       ),
       user_plans AS (
         SELECT r.user_id, fe.starts_at,
@@ -5747,7 +5775,7 @@ app.get("/admin/kpis/growth-loop", async (c) => {
         WHERE e.status = 'published' AND e.starts_at < NOW()
           AND (${city}::text IS NULL OR e.location_area ILIKE '%' || ${city} || '%')
           AND (${interestId}::text IS NULL OR EXISTS (SELECT 1 FROM newchums.event_interests ei WHERE ei.event_id = e.id AND ei.interest_id = ${interestId}::uuid))
-          AND (${communityId}::text IS NULL OR e.community_id = ${communityId}::uuid)
+          AND (${communityId}::text IS NULL OR EXISTS (SELECT 1 FROM newchums.event_communities ec_kpi WHERE ec_kpi.event_id = e.id AND ec_kpi.community_id = ${communityId}::uuid))
       ),
       user_plans AS (
         SELECT r.user_id, fe.starts_at,
@@ -5779,7 +5807,7 @@ app.get("/admin/kpis/growth-loop", async (c) => {
         WHERE e.status = 'published' AND e.starts_at < NOW()
           AND (${city}::text IS NULL OR e.location_area ILIKE '%' || ${city} || '%')
           AND (${interestId}::text IS NULL OR EXISTS (SELECT 1 FROM newchums.event_interests ei WHERE ei.event_id = e.id AND ei.interest_id = ${interestId}::uuid))
-          AND (${communityId}::text IS NULL OR e.community_id = ${communityId}::uuid)
+          AND (${communityId}::text IS NULL OR EXISTS (SELECT 1 FROM newchums.event_communities ec_kpi WHERE ec_kpi.event_id = e.id AND ec_kpi.community_id = ${communityId}::uuid))
       ),
       user_plans AS (
         SELECT r.user_id, fe.starts_at,
@@ -5811,7 +5839,7 @@ app.get("/admin/kpis/growth-loop", async (c) => {
         WHERE e.status = 'published' AND e.starts_at < NOW()
           AND (${city}::text IS NULL OR e.location_area ILIKE '%' || ${city} || '%')
           AND (${interestId}::text IS NULL OR EXISTS (SELECT 1 FROM newchums.event_interests ei WHERE ei.event_id = e.id AND ei.interest_id = ${interestId}::uuid))
-          AND (${communityId}::text IS NULL OR e.community_id = ${communityId}::uuid)
+          AND (${communityId}::text IS NULL OR EXISTS (SELECT 1 FROM newchums.event_communities ec_kpi WHERE ec_kpi.event_id = e.id AND ec_kpi.community_id = ${communityId}::uuid))
       ),
       completed_plans AS (
         SELECT id FROM fe
@@ -5847,7 +5875,7 @@ app.get("/admin/kpis/growth-loop", async (c) => {
         WHERE e.status IN ('published', 'canceled')
           AND (${city}::text IS NULL OR e.location_area ILIKE '%' || ${city} || '%')
           AND (${interestId}::text IS NULL OR EXISTS (SELECT 1 FROM newchums.event_interests ei WHERE ei.event_id = e.id AND ei.interest_id = ${interestId}::uuid))
-          AND (${communityId}::text IS NULL OR e.community_id = ${communityId}::uuid)
+          AND (${communityId}::text IS NULL OR EXISTS (SELECT 1 FROM newchums.event_communities ec_kpi WHERE ec_kpi.event_id = e.id AND ec_kpi.community_id = ${communityId}::uuid))
       ),
       all_hosts AS (
         SELECT DISTINCT host_user_id FROM fe
@@ -5870,7 +5898,7 @@ app.get("/admin/kpis/growth-loop", async (c) => {
           AND e.starts_at < NOW()
           AND (${city}::text IS NULL OR e.location_area ILIKE '%' || ${city} || '%')
           AND (${interestId}::text IS NULL OR EXISTS (SELECT 1 FROM newchums.event_interests ei WHERE ei.event_id = e.id AND ei.interest_id = ${interestId}::uuid))
-          AND (${communityId}::text IS NULL OR e.community_id = ${communityId}::uuid)
+          AND (${communityId}::text IS NULL OR EXISTS (SELECT 1 FROM newchums.event_communities ec_kpi WHERE ec_kpi.event_id = e.id AND ec_kpi.community_id = ${communityId}::uuid))
       ),
       with_attendees AS (
         SELECT fe.id, fe.status
@@ -5896,7 +5924,7 @@ app.get("/admin/kpis/growth-loop", async (c) => {
         WHERE e.status = 'published' AND e.starts_at < NOW()
           AND (${city}::text IS NULL OR e.location_area ILIKE '%' || ${city} || '%')
           AND (${interestId}::text IS NULL OR EXISTS (SELECT 1 FROM newchums.event_interests ei WHERE ei.event_id = e.id AND ei.interest_id = ${interestId}::uuid))
-          AND (${communityId}::text IS NULL OR e.community_id = ${communityId}::uuid)
+          AND (${communityId}::text IS NULL OR EXISTS (SELECT 1 FROM newchums.event_communities ec_kpi WHERE ec_kpi.event_id = e.id AND ec_kpi.community_id = ${communityId}::uuid))
       ),
       user_plans AS (
         SELECT r.user_id, fe.starts_at,
@@ -5926,7 +5954,7 @@ app.get("/admin/kpis/growth-loop", async (c) => {
           AND e.starts_at > NOW() AND e.starts_at <= NOW() + INTERVAL '7 days'
           AND (${city}::text IS NULL OR e.location_area ILIKE '%' || ${city} || '%')
           AND (${interestId}::text IS NULL OR EXISTS (SELECT 1 FROM newchums.event_interests ei WHERE ei.event_id = e.id AND ei.interest_id = ${interestId}::uuid))
-          AND (${communityId}::text IS NULL OR e.community_id = ${communityId}::uuid)
+          AND (${communityId}::text IS NULL OR EXISTS (SELECT 1 FROM newchums.event_communities ec_kpi WHERE ec_kpi.event_id = e.id AND ec_kpi.community_id = ${communityId}::uuid))
       ),
       active_users AS (
         SELECT COUNT(*)::int AS cnt
@@ -7290,7 +7318,7 @@ app.get("/communities", async (c) => {
           c.owner_user_id, c.created_at, c.is_online,
           (SELECT COUNT(*)::int FROM newchums.community_members cm WHERE cm.community_id = c.id AND cm.status = 'active') AS member_count,
           cme.role AS viewer_role,
-          (SELECT COUNT(*)::int FROM newchums.events e WHERE e.community_id = c.id AND e.status = 'published' AND e.starts_at >= NOW() AND (COALESCE(e.is_qa, false) = false OR ${isSuperAdmin})) AS upcoming_plan_count,
+          (SELECT COUNT(*)::int FROM newchums.events e JOIN newchums.event_communities ec ON ec.event_id = e.id WHERE ec.community_id = c.id AND e.status = 'published' AND e.starts_at >= NOW() AND (COALESCE(e.is_qa, false) = false OR ${isSuperAdmin})) AS upcoming_plan_count,
           ${hobbyMatchExpr} AS hobby_match_count,
           ${distanceExpr} AS distance_km,
           (SELECT COALESCE(json_agg(json_build_object('name', ii.name, 'slug', ii.slug)), '[]'::json)
@@ -7349,7 +7377,7 @@ app.get("/communities", async (c) => {
         c.location_name, c.owner_user_id, c.created_at, c.is_online,
         (SELECT COUNT(*)::int FROM newchums.community_members cm WHERE cm.community_id = c.id AND cm.status = 'active') AS member_count,
         ${viewerRoleExpr} AS viewer_role,
-        (SELECT COUNT(*)::int FROM newchums.events e WHERE e.community_id = c.id AND e.status = 'published' AND e.starts_at >= NOW() AND (COALESCE(e.is_qa, false) = false OR ${isSuperAdmin})) AS upcoming_plan_count,
+        (SELECT COUNT(*)::int FROM newchums.events e JOIN newchums.event_communities ec ON ec.event_id = e.id WHERE ec.community_id = c.id AND e.status = 'published' AND e.starts_at >= NOW() AND (COALESCE(e.is_qa, false) = false OR ${isSuperAdmin})) AS upcoming_plan_count,
         ${hobbyMatchExpr} AS hobby_match_count,
         ${distanceExpr} AS distance_km,
         (SELECT COALESCE(json_agg(json_build_object('name', ii.name, 'slug', ii.slug)), '[]'::json)
@@ -7484,7 +7512,8 @@ app.get("/public/communities", async (c) => {
         (SELECT COUNT(*)::int FROM newchums.community_members cm WHERE cm.community_id = c.id AND cm.status = 'active') AS member_count,
         NULL::text AS viewer_role,
         (SELECT COUNT(*)::int FROM newchums.events e
-         WHERE e.community_id = c.id
+         JOIN newchums.event_communities ec ON ec.event_id = e.id
+         WHERE ec.community_id = c.id
            AND e.status = 'published'
            AND e.starts_at >= NOW()
            AND COALESCE(e.is_qa, false) = false
@@ -7575,7 +7604,8 @@ app.get("/communities/:slug", async (c) => {
       if (!userId) {
         const planCountRows = (await sql`
           SELECT COUNT(*)::int AS cnt FROM newchums.events e
-          WHERE e.community_id = ${community.id}
+          JOIN newchums.event_communities ec ON ec.event_id = e.id
+          WHERE ec.community_id = ${community.id}
             AND e.status = 'published'
             AND e.starts_at >= NOW()
             AND COALESCE(e.is_qa, false) = false
@@ -7656,7 +7686,8 @@ app.get("/communities/:slug", async (c) => {
           ` as Promise<{ reviewed_at: string | Date | null; created_at: string | Date }[]>,
           sql`
             SELECT COUNT(*)::int AS cnt FROM newchums.events e
-            WHERE e.community_id = ${community.id}
+            JOIN newchums.event_communities ec ON ec.event_id = e.id
+            WHERE ec.community_id = ${community.id}
               AND e.status = 'published'
               AND e.starts_at >= NOW()
               AND COALESCE(e.is_qa, false) = false
@@ -8008,7 +8039,7 @@ app.post("/communities/:slug/close", async (c) => {
   const cid = communityRows[0].id;
   try {
     await sql`UPDATE newchums.communities SET status = 'closed', updated_at = now() WHERE id = ${cid}`;
-    await sql`UPDATE newchums.events SET community_id = NULL WHERE community_id = ${cid}`;
+    await sql`DELETE FROM newchums.event_communities WHERE community_id = ${cid}`;
     return c.json({ ok: true });
   } catch (err) {
     console.error("[POST /communities/:slug/close]", err);
@@ -8606,8 +8637,6 @@ app.get("/communities/:id/events", async (c) => {
       if (memberCheck.length === 0) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
     }
 
-    const communityInfo = { id: communityRows[0].id, slug: communityRows[0].slug, name: communityRows[0].name };
-
     // Time-window filter:
     //  - upcoming mode: plans whose start time is later than 24 hours ago
     //    (so a plan that just ended is still visible briefly).
@@ -8641,11 +8670,20 @@ app.get("/communities/:id/events", async (c) => {
           '[]'::json
         ) AS hobbies,
         CASE WHEN e.host_user_id = ${userId} THEN true ELSE false END AS is_host,
-        r_viewer.status AS my_rsvp_status
+        r_viewer.status AS my_rsvp_status,
+        COALESCE(
+          (SELECT jsonb_agg(jsonb_build_object('id', c2.id, 'slug', c2.slug, 'name', c2.name) ORDER BY c2.name)
+           FROM newchums.event_communities ec2
+           JOIN newchums.communities c2 ON c2.id = ec2.community_id
+           WHERE ec2.event_id = e.id
+             AND COALESCE(c2.status, 'active') = 'active'),
+          '[]'::jsonb
+        ) AS communities
       FROM newchums.events e
       JOIN newchums.users u ON u.id = e.host_user_id
+      JOIN newchums.event_communities ec_filter ON ec_filter.event_id = e.id AND ec_filter.community_id = ${communityId}
       LEFT JOIN newchums.event_rsvps r_viewer ON r_viewer.event_id = e.id AND r_viewer.user_id = ${userId}
-      WHERE e.community_id = ${communityId} AND e.status = 'published' AND ${timeFilter}
+      WHERE e.status = 'published' AND ${timeFilter}
         AND (COALESCE(e.is_qa, false) = false OR ${isSuperAdmin})
         -- Community linkage is organizational context only; it does not expand
         -- the audience beyond the plan's base visibility rule. See
@@ -8781,7 +8819,7 @@ app.get("/communities/:id/events", async (c) => {
         hobbies: ev.hobbies,
         isHost: ev.is_host === true,
         myRsvpStatus: (ev.my_rsvp_status as string | null) ?? null,
-        community: communityInfo,
+        communities: (ev.communities as Array<{ id: string; slug: string; name: string }> | null) ?? [],
         hasPrefMismatch,
         isQa: ev.is_qa === true,
       };
@@ -8812,7 +8850,7 @@ app.get("/admin/communities", async (c) => {
         COALESCE(c.status, 'active') AS status, c.location_name,
         ou.name AS owner_name, ou.username AS owner_username, ou.email AS owner_email,
         (SELECT COUNT(*)::int FROM newchums.community_members cm WHERE cm.community_id = c.id AND cm.status = 'active') AS member_count,
-        (SELECT COUNT(*)::int FROM newchums.events e WHERE e.community_id = c.id) AS plan_count
+        (SELECT COUNT(*)::int FROM newchums.event_communities ec WHERE ec.community_id = c.id) AS plan_count
       FROM newchums.communities c
       JOIN newchums.users ou ON ou.id = c.owner_user_id
       WHERE (${q}::text IS NULL OR c.name ILIKE ${q} OR c.slug ILIKE ${q} OR ou.name ILIKE ${q} OR ou.email ILIKE ${q})
@@ -9074,11 +9112,19 @@ app.post("/events", async (c) => {
   // all. The Add/Edit plan forms hide the community controls when
   // invite_only is selected; this server-side guard catches any client that
   // bypasses that UI or any legacy payload.
-  const rawCommunityId = body.community_id ? String(body.community_id) : null;
-  const communityId = visibility === "invite_only" ? null : rawCommunityId;
-  // hide_from_explore is only meaningful when a community is linked; clear
-  // it when we clear the community (keeps the DB row consistent).
-  const hideFromExplore = communityId !== null && body.hide_from_explore === true;
+  const rawCommunityIds = Array.isArray(body.community_ids)
+    ? (body.community_ids as unknown[])
+        .map((v) => (typeof v === "string" ? v.trim() : ""))
+        .filter((v): v is string => !!v)
+    : [];
+  // De-duplicate while preserving order; cap at 10 communities per plan to
+  // keep response payloads sensible and the membership-check loop bounded.
+  const dedupedCommunityIds = Array.from(new Set(rawCommunityIds)).slice(0, 10);
+  const communityIds: string[] = visibility === "invite_only" ? [] : dedupedCommunityIds;
+  // hide_from_explore is only meaningful when at least one community is
+  // linked; clear it when no communities are linked (keeps the DB row
+  // consistent).
+  const hideFromExplore = communityIds.length > 0 && body.hide_from_explore === true;
 
   // QA plan flag: only super_admins can create QA plans
   const isQa = body.is_qa === true;
@@ -9123,14 +9169,19 @@ app.post("/events", async (c) => {
   }
   const onlineLink = body.online_link ? String(body.online_link).trim().slice(0, 500) : null;
 
-  // Validate community_id if provided
-  if (communityId) {
-    try {
-      const cmRows = (await sql`
-        SELECT 1 FROM newchums.community_members WHERE community_id = ${communityId} AND user_id = ${userId} AND status = 'active' LIMIT 1
-      `) as unknown[];
-      if (cmRows.length === 0) return c.json({ ok: false, error: "VALIDATION", message: "You must be a member of the community", field: "community_id" }, 400);
-    } catch { /* community validation failure is non-fatal, will fail at INSERT FK */ }
+  // Validate community_ids if provided. The user must be an active member
+  // of every community they're attaching the plan to.
+  if (communityIds.length > 0) {
+    const cmRows = (await sql`
+      SELECT community_id FROM newchums.community_members
+      WHERE community_id = ANY(${communityIds}::uuid[])
+        AND user_id = ${userId}
+        AND status = 'active'
+    `) as { community_id: string }[];
+    const memberOf = new Set(cmRows.map((r) => r.community_id));
+    const missing = communityIds.filter((cid) => !memberOf.has(cid));
+    if (missing.length > 0)
+      return c.json({ ok: false, error: "VALIDATION", message: "You must be a member of every selected community", field: "community_ids" }, 400);
   }
 
   try {
@@ -9217,18 +9268,31 @@ app.post("/events", async (c) => {
         location_type, location_name, location_address, location_place_id, location_lat, location_lng,
         location_visibility, location_area, online_link,
         max_seats, visibility, status, allow_alt_times, alt_times_mode, availability_deadline_at, allow_attendee_invites, reserve_seats, require_reconfirmation, require_approval, timezone,
-        min_confirmed_attendees, fallback_policy, pref_overrides, community_id, hide_from_explore, is_qa
+        min_confirmed_attendees, fallback_policy, pref_overrides, hide_from_explore, is_qa
       ) VALUES (
         ${userId}, ${title}, ${description}, ${interestId}, ${startsDate.toISOString()},
         ${locationType}, ${locationName}, ${locationAddress}, ${locationPlaceId}, ${locationLat}, ${locationLng},
         ${locationVisibility}, ${locationArea}, ${onlineLink},
         ${maxSeats}, ${visibility}, ${status}, ${allowAltTimes}, ${altTimesMode}, ${availabilityDeadlineAt}, ${allowAttendeeInvites}, ${reserveSeats}, ${requireReconfirmation}, ${requireApproval}, ${timezone},
-        ${minConfirmedAttendees}, ${fallbackPolicy}, ${prefOverrides ? JSON.stringify(prefOverrides) : null}, ${communityId}, ${hideFromExplore}, ${isQa}
+        ${minConfirmedAttendees}, ${fallbackPolicy}, ${prefOverrides ? JSON.stringify(prefOverrides) : null}, ${hideFromExplore}, ${isQa}
       )
       RETURNING id, created_at
     `) as { id: string; created_at: string }[];
 
     const eventId = rows[0].id;
+
+    // Link the new plan to its communities via the junction table.
+    if (communityIds.length > 0) {
+      try {
+        await sql`
+          INSERT INTO newchums.event_communities (event_id, community_id)
+          SELECT ${eventId}::uuid, unnest(${communityIds}::uuid[])
+          ON CONFLICT DO NOTHING
+        `;
+      } catch (err) {
+        console.error("[POST /events] event_communities insert failed:", err);
+      }
+    }
 
     if (resolvedInterestIds.length > 0) {
       try {
@@ -9440,7 +9504,15 @@ app.get("/events/mine", async (c) => {
               (SELECT cr.last_read_at FROM newchums.event_chat_reads cr WHERE cr.event_id = e.id AND cr.user_id = ${userId}),
               '1970-01-01'::timestamptz
             )
-        ) THEN true ELSE false END AS has_unread_chat
+        ) THEN true ELSE false END AS has_unread_chat,
+        COALESCE(
+          (SELECT jsonb_agg(jsonb_build_object('id', c2.id, 'slug', c2.slug, 'name', c2.name) ORDER BY c2.name)
+           FROM newchums.event_communities ec2
+           JOIN newchums.communities c2 ON c2.id = ec2.community_id
+           WHERE ec2.event_id = e.id
+             AND COALESCE(c2.status, 'active') = 'active'),
+          '[]'::jsonb
+        ) AS communities
       FROM newchums.events e
       LEFT JOIN newchums.interests i ON i.id = e.interest_id
       LEFT JOIN newchums.users h ON h.id = e.host_user_id
@@ -9468,6 +9540,7 @@ app.get("/events/mine", async (c) => {
       my_rsvp_status: string | null;
       going_count: number; maybe_count: number; is_host: boolean;
       has_unread_chat: boolean; is_qa: boolean;
+      communities: Array<{ id: string; slug: string; name: string }>;
     }>;
 
     const events = rows.map((r) => {
@@ -9517,6 +9590,7 @@ app.get("/events/mine", async (c) => {
         bannerKey: r.banner_key ?? null,
         hasUnreadChat: r.has_unread_chat === true,
         isQa: r.is_qa || undefined,
+        communities: r.communities ?? [],
       };
     });
 
@@ -9940,15 +10014,19 @@ app.get("/events/explore", async (c) => {
             )
           ELSE NULL
         END AS distance_km,
-        cm_community.id AS community_id,
-        cm_community.slug AS community_slug,
-        cm_community.name AS community_name
+        COALESCE(
+          (SELECT jsonb_agg(jsonb_build_object('id', c2.id, 'slug', c2.slug, 'name', c2.name) ORDER BY c2.name)
+           FROM newchums.event_communities ec2
+           JOIN newchums.communities c2 ON c2.id = ec2.community_id
+           WHERE ec2.event_id = e.id
+             AND COALESCE(c2.status, 'active') = 'active'),
+          '[]'::jsonb
+        ) AS communities
       FROM newchums.events e
       LEFT JOIN newchums.interests i ON i.id = e.interest_id
       LEFT JOIN newchums.users h ON h.id = e.host_user_id
       LEFT JOIN newchums.event_rsvps r ON r.event_id = e.id AND r.user_id = ${userId}
       LEFT JOIN newchums.chum_preferences hp ON hp.user_id = e.host_user_id
-      LEFT JOIN newchums.communities cm_community ON cm_community.id = e.community_id AND COALESCE(cm_community.status, 'active') = 'active'
       LEFT JOIN (
         SELECT event_id,
           COUNT(*) FILTER (WHERE status = 'going')::int AS going_count,
@@ -9967,10 +10045,13 @@ app.get("/events/explore", async (c) => {
         -- you change the hide_from_explore gate, update both sites together.
         AND (
           COALESCE(e.hide_from_explore, false) = false
-          OR (e.community_id IS NOT NULL AND EXISTS (
-            SELECT 1 FROM newchums.community_members cm_viewer
-            WHERE cm_viewer.community_id = e.community_id AND cm_viewer.user_id = ${userId} AND cm_viewer.status = 'active'
-          ))
+          OR EXISTS (
+            SELECT 1 FROM newchums.event_communities ec_hid
+            JOIN newchums.community_members cm_viewer ON cm_viewer.community_id = ec_hid.community_id
+            WHERE ec_hid.event_id = e.id
+              AND cm_viewer.user_id = ${userId}
+              AND cm_viewer.status = 'active'
+          )
           OR EXISTS (SELECT 1 FROM newchums.event_rsvps er_hid WHERE er_hid.event_id = e.id AND er_hid.user_id = ${userId})
         )
         AND (e.visibility != 'invite_only'
@@ -10047,7 +10128,7 @@ app.get("/events/explore", async (c) => {
       my_rsvp_status: string | null;
       going_count: number; maybe_count: number; is_host: boolean;
       distance_km: number | null; is_qa: boolean;
-      community_id: string | null; community_slug: string | null; community_name: string | null;
+      communities: Array<{ id: string; slug: string; name: string }>;
     }>;
 
     // Batch-load host metrics for viewer→host compatibility notes
@@ -10165,7 +10246,7 @@ app.get("/events/explore", async (c) => {
         bannerKey: r.banner_key ?? null,
         prefNote,
         hasPrefMismatch,
-        community: r.community_id ? { id: r.community_id, slug: r.community_slug!, name: r.community_name! } : null,
+        communities: r.communities ?? [],
         isQa: r.is_qa || undefined,
       };
     });
@@ -10219,7 +10300,6 @@ app.get("/events/recently-happened/public", async (c) => {
       SELECT
         e.id, e.title, e.description, e.starts_at, e.timezone, e.location_type,
         e.location_area, e.max_seats, e.visibility, e.status, e.banner_key,
-        e.community_id,
         COALESCE(
           (SELECT json_agg(json_build_object('name', ii.name, 'slug', ii.slug, 'category', ii.category))
            FROM newchums.event_interests ei2
@@ -10229,12 +10309,18 @@ app.get("/events/recently-happened/public", async (c) => {
         ) AS hobbies,
         i.name AS interest_name, i.slug AS interest_slug,
         h.name AS host_name, h.username AS host_username,
-        co.id AS community_pk, co.slug AS community_slug, co.name AS community_name,
+        COALESCE(
+          (SELECT jsonb_agg(jsonb_build_object('id', c2.id, 'slug', c2.slug, 'name', c2.name) ORDER BY c2.name)
+           FROM newchums.event_communities ec2
+           JOIN newchums.communities c2 ON c2.id = ec2.community_id
+           WHERE ec2.event_id = e.id
+             AND COALESCE(c2.status, 'active') = 'active'),
+          '[]'::jsonb
+        ) AS communities,
         (SELECT COUNT(*)::int FROM newchums.event_rsvps er WHERE er.event_id = e.id AND er.status = 'going') AS going_count
       FROM newchums.events e
       LEFT JOIN newchums.interests i ON i.id = e.interest_id
       LEFT JOIN newchums.users h ON h.id = e.host_user_id
-      LEFT JOIN newchums.communities co ON co.id = e.community_id AND COALESCE(co.status, 'active') = 'active'
       WHERE e.status = 'published'
         AND e.starts_at < ${now.toISOString()}
         AND e.starts_at >= ${since.toISOString()}
@@ -10253,11 +10339,10 @@ app.get("/events/recently-happened/public", async (c) => {
       id: string; title: string; description: string | null; starts_at: string; timezone: string | null;
       location_type: string; location_area: string | null;
       max_seats: number | null; visibility: string; status: string; banner_key: string | null;
-      community_id: string | null;
       hobbies: Array<{ name: string; slug: string }> | string;
       interest_name: string | null; interest_slug: string | null;
       host_name: string | null; host_username: string | null;
-      community_pk: string | null; community_slug: string | null; community_name: string | null;
+      communities: Array<{ id: string; slug: string; name: string }>;
       going_count: number;
     }>;
 
@@ -10269,9 +10354,6 @@ app.get("/events/recently-happened/public", async (c) => {
       const locationDisplay =
         r.location_type === "online" ? "Online"
           : r.location_area || "General area";
-      const community = r.community_pk && r.community_slug && r.community_name
-        ? { id: r.community_pk, slug: r.community_slug, name: r.community_name }
-        : null;
       return {
         id: r.id,
         title: r.title,
@@ -10296,7 +10378,7 @@ app.get("/events/recently-happened/public", async (c) => {
         maybeCount: 0,
         distanceKm: null,
         bannerKey: r.banner_key ?? null,
-        community,
+        communities: r.communities ?? [],
       };
     });
 
@@ -10467,12 +10549,15 @@ app.get("/events/:id", async (c) => {
         ? [{ name: (event as Record<string, unknown>).interest_name as string, slug: ((event as Record<string, unknown>).interest_slug as string) ?? "", category: null }]
         : [];
 
-    // Community info (if plan belongs to a community)
-    let communityInfo: { id: string; slug: string; name: string } | null = null;
-    if (event.community_id) {
-      const cmRows = (await sql`SELECT id, slug, name FROM newchums.communities WHERE id = ${event.community_id} LIMIT 1`) as { id: string; slug: string; name: string }[];
-      if (cmRows[0]) communityInfo = cmRows[0];
-    }
+    // Communities the plan belongs to (zero, one, or more).
+    const communityList = (await sql`
+      SELECT c.id, c.slug, c.name
+      FROM newchums.event_communities ec
+      JOIN newchums.communities c ON c.id = ec.community_id
+      WHERE ec.event_id = ${eventId}
+        AND COALESCE(c.status, 'active') = 'active'
+      ORDER BY c.name ASC
+    `) as { id: string; slug: string; name: string }[];
 
     // --- Plan Access State ---
     // Determines the viewer's access level for data scoping and frontend rendering.
@@ -10550,7 +10635,7 @@ app.get("/events/:id", async (c) => {
           pendingConfirmationCount: 0,
           myConfirmationStatus: null,
           planViability: null,
-          community: communityInfo,
+          communities: communityList,
           hideFromExplore: false,
         },
         rsvps: [],
@@ -10795,7 +10880,7 @@ app.get("/events/:id", async (c) => {
         myConfirmationStatus,
         planViability,
         prefOverrides: isHost ? (event.pref_overrides ?? null) : undefined,
-        community: communityInfo,
+        communities: communityList,
         hideFromExplore: isHost ? (event.hide_from_explore === true) : undefined,
         isQa: event.is_qa === true ? true : undefined,
       },
@@ -11569,12 +11654,20 @@ app.patch("/events/:id", async (c) => {
       SELECT id, host_user_id, status, title, description, starts_at, timezone, max_seats, visibility,
              require_reconfirmation, min_confirmed_attendees, fallback_policy, alt_times_mode, availability_deadline_at,
              location_type, location_name, location_address, location_place_id, location_lat, location_lng,
-             location_visibility, location_area, online_link, community_id
+             location_visibility, location_area, online_link
       FROM newchums.events WHERE id = ${eventId}
-    `) as { id: string; host_user_id: string; status: string; title: string; description: string | null; starts_at: string; timezone: string | null; max_seats: number | null; visibility: string; require_reconfirmation: boolean; min_confirmed_attendees: number | null; fallback_policy: string; alt_times_mode: string | null; availability_deadline_at: string | null; location_type: string; location_name: string | null; location_address: string | null; location_place_id: string | null; location_lat: number | null; location_lng: number | null; location_visibility: string; location_area: string | null; online_link: string | null; community_id: string | null }[];
+    `) as { id: string; host_user_id: string; status: string; title: string; description: string | null; starts_at: string; timezone: string | null; max_seats: number | null; visibility: string; require_reconfirmation: boolean; min_confirmed_attendees: number | null; fallback_policy: string; alt_times_mode: string | null; availability_deadline_at: string | null; location_type: string; location_name: string | null; location_address: string | null; location_place_id: string | null; location_lat: number | null; location_lng: number | null; location_visibility: string; location_area: string | null; online_link: string | null }[];
     if (rows.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     if (rows[0].host_user_id !== userId) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
     if (rows[0].status === "canceled") return c.json({ ok: false, error: "VALIDATION", message: "Cannot edit a canceled plan" }, 400);
+
+    // Existing community links, used to determine which entries are newly
+    // added (and therefore need a fresh membership check) vs already
+    // present (which a host who left the community can keep).
+    const existingCommunityRows = (await sql`
+      SELECT community_id FROM newchums.event_communities WHERE event_id = ${eventId}
+    `) as { community_id: string }[];
+    const existingCommunityIds = new Set(existingCommunityRows.map((r) => r.community_id));
 
     const rawTitle = body.title != null ? String(body.title).trim() : null;
     if (!rawTitle) return c.json({ ok: false, error: "VALIDATION", message: "Title is required", field: "title" }, 400);
@@ -11681,40 +11774,58 @@ app.patch("/events/:id", async (c) => {
 
     const patchTimezone = body.timezone && typeof body.timezone === "string" ? body.timezone.trim().slice(0, 64) : null;
     const patchPrefOverrides = "pref_overrides" in body ? parsePrefOverrides(body.pref_overrides ?? null) : undefined;
-    const patchCommunityIdRaw = "community_id" in body ? (body.community_id ? String(body.community_id) : null) : undefined;
-    // Server-side invariant: invite_only plans can never be linked to a
-    // community. If the caller sets visibility=invite_only in this PATCH, we
-    // force community_id=null regardless of what else they sent. Mirror of
-    // the POST /events guard. See AGENTS.md -> Plan Feed and Community
-    // Visibility Contract.
-    const patchCommunityId: string | null | undefined =
-      visibility === "invite_only"
-        ? null
-        : patchCommunityIdRaw;
-    // hide_from_explore is only meaningful when a community is linked. When
-    // the effective community_id is null (either explicitly cleared or
-    // forced null by invite_only), clear hide_from_explore too so the two
-    // columns cannot drift apart.
+    // Community links are an array; the field is only present when the form
+    // detected a change from the original list. Server-side invariant:
+    // invite_only plans can never be linked to a community, so we force the
+    // list empty if the caller is setting visibility=invite_only in this
+    // PATCH. Mirror of the POST /events guard. See AGENTS.md -> Plan Feed
+    // and Community Visibility Contract.
+    let patchCommunityIds: string[] | undefined;
+    if ("community_ids" in body) {
+      const raw = Array.isArray(body.community_ids)
+        ? (body.community_ids as unknown[])
+            .map((v) => (typeof v === "string" ? v.trim() : ""))
+            .filter((v): v is string => !!v)
+        : [];
+      patchCommunityIds = visibility === "invite_only"
+        ? []
+        : Array.from(new Set(raw)).slice(0, 10);
+    } else if (visibility === "invite_only" && existingCommunityIds.size > 0) {
+      // Caller didn't touch community_ids but is switching to invite_only;
+      // detach all existing links to enforce the invariant.
+      patchCommunityIds = [];
+    }
+    // hide_from_explore is only meaningful when at least one community is
+    // linked. When the effective community list is empty (explicitly cleared
+    // or forced empty by invite_only), clear hide_from_explore too so the
+    // two values cannot drift apart.
     const patchHideFromExploreRaw = "hide_from_explore" in body ? body.hide_from_explore === true : undefined;
+    const effectiveCommunityCount = patchCommunityIds !== undefined
+      ? patchCommunityIds.length
+      : existingCommunityIds.size;
     const patchHideFromExplore: boolean | undefined =
-      patchCommunityId === null
+      effectiveCommunityCount === 0
         ? false
         : patchHideFromExploreRaw;
-    // Mirror the POST /events guard: if the caller is attaching the plan to a
-    // community (set or change), require them to be an active member. Clearing
-    // the link (null) is always allowed; a no-op that reuses the existing
-    // community_id is also allowed so a host who later left the community
-    // can still edit their plan's other fields without being forced to
-    // detach. Only a *change* to a different community triggers the check.
-    if (patchCommunityId && patchCommunityId !== rows[0].community_id) {
-      try {
+    // Mirror the POST /events guard: only newly-added community links need a
+    // fresh membership check. Communities that were already linked stay
+    // linked even if the host later left them, so a host who left a
+    // community can still edit other plan fields without being forced to
+    // detach.
+    if (patchCommunityIds !== undefined) {
+      const newlyAdded = patchCommunityIds.filter((cid) => !existingCommunityIds.has(cid));
+      if (newlyAdded.length > 0) {
         const cmRows = (await sql`
-          SELECT 1 FROM newchums.community_members
-          WHERE community_id = ${patchCommunityId} AND user_id = ${userId} AND status = 'active' LIMIT 1
-        `) as unknown[];
-        if (cmRows.length === 0)
-          return c.json({ ok: false, error: "VALIDATION", message: "You must be a member of the community", field: "community_id" }, 400);
-      } catch { /* community validation failure is non-fatal, will fail at UPDATE FK */ }
+          SELECT community_id FROM newchums.community_members
+          WHERE community_id = ANY(${newlyAdded}::uuid[])
+            AND user_id = ${userId}
+            AND status = 'active'
+        `) as { community_id: string }[];
+        const memberOf = new Set(cmRows.map((r) => r.community_id));
+        const missing = newlyAdded.filter((cid) => !memberOf.has(cid));
+        if (missing.length > 0)
+          return c.json({ ok: false, error: "VALIDATION", message: "You must be a member of every selected community", field: "community_ids" }, 400);
+      }
     }
     const patchIsQa = "is_qa" in body ? body.is_qa === true : undefined;
     // Only super admins can toggle the QA flag
@@ -11793,7 +11904,6 @@ app.patch("/events/:id", async (c) => {
           min_confirmed_attendees  = ${patchMinConfirmed},
           fallback_policy          = ${patchFallbackPolicy},
           pref_overrides           = CASE WHEN ${patchPrefOverrides !== undefined} THEN ${patchPrefOverrides !== undefined ? (patchPrefOverrides ? JSON.stringify(patchPrefOverrides) : null) : null}::jsonb ELSE pref_overrides END,
-          community_id             = CASE WHEN ${patchCommunityId !== undefined} THEN ${patchCommunityId !== undefined ? patchCommunityId : null}::uuid ELSE community_id END,
           hide_from_explore        = CASE WHEN ${patchHideFromExplore !== undefined} THEN ${patchHideFromExplore !== undefined ? patchHideFromExplore : false} ELSE hide_from_explore END,
           is_qa                    = CASE WHEN ${patchIsQa !== undefined} THEN ${patchIsQa !== undefined ? patchIsQa : false} ELSE is_qa END,
           banner_key               = CASE WHEN ${patchBannerKey !== undefined} THEN ${patchBannerKey !== undefined ? patchBannerKey : null} ELSE banner_key END,
@@ -11817,6 +11927,20 @@ app.patch("/events/:id", async (c) => {
         SELECT ${eventId}::uuid, unnest(${patchInterestIds}::uuid[])
         ON CONFLICT DO NOTHING
       `;
+    }
+
+    // Sync community links: replace the junction rows with the new list
+    // (only when the caller actually sent community_ids, or when the
+    // invite_only invariant is forcing a clear).
+    if (patchCommunityIds !== undefined) {
+      await sql`DELETE FROM newchums.event_communities WHERE event_id = ${eventId}`;
+      if (patchCommunityIds.length > 0) {
+        await sql`
+          INSERT INTO newchums.event_communities (event_id, community_id)
+          SELECT ${eventId}::uuid, unnest(${patchCommunityIds}::uuid[])
+          ON CONFLICT DO NOTHING
+        `;
+      }
     }
 
     // Build a human-readable diff for the email notification
@@ -15785,12 +15909,13 @@ async function processEventMatchDigest(
   // already has an RSVP on.
   const membersOnlyGate = sql`(
     COALESCE(e.hide_from_explore, false) = false
-    OR (e.community_id IS NOT NULL AND EXISTS (
-      SELECT 1 FROM newchums.community_members cm_digest
-      WHERE cm_digest.community_id = e.community_id
+    OR EXISTS (
+      SELECT 1 FROM newchums.event_communities ec_digest
+      JOIN newchums.community_members cm_digest ON cm_digest.community_id = ec_digest.community_id
+      WHERE ec_digest.event_id = e.id
         AND cm_digest.user_id = eu.user_id
         AND cm_digest.status = 'active'
-    ))
+    )
   )`;
 
   const rows = (await sql`

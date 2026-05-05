@@ -271,7 +271,7 @@ export default function CommunityDetailClient() {
       goingCount: Number(ev.goingCount ?? 0),
       maybeCount: Number(ev.maybeCount ?? 0),
       bannerKey: (ev.bannerKey as string) ?? null,
-      community: (ev.community as { id: string; slug: string; name: string }) ?? null,
+      communities: (ev.communities as Array<{ id: string; slug: string; name: string }>) ?? [],
       hasPrefMismatch: ev.hasPrefMismatch === true,
       isQa: ev.isQa === true,
     };
@@ -347,6 +347,10 @@ export default function CommunityDetailClient() {
     setMembersFetched(true);
   }, [community, isAuthenticated]);
 
+  // fetchCommunity flips loading=true synchronously; legitimate fetch-on-
+  // mount pattern. Same suppression style used elsewhere in this file for
+  // the plans/members and view-tracker effects.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { fetchCommunity(); }, [fetchCommunity]);
 
   useEffect(() => {
@@ -393,8 +397,12 @@ export default function CommunityDetailClient() {
     // members for the inline public member preview above the tabs. Fetching
     // both on mount means tab switches feel instant and the page renders a
     // lived-in snapshot immediately instead of waiting for a tab click.
+    // Both fetchers flip loading=true synchronously; legitimate fetch-on-
+    // ready pattern.
+    /* eslint-disable react-hooks/set-state-in-effect */
     fetchEvents();
     fetchMembers();
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [community, restricted, fetchEvents, fetchMembers]);
 
   // Apply an incoming ?tab=<name> query param to tabIndex exactly once, the

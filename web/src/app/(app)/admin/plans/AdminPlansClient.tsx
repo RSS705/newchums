@@ -47,9 +47,7 @@ type PlanRow = {
   location_type: string;
   location_name: string | null;
   location_address: string | null;
-  community_id: string | null;
-  community_name: string | null;
-  community_slug: string | null;
+  communities: Array<{ id: string; slug: string; name: string }>;
   hide_from_explore: boolean;
   host_name: string | null;
   host_username: string | null;
@@ -132,8 +130,11 @@ export default function AdminPlansClient() {
   const [removeSubmitting, setRemoveSubmitting] = useState(false);
 
   const [editTarget, setEditTarget] = useState<PlanRow | null>(null);
-  const [editPicked, setEditPicked] = useState<{ id: string; name: string; slug: string } | null>(null);
+  const [editPickedList, setEditPickedList] = useState<Array<{ id: string; name: string; slug: string }>>([]);
   const [editHideFromExplore, setEditHideFromExplore] = useState(false);
+  // Mirror the server-side cap (POST/PATCH /events both slice to 10) and the
+  // host-facing CommunityLinkSection so admins can't push past it either.
+  const ADMIN_MAX_COMMUNITIES = 10;
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [editCommunityQuery, setEditCommunityQuery] = useState("");
   const [editCommunityResults, setEditCommunityResults] = useState<AdminCommunityRow[]>([]);
@@ -156,6 +157,10 @@ export default function AdminPlansClient() {
     setLoading(false);
   }, []);
 
+  // fetchPlans flips loading=true synchronously, which the rule flags. The
+  // pattern is the standard "fetch list on mount / on filter change" effect
+  // used elsewhere in the admin panels.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { fetchPlans("", statusFilter); }, [fetchPlans, statusFilter]);
 
   const handleSearchChange = (val: string) => {
@@ -218,11 +223,7 @@ export default function AdminPlansClient() {
 
   const openEdit = (plan: PlanRow) => {
     setEditTarget(plan);
-    setEditPicked(
-      plan.community_id && plan.community_slug
-        ? { id: plan.community_id, name: plan.community_name ?? plan.community_slug, slug: plan.community_slug }
-        : null,
-    );
+    setEditPickedList(plan.communities.map((c) => ({ id: c.id, name: c.name, slug: c.slug })));
     setEditHideFromExplore(plan.hide_from_explore);
     setEditCommunityQuery("");
     setEditCommunityResults([]);
@@ -263,8 +264,8 @@ export default function AdminPlansClient() {
 
   const handleSaveEdit = async () => {
     if (!editTarget) return;
-    const nextCommunityId = editPicked?.id ?? null;
-    if (editTarget.visibility === "invite_only" && nextCommunityId !== null) {
+    const nextCommunityIds = editPickedList.map((c) => c.id);
+    if (editTarget.visibility === "invite_only" && nextCommunityIds.length > 0) {
       toast.error("Invite-only plans cannot be linked to a community");
       return;
     }
@@ -275,15 +276,15 @@ export default function AdminPlansClient() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          community_id: nextCommunityId,
-          hide_from_explore: nextCommunityId !== null && editHideFromExplore,
+          community_ids: nextCommunityIds,
+          hide_from_explore: nextCommunityIds.length > 0 && editHideFromExplore,
         }),
       });
       const data = (await res.json()) as {
         ok: boolean;
         error?: string;
         message?: string;
-        plan?: { community_id: string | null; hide_from_explore: boolean; community_name: string | null; community_slug: string | null };
+        plan?: { hide_from_explore: boolean; communities: Array<{ id: string; slug: string; name: string }> };
       };
       if (data.ok && data.plan) {
         const updated = data.plan;
@@ -291,17 +292,18 @@ export default function AdminPlansClient() {
           p.id === editTarget.id
             ? {
                 ...p,
-                community_id: updated.community_id,
-                community_name: updated.community_name,
-                community_slug: updated.community_slug,
+                communities: updated.communities,
                 hide_from_explore: updated.hide_from_explore,
               }
             : p,
         ));
+        const count = updated.communities.length;
         toast.success(
-          updated.community_id
-            ? `Linked to "${updated.community_name ?? "community"}"`
-            : "Community link cleared",
+          count === 0
+            ? "Community links cleared"
+            : count === 1
+              ? `Linked to "${updated.communities[0].name}"`
+              : `Linked to ${count} communities`,
         );
         closeEdit();
       } else if (data.error === "NOT_FOUND") {
@@ -470,13 +472,15 @@ export default function AdminPlansClient() {
                     </Typography>
                   </TableCell>
                   <TableCell sx={{ fontSize: "0.8125rem", maxWidth: 180, display: { xs: "none", lg: "table-cell" } }}>
-                    {plan.community_id && plan.community_slug ? (
+                    {plan.communities.length > 0 ? (
                       <Stack spacing={0.25} sx={{ minWidth: 0 }}>
-                        <NextLink href={`/communities/${plan.community_slug}`} style={{ color: "inherit", textDecoration: "none" }}>
-                          <Typography variant="body2" noWrap fontWeight={600} sx={{ "&:hover": { textDecoration: "underline" } }}>
-                            {plan.community_name || plan.community_slug}
-                          </Typography>
-                        </NextLink>
+                        {plan.communities.map((c) => (
+                          <NextLink key={c.id} href={`/communities/${c.slug}`} style={{ color: "inherit", textDecoration: "none" }}>
+                            <Typography variant="body2" noWrap fontWeight={600} sx={{ "&:hover": { textDecoration: "underline" } }}>
+                              {c.name || c.slug}
+                            </Typography>
+                          </NextLink>
+                        ))}
                         {plan.hide_from_explore && (
                           <Typography variant="caption" color="text.disabled">
                             Members only
@@ -564,24 +568,27 @@ export default function AdminPlansClient() {
                 <>
                   <Box>
                     <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.625 }}>
-                      Linked community
+                      Linked communities
                     </Typography>
-                    {editPicked ? (
-                      <Box sx={{ p: 1.5, borderRadius: 1.5, bgcolor: "action.hover", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 1 }}>
-                        <Typography variant="body2" fontWeight={600} noWrap>
-                          {editPicked.name}
-                        </Typography>
-                        <Button size="small" onClick={() => setEditPicked(null)} sx={{ textTransform: "none" }}>
-                          Clear
-                        </Button>
-                      </Box>
+                    {editPickedList.length > 0 ? (
+                      <Stack direction="row" sx={{ flexWrap: "wrap", gap: 0.75 }}>
+                        {editPickedList.map((c) => (
+                          <Chip
+                            key={c.id}
+                            label={c.name}
+                            size="small"
+                            onDelete={() => setEditPickedList((prev) => prev.filter((p) => p.id !== c.id))}
+                          />
+                        ))}
+                      </Stack>
                     ) : (
                       <Typography variant="body2" color="text.disabled">
                         Not linked to any community.
                       </Typography>
                     )}
                     <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.75, lineHeight: 1.5 }}>
-                      Super admin override. The host doesn&apos;t need to be a member of the chosen community, and they won&apos;t be notified.
+                      Super admin override. The host doesn&apos;t need to be a member of the chosen communities, and they won&apos;t be notified.
+                      {editPickedList.length >= ADMIN_MAX_COMMUNITIES && ` Maximum of ${ADMIN_MAX_COMMUNITIES} communities reached.`}
                     </Typography>
                   </Box>
 
@@ -613,22 +620,31 @@ export default function AdminPlansClient() {
                         </Typography>
                       ) : (
                         editCommunityResults.map((c) => {
-                          const selected = editPicked?.id === c.id;
+                          const selected = editPickedList.some((p) => p.id === c.id);
                           const isClosed = c.status === "closed";
+                          const atCap = editPickedList.length >= ADMIN_MAX_COMMUNITIES;
+                          const disabled = isClosed || (atCap && !selected);
+                          const toggle = () => {
+                            setEditPickedList((prev) =>
+                              prev.some((p) => p.id === c.id)
+                                ? prev.filter((p) => p.id !== c.id)
+                                : [...prev, { id: c.id, name: c.name, slug: c.slug }]
+                            );
+                          };
                           return (
                             <Box
                               key={c.id}
-                              onClick={isClosed ? undefined : () => setEditPicked({ id: c.id, name: c.name, slug: c.slug })}
+                              onClick={disabled ? undefined : toggle}
                               sx={{
                                 px: 1.5,
                                 py: 1,
-                                cursor: isClosed ? "default" : "pointer",
+                                cursor: disabled ? "default" : "pointer",
                                 bgcolor: selected ? "action.selected" : "transparent",
-                                opacity: isClosed ? 0.55 : 1,
+                                opacity: disabled ? 0.55 : 1,
                                 borderBottom: "1px solid",
                                 borderColor: "divider",
                                 "&:last-child": { borderBottom: 0 },
-                                "&:hover": isClosed ? {} : { bgcolor: "action.hover" },
+                                "&:hover": disabled ? {} : { bgcolor: "action.hover" },
                               }}
                             >
                               <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}>
@@ -657,7 +673,7 @@ export default function AdminPlansClient() {
                     </Box>
                   )}
 
-                  {editPicked !== null && (
+                  {editPickedList.length > 0 && (
                     <FormControlLabel
                       control={
                         <Switch
@@ -671,7 +687,7 @@ export default function AdminPlansClient() {
                             Only show this plan to community members
                           </Typography>
                           <Typography variant="caption" color="text.secondary">
-                            When on, this plan only appears in the community feed and to members in their Explore.
+                            When on, this plan only appears in each linked community feed and to those members in their Explore.
                           </Typography>
                         </Box>
                       }

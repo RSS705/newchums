@@ -107,14 +107,15 @@ export default function EditEventClient() {
   const [prefDisabledMetrics, setPrefDisabledMetrics] = useState<Record<string, boolean>>({});
 
   // Community association. Mirrors the Add Plan form: `myCommunities` is
-  // the dropdown's option list, `selectedCommunityId` is the current choice.
-  // `initialCommunityId` is the community linked when the event loaded;
-  // PATCH only ships `community_id` when the selection actually changed, so
-  // an unchanged save never triggers the server-side "must be a member"
-  // validation for a host who has since left that community.
+  // the selector's option list, `selectedCommunityIds` is the current set of
+  // linked communities. `initialCommunityIds` is the list linked when the
+  // event loaded; PATCH only ships `community_ids` when the selection
+  // actually changed, so an unchanged save never triggers the server-side
+  // "must be a member" validation for a host who has since left one of the
+  // already-linked communities.
   const [myCommunities, setMyCommunities] = useState<SharedMyCommunity[]>([]);
-  const [selectedCommunityId, setSelectedCommunityId] = useState<string | null>(null);
-  const [initialCommunityId, setInitialCommunityId] = useState<string | null>(null);
+  const [selectedCommunityIds, setSelectedCommunityIds] = useState<string[]>([]);
+  const [initialCommunityIds, setInitialCommunityIds] = useState<string[]>([]);
   const [hideFromExplore, setHideFromExplore] = useState(false);
   const [initialHideFromExplore, setInitialHideFromExplore] = useState(false);
 
@@ -216,16 +217,21 @@ export default function EditEventClient() {
           : ev.hobby ? [{ name: ev.hobby, slug: ev.hobbySlug ?? "" }] : [];
         setHobbies(h);
 
-        // Community association
-        if (ev.community) {
-          setSelectedCommunityId(ev.community.id);
-          setInitialCommunityId(ev.community.id);
-          // Seed the dropdown with the currently-linked community so the user
-          // always sees it, even if they're no longer an active member (in
-          // which case the /communities?mine=1 fetch below would omit it).
-          // `myCommunities` is then replaced (not merged) once that fetch
-          // resolves, we re-seed the linked community there if needed.
-          setMyCommunities([{ id: ev.community.id, name: ev.community.name }]);
+        // Community associations. Plans can be linked to zero or more
+        // communities.
+        const linkedCommunities: Array<{ id: string; name: string; slug?: string }> =
+          Array.isArray(ev.communities) ? ev.communities : [];
+        if (linkedCommunities.length > 0) {
+          const linkedIds = linkedCommunities.map((c) => c.id);
+          setSelectedCommunityIds(linkedIds);
+          setInitialCommunityIds(linkedIds);
+          // Seed the selector with the currently-linked communities so the
+          // user always sees them, even if they're no longer an active
+          // member (in which case the /communities?mine=1 fetch below would
+          // omit them). `myCommunities` is then replaced (not merged) once
+          // that fetch resolves; we re-seed any still-missing linked
+          // communities there.
+          setMyCommunities(linkedCommunities.map((c) => ({ id: c.id, name: c.name })));
         }
         const initialHide = ev.hideFromExplore === true;
         setHideFromExplore(initialHide);
@@ -279,13 +285,13 @@ export default function EditEventClient() {
 
   // When visibility switches to invite_only, clear any community linkage so
   // the form state matches what the server will store (PATCH /events/:id
-  // forces community_id=null for invite_only) and the Community section
-  // disappears rather than misleading the user. Mirror of the same effect
-  // in the Add Plan form. See AGENTS.md -> Plan Feed and Community
+  // forces an empty community list for invite_only) and the Community
+  // section disappears rather than misleading the user. Mirror of the same
+  // effect in the Add Plan form. See AGENTS.md -> Plan Feed and Community
   // Visibility Contract.
   useEffect(() => {
     if (visibility === "invite_only") {
-      setSelectedCommunityId(null);
+      setSelectedCommunityIds([]);
       setHideFromExplore(false);
     }
   }, [visibility]);
@@ -314,19 +320,17 @@ export default function EditEventClient() {
           location_lng: c.location_lng != null ? Number(c.location_lng) : null,
         }));
         setMyCommunities((prev) => {
-          // If the plan is linked to a community that isn't in the fresh
-          // list (host has left it, for example), preserve the seeded entry
-          // so the user can still see the linkage and detach it.
-          const linked = prev.find((c) => c.id === initialCommunityId);
-          if (linked && !list.some((c) => c.id === linked.id)) {
-            return [...list, linked];
-          }
-          return list;
+          // If the plan is linked to communities that aren't in the fresh
+          // list (host has left them, for example), preserve those seeded
+          // entries so the user can still see the linkage and detach.
+          const linkedIds = new Set(initialCommunityIds);
+          const carry = prev.filter((c) => linkedIds.has(c.id) && !list.some((nc) => nc.id === c.id));
+          return carry.length > 0 ? [...list, ...carry] : list;
         });
       } catch { /* non-fatal */ }
     })();
     return () => { cancelled = true; };
-  }, [initialCommunityId]);
+  }, [initialCommunityIds]);
 
   const buildPrefOverrides = (): PrefOverrides => {
     if (prefDisableAll) return { disabled: true };
@@ -414,9 +418,15 @@ export default function EditEventClient() {
           // "you must be a member" validation on the unchanged id. Clearing
           // or switching the linkage still sends the new value and is
           // validated as normal.
-          ...(selectedCommunityId !== initialCommunityId
-            ? { community_id: selectedCommunityId || null }
-            : {}),
+          ...((() => {
+            // Only ship community_ids when the set of linked communities
+            // actually changed. Order-insensitive comparison so reordering
+            // alone (which has no semantic effect) doesn't trip the server-
+            // side membership check on already-linked entries.
+            const before = [...initialCommunityIds].sort().join(",");
+            const after = [...selectedCommunityIds].sort().join(",");
+            return before !== after ? { community_ids: selectedCommunityIds } : {};
+          })()),
           ...(hideFromExplore !== initialHideFromExplore
             ? { hide_from_explore: hideFromExplore }
             : {}),
@@ -1133,8 +1143,8 @@ export default function EditEventClient() {
       <CommunityLinkSection
         visibility={visibility}
         myCommunities={myCommunities}
-        selectedCommunityId={selectedCommunityId}
-        onChangeSelectedCommunityId={setSelectedCommunityId}
+        selectedCommunityIds={selectedCommunityIds}
+        onChangeSelectedCommunityIds={setSelectedCommunityIds}
         hideFromExplore={hideFromExplore}
         onChangeHideFromExplore={setHideFromExplore}
       />
