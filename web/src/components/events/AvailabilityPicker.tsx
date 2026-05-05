@@ -15,7 +15,6 @@ import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
 import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import { AppButton } from "@/components/ui";
-import { pickerFieldTabKeyDown } from "@/components/fields/pickerTabNav";
 
 export type AvailabilitySelection = {
   /** Local-day key, e.g. "2026-05-06". Used to dedupe selections. */
@@ -42,6 +41,15 @@ const SLIDER_DAYS_AFTER_PLAN = 27;
 
 function makeDayKey(d: Dayjs): string {
   return d.format("YYYY-MM-DD");
+}
+
+// TimePicker values can carry whatever date the picker used as a reference
+// (today by default when there was no prior value). Comparing the full Dayjs
+// across two pickers therefore mixes time-of-day with date and produces wrong
+// results, e.g. "today 7pm" is "before" a start value from a future plan day.
+// Always compare only the time-of-day component for window validation.
+function minutesOfDay(t: Dayjs): number {
+  return t.hour() * 60 + t.minute();
 }
 
 export default function AvailabilityPicker({
@@ -107,14 +115,17 @@ export default function AvailabilityPicker({
     [selected]
   );
 
-  const isPartialWindow = (s: AvailabilitySelection): boolean =>
-    (!!s.start || !!s.end) && !(s.start && s.end);
+  // Single-time entries are entered in the "Earliest start" field only; a
+  // value in "Latest start" without an "Earliest start" is treated as
+  // partial input rather than as a single time.
+  const isMissingEarliest = (s: AvailabilitySelection): boolean =>
+    !s.start && !!s.end;
 
   const isInvalidWindow = (s: AvailabilitySelection): boolean =>
-    !!(s.start && s.end && !s.end.isAfter(s.start));
+    !!(s.start && s.end && minutesOfDay(s.end) <= minutesOfDay(s.start));
 
   const hasInvalidSelection = sortedSelections.some(
-    (s) => isPartialWindow(s) || isInvalidWindow(s)
+    (s) => isMissingEarliest(s) || isInvalidWindow(s)
   );
 
   const submit = async () => {
@@ -326,7 +337,7 @@ export default function AvailabilityPicker({
         <Stack spacing={0.875} sx={{ mt: 1.75 }}>
           {sortedSelections.map((s) => {
             const isAnytime = !s.start && !s.end;
-            const partialWindow = isPartialWindow(s);
+            const missingEarliest = isMissingEarliest(s);
             const invalidWindow = isInvalidWindow(s);
             return (
               <Paper
@@ -393,6 +404,7 @@ export default function AvailabilityPicker({
                     value={s.start}
                     onChange={(v) => updateTime(s.dayKey, v, s.end)}
                     format="h:mm A"
+                    enableAccessibleFieldDOMStructure={false}
                     slotProps={{
                       field: {
                         shouldRespectLeadingZeros: true,
@@ -401,7 +413,6 @@ export default function AvailabilityPicker({
                         fullWidth: true,
                         size: "small",
                         placeholder: "Earliest start",
-                        onKeyDown: pickerFieldTabKeyDown,
                       },
                     }}
                   />
@@ -409,6 +420,7 @@ export default function AvailabilityPicker({
                     value={s.end}
                     onChange={(v) => updateTime(s.dayKey, s.start, v)}
                     format="h:mm A"
+                    enableAccessibleFieldDOMStructure={false}
                     slotProps={{
                       field: {
                         shouldRespectLeadingZeros: true,
@@ -417,12 +429,11 @@ export default function AvailabilityPicker({
                         fullWidth: true,
                         size: "small",
                         placeholder: "Latest start",
-                        onKeyDown: pickerFieldTabKeyDown,
                       },
                     }}
                   />
                 </Stack>
-                {(partialWindow || invalidWindow) && (
+                {(missingEarliest || invalidWindow) && (
                   <Typography
                     variant="caption"
                     color="warning.dark"
@@ -430,7 +441,7 @@ export default function AvailabilityPicker({
                   >
                     {invalidWindow
                       ? "Latest start must be after earliest start."
-                      : "Pick both an earliest and a latest start, or tick Anytime."}
+                      : "Add an earliest start time."}
                   </Typography>
                 )}
               </Paper>

@@ -72,7 +72,7 @@ import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import UserAvatar from "@/components/common/UserAvatar";
-import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
+import { AppButton, AppCard, useToast } from "@/components/ui";
 import RichTextContent from "@/components/ui/RichTextContent";
 import {
   apiFetch,
@@ -176,7 +176,6 @@ type AltTimeEntry = {
   handle: string | null;
   suggestedAt: string;
   endsAt: string | null;
-  note: string | null;
 };
 type InviteEntry = {
   userId: string | null;
@@ -322,7 +321,6 @@ export default function EventDetailClient() {
   const [altEditStartTime, setAltEditStartTime] = useState<Dayjs | null>(null);
   const [altEditEndTime, setAltEditEndTime] = useState<Dayjs | null>(null);
   const [altEditAnytime, setAltEditAnytime] = useState(false);
-  const [altEditNote, setAltEditNote] = useState("");
   const [altEditingId, setAltEditingId] = useState<string | null>(null);
   const [altSubmitting, setAltSubmitting] = useState(false);
   const [altDeleting, setAltDeleting] = useState<string | null>(null);
@@ -1303,7 +1301,7 @@ export default function EventDetailClient() {
         auth: true,
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ suggested_at: event.startsAt, note: "Proposed time works" }),
+        body: JSON.stringify({ suggested_at: event.startsAt }),
       });
       const data = (await res.json()) as { ok: boolean; message?: string };
       if (data.ok) {
@@ -1323,15 +1321,15 @@ export default function EventDetailClient() {
     setAltEditStartTime(null);
     setAltEditEndTime(null);
     setAltEditAnytime(false);
-    setAltEditNote("");
     setAltEditingId(null);
   };
 
   /**
-   * Send one POST per selected date. "Anytime start" is encoded as a 24h
+   * Send one POST per selected date. "Start anytime" is encoded as a 24h
    * window from local-midnight to next-day local-midnight, which is a valid
    * payload under the existing API contract and renders cleanly in the
-   * existing list/overlap logic. A specific window passes start/end as-is.
+   * existing list/overlap logic. A range passes start/end as-is. A single
+   * filled time is sent as a point-in-time entry (ends_at: null).
    */
   const handleAvailabilityShare = async (entries: AvailabilitySelection[]) => {
     if (entries.length === 0 || !event) return;
@@ -1340,21 +1338,16 @@ export default function EventDetailClient() {
     try {
       for (const entry of entries) {
         const day = entry.date.startOf("day");
+        const atTimeOnDay = (t: import("dayjs").Dayjs) =>
+          day.hour(t.hour()).minute(t.minute()).second(0).millisecond(0).toISOString();
         let suggestedAt: string;
         let endsAt: string | null;
         if (entry.start && entry.end) {
-          suggestedAt = day
-            .hour(entry.start.hour())
-            .minute(entry.start.minute())
-            .second(0)
-            .millisecond(0)
-            .toISOString();
-          endsAt = day
-            .hour(entry.end.hour())
-            .minute(entry.end.minute())
-            .second(0)
-            .millisecond(0)
-            .toISOString();
+          suggestedAt = atTimeOnDay(entry.start);
+          endsAt = atTimeOnDay(entry.end);
+        } else if (entry.start) {
+          suggestedAt = atTimeOnDay(entry.start);
+          endsAt = null;
         } else {
           suggestedAt = day.toISOString();
           endsAt = day.add(1, "day").toISOString();
@@ -1363,7 +1356,7 @@ export default function EventDetailClient() {
           auth: true,
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ suggested_at: suggestedAt, ends_at: endsAt, note: null }),
+          body: JSON.stringify({ suggested_at: suggestedAt, ends_at: endsAt }),
         });
         const data = (await res.json()) as { ok: boolean; message?: string };
         if (!data.ok) {
@@ -1380,7 +1373,10 @@ export default function EventDetailClient() {
             ? `${addedLabel} shared`
             : `${created} ${addedLabel.toLowerCase()} entries shared`
         );
-        refresh();
+        // Await the refresh so the picker's parent has the new entries
+        // committed before AvailabilityPicker.submit clears its selection;
+        // otherwise the empty-state caption flickers in for one render.
+        await refresh();
       }
     } catch {
       toast.error("Network error");
@@ -1390,47 +1386,42 @@ export default function EventDetailClient() {
 
   const handleAltEditSave = async () => {
     if (!altEditingId || !altEditDate) return;
-    if (!altEditAnytime && (!altEditStartTime || !altEditEndTime)) {
-      toast.error("Pick a time window or switch to Anytime");
+    if (!altEditAnytime && !altEditStartTime) {
+      toast.error("Pick an earliest start, or switch to Anytime");
       return;
     }
     if (
       !altEditAnytime &&
       altEditStartTime &&
       altEditEndTime &&
-      !altEditEndTime.isAfter(altEditStartTime)
+      altEditEndTime.hour() * 60 + altEditEndTime.minute() <=
+        altEditStartTime.hour() * 60 + altEditStartTime.minute()
     ) {
-      toast.error("End time must be after start time");
+      toast.error("Latest start must be after earliest start");
       return;
     }
     setAltSubmitting(true);
     try {
       const day = altEditDate.startOf("day");
+      const atTimeOnDay = (t: import("dayjs").Dayjs) =>
+        day.hour(t.hour()).minute(t.minute()).second(0).millisecond(0).toISOString();
       let suggestedAt: string;
       let endsAt: string | null;
-      if (altEditAnytime || !altEditStartTime || !altEditEndTime) {
+      if (altEditAnytime) {
         suggestedAt = day.toISOString();
         endsAt = day.add(1, "day").toISOString();
+      } else if (altEditStartTime && altEditEndTime) {
+        suggestedAt = atTimeOnDay(altEditStartTime);
+        endsAt = atTimeOnDay(altEditEndTime);
       } else {
-        suggestedAt = day
-          .hour(altEditStartTime.hour())
-          .minute(altEditStartTime.minute())
-          .second(0)
-          .millisecond(0)
-          .toISOString();
-        endsAt = day
-          .hour(altEditEndTime.hour())
-          .minute(altEditEndTime.minute())
-          .second(0)
-          .millisecond(0)
-          .toISOString();
+        suggestedAt = atTimeOnDay(altEditStartTime!);
+        endsAt = null;
       }
-      const noteVal = altEditNote.trim() || null;
       const res = await apiFetch(`/events/${eventId}/alt-time/${altEditingId}`, {
         auth: true,
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ suggested_at: suggestedAt, ends_at: endsAt, note: noteVal }),
+        body: JSON.stringify({ suggested_at: suggestedAt, ends_at: endsAt }),
       });
       const data = (await res.json()) as { ok: boolean; message?: string };
       if (data.ok) {
@@ -1474,7 +1465,6 @@ export default function EventDetailClient() {
     setAltEditAnytime(isAnytime);
     setAltEditStartTime(isAnytime ? null : start);
     setAltEditEndTime(isAnytime ? null : end);
-    setAltEditNote(entry.note ?? "");
     setAltEditingId(entry.id);
     // Scroll handled by an effect on altEditingId so the form has mounted
     // before we scrollIntoView; the previous scrollTo({top:0}) was a no-op
@@ -4164,7 +4154,7 @@ export default function EventDetailClient() {
           const fmtTime = (d: Date) =>
             d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", hour12: true });
 
-          // "Anytime start" entries are submitted as a ~24h window (local
+          // "Start anytime" entries are submitted as a ~24h window (local
           // midnight to next-day local midnight in the submitter's timezone).
           // Detect by duration alone so viewers in a different timezone still
           // see "Anytime", not "4:00 AM - 4:00 AM".
@@ -4178,7 +4168,7 @@ export default function EventDetailClient() {
           ): string => {
             const startMs = new Date(suggestedAt).getTime();
             const endMs = endsAt ? new Date(endsAt).getTime() : null;
-            if (isAnytimeWindow(startMs, endMs)) return "Anytime start";
+            if (isAnytimeWindow(startMs, endMs)) return "Start anytime";
             const startLabel = fmtTime(new Date(startMs));
             return endMs != null ? `${startLabel} - ${fmtTime(new Date(endMs))}` : startLabel;
           };
@@ -4238,6 +4228,33 @@ export default function EventDetailClient() {
                 entries: [...entrySet].map((id) => entryById.get(id)!).filter(Boolean),
               });
             }
+
+            // Catch groups of point entries that share an exact timestamp.
+            // The segment loop above only runs when there are 2+ distinct
+            // boundaries, so a day whose only entries are points all at the
+            // same minute would otherwise produce no overlap. Emit a
+            // zero-width window for each such group, unless the group is
+            // already represented by a segment-based overlap (e.g. when a
+            // ranged interval covers the same timestamp).
+            const pointBuckets = new Map<number, AltTimeEntry[]>();
+            for (const pt of pointEntries) {
+              const ts = new Date(pt.suggestedAt).getTime();
+              const bucket = pointBuckets.get(ts);
+              if (bucket) bucket.push(pt);
+              else pointBuckets.set(ts, [pt]);
+            }
+            for (const [ts, bucket] of pointBuckets) {
+              if (bucket.length < 2) continue;
+              const alreadyCovered = raw.some(
+                (w) =>
+                  ts >= w.startMs &&
+                  ts < w.endMs &&
+                  bucket.every((pt) => w.entries.some((e) => e.id === pt.id))
+              );
+              if (alreadyCovered) continue;
+              raw.push({ startMs: ts, endMs: ts, entries: [...bucket] });
+            }
+            raw.sort((a, b) => a.startMs - b.startMs);
 
             const merged: OverlapWindow[] = [];
             for (const w of raw) {
@@ -4504,7 +4521,7 @@ export default function EventDetailClient() {
                             }}
                           />
                         }
-                        label="Anytime start"
+                        label="Start anytime"
                       />
                       {!altEditAnytime && (
                         <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
@@ -4520,6 +4537,7 @@ export default function EventDetailClient() {
                               value={altEditStartTime}
                               onChange={setAltEditStartTime}
                               format="h:mm A"
+                              enableAccessibleFieldDOMStructure={false}
                               slotProps={{
                                 field: {
                                   shouldRespectLeadingZeros: true,
@@ -4527,8 +4545,7 @@ export default function EventDetailClient() {
                                 textField: {
                                   fullWidth: true,
                                   size: "small",
-                                  placeholder: "Earliest",
-                                  onKeyDown: pickerFieldTabKeyDown,
+                                  placeholder: "Earliest start",
                                 },
                               }}
                             />
@@ -4545,6 +4562,7 @@ export default function EventDetailClient() {
                               value={altEditEndTime}
                               onChange={setAltEditEndTime}
                               format="h:mm A"
+                              enableAccessibleFieldDOMStructure={false}
                               slotProps={{
                                 field: {
                                   shouldRespectLeadingZeros: true,
@@ -4552,24 +4570,13 @@ export default function EventDetailClient() {
                                 textField: {
                                   fullWidth: true,
                                   size: "small",
-                                  placeholder: "Latest",
-                                  onKeyDown: pickerFieldTabKeyDown,
+                                  placeholder: "Latest start",
                                 },
                               }}
                             />
                           </Box>
                         </Stack>
                       )}
-                      <AppTextField
-                        label="Note (optional)"
-                        placeholder={
-                          isAvailMode
-                            ? "e.g. Available most of the afternoon"
-                            : "e.g. Friday works better for me"
-                        }
-                        value={altEditNote}
-                        onChange={(e) => setAltEditNote(e.target.value)}
-                      />
                       <Stack direction="row" spacing={1}>
                         <AppButton
                           size="small"
@@ -4775,15 +4782,6 @@ export default function EventDetailClient() {
                                         )}
                                       </Typography>
                                     </Stack>
-                                    {entry.note && (
-                                      <Typography
-                                        variant="caption"
-                                        color="text.disabled"
-                                        sx={{ display: "block" }}
-                                      >
-                                        {entry.note}
-                                      </Typography>
-                                    )}
                                   </Box>
                                   <Stack direction="row" spacing={0} sx={{ flexShrink: 0 }}>
                                     {event.isHost && (

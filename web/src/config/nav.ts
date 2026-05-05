@@ -53,10 +53,13 @@ export type HeaderNavLink = { label: string; href: string };
 /** Marketing-only nav shown in the site header for every viewer. Logged-in
  *  users don't get any product links here because the left sidebar already
  *  carries those. Kept as a plain array (not a tuple) so the logged-out
- *  variant below can be composed from it with a spread. */
+ *  variant below can be composed from it with a spread.
+ *
+ *  Science of Friendship is intentionally omitted from the primary nav. The
+ *  page still exists, is reachable from the in-page CTA inside the "Why
+ *  NewChums works" homepage section, and remains in the footer. */
 export const headerNavLinks: HeaderNavLink[] = [
   { label: "How it Works", href: "/how-it-works" },
-  { label: "Science of Friendship", href: "/science-of-friendship" },
   { label: "Safety Center", href: "/safety-center" },
 ];
 
@@ -66,11 +69,8 @@ export const headerNavLinks: HeaderNavLink[] = [
  *  Kept out of the logged-in header because authenticated users already
  *  have Communities in the left sidebar; showing it twice would be noise.
  *
- *  Science of Friendship is intentionally not in the primary nav for the
- *  pilot. The page itself still exists, is reachable from the in-page CTA
- *  inside the "Why NewChums works" homepage section, and remains in the
- *  footer. The homepage's "For Organizers" section (id `for-organizers`)
- *  is similarly unlinked from the top nav, the in-page hero CTA on the
+ *  The homepage's "For Organizers" section (id `for-organizers`) is
+ *  similarly unlinked from the top nav, the in-page hero CTA on the
  *  homepage routes there. */
 export const publicHeaderNavLinks: HeaderNavLink[] = [
   { label: "How it Works", href: "/how-it-works" },

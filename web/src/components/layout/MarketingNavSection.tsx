@@ -19,7 +19,7 @@ type MarketingNavSectionProps = {
 };
 
 /**
- * Shared "More Goodness" section: How it Works, Science of Friendship, Safety Center.
+ * Shared "More Goodness" drawer section rendering the marketing nav links.
  * Used in AppShell (logged-in drawer) and LandingLayout (logged-out drawer).
  * Typography slightly larger for improved mobile readability.
  */

@@ -10584,12 +10584,12 @@ app.get("/events/:id", async (c) => {
     }
 
     const altTimes = (await sql`
-      SELECT eat.id, eat.suggested_at, eat.ends_at, eat.note, eat.user_id, u.name, u.username
+      SELECT eat.id, eat.suggested_at, eat.ends_at, eat.user_id, u.name, u.username
       FROM newchums.event_alt_times eat
       JOIN newchums.users u ON u.id = eat.user_id
       WHERE eat.event_id = ${eventId}
       ORDER BY eat.created_at ASC
-    `) as Array<{ id: string; suggested_at: string; ends_at: string | null; note: string | null; user_id: string; name: string | null; username: string | null }>;
+    `) as Array<{ id: string; suggested_at: string; ends_at: string | null; user_id: string; name: string | null; username: string | null }>;
 
     const invites = (await sql`
       SELECT ei.user_id, ei.email, u.name, u.username
@@ -10836,7 +10836,6 @@ app.get("/events/:id", async (c) => {
           handle: aHandle ? `@${aHandle}` : null,
           suggestedAt: a.suggested_at,
           endsAt: a.ends_at,
-          note: a.note,
         };
       }),
       invites: invites.map((inv) => {
@@ -11273,8 +11272,6 @@ app.post("/events/:id/alt-time", async (c) => {
       return c.json({ ok: false, error: "VALIDATION", message: "End time must be after start time", field: "ends_at" }, 400);
   }
 
-  const note = body.note ? String(body.note).trim().slice(0, 500) : null;
-
   try {
     const ev = (await sql`SELECT id, host_user_id, allow_alt_times, title FROM newchums.events WHERE id = ${eventId} AND status = 'published'`) as { id: string; host_user_id: string; allow_alt_times: boolean; title: string }[];
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
@@ -11293,8 +11290,8 @@ app.post("/events/:id/alt-time", async (c) => {
     }
 
     await sql`
-      INSERT INTO newchums.event_alt_times (event_id, user_id, suggested_at, ends_at, note)
-      VALUES (${eventId}, ${userId}, ${suggestedDate.toISOString()}, ${endsAtDate ? endsAtDate.toISOString() : null}, ${note})
+      INSERT INTO newchums.event_alt_times (event_id, user_id, suggested_at, ends_at)
+      VALUES (${eventId}, ${userId}, ${suggestedDate.toISOString()}, ${endsAtDate ? endsAtDate.toISOString() : null})
     `;
 
     const participants = (await sql`
@@ -11340,7 +11337,7 @@ app.patch("/events/:id/alt-time/:altTimeId", async (c) => {
   try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
 
   try {
-    const row = (await sql`SELECT id, user_id, suggested_at, ends_at, note FROM newchums.event_alt_times WHERE id = ${altTimeId}`) as { id: string; user_id: string; suggested_at: string; ends_at: string | null; note: string | null }[];
+    const row = (await sql`SELECT id, user_id, suggested_at, ends_at FROM newchums.event_alt_times WHERE id = ${altTimeId}`) as { id: string; user_id: string; suggested_at: string; ends_at: string | null }[];
     if (row.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     if (row[0].user_id !== userId) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
 
@@ -11365,13 +11362,10 @@ app.patch("/events/:id/alt-time/:altTimeId", async (c) => {
     if (effectiveEnd && effectiveEnd.getTime() <= effectiveStart.getTime())
       return c.json({ ok: false, error: "VALIDATION", message: "End time must be after start time", field: "ends_at" }, 400);
 
-    const finalNote = body.note !== undefined ? (body.note ? String(body.note).trim().slice(0, 500) : null) : row[0].note;
-
     await sql`
       UPDATE newchums.event_alt_times SET
         suggested_at = ${suggestedAt ? suggestedAt.toISOString() : row[0].suggested_at},
-        ends_at      = ${endsAt !== undefined ? (endsAt ? endsAt.toISOString() : null) : row[0].ends_at},
-        note         = ${finalNote}
+        ends_at      = ${endsAt !== undefined ? (endsAt ? endsAt.toISOString() : null) : row[0].ends_at}
       WHERE id = ${altTimeId}
     `;
 
