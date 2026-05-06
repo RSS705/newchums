@@ -142,6 +142,10 @@ type EventDetail = {
   // Attendance assurance
   minConfirmedAttendees: number | null;
   fallbackPolicy: string | null;
+  // Optional RSVP-based threshold; distinct from the 24-hour attendance check.
+  // If set, the cron auto-cancels the plan 2 hours before start when fewer
+  // than this many "going" RSVPs exist (host included).
+  minAttendeesRequired?: number | null;
   confirmationWindowOpen: boolean;
   // True once the confirmation cycle has been issued for this plan (Phase 1
   // ran). Stays true after the window closes or the plan is canceled, so the
@@ -2617,14 +2621,22 @@ export default function EventDetailClient() {
                 ? "The host decided to cancel this plan."
                 : event.cancellationReason === "min_attendees_not_met"
                   ? "The minimum number of confirmed attendees wasn't reached."
-                  : event.cancellationReason === "no_attendees"
-                    ? "No one else was able to join this time around, but don't let that discourage you. The right plan is out there."
-                    : null}
+                  : event.cancellationReason === "min_attendees_required_not_met"
+                    ? "Not enough people were going by the 2-hour cutoff, so NewChums automatically cancelled the plan."
+                    : event.cancellationReason === "no_attendees"
+                      ? "No one else was able to join this time around, but don't let that discourage you. The right plan is out there."
+                      : null}
             </Typography>
             {event.cancellationReason === "min_attendees_not_met" && event.minConfirmedAttendees && (
               <Typography variant="body2" sx={{ opacity: 0.8 }}>
                 {event.confirmedCount} of {event.minConfirmedAttendees}{" "}
                 {event.minConfirmedAttendees === 1 ? "person" : "people"} confirmed by the deadline.
+              </Typography>
+            )}
+            {event.cancellationReason === "min_attendees_required_not_met" && event.minAttendeesRequired && (
+              <Typography variant="body2" sx={{ opacity: 0.8 }}>
+                {goingCount} of {event.minAttendeesRequired}{" "}
+                {event.minAttendeesRequired === 1 ? "person" : "people"} going by the deadline.
               </Typography>
             )}
             {event.canceledAt && (
@@ -2794,6 +2806,16 @@ export default function EventDetailClient() {
                   </Typography>
                 )}
               </Stack>
+            </Stack>
+          )}
+          {event.minAttendeesRequired != null && !isCanceled && (
+            <Stack direction="row" spacing={1.5} alignItems="flex-start">
+              <NotificationsRoundedIcon sx={{ color: "text.secondary", fontSize: 22, mt: "1px" }} />
+              <Typography variant="body2" color="text.secondary">
+                This plan needs at least {event.minAttendeesRequired}{" "}
+                {event.minAttendeesRequired === 1 ? "person" : "people"} going, or it will be
+                automatically cancelled 2 hours before it starts.
+              </Typography>
             </Stack>
           )}
           {event.requireReconfirmation && event.confirmationWindowOpen && (

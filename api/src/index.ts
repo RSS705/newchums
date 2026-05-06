@@ -709,7 +709,7 @@ app.get("/public/users/:userId/attendance-record", async (c) => {
             AND er.user_id IS DISTINCT FROM e.host_user_id
             AND er.committed_at IS NOT NULL
         )
-        AND COALESCE(e.cancellation_reason, '') != 'no_attendees'
+        AND COALESCE(e.cancellation_reason, '') NOT IN ('no_attendees', 'min_attendees_required_not_met')
     `) as { completed: number; total_hosted: number }[];
 
     return c.json({
@@ -5909,7 +5909,7 @@ app.get("/admin/kpis/growth-loop", async (c) => {
             AND er.user_id IS DISTINCT FROM fe.host_user_id
             AND er.committed_at IS NOT NULL
         )
-        AND COALESCE(fe.cancellation_reason, '') != 'no_attendees'
+        AND COALESCE(fe.cancellation_reason, '') NOT IN ('no_attendees', 'min_attendees_required_not_met')
       )
       SELECT
         (SELECT COUNT(*)::int FROM with_attendees) AS denominator,
@@ -9142,6 +9142,22 @@ app.post("/events", async (c) => {
     ? body.fallback_policy as string
     : "notify_host";
 
+  // Optional RSVP-based minimum, independent of the 24-hour attendance check.
+  // If fewer than this many people are "going" 2 hours before start, the
+  // cron auto-cancels the plan. Host counts toward the threshold (host is
+  // auto-RSVP'd as "going" on creation; same counting definition as
+  // goingCount everywhere else).
+  let minAttendeesRequired: number | null = null;
+  if (body.min_attendees_required != null && body.min_attendees_required !== "") {
+    const raw = Number(body.min_attendees_required);
+    if (!Number.isFinite(raw) || raw < 1)
+      return c.json({ ok: false, error: "VALIDATION", message: "Minimum attendees required must be at least 1", field: "min_attendees_required" }, 400);
+    const floored = Math.floor(raw);
+    if (maxSeats != null && floored > maxSeats)
+      return c.json({ ok: false, error: "VALIDATION", message: "Minimum attendees required cannot be greater than the seat count", field: "min_attendees_required" }, 400);
+    minAttendeesRequired = Math.min(500, floored);
+  }
+
   const locationName = body.location_name ? String(body.location_name).trim().slice(0, 200) : null;
   const locationAddress = body.location_address ? String(body.location_address).trim().slice(0, 500) : null;
   const locationPlaceId = body.location_place_id ? String(body.location_place_id) : null;
@@ -9268,13 +9284,13 @@ app.post("/events", async (c) => {
         location_type, location_name, location_address, location_place_id, location_lat, location_lng,
         location_visibility, location_area, online_link,
         max_seats, visibility, status, allow_alt_times, alt_times_mode, availability_deadline_at, allow_attendee_invites, reserve_seats, require_reconfirmation, require_approval, timezone,
-        min_confirmed_attendees, fallback_policy, pref_overrides, hide_from_explore, is_qa
+        min_confirmed_attendees, fallback_policy, min_attendees_required, pref_overrides, hide_from_explore, is_qa
       ) VALUES (
         ${userId}, ${title}, ${description}, ${interestId}, ${startsDate.toISOString()},
         ${locationType}, ${locationName}, ${locationAddress}, ${locationPlaceId}, ${locationLat}, ${locationLng},
         ${locationVisibility}, ${locationArea}, ${onlineLink},
         ${maxSeats}, ${visibility}, ${status}, ${allowAltTimes}, ${altTimesMode}, ${availabilityDeadlineAt}, ${allowAttendeeInvites}, ${reserveSeats}, ${requireReconfirmation}, ${requireApproval}, ${timezone},
-        ${minConfirmedAttendees}, ${fallbackPolicy}, ${prefOverrides ? JSON.stringify(prefOverrides) : null}, ${hideFromExplore}, ${isQa}
+        ${minConfirmedAttendees}, ${fallbackPolicy}, ${minAttendeesRequired}, ${prefOverrides ? JSON.stringify(prefOverrides) : null}, ${hideFromExplore}, ${isQa}
       )
       RETURNING id, created_at
     `) as { id: string; created_at: string }[];
@@ -10629,6 +10645,9 @@ app.get("/events/:id", async (c) => {
           maybeCount: Number(maybeCount),
           minConfirmedAttendees: null,
           fallbackPolicy: null,
+          minAttendeesRequired: (event as Record<string, unknown>).min_attendees_required != null
+            ? Number((event as Record<string, unknown>).min_attendees_required)
+            : null,
           confirmationWindowOpen: false,
           confirmationCutoffAt: null,
           confirmedCount: 0,
@@ -10872,6 +10891,10 @@ app.get("/events/:id", async (c) => {
         // Attendance assurance
         minConfirmedAttendees: event.min_confirmed_attendees ? Number(event.min_confirmed_attendees) : null,
         fallbackPolicy: requiresConfirmation ? (event.fallback_policy ?? "notify_host") : null,
+        // RSVP-based minimum attendees (separate from the 24-hour attendance check).
+        // Visible to all access states so the cancellation banner / details note
+        // can render after a min_attendees_required_not_met cancellation.
+        minAttendeesRequired: event.min_attendees_required != null ? Number(event.min_attendees_required) : null,
         confirmationWindowOpen,
         confirmationsIssued,
         confirmationCutoffAt,
@@ -11652,11 +11675,12 @@ app.patch("/events/:id", async (c) => {
   try {
     const rows = (await sql`
       SELECT id, host_user_id, status, title, description, starts_at, timezone, max_seats, visibility,
-             require_reconfirmation, min_confirmed_attendees, fallback_policy, alt_times_mode, availability_deadline_at,
+             require_reconfirmation, min_confirmed_attendees, fallback_policy, min_attendees_required,
+             alt_times_mode, availability_deadline_at,
              location_type, location_name, location_address, location_place_id, location_lat, location_lng,
              location_visibility, location_area, online_link
       FROM newchums.events WHERE id = ${eventId}
-    `) as { id: string; host_user_id: string; status: string; title: string; description: string | null; starts_at: string; timezone: string | null; max_seats: number | null; visibility: string; require_reconfirmation: boolean; min_confirmed_attendees: number | null; fallback_policy: string; alt_times_mode: string | null; availability_deadline_at: string | null; location_type: string; location_name: string | null; location_address: string | null; location_place_id: string | null; location_lat: number | null; location_lng: number | null; location_visibility: string; location_area: string | null; online_link: string | null }[];
+    `) as { id: string; host_user_id: string; status: string; title: string; description: string | null; starts_at: string; timezone: string | null; max_seats: number | null; visibility: string; require_reconfirmation: boolean; min_confirmed_attendees: number | null; fallback_policy: string; min_attendees_required: number | null; alt_times_mode: string | null; availability_deadline_at: string | null; location_type: string; location_name: string | null; location_address: string | null; location_place_id: string | null; location_lat: number | null; location_lng: number | null; location_visibility: string; location_area: string | null; online_link: string | null }[];
     if (rows.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     if (rows[0].host_user_id !== userId) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
     if (rows[0].status === "canceled") return c.json({ ok: false, error: "VALIDATION", message: "Cannot edit a canceled plan" }, 400);
@@ -11844,6 +11868,20 @@ app.patch("/events/:id", async (c) => {
       ? body.fallback_policy as string
       : "notify_host";
 
+    // Optional RSVP-based minimum attendees, independent of the 24-hour
+    // attendance check. Validated against the effective max_seats so the
+    // PATCH can't leave the row in a state that violates the seat-cap CHECK.
+    let patchMinAttendeesRequired: number | null = null;
+    if (body.min_attendees_required != null && body.min_attendees_required !== "") {
+      const raw = Number(body.min_attendees_required);
+      if (!Number.isFinite(raw) || raw < 1)
+        return c.json({ ok: false, error: "VALIDATION", message: "Minimum attendees required must be at least 1", field: "min_attendees_required" }, 400);
+      const floored = Math.floor(raw);
+      if (maxSeats != null && floored > maxSeats)
+        return c.json({ ok: false, error: "VALIDATION", message: "Minimum attendees required cannot be greater than the seat count", field: "min_attendees_required" }, 400);
+      patchMinAttendeesRequired = Math.min(500, floored);
+    }
+
     // Resolve and validate hobby tags (required, mirrors POST /events logic)
     const patchInterestItems = Array.isArray(body.interest_items)
       ? (body.interest_items as Array<{ slug?: string; name?: string }>).slice(0, 10)
@@ -11903,6 +11941,7 @@ app.patch("/events/:id", async (c) => {
           timezone                 = COALESCE(${patchTimezone}, timezone),
           min_confirmed_attendees  = ${patchMinConfirmed},
           fallback_policy          = ${patchFallbackPolicy},
+          min_attendees_required   = ${patchMinAttendeesRequired},
           pref_overrides           = CASE WHEN ${patchPrefOverrides !== undefined} THEN ${patchPrefOverrides !== undefined ? (patchPrefOverrides ? JSON.stringify(patchPrefOverrides) : null) : null}::jsonb ELSE pref_overrides END,
           hide_from_explore        = CASE WHEN ${patchHideFromExplore !== undefined} THEN ${patchHideFromExplore !== undefined ? patchHideFromExplore : false} ELSE hide_from_explore END,
           is_qa                    = CASE WHEN ${patchIsQa !== undefined} THEN ${patchIsQa !== undefined ? patchIsQa : false} ELSE is_qa END,
@@ -12005,6 +12044,13 @@ app.patch("/events/:id", async (c) => {
         fieldName: "If minimum not met",
         oldValue: FALLBACK_LABEL[before.fallback_policy ?? "notify_host"] ?? before.fallback_policy ?? "Notify host",
         newValue: FALLBACK_LABEL[patchFallbackPolicy] ?? patchFallbackPolicy,
+      });
+
+    if ((before.min_attendees_required ?? null) !== patchMinAttendeesRequired)
+      changes.push({
+        fieldName: "Minimum attendees required",
+        oldValue: before.min_attendees_required != null ? `${before.min_attendees_required} people` : "Not set",
+        newValue: patchMinAttendeesRequired != null ? `${patchMinAttendeesRequired} people` : "Not set",
       });
 
     // Availability deadline change detection
@@ -15883,6 +15929,102 @@ async function processAttendanceAssurance(
       console.error(`[attendance-assurance] cutoff processing failed for event ${ev.id}:`, err);
     }
   }
+
+  // Phase 4: RSVP-based "minimum attendees required" auto-cancel.
+  //
+  // Distinct from Phase 3 above:
+  //   Phase 3 evaluates min_confirmed_attendees against the 24-hour
+  //   attendance check confirmations and only fires when require_reconfirmation
+  //   is on and fallback_policy = 'auto_cancel'.
+  //   Phase 4 evaluates min_attendees_required against raw "going" RSVPs
+  //   and fires for any plan with min_attendees_required set, independent
+  //   of the 24-hour attendance check.
+  //
+  // Cutoff is a fixed 2 hours before starts_at, matching the default
+  // confirmation_cutoff_hours and the wording shown on the plan-detail page
+  // and in form helper text.
+  //
+  // Dedup: the WHERE clause filters to status = 'published'. If Phase 3
+  // already cancelled the same plan in the same cron tick, the row is now
+  // 'canceled' and falls out here, so attendees never get two cancellation
+  // emails. The same gate protects against any future auto-cancel reason
+  // running in the same tick.
+  const eventsAtMinAttendeesCutoff = (await sql`
+    SELECT e.id, e.host_user_id, e.title, e.starts_at, e.timezone,
+           e.min_attendees_required,
+           e.location_type, e.location_name, e.location_address,
+           e.location_visibility, e.location_area, e.online_link,
+           COALESCE(e.is_qa, false) AS is_qa,
+           (SELECT COUNT(*)::int FROM newchums.event_rsvps er
+              WHERE er.event_id = e.id AND er.status = 'going') AS going_count
+    FROM newchums.events e
+    WHERE e.min_attendees_required IS NOT NULL
+      AND e.status = 'published'
+      AND e.starts_at > NOW()
+      AND e.starts_at - INTERVAL '2 hours' <= NOW()
+  `) as Array<{
+    id: string; host_user_id: string; title: string; starts_at: string;
+    timezone: string | null; min_attendees_required: number;
+    location_type: string; location_name: string | null;
+    location_address: string | null; location_visibility: string | null;
+    location_area: string | null; online_link: string | null;
+    is_qa: boolean; going_count: number;
+  }>;
+
+  for (const ev of eventsAtMinAttendeesCutoff) {
+    try {
+      const minRequired = Number(ev.min_attendees_required);
+      const goingCount = Number(ev.going_count);
+      if (goingCount >= minRequired) continue;
+
+      // Cancel-and-claim: only flip to 'canceled' if still 'published'. A
+      // concurrent cancel (host-cancel, Phase 3 auto-cancel, or another cron
+      // worker) would have already moved status forward, so the UPDATE
+      // returns 0 rows and we skip the email batch entirely. This keeps the
+      // dedup guarantee even under overlap.
+      const claimed = (await sql`
+        UPDATE newchums.events
+        SET status = 'canceled', canceled_at = NOW(),
+            cancellation_reason = 'min_attendees_required_not_met', updated_at = NOW()
+        WHERE id = ${ev.id} AND status = 'published'
+        RETURNING id
+      `) as { id: string }[];
+      if (claimed.length === 0) continue;
+
+      const attendees = (await sql`
+        SELECT u.id AS user_id, u.email, u.name, u.username
+        FROM newchums.event_rsvps er
+        JOIN newchums.users u ON u.id = er.user_id
+        WHERE er.event_id = ${ev.id} AND er.status IN ('going', 'maybe')
+      `) as Array<{ user_id: string; email: string; name: string | null; username: string | null }>;
+
+      const tz = ev.timezone || "UTC";
+      const cancelEventDate = formatEventDate(ev.starts_at, tz);
+
+      // QA plans: only notify super admin attendees
+      const qaCancelAdminIds = ev.is_qa ? await batchLoadSuperAdminIds(sql, attendees.map((a) => a.user_id)) : null;
+
+      for (const att of attendees) {
+        if (qaCancelAdminIds && !qaCancelAdminIds.has(att.user_id)) continue;
+        try {
+          const recipientName = att.name?.trim() || att.username?.replace(/^@/, "") || "there";
+          const isHost = att.user_id === ev.host_user_id;
+          const cancelEventLocation = buildEmailEventLocation(ev, isHost ? "host" : "joined");
+          const unsubToken = await createUnsubscribeToken(env.NEXTAUTH_SECRET, att.user_id, "event_changed_canceled");
+          await sendPlanAutoCancelledEmail(env, {
+            to: att.email, recipientName, eventTitle: ev.title,
+            eventUrl: `${env.WEB_BASE_URL}/events/${ev.id}`,
+            confirmedCount: goingCount, minRequired,
+            reason: "min_attendees_required",
+            eventDate: cancelEventDate, eventLocation: cancelEventLocation,
+            unsubscribeUrl: `${env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
+          });
+        } catch { /* noop */ }
+      }
+    } catch (err) {
+      console.error(`[attendance-assurance] min_attendees_required cancel failed for event ${ev.id}:`, err);
+    }
+  }
 }
 
 // ─── Event match digest ───────────────────────────────────────────────────────
@@ -16489,7 +16631,7 @@ async function computeLocalBadges(sql: ReturnType<typeof getSql>) {
       AND COALESCE(e.is_qa, false) = false
       AND e.starts_at < ${now}
       AND e.starts_at >= ${twelveMonthsAgo}
-      AND COALESCE(e.cancellation_reason, '') != 'no_attendees'
+      AND COALESCE(e.cancellation_reason, '') NOT IN ('no_attendees', 'min_attendees_required_not_met')
       AND EXISTS (
         SELECT 1 FROM newchums.event_rsvps er
         WHERE er.event_id = e.id

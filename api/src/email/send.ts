@@ -856,15 +856,35 @@ export const sendPlanAtRiskEmail = async (
 
 export const sendPlanAutoCancelledEmail = async (
   env: Bindings,
-  { to, recipientName, eventTitle, eventUrl, confirmedCount, minRequired, eventDate, eventLocation, unsubscribeUrl }: {
+  { to, recipientName, eventTitle, eventUrl, confirmedCount, minRequired, eventDate, eventLocation, unsubscribeUrl, reason }: {
     to: string; recipientName: string;
     eventTitle: string;
     eventUrl: string;
+    /** Count that fell short of `minRequired`. For the 24-hour confirmation
+     *  flow this is the confirmed-count; for the RSVP-based minimum it is
+     *  the count of "going" RSVPs at the cutoff. */
     confirmedCount: number; minRequired: number;
     eventDate?: string; eventLocation?: string;
     unsubscribeUrl?: string;
+    /** Which auto-cancel pathway triggered this email. Determines the body
+     *  copy so attendees can tell whether the plan fell short on the
+     *  24-hour confirmation check or on the simpler RSVP threshold.
+     *  Default: 'min_confirmed' (the original 24-hour-attendance-check use). */
+    reason?: "min_confirmed" | "min_attendees_required";
   }
 ) => {
+  const variant = reason ?? "min_confirmed";
+  const heading = "A plan you were attending has been cancelled";
+  const bodyText = variant === "min_attendees_required"
+    ? `Hey ${recipientName}, unfortunately "${eventTitle}" didn't reach its minimum of ${minRequired} ${minRequired === 1 ? "person" : "people"} going by the 2-hour cutoff (only ${confirmedCount} ${confirmedCount === 1 ? "was" : "were"} going), so it's been automatically cancelled.`
+    : `Hey ${recipientName}, unfortunately "${eventTitle}" didn't reach its minimum of ${minRequired} confirmed attendees (only ${confirmedCount} confirmed), so it's been automatically cancelled.`;
+  const reasonText = variant === "min_attendees_required"
+    ? `Only ${confirmedCount} of ${minRequired} required attendees were going at the 2-hour cutoff`
+    : `Only ${confirmedCount} of ${minRequired} required attendees confirmed`;
+  const fallbackChangeNew = variant === "min_attendees_required"
+    ? "Auto-cancelled, minimum attendees not reached"
+    : "Auto-cancelled, minimum confirmation not met";
+
   // Use dedicated template if available, otherwise fall back to the generic eventChanged template
   if (env.POSTMARK_TEMPLATE_PLAN_AUTO_CANCELLED) {
     return sendPostmarkTemplateEmail(env, {
@@ -872,12 +892,12 @@ export const sendPlanAutoCancelledEmail = async (
       TemplateId: env.POSTMARK_TEMPLATE_PLAN_AUTO_CANCELLED,
       TemplateModel: {
         productName: "NewChums",
-        heading: "A plan you were attending has been cancelled",
-        bodyText: `Hey ${recipientName}, unfortunately "${eventTitle}" didn't reach its minimum of ${minRequired} confirmed attendees -- only ${confirmedCount} confirmed -- so it's been automatically cancelled.`,
+        heading,
+        bodyText,
         eventTitle,
         eventDate: eventDate || "",
         eventLocation: hasContent(eventLocation) ? eventLocation : null,
-        reasonText: `Only ${confirmedCount} of ${minRequired} required attendees confirmed`,
+        reasonText,
         // Point attendees at the plan detail page (which surfaces the cancelled state)
         // rather than the homepage, so they land on the context they already know.
         ctaUrl: eventUrl,
@@ -893,7 +913,7 @@ export const sendPlanAutoCancelledEmail = async (
     to, recipientName, eventTitle,
     eventUrl,
     changeType: "canceled",
-    changes: [{ fieldName: "Reason", oldValue: `${confirmedCount} of ${minRequired} confirmed`, newValue: "Auto-cancelled -- minimum attendance not met" }],
+    changes: [{ fieldName: "Reason", oldValue: `${confirmedCount} of ${minRequired}`, newValue: fallbackChangeNew }],
     unsubscribeUrl,
   });
 };

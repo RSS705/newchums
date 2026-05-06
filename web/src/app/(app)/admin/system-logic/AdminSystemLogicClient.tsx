@@ -250,6 +250,19 @@ export default function AdminSystemLogicClient() {
         </Bullet>
 
         <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
+          Minimum attendees required (opt-in per plan)
+        </Typography>
+        <Bullet>
+          Optional simpler RSVP-based threshold. If the host sets a number, the plan auto-cancels 2 hours before start when fewer than that many
+          people are Going (host counts toward the total, same as the goingCount everywhere else). Independent of the 24-hour attendance check above:
+          a plan can use either, both, or neither. Cancellation reason is <code>min_attendees_required_not_met</code>.
+        </Bullet>
+        <Bullet>
+          When both checks would cancel the same plan in the same cron tick, the plan is only cancelled once and each recipient gets a single
+          cancellation email. Plans cancelled this way do not penalize the host&rsquo;s host-completion / host-follow-through metrics.
+        </Bullet>
+
+        <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
           No-attendees auto-cancel (always on)
         </Typography>
         <Bullet>
@@ -643,7 +656,7 @@ export default function AdminSystemLogicClient() {
           <strong>Attendance checks answered:</strong> response rate to 24-hour confirmation requests.
         </Bullet>
         <Bullet>
-          <strong>Host follow-through:</strong> share of hosted plans that completed (i.e. weren&rsquo;t auto-canceled for no attendees).
+          <strong>Host follow-through:</strong> share of hosted plans that completed. System auto-cancellations for <code>no_attendees</code> or <code>min_attendees_required_not_met</code> are excluded so the host isn&rsquo;t penalized for cases where the system pulled the plug.
         </Bullet>
         <Bullet>
           <strong>Plans attended / Plans hosted:</strong> activity counts. Shown even when logged-out; the reliability metrics above are hidden from

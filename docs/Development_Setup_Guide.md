@@ -264,6 +264,7 @@ psql "$DATABASE_URL" -f sql/043_guest_alt_times.sql
 # (migrations 044-082 not listed individually here; apply the rest of web/sql/ in numerical order)
 psql "$DATABASE_URL" -f sql/083_subscription_plan.sql
 psql "$DATABASE_URL" -f sql/084_remove_guest_participation.sql
+psql "$DATABASE_URL" -f sql/094_min_attendees_required.sql
 ```
 
 Tip for fresh setups: `ls web/sql/*.sql | sort | xargs -I {} psql "$DATABASE_URL" -f {}` applies every migration in order. 084 is a destructive consolidation of 035/043/077 (guest participation model); its pre-flight will abort if more than ~100 orphan guest rows exist.

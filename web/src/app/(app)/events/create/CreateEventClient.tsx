@@ -55,7 +55,7 @@ import { pickerFieldTabKeyDown } from "@/components/fields/pickerTabNav";
 // Visual top-to-bottom order of validation-bearing fields. Drives the
 // scroll-to-first-error helper so the user always lands on the earliest
 // problem they need to fix rather than a later one.
-const FIELD_ORDER = ["title", "hobby", "maxSeats", "date", "time", "location"] as const;
+const FIELD_ORDER = ["title", "hobby", "maxSeats", "minAttendeesRequired", "date", "time", "location"] as const;
 
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_BANNER_INPUT_BYTES = 20 * 1024 * 1024; // 20MB, raw file limit before compression
@@ -111,6 +111,10 @@ export default function CreateEventClient() {
   const [fallbackPolicy, setFallbackPolicy] = useState<"notify_host" | "proceed" | "auto_cancel">(
     "notify_host"
   );
+  // Optional RSVP-based threshold. If set, the cron auto-cancels the plan 2
+  // hours before start when fewer than this many people are "going" (host
+  // counts toward the total, matching the rest of the product).
+  const [minAttendeesRequired, setMinAttendeesRequired] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -311,6 +315,14 @@ export default function CreateEventClient() {
     }
     if (maxSeats && (isNaN(Number(maxSeats)) || Number(maxSeats) < 1))
       errs.maxSeats = "Must be a positive number";
+    if (minAttendeesRequired) {
+      const n = Number(minAttendeesRequired);
+      if (isNaN(n) || n < 1) {
+        errs.minAttendeesRequired = "Must be at least 1";
+      } else if (maxSeats && n > Number(maxSeats)) {
+        errs.minAttendeesRequired = "Can't be more than the seat count";
+      }
+    }
     setErrors(errs);
     return errs;
   };
@@ -375,6 +387,7 @@ export default function CreateEventClient() {
       min_confirmed_attendees:
         requireReconfirmation && minConfirmedAttendees ? Number(minConfirmedAttendees) : null,
       fallback_policy: requireReconfirmation ? fallbackPolicy : "notify_host",
+      min_attendees_required: minAttendeesRequired ? Number(minAttendeesRequired) : null,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       status: "published",
       pref_overrides: buildPrefOverrides(),
@@ -789,6 +802,30 @@ export default function CreateEventClient() {
               />
             </>
           )}
+
+          <Box
+            ref={setFieldRef("minAttendeesRequired")}
+            sx={{ width: { xs: "100%", sm: "auto" }, scrollMarginTop: 96 }}
+          >
+            <AppTextField
+              label="Minimum attendees required (optional)"
+              placeholder="e.g. 4"
+              value={minAttendeesRequired}
+              onChange={(e) => setMinAttendeesRequired(e.target.value)}
+              error={!!errors.minAttendeesRequired}
+              helperText={
+                errors.minAttendeesRequired ??
+                "If fewer than this many people are going 2 hours before the plan, NewChums will automatically cancel it."
+              }
+              type="number"
+              inputProps={{
+                min: 1,
+                max: 500,
+                onWheel: (e: WheelEvent<HTMLInputElement>) => e.currentTarget.blur(),
+              }}
+              sx={{ minWidth: { xs: "100%", sm: 320 } }}
+            />
+          </Box>
         </Stack>
       </AppCard>
 

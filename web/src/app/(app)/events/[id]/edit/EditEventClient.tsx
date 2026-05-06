@@ -52,7 +52,7 @@ import {
 // Visual top-to-bottom order of validation-bearing fields. Drives the
 // scroll-to-first-error helper so the user always lands on the earliest
 // problem they need to fix rather than a later one.
-const FIELD_ORDER = ["title", "hobby", "date", "time", "location"] as const;
+const FIELD_ORDER = ["title", "hobby", "minAttendeesRequired", "date", "time", "location"] as const;
 
 type PrefOverrides = {
   disabled?: boolean;
@@ -87,6 +87,9 @@ export default function EditEventClient() {
   const [requireApproval, setRequireApproval] = useState(false);
   const [minConfirmed, setMinConfirmed] = useState("");
   const [fallbackPolicy, setFallbackPolicy] = useState<"notify_host" | "proceed" | "auto_cancel">("notify_host");
+  // Optional RSVP-based threshold; mirrors the Add Plan form. See AGENTS.md
+  // -> Add Plan / Edit Plan Parity Rule.
+  const [minAttendeesRequired, setMinAttendeesRequired] = useState("");
 
   const [hobbies, setHobbies] = useState<HobbyOption[]>([]);
 
@@ -201,6 +204,7 @@ export default function EditEventClient() {
         setReserveSeats(ev.reserveSeats === true);
         setMinConfirmed(ev.minConfirmedAttendees != null ? String(ev.minConfirmedAttendees) : "");
         setFallbackPolicy(ev.fallbackPolicy ?? "notify_host");
+        setMinAttendeesRequired(ev.minAttendeesRequired != null ? String(ev.minAttendeesRequired) : "");
 
         // Location
         setLocationType(ev.locationType === "online" ? "online" : "in_person");
@@ -372,6 +376,14 @@ export default function EditEventClient() {
         errs.location = "Please pick a location from the suggestions";
       }
     }
+    if (minAttendeesRequired) {
+      const n = Number(minAttendeesRequired);
+      if (isNaN(n) || n < 1) {
+        errs.minAttendeesRequired = "Must be at least 1";
+      } else if (maxSeats && n > Number(maxSeats)) {
+        errs.minAttendeesRequired = "Can't be more than the seat count";
+      }
+    }
     setErrors(errs);
     return errs;
   };
@@ -410,6 +422,7 @@ export default function EditEventClient() {
             : null,
           min_confirmed_attendees: requireReconfirmation && minConfirmed ? Number(minConfirmed) : null,
           fallback_policy: requireReconfirmation ? fallbackPolicy : "notify_host",
+          min_attendees_required: minAttendeesRequired ? Number(minAttendeesRequired) : null,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           pref_overrides: buildPrefOverrides(),
           // Only send community linkage fields when they actually changed.
@@ -816,6 +829,29 @@ export default function EditEventClient() {
               sx={{ alignItems: "center", mt: 0.5, gap: 0.5 }}
             />
           )}
+
+          <Box
+            ref={setFieldRef("minAttendeesRequired")}
+            sx={{ width: { xs: "100%", sm: "auto" }, scrollMarginTop: 96 }}
+          >
+            <AppTextField
+              label="Minimum attendees required (optional)"
+              type="number"
+              value={minAttendeesRequired}
+              onChange={(e) => setMinAttendeesRequired(e.target.value)}
+              error={!!errors.minAttendeesRequired}
+              helperText={
+                errors.minAttendeesRequired ??
+                "If fewer than this many people are going 2 hours before the plan, NewChums will automatically cancel it."
+              }
+              inputProps={{
+                min: 1,
+                max: 500,
+                onWheel: (e: WheelEvent<HTMLInputElement>) => e.currentTarget.blur(),
+              }}
+              sx={{ minWidth: { xs: "100%", sm: 320 } }}
+            />
+          </Box>
         </Stack>
       </AppCard>
 
