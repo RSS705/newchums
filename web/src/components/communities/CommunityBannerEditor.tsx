@@ -52,9 +52,9 @@ type Props = {
  * (community banners intentionally don't carry the theme-picker affordance
  * that the plan form has). Visual language mirrors the plan-banner
  * section, same section header treatment, same dashed-empty-state
- * preview, same action-button row, same bottom helper line. Gated to
- * Community Pro owners at the call site; this component trusts the
- * caller's gating.
+ * preview, same action-button row, same bottom helper line. Available on
+ * every plan; the call site is responsible for confirming the viewer can
+ * edit the community (owner / super admin).
  */
 export default function CommunityBannerEditor({
   existingBannerUrl,

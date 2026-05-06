@@ -56,7 +56,7 @@ export const communityAvatarUrl = (
   return `${base}/communities/${encodeURIComponent(communityId)}/avatar${v}`;
 };
 
-/** Same idea as communityAvatarUrl, for the Pro banner image. */
+/** Same idea as communityAvatarUrl, for the community banner image. */
 export const communityBannerUrl = (
   communityId: string,
   bannerKey: string | null | undefined,

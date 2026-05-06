@@ -84,11 +84,12 @@ export default function EditCommunityClient() {
   // Operating hours (free for all plans)
   const [operatingHours, setOperatingHours] = useState<OperatingHours | null>(null);
 
-  // Banner (Community Pro only). `viewerHasProBannerAccess` comes from the
-  // GET /communities/:slug response; the server resolves it from the
-  // community owner's subscription_plan so super admins editing on behalf of
-  // a Pro owner also see the uploader. Non-Pro owners see nothing.
-  const [viewerHasProBannerAccess, setViewerHasProBannerAccess] = useState(false);
+  // Banner is available on every plan; the uploader is shown to anyone who
+  // can edit the community (owner or super admin). `viewerCanEditBanner`
+  // is what the server returns now; the legacy `viewerHasProBannerAccess`
+  // flag is still emitted for older clients and is identical to
+  // `viewerCanEditBanner` on the current API.
+  const [canEditBanner, setCanEditBanner] = useState(false);
   const [existingBannerKey, setExistingBannerKey] = useState<string | null>(null);
   const [bannerBlob, setBannerBlob] = useState<Blob | null>(null);
   const [bannerRemoving, setBannerRemoving] = useState(false);
@@ -137,7 +138,11 @@ export default function EditCommunityClient() {
         setExistingAvatarKey(c.avatar_key ?? null);
         setExistingBannerKey(c.banner_key ?? null);
         setOperatingHours(c.operating_hours ?? null);
-        setViewerHasProBannerAccess(data.viewerHasProBannerAccess === true);
+        // Prefer the new field; fall back to the legacy one so this client
+        // works against API builds that still only emit the old flag.
+        setCanEditBanner(
+          data.viewerCanEditBanner === true || data.viewerHasProBannerAccess === true,
+        );
         setIsOwner(data.viewerMembership?.role === "owner");
         // Load hobbies
         if (Array.isArray(c.hobbies)) {
@@ -291,7 +296,7 @@ export default function EditCommunityClient() {
     setSaving(true);
     try {
       if (logoBlob) await uploadLogo();
-      if (bannerBlob && viewerHasProBannerAccess) await uploadBanner();
+      if (bannerBlob && canEditBanner) await uploadBanner();
 
       const res = await apiFetch(`/communities/${slug}`, {
         auth: true, method: "PATCH",
@@ -423,9 +428,9 @@ export default function EditCommunityClient() {
         </Stack>
       </Paper>
 
-      {/* Banner (Community Pro only). Hidden entirely for non-Pro owners,
-          no locked controls, no upgrade nag. */}
-      {viewerHasProBannerAccess && (
+      {/* Banner is available on every plan; rendered for any viewer the
+          server has confirmed can edit the community (owner / super admin). */}
+      {canEditBanner && (
         <AppCard>
           <CommunityBannerEditor
             existingBannerUrl={

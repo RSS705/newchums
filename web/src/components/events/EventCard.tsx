@@ -12,7 +12,6 @@ import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
 import LinkRoundedIcon from "@mui/icons-material/LinkRounded";
 import PeopleOutlineRoundedIcon from "@mui/icons-material/PeopleOutlineRounded";
 import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
-import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
 import FlagRoundedIcon from "@mui/icons-material/FlagRounded";
 import Tooltip from "@mui/material/Tooltip";
 import Link from "next/link";
@@ -291,19 +290,9 @@ const EventCard = React.memo(function EventCard({
           </Stack>
 
           {/* Host */}
-          <Typography variant="body2" color="text.secondary" sx={{ mb: event.communities && event.communities.length > 0 ? 0.5 : 1.75, fontSize: "0.8125rem" }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.75, fontSize: "0.8125rem" }}>
             {event.isHost ? "Hosted by you" : `Hosted by ${event.hostName}`}
           </Typography>
-
-          {/* Community attribution */}
-          {event.communities && event.communities.length > 0 && (
-            <Stack direction="row" alignItems="flex-start" spacing={1} sx={{ mb: 0.75 }}>
-              <GroupsRoundedIcon sx={{ fontSize: 16, color: "text.disabled", mt: "1px", flexShrink: 0, opacity: 0.85 }} />
-              <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem", lineHeight: 1.4, minWidth: 0 }}>
-                {event.communities.map((c) => c.name).join(", ")}
-              </Typography>
-            </Stack>
-          )}
 
           {/* Meta */}
           <Stack spacing={0.75}>

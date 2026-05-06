@@ -80,14 +80,9 @@ export default function CreateCommunityClient() {
   // Operating hours (optional, free for all plans).
   const [operatingHours, setOperatingHours] = useState<OperatingHours | null>(null);
 
-  // Community banner (optional, Community Pro feature). We resolve the
-  // creator's plan from /profile; banner upload UI stays hidden for non-Pro
-  // users so there are no upgrade nags in the normal create flow. Super
-  // admins also see the uploader regardless of their own plan to match the
-  // edit form's behavior (the /media/finalize handler allows either a Pro
-  // owner or a super admin). The banner, if present, is uploaded after the
-  // community is created (same pattern as the community logo).
-  const [canUploadBanner, setCanUploadBanner] = useState(false);
+  // Community banner (optional, available on every plan). The banner, if
+  // present, is uploaded after the community is created (same pattern as
+  // the community logo).
   const [bannerBlob, setBannerBlob] = useState<Blob | null>(null);
 
   // Field refs for scroll-to-first-error
@@ -101,26 +96,6 @@ export default function CreateCommunityClient() {
     loadGooglePlacesScript().catch((err) => {
       console.warn("[CreateCommunityClient] Google Places script failed to load:", err);
     });
-  }, []);
-
-  // Resolve creator's plan (and role) to decide whether to surface the
-  // banner uploader. Non-eligible users see no upload UI at all, no locked
-  // controls, no upgrade nags. Super admins see the uploader regardless of
-  // their own plan, mirroring the edit form and the /media/finalize gate.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await apiFetch("/profile", { auth: true });
-        if (!res.ok) return;
-        const d = await res.json();
-        if (cancelled || !d.ok) return;
-        const isPro = d.profile?.subscription_plan === "community_pro";
-        const isSuperAdmin = d.profile?.role === "super_admin";
-        if (isPro || isSuperAdmin) setCanUploadBanner(true);
-      } catch { /* non-fatal */ }
-    })();
-    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -270,7 +245,7 @@ export default function CreateCommunityClient() {
       if (data.ok) {
         if (data.community?.id) {
           if (logoBlob) await uploadCommunityLogo(data.community.id);
-          if (bannerBlob && canUploadBanner) await uploadCommunityBanner(data.community.id);
+          if (bannerBlob) await uploadCommunityBanner(data.community.id);
         }
         toast.success("Community created!");
         router.push(`/communities/${data.community.slug}`);
@@ -363,18 +338,15 @@ export default function CreateCommunityClient() {
         </Stack>
       </Paper>
 
-      {/* Banner (Community Pro, or super admin). Hidden entirely for anyone
-          else, the spec is explicit about no locked controls or upgrade
-          nags. */}
-      {canUploadBanner && (
-        <AppCard>
-          <CommunityBannerEditor
-            existingBannerUrl={null}
-            pendingBlob={bannerBlob}
-            onChangePendingBlob={setBannerBlob}
-          />
-        </AppCard>
-      )}
+      {/* Banner is available on every plan. The cropper, validation, and
+          upload pipeline match the edit form. */}
+      <AppCard>
+        <CommunityBannerEditor
+          existingBannerUrl={null}
+          pendingBlob={bannerBlob}
+          onChangePendingBlob={setBannerBlob}
+        />
+      </AppCard>
 
       {/* Basic details */}
       <AppCard>

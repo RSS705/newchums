@@ -52,6 +52,16 @@ export default function AdminSystemLogicClient() {
           They <strong>never</strong> reveal exact address, online join link, attendee names, or attendee handles.
         </Bullet>
         <Bullet>
+          The same privacy-safe rule applies to <strong>plan cards on the logged-out community detail page</strong>. <code>GET /communities/:id/events</code>
+          computes <code>locationDisplay</code> server-side (approximate area or &ldquo;Online&rdquo;) and returns <code>null</code> for{" "}
+          <code>locationName</code>, <code>locationAddress</code>, <code>locationLat</code>, <code>locationLng</code>, and <code>onlineLink</code> when the
+          caller is unauthenticated. Authenticated viewers still receive the full location set.
+        </Bullet>
+        <Bullet>
+          Plan cards across the system (Explore, Your Plans, community detail, public landing, &ldquo;Recently happened&rdquo;) <strong>do not show
+          a connected-community line</strong>. Community context is rendered on the plan <em>detail</em> page header instead.
+        </Bullet>
+        <Bullet>
           Share links (<code>?share_token=&hellip;</code>) grant preview access to non-public plans so the recipient can see the full page, but still
           need auth to RSVP or join chat.
         </Bullet>
@@ -415,8 +425,9 @@ export default function AdminSystemLogicClient() {
           lose Pro access.
         </Bullet>
         <Bullet>
-          <strong>Currently gated as Pro:</strong> community banner upload. Everything else (website link, Discord link, operating hours, plan feed,
-          join requests, etc.) is free for all communities today.
+          <strong>Currently gated as Pro:</strong> nothing yet. Community banner upload was moved to Free; community chat is the planned first Pro
+          feature when it ships. Everything else (website link, Discord link, operating hours, plan feed, join requests, etc.) is free for all
+          communities today.
         </Bullet>
         <Bullet>
           Premium modules that aren&rsquo;t available are <strong>hidden</strong> in the UI, not shown as locked.
@@ -569,7 +580,8 @@ export default function AdminSystemLogicClient() {
           What&rsquo;s actually gated today
         </Typography>
         <Bullet>
-          <strong>Community Pro:</strong> community <em>banner</em> upload (checked at upload finalize, inherited by the community from its owner).
+          <strong>Community Pro:</strong> nothing today. The framework exists (<code>hasCommunityProAccess</code>,{" "}
+          <code>communityInheritsProAccess</code>) and is reserved for future community-level features. Community banner upload was moved to Free.
         </Bullet>
         <Bullet>
           <strong>Super Host:</strong> framework exists (<code>hasSuperHostAccess</code>), but no plan / organizer features are currently gated to it.

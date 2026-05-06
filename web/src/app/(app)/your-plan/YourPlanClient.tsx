@@ -61,7 +61,7 @@ const PLANS: PlanInfo[] = [
       "Suggest alternate times or collect availability before a plan is scheduled",
       "24-hour attendance check so everyone knows who's confirmed",
       "Daily digest of new plans that match your interests",
-      "Create and own up to 5 communities with hobbies, operating hours, and an avatar",
+      "Create and own up to 5 communities with hobbies, operating hours, an avatar, and a banner",
       "Build a Chum List and surface attendance reliability on your profile",
     ],
   },
@@ -81,10 +81,10 @@ const PLANS: PlanInfo[] = [
     name: "Community Pro",
     summary: "Builds on Super Host with advanced features for communities you own.",
     icon: WorkspacePremiumRoundedIcon,
-    features: [
-      "Everything in Super Host",
-      "Custom community banner on owned communities",
-    ],
+    features: ["Everything in Super Host"],
+    // No production feature is gated to this tier alone today. Surfaced as
+    // a trailing line so the card still feels intentional, not thin.
+    trailingNote: "More advanced community tools will appear here as they launch.",
   },
 ];
 

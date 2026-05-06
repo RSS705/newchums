@@ -53,7 +53,7 @@ type CommunityData = {
   location_lat: number | null;
   location_lng: number | null;
   avatar_key: string | null;
-  /** Wide hero image, Community Pro feature. May appear on every detail
+  /** Wide hero image, available on every plan. May appear on every detail
    *  surface (public, restricted, logged-in) when set. */
   banner_key: string | null;
   /** Day-by-day open/close times, free for all communities. Omitted from
@@ -246,9 +246,15 @@ export default function CommunityDetailClient() {
       ? JSON.parse(hobbiesRaw)
       : Array.isArray(hobbiesRaw) ? hobbiesRaw : [];
     const locationType = String(ev.locationType ?? "in_person");
-    const locationDisplay = locationType === "online"
-      ? ((ev.onlineLink as string) || "Online")
-      : ((ev.locationName as string) || (ev.locationAddress as string) || (ev.locationArea as string) || "TBD");
+    // Prefer the server-provided `locationDisplay`. The community plan feed
+    // computes a privacy-safe display string (approximate area for
+    // unauthenticated viewers, "Online" for online plans) so the same card
+    // never reveals an exact address to a logged-out visitor regardless of
+    // what local fallbacks would do.
+    const locationDisplay = (ev.locationDisplay as string | undefined)
+      ?? (locationType === "online"
+        ? ((ev.onlineLink as string) || "Online")
+        : ((ev.locationName as string) || (ev.locationAddress as string) || (ev.locationArea as string) || "TBD"));
     return {
       id: String(ev.id),
       title: String(ev.title ?? ""),

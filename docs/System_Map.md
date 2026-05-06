@@ -173,7 +173,7 @@ Two distinct feeds surface plans; the per-plan `hide_from_explore` toggle (UI la
 |---|---|---|
 | Explore (authenticated) | `GET /events/explore` | Plan `visibility` + `hide_from_explore` + community-member / RSVP bypass + chum-prefs + distance + hobby |
 | Explore (public, anonymous) | `GET /events/explore/public` | `visibility='public'` + `hide_from_explore=false` + `is_qa=false` |
-| Community plan feed | `GET /communities/:id/events` | `community_id = :id` + per-plan `visibility` gate (invite_only excluded entirely; chums_only scoped to host + host's on-NewChums chums + RSVP'd viewers; public always shown). Endpoint access is gated by community privacy (private communities: members + super admin). No `hide_from_explore` filter on rows. |
+| Community plan feed | `GET /communities/:id/events` | `community_id = :id` + per-plan `visibility` gate (invite_only excluded entirely; chums_only scoped to host + host's on-NewChums chums + RSVP'd viewers; public always shown). Endpoint access is gated by community privacy (private communities: members + super admin). No `hide_from_explore` filter on rows. **Logged-out viewers** receive a server-derived `locationDisplay` (approximate area or "Online"); exact `locationName` / `locationAddress` / `locationLat` / `locationLng` / `onlineLink` are returned as `null` so a public community page never leaks an exact venue or meeting link. Authenticated viewers continue to receive the full location set. |
 
 Visibility × community-linkage matrix (applies to all three feeds):
 

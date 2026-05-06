@@ -70,7 +70,6 @@ import {
 import { checkContactRateLimit, checkRateLimit } from "./lib/contactRateLimit";
 import {
   countOwnedCommunities,
-  hasCommunityProAccess,
   isValidSubscriptionPlan,
   MAX_OWNED_COMMUNITIES,
   type SubscriptionPlan,
@@ -3461,12 +3460,11 @@ app.post("/media/finalize", async (c) => {
     }
 
     if (purpose === "community_banner") {
-      // Community banner is a Community Pro feature. Gated on the community
-      // owner's subscription plan, not the uploader's (super admins can
-      // still manage on behalf of the owner, same pattern as community
-      // avatar). Non-Pro owners calling this endpoint get 403, the web form
-      // hides the upload UI for them so this is only reached by direct API
-      // callers or stale clients.
+      // Community banner is a Free-tier feature available to all community
+      // owners. Access is gated on community ownership only (super admins
+      // can still manage on behalf of the owner, same pattern as community
+      // avatar). Previously gated as Community Pro; that gate was lifted
+      // when banner upload moved to Free.
       const expectedPrefix = `community_banners/${appUserId}/`;
       if (!objectKey.startsWith(expectedPrefix)) {
         return c.json({ ok: false, error: "FORBIDDEN" }, 403);
@@ -3480,18 +3478,11 @@ app.post("/media/finalize", async (c) => {
         return c.json({ ok: false, error: "OBJECT_NOT_FOUND" }, 404);
       }
       const cm = (await sql`
-        SELECT c.id, c.owner_user_id, u.subscription_plan
-        FROM newchums.communities c
-        JOIN newchums.users u ON u.id = c.owner_user_id
-        WHERE c.id = ${communityId}
-        LIMIT 1
-      `) as { id: string; owner_user_id: string; subscription_plan: string | null }[];
+        SELECT id, owner_user_id FROM newchums.communities WHERE id = ${communityId} LIMIT 1
+      `) as { id: string; owner_user_id: string }[];
       if (cm.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
       const isSuperAdmin = ((await sql`SELECT role FROM newchums.users WHERE id = ${appUserId} LIMIT 1`) as { role: string | null }[])[0]?.role === "super_admin";
       if (cm[0].owner_user_id !== appUserId && !isSuperAdmin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
-      if (!hasCommunityProAccess(cm[0].subscription_plan) && !isSuperAdmin) {
-        return c.json({ ok: false, error: "PRO_REQUIRED", message: "Community banners are a Community Pro feature." }, 403);
-      }
       await sql`UPDATE newchums.communities SET banner_key = ${objectKey}, updated_at = now() WHERE id = ${communityId}`;
       return c.json({ ok: true, bannerUrl: `/communities/${communityId}/banner?v=${Date.now()}` });
     }
@@ -7567,7 +7558,6 @@ app.get("/communities/:slug", async (c) => {
   try {
     const rows = (await sql`
       SELECT c.*, ou.name AS owner_name, ou.username AS owner_username, ou.avatar_key AS owner_avatar_key, ou.avatar_updated_at AS owner_avatar_updated_at,
-        ou.subscription_plan AS owner_subscription_plan,
         (SELECT COUNT(*)::int FROM newchums.community_members cm WHERE cm.community_id = c.id AND cm.status = 'active') AS member_count
       FROM newchums.communities c
       JOIN newchums.users ou ON ou.id = c.owner_user_id
@@ -7821,30 +7811,27 @@ app.get("/communities/:slug", async (c) => {
         .sign(new TextEncoder().encode(c.env.NEXTAUTH_SECRET));
     }
 
-    // Strip the owner_subscription_plan column from the spread, it's a
-    // server-side join artifact we don't want leaking to the client. It's
-    // already been used to compute viewer_has_pro_banner_access below.
-    const { owner_subscription_plan, ...communityCols } = community as Record<string, unknown>;
-    void owner_subscription_plan;
-
-    // Pro banner access reflects the community owner's plan (Community Pro).
-    // Only the owner or a super admin can edit the banner; non-owner members
-    // don't need the flag but we still expose it so the detail page's edit
-    // affordance can hide cleanly. Logged-out viewers never see edit UI.
-    const viewerHasProBannerAccess = !!(isOwnerOrAdmin &&
-      (isSuperAdmin || hasCommunityProAccess(community.owner_subscription_plan as string | null)));
+    // Banner upload is now a Free-tier capability (was previously gated as
+    // Community Pro). Owner + super-admin permission still applies; the
+    // edit form gates the uploader on `viewerCanEditBanner` instead of the
+    // old `viewerHasProBannerAccess` flag. The flag is kept (always true
+    // for owner/admin viewers) so older clients continue to render the
+    // uploader without a redeploy; new clients should read
+    // `viewerCanEditBanner`.
+    const viewerCanEditBanner = isOwnerOrAdmin;
 
     return c.json({
       ok: true,
       community: {
-        ...communityCols,
+        ...(community as Record<string, unknown>),
         owner_avatar_url: ownerAvatarUrl,
         hobbies: communityHobbies,
       },
       viewerMembership,
       viewerPendingRequest,
       viewerRemoved,
-      viewerHasProBannerAccess,
+      viewerCanEditBanner,
+      viewerHasProBannerAccess: viewerCanEditBanner,
       pendingRequests: isOwnerOrAdmin ? pendingRequests : undefined,
       declinedRequests: isOwnerOrAdmin ? declinedRequests : undefined,
       shareToken,
@@ -8757,6 +8744,15 @@ app.get("/communities/:id/events", async (c) => {
       }
     }
 
+    // Logged-out viewers must not see exact addresses, venue names, online
+    // meeting links, or precise coordinates on the community plan feed.
+    // Mirrors the public Explore feed (`GET /events/explore/public`) and the
+    // public plan-detail preview (`GET /events/:id` access state `public`).
+    // The `locationDisplay` field is computed server-side so all surfaces
+    // agree on the privacy-safe fallback ("London, ON" rather than the
+    // generic "General area" when an approximate area is derivable).
+    const viewerAuthenticated = !!userId;
+
     const eventsWithAvatars = events.map((ev) => {
       const isHost = String(ev.host_user_id) === userId;
       let hasPrefMismatch = false;
@@ -8785,6 +8781,19 @@ app.get("/communities/:id/events", async (c) => {
         }
       }
 
+      const rawLocationArea = (ev.location_area as string | null) ?? null;
+      const rawLocationAddress = (ev.location_address as string | null) ?? null;
+      const locationType = String(ev.location_type ?? "in_person");
+      // Approximate area used both for the privacy-safe `locationDisplay`
+      // fallback and for the redacted `locationArea` field on logged-out
+      // responses. Same precedence the public Explore feed uses.
+      const approxArea = (rawLocationArea && rawLocationArea.trim())
+        || deriveApproxArea(rawLocationAddress)
+        || null;
+      const locationDisplay = locationType === "online"
+        ? "Online"
+        : approxArea || "General area";
+
       // Normalized camelCase payload. The prior spread mixed DB snake_case
       // with ad-hoc camelCase (hasPrefMismatch, isQa) and forced the sole
       // caller (CommunityDetailClient) to hand-pick which convention to use
@@ -8795,14 +8804,20 @@ app.get("/communities/:id/events", async (c) => {
         description: (ev.description as string | null) ?? null,
         startsAt: String(ev.starts_at ?? ""),
         timezone: (ev.timezone as string | null) ?? null,
-        locationType: String(ev.location_type ?? "in_person"),
-        locationName: (ev.location_name as string | null) ?? null,
-        locationAddress: (ev.location_address as string | null) ?? null,
-        locationArea: (ev.location_area as string | null) ?? null,
+        locationType,
+        locationDisplay,
+        // Logged-out viewers receive only privacy-safe location fields:
+        // approximate area + display string, never venue/street/online
+        // link/coords. Authenticated viewers continue to see the same
+        // detail set as before (the plan-detail page applies its own
+        // visibility-aware redaction once they open a plan).
+        locationName: viewerAuthenticated ? ((ev.location_name as string | null) ?? null) : null,
+        locationAddress: viewerAuthenticated ? rawLocationAddress : null,
+        locationArea: approxArea,
         locationVisibility: (ev.location_visibility as string | null) ?? null,
-        locationLat: ev.location_lat != null ? Number(ev.location_lat) : null,
-        locationLng: ev.location_lng != null ? Number(ev.location_lng) : null,
-        onlineLink: (ev.online_link as string | null) ?? null,
+        locationLat: viewerAuthenticated && ev.location_lat != null ? Number(ev.location_lat) : null,
+        locationLng: viewerAuthenticated && ev.location_lng != null ? Number(ev.location_lng) : null,
+        onlineLink: viewerAuthenticated ? ((ev.online_link as string | null) ?? null) : null,
         visibility: String(ev.visibility ?? "public"),
         status: String(ev.status ?? "published"),
         maxSeats: ev.max_seats != null ? Number(ev.max_seats) : null,
@@ -9655,7 +9670,7 @@ app.get("/events/explore/public", async (c) => {
     const rows = (await sql`
       SELECT
         e.id, e.title, e.description, e.starts_at, e.timezone, e.location_type,
-        e.location_area, e.online_link,
+        e.location_area, e.location_address, e.online_link,
         e.max_seats, e.visibility, e.status, e.banner_key,
         COALESCE(
           (SELECT json_agg(json_build_object('name', ii.name, 'slug', ii.slug, 'category', ii.category))
@@ -9693,7 +9708,7 @@ app.get("/events/explore/public", async (c) => {
       LIMIT ${pageLimit + 1} OFFSET ${pageOffset}
     `) as Array<{
       id: string; title: string; description: string | null; starts_at: string; timezone: string | null;
-      location_type: string; location_area: string | null; online_link: string | null;
+      location_type: string; location_area: string | null; location_address: string | null; online_link: string | null;
       max_seats: number | null; visibility: string; status: string; banner_key: string | null;
       hobbies: Array<{ name: string; slug: string }> | string;
       interest_name: string | null; interest_slug: string | null;
@@ -9706,9 +9721,17 @@ app.get("/events/explore/public", async (c) => {
       const hobbyList = Array.isArray(parsedHobbies) && parsedHobbies.length > 0
         ? parsedHobbies as Array<{ name: string; slug: string }>
         : r.interest_name ? [{ name: r.interest_name, slug: r.interest_slug ?? "" }] : [];
+      // Mirror the public plan-detail page's approximate-area logic: prefer
+      // the stored `location_area`, then derive from the full address (street
+      // segment stripped, country normalized) so the card reads "London, ON"
+      // instead of the generic "General area" placeholder. `location_address`
+      // itself is never exposed in the response, only the derived area.
+      const approxArea = (r.location_area && r.location_area.trim())
+        || deriveApproxArea(r.location_address)
+        || null;
       const locationDisplay =
         r.location_type === "online" ? "Online"
-          : r.location_area || "General area";
+          : approxArea || "General area";
       return {
         id: r.id,
         title: r.title,
@@ -10315,7 +10338,7 @@ app.get("/events/recently-happened/public", async (c) => {
     const rows = (await sql`
       SELECT
         e.id, e.title, e.description, e.starts_at, e.timezone, e.location_type,
-        e.location_area, e.max_seats, e.visibility, e.status, e.banner_key,
+        e.location_area, e.location_address, e.max_seats, e.visibility, e.status, e.banner_key,
         COALESCE(
           (SELECT json_agg(json_build_object('name', ii.name, 'slug', ii.slug, 'category', ii.category))
            FROM newchums.event_interests ei2
@@ -10353,7 +10376,7 @@ app.get("/events/recently-happened/public", async (c) => {
       LIMIT ${pageLimit}
     `) as Array<{
       id: string; title: string; description: string | null; starts_at: string; timezone: string | null;
-      location_type: string; location_area: string | null;
+      location_type: string; location_area: string | null; location_address: string | null;
       max_seats: number | null; visibility: string; status: string; banner_key: string | null;
       hobbies: Array<{ name: string; slug: string }> | string;
       interest_name: string | null; interest_slug: string | null;
@@ -10367,9 +10390,16 @@ app.get("/events/recently-happened/public", async (c) => {
       const hobbyList = Array.isArray(parsedHobbies) && parsedHobbies.length > 0
         ? parsedHobbies as Array<{ name: string; slug: string }>
         : r.interest_name ? [{ name: r.interest_name, slug: r.interest_slug ?? "" }] : [];
+      // Same approximate-area logic as the public plan-detail page and the
+      // upcoming public Explore feed: prefer the stored `location_area`, then
+      // derive from `location_address`. The full address itself is never
+      // exposed; only the derived area is sent to the client.
+      const approxArea = (r.location_area && r.location_area.trim())
+        || deriveApproxArea(r.location_address)
+        || null;
       const locationDisplay =
         r.location_type === "online" ? "Online"
-          : r.location_area || "General area";
+          : approxArea || "General area";
       return {
         id: r.id,
         title: r.title,
