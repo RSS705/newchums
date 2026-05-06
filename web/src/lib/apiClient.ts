@@ -83,6 +83,16 @@ export const getImageFallbackBaseUrl = (): string | null => {
 let cachedToken: string | null = null;
 /** Unix ms at which the cached token should be considered expired (1-min buffer baked in). */
 let cachedTokenExpiry = 0;
+/**
+ * Unix ms until which we treat the viewer as definitely signed out and skip
+ * the `/api/auth/api-token` round trip. Set when that endpoint returns 401
+ * (no NextAuth session) so logged-out pages don't re-fire the request and
+ * pile up red entries in the browser console / Sentry breadcrumbs. The TTL
+ * is short so a viewer who logs in mid-page picks up auth on the next
+ * `getAuthToken()` call without needing a hard reload.
+ */
+let signedOutUntil = 0;
+const SIGNED_OUT_CACHE_MS = 30_000;
 
 /**
  * Decode the `exp` claim from a JWT payload without verifying the signature.
@@ -103,16 +113,29 @@ export async function getAuthToken(): Promise<string | null> {
   if (typeof window === "undefined") return null;
   // Return cached token only if it has not yet reached its expiry (with buffer).
   if (cachedToken && Date.now() < cachedTokenExpiry) return cachedToken;
+  // Logged-out viewers: don't re-hit the auth-token endpoint over and over.
+  // Public pages (logged-out community detail, public Explore feed) call
+  // `getAuthToken()` once during init to learn the auth state; without
+  // this short-lived sentinel, any follow-up call within the same page
+  // life produces another 401 in the network tab.
+  if (Date.now() < signedOutUntil) return null;
   // Cache is stale or empty, clear and fetch a fresh token.
   cachedToken = null;
   cachedTokenExpiry = 0;
   try {
     const res = await fetch("/api/auth/api-token", { credentials: "include" });
+    if (res.status === 401) {
+      // Expected for logged-out viewers; remember briefly so subsequent
+      // calls within the same page don't refire the request.
+      signedOutUntil = Date.now() + SIGNED_OUT_CACHE_MS;
+      return null;
+    }
     if (!res.ok) return null;
     const data = await res.json();
     if (data.ok && typeof data.token === "string") {
       cachedToken = data.token;
       cachedTokenExpiry = extractTokenExpiry(data.token);
+      signedOutUntil = 0;
       return cachedToken;
     }
     return null;
@@ -124,6 +147,11 @@ export async function getAuthToken(): Promise<string | null> {
 export function clearAuthTokenCache() {
   cachedToken = null;
   cachedTokenExpiry = 0;
+  // Also clear the signed-out sentinel: the only callers of this are
+  // sign-in / sign-out flows, and a freshly signed-in user must be able
+  // to fetch a token immediately after their session lands rather than
+  // wait for the SIGNED_OUT_CACHE_MS TTL.
+  signedOutUntil = 0;
 }
 
 export type ApiFetchOptions = RequestInit & {

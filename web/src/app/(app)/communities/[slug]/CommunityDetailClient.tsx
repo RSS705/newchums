@@ -178,7 +178,17 @@ type JoinRequest = {
   reviewed_at?: string | null;
 };
 
-export default function CommunityDetailClient() {
+type CommunityDetailClientProps = {
+  /** Server-resolved auth state. When `false`, the client skips the
+   *  initial `getAuthToken()` call (which would 401 for logged-out
+   *  viewers) and goes straight into the unauthenticated fetch path,
+   *  keeping the canonical public community URL quiet in the console. */
+  isAuthenticatedFromServer?: boolean;
+};
+
+export default function CommunityDetailClient({
+  isAuthenticatedFromServer,
+}: CommunityDetailClientProps = {}) {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -303,11 +313,19 @@ export default function CommunityDetailClient() {
   const fetchCommunity = useCallback(async () => {
     try {
       // Resolve auth state once up front so every follow-up fetch (plans,
-      // members, profile) can skip the token probe when logged out. Without
-      // this, apiFetch with auth:true hits /api/auth/api-token once per
-      // call for a signed-out viewer, producing noisy 401s in the console.
-      const token = await getAuthToken();
-      const useAuth = !!token;
+      // members, profile) can skip the token probe when logged out. The
+      // server already told us whether there's a session (via the
+      // `isAuthenticatedFromServer` prop), so a definitively-logged-out
+      // viewer skips `getAuthToken()` entirely. Without that short-circuit,
+      // the canonical public community URL fires a 401 against
+      // `/api/auth/api-token` and pollutes the browser console. For
+      // logged-in viewers we still resolve a fresh token here so the
+      // Bearer header is current and reused by follow-up calls.
+      let useAuth = false;
+      if (isAuthenticatedFromServer !== false) {
+        const token = await getAuthToken();
+        useAuth = !!token;
+      }
       setIsAuthenticated(useAuth);
       const res = await apiFetch(`/communities/${slug}`, { auth: useAuth });
       const data = await res.json();
@@ -342,7 +360,7 @@ export default function CommunityDetailClient() {
       }
     } catch { /* noop */ }
     setLoading(false);
-  }, [slug]);
+  }, [slug, isAuthenticatedFromServer]);
 
   // Clear the announcements badge in-memory after the tab successfully
   // stamps the viewer's `last_seen_at`. Local-only, no API round trip,
@@ -352,6 +370,21 @@ export default function CommunityDetailClient() {
   const clearUnseenAnnouncementsBadge = useCallback(() => {
     setHasUnseenAnnouncements(false);
   }, []);
+
+  // Stable callback so the announcements tab's internal `fetchList`, which
+  // lists this in its deps, keeps a stable identity across parent renders.
+  // An inline arrow here would recreate on every render, refire the tab's
+  // mount-effect, and cause a refetch loop. Pulling it into useCallback
+  // keeps the child's hook deps quiet and avoids the kind of churn that
+  // occasionally surfaces as a "more hooks than during the previous
+  // render" error under Next.js Fast Refresh.
+  const handleAnnouncementsListSynced = useCallback(
+    (items: CommunityAnnouncement[], canManage: boolean) => {
+      setAnnouncementsSeed(items);
+      setAnnouncementsCanManageSeed(canManage);
+    },
+    [],
+  );
 
   const fetchEvents = useCallback(async () => {
     if (!community) return;
@@ -2063,12 +2096,7 @@ export default function CommunityDetailClient() {
             initialAnnouncements={announcementsSeed}
             initialCanManage={announcementsCanManageSeed}
             onMarkedSeen={clearUnseenAnnouncementsBadge}
-            onListSynced={(items, canManage) => {
-              // Keep the parent cache in sync with mutations made inside
-              // the tab so re-opening the tab still paints instantly.
-              setAnnouncementsSeed(items);
-              setAnnouncementsCanManageSeed(canManage);
-            }}
+            onListSynced={handleAnnouncementsListSynced}
           />
         )}
 

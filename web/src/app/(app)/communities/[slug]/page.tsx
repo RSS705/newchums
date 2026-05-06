@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { auth } from "@/auth";
 import CommunityDetailClient from "./CommunityDetailClient";
 import { communityAvatarUrl, communityBannerUrl } from "@/lib/apiClient";
 
@@ -116,6 +117,13 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   }
 }
 
-export default function CommunityDetailPage() {
-  return <CommunityDetailClient />;
+export default async function CommunityDetailPage() {
+  // Resolve auth state on the server so the client component can skip
+  // calling `/api/auth/api-token` for logged-out viewers. The token
+  // endpoint correctly returns 401 in that case, but the resulting red
+  // entry in the browser console (and Sentry breadcrumb) is noise that
+  // shouldn't fire for the canonical-public-URL case. Logged-in clients
+  // still resolve a fresh token via `getAuthToken()` as usual.
+  const session = await auth();
+  return <CommunityDetailClient isAuthenticatedFromServer={!!session?.user?.email} />;
 }

@@ -288,7 +288,19 @@ const PREF_NOTE_LABELS: Record<string, string> = {
   age: "age range",
 };
 
-export default function EventDetailClient() {
+type EventDetailClientProps = {
+  /** Server-resolved auth state. When `false`, the client skips its
+   *  initial `getAuthToken()` call (which would 401 for logged-out
+   *  viewers) and goes straight into the unauthenticated fetch path,
+   *  keeping the public plan URL quiet in the console. Logged-in
+   *  flows (RSVP, chat WebSocket, refresh-after-action) still call
+   *  `getAuthToken()` directly when needed. */
+  isAuthenticatedFromServer?: boolean;
+};
+
+export default function EventDetailClient({
+  isAuthenticatedFromServer,
+}: EventDetailClientProps = {}) {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -524,7 +536,13 @@ export default function EventDetailClient() {
       // Fetch the auth token once up front so we can decide whether to send
       // authenticated requests without hitting /api/auth/api-token repeatedly
       // (each call produces a visible 401 console error for logged-out users).
-      const authToken = await getAuthToken();
+      // The server has already resolved auth state via the
+      // `isAuthenticatedFromServer` prop; when it's definitively false (no
+      // session cookie), skip the token fetch entirely so the public plan
+      // URL never fires a 401 against `/api/auth/api-token`.
+      const authToken = isAuthenticatedFromServer === false
+        ? null
+        : await getAuthToken();
       const useAuth = !!authToken;
 
       // Email deep-links to auth-required sections (e.g. ?section=feedback in
@@ -612,11 +630,16 @@ export default function EventDetailClient() {
       setError("Failed to load plan");
     }
     setLoading(false);
-  }, [eventId, applyEventData, buildTokenSuffix, router]);
+  }, [eventId, applyEventData, buildTokenSuffix, router, isAuthenticatedFromServer]);
 
   const refresh = useCallback(async () => {
     try {
-      const authToken = await getAuthToken();
+      // Same server-hint short-circuit as `load` above: definitively
+      // logged-out viewers skip `getAuthToken()` so the public refresh
+      // path doesn't fire a 401 against the auth-token endpoint.
+      const authToken = isAuthenticatedFromServer === false
+        ? null
+        : await getAuthToken();
       const res = await apiFetch(`/events/${eventId}${buildTokenSuffix()}`, { auth: !!authToken });
       if (res.ok) {
         const data = await res.json();
@@ -625,7 +648,7 @@ export default function EventDetailClient() {
     } catch {
       /* silent */
     }
-  }, [eventId, applyEventData, buildTokenSuffix]);
+  }, [eventId, applyEventData, buildTokenSuffix, isAuthenticatedFromServer]);
 
   useEffect(() => {
     load();

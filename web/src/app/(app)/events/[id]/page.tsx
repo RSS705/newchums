@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import CircularProgress from "@mui/material/CircularProgress";
 import Box from "@mui/material/Box";
+import { auth } from "@/auth";
 import EventDetailClient from "./EventDetailClient";
 
 type PageProps = {
@@ -312,7 +313,15 @@ export async function generateMetadata({
   }
 }
 
-export default function EventDetailPage() {
+export default async function EventDetailPage() {
+  // Resolve auth state on the server so the client can skip
+  // `/api/auth/api-token` for logged-out viewers (which would 401 and
+  // pollute the browser console / Sentry breadcrumbs). Plan detail is
+  // a public canonical surface, share-link traffic and search-engine
+  // bots reach it without a session, so this short-circuit matters.
+  // Logged-in clients still resolve a fresh token as before.
+  const session = await auth();
+  const isAuthenticatedFromServer = !!session?.user?.email;
   return (
     <Suspense
       fallback={
@@ -321,7 +330,7 @@ export default function EventDetailPage() {
         </Box>
       }
     >
-      <EventDetailClient />
+      <EventDetailClient isAuthenticatedFromServer={isAuthenticatedFromServer} />
     </Suspense>
   );
 }
