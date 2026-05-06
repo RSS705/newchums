@@ -2,6 +2,8 @@ export { default as OperatingHoursEditor } from "./OperatingHoursEditor";
 export { default as OperatingHoursDisplay } from "./OperatingHoursDisplay";
 export { default as OperatingHoursInline } from "./OperatingHoursInline";
 export { default as CommunityBannerEditor } from "./CommunityBannerEditor";
+export { default as CommunityAnnouncementsTab } from "./CommunityAnnouncementsTab";
+export type { CommunityAnnouncement } from "./CommunityAnnouncementsTab";
 export {
   OPERATING_HOURS_DAY_CODES,
   OPERATING_HOURS_DAY_LABELS,

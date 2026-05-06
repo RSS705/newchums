@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import Box from "@mui/material/Box";
 import Grid from "@mui/material/Grid";
-import Skeleton from "@mui/material/Skeleton";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import HistoryRoundedIcon from "@mui/icons-material/HistoryRounded";
@@ -87,13 +86,16 @@ export default function RecentlyHappenedSection({
 
   const copy = COPY[variant];
 
-  // Hide the section entirely when empty on every surface. Don't render
-  // any heading or skeleton residue in that case, the surface already
-  // has a primary upcoming feed and an empty social-proof block would
-  // feel like dead air. Same behavior on the community detail page,
-  // an unused "Recently happened" block read as accidental rather than
-  // informative.
-  if (fetched && events.length === 0) return null;
+  // Hide the section entirely until we know there's something to show.
+  // Rendering the heading + skeletons while loading caused a flicker on
+  // surfaces that often have no past plans (the community detail page in
+  // particular): the eyebrow + 3 skeleton cards painted, the fetch
+  // resolved empty, and the whole block vanished. The block is
+  // non-critical social proof, so a slightly later first paint is better
+  // than a brief shimmer that disappears. Same effective behavior once
+  // the fetch resolves with results.
+  if (loading || !fetched) return null;
+  if (events.length === 0) return null;
 
   // Past cards render in the same grid sizing as the upcoming feed
   // (xs:12, sm:6, md:4) and stay left-aligned even when there's only
@@ -142,23 +144,13 @@ export default function RecentlyHappenedSection({
         </Typography>
       </Stack>
 
-      {loading ? (
-        <Grid container spacing={{ xs: 1.5, sm: 2 }}>
-          {[0, 1, 2].map((i) => (
-            <Grid key={i} size={cardSize} sx={{ display: "flex" }}>
-              <Skeleton variant="rounded" sx={{ width: "100%", height: 280, borderRadius: 3, bgcolor: "grey.100" }} />
-            </Grid>
-          ))}
-        </Grid>
-      ) : (
-        <Grid container spacing={{ xs: 1.5, sm: 2 }}>
-          {events.map((ev) => (
-            <Grid key={ev.id} size={cardSize} sx={{ display: "flex" }}>
-              <EventCard event={ev} isPast hideRsvp viewerHobbyCategories={viewerHobbyCategories} />
-            </Grid>
-          ))}
-        </Grid>
-      )}
+      <Grid container spacing={{ xs: 1.5, sm: 2 }}>
+        {events.map((ev) => (
+          <Grid key={ev.id} size={cardSize} sx={{ display: "flex" }}>
+            <EventCard event={ev} isPast hideRsvp viewerHobbyCategories={viewerHobbyCategories} />
+          </Grid>
+        ))}
+      </Grid>
     </Box>
   );
 }

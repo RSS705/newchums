@@ -440,6 +440,26 @@ export default function AdminSystemLogicClient() {
           Every user can own at most <strong>5 active</strong> communities regardless of plan. Closing a community frees a slot. Community chat is
           deferred; the schema flag exists but no implementation ships yet.
         </Bullet>
+
+        <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
+          Announcements (v1)
+        </Typography>
+        <Bullet>
+          Each community has an <strong>Announcements</strong> tab between Plans and Members. Owners and super admins can post, pin, edit, and
+          soft-delete announcements; everyone else who can view the community page can read them.
+        </Bullet>
+        <Bullet>
+          Visibility follows the community page rules: public communities&rsquo; announcements are readable by anyone (logged out included); private
+          communities require an active member or super admin.
+        </Bullet>
+        <Bullet>
+          Logged-in viewers get a subtle dot on the Announcements tab when there&rsquo;s anything posted since they last opened the tab. Tracked via
+          <code> community_announcement_seen.last_seen_at</code>; opening the tab stamps it to <code>NOW()</code>. Logged-out viewers don&rsquo;t track
+          seen state.
+        </Bullet>
+        <Bullet>
+          v1 deliberately omits email blasts and in-app bell notifications; announcements live on the tab only.
+        </Bullet>
       </CollapsibleSection>
 
       <CollapsibleSection title="QR redirects" subtitle="Printed posters and cards as a small inventory">

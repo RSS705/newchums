@@ -7820,6 +7820,30 @@ app.get("/communities/:slug", async (c) => {
     // `viewerCanEditBanner`.
     const viewerCanEditBanner = isOwnerOrAdmin;
 
+    // Tab indicator for the Announcements tab. Logged-out viewers never
+    // need a badge (they have no seen-state to compare against). For
+    // logged-in viewers we compare the latest non-deleted announcement's
+    // `created_at` against the viewer's `last_seen_at` for this community
+    // (`community_announcement_seen`); a NULL row is treated as "never
+    // seen" so brand-new viewers will see the indicator if any
+    // announcements exist. Cheap query, single round trip.
+    let hasUnseenAnnouncements = false;
+    if (userId) {
+      const unseenRows = (await sql`
+        SELECT EXISTS (
+          SELECT 1 FROM newchums.community_announcements a
+          WHERE a.community_id = ${community.id}
+            AND a.deleted_at IS NULL
+            AND a.created_at > COALESCE(
+              (SELECT s.last_seen_at FROM newchums.community_announcement_seen s
+               WHERE s.user_id = ${userId} AND s.community_id = ${community.id} LIMIT 1),
+              '1970-01-01'::timestamptz
+            )
+        ) AS has_unseen
+      `) as { has_unseen: boolean }[];
+      hasUnseenAnnouncements = unseenRows[0]?.has_unseen === true;
+    }
+
     return c.json({
       ok: true,
       community: {
@@ -7832,6 +7856,7 @@ app.get("/communities/:slug", async (c) => {
       viewerRemoved,
       viewerCanEditBanner,
       viewerHasProBannerAccess: viewerCanEditBanner,
+      hasUnseenAnnouncements,
       pendingRequests: isOwnerOrAdmin ? pendingRequests : undefined,
       declinedRequests: isOwnerOrAdmin ? declinedRequests : undefined,
       shareToken,
@@ -8843,6 +8868,328 @@ app.get("/communities/:id/events", async (c) => {
     return c.json({ ok: true, events: eventsWithAvatars });
   } catch (err) {
     console.error("[GET /communities/:id/events]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+// ─── Community announcements (v1) ───────────────────────────────────────────
+//
+// Tab-based announcement feed on the community detail page. Visibility
+// follows the existing community-page rules: public communities are
+// readable by anyone (logged-out included); private communities require an
+// active member or super admin. Management (create / edit / pin / delete)
+// is restricted to community owner + super admin. v1 deliberately scopes
+// to the announcement list, no email blast, no in-app bell notification,
+// no comments, reactions, attachments, or scheduling. The tab indicator
+// uses a per-user last-seen timestamp (`community_announcement_seen`)
+// rather than per-announcement read rows.
+
+const MAX_ANNOUNCEMENT_TITLE_LEN = 200;
+const MAX_ANNOUNCEMENT_BODY_LEN = 10000;
+
+/**
+ * Resolve viewer state needed by every announcement endpoint:
+ *  - the requesting user's id (or null for logged-out callers)
+ *  - whether they're a super admin
+ *  - the community row (or null if missing/closed-and-not-admin)
+ *  - the viewer's active membership row (if any)
+ *
+ * Returns `null` for the community when the caller should receive a 404
+ * (missing or closed-without-super-admin), so handlers can fail fast.
+ */
+async function resolveAnnouncementContext(
+  sql: ReturnType<typeof getSql>,
+  c: Parameters<Parameters<typeof app.get>[1]>[0],
+  communityId: string,
+): Promise<{
+  userId: string | null;
+  isSuperAdmin: boolean;
+  community: { id: string; visibility: string; status: string; owner_user_id: string } | null;
+  viewerMembership: { role: string; status: string } | null;
+}> {
+  const payload = await requireAuth(c);
+  let userId: string | null = null;
+  let isSuperAdmin = false;
+  if (payload?.email) {
+    const userRows = (await sql`SELECT id, role FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string; role: string | null }[];
+    if (userRows[0]) { userId = userRows[0].id; isSuperAdmin = userRows[0].role === "super_admin"; }
+  }
+  const rows = (await sql`
+    SELECT id, visibility, COALESCE(status, 'active') AS status, owner_user_id
+    FROM newchums.communities
+    WHERE id = ${communityId}
+    LIMIT 1
+  `) as { id: string; visibility: string; status: string; owner_user_id: string }[];
+  const community = rows[0] ?? null;
+  if (!community || (community.status === "closed" && !isSuperAdmin)) {
+    return { userId, isSuperAdmin, community: null, viewerMembership: null };
+  }
+  let viewerMembership: { role: string; status: string } | null = null;
+  if (userId) {
+    const m = (await sql`
+      SELECT role, status FROM newchums.community_members
+      WHERE community_id = ${communityId} AND user_id = ${userId}
+      LIMIT 1
+    `) as { role: string; status: string }[];
+    viewerMembership = m[0] ?? null;
+  }
+  return { userId, isSuperAdmin, community, viewerMembership };
+}
+
+function viewerCanReadAnnouncements(
+  community: { visibility: string },
+  viewerMembership: { status: string } | null,
+  isSuperAdmin: boolean,
+): boolean {
+  if (community.visibility === "public") return true;
+  if (isSuperAdmin) return true;
+  return viewerMembership?.status === "active";
+}
+
+function viewerCanManageAnnouncements(
+  community: { owner_user_id: string },
+  userId: string | null,
+  isSuperAdmin: boolean,
+): boolean {
+  if (isSuperAdmin) return true;
+  return !!userId && community.owner_user_id === userId;
+}
+
+/** GET /communities/:id/announcements, ordered pinned-first then newest-first.
+ *  Returns the same set of fields the detail UI needs: title, sanitized HTML
+ *  body, author handle/display, pin/timestamp metadata, and the viewer's
+ *  permission to manage. Logged-out viewers on a public community see the
+ *  same list minus management affordances. */
+app.get("/communities/:id/announcements", async (c) => {
+  const sql = getSql(c.env);
+  const communityId = c.req.param("id");
+  const { userId, isSuperAdmin, community, viewerMembership } =
+    await resolveAnnouncementContext(sql, c, communityId);
+  if (!community) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+  if (!viewerCanReadAnnouncements(community, viewerMembership, isSuperAdmin)) {
+    return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  }
+
+  try {
+    const rows = (await sql`
+      SELECT a.id, a.title, a.body, a.is_pinned, a.created_at, a.updated_at,
+             a.author_user_id, u.name AS author_name, u.username AS author_username,
+             u.avatar_key AS author_avatar_key, u.avatar_updated_at AS author_avatar_updated_at
+      FROM newchums.community_announcements a
+      JOIN newchums.users u ON u.id = a.author_user_id
+      WHERE a.community_id = ${communityId} AND a.deleted_at IS NULL
+      ORDER BY a.is_pinned DESC, a.created_at DESC
+    `) as Array<{
+      id: string; title: string; body: string; is_pinned: boolean;
+      created_at: string; updated_at: string;
+      author_user_id: string; author_name: string | null; author_username: string | null;
+      author_avatar_key: string | null; author_avatar_updated_at: string | Date | null;
+    }>;
+
+    const announcements = rows.map((r) => ({
+      id: r.id,
+      title: r.title,
+      body: r.body,
+      isPinned: r.is_pinned,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+      authorUserId: r.author_user_id,
+      // Match the same handle/name precedence used elsewhere on plan / community
+      // payloads: prefer `@username`, fall back to display name.
+      authorName: (() => {
+        const u = r.author_username?.replace(/^@/, "");
+        return u ? `@${u}` : (r.author_name?.trim() || "Someone");
+      })(),
+      // Same `buildAvatarUrl` helper used by community members / event hosts;
+      // returns a versioned `/users/:id/avatar?v=<ts>` URL that survives
+      // CDN caching when the user changes their avatar, or null when no
+      // avatar is set so the client falls back to a name initial.
+      authorAvatarUrl: buildAvatarUrl(
+        r.author_user_id,
+        r.author_avatar_key,
+        r.author_avatar_updated_at,
+        c.env.MEDIA_BUCKET,
+      ),
+    }));
+
+    return c.json({
+      ok: true,
+      announcements,
+      viewerCanManage: viewerCanManageAnnouncements(community, userId, isSuperAdmin),
+    });
+  } catch (err) {
+    console.error("[GET /communities/:id/announcements]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /communities/:id/announcements, owner / super admin only.
+ *  Body: `{ title, body, is_pinned? }`. Title required, body sanitized via
+ *  the shared `sanitizeDescriptionHtml` helper so the same allow-list as
+ *  community / plan descriptions applies. */
+app.post("/communities/:id/announcements", async (c) => {
+  const sql = getSql(c.env);
+  const communityId = c.req.param("id");
+  const { userId, isSuperAdmin, community } =
+    await resolveAnnouncementContext(sql, c, communityId);
+  if (!userId) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  if (!community) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+  if (!viewerCanManageAnnouncements(community, userId, isSuperAdmin)) {
+    return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  }
+
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+
+  const rawTitle = typeof body.title === "string" ? body.title.trim() : "";
+  if (!rawTitle) return c.json({ ok: false, error: "VALIDATION", message: "Title is required", field: "title" }, 400);
+  if (rawTitle.length > MAX_ANNOUNCEMENT_TITLE_LEN)
+    return c.json({ ok: false, error: "VALIDATION", message: `Title must be ${MAX_ANNOUNCEMENT_TITLE_LEN} characters or less`, field: "title" }, 400);
+
+  const rawBody = typeof body.body === "string" ? body.body.trim() : "";
+  if (!rawBody) return c.json({ ok: false, error: "VALIDATION", message: "Message is required", field: "body" }, 400);
+  const sanitizedBody = sanitizeDescriptionHtml(rawBody.slice(0, MAX_ANNOUNCEMENT_BODY_LEN));
+  if (!sanitizedBody) return c.json({ ok: false, error: "VALIDATION", message: "Message is required", field: "body" }, 400);
+
+  const isPinned = body.is_pinned === true;
+
+  try {
+    const inserted = (await sql`
+      INSERT INTO newchums.community_announcements
+        (community_id, author_user_id, title, body, is_pinned)
+      VALUES (${communityId}, ${userId}, ${rawTitle}, ${sanitizedBody}, ${isPinned})
+      RETURNING id, created_at, updated_at
+    `) as { id: string; created_at: string; updated_at: string }[];
+    return c.json({
+      ok: true,
+      announcement: {
+        id: inserted[0].id,
+        createdAt: inserted[0].created_at,
+        updatedAt: inserted[0].updated_at,
+      },
+    });
+  } catch (err) {
+    console.error("[POST /communities/:id/announcements]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** PATCH /communities/:id/announcements/:announcementId.
+ *  Accepts partial updates: `title`, `body`, `is_pinned`. Same management
+ *  permissions as create. Pin/unpin lives on this endpoint rather than its
+ *  own POST so the host can pin while editing in a single request. */
+app.patch("/communities/:id/announcements/:announcementId", async (c) => {
+  const sql = getSql(c.env);
+  const communityId = c.req.param("id");
+  const announcementId = c.req.param("announcementId");
+  const { userId, isSuperAdmin, community } =
+    await resolveAnnouncementContext(sql, c, communityId);
+  if (!userId) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  if (!community) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+  if (!viewerCanManageAnnouncements(community, userId, isSuperAdmin)) {
+    return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  }
+
+  const existing = (await sql`
+    SELECT id FROM newchums.community_announcements
+    WHERE id = ${announcementId} AND community_id = ${communityId} AND deleted_at IS NULL
+    LIMIT 1
+  `) as { id: string }[];
+  if (existing.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+
+  const titleProvided = "title" in body;
+  let nextTitle: string | null = null;
+  if (titleProvided) {
+    const rawTitle = typeof body.title === "string" ? body.title.trim() : "";
+    if (!rawTitle) return c.json({ ok: false, error: "VALIDATION", message: "Title is required", field: "title" }, 400);
+    if (rawTitle.length > MAX_ANNOUNCEMENT_TITLE_LEN)
+      return c.json({ ok: false, error: "VALIDATION", message: `Title must be ${MAX_ANNOUNCEMENT_TITLE_LEN} characters or less`, field: "title" }, 400);
+    nextTitle = rawTitle;
+  }
+
+  const bodyProvided = "body" in body;
+  let nextBody: string | null = null;
+  if (bodyProvided) {
+    const rawBody = typeof body.body === "string" ? body.body.trim() : "";
+    if (!rawBody) return c.json({ ok: false, error: "VALIDATION", message: "Message is required", field: "body" }, 400);
+    const sanitized = sanitizeDescriptionHtml(rawBody.slice(0, MAX_ANNOUNCEMENT_BODY_LEN));
+    if (!sanitized) return c.json({ ok: false, error: "VALIDATION", message: "Message is required", field: "body" }, 400);
+    nextBody = sanitized;
+  }
+
+  const pinProvided = "is_pinned" in body;
+  const nextPin = pinProvided ? body.is_pinned === true : null;
+
+  try {
+    await sql`
+      UPDATE newchums.community_announcements
+      SET title      = COALESCE(${titleProvided ? nextTitle : null}, title),
+          body       = COALESCE(${bodyProvided ? nextBody : null}, body),
+          is_pinned  = CASE WHEN ${pinProvided} THEN ${nextPin} ELSE is_pinned END,
+          updated_at = NOW()
+      WHERE id = ${announcementId} AND community_id = ${communityId}
+    `;
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[PATCH /communities/:id/announcements/:announcementId]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** DELETE /communities/:id/announcements/:announcementId. Soft delete by
+ *  stamping `deleted_at`, preserving an audit trail and letting us recover
+ *  accidentally removed posts on request. */
+app.delete("/communities/:id/announcements/:announcementId", async (c) => {
+  const sql = getSql(c.env);
+  const communityId = c.req.param("id");
+  const announcementId = c.req.param("announcementId");
+  const { userId, isSuperAdmin, community } =
+    await resolveAnnouncementContext(sql, c, communityId);
+  if (!userId) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  if (!community) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+  if (!viewerCanManageAnnouncements(community, userId, isSuperAdmin)) {
+    return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  }
+  try {
+    await sql`
+      UPDATE newchums.community_announcements
+      SET deleted_at = NOW(), updated_at = NOW()
+      WHERE id = ${announcementId} AND community_id = ${communityId} AND deleted_at IS NULL
+    `;
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[DELETE /communities/:id/announcements/:announcementId]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /communities/:id/announcements/seen. Auth required; logged-out
+ *  viewers don't track seen state. Upserts the viewer's `last_seen_at` to
+ *  now, which the tab indicator compares against the latest non-deleted
+ *  announcement's `created_at`. */
+app.post("/communities/:id/announcements/seen", async (c) => {
+  const sql = getSql(c.env);
+  const communityId = c.req.param("id");
+  const { userId, isSuperAdmin, community, viewerMembership } =
+    await resolveAnnouncementContext(sql, c, communityId);
+  if (!userId) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  if (!community) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+  if (!viewerCanReadAnnouncements(community, viewerMembership, isSuperAdmin)) {
+    return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  }
+  try {
+    await sql`
+      INSERT INTO newchums.community_announcement_seen (user_id, community_id, last_seen_at)
+      VALUES (${userId}, ${communityId}, NOW())
+      ON CONFLICT (user_id, community_id) DO UPDATE
+        SET last_seen_at = EXCLUDED.last_seen_at
+    `;
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[POST /communities/:id/announcements/seen]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });

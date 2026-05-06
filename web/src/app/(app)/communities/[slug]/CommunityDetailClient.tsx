@@ -33,7 +33,13 @@ import EventCard, { type PlanEvent } from "@/components/events/EventCard";
 import RecentlyHappenedSection from "@/components/events/RecentlyHappenedSection";
 import { apiFetch, communityAvatarUrl, communityBannerUrl, getAuthToken, getAvatarBaseUrl } from "@/lib/apiClient";
 import { effectiveCategorySet } from "@/lib/interestUtils";
-import { OperatingHoursInline, type OperatingHours } from "@/components/communities";
+import {
+  CommunityAnnouncementsTab,
+  OperatingHoursInline,
+  type CommunityAnnouncement,
+  type OperatingHours,
+} from "@/components/communities";
+import CampaignRoundedIcon from "@mui/icons-material/CampaignRounded";
 
 type CommunityData = {
   id: string;
@@ -206,6 +212,17 @@ export default function CommunityDetailClient() {
   const [undoDeclineSubmitting, setUndoDeclineSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [tabIndex, setTabIndex] = useState(0);
+  // Announcements tab indicator. Server returns this on `GET /communities/:slug`
+  // for authenticated viewers (logged-out viewers always see false). The badge
+  // is on the tab strip; the tab body owns the mark-seen call and pings back
+  // through `onListChanged` so this flag clears without a full refresh.
+  const [hasUnseenAnnouncements, setHasUnseenAnnouncements] = useState(false);
+  // Prefetch announcements alongside plans and members so clicking the
+  // Announcements tab paints with cards on first frame instead of a brief
+  // spinner. The tab body uses these as initial seed data and skips its
+  // own first fetch when seeded.
+  const [announcementsSeed, setAnnouncementsSeed] = useState<CommunityAnnouncement[] | null>(null);
+  const [announcementsCanManageSeed, setAnnouncementsCanManageSeed] = useState(false);
 
   const [events, setEvents] = useState<PlanEvent[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
@@ -320,11 +337,21 @@ export default function CommunityDetailClient() {
           setRestricted(data.restricted ?? false);
           setPendingRequests(data.pendingRequests ?? []);
           setDeclinedRequests(Array.isArray(data.declinedRequests) ? data.declinedRequests : []);
+          setHasUnseenAnnouncements(data.hasUnseenAnnouncements === true);
         }
       }
     } catch { /* noop */ }
     setLoading(false);
   }, [slug]);
+
+  // Clear the announcements badge in-memory after the tab successfully
+  // stamps the viewer's `last_seen_at`. Local-only, no API round trip,
+  // since the tab body is the source of truth for "I just opened this
+  // tab". A subsequent full slug refetch will reconfirm via
+  // `hasUnseenAnnouncements` if the user navigates away and back.
+  const clearUnseenAnnouncementsBadge = useCallback(() => {
+    setHasUnseenAnnouncements(false);
+  }, []);
 
   const fetchEvents = useCallback(async () => {
     if (!community) return;
@@ -351,6 +378,35 @@ export default function CommunityDetailClient() {
     } catch { /* noop */ }
     setMembersLoading(false);
     setMembersFetched(true);
+  }, [community, isAuthenticated]);
+
+  // Prefetch the announcements list once the community resolves, so the
+  // first click on the Announcements tab paints with real cards rather
+  // than a spinner. A 403 response (logged-out viewer on a private
+  // community whose tab won't render anyway) is silently swallowed; the
+  // tab body falls back to its own fetch in that edge case. Mutations
+  // performed inside the tab also notify back via `onListSynced` so this
+  // cache stays warm if the user closes and re-opens the tab.
+  const fetchAnnouncementsSeed = useCallback(async () => {
+    if (!community) return;
+    try {
+      const res = await apiFetch(`/communities/${community.id}/announcements`, {
+        auth: isAuthenticated === true,
+      });
+      if (!res.ok) {
+        setAnnouncementsSeed([]);
+        return;
+      }
+      const data = (await res.json()) as {
+        ok: boolean;
+        announcements?: CommunityAnnouncement[];
+        viewerCanManage?: boolean;
+      };
+      if (data.ok) {
+        setAnnouncementsSeed(Array.isArray(data.announcements) ? data.announcements : []);
+        setAnnouncementsCanManageSeed(data.viewerCanManage === true);
+      }
+    } catch { /* non-fatal; the tab body will retry on its own */ }
   }, [community, isAuthenticated]);
 
   // fetchCommunity flips loading=true synchronously; legitimate fetch-on-
@@ -408,8 +464,9 @@ export default function CommunityDetailClient() {
     /* eslint-disable react-hooks/set-state-in-effect */
     fetchEvents();
     fetchMembers();
+    fetchAnnouncementsSeed();
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [community, restricted, fetchEvents, fetchMembers]);
+  }, [community, restricted, fetchEvents, fetchMembers, fetchAnnouncementsSeed]);
 
   // Apply an incoming ?tab=<name> query param to tabIndex exactly once, the
   // first time we know enough about the viewer to evaluate eligibility
@@ -431,9 +488,12 @@ export default function CommunityDetailClient() {
       return;
     }
     const viewerIsOwner = viewerMembership?.role === "owner";
+    // Tab order: 0 plans, 1 announcements, 2 members, 3 requests (owner+private only).
     if (initialTabParam === "requests" && viewerIsOwner && community.visibility === "private") {
-      setTabIndex(2);
+      setTabIndex(3);
     } else if (initialTabParam === "members") {
+      setTabIndex(2);
+    } else if (initialTabParam === "announcements") {
       setTabIndex(1);
     }
     // `plans` or any unrecognized value falls through to the default of 0.
@@ -1458,7 +1518,7 @@ export default function CommunityDetailClient() {
                   members={members}
                   totalCount={community.member_count}
                   hideRealName={isAuthenticated === false}
-                  onSeeAll={() => setTabIndex(1)}
+                  onSeeAll={() => setTabIndex(2)}
                   onOpenProfile={(handle) => router.push(`/u/${handle}`)}
                 />
               )}
@@ -1752,7 +1812,10 @@ export default function CommunityDetailClient() {
             // browser history so the back button doesn't tab-walk.
             // `scroll: false` keeps the viewer at the tab section instead
             // of jumping to the page top on every tab switch.
-            const next = v === 2 ? "requests" : v === 1 ? "members" : null;
+            const next = v === 3 ? "requests"
+              : v === 2 ? "members"
+              : v === 1 ? "announcements"
+              : null;
             const url = new URL(window.location.href);
             if (next) url.searchParams.set("tab", next);
             else url.searchParams.delete("tab");
@@ -1777,6 +1840,45 @@ export default function CommunityDetailClient() {
           <Tab
             label={`Plans${events.length > 0 ? ` (${events.length})` : ""}`}
             icon={<EventNoteRoundedIcon sx={{ fontSize: 18 }} />}
+            iconPosition="start"
+            sx={{
+              textTransform: "none",
+              minHeight: 52,
+              fontWeight: 600,
+              fontSize: "0.9375rem",
+              color: "text.secondary",
+              "&.Mui-selected": { color: "primary.main", fontWeight: 700 },
+              "&:hover": { color: "text.primary", bgcolor: "action.hover" },
+              borderTopLeftRadius: 8,
+              borderTopRightRadius: 8,
+              transition: "color 0.15s ease, background-color 0.15s ease",
+            }}
+          />
+          {/* Announcements tab. The unseen indicator (`hasUnseenAnnouncements`)
+              is only ever true for authenticated viewers; logged-out viewers
+              see the tab without a badge. The badge is a small primary-color
+              dot rendered next to the label so the visual treatment matches
+              the existing unread-chat dot on plan cards. */}
+          <Tab
+            label={
+              <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75 }}>
+                <span>Announcements</span>
+                {hasUnseenAnnouncements && tabIndex !== 1 && (
+                  <Box
+                    aria-label="New announcements"
+                    sx={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: "50%",
+                      bgcolor: "primary.main",
+                      boxShadow: "0 0 0 3px rgba(230, 91, 19, 0.18)",
+                      flexShrink: 0,
+                    }}
+                  />
+                )}
+              </Box>
+            }
+            icon={<CampaignRoundedIcon sx={{ fontSize: 18 }} />}
             iconPosition="start"
             sx={{
               textTransform: "none",
@@ -1949,8 +2051,29 @@ export default function CommunityDetailClient() {
           </Stack>
         )}
 
+        {/* Announcements tab. v1: tab-only surface, no email blast, no
+            in-app bell. The component owns its own create / edit / delete
+            / pin flow and pings `refreshUnseenAnnouncements` so the tab
+            badge clears after the user opens this tab or posts. */}
+        {tabIndex === 1 && community && (
+          <CommunityAnnouncementsTab
+            communityId={community.id}
+            isAuthenticated={isAuthenticated === true}
+            canManageHint={isOwner}
+            initialAnnouncements={announcementsSeed}
+            initialCanManage={announcementsCanManageSeed}
+            onMarkedSeen={clearUnseenAnnouncementsBadge}
+            onListSynced={(items, canManage) => {
+              // Keep the parent cache in sync with mutations made inside
+              // the tab so re-opening the tab still paints instantly.
+              setAnnouncementsSeed(items);
+              setAnnouncementsCanManageSeed(canManage);
+            }}
+          />
+        )}
+
         {/* Members tab */}
-        {tabIndex === 1 && (
+        {tabIndex === 2 && (
           <>
             {(!membersFetched || membersLoading) && members.length === 0 ? (
               <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}><CircularProgress size={28} /></Box>
@@ -2214,7 +2337,7 @@ export default function CommunityDetailClient() {
         )}
 
         {/* Requests tab (owner of private community) */}
-        {tabIndex === 2 && isOwner && community.visibility === "private" && (
+        {tabIndex === 3 && isOwner && community.visibility === "private" && (
           <>
             {pendingRequests.length === 0 ? (
               <AppCard>
