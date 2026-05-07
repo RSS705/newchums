@@ -87,6 +87,8 @@ export type Bindings = {
   POSTMARK_TEMPLATE_COMMUNITY_MEMBER_UNBLOCKED?: string;
   /** Postmark template ID for community join-request reopened notification (template 44470744) */
   POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST_REOPENED?: string;
+  /** Postmark template ID for community announcement notification (template 44937878) */
+  POSTMARK_TEMPLATE_COMMUNITY_ANNOUNCEMENT?: string;
   SENTRY_DSN: string;
   APP_ENV?: string;
   ENVIRONMENT?: string;

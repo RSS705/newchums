@@ -14,6 +14,8 @@ import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import MoreVertRoundedIcon from "@mui/icons-material/MoreVertRounded";
 import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
+import NotificationsOffRoundedIcon from "@mui/icons-material/NotificationsOffRounded";
+import NotificationsActiveRoundedIcon from "@mui/icons-material/NotificationsActiveRounded";
 import LanguageRoundedIcon from "@mui/icons-material/LanguageRounded";
 import LinkRoundedIcon from "@mui/icons-material/LinkRounded";
 import PeopleRoundedIcon from "@mui/icons-material/PeopleRounded";
@@ -255,6 +257,18 @@ export default function CommunityDetailClient({
   // dialog so it can't be triggered by an accidental click.
   const [memberActionsAnchor, setMemberActionsAnchor] = useState<HTMLElement | null>(null);
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
+  // Per-community announcement-email mute. Reflects only the row in
+  // `community_announcement_mutes`, not the global notification preference.
+  // The global preference (Settings → Community announcements) supersedes
+  // this at send time but never overwrites the row, so the user's
+  // per-community choice survives a global toggle flip.
+  const [announcementMuted, setAnnouncementMuted] = useState(false);
+  const [announcementMuteSubmitting, setAnnouncementMuteSubmitting] = useState(false);
+  // Whether the global Settings toggle for community announcement emails
+  // is on. Loaded lazily from `/notification-preferences` once the viewer
+  // is confirmed to be a member, only used to render an explanatory hint
+  // next to the per-community mute action when the global pref is off.
+  const [globalCommunityAnnouncementsEnabled, setGlobalCommunityAnnouncementsEnabled] = useState<boolean | null>(null);
   const [joinRequestMessage, setJoinRequestMessage] = useState("");
   const [isClosed, setIsClosed] = useState(false);
   const [viewerHobbyItems, setViewerHobbyItems] = useState<{ slug: string; name: string; category?: string | null }[]>([]);
@@ -356,6 +370,7 @@ export default function CommunityDetailClient({
           setPendingRequests(data.pendingRequests ?? []);
           setDeclinedRequests(Array.isArray(data.declinedRequests) ? data.declinedRequests : []);
           setHasUnseenAnnouncements(data.hasUnseenAnnouncements === true);
+          setAnnouncementMuted(data.viewerAnnouncementMuted === true);
         }
       }
     } catch { /* noop */ }
@@ -462,6 +477,61 @@ export default function CommunityDetailClient({
       } catch { /* noop */ }
     })();
   }, [isAuthenticated]);
+
+  // Fetch the viewer's global community-announcements notification pref
+  // once we know they're authed and a member, so the per-community mute
+  // menu entry can show an explanatory hint when the global toggle is
+  // off ("Global community announcement emails are off"). Cheap, fires
+  // once per mount of an authed member.
+  useEffect(() => {
+    if (isAuthenticated !== true) return;
+    if (!viewerMembership || viewerMembership.status !== "active") return;
+    if (globalCommunityAnnouncementsEnabled !== null) return;
+    (async () => {
+      try {
+        const res = await apiFetch("/notification-preferences", { auth: true });
+        if (res.ok) {
+          const d = await res.json();
+          const enabled = d?.prefs?.items?.community_announcements?.enabled;
+          setGlobalCommunityAnnouncementsEnabled(enabled !== false);
+        }
+      } catch { /* noop, the hint just won't render */ }
+    })();
+  }, [isAuthenticated, viewerMembership, globalCommunityAnnouncementsEnabled]);
+
+  // Deeplink handler for the email footer's "Mute announcement emails for
+  // {community}" link. When the slug page opens with `?mute=announcements`
+  // we surface a confirmation toast then mute, then strip the query so a
+  // refresh doesn't re-trigger. We wait for `community` to load and for
+  // the viewer's membership to be known before acting; non-members fall
+  // through to a soft notice rather than 403'ing the API call.
+  useEffect(() => {
+    const muteParam = searchParams.get("mute");
+    if (muteParam !== "announcements") return;
+    if (!community || isAuthenticated === null) return;
+    // Drop the query param so reloads don't replay the action.
+    const url = new URL(window.location.href);
+    url.searchParams.delete("mute");
+    window.history.replaceState({}, "", url.toString());
+
+    if (isAuthenticated === false) {
+      toast.info("Sign in to mute announcement notifications for this community");
+      return;
+    }
+    if (!viewerMembership || viewerMembership.status !== "active") {
+      toast.info("Join this community to manage its announcement notifications");
+      return;
+    }
+    if (announcementMuted) {
+      toast.info("Announcement notifications for this community are already muted");
+      return;
+    }
+    void handleToggleAnnouncementMute();
+    // We deliberately depend on the resolved state (community, auth,
+    // membership) but not on the toggle handler / current muted flag,
+    // since this should fire exactly once per arrival with the param.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, community, isAuthenticated, viewerMembership]);
 
   const viewerHobbyCategories = useMemo(() => {
     if (!viewerHobbyItems.length) return undefined;
@@ -584,6 +654,37 @@ export default function CommunityDetailClient({
       }
     } catch { toast.error("Something went wrong"); }
     setJoining(false);
+  };
+
+  /** Toggle the per-community mute. Optimistic update so the menu
+   *  closes feeling responsive; reverts on error. The global pref is not
+   *  touched, that's a separate Settings-level decision and intentionally
+   *  outside the scope of this control. */
+  const handleToggleAnnouncementMute = async () => {
+    if (!community) return;
+    const next = !announcementMuted;
+    setAnnouncementMuted(next);
+    setAnnouncementMuteSubmitting(true);
+    try {
+      const res = await apiFetch(`/communities/${community.id}/announcement-mute`, {
+        auth: true,
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ muted: next }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        toast.success(next ? "Announcement notifications muted" : "Announcement notifications unmuted");
+      } else {
+        setAnnouncementMuted(!next);
+        toast.error(data.message || "Couldn't update mute preference");
+      }
+    } catch {
+      setAnnouncementMuted(!next);
+      toast.error("Something went wrong");
+    } finally {
+      setAnnouncementMuteSubmitting(false);
+    }
   };
 
   const handleLeave = async () => {
@@ -1735,10 +1836,41 @@ export default function CommunityDetailClient({
         transformOrigin={{ vertical: "top", horizontal: "right" }}
         slotProps={{
           paper: {
-            sx: { minWidth: 200, borderRadius: 2.5, mt: 0.5 },
+            sx: { minWidth: 240, borderRadius: 2.5, mt: 0.5 },
           },
         }}
       >
+        {/* Per-community announcement-email mute. Available but quiet,
+         *  living next to Leave so a member can curate noise without
+         *  leaving the community. The label flips between "Mute" and
+         *  "Unmute" so the current state is obvious. When the global
+         *  Settings toggle is off, an explanatory caption sits under the
+         *  item so unmuting one community can't be misread as overriding
+         *  the global preference. */}
+        <MenuItem
+          onClick={() => {
+            setMemberActionsAnchor(null);
+            void handleToggleAnnouncementMute();
+          }}
+          disabled={announcementMuteSubmitting}
+        >
+          <ListItemIcon>
+            {announcementMuted
+              ? <NotificationsActiveRoundedIcon fontSize="small" />
+              : <NotificationsOffRoundedIcon fontSize="small" />}
+          </ListItemIcon>
+          <ListItemText
+            primary={announcementMuted ? "Unmute announcement notifications" : "Mute announcement notifications"}
+            secondary={
+              globalCommunityAnnouncementsEnabled === false
+                ? "Global community announcement notifications are off in Settings"
+                : undefined
+            }
+            secondaryTypographyProps={{
+              sx: { fontSize: "0.75rem", color: "text.secondary", whiteSpace: "normal", lineHeight: 1.3 },
+            }}
+          />
+        </MenuItem>
         <MenuItem
           onClick={() => {
             setMemberActionsAnchor(null);
@@ -2097,6 +2229,12 @@ export default function CommunityDetailClient({
             initialCanManage={announcementsCanManageSeed}
             onMarkedSeen={clearUnseenAnnouncementsBadge}
             onListSynced={handleAnnouncementsListSynced}
+            // ?announcement=<id> from the email CTA: the auth gate in
+            // (app)/layout.tsx has already bounced logged-out recipients
+            // through /login first, so by the time we render this prop
+            // the viewer is signed in. The tab uses the id to scroll the
+            // matching card into view and briefly highlight it.
+            focusAnnouncementId={searchParams.get("announcement")}
           />
         )}
 

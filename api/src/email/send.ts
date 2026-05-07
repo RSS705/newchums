@@ -1216,6 +1216,77 @@ export const sendCommunityMemberUnblockedEmail = async (
   });
 };
 
+// ── Community announcement notification ─────────────────────────────────
+//
+// Sent to active community members when an owner posts an announcement
+// with the "Email members" option enabled. The HTML body is pre-rendered
+// (sanitized) and inserted via triple-stache `{{{announcementBodyHtml}}}`
+// in the template, mirroring the unreadChatDigest `planCards` and
+// eventChanged `changesBlockHtml` pattern. The plain-text fallback is the
+// htmlToPlainText projection of the same body, passed via a same-name
+// scalar section + `{{.}}` so it's only rendered when present. No empty
+// strings: absent fields are passed as null so the corresponding
+// `{{#field}}...{{/field}}` blocks stay hidden (see docs/Technical_Specs.md
+// → "Postmark email templates (Mustachio)").
+
+export const sendCommunityAnnouncementEmail = async (
+  env: Bindings,
+  {
+    to,
+    recipientName,
+    communityName,
+    communityUrl,
+    announcementTitle,
+    announcementBodyHtml,
+    announcementBodyText,
+    communityMuteUrl,
+    settingsUrl,
+    unsubscribeUrl,
+  }: {
+    to: string;
+    recipientName: string;
+    communityName: string;
+    communityUrl: string;
+    announcementTitle: string;
+    /** Sanitized HTML body for the message block (already passed through
+     *  `sanitizeDescriptionHtml`, identical to what's stored on the
+     *  announcement row). */
+    announcementBodyHtml: string;
+    /** Plain-text projection of the body for the .txt template. */
+    announcementBodyText: string;
+    /** Per-community mute deeplink (`/communities/<slug>?mute=announcements`). */
+    communityMuteUrl: string;
+    /** Global notification settings deeplink. */
+    settingsUrl: string;
+    /** Tokenized one-click unsubscribe for the `community_announcements`
+     *  notification key. Optional, omitted in environments where
+     *  `NEXTAUTH_SECRET` is not configured. */
+    unsubscribeUrl?: string;
+  }
+) => {
+  if (!env.POSTMARK_TEMPLATE_COMMUNITY_ANNOUNCEMENT) return;
+  return sendPostmarkTemplateEmail(env, {
+    From: env.EMAIL_FROM,
+    To: to,
+    TemplateId: env.POSTMARK_TEMPLATE_COMMUNITY_ANNOUNCEMENT,
+    TemplateModel: {
+      productName: "NewChums",
+      recipientName,
+      communityName,
+      communityUrl,
+      announcementTitle,
+      // Triple-stache field, always present (body is required). Passed
+      // through verbatim so sanitized HTML markup renders, not escaped.
+      announcementBodyHtml,
+      announcementBodyText: hasContent(announcementBodyText) ? announcementBodyText : null,
+      communityMuteUrl,
+      settingsUrl,
+      unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
+      year: new Date().getFullYear(),
+    },
+  });
+};
+
 export const sendCommunityJoinRequestReopenedEmail = async (
   env: Bindings,
   { to, recipientName, communityName, communityUrl }: {

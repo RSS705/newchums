@@ -1,0 +1,17 @@
+New announcement from {{communityName}}
+
+{{announcementTitle}}
+
+{{#announcementBodyText}}{{.}}{{/announcementBodyText}}
+
+View the announcement: {{communityUrl}}
+
+---
+You're receiving this because you're a member of {{communityName}} on NewChums.
+
+Want fewer of these?
+- Mute announcement emails for this community: {{communityMuteUrl}}
+- Turn off all community announcement emails in your notification settings: {{settingsUrl}}
+{{#unsubscribeUrl}}- One-click unsubscribe from community announcement emails: {{.}}
+{{/unsubscribeUrl}}
+© {{year}} {{productName}}

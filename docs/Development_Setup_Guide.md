@@ -112,6 +112,9 @@ Auth/lightweight-signup email templates (active, set in `wrangler.toml` vars):
 - `POSTMARK_TEMPLATE_PLAN_SIGNIN` (template 44523947, plan-signup notice when the email already has a verified account)
 - `POSTMARK_TEMPLATE_SIGNIN_LINK` (template 44802964, return-visit sign-in link for `password_setup_pending` accounts; copy is "Sign in to NewChums", distinct from the signup confirmation template)
 
+Community email templates (active, set in `wrangler.toml` vars):
+- `POSTMARK_TEMPLATE_COMMUNITY_ANNOUNCEMENT` (template 44937878, community announcement notification sent to active members when an owner posts an announcement with the "Email members" toggle on; gated by the `community_announcements` notification preference and the per-community mute row)
+
 Event email templates (scaffolded, sends noop if not set):
 - `POSTMARK_TEMPLATE_EVENT_INVITE`
 - `POSTMARK_TEMPLATE_EVENT_REMINDER`
@@ -266,6 +269,7 @@ psql "$DATABASE_URL" -f sql/083_subscription_plan.sql
 psql "$DATABASE_URL" -f sql/084_remove_guest_participation.sql
 psql "$DATABASE_URL" -f sql/094_min_attendees_required.sql
 psql "$DATABASE_URL" -f sql/095_community_announcements.sql
+psql "$DATABASE_URL" -f sql/096_community_announcement_emails.sql
 ```
 
 Tip for fresh setups: `ls web/sql/*.sql | sort | xargs -I {} psql "$DATABASE_URL" -f {}` applies every migration in order. 084 is a destructive consolidation of 035/043/077 (guest participation model); its pre-flight will abort if more than ~100 orphan guest rows exist.

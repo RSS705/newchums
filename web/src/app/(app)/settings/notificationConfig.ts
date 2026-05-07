@@ -96,4 +96,9 @@ export const NOTIFICATION_TYPES: NotificationTypeConfig[] = [
     title: "Your community join request was reviewed",
     description: "When a community owner approves or declines your request to join.",
   },
+  {
+    key: "community_announcements",
+    title: "Community announcements",
+    description: "Get emailed when communities you belong to post announcements.",
+  },
 ];

@@ -137,11 +137,25 @@ export default async function AppLayout({
       // would land on the public community shell instead of the tab they
       // were sent to. Redirect before any HTML renders so there is no
       // flash of the wrong view on the way to /login.
+      //
+      // The announcement-email CTA carries `announcement=<id>` so the
+      // logged-in destination can highlight/scroll to the specific post.
+      // We ALSO treat its presence as an auth gate: announcements are
+      // publicly readable on public communities (so we deliberately do
+      // NOT force login on bare ?tab=announcements visits), but a click
+      // from a member's inbox should land on the authenticated view, not
+      // the public preview, so members can use the mute controls and so
+      // the redirect path is symmetric with how every other email CTA
+      // behaves. The query-param-only check is intentional, no separate
+      // route, no client-side flash, no impact on normal browsing of
+      // public community announcements.
       const isCommunityRoute = /^\/?(\(app\)\/)?communities\/[^/?]+\/?(\?|$)/.test(requestedPath);
       if (isCommunityRoute) {
         const tabMatch = search.match(/[?&]tab=([^&]+)/);
         const tabParam = tabMatch ? decodeURIComponent(tabMatch[1]) : null;
-        if (tabParam && AUTH_REQUIRED_COMMUNITY_TABS.has(tabParam)) {
+        const announcementMatch = search.match(/[?&]announcement=([^&]+)/);
+        const announcementParam = announcementMatch ? decodeURIComponent(announcementMatch[1]) : null;
+        if ((tabParam && AUTH_REQUIRED_COMMUNITY_TABS.has(tabParam)) || announcementParam) {
           // Ensure the tab survives the login round-trip. Depending on
           // whether the proxy has populated x-request-path vs falling back
           // to framework headers, requestedPath may or may not already

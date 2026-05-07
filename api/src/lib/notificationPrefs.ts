@@ -30,6 +30,7 @@ export const VALID_KEYS = [
   "roadmap_updates",
   "community_join_request_received",
   "community_join_request_result",
+  "community_announcements",
 ] as const;
 
 export type NotificationKey = (typeof VALID_KEYS)[number];
@@ -56,6 +57,7 @@ export const DEFAULT_PREFS: Record<NotificationKey, NotificationPrefItem> = {
   roadmap_updates: { enabled: true },
   community_join_request_received: { enabled: true },
   community_join_request_result: { enabled: true },
+  community_announcements: { enabled: true },
 };
 
 /**

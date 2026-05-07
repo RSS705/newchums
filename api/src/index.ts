@@ -44,6 +44,7 @@ import {
   sendCommunityMemberRemovedEmail,
   sendCommunityMemberUnblockedEmail,
   sendCommunityJoinRequestReopenedEmail,
+  sendCommunityAnnouncementEmail,
   sendMagicLinkSignupEmail,
   sendPlanSigninEmail,
   sendSigninLinkEmail,
@@ -7828,6 +7829,13 @@ app.get("/communities/:slug", async (c) => {
     // seen" so brand-new viewers will see the indicator if any
     // announcements exist. Cheap query, single round trip.
     let hasUnseenAnnouncements = false;
+    // `viewerAnnouncementMuted` reflects only the per-community mute row,
+    // not the global notification preference. The Settings UI exposes the
+    // global toggle separately, and we want this flag to mean "the
+    // viewer has explicitly silenced this community" so the overflow menu
+    // can render the right action label without the global toggle
+    // confusing the local state.
+    let viewerAnnouncementMuted = false;
     if (userId) {
       const unseenRows = (await sql`
         SELECT EXISTS (
@@ -7842,6 +7850,13 @@ app.get("/communities/:slug", async (c) => {
         ) AS has_unseen
       `) as { has_unseen: boolean }[];
       hasUnseenAnnouncements = unseenRows[0]?.has_unseen === true;
+
+      const muteRows = (await sql`
+        SELECT 1 FROM newchums.community_announcement_mutes
+        WHERE user_id = ${userId} AND community_id = ${community.id}
+        LIMIT 1
+      `) as unknown[];
+      viewerAnnouncementMuted = muteRows.length > 0;
     }
 
     return c.json({
@@ -7857,6 +7872,7 @@ app.get("/communities/:slug", async (c) => {
       viewerCanEditBanner,
       viewerHasProBannerAccess: viewerCanEditBanner,
       hasUnseenAnnouncements,
+      viewerAnnouncementMuted,
       pendingRequests: isOwnerOrAdmin ? pendingRequests : undefined,
       declinedRequests: isOwnerOrAdmin ? declinedRequests : undefined,
       shareToken,
@@ -9052,6 +9068,7 @@ app.post("/communities/:id/announcements", async (c) => {
   if (!sanitizedBody) return c.json({ ok: false, error: "VALIDATION", message: "Message is required", field: "body" }, 400);
 
   const isPinned = body.is_pinned === true;
+  const notifyMembers = body.notify_members === true;
 
   try {
     const inserted = (await sql`
@@ -9060,6 +9077,110 @@ app.post("/communities/:id/announcements", async (c) => {
       VALUES (${communityId}, ${userId}, ${rawTitle}, ${sanitizedBody}, ${isPinned})
       RETURNING id, created_at, updated_at
     `) as { id: string; created_at: string; updated_at: string }[];
+
+    let eligibleRecipientCount = 0;
+    if (notifyMembers) {
+      // Resolve the community's slug + name once so the email batch and
+      // the deeplinks (mute / settings) use the same canonical
+      // identifiers. The community row from `resolveAnnouncementContext`
+      // doesn't carry these, so a second small lookup is cheaper than
+      // expanding that helper just for the email path.
+      try {
+        const communityRows = (await sql`
+          SELECT slug, name FROM newchums.communities WHERE id = ${communityId} LIMIT 1
+        `) as { slug: string; name: string }[];
+        const communityRow = communityRows[0];
+        if (communityRow) {
+          // Eligible members: active membership, not suspended, not the
+          // author. The global `community_announcements` notification
+          // preference (default ON) supersedes the per-community mute row
+          // at send time, but we don't read the global pref off the
+          // membership row, normalize it through the same helper used
+          // everywhere else so the default-true semantics stay consistent
+          // for users with missing keys. The per-community mute is a
+          // simple LEFT JOIN: presence == muted.
+          const recipients = (await sql`
+            SELECT u.id, u.email, u.name, u.username,
+                   p.notification_prefs,
+                   m.user_id IS NOT NULL AS muted
+            FROM newchums.community_members cm
+            JOIN newchums.users u ON u.id = cm.user_id
+            LEFT JOIN newchums.user_profile p ON p.user_id = cm.user_id
+            LEFT JOIN newchums.community_announcement_mutes m
+              ON m.user_id = cm.user_id AND m.community_id = cm.community_id
+            WHERE cm.community_id = ${communityId}
+              AND cm.status = 'active'
+              AND cm.user_id <> ${userId}
+              AND COALESCE(u.is_suspended, false) = false
+          `) as {
+            id: string; email: string; name: string | null; username: string | null;
+            notification_prefs: unknown; muted: boolean;
+          }[];
+
+          const settingsUrl = `${c.env.WEB_BASE_URL}/settings#notifications`;
+          // The `announcement=<id>` query param does double duty: it
+          // tells the community detail client which post to highlight /
+          // scroll to, AND `(app)/layout.tsx` treats its presence as an
+          // auth gate so a logged-out recipient is bounced through
+          // /login?next=... before any HTML renders. Bare ?tab=announcements
+          // is still publicly viewable; the auth requirement is opt-in
+          // via this email-only param so normal browsing of public
+          // community announcements stays unauthenticated.
+          const announcementId = inserted[0].id;
+          const communityUrl = `${c.env.WEB_BASE_URL}/communities/${communityRow.slug}?tab=announcements&announcement=${encodeURIComponent(announcementId)}`;
+          const communityMuteUrl = `${c.env.WEB_BASE_URL}/communities/${communityRow.slug}?mute=announcements`;
+          const communityName = communityRow.name;
+          const announcementBodyHtml = sanitizedBody;
+          const announcementBodyText = htmlToPlainText(sanitizedBody);
+
+          const eligible = recipients.filter((r) => {
+            if (r.muted) return false;
+            const prefs = normalizeNotificationPrefs(r.notification_prefs);
+            return prefs.items.community_announcements?.enabled !== false;
+          });
+          eligibleRecipientCount = eligible.length;
+
+          const sendBatch = async () => {
+            for (const r of eligible) {
+              try {
+                const recipientName = r.name?.trim() || r.username?.replace(/^@/, "") || "there";
+                let unsubscribeUrl: string | undefined;
+                if (c.env.NEXTAUTH_SECRET) {
+                  try {
+                    const token = await createUnsubscribeToken(c.env.NEXTAUTH_SECRET, r.id, "community_announcements");
+                    unsubscribeUrl = `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(token)}`;
+                  } catch { /* unsubscribe link is optional */ }
+                }
+                await sendCommunityAnnouncementEmail(c.env, {
+                  to: r.email,
+                  recipientName,
+                  communityName,
+                  communityUrl,
+                  announcementTitle: rawTitle,
+                  announcementBodyHtml,
+                  announcementBodyText,
+                  communityMuteUrl,
+                  settingsUrl,
+                  unsubscribeUrl,
+                });
+              } catch (sendErr) {
+                console.error("[POST /communities/:id/announcements] email send", sendErr);
+              }
+            }
+          };
+
+          // Run the batch in the background so the create response stays
+          // snappy even on communities with many members. Per-recipient
+          // failures inside `sendBatch` are already swallowed; the outer
+          // catch here only guards against a thrown promise from the
+          // wrapper itself.
+          c.executionCtx.waitUntil(sendBatch().catch(() => { /* noop */ }));
+        }
+      } catch (notifyErr) {
+        console.error("[POST /communities/:id/announcements] notify setup", notifyErr);
+      }
+    }
+
     return c.json({
       ok: true,
       announcement: {
@@ -9067,6 +9188,14 @@ app.post("/communities/:id/announcements", async (c) => {
         createdAt: inserted[0].created_at,
         updatedAt: inserted[0].updated_at,
       },
+      // `notified: true` means the email batch was queued.
+      // `notifyQueuedCount` is the eligible-recipient count computed
+      // synchronously before the batch is handed to `waitUntil`, so the
+      // toast copy can read "Posted (Emailing N members)". The actual
+      // Postmark calls run in the background; per-recipient send
+      // failures are swallowed so they don't undo the create.
+      notified: notifyMembers,
+      notifyQueuedCount: notifyMembers ? eligibleRecipientCount : 0,
     });
   } catch (err) {
     console.error("[POST /communities/:id/announcements]", err);
@@ -9162,6 +9291,51 @@ app.delete("/communities/:id/announcements/:announcementId", async (c) => {
     return c.json({ ok: true });
   } catch (err) {
     console.error("[DELETE /communities/:id/announcements/:announcementId]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** PUT /communities/:id/announcement-mute. Auth required.
+ *  Body: `{ muted: boolean }`. Toggles the per-community mute marker for
+ *  the calling user. The global `community_announcements` notification
+ *  preference still supersedes this at send time, but a global toggle
+ *  on/off does NOT touch this row, so the per-community choice survives
+ *  a global flip. Idempotent: re-muting an already-muted community is a
+ *  noop, same for unmute. */
+app.put("/communities/:id/announcement-mute", async (c) => {
+  const sql = getSql(c.env);
+  const communityId = c.req.param("id");
+  const { userId, isSuperAdmin, community, viewerMembership } =
+    await resolveAnnouncementContext(sql, c, communityId);
+  if (!userId) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  if (!community) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+  // The mute pref is a member-level preference. Non-members and
+  // logged-out viewers don't need a row; super admins are allowed
+  // through so they can self-test the flow on private communities.
+  if (!isSuperAdmin && viewerMembership?.status !== "active") {
+    return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  }
+
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+  const muted = body.muted === true;
+
+  try {
+    if (muted) {
+      await sql`
+        INSERT INTO newchums.community_announcement_mutes (user_id, community_id)
+        VALUES (${userId}, ${communityId})
+        ON CONFLICT (user_id, community_id) DO NOTHING
+      `;
+    } else {
+      await sql`
+        DELETE FROM newchums.community_announcement_mutes
+        WHERE user_id = ${userId} AND community_id = ${communityId}
+      `;
+    }
+    return c.json({ ok: true, muted });
+  } catch (err) {
+    console.error("[PUT /communities/:id/announcement-mute]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });

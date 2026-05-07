@@ -16,7 +16,6 @@ import Dialog from "@mui/material/Dialog";
 import DialogTitle from "@mui/material/DialogTitle";
 import DialogContent from "@mui/material/DialogContent";
 import DialogActions from "@mui/material/DialogActions";
-import FormControlLabel from "@mui/material/FormControlLabel";
 import Switch from "@mui/material/Switch";
 import CampaignRoundedIcon from "@mui/icons-material/CampaignRounded";
 import MoreVertRoundedIcon from "@mui/icons-material/MoreVertRounded";
@@ -72,6 +71,12 @@ type Props = {
    *  the parent can mirror the updated list into its prefetch cache and
    *  re-renders of this tab continue to paint instantly. */
   onListSynced?: (items: CommunityAnnouncement[], canManage: boolean) => void;
+  /** Optional announcement id from the email CTA's `?announcement=<id>`
+   *  query param. When present and the matching card is in the rendered
+   *  list, the tab scrolls it into view and briefly highlights it so
+   *  the recipient lands on the specific post they were emailed about
+   *  rather than just the top of the list. */
+  focusAnnouncementId?: string | null;
 };
 
 function formatPostedAt(iso: string): string {
@@ -91,6 +96,17 @@ function formatPostedAt(iso: string): string {
   return d.toLocaleDateString(undefined, sameYear
     ? { month: "short", day: "numeric" }
     : { month: "short", day: "numeric", year: "numeric" });
+}
+
+/** True when the announcement has been meaningfully edited after the
+ *  initial post. The DB sets `created_at` and `updated_at` from the same
+ *  `NOW()` on insert, so a tiny clock-tick drift between the two is
+ *  expected; only treat updates beyond a few seconds as a real edit. */
+function wasEdited(createdIso: string, updatedIso: string): boolean {
+  const created = new Date(createdIso).getTime();
+  const updated = new Date(updatedIso).getTime();
+  if (!Number.isFinite(created) || !Number.isFinite(updated)) return false;
+  return updated - created > 5_000;
 }
 
 const MAX_TITLE_LEN = 200;
@@ -122,6 +138,7 @@ export default function CommunityAnnouncementsTab({
   initialCanManage = false,
   onMarkedSeen,
   onListSynced,
+  focusAnnouncementId = null,
 }: Props) {
   const toast = useToast();
   // When the parent has already prefetched the list, render with that
@@ -146,6 +163,11 @@ export default function CommunityAnnouncementsTab({
   const [composerTitle, setComposerTitle] = useState("");
   const [composerBody, setComposerBody] = useState("");
   const [composerPinned, setComposerPinned] = useState(false);
+  // Notify-members toggle. Defaults to ON so the common case (post +
+  // email members) is one click; managers who want a quiet update can
+  // flip it off before posting. Not surfaced when editing (we don't
+  // re-email on edit), so the flag isn't sent to the PATCH endpoint.
+  const [composerNotify, setComposerNotify] = useState(true);
   const [composerSubmitting, setComposerSubmitting] = useState(false);
   const [composerErrors, setComposerErrors] = useState<{ title?: string; body?: string }>({});
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
@@ -179,6 +201,12 @@ export default function CommunityAnnouncementsTab({
   // of this tab. Manager-mutation paths call markSeen() directly and don't
   // touch this guard; only the post-load auto-mark uses it.
   const initialMarkRef = useRef(false);
+
+  // Email-deeplink highlight state. Tracks which card is currently being
+  // emphasised so the styling can fade out cleanly after a few seconds
+  // rather than staying lit forever.
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const focusAppliedRef = useRef(false);
 
   const fetchList = useCallback(async () => {
     try {
@@ -238,11 +266,39 @@ export default function CommunityAnnouncementsTab({
     void markSeen();
   }, [loading, markSeen]);
 
+  // Email-deeplink: when ?announcement=<id> matches a card in the
+  // current list, scroll it into view and light it with a transient
+  // outline. Runs once per id once the list has loaded; the ref guard
+  // prevents re-firing if the user switches tabs and comes back.
+  useEffect(() => {
+    if (loading) return;
+    if (!focusAnnouncementId) return;
+    if (focusAppliedRef.current) return;
+    const match = announcements.find((a) => a.id === focusAnnouncementId);
+    if (!match) return;
+    focusAppliedRef.current = true;
+    setHighlightId(focusAnnouncementId);
+    // Defer the scroll one tick so the card has painted before we ask
+    // the browser to bring it into view.
+    const scrollTimer = window.setTimeout(() => {
+      const el = document.getElementById(`community-announcement-${focusAnnouncementId}`);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 60);
+    const fadeTimer = window.setTimeout(() => setHighlightId(null), 3200);
+    return () => {
+      window.clearTimeout(scrollTimer);
+      window.clearTimeout(fadeTimer);
+    };
+  }, [loading, focusAnnouncementId, announcements]);
+
   const openComposerForCreate = () => {
     setEditing(null);
     setComposerTitle("");
     setComposerBody("");
     setComposerPinned(false);
+    // Defaults to true on create so the common case (post + notify) is
+    // one click; managers can flip it off for a quiet update.
+    setComposerNotify(true);
     setComposerErrors({});
     setComposerOpen(true);
   };
@@ -252,6 +308,7 @@ export default function CommunityAnnouncementsTab({
     setComposerTitle(a.title);
     setComposerBody(a.body);
     setComposerPinned(a.isPinned);
+    setComposerNotify(false);
     setComposerErrors({});
     setComposerOpen(true);
     setMenuAnchor(null);
@@ -289,11 +346,27 @@ export default function CommunityAnnouncementsTab({
           title: trimmedTitle,
           body: composerBody.slice(0, MAX_BODY_LEN),
           is_pinned: composerPinned,
+          // Only sent on create. Edits intentionally never re-email
+          // members so a typo fix can't blast the inbox a second time.
+          ...(editing ? {} : { notify_members: composerNotify }),
         }),
       });
-      const data = await res.json() as { ok: boolean; message?: string; field?: string };
+      const data = await res.json() as {
+        ok: boolean; message?: string; field?: string;
+        notified?: boolean; notifyQueuedCount?: number;
+      };
       if (data.ok) {
-        toast.success(editing ? "Announcement updated" : "Announcement posted");
+        if (editing) {
+          toast.success("Announcement updated");
+        } else if (data.notified && typeof data.notifyQueuedCount === "number" && data.notifyQueuedCount > 0) {
+          toast.success(
+            data.notifyQueuedCount === 1
+              ? "Announcement posted (notifying 1 member)"
+              : `Announcement posted (notifying ${data.notifyQueuedCount} members)`
+          );
+        } else {
+          toast.success("Announcement posted");
+        }
         closeComposer();
         await fetchList();
         // Manager just acted on the list; mark seen so the badge stays
@@ -436,21 +509,34 @@ export default function CommunityAnnouncementsTab({
         </AppCard>
       ) : (
         <Stack spacing={{ xs: 1.5, sm: 2 }}>
-          {announcements.map((a) => (
-            <AppCard
-              key={a.id}
-              // Pinned cards get a subtle primary-tinted left accent stripe
-              // and a faintly tinted background so the pin reads at a
-              // glance, beyond the chip alone. Visual treatment stays
-              // restrained so the list still feels uniform.
-              sx={a.isPinned
+          {announcements.map((a) => {
+            const isHighlighted = highlightId === a.id;
+            // Card sx is composed of three concerns:
+            //   - pinned: subtle primary-tinted stripe + background
+            //   - highlight: transient primary outline + slightly
+            //     stronger tint when the email-deeplink lands here
+            //   - default: nothing extra
+            // The outline is declared on every card as `2px solid
+            // transparent` so the highlight on/off transition animates
+            // both the colour and the bg, instead of the outline
+            // appearing/disappearing instantly. Pinned + highlight
+            // compose: highlight wins on bg colour for the lit moment,
+            // then bg fades back to the pinned tint.
+            const pinnedBg = "rgba(230, 91, 19, 0.025)";
+            const highlightBg = "rgba(230, 91, 19, 0.06)";
+            const cardSx = {
+              outline: "2px solid",
+              outlineColor: isHighlighted ? "primary.main" : "transparent",
+              outlineOffset: "2px",
+              bgcolor: isHighlighted ? highlightBg : a.isPinned ? pinnedBg : undefined,
+              transition: "outline-color 600ms ease-out, background-color 600ms ease-out",
+              ...(a.isPinned
                 ? {
-                    position: "relative",
-                    bgcolor: "rgba(230, 91, 19, 0.025)",
+                    position: "relative" as const,
                     borderColor: "rgba(230, 91, 19, 0.2)",
                     "&::before": {
                       content: '""',
-                      position: "absolute",
+                      position: "absolute" as const,
                       left: 0, top: 0, bottom: 0,
                       width: 3,
                       bgcolor: "primary.main",
@@ -458,7 +544,13 @@ export default function CommunityAnnouncementsTab({
                       borderBottomLeftRadius: "inherit",
                     },
                   }
-                : undefined}
+                : {}),
+            };
+            return (
+            <AppCard
+              key={a.id}
+              id={`community-announcement-${a.id}`}
+              sx={cardSx}
             >
               <Stack spacing={1.25}>
                 <Stack direction="row" alignItems="flex-start" spacing={1.25}>
@@ -504,8 +596,20 @@ export default function CommunityAnnouncementsTab({
                         {a.title}
                       </Typography>
                     </Stack>
-                    <Typography variant="caption" color="text.secondary" sx={{ display: "block", fontSize: "0.75rem" }}>
-                      {a.authorName} · {formatPostedAt(a.createdAt)}
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ display: "block", fontSize: "0.75rem", lineHeight: 1.5 }}
+                    >
+                      {a.authorName} &middot; {formatPostedAt(a.createdAt)}
+                      {wasEdited(a.createdAt, a.updatedAt) && (
+                        <Box
+                          component="span"
+                          sx={{ ml: 0.5, fontStyle: "italic", color: "text.disabled" }}
+                        >
+                          (edited)
+                        </Box>
+                      )}
                     </Typography>
                   </Box>
                   {canManage && (
@@ -537,7 +641,8 @@ export default function CommunityAnnouncementsTab({
                 />
               </Stack>
             </AppCard>
-          ))}
+            );
+          })}
         </Stack>
       )}
 
@@ -545,6 +650,11 @@ export default function CommunityAnnouncementsTab({
         anchorEl={menuAnchor}
         open={!!menuAnchor}
         onClose={() => { setMenuAnchor(null); setMenuTarget(null); }}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+        transformOrigin={{ vertical: "top", horizontal: "right" }}
+        slotProps={{
+          paper: { sx: { minWidth: 180, borderRadius: 2.5, mt: 0.5 } },
+        }}
       >
         <MenuItem onClick={() => menuTarget && handleTogglePin(menuTarget)}>
           <ListItemIcon>
@@ -609,23 +719,86 @@ export default function CommunityAnnouncementsTab({
                 </Typography>
               )}
             </Box>
-            <FormControlLabel
-              control={
+            {/* Pin / Notify-members toggles. Grouped in their own
+                tighter sub-Stack so they cluster together as a single
+                "post options" block under the editor; the parent Stack's
+                wider spacing still separates the block from the title /
+                editor above. Each row is a `<label>` so clicking the
+                text also toggles the switch (standard form UX), with a
+                subtle hover tint for affordance. Notify-members is only
+                rendered on create, edits never re-email. */}
+            <Stack spacing={0.25} sx={{ mt: 0.5 }}>
+              <Box
+                component="label"
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 1,
+                  px: 1,
+                  py: 0.5,
+                  ml: -1,
+                  borderRadius: 1.5,
+                  cursor: "pointer",
+                  userSelect: "none",
+                  transition: "background-color 120ms ease-out",
+                  "&:hover": { bgcolor: "action.hover" },
+                }}
+              >
                 <Switch
                   checked={composerPinned}
                   onChange={(e) => setComposerPinned(e.target.checked)}
+                  sx={{ flexShrink: 0 }}
                 />
-              }
-              label="Pin to top"
-              sx={{ alignSelf: "flex-start", gap: 0.5 }}
-            />
+                <Typography variant="subtitle2" fontWeight={600}>
+                  Pin to top
+                </Typography>
+              </Box>
+              {!editing && (
+                <Box
+                  component="label"
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 1,
+                    px: 1,
+                    py: 0.5,
+                    ml: -1,
+                    borderRadius: 1.5,
+                    cursor: "pointer",
+                    userSelect: "none",
+                    transition: "background-color 120ms ease-out",
+                    "&:hover": { bgcolor: "action.hover" },
+                  }}
+                >
+                  <Switch
+                    checked={composerNotify}
+                    onChange={(e) => setComposerNotify(e.target.checked)}
+                    sx={{ flexShrink: 0 }}
+                  />
+                  <Typography variant="subtitle2" fontWeight={600}>
+                    Notify members
+                  </Typography>
+                </Box>
+              )}
+            </Stack>
           </Stack>
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+        <DialogActions
+          sx={{
+            display: "flex",
+            flexDirection: { xs: "column-reverse", sm: "row" },
+            alignItems: { xs: "stretch", sm: "center" },
+            justifyContent: "flex-end",
+            gap: 1,
+            px: 3,
+            pb: 2.5,
+          }}
+        >
           <AppButton
             variant="text"
             onClick={closeComposer}
             disabled={composerSubmitting}
+            sx={{ width: { xs: "100%", sm: "auto" } }}
           >
             Cancel
           </AppButton>
@@ -633,6 +806,8 @@ export default function CommunityAnnouncementsTab({
             variant="contained"
             onClick={handleSubmitComposer}
             disabled={composerSubmitting}
+            startIcon={composerSubmitting ? <CircularProgress size={16} color="inherit" /> : undefined}
+            sx={{ width: { xs: "100%", sm: "auto" } }}
           >
             {composerSubmitting ? "Saving…" : editing ? "Save" : "Post"}
           </AppButton>
@@ -653,8 +828,23 @@ export default function CommunityAnnouncementsTab({
             This removes the announcement from the community page. Members will no longer see it.
           </Typography>
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5 }}>
-          <AppButton variant="text" onClick={() => setDeleteTarget(null)} disabled={deleteSubmitting}>
+        <DialogActions
+          sx={{
+            display: "flex",
+            flexDirection: { xs: "column-reverse", sm: "row" },
+            alignItems: { xs: "stretch", sm: "center" },
+            justifyContent: "flex-end",
+            gap: 1,
+            px: 3,
+            pb: 2.5,
+          }}
+        >
+          <AppButton
+            variant="text"
+            onClick={() => setDeleteTarget(null)}
+            disabled={deleteSubmitting}
+            sx={{ width: { xs: "100%", sm: "auto" } }}
+          >
             Cancel
           </AppButton>
           <AppButton
@@ -662,6 +852,8 @@ export default function CommunityAnnouncementsTab({
             color="error"
             onClick={handleConfirmDelete}
             disabled={deleteSubmitting}
+            startIcon={deleteSubmitting ? <CircularProgress size={16} color="inherit" /> : undefined}
+            sx={{ width: { xs: "100%", sm: "auto" } }}
           >
             {deleteSubmitting ? "Deleting…" : "Delete"}
           </AppButton>

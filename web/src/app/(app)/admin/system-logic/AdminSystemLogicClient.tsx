@@ -458,7 +458,18 @@ export default function AdminSystemLogicClient() {
           seen state.
         </Bullet>
         <Bullet>
-          v1 deliberately omits email blasts and in-app bell notifications; announcements live on the tab only.
+          When posting an announcement, owners can opt in to <strong>Email members</strong> (default off). The email send is
+          gated by three independent checks: the recipient is an active, non-suspended member who isn&rsquo;t the author; their
+          per-community mute row in <code>community_announcement_mutes</code> is absent; and their global
+          <strong> Community announcements</strong> notification preference is on. The global preference supersedes per-community
+          mute at send time, but turning the global preference off does not delete the mute rows, the user&rsquo;s
+          per-community choices survive a global flip. Edits never re-email; the notify flag only fires on create.
+        </Bullet>
+        <Bullet>
+          Members can mute or unmute announcement emails for a single community from the <strong>three-dot</strong> menu on the
+          community page (next to Leave). Email footers also expose a per-community deeplink
+          (<code>?mute=announcements</code>) and a one-click unsubscribe token keyed to the global preference.
+          In-app bell notifications are still deliberately omitted in this iteration.
         </Bullet>
       </CollapsibleSection>
 
