@@ -37,11 +37,13 @@ import { apiFetch, communityAvatarUrl, communityBannerUrl, getAuthToken, getAvat
 import { effectiveCategorySet } from "@/lib/interestUtils";
 import {
   CommunityAnnouncementsTab,
+  CommunityScheduleTab,
   OperatingHoursInline,
   type CommunityAnnouncement,
   type OperatingHours,
 } from "@/components/communities";
 import CampaignRoundedIcon from "@mui/icons-material/CampaignRounded";
+import EventAvailableRoundedIcon from "@mui/icons-material/EventAvailableRounded";
 
 type CommunityData = {
   id: string;
@@ -68,6 +70,12 @@ type CommunityData = {
    *  the restricted (private non-member) response so private operational
    *  details don't leak publicly. */
   operating_hours?: OperatingHours | null;
+  /** Per-community feature flag: when true, the Schedule tab renders.
+   *  Defaults to true via migration 097 for existing communities.
+   *  Omitted from the restricted (private non-member) response, so
+   *  treat `undefined` as "tab hidden" for non-members of private
+   *  communities. */
+  schedule_enabled?: boolean;
   owner_user_id: string;
   owner_name: string | null;
   owner_username: string | null;
@@ -582,6 +590,24 @@ export default function CommunityDetailClient({
   // on async data (community + membership) and a URL param that aren't
   // available at mount, and the ref guard ensures this runs exactly once
   // so manual tab clicks are not fought on subsequent renders.
+  // Schedule tab visibility. The flag is omitted from the restricted
+  // (private non-member) response, so falsy means "hidden". The full
+  // response always includes the field via `c.*`, so this resolves to
+  // the actual community setting once `community` loads for viewers
+  // who can see the tab strip in the first place.
+  const scheduleTabVisible = community?.schedule_enabled === true && !restricted;
+  // Tab order is dynamic because Schedule may be disabled per community.
+  // When Schedule is hidden, Members shifts up to index 2 and Requests
+  // (private + owner only) shifts to index 3. Keys stay stable so the
+  // ?tab=<name> param is order-independent.
+  const tabIndexMap = useMemo(() => ({
+    plans: 0,
+    announcements: 1,
+    schedule: scheduleTabVisible ? 2 : -1,
+    members: scheduleTabVisible ? 3 : 2,
+    requests: scheduleTabVisible ? 4 : 3,
+  }), [scheduleTabVisible]);
+
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (hasAppliedInitialTab.current) return;
@@ -591,17 +617,18 @@ export default function CommunityDetailClient({
       return;
     }
     const viewerIsOwner = viewerMembership?.role === "owner";
-    // Tab order: 0 plans, 1 announcements, 2 members, 3 requests (owner+private only).
     if (initialTabParam === "requests" && viewerIsOwner && community.visibility === "private") {
-      setTabIndex(3);
+      setTabIndex(tabIndexMap.requests);
     } else if (initialTabParam === "members") {
-      setTabIndex(2);
+      setTabIndex(tabIndexMap.members);
+    } else if (initialTabParam === "schedule" && scheduleTabVisible) {
+      setTabIndex(tabIndexMap.schedule);
     } else if (initialTabParam === "announcements") {
-      setTabIndex(1);
+      setTabIndex(tabIndexMap.announcements);
     }
     // `plans` or any unrecognized value falls through to the default of 0.
     hasAppliedInitialTab.current = true;
-  }, [community, viewerMembership, initialTabParam]);
+  }, [community, viewerMembership, initialTabParam, scheduleTabVisible, tabIndexMap]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleJoin = async () => {
@@ -1652,7 +1679,7 @@ export default function CommunityDetailClient({
                   members={members}
                   totalCount={community.member_count}
                   hideRealName={isAuthenticated === false}
-                  onSeeAll={() => setTabIndex(2)}
+                  onSeeAll={() => setTabIndex(tabIndexMap.members)}
                   onOpenProfile={(handle) => router.push(`/u/${handle}`)}
                 />
               )}
@@ -1976,10 +2003,13 @@ export default function CommunityDetailClient({
             // sharer was looking at. router.replace keeps this out of the
             // browser history so the back button doesn't tab-walk.
             // `scroll: false` keeps the viewer at the tab section instead
-            // of jumping to the page top on every tab switch.
-            const next = v === 3 ? "requests"
-              : v === 2 ? "members"
-              : v === 1 ? "announcements"
+            // of jumping to the page top on every tab switch. Tab keys
+            // come from `tabIndexMap` so the URL stays stable when the
+            // index of a particular tab shifts (e.g. Schedule disabled).
+            const next = v === tabIndexMap.requests ? "requests"
+              : v === tabIndexMap.members ? "members"
+              : v === tabIndexMap.schedule ? "schedule"
+              : v === tabIndexMap.announcements ? "announcements"
               : null;
             const url = new URL(window.location.href);
             if (next) url.searchParams.set("tab", next);
@@ -2028,7 +2058,7 @@ export default function CommunityDetailClient({
             label={
               <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75 }}>
                 <span>Announcements</span>
-                {hasUnseenAnnouncements && tabIndex !== 1 && (
+                {hasUnseenAnnouncements && tabIndex !== tabIndexMap.announcements && (
                   <Box
                     aria-label="New announcements"
                     sx={{
@@ -2058,6 +2088,31 @@ export default function CommunityDetailClient({
               transition: "color 0.15s ease, background-color 0.15s ease",
             }}
           />
+          {/* Schedule tab. Renders when the per-community feature flag
+              `schedule_enabled` is on AND the viewer isn't on the
+              restricted preview (private community + non-member). The
+              tab is publicly readable on public communities; private
+              communities follow normal access (active member or super
+              admin). */}
+          {scheduleTabVisible && (
+            <Tab
+              label="Schedule"
+              icon={<EventAvailableRoundedIcon sx={{ fontSize: 18 }} />}
+              iconPosition="start"
+              sx={{
+                textTransform: "none",
+                minHeight: 52,
+                fontWeight: 600,
+                fontSize: "0.9375rem",
+                color: "text.secondary",
+                "&.Mui-selected": { color: "primary.main", fontWeight: 700 },
+                "&:hover": { color: "text.primary", bgcolor: "action.hover" },
+                borderTopLeftRadius: 8,
+                borderTopRightRadius: 8,
+                transition: "color 0.15s ease, background-color 0.15s ease",
+              }}
+            />
+          )}
           <Tab
             label={`Members${community.member_count > 0 ? ` (${community.member_count})` : ""}`}
             icon={<PeopleRoundedIcon sx={{ fontSize: 18 }} />}
@@ -2097,7 +2152,7 @@ export default function CommunityDetailClient({
         </Tabs>
 
         {/* Plans tab */}
-        {tabIndex === 0 && (
+        {tabIndex === tabIndexMap.plans && (
           <Stack spacing={{ xs: 2, sm: 2.5 }}>
             {events.length > 0 && (
               <Stack
@@ -2220,7 +2275,7 @@ export default function CommunityDetailClient({
             in-app bell. The component owns its own create / edit / delete
             / pin flow and pings `refreshUnseenAnnouncements` so the tab
             badge clears after the user opens this tab or posts. */}
-        {tabIndex === 1 && community && (
+        {tabIndex === tabIndexMap.announcements && community && (
           <CommunityAnnouncementsTab
             communityId={community.id}
             isAuthenticated={isAuthenticated === true}
@@ -2238,8 +2293,26 @@ export default function CommunityDetailClient({
           />
         )}
 
+        {/* Schedule tab. Public when the community page is public and
+            `schedule_enabled` is on; gated behind the existing private-
+            community access rules otherwise (the API enforces the same
+            matrix). The component owns its own list fetch + manager
+            mutations. */}
+        {scheduleTabVisible && tabIndex === tabIndexMap.schedule && community && (
+          <CommunityScheduleTab
+            communityId={community.id}
+            communitySlug={community.slug}
+            communityLocationName={community.location_name}
+            communityLocationAddress={community.location_address}
+            communityLocationLat={community.location_lat}
+            communityLocationLng={community.location_lng}
+            isAuthenticated={isAuthenticated === true}
+            canManageHint={isOwner}
+          />
+        )}
+
         {/* Members tab */}
-        {tabIndex === 2 && (
+        {tabIndex === tabIndexMap.members && (
           <>
             {(!membersFetched || membersLoading) && members.length === 0 ? (
               <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}><CircularProgress size={28} /></Box>
@@ -2503,7 +2576,7 @@ export default function CommunityDetailClient({
         )}
 
         {/* Requests tab (owner of private community) */}
-        {tabIndex === 3 && isOwner && community.visibility === "private" && (
+        {tabIndex === tabIndexMap.requests && isOwner && community.visibility === "private" && (
           <>
             {pendingRequests.length === 0 ? (
               <AppCard>

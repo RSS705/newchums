@@ -471,6 +471,43 @@ export default function AdminSystemLogicClient() {
           (<code>?mute=announcements</code>) and a one-click unsubscribe token keyed to the global preference.
           In-app bell notifications are still deliberately omitted in this iteration.
         </Bullet>
+
+        <Typography variant="body2" fontWeight={600} sx={{ mt: 1.5, mb: 0.5 }}>
+          Schedule (v1)
+        </Typography>
+        <Bullet>
+          Each community has an optional <strong>Schedule</strong> tab between Announcements and Members, controlled by the per-community
+          <code> schedule_enabled</code> flag in the <em>Community features</em> section of the Edit Community form. Defaults to on for all
+          new communities; existing communities were backfilled to on by migration 097. Owners can flip it off to hide the tab without
+          deleting the underlying blocks; existing rows stay on disk and reappear if the flag is re-enabled.
+        </Bullet>
+        <Bullet>
+          v1 only stores recurring weekly entries in <code>community_schedule_blocks</code> (one row per time window).
+          Schema reserves <code>entry_type = 'one_off'</code> and a <code>specific_date</code> column for a future
+          one-off variant; the v1 API never accepts <code>entry_type</code> from clients, so weekly is the only path.
+          End time must be strictly greater than start time, overnight windows are rejected. Soft-delete via
+          <code> deleted_at</code>, same convention as announcements.
+        </Bullet>
+        <Bullet>
+          Visibility follows the community-page privacy rules. Public communities&rsquo; schedule blocks are readable by anyone
+          (including logged-out visitors); private communities require an active member or super admin and the tab is suppressed
+          on the restricted (private non-member) preview. Non-managers only see <code>is_active = true</code> blocks; managers
+          see drafts (hidden blocks) too so they can finish a partially-set entry.
+        </Bullet>
+        <Bullet>
+          Each block can carry an optional 16:9 image (uploaded via the shared media pipeline with purpose
+          <code> community_schedule_block_banner</code>; max 400KB after WebP compression; served at
+          <code> /communities/:communityId/schedule-blocks/:blockId/banner</code>). Cards fall back to a primary-tinted
+          gradient when no image is supplied so the visual rhythm stays consistent. The composer uploads
+          <em> after</em> the row is created/matched (finalize needs a block id); a failed image upload still
+          saves the text fields and the manager can retry from the edit menu.
+        </Bullet>
+        <Bullet>
+          The block detail dialog includes a <strong>Start a plan during this time</strong> CTA for authenticated viewers,
+          which deep-links to <code>/events/create?community_id=&hellip;&amp;day=N&amp;start_hhmm=HH:MM&amp;end_hhmm=HH:MM</code>.
+          The create form&rsquo;s mount effect seeds the date (next future occurrence of that weekday) and the start time;
+          the user can still adjust before publishing.
+        </Bullet>
       </CollapsibleSection>
 
       <CollapsibleSection title="QR redirects" subtitle="Printed posters and cards as a small inventory">

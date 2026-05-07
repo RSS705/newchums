@@ -98,6 +98,7 @@ import {
   MAX_COMMUNITY_BANNER_BYTES,
   MAX_EVENT_BANNER_BYTES,
   MAX_ROADMAP_ATTACHMENT_BYTES,
+  MAX_SCHEDULE_BLOCK_BANNER_BYTES,
   buildObjectKey,
   createUploadToken,
   validateMediaInit,
@@ -3297,7 +3298,8 @@ app.post("/media/init", async (c) => {
       | "event_banner"
       | "roadmap_attachment"
       | "community_avatar"
-      | "community_banner";
+      | "community_banner"
+      | "community_schedule_block_banner";
     const contentType = (body.contentType ?? "").trim().toLowerCase();
     const contentLength = typeof body.contentLength === "number" ? body.contentLength : 0;
 
@@ -3331,6 +3333,7 @@ app.post("/media/init", async (c) => {
     const maxBytes =
       purpose === "roadmap_attachment" ? MAX_ROADMAP_ATTACHMENT_BYTES :
       purpose === "community_banner" ? MAX_COMMUNITY_BANNER_BYTES :
+      purpose === "community_schedule_block_banner" ? MAX_SCHEDULE_BLOCK_BANNER_BYTES :
       purpose === "event_banner" ? MAX_EVENT_BANNER_BYTES :
       MAX_AVATAR_BYTES;
     return c.json({
@@ -3390,14 +3393,18 @@ app.post("/media/finalize", async (c) => {
     return c.json({ ok: false, error: "MEDIA_NOT_CONFIGURED" }, 503);
   }
   try {
-    const body = (await c.req.json()) as { objectKey?: string; purpose?: string; eventId?: string; communityId?: string };
+    const body = (await c.req.json()) as {
+      objectKey?: string; purpose?: string; eventId?: string;
+      communityId?: string; scheduleBlockId?: string;
+    };
     const objectKey = (body.objectKey ?? "").trim();
     const purpose = (body.purpose ?? "avatar") as
       | "avatar"
       | "event_banner"
       | "roadmap_attachment"
       | "community_avatar"
-      | "community_banner";
+      | "community_banner"
+      | "community_schedule_block_banner";
 
     const sql = getSql(c.env);
     const appUserId = await ensureAppUserId(
@@ -3486,6 +3493,46 @@ app.post("/media/finalize", async (c) => {
       if (cm[0].owner_user_id !== appUserId && !isSuperAdmin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
       await sql`UPDATE newchums.communities SET banner_key = ${objectKey}, updated_at = now() WHERE id = ${communityId}`;
       return c.json({ ok: true, bannerUrl: `/communities/${communityId}/banner?v=${Date.now()}` });
+    }
+
+    if (purpose === "community_schedule_block_banner") {
+      // Schedule block banners share the community-banner permission
+      // model: community owner or super admin only. The objectKey must
+      // be in the caller's own upload prefix; the schedule block must
+      // belong to the named community; and that community must be
+      // managed by the caller. The block id is required so we know
+      // which row to stamp the key onto.
+      const expectedPrefix = `community_schedule_block_banners/${appUserId}/`;
+      if (!objectKey.startsWith(expectedPrefix)) {
+        return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+      }
+      const communityId = body.communityId?.trim();
+      const scheduleBlockId = body.scheduleBlockId?.trim();
+      if (!communityId) return c.json({ ok: false, error: "MISSING_COMMUNITY_ID" }, 400);
+      if (!scheduleBlockId) return c.json({ ok: false, error: "MISSING_SCHEDULE_BLOCK_ID" }, 400);
+      const obj = await c.env.MEDIA_BUCKET.head(objectKey);
+      if (!obj) return c.json({ ok: false, error: "OBJECT_NOT_FOUND" }, 404);
+      const cm = (await sql`
+        SELECT id, owner_user_id FROM newchums.communities WHERE id = ${communityId} LIMIT 1
+      `) as { id: string; owner_user_id: string }[];
+      if (cm.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+      const isSuperAdmin = ((await sql`SELECT role FROM newchums.users WHERE id = ${appUserId} LIMIT 1`) as { role: string | null }[])[0]?.role === "super_admin";
+      if (cm[0].owner_user_id !== appUserId && !isSuperAdmin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+      const block = (await sql`
+        SELECT id FROM newchums.community_schedule_blocks
+        WHERE id = ${scheduleBlockId} AND community_id = ${communityId} AND deleted_at IS NULL
+        LIMIT 1
+      `) as { id: string }[];
+      if (block.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+      await sql`
+        UPDATE newchums.community_schedule_blocks
+        SET banner_key = ${objectKey}, updated_at = NOW()
+        WHERE id = ${scheduleBlockId} AND community_id = ${communityId}
+      `;
+      return c.json({
+        ok: true,
+        bannerUrl: `/communities/${communityId}/schedule-blocks/${scheduleBlockId}/banner?v=${Date.now()}`,
+      });
     }
 
     if (!objectKey.startsWith("avatars/")) {
@@ -3633,6 +3680,42 @@ app.get("/communities/:communityId/banner", async (c) => {
   try {
     const sql = getSql(c.env);
     const rows = (await sql`SELECT banner_key FROM newchums.communities WHERE id = ${communityId} LIMIT 1`) as { banner_key: string | null }[];
+    const bannerKey = rows[0]?.banner_key ?? null;
+    if (!bannerKey) return c.notFound();
+    const obj = await c.env.MEDIA_BUCKET.get(bannerKey);
+    if (!obj) return c.notFound();
+    const headers = new Headers();
+    headers.set("Content-Type", obj.httpMetadata?.contentType ?? "image/jpeg");
+    headers.set("Cache-Control", "public, max-age=86400");
+    return new Response(obj.body, { headers, status: 200 });
+  } catch {
+    return c.notFound();
+  }
+});
+
+/**
+ * Schedule block banner serving. Public, no auth: schedule blocks are
+ * shown on the public community page when `schedule_enabled` is on,
+ * so the image is too. The path includes the community id so the URL
+ * is predictable and matches the rest of the schedule routes; the
+ * row's `community_id` is verified server-side so a logged-out viewer
+ * can't request a block image by id-stuffing across communities.
+ * Cached for 24h with the cache-bust `?v=` query the finalize step
+ * returns. Blocks marked inactive (`is_active = false`) still serve
+ * their image so the manager preview keeps working; the public list
+ * endpoint is the gate that suppresses inactive blocks for visitors.
+ */
+app.get("/communities/:communityId/schedule-blocks/:blockId/banner", async (c) => {
+  const communityId = c.req.param("communityId");
+  const blockId = c.req.param("blockId");
+  if (!communityId || !blockId || !c.env.MEDIA_BUCKET) return c.notFound();
+  try {
+    const sql = getSql(c.env);
+    const rows = (await sql`
+      SELECT banner_key FROM newchums.community_schedule_blocks
+      WHERE id = ${blockId} AND community_id = ${communityId} AND deleted_at IS NULL
+      LIMIT 1
+    `) as { banner_key: string | null }[];
     const bannerKey = rows[0]?.banner_key ?? null;
     if (!bannerKey) return c.notFound();
     const obj = await c.env.MEDIA_BUCKET.get(bannerKey);
@@ -7938,6 +8021,7 @@ app.patch("/communities/:slug", async (c) => {
       }
     }
     if (body.chat_enabled !== undefined) { updates.push("chat_enabled"); vals.push(body.chat_enabled !== false); }
+    if (body.schedule_enabled !== undefined) { updates.push("schedule_enabled"); vals.push(body.schedule_enabled !== false); }
     if (body.is_online !== undefined) { updates.push("is_online"); vals.push(body.is_online === true); }
     if (body.website !== undefined) { updates.push("website"); vals.push(body.website ? String(body.website).trim().slice(0, 500) : null); }
     if (body.discord_url !== undefined) { updates.push("discord_url"); vals.push(body.discord_url ? String(body.discord_url).trim().slice(0, 500) : null); }
@@ -8028,6 +8112,7 @@ app.patch("/communities/:slug", async (c) => {
     if (fieldMap.visibility !== undefined) await sql`UPDATE newchums.communities SET visibility = ${fieldMap.visibility as string}, updated_at = now() WHERE id = ${cid}`;
     if (fieldMap.join_mode !== undefined) await sql`UPDATE newchums.communities SET join_mode = ${fieldMap.join_mode as string}, updated_at = now() WHERE id = ${cid}`;
     if (fieldMap.chat_enabled !== undefined) await sql`UPDATE newchums.communities SET chat_enabled = ${fieldMap.chat_enabled as boolean}, updated_at = now() WHERE id = ${cid}`;
+    if (fieldMap.schedule_enabled !== undefined) await sql`UPDATE newchums.communities SET schedule_enabled = ${fieldMap.schedule_enabled as boolean}, updated_at = now() WHERE id = ${cid}`;
     if (fieldMap.is_online !== undefined) await sql`UPDATE newchums.communities SET is_online = ${fieldMap.is_online as boolean}, updated_at = now() WHERE id = ${cid}`;
     if (fieldMap.website !== undefined) await sql`UPDATE newchums.communities SET website = ${fieldMap.website as string | null}, updated_at = now() WHERE id = ${cid}`;
     if (fieldMap.discord_url !== undefined) await sql`UPDATE newchums.communities SET discord_url = ${fieldMap.discord_url as string | null}, updated_at = now() WHERE id = ${cid}`;
@@ -9364,6 +9449,429 @@ app.post("/communities/:id/announcements/seen", async (c) => {
     return c.json({ ok: true });
   } catch (err) {
     console.error("[POST /communities/:id/announcements/seen]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+// ─── Community schedule (v1) ────────────────────────────────────────────────
+//
+// Recurring weekly time blocks shown on a community's Schedule tab.
+// Visibility follows the existing community-page rules (delegated to
+// `resolveAnnouncementContext` + `viewerCanReadAnnouncements`):
+//   - public communities: anyone can read (logged out included)
+//   - private communities: active member or super admin
+// Management (create / edit / delete) is restricted to community owner
+// + super admin, same as announcements. v1 only ever stores
+// `entry_type = 'weekly_recurring'`; the column is exposed in responses
+// so future one-off variants don't need a payload change.
+
+const MAX_SCHEDULE_TITLE_LEN = 120;
+const MAX_SCHEDULE_DESCRIPTION_LEN = 2000;
+
+type ScheduleBlockRow = {
+  id: string;
+  entry_type: string;
+  day_of_week: number | null;
+  specific_date: string | null;
+  start_time: string;
+  end_time: string;
+  title: string;
+  description: string | null;
+  banner_key: string | null;
+  is_active: boolean;
+  sort_order: number;
+  location_name: string | null;
+  location_address: string | null;
+  location_lat: number | null;
+  location_lng: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+function shapeScheduleBlock(r: ScheduleBlockRow) {
+  return {
+    id: r.id,
+    entryType: r.entry_type,
+    dayOfWeek: r.day_of_week,
+    specificDate: r.specific_date,
+    // TIME columns serialize as "HH:MM:SS"; the client only needs HH:MM
+    // for display + comparison, but we leave the wire shape intact and
+    // let the client trim. Future date-time pickers can reuse the full
+    // string without a backend change.
+    startTime: r.start_time,
+    endTime: r.end_time,
+    title: r.title,
+    description: r.description,
+    bannerKey: r.banner_key,
+    isActive: r.is_active,
+    sortOrder: r.sort_order,
+    locationName: r.location_name,
+    locationAddress: r.location_address,
+    locationLat: r.location_lat,
+    locationLng: r.location_lng,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+/** Validate a HH:MM[:SS] string and normalize to "HH:MM:00" so PG's TIME
+ *  comparator behaves predictably. Rejects 24:00 / negative / non-numeric
+ *  values up front so the CHECK constraint is the second line of defense,
+ *  not the first. */
+function parseTimeOfDay(input: unknown): string | null {
+  if (typeof input !== "string") return null;
+  const trimmed = input.trim();
+  const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(trimmed);
+  if (!m) return null;
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+  const ss = m[3] != null ? Number(m[3]) : 0;
+  if (!Number.isFinite(hh) || hh < 0 || hh > 23) return null;
+  if (!Number.isFinite(mm) || mm < 0 || mm > 59) return null;
+  if (!Number.isFinite(ss) || ss < 0 || ss > 59) return null;
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+}
+
+/** GET /communities/:id/schedule-blocks. Same access matrix as
+ *  announcements; non-deleted rows ordered by day, then within-day
+ *  sort_order, then start_time. Manager flag is included so the
+ *  Schedule tab can decide whether to render edit affordances without
+ *  a second round trip. */
+app.get("/communities/:id/schedule-blocks", async (c) => {
+  const sql = getSql(c.env);
+  const communityId = c.req.param("id");
+  const { userId, isSuperAdmin, community, viewerMembership } =
+    await resolveAnnouncementContext(sql, c, communityId);
+  if (!community) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+  if (!viewerCanReadAnnouncements(community, viewerMembership, isSuperAdmin)) {
+    return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  }
+
+  try {
+    const rows = (await sql`
+      SELECT id, entry_type, day_of_week, specific_date,
+             start_time::text AS start_time,
+             end_time::text   AS end_time,
+             title, description, banner_key, is_active, sort_order,
+             location_name, location_address, location_lat, location_lng,
+             created_at, updated_at
+      FROM newchums.community_schedule_blocks
+      WHERE community_id = ${communityId} AND deleted_at IS NULL
+      ORDER BY day_of_week ASC NULLS LAST, sort_order ASC, start_time ASC, created_at ASC
+    `) as ScheduleBlockRow[];
+
+    const viewerCanManage = viewerCanManageAnnouncements(community, userId, isSuperAdmin);
+    // Non-managers only see active blocks. Managers see drafts too so
+    // they can finish a partially-filled entry without needing a
+    // separate admin surface.
+    const visible = viewerCanManage ? rows : rows.filter((r) => r.is_active);
+    return c.json({
+      ok: true,
+      blocks: visible.map(shapeScheduleBlock),
+      viewerCanManage,
+    });
+  } catch (err) {
+    console.error("[GET /communities/:id/schedule-blocks]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /communities/:id/schedule-blocks. Owner / super admin only.
+ *  Body: `{ title, description?, day_of_week, start_time, end_time,
+ *           sort_order?, is_active? }`. v1 always writes
+ *  `entry_type = 'weekly_recurring'`; the column is reserved for a
+ *  future one-off variant and accepting it here would let a client
+ *  bypass the v1 invariant.
+ */
+app.post("/communities/:id/schedule-blocks", async (c) => {
+  const sql = getSql(c.env);
+  const communityId = c.req.param("id");
+  const { userId, isSuperAdmin, community } =
+    await resolveAnnouncementContext(sql, c, communityId);
+  if (!userId) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  if (!community) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+  if (!viewerCanManageAnnouncements(community, userId, isSuperAdmin)) {
+    return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  }
+
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+
+  const rawTitle = typeof body.title === "string" ? body.title.trim() : "";
+  if (!rawTitle) return c.json({ ok: false, error: "VALIDATION", message: "Title is required", field: "title" }, 400);
+  if (rawTitle.length > MAX_SCHEDULE_TITLE_LEN)
+    return c.json({ ok: false, error: "VALIDATION", message: `Title must be ${MAX_SCHEDULE_TITLE_LEN} characters or less`, field: "title" }, 400);
+  const titleSafe = validateCleanText(rawTitle, "title");
+  if (!titleSafe.ok) return c.json({ ok: false, error: "INAPPROPRIATE_TEXT", field: "title" }, 400);
+
+  const rawDescription = typeof body.description === "string" ? body.description.trim() : "";
+  if (rawDescription.length > MAX_SCHEDULE_DESCRIPTION_LEN)
+    return c.json({ ok: false, error: "VALIDATION", message: `Description must be ${MAX_SCHEDULE_DESCRIPTION_LEN} characters or less`, field: "description" }, 400);
+  // Description is rich-text HTML produced by the shared RichTextEditor.
+  // Run it through the same sanitizer as community / plan / announcement
+  // descriptions so the allow-list is uniform across surfaces, then
+  // store the cleaned HTML. An empty editor sends "" and stores NULL.
+  const sanitizedDescription = rawDescription.length > 0 ? sanitizeDescriptionHtml(rawDescription) : "";
+  const description = sanitizedDescription.length > 0 ? sanitizedDescription : null;
+
+  const dowRaw = body.day_of_week;
+  const dayOfWeek = typeof dowRaw === "number" && Number.isFinite(dowRaw) ? Math.floor(dowRaw) : NaN;
+  if (!Number.isFinite(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6)
+    return c.json({ ok: false, error: "VALIDATION", message: "Day of week must be 0–6", field: "day_of_week" }, 400);
+
+  const startTime = parseTimeOfDay(body.start_time);
+  if (!startTime) return c.json({ ok: false, error: "VALIDATION", message: "Start time is required (HH:MM)", field: "start_time" }, 400);
+  const endTime = parseTimeOfDay(body.end_time);
+  if (!endTime) return c.json({ ok: false, error: "VALIDATION", message: "End time is required (HH:MM)", field: "end_time" }, 400);
+  if (endTime <= startTime) {
+    // v1 deliberately rejects overnight / end-before-start windows. The
+    // CHECK constraint enforces the same invariant; this just surfaces a
+    // user-friendly message before the round trip to PG.
+    return c.json({ ok: false, error: "VALIDATION", message: "End time must be after start time", field: "end_time" }, 400);
+  }
+
+  const sortOrderRaw = body.sort_order;
+  const sortOrder = typeof sortOrderRaw === "number" && Number.isFinite(sortOrderRaw) ? Math.floor(sortOrderRaw) : 0;
+  const isActive = body.is_active !== false;
+
+  // Location fields, all optional. Mirror the `communities` schema:
+  // name + address are free-form text (clipped to 200/500 to match
+  // community columns), lat/lng are numeric. We store whatever the
+  // client picked from PlacesAutocompleteInput as-is, since the same
+  // component is the source of truth for both surfaces and the values
+  // are already verified by Google.
+  const locationName = typeof body.location_name === "string"
+    ? body.location_name.trim().slice(0, 200) || null
+    : null;
+  const locationAddress = typeof body.location_address === "string"
+    ? body.location_address.trim().slice(0, 500) || null
+    : null;
+  const locationLat = typeof body.location_lat === "number" && Number.isFinite(body.location_lat)
+    ? Number(body.location_lat) : null;
+  const locationLng = typeof body.location_lng === "number" && Number.isFinite(body.location_lng)
+    ? Number(body.location_lng) : null;
+
+  try {
+    const inserted = (await sql`
+      INSERT INTO newchums.community_schedule_blocks
+        (community_id, entry_type, day_of_week, start_time, end_time,
+         title, description, sort_order, is_active, created_by_user_id,
+         location_name, location_address, location_lat, location_lng)
+      VALUES (${communityId}, 'weekly_recurring', ${dayOfWeek},
+              ${startTime}::time, ${endTime}::time,
+              ${rawTitle}, ${description}, ${sortOrder}, ${isActive}, ${userId},
+              ${locationName}, ${locationAddress}, ${locationLat}, ${locationLng})
+      RETURNING id, entry_type, day_of_week, specific_date,
+                start_time::text AS start_time,
+                end_time::text   AS end_time,
+                title, description, banner_key, is_active, sort_order,
+                location_name, location_address, location_lat, location_lng,
+                created_at, updated_at
+    `) as ScheduleBlockRow[];
+    return c.json({ ok: true, block: shapeScheduleBlock(inserted[0]) });
+  } catch (err) {
+    console.error("[POST /communities/:id/schedule-blocks]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** PATCH /communities/:id/schedule-blocks/:blockId. Partial update of
+ *  `title`, `description`, `day_of_week`, `start_time`, `end_time`,
+ *  `is_active`, `sort_order`. Owner / super admin only. */
+app.patch("/communities/:id/schedule-blocks/:blockId", async (c) => {
+  const sql = getSql(c.env);
+  const communityId = c.req.param("id");
+  const blockId = c.req.param("blockId");
+  const { userId, isSuperAdmin, community } =
+    await resolveAnnouncementContext(sql, c, communityId);
+  if (!userId) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  if (!community) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+  if (!viewerCanManageAnnouncements(community, userId, isSuperAdmin)) {
+    return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  }
+
+  const existing = (await sql`
+    SELECT id, day_of_week,
+           start_time::text AS start_time,
+           end_time::text   AS end_time
+    FROM newchums.community_schedule_blocks
+    WHERE id = ${blockId} AND community_id = ${communityId} AND deleted_at IS NULL
+    LIMIT 1
+  `) as { id: string; day_of_week: number | null; start_time: string; end_time: string }[];
+  if (existing.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+
+  let nextTitle: string | null = null;
+  if ("title" in body) {
+    const rawTitle = typeof body.title === "string" ? body.title.trim() : "";
+    if (!rawTitle) return c.json({ ok: false, error: "VALIDATION", message: "Title is required", field: "title" }, 400);
+    if (rawTitle.length > MAX_SCHEDULE_TITLE_LEN)
+      return c.json({ ok: false, error: "VALIDATION", message: `Title must be ${MAX_SCHEDULE_TITLE_LEN} characters or less`, field: "title" }, 400);
+    const titleSafe = validateCleanText(rawTitle, "title");
+    if (!titleSafe.ok) return c.json({ ok: false, error: "INAPPROPRIATE_TEXT", field: "title" }, 400);
+    nextTitle = rawTitle;
+  }
+
+  let nextDescription: string | null = null;
+  let descriptionProvided = false;
+  if ("description" in body) {
+    descriptionProvided = true;
+    if (body.description === null) {
+      nextDescription = null;
+    } else {
+      const raw = typeof body.description === "string" ? body.description.trim() : "";
+      if (raw.length > MAX_SCHEDULE_DESCRIPTION_LEN)
+        return c.json({ ok: false, error: "VALIDATION", message: `Description must be ${MAX_SCHEDULE_DESCRIPTION_LEN} characters or less`, field: "description" }, 400);
+      // Sanitize on the way in so PATCH stores the same shape as POST.
+      const sanitized = raw.length > 0 ? sanitizeDescriptionHtml(raw) : "";
+      nextDescription = sanitized.length > 0 ? sanitized : null;
+    }
+  }
+
+  let nextDayOfWeek: number | null = null;
+  let dayOfWeekProvided = false;
+  if ("day_of_week" in body) {
+    dayOfWeekProvided = true;
+    const dow = typeof body.day_of_week === "number" && Number.isFinite(body.day_of_week)
+      ? Math.floor(body.day_of_week as number)
+      : NaN;
+    if (!Number.isFinite(dow) || dow < 0 || dow > 6)
+      return c.json({ ok: false, error: "VALIDATION", message: "Day of week must be 0–6", field: "day_of_week" }, 400);
+    nextDayOfWeek = dow;
+  }
+
+  let nextStartTime: string | null = null;
+  if ("start_time" in body) {
+    const t = parseTimeOfDay(body.start_time);
+    if (!t) return c.json({ ok: false, error: "VALIDATION", message: "Start time must be HH:MM", field: "start_time" }, 400);
+    nextStartTime = t;
+  }
+  let nextEndTime: string | null = null;
+  if ("end_time" in body) {
+    const t = parseTimeOfDay(body.end_time);
+    if (!t) return c.json({ ok: false, error: "VALIDATION", message: "End time must be HH:MM", field: "end_time" }, 400);
+    nextEndTime = t;
+  }
+
+  // Cross-field validation: the merged window must satisfy end > start.
+  // If only one side of the window is in the patch, fall back to the
+  // current row value so partial updates still get checked.
+  const finalStart = nextStartTime ?? existing[0].start_time;
+  const finalEnd = nextEndTime ?? existing[0].end_time;
+  if (finalEnd <= finalStart) {
+    return c.json({ ok: false, error: "VALIDATION", message: "End time must be after start time", field: "end_time" }, 400);
+  }
+
+  let nextIsActive: boolean | null = null;
+  if ("is_active" in body) nextIsActive = body.is_active !== false;
+  let nextSortOrder: number | null = null;
+  if ("sort_order" in body) {
+    const n = typeof body.sort_order === "number" && Number.isFinite(body.sort_order)
+      ? Math.floor(body.sort_order as number)
+      : 0;
+    nextSortOrder = n;
+  }
+  // banner_key only accepts explicit-clear (null) via PATCH. Setting a
+  // key goes through `/media/finalize` so the upload, ownership, and R2
+  // existence checks happen there, bypassing them via a raw PATCH is
+  // not allowed (mirrors the community-banner PATCH rule).
+  let bannerClearProvided = false;
+  if ("banner_key" in body) {
+    if (body.banner_key !== null) {
+      return c.json({ ok: false, error: "VALIDATION", message: "Set a banner via /media/finalize; PATCH only accepts null to clear it.", field: "banner_key" }, 400);
+    }
+    bannerClearProvided = true;
+  }
+
+  // Location: nullable, mirrors the `communities` PATCH semantics.
+  // Each field is independently patched. Sending `null` (or omitting
+  // the field by sending an empty string) clears that slot. Sending
+  // `undefined` (key absent from body) leaves the existing value
+  // alone. Lat/lng are numbers or null; non-numeric input is treated
+  // as null so the column never holds garbage.
+  let nextLocationName: string | null = null;
+  let locationNameProvided = false;
+  if ("location_name" in body) {
+    locationNameProvided = true;
+    nextLocationName = typeof body.location_name === "string"
+      ? body.location_name.trim().slice(0, 200) || null
+      : null;
+  }
+  let nextLocationAddress: string | null = null;
+  let locationAddressProvided = false;
+  if ("location_address" in body) {
+    locationAddressProvided = true;
+    nextLocationAddress = typeof body.location_address === "string"
+      ? body.location_address.trim().slice(0, 500) || null
+      : null;
+  }
+  let nextLocationLat: number | null = null;
+  let locationLatProvided = false;
+  if ("location_lat" in body) {
+    locationLatProvided = true;
+    nextLocationLat = typeof body.location_lat === "number" && Number.isFinite(body.location_lat)
+      ? Number(body.location_lat) : null;
+  }
+  let nextLocationLng: number | null = null;
+  let locationLngProvided = false;
+  if ("location_lng" in body) {
+    locationLngProvided = true;
+    nextLocationLng = typeof body.location_lng === "number" && Number.isFinite(body.location_lng)
+      ? Number(body.location_lng) : null;
+  }
+
+  try {
+    const isActiveProvided = nextIsActive !== null;
+    const isActiveValue = nextIsActive === true;
+    await sql`
+      UPDATE newchums.community_schedule_blocks
+      SET title            = COALESCE(${nextTitle}, title),
+          description      = CASE WHEN ${descriptionProvided} THEN ${nextDescription} ELSE description END,
+          day_of_week      = CASE WHEN ${dayOfWeekProvided} THEN ${nextDayOfWeek} ELSE day_of_week END,
+          start_time       = COALESCE(${nextStartTime}::time, start_time),
+          end_time         = COALESCE(${nextEndTime}::time, end_time),
+          is_active        = CASE WHEN ${isActiveProvided} THEN ${isActiveValue} ELSE is_active END,
+          sort_order       = COALESCE(${nextSortOrder}, sort_order),
+          banner_key       = CASE WHEN ${bannerClearProvided} THEN NULL ELSE banner_key END,
+          location_name    = CASE WHEN ${locationNameProvided} THEN ${nextLocationName} ELSE location_name END,
+          location_address = CASE WHEN ${locationAddressProvided} THEN ${nextLocationAddress} ELSE location_address END,
+          location_lat     = CASE WHEN ${locationLatProvided} THEN ${nextLocationLat} ELSE location_lat END,
+          location_lng     = CASE WHEN ${locationLngProvided} THEN ${nextLocationLng} ELSE location_lng END,
+          updated_at       = NOW()
+      WHERE id = ${blockId} AND community_id = ${communityId}
+    `;
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[PATCH /communities/:id/schedule-blocks/:blockId]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** DELETE /communities/:id/schedule-blocks/:blockId. Soft delete via
+ *  `deleted_at`, mirroring the announcements convention so a hasty
+ *  delete can be recovered manually if a host asks. */
+app.delete("/communities/:id/schedule-blocks/:blockId", async (c) => {
+  const sql = getSql(c.env);
+  const communityId = c.req.param("id");
+  const blockId = c.req.param("blockId");
+  const { userId, isSuperAdmin, community } =
+    await resolveAnnouncementContext(sql, c, communityId);
+  if (!userId) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  if (!community) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+  if (!viewerCanManageAnnouncements(community, userId, isSuperAdmin)) {
+    return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  }
+  try {
+    await sql`
+      UPDATE newchums.community_schedule_blocks
+      SET deleted_at = NOW(), updated_at = NOW()
+      WHERE id = ${blockId} AND community_id = ${communityId} AND deleted_at IS NULL
+    `;
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[DELETE /communities/:id/schedule-blocks/:blockId]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });

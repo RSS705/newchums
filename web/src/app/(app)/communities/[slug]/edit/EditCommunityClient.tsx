@@ -23,6 +23,8 @@ import PersonOutlineRoundedIcon from "@mui/icons-material/PersonOutlineRounded";
 import PhotoCameraRoundedIcon from "@mui/icons-material/PhotoCameraRounded";
 import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
 import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
+import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
+import Switch from "@mui/material/Switch";
 import Cropper, { type Area } from "react-easy-crop";
 import { AppCard, AppButton, AppTextField, useToast } from "@/components/ui";
 import RichTextEditor from "@/components/ui/RichTextEditor";
@@ -64,6 +66,11 @@ export default function EditCommunityClient() {
   const [website, setWebsite] = useState("");
   const [discordUrl, setDiscordUrl] = useState("");
   const [access, setAccess] = useState<"open" | "private">("open");
+  // Per-community feature flag: when true, the public community page
+  // shows the Schedule tab. Defaults to true via migration 097 for both
+  // new and existing communities. Owners can flip it off here to hide
+  // the tab without deleting any blocks.
+  const [scheduleEnabled, setScheduleEnabled] = useState(true);
 
   // Logo state
   const [existingAvatarKey, setExistingAvatarKey] = useState<string | null>(null);
@@ -138,6 +145,10 @@ export default function EditCommunityClient() {
         setExistingAvatarKey(c.avatar_key ?? null);
         setExistingBannerKey(c.banner_key ?? null);
         setOperatingHours(c.operating_hours ?? null);
+        // schedule_enabled is true by default; older API builds that don't
+        // emit the field yet will leave the toggle on, matching the
+        // backfill default in migration 097.
+        setScheduleEnabled(c.schedule_enabled !== false);
         // Prefer the new field; fall back to the legacy one so this client
         // works against API builds that still only emit the old flag.
         setCanEditBanner(
@@ -314,6 +325,7 @@ export default function EditCommunityClient() {
           location_lng: isOnline ? null : locationLng,
           interest_items: selectedHobbies.map((h) => ({ slug: h.slug, name: h.name })),
           operating_hours: operatingHours,
+          schedule_enabled: scheduleEnabled,
         }),
       });
       const data = await res.json();
@@ -663,6 +675,79 @@ export default function EditCommunityClient() {
 
       {/* Operating hours (optional, free for all communities) */}
       <OperatingHoursEditor value={operatingHours} onChange={setOperatingHours} />
+
+      {/* Community features. Lightweight per-community feature flags
+          that toggle optional surfaces on the public community page.
+          Designed to grow over time without becoming a generic module
+          system, just one card per durable feature. */}
+      <AppCard>
+        <Stack spacing={2}>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: "50%",
+                bgcolor: "primary.light",
+                color: "primary.main",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <TuneRoundedIcon sx={{ fontSize: 22 }} />
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography
+                variant="h6"
+                fontWeight={700}
+                sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
+              >
+                Community features
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.disabled"
+                sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
+              >
+                Optional sections that appear on this community&apos;s page.
+              </Typography>
+            </Box>
+          </Stack>
+
+          <Box
+            component="label"
+            sx={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 1.5,
+              px: 1,
+              py: 1,
+              ml: -1,
+              borderRadius: 1.5,
+              cursor: "pointer",
+              userSelect: "none",
+              transition: "background-color 120ms ease-out",
+              "&:hover": { bgcolor: "action.hover" },
+            }}
+          >
+            <Switch
+              checked={scheduleEnabled}
+              onChange={(e) => setScheduleEnabled(e.target.checked)}
+              sx={{ flexShrink: 0, mt: -0.25 }}
+            />
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography variant="subtitle2" fontWeight={600}>
+                Display Schedule tab
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.45 }}>
+                Show recurring activity times on this community page.
+              </Typography>
+            </Box>
+          </Box>
+        </Stack>
+      </AppCard>
 
       {/* Access */}
       <AppCard>

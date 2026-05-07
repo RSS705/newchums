@@ -9,6 +9,10 @@ export const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"] as 
 export const MAX_AVATAR_BYTES = 2 * 1024 * 1024; // 2MB
 export const MAX_EVENT_BANNER_BYTES = 400 * 1024; // 400KB
 export const MAX_COMMUNITY_BANNER_BYTES = 600 * 1024; // 600KB
+/** Per-block image cap. Sized smaller than the community banner because
+ *  schedule cards are smaller-format and a community can have many blocks;
+ *  600KB × N would balloon the page. 400KB matches event banners. */
+export const MAX_SCHEDULE_BLOCK_BANNER_BYTES = 400 * 1024; // 400KB
 export const MAX_ROADMAP_ATTACHMENT_BYTES = 5 * 1024 * 1024; // 5MB
 
 export type MediaPurpose =
@@ -16,13 +20,15 @@ export type MediaPurpose =
   | "event_banner"
   | "roadmap_attachment"
   | "community_avatar"
-  | "community_banner";
+  | "community_banner"
+  | "community_schedule_block_banner";
 const ALLOWED_PURPOSES: MediaPurpose[] = [
   "avatar",
   "event_banner",
   "roadmap_attachment",
   "community_avatar",
   "community_banner",
+  "community_schedule_block_banner",
 ];
 
 export type UploadTokenPayload = {
@@ -55,12 +61,14 @@ export function validateMediaInit(
   const maxBytes =
     purpose === "roadmap_attachment" ? MAX_ROADMAP_ATTACHMENT_BYTES :
     purpose === "community_banner" ? MAX_COMMUNITY_BANNER_BYTES :
+    purpose === "community_schedule_block_banner" ? MAX_SCHEDULE_BLOCK_BANNER_BYTES :
     purpose === "event_banner" ? MAX_EVENT_BANNER_BYTES :
     MAX_AVATAR_BYTES;
   if (contentLength > maxBytes) {
     const msg =
       purpose === "roadmap_attachment" ? "Attachment must be 5MB or less" :
       purpose === "community_banner" ? "Banner must be 600KB or less" :
+      purpose === "community_schedule_block_banner" ? "Image must be 400KB or less" :
       purpose === "event_banner" ? "Banner must be 400KB or less" :
       "Image must be 2MB or less";
     return { ok: false, error: msg };
@@ -88,6 +96,9 @@ export function buildObjectKey(userId: string, purpose: MediaPurpose, contentTyp
   }
   if (purpose === "community_banner") {
     return `community_banners/${userId}/${ts}.${ext}`;
+  }
+  if (purpose === "community_schedule_block_banner") {
+    return `community_schedule_block_banners/${userId}/${ts}.${ext}`;
   }
   return `${purpose}s/${userId}/${ts}.${ext}`;
 }

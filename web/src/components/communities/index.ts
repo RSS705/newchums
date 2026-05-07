@@ -4,6 +4,8 @@ export { default as OperatingHoursInline } from "./OperatingHoursInline";
 export { default as CommunityBannerEditor } from "./CommunityBannerEditor";
 export { default as CommunityAnnouncementsTab } from "./CommunityAnnouncementsTab";
 export type { CommunityAnnouncement } from "./CommunityAnnouncementsTab";
+export { default as CommunityScheduleTab } from "./CommunityScheduleTab";
+export type { CommunityScheduleBlock } from "./CommunityScheduleTab";
 export {
   OPERATING_HOURS_DAY_CODES,
   OPERATING_HOURS_DAY_LABELS,

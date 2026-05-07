@@ -80,9 +80,36 @@ export default function CreateEventClient() {
   const [dateValue, setDateValue] = useState<Dayjs | null>(null);
   const [timeValue, setTimeValue] = useState<Dayjs | null>(null);
   useEffect(() => {
-    const now = dayjs();
-    setDateValue(now);
-    setTimeValue(now);
+    // Schedule-block deeplink: `?day=N&start_hhmm=HH:MM` (and optionally
+    // `end_hhmm`). Sent by the community Schedule tab's "Start a plan
+    // during this time" CTA so the create form opens with the right
+    // weekday and start time pre-filled. The user can still adjust
+    // before publishing; we only seed defaults, we don't lock anything.
+    const dayParam = searchParams.get("day");
+    const startHHMM = searchParams.get("start_hhmm");
+    let date = dayjs();
+    let time = dayjs();
+    if (dayParam !== null && /^[0-6]$/.test(dayParam)) {
+      const targetDay = Number(dayParam);
+      const today = dayjs().startOf("day");
+      const diff = ((targetDay - today.day()) + 7) % 7;
+      date = today.add(diff, "day");
+    }
+    if (startHHMM) {
+      const m = /^(\d{1,2}):(\d{2})$/.exec(startHHMM.trim());
+      if (m) {
+        const hh = Number(m[1]);
+        const mm = Number(m[2]);
+        if (Number.isFinite(hh) && hh >= 0 && hh <= 23 && Number.isFinite(mm) && mm >= 0 && mm <= 59) {
+          time = dayjs().hour(hh).minute(mm).second(0).millisecond(0);
+        }
+      }
+    }
+    setDateValue(date);
+    setTimeValue(time);
+    // Mount-only seeding. Subsequent searchParams changes shouldn't
+    // override a value the user has already touched.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const [locationType, setLocationType] = useState<"in_person" | "online">("in_person");

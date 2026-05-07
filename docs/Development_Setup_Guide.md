@@ -270,6 +270,8 @@ psql "$DATABASE_URL" -f sql/084_remove_guest_participation.sql
 psql "$DATABASE_URL" -f sql/094_min_attendees_required.sql
 psql "$DATABASE_URL" -f sql/095_community_announcements.sql
 psql "$DATABASE_URL" -f sql/096_community_announcement_emails.sql
+psql "$DATABASE_URL" -f sql/097_community_schedule.sql
+psql "$DATABASE_URL" -f sql/098_community_schedule_block_location.sql
 ```
 
 Tip for fresh setups: `ls web/sql/*.sql | sort | xargs -I {} psql "$DATABASE_URL" -f {}` applies every migration in order. 084 is a destructive consolidation of 035/043/077 (guest participation model); its pre-flight will abort if more than ~100 orphan guest rows exist.
