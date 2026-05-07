@@ -30,7 +30,7 @@ import {
   Typography,
 } from "@mui/material";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
 import { signOut } from "next-auth/react";
 import { appNavItems, superAdminNavItems, createEventHref, publicHeaderNavLinks } from "@/config/nav";
@@ -102,8 +102,24 @@ type NavProfile = { avatar_url?: string | null; name?: string | null; username?:
 
 export default function AppShell({ children, user, passwordSetupPending }: AppShellProps) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const router = useRouter();
   const isAuthenticated = Boolean(user);
+
+  // Compose `?next=<current path+query>` for the unauthed-shell "Sign in"
+  // link so a logged-out viewer reading a plan or community page is
+  // returned to that page after authenticating, rather than dumped on
+  // the post-login default (homepage). Skip when we're already at a
+  // path where round-tripping makes no sense (root, /login, /signup),
+  // matching how the rest of the app composes login redirects.
+  const loginHref = React.useMemo(() => {
+    if (!pathname || pathname === "/" || pathname.startsWith("/login") || pathname.startsWith("/signup")) {
+      return "/login";
+    }
+    const search = searchParams?.toString() ?? "";
+    const target = search ? `${pathname}?${search}` : pathname;
+    return `/login?next=${encodeURIComponent(target)}`;
+  }, [pathname, searchParams]);
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [accountMenuAnchor, setAccountMenuAnchor] = React.useState<null | HTMLElement>(null);
   const [navProfile, setNavProfile] = React.useState<NavProfile | null>(null);
@@ -218,7 +234,7 @@ export default function AppShell({ children, user, passwordSetupPending }: AppSh
               <Stack direction="row" spacing={1} alignItems="center">
                 <Button
                   component={Link}
-                  href="/login"
+                  href={loginHref}
                   variant="text"
                   size="small"
                   sx={{ textTransform: "none", fontWeight: 600, fontSize: "0.875rem" }}

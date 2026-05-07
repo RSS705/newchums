@@ -2187,17 +2187,6 @@ export default function EventDetailClient({
               <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
                 Members can suggest alternative times that work better for them. Sign in to propose a new time, or RSVP as &quot;maybe&quot; to keep the host in the loop.
               </Typography>
-              <Box>
-                <Button
-                  component={Link}
-                  href={`/login?next=${encodeURIComponent(`/events/${eventId}`)}`}
-                  variant="outlined"
-                  size="small"
-                  sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
-                >
-                  Sign in to suggest a time
-                </Button>
-              </Box>
             </Stack>
           </AppCard>
         )}
