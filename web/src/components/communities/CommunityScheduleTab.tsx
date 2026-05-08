@@ -93,6 +93,18 @@ type Props = {
    *  manager permission so super admins (whose role isn't tracked
    *  client-side) still see the manage UI. */
   canManageHint?: boolean;
+  /** Pre-fetched list and management flag from the parent. When provided,
+   *  the tab skips its own initial fetch and renders immediately, so
+   *  clicking the tab doesn't flash a spinner before the empty state.
+   *  `null` means the parent hasn't fetched yet (or returned no data) and
+   *  the tab should fall back to its own fetch. Mirrors the announcements
+   *  tab pattern. */
+  initialBlocks?: CommunityScheduleBlock[] | null;
+  initialCanManage?: boolean;
+  /** Called whenever the tab refreshes its list (post-mutation), so the
+   *  parent can mirror the updated list into its prefetch cache and
+   *  re-renders of this tab continue to paint instantly. */
+  onListSynced?: (items: CommunityScheduleBlock[], canManage: boolean) => void;
 };
 
 /** Day order: Monday first, Sunday last. Mirrors the visual order of
@@ -171,11 +183,20 @@ export default function CommunityScheduleTab({
   communityLocationLng = null,
   isAuthenticated,
   canManageHint = false,
+  initialBlocks = null,
+  initialCanManage = false,
+  onListSynced,
 }: Props) {
   const toast = useToast();
-  const [blocks, setBlocks] = useState<CommunityScheduleBlock[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [canManage, setCanManage] = useState(canManageHint);
+  // When the parent has already prefetched the list, render with that
+  // data immediately. `loading` only goes true if we have no seed and
+  // need to fetch ourselves, so the common case (parent prefetch) paints
+  // the cards or empty state on first frame with no spinner flash. Mirrors
+  // the announcements-tab pattern.
+  const seeded = initialBlocks !== null;
+  const [blocks, setBlocks] = useState<CommunityScheduleBlock[]>(initialBlocks ?? []);
+  const [loading, setLoading] = useState(!seeded);
+  const [canManage, setCanManage] = useState(seeded ? initialCanManage : canManageHint);
 
   // Composer state. `editing` toggles between create + edit modes; the
   // dialog reuses the same form for both flows.
@@ -257,6 +278,7 @@ export default function CommunityScheduleTab({
       const res = await apiFetch(`/communities/${communityId}/schedule-blocks`, { auth: isAuthenticated });
       if (!res.ok) {
         setBlocks([]);
+        onListSynced?.([], false);
         return;
       }
       const data = (await res.json()) as {
@@ -265,16 +287,28 @@ export default function CommunityScheduleTab({
         viewerCanManage?: boolean;
       };
       if (data.ok && Array.isArray(data.blocks)) {
+        const nextCanManage = data.viewerCanManage === true;
         setBlocks(data.blocks);
-        setCanManage(data.viewerCanManage === true);
+        setCanManage(nextCanManage);
+        onListSynced?.(data.blocks, nextCanManage);
       }
     } catch { /* keep existing list on transient failure */ }
     finally { setLoading(false); }
-  }, [communityId, isAuthenticated]);
+  }, [communityId, isAuthenticated, onListSynced]);
 
+  // Initial fetch on mount / community change. Skipped when the parent
+  // already prefetched a seed list, so opening the tab paints immediately
+  // (no spinner-then-empty-state flicker on quiet schedules).
   useEffect(() => {
+    if (seeded) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     fetchBlocks();
+    // `seeded` is fixed for the lifetime of this mount; intentionally not
+    // a dependency so the seed path does not re-fire on every rerender.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchBlocks]);
 
   // Group by day so the render code stays straightforward.

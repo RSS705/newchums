@@ -1,6 +1,6 @@
 # System Map
 
-Last Updated: March 31, 2026
+Last Updated: May 8, 2026
 
 This document reflects the current production reality of NewChums.
 It is diagram-first: use this for boundaries, flows, and "how it connects."
@@ -72,7 +72,8 @@ This ensures:
 - PKCE `code_verifier` cookie is present on callback
 - `AUTH_URL` / `NEXTAUTH_URL` remain `https://newchums.com`
 
-Proxy: `web/src/proxy.ts` (Next.js 16 `proxy` file convention; previously `middleware.ts`).
+Middleware: `web/src/middleware.ts` (with `export const runtime = "experimental-edge"`). We briefly tried the Next.js 16 `proxy.ts` convention and reverted, Next 16 forces `proxy.ts` to the Node runtime, which OpenNext-Cloudflare cannot bundle, and the resulting Worker silently shipped without any middleware. See the file's header comment and `web/scripts/patch-functions-config.js` for the full rationale and deploy guard.
+
 Matcher includes `/api/auth/*` (OAuth flow), excludes static assets.
 
 ---
@@ -173,7 +174,7 @@ Two distinct feeds surface plans; the per-plan `hide_from_explore` toggle (UI la
 |---|---|---|
 | Explore (authenticated) | `GET /events/explore` | Plan `visibility` + `hide_from_explore` + community-member / RSVP bypass + chum-prefs + distance + hobby |
 | Explore (public, anonymous) | `GET /events/explore/public` | `visibility='public'` + `hide_from_explore=false` + `is_qa=false` |
-| Community plan feed | `GET /communities/:id/events` | `community_id = :id` + per-plan `visibility` gate (invite_only excluded entirely; chums_only scoped to host + host's on-NewChums chums + RSVP'd viewers; public always shown). Endpoint access is gated by community privacy (private communities: members + super admin). No `hide_from_explore` filter on rows. **Logged-out viewers** receive a server-derived `locationDisplay` (approximate area or "Online"); exact `locationName` / `locationAddress` / `locationLat` / `locationLng` / `onlineLink` are returned as `null` so a public community page never leaks an exact venue or meeting link. Authenticated viewers continue to receive the full location set. |
+| Community plan feed | `GET /communities/:id/events` | Joins through `event_communities` to scope to plans linked to this community, plus per-plan `visibility` gate (invite_only excluded entirely; chums_only scoped to host + host's on-NewChums chums + RSVP'd viewers; public always shown). Endpoint access is gated by community privacy (private communities: members + super admin). No `hide_from_explore` filter on rows. **Logged-out viewers** receive a server-derived `locationDisplay` (approximate area or "Online"); exact `locationName` / `locationAddress` / `locationLat` / `locationLng` / `onlineLink` are returned as `null` so a public community page never leaks an exact venue or meeting link. Authenticated viewers continue to receive the full location set. |
 
 Visibility × community-linkage matrix (applies to all three feeds):
 
@@ -181,7 +182,7 @@ Visibility × community-linkage matrix (applies to all three feeds):
 |---|---|---|---|
 | `public` | Yes | Shown | Shown; `hide_from_explore` governs non-member visibility |
 | `chums_only` | Yes | Shown only to host, host's on-NewChums chums, and RSVP'd viewers | Same chums_only rule; `hide_from_explore` layers on top |
-| `invite_only` | No (server forces `community_id = null` on POST and PATCH) | Never shown | Hidden except to viewers already RSVP'd |
+| `invite_only` | No (server forces `community_ids = []` on POST and PATCH) | Never shown | Hidden except to viewers already RSVP'd |
 
 Toggle states (per plan, shown only when a community is selected and `visibility != 'invite_only'`):
 
@@ -393,6 +394,7 @@ Wrangler config is code-managed so deploys do not wipe routes or override canoni
 | `/terms` | Terms of Use |
 | `/privacy` | Privacy Policy |
 | `/unsubscribe` | Email notification unsubscribe (public, token-based) |
+| `/qr/[code]` | QR redirect public surface. Resolves the code via `POST /public/qr/:code/scan` and 302s to the destination; HEAD requests do not log a scan. |
 
 ### Logged-in routes (AppShell)
 
@@ -408,8 +410,12 @@ Wrangler config is code-managed so deploys do not wipe routes or override canoni
 | `/settings` | Notifications, privacy, account |
 | `/communities` | Community discovery feed with search, distance/hobby filtering, personalization, All/Yours scope |
 | `/communities/create` | Create community with rich text description, required hobbies, online/offline, location, website, join link |
-| `/communities/[slug]` | Community detail with hobbies, online/website/join-link, members, plan feed, join/leave, join-request management |
+| `/communities/[slug]` | Community detail with hobbies, online/website/Discord link, members, plan feed, announcements tab, schedule tab (recurring weekly time blocks), join/leave, join-request management |
 | `/communities/[slug]/edit` | Edit community settings (owner), same form quality as create |
+| `/your-plan` | Read-only Your Plan page showing the viewer's organizer subscription tier (free / super_host / community_pro) |
+| `/admin/qr-redirects` | QR redirects inventory (super_admin) |
+| `/admin/qr-redirects/[id]` | QR redirect detail + recent scans (super_admin) |
+| `/admin/shoutouts` | Shout-out moderation queue (super_admin) |
 | `/admin/interests` | Interests moderation (super_admin) |
 | `/admin/chums` | User management (super_admin) |
 | `/admin/chums/[id]` | User diagnostics, metric scores, preferences, feedback, issues (super_admin) |
@@ -418,7 +424,6 @@ Wrangler config is code-managed so deploys do not wipe routes or override canoni
 | `/admin/plans` | Plan management, list, search, remove (super_admin) |
 | `/admin/safety` | Concern reports, attendance issues management (super_admin) |
 | `/admin/roadmap` | Roadmap item moderation, status, merge, remove (super_admin) |
-| `/admin/system-logic` | System logic configuration (super_admin) |
 
 ---
 

@@ -40,6 +40,7 @@ import {
   CommunityScheduleTab,
   OperatingHoursInline,
   type CommunityAnnouncement,
+  type CommunityScheduleBlock,
   type OperatingHours,
 } from "@/components/communities";
 import CampaignRoundedIcon from "@mui/icons-material/CampaignRounded";
@@ -244,6 +245,13 @@ export default function CommunityDetailClient({
   const [announcementsSeed, setAnnouncementsSeed] = useState<CommunityAnnouncement[] | null>(null);
   const [announcementsCanManageSeed, setAnnouncementsCanManageSeed] = useState(false);
 
+  // Same prefetch pattern for the Schedule tab. Without this, opening
+  // Schedule on a community with no entries flashed blank then "No
+  // schedule yet" while the tab body fetched its empty list. With the
+  // seed, the tab paints the correct empty state (or list) immediately.
+  const [scheduleSeed, setScheduleSeed] = useState<CommunityScheduleBlock[] | null>(null);
+  const [scheduleCanManageSeed, setScheduleCanManageSeed] = useState(false);
+
   const [events, setEvents] = useState<PlanEvent[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
   // True once the plans fetch has resolved at least once. Gates the empty
@@ -409,6 +417,17 @@ export default function CommunityDetailClient({
     [],
   );
 
+  // Same stability rationale as `handleAnnouncementsListSynced` above:
+  // pinning the callback avoids re-firing the schedule tab's `fetchBlocks`
+  // dependency chain on every parent render.
+  const handleScheduleListSynced = useCallback(
+    (items: CommunityScheduleBlock[], canManage: boolean) => {
+      setScheduleSeed(items);
+      setScheduleCanManageSeed(canManage);
+    },
+    [],
+  );
+
   const fetchEvents = useCallback(async () => {
     if (!community) return;
     setEventsLoading(true);
@@ -461,6 +480,34 @@ export default function CommunityDetailClient({
       if (data.ok) {
         setAnnouncementsSeed(Array.isArray(data.announcements) ? data.announcements : []);
         setAnnouncementsCanManageSeed(data.viewerCanManage === true);
+      }
+    } catch { /* non-fatal; the tab body will retry on its own */ }
+  }, [community, isAuthenticated]);
+
+  // Prefetch the schedule blocks list when the Schedule tab is going to
+  // render, so the first click on it paints the correct empty state (or
+  // the cards) immediately rather than flashing blank then "No schedule
+  // yet". Same pattern as the announcements seed above. Skipped when the
+  // tab isn't available so we don't spend a request on communities that
+  // disabled the schedule or that the viewer can't see.
+  const fetchScheduleSeed = useCallback(async () => {
+    if (!community || community.schedule_enabled !== true) return;
+    try {
+      const res = await apiFetch(`/communities/${community.id}/schedule-blocks`, {
+        auth: isAuthenticated === true,
+      });
+      if (!res.ok) {
+        setScheduleSeed([]);
+        return;
+      }
+      const data = (await res.json()) as {
+        ok: boolean;
+        blocks?: CommunityScheduleBlock[];
+        viewerCanManage?: boolean;
+      };
+      if (data.ok) {
+        setScheduleSeed(Array.isArray(data.blocks) ? data.blocks : []);
+        setScheduleCanManageSeed(data.viewerCanManage === true);
       }
     } catch { /* non-fatal; the tab body will retry on its own */ }
   }, [community, isAuthenticated]);
@@ -576,8 +623,9 @@ export default function CommunityDetailClient({
     fetchEvents();
     fetchMembers();
     fetchAnnouncementsSeed();
+    fetchScheduleSeed();
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [community, restricted, fetchEvents, fetchMembers, fetchAnnouncementsSeed]);
+  }, [community, restricted, fetchEvents, fetchMembers, fetchAnnouncementsSeed, fetchScheduleSeed]);
 
   // Apply an incoming ?tab=<name> query param to tabIndex exactly once, the
   // first time we know enough about the viewer to evaluate eligibility
@@ -2308,6 +2356,9 @@ export default function CommunityDetailClient({
             communityLocationLng={community.location_lng}
             isAuthenticated={isAuthenticated === true}
             canManageHint={isOwner}
+            initialBlocks={scheduleSeed}
+            initialCanManage={scheduleCanManageSeed}
+            onListSynced={handleScheduleListSynced}
           />
         )}
 

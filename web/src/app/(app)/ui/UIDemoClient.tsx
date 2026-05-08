@@ -22,7 +22,6 @@ import { AppButton, AppCard, AppDialog, AppTextField, useToast } from "@/compone
 
 /**
  * Theme alignment proof: /ui showcases components that use the shared theme.
- * Compare with template_reference for visual parity.
  */
 export default function UIDemoClient() {
   const [open, setOpen] = useState(false);

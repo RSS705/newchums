@@ -1,7 +1,7 @@
 # Technical Specifications
 
-Last Updated: March 24, 2026
-Version: 15.0
+Last Updated: May 8, 2026
+Version: 16.0
 
 This document defines the authoritative technical architecture of NewChums.
 It describes **what exists today** and the structural commitments we are making.
@@ -45,7 +45,7 @@ NewChums helps people organize gatherings more easily around hobbies and shared 
 
 | Tool | Purpose |
 |------|---------|
-| VS Code / Cursor | Primary editor |
+| VS Code (with a coding agent such as Claude Code or similar) | Primary editor |
 | Wrangler CLI | Workers dev + deployment |
 | GitHub | Version control |
 | TypeScript | Type safety |
@@ -165,11 +165,13 @@ If sign-in starts on `www.newchums.com` and callback lands on `newchums.com`, th
 
 ### Implementation
 
-The Next.js proxy file at `web/src/proxy.ts` (formerly `middleware.ts`, renamed for the Next.js 16 `proxy` convention) runs before Auth.js.
+The Next.js middleware file at `web/src/middleware.ts` runs before Auth.js. (We briefly migrated to the Next.js 16 `proxy.ts` convention and then reverted: Next 16 hard-codes `proxy.ts` to the Node runtime, and OpenNext-Cloudflare can only bundle Edge middleware. The combination silently shipped a Worker with no middleware wired at all. The file declares `export const runtime = "experimental-edge"`; see the file header comment for the full rationale, and `web/scripts/patch-functions-config.js` for the deploy-time guard that fails the build if the Edge wiring regresses.)
+
 Any request to a host starting with `www.` is 301-redirected to the same path + query on the non-www host.
 
 - Matcher includes `/api/auth/*` so OAuth flows always land on canonical host.
 - Exclusions: static assets (`/_next/static`, `/_next/image`, `favicon.ico`, `robots.txt`, `sitemap.xml`).
+- The middleware also sets `x-request-path` and `x-request-search` headers (read by `(app)/layout.tsx`) and applies a defensive `Cache-Control: private, no-store, ...` to authenticated-only paths so a transient unauthed render cannot get pinned at the Cloudflare edge.
 
 ---
 
@@ -236,7 +238,7 @@ Users manage notification preferences in **Settings** (`/settings`). Each notifi
 | `attendee_removed` | You were removed from a plan | Template 43923102 |
 | `product_announcements` | Product updates | N/A |
 | `unread_chat_digest` | Unread messages in your plans | `POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST` (template 43975299) |
-| `attendance_confirmation` | Attendance confirmation reminders | `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST` (template 43984465) |
+| `attendance_confirmation` | Attendance confirmation reminders | `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST_USER` (template 44415561) |
 | `plan_feedback` | Post-plan feedback reminders | `POSTMARK_TEMPLATE_PLAN_FEEDBACK` (template 44091936) |
 | `community_announcements` | Community announcements | `POSTMARK_TEMPLATE_COMMUNITY_ANNOUNCEMENT` (template 44937878). Sent only when a community owner posts an announcement with the "Email members" toggle on. Suppression order at send time: per-community mute row (`community_announcement_mutes`) **and** the global preference here, both must be permissive. Toggling the global key off does NOT delete per-community mute rows; the choices survive a global flip. |
 
@@ -636,7 +638,7 @@ The interest system underpins personalization across plans, communities, and dis
 - `POST /admin/users/:id/unsuspend`, clear suspension fields.
 - `PATCH /admin/users/:id/subscription-plan`, update a user's subscription plan. Body: `{ plan: "free" | "super_host" | "community_pro" }`. Logs change to `subscription_plan_history`.
 
-**Web page:** `/admin/chums`, table with search, sort, status chips, inline subscription plan dropdown, suspend/unsuspend actions with confirmation dialogs. Sidebar tab and page header label: **"Users"**.
+**Web page:** `/admin/chums`, table with search, sort, status chips, inline subscription plan dropdown, suspend/unsuspend actions with confirmation dialogs. Sidebar tab and page header label: **"Users"**. Each row also renders a **setup-status chip** derived from existing fields (no extra tracking) so a stalled signup is obvious at a glance. Priority order: `Suspended` > `Email unverified` (`email_verified_at IS NULL`) > `Password setup pending` (`password_setup_pending = true`) > `No plan activity` (verified, has password, zero RSVPs and zero hosted plans) > `Active`. A small subtitle under the chip shows plan activity ("3 RSVPs · 1 hosted" or "No plan activity") for quick triage.
 
 **Suspension enforcement:** credentials login rejected with `AccountSuspended`; OAuth sign-in redirected to `/login?error=AccountSuspended`; all authenticated API requests from suspended users return `403 USER_SUSPENDED`; signup with a suspended email returns `409 EMAIL_SUSPENDED`.
 
@@ -756,10 +758,10 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 
 | Route | Description |
 |-------|-------------|
-| `POST /events` | Create event. Validates title, starts_at, location_type, visibility. Accepts `invitees[]` array of `{ user_id?, email? }`, `require_reconfirmation`, `require_approval`, `allow_attendee_invites` (default true), `allow_alt_times` (default true), `alt_times_mode` (suggest/availability), `availability_deadline_at` (must be before starts_at, availability mode only), `reserve_seats`, `max_seats` (1-500), `pref_overrides` (JSONB), `community_id` (UUID, user must be active member), `hide_from_explore`. Published events send invite notifications and emails. |
+| `POST /events` | Create event. Validates title, starts_at, location_type, visibility. Accepts `invitees[]` array of `{ user_id?, email? }`, `require_reconfirmation`, `require_approval`, `allow_attendee_invites` (default true), `allow_alt_times` (default true), `alt_times_mode` (suggest/availability), `availability_deadline_at` (must be before starts_at, availability mode only), `reserve_seats`, `max_seats` (1-500), `pref_overrides` (JSONB), `community_ids[]` (UUID array, user must be active member of every selected community; capped at 10), `hide_from_explore`. Published events send invite notifications and emails. |
 | `GET /events/mine?filter=upcoming\|past` | List events the user hosts, is invited to, or has RSVP'd. Includes going/maybe counts, host info, RSVP status, `has_unread_chat` flag. Host name uses `@username` priority. |
 | `GET /events/:id` | Event detail with RSVP list, alternate time suggestions, join requests, and attendance assurance state. Optional auth. Accepts query params: `invite_token`, `share_token`. Returns `accessState` (`public` \| `invite` \| `authenticated` \| `attending`) and `shareToken` (for non-public states). Public access returns limited preview (counts only, no individual RSVPs). Full response includes `requireReconfirmation`, `lockedAt`, `requireApproval`, `isInvited`, `hasRsvp`, `confirmationWindowOpen`, `confirmationCutoffAt`, `confirmedCount`, `pendingConfirmationCount`, `myConfirmationStatus`, `planViability`, and per-RSVP `confirmationStatus`. Join requests: full list for host, own request only for non-hosts. On first authenticated load, idempotently adopts any matching email-only `event_invites` row (`WHERE LOWER(email) = <user email> AND user_id IS NULL`) onto the user's account. |
-| `PATCH /events/:id` | Edit event (host only). Accepts: `title`, `description`, `starts_at`, `max_seats`, `visibility`, `require_reconfirmation`, `require_approval`, `allow_alt_times`, `alt_times_mode`, `availability_deadline_at`, `allow_attendee_invites`, `reserve_seats`, `pref_overrides`, `community_id`, `hide_from_explore`, `timezone`, `interest_items`. Returns `{ ok: true }`. Sends plan-changed notifications to Going/Maybe attendees when meaningful fields change (title, date, description, capacity, visibility, confirmation settings, availability deadline). Automatically clears `availability_deadline_at` when mode switches away from availability. |
+| `PATCH /events/:id` | Edit event (host only). Accepts: `title`, `description`, `starts_at`, `max_seats`, `visibility`, `require_reconfirmation`, `require_approval`, `allow_alt_times`, `alt_times_mode`, `availability_deadline_at`, `allow_attendee_invites`, `reserve_seats`, `pref_overrides`, `community_ids[]`, `hide_from_explore`, `timezone`, `interest_items`. Returns `{ ok: true }`. Sends plan-changed notifications to Going/Maybe attendees when meaningful fields change (title, date, description, capacity, visibility, confirmation settings, availability deadline). Automatically clears `availability_deadline_at` when mode switches away from availability. The Edit form omits `community_ids` / `hide_from_explore` from the body when neither has changed, so the server's "must be a member" check only fires when the linkage actually changes. |
 | `POST /events/:id/rsvp` | RSVP to an event, `{ status: "going"\|"maybe"\|"cant_make_it", note?, share_token?, invite_token? }`. Capacity enforcement for going status. Locked plans reject new RSVPs (`EVENT_LOCKED` error) but allow existing participants to change status. Plans with `require_approval` reject users without host-extended access (`APPROVAL_REQUIRED` error). Host-extended access is satisfied by ANY of: an existing RSVP, an `event_invites` row for the user, a valid `share_token` in the body (Copy Link share path), or a valid `invite_token` in the body (email-mismatch safety net). Plans with `visibility = invite_only` apply the same bypass set under `INVITE_ONLY`. Notifies host via in-app notification and email. UI: "Can't make it" button only shown when user is invited or has an existing RSVP; heading text is context-aware ("Can you make it?" for invited users, "Are you in?" otherwise). |
 | `POST /events/:id/alt-time` | Submit one alternate time / availability entry, `{ suggested_at, ends_at?, note? }`. Only if event.allow_alt_times. `suggested_at` is the earliest possible plan-start; optional `ends_at` is the latest possible start (must be after `suggested_at`). The attendee-facing UI submits multiple selected dates by issuing one POST per date; "Anytime start" is encoded as a ~24h window (local-midnight to next-day local-midnight) so the entry naturally contributes to the existing best-overlap computation, and the display layer renders any window with duration ≥ 23h as "Anytime start" instead of a 12:00 AM time. Notifies host. Auth required. |
 | `POST /events/:id/cancel` | Cancel event (host only). Notifies all attendees via in-app notification and email. |
@@ -791,7 +793,7 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 **Visibility enforcement:**
 - Plan `visibility` controls **discoverability** (Explore feed, community feed, digests), **not** direct URL access.
 - Anyone with the plan URL can view published plans (draft plans remain host-only).
-- `invite_only`: excluded from Explore feed, community feed, and digests. Cannot be linked to a community (server-side invariant on POST and PATCH).
+- `invite_only`: excluded from Explore feed, community feed, and digests. Cannot be linked to any community (server-side invariant on POST and PATCH).
 - `chums_only`: shown in Explore, community feed, and digests only to the host, the host's on-NewChums chums, and viewers already RSVP'd. Community linkage does not widen this audience.
 - `public`: shown in Explore feed, community feed, and digests to all eligible users, subject to `hide_from_explore` for Explore.
 - For community-linked plans, `hide_from_explore` ("Only show this plan to community members") layers on top of `visibility` to gate Explore only. It does not affect direct URL access or the community's own plan feed. See the **Plan Feeds, Community Linkage, and "Only show this plan to community members" Toggle** subsection under Communities for the full matrix.
@@ -852,6 +854,8 @@ Access control:
 - Participants with `going` RSVP can access chat.
 - Non-participants, `maybe`, and `cant_make_it` statuses cannot access chat.
 - If a user leaves or is removed, they lose chat access.
+- **Cancelled plans hide chat.** `EventDetailClient` only renders the chat panel when `event.status !== "canceled"`, so a cancelled plan stops surfacing chat for everyone. Message history is not deleted; the panel is just suppressed.
+- **3-day chat auto-lock.** `POST /events/:id/chat` rejects new messages with `CHAT_LOCKED` (HTTP 403) once `Date.now() >= starts_at + 3 days`. Reads are unaffected; the post-plan window stays open for confirming details and feedback, but the conversation is sealed once the plan is well in the past.
 
 Unread tracking:
 - `event_chat_reads` table stores `last_read_at` per user per event.
@@ -902,7 +906,7 @@ Hosts can enable `require_approval` on a plan, requiring users without host-exte
 | Join request accepted | Template 43906609 | `join_request_accepted` |
 | Join request declined | Template 43906703 | `join_request_declined` |
 | Unread chat digest (daily) | `POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST` (43975299) | `unread_chat_digest` |
-| Confirmation request | `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST` (43984465) | `attendance_confirmation` |
+| Confirmation request | `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST_USER` (44415561) | `attendance_confirmation` |
 | Plan at risk (host) | `POSTMARK_TEMPLATE_PLAN_AT_RISK` (43984947) | (always sent to host) |
 
 | Concern report admin alert | `POSTMARK_TEMPLATE_CONCERN_REPORT` (44107767) | (internal admin alert, always sent to contact@newchums.com) |
@@ -912,13 +916,6 @@ All emails with a notification preference toggle include a tokenized unsubscribe
 **Postmark email template source files:**
 
 HTML and plain text versions of Postmark email templates are stored in `api/src/email/templates/`. When creating or updating a Postmark template, the source content should be maintained in this directory alongside the existing templates. Each template has an `.html` file and a `.txt` file (e.g. `concernReportAlert.html`, `concernReportAlert.txt`). These files are the canonical source for what gets pasted into Postmark; they are not compiled or deployed automatically.
-
-**Remaining scaffolded templates (noop if template ID not configured):**
-
-| Email | Env var | Template model |
-|-------|---------|----------------|
-| Event reminder (24h) | `POSTMARK_TEMPLATE_EVENT_REMINDER` | recipientName, eventTitle, eventDate, eventLocation, eventUrl |
-| RSVP update to host (legacy) | `POSTMARK_TEMPLATE_EVENT_RSVP_UPDATE` | hostName, attendeeName, eventTitle, rsvpStatus, eventUrl |
 
 **Web pages:**
 
@@ -1129,7 +1126,6 @@ A durable objectives framework that guides users through onboarding and early re
 **Admin surfaces:**
 - User Diagnostics: completed/incomplete objectives, tutorial state, current next step.
 - KPI tab: engagement rate, avg completion depth, opt-out count, completion funnel table.
-- System Logic tab: abbreviated explanation.
 
 **Settings:** Users can re-enable tutorial tips via Settings → Tips & guidance toggle. This controls the `users.tutorial_nudges_off` flag via `PUT /objectives/tutorial-off`.
 
@@ -1179,9 +1175,10 @@ Community pages where users can join, browse, and create plans together. The com
 
 **Community privacy vs plan-level Explore visibility.** A community's `visibility` (`public` / `private`) gates access to the **community page and plan feed**. It does **not** remove the community's plans from the Explore feed. Per-plan Explore visibility is controlled exclusively by the host's `hide_from_explore` toggle on that plan. A plan in a private community with the toggle off still appears in Explore for non-members (subject to normal plan-visibility and personalization filters); the same plan with the toggle on is scoped to community members and RSVP'd viewers. See the **Plan Feeds, Community Linkage, and "Only show this plan to community members" Toggle** subsection below for the full matrix and enforcement points.
 
-**Events table additions (migration 055):**
-- `community_id UUID NULL` FK → `communities(id)` ON DELETE SET NULL, associates a plan with 0 or 1 community. Forced to NULL by `POST /events` and `PATCH /events/:id` when `visibility = 'invite_only'`.
-- `hide_from_explore BOOLEAN NOT NULL DEFAULT false`, when true, the plan is hidden from the general Explore feed for non-members / non-RSVP'd viewers. Independent of base `visibility`, which still applies in both Explore and the community feed.
+**Plan-to-community linkage (migrations 055, 092, 093):**
+- Migration 055 originally added a single `events.community_id UUID NULL` column. Migrations 092 (additive) and 093 (drop) replaced that with a many-to-many junction table `newchums.event_communities (event_id, community_id, created_at)`, composite PK `(event_id, community_id)`, indexed on `community_id`. A plan can now be linked to **zero or more communities** (capped at 10 per plan in code). Linkage is forced to empty by `POST /events` and `PATCH /events/:id` when `visibility = 'invite_only'`.
+- Wire field name: `community_ids[]` (UUID array). The legacy single-value `community_id` field is no longer accepted.
+- `events.hide_from_explore BOOLEAN NOT NULL DEFAULT false`, when true, the plan is hidden from the general Explore feed for non-members / non-RSVP'd viewers. Independent of base `visibility`, which still applies in both Explore and the community feed. Cleared automatically when a plan has no community linkages.
 
 **API endpoints (auth required unless noted):**
 
@@ -1193,8 +1190,8 @@ Community pages where users can join, browse, and create plans together. The com
 | `GET /communities/slug-available` | Check slug availability. |
 | `GET /communities/:slug` | Community detail. **Auth optional**, the slug URL is the canonical public / shareable destination for a community (see **Canonical community URL** below) and this endpoint mirrors that: logged-in viewers get full detail (membership, plans metadata, website, Discord link if private-and-member), logged-out viewers get either the full public view (for `visibility = 'public'` communities) or the same restricted preview a logged-in non-member would get (for `visibility = 'private'`). The privacy contract is identical across authenticated and anonymous non-members: no member list, no plan details, no `website`, and no `discord_url` leak. Returns full community info including `is_online`, `website`, `discord_url`, `hobbies` array, member_count, viewer's membership role/status, pending join request status. **Private communities** return a preview for non-members (name, description, avatar, hobbies, location, member count, visibility, plus `upcoming_plan_count` so the locked preview can surface a real number without leaking plan detail) with `restricted: true`; plans, members, `website`, and `discord_url` are hidden from non-members to keep those links scoped to approved members only. Non-member responses also include `viewerPendingRequestSentLabel` (pre-formatted "Sent N days ago" string), `viewerPendingRequestRefreshable` (boolean; true once the pending request has aged past the cooldown), `viewerPendingRequestDaysUntilRefreshable` (number or null), and `viewerPendingRequestCooldownDays` (echoes the server-side constant) so the client can render the pending-state card without doing any time math of its own. Anonymous-viewer responses omit those viewer-specific fields, there is no viewer identity to key them on. Owner/admin sees pending join requests with message and avatar URLs. |
 | `PATCH /communities/:slug` | Update community (owner or super admin). Accepts unified `access` field (`"open"` or `"private"`, preferred) or legacy `visibility`/`join_mode`. Also: name, description (required), chat_enabled, `is_online`, `website`, `discord_url`, `operating_hours` (see **Community operating hours**), location fields, avatar_key, `banner_key` (only `null` is accepted to clear; setting a key is done via `/media/finalize` so the Pro gate is enforced there, not here), `interest_items` (replaces all community hobbies; at least one required). |
-| `POST /communities/:slug/close` | Soft-close a community (owner or super admin). Sets `status = 'closed'`, nullifies `community_id` on linked events. Community data is preserved but hidden from listings. Irreversible. Migration 059 adds the `status` column. |
-| `DELETE /communities/:slug` | Hard-delete community (owner or super admin). Cascades to members, join requests; events have `community_id` set to NULL. |
+| `POST /communities/:slug/close` | Soft-close a community (owner or super admin). Sets `status = 'closed'` and removes any matching rows from `event_communities` (so previously linked plans are detached). Community data is preserved but hidden from listings. Irreversible. Migration 059 adds the `status` column. |
+| `DELETE /communities/:slug` | Hard-delete community (owner or super admin). Cascades to members, join requests, and `event_communities` rows (CASCADE on the FK), so previously linked plans are detached automatically. |
 | `POST /communities/:id/join` | Join (open) or request to join (approval_required). Accepts optional JSON body with `message` (max 500 chars). Idempotent. For approval_required: creates a join request, creates in-app notification for owner (`community_join_request`), sends join-request email to owner (Postmark template 44111064, respects `community_join_request_received` notification pref). The email's "Review request" CTA links to `/communities/:slug?tab=requests` so the owner lands directly on the Requests tab (see **Community detail tab deep-links** below). The message field is passed to the template via the `hasMessage` + `message` pair so the "Their message" block only renders when the requester included a note. **Re-request cooldown:** if a pending request already exists, the server checks its age. Within `COMMUNITY_JOIN_REQUEST_COOLDOWN_DAYS` (default 7) the endpoint returns `{ ok: true, status: "already_pending", cooldownDays, daysRemaining }` without notifying anyone. After the cooldown, the existing pending row is refreshed in place (`created_at = NOW()`, `message` replaced), the owner is re-notified, and the response is `{ ok: true, status: "refreshed" }`. The partial unique index guarantees only one active pending row per `(community, user)`. |
 | `POST /communities/:id/leave` | Leave community. Owner cannot leave (must transfer ownership first). Also withdraws any pending join request. |
 | `GET /communities/:id/members` | List active members. Private communities restrict to members + super admin. |
@@ -1225,15 +1222,15 @@ The `GET /communities/:slug` response includes a top-level `hasUnseenAnnouncemen
 | `POST /admin/communities/:id/change-owner` | Reassign community ownership to another user. Body: `{ userId: string }`. Updates both `communities.owner_user_id` (authoritative FK) and the `community_members` rows in sync: the old owner is demoted to `role = 'member'` (kept as an active member), and the new owner is upserted as `role = 'owner', status = 'active'` (reactivated if previously removed). Any pending `community_join_requests` row for the new owner on this community is withdrawn. Rejects assignment to a suspended user (`USER_SUSPENDED`). Returns `{ ok: true, status: "no_change" }` when the target is already the owner. The community banner is editable by the current owner regardless of plan; an existing `banner_key` continues to render after an owner change. |
 
 **Plan creation/edit integration:**
-- `POST /events` accepts optional `community_id` and `hide_from_explore`. Validates that the user is an active member of the community. A plan belongs to zero or one community. **Invite-only invariant:** when `visibility = 'invite_only'`, the server forces `community_id = null` and `hide_from_explore = false` regardless of what the client sends.
-- `PATCH /events/:id` accepts `community_id` (set or clear) and `hide_from_explore`. Active-community-membership is re-validated only when the linkage changes to a *different* community; clearing the link and a no-op save that reuses the existing `community_id` both skip the membership check, so a host who has since left the linked community can still edit the plan's other fields without being forced to detach. Same invite-only invariant as POST: setting `visibility = 'invite_only'` on a PATCH clears `community_id` and forces `hide_from_explore = false`.
-- `GET /events/:id` includes `community` info (`id`, `slug`, `name`) when the plan belongs to a community.
-- `GET /events/explore` includes community attribution (`community` object) on plans that belong to a community. Plans with `hide_from_explore = true` are still visible in Explore to active community members and viewers with an existing RSVP.
-- **Plan form community selector:** The Add and Edit plan forms both render the shared `CommunityLinkSection` (`web/src/components/events/planForm/CommunityLinkSection.tsx`) with the same prop shape and the same UX; the section is a single-select dropdown of the user's communities plus a "None" option, with the "Only show this plan to community members" toggle (`hide_from_explore`) appearing when a community is selected. Both forms fetch the user's communities via `GET /communities?mine=1` on mount. The Edit form additionally seeds the dropdown with the event's currently-linked community so it still renders when the host has since left that community (lets them detach or leave it linked); the Edit form's PATCH body omits `community_id` / `hide_from_explore` from the payload when they haven't changed, so a no-op save doesn't re-trigger the server's membership validation for ex-members. When arriving at the Add form from a community detail page, the `community_id` search param preselects that community and its location is prefilled into the venue/address field (for in-person communities). The whole Community section is hidden when `visibility = 'invite_only'`; both forms also run a `useEffect` on `visibility` that auto-clears community linkage state when the host switches to invite-only. When `visibility = 'chums_only'` and a community is linked, a reminder renders inside the section clarifying that community members who aren't on the host's Chum List still won't see the plan.
+- `POST /events` accepts optional `community_ids[]` and `hide_from_explore`. Validates that the user is an active member of every selected community. A plan can be linked to zero or more communities (cap 10). **Invite-only invariant:** when `visibility = 'invite_only'`, the server forces `community_ids = []` and `hide_from_explore = false` regardless of what the client sends.
+- `PATCH /events/:id` accepts `community_ids[]` (full replace; absent or empty clears all linkages) and `hide_from_explore`. Active-community-membership is re-validated only when the linkage actually changes; clearing the link and a no-op save that re-sends the existing set both skip the per-community membership check, so a host who has since left a linked community can still edit the plan's other fields without being forced to detach. Same invite-only invariant as POST: setting `visibility = 'invite_only'` on a PATCH clears `community_ids` and forces `hide_from_explore = false`.
+- `GET /events/:id` includes a `communities` array (each entry: `id`, `slug`, `name`) when the plan is linked to one or more communities.
+- `GET /events/explore` includes community attribution (`communities[]`) on plans linked to one or more communities. Plans with `hide_from_explore = true` are still visible in Explore to active members of any linked community and viewers with an existing RSVP.
+- **Plan form community selector:** The Add and Edit plan forms both render the shared `CommunityLinkSection` (`web/src/components/events/planForm/CommunityLinkSection.tsx`) with the same prop shape and the same UX; the section is a multi-select Autocomplete over the user's communities (chips + checkbox options), with the "Only show this plan to community members" toggle (`hide_from_explore`) appearing when at least one community is selected. Both forms fetch the user's communities via `GET /communities?mine=1` on mount. The Edit form additionally seeds the picker with any of the event's currently-linked communities the host has since left so they still render and can be removed; the Edit form's PATCH body omits `community_ids` / `hide_from_explore` from the payload when they haven't changed. When arriving at the Add form from a community detail page, the `community_id` search param preselects that single community and its location is prefilled into the venue/address field (for in-person communities). The whole Community section is hidden when `visibility = 'invite_only'`; both forms also run a `useEffect` on `visibility` that auto-clears community linkage state when the host switches to invite-only. When `visibility = 'chums_only'` and at least one community is linked, a reminder renders inside the section clarifying that community members who aren't on the host's Chum List still won't see the plan.
 
 #### Plan Feeds, Community Linkage, and "Only show this plan to community members" Toggle
 
-This is the authoritative contract for how plans appear in the **Explore feed** vs a **community's own plan feed**. Any change to a filter, toggle label, or payload shape below must update this subsection in the same change set, plus the parallel contract section in `AGENTS.md` and the bullets on the Super Admin System Logic page.
+This is the authoritative contract for how plans appear in the **Explore feed** vs a **community's own plan feed**. Any change to a filter, toggle label, or payload shape below must update this subsection in the same change set, plus the parallel contract section in `AGENTS.md`.
 
 **Two distinct feeds.**
 
@@ -1251,7 +1248,7 @@ This is the authoritative contract for how plans appear in the **Explore feed** 
 |---|---|---|---|
 | `public` | Yes | Shown (subject to community-privacy access) | Shown; `hide_from_explore` governs non-member visibility |
 | `chums_only` | Yes | Shown only to host, host's on-NewChums chums, and viewers already RSVP'd | Same chums_only rule; `hide_from_explore` layers on top |
-| `invite_only` | **No.** Forms hide the Community section; server forces `community_id = null` on POST and PATCH | Never shown | Hidden except to viewers already RSVP'd (standing Explore rule) |
+| `invite_only` | **No.** Forms hide the Community section; server forces `community_ids = []` on POST and PATCH | Never shown | Hidden except to viewers already RSVP'd (standing Explore rule) |
 
 **Toggle semantics (per plan; stored as `hide_from_explore`, default `false`).** Shown on Add Plan and Edit Plan only when a community is selected and `visibility` is not `invite_only`. The toggle only affects **Explore**; the community feed applies the base `visibility` rule from the matrix above regardless.
 
@@ -1270,12 +1267,12 @@ This is the authoritative contract for how plans appear in the **Explore feed** 
 
 **Enforcement points (kept in sync).**
 
-- Database: `newchums.events.hide_from_explore BOOLEAN NOT NULL DEFAULT false` and `newchums.events.community_id UUID NULL` (migration 055). `visibility TEXT NOT NULL` with values in `{public, chums_only, invite_only}`.
-- **Invite-only server-side invariant.** `POST /events` and `PATCH /events/:id` both force `community_id = null` and `hide_from_explore = false` when `visibility === 'invite_only'`, regardless of what the client sends. The forms hide the Community section so this is rarely triggered in practice, but any client bypassing the UI still cannot create or save an invite_only plan with a linked community.
+- Database: `newchums.events.hide_from_explore BOOLEAN NOT NULL DEFAULT false` (migration 055); `newchums.event_communities (event_id, community_id, created_at)` junction (migrations 092 + 093, replacing the original single `events.community_id` column). `visibility TEXT NOT NULL` with values in `{public, chums_only, invite_only}`.
+- **Invite-only server-side invariant.** `POST /events` and `PATCH /events/:id` both force `community_ids = []` and `hide_from_explore = false` when `visibility === 'invite_only'`, regardless of what the client sends. The forms hide the Community section so this is rarely triggered in practice, but any client bypassing the UI still cannot create or save an invite_only plan with linked communities.
 - Explore filter: `hide_from_explore` gate is `COALESCE(e.hide_from_explore, false) = false OR (community member) OR (viewer has an existing RSVP row)`. Do not re-add a separate community-visibility override here; it caused the April 2026 regression that required a doc pass. Visibility gate is: invite_only hidden unless RSVP'd; chums_only shown to host + on-NewChums chums + RSVP'd.
-- Event match digest (`processEventMatchDigest` in `api/src/index.ts`): same `hide_from_explore` members-only gate applies inside both UNION branches (public and chums_only). Predicate: `COALESCE(e.hide_from_explore, false) = false OR (e.community_id IS NOT NULL AND <recipient is an active community_members row>)`. The RSVP-bypass third branch present in the Explore query is omitted because the digest already suppresses plans the recipient has any RSVP on (standing rule: the digest is a "new plans you're not yet involved with" channel, not a second outreach for plans already surfaced). The community gate is additive on top of hobby / distance / visibility / QA / suppression filters; it only narrows eligibility.
-- Community feed: per-plan `visibility` gate is enforced in SQL. `invite_only` rows never match (no RSVP bypass). `chums_only` rows match for host + host's on-NewChums chums + RSVP'd viewers. `public` rows always match. QA-isolation filter: `AND (COALESCE(e.is_qa, false) = false OR <isSuperAdmin>)`. No `hide_from_explore` filter.
-- Form state: `hideFromExplore`, `selectedCommunityId` / `communityId`, and `visibility` in both `CreateEventClient.tsx` and `EditEventClient.tsx`. Both forms run a `useEffect` on `visibility` that auto-clears community linkage when `visibility === 'invite_only'`. Initial value on Edit is `ev.hideFromExplore === true`.
+- Event match digest (`processEventMatchDigest` in `api/src/index.ts`): same `hide_from_explore` members-only gate applies inside both UNION branches (public and chums_only). Predicate: `COALESCE(e.hide_from_explore, false) = false OR EXISTS (event_communities ec JOIN community_members cm ON cm.community_id = ec.community_id WHERE ec.event_id = e.id AND cm.user_id = recipient AND cm.status = 'active')`. The RSVP-bypass third branch present in the Explore query is omitted because the digest already suppresses plans the recipient has any RSVP on (standing rule: the digest is a "new plans you're not yet involved with" channel, not a second outreach for plans already surfaced). The community gate is additive on top of hobby / distance / visibility / QA / suppression filters; it only narrows eligibility.
+- Community feed: scoped by joining through `event_communities`. Per-plan `visibility` gate is enforced in SQL. `invite_only` rows never match (no RSVP bypass). `chums_only` rows match for host + host's on-NewChums chums + RSVP'd viewers. `public` rows always match. QA-isolation filter: `AND (COALESCE(e.is_qa, false) = false OR <isSuperAdmin>)`. No `hide_from_explore` filter.
+- Form state: `hideFromExplore`, `selectedCommunityIds[]`, and `visibility` in both `CreateEventClient.tsx` and `EditEventClient.tsx`. Both forms run a `useEffect` on `visibility` that auto-clears community linkage when `visibility === 'invite_only'`. Initial value on Edit is `ev.hideFromExplore === true`.
 - Shared UI: `CommunityLinkSection` (`web/src/components/events/planForm/CommunityLinkSection.tsx`) takes a `visibility` prop. Returns `null` for `invite_only`. Renders a "Chums only" reminder under the Community section when `visibility === 'chums_only'` so authors don't assume community members will see a chums-only plan.
 - UI label: "Only show this plan to community members" on both Add Plan and Edit Plan. Helper text on Edit: "When on, this plan only appears in the community feed and to members in their Explore. Others won't see it."
 
@@ -1593,8 +1590,9 @@ Core tables include:
 - `newchums.community_members` (migration 055, extended 081), membership records. Columns: `id` (UUID PK), `community_id` (FK, CASCADE), `user_id` (FK, CASCADE), `role` (owner/member), `status` (active/pending/removed), `created_at`, `removal_reason` (text, nullable, max 500 chars, migration 081), `removed_at` (TIMESTAMPTZ, nullable, migration 081), `removed_by_user_id` (FK users.id, nullable, migration 081). Unique on `(community_id, user_id)`. Indexed on `user_id`. Remove-and-block sets `status='removed'` (row survives; the Members tab "Blocked" section and the POST /join guard both read it). Unblock **deletes the row outright**; the user becomes a plain non-member and may request to join again on their own.
 - `newchums.community_join_requests` (migration 055, extended 079), join request records. Columns: `id` (UUID PK), `community_id` (FK, CASCADE), `user_id` (FK, CASCADE), `status` (pending/approved/declined/withdrawn), `reviewed_by_user_id` (FK), `message` (text, nullable, max 500 chars, migration 079), `created_at`, `reviewed_at`. Unique partial index on `(community_id, user_id) WHERE status = 'pending'`.
 - `newchums.community_interests` (migration 078), hobby/interest tagging for communities. Columns: `community_id` (FK, CASCADE), `interest_id` (FK, CASCADE). Composite PK. Indexed on `interest_id`.
-- `newchums.events.community_id` (migration 055), `UUID NULL` FK → `communities(id)` ON DELETE SET NULL. Associates a plan with 0 or 1 community. Indexed where not null.
-- `newchums.events.hide_from_explore` (migration 055), `BOOLEAN NOT NULL DEFAULT false`. When true, the plan is hidden from the general Explore feed for non-members / non-RSVP'd viewers. Does not affect the community's plan feed, which applies the base `visibility` rule instead. See the **Plan Feeds, Community Linkage, and "Only show this plan to community members" Toggle** subsection under Communities.
+- `newchums.events.community_id` (migration 055, **dropped by migration 093**). The single-community FK was originally added by 055; migrations 092 and 093 replaced it with the `newchums.event_communities` junction table. Plans now link to zero or more communities.
+- `newchums.event_communities` (migrations 092 + 093). Junction table with composite PK `(event_id, community_id)`, FK CASCADE on both sides, indexed on `community_id`. Migration 092 backfilled rows from the legacy single-column linkage; migration 093 dropped `events.community_id`.
+- `newchums.events.hide_from_explore` (migration 055), `BOOLEAN NOT NULL DEFAULT false`. When true, the plan is hidden from the general Explore feed for non-members / non-RSVP'd viewers. Does not affect a community's plan feed, which applies the base `visibility` rule instead. See the **Plan Feeds, Community Linkage, and "Only show this plan to community members" Toggle** subsection under Communities.
 - `newchums.roadmap_items.attachment_key` (migration 056), `TEXT NULL`. Stores R2 object key for optional roadmap item attachments.
 - `newchums.events.alt_times_mode` (migration 057), `TEXT NOT NULL DEFAULT 'suggest'`. Host-controlled presentation mode for the alternate times feature: `'suggest'` (default, current behavior) or `'availability'` (collaborative scheduling framing). Same underlying `event_alt_times` engine; only attendee-facing copy differs.
 - `newchums.users.share_link_modal_dismissed` (migration 062), `BOOLEAN NOT NULL DEFAULT false`; when true, the share-link first-use info modal is permanently dismissed for the user.
@@ -1693,7 +1691,7 @@ When sharing the same DB between local and production, set `NEXT_PUBLIC_AVATAR_B
 - Secrets (via Wrangler/CF dashboard): `DATABASE_URL`, `NEXTAUTH_SECRET`, `POSTMARK_SERVER_TOKEN`
 - Durable Objects: `[[durable_objects.bindings]]` binds `CHAT_ROOM` → `ChatRoom` class; `[[migrations]]` tag `v1` with `new_classes = ["ChatRoom"]`
 - Cron Triggers: `[triggers] crons = ["0 * * * *"]`, hourly; processes attendance assurance, daily unread-chat digest, event match digest, and post-plan feedback emails
-- Vars include `POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST`, `POSTMARK_TEMPLATE_EVENT_CHANGED`, `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST`, `POSTMARK_TEMPLATE_PLAN_AT_RISK`, `POSTMARK_TEMPLATE_PLAN_FEEDBACK`, `POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST`, `POSTMARK_TEMPLATE_COMMUNITY_JOIN_APPROVED`, `POSTMARK_TEMPLATE_COMMUNITY_JOIN_DECLINED`, and other template IDs
+- Vars include `POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST`, `POSTMARK_TEMPLATE_EVENT_CHANGED`, `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST_USER`, `POSTMARK_TEMPLATE_PLAN_AT_RISK`, `POSTMARK_TEMPLATE_PLAN_FEEDBACK`, `POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST`, `POSTMARK_TEMPLATE_COMMUNITY_JOIN_APPROVED`, `POSTMARK_TEMPLATE_COMMUNITY_JOIN_DECLINED`, `POSTMARK_TEMPLATE_COMMUNITY_ANNOUNCEMENT`, and other template IDs (see `api/wrangler.toml` for the full list)
 
 CORS is enforced via an explicit allowlist (newchums.com, www, localhost:3000) in API code.
 
@@ -1722,4 +1720,5 @@ cd web && npm run build
 - Schema normalization/cleanup will be required before broader public launch.
 - Account deletion (`DELETE /account`) does not yet cascade to events, event_rsvps, event_invites, event_alt_times, event_chat_messages, event_chat_reads, event_join_requests, event_confirmations, or host_attendee_removals; must be updated when those tables accumulate production data.
 - `interest_id` on `events` is a legacy FK; `event_interests` is the canonical many-to-many source of truth. The legacy column should be dropped in a future migration once all queries are migrated.
-- Legacy scaffolded email env vars (`POSTMARK_TEMPLATE_EVENT_RSVP_UPDATE`, `POSTMARK_TEMPLATE_EVENT_REMINDER`) can be removed once confirmed unused.
+- The legacy private-community share token (`community_share` JWT, returned by `GET /communities/:slug` for owners / super admins) has no current consumer; the canonical slug URL grants the same restricted preview without a token. Safe to retire in a future pass.
+- The community `chat_enabled` column on `newchums.communities` is reserved for the future Community Pro chat feature and currently has no read or write path beyond admin schema dumps.

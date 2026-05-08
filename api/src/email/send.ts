@@ -299,36 +299,6 @@ export const sendEventChangedEmail = async (
   });
 };
 
-export const sendEventCanceledEmail = async (
-  env: Bindings,
-  { to, recipientName, hostName, eventTitle, eventDate }: {
-    to: string; recipientName: string; hostName: string;
-    eventTitle: string; eventDate: string;
-  }
-) => {
-  if (!env.POSTMARK_TEMPLATE_EVENT_CANCELED) return;
-  return sendPostmarkTemplateEmail(env, {
-    From: env.EMAIL_FROM, To: to,
-    TemplateId: env.POSTMARK_TEMPLATE_EVENT_CANCELED,
-    TemplateModel: { productName: "NewChums", recipientName, hostName, eventTitle, eventDate },
-  });
-};
-
-export const sendEventRsvpUpdateEmail = async (
-  env: Bindings,
-  { to, hostName, attendeeName, eventTitle, rsvpStatus, eventUrl }: {
-    to: string; hostName: string; attendeeName: string;
-    eventTitle: string; rsvpStatus: string; eventUrl: string;
-  }
-) => {
-  if (!env.POSTMARK_TEMPLATE_EVENT_RSVP_UPDATE) return;
-  return sendPostmarkTemplateEmail(env, {
-    From: env.EMAIL_FROM, To: to,
-    TemplateId: env.POSTMARK_TEMPLATE_EVENT_RSVP_UPDATE,
-    TemplateModel: { productName: "NewChums", hostName, attendeeName, eventTitle, rsvpStatus, eventUrl },
-  });
-};
-
 // ── Host RSVP notification helpers ──────────────────────────────────────
 //   Each RSVP status has its own Postmark template and preference toggle.
 //   Model: productName, hostName, attendeeName, eventTitle, eventUrl, attendeeMessage

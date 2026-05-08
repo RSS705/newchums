@@ -22,8 +22,6 @@ export type Bindings = {
   POSTMARK_TEMPLATE_INVITE?: string;
   /** Event email template IDs, optional until Postmark templates are created */
   POSTMARK_TEMPLATE_EVENT_INVITE?: string;
-  POSTMARK_TEMPLATE_EVENT_CANCELED?: string;
-  POSTMARK_TEMPLATE_EVENT_RSVP_UPDATE?: string;
   /** Postmark template ID for host leave notification (template 43921920) */
   POSTMARK_TEMPLATE_EVENT_LEAVE?: string;
   /** Postmark template ID for host maybe notification (template 43922237) */

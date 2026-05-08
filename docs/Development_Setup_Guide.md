@@ -1,13 +1,13 @@
 # Development Setup Guide
 
-Last Updated: March 19, 2026
+Last Updated: May 8, 2026
 
 This document is the operational guide for running and deploying NewChums.
 For architectural invariants and contracts, see `docs/Technical_Specs.md`.
 For diagrams and flows, see `docs/System_Map.md`.
 For product direction, terminology, and agent governance, see `AGENTS.md`.
 
-**System Logic (super admin):** The web app exposes a **System Logic** tab (`/admin/system-logic`) with short, admin-facing explanations of major product behavior. Keep it concise and current, but do **not** treat it as a substitute for the repo docs. `AGENTS.md`, `Technical_Specs.md`, and `System_Map.md` remain the primary durable sources of truth; the System Logic tab is a quick operational summary. Review it in the same change set when important user-visible behavior changes.
+**Where durable behavior lives:** `AGENTS.md`, `docs/Technical_Specs.md`, and `docs/System_Map.md` are the durable sources of truth for user-visible product behavior. There is no separate in-app system-logic page; when behavior changes, update the relevant repo doc in the same change set.
 
 ---
 
@@ -21,12 +21,14 @@ For product direction, terminology, and agent governance, see `AGENTS.md`.
 - **Events (plans):** Full event creation, context-aware RSVP (going/maybe/can't make it), invite, alternate time suggestion (with best-start-times overlap display), cancel, edit (host), request-to-join (host approval), host attendee removal. Visibility: invite_only, chums_only, public. Gradient banner presets + custom upload. Plan-change email notifications to attendees (edits, locks, cancellations). Per-plan participant chat with real-time WebSocket delivery via Cloudflare Durable Objects, unread chat indicators in bell and plan cards, daily unread-chat digest email. Host can lock/unlock plans. Attendance assurance (host-configurable final confirmation, min confirmed attendees, fallback policies, cron-based reminders and cutoff processing). Going attendees can invite others (host-controlled via `allow_attendee_invites`, on by default). Invites support optional "suggest a better time" mode when alt times are enabled. Unauthenticated visitors on share/invite links land on a **lightweight signup card** (email + DOB + legal) that issues a magic link; clicking it creates a real NewChums account, signs them in, and returns them to the plan (migration 084 removed the prior guest participation model).
 - **Explore page:** Personalized discovery feed (`/`). Uses `GET /events/explore` with hobby-based ranking, sort options (upcoming/newest), personalization toggle, location-aware ordering (Haversine), hobby filter, time-range chips, text search, session state persistence via `localStorage`. Includes a local-signal footer (`GET /explore/local-signal`) showing nearby active-user counts for relevant hobbies (e.g. "14 active people near you are into board games") when the count meets a minimum threshold of 5.
 - **Your Plans:** Tabbed upcoming/past view with hosted and joined sections, unread chat indicators, real API data.
-- **Chums:** One-way saved-people feature with search, email invite flow, mutual indicators, privacy controls, public Chums on profiles, private per-chum notes, and birthday display.
-- **Notifications:** In-app bell with unread state for chum, event, and join-request notification types. Unread chat indicators derived from per-plan read tracking. 14 email notification types with per-type Settings toggles and tokenized email unsubscribe links.
-- **Scheduled tasks:** Cloudflare Cron Trigger (`0 * * * *` UTC, hourly) processes 24-hour attendance checks (confirmation requests, reminders, cutoff) and daily unread-chat digest email.
-- **Admin:** Interests moderation (default sort newest-first, category combo-box for structured-but-flexible categorization) + user account management (super_admin only).
-- **Subscriptions and premium rollout:** Billing is **not** implemented yet. Organizer-facing access is planned around three manually assigned user plans: `free`, `super_host`, and `community_pro`. `community_pro` includes `super_host` benefits and is intended to cover up to 5 owned communities. Premium work can stay behind super-admin or QA-only gating until ready.
-- **Communities:** Community create/browse/detail flows are live. Community chat is **not** implemented yet and is intended to be a `community_pro` feature when added.
+- **Chums:** Two-part saved-people feature (On NewChums + Private Contacts) with search, email invite flow, privacy controls, public Chums on profiles, private per-chum notes, and birthday display. One-way only; no mutual indicator.
+- **Notifications:** In-app bell with unread state for chum, plan, join-request, and shout-out notification types. Unread chat indicators derived from per-plan read tracking. 14 email notification types with per-type Settings toggles and tokenized email unsubscribe links.
+- **Scheduled tasks:** Cloudflare Cron Trigger (`0 * * * *` UTC, hourly) runs the attendance assurance lifecycle (Phases 1-3 for the 24-hour check; Phase 4 for the optional RSVP-based minimum), the no-attendee auto-cancel, the daily unread-chat digest, the plan-match digest, post-plan feedback emails, and local-badge computation.
+- **Admin:** Interests moderation, user account management (super_admin only), plan moderation, community moderation, safety/concern review, shout-out moderation, KPIs and growth-loop dashboard, roadmap moderation, QR redirects inventory.
+- **Subscriptions and premium rollout:** Billing is **not** implemented yet. Organizer-facing access is planned around three manually assigned user plans: `free`, `super_host`, and `community_pro`. `community_pro` includes `super_host` benefits and is intended to cover up to 5 owned communities. Premium work can stay behind super-admin or QA-only gating until ready. Read-only `/your-plan` page surfaces the current tier in-app.
+- **Communities:** Community create/browse/detail flows are live, including avatar upload, banner upload, hobby tagging, optional Website / Discord links, optional weekly operating hours, an Announcements tab with optional member email notifications and per-community email mute, and a Schedule tab (recurring weekly time blocks with optional per-block image and a "Start a plan during this time" deeplink). Plans can be linked to many communities (cap 10) via the `event_communities` junction table. Community chat is **not** implemented yet and is intended to be the first `community_pro` feature when added.
+- **QR redirects:** Internal redirect layer at `https://newchums.com/qr/{code}` so printed codes can be remapped without reprinting. Super-admin inventory UI at `/admin/qr-redirects` with per-record scan log (CF-resolved geo, server-side dedupe, no raw IPs).
+- **Roadmap:** Public product roadmap with submit/vote/follow/comment, optional anonymous submissions, per-item privacy gate, super-admin moderation.
 - **Profiles:** Edit profile page and public profile page include live Attendance Record section (Going follow-through, follow-through rate, attendance checks answered, plans attended, plans hosted, host completion rate).
 - **Legal:** Privacy Policy (`/privacy`) and Terms of Use (`/terms`) pages. Required legal acceptance checkbox on signup (credentials and OAuth). Acceptance metadata stored on users table.
 - **Public site:** Homepage (updated copy, gradient event cards, screenshot placeholders), How it Works (updated copy, screenshot placeholders), Science of Friendship, Safety Center, Contact, all sharing `LandingLayout`. Footer includes Terms of Use and Privacy Policy links.
@@ -38,7 +40,7 @@ For product direction, terminology, and agent governance, see `AGENTS.md`.
 
 ### First-time or fresh clone
 
-If you are doing UI work, restore gitignored assets per `docs/Gitignored_Assets_and_Restore.md` (env files, and `template_reference/` if available).
+If you are doing UI work, restore gitignored assets per `docs/Gitignored_Assets_and_Restore.md` (env files only). New UI should reuse existing NewChums patterns and `docs/UI_Patterns.md`; the original purchased template is no longer used.
 
 ### Web
 
@@ -104,8 +106,14 @@ Email / Postmark (required for email flows):
 Event email templates (active, set in `wrangler.toml` vars):
 - `POSTMARK_TEMPLATE_EVENT_CHANGED` (template 43971187, plan changed/locked/canceled)
 - `POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST` (template 43975299, daily unread chat digest)
-- `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST` (template 43984465, 24-hour attendance check request/reminder)
+- `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST_USER` (template 44415561, 24-hour attendance check request/reminder)
 - `POSTMARK_TEMPLATE_PLAN_AT_RISK` (template 43984947, plan at risk notification to host)
+- `POSTMARK_TEMPLATE_PLAN_AUTO_CANCELLED` (template 44165043, auto-cancellation notification)
+- `POSTMARK_TEMPLATE_PLAN_REMOVED` (template 43998481, plan removed by admin)
+- `POSTMARK_TEMPLATE_PLAN_FEEDBACK` (template 44091936, post-plan feedback reminder)
+- `POSTMARK_TEMPLATE_EVENT_MATCH_DIGEST` (template 44018889, plan-match digest)
+- `POSTMARK_TEMPLATE_CONCERN_REPORT` (template 44107767, internal concern alert to contact@newchums.com)
+- `POSTMARK_TEMPLATE_ROADMAP_UPDATE` (template 44007454, roadmap status update follower email)
 
 Auth/lightweight-signup email templates (active, set in `wrangler.toml` vars):
 - `POSTMARK_TEMPLATE_MAGIC_LINK_SIGNUP` (template 44523927, lightweight-signup confirmation link from a plan invite/share page)
@@ -113,12 +121,13 @@ Auth/lightweight-signup email templates (active, set in `wrangler.toml` vars):
 - `POSTMARK_TEMPLATE_SIGNIN_LINK` (template 44802964, return-visit sign-in link for `password_setup_pending` accounts; copy is "Sign in to NewChums", distinct from the signup confirmation template)
 
 Community email templates (active, set in `wrangler.toml` vars):
+- `POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST` (template 44111064, request to join sent to community owner)
+- `POSTMARK_TEMPLATE_COMMUNITY_JOIN_APPROVED` (template 44111212, join approved sent to requester)
+- `POSTMARK_TEMPLATE_COMMUNITY_JOIN_DECLINED` (template 44111205, join declined sent to requester)
+- `POSTMARK_TEMPLATE_COMMUNITY_MEMBER_REMOVED` (template 44452043, member removed and blocked notification)
+- `POSTMARK_TEMPLATE_COMMUNITY_MEMBER_UNBLOCKED` (template 44470363, block lifted notification)
+- `POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST_REOPENED` (template 44470744, decline reversed by owner)
 - `POSTMARK_TEMPLATE_COMMUNITY_ANNOUNCEMENT` (template 44937878, community announcement notification sent to active members when an owner posts an announcement with the "Email members" toggle on; gated by the `community_announcements` notification preference and the per-community mute row)
-
-Event email templates (scaffolded, sends noop if not set):
-- `POSTMARK_TEMPLATE_EVENT_INVITE`
-- `POSTMARK_TEMPLATE_EVENT_REMINDER`
-- `POSTMARK_TEMPLATE_EVENT_RSVP_UPDATE`
 
 Optional:
 - `TURNSTILE_SECRET_KEY`, Cloudflare Turnstile secret key for contact form verification (logged-out users). If unset, Turnstile is skipped (useful for local dev).
@@ -221,91 +230,25 @@ Migration required:
 
 ## Database Migrations
 
-Migrations live in `web/sql/`. Run them in order against your Neon database.
+Migrations live in `web/sql/`. They are forward-only (a few early migrations have an accompanying `*.down.sql`; most do not), and the canonical workflow is "apply every numbered file in sorted order against your Neon database." `web/sql/` itself is the source of truth for what each file does; read the SQL when you need details.
+
+**Apply every migration in order on a fresh database:**
 
 ```bash
 cd web
-psql "$DATABASE_URL" -f sql/001_create_users.sql
-psql "$DATABASE_URL" -f sql/002_password_reset_tokens.sql
-psql "$DATABASE_URL" -f sql/003_add_username_to_users.sql
-psql "$DATABASE_URL" -f sql/004_add_username_norm.sql
-psql "$DATABASE_URL" -f sql/005_add_date_of_birth.sql
-psql "$DATABASE_URL" -f sql/006_add_email_verified_at.sql
-psql "$DATABASE_URL" -f sql/007_email_verification_tokens.sql
-psql "$DATABASE_URL" -f sql/008_interests_seed.sql
-psql "$DATABASE_URL" -f sql/009_add_bio_to_user_profile.sql
-psql "$DATABASE_URL" -f sql/010_add_avatar_to_users.sql
-psql "$DATABASE_URL" -f sql/011_email_change_requests.sql
-psql "$DATABASE_URL" -f sql/012_add_notification_prefs.sql
-psql "$DATABASE_URL" -f sql/013_add_privacy_columns.sql
-psql "$DATABASE_URL" -f sql/014_add_is_hidden_age.sql
-psql "$DATABASE_URL" -f sql/015_interests_moderation.sql
-psql "$DATABASE_URL" -f sql/016_interests_merged_into.sql
-psql "$DATABASE_URL" -f sql/017_add_user_suspension.sql
-psql "$DATABASE_URL" -f sql/018_add_gender.sql
-psql "$DATABASE_URL" -f sql/019_add_profile_theme.sql
-psql "$DATABASE_URL" -f sql/020_add_chum_privacy_columns.sql
-psql "$DATABASE_URL" -f sql/021_create_user_chums.sql
-psql "$DATABASE_URL" -f sql/022_create_notifications.sql
-psql "$DATABASE_URL" -f sql/023_create_chum_invites.sql
-psql "$DATABASE_URL" -f sql/024_create_events.sql
-psql "$DATABASE_URL" -f sql/025_event_multi_hobby_and_banner.sql
-psql "$DATABASE_URL" -f sql/027_chum_notes.sql
-psql "$DATABASE_URL" -f sql/028_event_reconfirmation.sql
-psql "$DATABASE_URL" -f sql/029_event_chat_and_lock.sql
-psql "$DATABASE_URL" -f sql/030_event_join_requests.sql
-psql "$DATABASE_URL" -f sql/033_simplify_notification_prefs.sql
-psql "$DATABASE_URL" -f sql/034_host_attendee_removals.sql
-psql "$DATABASE_URL" -f sql/035_guest_rsvps.sql
-psql "$DATABASE_URL" -f sql/036_join_request_withdrawn.sql
-psql "$DATABASE_URL" -f sql/037_chat_digest_tracking.sql
-psql "$DATABASE_URL" -f sql/039_attendance_assurance.sql
-psql "$DATABASE_URL" -f sql/040_legal_acceptance.sql
-psql "$DATABASE_URL" -f sql/041_attendance_record.sql
-psql "$DATABASE_URL" -f sql/042_allow_attendee_invites.sql
-psql "$DATABASE_URL" -f sql/043_guest_alt_times.sql
-# (migrations 044-082 not listed individually here; apply the rest of web/sql/ in numerical order)
-psql "$DATABASE_URL" -f sql/083_subscription_plan.sql
-psql "$DATABASE_URL" -f sql/084_remove_guest_participation.sql
-psql "$DATABASE_URL" -f sql/094_min_attendees_required.sql
-psql "$DATABASE_URL" -f sql/095_community_announcements.sql
-psql "$DATABASE_URL" -f sql/096_community_announcement_emails.sql
-psql "$DATABASE_URL" -f sql/097_community_schedule.sql
-psql "$DATABASE_URL" -f sql/098_community_schedule_block_location.sql
+ls sql/*.sql | sort | grep -v '\.down\.sql$' | xargs -I {} psql "$DATABASE_URL" -f {}
 ```
 
-Tip for fresh setups: `ls web/sql/*.sql | sort | xargs -I {} psql "$DATABASE_URL" -f {}` applies every migration in order. 084 is a destructive consolidation of 035/043/077 (guest participation model); its pre-flight will abort if more than ~100 orphan guest rows exist.
+That command also works on an existing database, but most migrations are not idempotent, so you should only apply files newer than the last one already run. To check what is already applied, inspect the live schema (e.g. `psql "$DATABASE_URL" -c '\\d newchums.events'`) or compare against `git log -- web/sql/`.
 
-Notes:
-- Migration `008_interests_seed.sql` requires the interests tables to exist and seeds the base list.
-- Migration `015_interests_moderation.sql` adds `role` to `users` and moderation columns (`is_deleted`, audit fields) to `interests`.
-- Migration `016_interests_merged_into.sql` adds `merged_into_interest_id` to `interests` for tracking merge targets.
-- Migration `017_add_user_suspension.sql` adds suspension columns and a partial index on `is_suspended = true`.
-- Migration `018_add_gender.sql` adds `gender TEXT NULL` to `users`.
-- Migration `019_add_profile_theme.sql` adds `profile_theme TEXT NULL` to `users`.
-- Migration `020_add_chum_privacy_columns.sql` adds `is_hidden_chum_list` and `is_hidden_from_chum_lists` (both boolean, default false) to `users`.
-- Migration `021_create_user_chums.sql` creates the `newchums.user_chums` table for one-way Chum relationships.
-- Migration `022_create_notifications.sql` creates the `newchums.notifications` table for in-app notifications.
-- Migration `023_create_chum_invites.sql` creates the `newchums.chum_invites` table for Chum invite links (token hash, status, 30-day expiry).
-- Migration `024_create_events.sql` creates `newchums.events`, `newchums.event_invites`, `newchums.event_rsvps`, and `newchums.event_alt_times` tables for the event/plan system.
-- Migration `025_event_multi_hobby_and_banner.sql` adds the `newchums.event_interests` junction table for multi-hobby support on events, migrates existing `interest_id` data, and adds `banner_key` to events for banner images.
-- Migration `027_chum_notes.sql` adds a `note TEXT NULL` column to `newchums.user_chums` for private per-chum notes (visible only to the user who added them).
-- Migration `028_event_reconfirmation.sql` adds `require_reconfirmation BOOLEAN NOT NULL DEFAULT FALSE` to `newchums.events` for the attendance reconfirmation setting.
-- Migration `029_event_chat_and_lock.sql` creates `newchums.event_chat_messages` (per-plan chat messages), `newchums.event_chat_reads` (last-read tracking), and adds `locked_at TIMESTAMPTZ NULL` to `newchums.events` for host-controlled plan locking.
-- Migration `030_event_join_requests.sql` adds `require_approval BOOLEAN NOT NULL DEFAULT FALSE` to `newchums.events` and creates `newchums.event_join_requests` (join request records with status, messages, and timestamps).
-- Migration `033_simplify_notification_prefs.sql` removes the obsolete `event_reminders` key and `frequency` fields from existing `notification_prefs` JSONB data in `user_profile`. No columns are added or dropped.
-- Migration `034_host_attendee_removals.sql` creates `newchums.host_attendee_removals` to track host-initiated attendee removals for future host quality metrics and moderation.
-- Migration `035_guest_rsvps.sql` originally added guest RSVP support (nullable `user_id` + `guest_email` + `guest_name`). **Superseded by migration 084**, which deleted orphan guest rows, dropped the guest columns and partial index, and restored `user_id NOT NULL`.
-- Migration `036_join_request_withdrawn.sql` supports the `join_request_withdrawn` notification type for tracking withdrawn join requests.
-- Migration `037_chat_digest_tracking.sql` adds `chat_digest_sent_at TIMESTAMPTZ NULL` to `user_profile` for tracking when the daily unread-chat digest email was last sent.
-- Migration `039_attendance_assurance.sql` adds attendance assurance columns to `events` (`min_confirmed_attendees`, `confirmation_window_hours`, `confirmation_cutoff_hours`, `fallback_policy`, `confirmation_sent_at`, `cutoff_processed_at`) and creates the `event_confirmations` table for final attendance confirmation tracking.
-- Migration `040_legal_acceptance.sql` adds `accepted_terms_version`, `accepted_privacy_version`, and `accepted_legal_at` columns to `users` for recording legal acceptance during signup.
-- Migration `041_attendance_record.sql` adds `committed_at TIMESTAMPTZ NULL` to `event_rsvps` for accurate follow-through tracking, backfills existing going RSVPs, and adds an index.
-- Migration `042_allow_attendee_invites.sql` adds `allow_attendee_invites BOOLEAN NOT NULL DEFAULT true` to `newchums.events`. When true, Going attendees can invite others to the plan.
-- Migration `043_guest_alt_times.sql` originally added guest alt-time support (nullable `user_id` + `guest_email` on `event_alt_times`). **Superseded by migration 084.**
-- Migration `077_guest_confirmations.sql` originally added guest confirmation support (nullable `user_id` + `guest_email` on `event_confirmations` + dual partial unique indexes). **Superseded by migration 084.**
-- Migration `083_subscription_plan.sql` adds `users.subscription_plan` (default `free`, constrained to `free`/`super_host`/`community_pro`) and `subscription_plan_history` audit table. Powers the organizer-plan access resolver in `api/src/lib/subscriptionAccess.ts`.
-- Migration `084_remove_guest_participation.sql` removes guest participation. Pre-flight counts guest rows and aborts if the total exceeds ~100 as a safety catch, then deletes any orphan rows from `event_rsvps`, `event_confirmations`, `event_alt_times`; drops the `guest_email` / `guest_name` columns and guest-specific partial indexes; restores `user_id NOT NULL` on all three tables. Post-migration, every attendee / confirmation / alt-time row belongs to an authenticated user. Unauthenticated visitors become real accounts via the lightweight signup flow (`POST /auth/plan-signup/request` + magic-link).
+**Migrations with non-obvious behavior worth knowing about before running them:**
+
+- `084_remove_guest_participation.sql` is a **destructive consolidation** of the prior 035 / 043 / 077 guest-participation pattern. It deletes orphan guest rows from `event_rsvps`, `event_confirmations`, and `event_alt_times`, drops the `guest_email` / `guest_name` columns + guest-specific partial indexes, and restores `user_id NOT NULL` on all three tables. A pre-flight count aborts the migration if more than ~100 orphan guest rows exist as a safety catch. After 084, the lightweight magic-link signup flow (`POST /auth/plan-signup/request` + `POST /auth/magic-link/consume`) is the only way for unauthenticated visitors to participate in a plan.
+- `092_event_communities_junction.sql` and `093_drop_event_community_id.sql` are a **paired schema change**: 092 introduces `event_communities` (many-to-many) and backfills it from the legacy `events.community_id` column; 093 then drops the old column. Apply 092 before deploying the new API + web bundle, and 093 only after the new code is live so the running worker never reads a column that no longer exists.
+- `008_interests_seed.sql` requires the interests tables to exist and seeds the base hobby list.
+- `015_interests_moderation.sql` adds the `role` column to `users` (this is what unlocks `super_admin` access).
+
+For everything else, read the SQL file directly: each migration is small, has a one-line purpose comment at the top, and is named after what it does.
 
 ---
 
@@ -356,15 +299,24 @@ npm run deploy
 | Join request declined | Hardcoded template ID `43906703` | Active |
 | Plan changed/locked/canceled | `POSTMARK_TEMPLATE_EVENT_CHANGED` (43971187) | Active |
 | Unread chat digest (daily) | `POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST` (43975299) | Active |
-| Confirmation request | `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST` (43984465) | Active |
+| Confirmation request | `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST_USER` (44415561) | Active |
 | Plan at risk (host) | `POSTMARK_TEMPLATE_PLAN_AT_RISK` (43984947) | Active |
-
-### Scaffolded templates (send noop if not configured)
-
-| Purpose | Env var | Status |
-|---------|---------|--------|
-| Event reminder (24h) | `POSTMARK_TEMPLATE_EVENT_REMINDER` | Not created |
-| RSVP update to host (legacy) | `POSTMARK_TEMPLATE_EVENT_RSVP_UPDATE` | Not created |
+| Plan auto-cancelled | `POSTMARK_TEMPLATE_PLAN_AUTO_CANCELLED` (44165043) | Active |
+| Plan removed by admin | `POSTMARK_TEMPLATE_PLAN_REMOVED` (43998481) | Active |
+| Post-plan feedback reminder | `POSTMARK_TEMPLATE_PLAN_FEEDBACK` (44091936) | Active |
+| Plan match digest | `POSTMARK_TEMPLATE_EVENT_MATCH_DIGEST` (44018889) | Active |
+| Lightweight signup magic link | `POSTMARK_TEMPLATE_MAGIC_LINK_SIGNUP` (44523927) | Active |
+| Plan signin (existing-account notice) | `POSTMARK_TEMPLATE_PLAN_SIGNIN` (44523947) | Active |
+| Sign-in link (return-visit, password setup pending) | `POSTMARK_TEMPLATE_SIGNIN_LINK` (44802964) | Active |
+| Concern report (internal alert) | `POSTMARK_TEMPLATE_CONCERN_REPORT` (44107767) | Active |
+| Community join request (to owner) | `POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST` (44111064) | Active |
+| Community join approved (to requester) | `POSTMARK_TEMPLATE_COMMUNITY_JOIN_APPROVED` (44111212) | Active |
+| Community join declined (to requester) | `POSTMARK_TEMPLATE_COMMUNITY_JOIN_DECLINED` (44111205) | Active |
+| Community member removed | `POSTMARK_TEMPLATE_COMMUNITY_MEMBER_REMOVED` (44452043) | Active |
+| Community member unblocked | `POSTMARK_TEMPLATE_COMMUNITY_MEMBER_UNBLOCKED` (44470363) | Active |
+| Community join-request reopened | `POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST_REOPENED` (44470744) | Active |
+| Community announcement | `POSTMARK_TEMPLATE_COMMUNITY_ANNOUNCEMENT` (44937878) | Active |
+| Roadmap status update (follower email) | `POSTMARK_TEMPLATE_ROADMAP_UPDATE` (44007454) | Active |
 
 The send functions in `api/src/email/send.ts` noop safely when template IDs are not configured.
 

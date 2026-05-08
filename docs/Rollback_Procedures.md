@@ -32,18 +32,14 @@ is running in production.
 
 ```bash
 cd api
-npx wrangler deployments list --env production
-# Pick the previous deployment ID (the one that was active before the bad deploy).
-npx wrangler rollback <deployment-id> --env production
-```
+npx wrangler deployments list# Pick the previous deployment ID (the one that was active before the bad deploy).
+npx wrangler rollback <deployment-id>```
 
 ### Rolling back the web worker
 
 ```bash
 cd web
-npx wrangler deployments list --env production
-npx wrangler rollback <deployment-id> --env production
-```
+npx wrangler deployments listnpx wrangler rollback <deployment-id>```
 
 ### Order matters
 
