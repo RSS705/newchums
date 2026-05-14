@@ -18,10 +18,16 @@ Sentry.init({
   // enableDidUserTypeOnKeyboardLogging, FBNav* metrics). If the WebView
   // tears down the underlying Java object mid-call, the bridge throws
   // "Java object is gone" into the page, which Sentry then captures as
-  // if it were an app error. None of these symbols exist in NewChums
-  // code, so we drop them. Both signals are kept narrow on purpose so
+  // if it were an app error. denyUrls catches events whose top frame is
+  // the injected script; the message regexes are a fallback because
+  // Sentry's URL filter is unreliable for the non-http `app://` scheme.
+  // "Java object is gone" is an Android WebView JNI signature that
+  // cannot originate from our code. All patterns are kept narrow so
   // genuine app errors are still reported.
-  ignoreErrors: [/enableDidUserTypeOnKeyboardLogging/],
+  ignoreErrors: [
+    /enableDidUserTypeOnKeyboardLogging/,
+    /Java object is gone/,
+  ],
   denyUrls: [/^app:\/\/navigation_performance_logger_android/],
 });
 
