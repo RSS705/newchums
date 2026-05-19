@@ -97,7 +97,7 @@ Email / Resend (required for email flows):
 - `EMAIL_FROM` (e.g. `NewChums <no-reply@newchums.com>`)
 - `WEB_BASE_URL`
 
-Subject lines live in `api/src/email/subjects.ts` (keyed by template basename). Template HTML/text bodies live in `api/src/email/templates/` and are bundled at build time via the `[[rules]] type = "Text"` block in `wrangler.toml`, then rendered in-process by `mustache` via `api/src/email/renderTemplate.ts`. No template ID env vars are needed.
+Subject lines live in `api/src/email/subjects.ts` (keyed by template basename). Template HTML/text bodies live in `api/src/email/templates/` and are bundled at build time via the `[[rules]] type = "Text"` block in `wrangler.toml`, then rendered in-process by `mustache` via `api/src/email/renderTemplate.ts`. The repo is the **source of truth** for every template body, subject, and model: there is no provider-hosted dashboard copy to keep in sync. No template ID env vars are needed. See `docs/Technical_Specs.md` "Email templates (Mustache)" for the full authoring + conditional-section rules.
 
 Optional:
 - `TURNSTILE_SECRET_KEY`, Cloudflare Turnstile secret key for contact form verification (logged-out users). If unset, Turnstile is skipped (useful for local dev).
@@ -265,7 +265,7 @@ Template basenames currently shipped:
 - `communityJoinRequest`, `communityJoinApproved`, `communityJoinDeclined`, `communityJoinRequestReopened`, `communityMemberRemoved`, `communityMemberUnblocked`, `communityAnnouncement`
 - `roadmapUpdate`, `concernReportAlert`
 
-The send functions in `api/src/email/send.ts` noop safely when `RESEND_API_KEY` is not configured.
+`RESEND_API_KEY` is required in every environment. The send functions do not early-return when it's missing; the underlying `fetch` to Resend will be rejected with a 401 / 403 and the helper throws. Treat unconfigured-key as a deploy-time error, not a soft skip.
 
 ---
 

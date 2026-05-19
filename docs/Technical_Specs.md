@@ -34,7 +34,7 @@ NewChums helps people organize gatherings more easily around hobbies and shared 
 | API | Hono | Runs in a separate Cloudflare Worker |
 | Database | Neon PostgreSQL | PostGIS available |
 | Auth | Auth.js (JWT sessions) | Google OAuth + Credentials |
-| Email | Resend | Transactional |
+| Email | Resend | Transactional; templates and subjects live in-repo under `api/src/email/templates/` and `api/src/email/subjects.ts`, rendered in-process by `mustache` (no provider-hosted templates) |
 | Analytics | Google Analytics (gtag.js) | Production |
 | Error tracking | Sentry | Web + API |
 | Logging | Axiom | API |
