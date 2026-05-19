@@ -136,7 +136,7 @@ NewChums may use third-party providers such as:
 
 - Cloudflare
 - Neon
-- Postmark
+- Resend
 - Sentry
 - Axiom
 - Google sign-in or similar authentication tools

@@ -92,42 +92,12 @@ Required:
 - `DATABASE_URL` (same Neon URL as web)
 - `NEXTAUTH_SECRET` (must match web `AUTH_SECRET`)
 
-Email / Postmark (required for email flows):
-- `POSTMARK_SERVER_TOKEN`, used for all Postmark sends (verification, reset, contact form, etc.)
-- `EMAIL_FROM`
+Email / Resend (required for email flows):
+- `RESEND_API_KEY`, used for all transactional email sends (verification, reset, contact form, etc.) via raw fetch to `https://api.resend.com/emails`.
+- `EMAIL_FROM` (e.g. `NewChums <no-reply@newchums.com>`)
 - `WEB_BASE_URL`
-- `POSTMARK_TEMPLATE_VERIFY`
-- `POSTMARK_TEMPLATE_RESET`
-- `POSTMARK_TEMPLATE_RSVP`
-- `POSTMARK_TEMPLATE_EMAIL_CHANGE_CONFIRM`
-- `POSTMARK_TEMPLATE_EMAIL_CHANGE_NOTIFY_OLD`
-- `POSTMARK_TEMPLATE_EMAIL_CHANGE_SUCCESS`
 
-Event email templates (active, set in `wrangler.toml` vars):
-- `POSTMARK_TEMPLATE_EVENT_CHANGED` (template 43971187, plan changed/locked/canceled)
-- `POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST` (template 43975299, daily unread chat digest)
-- `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST_USER` (template 44415561, 24-hour attendance check request/reminder)
-- `POSTMARK_TEMPLATE_PLAN_AT_RISK` (template 43984947, plan at risk notification to host)
-- `POSTMARK_TEMPLATE_PLAN_AUTO_CANCELLED` (template 44165043, auto-cancellation notification)
-- `POSTMARK_TEMPLATE_PLAN_REMOVED` (template 43998481, plan removed by admin)
-- `POSTMARK_TEMPLATE_PLAN_FEEDBACK` (template 44091936, post-plan feedback reminder)
-- `POSTMARK_TEMPLATE_EVENT_MATCH_DIGEST` (template 44018889, plan-match digest)
-- `POSTMARK_TEMPLATE_CONCERN_REPORT` (template 44107767, internal concern alert to contact@newchums.com)
-- `POSTMARK_TEMPLATE_ROADMAP_UPDATE` (template 44007454, roadmap status update follower email)
-
-Auth/lightweight-signup email templates (active, set in `wrangler.toml` vars):
-- `POSTMARK_TEMPLATE_MAGIC_LINK_SIGNUP` (template 44523927, lightweight-signup confirmation link from a plan invite/share page)
-- `POSTMARK_TEMPLATE_PLAN_SIGNIN` (template 44523947, plan-signup notice when the email already has a verified account)
-- `POSTMARK_TEMPLATE_SIGNIN_LINK` (template 44802964, return-visit sign-in link for `password_setup_pending` accounts; copy is "Sign in to NewChums", distinct from the signup confirmation template)
-
-Community email templates (active, set in `wrangler.toml` vars):
-- `POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST` (template 44111064, request to join sent to community owner)
-- `POSTMARK_TEMPLATE_COMMUNITY_JOIN_APPROVED` (template 44111212, join approved sent to requester)
-- `POSTMARK_TEMPLATE_COMMUNITY_JOIN_DECLINED` (template 44111205, join declined sent to requester)
-- `POSTMARK_TEMPLATE_COMMUNITY_MEMBER_REMOVED` (template 44452043, member removed and blocked notification)
-- `POSTMARK_TEMPLATE_COMMUNITY_MEMBER_UNBLOCKED` (template 44470363, block lifted notification)
-- `POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST_REOPENED` (template 44470744, decline reversed by owner)
-- `POSTMARK_TEMPLATE_COMMUNITY_ANNOUNCEMENT` (template 44937878, community announcement notification sent to active members when an owner posts an announcement with the "Email members" toggle on; gated by the `community_announcements` notification preference and the per-community mute row)
+Subject lines live in `api/src/email/subjects.ts` (keyed by template basename). Template HTML/text bodies live in `api/src/email/templates/` and are bundled at build time via the `[[rules]] type = "Text"` block in `wrangler.toml`, then rendered in-process by `mustache` via `api/src/email/renderTemplate.ts`. No template ID env vars are needed.
 
 Optional:
 - `TURNSTILE_SECRET_KEY`, Cloudflare Turnstile secret key for contact form verification (logged-out users). If unset, Turnstile is skipped (useful for local dev).
@@ -142,8 +112,8 @@ Optional:
 ### API Worker (`newchums-api`)
 
 - **Deployment:** Cloudflare Worker via `wrangler deploy`
-- **Secrets:** `npx wrangler secret put <NAME>`, stored in Cloudflare, not in code (e.g. `DATABASE_URL`, `NEXTAUTH_SECRET`, `POSTMARK_SERVER_TOKEN`, `TURNSTILE_SECRET_KEY`)
-- **Public vars:** `api/wrangler.toml` `[vars]` (e.g. `APP_ENV`, `EMAIL_FROM`, `WEB_BASE_URL`, template IDs)
+- **Secrets:** `npx wrangler secret put <NAME>`, stored in Cloudflare, not in code (e.g. `DATABASE_URL`, `NEXTAUTH_SECRET`, `RESEND_API_KEY`, `TURNSTILE_SECRET_KEY`)
+- **Public vars:** `api/wrangler.toml` `[vars]` (e.g. `APP_ENV`, `EMAIL_FROM`, `WEB_BASE_URL`)
 - **Local dev:** `api/.dev.vars` (gitignored; copy from `.dev.vars.example`)
 
 ### Web Worker (`newchums-web-dev`)
@@ -181,7 +151,7 @@ Credentials signups require email verification before sign-in.
 
 ### Contact form
 
-- `POST /contact` sends email to `contact@newchums.com` from `contact@newchums.com` via Postmark (uses `POSTMARK_SERVER_TOKEN`).
+- `POST /contact` sends email to `contact@newchums.com` from `contact@newchums.com` via Resend (uses `RESEND_API_KEY`).
 - **Turnstile setup (production):**
   1. Create a Turnstile widget at [Cloudflare Dashboard → Turnstile](https://dash.cloudflare.com/?to=/:account/turnstile).
   2. **Add your domain:** In the widget settings, add `newchums.com` (and `www.newchums.com` if used) to the widget's allowed domains. Otherwise the widget will not render.
@@ -212,7 +182,7 @@ If the Turnstile widget shows "For testing only" on newchums.com/contact, you ar
 ### Password reset
 
 End-to-end:
-forgot-password → Postmark reset email → reset-password page → confirm → login
+forgot-password → Resend reset email → reset-password page → confirm → login
 
 API behavior:
 - Unknown email: 404 `EMAIL_NOT_FOUND`
@@ -271,54 +241,31 @@ Notes:
 cd api
 npx wrangler secret put DATABASE_URL
 npx wrangler secret put NEXTAUTH_SECRET
-npx wrangler secret put POSTMARK_SERVER_TOKEN
+npx wrangler secret put RESEND_API_KEY
 npm run deploy
 ```
 
 ---
 
-## Postmark Email Templates
+## Email Templates
 
-### Active templates
+All transactional emails are sent via Resend. Templates live in `api/src/email/templates/` as `.html` + `.txt` pairs (plus `contactSubmission.ts` for the contact-form body). They are bundled at build time via the `[[rules]] type = "Text"` block in `wrangler.toml`, imported as strings, and rendered in-process using the `mustache` npm package via `api/src/email/renderTemplate.ts`. Subject lines live in `api/src/email/subjects.ts`, keyed by template basename (with `_host` / `_attendee` variants for `confirmationRequestUser`).
 
-| Purpose | Template ID / env var | Status |
-|---------|----------------------|--------|
-| Email verification | `POSTMARK_TEMPLATE_VERIFY` | Active |
-| Password reset | `POSTMARK_TEMPLATE_RESET` | Active |
-| Event invite | `POSTMARK_TEMPLATE_RSVP` | Active |
-| Email change confirm | `POSTMARK_TEMPLATE_EMAIL_CHANGE_CONFIRM` | Active |
-| Email change notify old | `POSTMARK_TEMPLATE_EMAIL_CHANGE_NOTIFY_OLD` | Active |
-| Email change success | `POSTMARK_TEMPLATE_EMAIL_CHANGE_SUCCESS` | Active |
-| Chum invite | Hardcoded template ID `43805532` | Active |
-| Someone is going | Hardcoded template ID `43922675` | Active |
-| Someone is maybe | Hardcoded template ID `43922237` | Active |
-| Someone can't make it | Hardcoded template ID `43921920` | Active |
-| Attendee removed by host | Hardcoded template ID `43923102` | Active |
-| Join request received | Hardcoded template ID `43906440` | Active |
-| Join request accepted | Hardcoded template ID `43906609` | Active |
-| Join request declined | Hardcoded template ID `43906703` | Active |
-| Plan changed/locked/canceled | `POSTMARK_TEMPLATE_EVENT_CHANGED` (43971187) | Active |
-| Unread chat digest (daily) | `POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST` (43975299) | Active |
-| Confirmation request | `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST_USER` (44415561) | Active |
-| Plan at risk (host) | `POSTMARK_TEMPLATE_PLAN_AT_RISK` (43984947) | Active |
-| Plan auto-cancelled | `POSTMARK_TEMPLATE_PLAN_AUTO_CANCELLED` (44165043) | Active |
-| Plan removed by admin | `POSTMARK_TEMPLATE_PLAN_REMOVED` (43998481) | Active |
-| Post-plan feedback reminder | `POSTMARK_TEMPLATE_PLAN_FEEDBACK` (44091936) | Active |
-| Plan match digest | `POSTMARK_TEMPLATE_EVENT_MATCH_DIGEST` (44018889) | Active |
-| Lightweight signup magic link | `POSTMARK_TEMPLATE_MAGIC_LINK_SIGNUP` (44523927) | Active |
-| Plan signin (existing-account notice) | `POSTMARK_TEMPLATE_PLAN_SIGNIN` (44523947) | Active |
-| Sign-in link (return-visit, password setup pending) | `POSTMARK_TEMPLATE_SIGNIN_LINK` (44802964) | Active |
-| Concern report (internal alert) | `POSTMARK_TEMPLATE_CONCERN_REPORT` (44107767) | Active |
-| Community join request (to owner) | `POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST` (44111064) | Active |
-| Community join approved (to requester) | `POSTMARK_TEMPLATE_COMMUNITY_JOIN_APPROVED` (44111212) | Active |
-| Community join declined (to requester) | `POSTMARK_TEMPLATE_COMMUNITY_JOIN_DECLINED` (44111205) | Active |
-| Community member removed | `POSTMARK_TEMPLATE_COMMUNITY_MEMBER_REMOVED` (44452043) | Active |
-| Community member unblocked | `POSTMARK_TEMPLATE_COMMUNITY_MEMBER_UNBLOCKED` (44470363) | Active |
-| Community join-request reopened | `POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST_REOPENED` (44470744) | Active |
-| Community announcement | `POSTMARK_TEMPLATE_COMMUNITY_ANNOUNCEMENT` (44937878) | Active |
-| Roadmap status update (follower email) | `POSTMARK_TEMPLATE_ROADMAP_UPDATE` (44007454) | Active |
+Template basenames currently shipped:
 
-The send functions in `api/src/email/send.ts` noop safely when template IDs are not configured.
+- `verifyEmail`, `passwordReset`
+- `emailChangeConfirm`, `emailChangeNotifyOld`, `emailChangeSuccess`
+- `magicLinkSignup`, `planSignin`, `signinLink`
+- `chumInvite`
+- `eventInvite`, `eventJoin`, `eventLeave`, `eventMaybe`, `eventChanged`, `attendeeRemoved`
+- `joinRequestToHost`, `joinRequestApproved`, `joinRequestDeclined`
+- `confirmationRequestUser` (host + attendee subject variants)
+- `planAtRisk`, `planAutoCancelled`, `planRemovedByAdmin`, `planFeedback`
+- `unreadChatDigest`, `eventMatchDigest`
+- `communityJoinRequest`, `communityJoinApproved`, `communityJoinDeclined`, `communityJoinRequestReopened`, `communityMemberRemoved`, `communityMemberUnblocked`, `communityAnnouncement`
+- `roadmapUpdate`, `concernReportAlert`
+
+The send functions in `api/src/email/send.ts` noop safely when `RESEND_API_KEY` is not configured.
 
 ---
 

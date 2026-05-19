@@ -23,7 +23,7 @@ NewChums is a live, deployed product, not a prototype. The current system includ
 - **Roadmap**: public product roadmap where users can submit, vote on, follow, and comment on items. Items in `received` status are private until super-admin review. Optional anonymous submissions and per-item privacy gate.
 - **Subscription plans (no billing yet)**: three user-level plans (`free`, `super_host`, `community_pro`) assigned manually via admin. `community_pro` includes Super Host benefits and is inherited by communities the user owns. Surfaced read-only on `/your-plan`.
 - **In-app notifications**: bell icon with unread state for chum, plan, join-request, and shout-out notification types. Unread chat message indicators derived from per-plan read tracking.
-- **Email notifications**: transactional emails for invites, RSVPs, plan changes, join requests, attendee removals, confirmation requests, plan-at-risk alerts, post-plan feedback, plan-match digest, community announcements, community join-request lifecycle, and a daily unread-chat digest. Per-type unsubscribe via tokenized email links. Sent via Postmark.
+- **Email notifications**: transactional emails for invites, RSVPs, plan changes, join requests, attendee removals, confirmation requests, plan-at-risk alerts, post-plan feedback, plan-match digest, community announcements, community join-request lifecycle, and a daily unread-chat digest. Per-type unsubscribe via tokenized email links. Sent via Resend, templates rendered in-process with Mustache.
 - **Signup and onboarding**: multi-step wizard for both email/password and Google OAuth paths. Collects required fields (email, password, username, DOB) across focused steps, then optionally captures hobbies and location/travel distance. Required legal acceptance (Terms of Use and Privacy Policy) before signup.
 - **Legal pages**: Privacy Policy and Terms of Use pages with footer links and required acceptance during signup for both credentials and OAuth paths.
 - **Public marketing site**: homepage (gradient event cards, screenshot placeholders, updated copy), How it Works (screenshot placeholders, "Sign up" CTA), Science of Friendship, Safety Center, and contact form.
@@ -49,10 +49,10 @@ Users → Cloudflare Edge → Web Worker (Next.js via OpenNext) → API Worker (
 | Layer | Technology | Role |
 |-------|-----------|------|
 | Web Worker | Next.js (App Router) via OpenNext | UI rendering, auth orchestration (Auth.js), session management, API token minting |
-| API Worker | Hono | All business logic, database access, transactional email (Postmark), media upload (R2) |
+| API Worker | Hono | All business logic, database access, transactional email (Resend), media upload (R2) |
 | Database | Neon PostgreSQL (PostGIS available) | Primary data store |
 | Auth | Auth.js (JWT sessions) | Google OAuth + Credentials |
-| Email | Postmark | Transactional emails |
+| Email | Resend | Transactional emails (templates rendered in-process via Mustache) |
 | Real-time | Cloudflare Durable Objects | WebSocket relay for plan chat (ChatRoom, Hibernation API) |
 | Scheduled tasks | Cloudflare Cron Triggers | Hourly handler runs 24-hour attendance check processing (Phases 1-3), the RSVP-based minimum-attendees auto-cancel (Phase 4), no-attendee auto-cancel, post-plan feedback emails, plan-match digest, local badge computation, and (once per day) the unread-chat digest |
 | Storage | Cloudflare R2 | Avatar, banner, community banner, and schedule-block image media |

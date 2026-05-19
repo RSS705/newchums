@@ -101,5 +101,5 @@ roll back further.
 - Load `/` and one authed page (e.g. `/your-plan`) in a fresh incognito window.
 - Sign in with email + password.
 - Confirm Sentry stops receiving the error pattern you rolled back to fix.
-- Confirm Postmark activity looks normal for any emails the broken path would
+- Confirm Resend activity looks normal for any emails the broken path would
   have triggered.

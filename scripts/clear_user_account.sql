@@ -1,5 +1,5 @@
 -- Clear a user account by email. Run from repo root: psql "$DATABASE_URL" -f scripts/clear_user_account.sql
--- Replace 'robert@ourmodule.com' with the target email.
+-- Replace 'robert@newchums.com' with the target email.
 --
 -- Schema note: If your DB uses the newchums schema, replace:
 --   users → newchums.users
@@ -11,34 +11,34 @@
 BEGIN;
 
 WITH u AS (
-  SELECT id FROM users WHERE email = 'robert@ourmodule.com'
+  SELECT id FROM users WHERE email = 'robert@newchums.com'
 )
 DELETE FROM user_interests ui
 USING u
 WHERE ui.user_id = u.id;
 
 WITH u AS (
-  SELECT id FROM users WHERE email = 'robert@ourmodule.com'
+  SELECT id FROM users WHERE email = 'robert@newchums.com'
 )
 DELETE FROM email_verification_tokens evt
 USING u
 WHERE evt.user_id = u.id;
 
 WITH u AS (
-  SELECT id FROM users WHERE email = 'robert@ourmodule.com'
+  SELECT id FROM users WHERE email = 'robert@newchums.com'
 )
 DELETE FROM password_reset_tokens prt
 USING u
 WHERE prt.user_id = u.id;
 
 WITH u AS (
-  SELECT id FROM users WHERE email = 'robert@ourmodule.com'
+  SELECT id FROM users WHERE email = 'robert@newchums.com'
 )
 DELETE FROM user_profile up
 USING u
 WHERE up.user_id = u.id;
 
 DELETE FROM users
-WHERE email = 'robert@ourmodule.com';
+WHERE email = 'robert@newchums.com';
 
 COMMIT;

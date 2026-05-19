@@ -137,7 +137,7 @@ function normalizeVisibility(
  * at all (e.g. online plan with no online_link for a not-joined recipient
  * yields "Online"; an in-person plan with no fields yields ""). Callers
  * should pass the result through `hasContent(x) ? x : null` before it
- * reaches a Postmark TemplateModel so empty values use the standard
+ * reaches a TemplateModel so empty values use the standard
  * optional-block suppression pattern.
  */
 export function buildEmailEventLocation(

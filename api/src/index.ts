@@ -24,7 +24,6 @@ import {
   sendJoinRequestDeclinedEmail,
   sendJoinRequestEmail,
   sendPasswordResetEmail,
-  sendRsvpConfirmationEmail,
   sendUnreadChatDigestEmail,
   sendEventMatchDigestEmail,
   formatEventMatchSeatLine,
@@ -4032,49 +4031,6 @@ app.post("/email/password-reset", async (c) => {
       to: body.to,
       name: body.name,
       resetUrl: body.resetUrl,
-    });
-
-    return c.json({ ok: true });
-  } catch (err) {
-    console.error(err);
-    const message = err instanceof Error ? err.message : "Unknown error";
-    return c.json({ ok: false, error: message }, 502);
-  }
-});
-
-app.post("/email/rsvp-confirmation", async (c) => {
-  try {
-    const body = await c.req.json<{
-      to?: string;
-      name?: string;
-      eventTitle?: string;
-      eventStartsAtISO?: string;
-      eventLocation?: string;
-      eventUrl?: string;
-    }>();
-
-    if (
-      !body.to ||
-      !body.eventTitle ||
-      !body.eventStartsAtISO ||
-      !body.eventUrl
-    ) {
-      return c.json(
-        {
-          ok: false,
-          error: "to, eventTitle, eventStartsAtISO, and eventUrl are required",
-        },
-        400,
-      );
-    }
-
-    await sendRsvpConfirmationEmail(c.env, {
-      to: body.to,
-      name: body.name,
-      eventTitle: body.eventTitle,
-      eventStartsAtISO: body.eventStartsAtISO,
-      eventLocation: body.eventLocation,
-      eventUrl: body.eventUrl,
     });
 
     return c.json({ ok: true });
@@ -8591,14 +8547,14 @@ app.put("/communities/:id/join-requests/:requestId", async (c) => {
     // Email notification to requester
     const requesterRows = (await sql`SELECT email, name FROM newchums.users WHERE id = ${reqRows[0].user_id} LIMIT 1`) as { email: string; name: string | null }[];
     if (requesterRows[0]) {
-      if (action === "approve" && c.env.POSTMARK_TEMPLATE_COMMUNITY_JOIN_APPROVED) {
+      if (action === "approve") {
         c.executionCtx.waitUntil(sendCommunityJoinApprovedEmail(c.env, {
           to: requesterRows[0].email,
           userName: requesterRows[0].name || "there",
           communityName: community.name,
           communityUrl: `${c.env.WEB_BASE_URL}/communities/${community.slug}`,
         }));
-      } else if (action === "decline" && c.env.POSTMARK_TEMPLATE_COMMUNITY_JOIN_DECLINED) {
+      } else if (action === "decline") {
         c.executionCtx.waitUntil(sendCommunityJoinDeclinedEmail(c.env, {
           to: requesterRows[0].email,
           userName: requesterRows[0].name || "there",
@@ -9275,7 +9231,7 @@ app.post("/communities/:id/announcements", async (c) => {
       // `notifyQueuedCount` is the eligible-recipient count computed
       // synchronously before the batch is handed to `waitUntil`, so the
       // toast copy can read "Posted (Emailing N members)". The actual
-      // Postmark calls run in the background; per-recipient send
+      // Resend calls run in the background; per-recipient send
       // failures are swallowed so they don't undo the create.
       notified: notifyMembers,
       notifyQueuedCount: notifyMembers ? eligibleRecipientCount : 0,
@@ -12637,7 +12593,7 @@ async function notifyAttendeesPlanChanged(
   changeType: "updated" | "locked" | "canceled",
   changes?: PlanChangeItem[],
 ): Promise<void> {
-  if (!env.POSTMARK_TEMPLATE_EVENT_CHANGED || !env.NEXTAUTH_SECRET) return;
+  if (!env.NEXTAUTH_SECRET) return;
   const eventUrl = `${env.WEB_BASE_URL}/events/${eventId}`;
 
   // Fetch event details for date/location display in the email
@@ -17097,8 +17053,6 @@ async function processEventMatchDigest(
   env: Bindings,
   ctx: ExecutionContext,
 ) {
-  if (!env.POSTMARK_TEMPLATE_EVENT_MATCH_DIGEST) return;
-
   // Community members-only gate, shared between the public and chums_only
   // UNION branches below. A community-linked plan with hide_from_explore=true
   // is only delivered to active members of that community, same semantic
@@ -17507,8 +17461,6 @@ async function processPlanFeedbackEmails(
   env: Bindings,
   ctx: ExecutionContext,
 ) {
-  if (!env.POSTMARK_TEMPLATE_PLAN_FEEDBACK) return;
-
   // Find published plans that ended 3+ hours ago but haven't had feedback emails sent
   const plans = (await sql`
     SELECT e.id, e.title, e.host_user_id,

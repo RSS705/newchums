@@ -34,7 +34,7 @@ NewChums helps people organize gatherings more easily around hobbies and shared 
 | API | Hono | Runs in a separate Cloudflare Worker |
 | Database | Neon PostgreSQL | PostGIS available |
 | Auth | Auth.js (JWT sessions) | Google OAuth + Credentials |
-| Email | Postmark | Transactional |
+| Email | Resend | Transactional |
 | Analytics | Google Analytics (gtag.js) | Production |
 | Error tracking | Sentry | Web + API |
 | Logging | Axiom | API |
@@ -223,32 +223,32 @@ Users manage notification preferences in **Settings** (`/settings`). Each notifi
 
 **Notification types (keys):**
 
-| Key | UI title | Postmark template |
+| Key | UI title | Template basename |
 |-----|----------|-------------------|
-| `event_match` | New plans matching my interests | `POSTMARK_TEMPLATE_EVENT_MATCH_DIGEST` (template 44018889) |
-| `event_invite` | Someone invited you to a plan | `POSTMARK_TEMPLATE_RSVP` |
-| `join_request_received` | Someone requested to join your plan | Template 43906440 |
-| `join_request_accepted` | Your join request was accepted | Template 43906609 |
-| `join_request_declined` | Your join request was declined | Template 43906703 |
-| `host_join` | Someone is going to your plan | Template 43922675 |
-| `host_maybe` | Someone might attend your plan | Template 43922237 |
-| `host_leave` | Someone leaves your plan | Template 43921920 |
-| `feedback_requests` | Post-plan feedback | `POSTMARK_TEMPLATE_PLAN_FEEDBACK` (template 44091936) |
-| `event_changed_canceled` | Plan canceled or changed | `POSTMARK_TEMPLATE_EVENT_CHANGED` (template 43971187) |
-| `attendee_removed` | You were removed from a plan | Template 43923102 |
+| `event_match` | New plans matching my interests | `eventMatchDigest` |
+| `event_invite` | Someone invited you to a plan | `eventInvite` |
+| `join_request_received` | Someone requested to join your plan | `joinRequestToHost` |
+| `join_request_accepted` | Your join request was accepted | `joinRequestApproved` |
+| `join_request_declined` | Your join request was declined | `joinRequestDeclined` |
+| `host_join` | Someone is going to your plan | `eventJoin` |
+| `host_maybe` | Someone might attend your plan | `eventMaybe` |
+| `host_leave` | Someone leaves your plan | `eventLeave` |
+| `feedback_requests` | Post-plan feedback | `planFeedback` |
+| `event_changed_canceled` | Plan canceled or changed | `eventChanged` |
+| `attendee_removed` | You were removed from a plan | `attendeeRemoved` |
 | `product_announcements` | Product updates | N/A |
-| `unread_chat_digest` | Unread messages in your plans | `POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST` (template 43975299) |
-| `attendance_confirmation` | Attendance confirmation reminders | `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST_USER` (template 44415561) |
-| `plan_feedback` | Post-plan feedback reminders | `POSTMARK_TEMPLATE_PLAN_FEEDBACK` (template 44091936) |
-| `community_announcements` | Community announcements | `POSTMARK_TEMPLATE_COMMUNITY_ANNOUNCEMENT` (template 44937878). Sent only when a community owner posts an announcement with the "Email members" toggle on. Suppression order at send time: per-community mute row (`community_announcement_mutes`) **and** the global preference here, both must be permissive. Toggling the global key off does NOT delete per-community mute rows; the choices survive a global flip. |
+| `unread_chat_digest` | Unread messages in your plans | `unreadChatDigest` |
+| `attendance_confirmation` | Attendance confirmation reminders | `confirmationRequestUser` |
+| `plan_feedback` | Post-plan feedback reminders | `planFeedback` |
+| `community_announcements` | Community announcements | `communityAnnouncement`. Sent only when a community owner posts an announcement with the "Email members" toggle on. Suppression order at send time: per-community mute row (`community_announcement_mutes`) **and** the global preference here, both must be permissive. Toggling the global key off does NOT delete per-community mute rows; the choices survive a global flip. |
 
 **Non-preference transactional emails (no toggle):**
 
-| Purpose | Postmark template |
+| Purpose | Template basename |
 |---------|-------------------|
-| Lightweight-signup magic link | `POSTMARK_TEMPLATE_MAGIC_LINK_SIGNUP` (template 44523927) |
-| Plan-signin notice (email already has an account) | `POSTMARK_TEMPLATE_PLAN_SIGNIN` (template 44523947) |
-| Sign-in link for `password_setup_pending` accounts (return-visit, distinct copy from initial signup) | `POSTMARK_TEMPLATE_SIGNIN_LINK` (template 44802964) |
+| Lightweight-signup magic link | `magicLinkSignup` |
+| Plan-signin notice (email already has an account) | `planSignin` |
+| Sign-in link for `password_setup_pending` accounts (return-visit, distinct copy from initial signup) | `signinLink` |
 
 Defaults are applied at account creation (credentials signup, OAuth) and backfilled for existing users with missing keys. GET normalizes stored prefs and optionally persists backfilled values.
 
@@ -261,77 +261,56 @@ Both checks use the centralized `evaluateChumPreferences` helper with `PREF_THRE
 
 Each RSVP status has a dedicated host notification email, each gated on its own preference toggle. Each email includes a tokenized unsubscribe link that toggles the corresponding preference. Migration 033 removes the obsolete `event_reminders` key and `frequency` fields from existing JSONB data.
 
-### Postmark email templates (Mustachio)
+### Email templates (Mustache)
 
-Postmark renders templates with **Mustachio**, a Mustache variant with two quirks that together caused most of the recurring email bugs in this codebase. If you're touching any template or any `send*Email` helper, read this whole subsection first.
+All transactional email is sent via Resend, using `mustache`-rendered templates that live in this repo. If you're touching any template or any `send*Email` helper, read this whole subsection first.
 
-#### Quirk 1: Empty strings are truthy
+#### Where templates live and how they ship
 
-In Mustachio, `""` is truthy inside `{{#variable}}` blocks. That means `{{#someField}}...{{/someField}}` will render even when `someField` is the empty string. **Callers must never pass `""`** for an "absent" value; use `null` or omit the field entirely. Any coercion like `someField || ""` is a footgun; callers should write:
+Template HTML and plain-text bodies live in `api/src/email/templates/` as `.html` + `.txt` pairs (one pair per template basename), plus a single TypeScript module `contactSubmission.ts` for the contact-form body (which is built in code rather than from a Mustache template). They are bundled at build time by Wrangler via the `[[rules]] type = "Text"` block in `api/wrangler.toml`, imported as strings into the worker, and rendered in-process by `api/src/email/renderTemplate.ts` using the `mustache` npm package. Sends are a raw `fetch` to `https://api.resend.com/emails` with `RESEND_API_KEY` in the Authorization header.
 
-```ts
-someField: typeof someField === "string" && someField.trim() ? someField.trim() : null,
-// or use the `hasContent` helper in api/src/email/send.ts:
-someField: hasContent(someField) ? someField : null,
-```
+Subjects live in `api/src/email/subjects.ts` as a flat record keyed by template basename. `confirmationRequestUser` has two subject variants (`_host` / `_attendee`); the helper picks between them based on the `isHost` flag.
 
-#### Quirk 2: No parent-scope lookup inside a scalar section
+There is no dashboard. The repo is the source of truth for everything (template body, subject, model). Changing a template is just an edit + redeploy.
 
-This is the critical rule and the one we learned the hard way. In standard Mustache, `{{#foo}}...{{bar}}...{{/foo}}` looks up `bar` first on `foo`'s context, then walks up to the parent. **Postmark's Mustachio does not walk up.** Inside a scalar section, any `{{otherField}}` lookup that isn't on the section's own value resolves to empty and renders as a blank space.
+#### Empty strings, `hasContent`, and the conditional idiom
 
-**This means the `{{#hasField}}...{{field}}...{{/hasField}}` pattern does NOT work in Postmark**, even though it's legal Mustache. Inside `{{#hasMessage}}` where `hasMessage` is `true`, the section's "context" is the boolean, which has no `message` property, so `{{message}}` renders nothing. You get the wrapper but not the value, i.e. an empty quoted block.
+Standard Mustache treats `""`, `null`, `false`, `0`, and missing keys as **falsy** inside `{{#field}}...{{/field}}` sections. That's the behaviour we want for optional-string fields, but callers can still get into trouble if they pass `""` instead of `null`, since downstream consumers (and the dot-rendering pattern below) assume an "absent" value is `null`.
 
-#### The one safe pattern: same-name scalar section + `{{.}}` inside
-
-This is the only conditional-section idiom supported by Postmark Mustachio for rendering optional string values. Every new and existing template in this codebase uses it:
+The `hasContent()` helper in `api/src/email/send.ts` coerces undefined / null / empty / whitespace-only strings to a clean falsy. Use it for every optional-string field:
 
 ```ts
-// API: pass the value itself, null when absent (NEVER empty string).
 TemplateModel: {
   hostMessage: hasContent(hostMessage) ? hostMessage : null,
 }
 ```
 
+The template-side idiom used everywhere in this codebase is a **same-name scalar section with `{{.}}` inside**:
+
 ```mustache
-{{! Template: same-name scalar section, dot renders the scalar value. }}
 {{#hostMessage}}
   <p>"{{.}}"</p>
 {{/hostMessage}}
 ```
 
-How it behaves:
-- `hostMessage: null` → section hidden ✓
-- `hostMessage: "some text"` → section renders with `"some text"` inside ✓
-- `hostMessage: ""` → would render an empty block, but the API layer never sends `""`. This is the API-side guarantee that makes the pattern bulletproof.
+- `hostMessage: null` (or omitted), section hidden.
+- `hostMessage: "some text"`, section renders, `{{.}}` prints the string.
 
-#### True boolean gates (no inner value lookup)
+This works in standard Mustache; the previous "Mustachio doesn't walk up parent scope" warning no longer applies. Inverted sections (`{{^field}}...{{/field}}`) and nested sections behave as Mustache spec describes.
 
-When a conditional has NO inner variable lookup (it only toggles static text or static HTML), a plain boolean section works fine:
+#### Triple-stache for pre-rendered HTML blocks
 
-```ts
-TemplateModel: {
-  isFinal: true, // or false
-}
-```
-
-```mustache
-{{#isFinal}}FINAL REMINDER{{/isFinal}}
-```
-
-This is safe because there's no `{{someOtherField}}` inside the section to trip Quirk 2. Used for things like `isFinal` / `isReminder` on the confirmation-request emails. **Never** put a `{{otherField}}` lookup inside a boolean section; if you need both a gate and a value, the same-name pattern above is always the answer.
-
-#### Multi-item lists: pre-render server-side
-
-If a template needs to emit a variable-length list (e.g. multiple "what changed" rows, multiple unread chat cards), build the entire list block as a single pre-formatted string in the API helper and render it with `{{#blockField}}{{{.}}}{{/blockField}}` (triple-brace for HTML, double-brace for text). Reference implementations:
+Triple-stache (`{{{var}}}`) is supported and used for blocks that the helper renders as HTML server-side, for example:
 
 - `sendUnreadChatDigestEmail`: `planCards` / `planCardsText` built via `buildPlanCardHtml` / `buildPlanCardText`.
 - `sendEventChangedEmail`: `changesBlockHtml` / `changesBlockText` built inline from the `changes[]` array.
+- `sendCommunityAnnouncementEmail`: `announcementBodyHtml` already-sanitized rich-text body.
 
-Do NOT try to build a fixed-slot array (`change1`, `change2`, ... `change5`) with per-slot boolean gates. That pattern hits Quirk 2 and can't be rescued.
+For variable-length lists, pre-render server-side and inject as a single string with `{{{blockField}}}`; this keeps the template flat and avoids fixed-slot per-row gating.
 
 #### Iteration over arrays
 
-Arrays of objects DO work in Postmark Mustachio because the section context becomes the item object, and `{{propertyOnItem}}` is a valid lookup on that item:
+Arrays of objects work as in standard Mustache: the section context becomes the item object and `{{propertyOnItem}}` is a valid lookup on that item.
 
 ```ts
 TemplateModel: {
@@ -345,79 +324,33 @@ TemplateModel: {
 {{/orders}}
 ```
 
-Use this only for TRUE lists (same shape per item). For heterogeneous blocks or styled wrappers, pre-render server-side as above.
+Use this only for true lists (same shape per item). For heterogeneous blocks or styled wrappers, pre-render server-side as above.
 
-#### Never embed literal Mustachio tag syntax in template text
+#### Deploying a template fix
 
-Postmark's parser scans every character of the template, including HTML comments, backticks, and string literals, looking for `{{...}}` / `{{{...}}}` tokens. A comment like `<!-- {{#foo}} is the opening tag -->` or `<!-- dumped via {{{.}}} -->` will be parsed as a real tag and the save will fail, sometimes with the specific "scope block ... not closed" error, sometimes with a vague "There is an unknown issue parsing the template." Describe tag syntax in prose in this doc, never inside template files.
+The full flow is now just:
 
-**Rule of thumb:** if you'd write the literal `{{` anywhere in an `.html`/`.txt` template for any reason other than being an actual tag (inside Outlook-conditional `<!--[if mso]>...` markup is fine; those run through Postmark's variable substitution), rewrite the passage.
+1. Edit the local `.html` / `.txt` files in `api/src/email/templates/` (and `subjects.ts` if the subject also needs to change).
+2. Update the corresponding `send*Email` helper in `api/src/email/send.ts` so the TemplateModel matches.
+3. Deploy the API (`cd api && wrangler deploy`). A running `wrangler dev` session needs a restart to pick up template-string changes (since the file is bundled at build time).
+4. Exercise the real flow end-to-end in prod, with both the "value present" and "value absent" cases for any conditional fields.
 
-**One exception that IS safe:** Outlook conditional comments like `<!--[if mso]><v:roundrect ... href="{{ctaUrl}}" ...></v:roundrect><![endif]-->`. Postmark actually substitutes variables inside these, because they're intentional fallback markup for Outlook's mail client. That's why every template in the repo has `{{url}}` inside `[if mso]` without trouble. The ban is on PLAIN HTML comments that happen to mention tag syntax for documentation purposes.
+#### Template source files
 
-#### Deploying a template fix: both sides must ship together
+Each template basename has a `.html` and `.txt` file in `api/src/email/templates/`. The current set:
 
-Every template fix touches two systems:
-
-1. The **API `send*Email` helper** in `api/src/email/send.ts`, which is what the code passes into `TemplateModel`.
-2. The **Postmark-hosted template** in the dashboard, which is what renders the HTML/text.
-
-Both have to be on the new shape for the email to render correctly. Until both sides land, you can be in one of these broken states (all of which have bitten us):
-
-| API helper | Postmark template | Behaviour |
-|---|---|---|
-| old (`field \|\| ""`) | old (`{{#field}}...{{field}}...{{/field}}`) | The original empty-block bug when `field` is absent |
-| old | new (same-name + `{{.}}`) | Field renders when present (old still sends the raw string); but API may still send `""` on some paths and leak the empty-block bug |
-| new (`field: hasContent(field) ? field : null`) | old | Field renders when present, block correctly hidden when absent |
-| new | new | Correct: renders when present, hidden when absent |
-
-Checklist when shipping a template fix:
-
-1. Edit the local `.html` and `.txt` files in `api/src/email/templates/`. That's the source of truth.
-2. Update the corresponding `send*Email` helper in `api/src/email/send.ts` to send the value as `field: hasContent(x) ? x : null` (never `x || ""`).
-3. Deploy the API (`cd api && wrangler deploy`). A running `wrangler dev` session needs a restart to pick up `send.ts` edits.
-4. Paste the updated local HTML and text into Postmark dashboard template #N and save.
-5. If the dashboard "Template Model" JSON panel (used by the **Send test email** button) references removed fields like `hasFoo`, update it to match the new shape or you'll see confusing preview results that don't match production.
-6. End-to-end test on prod by exercising the real flow (not the dashboard test-send). Include both the "value present" and "value absent" cases.
-
-The local `.html` and `.txt` files are the source of truth; the Postmark dashboard is what actually ships. Drift between the two is a recurring class of email bug, so treat them as one change set.
-
-#### Template ID map
-
-| Local filename | `POSTMARK_TEMPLATE_*` env var | Template ID |
-|---|---|---|
-| `verifyEmail` | `POSTMARK_TEMPLATE_VERIFY` | 43483393 |
-| `passwordReset` | `POSTMARK_TEMPLATE_RESET` | 43483403 |
-| `eventInvite` | `POSTMARK_TEMPLATE_EVENT_INVITE` | 43910392 |
-| `eventJoin` | `POSTMARK_TEMPLATE_EVENT_JOIN` | 43922675 |
-| `eventLeave` | `POSTMARK_TEMPLATE_EVENT_LEAVE` | 43921920 |
-| `eventMaybe` | `POSTMARK_TEMPLATE_EVENT_MAYBE` | 43922237 |
-| `eventChanged` | `POSTMARK_TEMPLATE_EVENT_CHANGED` | 43971187 |
-| `attendeeRemoved` | `POSTMARK_TEMPLATE_ATTENDEE_REMOVED` | 43923102 |
-| `joinRequestToHost` | *(hard-coded id)* | 43906440 |
-| `joinRequestApproved` | *(hard-coded id)* | 43906609 |
-| `joinRequestDeclined` | *(hard-coded id)* | 43906703 |
-| `planAtRisk` | `POSTMARK_TEMPLATE_PLAN_AT_RISK` | 43984947 |
-| `planAutoCancelled` | `POSTMARK_TEMPLATE_PLAN_AUTO_CANCELLED` | 44165043 |
-| `planRemovedByAdmin` | `POSTMARK_TEMPLATE_PLAN_REMOVED` | 43998481 |
-| `confirmationRequestUser` | `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST_USER` | 44415561 |
-| `unreadChatDigest` | `POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST` | 43975299 |
-| `eventMatchDigest` | `POSTMARK_TEMPLATE_EVENT_MATCH_DIGEST` | 44018889 |
-| `planFeedback` | `POSTMARK_TEMPLATE_PLAN_FEEDBACK` | 44091936 |
-| `roadmapUpdate` | `POSTMARK_TEMPLATE_ROADMAP_UPDATE` | 44007454 |
-| `communityJoinRequest` | `POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST` | 44111064 |
-| `communityJoinApproved` | `POSTMARK_TEMPLATE_COMMUNITY_JOIN_APPROVED` | 44111212 |
-| `communityJoinDeclined` | `POSTMARK_TEMPLATE_COMMUNITY_JOIN_DECLINED` | 44111205 |
-| `communityMemberRemoved` | `POSTMARK_TEMPLATE_COMMUNITY_MEMBER_REMOVED` | 44452043 |
-| `communityMemberUnblocked` | `POSTMARK_TEMPLATE_COMMUNITY_MEMBER_UNBLOCKED` | 44470363 |
-| `communityJoinRequestReopened` | `POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST_REOPENED` | 44470744 |
-| `concernReportAlert` | `POSTMARK_TEMPLATE_CONCERN_REPORT` | 44107767 |
-| `magicLinkSignup` | `POSTMARK_TEMPLATE_MAGIC_LINK_SIGNUP` | 44523927 |
-| `planSignin` | `POSTMARK_TEMPLATE_PLAN_SIGNIN` | 44523947 |
-| `signinLink` | `POSTMARK_TEMPLATE_SIGNIN_LINK` | 44802964 |
-| `emailChangeConfirm` | `POSTMARK_TEMPLATE_EMAIL_CHANGE_CONFIRM` | 43739983 |
-| `emailChangeNotifyOld` | `POSTMARK_TEMPLATE_EMAIL_CHANGE_NOTIFY_OLD` | 43740027 |
-| `emailChangeSuccess` | `POSTMARK_TEMPLATE_EMAIL_CHANGE_SUCCESS` | 43740066 |
+- `verifyEmail`, `passwordReset`
+- `eventInvite`, `eventJoin`, `eventLeave`, `eventMaybe`, `eventChanged`, `attendeeRemoved`
+- `joinRequestToHost`, `joinRequestApproved`, `joinRequestDeclined`
+- `planAtRisk`, `planAutoCancelled`, `planRemovedByAdmin`
+- `confirmationRequestUser`
+- `unreadChatDigest`, `eventMatchDigest`
+- `planFeedback`
+- `roadmapUpdate`, `concernReportAlert`
+- `communityJoinRequest`, `communityJoinApproved`, `communityJoinDeclined`, `communityMemberRemoved`, `communityMemberUnblocked`, `communityJoinRequestReopened`, `communityAnnouncement`
+- `magicLinkSignup`, `planSignin`, `signinLink`
+- `emailChangeConfirm`, `emailChangeNotifyOld`, `emailChangeSuccess`
+- `chumInvite`
 
 ### Host attendee removal
 
@@ -425,7 +358,7 @@ Hosts can remove attendees with status "going" or "maybe" from their plans via `
 
 1. Deletes the attendee's RSVP row from `event_rsvps`
 2. Records the removal in `newchums.host_attendee_removals` (migration 034) for future host quality metrics, moderation review, and trust scoring
-3. Sends a notification email to the removed user (Postmark template 43923102)
+3. Sends a notification email to the removed user (`attendeeRemoved` template)
 
 The `host_attendee_removals` table tracks: `event_id`, `host_user_id`, `removed_user_id`, `status_at_removal`, and `created_at`. Hosts cannot remove themselves or attendees with "can't make it" status (since they're already not attending).
 
@@ -452,7 +385,7 @@ The flag is cleared any time a password is established: via Settings > Set a pas
   - **No account / unverified account** → creates or refreshes the user row (auto-generated fun username via `generateFunUsername`, legal versions pinned, `email_verified_at = NULL`, `password_hash = NULL`, `password_setup_pending = TRUE` on fresh insert, DOB set), invalidates any prior unused `email_verification_tokens` rows for that user, issues a fresh hashed token with **15-minute TTL**, emails the magic link. Returns `{ ok: true, state: "pending" }`. An in-flight unverified row is refreshed but its `password_setup_pending` state is left untouched so a repeat submission doesn't clobber a completed setup.
   - **Verified account exists** → no DB writes. Sends a plan-signin notice pointing at `/login?next=<safe_next>`. Returns `{ ok: true, state: "existing_account", next }`. The client (`PlanSignupCard`) flips the card into an inline "You already have a NewChums account" panel that explains what happened, mentions the emailed sign-in link, and offers a **Sign in to continue** button that opens `/login?next=<plan>&email=<email>` (email prefilled). A secondary "Use a different email" action resets the card back to the idle state. After sign-in the normal `/login` flow returns the user to the plan URL, landing on the RSVP section.
 - `POST /auth/magic-link/consume` (unauthenticated). Body: `{ email, token }`. Verifies the token against `email_verification_tokens` (shared table with credential-signup email verification), marks the row `used_at = NOW()`, sets `email_verified_at = NOW()`, and returns the user record for the Auth.js `magic-link` Credentials provider to build a session from. Rejects suspended users without consuming the token.
-- `POST /auth/signin-link/request` (unauthenticated). Body: `{ email, turnstile_token }` (any client-supplied `next` is ignored, see below). Issues a magic sign-in link for accounts where `password_setup_pending = TRUE`, for the return-visit case where a user didn't set a password before logging out. Silently returns `ok` for non-pending accounts (or no account) so the endpoint cannot be used to probe account existence; only pending accounts actually receive an email. Rate-limited identically to plan-signup. **Email template:** sends `POSTMARK_TEMPLATE_SIGNIN_LINK` (template ID `44802964`, source files `signinLink.html` / `signinLink.txt`). Distinct from `POSTMARK_TEMPLATE_MAGIC_LINK_SIGNUP`, whose copy frames the email as a fresh signup confirmation; this template's copy is for an existing account signing back in. **Redirect target:** the server hard-codes `next = "/settings#account"` for this flow regardless of what the client posts. The recipient's open task is to finish setup; landing them on `/settings#account` puts the password-setup card in view immediately so they can complete it in one step. The magic link lands on `/auth/magic` like plan-signup, consumes the token via `POST /auth/magic-link/consume`, and Auth.js's `redirectTo: "/settings#account"` lands them on the password-setup section. The `password_setup_pending` flag stays `TRUE` until they actually call `POST /auth/password/set`, so the `PasswordSetupBanner` is visible alongside the in-page Account card.
+- `POST /auth/signin-link/request` (unauthenticated). Body: `{ email, turnstile_token }` (any client-supplied `next` is ignored, see below). Issues a magic sign-in link for accounts where `password_setup_pending = TRUE`, for the return-visit case where a user didn't set a password before logging out. Silently returns `ok` for non-pending accounts (or no account) so the endpoint cannot be used to probe account existence; only pending accounts actually receive an email. Rate-limited identically to plan-signup. **Email template:** sends `signinLink` (source files `signinLink.html` / `signinLink.txt`). Distinct from `magicLinkSignup`, whose copy frames the email as a fresh signup confirmation; this template's copy is for an existing account signing back in. **Redirect target:** the server hard-codes `next = "/settings#account"` for this flow regardless of what the client posts. The recipient's open task is to finish setup; landing them on `/settings#account` puts the password-setup card in view immediately so they can complete it in one step. The magic link lands on `/auth/magic` like plan-signup, consumes the token via `POST /auth/magic-link/consume`, and Auth.js's `redirectTo: "/settings#account"` lands them on the password-setup section. The `password_setup_pending` flag stays `TRUE` until they actually call `POST /auth/password/set`, so the `PasswordSetupBanner` is visible alongside the in-page Account card.
 - `POST /auth/password/set` (authenticated). Body: `{ password }`. First-time password setup for a lightweight-signup account. Only accepts the write when the caller's row has `password_setup_pending = TRUE`, so it cannot be used to bypass the current-password check on an established account. On success, hashes + stores the password, flips `password_setup_pending` to `FALSE`, and invalidates any outstanding `email_verification_tokens` rows for the user.
 
 **Magic-link consumption on the web side**, `/auth/magic` page (server component) reads `?token`, `?email`, `?next` from the URL, checks current session:
@@ -462,7 +395,7 @@ The flag is cleared any time a password is established: via Settings > Set a pas
 
 **Username auto-generation**, `generateFunUsername(sql)` in `api/src/username.ts` picks `<Adjective><Animal><###>` from curated lists in `api/src/data/usernameWords.ts` (e.g. `HappyOtter273`), validates against `USERNAME_REGEX` and `validateCleanText`, checks uniqueness against `username_norm`, and retries up to 10 times. Falls back to `Chum` + 6 hex chars.
 
-**Login with password_setup_pending = TRUE:** when the user returns to `/login` and tries password sign-in without having set a password yet, the credentials provider in `web/src/auth.ts` throws `CredentialsSignin` with code `PasswordSetupPending`. `LoginClient` catches this and reveals a **Email me a sign-in link** button that POSTs to `/auth/signin-link/request` and tells the user to check their inbox. The dedicated `POSTMARK_TEMPLATE_SIGNIN_LINK` template is sent (not the lightweight-signup confirmation template), so the copy reads as "Sign in to NewChums" rather than "create your NewChums account". Clicking the link in the email takes them through the normal magic-link flow and lands them on `/settings#account`, with the `PasswordSetupBanner` and the in-page password-setup form both visible so they can finish setup in one step.
+**Login with password_setup_pending = TRUE:** when the user returns to `/login` and tries password sign-in without having set a password yet, the credentials provider in `web/src/auth.ts` throws `CredentialsSignin` with code `PasswordSetupPending`. `LoginClient` catches this and reveals a **Email me a sign-in link** button that POSTs to `/auth/signin-link/request` and tells the user to check their inbox. The dedicated `signinLink` template is sent (not the lightweight-signup confirmation template), so the copy reads as "Sign in to NewChums" rather than "create your NewChums account". Clicking the link in the email takes them through the normal magic-link flow and lands them on `/settings#account`, with the `PasswordSetupBanner` and the in-page password-setup form both visible so they can finish setup in one step.
 
 **Legacy password-less accounts (no pending flag):** Google-OAuth-only accounts, and any lightweight-signup accounts created before migration 086, have `password_hash = NULL` and `password_setup_pending = FALSE`. The credentials provider surfaces `NoPasswordOnFile` for these and the login page points them at "Forgot password?" (which accepts password-less accounts and sets a password, clearing any residual pending flag along the way) or Google sign-in.
 
@@ -478,7 +411,7 @@ The flag is cleared any time a password is established: via Settings > Set a pas
 
 The prior `participation_token` (JWT, purpose `public_rsvp`), `guest_challenge` (10-min HMAC-signed code), `guest_confirmation` (JWT, purpose `guest_confirmation`), and 6-digit verification code have all been removed.
 
-**Email template:** `POSTMARK_TEMPLATE_MAGIC_LINK_SIGNUP` (template 44523927) for new-account confirmation, `POSTMARK_TEMPLATE_PLAN_SIGNIN` (template 44523947) for existing-account sign-in notices. Source HTML/text live in `api/src/email/templates/magicLinkSignup.{html,txt}` and `planSignin.{html,txt}`.
+**Email template:** `magicLinkSignup` for new-account confirmation, `planSignin` for existing-account sign-in notices. Source HTML/text live in `api/src/email/templates/magicLinkSignup.{html,txt}` and `planSignin.{html,txt}`.
 
 **Invite-email adoption flow**, when a host invites an off-platform email via `POST /events/:id/invite`, the email link lands the invitee on `/events/[id]?invite_token=...`. Logged-out visitors see the same lightweight-signup card with their email pre-fill. After magic-link click, the `GET /events/:id` handler adopts any matching `event_invites` row (`WHERE LOWER(email) = <user email> AND user_id IS NULL`) onto their new `user_id` so they show as invited and bypass any join-approval gate.
 
@@ -605,7 +538,7 @@ Enforced at both API level (endpoints return redacted data when no bearer token 
   - Honeypot: `website` field; if non-empty, returns `{ ok: true }` without sending
   - Rate limit: 5 submissions per 10 minutes per IP (KV `CONTACT_RATELIMIT_KV`, optional)
   - **Spam protection (logged-out):** Cloudflare Turnstile required when `TURNSTILE_SECRET_KEY` is set. Logged-in users (Bearer token) skip Turnstile.
-  - Email: Postmark sends to `contact@newchums.com` from `contact@newchums.com`, Reply-To from form; subject line "NewChums: Contact, &lt;Subject&gt;"; includes Subject, Name, Email, Message, Timestamp, IP, Environment; if logged in, includes userId and username
+  - Email: Resend sends to `contact@newchums.com` from `contact@newchums.com`, Reply-To from form; subject line "NewChums: Contact, &lt;Subject&gt;"; includes Subject, Name, Email, Message, Timestamp, IP, Environment; if logged in, includes userId and username
 
 ### Admin, interests moderation (super_admin only)
 
@@ -657,7 +590,7 @@ One-way saved-people feature. No approval flow, no mutual-state requirement.
 | `POST /chums/:userId` | Save an on-platform user to the authenticated user's On NewChums connections. Idempotent (`ON CONFLICT DO NOTHING`). Cannot add self. No notification sent. |
 | `POST /chums/private` | Add a Private Contact. Body: `{ email?, name?, note? }`. If email matches an existing user, auto-creates as `on_newchums` instead. |
 | `DELETE /chums/:id` | Remove a contact entry by contact row ID or linked user ID. Works for both On NewChums and Private Contact entries. |
-| `POST /chums/invite` | Send an invite email to an address not yet on NewChums. Also creates a Private Contact entry for the invitee if one doesn't exist. Prevents duplicate pending invites. Rate limit: 10 per inviter per 24 h. Uses Postmark template `43805532`. |
+| `POST /chums/invite` | Send an invite email to an address not yet on NewChums. Also creates a Private Contact entry for the invitee if one doesn't exist. Prevents duplicate pending invites. Rate limit: 10 per inviter per 24 h. Uses the `chumInvite` template. |
 | `POST /chums/invite/accept` | Consume an invite token during signup. Called with `{ token, email }`. Verifies invite, creates two independent `on_newchums` entries (inviter → new user, new user → inviter). Also auto-links any Private Contacts matching the new user's email across all users. No mutual indicator. |
 | `GET /public/users/:handle/chums` | Public-facing paginated connections list for a profile. No auth required. Only shows `on_newchums` entries. Respects: owner's `is_hidden_chum_list` (if ON, returns `{ hidden: true }`) and each listed connection's `is_hidden_from_chum_lists` (filters them out). Query params: `offset`, `limit` (max 20, default 8). |
 
@@ -866,7 +799,7 @@ Unread tracking:
 **Unread chat notifications:**
 
 - **Bell icon:** `GET /notifications` returns an `unreadChats` array derived from `event_chat_messages` and `event_chat_reads`. These are not persisted as notification rows; they are computed at query time. The bell UI renders them as separate entries above regular notifications.
-- **Daily email digest:** The hourly Cron Trigger (`0 * * * *` UTC) includes the daily unread-chat digest handler, which queries for users with unread chat messages in plans they are part of (host or going RSVP). It checks the `unread_chat_digest` preference, enforces a 23-hour cooldown via `user_profile.chat_digest_sent_at` (migration 037), and sends via Postmark template 43975299. The email lists up to 10 plans with unread counts and direct links.
+- **Daily email digest:** The hourly Cron Trigger (`0 * * * *` UTC) includes the daily unread-chat digest handler, which queries for users with unread chat messages in plans they are part of (host or going RSVP). It checks the `unread_chat_digest` preference, enforces a 23-hour cooldown via `user_profile.chat_digest_sent_at` (migration 037), and sends via the `unreadChatDigest` template. The email lists up to 10 plans with unread counts and direct links.
 
 **Plan lock (host-controlled):**
 
@@ -884,7 +817,7 @@ Hosts can enable `require_approval` on a plan, requiring users without host-exte
 - `event_join_requests` table tracks each request with status (`pending`, `approved`, `declined`), requester message, host response message, and timestamps.
 - Unique partial index `(event_id, user_id) WHERE status = 'pending'` prevents duplicate active requests.
 - On approval, the requester is automatically added to the plan as Going (subject to seat capacity).
-- Three Postmark email templates: request submitted (to host, template 43906440), approved (to requester, template 43906609), declined (to requester, template 43906703).
+- Three email templates: request submitted (to host, `joinRequestToHost`), approved (to requester, `joinRequestApproved`), declined (to requester, `joinRequestDeclined`).
 - In-app notification types: `join_request` (to host), `join_request_approved` (to requester), `join_request_declined` (to requester).
 - UI: plan details shows "Request to join" CTA with optional message for non-invited users; shows request status (pending/approved/declined) after submission; host sees a "Join requests" review section with approve/decline actions and optional response message.
 - Plan header shows an "Approval required" badge when enabled.
@@ -894,28 +827,27 @@ Hosts can enable `require_approval` on a plan, requiring users without host-exte
 
 **Active event email templates:**
 
-| Email | Template ID / Env var | Gated by preference |
-|-------|----------------------|---------------------|
-| Event invite | `POSTMARK_TEMPLATE_RSVP` | `event_invite` |
-| Plan changed/locked/canceled (attendee) | `POSTMARK_TEMPLATE_EVENT_CHANGED` (43971187) | `event_changed_canceled` |
-| Someone is going | Template 43922675 | `host_join` |
-| Someone is maybe | Template 43922237 | `host_maybe` |
-| Someone can't make it | Template 43921920 | `host_leave` |
-| Attendee removed by host | Template 43923102 | `attendee_removed` |
-| Join request received | Template 43906440 | `join_request_received` |
-| Join request accepted | Template 43906609 | `join_request_accepted` |
-| Join request declined | Template 43906703 | `join_request_declined` |
-| Unread chat digest (daily) | `POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST` (43975299) | `unread_chat_digest` |
-| Confirmation request | `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST_USER` (44415561) | `attendance_confirmation` |
-| Plan at risk (host) | `POSTMARK_TEMPLATE_PLAN_AT_RISK` (43984947) | (always sent to host) |
-
-| Concern report admin alert | `POSTMARK_TEMPLATE_CONCERN_REPORT` (44107767) | (internal admin alert, always sent to contact@newchums.com) |
+| Email | Template basename | Gated by preference |
+|-------|-------------------|---------------------|
+| Event invite | `eventInvite` | `event_invite` |
+| Plan changed/locked/canceled (attendee) | `eventChanged` | `event_changed_canceled` |
+| Someone is going | `eventJoin` | `host_join` |
+| Someone is maybe | `eventMaybe` | `host_maybe` |
+| Someone can't make it | `eventLeave` | `host_leave` |
+| Attendee removed by host | `attendeeRemoved` | `attendee_removed` |
+| Join request received | `joinRequestToHost` | `join_request_received` |
+| Join request accepted | `joinRequestApproved` | `join_request_accepted` |
+| Join request declined | `joinRequestDeclined` | `join_request_declined` |
+| Unread chat digest (daily) | `unreadChatDigest` | `unread_chat_digest` |
+| Confirmation request | `confirmationRequestUser` | `attendance_confirmation` |
+| Plan at risk (host) | `planAtRisk` | (always sent to host) |
+| Concern report admin alert | `concernReportAlert` | (internal admin alert, always sent to contact@newchums.com) |
 
 All emails with a notification preference toggle include a tokenized unsubscribe link in the footer. The unsubscribe endpoint (`POST /email/unsubscribe`) verifies a JWT containing the user ID and preference key, then disables that preference.
 
-**Postmark email template source files:**
+**Email template source files:**
 
-HTML and plain text versions of Postmark email templates are stored in `api/src/email/templates/`. When creating or updating a Postmark template, the source content should be maintained in this directory alongside the existing templates. Each template has an `.html` file and a `.txt` file (e.g. `concernReportAlert.html`, `concernReportAlert.txt`). These files are the canonical source for what gets pasted into Postmark; they are not compiled or deployed automatically.
+HTML and plain-text bodies live in `api/src/email/templates/` as `.html` + `.txt` pairs per basename (e.g. `concernReportAlert.html`, `concernReportAlert.txt`). They are bundled at build time via wrangler text-imports, rendered in-process by `api/src/email/renderTemplate.ts` with `mustache`, and sent through Resend. The repo is the source of truth; deploying a template change is just edit + redeploy.
 
 **Web pages:**
 
@@ -1005,7 +937,7 @@ All metrics use a 0–100 scale, starting at 50.00 (neutral baseline). `signal_c
 *Separate layers (not part of normal feedback):*
 
 - **Attendance issues**, structured reports: no-show, cancelled too late, arrived very late. Stored in `attendance_issues`. Immediately penalizes Reliability score (modulated by confidence).
-- **Conduct / Safety reports**, structured reasons: rude/aggressive, harassment, boundary issue, discriminatory, unsafe/intoxicated, disruptive, property damage, other. Stored in `conduct_reports` (with `status`: new/reviewed/closed per migration 053). Treated separately from normal scoring. Each submission triggers an immediate email alert (Postmark template 44107767) to contact@newchums.com and appears in the admin Safety tab for review.
+- **Conduct / Safety reports**, structured reasons: rude/aggressive, harassment, boundary issue, discriminatory, unsafe/intoxicated, disruptive, property damage, other. Stored in `conduct_reports` (with `status`: new/reviewed/closed per migration 053). Treated separately from normal scoring. Each submission triggers an immediate email alert (`concernReportAlert` template) to contact@newchums.com and appears in the admin Safety tab for review.
 
 *Attendance Trust Model (migration 052):*
 
@@ -1070,7 +1002,7 @@ Users configure matching preferences in their profile ("Your chum preferences" s
 | `PUT /chum-preferences` | Save preference settings (upsert) |
 | `GET /admin/users/:id/diagnostics` | Super-admin: per-user metric scores, preferences, feedback history, attendance/conduct summaries |
 
-*Email:* Post-plan feedback reminder email sent ~3 hours after plan start time via the hourly cron handler. Uses Postmark template 44091936. One email per plan (tracked via `events.feedback_email_sent_at`). Sent to host + going RSVPs. Gated on the `feedback_requests` notification preference (users can unsubscribe). Each email includes a one-click unsubscribe link keyed to `feedback_requests`.
+*Email:* Post-plan feedback reminder email sent ~3 hours after plan start time via the hourly cron handler. Uses the `planFeedback` template. One email per plan (tracked via `events.feedback_email_sent_at`). Sent to host + going RSVPs. Gated on the `feedback_requests` notification preference (users can unsubscribe). Each email includes a one-click unsubscribe link keyed to `feedback_requests`.
 
 *UI:* Carousel-style "How did it go?" section appears on the plan detail page for past, non-canceled plans where the viewer is a participant. One-person-at-a-time stepper with progress dots, per-person feedback prompts, contextual attendance issue reporting, and separate conduct report dialog.
 
@@ -1171,7 +1103,7 @@ Community pages where users can join, browse, and create plans together. The com
 | `newchums.communities.schedule_enabled` | BOOLEAN NOT NULL DEFAULT TRUE feature flag (migration 097). When false the Schedule tab is not rendered on the community detail page; existing schedule blocks are kept on disk so re-enabling restores them. Backfilled to TRUE for all pre-097 rows. Toggled by community owner / super admin via the "Display Schedule tab" switch in the Edit Community form. Omitted from the restricted (private non-member) GET response so non-members never receive the flag. |
 | `newchums.community_interests` | Hobby/interest tagging for communities. Composite PK on `(community_id, interest_id)`. FK to `communities` (CASCADE) and `interests` (CASCADE). Indexed on `interest_id`. Migration 078. |
 
-**Unified access model:** The forms present a single "Access" setting with two options: **Open** (visibility=public, join_mode=open) and **Private** (visibility=private, join_mode=approval_required). The API accepts an `access` field that maps to these DB column pairs. The underlying `visibility` and `join_mode` columns are preserved for backward compatibility, but the only supported combinations going forward are these two. Private communities are discoverable in the communities discovery feed and in the community detail page; non-members see a preview (description, hobbies, metadata) but internal contents (plans, members) are restricted until the viewer is an approved member. In-app notifications (`community_join_request`, `community_join_request_approved`, `community_join_request_declined`) and Postmark emails support the full join request lifecycle including optional requester messages.
+**Unified access model:** The forms present a single "Access" setting with two options: **Open** (visibility=public, join_mode=open) and **Private** (visibility=private, join_mode=approval_required). The API accepts an `access` field that maps to these DB column pairs. The underlying `visibility` and `join_mode` columns are preserved for backward compatibility, but the only supported combinations going forward are these two. Private communities are discoverable in the communities discovery feed and in the community detail page; non-members see a preview (description, hobbies, metadata) but internal contents (plans, members) are restricted until the viewer is an approved member. In-app notifications (`community_join_request`, `community_join_request_approved`, `community_join_request_declined`) and email notifications support the full join request lifecycle including optional requester messages.
 
 **Community privacy vs plan-level Explore visibility.** A community's `visibility` (`public` / `private`) gates access to the **community page and plan feed**. It does **not** remove the community's plans from the Explore feed. Per-plan Explore visibility is controlled exclusively by the host's `hide_from_explore` toggle on that plan. A plan in a private community with the toggle off still appears in Explore for non-members (subject to normal plan-visibility and personalization filters); the same plan with the toggle on is scoped to community members and RSVP'd viewers. See the **Plan Feeds, Community Linkage, and "Only show this plan to community members" Toggle** subsection below for the full matrix and enforcement points.
 
@@ -1192,7 +1124,7 @@ Community pages where users can join, browse, and create plans together. The com
 | `PATCH /communities/:slug` | Update community (owner or super admin). Accepts unified `access` field (`"open"` or `"private"`, preferred) or legacy `visibility`/`join_mode`. Also: name, description (required), chat_enabled, `is_online`, `website`, `discord_url`, `operating_hours` (see **Community operating hours**), location fields, avatar_key, `banner_key` (only `null` is accepted to clear; setting a key is done via `/media/finalize` so the Pro gate is enforced there, not here), `interest_items` (replaces all community hobbies; at least one required). |
 | `POST /communities/:slug/close` | Soft-close a community (owner or super admin). Sets `status = 'closed'` and removes any matching rows from `event_communities` (so previously linked plans are detached). Community data is preserved but hidden from listings. Irreversible. Migration 059 adds the `status` column. |
 | `DELETE /communities/:slug` | Hard-delete community (owner or super admin). Cascades to members, join requests, and `event_communities` rows (CASCADE on the FK), so previously linked plans are detached automatically. |
-| `POST /communities/:id/join` | Join (open) or request to join (approval_required). Accepts optional JSON body with `message` (max 500 chars). Idempotent. For approval_required: creates a join request, creates in-app notification for owner (`community_join_request`), sends join-request email to owner (Postmark template 44111064, respects `community_join_request_received` notification pref). The email's "Review request" CTA links to `/communities/:slug?tab=requests` so the owner lands directly on the Requests tab (see **Community detail tab deep-links** below). The message field is passed to the template via the `hasMessage` + `message` pair so the "Their message" block only renders when the requester included a note. **Re-request cooldown:** if a pending request already exists, the server checks its age. Within `COMMUNITY_JOIN_REQUEST_COOLDOWN_DAYS` (default 7) the endpoint returns `{ ok: true, status: "already_pending", cooldownDays, daysRemaining }` without notifying anyone. After the cooldown, the existing pending row is refreshed in place (`created_at = NOW()`, `message` replaced), the owner is re-notified, and the response is `{ ok: true, status: "refreshed" }`. The partial unique index guarantees only one active pending row per `(community, user)`. |
+| `POST /communities/:id/join` | Join (open) or request to join (approval_required). Accepts optional JSON body with `message` (max 500 chars). Idempotent. For approval_required: creates a join request, creates in-app notification for owner (`community_join_request`), sends join-request email to owner (`communityJoinRequest` template, respects `community_join_request_received` notification pref). The email's "Review request" CTA links to `/communities/:slug?tab=requests` so the owner lands directly on the Requests tab (see **Community detail tab deep-links** below). The message field is passed to the template via the `hasMessage` + `message` pair so the "Their message" block only renders when the requester included a note. **Re-request cooldown:** if a pending request already exists, the server checks its age. Within `COMMUNITY_JOIN_REQUEST_COOLDOWN_DAYS` (default 7) the endpoint returns `{ ok: true, status: "already_pending", cooldownDays, daysRemaining }` without notifying anyone. After the cooldown, the existing pending row is refreshed in place (`created_at = NOW()`, `message` replaced), the owner is re-notified, and the response is `{ ok: true, status: "refreshed" }`. The partial unique index guarantees only one active pending row per `(community, user)`. |
 | `POST /communities/:id/leave` | Leave community. Owner cannot leave (must transfer ownership first). Also withdraws any pending join request. |
 | `GET /communities/:id/members` | List active members. Private communities restrict to members + super admin. |
 | `POST /communities/:id/members/:userId/remove` | Remove a member (owner or super admin). Cannot remove owner. |
@@ -1200,7 +1132,7 @@ Community pages where users can join, browse, and create plans together. The com
 | `GET /communities/:id/join-requests` | List pending join requests (owner or super admin). |
 | `GET /communities/:id/events` | Community plan feed. Returns published plans belonging to this community, gated by the per-plan `visibility` rule: `invite_only` rows are always excluded; `chums_only` rows are shown only to the host, the host's on-NewChums chums, and viewers already RSVP'd; `public` rows are always shown. No `hide_from_explore` filter. Private communities restrict endpoint access to members + super admin. **Privacy-safe location for logged-out viewers:** the response always includes a server-derived `locationDisplay` (`"Online"` for online plans, otherwise `location_area` falling back to `deriveApproxArea(location_address)`, with `"General area"` as the final fallback). Logged-out viewers additionally receive `locationName`, `locationAddress`, `locationLat`, `locationLng`, and `onlineLink` as `null`, so the public community page can never leak an exact venue, address, coordinates, or meeting link. Authenticated viewers continue to receive the full set. **Modes:** default (or `?past=false`) returns upcoming plans (allowing a 24-hour past lookback). `?past=true` returns the **Recently happened** social-proof variant: plans whose `starts_at` is strictly in the past and within the last 90 days, with at least one **non-host RSVP marked Going** as the participation signal so lonely past plans aren't surfaced. The visibility matrix and QA-isolation invariant are identical in both modes; community privacy still gates the endpoint itself. Supports `limit`/`offset`. |
 | `GET /communities/:id/announcements` | List announcements for a community in pinned-first, newest-next order. Visibility follows the community page rules: public communities are readable by anyone (logged out included); private communities require an active member or super admin. Returns `{ announcements, viewerCanManage }` where `viewerCanManage` is true for community owner + super admin and gates the create/edit/delete UI client-side. |
-| `POST /communities/:id/announcements` | Create an announcement (owner or super admin). Body: `{ title, body, is_pinned?, notify_members? }`. Title 1-200 chars, body sanitized via `sanitizeDescriptionHtml` (same allow-list as community / plan descriptions), 1-10000 chars after sanitization. When `notify_members: true`, queues an email batch (`sendCommunityAnnouncementEmail`, Postmark template 44937878) to every **active** community member who is **not suspended**, **not the author**, **not muted via `community_announcement_mutes`**, and whose **`community_announcements` notification preference is enabled**. The batch runs via `executionCtx.waitUntil` so the create response returns without waiting on Postmark; per-recipient send failures are caught and never undo the create. The response includes `notified: boolean` and `notifyQueuedCount: number` (the eligible-recipient count computed synchronously before the batch is handed off, used for toast copy on the client). Edits never re-email; the PATCH endpoint ignores any notify flag. |
+| `POST /communities/:id/announcements` | Create an announcement (owner or super admin). Body: `{ title, body, is_pinned?, notify_members? }`. Title 1-200 chars, body sanitized via `sanitizeDescriptionHtml` (same allow-list as community / plan descriptions), 1-10000 chars after sanitization. When `notify_members: true`, queues an email batch (`sendCommunityAnnouncementEmail`, `communityAnnouncement` template) to every **active** community member who is **not suspended**, **not the author**, **not muted via `community_announcement_mutes`**, and whose **`community_announcements` notification preference is enabled**. The batch runs via `executionCtx.waitUntil` so the create response returns without waiting on Resend; per-recipient send failures are caught and never undo the create. The response includes `notified: boolean` and `notifyQueuedCount: number` (the eligible-recipient count computed synchronously before the batch is handed off, used for toast copy on the client). Edits never re-email; the PATCH endpoint ignores any notify flag. |
 | `PUT /communities/:id/announcement-mute` | Auth required. Body: `{ muted: boolean }`. Toggles the calling user's row in `community_announcement_mutes` for the community. Idempotent. Available to active members and super admins; logged-out viewers and non-members 401/403. The mute is independent of the global `community_announcements` notification preference: the global pref supersedes the mute at send time, but a global flip never deletes the row, so the user's per-community choice survives. |
 | `GET /communities/:id/schedule-blocks` | List schedule blocks for a community in day-of-week, sort_order, start_time order. Visibility matches announcements (public community: anyone; private community: active member or super admin). Returns `{ blocks, viewerCanManage }`; `viewerCanManage` is true for owner + super admin and gates the create/edit/delete UI client-side. Non-managers only receive `is_active = true` rows; managers see drafts too. |
 | `POST /communities/:id/schedule-blocks` | Create a schedule block (owner or super admin). Body: `{ title, day_of_week, start_time, end_time, description?, sort_order?, is_active?, location_name?, location_address?, location_lat?, location_lng? }`. v1 always writes `entry_type = 'weekly_recurring'` server-side; clients cannot bypass the v1 invariant by passing the field. Times accept "HH:MM" or "HH:MM:SS"; the server normalises to "HH:MM:00". `end_time` must be strictly greater than `start_time` (overnight windows are rejected in v1). Title is run through `validateCleanText` for content safety. Description is sanitized via `sanitizeDescriptionHtml`. Location fields are all optional, mirror the `communities` location columns, and are stored verbatim from the client's verified Google Places pick. |
@@ -1316,16 +1248,16 @@ The schedule block detail dialog renders an outlined CTA for authenticated viewe
 **Community operating hours (free for all plans, optional):**
 Stored as a single JSONB column `newchums.communities.operating_hours` (migration 087). Shape: `{ mon: { open: "09:00", close: "17:00" } | { closed: true }, tue: ..., ... }` keyed by three-letter weekday code (`mon`, `tue`, `wed`, `thu`, `fri`, `sat`, `sun`). A day without an entry is "no hours published" (the UI renders nothing for it), **not** "closed"; a day rendered as closed requires an explicit `{ closed: true }` entry. Times are zero-padded 24-hour `HH:MM` strings. `close` is allowed to be earlier than `open` (overnight venues). API validation (`parseOperatingHours` in `api/src/index.ts`) rejects unknown day codes, rejects malformed `HH:MM`, and normalizes an empty object to `null` so the DB stores one canonical "no hours" shape. Sent on both `POST /communities` and `PATCH /communities/:slug`. **Privacy**: omitted from the restricted (private-community non-member) response so private operational details don't leak via the public slug URL. Rendered on the full detail view for all other viewers via the shared `OperatingHoursDisplay` component. Intentionally minimal: no split shifts, no multiple windows per day, no activity-specific hours, no holiday overrides, see the feature scope notes in `AGENTS.md`.
 
-**Email templates (Postmark template IDs pending):**
+**Email templates:**
 
-| Email | Env var | Trigger |
-|-------|---------|---------|
-| Community join request (to owner) | `POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST` | User requests to join an approval_required community |
-| Community join approved (to requester) | `POSTMARK_TEMPLATE_COMMUNITY_JOIN_APPROVED` | Owner approves a join request |
-| Community join declined (to requester) | `POSTMARK_TEMPLATE_COMMUNITY_JOIN_DECLINED` | Owner declines a join request |
-| Community member removed (to removed user) | `POSTMARK_TEMPLATE_COMMUNITY_MEMBER_REMOVED` | Owner/super admin removes a member via the Members tab. The action is a remove-and-block: the user's `community_members` row flips to `status='removed'`, which blocks any rejoin attempt server-side. Optional `removalReason` is included when provided. |
-| Community member unblocked (to unblocked user) | `POSTMARK_TEMPLATE_COMMUNITY_MEMBER_UNBLOCKED` | Owner/super admin lifts the block via the Members tab's "Blocked" list. The `community_members` row is **deleted**; the user becomes a plain non-member and can request to join again on their own. No automatic re-add. |
-| Community join-request reopened (to previously-denied user) | `POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST_REOPENED` | Owner/super admin clicks **Undo denial** on the Requests tab's "Previously denied" list (declines within the 30-day cooldown). The declined `community_join_requests` row is **deleted**, lifting the cooldown. The user is notified but **not** added; they must submit a fresh request. |
+| Email | Template basename | Trigger |
+|-------|-------------------|---------|
+| Community join request (to owner) | `communityJoinRequest` | User requests to join an approval_required community |
+| Community join approved (to requester) | `communityJoinApproved` | Owner approves a join request |
+| Community join declined (to requester) | `communityJoinDeclined` | Owner declines a join request |
+| Community member removed (to removed user) | `communityMemberRemoved` | Owner/super admin removes a member via the Members tab. The action is a remove-and-block: the user's `community_members` row flips to `status='removed'`, which blocks any rejoin attempt server-side. Optional `removalReason` is included when provided. |
+| Community member unblocked (to unblocked user) | `communityMemberUnblocked` | Owner/super admin lifts the block via the Members tab's "Blocked" list. The `community_members` row is **deleted**; the user becomes a plain non-member and can request to join again on their own. No automatic re-add. |
+| Community join-request reopened (to previously-denied user) | `communityJoinRequestReopened` | Owner/super admin clicks **Undo denial** on the Requests tab's "Previously denied" list (declines within the 30-day cooldown). The declined `community_join_requests` row is **deleted**, lifting the cooldown. The user is notified but **not** added; they must submit a fresh request. |
 
 Template source files: `api/src/email/templates/communityJoinRequest.*`, `communityJoinApproved.*`, `communityJoinDeclined.*`, `communityMemberRemoved.*`, `communityMemberUnblocked.*`, `communityJoinRequestReopened.*`.
 
@@ -1688,10 +1620,10 @@ When sharing the same DB between local and production, set `NEXT_PUBLIC_AVATAR_B
 ### API (`api/wrangler.toml`)
 
 - Root worker `newchums-api` is the production API target
-- Secrets (via Wrangler/CF dashboard): `DATABASE_URL`, `NEXTAUTH_SECRET`, `POSTMARK_SERVER_TOKEN`
+- Secrets (via Wrangler/CF dashboard): `DATABASE_URL`, `NEXTAUTH_SECRET`, `RESEND_API_KEY`
 - Durable Objects: `[[durable_objects.bindings]]` binds `CHAT_ROOM` → `ChatRoom` class; `[[migrations]]` tag `v1` with `new_classes = ["ChatRoom"]`
 - Cron Triggers: `[triggers] crons = ["0 * * * *"]`, hourly; processes attendance assurance, daily unread-chat digest, event match digest, and post-plan feedback emails
-- Vars include `POSTMARK_TEMPLATE_UNREAD_CHAT_DIGEST`, `POSTMARK_TEMPLATE_EVENT_CHANGED`, `POSTMARK_TEMPLATE_CONFIRMATION_REQUEST_USER`, `POSTMARK_TEMPLATE_PLAN_AT_RISK`, `POSTMARK_TEMPLATE_PLAN_FEEDBACK`, `POSTMARK_TEMPLATE_COMMUNITY_JOIN_REQUEST`, `POSTMARK_TEMPLATE_COMMUNITY_JOIN_APPROVED`, `POSTMARK_TEMPLATE_COMMUNITY_JOIN_DECLINED`, `POSTMARK_TEMPLATE_COMMUNITY_ANNOUNCEMENT`, and other template IDs (see `api/wrangler.toml` for the full list)
+- Vars include `APP_ENV`, `EMAIL_FROM`, `WEB_BASE_URL` (template bodies are bundled at build time via `[[rules]] type = "Text"`, no template-ID env vars; see `api/wrangler.toml` for the full list)
 
 CORS is enforced via an explicit allowlist (newchums.com, www, localhost:3000) in API code.
 

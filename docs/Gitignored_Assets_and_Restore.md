@@ -43,7 +43,7 @@ After `git clone` on a fresh machine:
 
 **Never commit:**
 - `web/.env.local`, AUTH_SECRET, GOOGLE_CLIENT_*, DATABASE_URL, etc.
-- `api/.dev.vars`, DATABASE_URL, NEXTAUTH_SECRET, POSTMARK_SERVER_TOKEN, etc.
+- `api/.dev.vars`, DATABASE_URL, NEXTAUTH_SECRET, RESEND_API_KEY, etc.
 - Any file matching `.env` or `.env.*` (except opt-in `.env.example` if team chooses)
 
 **Production secrets:**

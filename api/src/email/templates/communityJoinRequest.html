@@ -68,12 +68,11 @@
               </p>
 
               <!-- Requester message (conditional). Uses the
-                   same-name scalar-section idiom that Postmark
-                   Mustachio actually supports. The API layer sends
-                   message: null when no note is provided, which
-                   hides the block; a non-empty trimmed string shows
-                   it. The dot inside the section renders the
-                   section's own value. -->
+                   same-name scalar-section idiom from standard
+                   Mustache. The API layer sends message: null when
+                   no note is provided, which hides the block; a
+                   non-empty trimmed string shows it. The dot inside
+                   the section renders the section's own value. -->
               {{#message}}
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 22px;">
                 <tr>

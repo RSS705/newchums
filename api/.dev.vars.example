@@ -1,26 +1,20 @@
-# NewChums API — copy to .dev.vars and fill values
+# NewChums API, copy to .dev.vars and fill values
 # Wrangler loads .dev.vars for local dev (wrangler dev --local)
 # Run from api/ directory. After editing, restart npm run dev.
 APP_ENV=development
 
-# Database — REQUIRED: paste your Neon connection string (same as web/.env.local)
+# Database, REQUIRED: paste your Neon connection string (same as web/.env.local)
 # Must be non-empty. No spaces around =. Use quotes if the URL contains spaces.
 DATABASE_URL=
 
 # Auth (required for profile, user/username, user/date-of-birth; must match web AUTH_SECRET)
 NEXTAUTH_SECRET=
 
-# Postmark
-POSTMARK_SERVER_TOKEN=
+# Email (Resend). EMAIL_FROM should be "NewChums <no-reply@newchums.com>" in prod;
+# any verified Resend sender works in dev.
+RESEND_API_KEY=
 EMAIL_FROM=
 WEB_BASE_URL=http://localhost:3000
-POSTMARK_TEMPLATE_VERIFY=
-POSTMARK_TEMPLATE_RESET=
-POSTMARK_TEMPLATE_RSVP=
-# Email change flow (create templates in Postmark, set IDs)
-POSTMARK_TEMPLATE_EMAIL_CHANGE_CONFIRM=
-POSTMARK_TEMPLATE_EMAIL_CHANGE_NOTIFY_OLD=
-POSTMARK_TEMPLATE_EMAIL_CHANGE_SUCCESS=
 
 # Observability
 SENTRY_DSN=

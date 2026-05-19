@@ -35,7 +35,7 @@ flowchart TB
 
   W -->|"Auth flows"| AUTH["Auth.js<br/>(JWT Sessions)"]
   AUTH -->|"OAuth"| GOOGLE["Google OAuth"]
-  AUTH -->|"Email verify/reset"| PM["Postmark<br/>(Transactional Email)"]
+  AUTH -->|"Email verify/reset"| PM["Resend<br/>(Transactional Email)"]
   API -->|"Send transactional emails"| PM
 
   W -->|"Frontend errors"| SENTRY_FE["Sentry<br/>(Frontend)"]
@@ -335,14 +335,14 @@ Visit /events/[id]
 - Web dev server: `localhost:3000`
 - API dev server: `localhost:8787` (Wrangler dev)
 - Neon DB: remote
-- Postmark: used for email dispatch (dev/prod tokens as configured)
+- Resend: used for email dispatch (dev/prod API keys as configured)
 
 ```mermaid
 flowchart TB
   Browser["Browser"] --> WebLocal["Next.js Dev Server<br/>localhost:3000"]
   WebLocal --> ApiLocal["Wrangler Dev<br/>localhost:8787"]
   ApiLocal --> Neon["Neon (Remote DB)"]
-  ApiLocal --> Postmark["Postmark"]
+  ApiLocal --> Resend["Resend"]
   WebLocal --> Google["Google OAuth"]
   WebLocal --> SentryFE["Sentry FE"]
   ApiLocal --> SentryBE["Sentry BE"]
@@ -440,7 +440,7 @@ flowchart TB
 
   W --> AUTH["Auth.js"]
   AUTH --> GOOGLE["Google OAuth"]
-  AUTH --> PM["Postmark"]
+  AUTH --> PM["Resend"]
 
   API --> PM
 
