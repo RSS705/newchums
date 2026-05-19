@@ -252,7 +252,7 @@ export default function PrivacyContent() {
               <ul>
                 <li><Typography variant="body1">Cloudflare</Typography></li>
                 <li><Typography variant="body1">Neon</Typography></li>
-                <li><Typography variant="body1">Postmark</Typography></li>
+                <li><Typography variant="body1">Resend</Typography></li>
                 <li><Typography variant="body1">Sentry</Typography></li>
                 <li><Typography variant="body1">Axiom</Typography></li>
                 <li><Typography variant="body1">Google sign-in or similar authentication tools</Typography></li>
