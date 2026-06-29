@@ -10099,6 +10099,10 @@ app.post("/events", async (c) => {
   const allowAttendeeInvites = body.allow_attendee_invites !== false;
   const reserveSeats = body.reserve_seats === true;
   const requireReconfirmation = body.require_reconfirmation === true;
+  // Per-plan host preference: when true, suppress the Going/Maybe/Can't-make-it
+  // emails to the host for this plan (including invited users' attendance
+  // updates). Defaults off so existing behaviour is unchanged.
+  const muteHostAttendanceEmails = body.mute_host_attendance_emails === true;
   const requireApproval = body.require_approval === true;
   const status = body.status === "draft" ? "draft" : "published";
   const timezone = body.timezone && typeof body.timezone === "string" ? body.timezone.trim().slice(0, 64) : "UTC";
@@ -10282,13 +10286,13 @@ app.post("/events", async (c) => {
         location_type, location_name, location_address, location_place_id, location_lat, location_lng,
         location_visibility, location_area, online_link,
         max_seats, visibility, status, allow_alt_times, alt_times_mode, availability_deadline_at, allow_attendee_invites, reserve_seats, require_reconfirmation, require_approval, timezone,
-        min_confirmed_attendees, fallback_policy, min_attendees_required, pref_overrides, hide_from_explore, is_qa
+        min_confirmed_attendees, fallback_policy, min_attendees_required, pref_overrides, hide_from_explore, is_qa, mute_host_attendance_emails
       ) VALUES (
         ${userId}, ${title}, ${description}, ${interestId}, ${startsDate.toISOString()},
         ${locationType}, ${locationName}, ${locationAddress}, ${locationPlaceId}, ${locationLat}, ${locationLng},
         ${locationVisibility}, ${locationArea}, ${onlineLink},
         ${maxSeats}, ${visibility}, ${status}, ${allowAltTimes}, ${altTimesMode}, ${availabilityDeadlineAt}, ${allowAttendeeInvites}, ${reserveSeats}, ${requireReconfirmation}, ${requireApproval}, ${timezone},
-        ${minConfirmedAttendees}, ${fallbackPolicy}, ${minAttendeesRequired}, ${prefOverrides ? JSON.stringify(prefOverrides) : null}, ${hideFromExplore}, ${isQa}
+        ${minConfirmedAttendees}, ${fallbackPolicy}, ${minAttendeesRequired}, ${prefOverrides ? JSON.stringify(prefOverrides) : null}, ${hideFromExplore}, ${isQa}, ${muteHostAttendanceEmails}
       )
       RETURNING id, created_at
     `) as { id: string; created_at: string }[];
@@ -11652,6 +11656,7 @@ app.get("/events/:id", async (c) => {
           lockedAt: event.locked_at ?? null,
           requireApproval: event.require_approval === true,
           reserveSeats: false,
+          muteHostAttendanceEmails: false,
           isInvited: false,
           hasRsvp: false,
           goingCount: Number(goingCount),
@@ -11899,6 +11904,7 @@ app.get("/events/:id", async (c) => {
         lockedAt: event.locked_at ?? null,
         requireApproval: event.require_approval === true,
         reserveSeats: event.reserve_seats === true,
+        muteHostAttendanceEmails: event.mute_host_attendance_emails === true,
         isInvited,
         hasRsvp,
         // Attendance assurance
@@ -12017,7 +12023,7 @@ app.post("/events/:id/rsvp", async (c) => {
     // a targeted error when RSVP is blocked because of plan state (draft or
     // canceled) rather than masking it behind a generic NOT_FOUND, which
     // made it look like the plan itself had disappeared.
-    const ev = (await sql`SELECT id, host_user_id, visibility, status, max_seats, title, locked_at, canceled_at, require_approval, reserve_seats, require_reconfirmation, confirmation_sent_at, starts_at, timezone, location_type, location_name, location_address, location_visibility, location_area, online_link, is_qa FROM newchums.events WHERE id = ${eventId}`) as { id: string; host_user_id: string; visibility: string; status: string; max_seats: number | null; title: string; locked_at: string | null; canceled_at: string | null; require_approval: boolean; reserve_seats: boolean; require_reconfirmation: boolean; confirmation_sent_at: string | null; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; location_visibility: string | null; location_area: string | null; online_link: string | null; is_qa: boolean }[];
+    const ev = (await sql`SELECT id, host_user_id, visibility, status, max_seats, title, locked_at, canceled_at, require_approval, reserve_seats, require_reconfirmation, mute_host_attendance_emails, confirmation_sent_at, starts_at, timezone, location_type, location_name, location_address, location_visibility, location_area, online_link, is_qa FROM newchums.events WHERE id = ${eventId}`) as { id: string; host_user_id: string; visibility: string; status: string; max_seats: number | null; title: string; locked_at: string | null; canceled_at: string | null; require_approval: boolean; reserve_seats: boolean; require_reconfirmation: boolean; mute_host_attendance_emails: boolean; confirmation_sent_at: string | null; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; location_visibility: string | null; location_area: string | null; online_link: string | null; is_qa: boolean }[];
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     const event = ev[0];
     if (event.status === "canceled" || event.canceled_at) {
@@ -12239,15 +12245,21 @@ app.post("/events/:id/rsvp", async (c) => {
         );
         const baseEmailArgs = { to: hostUser[0].email, hostName, attendeeName, eventTitle: event.title, eventUrl, attendeeMessage: note, eventDate: rsvpEventDate, eventLocation: rsvpEventLocation };
 
-        if (status === "going" && hostPrefs.items.host_join?.enabled !== false) {
+        // Per-plan host mute: when enabled, suppress all three attendance
+        // emails (Going/Maybe/Can't make it) for this plan, regardless of the
+        // host's account-level prefs. Covers invited users' updates too, since
+        // they RSVP through this same endpoint. The in-app notification above,
+        // join-request emails, and at-risk emails are intentionally unaffected.
+        const muteAttendanceEmails = event.mute_host_attendance_emails === true;
+        if (!muteAttendanceEmails && status === "going" && hostPrefs.items.host_join?.enabled !== false) {
           const unsubToken = await createUnsubscribeToken(c.env.NEXTAUTH_SECRET, event.host_user_id, "host_join");
           await sendEventJoinEmail(c.env, { ...baseEmailArgs, unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}` });
         }
-        if (status === "maybe" && hostPrefs.items.host_maybe?.enabled !== false) {
+        if (!muteAttendanceEmails && status === "maybe" && hostPrefs.items.host_maybe?.enabled !== false) {
           const unsubToken = await createUnsubscribeToken(c.env.NEXTAUTH_SECRET, event.host_user_id, "host_maybe");
           await sendEventMaybeEmail(c.env, { ...baseEmailArgs, unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}` });
         }
-        if (status === "cant_make_it" && hostPrefs.items.host_leave?.enabled !== false) {
+        if (!muteAttendanceEmails && status === "cant_make_it" && hostPrefs.items.host_leave?.enabled !== false) {
           const unsubToken = await createUnsubscribeToken(c.env.NEXTAUTH_SECRET, event.host_user_id, "host_leave");
           await sendEventLeaveEmail(c.env, { ...baseEmailArgs, unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}` });
         }
@@ -12767,6 +12779,7 @@ app.patch("/events/:id", async (c) => {
       patchAvailabilityDeadlineAt = null;
     }
     const patchReserveSeats = body.reserve_seats != null ? body.reserve_seats === true : undefined;
+    const patchMuteHostAttendanceEmails = body.mute_host_attendance_emails != null ? body.mute_host_attendance_emails === true : undefined;
 
     // Location fields (optional, only processed if location_type is present in the body)
     const hasLocationUpdate = "location_type" in body;
@@ -12951,6 +12964,7 @@ app.patch("/events/:id", async (c) => {
           alt_times_mode           = COALESCE(${patchAltTimesMode ?? null}, alt_times_mode),
           availability_deadline_at = CASE WHEN ${patchAvailabilityDeadlineAt !== undefined} THEN ${patchAvailabilityDeadlineAt !== undefined ? patchAvailabilityDeadlineAt : null}::timestamptz ELSE availability_deadline_at END,
           reserve_seats            = COALESCE(${patchReserveSeats ?? null}, reserve_seats),
+          mute_host_attendance_emails = COALESCE(${patchMuteHostAttendanceEmails ?? null}, mute_host_attendance_emails),
           timezone                 = COALESCE(${patchTimezone}, timezone),
           min_confirmed_attendees  = ${patchMinConfirmed},
           fallback_policy          = ${patchFallbackPolicy},

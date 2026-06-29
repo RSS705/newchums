@@ -133,6 +133,7 @@ export default function CreateEventClient() {
   const [allowAttendeeInvites, setAllowAttendeeInvites] = useState(true);
   const [reserveSeats, setReserveSeats] = useState(false);
   const [requireReconfirmation, setRequireReconfirmation] = useState(false);
+  const [muteHostAttendanceEmails, setMuteHostAttendanceEmails] = useState(false);
   const [requireApproval, setRequireApproval] = useState(false);
   const [minConfirmedAttendees, setMinConfirmedAttendees] = useState("");
   const [fallbackPolicy, setFallbackPolicy] = useState<"notify_host" | "proceed" | "auto_cancel">(
@@ -410,6 +411,7 @@ export default function CreateEventClient() {
           : null,
       allow_attendee_invites: allowAttendeeInvites,
       require_reconfirmation: requireReconfirmation,
+      mute_host_attendance_emails: muteHostAttendanceEmails,
       require_approval: requireApproval,
       min_confirmed_attendees:
         requireReconfirmation && minConfirmedAttendees ? Number(minConfirmedAttendees) : null,
@@ -1273,6 +1275,8 @@ export default function CreateEventClient() {
         onChangeRequireApproval={setRequireApproval}
         allowAttendeeInvites={allowAttendeeInvites}
         onChangeAllowAttendeeInvites={setAllowAttendeeInvites}
+        muteHostAttendanceEmails={muteHostAttendanceEmails}
+        onChangeMuteHostAttendanceEmails={setMuteHostAttendanceEmails}
       />
 
       {/* Community association. Hidden entirely when visibility=invite_only,

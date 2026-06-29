@@ -84,6 +84,7 @@ export default function EditEventClient() {
   const [allowAttendeeInvites, setAllowAttendeeInvites] = useState(true);
   const [reserveSeats, setReserveSeats] = useState(false);
   const [requireReconfirmation, setRequireReconfirmation] = useState(false);
+  const [muteHostAttendanceEmails, setMuteHostAttendanceEmails] = useState(false);
   const [requireApproval, setRequireApproval] = useState(false);
   const [minConfirmed, setMinConfirmed] = useState("");
   const [fallbackPolicy, setFallbackPolicy] = useState<"notify_host" | "proceed" | "auto_cancel">("notify_host");
@@ -189,6 +190,7 @@ export default function EditEventClient() {
         setMaxSeats(ev.maxSeats != null ? String(ev.maxSeats) : "");
         setVisibility(ev.visibility ?? "public");
         setRequireReconfirmation(ev.requireReconfirmation ?? false);
+        setMuteHostAttendanceEmails(ev.muteHostAttendanceEmails === true);
         setRequireApproval(ev.requireApproval ?? false);
         setAllowAttendeeInvites(ev.allowAttendeeInvites !== false);
         setSchedulingMode(
@@ -413,6 +415,7 @@ export default function EditEventClient() {
           reserve_seats: maxSeats ? reserveSeats : false,
           visibility,
           require_reconfirmation: requireReconfirmation,
+          mute_host_attendance_emails: muteHostAttendanceEmails,
           require_approval: requireApproval,
           allow_attendee_invites: allowAttendeeInvites,
           allow_alt_times: schedulingMode !== "off",
@@ -1170,6 +1173,8 @@ export default function EditEventClient() {
         onChangeRequireApproval={setRequireApproval}
         allowAttendeeInvites={allowAttendeeInvites}
         onChangeAllowAttendeeInvites={setAllowAttendeeInvites}
+        muteHostAttendanceEmails={muteHostAttendanceEmails}
+        onChangeMuteHostAttendanceEmails={setMuteHostAttendanceEmails}
         notifyAttendees={{ value: notifyAttendees, onChange: setNotifyAttendees }}
       />
 

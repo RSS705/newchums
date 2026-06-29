@@ -30,6 +30,9 @@ type Props = {
   allowAttendeeInvites: boolean;
   onChangeAllowAttendeeInvites: (value: boolean) => void;
 
+  muteHostAttendanceEmails: boolean;
+  onChangeMuteHostAttendanceEmails: (value: boolean) => void;
+
   /** Edit-only toggle. Omit on the Add Plan form so the row does not render. */
   notifyAttendees?: {
     value: boolean;
@@ -179,6 +182,13 @@ export default function ExtraOptionsSection(props: Props) {
           }
           label="Let Going attendees invite others"
           sx={{ gap: 0.5 }}
+        />
+
+        <TooltipToggleRow
+          checked={props.muteHostAttendanceEmails}
+          onChange={props.onChangeMuteHostAttendanceEmails}
+          label="Mute attendance emails"
+          tooltip="Stop emailing you when someone joins, leaves, or changes their RSVP for this plan, including invited people updating their attendance. You'll still get these in your in-app notifications, and you can check the plan anytime. Join requests and at-risk alerts are not affected."
         />
 
         {props.notifyAttendees && (
