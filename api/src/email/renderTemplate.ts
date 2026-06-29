@@ -21,6 +21,8 @@ import concernReportAlertHtml from "./templates/concernReportAlert.html";
 import concernReportAlertTxt from "./templates/concernReportAlert.txt";
 import confirmationRequestUserHtml from "./templates/confirmationRequestUser.html";
 import confirmationRequestUserTxt from "./templates/confirmationRequestUser.txt";
+import chatMessageNotifyHtml from "./templates/chatMessageNotify.html";
+import chatMessageNotifyTxt from "./templates/chatMessageNotify.txt";
 import chumInviteHtml from "./templates/chumInvite.html";
 import chumInviteTxt from "./templates/chumInvite.txt";
 import emailChangeConfirmHtml from "./templates/emailChangeConfirm.html";
@@ -86,6 +88,7 @@ const TEMPLATES: Record<string, TemplatePair> = {
   communityMemberUnblocked: { html: communityMemberUnblockedHtml, text: communityMemberUnblockedTxt },
   concernReportAlert: { html: concernReportAlertHtml, text: concernReportAlertTxt },
   confirmationRequestUser: { html: confirmationRequestUserHtml, text: confirmationRequestUserTxt },
+  chatMessageNotify: { html: chatMessageNotifyHtml, text: chatMessageNotifyTxt },
   chumInvite: { html: chumInviteHtml, text: chumInviteTxt },
   emailChangeConfirm: { html: emailChangeConfirmHtml, text: emailChangeConfirmTxt },
   emailChangeNotifyOld: { html: emailChangeNotifyOldHtml, text: emailChangeNotifyOldTxt },

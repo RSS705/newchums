@@ -30,6 +30,9 @@ export const SUBJECTS = {
   joinRequestApproved: "You're in for {{eventTitle}}",
   joinRequestDeclined: "About your request to join {{eventTitle}}",
 
+  // Plan chat
+  chatMessageNotify: "{{senderName}} posted in {{eventTitle}}",
+
   // Host notifications
   eventJoin: "{{attendeeName}} is going to {{eventTitle}}",
   eventLeave: "{{attendeeName}} left {{eventTitle}}",

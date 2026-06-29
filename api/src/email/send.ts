@@ -272,6 +272,38 @@ const buildHostRsvpModel = (params: HostRsvpEmailParams): TemplateModel => ({
   unsubscribeUrl: hasContent(params.unsubscribeUrl) ? params.unsubscribeUrl : null,
 });
 
+/** Sent when a plan chat message's author opts to notify attendees. One email
+ *  per recipient (rate-limited upstream); the message body is truncated to a
+ *  short preview. */
+export const sendChatMessageNotifyEmail = async (
+  env: Bindings,
+  {
+    to,
+    recipientName,
+    senderName,
+    eventTitle,
+    messagePreview,
+    eventUrl,
+    unsubscribeUrl,
+  }: {
+    to: string;
+    recipientName: string;
+    senderName: string;
+    eventTitle: string;
+    messagePreview: string;
+    eventUrl: string;
+    unsubscribeUrl?: string;
+  },
+) =>
+  dispatch(env, to, "chatMessageNotify", {
+    recipientName: recipientName || "there",
+    senderName: senderName || "Someone",
+    eventTitle,
+    messagePreview,
+    eventUrl,
+    unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
+  });
+
 export const sendEventJoinEmail = async (env: Bindings, params: HostRsvpEmailParams) =>
   dispatch(env, params.to, "eventJoin", buildHostRsvpModel(params));
 

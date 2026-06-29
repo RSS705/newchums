@@ -19,6 +19,7 @@ import DialogTitle from "@mui/material/DialogTitle";
 import Divider from "@mui/material/Divider";
 import FormControl from "@mui/material/FormControl";
 import FormControlLabel from "@mui/material/FormControlLabel";
+import Switch from "@mui/material/Switch";
 import InputAdornment from "@mui/material/InputAdornment";
 import Select from "@mui/material/Select";
 import Menu from "@mui/material/Menu";
@@ -72,7 +73,7 @@ import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import UserAvatar from "@/components/common/UserAvatar";
-import { AppButton, AppCard, useToast } from "@/components/ui";
+import { AppButton, AppCard, HelpTooltip, useToast } from "@/components/ui";
 import RichTextContent from "@/components/ui/RichTextContent";
 import {
   apiFetch,
@@ -378,6 +379,9 @@ export default function EventDetailClient({
   const [chatLoading, setChatLoading] = useState(true);
   const [chatInput, setChatInput] = useState("");
   const [chatSending, setChatSending] = useState(false);
+  // Per-message opt-in to email + in-app notify attendees. Off by default and
+  // reset after each send so notifying is always a deliberate choice.
+  const [chatNotify, setChatNotify] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
@@ -996,11 +1000,12 @@ export default function EventDetailClient({
         auth: true,
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body: text }),
+        body: JSON.stringify({ body: text, notify_attendees: chatNotify }),
       });
       const data = (await res.json()) as { ok: boolean; message?: ChatMessage };
       if (data.ok) {
         setChatInput("");
+        setChatNotify(false);
         notifyObjectivesChanged();
         // Message will arrive via WebSocket broadcast.
         // If WebSocket is disconnected, append locally as fallback.
@@ -5461,33 +5466,55 @@ export default function EventDetailClient({
               </Typography>
             </Stack>
           ) : (
-            <Stack direction="row" spacing={1} alignItems="flex-end">
-              <TextField
-                fullWidth
-                size="small"
-                placeholder="Write a message…"
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value.slice(0, 2000))}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSendChat();
+            <Stack spacing={0.5}>
+              <Stack direction="row" spacing={1} alignItems="center">
+                <TextField
+                  fullWidth
+                  size="small"
+                  placeholder="Write a message…"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value.slice(0, 2000))}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendChat();
+                    }
+                  }}
+                  multiline
+                  maxRows={4}
+                  disabled={chatSending}
+                  slotProps={{ htmlInput: { enterKeyHint: "send" } }}
+                  sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
+                />
+                <IconButton
+                  color="primary"
+                  onClick={handleSendChat}
+                  disabled={chatSending || !chatInput.trim()}
+                  sx={{ flexShrink: 0 }}
+                >
+                  {chatSending ? <CircularProgress size={20} /> : <SendRoundedIcon />}
+                </IconButton>
+              </Stack>
+              {/* Per-message opt-in: off by default, resets after each send. */}
+              <Stack direction="row" alignItems="center" spacing={0.25} sx={{ pl: 0.5 }}>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      size="small"
+                      checked={chatNotify}
+                      onChange={(e) => setChatNotify(e.target.checked)}
+                      disabled={chatSending}
+                    />
                   }
-                }}
-                multiline
-                maxRows={4}
-                disabled={chatSending}
-                slotProps={{ htmlInput: { enterKeyHint: "send" } }}
-                sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
-              />
-              <IconButton
-                color="primary"
-                onClick={handleSendChat}
-                disabled={chatSending || !chatInput.trim()}
-                sx={{ flexShrink: 0 }}
-              >
-                {chatSending ? <CircularProgress size={20} /> : <SendRoundedIcon />}
-              </IconButton>
+                  label={
+                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.75rem" }}>
+                      Notify attendees about this message
+                    </Typography>
+                  }
+                  sx={{ mr: 0, gap: 0.5 }}
+                />
+                <HelpTooltip title="Off by default, sending won't email anyone. Turn it on to email this plan's attendees (Going, Maybe, and the host) and add an in-app notification for just this message." />
+              </Stack>
             </Stack>
           )}
         </AppCard>

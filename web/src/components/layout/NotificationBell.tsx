@@ -121,6 +121,23 @@ function notificationText(n: AppNotification, viewerHandle: string | null): {
         actorHref,
         body: titleLink ? <>{" invited you to "}{titleLink}.</> : " invited you to a plan.",
       };
+    case "chat_message": {
+      // Deep-link to the plan's chat section rather than the top of the plan.
+      const chatHref = eventHref ? `${eventHref}?section=chat` : null;
+      const chatTitleLink = eventTitle && chatHref ? (
+        <Link href={chatHref} style={{ fontWeight: 600, color: "inherit", textDecoration: "none" }}
+          onMouseOver={(e) => { (e.target as HTMLElement).style.textDecoration = "underline"; }}
+          onMouseOut={(e) => { (e.target as HTMLElement).style.textDecoration = "none"; }}
+        >
+          &ldquo;{eventTitle}&rdquo;
+        </Link>
+      ) : eventTitle ? <>{`"${eventTitle}"`}</> : null;
+      return {
+        actorLabel,
+        actorHref,
+        body: chatTitleLink ? <>{" posted a message in "}{chatTitleLink}.</> : " posted a message in a plan chat.",
+      };
+    }
     case "join_request":
       return {
         actorLabel,

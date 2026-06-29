@@ -9,6 +9,7 @@ import { DATABASE_URL_HINT, type Bindings, getSql } from "./db";
 import { evaluateObjectives, OBJECTIVES } from "./objectives";
 import {
   sendAttendeeRemovedEmail,
+  sendChatMessageNotifyEmail,
   sendChumInviteEmail,
   sendContactFormEmail,
   sendEmailChangeConfirmEmail,
@@ -24,7 +25,6 @@ import {
   sendJoinRequestDeclinedEmail,
   sendJoinRequestEmail,
   sendPasswordResetEmail,
-  sendUnreadChatDigestEmail,
   sendEventMatchDigestEmail,
   formatEventMatchSeatLine,
   sendVerificationEmail,
@@ -13717,6 +13717,10 @@ app.post("/events/:id/chat", async (c) => {
   const messageBody = typeof body.body === "string" ? body.body.trim() : "";
   if (messageBody.length === 0) return c.json({ ok: false, error: "VALIDATION", message: "Message cannot be empty" }, 400);
   if (messageBody.length > 2000) return c.json({ ok: false, error: "VALIDATION", message: "Message is too long (max 2000 characters)" }, 400);
+  // Per-message opt-in: when true, this message notifies the plan's attendees
+  // (Going + Maybe + host, minus the sender) by email + an in-app notification.
+  // Unflagged messages stay silent (real-time broadcast + unread badge only).
+  const notifyAttendees = body.notify_attendees === true;
 
   try {
     const access = await checkChatAccess(sql, eventId, userId);
@@ -13737,8 +13741,8 @@ app.post("/events/:id/chat", async (c) => {
     }
 
     const inserted = (await sql`
-      INSERT INTO newchums.event_chat_messages (event_id, user_id, body)
-      VALUES (${eventId}, ${userId}, ${messageBody})
+      INSERT INTO newchums.event_chat_messages (event_id, user_id, body, notify_attendees)
+      VALUES (${eventId}, ${userId}, ${messageBody}, ${notifyAttendees})
       RETURNING id, created_at
     `) as { id: string; created_at: string }[];
 
@@ -13766,6 +13770,85 @@ app.post("/events/:id/chat", async (c) => {
         }))
       );
     } catch { /* DO broadcast failure should not fail the API response */ }
+
+    // Notify attendees when the sender opted in. Runs in the background so the
+    // send response stays fast. Recipients = Going + Maybe RSVPs + host, minus
+    // the sender. Each recipient always gets an in-app notification; the email
+    // additionally respects their chat-notification pref and a 2-minute
+    // per-recipient rate limit so a burst of flagged messages can't spam them.
+    if (notifyAttendees) {
+      const senderName = chatMessage.senderName;
+      const preview = messageBody.length > 280 ? `${messageBody.slice(0, 277)}...` : messageBody;
+      c.executionCtx.waitUntil((async () => {
+        try {
+          const evRows = (await sql`SELECT title FROM newchums.events WHERE id = ${eventId}`) as { title: string }[];
+          const eventTitle = evRows[0]?.title ?? "your plan";
+          const recipients = (await sql`
+            SELECT u.id, u.email, u.name, up.notification_prefs
+            FROM newchums.users u
+            LEFT JOIN newchums.user_profile up ON up.user_id = u.id
+            WHERE u.id != ${userId}
+              AND u.id IN (
+                SELECT user_id FROM newchums.event_rsvps
+                  WHERE event_id = ${eventId} AND status IN ('going', 'maybe')
+                UNION
+                SELECT host_user_id FROM newchums.events WHERE id = ${eventId}
+              )
+          `) as { id: string; email: string; name: string | null; notification_prefs: unknown }[];
+
+          const eventUrl = `${c.env.WEB_BASE_URL}/events/${eventId}?section=chat`;
+          const notifyMetadata = JSON.stringify({ eventTitle, senderName, preview });
+
+          for (const r of recipients) {
+            // In-app notification: always created (never rate-limited).
+            try {
+              await sql`
+                INSERT INTO newchums.notifications (user_id, type, actor_user_id, entity_id, metadata)
+                VALUES (${r.id}, 'chat_message', ${userId}, ${eventId}, ${notifyMetadata})
+              `;
+            } catch { /* one bad insert shouldn't stop the rest */ }
+
+            // Email: respect the recipient's chat-notification pref (the
+            // repurposed unread_chat_digest toggle)...
+            const prefs = normalizeNotificationPrefs(r.notification_prefs);
+            if (prefs.items.unread_chat_digest?.enabled === false) continue;
+
+            // ...and the per-recipient/per-plan rate limit. The conditional
+            // upsert atomically "claims" a send only when the last email was
+            // over 2 minutes ago (or never), so a flurry of flagged messages
+            // can't double-send to the same person.
+            let claimed = false;
+            try {
+              const claim = (await sql`
+                INSERT INTO newchums.event_chat_notify_sends (event_id, recipient_user_id, last_sent_at)
+                VALUES (${eventId}, ${r.id}, NOW())
+                ON CONFLICT (event_id, recipient_user_id) DO UPDATE
+                  SET last_sent_at = NOW()
+                  WHERE event_chat_notify_sends.last_sent_at < NOW() - INTERVAL '2 minutes'
+                RETURNING recipient_user_id
+              `) as { recipient_user_id: string }[];
+              claimed = claim.length > 0;
+            } catch { claimed = false; }
+            if (!claimed) continue;
+
+            try {
+              const unsubToken = await createUnsubscribeToken(c.env.NEXTAUTH_SECRET, r.id, "unread_chat_digest");
+              await sendChatMessageNotifyEmail(c.env, {
+                to: r.email,
+                recipientName: r.name?.trim() || "there",
+                senderName,
+                eventTitle,
+                messagePreview: preview,
+                eventUrl,
+                unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
+              });
+            } catch { /* email failure shouldn't break others */ }
+          }
+        } catch (notifyErr) {
+          console.error("[POST /events/:id/chat] notify failed", notifyErr);
+        }
+      })());
+    }
 
     return c.json({ ok: true, message: chatMessage });
   } catch (err) {
@@ -17787,121 +17870,11 @@ async function handleScheduled(
     console.error("[scheduled] no-attendee cancel error:", err);
   }
 
-  // Unread chat digest
-  try {
-    const chatRows = (await sql`
-      WITH participant AS (
-        SELECT er.user_id, er.event_id
-        FROM newchums.event_rsvps er WHERE er.status = 'going'
-        UNION
-        SELECT e.host_user_id AS user_id, e.id AS event_id
-        FROM newchums.events e WHERE e.status != 'canceled'
-      ),
-      unread AS (
-        SELECT
-          p.user_id,
-          p.event_id,
-          e.title AS event_title,
-          COUNT(cm.id)::int AS unread_count
-        FROM participant p
-        JOIN newchums.event_chat_messages cm
-          ON cm.event_id = p.event_id
-          AND cm.user_id != p.user_id
-        JOIN newchums.events e
-          ON e.id = p.event_id AND e.status != 'canceled'
-        JOIN newchums.users pu ON pu.id = p.user_id
-        LEFT JOIN newchums.event_chat_reads cr
-          ON cr.event_id = p.event_id AND cr.user_id = p.user_id
-        LEFT JOIN newchums.user_profile up
-          ON up.user_id = p.user_id
-        WHERE cm.created_at > COALESCE(cr.last_read_at, '1970-01-01'::timestamptz)
-          AND cm.created_at > COALESCE(up.chat_digest_sent_at, '1970-01-01'::timestamptz)
-          AND (COALESCE(e.is_qa, false) = false OR pu.role = 'super_admin')
-        GROUP BY p.user_id, p.event_id, e.title
-      )
-      SELECT
-        u.id AS user_id,
-        u.email,
-        u.name,
-        up.notification_prefs,
-        json_agg(json_build_object(
-          'eventId', unread.event_id,
-          'eventTitle', unread.event_title,
-          'unreadCount', unread.unread_count
-        ) ORDER BY unread.unread_count DESC) AS plans
-      FROM unread
-      JOIN newchums.users u ON u.id = unread.user_id
-      LEFT JOIN newchums.user_profile up ON up.user_id = u.id
-      WHERE (up.chat_digest_sent_at IS NULL OR up.chat_digest_sent_at < NOW() - INTERVAL '23 hours')
-      GROUP BY u.id, u.email, u.name, up.notification_prefs
-    `) as {
-      user_id: string;
-      email: string;
-      name: string | null;
-      notification_prefs: unknown;
-      plans: { eventId: string; eventTitle: string; unreadCount: number }[];
-    }[];
-
-    let chatSkippedPref = 0;
-    let chatSkippedEmpty = 0;
-    let chatQueued = 0;
-
-    if (chatRows.length > 0) {
-      const userIds: string[] = [];
-      const emailPromises: Promise<unknown>[] = [];
-
-      for (const row of chatRows) {
-        const prefs = normalizeNotificationPrefs(row.notification_prefs);
-        if (prefs.items.unread_chat_digest?.enabled === false) { chatSkippedPref++; continue; }
-
-        const plans = (Array.isArray(row.plans) ? row.plans : []).slice(0, 10);
-        if (plans.length === 0) { chatSkippedEmpty++; continue; }
-
-        const recipientName = row.name?.trim() || "there";
-
-        let unsubscribeUrl = "";
-        try {
-          if (env.NEXTAUTH_SECRET) {
-            const token = await createUnsubscribeToken(env.NEXTAUTH_SECRET, row.user_id, "unread_chat_digest");
-            unsubscribeUrl = `${env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(token)}`;
-          }
-        } catch { /* skip token on failure */ }
-
-        emailPromises.push(
-          sendUnreadChatDigestEmail(env, {
-            to: row.email,
-            recipientName,
-            plans: plans.map((p) => ({
-              title: p.eventTitle,
-              unreadCount: p.unreadCount,
-              url: `${env.WEB_BASE_URL}/events/${p.eventId}?section=chat`,
-            })),
-            unsubscribeUrl,
-          }),
-        );
-        userIds.push(row.user_id);
-        chatQueued++;
-      }
-
-      if (userIds.length > 0) {
-        ctx.waitUntil(
-          Promise.allSettled(emailPromises).then(async (results) => {
-            const failed = results.filter((r) => r.status === "rejected").length;
-            if (failed > 0) console.error(`[chat-digest] ${failed}/${results.length} email sends failed`);
-            await sql`
-              UPDATE newchums.user_profile
-              SET chat_digest_sent_at = NOW()
-              WHERE user_id = ANY(${userIds}::uuid[])
-            `;
-          }),
-        );
-      }
-    }
-
-    console.log(`[chat-digest] eligible=${chatRows.length} skippedPref=${chatSkippedPref} skippedEmpty=${chatSkippedEmpty} queued=${chatQueued}`);
-  } catch (err) {
-    console.error("[scheduled] chat digest error:", err);
-  }
+  // Unread chat digest: retired. Plan chat is now silent by default; a sender
+  // opts in per message ("Notify attendees") to email + in-app notify the
+  // plan's attendees immediately (see POST /events/:id/chat). The recipient-side
+  // unread_chat_digest pref now governs those per-message emails. The in-app
+  // unread-chat surface in the notification bell is unaffected (see GET notifications).
 
   // Event match digest
   try {

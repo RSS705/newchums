@@ -73,8 +73,8 @@ export const NOTIFICATION_TYPES: NotificationTypeConfig[] = [
   },
   {
     key: "unread_chat_digest",
-    title: "Unread messages in your plans",
-    description: "A daily email when you have unread chat messages in plans you're part of.",
+    title: "Plan chat notifications",
+    description: "An email when someone posts in a plan's chat and chooses to notify attendees. Plain messages won't email you.",
   },
   {
     key: "attendance_confirmation",
