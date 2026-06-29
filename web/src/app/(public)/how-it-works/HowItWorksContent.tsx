@@ -214,7 +214,7 @@ const FEATURE_SECTIONS: FeatureSection[] = [
   {
     id: "discovery",
     sectionTitle: "Discover plans and communities",
-    subtitle: "Find plans that match your interests and location. Join communities to see what people near you are organizing.",
+    subtitle: "Find plans that match your interests and location. Browse what people near you are organizing, and join a community if you want a regular group.",
     accentColor: "#1565c0",
     imageOnLeft: false,
     images: [
@@ -416,7 +416,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
             color="text.primary"
             sx={{ lineHeight: 1.7, fontSize: { xs: "1.0625rem", sm: "1.25rem" }, mb: 2 }}
           >
-            Whether you run a community or you&apos;re hosting a one-off, NewChums supports the whole flow: posting plans, inviting people, collecting RSVPs, finding the best time, confirming attendance, and following up after.
+            Whether it&apos;s a one-off get-together or something you run every week, NewChums supports the whole flow: posting plans, inviting people, collecting RSVPs, finding the best time, confirming attendance, and following up after.
           </Typography>
           <Typography
             variant="h5"

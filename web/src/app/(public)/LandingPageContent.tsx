@@ -114,8 +114,8 @@ const HOW_IT_WORKS_STEPS = [
     step: 1,
     accentColor: "#E65B13",
     Icon: CalendarMonthRoundedIcon,
-    title: "Set up a community or plan",
-    body: "Make a community page for your group, or post a one-off plan. Either way you choose the activity, the where, and the when.",
+    title: "Post your plan",
+    body: "Post a one-off plan in a couple of minutes, or set up a page for a group you run regularly. Either way, you choose the activity, the where, and the when.",
     placeholder: "Screenshot, Create plan flow",
     imageSrc: "/images/home/how-step-create.png",
   },
@@ -192,25 +192,25 @@ const ORGANIZER_VALUE_CARDS: {
     Icon: CampaignRoundedIcon,
     accentColor: "#E65B13",
     title: "Make plans visible",
-    body: "Give your community a public page where every upcoming gathering shows up in one place. Members and nearby people with matching hobbies can find what's happening without digging through chats.",
+    body: "Every plan you post lives in one place. The people you invite, and nearby people who share your hobbies, can see what's happening without digging through chats. Running something regularly? A public page keeps it all together.",
   },
   {
     Icon: HowToRegRoundedIcon,
     accentColor: "#1565c0",
     title: "Reduce RSVP friction",
-    body: "Built-in RSVPs, request-to-join, and a 24-hour attendance check so you know who's actually coming. Less back-and-forth in group chat, fewer no-shows on the day.",
+    body: "RSVPs are built in, with optional extras like request-to-join and a 24-hour attendance check so you can see who's actually coming. Less back-and-forth in the group chat, fewer no-shows on the day.",
   },
   {
     Icon: EmojiPeopleRoundedIcon,
     accentColor: "#2e7d32",
     title: "Help newcomers join in",
-    body: "Share one link and a curious newcomer can preview the community, sign up in seconds, and request to join a plan. No app download, no waiting on a moderator to add them to a chat.",
+    body: "Send one link. Someone new can preview the plan, sign up in seconds, and join. No app to download, no waiting to be added to yet another group chat.",
   },
   {
     Icon: TuneRoundedIcon,
     accentColor: "#7c3aed",
-    title: "Keep organizers in control",
-    body: "Choose public, members-only, or invite-only per plan. Approve requests when you want to vet new players. Lock a plan when seats are full. The defaults are sensible, the toggles are yours.",
+    title: "Stay in control",
+    body: "Choose public, chums-only, or invite-only per plan. Approve requests when you want to vet who's coming. Lock a plan when seats are full. The defaults are sensible, the toggles are yours.",
   },
 ];
 
@@ -482,11 +482,11 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                   display: "block",
                 }}
               >
-                For local hobby communities, clubs, and game stores
+                The easiest way to organize group plans
               </Typography>
 
               <Typography component="h1" variant="h1" sx={{ mt: "0 !important" }}>
-                Help your community make more plans happen
+                Make plans that actually happen
               </Typography>
 
               <Typography
@@ -499,11 +499,11 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                   fontSize: "1.2rem",
                 }}
               >
-                NewChums gives your community a simple place to{" "}
+                NewChums gives you one simple place to{" "}
                 <Box component="span" sx={{ fontWeight: 700 }}>
-                  post plans, collect RSVPs, invite people,
+                  post a plan, invite people, collect RSVPs,
                 </Box>{" "}
-                and help members find local gatherings that match their hobbies.
+                and let the right people find it.
               </Typography>
 
               <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ pt: 0.5 }}>
@@ -621,7 +621,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
             {heroImageErrored ? (
               <Box
                 role="img"
-                aria-label="Local hobby community gathering"
+                aria-label="Friends meeting up through a shared plan"
                 sx={{
                   width: "100%",
                   aspectRatio: "3 / 2",
@@ -645,14 +645,14 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                   fontWeight={600}
                   sx={{ color: "text.secondary", textAlign: "center", maxWidth: 320 }}
                 >
-                  Your community, in one place.
+                  Your plans, in one place.
                 </Typography>
               </Box>
             ) : (
               <Box
                 component="img"
                 src="/images/home/community-hero.png"
-                alt="A local hobby community making plans together"
+                alt="Friends making plans together"
                 onError={() => setHeroImageErrored(true)}
                 sx={{
                   height: "100%",
@@ -837,7 +837,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                 mb: 2,
               }}
             >
-              Built for the people who keep communities moving
+              Built for the people who make plans happen
             </Typography>
             <Typography
               variant="h5"
@@ -851,9 +851,9 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                 mx: "auto",
               }}
             >
-              Game stores, hobby clubs, league captains, Discord and Facebook group admins. If
-              you&apos;re the person turning &ldquo;we should do something&rdquo; into actual plans,
-              NewChums is built to make that part easier.
+              A game night, a group hike, a study group, a club you help run. If you&apos;re the one
+              who turns &ldquo;we should do something&rdquo; into an actual plan, NewChums is built to
+              make your life easier.
             </Typography>
           </Box>
 
@@ -1035,7 +1035,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                 mx: "auto",
               }}
             >
-              Whether you run a community or you&apos;re hosting a one-off, the same four steps get you from idea to gathering.
+              Whether it&apos;s a one-off get-together or something you run every week, the same four steps get you from idea to gathering.
             </Typography>
           </Box>
 
@@ -1432,7 +1432,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                 mb: 2,
               }}
             >
-              For people looking for their hobby community
+              For people looking for plans they&apos;ll actually enjoy
             </Typography>
             <Typography
               variant="h5"
@@ -1446,7 +1446,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                 mx: "auto",
               }}
             >
-              Find local plans and communities that match what you actually enjoy doing.
+              Find local plans that match what you actually enjoy doing.
             </Typography>
           </Box>
 
@@ -1460,10 +1460,10 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
               <Typography variant="body1" sx={{ lineHeight: 1.85, mb: 3, color: "text.primary" }}>
                 Browse{" "}
                 <Box component="span" sx={{ fontWeight: 700 }}>
-                  nearby plans and communities
+                  nearby plans
                 </Box>{" "}
-                that fit your hobbies. RSVP to a board game night, request to join a community for
-                your local pottery group, jump into the plan chat once you&apos;re in.
+                that fit your hobbies. RSVP to a board game night, join a Saturday hike, drop into a
+                study session, and jump into the plan chat once you&apos;re in.
               </Typography>
               <Typography
                 variant="body1"
@@ -1473,8 +1473,8 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                 <Box component="span" sx={{ fontWeight: 700 }}>
                   matching gatherings come to you
                 </Box>{" "}
-                instead of you trawling group chats. New to the area or new to the hobby? Public
-                community pages are an easy first step in.
+                instead of you trawling group chats. New to the area or the hobby? Browsing
+                public plans is an easy way to start.
               </Typography>
               {!isLoggedIn && (
                 <Button
@@ -1723,7 +1723,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                 }}
               >
                 There&apos;s real research behind why shared activities, smaller gatherings, and
-                repeated contact help communities show up consistently.
+                repeated contact help people show up consistently.
               </Typography>
               <Button
                 component={Link}
@@ -1785,7 +1785,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
               fontWeight: 600,
             }}
           >
-            Ready to make your community easier to join?
+            Ready to make your next plan happen?
           </Typography>
           <Typography
             component="h2"
@@ -1804,7 +1804,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
             variant="body1"
             sx={{ mb: { xs: 6, sm: 8 }, opacity: 0.85, lineHeight: 1.75, maxWidth: 520, mx: "auto" }}
           >
-            Create a free account, explore local plans, or start building a home for your hobby community.
+            Create a free account, explore local plans, or post your first one.
           </Typography>
           <Divider
             sx={{

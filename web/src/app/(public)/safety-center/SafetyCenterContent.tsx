@@ -154,7 +154,7 @@ export default function SafetyCenterContent({ isLoggedIn = false }: { isLoggedIn
                 textTransform: "uppercase",
               }}
             >
-              Community guidance
+              Safety guidance
             </Typography>
           </Stack>
 
@@ -186,7 +186,7 @@ export default function SafetyCenterContent({ isLoggedIn = false }: { isLoggedIn
             color="text.primary"
             sx={{ lineHeight: 1.7, fontSize: { xs: "1.0625rem", sm: "1.25rem" }, mb: 2.5 }}
           >
-            NewChums is built for local hobby communities and the people who attend their plans. A few simple habits make every gathering safer and more enjoyable, for hosts, organizers, and attendees alike.
+            NewChums helps anyone pull a plan together and get people there. A few simple habits make every gathering safer and more enjoyable, for whoever is hosting and everyone coming along.
           </Typography>
           <Typography
             variant="h5"
@@ -417,7 +417,7 @@ export default function SafetyCenterContent({ isLoggedIn = false }: { isLoggedIn
             variant="body1"
             sx={{ mb: { xs: 4, sm: 5 }, lineHeight: 1.75, textAlign: { xs: "center", sm: "left" } }}
           >
-            Good communities are built on consideration. The people who make gatherings great are the ones
+            Good gatherings are built on consideration. The people who make them great are the ones
             who are thoughtful, patient, and genuinely interested in others.
           </Typography>
 
@@ -497,8 +497,8 @@ export default function SafetyCenterContent({ isLoggedIn = false }: { isLoggedIn
           </Box>
 
           <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.75, textAlign: { xs: "center", sm: "left" } }}>
-            If you experience something concerning from another member, you can let us know. We take
-            community conduct seriously and handle concerns respectfully.
+            If you experience something concerning from someone you met through a plan, you can let us know. We take
+            conduct seriously and handle concerns respectfully.
           </Typography>
         </Box>
       </Box>
