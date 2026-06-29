@@ -132,7 +132,7 @@ export default function CreateEventClient() {
   const [deadlineTime, setDeadlineTime] = useState<Dayjs | null>(null);
   const [allowAttendeeInvites, setAllowAttendeeInvites] = useState(true);
   const [reserveSeats, setReserveSeats] = useState(false);
-  const [requireReconfirmation, setRequireReconfirmation] = useState(true);
+  const [requireReconfirmation, setRequireReconfirmation] = useState(false);
   const [requireApproval, setRequireApproval] = useState(false);
   const [minConfirmedAttendees, setMinConfirmedAttendees] = useState("");
   const [fallbackPolicy, setFallbackPolicy] = useState<"notify_host" | "proceed" | "auto_cancel">(

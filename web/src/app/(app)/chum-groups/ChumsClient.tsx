@@ -141,7 +141,7 @@ function ContactRow({
           size={44}
           sx={{ flexShrink: 0 }}
         />
-        <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Box sx={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
           {profileHref ? (
             <Typography
               component={Link}
@@ -173,9 +173,10 @@ function ContactRow({
             alignItems={{ xs: "flex-start", sm: "center" }}
             spacing={{ xs: 0.25, sm: 1.25 }}
             flexWrap="wrap"
+            sx={{ minWidth: 0, width: "100%" }}
           >
             {handle && (
-              <Typography variant="body2" color="text.secondary" sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <Typography variant="body2" color="text.secondary" sx={{ minWidth: 0, maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {handle}
               </Typography>
             )}

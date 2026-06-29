@@ -14353,10 +14353,16 @@ app.get("/events/:id/feedback", async (c) => {
       return c.json({ ok: false, error: "NOT_PAST" }, 400);
 
     const isHost = ev[0].host_user_id === userId;
-    const hasRsvp = (await sql`
-      SELECT 1 FROM newchums.event_rsvps WHERE event_id = ${eventId} AND user_id = ${userId} LIMIT 1
+    // Only people who actually attended can leave feedback. A 'cant_make_it'
+    // RSVP (or no RSVP) means they didn't attend → NOT_PARTICIPANT; the client
+    // then shows the normal past-plan view. Mirrors the reviewee query below,
+    // which already scopes to going/maybe + host.
+    const attended = (await sql`
+      SELECT 1 FROM newchums.event_rsvps
+      WHERE event_id = ${eventId} AND user_id = ${userId}
+        AND status IN ('going', 'maybe') LIMIT 1
     `).length > 0;
-    if (!isHost && !hasRsvp)
+    if (!isHost && !attended)
       return c.json({ ok: false, error: "NOT_PARTICIPANT" }, 403);
 
     const attendees = (await sql`
@@ -14478,6 +14484,16 @@ app.post("/events/:id/feedback", async (c) => {
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     if (new Date(ev[0].starts_at) > new Date())
       return c.json({ ok: false, error: "NOT_PAST" }, 400);
+
+    // Only people who actually attended can leave feedback (see GET handler).
+    const isHost = ev[0].host_user_id === userId;
+    const attended = (await sql`
+      SELECT 1 FROM newchums.event_rsvps
+      WHERE event_id = ${eventId} AND user_id = ${userId}
+        AND status IN ('going', 'maybe') LIMIT 1
+    `).length > 0;
+    if (!isHost && !attended)
+      return c.json({ ok: false, error: "NOT_PARTICIPANT" }, 403);
 
     for (const entry of body.entries) {
       if (entry.prompt === "hosting_skills" && entry.revieweeUserId !== ev[0].host_user_id)

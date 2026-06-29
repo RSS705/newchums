@@ -2697,7 +2697,8 @@ export default function EventDetailClient({
           bails out (loading/dismissed/no attendees-or-issues to review),
           it doesn't leave an empty Box consuming a Stack gap slot between
           the header and the details card. */}
-      {isPast && !isCanceled && accessState === "attending" && (
+      {isPast && !isCanceled && accessState === "attending" &&
+        (event.isHost || viewerRsvpStatus === "going" || viewerRsvpStatus === "maybe") && (
         <PlanFeedback
           id="plan-section-feedback"
           eventId={event.id}
@@ -2952,8 +2953,12 @@ export default function EventDetailClient({
         </AppCard>
       )}
 
-      {/* RSVP / Request-to-join actions (non-hosts, non-canceled) */}
-      {!event.isHost && !isCanceled && (
+      {/* RSVP / Request-to-join actions (non-hosts, non-canceled, not past).
+          Once a plan has passed it can no longer be joined and attendance can
+          no longer be changed, so the interactive card is hidden; the read-only
+          status card below preserves the viewer's recorded RSVP in the normal
+          past-plan view. */}
+      {!event.isHost && !isCanceled && !isPast && (
         <AppCard>
           {isAuthenticated === false && emailContext === "host_review" ? (
             <Stack spacing={2} sx={{ py: 1 }}>
@@ -3561,6 +3566,32 @@ export default function EventDetailClient({
               )}
             </div>
           )}
+        </AppCard>
+      )}
+
+      {/* Past-plan RSVP status (read-only). The interactive RSVP card above is
+          hidden once a plan has passed; this preserves the viewer's recorded
+          attendance status in the normal past-plan view without allowing changes. */}
+      {!event.isHost && !isCanceled && isPast && viewerRsvpStatus && (
+        <AppCard>
+          <Stack direction="row" alignItems="center" spacing={1}>
+            {viewerRsvpStatus === "going" && (
+              <CheckCircleRoundedIcon sx={{ fontSize: 20, color: "success.main" }} />
+            )}
+            {viewerRsvpStatus === "maybe" && (
+              <AccessTimeRoundedIcon sx={{ fontSize: 20, color: "warning.main" }} />
+            )}
+            {viewerRsvpStatus === "cant_make_it" && (
+              <InfoOutlinedIcon sx={{ fontSize: 20, color: "text.secondary" }} />
+            )}
+            <Typography variant="h6" fontWeight={600}>
+              {viewerRsvpStatus === "going"
+                ? "You went"
+                : viewerRsvpStatus === "maybe"
+                  ? "You were marked as maybe"
+                  : "You couldn't make it"}
+            </Typography>
+          </Stack>
         </AppCard>
       )}
 

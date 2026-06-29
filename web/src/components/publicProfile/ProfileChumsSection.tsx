@@ -14,7 +14,9 @@ import { AppCard } from "@/components/ui";
 import UserAvatar from "@/components/common/UserAvatar";
 import ProfileSectionHeader from "./ProfileSectionHeader";
 
-const PAGE_SIZE = 8;
+// Whole multiple of every breakpoint's column count (3 on xs, 6 on sm) so each
+// non-final page renders only complete rows — no orphan in a partial last row.
+const PAGE_SIZE = 12;
 
 type PublicChum = {
   userId: string;
@@ -104,7 +106,7 @@ export default function ProfileChumsSection({ ownerHandle, viewerLoggedIn }: Pro
         <Box
           sx={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(96px, 1fr))",
+            gridTemplateColumns: { xs: "repeat(3, 1fr)", sm: "repeat(6, 1fr)" },
             columnGap: { xs: 2, sm: 2.5 },
             rowGap: { xs: 2.25, sm: 2.5 },
           }}
@@ -142,7 +144,10 @@ export default function ProfileChumsSection({ ownerHandle, viewerLoggedIn }: Pro
             );
 
             return (
-              <Box key={chum.userId}>
+              // minWidth: 0 lets the 1fr track shrink below the label's
+              // intrinsic (nowrap) width so long handles ellipsize instead of
+              // forcing the column — and the grid — wider than the viewport.
+              <Box key={chum.userId} sx={{ minWidth: 0 }}>
                 {href ? (
                   <Box
                     component={Link}
