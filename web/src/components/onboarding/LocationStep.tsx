@@ -30,8 +30,8 @@ export default function LocationStep({
         }}
         onPlaceSelect={onPlaceSelect}
         label="Home location"
-        placeholder="Enter your address"
-        helperText="Your address is never shared publicly."
+        placeholder="Your city or neighbourhood"
+        helperText="A city or neighbourhood is enough. Whatever you enter is only used for distance matching and is never shared publicly."
         inputId="onboarding-location"
       />
       <DistanceSelect

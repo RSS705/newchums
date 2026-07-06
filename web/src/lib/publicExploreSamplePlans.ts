@@ -36,7 +36,7 @@ export function getSamplePublicExplorePlans(now = new Date()): PlanEvent[] {
     // 1 – Game (board game)
     {
       id: IDS[0],
-      title: "Game of settlers of catan",
+      title: "Settlers of Catan game night",
       description: null,
       startsAt: d0(5, 19),
       locationType: "in_person",
@@ -63,7 +63,7 @@ export function getSamplePublicExplorePlans(now = new Date()): PlanEvent[] {
     // 2 – Sport (pickleball)
     {
       id: IDS[3],
-      title: "Pickleball meet up",
+      title: "Morning pickleball, all levels welcome",
       description: null,
       startsAt: d0(3, 11),
       locationType: "in_person",
@@ -90,7 +90,7 @@ export function getSamplePublicExplorePlans(now = new Date()): PlanEvent[] {
     // 3 – Game (card game)
     {
       id: IDS[1],
-      title: "Casual game of commander",
+      title: "Casual Commander night (MTG)",
       description: null,
       startsAt: d0(9, 18),
       locationType: "in_person",
@@ -117,7 +117,7 @@ export function getSamplePublicExplorePlans(now = new Date()): PlanEvent[] {
     // 4 – Sport (bowling)
     {
       id: IDS[4],
-      title: "Bowling meetup",
+      title: "Weekend bowling hangout",
       description: null,
       startsAt: d0(6, 10),
       locationType: "in_person",
@@ -171,7 +171,7 @@ export function getSamplePublicExplorePlans(now = new Date()): PlanEvent[] {
     // 6 – Craft (pottery)
     {
       id: IDS[5],
-      title: "Pottery hangout",
+      title: "Pottery studio hangout",
       description: null,
       startsAt: d0(14, 15),
       locationType: "in_person",

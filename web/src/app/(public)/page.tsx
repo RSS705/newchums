@@ -12,22 +12,44 @@ export const metadata: Metadata = {
   // Absolute override: the root layout's title.template would otherwise
   // produce "NewChums | ... | NewChums". The homepage deserves the full
   // positioning in both the title and the OG/Twitter cards.
-  title: { absolute: "NewChums | Start, share, and join hobby-based plans nearby" },
+  // Title matches the on-page H1 so search snippets, social cards, and the
+  // hero all make the same promise.
+  title: { absolute: "NewChums | Make plans that actually happen" },
   description:
-    "One place for your plans. Create them, share invites, or discover gatherings near you, around the things you enjoy.",
+    "One simple place to post a plan, invite people, collect RSVPs, and let the right people find it. Free to use, around the hobbies you enjoy.",
   alternates: { canonical: "/" },
   openGraph: {
-    title: "NewChums | Start, share, and join hobby-based plans nearby",
+    title: "NewChums | Make plans that actually happen",
     description:
-      "One place for your plans. Create them, share invites, or discover gatherings near you, around the things you enjoy.",
+      "One simple place to post a plan, invite people, collect RSVPs, and let the right people find it. Free to use, around the hobbies you enjoy.",
     url: "/",
     type: "website",
   },
   twitter: {
-    title: "NewChums | Start, share, and join hobby-based plans nearby",
+    title: "NewChums | Make plans that actually happen",
     description:
-      "One place for your plans. Create them, share invites, or discover gatherings near you, around the things you enjoy.",
+      "One simple place to post a plan, invite people, collect RSVPs, and let the right people find it. Free to use, around the hobbies you enjoy.",
   },
+};
+
+/** Organization + WebSite structured data for the logged-out homepage.
+ *  Kept minimal and static; serialized with `<` escaped so user-agnostic
+ *  JSON can be inlined safely in a script tag. */
+const HOME_JSON_LD = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      name: "NewChums",
+      url: "https://newchums.com",
+      logo: "https://newchums.com/logo-horizontal-black.png",
+    },
+    {
+      "@type": "WebSite",
+      name: "NewChums",
+      url: "https://newchums.com",
+    },
+  ],
 };
 
 export default async function RootPage() {
@@ -35,9 +57,17 @@ export default async function RootPage() {
 
   if (!session?.user?.email) {
     return (
-      <LandingLayout isLoggedIn={false}>
-        <LandingPageContent isLoggedIn={false} />
-      </LandingLayout>
+      <>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify(HOME_JSON_LD).replace(/</g, "\\u003c"),
+          }}
+        />
+        <LandingLayout isLoggedIn={false}>
+          <LandingPageContent isLoggedIn={false} />
+        </LandingLayout>
+      </>
     );
   }
 

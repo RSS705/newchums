@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
+import { Suspense, cache } from "react";
 import CircularProgress from "@mui/material/CircularProgress";
 import Box from "@mui/material/Box";
 import { auth } from "@/auth";
@@ -29,9 +29,9 @@ const FALLBACK_METADATA: Metadata = {
     description: GENERIC_FALLBACK_DESCRIPTION,
     siteName: "NewChums",
     // Explicit empty override. Root layout sets openGraph.images to the
-    // horizontal NewChums wordmark; without an explicit override here,
+    // /og-image.png brand card; without an explicit override here,
     // Next deep-merges the parent's images into this page and Discord
-    // unfurls a "giant logo" embed for banner-less plans.
+    // unfurls a generic product embed for banner-less plans.
     images: [],
   },
   twitter: {
@@ -122,6 +122,131 @@ function truncateTitleForMetadata(raw: string, max = 65): string {
   return `${t.slice(0, cut).trimEnd()}…`;
 }
 
+/** Shape of the GET /events/:id response, narrowed to the fields this
+ *  route consumes for metadata and structured data. The API is the source
+ *  of truth for what each access state exposes; logged-out requests get
+ *  the public-preview shape (no exact address, no online link). */
+type PlanDetailResponse = {
+  ok?: boolean;
+  accessState?: "public" | "invite" | "authenticated" | "attending";
+  event?: {
+    title?: string | null;
+    description?: string | null;
+    startsAt?: string | null;
+    timezone?: string | null;
+    locationType?: string | null;
+    locationDisplay?: string | null;
+    locationArea?: string | null;
+    locationName?: string | null;
+    locationAddress?: string | null;
+    hobby?: string | null;
+    hobbies?: Array<{ name: string }>;
+    bannerKey?: string | null;
+    visibility?: string | null;
+    status?: string | null;
+    hostName?: string | null;
+    isQa?: boolean;
+  };
+};
+
+/** Pull share/invite tokens out of the resolved searchParams. */
+function readTokens(search: Record<string, string | string[] | undefined>) {
+  const shareToken =
+    typeof search.share_token === "string" && search.share_token
+      ? search.share_token
+      : null;
+  const inviteToken =
+    typeof search.invite_token === "string" && search.invite_token
+      ? search.invite_token
+      : null;
+  return { shareToken, inviteToken };
+}
+
+/** Fetch the plan from the API worker. Wrapped in React `cache()` so
+ *  generateMetadata and the page component share a single API round trip
+ *  per request instead of fetching twice. Tokens are forwarded so the API
+ *  returns the token-backed access state for chums_only / invite_only
+ *  plans; the API validates them and is the source of truth for what each
+ *  access state may expose. Returns null on any error so callers fall
+ *  back to their generic branches. */
+const fetchPlanDetail = cache(
+  async (
+    id: string,
+    shareToken: string | null,
+    inviteToken: string | null
+  ): Promise<PlanDetailResponse | null> => {
+    const base = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "");
+    if (!base || !id) return null;
+    const apiUrl = new URL(`${base}/events/${encodeURIComponent(id)}`);
+    if (shareToken) apiUrl.searchParams.set("share_token", shareToken);
+    if (inviteToken) apiUrl.searchParams.set("invite_token", inviteToken);
+    try {
+      const res = await fetch(apiUrl.toString(), { cache: "no-store" });
+      if (!res.ok) return null;
+      return (await res.json()) as PlanDetailResponse;
+    } catch {
+      return null;
+    }
+  }
+);
+
+/** schema.org/Event structured data for public-visibility plans.
+ *
+ *  Emitted only for `visibility === "public"` plans (published, or
+ *  canceled so search engines learn the cancellation), never for QA,
+ *  draft, chums_only, or invite_only plans. Location follows the same
+ *  privacy contract as the metadata above: only the approximate
+ *  city/region area, never the exact address, coordinates, or online
+ *  meeting link. Online plans use a VirtualLocation pointing at the plan
+ *  page itself. Returns null when the plan should not carry schema. */
+function buildPlanJsonLd(
+  id: string,
+  data: PlanDetailResponse | null
+): Record<string, unknown> | null {
+  const ev = data?.ok ? data.event : null;
+  if (!ev) return null;
+  if (ev.visibility !== "public" || ev.isQa) return null;
+  if (ev.status !== "published" && ev.status !== "canceled") return null;
+  const title = (ev.title || "").trim();
+  if (!title || !ev.startsAt) return null;
+
+  const url = `https://newchums.com/events/${encodeURIComponent(id)}`;
+  const isOnline = ev.locationType === "online";
+
+  // Privacy-safe location only. Approximate area comes from the stored
+  // locationArea, else is derived from the address with street detail
+  // stripped; the raw address itself never appears.
+  let location: Record<string, unknown> | undefined;
+  if (isOnline) {
+    location = { "@type": "VirtualLocation", url };
+  } else {
+    const area =
+      (ev.locationArea || "").trim() || deriveApproxArea(ev.locationAddress);
+    if (area) location = { "@type": "Place", name: area };
+  }
+
+  const jsonLd: Record<string, unknown> = {
+    "@context": "https://schema.org",
+    "@type": "Event",
+    name: title,
+    startDate: ev.startsAt,
+    url,
+    eventAttendanceMode: isOnline
+      ? "https://schema.org/OnlineEventAttendanceMode"
+      : "https://schema.org/OfflineEventAttendanceMode",
+    eventStatus:
+      ev.status === "canceled"
+        ? "https://schema.org/EventCancelled"
+        : "https://schema.org/EventScheduled",
+  };
+  if (location) jsonLd.location = location;
+  const host = (ev.hostName || "").trim();
+  if (host) jsonLd.organizer = { "@type": "Person", name: host };
+  const description = (ev.description || "").trim();
+  if (description) jsonLd.description = description.slice(0, 500);
+  return jsonLd;
+}
+
 /** Dynamic metadata for plan detail pages.
  *
  *  Token-aware: when the URL carries `?share_token=` or `?invite_token=`,
@@ -148,7 +273,7 @@ function truncateTitleForMetadata(raw: string, max = 65): string {
  *  ImageResponse + Satori; SVG OG images are unreliable on Twitter).
  *  Both `openGraph.images` and `twitter.images` are set to an explicit
  *  empty array so Next's deep-merge doesn't inherit the root layout's
- *  `/logo-horizontal-black.png` and ship a "giant logo" embed.
+ *  `/og-image.png` brand card and ship a generic product embed.
  *
  *  Location handling: never includes the exact street address even
  *  when token-backed access exposes it. Built from `locationName` plus
@@ -164,51 +289,19 @@ export async function generateMetadata({
 }: PageProps): Promise<Metadata> {
   const { id } = await params;
   const search = (await searchParams) ?? {};
-  const shareToken =
-    typeof search.share_token === "string" && search.share_token
-      ? search.share_token
-      : null;
-  const inviteToken =
-    typeof search.invite_token === "string" && search.invite_token
-      ? search.invite_token
-      : null;
+  const { shareToken, inviteToken } = readTokens(search);
   const hasToken = !!(shareToken || inviteToken);
-
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "");
-  if (!base || !id) return FALLBACK_METADATA;
 
   // Forward tokens so the API returns the token-backed access state for
   // chums_only / invite_only plans rather than the public-preview shape.
   // The API validates tokens and is the source of truth for what each
   // accessState is allowed to expose; we just consume the response.
-  const apiUrl = new URL(`${base}/events/${encodeURIComponent(id)}`);
-  if (shareToken) apiUrl.searchParams.set("share_token", shareToken);
-  if (inviteToken) apiUrl.searchParams.set("invite_token", inviteToken);
+  // The fetch is request-scoped via React cache(), so the page component
+  // below reuses this same response for its JSON-LD.
+  const data = await fetchPlanDetail(id, shareToken, inviteToken);
+  if (!data) return FALLBACK_METADATA;
 
   try {
-    const res = await fetch(apiUrl.toString(), { cache: "no-store" });
-    if (!res.ok) return FALLBACK_METADATA;
-    const data = (await res.json()) as {
-      ok?: boolean;
-      accessState?: "public" | "invite" | "authenticated" | "attending";
-      event?: {
-        title?: string | null;
-        description?: string | null;
-        startsAt?: string | null;
-        timezone?: string | null;
-        locationType?: string | null;
-        locationDisplay?: string | null;
-        locationArea?: string | null;
-        locationName?: string | null;
-        locationAddress?: string | null;
-        hobby?: string | null;
-        hobbies?: Array<{ name: string }>;
-        bannerKey?: string | null;
-        visibility?: string | null;
-        status?: string | null;
-        isQa?: boolean;
-      };
-    };
     const ev = data.ok ? data.event : null;
     if (!ev) return FALLBACK_METADATA;
 
@@ -297,7 +390,7 @@ export async function generateMetadata({
         // card yet (font/runtime risk on OpenNext-Cloudflare). Until that
         // exists, ship a clean text-only embed by explicitly clearing the
         // image. Empty array also overrides the root layout's
-        // /logo-horizontal-black.png that would otherwise leak in via
+        // /og-image.png brand card that would otherwise leak in via
         // Next's deep-merge.
         images: [],
       },
@@ -313,7 +406,13 @@ export async function generateMetadata({
   }
 }
 
-export default async function EventDetailPage() {
+export default async function EventDetailPage({
+  params,
+  searchParams,
+}: PageProps) {
+  const { id } = await params;
+  const search = (await searchParams) ?? {};
+  const { shareToken, inviteToken } = readTokens(search);
   // Resolve auth state on the server so the client can skip
   // `/api/auth/api-token` for logged-out viewers (which would 401 and
   // pollute the browser console / Sentry breadcrumbs). Plan detail is
@@ -322,15 +421,30 @@ export default async function EventDetailPage() {
   // Logged-in clients still resolve a fresh token as before.
   const session = await auth();
   const isAuthenticatedFromServer = !!session?.user?.email;
+  // Reuses the request-scoped response already fetched by generateMetadata
+  // (React cache()); no extra API round trip. Only public-visibility plans
+  // produce structured data, see buildPlanJsonLd.
+  const planData = await fetchPlanDetail(id, shareToken, inviteToken);
+  const jsonLd = buildPlanJsonLd(id, planData);
   return (
-    <Suspense
-      fallback={
-        <Box sx={{ display: "flex", justifyContent: "center", py: 10 }}>
-          <CircularProgress />
-        </Box>
-      }
-    >
-      <EventDetailClient isAuthenticatedFromServer={isAuthenticatedFromServer} />
-    </Suspense>
+    <>
+      {jsonLd && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c"),
+          }}
+        />
+      )}
+      <Suspense
+        fallback={
+          <Box sx={{ display: "flex", justifyContent: "center", py: 10 }}>
+            <CircularProgress />
+          </Box>
+        }
+      >
+        <EventDetailClient isAuthenticatedFromServer={isAuthenticatedFromServer} />
+      </Suspense>
+    </>
   );
 }

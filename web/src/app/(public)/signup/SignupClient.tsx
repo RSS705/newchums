@@ -23,6 +23,7 @@ import AuthFooterLink from "@/components/auth/AuthFooterLink";
 import AuthSplitLayout from "@/components/layout/AuthSplitLayout";
 import { AppButton, AppCard } from "@/components/ui";
 import { apiFetch } from "@/lib/apiClient";
+import { trackEvent } from "@/lib/analytics";
 import { validateCleanText } from "@/lib/contentSafety";
 import { getSafeRedirectPath } from "@/lib/authRedirect";
 import OnboardingProgress from "@/components/onboarding/OnboardingProgress";
@@ -83,6 +84,9 @@ export default function SignupClient() {
     errorParam === "UserSuspended";
 
   const goForward = () => {
+    // Funnel instrumentation: fires once per successful step advance so
+    // drop-off between wizard steps is measurable in GA.
+    trackEvent("signup_step_completed", { step });
     setDirection("forward");
     setStep((s) => Math.min(s + 1, TOTAL_STEPS));
   };
@@ -275,6 +279,11 @@ export default function SignupClient() {
         } catch { /* non-fatal */ }
       }
 
+      trackEvent("signup_completed", {
+        has_hobbies: hobbies.length > 0,
+        has_location: homeLat != null && homeLng != null,
+      });
+
       await apiFetch("/auth/email-verify/request", {
         method: "POST",
         body: JSON.stringify({ email: signedUpEmail }),
@@ -437,6 +446,7 @@ export default function SignupClient() {
                         terms: "2026-03-17",
                         privacy: "2026-03-17",
                       }));
+                      trackEvent("signup_google_clicked");
                       signIn("google", { redirectTo: redirectTarget });
                     }}
                     sx={{

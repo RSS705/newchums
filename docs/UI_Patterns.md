@@ -60,7 +60,11 @@ advancing feels guided rather than form-flat.
 - You need to compare items side by side.
 
 **Where it lives.**
-Canonical implementation: [web/src/components/events/PlanFeedback.tsx:494-988](../web/src/components/events/PlanFeedback.tsx#L494-L988)
+No live canonical implementation right now. The original implementation
+(post-plan feedback) was consolidated to a single-screen batch form in July
+2026 because the per-item walk was hurting completion. The pattern remains
+valid guidance for future queue-style flows (batch approvals, onboarding
+interviews); check this file's git history for the reference implementation.
 
 **Key conventions.**
 - The wrapper is a `<Box>` with `display: flex; flex-direction: column;
@@ -98,7 +102,11 @@ and a `primary.light` border.
   treatments (see EventCard, AppCard usage in event detail).
 
 **Where it lives.**
-Canonical implementation: [web/src/components/events/PlanFeedback.tsx:579-707](../web/src/components/events/PlanFeedback.tsx#L579-L707)
+No live canonical implementation right now: the post-plan feedback flow that
+introduced this hero moved to a single-screen layout with compact per-person
+header rows (July 2026). The recipe below still applies when a future screen
+is genuinely about one person; check this file's git history for the
+reference implementation.
 
 **Key conventions.**
 - Avatar: `width/height: { xs: 60, sm: 68 }`, `border: 3px solid #fff`,
@@ -140,7 +148,10 @@ decline), a subtle drop shadow, and weight 700. The module's border lifts to
 - Free-text answers; use a TextField.
 
 **Where it lives.**
-Canonical implementation: [web/src/components/events/PlanFeedback.tsx:709-791](../web/src/components/events/PlanFeedback.tsx#L709-L791)
+Canonical implementation: [web/src/components/events/PlanFeedback.tsx:1005-1095](../web/src/components/events/PlanFeedback.tsx#L1005-L1095)
+(now rendered as compact label + pill-row lines inside one card per person,
+rather than one outlined Paper per question; the pill styling conventions
+below are unchanged).
 
 **Key conventions.**
 - Each pill is a `Box role="button" tabIndex={0}` with explicit
@@ -181,8 +192,11 @@ empty answers become "Skip" so the user always has a clear way forward.
   it.
 
 **Where it lives.**
-Canonical implementation: [web/src/components/events/PlanFeedback.tsx:221-262](../web/src/components/events/PlanFeedback.tsx#L221-L262)
-(handler) and [web/src/components/events/PlanFeedback.tsx:793-848](../web/src/components/events/PlanFeedback.tsx#L793-L848) (button).
+No live canonical implementation right now: the post-plan feedback flow that
+used this moved to a single batched submit (July 2026), which better fits
+its "short form, one commit" shape. The recipe below still applies to future
+flows where items are genuinely walked one at a time; check this file's git
+history for the reference implementation.
 
 **Key conventions.**
 - Track a `submittedSet: Set<string>` of completed item IDs, hydrated from
@@ -222,9 +236,9 @@ glow shadow, bold heading, one-sentence reassurance, and a single primary
   receipt). Render a more structured DialogContent instead.
 
 **Where it lives.**
-Canonical implementation: [web/src/components/events/PlanFeedback.tsx:1212-1284](../web/src/components/events/PlanFeedback.tsx#L1212-L1284)
-(component definition) and [web/src/components/events/PlanFeedback.tsx:998-1006](../web/src/components/events/PlanFeedback.tsx#L998-L1006)
-(call site).
+Canonical implementation: [web/src/components/events/PlanFeedback.tsx:1380-1460](../web/src/components/events/PlanFeedback.tsx#L1380-L1460)
+(component definition) and the two dialog call sites around lines 1210 and 1290
+of the same file.
 
 **Key conventions.**
 - **Hide the `DialogTitle` and `DialogActions` when in the success state.**
@@ -270,7 +284,13 @@ opens a confirm dialog for the most destructive action.
   instead of building the whole section.
 
 **Where it lives.**
-Canonical implementation: [web/src/components/events/PlanFeedback.tsx:850-985](../web/src/components/events/PlanFeedback.tsx#L850-L985)
+No live canonical implementation right now: the post-plan feedback flow
+replaced its two escalation cards with a single quiet text-link row
+([web/src/components/events/PlanFeedback.tsx:1131-1190](../web/src/components/events/PlanFeedback.tsx#L1131-L1190))
+when the flow collapsed to one screen (July 2026), because the two-card
+section repeated on every carousel step outweighed the primary flow. The
+recipe below still applies to surfaces with a heavier escalation story;
+check this file's git history for the reference implementation.
 
 **Key conventions.**
 - The eyebrow divider is `<Stack direction="row">` with two flex-grow `Box`
@@ -311,9 +331,9 @@ Hide the action entirely if the check fails (network error, 401, etc.).
   by first paint.
 
 **Where it lives.**
-Canonical implementation: [web/src/components/events/PlanFeedback.tsx:169-205](../web/src/components/events/PlanFeedback.tsx#L169-L205)
-(handlers) and [web/src/components/events/PlanFeedback.tsx:329-333](../web/src/components/events/PlanFeedback.tsx#L329-L333)
-(lazy-load effect).
+Canonical implementation: [web/src/components/events/PlanFeedback.tsx:297-343](../web/src/components/events/PlanFeedback.tsx#L297-L343)
+(handlers + the lazy-load effect that fetches statuses for the post-submit
+follow-up panel).
 
 **Key conventions.**
 - API endpoints used: `GET /chums/check/:userId`, `POST /chums/:userId`,
@@ -381,6 +401,13 @@ Canonical implementation: [web/src/app/(app)/communities/PublicCommunitiesExplor
   `letterSpacing: -0.025em`, lineHeight 1.15.
 - Subtitle uses `body1`, `text.secondary`, `maxWidth: 640` so long copy
   doesn't sprawl on wide viewports.
+- Depth accent: the hero `Paper` carries `position: relative; overflow:
+  hidden` and an `&::after` corner radial
+  (`radial-gradient(circle, rgba(230,91,19,0.07) 0%, transparent 70%)`,
+  280px circle offset to the top-right, `pointerEvents: "none"`). It's a
+  quiet decorative lift shared by Explore, Your Plans, and both
+  Communities discovery headers; keep the alpha at 0.07, stronger tints
+  start competing with the content.
 - Pair with a matching warm-wash CTA card at the bottom of the page so the
   surface reads as one curated shell from top to bottom rather than a list
   with a banner pinned underneath. See `PublicCommunitiesExplore.tsx`'s

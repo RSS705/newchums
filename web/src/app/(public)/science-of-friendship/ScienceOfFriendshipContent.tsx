@@ -51,7 +51,7 @@ export default function ScienceOfFriendshipContent({ isLoggedIn = false }: { isL
             component="h1"
             variant="h1"
             fontWeight={800}
-            sx={{ fontSize: "4rem", lineHeight: 1.2, mb: 3 }}
+            sx={{ fontSize: { xs: "2.25rem", sm: "3rem", md: "4rem" }, lineHeight: 1.2, mb: 3 }}
           >
             The Science of Friendship
           </Typography>

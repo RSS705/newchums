@@ -18,6 +18,7 @@ import NotificationsActiveRoundedIcon from "@mui/icons-material/NotificationsAct
 import VerifiedUserRoundedIcon from "@mui/icons-material/VerifiedUserRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import ChatRoundedIcon from "@mui/icons-material/ChatRounded";
+import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
 
 import EventAvailableRoundedIcon from "@mui/icons-material/EventAvailableRounded";
 import MailOutlineRoundedIcon from "@mui/icons-material/MailOutlineRounded";
@@ -28,6 +29,7 @@ import EmojiPeopleRoundedIcon from "@mui/icons-material/EmojiPeopleRounded";
 import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
 import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
 import PublicExploreFeed from "@/components/landing/PublicExploreFeed";
+import { trackEvent } from "@/lib/analytics";
 import RecentlyHappenedSection from "@/components/events/RecentlyHappenedSection";
 
 /**
@@ -466,9 +468,24 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
       <Box
         component="section"
         ref={heroReveal.ref}
-        sx={{ pb: { xs: 6, sm: 8, md: 10 }, ...REVEAL_SX(heroReveal.visible) }}
+        sx={{
+          pb: { xs: 6, sm: 8, md: 10 },
+          position: "relative",
+          ...REVEAL_SX(heroReveal.visible),
+          // Soft warm ambience behind the hero so the first screen feels
+          // inviting rather than flat white. Purely decorative, zero layout
+          // impact; the radials fade to transparent well inside the section.
+          "&::before": {
+            content: '""',
+            position: "absolute",
+            inset: 0,
+            pointerEvents: "none",
+            background:
+              "radial-gradient(ellipse 60% 55% at 78% 42%, rgba(252,236,195,0.55) 0%, transparent 70%), radial-gradient(ellipse 40% 40% at 8% 8%, rgba(230,91,19,0.05) 0%, transparent 70%)",
+          },
+        }}
       >
-        <Grid container spacing={{ xs: 4, md: 8 }} alignItems="stretch">
+        <Grid container spacing={{ xs: 4, md: 8 }} alignItems="stretch" sx={{ position: "relative" }}>
           {/* Left: copy + CTAs */}
           <Grid size={{ xs: 12, md: 6 }}>
             <Stack spacing={3}>
@@ -552,9 +569,14 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                   </>
                 ) : (
                   <>
+                    {/* Primary hero CTA is signup: cold visitors need one
+                        obvious next step, and sending them into a sparse
+                        communities index first was costing the conversion.
+                        Browsing stays one click away as the secondary CTA. */}
                     <Button
                       component={Link}
-                      href="/communities"
+                      href="/signup"
+                      onClick={() => trackEvent("hero_cta_clicked", { cta: "signup" })}
                       variant="contained"
                       color="primary"
                       size="large"
@@ -571,11 +593,12 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                         ...BTN_HOVER,
                       }}
                     >
-                      Browse communities
+                      Create a free account
                     </Button>
                     <Button
-                      component="a"
-                      href="#for-organizers"
+                      component={Link}
+                      href="/communities"
+                      onClick={() => trackEvent("hero_cta_clicked", { cta: "browse_communities" })}
                       variant="outlined"
                       color="primary"
                       size="large"
@@ -590,17 +613,46 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                         ...BTN_HOVER,
                       }}
                     >
-                      For organizers
+                      Browse communities
                     </Button>
                   </>
                 )}
               </Stack>
+
+              {/* Quiet reassurance row. Every claim here is true today:
+                  no billing exists, the product is a web app, and public
+                  plans are viewable without an account. */}
+              {!isLoggedIn && (
+                <Stack
+                  direction="row"
+                  spacing={{ xs: 1.5, sm: 2.5 }}
+                  flexWrap="wrap"
+                  useFlexGap
+                  sx={{ pt: 0.5 }}
+                >
+                  {["Free to use", "No app to download", "Browse plans without an account"].map(
+                    (claim) => (
+                      <Stack key={claim} direction="row" spacing={0.75} alignItems="center">
+                        <CheckCircleRoundedIcon sx={{ fontSize: 16, color: "success.main" }} />
+                        <Typography
+                          variant="body2"
+                          sx={{ color: "text.secondary", fontSize: "0.85rem", fontWeight: 500 }}
+                        >
+                          {claim}
+                        </Typography>
+                      </Stack>
+                    )
+                  )}
+                </Stack>
+              )}
             </Stack>
           </Grid>
 
           {/* Right: hero image.
-              Placeholder path, deliberately wired ahead of the asset:
-                /public/images/home/community-hero.png
+              Serves the optimized WebP (community-hero.webp, ~150KB); the
+              original community-hero.png (2MB) stays in the folder as the
+              source asset. Regenerate the WebP from the PNG if the art
+              changes (sharp: resize width 1400, webp quality 84).
               Recommended specs: 1200x800 (or 1400x900) PNG or WebP, light or
               transparent background, light/warm composition that works on
               the homepage's white background. Visual concept: a warm hobby
@@ -650,18 +702,48 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
               </Box>
             ) : (
               <Box
-                component="img"
-                src="/images/home/community-hero.png"
-                alt="Friends making plans together"
-                onError={() => setHeroImageErrored(true)}
                 sx={{
+                  position: "relative",
                   height: "100%",
-                  width: "auto",
-                  maxWidth: "100%",
-                  objectFit: "contain",
-                  display: "block",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  // Warm radiant glow behind the illustration so it sits in
+                  // the page like a lit scene instead of a pasted rectangle.
+                  "&::before": {
+                    content: '""',
+                    position: "absolute",
+                    inset: "8% 4%",
+                    borderRadius: "50%",
+                    background:
+                      "radial-gradient(ellipse at center, rgba(230,91,19,0.14) 0%, rgba(252,236,195,0.5) 45%, transparent 72%)",
+                    filter: "blur(24px)",
+                    pointerEvents: "none",
+                  },
+                  "@keyframes ncHeroFloat": {
+                    "0%, 100%": { transform: "translateY(0)" },
+                    "50%": { transform: "translateY(-10px)" },
+                  },
                 }}
-              />
+              >
+                <Box
+                  component="img"
+                  src="/images/home/community-hero.webp"
+                  alt="Friends making plans together"
+                  onError={() => setHeroImageErrored(true)}
+                  sx={{
+                    position: "relative",
+                    height: "100%",
+                    width: "auto",
+                    maxWidth: "100%",
+                    objectFit: "contain",
+                    display: "block",
+                    "@media (prefers-reduced-motion: no-preference)": {
+                      animation: "ncHeroFloat 7s ease-in-out infinite",
+                    },
+                  }}
+                />
+              </Box>
             )}
           </Grid>
         </Grid>
@@ -1756,11 +1838,14 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
         sx={{
           py: { xs: 8, sm: 12 },
           textAlign: "center",
-          backgroundColor: (theme) =>
-            theme.palette.mode === "light" ? theme.palette.primary.main : "grey.900",
+          background: (theme) =>
+            theme.palette.mode === "light"
+              ? "radial-gradient(ellipse 70% 90% at 50% -20%, rgba(247,206,22,0.18) 0%, transparent 60%), linear-gradient(135deg, #E65B13 0%, #C44D10 100%)"
+              : theme.palette.grey[900],
           mx: { xs: -2, sm: -3 },
           px: { xs: 3, sm: 4 },
           color: "white",
+          overflow: "hidden",
           position: "relative",
           "&::before": {
             content: '""',

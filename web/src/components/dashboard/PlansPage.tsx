@@ -76,6 +76,21 @@ export default function PlansPage() {
           borderRadius: 4,
           borderColor: "primary.light",
           background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
+          position: "relative",
+          overflow: "hidden",
+          // Soft corner radial for depth; decorative only (see the discovery
+          // page header pattern in docs/UI_Patterns.md).
+          "&::after": {
+            content: '""',
+            position: "absolute",
+            width: 280,
+            height: 280,
+            top: -120,
+            right: -80,
+            borderRadius: "50%",
+            background: "radial-gradient(circle, rgba(230,91,19,0.07) 0%, transparent 70%)",
+            pointerEvents: "none",
+          },
         }}
       >
         <Stack

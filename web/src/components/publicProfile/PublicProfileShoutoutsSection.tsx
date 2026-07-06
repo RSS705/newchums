@@ -351,16 +351,26 @@ export default function PublicProfileShoutoutsSection({
                     placement="top"
                     enterTouchDelay={0}
                   >
-                    <span>
+                    {/* The absolute positioning lives on the span wrapper
+                        (not the IconButton) so the Tooltip's anchor and the
+                        visible button are the same box; positioning the
+                        button used to leave the tooltip attached to a
+                        zero-size span on the far side of the card. */}
+                    <Box
+                      component="span"
+                      sx={{
+                        position: "absolute",
+                        top: 6,
+                        right: 6,
+                        display: "inline-flex",
+                      }}
+                    >
                       <IconButton
                         size="small"
                         disabled={isToggling}
                         onClick={() => handleToggleCard(s.id, cardHidden)}
                         aria-label={cardHidden ? "Show this shout-out" : "Hide this shout-out"}
                         sx={{
-                          position: "absolute",
-                          top: 6,
-                          right: 6,
                           color: "text.disabled",
                           "&:hover": {
                             color: "text.secondary",
@@ -374,7 +384,7 @@ export default function PublicProfileShoutoutsSection({
                           <VisibilityOffOutlinedIcon sx={{ fontSize: "1.0625rem" }} />
                         )}
                       </IconButton>
-                    </span>
+                    </Box>
                   </Tooltip>
                 )}
               </Box>

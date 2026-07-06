@@ -92,15 +92,41 @@ export default function LandingLayout({
                 Sign out
               </Button>
             ) : (
-              <Button
-                variant="contained"
-                color="primary"
-                component={Link}
-                href="/login"
-                sx={{ px: 2.5, fontSize: "0.875rem", textTransform: "none" }}
-              >
-                Sign in
-              </Button>
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Button
+                  variant="text"
+                  color="primary"
+                  component={Link}
+                  href="/login"
+                  sx={{
+                    px: 2,
+                    fontSize: "0.875rem",
+                    textTransform: "none",
+                    fontWeight: 600,
+                    color: "text.primary",
+                    backgroundColor: "transparent",
+                    display: { xs: "none", sm: "inline-flex" },
+                    "&:hover": { backgroundColor: "action.hover", color: "text.primary" },
+                  }}
+                >
+                  Sign in
+                </Button>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  component={Link}
+                  href="/signup"
+                  sx={{
+                    px: 2.5,
+                    fontSize: "0.875rem",
+                    textTransform: "none",
+                    boxShadow: "0 2px 10px rgba(230,91,19,0.25)",
+                    "&:hover": { boxShadow: "0 4px 14px rgba(230,91,19,0.32)" },
+                  }}
+                >
+                  Sign up
+                </Button>
+              </Stack>
             )
           }
         />

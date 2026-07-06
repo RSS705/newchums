@@ -182,18 +182,30 @@ const EventCard = React.memo(function EventCard({
       sx={{
         overflow: "hidden",
         borderRadius: 3,
-        borderColor: isPast || isCanceled ? "grey.200" : "grey.200",
-        boxShadow: isPast ? "none" : "0 1px 3px rgba(0,0,0,0.04), 0 2px 8px rgba(0,0,0,0.03)",
-        transition: "box-shadow 0.2s ease, transform 0.15s ease",
+        borderColor: "grey.200",
+        boxShadow: isPast ? "none" : "0 1px 2px rgba(0,0,0,0.04), 0 2px 6px rgba(0,0,0,0.05)",
+        transition: "box-shadow 0.25s ease, transform 0.25s ease, border-color 0.25s ease",
         bgcolor: isPast || isCanceled ? "grey.100" : "background.paper",
         opacity: isCanceled ? 0.65 : 1,
         height: "100%",
         display: "flex",
         flexDirection: "column",
         minHeight: 0,
+        // Warm-tinted lift on hover, matching the three-zone discovery card
+        // convention in docs/UI_Patterns.md: calm at rest, warm on hover.
         "&:hover": {
-          boxShadow: isPast ? "0 1px 3px rgba(0,0,0,0.03)" : "0 4px 16px rgba(0,0,0,0.08)",
-          transform: isPast ? "none" : "translateY(-1px)",
+          boxShadow: isPast
+            ? "0 1px 3px rgba(0,0,0,0.03)"
+            : "0 10px 28px rgba(230, 91, 19, 0.10), 0 4px 10px rgba(0, 0, 0, 0.04)",
+          transform: isPast ? "none" : "translateY(-2px)",
+          borderColor: isPast || isCanceled ? "grey.200" : "primary.light",
+        },
+        // Gentle banner zoom driven from the card so the whole card is the
+        // hover target; disabled for past/canceled cards and reduced motion.
+        "@media (hover: hover) and (prefers-reduced-motion: no-preference)": {
+          "&:hover .nc-event-banner-img": {
+            transform: isPast || isCanceled ? "none" : "scale(1.04)",
+          },
         },
       }}
     >
@@ -217,6 +229,7 @@ const EventCard = React.memo(function EventCard({
           {bannerUrl && (
             <Box
               component="img"
+              className="nc-event-banner-img"
               src={bannerUrl}
               alt=""
               onError={handleBannerError}
@@ -225,6 +238,7 @@ const EventCard = React.memo(function EventCard({
                 height: "100%",
                 objectFit: "cover",
                 display: "block",
+                transition: "transform 0.45s cubic-bezier(0.22,1,0.36,1)",
               }}
             />
           )}

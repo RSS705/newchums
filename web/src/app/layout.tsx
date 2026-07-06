@@ -59,10 +59,10 @@ export const metadata: Metadata = {
     locale: "en_US",
     images: [
       {
-        url: "/logo-horizontal-black.png",
-        width: 3791,
-        height: 1575,
-        alt: "NewChums",
+        url: "/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "NewChums, make plans that actually happen",
       },
     ],
   },
@@ -71,7 +71,7 @@ export const metadata: Metadata = {
     title: "NewChums",
     description:
       "Organize gatherings around shared hobbies and interests. One place for your plans, invites, and RSVPs.",
-    images: ["/logo-horizontal-black.png"],
+    images: ["/og-image.png"],
   },
 };
 
