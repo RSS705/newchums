@@ -289,11 +289,12 @@ Visit newchums.com → Homepage (LandingLayout)
 
 ```
 Sign in → Explore (event discovery feed)
-├── Start a plan → Create event form → Publish → Your Plans
+├── Start a plan → Create event form (option: copy a previous plan via picker) → Publish → Your Plans
 ├── Explore → Browse events → RSVP / Suggest alt time / Request to join
 │   └── Local signal (bottom of feed) → "{count} active people near you are into {hobby}"
 ├── Your Plans → Upcoming / Past tabs → Event detail
 │   ├── Edit plan (host) → Edit event form
+│   ├── Copy plan (host, incl. past/canceled) → pre-filled create form → Publish as new plan
 │   └── Past plan → Post-plan feedback (rate attendees, report issues/concerns)
 ├── Your Chums → Search / Add / Remove / Invite by email
 ├── Communities → Browse / Create / Join / Community plans feed
@@ -401,7 +402,7 @@ Wrangler config is code-managed so deploys do not wipe routes or override canoni
 | Route | Purpose |
 |-------|---------|
 | `/` (logged in) | Explore, event discovery feed |
-| `/events/create` | Start a plan (create event) |
+| `/events/create` | Start a plan (create event); `?copy_from=<planId>` pre-fills the form from a plan the viewer hosted (Copy plan), and a header action opens a picker of the viewer's hosted plans that does the same in place |
 | `/plans` | Your Plans, upcoming / past tabs |
 | `/events/[id]` | Event detail, full experience with RSVP, attendees, chat, lock, cancel (access state: authenticated/attending). Past plans show post-plan feedback section. |
 | `/events/[id]/edit` | Edit an existing event (host only) |

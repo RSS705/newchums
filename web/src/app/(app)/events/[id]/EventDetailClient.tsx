@@ -40,6 +40,7 @@ import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
+import EventRepeatRoundedIcon from "@mui/icons-material/EventRepeatRounded";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import StarRoundedIcon from "@mui/icons-material/StarRounded";
 import Paper from "@mui/material/Paper";
@@ -5520,48 +5521,70 @@ export default function EventDetailClient({
         </AppCard>
       )}
 
-      {/* Host actions */}
-      {event.isHost && !isCanceled && (
+      {/* Host actions. Copy plan stays available on past and canceled plans:
+          it opens the create form pre-filled from this plan so a weekly
+          re-run doesn't start from scratch. */}
+      {event.isHost && (
         <AppCard>
-          {isEditLocked && (
+          {!isCanceled && isEditLocked && (
             <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-              Editing is locked because this plan has already happened.
+              Editing is locked because this plan has already happened. You can still copy it
+              into a new plan.
+            </Typography>
+          )}
+          {isCanceled && (
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+              This plan was canceled. You can copy it into a new plan to run it again.
             </Typography>
           )}
           <Stack direction={{ xs: "column", sm: "row" }} spacing={2} flexWrap="wrap">
+            {!isCanceled && (
+              <Button
+                variant="outlined"
+                startIcon={<EditRoundedIcon />}
+                onClick={() => router.push(`/events/${eventId}/edit`)}
+                disabled={isEditLocked}
+                sx={{ textTransform: "none" }}
+              >
+                Edit plan
+              </Button>
+            )}
             <Button
               variant="outlined"
-              startIcon={<EditRoundedIcon />}
-              onClick={() => router.push(`/events/${eventId}/edit`)}
-              disabled={isEditLocked}
+              startIcon={<EventRepeatRoundedIcon />}
+              onClick={() => router.push(`/events/create?copy_from=${eventId}`)}
               sx={{ textTransform: "none" }}
             >
-              Edit plan
+              Copy plan
             </Button>
-            <Button
-              variant="outlined"
-              startIcon={event.lockedAt ? <LockOpenRoundedIcon /> : <LockRoundedIcon />}
-              onClick={() => {
-                if (event.lockedAt) {
-                  void performLockToggle();
-                } else {
-                  setLockDialogOpen(true);
-                }
-              }}
-              disabled={lockToggling || isEditLocked}
-              sx={{ textTransform: "none" }}
-            >
-              {lockToggling ? "Updating…" : event.lockedAt ? "Unlock plan" : "Lock plan"}
-            </Button>
-            <Button
-              variant="outlined"
-              color="error"
-              onClick={() => setCancelDialogOpen(true)}
-              disabled={isEditLocked}
-              sx={{ textTransform: "none" }}
-            >
-              Cancel this plan
-            </Button>
+            {!isCanceled && (
+              <Button
+                variant="outlined"
+                startIcon={event.lockedAt ? <LockOpenRoundedIcon /> : <LockRoundedIcon />}
+                onClick={() => {
+                  if (event.lockedAt) {
+                    void performLockToggle();
+                  } else {
+                    setLockDialogOpen(true);
+                  }
+                }}
+                disabled={lockToggling || isEditLocked}
+                sx={{ textTransform: "none" }}
+              >
+                {lockToggling ? "Updating…" : event.lockedAt ? "Unlock plan" : "Lock plan"}
+              </Button>
+            )}
+            {!isCanceled && (
+              <Button
+                variant="outlined"
+                color="error"
+                onClick={() => setCancelDialogOpen(true)}
+                disabled={isEditLocked}
+                sx={{ textTransform: "none" }}
+              >
+                Cancel this plan
+              </Button>
+            )}
           </Stack>
         </AppCard>
       )}

@@ -1,6 +1,6 @@
 # UI Patterns
 
-Last Updated: 2026-04-30
+Last Updated: 2026-07-14
 
 A living catalog of reusable UI patterns extracted from real surfaces in the
 NewChums codebase. Use this as a reference when building new screens; pick a
@@ -33,6 +33,7 @@ points you at it.
 - [Discovery filter shell](#discovery-filter-shell)
 - [Single-line meta row](#single-line-meta-row)
 - [Three-zone discovery card](#three-zone-discovery-card)
+- [Entity picker dialog](#entity-picker-dialog)
 - [How to add a new pattern](#how-to-add-a-new-pattern)
 
 ---
@@ -568,6 +569,58 @@ Canonical implementation: [web/src/app/(app)/communities/CommunityListCard.tsx:2
   `py: 1.5`. The grey wash is what marks it as a footer rather than
   trailing body content. Use the [Single-line meta row](#single-line-meta-row)
   pattern for the contents.
+
+---
+
+## Entity picker dialog
+
+**What it is.** A dialog for choosing one existing entity to act on (a plan,
+a community, a chum) from the viewer's own items. `AppDialog` shell with a
+two-line title (bold heading + one-sentence body-2 explainer), lazily fetched
+content on first open, and a scrollable list of full-width `ButtonBase` rows:
+64x44 rounded thumbnail (image with deterministic gradient fallback), bold
+single-line primary text with optional status `Chip`s, and a one-line
+`text.secondary` meta row. Selecting a row IS the action; there is no
+confirm step and no `DialogActions`. A search field appears only once the
+list is long enough to need it (7+ items).
+
+**When to use it.**
+- The user needs to pick one of *their own* existing things to seed or link
+  something new (e.g. "Copy a previous plan" on the Start a plan form).
+- The list is modest (up to ~100 rows) and fetchable in one or two requests.
+- Selection is safe/reversible, so a single tap can commit it.
+
+**When NOT to use it.**
+- Choosing multiple items, use a multi-select Autocomplete inline in the
+  form instead (see `CommunityLinkSection`).
+- The choice is destructive or hard to undo, use a confirm dialog after the
+  pick.
+- The list needs server-side search or pagination at real scale; this
+  pattern filters client-side only.
+
+**Where it lives.**
+Canonical implementation: [web/src/components/events/CopyPlanDialog.tsx](../web/src/components/events/CopyPlanDialog.tsx)
+(consumed by `CreateEventClient`'s "Copy a previous plan" header action).
+
+**Key conventions.**
+- Fetch lazily on first open (`status: "idle" | "loading" | "loaded" |
+  "error"` state machine), keep results for the dialog's lifetime, and give
+  Retry a one-click path back to `idle`.
+- Loading state is 3-4 skeleton rows shaped like the real rows, not a
+  centered spinner, so the dialog doesn't jump when content lands.
+- Rows are `ButtonBase` with `borderRadius: 2`, `px: 1`, `py: 0.875`,
+  `action.hover` on hover and on `Mui-focusVisible`; thumbnail
+  64x44 `borderRadius: 1.5` with `getGradientForEventId`-style fallback
+  behind the image.
+- Section labels are the 0.6875rem uppercase `text.disabled` eyebrow style;
+  omit a section entirely when empty rather than showing a dead header.
+- Empty state follows the app's encouraging tone with a 56px `primary.light`
+  icon orb, bold one-liner, and a short body-2 explainer.
+- Keep the dialog dumb: it fires `onSelect(id)` and the parent owns closing,
+  loading treatment, and whatever the selection actually does.
+- Mobile: `PaperProps` margins `m: { xs: 2, sm: 3 }` and `maxHeight:
+  calc(100dvh - 32px)` per the app's dialog convention; rows are 60px+ touch
+  targets.
 
 ---
 

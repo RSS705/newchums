@@ -25,6 +25,7 @@ import AddCircleRoundedIcon from "@mui/icons-material/AddCircleRounded";
 import AddPhotoAlternateRoundedIcon from "@mui/icons-material/AddPhotoAlternateRounded";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import EventNoteRoundedIcon from "@mui/icons-material/EventNoteRounded";
+import EventRepeatRoundedIcon from "@mui/icons-material/EventRepeatRounded";
 import ImageRoundedIcon from "@mui/icons-material/ImageRounded";
 import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
@@ -36,13 +37,14 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
 import RichTextEditor from "@/components/ui/RichTextEditor";
 import PlacesAutocompleteInput, { formatPlaceDisplay } from "@/components/common/PlacesAutocompleteInput";
-import { apiFetch, getApiBaseUrl } from "@/lib/apiClient";
+import { apiFetch, getApiBaseUrl, getAvatarBaseUrl, getImageFallbackBaseUrl } from "@/lib/apiClient";
 import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
 import { notifyObjectivesChanged } from "@/components/objectives/NextStepNudge";
 import { loadGooglePlacesScript } from "@/lib/loadGooglePlaces";
 import { BANNER_PRESETS, renderBannerPreset, suggestPreset } from "@/lib/eventBanners";
 import { scrollToFirstError } from "@/lib/scrollToFirstError";
 import HobbyPickerField, { type HobbyOption } from "@/components/common/HobbyPickerField";
+import CopyPlanDialog from "@/components/events/CopyPlanDialog";
 import {
   CommunityLinkSection,
   ExtraOptionsSection,
@@ -65,6 +67,25 @@ export default function CreateEventClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const toast = useToast();
+
+  // Copy-a-plan mode: pre-fills the whole form from a plan the viewer
+  // previously hosted, so week-to-week re-runs don't start from scratch.
+  // Reached via `?copy_from=<planId>` (Copy plan on the plan detail page) or
+  // the "Copy a previous plan" picker in this form's header. Nothing is
+  // created until the user reviews and publishes.
+  const copyFromId = searchParams.get("copy_from");
+  const [copyLoading, setCopyLoading] = useState(!!copyFromId);
+  const [copyApplied, setCopyApplied] = useState(false);
+  const [copyDialogOpen, setCopyDialogOpen] = useState(false);
+  // Lets copy hydration started from the picker bail out if the user
+  // navigates away mid-fetch.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -176,6 +197,8 @@ export default function CreateEventClient() {
   };
   const [myCommunities, setMyCommunities] = useState<MyCommunity[]>([]);
   const [selectedCommunityIds, setSelectedCommunityIds] = useState<string[]>(() => {
+    // When copying a plan, linkage comes from the source plan instead.
+    if (searchParams.get("copy_from")) return [];
     const initial = searchParams.get("community_id");
     return initial ? [initial] : [];
   });
@@ -205,10 +228,176 @@ export default function CreateEventClient() {
     });
   }, []);
 
-  // Fetch profile (for QA toggle) and user's communities (for the community selector)
+  // Pre-fill the form from a plan the viewer hosted. Reached two ways: the
+  // `?copy_from=` query param (Copy plan on the plan detail page) and the
+  // "Copy a previous plan" picker on this form. Resets before applying so
+  // copying over a half-filled form still produces a faithful copy. Things
+  // tied to the original instance are never copied: attendees, the
+  // availability deadline, and community linkage the viewer can no longer
+  // use (POST /events validates membership on every linked id).
+  const hydrateFromSourcePlan = async (
+    sourceId: string,
+    communityList: MyCommunity[],
+    isCancelled: () => boolean
+  ): Promise<boolean> => {
+    const copyLoadFailed = () =>
+      toast.error("We couldn't load that plan to copy, so you're starting fresh.");
+    try {
+      const res = await apiFetch(`/events/${sourceId}`, { auth: true });
+      const data = await res.json();
+      if (isCancelled()) return false;
+      const ev = data.ok ? data.event : null;
+      if (!ev?.isHost) {
+        copyLoadFailed();
+        return false;
+      }
+
+      // Clear anything a previous copy or manual editing left behind.
+      setErrors({});
+      setDeadlineDate(null);
+      setDeadlineTime(null);
+      setLocationPlaceId(null);
+      if (bannerPreview) URL.revokeObjectURL(bannerPreview);
+      setBannerFile(null);
+      setBannerPreview(null);
+      setSelectedPresetSlug(null);
+      // The copy keeps the source plan's banner (or none); don't let the
+      // hobby-based preset auto-suggest override that.
+      autoSuggestedRef.current = true;
+
+      setTitle(ev.title ?? "");
+      setDescription(ev.description ?? "");
+      const hobbyList: HobbyOption[] =
+        Array.isArray(ev.hobbies) && ev.hobbies.length > 0
+          ? ev.hobbies.map((h: { name: string; slug: string }) => ({ name: h.name, slug: h.slug }))
+          : ev.hobby
+            ? [{ name: ev.hobby, slug: ev.hobbySlug ?? "" }]
+            : [];
+      setSelectedHobbies(hobbyList);
+      setMaxSeats(ev.maxSeats != null ? String(ev.maxSeats) : "");
+      setReserveSeats(ev.reserveSeats === true);
+      setMinAttendeesRequired(
+        ev.minAttendeesRequired != null ? String(ev.minAttendeesRequired) : ""
+      );
+
+      // Same time of day, next future occurrence of the source plan's
+      // weekday, so a weekly re-run lands on the natural next slot.
+      const src = dayjs(ev.startsAt);
+      const now = dayjs();
+      let target = now
+        .startOf("day")
+        .add((src.day() - now.day() + 7) % 7, "day")
+        .hour(src.hour())
+        .minute(src.minute())
+        .second(0)
+        .millisecond(0);
+      if (!target.isAfter(now)) target = target.add(7, "day");
+      setDateValue(target);
+      setTimeValue(target);
+
+      setLocationType(ev.locationType === "online" ? "online" : "in_person");
+      setLocationName(ev.locationName ?? "");
+      setLocationAddress(ev.locationAddress ?? "");
+      setLocationLat(ev.locationLat ?? null);
+      setLocationLng(ev.locationLng ?? null);
+      setLocationArea(ev.locationArea ?? null);
+      setLocationVisibility(ev.locationVisibility ?? "exact_everyone");
+      setOnlineLink(ev.onlineLink ?? "");
+
+      setVisibility(ev.visibility ?? "public");
+      setSchedulingMode(
+        !(ev.allowAltTimes ?? false)
+          ? "off"
+          : ev.altTimesMode === "availability"
+            ? "availability"
+            : "suggest"
+      );
+      setAllowAttendeeInvites(ev.allowAttendeeInvites !== false);
+      setRequireReconfirmation(ev.requireReconfirmation ?? false);
+      setMuteHostAttendanceEmails(ev.muteHostAttendanceEmails === true);
+      setRequireApproval(ev.requireApproval ?? false);
+      setMinConfirmedAttendees(
+        ev.minConfirmedAttendees != null ? String(ev.minConfirmedAttendees) : ""
+      );
+      setFallbackPolicy(ev.fallbackPolicy ?? "notify_host");
+
+      const po: { disabled?: boolean; disabled_metrics?: string[] } | null =
+        ev.prefOverrides ?? null;
+      const disabledMetrics: Record<string, boolean> = {};
+      if (!po?.disabled && Array.isArray(po?.disabled_metrics)) {
+        for (const m of po.disabled_metrics) disabledMetrics[m] = true;
+      }
+      setPrefDisableAll(po?.disabled === true);
+      setPrefDisabledMetrics(disabledMetrics);
+      setPrefOverridesOpen(po?.disabled === true || Object.keys(disabledMetrics).length > 0);
+
+      // Community linkage carries over only where the viewer is still a
+      // member; hide_from_explore without a surviving linkage would hide the
+      // plan from everyone in Explore, so it only carries with one.
+      const linked: Array<{ id: string }> = Array.isArray(ev.communities) ? ev.communities : [];
+      const linkable =
+        ev.visibility === "invite_only"
+          ? []
+          : linked
+              .map((c) => String(c.id))
+              .filter((id) => communityList.some((c) => c.id === id));
+      setSelectedCommunityIds(linkable);
+      setHideFromExplore(linkable.length > 0 && ev.hideFromExplore === true);
+
+      // Only super admins can load a QA plan, so carrying the flag keeps the
+      // copy isolated the same way its source was.
+      setIsQa(ev.isQa === true);
+
+      // Best-effort banner copy: fetch the source image and stage it through
+      // the normal upload pipeline. Failure just means no banner.
+      if (ev.bannerKey) {
+        const bases = [getAvatarBaseUrl(), getImageFallbackBaseUrl()].filter(
+          (b): b is string => !!b
+        );
+        for (const base of bases) {
+          try {
+            const imgRes = await fetch(`${base}/events/${ev.id}/banner`, { credentials: "omit" });
+            if (!imgRes.ok) continue;
+            const blob = await imgRes.blob();
+            if (isCancelled()) return false;
+            const file = new File([blob], "banner.webp", { type: blob.type || "image/webp" });
+            setBannerFile(file);
+            setBannerPreview(URL.createObjectURL(file));
+            break;
+          } catch {
+            /* try the next base */
+          }
+        }
+      }
+
+      setCopyApplied(true);
+      return true;
+    } catch {
+      if (!isCancelled()) copyLoadFailed();
+      return false;
+    }
+  };
+
+  // Selection handler for the "Copy a previous plan" picker. Swaps in the
+  // same full-page spinner as the `?copy_from=` entry path so every
+  // mount-initialized control (rich text editor, pickers) re-initializes
+  // with the copied values.
+  const handleCopyPlanSelected = async (planId: string) => {
+    if (copyLoading) return;
+    setCopyDialogOpen(false);
+    setCopyLoading(true);
+    const applied = await hydrateFromSourcePlan(planId, myCommunities, () => !mountedRef.current);
+    if (!mountedRef.current) return;
+    setCopyLoading(false);
+    if (applied) toast.success("Plan details copied. Adjust anything, then publish.");
+  };
+
+  // Fetch profile (for QA toggle) and user's communities (for the community
+  // selector), then hydrate from the source plan when copying.
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      let list: MyCommunity[] = [];
       try {
         const [profileRes, communitiesRes] = await Promise.allSettled([
           apiFetch("/profile", { auth: true }),
@@ -222,7 +411,7 @@ export default function CreateEventClient() {
         if (communitiesRes.status === "fulfilled" && communitiesRes.value.ok) {
           const d = await communitiesRes.value.json();
           if (d.ok && Array.isArray(d.communities)) {
-            const list: MyCommunity[] = d.communities.map((c: Record<string, unknown>) => ({
+            list = d.communities.map((c: Record<string, unknown>) => ({
               id: String(c.id),
               slug: String(c.slug ?? ""),
               name: String(c.name ?? ""),
@@ -234,8 +423,9 @@ export default function CreateEventClient() {
             }));
             setMyCommunities(list);
 
-            // If arriving from a community page, prefill location from that community
-            const preselectedId = searchParams.get("community_id");
+            // If arriving from a community page, prefill location from that
+            // community. Skipped when copying; the source plan's location wins.
+            const preselectedId = copyFromId ? null : searchParams.get("community_id");
             if (preselectedId) {
               const match = list.find((c) => c.id === preselectedId);
               if (match && !match.is_online && match.location_name && !locationName) {
@@ -252,6 +442,11 @@ export default function CreateEventClient() {
       } catch {
         /* non-fatal */
       }
+
+      if (copyFromId && !cancelled) {
+        await hydrateFromSourcePlan(copyFromId, list, () => cancelled);
+      }
+      if (!cancelled) setCopyLoading(false);
     })();
     return () => {
       cancelled = true;
@@ -504,6 +699,17 @@ export default function CreateEventClient() {
     setSubmitting(false);
   };
 
+  // Copy mode fetches the source plan before first paint of the form, so the
+  // user never sees empty fields flash and then fill in. Mirrors the Edit
+  // form's loading state.
+  if (copyLoading) {
+    return (
+      <Box sx={{ display: "flex", justifyContent: "center", py: 10 }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
   return (
     <Stack spacing={{ xs: 3, sm: 4 }}>
       {/* Header. Warm-wash hero matching the rest of the polished
@@ -567,8 +773,31 @@ export default function CreateEventClient() {
               maxWidth: 560,
             }}
           >
-            Organize a gathering around something you enjoy. Keep it simple, you can always update later.
+            {copyApplied
+              ? "We've pre-filled everything from your previous plan. Review the details, tweak what you need, then publish."
+              : "Organize a gathering around something you enjoy. Keep it simple, you can always update later."}
           </Typography>
+          {/* Quiet entry point for re-running a previous plan. Kept visible
+              after a copy so the user can switch to a different source. */}
+          <AppButton
+            variant="text"
+            size="small"
+            startIcon={<EventRepeatRoundedIcon sx={{ fontSize: 18 }} />}
+            onClick={() => setCopyDialogOpen(true)}
+            sx={{
+              alignSelf: "flex-start",
+              textTransform: "none",
+              fontWeight: 600,
+              fontSize: "0.875rem",
+              color: "primary.dark",
+              px: 1,
+              ml: -1,
+              mt: 0.25,
+              "&:hover": { bgcolor: "rgba(230, 91, 19, 0.06)" },
+            }}
+          >
+            {copyApplied ? "Copy a different plan" : "Copy a previous plan"}
+          </AppButton>
         </Stack>
       </Paper>
 
@@ -1351,6 +1580,13 @@ export default function CreateEventClient() {
           {submitting ? <CircularProgress size={22} color="inherit" /> : "Publish plan"}
         </AppButton>
       </Stack>
+
+      {/* Copy-a-previous-plan picker */}
+      <CopyPlanDialog
+        open={copyDialogOpen}
+        onClose={() => setCopyDialogOpen(false)}
+        onSelect={(planId) => void handleCopyPlanSelected(planId)}
+      />
 
       {/* Hidden file input for banner */}
       <input
