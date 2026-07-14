@@ -81,7 +81,9 @@ export default function EditEventClient() {
   const [schedulingMode, setSchedulingMode] = useState<"off" | "suggest" | "availability">("suggest");
   const [deadlineDate, setDeadlineDate] = useState<Dayjs | null>(null);
   const [deadlineTime, setDeadlineTime] = useState<Dayjs | null>(null);
-  const [allowAttendeeInvites, setAllowAttendeeInvites] = useState(true);
+  // Presented inverted ("Prevent attendees from inviting others", default
+  // off); the wire field stays allow_attendee_invites. See ExtraOptionsSection.
+  const [preventAttendeeInvites, setPreventAttendeeInvites] = useState(false);
   const [reserveSeats, setReserveSeats] = useState(false);
   const [requireReconfirmation, setRequireReconfirmation] = useState(false);
   const [muteHostAttendanceEmails, setMuteHostAttendanceEmails] = useState(false);
@@ -192,7 +194,7 @@ export default function EditEventClient() {
         setRequireReconfirmation(ev.requireReconfirmation ?? false);
         setMuteHostAttendanceEmails(ev.muteHostAttendanceEmails === true);
         setRequireApproval(ev.requireApproval ?? false);
-        setAllowAttendeeInvites(ev.allowAttendeeInvites !== false);
+        setPreventAttendeeInvites(ev.allowAttendeeInvites === false);
         setSchedulingMode(
           !(ev.allowAltTimes ?? false) ? "off"
           : ev.altTimesMode === "availability" ? "availability"
@@ -417,7 +419,7 @@ export default function EditEventClient() {
           require_reconfirmation: requireReconfirmation,
           mute_host_attendance_emails: muteHostAttendanceEmails,
           require_approval: requireApproval,
-          allow_attendee_invites: allowAttendeeInvites,
+          allow_attendee_invites: !preventAttendeeInvites,
           allow_alt_times: schedulingMode !== "off",
           alt_times_mode: schedulingMode === "availability" ? "availability" : "suggest",
           availability_deadline_at: schedulingMode === "availability" && deadlineDate?.isValid() && deadlineTime?.isValid()
@@ -803,6 +805,7 @@ export default function EditEventClient() {
               value={hobbies}
               onChange={setHobbies}
               error={errors.hobby}
+              helperText="People nearby who share these hobbies may get notified about this plan, depending on who can see it."
               onReject={(msg) => toast.error(msg)}
             />
           </Box>
@@ -1171,8 +1174,8 @@ export default function EditEventClient() {
         onChangeFallbackPolicy={setFallbackPolicy}
         requireApproval={requireApproval}
         onChangeRequireApproval={setRequireApproval}
-        allowAttendeeInvites={allowAttendeeInvites}
-        onChangeAllowAttendeeInvites={setAllowAttendeeInvites}
+        preventAttendeeInvites={preventAttendeeInvites}
+        onChangePreventAttendeeInvites={setPreventAttendeeInvites}
         muteHostAttendanceEmails={muteHostAttendanceEmails}
         onChangeMuteHostAttendanceEmails={setMuteHostAttendanceEmails}
         notifyAttendees={{ value: notifyAttendees, onChange: setNotifyAttendees }}

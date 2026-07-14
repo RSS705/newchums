@@ -29,6 +29,8 @@ type HobbyPickerFieldProps = {
   placeholder?: string;
   /** Show error styling + helper text */
   error?: string | null;
+  /** Helper text shown below the input when there is no error. */
+  helperText?: string;
   /** Callback when a hobby is rejected (e.g. too long, content policy). */
   onReject?: (reason: string) => void;
   /** Max chips to show before collapsing. 0 = show all. Default: 0 (show all) */
@@ -41,6 +43,7 @@ export default function HobbyPickerField({
   label = "Hobbies",
   placeholder = "e.g. bowling, card games, cycling",
   error,
+  helperText,
   onReject,
   collapsedCount = 0,
 }: HobbyPickerFieldProps) {
@@ -138,7 +141,7 @@ export default function HobbyPickerField({
       {/*
        * MUI Autocomplete is used ONLY for the search input + dropdown.
        * Selection state is fully managed by the parent via value/onChange props
-       * on this component — we intentionally pass value={[]} to Autocomplete
+       * on this component; we intentionally pass value={[]} to Autocomplete
        * so MUI never tries to reconcile its internal selection state with ours.
        * This eliminates race conditions that caused selections to be cleared.
        */}
@@ -164,7 +167,7 @@ export default function HobbyPickerField({
         }}
         onChange={(_event, newValue, reason) => {
           if (reason === "clear" || reason === "removeOption") return;
-          // "selectOption" or "createOption" — the new item is the last entry.
+          // "selectOption" or "createOption"; the new item is the last entry.
           const last = newValue[newValue.length - 1];
           if (last) addItem(last);
         }}
@@ -205,7 +208,7 @@ export default function HobbyPickerField({
                 size="medium"
                 variant="outlined"
                 error={!!error}
-                helperText={error || undefined}
+                helperText={error || helperText || undefined}
                 inputProps={{
                   ...params.inputProps,
                   onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => {

@@ -27,8 +27,12 @@ type Props = {
   requireApproval: boolean;
   onChangeRequireApproval: (value: boolean) => void;
 
-  allowAttendeeInvites: boolean;
-  onChangeAllowAttendeeInvites: (value: boolean) => void;
+  /** Inverted presentation of the stored `allow_attendee_invites` flag: the
+   *  DB/API field stays "allow" (default true) so existing plans and
+   *  permission checks are untouched; the form surfaces it as "prevent"
+   *  (default off) so every toggle in this section defaults to off. */
+  preventAttendeeInvites: boolean;
+  onChangePreventAttendeeInvites: (value: boolean) => void;
 
   muteHostAttendanceEmails: boolean;
   onChangeMuteHostAttendanceEmails: (value: boolean) => void;
@@ -173,15 +177,11 @@ export default function ExtraOptionsSection(props: Props) {
           tooltip="People who are not directly invited will need to request to join, and you'll approve or decline each request."
         />
 
-        <FormControlLabel
-          control={
-            <Switch
-              checked={props.allowAttendeeInvites}
-              onChange={(e) => props.onChangeAllowAttendeeInvites(e.target.checked)}
-            />
-          }
-          label="Let Going attendees invite others"
-          sx={{ gap: 0.5 }}
+        <TooltipToggleRow
+          checked={props.preventAttendeeInvites}
+          onChange={props.onChangePreventAttendeeInvites}
+          label="Prevent attendees from inviting others"
+          tooltip="Normally, people marked Going can invite others to the plan. Turn this on to keep invites host-only."
         />
 
         <TooltipToggleRow

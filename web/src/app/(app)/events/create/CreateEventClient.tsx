@@ -151,7 +151,9 @@ export default function CreateEventClient() {
   );
   const [deadlineDate, setDeadlineDate] = useState<Dayjs | null>(null);
   const [deadlineTime, setDeadlineTime] = useState<Dayjs | null>(null);
-  const [allowAttendeeInvites, setAllowAttendeeInvites] = useState(true);
+  // Presented inverted ("Prevent attendees from inviting others", default
+  // off); the wire field stays allow_attendee_invites. See ExtraOptionsSection.
+  const [preventAttendeeInvites, setPreventAttendeeInvites] = useState(false);
   const [reserveSeats, setReserveSeats] = useState(false);
   const [requireReconfirmation, setRequireReconfirmation] = useState(false);
   const [muteHostAttendanceEmails, setMuteHostAttendanceEmails] = useState(false);
@@ -312,7 +314,7 @@ export default function CreateEventClient() {
             ? "availability"
             : "suggest"
       );
-      setAllowAttendeeInvites(ev.allowAttendeeInvites !== false);
+      setPreventAttendeeInvites(ev.allowAttendeeInvites === false);
       setRequireReconfirmation(ev.requireReconfirmation ?? false);
       setMuteHostAttendanceEmails(ev.muteHostAttendanceEmails === true);
       setRequireApproval(ev.requireApproval ?? false);
@@ -356,7 +358,13 @@ export default function CreateEventClient() {
         );
         for (const base of bases) {
           try {
-            const imgRes = await fetch(`${base}/events/${ev.id}/banner`, { credentials: "omit" });
+            // cache: "no-store" dodges browser-cached copies of the banner
+            // that were stored from <img> loads without CORS headers (the
+            // endpoint serves Cache-Control: public, max-age=86400).
+            const imgRes = await fetch(`${base}/events/${ev.id}/banner`, {
+              credentials: "omit",
+              cache: "no-store",
+            });
             if (!imgRes.ok) continue;
             const blob = await imgRes.blob();
             if (isCancelled()) return false;
@@ -604,7 +612,7 @@ export default function CreateEventClient() {
               .second(0)
               .toISOString()
           : null,
-      allow_attendee_invites: allowAttendeeInvites,
+      allow_attendee_invites: !preventAttendeeInvites,
       require_reconfirmation: requireReconfirmation,
       mute_host_attendance_emails: muteHostAttendanceEmails,
       require_approval: requireApproval,
@@ -782,17 +790,21 @@ export default function CreateEventClient() {
           <AppButton
             variant="text"
             size="small"
-            startIcon={<EventRepeatRoundedIcon sx={{ fontSize: 18 }} />}
+            startIcon={<EventRepeatRoundedIcon sx={{ fontSize: 16 }} />}
             onClick={() => setCopyDialogOpen(true)}
             sx={{
               alignSelf: "flex-start",
               textTransform: "none",
               fontWeight: 600,
-              fontSize: "0.875rem",
+              fontSize: "0.8125rem",
+              lineHeight: 1.4,
               color: "primary.dark",
-              px: 1,
-              ml: -1,
-              mt: 0.25,
+              px: 0.75,
+              py: 0.25,
+              ml: -0.75,
+              minHeight: 0,
+              minWidth: 0,
+              "& .MuiButton-startIcon": { mr: 0.5 },
               "&:hover": { bgcolor: "rgba(230, 91, 19, 0.06)" },
             }}
           >
@@ -1016,6 +1028,7 @@ export default function CreateEventClient() {
               value={selectedHobbies}
               onChange={setSelectedHobbies}
               error={errors.hobby}
+              helperText="People nearby who share these hobbies may get notified about this plan, depending on who can see it."
               onReject={(msg) => toast.error(msg)}
             />
           </Box>
@@ -1502,8 +1515,8 @@ export default function CreateEventClient() {
         onChangeFallbackPolicy={setFallbackPolicy}
         requireApproval={requireApproval}
         onChangeRequireApproval={setRequireApproval}
-        allowAttendeeInvites={allowAttendeeInvites}
-        onChangeAllowAttendeeInvites={setAllowAttendeeInvites}
+        preventAttendeeInvites={preventAttendeeInvites}
+        onChangePreventAttendeeInvites={setPreventAttendeeInvites}
         muteHostAttendanceEmails={muteHostAttendanceEmails}
         onChangeMuteHostAttendanceEmails={setMuteHostAttendanceEmails}
       />

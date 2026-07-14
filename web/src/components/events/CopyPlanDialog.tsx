@@ -285,7 +285,8 @@ export default function CopyPlanDialog({ open, onClose, onSelect }: CopyPlanDial
             Copy a previous plan
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-            Start from a plan you&apos;ve hosted. You can adjust everything before publishing.
+            Start from a plan you&apos;ve hosted. It will replace anything already in the form,
+            and you can adjust everything before publishing.
           </Typography>
         </Box>
       }

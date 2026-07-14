@@ -247,9 +247,10 @@ const CORS_ALLOWED_ORIGINS = new Set([
 
 app.use("*", async (c, next) => {
   const origin = c.req.header("Origin");
+  const allowedOrigin = origin && CORS_ALLOWED_ORIGINS.has(origin) ? origin : null;
 
-  if (origin && CORS_ALLOWED_ORIGINS.has(origin)) {
-    c.header("Access-Control-Allow-Origin", origin);
+  if (allowedOrigin) {
+    c.header("Access-Control-Allow-Origin", allowedOrigin);
     c.header("Vary", "Origin");
     c.header(
       "Access-Control-Allow-Methods",
@@ -264,6 +265,26 @@ app.use("*", async (c, next) => {
   }
 
   await next();
+
+  // Handlers that return a raw `new Response(...)` (media streamed from R2:
+  // avatars, event/community banners) bypass Hono's prepared headers, so the
+  // headers set above never reach the client on those routes. Browser fetch()
+  // of a banner (e.g. copy-a-plan carrying the image over) then fails CORS
+  // even though <img> tags render fine. Re-apply CORS onto the final
+  // response. Skip WebSocket upgrades (101 responses have immutable headers
+  // on Workers).
+  if (
+    allowedOrigin &&
+    c.res.status !== 101 &&
+    !c.res.headers.has("Access-Control-Allow-Origin")
+  ) {
+    try {
+      c.res.headers.set("Access-Control-Allow-Origin", allowedOrigin);
+      c.res.headers.set("Vary", "Origin");
+    } catch {
+      /* immutable headers on this response type; leave it as-is */
+    }
+  }
 });
 
 // ─── Suspension guard ────────────────────────────────────────────────────────
