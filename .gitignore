@@ -4,5 +4,6 @@ dist
 .env.*
 .DS_Store
 .dev.vars
+.wrangler/
 _vendor/
 template_reference/
