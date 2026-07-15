@@ -968,7 +968,7 @@ export default function EditEventClient() {
                 sx={{ mr: 0, gap: 0.5 }}
               />
               <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.25, lineHeight: 1.45 }}>
-                Everyone marked Going moves to Maybe, and attendees get an email showing the new time with one-tap RSVP links. This replaces the standard update email for this edit.
+                Everyone marked Going moves to Maybe, and attendees get an email showing the new time with one-tap RSVP links.
               </Typography>
             </Box>
           )}

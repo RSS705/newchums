@@ -12841,6 +12841,22 @@ app.patch("/events/:id", async (c) => {
     if (rows[0].host_user_id !== userId) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
     if (rows[0].status === "canceled") return c.json({ ok: false, error: "VALIDATION", message: "Cannot edit a canceled plan" }, 400);
 
+    // Banner-only partial update. The Edit form removes a banner with a
+    // follow-up PATCH whose body is exactly { banner_key: null }; the
+    // full-field validation below (title, starts_at, hobbies, ...) must
+    // not apply to that call, and it fires no attendee notifications.
+    // Clearing is the only mutation accepted here; setting a banner key
+    // still goes exclusively through /media/finalize so its ownership
+    // checks cannot be bypassed. Anything else falls through to normal
+    // full-body validation.
+    {
+      const bodyKeys = Object.keys(body);
+      if (bodyKeys.length === 1 && bodyKeys[0] === "banner_key" && body.banner_key === null) {
+        await sql`UPDATE newchums.events SET banner_key = NULL, updated_at = NOW() WHERE id = ${eventId}`;
+        return c.json({ ok: true });
+      }
+    }
+
     // Existing community links, used to determine which entries are newly
     // added (and therefore need a fresh membership check) vs already
     // present (which a host who left the community can keep).
