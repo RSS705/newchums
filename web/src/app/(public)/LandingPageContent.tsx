@@ -18,7 +18,7 @@ import NotificationsActiveRoundedIcon from "@mui/icons-material/NotificationsAct
 import VerifiedUserRoundedIcon from "@mui/icons-material/VerifiedUserRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import ChatRoundedIcon from "@mui/icons-material/ChatRounded";
-import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
+import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 
 import EventAvailableRoundedIcon from "@mui/icons-material/EventAvailableRounded";
 import MailOutlineRoundedIcon from "@mui/icons-material/MailOutlineRounded";
@@ -621,22 +621,67 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
 
               {/* Quiet reassurance row. Every claim here is true today:
                   no billing exists, the product is a web app, and public
-                  plans are viewable without an account. */}
+                  plans are viewable without an account. Rendered as soft
+                  success pills (the theme's success-chip colors: mint
+                  background, deep green text) rather than bare 16px icons,
+                  so the row reads as designed trust markers that match the
+                  hero's rounded-pill scale instead of stray green dots. */}
               {!isLoggedIn && (
                 <Stack
                   direction="row"
-                  spacing={{ xs: 1.5, sm: 2.5 }}
+                  spacing={1}
                   flexWrap="wrap"
                   useFlexGap
                   sx={{ pt: 0.5 }}
                 >
+                  {/* Metrics are deliberately tight (px 1.25, 0.8rem text,
+                      14px check, 8px gaps): the three pills measure ~536px
+                      against the ~544px hero text column, so any looser and
+                      the third one wraps to a second line at desktop. */}
                   {["Free to use", "No app to download", "Browse plans without an account"].map(
                     (claim) => (
-                      <Stack key={claim} direction="row" spacing={0.75} alignItems="center">
-                        <CheckCircleRoundedIcon sx={{ fontSize: 16, color: "success.main" }} />
+                      <Stack
+                        key={claim}
+                        direction="row"
+                        spacing={0.625}
+                        alignItems="center"
+                        sx={{
+                          px: 1.25,
+                          py: 0.625,
+                          borderRadius: 999,
+                          bgcolor: "success.light",
+                          border: "1px solid",
+                          borderColor: (theme) =>
+                            theme.palette.mode === "dark"
+                              ? "rgba(16,185,129,0.28)"
+                              : "rgba(5,150,105,0.18)",
+                        }}
+                      >
+                        <CheckRoundedIcon
+                          sx={{
+                            fontSize: 14,
+                            color: "success.main",
+                            // Optical alignment: the glyph sits a hair high
+                            // against the pill's cap-height text otherwise.
+                            mt: "1px",
+                          }}
+                        />
                         <Typography
                           variant="body2"
-                          sx={{ color: "text.secondary", fontSize: "0.85rem", fontWeight: 500 }}
+                          sx={{
+                            fontSize: "0.8rem",
+                            fontWeight: 600,
+                            lineHeight: 1.4,
+                            whiteSpace: "nowrap",
+                            // success.dark carries better small-text contrast
+                            // on the mint tint in light mode; in dark mode the
+                            // tint is a deep teal, so the brighter main reads
+                            // clearer.
+                            color: (theme) =>
+                              theme.palette.mode === "dark"
+                                ? theme.palette.success.main
+                                : theme.palette.success.dark,
+                          }}
                         >
                           {claim}
                         </Typography>
