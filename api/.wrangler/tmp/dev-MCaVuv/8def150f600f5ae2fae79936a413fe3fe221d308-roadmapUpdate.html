@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <title>Roadmap Update</title>
+  <!--[if mso]>
+  <noscript>
+    <xml>
+      <o:OfficeDocumentSettings>
+        <o:PixelsPerInch>96</o:PixelsPerInch>
+      </o:OfficeDocumentSettings>
+    </xml>
+  </noscript>
+  <![endif]-->
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Gabarito:wght@400;600;700&display=swap');
+  </style>
+</head>
+<body style="margin: 0; padding: 0; background-color: #F9FAFB; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%;">
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color: #F9FAFB;">
+    <tr>
+      <td align="center" style="padding: 40px 16px 32px 16px;">
+
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="560" style="max-width: 560px; width: 100%; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.06);">
+
+          <!-- Header band -->
+          <tr>
+            <td style="background-color: #E65B13; padding: 28px 32px 24px 32px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                <tr>
+                  <td style="vertical-align: middle;">
+                    <a href="https://newchums.com" style="text-decoration: none; display: inline-block;">
+                      <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                        <tr>
+                          <td style="vertical-align: middle; padding-right: 10px;">
+                            <img src="https://newchums.com/images/Icon-White-64.png" alt="" width="32" height="32" style="display: block; width: 32px; height: 32px; border: 0;" />
+                          </td>
+                          <td style="vertical-align: middle;">
+                            <span style="font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 22px; font-weight: 700; color: #ffffff; letter-spacing: -0.3px;">NewChums</span>
+                          </td>
+                        </tr>
+                      </table>
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="padding: 36px 32px 12px 32px;">
+
+              <!-- Heading -->
+              <p style="margin: 0 0 14px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 24px; font-weight: 700; color: #1F2937; line-height: 1.25;">
+                Roadmap update
+              </p>
+
+              <!-- Greeting -->
+              <p style="margin: 0 0 10px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 15px; color: #1F2937; line-height: 1.55;">
+                Hi {{recipientName}},
+              </p>
+
+              <!-- Body copy -->
+              <p style="margin: 0 0 22px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 15px; color: #4B5563; line-height: 1.6;">
+                There's an update on a roadmap item you're following.
+              </p>
+
+              <!-- Item detail (left-border style) -->
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 22px; border-left: 3px solid #E65B13;">
+                <tr>
+                  <td style="padding: 4px 0 4px 14px;">
+                    <p style="margin: 0 0 8px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 16px; font-weight: 700; color: #1F2937; line-height: 1.35;">
+                      {{itemTitle}}
+                    </p>
+
+                    {{#statusLabel}}
+                    <!-- Status badge -->
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-bottom: 8px;">
+                      <tr>
+                        <td style="background-color: #EEF4FF; border-radius: 20px; padding: 5px 14px;">
+                          <span style="font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 13px; font-weight: 700; color: #3B82F6;">{{.}}</span>
+                        </td>
+                      </tr>
+                    </table>
+                    {{/statusLabel}}
+
+                    {{#adminNote}}
+                    <!-- Admin note -->
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 4px;">
+                      <tr>
+                        <td style="background-color: #FFF7ED; border-left: 3px solid #E65B13; border-radius: 4px; padding: 12px 16px;">
+                          <p style="margin: 0 0 2px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 11px; font-weight: 600; color: #9A3412; text-transform: uppercase; letter-spacing: 0.5px;">Note from the team</p>
+                          <p style="margin: 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 14px; color: #1F2937; line-height: 1.5;">{{.}}</p>
+                        </td>
+                      </tr>
+                    </table>
+                    {{/adminNote}}
+
+                    {{#mergedIntoTitle}}
+                    <!-- Merge info -->
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 4px;">
+                      <tr>
+                        <td style="background-color: #FFFBEB; border-left: 3px solid #F59E0B; border-radius: 4px; padding: 12px 16px;">
+                          <p style="margin: 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 14px; color: #1F2937; line-height: 1.5;">
+                            This request has been merged into <a href="{{mergedIntoUrl}}" style="color: #E65B13; font-weight: 600; text-decoration: none;">{{.}}</a>. Your vote and follow have been transferred automatically.
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
+                    {{/mergedIntoTitle}}
+                  </td>
+                </tr>
+              </table>
+
+              <!-- CTA button -->
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 14px;">
+                <tr>
+                  <td align="center">
+                    <!--[if mso]>
+                    <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{itemUrl}}" style="height:44px;v-text-anchor:middle;width:260px;" arcsize="18%" strokecolor="#C44D10" fillcolor="#E65B13">
+                      <w:anchorlock/>
+                      <center style="color:#ffffff;font-family:'Segoe UI',sans-serif;font-size:14px;font-weight:bold;">View on Roadmap</center>
+                    </v:roundrect>
+                    <![endif]-->
+                    <!--[if !mso]><!-->
+                    <a href="{{itemUrl}}" style="display: inline-block; background-color: #E65B13; color: #ffffff; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 14px; font-weight: 700; text-decoration: none; padding: 14px 32px; border-radius: 8px; line-height: 1; text-align: center;">
+                      View on Roadmap
+                    </a>
+                    <!--<![endif]-->
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Spacer -->
+          <tr><td style="height: 12px;"></td></tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 20px 32px; border-top: 1px solid #E5E7EB;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                <tr>
+                  <td style="font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 12px; color: #9CA3AF; line-height: 1.5;">
+                    You're receiving this because you follow this item on the <a href="https://newchums.com/roadmap" style="color: #E65B13; text-decoration: none;">NewChums Community Roadmap</a>.
+                    {{#unsubscribeUrl}}&ensp;&middot;&ensp;<a href="{{.}}" style="color: #9CA3AF; text-decoration: underline; font-size: 12px;">Unsubscribe</a>{{/unsubscribeUrl}}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding-top: 6px; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 11px; color: #D1D5DB;">
+                    &copy; {{year}} {{productName}}
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+        </table>
+
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

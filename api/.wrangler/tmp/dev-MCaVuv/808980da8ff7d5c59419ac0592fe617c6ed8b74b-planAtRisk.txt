@@ -1,0 +1,18 @@
+{{heading}}
+
+{{bodyText}}
+
+{{eventTitle}}
+{{eventDate}}{{#eventLocation}} · {{.}}{{/eventLocation}}
+{{confirmedCount}} of {{minRequired}} confirmed
+
+{{ctaText}}: {{ctaUrl}}
+
+If you take no action, the plan will proceed as scheduled.
+
+---
+
+You're receiving this because you're the host of a plan on NewChums that didn't reach its minimum confirmed attendance.
+{{#unsubscribeUrl}}Unsubscribe: {{.}}{{/unsubscribeUrl}}
+
+© {{year}} {{productName}}

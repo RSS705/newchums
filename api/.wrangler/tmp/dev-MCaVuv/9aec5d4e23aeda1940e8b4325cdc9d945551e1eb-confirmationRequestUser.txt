@@ -1,0 +1,28 @@
+{{#isFinal}}FINAL REMINDER
+
+{{/isFinal}}{{^isFinal}}{{#isReminder}}REMINDER
+
+{{/isReminder}}{{/isFinal}}{{heading}}
+
+{{greeting}}
+
+{{bodyText}}
+
+---
+
+{{eventTitle}}
+{{eventDate}}{{#eventLocation}} · {{.}}{{/eventLocation}}
+Respond by {{deadline}}
+
+---
+
+View plan and confirm: {{ctaUrl}}
+
+You'll be asked to sign in if you aren't already.
+
+---
+
+You're receiving this because a plan you're attending on NewChums uses the 24-hour attendance check.
+{{#unsubscribeUrl}}Unsubscribe: {{.}}{{/unsubscribeUrl}}
+
+© {{year}} {{productName}}

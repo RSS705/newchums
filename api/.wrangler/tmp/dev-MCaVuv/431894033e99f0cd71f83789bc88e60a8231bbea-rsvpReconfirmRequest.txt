@@ -1,0 +1,30 @@
+Can you still make it?
+
+Hi {{recipientName}},
+
+{{hostName}} moved {{eventTitle}} to a new date and time and is asking everyone to reconfirm. {{#wasGoing}}Your RSVP has been set to Maybe until you respond, so please let {{hostName}} know if the new time works for you.{{/wasGoing}}{{^wasGoing}}You're currently marked as Maybe, so please let {{hostName}} know either way.{{/wasGoing}}
+
+---
+
+{{eventTitle}}
+New time: {{newDate}}{{#eventLocation}} · {{.}}{{/eventLocation}}
+Previously {{oldDate}}
+
+{{#changesBlockText}}{{{.}}}
+
+{{/changesBlockText}}---
+
+I can make it: {{goingUrl}}
+
+Can't make it: {{cantMakeItUrl}}
+
+View full plan details: {{eventUrl}}
+
+You may be asked to sign in first. You can change your response anytime from the plan page.
+
+---
+
+You're receiving this because the time changed on a plan you joined on NewChums.
+{{#unsubscribeUrl}}Unsubscribe: {{.}}{{/unsubscribeUrl}}
+
+© {{year}} {{productName}}

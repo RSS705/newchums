@@ -1,0 +1,21 @@
+Request update
+
+Hi {{recipientName}},
+
+Unfortunately, {{hostName}} wasn't able to accept your request to join this time. There are plenty of other plans to discover, keep exploring!
+
+{{eventTitle}}
+{{eventDate}}{{#eventLocation}} · {{.}}{{/eventLocation}}
+{{#hostMessage}}
+
+Message from the host: "{{.}}"
+{{/hostMessage}}
+
+Explore other plans: https://newchums.com
+
+---
+
+You're receiving this because you requested to join a plan on NewChums.
+{{#unsubscribeUrl}}Unsubscribe: {{.}}{{/unsubscribeUrl}}
+
+© {{year}} {{productName}}

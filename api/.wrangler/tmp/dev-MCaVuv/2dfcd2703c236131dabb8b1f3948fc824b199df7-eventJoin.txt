@@ -1,0 +1,23 @@
+{{heading}}
+
+Hi {{hostName}},
+
+{{bodyText}}
+
+{{#attendeeMessage}}Their message: "{{.}}"
+
+{{/attendeeMessage}}---
+
+{{eventTitle}}
+{{eventDate}}{{#eventLocation}} · {{.}}{{/eventLocation}}
+
+---
+
+View your plan: {{eventUrl}}
+
+---
+
+You're receiving this because you host a plan on NewChums.
+{{#unsubscribeUrl}}Unsubscribe: {{.}}{{/unsubscribeUrl}}
+
+© {{year}} {{productName}}

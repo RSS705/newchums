@@ -1,0 +1,21 @@
+You're in!
+
+Hi {{recipientName}},
+
+Great news, {{hostName}} approved your request to join their plan. You've been added as Going.
+
+{{eventTitle}}
+{{eventDate}}{{#eventLocation}} · {{.}}{{/eventLocation}}
+{{#hostMessage}}
+
+Message from the host: "{{.}}"
+{{/hostMessage}}
+
+View plan details: {{eventUrl}}
+
+---
+
+You're receiving this because you requested to join a plan on NewChums.
+{{#unsubscribeUrl}}Unsubscribe: {{.}}{{/unsubscribeUrl}}
+
+© {{year}} {{productName}}

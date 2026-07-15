@@ -1,0 +1,13 @@
+You're in!
+
+Hi {{userName}},
+
+Great news, your request to join "{{communityName}}" has been approved.
+
+Visit the community: {{communityUrl}}
+
+You can now see plans, members, and everything the community has to offer.
+
+---
+You're receiving this because you requested to join a community on NewChums (https://newchums.com).
+© {{year}} {{productName}}

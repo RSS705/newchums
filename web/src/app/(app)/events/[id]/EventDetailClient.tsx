@@ -2024,22 +2024,24 @@ export default function EventDetailClient({
             </AppCard>
           )}
 
-        {/* Anonymized "Who's in" preview. Drives the count + a handful of
-            role-labelled rows purely off `goingCount`, which is already
-            a public field. No handles, names, avatars, or profile links
-            are exposed; the rows deliberately read as a gated preview
-            ("Host", "Attendee 1", ...) rather than a censored list with
-            blurred identities.
-            Avatars get the white-ring + soft-shadow treatment from the
-            Participant hero card so the module feels human, the host
-            avatar gets a deeper primary tint so it reads as the plan
-            owner at a glance, and the sign-in hint sits in a soft well
-            inside the card so it feels like a signed footer rather than
-            a floating caption. */}
+        {/* Anonymized "Who's in" preview. The host's public handle is
+            already part of the public payload (the header's "Hosted by"
+            uses it), so the host row shows the real organizer with a
+            standard-size Host chip. Everyone else stays strictly
+            anonymous: an overlapping cluster of placeholder avatars
+            sized from goingCount minus the host's own Going RSVP (so
+            "5 going" never implies six people), with a caption carrying
+            the exact count. No attendee names, handles, avatars, or
+            profile links are exposed; the cluster deliberately reads as
+            a gated preview rather than a censored list with blurred
+            identities. Avatars keep the white-ring + soft-shadow
+            treatment from the Participant hero card, and the sign-in
+            hint sits in a soft well inside the card so it feels like a
+            signed footer rather than a floating caption. */}
         {!pubIsCanceled && (() => {
-          const pubMaxRows = 5;
-          const pubExtraVisible = Math.max(0, Math.min(pubGoingCount, pubMaxRows - 1));
-          const pubOverflow = Math.max(0, pubGoingCount - pubExtraVisible);
+          // The host's auto-created Going RSVP is inside goingCount.
+          const pubOthersGoing = Math.max(0, pubGoingCount - 1);
+          const pubClusterSize = Math.min(pubOthersGoing, 5);
           return (
             <AppCard>
               <Stack spacing={2}>
@@ -2055,68 +2057,69 @@ export default function EventDetailClient({
                   </Typography>
                 </Stack>
 
-                <Stack spacing={1.5}>
+                <Stack spacing={1.75}>
                   <Stack direction="row" spacing={1.5} alignItems="center">
                     <Avatar
                       sx={{
-                        width: 40,
-                        height: 40,
+                        width: 44,
+                        height: 44,
                         bgcolor: "primary.light",
                         color: "primary.dark",
                         border: "2px solid #fff",
                         boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
                       }}
                     >
-                      <PersonRoundedIcon sx={{ fontSize: 22 }} />
+                      <PersonRoundedIcon sx={{ fontSize: 24 }} />
                     </Avatar>
                     <Box sx={{ flex: 1, minWidth: 0 }}>
-                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                        Host
+                      <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
+                        {event.hostName}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.3 }}>
+                        Organizing this plan
                       </Typography>
                     </Box>
                     <Chip
                       label="Host"
                       size="small"
                       sx={{
-                        height: 20,
-                        fontSize: "0.6875rem",
                         fontWeight: 600,
-                        borderRadius: 1,
+                        fontSize: "0.8125rem",
                         bgcolor: "primary.main",
                         color: "primary.contrastText",
                       }}
                     />
                   </Stack>
 
-                  {Array.from({ length: pubExtraVisible }).map((_, i) => (
-                    <Stack key={i} direction="row" spacing={1.5} alignItems="center">
-                      <Avatar
-                        sx={{
-                          width: 40,
-                          height: 40,
-                          bgcolor: "grey.100",
-                          color: "text.disabled",
-                          border: "2px solid #fff",
-                          boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
-                        }}
-                      >
-                        <PersonRoundedIcon sx={{ fontSize: 22 }} />
-                      </Avatar>
+                  {pubOthersGoing > 0 ? (
+                    <Stack direction="row" spacing={1.5} alignItems="center">
+                      <Stack direction="row" alignItems="center">
+                        {Array.from({ length: pubClusterSize }).map((_, i) => (
+                          <Avatar
+                            key={i}
+                            sx={{
+                              width: 36,
+                              height: 36,
+                              bgcolor: "grey.100",
+                              color: "text.disabled",
+                              border: "2px solid #fff",
+                              boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
+                              ml: i === 0 ? 0 : -1,
+                            }}
+                          >
+                            <PersonRoundedIcon sx={{ fontSize: 20 }} />
+                          </Avatar>
+                        ))}
+                      </Stack>
                       <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                        Attendee {i + 1}
+                        {pubOthersGoing === 1
+                          ? "1 more person is going"
+                          : `${pubOthersGoing} more people are going`}
                       </Typography>
                     </Stack>
-                  ))}
-
-                  {pubGoingCount === 0 && (
-                    <Typography variant="body2" color="text.secondary" sx={{ pl: 7 }}>
+                  ) : (
+                    <Typography variant="body2" color="text.secondary">
                       No one else has RSVP&apos;d yet. Be the first.
-                    </Typography>
-                  )}
-
-                  {pubOverflow > 0 && (
-                    <Typography variant="caption" color="text.secondary" sx={{ pl: 7, fontWeight: 500 }}>
-                      +{pubOverflow} more going
                     </Typography>
                   )}
                 </Stack>

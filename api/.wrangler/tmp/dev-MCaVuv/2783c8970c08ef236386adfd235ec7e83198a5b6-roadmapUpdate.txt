@@ -1,0 +1,30 @@
+Roadmap update
+
+Hi {{recipientName}},
+
+There's an update on a roadmap item you're following.
+
+"{{itemTitle}}"
+
+{{#statusLabel}}Status: {{.}}{{/statusLabel}}
+
+{{#adminNote}}
+Note from the team:
+{{.}}
+{{/adminNote}}
+
+{{#mergedIntoTitle}}
+This request has been merged into "{{.}}".
+Your vote and follow have been transferred automatically.
+
+View the merged item: {{mergedIntoUrl}}
+{{/mergedIntoTitle}}
+
+View on Roadmap: {{itemUrl}}
+
+---
+
+You're receiving this because you follow this item on the NewChums Community Roadmap.
+{{#unsubscribeUrl}}Unsubscribe: {{.}}{{/unsubscribeUrl}}
+
+© {{year}} {{productName}}

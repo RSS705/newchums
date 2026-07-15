@@ -1,0 +1,32 @@
+SAFETY ALERT, Concern Report Submitted
+
+A user has submitted a safety or conduct concern. Review the details below and take action as needed.
+
+---
+
+CONCERN REASON: {{concernReason}}
+
+---
+
+Reporter: {{reporterName}} ({{reporterEmail}})
+Reported person: {{reportedName}} ({{reportedEmail}})
+Related plan: {{planTitle}}
+Submitted: {{submittedAt}}
+
+---
+
+Details:
+{{details}}
+
+---
+
+View safety reports: {{reportUrl}}
+Reporter diagnostics: {{reporterProfileUrl}}
+Reported user diagnostics: {{reportedProfileUrl}}
+View plan: {{planUrl}}
+
+---
+
+This is an internal admin alert from NewChums. A user submitted a safety concern that requires review.
+
+© {{year}} {{productName}}

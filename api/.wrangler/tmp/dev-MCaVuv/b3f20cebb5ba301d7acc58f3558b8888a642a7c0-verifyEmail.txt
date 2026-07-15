@@ -1,0 +1,17 @@
+Verify your email
+
+Hi {{name}},
+
+Thanks for signing up for NewChums! Please confirm your email address by visiting the link below.
+
+Verify email address: {{verifyUrl}}
+
+---
+
+If you didn't create a NewChums account, you can safely ignore this email.
+
+---
+
+This is an automated message from NewChums (https://newchums.com).
+
+© {{year}} {{productName}}

@@ -1,0 +1,17 @@
+Sign in to NewChums
+
+Use this secure link to sign back in to your NewChums account.
+
+Sign in: {{confirmUrl}}
+
+This link expires in 15 minutes and can be used once.
+
+---
+
+If you didn't ask to sign in, you can safely ignore this email. Your account is unchanged.
+
+---
+
+This is an automated message from NewChums (https://newchums.com).
+
+© {{year}} {{productName}}
