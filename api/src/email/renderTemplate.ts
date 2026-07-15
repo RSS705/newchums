@@ -65,6 +65,8 @@ import planSigninHtml from "./templates/planSignin.html";
 import planSigninTxt from "./templates/planSignin.txt";
 import roadmapUpdateHtml from "./templates/roadmapUpdate.html";
 import roadmapUpdateTxt from "./templates/roadmapUpdate.txt";
+import rsvpReconfirmRequestHtml from "./templates/rsvpReconfirmRequest.html";
+import rsvpReconfirmRequestTxt from "./templates/rsvpReconfirmRequest.txt";
 import signinLinkHtml from "./templates/signinLink.html";
 import signinLinkTxt from "./templates/signinLink.txt";
 import unreadChatDigestHtml from "./templates/unreadChatDigest.html";
@@ -110,6 +112,7 @@ const TEMPLATES: Record<string, TemplatePair> = {
   planRemovedByAdmin: { html: planRemovedByAdminHtml, text: planRemovedByAdminTxt },
   planSignin: { html: planSigninHtml, text: planSigninTxt },
   roadmapUpdate: { html: roadmapUpdateHtml, text: roadmapUpdateTxt },
+  rsvpReconfirmRequest: { html: rsvpReconfirmRequestHtml, text: rsvpReconfirmRequestTxt },
   signinLink: { html: signinLinkHtml, text: signinLinkTxt },
   unreadChatDigest: { html: unreadChatDigestHtml, text: unreadChatDigestTxt },
   verifyEmail: { html: verifyEmailHtml, text: verifyEmailTxt },

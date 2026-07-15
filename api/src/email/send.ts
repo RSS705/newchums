@@ -247,6 +247,74 @@ export const sendEventChangedEmail = async (
   });
 };
 
+/**
+ * Sent when the host changed the plan's date/time and asked attendees to
+ * reconfirm. Going RSVPs have already been softened to Maybe by the PATCH
+ * handler; `wasGoing` switches the copy between "your RSVP was set to
+ * Maybe" and the already-Maybe variant. `changes` should exclude the
+ * date/time item, the new time is the centerpiece of this email.
+ */
+export const sendRsvpReconfirmRequestEmail = async (
+  env: Bindings,
+  {
+    to,
+    recipientName,
+    hostName,
+    eventTitle,
+    eventUrl,
+    newDate,
+    oldDate,
+    eventLocation,
+    wasGoing,
+    changes,
+    unsubscribeUrl,
+  }: {
+    to: string;
+    recipientName: string;
+    hostName: string;
+    eventTitle: string;
+    eventUrl: string;
+    newDate: string;
+    oldDate: string;
+    eventLocation?: string;
+    wasGoing: boolean;
+    changes?: PlanChangeItem[];
+    unsubscribeUrl?: string;
+  },
+) => {
+  const hasAnyChanges = !!(changes && changes.length > 0);
+  const changesBlockHtml = hasAnyChanges
+    ? (() => {
+        const rows = changes!
+          .map(
+            (c) =>
+              `<p style="margin: 0 0 4px 0; font-family: ${FONT}; font-size: 14px; color: #4B5563; line-height: 1.55;">${escapeHtml(formatChange(c))}</p>`,
+          )
+          .join("");
+        return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 22px; border-left: 3px solid #E65B13; background-color: #FFF7ED; border-radius: 0 8px 8px 0;"><tr><td style="padding: 14px 20px;"><p style="margin: 0 0 8px 0; font-family: ${FONT}; font-size: 11px; font-weight: 600; color: #E65B13; text-transform: uppercase; letter-spacing: 0.5px;">Also changed</p>${rows}</td></tr></table>`;
+      })()
+    : null;
+  const changesBlockText = hasAnyChanges
+    ? "Also changed:\n" + changes!.map((c) => `- ${formatChange(c)}`).join("\n")
+    : null;
+
+  return dispatch(env, to, "rsvpReconfirmRequest", {
+    recipientName,
+    hostName,
+    eventTitle,
+    eventUrl,
+    newDate,
+    oldDate,
+    eventLocation: hasContent(eventLocation) ? eventLocation : null,
+    wasGoing,
+    goingUrl: `${eventUrl}?rsvp=going`,
+    cantMakeItUrl: `${eventUrl}?rsvp=cant_make_it`,
+    changesBlockHtml,
+    changesBlockText,
+    unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
+  });
+};
+
 type HostRsvpEmailParams = {
   to: string;
   hostName: string;

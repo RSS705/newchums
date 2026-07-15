@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type WheelEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type WheelEvent } from "react";
 import Box from "@mui/material/Box";
 import CircularProgress from "@mui/material/CircularProgress";
 import Paper from "@mui/material/Paper";
@@ -128,6 +128,16 @@ export default function EditEventClient() {
   // Notification control for this edit
   const [notifyAttendees, setNotifyAttendees] = useState(true);
 
+  // Date-change reconfirmation (edit-only; see AGENTS.md -> Add Plan /
+  // Edit Plan Parity Rule, deliberately-divergent sections). Follows the
+  // initialCommunityIds pattern: the original start time and the count of
+  // non-host going/maybe attendees are captured once at hydration, and the
+  // toggle only renders when the date/time actually differs and there is
+  // somebody to ask.
+  const [initialStartsAt, setInitialStartsAt] = useState<string | null>(null);
+  const [reconfirmableAttendeeCount, setReconfirmableAttendeeCount] = useState(0);
+  const [reconfirmRsvps, setReconfirmRsvps] = useState(false);
+
   // QA plan (super admin only)
   const [isQa, setIsQa] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
@@ -189,6 +199,14 @@ export default function EditEventClient() {
         const d = dayjs(ev.startsAt);
         setDateValue(d);
         setTimeValue(d);
+        setInitialStartsAt(ev.startsAt ?? null);
+        // Attendees who would be asked to reconfirm on a date/time change.
+        // The host-branch GET /events/:id response already carries the full
+        // rsvps array; the host's own auto-going row is excluded.
+        const rsvpRows: Array<{ userId?: string; status?: string }> = Array.isArray(data.rsvps) ? data.rsvps : [];
+        setReconfirmableAttendeeCount(
+          rsvpRows.filter((r) => (r.status === "going" || r.status === "maybe") && r.userId !== ev.hostUserId).length,
+        );
         setMaxSeats(ev.maxSeats != null ? String(ev.maxSeats) : "");
         setVisibility(ev.visibility ?? "public");
         setRequireReconfirmation(ev.requireReconfirmation ?? false);
@@ -367,6 +385,17 @@ export default function EditEventClient() {
     }
   }, [bannerCropSrc, bannerCroppedArea, toast]);
 
+  // True when the pickers differ from the plan's stored start time.
+  // Seconds and milliseconds are zeroed on both sides because submit
+  // builds starts_at with .second(0), so anything below minute precision
+  // would false-positive.
+  const dateTimeChanged = useMemo(() => {
+    if (!initialStartsAt || !dateValue?.isValid() || !timeValue?.isValid()) return false;
+    const combined = dateValue.hour(timeValue.hour()).minute(timeValue.minute()).second(0).millisecond(0);
+    return !combined.isSame(dayjs(initialStartsAt).second(0).millisecond(0));
+  }, [initialStartsAt, dateValue, timeValue]);
+  const offerReconfirm = dateTimeChanged && reconfirmableAttendeeCount > 0;
+
   const validate = (): Record<string, string> => {
     const errs: Record<string, string> = {};
     if (!title.trim()) errs.title = "Give your plan a title";
@@ -459,9 +488,12 @@ export default function EditEventClient() {
           location_visibility: locationType === "in_person" ? locationVisibility : "exact_everyone",
           online_link: locationType === "online" ? onlineLink.trim() || null : null,
           notify_attendees: notifyAttendees,
+          // Only meaningful when the date/time changed; the server
+          // re-verifies that before resetting anything.
+          ...(offerReconfirm && reconfirmRsvps ? { reconfirm_rsvps: true } : {}),
         }),
       });
-      const data = (await res.json()) as { ok: boolean; message?: string };
+      const data = (await res.json()) as { ok: boolean; message?: string; reconfirm_requested?: number };
       if (data.ok) {
         if (bannerFile) {
           try {
@@ -506,7 +538,11 @@ export default function EditEventClient() {
             });
           } catch { /* non-fatal */ }
         }
-        toast.success("Plan updated");
+        toast.success(
+          data.reconfirm_requested && data.reconfirm_requested > 0
+            ? "Plan updated. Attendees have been asked to reconfirm."
+            : "Plan updated",
+        );
         router.push(`/events/${eventId}`);
       } else {
         toast.error(data.message ?? "Couldn't save changes");
@@ -920,6 +956,22 @@ export default function EditEventClient() {
               />
             </Box>
           </Stack>
+          {/* Edit-only, shown once the pickers diverge from the saved start
+              time on a plan with going/maybe attendees. Deliberate parity
+              divergence from the Add form; see AGENTS.md -> Add Plan / Edit
+              Plan Parity Rule. */}
+          {offerReconfirm && (
+            <Box sx={{ borderRadius: 2, border: "1px solid", borderColor: "divider", bgcolor: "action.hover", px: 2, py: 1.5 }}>
+              <FormControlLabel
+                control={<Switch checked={reconfirmRsvps} onChange={(e) => setReconfirmRsvps(e.target.checked)} />}
+                label={<Typography variant="body2" fontWeight={600}>Ask attendees to reconfirm for the new time</Typography>}
+                sx={{ mr: 0, gap: 0.5 }}
+              />
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.25, lineHeight: 1.45 }}>
+                Everyone marked Going moves to Maybe, and attendees get an email showing the new time with one-tap RSVP links. This replaces the standard update email for this edit.
+              </Typography>
+            </Box>
+          )}
           <Box>
             <Typography variant="body2" fontWeight={600} sx={{ display: "block", mb: 0.625 }}>
               Alternate times

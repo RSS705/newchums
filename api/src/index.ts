@@ -16,6 +16,7 @@ import {
   sendEmailChangeNotifyOldEmail,
   sendEmailChangeSuccessEmail,
   sendEventChangedEmail,
+  sendRsvpReconfirmRequestEmail,
   type PlanChangeItem,
   sendEventInviteEmail,
   sendEventJoinEmail,
@@ -12177,12 +12178,20 @@ app.post("/events/:id/rsvp", async (c) => {
     if (status === "going" && event.max_seats) {
       const goingCount = (await sql`SELECT COUNT(*)::int AS c FROM newchums.event_rsvps WHERE event_id = ${eventId} AND status = 'going'`) as { c: number }[];
       let occupiedSeats = goingCount[0].c;
-      // When reserve_seats is on, pending invites (no RSVP yet, not declined) hold a seat
+      // When reserve_seats is on, pending invites (no RSVP yet, not declined)
+      // hold a seat. The requester's own held seat is excluded: an invitee
+      // upgrading Maybe -> Going simply converts the seat they were already
+      // holding, so it must not block their own upgrade. Without the
+      // exclusion, a full plan whose Going attendees were reset to Maybe by
+      // the date-change reconfirmation flow would lock every invited
+      // attendee out of reconfirming (their own reservation reads as the
+      // plan being full).
       if (event.reserve_seats) {
         const reservedCount = (await sql`
           SELECT COUNT(*)::int AS c FROM newchums.event_invites ei
           WHERE ei.event_id = ${eventId}
             AND ei.user_id IS NOT NULL
+            AND ei.user_id != ${userId}
             AND (
               NOT EXISTS (SELECT 1 FROM newchums.event_rsvps er WHERE er.event_id = ${eventId} AND er.user_id = ei.user_id)
               OR EXISTS (SELECT 1 FROM newchums.event_rsvps er2 WHERE er2.event_id = ${eventId} AND er2.user_id = ei.user_id AND er2.status = 'maybe')
@@ -12705,6 +12714,107 @@ async function notifyAttendeesPlanChanged(
   }
 }
 
+/**
+ * Host changed the plan's date/time and asked attendees to reconfirm.
+ * The PATCH handler has already softened every non-host 'going' RSVP to
+ * 'maybe'; this notifies everyone who was Going or Maybe before the flip
+ * (`wasGoingByUser`): an in-app notification always, plus the
+ * rsvpReconfirmRequest email gated by the same event_changed_canceled
+ * preference as other plan-change emails. Replaces (not supplements) the
+ * generic notifyAttendeesPlanChanged run for that edit, so attendees get
+ * one email per edit. Mirrors its sibling's QA isolation and per-recipient
+ * error swallowing.
+ */
+async function notifyAttendeesReconfirmRequest(
+  sql: ReturnType<typeof getSql>,
+  env: Bindings,
+  eventId: string,
+  hostUserId: string,
+  eventTitle: string,
+  oldStartsAt: string,
+  changes: PlanChangeItem[],
+  wasGoingByUser: Map<string, boolean>,
+): Promise<void> {
+  if (!env.NEXTAUTH_SECRET) return;
+  if (wasGoingByUser.size === 0) return;
+  const eventUrl = `${env.WEB_BASE_URL}/events/${eventId}`;
+
+  const evRows = (await sql`
+    SELECT starts_at, timezone, location_type, location_name, location_address, location_visibility, location_area, online_link, COALESCE(is_qa, false) AS is_qa
+    FROM newchums.events WHERE id = ${eventId} LIMIT 1
+  `) as { starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; location_visibility: string | null; location_area: string | null; online_link: string | null; is_qa: boolean }[];
+  const ev = evRows[0];
+  if (!ev) return;
+  const tz = ev.timezone || "UTC";
+  const newDate = formatEventDate(ev.starts_at, tz);
+  const oldDate = formatEventDate(oldStartsAt, tz);
+  // Recipients are attending non-host users, so they get the joined-viewer
+  // location treatment, same as the plan-changed email.
+  const eventLocation = buildEmailEventLocation(ev, "joined");
+
+  const hostRows = (await sql`
+    SELECT username, name FROM newchums.users WHERE id = ${hostUserId} LIMIT 1
+  `) as { username: string | null; name: string | null }[];
+  const host = hostRows[0];
+  const hostUsernameSlug = host?.username?.replace(/^@/, "").trim() || null;
+  const hostNameTrimmed = host?.name?.trim() || null;
+  const hostDisplayName = hostNameTrimmed || hostUsernameSlug || "The host";
+  const notificationMetadata = {
+    eventTitle,
+    newDate,
+    ...(hostUsernameSlug ? { hostUsername: hostUsernameSlug } : {}),
+    ...(hostNameTrimmed ? { hostName: hostNameTrimmed } : {}),
+  };
+
+  const recipientIds = Array.from(wasGoingByUser.keys());
+  const attendees = (await sql`
+    SELECT u.id, u.email, u.name, u.username
+    FROM newchums.users u
+    WHERE u.id = ANY(${recipientIds}::uuid[])
+  `) as Array<{ id: string; email: string; name: string | null; username: string | null }>;
+
+  // The date/time change is the centerpiece of the email; the "Also
+  // changed" block only carries any other edits made in the same save.
+  const otherChanges = changes.filter((ch) => ch.fieldName !== "Date & time");
+
+  // QA plans: only notify super admin attendees
+  const qaAdminIds = ev.is_qa ? await batchLoadSuperAdminIds(sql, attendees.map((a) => a.id)) : null;
+
+  for (const att of attendees) {
+    if (qaAdminIds && !qaAdminIds.has(att.id)) continue;
+    try {
+      await sql`
+        INSERT INTO newchums.notifications (user_id, type, actor_user_id, entity_id, metadata)
+        VALUES (${att.id}, 'event_reconfirm_requested', ${hostUserId}, ${eventId}, ${JSON.stringify(notificationMetadata)})
+      `;
+
+      const profileRows = (await sql`
+        SELECT notification_prefs FROM newchums.user_profile WHERE user_id = ${att.id} LIMIT 1
+      `) as Array<{ notification_prefs: unknown }>;
+      const prefs = normalizeNotificationPrefs(profileRows[0]?.notification_prefs);
+      if (prefs.items.event_changed_canceled?.enabled === false) continue;
+
+      const unsubToken = await createUnsubscribeToken(env.NEXTAUTH_SECRET, att.id, "event_changed_canceled");
+      const unsubscribeUrl = `${env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`;
+      const recipientName = att.name?.trim() || att.username?.replace(/^@/, "") || "there";
+
+      await sendRsvpReconfirmRequestEmail(env, {
+        to: att.email,
+        recipientName,
+        hostName: hostDisplayName,
+        eventTitle,
+        eventUrl,
+        newDate,
+        oldDate,
+        eventLocation,
+        wasGoing: wasGoingByUser.get(att.id) === true,
+        changes: otherChanges,
+        unsubscribeUrl,
+      });
+    } catch { /* noop, never let email failure break the host's action */ }
+  }
+}
+
 /** PATCH /events/:id, edit core event fields (host only, published events) */
 app.patch("/events/:id", async (c) => {
   const payload = await requireAuth(c);
@@ -13040,7 +13150,8 @@ app.patch("/events/:id", async (c) => {
     if (before.title !== rawTitle)
       changes.push({ fieldName: "Title", oldValue: before.title, newValue: rawTitle });
 
-    if (new Date(before.starts_at).getTime() !== startsAt.getTime())
+    const dateTimeChanged = new Date(before.starts_at).getTime() !== startsAt.getTime();
+    if (dateTimeChanged)
       changes.push({
         fieldName: "Date & time",
         oldValue: formatEventDate(before.starts_at, effectiveTz),
@@ -13151,15 +13262,74 @@ app.patch("/events/:id", async (c) => {
       newTitle: rawTitle,
     }));
 
-    // Host can opt out of attendee notifications for this edit
-    const shouldNotify = body.notify_attendees !== false;
+    // Host-requested RSVP reconfirmation. Only honored when the date/time
+    // actually changed (the edit form only offers the toggle then; this is
+    // the server-side backstop, and it also keeps the banner-removal
+    // follow-up PATCH and other partial callers inert). Every non-host
+    // 'going' RSVP is softened to 'maybe' so the Who's-in list shows who
+    // has reconfirmed for the new time, and everyone who was Going or
+    // Maybe is asked to respond.
+    //
+    // committed_at is cleared on the flipped rows: that stamp recorded a
+    // commitment to the OLD time, and the "Going follow-through"
+    // reliability metric counts any committed row that is no longer
+    // 'going' as the attendee backing out. Without the clear, the host's
+    // change would ding every attendee's public reliability stats.
+    // Re-RSVPing Going writes a fresh committed_at via the RSVP upsert's
+    // COALESCE, so the plan re-enters the metrics once they re-commit.
+    const reconfirmRequested = body.reconfirm_rsvps === true && dateTimeChanged;
+    let rsvpsReset = 0;
+    let reconfirmRecipientCount = 0;
+    if (reconfirmRequested) {
+      // Snapshot going/maybe attendees before the flip so the email can
+      // tell "you were Going" apart from "you were already Maybe".
+      const reconfirmRecipients = (await sql`
+        SELECT user_id, status FROM newchums.event_rsvps
+        WHERE event_id = ${eventId} AND status IN ('going', 'maybe') AND user_id != ${userId}
+      `) as { user_id: string; status: string }[];
+
+      const flipped = (await sql`
+        UPDATE newchums.event_rsvps
+        SET status = 'maybe', committed_at = NULL, updated_at = NOW()
+        WHERE event_id = ${eventId} AND status = 'going' AND user_id != ${userId}
+        RETURNING user_id
+      `) as { user_id: string }[];
+      rsvpsReset = flipped.length;
+
+      if (flipped.length > 0) {
+        // Mirror the user-initiated Going -> Maybe sync from
+        // POST /events/:id/rsvp: a prior 'confirmed' 24-hour attendance
+        // check response was for the old time, so roll it back to
+        // 'pending'. 'declined' and 'expired' rows stay final.
+        await sql`
+          UPDATE newchums.event_confirmations
+          SET status = 'pending', responded_at = NULL, updated_at = NOW()
+          WHERE event_id = ${eventId} AND status = 'confirmed'
+            AND user_id = ANY(${flipped.map((f) => f.user_id)}::uuid[])
+        `;
+      }
+
+      reconfirmRecipientCount = reconfirmRecipients.length;
+      if (reconfirmRecipients.length > 0) {
+        const wasGoingByUser = new Map(reconfirmRecipients.map((r) => [r.user_id, r.status === "going"]));
+        c.executionCtx.waitUntil(
+          notifyAttendeesReconfirmRequest(sql, c.env, eventId, userId, rawTitle, before.starts_at, changes, wasGoingByUser),
+        );
+      }
+    }
+
+    // Host can opt out of attendee notifications for this edit. A
+    // reconfirmation request already notifies every going/maybe attendee
+    // (with the change list included), so the generic plan-changed
+    // notification is suppressed for that edit to avoid double-emailing.
+    const shouldNotify = body.notify_attendees !== false && !reconfirmRequested;
     if (shouldNotify) {
       c.executionCtx.waitUntil(
         notifyAttendeesPlanChanged(sql, c.env, eventId, userId, rawTitle, "updated", changes),
       );
     }
 
-    return c.json({ ok: true });
+    return c.json({ ok: true, rsvps_reset: rsvpsReset, reconfirm_requested: reconfirmRecipientCount });
   } catch (err) {
     console.error("[PATCH /events/:id]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);

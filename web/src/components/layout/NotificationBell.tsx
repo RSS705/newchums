@@ -168,6 +168,19 @@ function notificationText(n: AppNotification, viewerHandle: string | null): {
         actorHref,
         body: titleLink ? <>{" updated the details for "}{titleLink}.</> : " updated a plan you're attending.",
       };
+    case "event_reconfirm_requested": {
+      // Host changed the plan's date/time and asked attendees to re-confirm;
+      // Going RSVPs were reset to Maybe. metadata.newDate carries the
+      // formatted new start time.
+      const newDate = n.metadata?.newDate as string | undefined;
+      return {
+        actorLabel,
+        actorHref,
+        body: titleLink
+          ? <>{" moved "}{titleLink}{newDate ? <>{" to "}<strong>{newDate}</strong></> : " to a new time"}{". Can you still make it?"}</>
+          : " moved a plan you joined to a new time. Can you still make it?",
+      };
+    }
     case "event_locked":
       return {
         actorLabel,

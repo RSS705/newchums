@@ -257,7 +257,7 @@ Template basenames currently shipped:
 - `emailChangeConfirm`, `emailChangeNotifyOld`, `emailChangeSuccess`
 - `magicLinkSignup`, `planSignin`, `signinLink`
 - `chumInvite`
-- `eventInvite`, `eventJoin`, `eventLeave`, `eventMaybe`, `eventChanged`, `attendeeRemoved`
+- `eventInvite`, `eventJoin`, `eventLeave`, `eventMaybe`, `eventChanged`, `rsvpReconfirmRequest`, `attendeeRemoved`
 - `joinRequestToHost`, `joinRequestApproved`, `joinRequestDeclined`
 - `confirmationRequestUser` (host + attendee subject variants)
 - `planAtRisk`, `planAutoCancelled`, `planRemovedByAdmin`, `planFeedback`
@@ -301,6 +301,21 @@ Chunk XX, YYYY-MM-DD
 ## Session Log (Chunks)
 
 (Existing chunks should remain here. Add new chunks at the end.)
+
+---
+
+Chunk 20, 2026-07-15
+- Goal: Let hosts ask attendees to reconfirm when a plan's date/time changes (RSVPs reset to Maybe + reconfirmation email), instead of attendees silently keeping stale Going RSVPs.
+- Changes:
+  - **API, PATCH /events/:id:** New `reconfirm_rsvps` body flag, honored only when `starts_at` actually changed (server re-verifies). Flips every non-host Going RSVP to Maybe via UPDATE (row order, notes, and access standing preserved), clears `committed_at` on flipped rows so the host's change never counts against attendees' Going follow-through metric (documented exception to migration 041's "never cleared" rule; re-RSVPing Going re-stamps it via the existing upsert COALESCE), and rolls `confirmed` 24-hour-check rows for flipped users back to `pending` (same rule as a user-initiated Going→Maybe). Response now returns `rsvps_reset` + `reconfirm_requested`. The generic plan-changed notification is suppressed for that edit so attendees get exactly one email.
+  - **API, new notify helper + email:** `notifyAttendeesReconfirmRequest` notifies all pre-flip Going/Maybe non-host attendees: in-app `event_reconfirm_requested` notification (always) + new `rsvpReconfirmRequest` email template (gated by the `event_changed_canceled` pref with matching unsubscribe token; QA plans notify super admins only). Email leads with the new time, shows the old time, was-Going vs was-Maybe copy variants, an "Also changed" block for other same-save edits, and one-tap `?rsvp=going` / `?rsvp=cant_make_it` links.
+  - **Web, (app)/layout.tsx:** Logged-out clicks on token-less `?rsvp=` links now round-trip through `/login?next=<path+query>` (same pattern as the community-tab and invite-token gates), so the RSVP intent auto-applies after sign-in instead of being silently dropped by the public preview. Invite-token flows unchanged.
+  - **API, POST /events/:id/rsvp:** Reserved-seat capacity check now excludes the requester's own held seat, fixing a latent lockout (an invitee with a Maybe RSVP on a full `reserve_seats` plan could never upgrade to Going because their own reservation counted the plan as full) that the bulk reset would have made common.
+  - **Web, EditEventClient.tsx:** "Ask attendees to reconfirm for the new time" toggle (default off) appears in the When? card only when the pickers diverge from the saved start time AND the plan has non-host going/maybe attendees (derived from the already-fetched `data.rsvps`). Sends `reconfirm_rsvps: true`; success toast confirms attendees were asked. Edit-only parity divergence documented in AGENTS.md.
+  - **Web, NotificationBell.tsx:** Renders `event_reconfirm_requested` ("moved {plan} to {new time}. Can you still make it?").
+  - **Documentation:** Technical_Specs.md (PATCH row, notification prefs, template lists, in-app types, Attendance Assurance RSVP-integration, Attendance Record), AGENTS.md (parity divergence row, 24-hour check row, email template inventory), Development_Setup_Guide.md template list, migration 041 header amendment.
+- Verification: `npm run build` (web) passes; API vitest suite passes; wrangler dry-run bundle clean; mustache render test of both new template variants (was-Going/was-Maybe, with/without changes block, location, unsubscribe) passes with URL-escaping parity against `eventInvite`; adversarial multi-agent review run over the diff (the one confirmed finding, the signed-out `?rsvp=` intent drop, is fixed by the layout gate above).
+- Deploy: API worker + web worker. No migrations.
 
 ---
 

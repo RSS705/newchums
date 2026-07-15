@@ -41,6 +41,7 @@ export const SUBJECTS = {
   // Attendance assurance / plan health
   confirmationRequestUser_attendee: "Are you still coming to {{eventTitle}}?",
   confirmationRequestUser_host: "Are you still hosting {{eventTitle}}?",
+  rsvpReconfirmRequest: "New time for {{eventTitle}}. Can you still make it?",
   planAtRisk: "{{eventTitle}} needs more confirmations",
   planAutoCancelled: "{{eventTitle}} has been cancelled",
   planRemovedByAdmin: "Your plan {{eventTitle}} has been removed",

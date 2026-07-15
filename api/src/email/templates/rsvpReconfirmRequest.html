@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <title>Can you still make it?</title>
+  <!--[if mso]>
+  <noscript>
+    <xml>
+      <o:OfficeDocumentSettings>
+        <o:PixelsPerInch>96</o:PixelsPerInch>
+      </o:OfficeDocumentSettings>
+    </xml>
+  </noscript>
+  <![endif]-->
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Gabarito:wght@400;600;700&display=swap');
+  </style>
+</head>
+<body style="margin: 0; padding: 0; background-color: #F9FAFB; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%;">
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color: #F9FAFB;">
+    <tr>
+      <td align="center" style="padding: 40px 16px 32px 16px;">
+
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="560" style="max-width: 560px; width: 100%; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.06);">
+
+          <!-- Header band -->
+          <tr>
+            <td style="background-color: #E65B13; padding: 28px 32px 24px 32px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                <tr>
+                  <td style="vertical-align: middle;">
+                    <a href="https://newchums.com" style="text-decoration: none; display: inline-block;">
+                      <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                        <tr>
+                          <td style="vertical-align: middle; padding-right: 10px;">
+                            <img src="https://newchums.com/images/Icon-White-64.png" alt="" width="32" height="32" style="display: block; width: 32px; height: 32px; border: 0;" />
+                          </td>
+                          <td style="vertical-align: middle;">
+                            <span style="font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 22px; font-weight: 700; color: #ffffff; letter-spacing: -0.3px;">NewChums</span>
+                          </td>
+                        </tr>
+                      </table>
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="padding: 36px 32px 12px 32px;">
+
+              <!-- Heading -->
+              <p style="margin: 0 0 14px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 24px; font-weight: 700; color: #1F2937; line-height: 1.25;">
+                Can you still make it?
+              </p>
+
+              <!-- Greeting -->
+              <p style="margin: 0 0 10px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 15px; color: #1F2937; line-height: 1.55;">
+                Hi {{recipientName}},
+              </p>
+
+              <!-- Body copy. wasGoing switches the second sentence between
+                   "your RSVP was moved to Maybe" (was Going) and a gentler
+                   nudge for attendees who were already Maybe. -->
+              <p style="margin: 0 0 22px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 15px; color: #4B5563; line-height: 1.6;">
+                {{hostName}} moved {{eventTitle}} to a new date and time and is asking everyone to reconfirm.
+                {{#wasGoing}}Your RSVP has been set to Maybe until you respond, so please let {{hostName}} know if the new time works for you.{{/wasGoing}}{{^wasGoing}}You're currently marked as Maybe, so please let {{hostName}} know either way.{{/wasGoing}}
+              </p>
+
+              <!-- New time summary (left-border accent, new time front and center) -->
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 26px; border-left: 3px solid #E65B13;">
+                <tr>
+                  <td style="padding: 4px 0 4px 14px;">
+                    <p style="margin: 0 0 3px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 16px; font-weight: 700; color: #1F2937; line-height: 1.35;">
+                      {{eventTitle}}
+                    </p>
+                    <p style="margin: 0 0 4px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 11px; font-weight: 600; color: #E65B13; text-transform: uppercase; letter-spacing: 0.5px;">
+                      New time
+                    </p>
+                    <p style="margin: 0 0 4px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 15px; font-weight: 700; color: #1F2937; line-height: 1.5;">
+                      {{newDate}}
+                    </p>
+                    {{#eventLocation}}
+                    <p style="margin: 0 0 4px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 13px; color: #6B7280; line-height: 1.5;">
+                      {{.}}
+                    </p>
+                    {{/eventLocation}}
+                    <p style="margin: 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 13px; color: #9CA3AF; line-height: 1.5;">
+                      Previously {{oldDate}}
+                    </p>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Other changes (pre-rendered server-side, hidden when the
+                   only change was the date/time) -->
+              {{{changesBlockHtml}}}
+
+              <!-- RSVP buttons -->
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 14px;">
+                <tr>
+                  <td align="center">
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <!-- Going -->
+                        <td style="padding: 6px;">
+                          <!--[if !mso]><!-->
+                          <a href="{{goingUrl}}" style="display: inline-block; background-color: #E65B13; color: #ffffff; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 14px; font-weight: 700; text-decoration: none; padding: 14px 32px; border-radius: 8px; line-height: 1; text-align: center;">
+                            I can make it
+                          </a>
+                          <!--<![endif]-->
+                        </td>
+                        <!-- Can't make it -->
+                        <td style="padding: 6px;">
+                          <!--[if !mso]><!-->
+                          <a href="{{cantMakeItUrl}}" style="display: inline-block; background-color: #ffffff; color: #374151; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 14px; font-weight: 700; text-decoration: none; padding: 13px 31px; border-radius: 8px; line-height: 1; text-align: center; border: 1px solid #D1D5DB;">
+                            Can't make it
+                          </a>
+                          <!--<![endif]-->
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- View plan link -->
+              <p style="margin: 0 0 18px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 13px; color: #6B7280; line-height: 1.5; text-align: center;">
+                <a href="{{eventUrl}}" style="color: #6B7280; text-decoration: underline;">View full plan details</a>
+              </p>
+
+              <!-- Helper text -->
+              <p style="margin: 0 0 18px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 12px; color: #9CA3AF; line-height: 1.5; text-align: center;">
+                You may be asked to sign in first. You can change your response anytime from the plan page.
+              </p>
+
+            </td>
+          </tr>
+
+          <tr><td style="height: 12px;"></td></tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 20px 32px; border-top: 1px solid #E5E7EB;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                <tr>
+                  <td style="font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 12px; color: #9CA3AF; line-height: 1.5;">
+                    You're receiving this because the time changed on a plan you joined on <a href="https://newchums.com" style="color: #E65B13; text-decoration: none;">NewChums</a>.
+                    {{#unsubscribeUrl}}&ensp;&middot;&ensp;<a href="{{.}}" style="color: #9CA3AF; text-decoration: underline; font-size: 12px;">Unsubscribe</a>{{/unsubscribeUrl}}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding-top: 6px; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 11px; color: #D1D5DB;">
+                    &copy; {{year}} {{productName}}
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+        </table>
+
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

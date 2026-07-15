@@ -3,6 +3,11 @@
 -- once a user RSVPs "going," committed_at is set and never cleared, even if
 -- they later change to "cant_make_it." This lets us distinguish "backed out of
 -- a commitment" from "directly declined without ever committing."
+-- (July 2026 amendment: one deliberate exception now exists. The host-initiated
+-- date-change reconfirmation reset in PATCH /events/:id clears committed_at on
+-- the Going rows it flips to Maybe, because the commitment was to the old time
+-- and the host's change must not read as the attendee backing out. See
+-- docs/Technical_Specs.md, Attendance Record.)
 -- Run: psql "$DATABASE_URL" -f web/sql/041_attendance_record.sql
 
 ALTER TABLE newchums.event_rsvps

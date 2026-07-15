@@ -164,13 +164,32 @@ export default async function AppLayout({
           redirect(`/login?next=${encodeURIComponent(nextTarget)}`);
         }
       }
+      const inviteMatch = search.match(/[?&]invite_token=([^&]+)/);
+      const inviteToken = inviteMatch ? decodeURIComponent(inviteMatch[1]) : null;
+      // One-tap RSVP links without an invite token (the date-change
+      // reconfirmation email: /events/{id}?rsvp=going|cant_make_it) are
+      // only ever sent to existing account holders. A logged-out click
+      // must round-trip through /login with the full path + query
+      // preserved so the RSVP intent auto-applies after sign-in; without
+      // this gate the public preview strips the param into memory and its
+      // sign-in CTA drops it, so the RSVP silently never lands. Invite
+      // emails also carry ?rsvp= but always alongside invite_token; those
+      // keep their existing flows (uid short-circuit below, or the public
+      // preview + signup card for off-platform invitees).
+      const isEventRoute = /^\/?(\(app\)\/)?events\/[^/?]+\/?(\?|$)/.test(requestedPath);
+      const rsvpMatch = search.match(/[?&]rsvp=([^&]+)/);
+      if (isEventRoute && rsvpMatch && !inviteToken) {
+        // requestedPath may or may not already carry the query string
+        // depending on which proxy headers populated it; re-attach search
+        // if it does not (same pattern as the community-tab gate above).
+        const nextTarget = requestedPath.includes("?") ? requestedPath : requestedPath + search;
+        redirect(`/login?next=${encodeURIComponent(nextTarget)}`);
+      }
       // Invite email short-circuit: if the invite_token identifies an
       // existing account (uid in payload), send the logged-out visitor
       // straight to /login so they don't see the plan flash on the way.
       // For off-platform invitees (email-only token) we fall through to
       // the public preview + signup card.
-      const inviteMatch = search.match(/[?&]invite_token=([^&]+)/);
-      const inviteToken = inviteMatch ? decodeURIComponent(inviteMatch[1]) : null;
       if (inviteToken) {
         const uid = await peekInviteTokenUserId(inviteToken);
         if (uid) {
