@@ -325,11 +325,21 @@ type HostRsvpEmailParams = {
   eventDate?: string;
   eventLocation?: string;
   unsubscribeUrl?: string;
+  /** The attendee's RSVP status before this response ('going' | 'maybe' |
+   *  'cant_make_it'), or null/undefined when this is their first response
+   *  to the plan. Drives the copy variants below: "left your plan" is only
+   *  accurate when a Going attendee backs out; a first-time "can't make
+   *  it" is a decline, not a departure. */
+  previousStatus?: string | null;
 };
 
+type HostRsvpCopy = { heading: string; bodyHtml: string; bodyText: string };
+
 /** Shared TemplateModel builder for the three host-RSVP notification
- *  emails. All three use the same conditional-section fields. */
-const buildHostRsvpModel = (params: HostRsvpEmailParams): TemplateModel => ({
+ *  emails. All three use the same shell template fields; the helper
+ *  supplies heading/body copy chosen from the attendee's previous status
+ *  (bodyHtml is pre-escaped and injected via triple-stache). */
+const buildHostRsvpModel = (params: HostRsvpEmailParams, copy: HostRsvpCopy): TemplateModel => ({
   hostName: params.hostName,
   attendeeName: params.attendeeName,
   eventTitle: params.eventTitle,
@@ -338,6 +348,9 @@ const buildHostRsvpModel = (params: HostRsvpEmailParams): TemplateModel => ({
   eventLocation: hasContent(params.eventLocation) ? params.eventLocation : null,
   attendeeMessage: hasContent(params.attendeeMessage) ? params.attendeeMessage : null,
   unsubscribeUrl: hasContent(params.unsubscribeUrl) ? params.unsubscribeUrl : null,
+  heading: copy.heading,
+  bodyHtml: copy.bodyHtml,
+  bodyText: copy.bodyText,
 });
 
 /** Sent when a plan chat message's author opts to notify attendees. One email
@@ -372,14 +385,74 @@ export const sendChatMessageNotifyEmail = async (
     unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
   });
 
-export const sendEventJoinEmail = async (env: Bindings, params: HostRsvpEmailParams) =>
-  dispatch(env, params.to, "eventJoin", buildHostRsvpModel(params));
+export const sendEventJoinEmail = async (env: Bindings, params: HostRsvpEmailParams) => {
+  const name = escapeHtml(params.attendeeName);
+  const wasMaybe = params.previousStatus === "maybe";
+  const wasOut = params.previousStatus === "cant_make_it";
+  const copy: HostRsvpCopy = wasOut
+    ? {
+        heading: "Someone is going to your plan",
+        bodyHtml: `Great news, <strong>${name}</strong> can make it after all and is now going.`,
+        bodyText: `Great news, ${params.attendeeName} can make it after all and is now going.`,
+      }
+    : wasMaybe
+      ? {
+          heading: "Someone is going to your plan",
+          bodyHtml: `Great news, <strong>${name}</strong> has upgraded their RSVP from Maybe and is now going.`,
+          bodyText: `Great news, ${params.attendeeName} has upgraded their RSVP from Maybe and is now going.`,
+        }
+      : {
+          heading: "Someone is going to your plan",
+          bodyHtml: `Great news, <strong>${name}</strong> just confirmed they're attending.`,
+          bodyText: `Great news, ${params.attendeeName} just confirmed they're attending.`,
+        };
+  return dispatch(env, params.to, "eventJoin", buildHostRsvpModel(params, copy), {
+    subjectKey: wasMaybe || wasOut ? "eventJoin_nowGoing" : undefined,
+  });
+};
 
-export const sendEventLeaveEmail = async (env: Bindings, params: HostRsvpEmailParams) =>
-  dispatch(env, params.to, "eventLeave", buildHostRsvpModel(params));
+export const sendEventLeaveEmail = async (env: Bindings, params: HostRsvpEmailParams) => {
+  const name = escapeHtml(params.attendeeName);
+  // "Left your plan" is only true when a Going attendee backs out. A first
+  // response to an invite or share link, or a Maybe declining, is a
+  // "can't make it", the person was never confirmed in the plan.
+  const wasGoing = params.previousStatus === "going";
+  const copy: HostRsvpCopy = wasGoing
+    ? {
+        heading: "Someone left your plan",
+        bodyHtml: `Just a heads-up, <strong>${name}</strong> was going but can no longer make it.`,
+        bodyText: `Just a heads-up, ${params.attendeeName} was going but can no longer make it.`,
+      }
+    : {
+        heading: "Someone can't make it",
+        bodyHtml: `Just a heads-up, <strong>${name}</strong> has let you know they can't make it.`,
+        bodyText: `Just a heads-up, ${params.attendeeName} has let you know they can't make it.`,
+      };
+  return dispatch(env, params.to, "eventLeave", buildHostRsvpModel(params, copy), {
+    subjectKey: wasGoing ? undefined : "eventLeave_declined",
+  });
+};
 
-export const sendEventMaybeEmail = async (env: Bindings, params: HostRsvpEmailParams) =>
-  dispatch(env, params.to, "eventMaybe", buildHostRsvpModel(params));
+export const sendEventMaybeEmail = async (env: Bindings, params: HostRsvpEmailParams) => {
+  const name = escapeHtml(params.attendeeName);
+  // Going -> Maybe is a downgrade the host should notice, not a fresh
+  // "might come" signal.
+  const wasGoing = params.previousStatus === "going";
+  const copy: HostRsvpCopy = wasGoing
+    ? {
+        heading: "An attendee is now a maybe",
+        bodyHtml: `Just a heads-up, <strong>${name}</strong> was going but has changed their RSVP to Maybe.`,
+        bodyText: `Just a heads-up, ${params.attendeeName} was going but has changed their RSVP to Maybe.`,
+      }
+    : {
+        heading: "Someone might attend your plan",
+        bodyHtml: `<strong>${name}</strong> is interested but hasn't fully committed yet.`,
+        bodyText: `${params.attendeeName} is interested but hasn't fully committed yet.`,
+      };
+  return dispatch(env, params.to, "eventMaybe", buildHostRsvpModel(params, copy), {
+    subjectKey: wasGoing ? "eventMaybe_wasGoing" : undefined,
+  });
+};
 
 export const sendAttendeeRemovedEmail = async (
   env: Bindings,

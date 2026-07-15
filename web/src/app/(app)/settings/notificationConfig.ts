@@ -48,8 +48,8 @@ export const NOTIFICATION_TYPES: NotificationTypeConfig[] = [
   },
   {
     key: "host_leave",
-    title: "Someone leaves your plan",
-    description: "When someone can no longer make it to a plan you're hosting.",
+    title: "Someone can't make it to your plan",
+    description: "When someone lets you know they can't make it to a plan you're hosting, or leaves after joining.",
   },
   {
     key: "feedback_requests",

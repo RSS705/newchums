@@ -12107,7 +12107,12 @@ app.post("/events/:id/rsvp", async (c) => {
 
     if (event.host_user_id === userId) return c.json({ ok: false, error: "VALIDATION", message: "Hosts cannot RSVP to their own event" }, 400);
 
-    const existingRsvp = (await sql`SELECT id FROM newchums.event_rsvps WHERE event_id = ${eventId} AND user_id = ${userId}`) as { id: string }[];
+    const existingRsvp = (await sql`SELECT id, status FROM newchums.event_rsvps WHERE event_id = ${eventId} AND user_id = ${userId}`) as { id: string; status: string }[];
+    // Captured before the upsert: null means this is the user's first
+    // response to the plan. The host notification emails use it to pick
+    // accurate copy (a first-time "can't make it" is a decline, not
+    // "someone left your plan").
+    const previousStatus = existingRsvp[0]?.status ?? null;
 
     if (event.locked_at) {
       if (existingRsvp.length === 0)
@@ -12273,7 +12278,7 @@ app.post("/events/:id/rsvp", async (c) => {
           },
           "host",
         );
-        const baseEmailArgs = { to: hostUser[0].email, hostName, attendeeName, eventTitle: event.title, eventUrl, attendeeMessage: note, eventDate: rsvpEventDate, eventLocation: rsvpEventLocation };
+        const baseEmailArgs = { to: hostUser[0].email, hostName, attendeeName, eventTitle: event.title, eventUrl, attendeeMessage: note, eventDate: rsvpEventDate, eventLocation: rsvpEventLocation, previousStatus };
 
         // Per-plan host mute: when enabled, suppress all three attendance
         // emails (Going/Maybe/Can't make it) for this plan, regardless of the

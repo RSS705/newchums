@@ -304,6 +304,18 @@ Chunk XX, YYYY-MM-DD
 
 ---
 
+Chunk 21, 2026-07-15
+- Goal: Make the three host RSVP notification emails previous-status aware, so a first-time "Can't make it" from an invitee no longer reads as "Someone left your plan".
+- Changes:
+  - **API, POST /events/:id/rsvp:** the pre-upsert RSVP status is captured (`previousStatus`, null on a first response) and passed to the three host email helpers.
+  - **API, send.ts + subjects.ts + templates:** `eventJoin` / `eventMaybe` / `eventLeave` templates are now parameterized shells (`{{heading}}`, `{{{bodyHtml}}}` / `{{bodyText}}`); the helpers pick copy and subject from the previous status. Leave: "left {{eventTitle}}" / "Someone left your plan" only when the attendee was Going; otherwise "can't make it to {{eventTitle}}" (`eventLeave_declined`) / "Someone can't make it" with "has let you know they can't make it" body. Maybe: Going→Maybe reads "is now a maybe for {{eventTitle}}" (`eventMaybe_wasGoing`) / "was going but has changed their RSVP to Maybe"; first responses keep the "might come" copy. Join: upgrades read "is now going to {{eventTitle}}" (`eventJoin_nowGoing`) with "can make it after all" (was Can't-make-it) or "upgraded their RSVP from Maybe" (was Maybe) bodies; first responses keep "just confirmed they're attending".
+  - **Web, settings:** the `host_leave` toggle is retitled "Someone can't make it to your plan" with a description covering both decline and leave (the preference key is unchanged, no data migration).
+  - **Documentation:** Technical_Specs.md notification-prefs table + previous-status-aware behavior note; subjects.ts header comment.
+- Verification: mustache render tests over all seven copy variants; API vitest suite; wrangler dry-run bundle; web build.
+- Deploy: API worker + web worker. No migrations.
+
+---
+
 Chunk 20, 2026-07-15
 - Goal: Let hosts ask attendees to reconfirm when a plan's date/time changes (RSVPs reset to Maybe + reconfirmation email), instead of attendees silently keeping stale Going RSVPs.
 - Changes:

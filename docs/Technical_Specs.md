@@ -232,7 +232,7 @@ Users manage notification preferences in **Settings** (`/settings`). Each notifi
 | `join_request_declined` | Your join request was declined | `joinRequestDeclined` |
 | `host_join` | Someone is going to your plan | `eventJoin` |
 | `host_maybe` | Someone might attend your plan | `eventMaybe` |
-| `host_leave` | Someone leaves your plan | `eventLeave` |
+| `host_leave` | Someone can't make it to your plan | `eventLeave` |
 | `feedback_requests` | Post-plan feedback | `planFeedback` |
 | `event_changed_canceled` | Plan canceled or changed | `eventChanged`, `rsvpReconfirmRequest` (the date-change reconfirmation email replaces `eventChanged` for that edit and shares this preference + unsubscribe key) |
 | `attendee_removed` | You were removed from a plan | `attendeeRemoved` |
@@ -259,7 +259,7 @@ Defaults are applied at account creation (credentials signup, OAuth) and backfil
 2. **Host→viewer:** Does the recipient's metrics meet the host's chum preference thresholds? If not, the plan is excluded (the host doesn't want this person matched to their plan).
 Both checks use the centralized `evaluateChumPreferences` helper with `PREF_THRESHOLDS` (open=0, preferred≥35, important≥45, required≥55) against `user_metrics` scores (baseline 50). Users with preferences disabled or at "open" for all metrics pass all checks. If all plans for a user are filtered out, no digest email is sent for that user. **Plan-level overrides** are respected: if a plan has `pref_overrides` set, `resolveEffectiveHostPrefs` merges them with the host's global preferences before the host→viewer check (e.g. fully disabled or specific metrics bypassed).
 
-Each RSVP status has a dedicated host notification email, each gated on its own preference toggle. Each email includes a tokenized unsubscribe link that toggles the corresponding preference. Migration 033 removes the obsolete `event_reminders` key and `frequency` fields from existing JSONB data.
+Each RSVP status has a dedicated host notification email, each gated on its own preference toggle. Each email includes a tokenized unsubscribe link that toggles the corresponding preference. The three emails are **previous-status aware** (the RSVP endpoint captures the attendee's pre-upsert status and the send helpers pick copy + subject from it): "left your plan" (`eventLeave` base subject) is used only when a Going attendee backs out; a first response or a Maybe declining reads "can't make it" (`eventLeave_declined` subject variant, heading "Someone can't make it"); a Going attendee softening to Maybe gets "is now a maybe" copy (`eventMaybe_wasGoing`) instead of the fresh "might come" copy; and a Maybe or Can't-make-it attendee flipping to Going gets "is now going" copy (`eventJoin_nowGoing`). The three templates share a parameterized shell (`{{heading}}`, `{{{bodyHtml}}}` / `{{bodyText}}` supplied by `send.ts`). Migration 033 removes the obsolete `event_reminders` key and `frequency` fields from existing JSONB data.
 
 ### Email templates (Mustache)
 

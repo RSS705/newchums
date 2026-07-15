@@ -3,8 +3,12 @@
  * (matches the .html / .txt files in templates/). Subjects use the same
  * Mustache syntax and TemplateModel as the body templates.
  *
- * `confirmationRequestUser` has two variants. The helper picks between
- * `_host` and `_attendee` based on the `isHost` flag.
+ * Some templates have subject variants (suffixed keys picked via the
+ * dispatch `subjectKey` option): `confirmationRequestUser` picks between
+ * `_host` and `_attendee` based on the `isHost` flag, and the three host
+ * RSVP emails pick a change-of-response variant (`eventJoin_nowGoing`,
+ * `eventLeave_declined`, `eventMaybe_wasGoing`) from the attendee's
+ * previous status.
  *
  * Source of truth at migration time: docs/Resend_Migration_Subjects.md.
  */
@@ -33,10 +37,15 @@ export const SUBJECTS = {
   // Plan chat
   chatMessageNotify: "{{senderName}} posted in {{eventTitle}}",
 
-  // Host notifications
+  // Host notifications. The three RSVP emails are previous-status aware:
+  // the base key covers a first response, the suffixed variants cover a
+  // change of response (picked via the dispatch subjectKey option).
   eventJoin: "{{attendeeName}} is going to {{eventTitle}}",
+  eventJoin_nowGoing: "{{attendeeName}} is now going to {{eventTitle}}",
   eventLeave: "{{attendeeName}} left {{eventTitle}}",
+  eventLeave_declined: "{{attendeeName}} can't make it to {{eventTitle}}",
   eventMaybe: "{{attendeeName}} might come to {{eventTitle}}",
+  eventMaybe_wasGoing: "{{attendeeName}} is now a maybe for {{eventTitle}}",
 
   // Attendance assurance / plan health
   confirmationRequestUser_attendee: "Are you still coming to {{eventTitle}}?",
