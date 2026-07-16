@@ -5732,6 +5732,17 @@ export default function EventDetailClient({
             <ListItemText>View profile</ListItemText>
           </MenuItem>
         )}
+        {/* Send a message (opens the Inbox compose flow) */}
+        {attendeeMenuTarget && viewerUserId && attendeeMenuTarget.userId !== viewerUserId && (
+          <MenuItem
+            component={Link}
+            href={`/inbox?to=${attendeeMenuTarget.userId}`}
+            onClick={() => { setAttendeeMenuAnchor(null); setAttendeeMenuTarget(null); }}
+          >
+            <ListItemIcon><MailOutlineRoundedIcon fontSize="small" /></ListItemIcon>
+            <ListItemText>Send a message</ListItemText>
+          </MenuItem>
+        )}
         {/* Add to / Remove from Chums */}
         {attendeeMenuTarget && viewerUserId && attendeeMenuTarget.userId !== viewerUserId && (
           <MenuItem

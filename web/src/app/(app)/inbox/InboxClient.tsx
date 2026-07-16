@@ -339,7 +339,7 @@ export default function InboxClient() {
             <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
               Inbox
             </Typography>
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.35 }}>
               Private messages between you and other members.
             </Typography>
           </Box>
@@ -365,12 +365,12 @@ export default function InboxClient() {
             <CircularProgress size={24} />
           </Stack>
         ) : conversations.length === 0 ? (
-          <Stack spacing={1} alignItems="center" sx={{ px: 3, py: 6, textAlign: "center" }}>
+          <Stack spacing={1.25} alignItems="center" sx={{ px: 3, py: 6, textAlign: "center" }}>
             <MailRoundedIcon sx={{ fontSize: 36, color: "text.disabled" }} />
             <Typography variant="body2" color="text.secondary" fontWeight={600}>
               No messages yet
             </Typography>
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.45 }}>
               Say hello to one of your chums, or to someone from a recent plan.
             </Typography>
             <Button
@@ -378,7 +378,7 @@ export default function InboxClient() {
               size="small"
               startIcon={<RateReviewRoundedIcon sx={{ fontSize: 16 }} />}
               onClick={() => setNewMessageOpen(true)}
-              sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, mt: 0.5 }}
+              sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
             >
               New message
             </Button>
@@ -598,7 +598,7 @@ export default function InboxClient() {
                 {displayNameOf(activeOther)} isn&apos;t accepting new messages right now.
               </Typography>
             ) : (
-              <Stack direction="row" spacing={1} alignItems="flex-end">
+              <Stack direction="row" spacing={1} alignItems="center">
                 <TextField
                   fullWidth
                   multiline
@@ -619,7 +619,6 @@ export default function InboxClient() {
                     color: "primary.contrastText",
                     "&:hover": { bgcolor: "primary.dark" },
                     "&.Mui-disabled": { bgcolor: "action.disabledBackground" },
-                    mb: 0.25,
                   }}
                 >
                   {sending ? <CircularProgress size={20} sx={{ color: "inherit" }} /> : <SendRoundedIcon fontSize="small" />}
@@ -643,11 +642,14 @@ export default function InboxClient() {
   );
 
   return (
-    <Box sx={{ maxWidth: 1080, mx: "auto", py: { xs: 1, sm: 2 } }}>
+    // No top padding: the (app) layout's Container already provides the page
+    // offset, and the sidebar card sits at that same line; extra padding here
+    // pushed the panes visibly below the sidebar's top edge.
+    <Box sx={{ maxWidth: 1080, mx: "auto", pb: { xs: 1, sm: 2 } }}>
       <Stack
         direction="row"
         spacing={2}
-        sx={{ height: { xs: "calc(100dvh - 140px)", md: "calc(100dvh - 150px)" }, minHeight: 420 }}
+        sx={{ height: { xs: "calc(100dvh - 130px)", md: "calc(100dvh - 136px)" }, minHeight: 420 }}
       >
         {listPane}
         {threadPane}

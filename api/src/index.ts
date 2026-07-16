@@ -7112,10 +7112,11 @@ app.get("/inbox", async (c) => {
       unreadCount: r.unread_count,
     }));
 
-    // Optional compose target resolution
+    // Optional compose target resolution (non-UUID values are ignored rather
+    // than reaching the uuid cast in SQL, which would 500 the whole list)
     let composeTarget: unknown = null;
     const withParam = (c.req.query("with") ?? "").trim();
-    if (withParam) {
+    if (withParam && UUID_RE.test(withParam)) {
       const targetRows = (await sql`
         SELECT id, name, username, avatar_key, avatar_updated_at,
           COALESCE(is_suspended, false) AS is_suspended,
