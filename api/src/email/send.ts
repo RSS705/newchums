@@ -1130,6 +1130,37 @@ export const sendPlanFeedbackEmail = async (
     unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
   });
 
+/** Direct-message notification. Sent at most once per conversation until the
+ *  recipient reads the thread (throttled by the caller via
+ *  dm_participant_state.notified_at); gated on the 'direct_message' pref. */
+export const sendDmMessageNotifyEmail = async (
+  env: Bindings,
+  {
+    to,
+    recipientName,
+    senderName,
+    senderHandle,
+    messagePreview,
+    inboxUrl,
+    unsubscribeUrl,
+  }: EmailPayloadBase & {
+    recipientName?: string | null;
+    senderName?: string | null;
+    senderHandle?: string | null;
+    messagePreview: string;
+    inboxUrl: string;
+    unsubscribeUrl?: string | null;
+  },
+) =>
+  dispatch(env, to, "dmMessageNotify", {
+    recipientName: recipientName || "there",
+    senderName: senderName || "Someone",
+    senderHandle: hasContent(senderHandle) ? senderHandle : null,
+    messagePreview,
+    inboxUrl,
+    unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
+  });
+
 export const sendConcernReportAlert = async (
   env: Bindings,
   {

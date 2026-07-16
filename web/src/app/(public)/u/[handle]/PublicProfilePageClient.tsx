@@ -17,7 +17,7 @@ type PublicProfilePageClientProps = {
 
 type FetchState =
   | { status: "loading" }
-  | { status: "success"; user: PublicProfileUser }
+  | { status: "success"; user: PublicProfileUser; viewerCanMessage: boolean }
   | { status: "not_found" }
   | { status: "error"; message?: string };
 
@@ -40,9 +40,10 @@ export default function PublicProfilePageClient({ handle, viewerHandle }: Public
         error?: string;
         message?: string;
         user?: PublicProfileUser;
+        viewerCanMessage?: boolean;
       };
       if (res.ok && data.ok && data.user) {
-        setState({ status: "success", user: data.user });
+        setState({ status: "success", user: data.user, viewerCanMessage: data.viewerCanMessage === true });
       } else if (res.status === 404 || data.error === "NOT_FOUND") {
         setState({ status: "not_found" });
       } else {
@@ -150,6 +151,7 @@ export default function PublicProfilePageClient({ handle, viewerHandle }: Public
       isOwner={isOwner}
       chumAction={chumAction}
       viewerLoggedIn={!!viewerHandle}
+      messageHref={!isOwner && state.viewerCanMessage ? `/inbox?to=${state.user.userId}` : null}
     />
   );
 }

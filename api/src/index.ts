@@ -11,6 +11,7 @@ import {
   sendAttendeeRemovedEmail,
   sendChatMessageNotifyEmail,
   sendChumInviteEmail,
+  sendDmMessageNotifyEmail,
   sendContactFormEmail,
   sendEmailChangeConfirmEmail,
   sendEmailChangeNotifyOldEmail,
@@ -376,7 +377,9 @@ app.get("/public/users/:handle", async (c) => {
         COALESCE(u.is_hidden_from_external_indexing, false) AS is_hidden_from_external_indexing,
         COALESCE(u.is_hidden_chum_list, false) AS is_hidden_chum_list,
         COALESCE(u.is_hidden_shoutouts, false) AS is_hidden_shoutouts,
-        COALESCE(u.is_hidden_communities, false) AS is_hidden_communities
+        COALESCE(u.is_hidden_communities, false) AS is_hidden_communities,
+        COALESCE(u.is_suspended, false) AS is_suspended,
+        COALESCE(u.dm_privacy, 'everyone') AS dm_privacy
       FROM newchums.users u
       WHERE u.username_norm = ${handleNorm}
         AND u.username IS NOT NULL
@@ -396,6 +399,8 @@ app.get("/public/users/:handle", async (c) => {
       is_hidden_chum_list: boolean;
       is_hidden_shoutouts: boolean;
       is_hidden_communities: boolean;
+      is_suspended: boolean;
+      dm_privacy: string;
     }>;
     const user = userRows[0];
     if (!user) {
@@ -445,8 +450,31 @@ app.get("/public/users/:handle", async (c) => {
         : (user.created_at as Date).toISOString()
       : null;
 
+    // Can the authenticated viewer message this person? Powers the profile's
+    // "Message" button. False for logged-out viewers, self, suspended
+    // targets, blocked pairs, and privacy-denied new conversations; an
+    // existing conversation always allows (replies bypass dm_privacy).
+    let viewerCanMessage = false;
+    if (viewerAuthenticated && authPayload?.email && !user.is_suspended) {
+      try {
+        const viewerId = await ensureAppUserId(sql, authPayload.email, (authPayload as { name?: string | null }).name);
+        if (viewerId !== user.id && !(await dmPairBlocked(sql, viewerId, user.id))) {
+          const [pairA, pairB] = dmPair(viewerId, user.id);
+          const existing = (await sql`
+            SELECT 1 FROM newchums.dm_conversations WHERE user_a = ${pairA} AND user_b = ${pairB} LIMIT 1
+          `) as unknown[];
+          viewerCanMessage = existing.length > 0
+            ? true
+            : await dmCanStartConversation(sql, viewerId, { id: user.id, dm_privacy: user.dm_privacy });
+        }
+      } catch {
+        // Non-essential enrichment; leave viewerCanMessage false on error.
+      }
+    }
+
     return c.json({
       ok: true,
+      viewerCanMessage,
       user: {
         userId: user.id,
         displayName,
@@ -2714,7 +2742,8 @@ app.get("/profile", async (c) => {
         COALESCE(is_hidden_from_chum_lists, false) AS is_hidden_from_chum_lists,
         COALESCE(is_hidden_shoutouts, false) AS is_hidden_shoutouts,
         COALESCE(is_hidden_communities, false) AS is_hidden_communities,
-        COALESCE(tutorial_nudges_off, false) AS tutorial_nudges_off
+        COALESCE(tutorial_nudges_off, false) AS tutorial_nudges_off,
+        COALESCE(dm_privacy, 'everyone') AS dm_privacy
       FROM newchums.users WHERE id = ${appUserId} LIMIT 1
     `) as Array<{
       name: string | null;
@@ -2737,6 +2766,7 @@ app.get("/profile", async (c) => {
       is_hidden_shoutouts: boolean;
       is_hidden_communities: boolean;
       tutorial_nudges_off: boolean;
+      dm_privacy: string;
     }>;
     const userInfo = userRows[0];
     const profileRows = (await sql`
@@ -2789,6 +2819,7 @@ app.get("/profile", async (c) => {
     const isHiddenShoutouts = userInfo?.is_hidden_shoutouts ?? false;
     const isHiddenCommunities = userInfo?.is_hidden_communities ?? false;
     const tutorialNudgesOff = userInfo?.tutorial_nudges_off ?? false;
+    const dmPrivacy = userInfo?.dm_privacy ?? "everyone";
     const role = userInfo?.role ?? null;
     const subscriptionPlan = userInfo?.subscription_plan ?? "free";
     const gender = userInfo?.gender ?? null;
@@ -2825,6 +2856,7 @@ app.get("/profile", async (c) => {
           is_hidden_shoutouts: isHiddenShoutouts,
           is_hidden_communities: isHiddenCommunities,
           tutorial_nudges_off: tutorialNudgesOff,
+          dm_privacy: dmPrivacy,
           role,
           subscription_plan: subscriptionPlan,
         },
@@ -2860,6 +2892,7 @@ app.get("/profile", async (c) => {
         is_hidden_shoutouts: isHiddenShoutouts,
         is_hidden_communities: isHiddenCommunities,
         tutorial_nudges_off: tutorialNudgesOff,
+        dm_privacy: dmPrivacy,
         role,
         subscription_plan: subscriptionPlan,
       },
@@ -2914,6 +2947,7 @@ app.put("/profile", async (c) => {
       is_hidden_from_chum_lists?: boolean;
       is_hidden_shoutouts?: boolean;
       is_hidden_communities?: boolean;
+      dm_privacy?: string;
     };
 
     if ("date_of_birth" in body && body.date_of_birth !== undefined) {
@@ -3202,6 +3236,12 @@ app.put("/profile", async (c) => {
     if ("is_hidden_communities" in body && body.is_hidden_communities !== undefined) {
       const val = body.is_hidden_communities === true;
       txQueries.push(sql`UPDATE newchums.users SET is_hidden_communities = ${val} WHERE id = ${appUserId}`);
+    }
+    if ("dm_privacy" in body && body.dm_privacy !== undefined) {
+      const val = String(body.dm_privacy);
+      if (DM_PRIVACY_LEVELS.includes(val as (typeof DM_PRIVACY_LEVELS)[number])) {
+        txQueries.push(sql`UPDATE newchums.users SET dm_privacy = ${val} WHERE id = ${appUserId}`);
+      }
     }
     if ("gender" in body && body.gender !== undefined) {
       const genderVal = body.gender != null && body.gender !== "" ? String(body.gender) : null;
@@ -5097,6 +5137,8 @@ app.get("/admin/concern-reports", async (c) => {
         cr.details,
         cr.status,
         cr.created_at,
+        cr.dm_conversation_id,
+        cr.dm_evidence,
         e.title AS plan_title,
         reporter.id AS reporter_id,
         reporter.name AS reporter_name,
@@ -5114,11 +5156,13 @@ app.get("/admin/concern-reports", async (c) => {
       LIMIT 200
     `) as {
       id: string;
-      plan_id: string;
+      plan_id: string | null;
       reason: string;
       details: string | null;
       status: string;
       created_at: string;
+      dm_conversation_id: string | null;
+      dm_evidence: unknown;
       plan_title: string | null;
       reporter_id: string;
       reporter_name: string | null;
@@ -5136,6 +5180,8 @@ app.get("/admin/concern-reports", async (c) => {
         id: r.id,
         planId: r.plan_id,
         planTitle: r.plan_title,
+        source: r.dm_conversation_id ? "direct_message" : "plan",
+        dmEvidence: r.dm_evidence ?? null,
         reason: r.reason,
         details: r.details,
         status: r.status,
@@ -6897,6 +6943,638 @@ app.delete("/chums/:id", async (c) => {
   }
 });
 
+// ─── Direct messages (Inbox) ─────────────────────────────────────────────────
+// 1:1 async messaging, deliberately framed as an email-like Inbox rather than
+// real-time chat (plain request/response + light client polling; no
+// websockets). Reachability rules:
+//   - users.dm_privacy gates NEW conversations only ('everyone' default,
+//     'chums_and_plans', 'no_one'); replies inside an existing conversation
+//     are always allowed (you opted in by messaging them).
+//   - Per-user blocks silence both directions, beat every setting, and are
+//     never disclosed to the blocked side (sends fail with the same generic
+//     NOT_ALLOWED as privacy denials).
+// Email model: at most one notification per conversation until the recipient
+// reads the thread (dm_participant_state.notified_at is claimed when an email
+// goes out and cleared on read), gated by the 'direct_message' pref.
+// Admin visibility: deliberately NO admin browse view over message content;
+// messages reach admins only via a conduct report's dm_evidence snapshot.
+
+const DM_PRIVACY_LEVELS = ["everyone", "chums_and_plans", "no_one"] as const;
+const DM_MAX_BODY_LENGTH = 5000;
+const DM_SNIPPET_LENGTH = 140;
+const DM_NEW_CONVERSATIONS_PER_DAY = 10;
+const DM_THREAD_MESSAGE_LIMIT = 200;
+const DM_REPORT_EVIDENCE_MESSAGES = 20;
+
+/** Canonical (user_a, user_b) ordering for the conversation pair. */
+function dmPair(u1: string, u2: string): [string, string] {
+  return u1 < u2 ? [u1, u2] : [u2, u1];
+}
+
+function dmSnippet(text: string, max = DM_SNIPPET_LENGTH): string {
+  const oneLine = text.replace(/\s+/g, " ").trim();
+  return oneLine.length > max ? `${oneLine.slice(0, max)}...` : oneLine;
+}
+
+/** A block in either direction kills messaging entirely. */
+async function dmPairBlocked(sql: ReturnType<typeof getSql>, u1: string, u2: string): Promise<boolean> {
+  const rows = (await sql`
+    SELECT 1 FROM newchums.user_blocks
+    WHERE (blocker_user_id = ${u1} AND blocked_user_id = ${u2})
+       OR (blocker_user_id = ${u2} AND blocked_user_id = ${u1})
+    LIMIT 1
+  `) as unknown[];
+  return rows.length > 0;
+}
+
+/** May `senderId` START a new conversation with the recipient? Existing
+ *  conversations bypass this; blocks are checked separately. */
+async function dmCanStartConversation(
+  sql: ReturnType<typeof getSql>,
+  senderId: string,
+  recipient: { id: string; dm_privacy: string | null },
+): Promise<boolean> {
+  const level = recipient.dm_privacy ?? "everyone";
+  if (level === "no_one") return false;
+  if (level !== "chums_and_plans") return true;
+  // chums_and_plans: the sender is in the recipient's On NewChums chums, or
+  // the two shared a plan (either was host or had a Going RSVP on the same
+  // event). QA plans are excluded outright so a QA plan can never
+  // manufacture a messaging relationship between real users.
+  const chum = (await sql`
+    SELECT 1 FROM newchums.user_contacts
+    WHERE user_id = ${recipient.id} AND linked_user_id = ${senderId} AND type = 'on_newchums'
+    LIMIT 1
+  `) as unknown[];
+  if (chum.length > 0) return true;
+  const shared = (await sql`
+    SELECT 1 FROM newchums.events e
+    WHERE COALESCE(e.is_qa, false) = false
+      AND (
+        e.host_user_id = ${senderId}
+        OR EXISTS (
+          SELECT 1 FROM newchums.event_rsvps ra
+          WHERE ra.event_id = e.id AND ra.user_id = ${senderId} AND ra.status = 'going'
+        )
+      )
+      AND (
+        e.host_user_id = ${recipient.id}
+        OR EXISTS (
+          SELECT 1 FROM newchums.event_rsvps rb
+          WHERE rb.event_id = e.id AND rb.user_id = ${recipient.id} AND rb.status = 'going'
+        )
+      )
+    LIMIT 1
+  `) as unknown[];
+  return shared.length > 0;
+}
+
+type DmOtherUserRow = {
+  other_id: string;
+  other_name: string | null;
+  other_username: string | null;
+  other_avatar_key: string | null;
+  other_avatar_updated_at: string | null;
+};
+
+function dmOtherUserPayload(r: DmOtherUserRow, mediaBucket: unknown) {
+  return {
+    userId: r.other_id,
+    name: r.other_name,
+    username: r.other_username,
+    avatarUrl: buildAvatarUrl(r.other_id, r.other_avatar_key, r.other_avatar_updated_at, mediaBucket),
+  };
+}
+
+/** GET /inbox?with=<userId>
+ *
+ *  Conversation list for the viewer, newest activity first. The optional
+ *  `with` param resolves a compose target (used by entry points that link to
+ *  /inbox?to=<userId>): if a conversation with that user already exists its
+ *  id is returned so the client opens it; otherwise `canMessage` says whether
+ *  a new conversation may be started. */
+app.get("/inbox", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+  try {
+    const sql = getSql(c.env);
+    const appUserId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+
+    const rows = (await sql`
+      SELECT
+        dc.id, dc.last_message_at,
+        other.id AS other_id, other.name AS other_name, other.username AS other_username,
+        other.avatar_key AS other_avatar_key, other.avatar_updated_at AS other_avatar_updated_at,
+        lm.body AS last_body, lm.sender_user_id AS last_sender_id, lm.created_at AS last_at,
+        (
+          SELECT COUNT(*)::int FROM newchums.dm_messages m
+          WHERE m.conversation_id = dc.id
+            AND m.sender_user_id != ${appUserId}
+            AND m.created_at > COALESCE(ps.last_read_at, '1970-01-01'::timestamptz)
+        ) AS unread_count
+      FROM newchums.dm_conversations dc
+      JOIN newchums.users other
+        ON other.id = CASE WHEN dc.user_a = ${appUserId} THEN dc.user_b ELSE dc.user_a END
+      LEFT JOIN newchums.dm_participant_state ps
+        ON ps.conversation_id = dc.id AND ps.user_id = ${appUserId}
+      LEFT JOIN LATERAL (
+        SELECT m2.body, m2.sender_user_id, m2.created_at
+        FROM newchums.dm_messages m2
+        WHERE m2.conversation_id = dc.id
+        ORDER BY m2.created_at DESC
+        LIMIT 1
+      ) lm ON true
+      WHERE dc.user_a = ${appUserId} OR dc.user_b = ${appUserId}
+      ORDER BY dc.last_message_at DESC
+      LIMIT 100
+    `) as Array<DmOtherUserRow & {
+      id: string;
+      last_message_at: string;
+      last_body: string | null;
+      last_sender_id: string | null;
+      last_at: string | null;
+      unread_count: number;
+    }>;
+
+    const conversations = rows.map((r) => ({
+      id: r.id,
+      otherUser: dmOtherUserPayload(r, c.env.MEDIA_BUCKET),
+      lastMessage: r.last_body
+        ? {
+            snippet: dmSnippet(r.last_body, 80),
+            isMine: r.last_sender_id === appUserId,
+            createdAt: r.last_at,
+          }
+        : null,
+      lastMessageAt: r.last_message_at,
+      unreadCount: r.unread_count,
+    }));
+
+    // Optional compose target resolution
+    let composeTarget: unknown = null;
+    const withParam = (c.req.query("with") ?? "").trim();
+    if (withParam) {
+      const targetRows = (await sql`
+        SELECT id, name, username, avatar_key, avatar_updated_at,
+          COALESCE(is_suspended, false) AS is_suspended,
+          COALESCE(dm_privacy, 'everyone') AS dm_privacy
+        FROM newchums.users WHERE id = ${withParam} LIMIT 1
+      `) as Array<{
+        id: string;
+        name: string | null;
+        username: string | null;
+        avatar_key: string | null;
+        avatar_updated_at: string | null;
+        is_suspended: boolean;
+        dm_privacy: string;
+      }>;
+      const target = targetRows[0];
+      if (target && target.id !== appUserId) {
+        const [pairA, pairB] = dmPair(appUserId, target.id);
+        const existing = (await sql`
+          SELECT id FROM newchums.dm_conversations WHERE user_a = ${pairA} AND user_b = ${pairB} LIMIT 1
+        `) as { id: string }[];
+        const blocked = await dmPairBlocked(sql, appUserId, target.id);
+        const canMessage =
+          !target.is_suspended &&
+          !blocked &&
+          (existing.length > 0 || (await dmCanStartConversation(sql, appUserId, target)));
+        composeTarget = {
+          userId: target.id,
+          name: target.name,
+          username: target.username,
+          avatarUrl: buildAvatarUrl(target.id, target.avatar_key, target.avatar_updated_at, c.env.MEDIA_BUCKET),
+          conversationId: existing[0]?.id ?? null,
+          canMessage,
+        };
+      }
+    }
+
+    return c.json({ ok: true, conversations, composeTarget });
+  } catch (err) {
+    console.error("[GET /inbox]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** GET /inbox/unread-count, cheap badge count: conversations with at least
+ *  one unread message from the other side. */
+app.get("/inbox/unread-count", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+  try {
+    const sql = getSql(c.env);
+    const appUserId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+    const [row] = (await sql`
+      SELECT COUNT(*)::int AS unread
+      FROM newchums.dm_conversations dc
+      LEFT JOIN newchums.dm_participant_state ps
+        ON ps.conversation_id = dc.id AND ps.user_id = ${appUserId}
+      WHERE (dc.user_a = ${appUserId} OR dc.user_b = ${appUserId})
+        AND EXISTS (
+          SELECT 1 FROM newchums.dm_messages m
+          WHERE m.conversation_id = dc.id
+            AND m.sender_user_id != ${appUserId}
+            AND m.created_at > COALESCE(ps.last_read_at, '1970-01-01'::timestamptz)
+        )
+    `) as { unread: number }[];
+    return c.json({ ok: true, unread: row?.unread ?? 0 });
+  } catch (err) {
+    console.error("[GET /inbox/unread-count]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** GET /inbox/:conversationId, the thread. Marks the conversation read for
+ *  the viewer (and clears the email-notify claim) as a side effect. */
+app.get("/inbox/:conversationId", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+  try {
+    const sql = getSql(c.env);
+    const appUserId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+    const conversationId = c.req.param("conversationId");
+    const convRows = (await sql`
+      SELECT dc.id,
+        other.id AS other_id, other.name AS other_name, other.username AS other_username,
+        other.avatar_key AS other_avatar_key, other.avatar_updated_at AS other_avatar_updated_at,
+        COALESCE(other.is_suspended, false) AS other_suspended
+      FROM newchums.dm_conversations dc
+      JOIN newchums.users other
+        ON other.id = CASE WHEN dc.user_a = ${appUserId} THEN dc.user_b ELSE dc.user_a END
+      WHERE dc.id = ${conversationId}
+        AND (dc.user_a = ${appUserId} OR dc.user_b = ${appUserId})
+      LIMIT 1
+    `) as Array<DmOtherUserRow & { id: string; other_suspended: boolean }>;
+    const conv = convRows[0];
+    if (!conv) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+
+    const messageRows = (await sql`
+      SELECT id, sender_user_id, body, created_at
+      FROM (
+        SELECT id, sender_user_id, body, created_at
+        FROM newchums.dm_messages
+        WHERE conversation_id = ${conversationId}
+        ORDER BY created_at DESC
+        LIMIT ${DM_THREAD_MESSAGE_LIMIT}
+      ) latest
+      ORDER BY created_at ASC
+    `) as { id: string; sender_user_id: string; body: string; created_at: string }[];
+
+    // Mark read + release the email-notify claim
+    await sql`
+      INSERT INTO newchums.dm_participant_state (conversation_id, user_id, last_read_at, notified_at)
+      VALUES (${conversationId}, ${appUserId}, NOW(), NULL)
+      ON CONFLICT (conversation_id, user_id)
+      DO UPDATE SET last_read_at = NOW(), notified_at = NULL
+    `;
+
+    const viewerBlockRows = (await sql`
+      SELECT 1 FROM newchums.user_blocks
+      WHERE blocker_user_id = ${appUserId} AND blocked_user_id = ${conv.other_id}
+      LIMIT 1
+    `) as unknown[];
+
+    return c.json({
+      ok: true,
+      conversation: {
+        id: conv.id,
+        otherUser: { ...dmOtherUserPayload(conv, c.env.MEDIA_BUCKET), isSuspended: conv.other_suspended },
+        viewerHasBlocked: viewerBlockRows.length > 0,
+      },
+      messages: messageRows.map((m) => ({
+        id: m.id,
+        body: m.body,
+        createdAt: m.created_at,
+        isMine: m.sender_user_id === appUserId,
+      })),
+    });
+  } catch (err) {
+    console.error("[GET /inbox/:conversationId]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /inbox/send, send a message. Body: { to_user_id, body }.
+ *
+ *  Creates the conversation on first contact (privacy + rate-limit gated) or
+ *  appends to the existing one (blocks only). Returns the conversation id so
+ *  the client can navigate into the thread. Privacy and block denials share
+ *  one generic NOT_ALLOWED so blocks are never disclosed. */
+app.post("/inbox/send", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+  try {
+    const sql = getSql(c.env);
+    const appUserId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+    const body = await c.req.json<{ to_user_id?: string; body?: string }>().catch(() => ({} as { to_user_id?: string; body?: string }));
+    const toUserId = (body.to_user_id ?? "").trim();
+    const text = typeof body.body === "string" ? body.body.trim() : "";
+
+    if (!toUserId) return c.json({ ok: false, error: "INVALID_RECIPIENT" }, 400);
+    if (toUserId === appUserId) return c.json({ ok: false, error: "CANNOT_MESSAGE_SELF" }, 400);
+    if (!text) return c.json({ ok: false, error: "EMPTY_MESSAGE", message: "Write a message first." }, 400);
+    if (text.length > DM_MAX_BODY_LENGTH) {
+      return c.json({ ok: false, error: "MESSAGE_TOO_LONG", message: `Messages are limited to ${DM_MAX_BODY_LENGTH} characters.` }, 400);
+    }
+    const safety = validateCleanText(text);
+    if (!safety.ok) {
+      return c.json({ ok: false, error: "INAPPROPRIATE_TEXT", message: safety.reason ?? "Please rephrase your message." }, 400);
+    }
+
+    const senderRows = (await sql`
+      SELECT name, username, email, (email_verified_at IS NOT NULL) AS verified
+      FROM newchums.users WHERE id = ${appUserId} LIMIT 1
+    `) as { name: string | null; username: string | null; email: string; verified: boolean }[];
+    if (!senderRows[0]?.verified) {
+      return c.json({ ok: false, error: "EMAIL_UNVERIFIED", message: "Verify your email before sending messages." }, 403);
+    }
+
+    const recipientRows = (await sql`
+      SELECT id, name, username, email,
+        COALESCE(is_suspended, false) AS is_suspended,
+        COALESCE(dm_privacy, 'everyone') AS dm_privacy
+      FROM newchums.users WHERE id = ${toUserId} LIMIT 1
+    `) as Array<{
+      id: string;
+      name: string | null;
+      username: string | null;
+      email: string;
+      is_suspended: boolean;
+      dm_privacy: string;
+    }>;
+    const recipient = recipientRows[0];
+    const notAllowed = () =>
+      c.json({ ok: false, error: "NOT_ALLOWED", message: "This person isn't accepting new messages right now." }, 403);
+    if (!recipient || recipient.is_suspended) return notAllowed();
+    if (await dmPairBlocked(sql, appUserId, recipient.id)) return notAllowed();
+
+    const [pairA, pairB] = dmPair(appUserId, recipient.id);
+    const existingRows = (await sql`
+      SELECT id FROM newchums.dm_conversations WHERE user_a = ${pairA} AND user_b = ${pairB} LIMIT 1
+    `) as { id: string }[];
+
+    let conversationId = existingRows[0]?.id ?? null;
+    if (!conversationId) {
+      if (!(await dmCanStartConversation(sql, appUserId, recipient))) return notAllowed();
+      // New-conversation rate limit, enforced in Postgres (the KV limiter is
+      // unbound in prod). Repliers are never limited; this only makes
+      // mass-spam boring.
+      const [rate] = (await sql`
+        SELECT COUNT(*)::int AS n FROM newchums.dm_conversations
+        WHERE created_by = ${appUserId} AND created_at > NOW() - INTERVAL '24 hours'
+      `) as { n: number }[];
+      if ((rate?.n ?? 0) >= DM_NEW_CONVERSATIONS_PER_DAY) {
+        return c.json({ ok: false, error: "RATE_LIMITED", message: "You've started a lot of new conversations today. Try again tomorrow." }, 429);
+      }
+      // ON CONFLICT guards the race where both sides message first at once.
+      const created = (await sql`
+        INSERT INTO newchums.dm_conversations (user_a, user_b, created_by)
+        VALUES (${pairA}, ${pairB}, ${appUserId})
+        ON CONFLICT (user_a, user_b) DO UPDATE SET last_message_at = newchums.dm_conversations.last_message_at
+        RETURNING id
+      `) as { id: string }[];
+      conversationId = created[0].id;
+    }
+
+    const inserted = (await sql`
+      INSERT INTO newchums.dm_messages (conversation_id, sender_user_id, body)
+      VALUES (${conversationId}, ${appUserId}, ${text})
+      RETURNING id, created_at
+    `) as { id: string; created_at: string }[];
+
+    await sql`UPDATE newchums.dm_conversations SET last_message_at = NOW() WHERE id = ${conversationId}`;
+    // Sending implies you've seen the thread up to now.
+    await sql`
+      INSERT INTO newchums.dm_participant_state (conversation_id, user_id, last_read_at)
+      VALUES (${conversationId}, ${appUserId}, NOW())
+      ON CONFLICT (conversation_id, user_id) DO UPDATE SET last_read_at = NOW()
+    `;
+
+    // Email notification: claim notified_at atomically so at most one email
+    // goes out per conversation until the recipient reads it. The claim is
+    // taken even when the pref is off (it's cleared on read either way).
+    try {
+      await sql`
+        INSERT INTO newchums.dm_participant_state (conversation_id, user_id)
+        VALUES (${conversationId}, ${recipient.id})
+        ON CONFLICT (conversation_id, user_id) DO NOTHING
+      `;
+      const claimed = (await sql`
+        UPDATE newchums.dm_participant_state
+        SET notified_at = NOW()
+        WHERE conversation_id = ${conversationId} AND user_id = ${recipient.id} AND notified_at IS NULL
+        RETURNING user_id
+      `) as unknown[];
+      if (claimed.length > 0) {
+        const prefRows = (await sql`
+          SELECT notification_prefs FROM user_profile WHERE user_id = ${recipient.id} LIMIT 1
+        `) as { notification_prefs: unknown }[];
+        const prefs = normalizeNotificationPrefs(prefRows[0]?.notification_prefs);
+        if (prefs.items.direct_message?.enabled !== false && recipient.email) {
+          const sender = senderRows[0];
+          const senderName = sender?.name?.trim() || (sender?.username ? `@${sender.username}` : null) || "Someone";
+          const unsubscribeToken = await createUnsubscribeToken(c.env.NEXTAUTH_SECRET, recipient.id, "direct_message");
+          await sendDmMessageNotifyEmail(c.env, {
+            to: recipient.email,
+            recipientName: recipient.name?.trim() || recipient.username || "there",
+            senderName,
+            senderHandle: sender?.username ? `@${sender.username}` : null,
+            messagePreview: dmSnippet(text),
+            inboxUrl: `${c.env.WEB_BASE_URL}/inbox?c=${conversationId}`,
+            unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubscribeToken)}`,
+          });
+        }
+      }
+    } catch (emailErr) {
+      console.error("[POST /inbox/send] notify email failed (message saved):", emailErr);
+    }
+
+    return c.json({
+      ok: true,
+      conversation_id: conversationId,
+      message: { id: inserted[0].id, body: text, createdAt: inserted[0].created_at, isMine: true },
+    });
+  } catch (err) {
+    console.error("[POST /inbox/send]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /inbox/:conversationId/report, report the other participant.
+ *  Body: { reason, details? }. Snapshots the recent messages into
+ *  dm_evidence so the report stays reviewable on its own; this snapshot is
+ *  the only path by which message content reaches admins. */
+app.post("/inbox/:conversationId/report", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+  try {
+    const sql = getSql(c.env);
+    const appUserId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+    const conversationId = c.req.param("conversationId");
+    const body = await c.req.json<{ reason?: string; details?: string }>().catch(() => ({} as { reason?: string; details?: string }));
+
+    if (!CONDUCT_REASONS.includes(body.reason as (typeof CONDUCT_REASONS)[number])) {
+      return c.json({ ok: false, error: "INVALID_REASON" }, 400);
+    }
+
+    const convRows = (await sql`
+      SELECT dc.id,
+        other.id AS other_id, other.name AS other_name, other.username AS other_username, other.email AS other_email
+      FROM newchums.dm_conversations dc
+      JOIN newchums.users other
+        ON other.id = CASE WHEN dc.user_a = ${appUserId} THEN dc.user_b ELSE dc.user_a END
+      WHERE dc.id = ${conversationId}
+        AND (dc.user_a = ${appUserId} OR dc.user_b = ${appUserId})
+      LIMIT 1
+    `) as Array<{ id: string; other_id: string; other_name: string | null; other_username: string | null; other_email: string }>;
+    const conv = convRows[0];
+    if (!conv) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+
+    const evidenceRows = (await sql`
+      SELECT m.body, m.created_at, m.sender_user_id, u.name AS sender_name, u.username AS sender_username
+      FROM newchums.dm_messages m
+      JOIN newchums.users u ON u.id = m.sender_user_id
+      WHERE m.conversation_id = ${conversationId}
+      ORDER BY m.created_at DESC
+      LIMIT ${DM_REPORT_EVIDENCE_MESSAGES}
+    `) as { body: string; created_at: string; sender_user_id: string; sender_name: string | null; sender_username: string | null }[];
+    const evidence = evidenceRows
+      .reverse()
+      .map((m) => ({
+        sender: m.sender_name?.trim() || (m.sender_username ? `@${m.sender_username}` : m.sender_user_id),
+        isReported: m.sender_user_id === conv.other_id,
+        body: m.body,
+        at: m.created_at,
+      }));
+
+    const inserted = (await sql`
+      INSERT INTO newchums.conduct_reports (plan_id, reporter_user_id, reported_user_id, reason, details, dm_conversation_id, dm_evidence)
+      VALUES (NULL, ${appUserId}, ${conv.other_id}, ${body.reason}, ${body.details?.trim() || null}, ${conversationId}, ${JSON.stringify(evidence)}::jsonb)
+      RETURNING id, created_at
+    `) as { id: string; created_at: string }[];
+
+    // Admin alert email (fire-and-forget; report is already saved)
+    try {
+      const reporterRows = (await sql`
+        SELECT name, email, username FROM newchums.users WHERE id = ${appUserId} LIMIT 1
+      `) as { name: string | null; email: string; username: string | null }[];
+      const reporter = reporterRows[0];
+      const baseUrl = c.env.WEB_BASE_URL || "https://newchums.com";
+      await sendConcernReportAlert(c.env, {
+        reporterName: reporter?.name?.trim() || reporter?.username || reporter?.email || "Unknown",
+        reporterEmail: reporter?.email || "unknown",
+        reportedName: conv.other_name?.trim() || conv.other_username || conv.other_email || "Unknown",
+        reportedEmail: conv.other_email || "unknown",
+        planTitle: "Direct message conversation",
+        concernReason: CONDUCT_REASON_LABELS[body.reason as keyof typeof CONDUCT_REASON_LABELS] ?? body.reason ?? "Unknown",
+        details: body.details?.trim() || "(none provided; see attached messages in the Safety tab)",
+        submittedAt: inserted[0]?.created_at ? new Date(inserted[0].created_at).toUTCString() : new Date().toUTCString(),
+        reportUrl: `${baseUrl}/admin/safety`,
+        reporterProfileUrl: `${baseUrl}/admin/chums/${appUserId}`,
+        reportedProfileUrl: `${baseUrl}/admin/chums/${conv.other_id}`,
+        planUrl: `${baseUrl}/admin/safety`,
+      });
+    } catch (emailErr) {
+      console.error("[POST /inbox/:conversationId/report] alert email failed (report saved):", emailErr);
+    }
+
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[POST /inbox/:conversationId/report]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** GET /me/blocks, the viewer's blocked-users list (for Settings). */
+app.get("/me/blocks", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+  try {
+    const sql = getSql(c.env);
+    const appUserId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+    const rows = (await sql`
+      SELECT b.blocked_user_id, b.created_at,
+        u.name, u.username, u.avatar_key, u.avatar_updated_at
+      FROM newchums.user_blocks b
+      JOIN newchums.users u ON u.id = b.blocked_user_id
+      WHERE b.blocker_user_id = ${appUserId}
+      ORDER BY b.created_at DESC
+    `) as { blocked_user_id: string; created_at: string; name: string | null; username: string | null; avatar_key: string | null; avatar_updated_at: string | null }[];
+    return c.json({
+      ok: true,
+      blocks: rows.map((r) => ({
+        userId: r.blocked_user_id,
+        name: r.name,
+        username: r.username,
+        avatarUrl: buildAvatarUrl(r.blocked_user_id, r.avatar_key, r.avatar_updated_at, c.env.MEDIA_BUCKET),
+        createdAt: r.created_at,
+      })),
+    });
+  } catch (err) {
+    console.error("[GET /me/blocks]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /users/:id/block, block a user (silences messaging both ways). */
+app.post("/users/:id/block", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+  try {
+    const sql = getSql(c.env);
+    const appUserId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+    const targetId = c.req.param("id");
+    if (targetId === appUserId) return c.json({ ok: false, error: "CANNOT_BLOCK_SELF" }, 400);
+    const exists = (await sql`SELECT 1 FROM newchums.users WHERE id = ${targetId} LIMIT 1`) as unknown[];
+    if (exists.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    await sql`
+      INSERT INTO newchums.user_blocks (blocker_user_id, blocked_user_id)
+      VALUES (${appUserId}, ${targetId})
+      ON CONFLICT (blocker_user_id, blocked_user_id) DO NOTHING
+    `;
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[POST /users/:id/block]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** DELETE /users/:id/block, unblock. */
+app.delete("/users/:id/block", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+  try {
+    const sql = getSql(c.env);
+    const appUserId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+    const targetId = c.req.param("id");
+    await sql`
+      DELETE FROM newchums.user_blocks
+      WHERE blocker_user_id = ${appUserId} AND blocked_user_id = ${targetId}
+    `;
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[DELETE /users/:id/block]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
 /** GET /notifications, fetch recent notifications for the authenticated user. */
 app.get("/notifications", async (c) => {
   const payload = await requireAuth(c);
@@ -7003,7 +7681,49 @@ app.get("/notifications", async (c) => {
       latestSenderName: r.latest_sender_name ?? null,
     }));
 
-    return c.json({ ok: true, notifications, unreadChats });
+    // Unread direct-message summaries (mirrors the unread-chat surface)
+    const dmRows = (await sql`
+      SELECT
+        dc.id AS conversation_id,
+        other.name AS other_name,
+        other.username AS other_username,
+        COUNT(m.id)::int AS unread_count,
+        MAX(m.created_at) AS latest_at,
+        (
+          SELECT m3.body FROM newchums.dm_messages m3
+          WHERE m3.conversation_id = dc.id
+          ORDER BY m3.created_at DESC LIMIT 1
+        ) AS latest_body
+      FROM newchums.dm_conversations dc
+      JOIN newchums.users other
+        ON other.id = CASE WHEN dc.user_a = ${appUserId} THEN dc.user_b ELSE dc.user_a END
+      LEFT JOIN newchums.dm_participant_state ps
+        ON ps.conversation_id = dc.id AND ps.user_id = ${appUserId}
+      JOIN newchums.dm_messages m
+        ON m.conversation_id = dc.id
+        AND m.sender_user_id != ${appUserId}
+        AND m.created_at > COALESCE(ps.last_read_at, '1970-01-01'::timestamptz)
+      WHERE dc.user_a = ${appUserId} OR dc.user_b = ${appUserId}
+      GROUP BY dc.id, other.name, other.username
+      ORDER BY MAX(m.created_at) DESC
+      LIMIT 10
+    `) as {
+      conversation_id: string;
+      other_name: string | null;
+      other_username: string | null;
+      unread_count: number;
+      latest_at: string;
+      latest_body: string | null;
+    }[];
+    const unreadDms = dmRows.map((r) => ({
+      conversationId: r.conversation_id,
+      otherName: r.other_name?.trim() || (r.other_username ? `@${r.other_username}` : "Someone"),
+      unreadCount: r.unread_count,
+      latestAt: r.latest_at,
+      latestMessageBody: r.latest_body ? (r.latest_body.length > 80 ? r.latest_body.slice(0, 80) + "..." : r.latest_body) : null,
+    }));
+
+    return c.json({ ok: true, notifications, unreadChats, unreadDms });
   } catch (err) {
     console.error("[GET /notifications]", err);
     return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);

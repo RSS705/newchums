@@ -187,6 +187,28 @@ export default function AppShell({ children, user, passwordSetupPending }: AppSh
     return () => { cancelled = true; };
   }, [user]);
 
+  // Inbox unread badge: fetch on mount and whenever the route changes (so
+  // reading a thread clears the badge on navigation), plus a slow poll.
+  const [inboxUnread, setInboxUnread] = React.useState(0);
+  React.useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    const load = () => {
+      apiFetch("/inbox/unread-count", { auth: true })
+        .then((res) => res.json())
+        .then((data: { ok?: boolean; unread?: number }) => {
+          if (!cancelled && data.ok) setInboxUnread(data.unread ?? 0);
+        })
+        .catch(() => {});
+    };
+    load();
+    const timer = setInterval(load, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [user, pathname]);
+
   // Fetch admin badge counts
   const isSuperAdmin = navProfile?.role === "super_admin" || user?.role === "super_admin";
   React.useEffect(() => {
@@ -371,6 +393,7 @@ export default function AppShell({ children, user, passwordSetupPending }: AppSh
         {appNavItems.map((item) => {
           const Icon = item.icon;
           const active = isNavItemActive(pathname, item.href);
+          const navBadge = item.href === "/inbox" ? inboxUnread : 0;
           return (
             <ListItemButton
               key={item.href}
@@ -380,7 +403,9 @@ export default function AppShell({ children, user, passwordSetupPending }: AppSh
               onClick={() => setMobileOpen(false)}
             >
               <ListItemIcon sx={{ minWidth: 36 }}>
-                <Icon sx={{ fontSize: 22, color: active ? "primary.main" : "text.secondary" }} />
+                <Badge badgeContent={navBadge} color="error" max={99} sx={{ "& .MuiBadge-badge": { fontSize: "0.625rem", height: 16, minWidth: 16 } }}>
+                  <Icon sx={{ fontSize: 22, color: active ? "primary.main" : "text.secondary" }} />
+                </Badge>
               </ListItemIcon>
               <ListItemText
                 primary={

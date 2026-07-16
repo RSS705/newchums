@@ -587,6 +587,48 @@ Per-request behavior tracking behind the KPI "Return behavior" section. `users.l
   - `/admin/kpis/activity`, a child view of the KPI tab (linked from the Return behavior section header, not a separate sidebar tab). Filterable table (window select, user search, path substring) with summary stat cards (Requests, Unique users, Active days) and Load-more pagination. Accepts `?user_id=` to pre-filter to one account; user names link to that user's diagnostics view.
   - `/admin/chums/[id]` User Diagnostics: a "Recent Activity" section (fixed 30-day window, Load-more) with a "Full log" link to the pre-filtered `/admin/kpis/activity` view.
 
+### Direct messages (Inbox)
+
+1:1 private messaging between users (migration 102), deliberately framed as an email-like **Inbox** rather than real-time chat: plain request/response with light client polling (30s on the inbox page, 60s for the sidebar badge), no websockets, no presence/typing/read receipts. Product intent: staying in touch with people you met through plans (exchanging contact details, following up) rather than replacing external chat apps. Plan chat remains the surface for plan logistics.
+
+**Schema** (all FKs cascade from `users(id)`, so `DELETE /account` needs no special handling):
+- `dm_conversations`: one row per user pair, canonical ordering `user_a < user_b` with `UNIQUE (user_a, user_b)`; `created_by` records the initiator (used by the rate limit); `last_message_at` orders the inbox.
+- `dm_messages`: `conversation_id`, `sender_user_id`, `body` (plain text, max 5000 chars), `created_at`.
+- `dm_participant_state`: per-participant `last_read_at` (unread counts), `notified_at` (email throttle claim), `archived_at` (reserved, no UI yet).
+- `user_blocks`: `(blocker_user_id, blocked_user_id)` pairs.
+- `users.dm_privacy`: `'everyone'` (default) | `'chums_and_plans'` | `'no_one'`.
+
+**Reachability rules:**
+- `dm_privacy` gates **new conversations only**. Replies inside an existing conversation are always allowed (messaging someone opts you into their replies); tightening the setting later does not strand open conversations. `chums_and_plans` passes when the sender is in the recipient's On NewChums chums OR the two shared a plan (either was host or had a Going RSVP on the same event; **QA plans are excluded outright** so a QA plan can never create a messaging relationship).
+- **Blocks** silence both directions, beat every setting, and are never disclosed: sends into a blocked pair fail with the same generic `NOT_ALLOWED` ("This person isn't accepting new messages right now.") as privacy denials. Managed from the conversation menu and Settings, Privacy, Blocked users.
+- Senders must have a verified email; suspended users cannot send (middleware) or be messaged.
+- Message bodies run through `validateCleanText` content safety.
+- **Rate limit:** max 10 **new conversations** per sender per rolling 24h, enforced in Postgres via `dm_conversations.created_by` (the KV limiter is unbound in prod). Replies are never limited.
+
+**Email notification model:** at most **one email per conversation until the recipient reads the thread**. On send, the recipient's `dm_participant_state.notified_at` is claimed atomically (`UPDATE ... WHERE notified_at IS NULL RETURNING`); if claimed and the recipient's `direct_message` pref is enabled, the `dmMessageNotify` template goes out (sender name/handle, 140-char snippet, "Read and reply" CTA to `/inbox?c=<id>`, one-click unsubscribe). Opening the thread clears both `last_read_at` and `notified_at`, re-arming the notification. A rapid back-and-forth therefore produces no email; a message to a dormant user produces exactly one.
+
+**API endpoints (auth required):**
+
+| Route | Description |
+|-------|-------------|
+| `GET /inbox?with=<userId>` | Conversation list (other user, last-message snippet, unread count), newest activity first. Optional `with` resolves a compose target: existing `conversationId` or `canMessage` verdict for a new one. |
+| `GET /inbox/unread-count` | Count of conversations with unread messages (sidebar badge). |
+| `GET /inbox/:conversationId` | Thread (latest 200 messages, ascending, each with `isMine`) + other-user header + `viewerHasBlocked`. Marks the conversation read and clears the notify claim as a side effect. |
+| `POST /inbox/send` | `{ to_user_id, body }`. Creates the conversation on first contact (privacy + rate-limit gated, `ON CONFLICT` guards the both-sides-message-first race) or appends (blocks only). Returns `conversation_id` + the message. |
+| `POST /inbox/:conversationId/report` | `{ reason, details? }` using the conduct-report reason vocabulary. Inserts a `conduct_reports` row with `plan_id NULL`, `dm_conversation_id`, and `dm_evidence` (JSONB snapshot of the latest 20 messages with sender labels), then fires the standard admin alert email. |
+| `GET /me/blocks` | The viewer's blocked-users list (Settings). |
+| `POST /users/:id/block`, `DELETE /users/:id/block` | Block / unblock. Idempotent. |
+
+Related integrations: `GET /notifications` returns an `unreadDms` array (mirrors `unreadChats`) for the bell; `GET /profile` / `PUT /profile` carry `dm_privacy`; `GET /public/users/:handle` computes `viewerCanMessage` for the profile Message button; the `direct_message` key joins the notification-pref allowlist and unsubscribe flow.
+
+**Admin visibility policy:** there is deliberately **no admin browse view over message content**. Message content reaches admins only through a conduct report's `dm_evidence` snapshot, rendered in the Safety tab (reports carry a "Direct message" chip and the excerpt in place of the plan link). The snapshot is taken at report time so it survives conversation/account deletion. `GET /admin/concern-reports` exposes `source` (`plan` | `direct_message`) and `dmEvidence`.
+
+**Web surfaces:** `/inbox` (two-pane list + thread with composer, day separators, block/report via the conversation menu; `?to=<userId>` opens compose, `?c=<id>` opens a thread); sidebar Inbox item with unread badge; bell shows unread DM summaries; entry points on public profiles (Message button, shown only when `viewerCanMessage`), the post-plan "Keep the connection going" attendee rows, and the Your Chums list; Settings, Privacy carries "Who can send you messages" and Blocked users; Settings, Notifications carries the email toggle.
+
+**Not implemented (deliberate v1 cuts):** read receipts, typing indicators, attachments/images, group threads, editing or deleting sent messages, per-side archive UI, message requests (accept-before-thread).
+
+### Chums
+
 One-way saved-people feature. No approval flow, no mutual-state requirement.
 
 **API endpoints (auth required):**

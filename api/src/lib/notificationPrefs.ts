@@ -31,6 +31,7 @@ export const VALID_KEYS = [
   "community_join_request_received",
   "community_join_request_result",
   "community_announcements",
+  "direct_message",
 ] as const;
 
 export type NotificationKey = (typeof VALID_KEYS)[number];
@@ -58,6 +59,7 @@ export const DEFAULT_PREFS: Record<NotificationKey, NotificationPrefItem> = {
   community_join_request_received: { enabled: true },
   community_join_request_result: { enabled: true },
   community_announcements: { enabled: true },
+  direct_message: { enabled: true },
 };
 
 /**

@@ -297,7 +297,9 @@ Sign in → Explore (event discovery feed)
 │   ├── Edit plan (host) → Edit event form
 │   ├── Copy plan (host, incl. past/canceled) → pre-filled create form → Publish as new plan
 │   └── Past plan → Post-plan feedback (rate attendees, report issues/concerns)
-├── Your Chums → Search / Add / Remove / Invite by email
+├── Your Chums → Search / Add / Remove / Invite by email / Message
+├── Inbox → 1:1 direct messages (async, email-like) → reply / block / report
+│   └── Entry points: profile Message button, post-plan attendee rows, Your Chums rows
 ├── Communities → Browse / Create / Join / Community plans feed
 ├── Roadmap → Browse / Vote / Follow / Comment on feature requests
 ├── Profile → Edit → Chum preferences → Public profile (/u/handle)
@@ -415,6 +417,7 @@ Wrangler config is code-managed so deploys do not wipe routes or override canoni
 | `/communities/[slug]` | Community detail with hobbies, online/website/Discord link, members, plan feed, announcements tab, schedule tab (recurring weekly time blocks), join/leave, join-request management |
 | `/communities/[slug]/edit` | Edit community settings (owner), same form quality as create |
 | `/your-plan` | Read-only Your Plan page showing the viewer's organizer subscription tier (free / super_host / community_pro) |
+| `/inbox` | Direct messages: two-pane inbox (conversation list + thread), compose via `?to=`, thread via `?c=` |
 | `/admin/qr-redirects` | QR redirects inventory (super_admin) |
 | `/admin/qr-redirects/[id]` | QR redirect detail + recent scans (super_admin) |
 | `/admin/shoutouts` | Shout-out moderation queue (super_admin) |

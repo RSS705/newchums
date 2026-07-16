@@ -21,10 +21,21 @@ type UserRef = {
   email: string;
 };
 
+type DmEvidenceMessage = {
+  sender: string;
+  isReported: boolean;
+  body: string;
+  at: string;
+};
+
 type ConcernReport = {
   id: string;
-  planId: string;
+  planId: string | null;
   planTitle: string | null;
+  /** "plan" for plan-sourced reports, "direct_message" for Inbox reports. */
+  source?: "plan" | "direct_message";
+  /** Snapshot of the recent conversation messages at report time (DM reports only). */
+  dmEvidence?: DmEvidenceMessage[] | null;
   reason: string;
   details: string | null;
   status: string;
@@ -139,7 +150,7 @@ export default function AdminSafetyClient() {
           Safety &amp; Concern Reports
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          User-submitted conduct and safety concern reports from the post-plan feedback form.
+          User-submitted conduct and safety concern reports from the post-plan feedback form and direct message conversations.
         </Typography>
       </Box>
 
@@ -218,9 +229,20 @@ export default function AdminSafetyClient() {
                       sx={{ fontSize: "0.7rem", textTransform: "capitalize", flexShrink: 0 }}
                     />
                     <Box sx={{ minWidth: 0 }}>
-                      <Typography variant="body2" fontWeight={600} noWrap>
-                        {REASON_LABELS[report.reason] ?? report.reason}
-                      </Typography>
+                      <Stack direction="row" alignItems="center" spacing={0.75} sx={{ minWidth: 0 }}>
+                        <Typography variant="body2" fontWeight={600} noWrap>
+                          {REASON_LABELS[report.reason] ?? report.reason}
+                        </Typography>
+                        {report.source === "direct_message" && (
+                          <Chip
+                            label="Direct message"
+                            size="small"
+                            variant="outlined"
+                            color="info"
+                            sx={{ fontSize: "0.6875rem", height: 20, flexShrink: 0 }}
+                          />
+                        )}
+                      </Stack>
                       <Typography variant="caption" color="text.secondary" noWrap>
                         {userLabel(report.reporter)} reported {userLabel(report.reported)} &middot; {formatDate(report.createdAt)}
                       </Typography>
@@ -285,24 +307,65 @@ export default function AdminSafetyClient() {
                         </Box>
                       </Stack>
 
-                      {/* Plan */}
-                      <Box>
-                        <Typography variant="caption" color="text.secondary" fontWeight={600}>
-                          Related plan
-                        </Typography>
-                        <Typography variant="body2">
-                          {report.planTitle ?? "Untitled plan"}
-                        </Typography>
-                        <Button
-                          component={Link}
-                          href={`/events/${report.planId}`}
-                          size="small"
-                          variant="text"
-                          sx={{ textTransform: "none", fontSize: "0.75rem", p: 0, minWidth: 0, mt: 0.25 }}
-                        >
-                          View plan
-                        </Button>
-                      </Box>
+                      {/* Source: plan link, or DM conversation excerpt */}
+                      {report.source === "direct_message" ? (
+                        <Box>
+                          <Typography variant="caption" color="text.secondary" fontWeight={600}>
+                            Conversation excerpt (snapshot at report time)
+                          </Typography>
+                          {Array.isArray(report.dmEvidence) && report.dmEvidence.length > 0 ? (
+                            <Paper
+                              variant="outlined"
+                              sx={{ p: 1.5, mt: 0.5, borderRadius: 1.5, bgcolor: "grey.50", maxHeight: 320, overflowY: "auto" }}
+                            >
+                              <Stack spacing={1}>
+                                {report.dmEvidence.map((m, i) => (
+                                  <Box key={i}>
+                                    <Typography
+                                      variant="caption"
+                                      fontWeight={700}
+                                      sx={{ color: m.isReported ? "error.main" : "text.secondary" }}
+                                    >
+                                      {m.sender}
+                                      {m.isReported ? " (reported)" : ""}
+                                      <Typography component="span" variant="caption" color="text.disabled" sx={{ ml: 0.75, fontWeight: 400 }}>
+                                        {formatDate(m.at)}
+                                      </Typography>
+                                    </Typography>
+                                    <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
+                                      {m.body}
+                                    </Typography>
+                                  </Box>
+                                ))}
+                              </Stack>
+                            </Paper>
+                          ) : (
+                            <Typography variant="body2" color="text.disabled">
+                              No messages captured.
+                            </Typography>
+                          )}
+                        </Box>
+                      ) : (
+                        <Box>
+                          <Typography variant="caption" color="text.secondary" fontWeight={600}>
+                            Related plan
+                          </Typography>
+                          <Typography variant="body2">
+                            {report.planTitle ?? "Untitled plan"}
+                          </Typography>
+                          {report.planId && (
+                            <Button
+                              component={Link}
+                              href={`/events/${report.planId}`}
+                              size="small"
+                              variant="text"
+                              sx={{ textTransform: "none", fontSize: "0.75rem", p: 0, minWidth: 0, mt: 0.25 }}
+                            >
+                              View plan
+                            </Button>
+                          )}
+                        </Box>
+                      )}
 
                       {/* Reason + details */}
                       <Box>

@@ -11,6 +11,12 @@ export type NotificationTypeConfig = {
 
 export const NOTIFICATION_TYPES: NotificationTypeConfig[] = [
   {
+    key: "direct_message",
+    title: "Someone sends you a message",
+    description:
+      "When someone messages your Inbox. At most one email per conversation until you've read it, so a back-and-forth never floods your email.",
+  },
+  {
     key: "event_match",
     title: "New plans matching my interests",
     description:

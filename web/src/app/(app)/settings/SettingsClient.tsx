@@ -7,6 +7,7 @@ import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
+import MenuItem from "@mui/material/MenuItem";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
@@ -56,6 +57,12 @@ export default function SettingsClient() {
   const [isHiddenCommunities, setIsHiddenCommunities] = useState(false);
   const [tutorialNudgesOff, setTutorialNudgesOff] = useState(false);
   const [privacyLoading, setPrivacyLoading] = useState(false);
+  const [dmPrivacy, setDmPrivacy] = useState("everyone");
+  const [dmPrivacySaving, setDmPrivacySaving] = useState(false);
+  const [blockedUsers, setBlockedUsers] = useState<
+    Array<{ userId: string; name: string | null; username: string | null }>
+  >([]);
+  const [unblockingId, setUnblockingId] = useState<string | null>(null);
   const privacySaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toast = useToast();
   const router = useRouter();
@@ -77,11 +84,66 @@ export default function SettingsClient() {
         setIsHiddenShoutouts(data.profile.is_hidden_shoutouts ?? false);
         setIsHiddenCommunities(data.profile.is_hidden_communities ?? false);
         setTutorialNudgesOff(data.profile.tutorial_nudges_off ?? false);
+        setDmPrivacy(data.profile.dm_privacy ?? "everyone");
       }
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const fetchBlockedUsers = useCallback(async () => {
+    try {
+      const res = await apiFetch("/me/blocks", { auth: true });
+      const data = await res.json();
+      if (data.ok && Array.isArray(data.blocks)) {
+        setBlockedUsers(data.blocks);
+      }
+    } catch {
+      /* non-essential; the section just shows empty */
+    }
+  }, []);
+
+  const setDmPrivacyValue = async (value: string) => {
+    const previous = dmPrivacy;
+    setDmPrivacy(value);
+    setDmPrivacySaving(true);
+    try {
+      const res = await apiFetch("/profile", {
+        method: "PUT",
+        auth: true,
+        body: JSON.stringify({ dm_privacy: value }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setDmPrivacy(previous);
+        toast.error("Couldn't save your messaging setting");
+      } else {
+        toast.success("Messaging setting saved");
+      }
+    } catch {
+      setDmPrivacy(previous);
+      toast.error("Couldn't save your messaging setting");
+    } finally {
+      setDmPrivacySaving(false);
+    }
+  };
+
+  const handleUnblock = async (userId: string) => {
+    setUnblockingId(userId);
+    try {
+      const res = await apiFetch(`/users/${userId}/block`, { auth: true, method: "DELETE" });
+      if (res.ok) {
+        setBlockedUsers((prev) => prev.filter((b) => b.userId !== userId));
+        toast.success("Unblocked");
+      } else {
+        toast.error("Couldn't unblock. Please try again.");
+      }
+    } catch {
+      toast.error("Couldn't unblock. Please try again.");
+    } finally {
+      setUnblockingId(null);
+    }
+  };
 
   const [notificationPrefs, setNotificationPrefs] = useState<
     Record<string, { enabled: boolean }>
@@ -114,7 +176,8 @@ export default function SettingsClient() {
   useEffect(() => {
     fetchProfile();
     fetchNotificationPrefs();
-  }, [fetchProfile, fetchNotificationPrefs]);
+    fetchBlockedUsers();
+  }, [fetchProfile, fetchNotificationPrefs, fetchBlockedUsers]);
 
   const persistNotificationPrefs = useCallback(
     async (prefs: Record<string, { enabled: boolean }>) => {
@@ -540,12 +603,34 @@ export default function SettingsClient() {
               </Typography>
             </Box>
           </Stack>
+          {/* Who can message you (Inbox reachability) */}
+          <Box>
+            <Typography variant="body2" fontWeight={600} sx={{ mb: 0.25 }}>
+              Who can send you messages
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1.25, lineHeight: 1.45 }}>
+              Controls who can start a new Inbox conversation with you. People you&apos;re already
+              in a conversation with can always reply. Blocking someone overrides this setting.
+            </Typography>
+            <AppTextField
+              select
+              value={dmPrivacy}
+              onChange={(e) => void setDmPrivacyValue(e.target.value)}
+              disabled={dmPrivacySaving}
+              helperText={null}
+              sx={{ maxWidth: 420 }}
+            >
+              <MenuItem value="everyone">Everyone on NewChums</MenuItem>
+              <MenuItem value="chums_and_plans">Chums and people from your plans</MenuItem>
+              <MenuItem value="no_one">No one</MenuItem>
+            </AppTextField>
+          </Box>
           <PrivacyToggleRow
             title="Hide me from NewChums search and discovery"
             description="Your profile won't appear in searches or discovery features, and others won't be able to add you through search. If you join a plan, attendees can still view your profile."
             enabled={isHiddenFromSearch}
             onToggle={setPrivacyHiddenFromSearch}
-            showDivider={false}
+            showDivider={true}
             disabled={privacyLoading}
           />
           <PrivacyToggleRow
@@ -596,6 +681,48 @@ export default function SettingsClient() {
             showDivider={true}
             disabled={privacyLoading}
           />
+
+          {/* Blocked users */}
+          <Box sx={{ pt: 1, borderTop: 1, borderColor: "divider" }}>
+            <Typography variant="body2" fontWeight={600} sx={{ mb: 0.25 }}>
+              Blocked users
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1.25, lineHeight: 1.45 }}>
+              Blocked people can&apos;t message you, and you can&apos;t message them. They aren&apos;t
+              told they&apos;ve been blocked.
+            </Typography>
+            {blockedUsers.length === 0 ? (
+              <Typography variant="body2" color="text.disabled">
+                You haven&apos;t blocked anyone.
+              </Typography>
+            ) : (
+              <Stack spacing={1}>
+                {blockedUsers.map((b) => (
+                  <Stack key={b.userId} direction="row" alignItems="center" justifyContent="space-between" spacing={2}>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography variant="body2" fontWeight={600} noWrap>
+                        {b.name?.trim() || (b.username ? `@${b.username}` : "NewChums member")}
+                      </Typography>
+                      {b.username && b.name && (
+                        <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
+                          @{b.username}
+                        </Typography>
+                      )}
+                    </Box>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => void handleUnblock(b.userId)}
+                      disabled={unblockingId === b.userId}
+                      sx={{ textTransform: "none", fontWeight: 600, flexShrink: 0 }}
+                    >
+                      {unblockingId === b.userId ? "Unblocking..." : "Unblock"}
+                    </Button>
+                  </Stack>
+                ))}
+              </Stack>
+            )}
+          </Box>
         </Stack>
       </AppCard>
 

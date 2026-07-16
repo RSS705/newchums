@@ -205,6 +205,18 @@ function ContactRow({
           </Stack>
         </Box>
 
+        <Tooltip title="Send a message" placement="top" arrow>
+          <IconButton
+            component={Link}
+            href={`/inbox?to=${contact.userId}`}
+            size="small"
+            sx={{ color: "text.disabled", "&:hover": { color: "primary.main" }, flexShrink: 0 }}
+            aria-label="Send a message"
+          >
+            <MailOutlineRoundedIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+
         <Tooltip title={contact.note ? "Edit note" : "Add private note"} placement="top" arrow>
           <IconButton
             size="small"

@@ -19,6 +19,7 @@ import Typography from "@mui/material/Typography";
 import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import HowToRegRoundedIcon from "@mui/icons-material/HowToRegRounded";
+import MailRoundedIcon from "@mui/icons-material/MailRounded";
 import PersonAddRoundedIcon from "@mui/icons-material/PersonAddRounded";
 import CampaignRoundedIcon from "@mui/icons-material/CampaignRounded";
 import ReportProblemRoundedIcon from "@mui/icons-material/ReportProblemRounded";
@@ -854,6 +855,31 @@ export default function PlanFeedback({ eventId, planTitle, planStartsAt, planHob
                               </Button>
                             </Tooltip>
                           )}
+                          <Tooltip title={`Send ${primaryLabel} a private message`} arrow>
+                            <Button
+                              component={Link}
+                              href={`/inbox?to=${a.userId}`}
+                              size="small"
+                              variant="outlined"
+                              color="inherit"
+                              startIcon={<MailRoundedIcon sx={{ fontSize: 17 }} />}
+                              sx={{
+                                textTransform: "none",
+                                fontWeight: 700,
+                                borderRadius: 2,
+                                fontSize: "0.78rem",
+                                px: 1.5,
+                                py: 0.5,
+                                flexShrink: 0,
+                                alignSelf: { xs: "stretch", sm: "center" },
+                                color: "text.secondary",
+                                borderColor: "divider",
+                                "&:hover": { borderColor: "text.secondary", bgcolor: "action.hover" },
+                              }}
+                            >
+                              Message
+                            </Button>
+                          </Tooltip>
                         </Stack>
                         {/* Shout-out composer: compact inline row. Locked slots
                             (approved / rejected) show status text above instead

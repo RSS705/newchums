@@ -1,0 +1,22 @@
+{{senderName}} sent you a message
+
+Hi {{recipientName}},
+
+{{senderName}}{{#senderHandle}} ({{.}}){{/senderHandle}} sent you a message in your NewChums inbox.
+
+---
+
+{{senderName}}: "{{messagePreview}}"
+
+---
+
+Read and reply: {{inboxUrl}}
+
+We won't email you again about this conversation until you've read it.
+
+---
+
+You can control who can message you in your NewChums settings: https://newchums.com/settings#privacy
+{{#unsubscribeUrl}}Unsubscribe from message emails: {{.}}{{/unsubscribeUrl}}
+
+© {{year}} {{productName}}

@@ -1,6 +1,7 @@
 "use client";
 
 import ChatBubbleOutlineRoundedIcon from "@mui/icons-material/ChatBubbleOutlineRounded";
+import MailRoundedIcon from "@mui/icons-material/MailRounded";
 import EventNoteRoundedIcon from "@mui/icons-material/EventNoteRounded";
 import NotificationsOutlinedIcon from "@mui/icons-material/NotificationsOutlined";
 import NotificationsRoundedIcon from "@mui/icons-material/NotificationsRounded";
@@ -44,6 +45,14 @@ type UnreadChatEntry = {
   latestAt: string;
   latestMessageBody: string | null;
   latestSenderName: string | null;
+};
+
+type UnreadDmEntry = {
+  conversationId: string;
+  otherName: string;
+  unreadCount: number;
+  latestAt: string;
+  latestMessageBody: string | null;
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -490,6 +499,90 @@ function NotificationRow({
 
 // ─── Unread chat row ──────────────────────────────────────────────────────────
 
+/** Unread direct-message summary row, deep-links into the Inbox thread.
+ *  Same visual shape as UnreadChatRow, mail icon instead of chat bubble. */
+function UnreadDmRow({ entry }: { entry: UnreadDmEntry }) {
+  return (
+    <Box
+      component={Link}
+      href={`/inbox?c=${entry.conversationId}`}
+      sx={{
+        px: 2,
+        py: 1.5,
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 1.5,
+        bgcolor: "rgba(244, 180, 0, 0.06)",
+        transition: "background-color 0.2s ease",
+        "&:hover": { bgcolor: "action.hover" },
+        position: "relative",
+        textDecoration: "none",
+        color: "inherit",
+      }}
+    >
+      <Box
+        sx={{
+          position: "absolute",
+          left: 6,
+          top: "50%",
+          transform: "translateY(-50%)",
+          width: 6,
+          height: 6,
+          borderRadius: "50%",
+          bgcolor: GOLD,
+          flexShrink: 0,
+        }}
+      />
+      <Box
+        sx={{
+          flexShrink: 0,
+          width: 36,
+          height: 36,
+          borderRadius: "50%",
+          bgcolor: "primary.main",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <MailRoundedIcon sx={{ fontSize: 18, color: "#fff" }} />
+      </Box>
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Typography variant="body2" sx={{ lineHeight: 1.45, color: "text.primary" }}>
+          <Box component="span" sx={{ fontWeight: 600 }}>
+            {entry.unreadCount} new {entry.unreadCount === 1 ? "message" : "messages"}
+          </Box>
+          {" from "}
+          <Box component="span" sx={{ fontWeight: 600 }}>
+            {entry.otherName}
+          </Box>
+        </Typography>
+        {entry.latestMessageBody && (
+          <Typography
+            variant="caption"
+            sx={{
+              color: "text.secondary",
+              mt: 0.25,
+              display: "block",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {entry.latestMessageBody}
+          </Typography>
+        )}
+        <Typography
+          variant="caption"
+          sx={{ color: "text.disabled", mt: 0.25, display: "block" }}
+        >
+          {formatRelativeTime(entry.latestAt)}
+        </Typography>
+      </Box>
+    </Box>
+  );
+}
+
 function UnreadChatRow({ entry }: { entry: UnreadChatEntry }) {
   return (
     <Box
@@ -593,6 +686,7 @@ export default function NotificationBell({ viewerHandle = null }: NotificationBe
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
   const [notifications, setNotifications] = React.useState<AppNotification[]>([]);
   const [unreadChats, setUnreadChats] = React.useState<UnreadChatEntry[]>([]);
+  const [unreadDms, setUnreadDms] = React.useState<UnreadDmEntry[]>([]);
   const [fetching, setFetching] = React.useState(false);
   const avatarBaseUrl = React.useMemo(() => {
     try {
@@ -602,13 +696,14 @@ export default function NotificationBell({ viewerHandle = null }: NotificationBe
     }
   }, []);
 
-  const hasUnread = notifications.some((n) => !n.readAt) || unreadChats.length > 0;
+  const hasUnread = notifications.some((n) => !n.readAt) || unreadChats.length > 0 || unreadDms.length > 0;
   const open = Boolean(anchorEl);
 
   type NotificationsResponse = {
     ok: boolean;
     notifications?: AppNotification[];
     unreadChats?: UnreadChatEntry[];
+    unreadDms?: UnreadDmEntry[];
   };
 
   const applyFetchResult = React.useCallback((data: NotificationsResponse) => {
@@ -617,6 +712,9 @@ export default function NotificationBell({ viewerHandle = null }: NotificationBe
     }
     if (data.ok && Array.isArray(data.unreadChats)) {
       setUnreadChats(data.unreadChats);
+    }
+    if (data.ok && Array.isArray(data.unreadDms)) {
+      setUnreadDms(data.unreadDms);
     }
   }, []);
 
@@ -653,6 +751,7 @@ export default function NotificationBell({ viewerHandle = null }: NotificationBe
         const fresh = data.notifications;
         setNotifications(fresh);
         if (Array.isArray(data.unreadChats)) setUnreadChats(data.unreadChats);
+        if (Array.isArray(data.unreadDms)) setUnreadDms(data.unreadDms);
 
         // Mark all unread regular notifications as read (chat entries clear when visited)
         const unreadIds = fresh.filter((n) => !n.readAt).map((n) => n.id);
@@ -707,7 +806,7 @@ export default function NotificationBell({ viewerHandle = null }: NotificationBe
 
       {/* Scrollable notification list */}
       <Box sx={{ overflowY: "auto", flex: 1 }}>
-        {notifications.length === 0 && unreadChats.length === 0 ? (
+        {notifications.length === 0 && unreadChats.length === 0 && unreadDms.length === 0 ? (
           <Box sx={{ py: 5, px: 2, textAlign: "center" }}>
             <Typography variant="body2" color="text.secondary">
               You&apos;re all caught up.
@@ -715,7 +814,17 @@ export default function NotificationBell({ viewerHandle = null }: NotificationBe
           </Box>
         ) : (
           <>
-            {/* Unread chat entries first */}
+            {/* Unread direct messages first */}
+            {unreadDms.map((entry, index) => (
+              <React.Fragment key={`dm-${entry.conversationId}`}>
+                {index > 0 && <Divider sx={{ opacity: 0.5 }} />}
+                <UnreadDmRow entry={entry} />
+              </React.Fragment>
+            ))}
+            {unreadDms.length > 0 && (unreadChats.length > 0 || notifications.length > 0) && (
+              <Divider />
+            )}
+            {/* Unread chat entries */}
             {unreadChats.map((entry, index) => (
               <React.Fragment key={`chat-${entry.eventId}`}>
                 {index > 0 && <Divider sx={{ opacity: 0.5 }} />}

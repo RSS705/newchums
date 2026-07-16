@@ -5,6 +5,7 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import Link from "next/link";
 import Button from "@mui/material/Button";
+import MailRoundedIcon from "@mui/icons-material/MailRounded";
 import PersonAddRoundedIcon from "@mui/icons-material/PersonAddRounded";
 import PersonRemoveRoundedIcon from "@mui/icons-material/PersonRemoveRounded";
 import PersonOutlineRoundedIcon from "@mui/icons-material/PersonOutlineRounded";
@@ -51,13 +52,17 @@ export type PublicProfileViewProps = {
   isOwner?: boolean;
   chumAction?: ChumAction;
   viewerLoggedIn?: boolean;
+  /** When set, renders a "Message" button linking into the Inbox compose
+   *  flow. Null/undefined hides the button (logged out, self, or the
+   *  profile owner isn't accepting messages from this viewer). */
+  messageHref?: string | null;
 };
 
 /**
  * Shared public profile view. Renders modular sections; easy to add future
  * sections (XP, badges, trust metrics, unlockables) as separate components.
  */
-export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAction, viewerLoggedIn }: PublicProfileViewProps) {
+export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAction, viewerLoggedIn, messageHref }: PublicProfileViewProps) {
   const cardBg = getProfileCardBg(user.profile_theme);
   const ownerHandleSlug = user.handle?.replace(/^@/, "") ?? null;
   return (
@@ -169,9 +174,35 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
               viewerLoggedIn={viewerLoggedIn}
             />
           </Box>
-          {chumAction && (
-            <Box sx={{ flexShrink: 0, pt: { xs: 0, sm: 0.25 }, width: { xs: "100%", sm: "auto" } }}>
-              {chumAction.isSaved ? (
+          {(chumAction || messageHref) && (
+            <Stack
+              spacing={1}
+              sx={{ flexShrink: 0, pt: { xs: 0, sm: 0.25 }, width: { xs: "100%", sm: "auto" }, alignItems: { xs: "stretch", sm: "flex-end" } }}
+            >
+              {messageHref && (
+                <Button
+                  component={Link}
+                  href={messageHref}
+                  variant={chumAction?.isSaved ? "contained" : "outlined"}
+                  size="medium"
+                  color="primary"
+                  startIcon={<MailRoundedIcon sx={{ fontSize: "1.05rem !important" }} />}
+                  sx={{
+                    fontSize: "0.8125rem",
+                    lineHeight: 1.25,
+                    whiteSpace: "nowrap",
+                    textTransform: "none",
+                    fontWeight: 600,
+                    borderRadius: 2.5,
+                    px: { xs: 2, sm: 2.5 },
+                    py: { xs: 1, sm: 0.75 },
+                    width: { xs: "100%", sm: "auto" },
+                  }}
+                >
+                  Message
+                </Button>
+              )}
+              {chumAction && (chumAction.isSaved ? (
                 /* Already-a-chum state: deliberately understated. The user
                    has already taken the primary action; "Remove from Chums"
                    should be discoverable but never the focus of the page. */
@@ -225,8 +256,8 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
                 >
                   Add to Chums
                 </Button>
-              )}
-            </Box>
+              ))}
+            </Stack>
           )}
         </Box>
       </AppCard>

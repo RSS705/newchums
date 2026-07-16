@@ -36,6 +36,7 @@ export const SUBJECTS = {
 
   // Plan chat
   chatMessageNotify: "{{senderName}} posted in {{eventTitle}}",
+  dmMessageNotify: "{{senderName}} sent you a message on NewChums",
 
   // Host notifications. The three RSVP emails are previous-status aware:
   // the base key covers a first response, the suffixed variants cover a
