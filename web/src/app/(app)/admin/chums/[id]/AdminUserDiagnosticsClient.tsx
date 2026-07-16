@@ -18,6 +18,8 @@ import TableRow from "@mui/material/TableRow";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
+import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
+import MuiLink from "@mui/material/Link";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
@@ -237,16 +239,24 @@ function RecentActivitySection({ userId }: { userId: string }) {
 
   return (
     <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}>
-      <Stack direction="row" alignItems="flex-start" justifyContent="space-between" spacing={1}>
+      <Stack direction="row" alignItems="baseline" justifyContent="space-between" spacing={1}>
         <SectionTitle>Recent Activity</SectionTitle>
-        <Button
+        <MuiLink
           component={Link}
           href={`/admin/kpis/activity?user_id=${userId}`}
-          size="small"
-          sx={{ textTransform: "none", fontWeight: 600, flexShrink: 0 }}
+          underline="hover"
+          variant="body2"
+          sx={{
+            fontWeight: 600,
+            flexShrink: 0,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 0.5,
+          }}
         >
           Full log
-        </Button>
+          <ArrowForwardRoundedIcon sx={{ fontSize: 15 }} />
+        </MuiLink>
       </Stack>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.5 }}>
         {loading

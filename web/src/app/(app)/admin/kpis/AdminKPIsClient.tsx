@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from "react";
 import Autocomplete from "@mui/material/Autocomplete";
 import Box from "@mui/material/Box";
-import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import Collapse from "@mui/material/Collapse";
@@ -31,6 +30,7 @@ import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
 import Link from "next/link";
+import MuiLink from "@mui/material/Link";
 import {
   ResponsiveContainer,
   LineChart,
@@ -1110,19 +1110,26 @@ export default function AdminKPIsClient() {
             </Grid>
 
             {/* ── 3. Return behavior ── */}
-            <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 0.5 }}>
+            <Stack direction="row" alignItems="baseline" justifyContent="space-between" sx={{ mb: 0.5 }}>
               <Typography variant="h6" fontWeight={700}>
                 Return behavior
               </Typography>
-              <Button
+              <MuiLink
                 component={Link}
                 href="/admin/kpis/activity"
-                size="small"
-                endIcon={<ArrowForwardRoundedIcon sx={{ fontSize: 16 }} />}
-                sx={{ textTransform: "none", fontWeight: 600, flexShrink: 0 }}
+                underline="hover"
+                variant="body2"
+                sx={{
+                  fontWeight: 600,
+                  flexShrink: 0,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 0.5,
+                }}
               >
                 Activity log
-              </Button>
+                <ArrowForwardRoundedIcon sx={{ fontSize: 15 }} />
+              </MuiLink>
             </Stack>
             <SectionSubtitle>
               Users who made at least one authenticated API request in the given window.
