@@ -7189,6 +7189,97 @@ app.get("/inbox/unread-count", async (c) => {
   }
 });
 
+/** GET /inbox/contacts, candidate recipients for the "New message" picker:
+ *  the viewer's On NewChums chums plus people from recent plans they shared
+ *  (either was host or had a Going RSVP on the same published, non-QA event
+ *  within the last 120 days). Suspended users and blocked pairs (either
+ *  direction) are excluded; people already in the chums list are deduped out
+ *  of the plans section. Reachability (dm_privacy) is deliberately NOT
+ *  evaluated per candidate here; the compose flow resolves it when a person
+ *  is picked, so a denial shows the standard "isn't accepting messages"
+ *  notice instead of silently hiding people from the list. */
+app.get("/inbox/contacts", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string") {
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  }
+  try {
+    const sql = getSql(c.env);
+    const appUserId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+
+    const chumRows = (await sql`
+      SELECT u.id, u.name, u.username, u.avatar_key, u.avatar_updated_at
+      FROM newchums.user_contacts uc
+      JOIN newchums.users u ON u.id = uc.linked_user_id
+      WHERE uc.user_id = ${appUserId} AND uc.type = 'on_newchums'
+        AND COALESCE(u.is_suspended, false) = false
+        AND NOT EXISTS (
+          SELECT 1 FROM newchums.user_blocks b
+          WHERE (b.blocker_user_id = ${appUserId} AND b.blocked_user_id = u.id)
+             OR (b.blocker_user_id = u.id AND b.blocked_user_id = ${appUserId})
+        )
+      ORDER BY LOWER(COALESCE(NULLIF(TRIM(u.name), ''), u.username, '')) ASC
+      LIMIT 100
+    `) as { id: string; name: string | null; username: string | null; avatar_key: string | null; avatar_updated_at: string | null }[];
+
+    const planMateRows = (await sql`
+      WITH my_events AS (
+        SELECT e.id, e.title, e.starts_at, e.host_user_id
+        FROM newchums.events e
+        WHERE COALESCE(e.is_qa, false) = false
+          AND e.status = 'published'
+          AND e.starts_at > NOW() - INTERVAL '120 days'
+          AND (
+            e.host_user_id = ${appUserId}
+            OR EXISTS (
+              SELECT 1 FROM newchums.event_rsvps r
+              WHERE r.event_id = e.id AND r.user_id = ${appUserId} AND r.status = 'going'
+            )
+          )
+      ),
+      participants AS (
+        SELECT me.title, me.starts_at, me.host_user_id AS user_id FROM my_events me
+        UNION ALL
+        SELECT me.title, me.starts_at, r.user_id
+        FROM my_events me
+        JOIN newchums.event_rsvps r ON r.event_id = me.id AND r.status = 'going'
+      )
+      SELECT DISTINCT ON (u.id)
+        u.id, u.name, u.username, u.avatar_key, u.avatar_updated_at,
+        p.title AS plan_title, p.starts_at AS plan_starts_at
+      FROM participants p
+      JOIN newchums.users u ON u.id = p.user_id
+      WHERE u.id != ${appUserId}
+        AND COALESCE(u.is_suspended, false) = false
+        AND NOT EXISTS (
+          SELECT 1 FROM newchums.user_blocks b
+          WHERE (b.blocker_user_id = ${appUserId} AND b.blocked_user_id = u.id)
+             OR (b.blocker_user_id = u.id AND b.blocked_user_id = ${appUserId})
+        )
+      ORDER BY u.id, p.starts_at DESC
+      LIMIT 100
+    `) as { id: string; name: string | null; username: string | null; avatar_key: string | null; avatar_updated_at: string | null; plan_title: string; plan_starts_at: string }[];
+
+    const toEntry = (r: { id: string; name: string | null; username: string | null; avatar_key: string | null; avatar_updated_at: string | null }) => ({
+      userId: r.id,
+      name: r.name,
+      username: r.username,
+      avatarUrl: buildAvatarUrl(r.id, r.avatar_key, r.avatar_updated_at, c.env.MEDIA_BUCKET),
+    });
+
+    const chumIds = new Set(chumRows.map((r) => r.id));
+    const fromPlans = planMateRows
+      .filter((r) => !chumIds.has(r.id))
+      .sort((a, b) => new Date(b.plan_starts_at).getTime() - new Date(a.plan_starts_at).getTime())
+      .map((r) => ({ ...toEntry(r), planTitle: r.plan_title, planAt: r.plan_starts_at }));
+
+    return c.json({ ok: true, chums: chumRows.map(toEntry), fromPlans });
+  } catch (err) {
+    console.error("[GET /inbox/contacts]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
 /** GET /inbox/:conversationId, the thread. Marks the conversation read for
  *  the viewer (and clears the email-notify claim) as a side effect. */
 app.get("/inbox/:conversationId", async (c) => {

@@ -601,6 +601,10 @@ list is long enough to need it (7+ items).
 **Where it lives.**
 Canonical implementation: [web/src/components/events/CopyPlanDialog.tsx](../web/src/components/events/CopyPlanDialog.tsx)
 (consumed by `CreateEventClient`'s "Copy a previous plan" header action).
+Also consumed by the Inbox's "New message" picker,
+[web/src/app/(app)/inbox/NewMessageDialog.tsx](../web/src/app/(app)/inbox/NewMessageDialog.tsx)
+(person rows with `UserAvatar` thumbnails instead of plan banners; sections
+"Your chums" / "From recent plans").
 
 **Key conventions.**
 - Fetch lazily on first open (`status: "idle" | "loading" | "loaded" |

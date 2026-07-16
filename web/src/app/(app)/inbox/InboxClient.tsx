@@ -24,12 +24,15 @@ import FlagRoundedIcon from "@mui/icons-material/FlagRounded";
 import MailRoundedIcon from "@mui/icons-material/MailRounded";
 import MoreVertRoundedIcon from "@mui/icons-material/MoreVertRounded";
 import PersonRoundedIcon from "@mui/icons-material/PersonRounded";
+import RateReviewRoundedIcon from "@mui/icons-material/RateReviewRounded";
 import SendRoundedIcon from "@mui/icons-material/SendRounded";
+import Tooltip from "@mui/material/Tooltip";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import { useToast } from "@/components/ui";
 import UserAvatar from "@/components/common/UserAvatar";
+import NewMessageDialog from "./NewMessageDialog";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -151,6 +154,7 @@ export default function InboxClient() {
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
   const [blockConfirmOpen, setBlockConfirmOpen] = useState(false);
+  const [newMessageOpen, setNewMessageOpen] = useState(false);
 
   const scrollBoxRef = useRef<HTMLDivElement | null>(null);
   const activeConversationId = cParam;
@@ -330,12 +334,30 @@ export default function InboxClient() {
       }}
     >
       <Box sx={{ px: 2.5, py: 2, borderBottom: 1, borderColor: "divider" }}>
-        <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
-          Inbox
-        </Typography>
-        <Typography variant="caption" color="text.secondary">
-          Private messages between you and other members.
-        </Typography>
+        <Stack direction="row" alignItems="flex-start" justifyContent="space-between" spacing={1}>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
+              Inbox
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Private messages between you and other members.
+            </Typography>
+          </Box>
+          <Tooltip title="New message" arrow>
+            <IconButton
+              onClick={() => setNewMessageOpen(true)}
+              aria-label="New message"
+              sx={{
+                bgcolor: "primary.main",
+                color: "primary.contrastText",
+                flexShrink: 0,
+                "&:hover": { bgcolor: "primary.dark" },
+              }}
+            >
+              <RateReviewRoundedIcon sx={{ fontSize: 20 }} />
+            </IconButton>
+          </Tooltip>
+        </Stack>
       </Box>
       <Box sx={{ flex: 1, overflowY: "auto" }}>
         {listLoading ? (
@@ -349,8 +371,17 @@ export default function InboxClient() {
               No messages yet
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              Say hello from someone&apos;s profile, or message people you met through a plan.
+              Say hello to one of your chums, or to someone from a recent plan.
             </Typography>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<RateReviewRoundedIcon sx={{ fontSize: 16 }} />}
+              onClick={() => setNewMessageOpen(true)}
+              sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, mt: 0.5 }}
+            >
+              New message
+            </Button>
           </Stack>
         ) : (
           conversations.map((conv) => {
@@ -621,6 +652,18 @@ export default function InboxClient() {
         {listPane}
         {threadPane}
       </Stack>
+
+      {/* New message picker */}
+      <NewMessageDialog
+        open={newMessageOpen}
+        onClose={() => setNewMessageOpen(false)}
+        onSelect={(userId) => {
+          setNewMessageOpen(false);
+          if (userId === toParam) return; // already composing to this person
+          setComposeTarget(null);
+          router.replace(`/inbox?to=${userId}`);
+        }}
+      />
 
       {/* Report dialog */}
       <ReportDialog
