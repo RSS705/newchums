@@ -575,7 +575,17 @@ The interest system underpins personalization across plans, communities, and dis
 
 **Suspension enforcement:** credentials login rejected with `AccountSuspended`; OAuth sign-in redirected to `/login?error=AccountSuspended`; all authenticated API requests from suspended users return `403 USER_SUSPENDED`; signup with a suspended email returns `409 EMAIL_SUSPENDED`.
 
-### Chums
+### Admin, user activity log (super_admin only)
+
+Per-request behavior tracking behind the KPI "Return behavior" section. `users.last_active_at` (migration 047, throttled to one write per hour) powers the active-user counts; the activity log answers the drill-in questions: which accounts are active, when exactly, and which parts of the app they touch.
+
+- **Capture:** the suspension-guard middleware in `api/src/index.ts` (the same `app.use("*")` that checks `is_suspended` and throttles `last_active_at`) inserts one row per authenticated API request into `newchums.user_activity_log` (migration 101) after the handler runs. The insert is fire-and-forget via `executionCtx.waitUntil`, so logging never adds latency or failure modes to the request itself. Requests without a Bearer token are never logged.
+- **Stored per row:** `user_id`, `method`, `path` (pathname only, capped at 300 chars), `route` (the matched Hono pattern, e.g. `/events/:id`, null on 404s), `status`, `occurred_at`. **Query strings are deliberately never stored** because magic-link and invite tokens travel in query params.
+- **Retention:** rows older than 90 days are deleted by the hourly cron (`handleScheduled`).
+- **Endpoint:** `GET /admin/activity?days=&user_id=&q=&path=&offset=&limit=`. Window defaults to 30 days (max 365); `user_id` narrows to one account (400 on non-UUID); `q` matches user email/handle/name (ILIKE); `path` is a substring match on the request path; pagination follows the standard `limit`/`offset`/`has_more` idiom (default 50, cap 200). Returns `entries` (joined with user email/username/name), `total`, `unique_users`, and `active_days` (distinct UTC days with a matching request, the "how often do they come back" number when filtered to one user).
+- **UI surfaces:**
+  - `/admin/kpis/activity`, a child view of the KPI tab (linked from the Return behavior section header, not a separate sidebar tab). Filterable table (window select, user search, path substring) with summary stat cards (Requests, Unique users, Active days) and Load-more pagination. Accepts `?user_id=` to pre-filter to one account; user names link to that user's diagnostics view.
+  - `/admin/chums/[id]` User Diagnostics: a "Recent Activity" section (fixed 30-day window, Load-more) with a "Full log" link to the pre-filtered `/admin/kpis/activity` view.
 
 One-way saved-people feature. No approval flow, no mutual-state requirement.
 
@@ -1010,7 +1020,7 @@ Users configure matching preferences in their profile ("Your chum preferences" s
 
 *Admin diagnostics (super-admin only):*
 - Per-user diagnostics view at `/admin/chums/[id]` (linked from "Inspect" icon on admin Users table).
-- Shows: hidden metric scores with progress bars, chum preference settings, attendance issue summary, conduct report summary, anonymized aggregated feedback table, recent feedback timeline (plan titles and reporter identity per row), and score derivation reference.
+- Shows: hidden metric scores with progress bars, chum preference settings, attendance issue summary, conduct report summary, anonymized aggregated feedback table, recent feedback timeline (plan titles and reporter identity per row), a Recent Activity section (per-request API activity log, see "Admin, user activity log"), and score derivation reference.
 - Reporter identities are never shown in admin views to protect feedback privacy.
 
 *Plan-level chum preference overrides (implemented):*

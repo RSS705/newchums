@@ -134,6 +134,217 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   );
 }
 
+type ActivityEntry = {
+  id: string;
+  method: string;
+  path: string;
+  route: string | null;
+  status: number | null;
+  occurred_at: string;
+};
+
+const ACTIVITY_SECTION_PAGE_SIZE = 25;
+
+function formatActivityWhen(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function activityStatusColor(status: number | null): string {
+  if (status == null) return "text.disabled";
+  if (status >= 500) return "error.main";
+  if (status >= 400) return "warning.main";
+  return "text.secondary";
+}
+
+/** Per-user request log fed by GET /admin/activity (one row per authenticated
+ *  API request, 90-day retention). Fixed 30-day window here; the "Full log"
+ *  link opens the KPI activity drill-in pre-filtered to this user for wider
+ *  windows and path filtering. */
+function RecentActivitySection({ userId }: { userId: string }) {
+  const [entries, setEntries] = useState<ActivityEntry[]>([]);
+  const [total, setTotal] = useState(0);
+  const [activeDays, setActiveDays] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchPage = useCallback(
+    async (offset: number) => {
+      const res = await apiFetch(
+        `/admin/activity?user_id=${userId}&days=30&limit=${ACTIVITY_SECTION_PAGE_SIZE}&offset=${offset}`,
+        { auth: true },
+      );
+      if (!res.ok) throw new Error("Failed to load activity");
+      const json = (await res.json()) as {
+        ok: boolean;
+        entries: ActivityEntry[];
+        total: number;
+        active_days: number;
+        has_more: boolean;
+      };
+      if (!json.ok) throw new Error("Failed to load activity");
+      return json;
+    },
+    [userId],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchPage(0)
+      .then((json) => {
+        if (cancelled) return;
+        setEntries(json.entries);
+        setTotal(json.total);
+        setActiveDays(json.active_days);
+        setHasMore(json.has_more);
+        setLoading(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setError("Failed to load activity");
+        setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchPage]);
+
+  const handleLoadMore = async () => {
+    setLoadingMore(true);
+    try {
+      const json = await fetchPage(entries.length);
+      setEntries((prev) => [...prev, ...json.entries]);
+      setTotal(json.total);
+      setActiveDays(json.active_days);
+      setHasMore(json.has_more);
+    } catch {
+      setError("Failed to load activity");
+    }
+    setLoadingMore(false);
+  };
+
+  return (
+    <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}>
+      <Stack direction="row" alignItems="flex-start" justifyContent="space-between" spacing={1}>
+        <SectionTitle>Recent Activity</SectionTitle>
+        <Button
+          component={Link}
+          href={`/admin/kpis/activity?user_id=${userId}`}
+          size="small"
+          sx={{ textTransform: "none", fontWeight: 600, flexShrink: 0 }}
+        >
+          Full log
+        </Button>
+      </Stack>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.5 }}>
+        {loading
+          ? "Loading authenticated API requests from the last 30 days..."
+          : `${total.toLocaleString()} authenticated API request${total !== 1 ? "s" : ""} on ${activeDays.toLocaleString()} day${activeDays !== 1 ? "s" : ""} in the last 30 days. Times are local. Entries are kept for 90 days; use the full log for older windows.`}
+      </Typography>
+      {loading ? (
+        <Stack alignItems="center" sx={{ py: 3 }}>
+          <CircularProgress size={24} />
+        </Stack>
+      ) : error ? (
+        <Typography variant="body2" color="error">
+          {error}
+        </Typography>
+      ) : entries.length === 0 ? (
+        <Typography variant="body2" color="text.secondary">
+          No requests in the last 30 days.
+        </Typography>
+      ) : (
+        <Stack spacing={1.5}>
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow
+                  sx={{
+                    "& th": {
+                      fontWeight: 700,
+                      fontSize: "0.6875rem",
+                      textTransform: "uppercase",
+                      letterSpacing: 0.6,
+                      color: "text.secondary",
+                      py: 1,
+                    },
+                  }}
+                >
+                  <TableCell>When</TableCell>
+                  <TableCell>Method</TableCell>
+                  <TableCell>Path</TableCell>
+                  <TableCell align="right">Status</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {entries.map((e) => (
+                  <TableRow
+                    key={e.id}
+                    hover
+                    sx={{
+                      "& td": { py: 0.75, fontSize: "0.8125rem", verticalAlign: "top" },
+                      "&:last-child td": { borderBottom: 0 },
+                    }}
+                  >
+                    <TableCell sx={{ whiteSpace: "nowrap", fontWeight: 500 }}>
+                      {formatActivityWhen(e.occurred_at)}
+                    </TableCell>
+                    <TableCell sx={{ fontFamily: "monospace", fontWeight: 700, whiteSpace: "nowrap" }}>
+                      {e.method}
+                    </TableCell>
+                    <TableCell sx={{ maxWidth: 340 }}>
+                      <Typography
+                        variant="body2"
+                        sx={{ fontFamily: "monospace", fontSize: "0.75rem", wordBreak: "break-all" }}
+                      >
+                        {e.path}
+                      </Typography>
+                    </TableCell>
+                    <TableCell
+                      align="right"
+                      sx={{ fontFamily: "monospace", color: activityStatusColor(e.status) }}
+                    >
+                      {e.status ?? "-"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+          {hasMore && (
+            <Box sx={{ display: "flex", justifyContent: "center" }}>
+              {loadingMore ? (
+                <CircularProgress size={20} />
+              ) : (
+                <Button
+                  variant="outlined"
+                  size="small"
+                  onClick={handleLoadMore}
+                  sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, px: 3 }}
+                >
+                  Load more
+                </Button>
+              )}
+            </Box>
+          )}
+        </Stack>
+      )}
+    </Paper>
+  );
+}
+
 function EditableMetricRow({
   metricKey,
   metricRow,
@@ -338,6 +549,9 @@ export default function AdminUserDiagnosticsClient() {
           </Box>
         </Stack>
       </Paper>
+
+      {/* Recent activity (per-request log) */}
+      <RecentActivitySection userId={userId} />
 
       {/* Hidden Metrics */}
       <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}>

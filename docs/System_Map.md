@@ -262,13 +262,14 @@ sequenceDiagram
 
 ### Background scheduled tasks (API `scheduled`, hourly cron)
 
-The hourly cron runs five tasks in sequence:
+The hourly cron runs six tasks in sequence:
 
 1. **Attendance assurance** -- validates and manages event attendance. Includes Phases 1-3 of the 24-hour attendance check (open window, reminders, cutoff with `min_confirmed_attendees` evaluation against `event_confirmations`) and a Phase 4 RSVP-based threshold (`min_attendees_required`) that auto-cancels a plan 2 hours before start when fewer than the configured number of "going" RSVPs exist (host counts). Phase 4 runs after Phase 3 and only acts on `status = 'published'` rows, so a plan already cancelled in the same tick by Phase 3 is skipped, no double cancellation email. Cancellation reasons are distinct: Phase 3 uses `min_attendees_not_met`, Phase 4 uses `min_attendees_required_not_met`. Both are excluded from host-completion / host-follow-through metric denominators alongside `no_attendees`.
 2. **Auto-cancel plans** -- cancels published plans whose event time has passed with no attendees beyond the host (within a 2-hour window)
 3. **Unread chat digest** -- sends digest emails for unread chat messages (daily gate, 23-hour cooldown)
 4. **Event match digest** -- “new plans matching my interests.” Recipients need home location, travel radius, and the `event_match` preference. **Public** in-person plans require **effective-category overlap** with the plan within travel radius (and the other digest gates). **Chums-only** in-person plans use the **same** category and distance rules; the recipient must also be on the **host’s** On NewChums connections (`user_contacts`, `type = ‘on_newchums’`). **Invite-only** plans are excluded. **Already-connected suppression:** plans where the recipient already has any RSVP row (any status) or any invite row (matched by `user_id` or by `LOWER(email) = LOWER(users.email)`) are excluded so the digest never overlaps with direct outreach. *Effective category* of an interest is `LOWER(COALESCE(NULLIF(TRIM(category), ''), name))` -- so two interests in the same admin-assigned category match (e.g. "MTG Draft" and "MTG Commander" with category `MTG`), and an interest with no category falls back to its own name. The same effective-category rule is applied by the authenticated Explore feed (hobby filter + match-count ranking), the public Explore feed (hobby filter), and the local-signal endpoint at the bottom of the Explore feed. The shared TypeScript helper is `effectiveCategoryOf` in `web/src/lib/interestUtils.ts`.
 5. **Post-plan feedback emails** -- sends feedback request 3+ hours after a plan ends to attendees
+6. **Activity log retention** -- deletes `user_activity_log` rows older than 90 days (per-request admin activity tracking, migration 101; also runs alongside the local recognition badges refresh)
 
 After the SQL selects candidate (recipient, plan) pairs, **chum preference filtering** applies two checks: (1) the host's metrics must meet the recipient's chum preference thresholds, and (2) the recipient's metrics must meet the host's thresholds. Both must pass for a plan to appear in a digest. **Plan-level preference overrides** (`pref_overrides` JSONB on events) are respected: `{ "disabled": true }` bypasses all host preference checks for that plan; `{ "disabled_metrics": [...] }` bypasses specific metrics only. The **Explore feed** also enforces the host's chum preferences as a hard filter (respecting plan-level overrides in SQL); the viewer's own preferences produce informational compatibility notes but do not hide plans.
 
@@ -419,9 +420,10 @@ Wrangler config is code-managed so deploys do not wipe routes or override canoni
 | `/admin/shoutouts` | Shout-out moderation queue (super_admin) |
 | `/admin/interests` | Interests moderation (super_admin) |
 | `/admin/chums` | User management (super_admin) |
-| `/admin/chums/[id]` | User diagnostics, metric scores, preferences, feedback, issues (super_admin) |
+| `/admin/chums/[id]` | User diagnostics, metric scores, preferences, feedback, issues, recent activity (super_admin) |
 | `/admin/communities` | Community management, list, search, remove (super_admin) |
 | `/admin/kpis` | KPI dashboard, growth loop analytics (super_admin) |
+| `/admin/kpis/activity` | Per-request user activity log, drill-in from the KPI Return behavior section (super_admin) |
 | `/admin/plans` | Plan management, list, search, remove (super_admin) |
 | `/admin/safety` | Concern reports, attendance issues management (super_admin) |
 | `/admin/roadmap` | Roadmap item moderation, status, merge, remove (super_admin) |

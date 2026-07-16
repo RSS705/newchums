@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Autocomplete from "@mui/material/Autocomplete";
 import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import Collapse from "@mui/material/Collapse";
@@ -28,6 +29,8 @@ import Typography from "@mui/material/Typography";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
+import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
+import Link from "next/link";
 import {
   ResponsiveContainer,
   LineChart,
@@ -536,6 +539,7 @@ const DEFINITIONS: Array<{ term: string; def: string }> = [
   { term: "Participated in 2+ plans", def: "Subset of the above: users whose distinct plan count (hosting + going RSVPs) is two or more. Indicates repeat engagement." },
   { term: "Hosted 1+ plan", def: "Users who are the host of at least one published or canceled plan. A core product assumption is ~10% of users may eventually host." },
   { term: "Active (7d / 30d)", def: "Users who made at least one authenticated API request within the trailing 7 or 30 days. Tracked via last_active_at, updated at most once per hour. Early proxy for retention." },
+  { term: "Activity log", def: "Per-request log of authenticated API requests (who, when, method, path, status). Retained for 90 days; opens from the Return behavior section. Each user's recent requests also appear in their User Diagnostics view." },
   { term: "MAU", def: "Monthly Active Users = Active Users in last 30 days (same definition)." },
   { term: "Plan Completion Rate", def: "Past-start-time published plans that were not canceled, divided by all past-start-time published+canceled plans. Measures how often plans actually happen." },
   { term: "Cancellation Rate", def: "Canceled plans divided by all published+canceled plans (including future). Shows cancellation prevalence." },
@@ -1106,11 +1110,25 @@ export default function AdminKPIsClient() {
             </Grid>
 
             {/* ── 3. Return behavior ── */}
-            <SectionTitle>Return behavior</SectionTitle>
+            <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 0.5 }}>
+              <Typography variant="h6" fontWeight={700}>
+                Return behavior
+              </Typography>
+              <Button
+                component={Link}
+                href="/admin/kpis/activity"
+                size="small"
+                endIcon={<ArrowForwardRoundedIcon sx={{ fontSize: 16 }} />}
+                sx={{ textTransform: "none", fontWeight: 600, flexShrink: 0 }}
+              >
+                Activity log
+              </Button>
+            </Stack>
             <SectionSubtitle>
               Users who made at least one authenticated API request in the given window.
               Tracked via <code style={{ fontSize: "0.85em" }}>last_active_at</code>, updated
-              at most once per hour.
+              at most once per hour. Open the activity log to see who is active, when, and
+              which parts of the app they touch, request by request.
             </SectionSubtitle>
 
             <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 2.5 }} flexWrap="wrap">

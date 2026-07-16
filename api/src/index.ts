@@ -288,9 +288,12 @@ app.use("*", async (c, next) => {
   }
 });
 
-// ─── Suspension guard ────────────────────────────────────────────────────────
+// ─── Suspension guard + activity tracking ────────────────────────────────────
 // Any authenticated request from a suspended user returns 403 immediately.
-// Public routes (no Bearer token) are unaffected.
+// Public routes (no Bearer token) are unaffected. The same users lookup feeds
+// two activity trackers: the hourly-throttled users.last_active_at column
+// (KPI active-user counts) and a per-request row in user_activity_log (the
+// super-admin behavior drill-in; 90-day retention enforced by the hourly cron).
 app.use("*", async (c, next) => {
   const authHeader = c.req.header("Authorization");
   if (!authHeader?.startsWith("Bearer ")) {
@@ -302,17 +305,20 @@ app.use("*", async (c, next) => {
     await next();
     return;
   }
+  let sql: ReturnType<typeof getSql> | null = null;
+  let userId: string | null = null;
   try {
-    const sql = getSql(c.env);
+    sql = getSql(c.env);
     const rows = (await sql`
-      SELECT is_suspended, last_active_at FROM users WHERE email = ${payload.email} LIMIT 1
-    `) as { is_suspended: boolean; last_active_at: string | null }[];
+      SELECT id, is_suspended, last_active_at FROM users WHERE email = ${payload.email} LIMIT 1
+    `) as { id: string; is_suspended: boolean; last_active_at: string | null }[];
     if (rows[0]?.is_suspended === true) {
       return c.json(
         { ok: false, error: { code: "USER_SUSPENDED", message: "Your account has been suspended." } },
         403,
       );
     }
+    userId = rows[0]?.id ?? null;
     // Throttled activity tracking, at most once per hour per user
     const lastActive = rows[0]?.last_active_at ? new Date(rows[0].last_active_at).getTime() : 0;
     if (Date.now() - lastActive > 3_600_000) {
@@ -322,6 +328,27 @@ app.use("*", async (c, next) => {
     // If DB lookup fails, allow the request through, individual routes will fail safely.
   }
   await next();
+  // Per-request activity log. Path only, never the query string (magic-link
+  // and invite tokens travel in query params). `route` is the pattern of the
+  // handler that actually responded (e.g. /events/:id) so requests can be
+  // grouped by surface. matchedRoutes lists every pattern the router matched
+  // (middleware and overlapping routes like /events/explore vs /events/:id),
+  // so index by routeIndex rather than scanning; middleware entries carry
+  // method ALL / path "*" and are stored as null (as are 404s).
+  if (userId && sql) {
+    const matched = c.req.matchedRoutes[c.req.routeIndex];
+    const routeEntry = matched && matched.method !== "ALL" && matched.path !== "*" ? matched : null;
+    const pathname = new URL(c.req.url).pathname.slice(0, 300);
+    const insert = sql`
+      INSERT INTO newchums.user_activity_log (user_id, method, path, route, status)
+      VALUES (${userId}, ${c.req.method}, ${pathname}, ${routeEntry?.path ?? null}, ${c.res.status})
+    `.catch(() => {});
+    try {
+      c.executionCtx.waitUntil(insert);
+    } catch {
+      // executionCtx unavailable (e.g. tests); the insert still runs fire-and-forget.
+    }
+  }
 });
 
 app.get("/", (c) => c.text("NewChums API is live"));
@@ -5693,6 +5720,97 @@ app.get("/admin/kpis", async (c) => {
     });
   } catch (err) {
     console.error("[GET /admin/kpis]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+// ── User activity log (KPI drill-in) ─────────────────────────────────────────
+
+const ACTIVITY_LOG_PAGE_SIZE = 50;
+const ACTIVITY_LOG_MAX_PAGE_SIZE = 200;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** GET /admin/activity?days=&user_id=&q=&path=&offset=&limit=
+ *
+ *  Paginated view over user_activity_log (one row per authenticated API
+ *  request, written by the suspension-guard middleware, 90-day retention).
+ *  Filters combine: `days` bounds the window (default 30, max 365), `user_id`
+ *  narrows to one account, `q` matches email / handle / name, `path` is a
+ *  substring match on the request path. `active_days` counts distinct UTC
+ *  days with at least one matching request; it is primarily meaningful when
+ *  filtered to a single user ("how often do they come back"). */
+app.get("/admin/activity", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  const sql = getSql(c.env);
+
+  const daysRaw = Number(c.req.query("days"));
+  const days = Number.isFinite(daysRaw) && daysRaw > 0 ? Math.min(Math.floor(daysRaw), 365) : 30;
+  const userIdRaw = (c.req.query("user_id") ?? "").trim();
+  if (userIdRaw && !UUID_RE.test(userIdRaw)) {
+    return c.json({ ok: false, error: "INVALID_USER_ID" }, 400);
+  }
+  const userId = userIdRaw || null;
+  const q = (c.req.query("q") ?? "").trim();
+  const pathQ = (c.req.query("path") ?? "").trim();
+  const limitRaw = Number(c.req.query("limit"));
+  const offsetRaw = Number(c.req.query("offset"));
+  const limit = Number.isFinite(limitRaw) && limitRaw > 0
+    ? Math.min(Math.floor(limitRaw), ACTIVITY_LOG_MAX_PAGE_SIZE)
+    : ACTIVITY_LOG_PAGE_SIZE;
+  const offset = Number.isFinite(offsetRaw) && offsetRaw > 0 ? Math.floor(offsetRaw) : 0;
+
+  try {
+    const [countRow] = (await sql`
+      SELECT COUNT(*)::int AS total,
+             COUNT(DISTINCT al.user_id)::int AS unique_users,
+             COUNT(DISTINCT (al.occurred_at AT TIME ZONE 'UTC')::date)::int AS active_days
+      FROM newchums.user_activity_log al
+      JOIN newchums.users u ON u.id = al.user_id
+      WHERE al.occurred_at >= NOW() - (${days} * INTERVAL '1 day')
+        AND (${userId}::uuid IS NULL OR al.user_id = ${userId}::uuid)
+        AND (${pathQ} = '' OR al.path ILIKE '%' || ${pathQ} || '%')
+        AND (${q} = '' OR u.email ILIKE '%' || ${q} || '%' OR u.username ILIKE '%' || ${q} || '%' OR u.name ILIKE '%' || ${q} || '%')
+    `) as { total: number; unique_users: number; active_days: number }[];
+    const total = countRow?.total ?? 0;
+
+    const entries = (await sql`
+      SELECT al.id, al.user_id, al.method, al.path, al.route, al.status, al.occurred_at,
+             u.email, u.username, u.name
+      FROM newchums.user_activity_log al
+      JOIN newchums.users u ON u.id = al.user_id
+      WHERE al.occurred_at >= NOW() - (${days} * INTERVAL '1 day')
+        AND (${userId}::uuid IS NULL OR al.user_id = ${userId}::uuid)
+        AND (${pathQ} = '' OR al.path ILIKE '%' || ${pathQ} || '%')
+        AND (${q} = '' OR u.email ILIKE '%' || ${q} || '%' OR u.username ILIKE '%' || ${q} || '%' OR u.name ILIKE '%' || ${q} || '%')
+      ORDER BY al.occurred_at DESC, al.id DESC
+      LIMIT ${limit} OFFSET ${offset}
+    `) as {
+      id: string;
+      user_id: string;
+      method: string;
+      path: string;
+      route: string | null;
+      status: number | null;
+      occurred_at: string;
+      email: string;
+      username: string | null;
+      name: string | null;
+    }[];
+
+    return c.json({
+      ok: true,
+      entries,
+      total,
+      unique_users: countRow?.unique_users ?? 0,
+      active_days: countRow?.active_days ?? 0,
+      days,
+      limit,
+      offset,
+      has_more: offset + entries.length < total,
+    });
+  } catch (err) {
+    console.error("[GET /admin/activity]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });
@@ -18107,6 +18225,14 @@ async function handleScheduled(
     await computeLocalBadges(sql);
   } catch (err) {
     console.error("[scheduled] local badges error:", err);
+  }
+
+  // Per-request activity log retention: keep 90 days (see migration 101 and
+  // the suspension-guard middleware that writes the rows)
+  try {
+    await sql`DELETE FROM newchums.user_activity_log WHERE occurred_at < NOW() - INTERVAL '90 days'`;
+  } catch (err) {
+    console.error("[scheduled] activity log retention error:", err);
   }
 }
 
