@@ -157,6 +157,9 @@ export default function InboxClient() {
   const [newMessageOpen, setNewMessageOpen] = useState(false);
 
   const scrollBoxRef = useRef<HTMLDivElement | null>(null);
+  // Whether the user is scrolled near the thread's bottom (updated onScroll);
+  // gates the auto-scroll so polling never yanks them out of history.
+  const nearBottomRef = useRef(true);
   const activeConversationId = cParam;
 
   // The pane the user is "in": a real conversation, a fresh compose, or the list.
@@ -198,10 +201,13 @@ export default function InboxClient() {
           const json = (await res.json()) as { ok: boolean } & ThreadData;
           if (json.ok) {
             setThread({ conversation: json.conversation, messages: json.messages });
-            // Reading the thread zeroes its unread badge in the list.
+            // Reading the thread zeroes its unread badge in the list, and
+            // tells AppShell to refresh the sidebar badge right away instead
+            // of waiting out its 60s poll.
             setConversations((prev) =>
               prev.map((conv) => (conv.id === conversationId ? { ...conv, unreadCount: 0 } : conv)),
             );
+            window.dispatchEvent(new Event("nc-inbox-read"));
           }
         } else if (res.status === 404 && !background) {
           toast.error("Conversation not found");
@@ -217,25 +223,42 @@ export default function InboxClient() {
 
   useEffect(() => {
     loadList();
-    const timer = setInterval(loadList, LIST_POLL_MS);
+    // Skip background-tab polls: they waste requests, and for the thread
+    // below they would mark messages read that the user never saw.
+    const timer = setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      loadList();
+    }, LIST_POLL_MS);
     return () => clearInterval(timer);
   }, [loadList]);
 
   useEffect(() => {
+    setDraft(""); // a half-written draft belongs to one conversation only
+    nearBottomRef.current = true;
     if (!activeConversationId) {
       setThread(null);
       return;
     }
     loadThread(activeConversationId);
-    const timer = setInterval(() => loadThread(activeConversationId, true), LIST_POLL_MS);
+    const timer = setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      loadThread(activeConversationId, true);
+    }, LIST_POLL_MS);
     return () => clearInterval(timer);
   }, [activeConversationId, loadThread]);
 
-  // Keep the thread pinned to the latest message.
-  const lastMessageId = thread?.messages[thread.messages.length - 1]?.id;
+  // Keep the thread pinned to the latest message, but never yank the user
+  // down while they've scrolled up reading history; only auto-scroll when
+  // they're already near the bottom or the newest message is their own.
+  const lastMessage = thread?.messages[thread.messages.length - 1];
+  const lastMessageId = lastMessage?.id;
+  const lastMessageIsMine = lastMessage?.isMine === true;
   useEffect(() => {
     const box = scrollBoxRef.current;
-    if (box) box.scrollTop = box.scrollHeight;
+    if (box && (nearBottomRef.current || lastMessageIsMine)) {
+      box.scrollTop = box.scrollHeight;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastMessageId, threadLoading, composing]);
 
   const activeOther: OtherUser | null = thread?.conversation.otherUser ?? (composing ? composeTarget : null);
@@ -245,7 +268,7 @@ export default function InboxClient() {
 
   const handleSend = async () => {
     const text = draft.trim();
-    if (!text || !activeOther) return;
+    if (!text || !activeOther || sending) return;
     setSending(true);
     try {
       const res = await apiFetch("/inbox/send", {
@@ -391,7 +414,9 @@ export default function InboxClient() {
                 key={conv.id}
                 onClick={() => {
                   setComposeTarget(null);
-                  router.replace(`/inbox?c=${conv.id}`);
+                  // push (not replace) so the hardware/browser back button
+                  // returns from a thread to the list, matching mobile habits
+                  router.push(`/inbox?c=${conv.id}`);
                 }}
                 sx={{
                   display: "flex",
@@ -562,7 +587,14 @@ export default function InboxClient() {
           </Stack>
 
           {/* Messages */}
-          <Box ref={scrollBoxRef} sx={{ flex: 1, overflowY: "auto", px: 2.5, py: 2 }}>
+          <Box
+            ref={scrollBoxRef}
+            onScroll={(e) => {
+              const el = e.currentTarget;
+              nearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+            }}
+            sx={{ flex: 1, overflowY: "auto", px: 2.5, py: 2 }}
+          >
             {threadLoading ? (
               <Stack alignItems="center" sx={{ py: 6 }}>
                 <CircularProgress size={24} />
@@ -598,32 +630,56 @@ export default function InboxClient() {
                 {displayNameOf(activeOther)} isn&apos;t accepting new messages right now.
               </Typography>
             ) : (
-              <Stack direction="row" spacing={1} alignItems="center">
-                <TextField
-                  fullWidth
-                  multiline
-                  maxRows={6}
-                  size="small"
-                  placeholder={`Message ${displayNameOf(activeOther)}`}
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value.slice(0, MAX_MESSAGE_LENGTH))}
-                  disabled={composerDisabled}
-                />
-                <IconButton
-                  color="primary"
-                  onClick={() => void handleSend()}
-                  disabled={composerDisabled || !draft.trim()}
-                  aria-label="Send message"
-                  sx={{
-                    bgcolor: "primary.main",
-                    color: "primary.contrastText",
-                    "&:hover": { bgcolor: "primary.dark" },
-                    "&.Mui-disabled": { bgcolor: "action.disabledBackground" },
-                  }}
-                >
-                  {sending ? <CircularProgress size={20} sx={{ color: "inherit" }} /> : <SendRoundedIcon fontSize="small" />}
-                </IconButton>
-              </Stack>
+              <>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <TextField
+                    fullWidth
+                    multiline
+                    maxRows={6}
+                    size="small"
+                    placeholder={`Message ${displayNameOf(activeOther)}`}
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value.slice(0, MAX_MESSAGE_LENGTH))}
+                    onKeyDown={(e) => {
+                      // Enter stays a newline (email-like); Cmd/Ctrl+Enter sends
+                      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                        e.preventDefault();
+                        void handleSend();
+                      }
+                    }}
+                    // Stays enabled while sending so typing is never interrupted;
+                    // handleSend and the button guard against double-sends.
+                    disabled={composing && composeTarget !== null && !composeTarget.canMessage}
+                  />
+                  <IconButton
+                    color="primary"
+                    onClick={() => void handleSend()}
+                    disabled={composerDisabled || !draft.trim()}
+                    aria-label="Send message"
+                    sx={{
+                      bgcolor: "primary.main",
+                      color: "primary.contrastText",
+                      "&:hover": { bgcolor: "primary.dark" },
+                      "&.Mui-disabled": { bgcolor: "action.disabledBackground" },
+                    }}
+                  >
+                    {sending ? <CircularProgress size={20} sx={{ color: "inherit" }} /> : <SendRoundedIcon fontSize="small" />}
+                  </IconButton>
+                </Stack>
+                {draft.length >= MAX_MESSAGE_LENGTH - 500 && (
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      display: "block",
+                      textAlign: "right",
+                      mt: 0.5,
+                      color: draft.length >= MAX_MESSAGE_LENGTH ? "warning.main" : "text.disabled",
+                    }}
+                  >
+                    {draft.length.toLocaleString()}/{MAX_MESSAGE_LENGTH.toLocaleString()}
+                  </Typography>
+                )}
+              </>
             )}
           </Box>
         </>
@@ -646,10 +702,11 @@ export default function InboxClient() {
     // offset, and the sidebar card sits at that same line; extra padding here
     // pushed the panes visibly below the sidebar's top edge.
     <Box sx={{ maxWidth: 1080, mx: "auto", pb: { xs: 1, sm: 2 } }}>
+      {/* gap (not Stack spacing) so a display:none pane on mobile doesn't
+          leave its sibling with a stray margin pushing it off-center */}
       <Stack
         direction="row"
-        spacing={2}
-        sx={{ height: { xs: "calc(100dvh - 130px)", md: "calc(100dvh - 136px)" }, minHeight: 420 }}
+        sx={{ gap: 2, height: { xs: "calc(100dvh - 130px)", md: "calc(100dvh - 136px)" }, minHeight: 420 }}
       >
         {listPane}
         {threadPane}

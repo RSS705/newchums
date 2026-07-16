@@ -188,7 +188,10 @@ export default function AppShell({ children, user, passwordSetupPending }: AppSh
   }, [user]);
 
   // Inbox unread badge: fetch on mount and whenever the route changes (so
-  // reading a thread clears the badge on navigation), plus a slow poll.
+  // reading a thread clears the badge on navigation), plus a slow poll that
+  // pauses while the tab is hidden. The inbox page dispatches
+  // "nc-inbox-read" after marking a thread read so the badge updates
+  // immediately instead of waiting out the poll.
   const [inboxUnread, setInboxUnread] = React.useState(0);
   React.useEffect(() => {
     if (!user) return;
@@ -202,10 +205,15 @@ export default function AppShell({ children, user, passwordSetupPending }: AppSh
         .catch(() => {});
     };
     load();
-    const timer = setInterval(load, 60_000);
+    const timer = setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      load();
+    }, 60_000);
+    window.addEventListener("nc-inbox-read", load);
     return () => {
       cancelled = true;
       clearInterval(timer);
+      window.removeEventListener("nc-inbox-read", load);
     };
   }, [user, pathname]);
 
