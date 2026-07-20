@@ -1,8 +1,12 @@
 # NewChums
 
-NewChums helps people organize gatherings more easily around hobbies and shared interests, from board game nights and coffee walks to pottery sessions and pickup sports.
+**NewChums is a live web app for organizing real-world gatherings around hobbies and shared interests**, from board game nights and coffee walks to pottery sessions and pickup sports.
+
+**Live site: [newchums.com](https://newchums.com)**
 
 The broader mission is reducing loneliness by making real-world social connection easier. The product achieves this by focusing on practical coordination: clear plans, shared interests, and ways to get together with existing friends or meet new people naturally.
+
+NewChums was designed and built solo by Robert Smith: product, full-stack engineering, infrastructure, and design. This repository is shared publicly for portfolio and code review. See [License](#license) for terms of use.
 
 ---
 
@@ -81,7 +85,6 @@ Users → Cloudflare Edge → Web Worker (Next.js via OpenNext) → API Worker (
 | `docs/Development_Setup_Guide.md` | Operational guide, local setup, env vars, migrations, deployment, session log. |
 | `docs/UI_Patterns.md` | Reusable UI recipes (hero cards, empty states, success dialogs, three-zone discovery cards, etc.). Skim before any UI change. |
 | `docs/Rollback_Procedures.md` | Practical rollback notes for a bad deploy (Worker rollback, Neon PITR, migration safety). |
-| `docs/Future_Ideas_Reference.md` | Strategic idea bank (Robert only). Agents may read for context but must not treat contents as requirements or modify the file. |
 | `docs/Gitignored_Assets_and_Restore.md` | Guide for restoring gitignored files on a fresh clone. |
 | `docs/legal/` | Source markdown for Terms of Use and Privacy Policy. |
 
@@ -108,6 +111,7 @@ Users → Cloudflare Edge → Web Worker (Next.js via OpenNext) → API Worker (
 ```bash
 cd web
 npm install
+cp .env.example .env.local   # fill in values (DATABASE_URL, AUTH_SECRET, GOOGLE_CLIENT_ID, etc.)
 npm run dev
 ```
 
@@ -138,3 +142,11 @@ NewChums no longer relies on the original purchased template (`template_referenc
 - Form fields: label-above style only (`AppTextField`, `AuthField`, `NCDatePicker`). No floating/in-field labels.
 
 See `AGENTS.md` for detailed UI governance rules.
+
+---
+
+## License
+
+Copyright © 2026 Robert Smith. All rights reserved.
+
+This source code is published for portfolio and code-review purposes only. It is not licensed for reuse, redistribution, or deployment. See [LICENSE](LICENSE) for the full terms.
