@@ -1,6 +1,6 @@
 # Cloudflare Worker for NewChums Next.js app (OpenNext)
 # https://opennext.js.org/cloudflare
-# Single deploy target — newchums-web-dev
+# Single deploy target: newchums-web-dev
 name = "newchums-web-dev"
 main = ".open-next/worker.js"
 compatibility_date = "2025-02-18"
@@ -25,7 +25,14 @@ pattern = "www.newchums.com"
 zone_name = "newchums.com"
 custom_domain = true
 
-# Production canonical host
+# Production canonical host.
+#
+# Only public, client-side values live in [vars]. Every value here is already
+# exposed in the browser bundle at runtime (OAuth client ID, the referrer-
+# restricted Google Maps browser key, public API/avatar origins), so none of it
+# is a secret. Real secrets (AUTH_SECRET, GOOGLE_CLIENT_SECRET, DATABASE_URL,
+# RESEND_API_KEY, etc.) are stored in the Cloudflare Worker secret store via
+# `wrangler secret put` and are never committed to this file or the repo.
 [vars]
 AUTH_URL = "https://newchums.com"
 AUTH_TRUST_HOST = "true"

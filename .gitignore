@@ -1,9 +1,71 @@
-node_modules
-dist
+# ---------------------------------------------------------------------------
+# Dependencies
+# ---------------------------------------------------------------------------
+node_modules/
+
+# ---------------------------------------------------------------------------
+# Build output and caches
+# ---------------------------------------------------------------------------
+dist/
+.next/
+.open-next/
+.wrangler/
+.turbo/
+coverage/
+*.tsbuildinfo
+
+# ---------------------------------------------------------------------------
+# Environment files and secrets
+#
+# Every .env variant is ignored by default. The example/template files and the
+# public (NEXT_PUBLIC_*) build configs that are intentionally committed are
+# re-included below. Never commit a file that contains real secret values.
+# ---------------------------------------------------------------------------
 .env
 .env.*
-.DS_Store
 .dev.vars
-.wrangler/
+.env.sentry-build-plugin
+
+# Re-include the safe, intentionally committed env files (placeholders and
+# public build-time values only).
+!.env.example
+!**/.env.example
+!web/.env.development
+!web/.env.production
+
+# ---------------------------------------------------------------------------
+# Credentials and keys (never commit these)
+# ---------------------------------------------------------------------------
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.keystore
+*.jks
+id_rsa
+id_rsa.*
+*.pkcs12
+
+# ---------------------------------------------------------------------------
+# Logs
+# ---------------------------------------------------------------------------
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ---------------------------------------------------------------------------
+# OS and editor cruft
+# ---------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+
+# ---------------------------------------------------------------------------
+# Local-only working directories
+# ---------------------------------------------------------------------------
 _vendor/
 template_reference/
