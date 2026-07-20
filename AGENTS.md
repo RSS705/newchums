@@ -106,12 +106,6 @@ The following documents serve distinct purposes and must remain structured accor
 - Daily session "Chunk" log.
 - Current State must remain short and accurate.
 
-### `docs/Future_Ideas_Reference.md`
-
-- Strategic idea bank maintained by Robert.
-- Agents may read for context but must **not** treat contents as requirements.
-- Agents must **not** modify this file.
-
 ### `docs/UI_Patterns.md`
 
 - Living catalogue of reusable UI recipes (hero cards, empty states, pill modules, success dialogs, escalation footers, lazy chum-status flows, and more).
@@ -141,7 +135,7 @@ The rule: **if a commit touches one row, open the other files in that row and ch
 
 ### Where durable behavior lives
 
-Durable, user-visible product behavior should be documented in the repo docs, especially `AGENTS.md`, `docs/Technical_Specs.md`, and `docs/System_Map.md`. There is no separate in-app operator-facing system-logic page. When user-visible flows change (notifications, emails, RSVP, visibility, digests, subscription gating, etc.), update the relevant repo doc in the same change set so the next agent or future Robert can read the current rules from the repo alone.
+Durable, user-visible product behavior should be documented in the repo docs, especially `AGENTS.md`, `docs/Technical_Specs.md`, and `docs/System_Map.md`. There is no separate in-app operator-facing system-logic page. When user-visible flows change (notifications, emails, RSVP, visibility, digests, subscription gating, etc.), update the relevant repo doc in the same change set so the next agent or the maintainer can read the current rules from the repo alone.
 
 
 ### Organizer Plans, Community Pro, and Module Gating
