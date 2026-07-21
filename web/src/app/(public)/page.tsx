@@ -14,19 +14,19 @@ export const metadata: Metadata = {
   // positioning in both the title and the OG/Twitter cards.
   // Title matches the on-page H1 so search snippets, social cards, and the
   // hero all make the same promise.
-  title: { absolute: "NewChums | Make plans that actually happen" },
+  title: { absolute: "NewChums | A place for people who actually do things" },
   description:
     "One simple place to post a plan, invite people, collect RSVPs, and let the right people find it. Free to use, around the hobbies you enjoy.",
   alternates: { canonical: "/" },
   openGraph: {
-    title: "NewChums | Make plans that actually happen",
+    title: "NewChums | A place for people who actually do things",
     description:
       "One simple place to post a plan, invite people, collect RSVPs, and let the right people find it. Free to use, around the hobbies you enjoy.",
     url: "/",
     type: "website",
   },
   twitter: {
-    title: "NewChums | Make plans that actually happen",
+    title: "NewChums | A place for people who actually do things",
     description:
       "One simple place to post a plan, invite people, collect RSVPs, and let the right people find it. Free to use, around the hobbies you enjoy.",
   },

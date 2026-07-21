@@ -503,7 +503,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
               </Typography>
 
               <Typography component="h1" variant="h1" sx={{ mt: "0 !important" }}>
-                Make plans that actually happen
+                A place for people who actually do things
               </Typography>
 
               <Typography

@@ -843,7 +843,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
       >
         <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto">
           <Typography variant="overline" sx={{ display: "block", mb: 1.5, opacity: 0.65, letterSpacing: 2, fontSize: "0.6875rem", fontWeight: 600 }}>
-            Ready to make plans that actually happen?
+            Ready to actually do things?
           </Typography>
           <Typography component="h2" variant="h4" fontWeight={700} sx={{ mb: 2, fontSize: { xs: "1.5rem", sm: "2rem" }, lineHeight: 1.25, color: "inherit" }}>
             Stop patching it together
