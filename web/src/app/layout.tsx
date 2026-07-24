@@ -36,7 +36,7 @@ export const metadata: Metadata = {
     template: "%s | NewChums",
   },
   description:
-    "NewChums helps you organize gatherings around shared hobbies and interests. One place for your plans, invites, and RSVPs so more real-life get-togethers actually happen.",
+    "NewChums is the easiest way to get your group to actually show up. Post the plan, share one link, and see who is really coming.",
   applicationName: "NewChums",
   // Explicit default; authenticated app routes, admin routes, auth flows,
   // utility endpoints, and hidden profiles / private communities override
@@ -54,7 +54,7 @@ export const metadata: Metadata = {
     siteName: "NewChums",
     title: "NewChums",
     description:
-      "Organize gatherings around shared hobbies and interests. One place for your plans, invites, and RSVPs so more real-life get-togethers actually happen.",
+      "Post the plan, share one link, and see who is really coming. One place for your plans, invites, and RSVPs.",
     url: "https://newchums.com",
     locale: "en_US",
     images: [
@@ -62,7 +62,7 @@ export const metadata: Metadata = {
         url: "/og-image.png",
         width: 1200,
         height: 630,
-        alt: "NewChums, a place for people who actually do things",
+        alt: "NewChums, get your group to actually show up",
       },
     ],
   },
@@ -70,7 +70,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "NewChums",
     description:
-      "Organize gatherings around shared hobbies and interests. One place for your plans, invites, and RSVPs.",
+      "Post the plan, share one link, and see who is really coming. One place for your plans, invites, and RSVPs.",
     images: ["/og-image.png"],
   },
 };
