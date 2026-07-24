@@ -12,11 +12,6 @@ import Image from "next/image";
 import Link from "next/link";
 import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
 import PeopleRoundedIcon from "@mui/icons-material/PeopleRounded";
-import ExploreRoundedIcon from "@mui/icons-material/ExploreRounded";
-import InterestsRoundedIcon from "@mui/icons-material/InterestsRounded";
-import NotificationsActiveRoundedIcon from "@mui/icons-material/NotificationsActiveRounded";
-import VerifiedUserRoundedIcon from "@mui/icons-material/VerifiedUserRounded";
-import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import ChatRoundedIcon from "@mui/icons-material/ChatRounded";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 
@@ -111,7 +106,7 @@ const HOW_IT_WORKS_STEPS = [
     accentColor: "#E65B13",
     Icon: CalendarMonthRoundedIcon,
     title: "Post your plan",
-    body: "Post a one-off plan in a couple of minutes, or set up a page for a group you run regularly. Either way, you choose the activity, the where, and the when.",
+    body: "Post a plan in a couple of minutes, or set up a page for a group you run regularly. Either way, you choose the activity, the where, and the when.",
     placeholder: "Screenshot, Create plan flow",
     imageSrc: "/images/home/how-step-create.png",
   },
@@ -120,7 +115,7 @@ const HOW_IT_WORKS_STEPS = [
     accentColor: "#1565c0",
     Icon: MailOutlineRoundedIcon,
     title: "Share what's happening",
-    body: "Send invite links, copy a share link for your group chat, or let nearby people with matching hobbies discover it.",
+    body: "Send direct invites, or copy one share link and drop it in your group chat. Everyone lands on the same plan page. Nearby people with matching hobbies can find it too.",
     placeholder: "Screenshot, Invite view",
     imageSrc: "/images/home/how-step-invite.png",
   },
@@ -144,37 +139,11 @@ const HOW_IT_WORKS_STEPS = [
   },
 ];
 
-const MEET_PEOPLE_CALLOUTS: {
-  imageSrc?: string;
-  Icon: typeof ExploreRoundedIcon;
-  title: string;
-  body: string;
-}[] = [
-  {
-    imageSrc: "/images/home/Preferences.png",
-    Icon: ExploreRoundedIcon,
-    title: "Setup your profile",
-    body: "Set your hobbies, your location, how far you'd travel, and the kind of people you enjoy spending time with. NewChums handles the rest.",
-  },
-  {
-    imageSrc: "/images/home/Notifications.png",
-    Icon: NotificationsActiveRoundedIcon,
-    title: "Get notified of plans that fit you",
-    body: "You won't get flooded with everything happening nearby. You'll only hear about gatherings that match your interests and preferences.",
-  },
-  {
-    imageSrc: "/images/home/Meet.png",
-    Icon: VerifiedUserRoundedIcon,
-    title: "Your chum preferences are remembered",
-    body: "Matching is based on shared hobbies, location, and the social preferences you set. The right people find the right plans.",
-  },
-];
-
-// Organizer-value cards. Wired to surfaces that already exist:
-//   - "Make plans visible"     -> public community pages, public Explore feed, hobby matching
+// Plan-maker value cards. Wired to surfaces that already exist:
+//   - "One link..."            -> share link, plan detail page, plan updates
 //   - "Reduce RSVP friction"   -> RSVP buttons, request-to-join, 24-hour attendance check
-//   - "Help newcomers join in" -> public community slug URL, lightweight signup card
-//   - "Keep organizers in control" -> approval-required, invite-only, host lock, share link
+//   - "Help newcomers join in" -> plan share link, lightweight signup card
+//   - "Stay in control"        -> approval-required, invite-only, host lock, share link
 // All four reference behavior that is implemented today (see AGENTS.md
 // "Incomplete Areas" table for status). Do not add cards for features
 // that aren't shipped, the homepage is honest-claims territory.
@@ -187,8 +156,8 @@ const ORGANIZER_VALUE_CARDS: {
   {
     Icon: CampaignRoundedIcon,
     accentColor: "#E65B13",
-    title: "Make plans visible",
-    body: "Every plan you post lives in one place. The people you invite, and nearby people who share your hobbies, can see what's happening without digging through chats. Running something regularly? A public page keeps it all together.",
+    title: "One link, one source of truth",
+    body: "Every plan lives at a single link you can share anywhere. The time, the place, the RSVPs, and any updates stay on one page instead of scattered across chat threads, so nobody has to scroll back to find the details.",
   },
   {
     Icon: HowToRegRoundedIcon,
@@ -207,41 +176,6 @@ const ORGANIZER_VALUE_CARDS: {
     accentColor: "#7c3aed",
     title: "Stay in control",
     body: "Choose public, chums-only, or invite-only per plan. Approve requests when you want to vet who's coming. Lock a plan when seats are full. The defaults are sensible, the toggles are yours.",
-  },
-];
-
-const WHY_THIS_WORKS_CARDS: {
-  Icon: typeof InterestsRoundedIcon;
-  accentColor: string;
-  title: string;
-  body: string | ReactNode;
-}[] = [
-  {
-    Icon: InterestsRoundedIcon,
-    accentColor: "#E65B13",
-    title: "Shared hobbies make everything easier",
-    body: "When you already have something in common, meeting up feels natural. A shared activity gives people something to do and talk about, not just sit across from each other trying to think of something to say.",
-  },
-  {
-    Icon: PeopleRoundedIcon,
-    accentColor: "#1565c0",
-    title: "Smaller gatherings, stronger connections",
-    body: "Big groups make it hard to get to know anyone. NewChums is designed for the kind of gathering where people actually talk, learn names, and get to know each other.",
-  },
-  {
-    Icon: AutoAwesomeRoundedIcon,
-    accentColor: "#7c3aed",
-    title: "It gets better the more you use it",
-    body: (
-      <>
-        Your{" "}
-        <Box component="span" sx={{ color: "#E65B13", fontWeight: 600 }}>
-          feedback
-        </Box>{" "}
-        after each gathering helps improve which plans and people you&apos;re notified about. Each
-        time, the experience becomes more customized to you.
-      </>
-    ),
   },
 ];
 
@@ -308,15 +242,15 @@ const FEATURES_BOTTOM: typeof FEATURES_TOP = [
   {
     accentColor: "#0e7490",
     Icon: MailOutlineRoundedIcon,
-    title: "Flexible invites and discovery",
+    title: "Flexible invites and sharing",
     body: (
       <>
-        Invite people by name or email,{" "}
+        Invite people by name or email, or{" "}
         <Box component="span" sx={{ fontWeight: 700 }}>
-          share a link
-        </Box>
-        , or let nearby people with matching hobbies discover your plan. Daily digests surface plans
-        you&apos;d actually enjoy.
+          share one link
+        </Box>{" "}
+        anywhere your group already talks. Nearby people with matching hobbies can find public plans
+        too.
       </>
     ),
     placeholder: "Screenshot, Invites / discovery",
@@ -440,7 +374,6 @@ function FeatureCard({
 // ── Main component ─────────────────────────────────────────────────────────
 
 export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?: boolean }) {
-  const [meetPeopleImageErrors, setMeetPeopleImageErrors] = useState<Set<string>>(new Set());
   // Hero image is wired to a community-themed placeholder path that may not
   // exist on disk yet (see comment near the <img> below). When the file is
   // missing, the onError handler swaps to a warm icon-block fallback so the
@@ -452,8 +385,6 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
   const howReveal = useReveal();
   const featuresTopReveal = useReveal();
   const featuresBotReveal = useReveal();
-  const meetReveal = useReveal();
-  const whyReveal = useReveal();
   const ctaReveal = useReveal(0.2);
 
   return (
@@ -787,307 +718,6 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
         </Grid>
       </Box>
 
-      {/* ── Section 1.1: Public Explore Feed ── */}
-      {!isLoggedIn && <PublicExploreFeed />}
-
-      {/* ── Sections 1.2 + 1.3: Recently happened + closing CTA ──
-          Bundled in a single wrapper that sits tight to the upcoming
-          feed (negative top margin pulls the block up so it reads as
-          a continuation of the discovery area rather than a separate
-          mini-page). The past section uses the same grid as upcoming;
-          the closing CTA is wrapped in a soft contained panel below
-          so it feels like the natural conclusion to the plan-preview
-          area rather than floating text under a single card.
-
-          Past cards never look joinable, see RecentlyHappenedSection,
-          and the section hides itself entirely when there are no
-          qualifying past plans (the wrapper still renders so the CTA
-          remains attached to the upcoming feed). Visibility / privacy
-          rules: AGENTS.md, Plan Feed and Community Visibility
-          Contract, "Recently happened" subsection. */}
-      {!isLoggedIn && (
-        <Box
-          sx={{
-            // PublicExploreFeed has its own `py: { xs: 5, sm: 7, md: 9 }`
-            // bottom padding for visual rhythm. That's intentional for
-            // when the upcoming feed is the only block, but here it
-            // creates an awkward gap before the social-proof block.
-            // A small negative top margin re-attaches the past +
-            // CTA wrapper to the upcoming feed without having to
-            // refactor PublicExploreFeed's spacing model.
-            mt: { xs: -3, sm: -4, md: -6 },
-            mb: { xs: 4, sm: 6 },
-          }}
-        >
-          <RecentlyHappenedSection variant="public_explore" />
-
-          {/* Closing CTA panel. Soft contained card so the affordance
-              feels like an intentional conclusion to the plan-preview
-              block, not detached marketing text. Visual weight is
-              intentionally lighter than the orange Section 5 CTA so
-              it reads as a calm "want more?" rather than a hard sell. */}
-          <Box
-            sx={{
-              mt: { xs: 3.5, sm: 4.5 },
-              borderRadius: 3,
-              border: "1px solid",
-              borderColor: "grey.200",
-              bgcolor: "grey.50",
-              px: { xs: 2.5, sm: 4 },
-              py: { xs: 3, sm: 4 },
-              textAlign: "center",
-            }}
-          >
-            <Stack spacing={1.25} alignItems="center" sx={{ maxWidth: 520, mx: "auto" }}>
-              <Typography
-                component="h2"
-                sx={{
-                  fontSize: { xs: "1.125rem", sm: "1.25rem" },
-                  fontWeight: 700,
-                  lineHeight: 1.3,
-                  letterSpacing: "-0.015em",
-                }}
-              >
-                Want to see more plans near you?
-              </Typography>
-              <Typography
-                variant="body2"
-                color="text.secondary"
-                sx={{ lineHeight: 1.65, fontSize: "0.9375rem" }}
-              >
-                Sign up to get personalized recommendations, RSVP, chat with attendees, and create your own.
-              </Typography>
-              <Button
-                component={Link}
-                href="/signup"
-                variant="contained"
-                color="primary"
-                sx={{
-                  mt: 0.5,
-                  px: 3.5,
-                  py: 1.25,
-                  textTransform: "none",
-                  fontWeight: 600,
-                  borderRadius: 2.5,
-                  fontSize: "0.9375rem",
-                  boxShadow: "0 4px 14px rgba(230,91,19,0.22)",
-                  "&:hover": { boxShadow: "0 6px 18px rgba(230,91,19,0.28)" },
-                  ...BTN_HOVER,
-                }}
-              >
-                Create a free account
-              </Button>
-            </Stack>
-          </Box>
-        </Box>
-      )}
-
-      {/* ── Section: For Organizers ──
-          Pilot-positioning section. Anchored from the top nav
-          ("For Organizers" -> /#for-organizers). Speaks directly to
-          local store owners, club leaders, and Discord/Facebook group
-          admins. Card data lives in ORGANIZER_VALUE_CARDS at the top
-          of this file. Visual treatment is the same accent-bordered
-          card pattern used by "Why NewChums works" so the section
-          reads as a peer of the rest of the page rather than a
-          retrofitted block. */}
-      <Box
-        component="section"
-        id="for-organizers"
-        ref={organizersReveal.ref}
-        sx={{
-          ...SECTION_SPACING,
-          mx: { xs: -2, sm: -3 },
-          px: { xs: 2, sm: 3 },
-          backgroundColor: (theme) => (theme.palette.mode === "light" ? "#F6F7F9" : "grey.900"),
-          // The for-organizers anchor needs scroll-margin so the sticky
-          // site header doesn't cover the heading on hash navigation.
-          scrollMarginTop: { xs: 72, md: 88 },
-        }}
-      >
-        <Box maxWidth={1100} mx="auto">
-          <Box
-            sx={{
-              textAlign: "center",
-              mb: { xs: 4, sm: 6 },
-              ...REVEAL_SX(organizersReveal.visible),
-            }}
-          >
-            <Stack
-              direction="row"
-              spacing={1}
-              alignItems="center"
-              justifyContent="center"
-              sx={{ mb: 1.75 }}
-            >
-              <Box
-                sx={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: "50%",
-                  bgcolor: "primary.main",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flexShrink: 0,
-                }}
-              >
-                <CampaignRoundedIcon sx={{ color: "primary.contrastText", fontSize: 18 }} />
-              </Box>
-              <Typography
-                sx={{
-                  color: "primary.dark",
-                  fontWeight: 700,
-                  letterSpacing: "0.12em",
-                  fontSize: "0.7rem",
-                  textTransform: "uppercase",
-                }}
-              >
-                For organizers
-              </Typography>
-            </Stack>
-            <Typography
-              component="h2"
-              variant="h2"
-              fontWeight={800}
-              sx={{
-                fontSize: { xs: "1.85rem", sm: "2.5rem", md: "2.75rem" },
-                lineHeight: 1.15,
-                letterSpacing: "-0.025em",
-                mb: 2,
-              }}
-            >
-              Built for the people who make plans happen
-            </Typography>
-            <Typography
-              variant="h5"
-              component="p"
-              fontWeight={500}
-              sx={{
-                fontSize: { xs: "1.05rem", sm: "1.2rem" },
-                lineHeight: 1.6,
-                color: "text.secondary",
-                maxWidth: 620,
-                mx: "auto",
-              }}
-            >
-              A game night, a group hike, a study group, a club you help run. If you&apos;re the one
-              who turns &ldquo;we should do something&rdquo; into an actual plan, NewChums is built to
-              make your life easier.
-            </Typography>
-          </Box>
-
-          <Grid container spacing={{ xs: 3, sm: 3.5 }}>
-            {ORGANIZER_VALUE_CARDS.map(({ Icon, accentColor, title, body }, i) => (
-              <Grid key={title} size={{ xs: 12, sm: 6 }}>
-                <Box
-                  sx={{
-                    height: "100%",
-                    backgroundColor: "background.paper",
-                    borderTop: "3px solid",
-                    borderColor: accentColor,
-                    borderRadius: 3,
-                    p: { xs: 3, sm: 3.5 },
-                    boxShadow: (theme) =>
-                      theme.palette.mode === "light" ? "0 2px 8px rgba(0,0,0,0.06)" : "none",
-                    display: "flex",
-                    flexDirection: "column",
-                    ...CARD_HOVER,
-                    ...REVEAL_SX(organizersReveal.visible, 0.08 * i),
-                  }}
-                >
-                  <Box
-                    sx={{
-                      width: 48,
-                      height: 48,
-                      borderRadius: 2.5,
-                      bgcolor: `${accentColor}10`,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      mb: 2,
-                    }}
-                  >
-                    <Icon sx={{ fontSize: 24, color: accentColor }} />
-                  </Box>
-                  <Typography
-                    variant="h6"
-                    component="h3"
-                    fontWeight={700}
-                    sx={{
-                      mb: 1.25,
-                      fontSize: { xs: "1.0625rem", sm: "1.125rem" },
-                      lineHeight: 1.35,
-                    }}
-                  >
-                    {title}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.7 }}>
-                    {body}
-                  </Typography>
-                </Box>
-              </Grid>
-            ))}
-          </Grid>
-
-          <Box
-            sx={{
-              mt: { xs: 5, sm: 6 },
-              textAlign: "center",
-              ...REVEAL_SX(organizersReveal.visible, 0.4),
-            }}
-          >
-            <Stack
-              direction={{ xs: "column", sm: "row" }}
-              spacing={2}
-              justifyContent="center"
-              alignItems="center"
-            >
-              <Button
-                component={Link}
-                href={isLoggedIn ? "/communities/create" : "/signup"}
-                variant="contained"
-                color="primary"
-                size="large"
-                sx={{
-                  px: 4,
-                  py: 1.5,
-                  fontWeight: 700,
-                  fontSize: "1.0625rem",
-                  borderRadius: 2.5,
-                  textTransform: "none",
-                  minWidth: { xs: "100%", sm: 220 },
-                  boxShadow: "0 4px 16px rgba(230,91,19,0.25)",
-                  "&:hover": { boxShadow: "0 6px 24px rgba(230,91,19,0.35)" },
-                  ...BTN_HOVER,
-                }}
-              >
-                {isLoggedIn ? "Start a community" : "Create a free account"}
-              </Button>
-              <Button
-                component={Link}
-                href="/communities"
-                variant="outlined"
-                color="primary"
-                size="large"
-                sx={{
-                  px: 4,
-                  py: 1.5,
-                  fontWeight: 600,
-                  fontSize: "1.0625rem",
-                  borderRadius: 2.5,
-                  textTransform: "none",
-                  minWidth: { xs: "100%", sm: 220 },
-                  ...BTN_HOVER,
-                }}
-              >
-                See active communities
-              </Button>
-            </Stack>
-          </Box>
-        </Box>
-      </Box>
-
       {/* ── Section: How It Works ── */}
       <Box
         component="section"
@@ -1155,7 +785,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                 mx: "auto",
               }}
             >
-              Whether it&apos;s a one-off get-together or something you run every week, the same four steps get you from idea to gathering.
+              Whether it&apos;s a single get-together or something you run every week, the same four steps get you from idea to gathering.
             </Typography>
           </Box>
 
@@ -1327,6 +957,208 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
             >
               See the full walkthrough
             </Button>
+          </Box>
+        </Box>
+      </Box>
+
+      {/* ── Section: For the Plan-Maker ──
+          Speaks directly to the individual who makes the plan: game
+          nights, hikes, study groups, dinners. Card data lives in
+          ORGANIZER_VALUE_CARDS at the top of this file. Nothing
+          external links to the old #for-organizers anchor, so the id
+          moved to #for-plan-makers with the repositioning. */}
+      <Box
+        component="section"
+        id="for-plan-makers"
+        ref={organizersReveal.ref}
+        sx={{
+          ...SECTION_SPACING,
+          mx: { xs: -2, sm: -3 },
+          px: { xs: 2, sm: 3 },
+          backgroundColor: (theme) => (theme.palette.mode === "light" ? "#F6F7F9" : "grey.900"),
+          // The anchor needs scroll-margin so the sticky site header
+          // doesn't cover the heading on hash navigation.
+          scrollMarginTop: { xs: 72, md: 88 },
+        }}
+      >
+        <Box maxWidth={1100} mx="auto">
+          <Box
+            sx={{
+              textAlign: "center",
+              mb: { xs: 4, sm: 6 },
+              ...REVEAL_SX(organizersReveal.visible),
+            }}
+          >
+            <Stack
+              direction="row"
+              spacing={1}
+              alignItems="center"
+              justifyContent="center"
+              sx={{ mb: 1.75 }}
+            >
+              <Box
+                sx={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: "50%",
+                  bgcolor: "primary.main",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <CampaignRoundedIcon sx={{ color: "primary.contrastText", fontSize: 18 }} />
+              </Box>
+              <Typography
+                sx={{
+                  color: "primary.dark",
+                  fontWeight: 700,
+                  letterSpacing: "0.12em",
+                  fontSize: "0.7rem",
+                  textTransform: "uppercase",
+                }}
+              >
+                For the plan-maker
+              </Typography>
+            </Stack>
+            <Typography
+              component="h2"
+              variant="h2"
+              fontWeight={800}
+              sx={{
+                fontSize: { xs: "1.85rem", sm: "2.5rem", md: "2.75rem" },
+                lineHeight: 1.15,
+                letterSpacing: "-0.025em",
+                mb: 2,
+              }}
+            >
+              Built for the person who makes the plan
+            </Typography>
+            <Typography
+              variant="h5"
+              component="p"
+              fontWeight={500}
+              sx={{
+                fontSize: { xs: "1.05rem", sm: "1.2rem" },
+                lineHeight: 1.6,
+                color: "text.secondary",
+                maxWidth: 620,
+                mx: "auto",
+              }}
+            >
+              A game night, a group hike, a study group. If you are the one who turns &ldquo;we
+              should do something&rdquo; into an actual plan, NewChums is built for you.
+            </Typography>
+          </Box>
+
+          <Grid container spacing={{ xs: 3, sm: 3.5 }}>
+            {ORGANIZER_VALUE_CARDS.map(({ Icon, accentColor, title, body }, i) => (
+              <Grid key={title} size={{ xs: 12, sm: 6 }}>
+                <Box
+                  sx={{
+                    height: "100%",
+                    backgroundColor: "background.paper",
+                    borderTop: "3px solid",
+                    borderColor: accentColor,
+                    borderRadius: 3,
+                    p: { xs: 3, sm: 3.5 },
+                    boxShadow: (theme) =>
+                      theme.palette.mode === "light" ? "0 2px 8px rgba(0,0,0,0.06)" : "none",
+                    display: "flex",
+                    flexDirection: "column",
+                    ...CARD_HOVER,
+                    ...REVEAL_SX(organizersReveal.visible, 0.08 * i),
+                  }}
+                >
+                  <Box
+                    sx={{
+                      width: 48,
+                      height: 48,
+                      borderRadius: 2.5,
+                      bgcolor: `${accentColor}10`,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      mb: 2,
+                    }}
+                  >
+                    <Icon sx={{ fontSize: 24, color: accentColor }} />
+                  </Box>
+                  <Typography
+                    variant="h6"
+                    component="h3"
+                    fontWeight={700}
+                    sx={{
+                      mb: 1.25,
+                      fontSize: { xs: "1.0625rem", sm: "1.125rem" },
+                      lineHeight: 1.35,
+                    }}
+                  >
+                    {title}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.7 }}>
+                    {body}
+                  </Typography>
+                </Box>
+              </Grid>
+            ))}
+          </Grid>
+
+          <Box
+            sx={{
+              mt: { xs: 5, sm: 6 },
+              textAlign: "center",
+              ...REVEAL_SX(organizersReveal.visible, 0.4),
+            }}
+          >
+            <Stack
+              direction={{ xs: "column", sm: "row" }}
+              spacing={2}
+              justifyContent="center"
+              alignItems="center"
+            >
+              <Button
+                component={Link}
+                href={isLoggedIn ? "/events/create" : "/signup"}
+                variant="contained"
+                color="primary"
+                size="large"
+                sx={{
+                  px: 4,
+                  py: 1.5,
+                  fontWeight: 700,
+                  fontSize: "1.0625rem",
+                  borderRadius: 2.5,
+                  textTransform: "none",
+                  minWidth: { xs: "100%", sm: 220 },
+                  boxShadow: "0 4px 16px rgba(230,91,19,0.25)",
+                  "&:hover": { boxShadow: "0 6px 24px rgba(230,91,19,0.35)" },
+                  ...BTN_HOVER,
+                }}
+              >
+                {isLoggedIn ? "Start a plan" : "Create a free account"}
+              </Button>
+              <Button
+                component={Link}
+                href="/how-it-works"
+                variant="outlined"
+                color="primary"
+                size="large"
+                sx={{
+                  px: 4,
+                  py: 1.5,
+                  fontWeight: 600,
+                  fontSize: "1.0625rem",
+                  borderRadius: 2.5,
+                  textTransform: "none",
+                  minWidth: { xs: "100%", sm: 220 },
+                  ...BTN_HOVER,
+                }}
+              >
+                See how it works
+              </Button>
+            </Stack>
           </Box>
         </Box>
       </Box>
@@ -1527,346 +1359,103 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
         </Box>
       </Box>
 
-      {/* ── Section: Meet New People ── */}
-      <Box
-        component="section"
-        id="meet-people"
-        ref={meetReveal.ref}
-        sx={{
-          ...SECTION_SPACING,
-          backgroundColor: (theme) => (theme.palette.mode === "light" ? "#FCECC3" : "grey.900"),
-          mx: { xs: -2, sm: -3 },
-          px: { xs: 2, sm: 3 },
-        }}
-      >
-        <Box maxWidth={1100} mx="auto">
-          <Box sx={{ textAlign: "center", mb: { xs: 4, sm: 6 }, ...REVEAL_SX(meetReveal.visible) }}>
-            <Typography
-              component="h2"
-              variant="h2"
-              fontWeight={800}
-              sx={{
-                fontSize: { xs: "1.85rem", sm: "2.5rem", md: "2.75rem" },
-                lineHeight: 1.15,
-                letterSpacing: "-0.025em",
-                mb: 2,
-              }}
-            >
-              For people looking for plans they&apos;ll actually enjoy
-            </Typography>
-            <Typography
-              variant="h5"
-              component="p"
-              fontWeight={500}
-              sx={{
-                fontSize: { xs: "1.05rem", sm: "1.2rem" },
-                lineHeight: 1.6,
-                color: "text.secondary",
-                maxWidth: 620,
-                mx: "auto",
-              }}
-            >
-              Find local plans that match what you actually enjoy doing.
-            </Typography>
-          </Box>
+      {/* ── Section: Public Explore Feed ──
+          Deliberately below the message sections: the first screens
+          carry the one plan-maker promise, and this block then shows
+          what plans actually look like as proof. */}
+      {!isLoggedIn && <PublicExploreFeed />}
 
-          <Grid
-            container
-            spacing={{ xs: 4, md: 6 }}
-            alignItems="center"
-            sx={{ mb: { xs: 5, sm: 7 } }}
-          >
-            <Grid size={{ xs: 12, md: 6 }} sx={REVEAL_SX(meetReveal.visible, 0.1)}>
-              <Typography variant="body1" sx={{ lineHeight: 1.85, mb: 3, color: "text.primary" }}>
-                Browse{" "}
-                <Box component="span" sx={{ fontWeight: 700 }}>
-                  nearby plans
-                </Box>{" "}
-                that fit your hobbies. RSVP to a board game night, join a Saturday hike, drop into a
-                study session, and jump into the plan chat once you&apos;re in.
-              </Typography>
-              <Typography
-                variant="body1"
-                sx={{ lineHeight: 1.85, mb: { xs: 3, sm: 4 }, color: "text.primary" }}
-              >
-                Set your hobbies and the kind of plans you enjoy, and{" "}
-                <Box component="span" sx={{ fontWeight: 700 }}>
-                  matching gatherings come to you
-                </Box>{" "}
-                instead of you trawling group chats. New to the area or the hobby? Browsing
-                public plans is an easy way to start.
-              </Typography>
-              {!isLoggedIn && (
-                <Button
-                  component={Link}
-                  href="/signup"
-                  variant="contained"
-                  color="primary"
-                  size="large"
-                  sx={{
-                    px: 4,
-                    py: 1.5,
-                    fontWeight: 600,
-                    borderRadius: 2.5,
-                    textTransform: "none",
-                    minWidth: { xs: "100%", sm: "auto" },
-                    boxShadow: "0 4px 14px rgba(230,91,19,0.25)",
-                    "&:hover": { boxShadow: "0 6px 20px rgba(230,91,19,0.35)" },
-                    ...BTN_HOVER,
-                  }}
-                >
-                  Setup your profile
-                </Button>
-              )}
-            </Grid>
+      {/* ── Recently happened + closing CTA ──
+          Bundled in a single wrapper that sits tight to the upcoming
+          feed (negative top margin pulls the block up so it reads as
+          a continuation of the discovery area rather than a separate
+          mini-page). The past section uses the same grid as upcoming;
+          the closing CTA is wrapped in a soft contained panel below
+          so it feels like the natural conclusion to the plan-preview
+          area rather than floating text under a single card.
 
-            <Grid size={{ xs: 12, md: 6 }} sx={REVEAL_SX(meetReveal.visible, 0.2)}>
-              <Box
-                sx={{
-                  borderRadius: 3,
-                  overflow: "hidden",
-                  border: "1px solid",
-                  borderColor: (theme) =>
-                    theme.palette.mode === "light" ? "rgba(0,0,0,0.06)" : "divider",
-                  boxShadow: (theme) =>
-                    theme.palette.mode === "light" ? "0 8px 32px rgba(0,0,0,0.10)" : "none",
-                  ...CARD_HOVER,
-                }}
-              >
-                <Image
-                  src="/images/home/profile-settings.png"
-                  alt="NewChums profile and preference settings"
-                  width={1200}
-                  height={900}
-                  sizes="(max-width: 960px) 100vw, 50vw"
-                  style={{ width: "100%", height: "auto", display: "block" }}
-                />
-              </Box>
-            </Grid>
-          </Grid>
+          Past cards never look joinable, see RecentlyHappenedSection,
+          and the section hides itself entirely when there are no
+          qualifying past plans (the wrapper still renders so the CTA
+          remains attached to the upcoming feed). Visibility / privacy
+          rules: AGENTS.md, Plan Feed and Community Visibility
+          Contract, "Recently happened" subsection. */}
+      {!isLoggedIn && (
+        <Box
+          sx={{
+            // PublicExploreFeed has its own `py: { xs: 5, sm: 7, md: 9 }`
+            // bottom padding for visual rhythm. That's intentional for
+            // when the upcoming feed is the only block, but here it
+            // creates an awkward gap before the social-proof block.
+            // A small negative top margin re-attaches the past +
+            // CTA wrapper to the upcoming feed without having to
+            // refactor PublicExploreFeed's spacing model.
+            mt: { xs: -3, sm: -4, md: -6 },
+            mb: { xs: 4, sm: 6 },
+          }}
+        >
+          <RecentlyHappenedSection variant="public_explore" />
 
-          {/* Three feature callouts */}
-          <Grid container spacing={{ xs: 3, sm: 4 }}>
-            {MEET_PEOPLE_CALLOUTS.map(({ imageSrc, Icon, title, body }, i) => {
-              const showFallback = !imageSrc || meetPeopleImageErrors.has(title);
-              return (
-                <Grid key={title} size={{ xs: 12, sm: 4 }}>
-                  <Box
-                    sx={{
-                      height: "100%",
-                      backgroundColor: (theme) =>
-                        theme.palette.mode === "light"
-                          ? "rgba(255,255,255,0.75)"
-                          : "rgba(255,255,255,0.04)",
-                      borderRadius: 3,
-                      overflow: "hidden",
-                      display: "flex",
-                      flexDirection: "column",
-                      ...CARD_HOVER,
-                      ...REVEAL_SX(meetReveal.visible, 0.15 + i * 0.1),
-                    }}
-                  >
-                    <Box
-                      sx={{
-                        width: "100%",
-                        aspectRatio: "2 / 1",
-                        position: "relative",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        bgcolor: showFallback ? "primary.light" : "transparent",
-                        p: showFallback ? 0 : 2,
-                      }}
-                    >
-                      {showFallback ? (
-                        <Icon sx={{ fontSize: 40, color: "primary.main" }} />
-                      ) : (
-                        <Box sx={{ position: "relative", width: "100%", height: "100%" }}>
-                          <Image
-                            src={imageSrc}
-                            alt={title}
-                            fill
-                            sizes="(max-width: 600px) 100vw, 33vw"
-                            style={{ objectFit: "contain" }}
-                            onError={() =>
-                              setMeetPeopleImageErrors((prev) => new Set(prev).add(title))
-                            }
-                          />
-                        </Box>
-                      )}
-                    </Box>
-                    <Box sx={{ px: { xs: 3, sm: 3 }, pb: { xs: 3, sm: 3.5 }, pt: 1.5, flex: 1 }}>
-                      <Typography
-                        variant="h6"
-                        component="h3"
-                        fontWeight={700}
-                        sx={{ mb: 1, fontSize: { xs: "1rem", sm: "1.0625rem" }, lineHeight: 1.35 }}
-                      >
-                        {title}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.75 }}>
-                        {body}
-                      </Typography>
-                    </Box>
-                  </Box>
-                </Grid>
-              );
-            })}
-          </Grid>
-        </Box>
-      </Box>
-
-      {/* ── Section: Why This Works ── */}
-      <Box
-        component="section"
-        id="why-this-works"
-        ref={whyReveal.ref}
-        sx={{
-          ...SECTION_SPACING,
-          backgroundColor: (theme) => (theme.palette.mode === "light" ? "grey.50" : "grey.900"),
-          mx: { xs: -2, sm: -3 },
-          px: { xs: 2, sm: 3 },
-          borderTop: "1px solid",
-          borderColor: (theme) => (theme.palette.mode === "light" ? "grey.200" : "grey.800"),
-        }}
-      >
-        <Box maxWidth={960} mx="auto">
-          <Box sx={{ textAlign: "center", mb: { xs: 4, sm: 6 }, ...REVEAL_SX(whyReveal.visible) }}>
-            <Typography
-              component="h2"
-              variant="h2"
-              fontWeight={800}
-              sx={{
-                fontSize: { xs: "1.85rem", sm: "2.5rem", md: "2.75rem" },
-                lineHeight: 1.15,
-                letterSpacing: "-0.025em",
-                mb: 2,
-              }}
-            >
-              Why NewChums works
-            </Typography>
-            <Typography
-              variant="h5"
-              component="p"
-              fontWeight={500}
-              sx={{
-                fontSize: { xs: "1.05rem", sm: "1.2rem" },
-                lineHeight: 1.6,
-                color: "text.secondary",
-                maxWidth: 560,
-                mx: "auto",
-              }}
-            >
-              This isn&apos;t guesswork. NewChums is designed around the conditions that make plans
-              work.
-            </Typography>
-          </Box>
-
-          <Grid container spacing={{ xs: 3, sm: 4 }}>
-            {WHY_THIS_WORKS_CARDS.map(({ Icon, accentColor, title, body }, i) => (
-              <Grid key={title} size={{ xs: 12, sm: 4 }}>
-                <Box
-                  sx={{
-                    height: "100%",
-                    backgroundColor: "background.paper",
-                    borderTop: "3px solid",
-                    borderColor: accentColor,
-                    borderRadius: 3,
-                    p: { xs: 3, sm: 3.5 },
-                    boxShadow: (theme) =>
-                      theme.palette.mode === "light" ? "0 2px 8px rgba(0,0,0,0.06)" : "none",
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: { xs: "center", sm: "flex-start" },
-                    textAlign: { xs: "center", sm: "left" },
-                    ...CARD_HOVER,
-                    ...REVEAL_SX(whyReveal.visible, 0.1 * i),
-                  }}
-                >
-                  <Box
-                    sx={{
-                      width: 48,
-                      height: 48,
-                      borderRadius: 2.5,
-                      bgcolor: `${accentColor}10`,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      mb: 2,
-                    }}
-                  >
-                    <Icon sx={{ fontSize: 24, color: accentColor }} />
-                  </Box>
-                  <Typography
-                    variant="h6"
-                    component="h3"
-                    fontWeight={700}
-                    sx={{ mb: 1.25, fontSize: { xs: "1rem", sm: "1.0625rem" }, lineHeight: 1.35 }}
-                  >
-                    {title}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.75 }}>
-                    {body}
-                  </Typography>
-                </Box>
-              </Grid>
-            ))}
-          </Grid>
-
+          {/* Closing CTA panel. Soft contained card so the affordance
+              feels like an intentional conclusion to the plan-preview
+              block, not detached marketing text. Visual weight is
+              intentionally lighter than the orange Section 5 CTA so
+              it reads as a calm "want more?" rather than a hard sell. */}
           <Box
             sx={{
-              mt: { xs: 5, sm: 7 },
+              mt: { xs: 3.5, sm: 4.5 },
+              borderRadius: 3,
+              border: "1px solid",
+              borderColor: "grey.200",
+              bgcolor: "grey.50",
+              px: { xs: 2.5, sm: 4 },
+              py: { xs: 3, sm: 4 },
               textAlign: "center",
-              ...REVEAL_SX(whyReveal.visible, 0.35),
             }}
           >
-            <Box
-              sx={{
-                backgroundColor: (theme) =>
-                  theme.palette.mode === "light" ? "primary.dark" : "grey.800",
-                borderRadius: 3,
-                px: { xs: 3, sm: 5 },
-                py: { xs: 3.5, sm: 4 },
-                maxWidth: 640,
-                mx: "auto",
-                boxShadow: "0 8px 32px rgba(0,0,0,0.12)",
-              }}
-            >
+            <Stack spacing={1.25} alignItems="center" sx={{ maxWidth: 520, mx: "auto" }}>
               <Typography
-                variant="body1"
-                fontWeight={600}
+                component="h2"
                 sx={{
-                  color: "white",
-                  lineHeight: 1.65,
-                  mb: 2.5,
-                  fontSize: { xs: "0.975rem", sm: "1.05rem" },
+                  fontSize: { xs: "1.125rem", sm: "1.25rem" },
+                  fontWeight: 700,
+                  lineHeight: 1.3,
+                  letterSpacing: "-0.015em",
                 }}
               >
-                There&apos;s real research behind why shared activities, smaller gatherings, and
-                repeated contact help people show up consistently.
+                The next plan could be yours
+              </Typography>
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ lineHeight: 1.65, fontSize: "0.9375rem" }}
+              >
+                Create a free account, post your plan, and share one link with your group.
               </Typography>
               <Button
                 component={Link}
-                href="/science-of-friendship"
+                href="/signup"
                 variant="contained"
-                color="onPrimary"
-                size="large"
+                color="primary"
                 sx={{
-                  px: 4,
+                  mt: 0.5,
+                  px: 3.5,
                   py: 1.25,
+                  textTransform: "none",
                   fontWeight: 600,
                   borderRadius: 2.5,
-                  textTransform: "none",
                   fontSize: "0.9375rem",
+                  boxShadow: "0 4px 14px rgba(230,91,19,0.22)",
+                  "&:hover": { boxShadow: "0 6px 18px rgba(230,91,19,0.28)" },
                   ...BTN_HOVER,
                 }}
               >
-                Read the research
+                Create a free account
               </Button>
-            </Box>
+            </Stack>
           </Box>
         </Box>
-      </Box>
+      )}
 
       {/* ── Section 5: CTA ── */}
       <Box
@@ -1921,13 +1510,13 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
               color: "inherit",
             }}
           >
-            Let&apos;s make plans happen
+            Post the plan. Share the link. See who shows up.
           </Typography>
           <Typography
             variant="body1"
             sx={{ mb: { xs: 6, sm: 8 }, opacity: 0.85, lineHeight: 1.75, maxWidth: 520, mx: "auto" }}
           >
-            Create a free account, explore local plans, or post your first one.
+            Create a free account and post your first plan in about a minute.
           </Typography>
           <Divider
             sx={{
@@ -1945,7 +1534,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
           >
             <Button
               component={Link}
-              href={isLoggedIn ? "/" : "/signup"}
+              href={isLoggedIn ? "/events/create" : "/signup"}
               variant="contained"
               color="onPrimary"
               size="large"
@@ -1962,11 +1551,11 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                 ...BTN_HOVER,
               }}
             >
-              {isLoggedIn ? "Explore NewChums" : "Create a free account"}
+              {isLoggedIn ? "Start a plan" : "Create a free account"}
             </Button>
             <Button
               component={Link}
-              href="/communities"
+              href="/how-it-works"
               variant="outlined"
               size="large"
               sx={{
@@ -1986,7 +1575,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                 ...BTN_HOVER,
               }}
             >
-              Browse communities
+              See how it works
             </Button>
           </Stack>
         </Box>

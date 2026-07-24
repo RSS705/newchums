@@ -127,11 +127,11 @@ export default function PublicExploreFeed() {
               textTransform: "uppercase",
             }}
           >
-            Discover plans
+            Plans on NewChums
           </Typography>
         </Stack>
         <Typography component="h2" variant="h3" fontWeight={700}>
-          See what people are organizing
+          Here is what plans look like on NewChums
         </Typography>
         <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 560, lineHeight: 1.7 }}>
           {showSampleFallback ? (
@@ -141,7 +141,7 @@ export default function PublicExploreFeed() {
             </>
           ) : (
             <>
-              Browse real upcoming plans from the NewChums community. Sign up to RSVP, chat with attendees, and create your own.
+              Real upcoming plans people have posted publicly. Sign up to RSVP, join the chat, or post your own.
             </>
           )}
         </Typography>
