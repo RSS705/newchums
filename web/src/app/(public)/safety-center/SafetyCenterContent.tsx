@@ -278,6 +278,7 @@ export default function SafetyCenterContent({ isLoggedIn = false }: { isLoggedIn
           backgroundColor: (theme) => theme.palette.mode === "light" ? "grey.100" : "grey.900",
           mx: { xs: -2, sm: -3 },
           px: { xs: 2, sm: 3 },
+          borderRadius: { xs: 4, sm: 6 },
         }}
       >
         <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto">
@@ -409,6 +410,7 @@ export default function SafetyCenterContent({ isLoggedIn = false }: { isLoggedIn
           backgroundColor: (theme) => theme.palette.mode === "light" ? "grey.100" : "grey.900",
           mx: { xs: -2, sm: -3 },
           px: { xs: 2, sm: 3 },
+          borderRadius: { xs: 4, sm: 6 },
         }}
       >
         <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto">
@@ -512,6 +514,7 @@ export default function SafetyCenterContent({ isLoggedIn = false }: { isLoggedIn
           backgroundColor: (theme) => theme.palette.mode === "light" ? "grey.100" : "grey.900",
           mx: { xs: -2, sm: -3 },
           px: { xs: 2, sm: 3 },
+          borderRadius: { xs: 4, sm: 6 },
         }}
       >
         <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto">
@@ -581,17 +584,11 @@ export default function SafetyCenterContent({ isLoggedIn = false }: { isLoggedIn
             theme.palette.mode === "light" ? theme.palette.primary.main : "grey.900",
           mx: { xs: -2, sm: -3 },
           px: { xs: 3, sm: 4 },
+          mb: { xs: 1, sm: 2 },
           color: "white",
+          borderRadius: { xs: 4, sm: 6 },
+          overflow: "hidden",
           position: "relative",
-          "&::before": {
-            content: '""',
-            position: "absolute",
-            top: 0,
-            left: 0,
-            right: 0,
-            height: "3px",
-            backgroundColor: (theme) => theme.palette.onPrimary.main,
-          },
         }}
       >
         <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto">
@@ -694,7 +691,7 @@ export default function SafetyCenterContent({ isLoggedIn = false }: { isLoggedIn
               fontWeight: 600,
               textTransform: "none",
               borderRadius: 2.5,
-              minWidth: { xs: "100%", sm: 220 },
+              minWidth: { xs: 0, sm: 220 },
               maxWidth: { xs: "none", sm: 300 },
               boxShadow: "0 2px 12px rgba(0,0,0,0.15)",
               "&:hover": {

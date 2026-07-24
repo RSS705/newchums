@@ -177,3 +177,12 @@ a {
 a:not(.MuiButton-root):not(.MuiLink-root) {
   color: inherit;
 }
+
+/* Balanced heading wraps: stops single-word orphan lines in large
+   marketing and section headings on narrow viewports. Progressive
+   enhancement; browsers without text-wrap support ignore it. */
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}

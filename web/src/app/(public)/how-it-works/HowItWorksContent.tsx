@@ -52,7 +52,16 @@ import CancelRoundedIcon from "@mui/icons-material/CancelRounded";
 
 const CONTENT_MAX_WIDTH = 800;
 const WIDE_MAX_WIDTH = 1100;
-const FULL_BLEED = { mx: { xs: -2, sm: -3 }, px: { xs: 2, sm: 3 } };
+// Tinted bands span the container (maxWidth lg), not the viewport, so
+// square corners read as floating hard rectangles on wide screens. The
+// radius + overflow clip turn each band into a soft contained panel;
+// matches the landing page's band treatment.
+const FULL_BLEED = {
+  mx: { xs: -2, sm: -3 },
+  px: { xs: 2, sm: 3 },
+  borderRadius: { xs: 4, sm: 6 },
+  overflow: "hidden",
+};
 
 // ── Lifecycle stepper (Section 2) ────────────────────────────────────────────
 
@@ -294,7 +303,7 @@ function InlineCTA({ isLoggedIn }: { isLoggedIn: boolean }) {
         fontWeight: 600,
         textTransform: "none",
         borderRadius: 2.5,
-        minWidth: { xs: "100%", sm: 200 },
+        minWidth: { xs: 0, sm: 200 },
         maxWidth: { xs: "none", sm: 280 },
         boxShadow: "0 2px 12px rgba(230,91,19,0.2)",
         "&:hover": { boxShadow: "0 4px 20px rgba(230,91,19,0.3)" },
@@ -418,7 +427,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
             color="text.primary"
             sx={{ lineHeight: 1.7, fontSize: { xs: "1.0625rem", sm: "1.25rem" }, mb: 2 }}
           >
-            NewChums is the easiest way to get your group to actually show up. Post the plan, share one link, and see who is really coming. It supports the whole flow: inviting people, collecting RSVPs, finding the best time, confirming attendance, and following up after.
+            NewChums is the easiest way to make plans that actually happen. Post the plan, share one link, and see who is really coming. It supports the whole flow: inviting people, collecting RSVPs, finding the best time, confirming attendance, and following up after.
           </Typography>
           <Typography
             variant="h5"
@@ -564,7 +573,6 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
         sx={{
           py: { xs: 8, sm: 12, md: 14 },
           position: "relative",
-          overflow: "hidden",
           ...FULL_BLEED,
         }}
       >
@@ -840,7 +848,6 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
           py: { xs: 8, sm: 12 }, textAlign: "center",
           backgroundColor: (theme) => theme.palette.mode === "light" ? theme.palette.primary.main : "grey.900",
           ...FULL_BLEED, color: "white", position: "relative",
-          "&::before": { content: '""', position: "absolute", top: 0, left: 0, right: 0, height: "3px", backgroundColor: (theme) => theme.palette.onPrimary.main },
         }}
       >
         <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto">
@@ -883,7 +890,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
             sx={{
               px: { xs: 5, sm: 6 }, py: 1.75, fontSize: "1.0625rem", fontWeight: 600,
               textTransform: "none", borderRadius: 2.5,
-              minWidth: { xs: "100%", sm: 220 }, maxWidth: { xs: "none", sm: 300 },
+              minWidth: { xs: 0, sm: 220 }, maxWidth: 300,
               boxShadow: "0 2px 12px rgba(0,0,0,0.15)",
               "&:hover": { boxShadow: "0 4px 20px rgba(0,0,0,0.25)" },
             }}

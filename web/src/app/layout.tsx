@@ -36,7 +36,7 @@ export const metadata: Metadata = {
     template: "%s | NewChums",
   },
   description:
-    "NewChums is the easiest way to get your group to actually show up. Post the plan, share one link, and see who is really coming.",
+    "NewChums is the easiest way to make plans that actually happen. Post the plan, share one link, and see who is really coming.",
   applicationName: "NewChums",
   // Explicit default; authenticated app routes, admin routes, auth flows,
   // utility endpoints, and hidden profiles / private communities override
@@ -62,7 +62,7 @@ export const metadata: Metadata = {
         url: "/og-image.png",
         width: 1200,
         height: 630,
-        alt: "NewChums, get your group to actually show up",
+        alt: "NewChums, make plans that actually happen",
       },
     ],
   },

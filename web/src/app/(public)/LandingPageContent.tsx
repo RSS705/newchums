@@ -428,7 +428,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
               </Typography>
 
               <Typography component="h1" variant="h1" sx={{ mt: "0 !important" }}>
-                Get your group to actually show up.
+                Make plans that actually happen.
               </Typography>
 
               <Typography
@@ -458,10 +458,10 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                       color="primary"
                       size="large"
                       sx={{
-                        px: 4,
+                        px: { xs: 3, sm: 4 },
                         py: 1.625,
                         fontWeight: 600,
-                        fontSize: "1.125rem",
+                        fontSize: { xs: "1.0625rem", sm: "1.125rem" },
                         borderRadius: 2.5,
                         minWidth: { xs: "100%", sm: "auto" },
                         textTransform: "none",
@@ -479,10 +479,10 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                       color="primary"
                       size="large"
                       sx={{
-                        px: 4,
+                        px: { xs: 3, sm: 4 },
                         py: 1.625,
                         fontWeight: 600,
-                        fontSize: "1.125rem",
+                        fontSize: { xs: "1.0625rem", sm: "1.125rem" },
                         borderRadius: 2.5,
                         minWidth: { xs: "100%", sm: "auto" },
                         textTransform: "none",
@@ -505,10 +505,10 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                       color="primary"
                       size="large"
                       sx={{
-                        px: 4,
+                        px: { xs: 3, sm: 4 },
                         py: 1.625,
                         fontWeight: 600,
-                        fontSize: "1.125rem",
+                        fontSize: { xs: "1.0625rem", sm: "1.125rem" },
                         borderRadius: 2.5,
                         minWidth: { xs: "100%", sm: "auto" },
                         textTransform: "none",
@@ -527,10 +527,10 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                       color="primary"
                       size="large"
                       sx={{
-                        px: 4,
+                        px: { xs: 3, sm: 4 },
                         py: 1.625,
                         fontWeight: 600,
-                        fontSize: "1.125rem",
+                        fontSize: { xs: "1.0625rem", sm: "1.125rem" },
                         borderRadius: 2.5,
                         minWidth: { xs: "100%", sm: "auto" },
                         textTransform: "none",
@@ -728,6 +728,11 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
           mx: { xs: -2, sm: -3 },
           px: { xs: 2, sm: 3 },
           backgroundColor: (theme) => (theme.palette.mode === "light" ? "#FCECC3" : "grey.900"),
+          // Rounded panel: tinted bands are container-width (maxWidth lg),
+          // so hard 90-degree corners read as a floating rectangle on wide
+          // screens. The radius turns each band into a deliberate soft
+          // panel; overflow hidden clips the decorative radials to it.
+          borderRadius: { xs: 4, sm: 6 },
           position: "relative",
           overflow: "hidden",
           "&::before, &::after": {
@@ -949,7 +954,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                 fontSize: "1.0625rem",
                 borderRadius: 2.5,
                 textTransform: "none",
-                minWidth: { xs: "100%", sm: "auto" },
+                minWidth: { xs: 0, sm: "auto" },
                 boxShadow: "0 4px 16px rgba(230,91,19,0.3)",
                 "&:hover": { boxShadow: "0 6px 24px rgba(230,91,19,0.4)" },
                 ...BTN_HOVER,
@@ -976,6 +981,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
           mx: { xs: -2, sm: -3 },
           px: { xs: 2, sm: 3 },
           backgroundColor: (theme) => (theme.palette.mode === "light" ? "#F6F7F9" : "grey.900"),
+          borderRadius: { xs: 4, sm: 6 },
           // The anchor needs scroll-margin so the sticky site header
           // doesn't cover the heading on hash navigation.
           scrollMarginTop: { xs: 72, md: 88 },
@@ -1112,53 +1118,31 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
               ...REVEAL_SX(organizersReveal.visible, 0.4),
             }}
           >
-            <Stack
-              direction={{ xs: "column", sm: "row" }}
-              spacing={2}
-              justifyContent="center"
-              alignItems="center"
+            {/* Single CTA: the How It Works section directly above
+                already links the walkthrough, and the hero carries
+                See how it works too. One ask per section. */}
+            <Button
+              component={Link}
+              href={isLoggedIn ? "/events/create" : "/signup"}
+              variant="contained"
+              color="primary"
+              size="large"
+              sx={{
+                px: 4,
+                py: 1.5,
+                fontWeight: 700,
+                fontSize: "1.0625rem",
+                borderRadius: 2.5,
+                textTransform: "none",
+                minWidth: { xs: 0, sm: 220 },
+                maxWidth: 360,
+                boxShadow: "0 4px 16px rgba(230,91,19,0.25)",
+                "&:hover": { boxShadow: "0 6px 24px rgba(230,91,19,0.35)" },
+                ...BTN_HOVER,
+              }}
             >
-              <Button
-                component={Link}
-                href={isLoggedIn ? "/events/create" : "/signup"}
-                variant="contained"
-                color="primary"
-                size="large"
-                sx={{
-                  px: 4,
-                  py: 1.5,
-                  fontWeight: 700,
-                  fontSize: "1.0625rem",
-                  borderRadius: 2.5,
-                  textTransform: "none",
-                  minWidth: { xs: "100%", sm: 220 },
-                  boxShadow: "0 4px 16px rgba(230,91,19,0.25)",
-                  "&:hover": { boxShadow: "0 6px 24px rgba(230,91,19,0.35)" },
-                  ...BTN_HOVER,
-                }}
-              >
-                {isLoggedIn ? "Start a plan" : "Create a free account"}
-              </Button>
-              <Button
-                component={Link}
-                href="/how-it-works"
-                variant="outlined"
-                color="primary"
-                size="large"
-                sx={{
-                  px: 4,
-                  py: 1.5,
-                  fontWeight: 600,
-                  fontSize: "1.0625rem",
-                  borderRadius: 2.5,
-                  textTransform: "none",
-                  minWidth: { xs: "100%", sm: 220 },
-                  ...BTN_HOVER,
-                }}
-              >
-                See how it works
-              </Button>
-            </Stack>
+              {isLoggedIn ? "Start a plan" : "Create a free account"}
+            </Button>
           </Box>
         </Box>
       </Box>
@@ -1173,6 +1157,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
           mx: { xs: -2, sm: -3 },
           px: { xs: 2, sm: 3 },
           backgroundColor: (theme) => (theme.palette.mode === "light" ? "#F6F7F9" : "grey.900"),
+          borderRadius: { xs: 4, sm: 6 },
           position: "relative",
           overflow: "hidden",
           "& .features-blob": { position: "absolute", borderRadius: "50%", pointerEvents: "none" },
@@ -1395,65 +1380,9 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
           }}
         >
           <RecentlyHappenedSection variant="public_explore" />
-
-          {/* Closing CTA panel. Soft contained card so the affordance
-              feels like an intentional conclusion to the plan-preview
-              block, not detached marketing text. Visual weight is
-              intentionally lighter than the orange Section 5 CTA so
-              it reads as a calm "want more?" rather than a hard sell. */}
-          <Box
-            sx={{
-              mt: { xs: 3.5, sm: 4.5 },
-              borderRadius: 3,
-              border: "1px solid",
-              borderColor: "grey.200",
-              bgcolor: "grey.50",
-              px: { xs: 2.5, sm: 4 },
-              py: { xs: 3, sm: 4 },
-              textAlign: "center",
-            }}
-          >
-            <Stack spacing={1.25} alignItems="center" sx={{ maxWidth: 520, mx: "auto" }}>
-              <Typography
-                component="h2"
-                sx={{
-                  fontSize: { xs: "1.125rem", sm: "1.25rem" },
-                  fontWeight: 700,
-                  lineHeight: 1.3,
-                  letterSpacing: "-0.015em",
-                }}
-              >
-                The next plan could be yours
-              </Typography>
-              <Typography
-                variant="body2"
-                color="text.secondary"
-                sx={{ lineHeight: 1.65, fontSize: "0.9375rem" }}
-              >
-                Create a free account, post your plan, and share one link with your group.
-              </Typography>
-              <Button
-                component={Link}
-                href="/signup"
-                variant="contained"
-                color="primary"
-                sx={{
-                  mt: 0.5,
-                  px: 3.5,
-                  py: 1.25,
-                  textTransform: "none",
-                  fontWeight: 600,
-                  borderRadius: 2.5,
-                  fontSize: "0.9375rem",
-                  boxShadow: "0 4px 14px rgba(230,91,19,0.22)",
-                  "&:hover": { boxShadow: "0 6px 18px rgba(230,91,19,0.28)" },
-                  ...BTN_HOVER,
-                }}
-              >
-                Create a free account
-              </Button>
-            </Stack>
-          </Box>
+          {/* No closing CTA card here: the orange final CTA section
+              directly below is the single sign-up ask at the end of
+              the page, so a second card back-to-back read as nagging. */}
         </Box>
       )}
 
@@ -1471,18 +1400,11 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
               : theme.palette.grey[900],
           mx: { xs: -2, sm: -3 },
           px: { xs: 3, sm: 4 },
+          mb: { xs: 1, sm: 2 },
           color: "white",
+          borderRadius: { xs: 4, sm: 6 },
           overflow: "hidden",
           position: "relative",
-          "&::before": {
-            content: '""',
-            position: "absolute",
-            top: 0,
-            left: 0,
-            right: 0,
-            height: "3px",
-            backgroundColor: (theme) => theme.palette.onPrimary.main,
-          },
         }}
       >
         <Box maxWidth={800} mx="auto" sx={REVEAL_SX(ctaReveal.visible)}>
@@ -1526,58 +1448,31 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
               mx: "auto",
             }}
           />
-          <Stack
-            direction={{ xs: "column", sm: "row" }}
-            spacing={2}
-            justifyContent="center"
-            alignItems="center"
+          {/* Single closing ask. See how it works already appears in
+              the hero and under the How It Works section; repeating it
+              here diluted the final conversion step. */}
+          <Button
+            component={Link}
+            href={isLoggedIn ? "/events/create" : "/signup"}
+            variant="contained"
+            color="onPrimary"
+            size="large"
+            sx={{
+              px: { xs: 5, sm: 6 },
+              py: 1.75,
+              fontSize: "1.0625rem",
+              fontWeight: 700,
+              textTransform: "none",
+              borderRadius: 2.5,
+              minWidth: { xs: 0, sm: 240 },
+              maxWidth: 360,
+              boxShadow: "0 2px 12px rgba(0,0,0,0.15)",
+              "&:hover": { boxShadow: "0 4px 20px rgba(0,0,0,0.2)" },
+              ...BTN_HOVER,
+            }}
           >
-            <Button
-              component={Link}
-              href={isLoggedIn ? "/events/create" : "/signup"}
-              variant="contained"
-              color="onPrimary"
-              size="large"
-              sx={{
-                px: { xs: 5, sm: 6 },
-                py: 1.75,
-                fontSize: "1.0625rem",
-                fontWeight: 700,
-                textTransform: "none",
-                borderRadius: 2.5,
-                minWidth: { xs: "100%", sm: 240 },
-                boxShadow: "0 2px 12px rgba(0,0,0,0.15)",
-                "&:hover": { boxShadow: "0 4px 20px rgba(0,0,0,0.2)" },
-                ...BTN_HOVER,
-              }}
-            >
-              {isLoggedIn ? "Start a plan" : "Create a free account"}
-            </Button>
-            <Button
-              component={Link}
-              href="/how-it-works"
-              variant="outlined"
-              size="large"
-              sx={{
-                px: { xs: 5, sm: 6 },
-                py: 1.75,
-                fontSize: "1.0625rem",
-                fontWeight: 600,
-                textTransform: "none",
-                borderRadius: 2.5,
-                minWidth: { xs: "100%", sm: 240 },
-                color: "white",
-                borderColor: "rgba(255,255,255,0.6)",
-                "&:hover": {
-                  borderColor: "white",
-                  backgroundColor: "rgba(255,255,255,0.08)",
-                },
-                ...BTN_HOVER,
-              }}
-            >
-              See how it works
-            </Button>
-          </Stack>
+            {isLoggedIn ? "Start a plan" : "Create a free account"}
+          </Button>
         </Box>
       </Box>
     </Box>

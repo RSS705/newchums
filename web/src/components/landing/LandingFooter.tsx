@@ -24,16 +24,24 @@ export default function LandingFooter() {
           mb: 3,
         }}
       >
-        <Stack spacing={1.5} sx={{ flexShrink: 0 }}>
+        {/* Centered on mobile so the stacked logo, tagline, and link
+            list read as one column; the bottom legal row is already
+            centered, so this removes the mixed-alignment look. */}
+        <Stack spacing={1.5} sx={{ flexShrink: 0, alignItems: { xs: "center", md: "flex-start" } }}>
           <BrandLogo src="/logo-horizontal-black-no-dot-com.png" alt="NewChums" height={32} width={79} />
-          <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 320, lineHeight: 1.6 }}>
-            Get your group to actually show up.
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            sx={{ maxWidth: 320, lineHeight: 1.6, textAlign: { xs: "center", md: "left" } }}
+          >
+            Make plans that actually happen.
           </Typography>
         </Stack>
         <Stack
           direction={{ xs: "column", sm: "row" }}
           spacing={{ xs: 0.75, sm: 2.5 }}
-          alignItems={{ xs: "flex-start", md: "flex-end" }}
+          alignItems={{ xs: "center", md: "flex-end" }}
+          justifyContent={{ sm: "center" }}
           sx={{ flexShrink: 0 }}
         >
           {[
