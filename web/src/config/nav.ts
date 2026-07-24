@@ -63,17 +63,13 @@ export const headerNavLinks: HeaderNavLink[] = [
   { label: "Safety Center", href: "/safety-center" },
 ];
 
-/** Logged-out nav: marketing links plus a "Communities" entry so non-
- *  authenticated visitors can discover public communities from the top nav
- *  the same way they can browse public plans from the landing Explore feed.
- *  Kept out of the logged-in header because authenticated users already
- *  have Communities in the left sidebar; showing it twice would be noise.
- *
- *  The homepage's "For Organizers" section (id `for-organizers`) is
- *  similarly unlinked from the top nav, the in-page hero CTA on the
- *  homepage routes there. */
+/** Logged-out nav: marketing links only. The public site sells one job
+ *  (post the plan, share one link, see who is really coming), so the
+ *  header stays minimal: How it Works and Safety Center. Communities is
+ *  deliberately absent here; the product feature is unchanged and stays
+ *  in the logged-in sidebar (`appNavItems`), and /communities remains a
+ *  public route reachable by direct URL and community share links. */
 export const publicHeaderNavLinks: HeaderNavLink[] = [
   { label: "How it Works", href: "/how-it-works" },
-  { label: "Communities", href: "/communities" },
   { label: "Safety Center", href: "/safety-center" },
 ];

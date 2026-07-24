@@ -24,7 +24,10 @@ export default function robots(): MetadataRoute.Robots {
         allow: [
           "/",
           "/how-it-works",
-          "/science-of-friendship",
+          // /science-of-friendship is deliberately not listed: the page
+          // stays live (unlisted) but carries a noindex in its metadata,
+          // which crawlers can only see because crawling is not
+          // disallowed. It is also omitted from the sitemap.
           "/safety-center",
           "/contact",
           "/privacy",
