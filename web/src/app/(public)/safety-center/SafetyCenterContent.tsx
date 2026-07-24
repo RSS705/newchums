@@ -644,7 +644,7 @@ export default function SafetyCenterContent({ isLoggedIn = false }: { isLoggedIn
             {[
               isLoggedIn ? "Open your profile" : "Sign up in under a minute",
               "Add the hobbies you enjoy",
-              "Discover local gatherings around your interests",
+              "Post a plan and share the link with your group",
             ].map((text, i) => (
               <Grid key={text} size={{ xs: 12, sm: 4 }}>
                 <Stack alignItems="center" spacing={2}>

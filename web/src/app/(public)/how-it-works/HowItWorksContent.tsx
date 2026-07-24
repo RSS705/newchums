@@ -82,11 +82,11 @@ const LIFECYCLE_STEPS: LifecycleStep[] = [
     Icon: MailOutlineRoundedIcon,
     label: "Invite",
     headline: "Get people involved",
-    description: "Send direct invites, share a link, or let people find your plan in the explore feed. Even people without an account can RSVP.",
+    description: "Send direct invites, or share one link anywhere your group already talks. Anyone can preview a public plan from the link and sign up in about a minute to RSVP.",
     color: "#1565c0",
     imageSrc: "/images/how-it-works/step-invite.png",
     placeholder: "Screenshot: Invite flow",
-    highlights: ["Invite by handle or email", "Shareable links for anyone", "Guest RSVP without signup"],
+    highlights: ["Invite by handle or email", "Shareable links for anyone", "Quick signup to RSVP"],
   },
   {
     Icon: ScheduleRoundedIcon,
@@ -160,7 +160,7 @@ const FEATURE_SECTIONS: FeatureSection[] = [
   {
     id: "inviting",
     sectionTitle: "Invite people and manage attendance",
-    subtitle: "Get the right people involved, whether they have an account or not. Share a link, send a direct invite, or let people find you.",
+    subtitle: "Share one link, send direct invites, and keep every RSVP in one place.",
     accentColor: "#1565c0",
     imageOnLeft: true,
     images: [
@@ -172,7 +172,7 @@ const FEATURE_SECTIONS: FeatureSection[] = [
       { label: "Direct invites", detail: "Invite people by NewChums handle or email address. They get a notification and an email." },
       { label: "Custom invite messages", detail: "Add a personal note when sending invites so people know why you're reaching out." },
       { label: "Share links", detail: "Generate a permanent shareable link for any plan. Send it anywhere." },
-      { label: "Guest RSVP without an account", detail: "Anyone with a link can RSVP using just their email and a quick verification code." },
+      { label: "Preview before signing up", detail: "Anyone with the link can preview a public plan. Creating an account to RSVP takes about a minute." },
       { label: "Going, Maybe, or Can't Make It", detail: "Three clear RSVP options with optional personal notes. Update anytime." },
       { label: "Join requests", detail: "For plans that require approval, people request to join and the host reviews each one." },
     ],
@@ -212,25 +212,6 @@ const FEATURE_SECTIONS: FeatureSection[] = [
     ],
   },
   {
-    id: "discovery",
-    sectionTitle: "Discover plans and communities",
-    subtitle: "Find plans that match your interests and location. Browse what people near you are organizing, and join a community if you want a regular group.",
-    accentColor: "#1565c0",
-    imageOnLeft: false,
-    images: [
-      { src: "/images/how-it-works/discover-explore.png", placeholder: "Screenshot: Explore feed", Icon: ExploreRoundedIcon },
-      { src: "/images/how-it-works/discover-digest.png", placeholder: "Screenshot: Match digest email", Icon: MailOutlineRoundedIcon },
-      { src: "/images/how-it-works/discover-community.png", placeholder: "Screenshot: Community page", Icon: GroupsRoundedIcon },
-    ],
-    features: [
-      { label: "Explore feed", detail: "Browse plans filtered by hobby, distance, time range, and sort order. Personalized to your interests." },
-      { label: "Browse without an account", detail: "Public plans are visible to anyone. No signup required." },
-      { label: "Daily match digest", detail: "A daily email surfaces new plans that match your hobbies and travel distance." },
-      { label: "Communities", detail: "Create or join public and private groups. Community plans appear in a dedicated feed." },
-      { label: "Smart matching", detail: "Your chum preferences help filter which plans and people show up in your recommendations." },
-    ],
-  },
-  {
     id: "trust",
     sectionTitle: "Trust and accountability",
     subtitle: "A lightweight reputation system that rewards people who show up and follow through.",
@@ -249,6 +230,27 @@ const FEATURE_SECTIONS: FeatureSection[] = [
       { label: "Chum preference matching", detail: "Set per-metric thresholds for reliability and more. Plans are filtered based on your preferences." },
     ],
   },
+  // Deliberately last: the share link is the primary way plans reach
+  // people; Explore, digests, and communities are supporting features.
+  {
+    id: "discovery",
+    sectionTitle: "Beyond the invite list",
+    subtitle: "Your share link does the heavy lifting. If you make a plan public, it can also reach the right extra people through the Explore feed, daily digests, and community pages.",
+    accentColor: "#1565c0",
+    imageOnLeft: false,
+    images: [
+      { src: "/images/how-it-works/discover-explore.png", placeholder: "Screenshot: Explore feed", Icon: ExploreRoundedIcon },
+      { src: "/images/how-it-works/discover-digest.png", placeholder: "Screenshot: Match digest email", Icon: MailOutlineRoundedIcon },
+      { src: "/images/how-it-works/discover-community.png", placeholder: "Screenshot: Community page", Icon: GroupsRoundedIcon },
+    ],
+    features: [
+      { label: "Explore feed", detail: "Public plans appear in a feed filtered by hobby, distance, time range, and sort order." },
+      { label: "Browse without an account", detail: "Public plans are viewable by anyone. No signup required." },
+      { label: "Daily match digest", detail: "A daily email surfaces new plans that match subscribers' hobbies and travel distance." },
+      { label: "Communities", detail: "Create or join public and private groups. Community plans appear in a dedicated feed." },
+      { label: "Smart matching", detail: "Chum preferences quietly filter which plans and people show up in recommendations." },
+    ],
+  },
 ];
 
 // ── Use cases (Section 6) ───────────────────────────────────────────────────
@@ -258,8 +260,8 @@ type UseCase = { Icon: SvgIconComponent; title: string; description: string; ban
 const USE_CASES: UseCase[] = [
   { Icon: CasinoRoundedIcon, title: "Board game nights", description: "Set a player cap, pick the game, share a link. No more 'who's in?' messages that nobody replies to.", bannerSrc: "/images/how-it-works/usecase-boardgames.png", bannerPlaceholder: "Board games", bannerColor: "#E65B13" },
   { Icon: LocalCafeRoundedIcon, title: "Coffee walks & casual meetups", description: "Low-key, low-commitment. Post a time and a meeting point and see who shows up.", bannerSrc: "/images/how-it-works/usecase-coffee.png", bannerPlaceholder: "Coffee meetup", bannerColor: "#7c3aed" },
-  { Icon: MenuBookRoundedIcon, title: "Study groups & coworking", description: "Find people working on the same thing nearby. Use availability mode to pick the best time.", bannerSrc: "/images/how-it-works/usecase-study.png", bannerPlaceholder: "Study group", bannerColor: "#1565c0" },
-  { Icon: CelebrationRoundedIcon, title: "Community events", description: "Associate your plan with a community. Members see it in their feed automatically.", bannerSrc: "/images/how-it-works/usecase-community.png", bannerPlaceholder: "Community event", bannerColor: "#059669" },
+  { Icon: MenuBookRoundedIcon, title: "Study groups & coworking", description: "Get everyone working on the same thing into one plan. Use availability mode to pick the best time.", bannerSrc: "/images/how-it-works/usecase-study.png", bannerPlaceholder: "Study group", bannerColor: "#1565c0" },
+  { Icon: CelebrationRoundedIcon, title: "Regular groups", description: "Run a group on a schedule? Give it a page, link each plan to it, and regulars see every session in their feed automatically.", bannerSrc: "/images/how-it-works/usecase-community.png", bannerPlaceholder: "Regular group", bannerColor: "#059669" },
   { Icon: HikingRoundedIcon, title: "Outdoor adventures", description: "Hikes, bike rides, park hangs. Approximate location keeps the meeting point flexible.", bannerSrc: "/images/how-it-works/usecase-outdoors.png", bannerPlaceholder: "Outdoor adventure", bannerColor: "#0e7490" },
   { Icon: LocalCafeRoundedIcon, title: "Dinner parties & potlucks", description: "Set the vibe, cap the guest list, and let people RSVP. Everyone knows what to bring.", bannerSrc: "/images/how-it-works/usecase-dinner.png", bannerPlaceholder: "Dinner party", bannerColor: "#E65B13" },
 ];
@@ -271,7 +273,7 @@ const COMPARISON_POINTS: { problem: string; solution: string }[] = [
   { problem: "Nobody knows the final time or place", solution: "One source of truth for every detail, always up to date." },
   { problem: "Half the group says maybe and never confirms", solution: "Automatic 24-hour confirmation window with timed reminders." },
   { problem: "You show up and nobody else does", solution: "Minimum attendee thresholds with auto-cancel or host notification." },
-  { problem: "Inviting new people means adding them to another chat", solution: "Share a link. Anyone can RSVP, even without an account." },
+  { problem: "Inviting new people means adding them to another chat", solution: "Share a link. Anyone can preview the plan and sign up to RSVP in about a minute." },
   { problem: "No memory of who flaked last time", solution: "Attendance records and post-plan feedback visible on every profile." },
 ];
 
@@ -416,7 +418,7 @@ export default function HowItWorksContent({ isLoggedIn = false }: { isLoggedIn?:
             color="text.primary"
             sx={{ lineHeight: 1.7, fontSize: { xs: "1.0625rem", sm: "1.25rem" }, mb: 2 }}
           >
-            Whether it&apos;s a one-off get-together or something you run every week, NewChums supports the whole flow: posting plans, inviting people, collecting RSVPs, finding the best time, confirming attendance, and following up after.
+            NewChums is the easiest way to get your group to actually show up. Post the plan, share one link, and see who is really coming. It supports the whole flow: inviting people, collecting RSVPs, finding the best time, confirming attendance, and following up after.
           </Typography>
           <Typography
             variant="h5"

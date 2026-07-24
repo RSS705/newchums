@@ -359,7 +359,7 @@ export default function SignupClient() {
   const stepHeadings: Record<number, { title: string; subtitle: string }> = {
     1: {
       title: "Welcome to NewChums",
-      subtitle: "Create your account to start organizing plans and gatherings",
+      subtitle: "Create your account so your group knows it is you, and so you can RSVP and get reminders",
     },
     2: {
       title: "Pick a username",

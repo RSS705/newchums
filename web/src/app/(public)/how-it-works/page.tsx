@@ -6,12 +6,12 @@ import HowItWorksContent from "./HowItWorksContent";
 export const metadata: Metadata = {
   title: "How it works",
   description:
-    "See how NewChums helps local hobby communities and one-off hosts make plans happen, from posting a plan to collecting RSVPs to following up after.",
+    "See how NewChums gets your group to actually show up, from posting the plan and sharing one link to collecting RSVPs and 24-hour attendance checks.",
   alternates: { canonical: "/how-it-works" },
   openGraph: {
     title: "How NewChums works",
     description:
-      "See how NewChums helps local hobby communities and one-off hosts make plans happen, from posting a plan to collecting RSVPs to following up after.",
+      "See how NewChums gets your group to actually show up, from posting the plan and sharing one link to collecting RSVPs and 24-hour attendance checks.",
     url: "/how-it-works",
   },
 };
