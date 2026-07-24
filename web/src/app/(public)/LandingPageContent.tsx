@@ -34,19 +34,13 @@ import RecentlyHappenedSection from "@/components/events/RecentlyHappenedSection
 
 /**
  * Full public homepage content for logged-out visitors.
- * Sections: Hero -> Public Explore -> For Organizers -> How It Works -> Features ->
- * Meet People -> Why This Works -> CTA
+ * Sections: Hero -> How It Works -> For the Plan-Maker -> Features ->
+ * Public Explore -> CTA
  *
- * Messaging hierarchy (pilot positioning, oriented toward local hobby
- * communities, clubs, and game stores):
- *   (1) Help your community make more plans happen.
- *   (2) Make plans visible, reduce RSVP friction, help newcomers join in.
- *   (3) Member side: find local plans that match your hobbies and a way
- *       into a community.
- * The "For Organizers" section sits directly under the public Explore feed
- * so a store owner / club leader / Discord admin sees the wedge value
- * within the first scroll. Member value still has its own dedicated
- * section further down.
+ * Positioning: NewChums is a coordination tool for the individual person
+ * who makes the plan. One promise: post the plan, share one link, and see
+ * who is really coming. Discovery, matching, and communities exist in the
+ * product but are quiet supporting features here, never the headline.
  */
 
 const SECTION_SPACING = { py: { xs: 5, sm: 8, md: 10 } };
@@ -499,11 +493,11 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                   display: "block",
                 }}
               >
-                The easiest way to organize group plans
+                For the person who always makes the plan
               </Typography>
 
               <Typography component="h1" variant="h1" sx={{ mt: "0 !important" }}>
-                A place for people who actually do things
+                Get your group to actually show up.
               </Typography>
 
               <Typography
@@ -516,11 +510,11 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                   fontSize: "1.2rem",
                 }}
               >
-                NewChums gives you one simple place to{" "}
+                Post the plan,{" "}
                 <Box component="span" sx={{ fontWeight: 700 }}>
-                  post a plan, invite people, collect RSVPs,
+                  share one link,
                 </Box>{" "}
-                and let the right people find it.
+                and see who is really coming. No noisy group chat, no chasing RSVPs.
               </Typography>
 
               <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ pt: 0.5 }}>
@@ -528,7 +522,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                   <>
                     <Button
                       component={Link}
-                      href="/communities"
+                      href="/events/create"
                       variant="contained"
                       color="primary"
                       size="large"
@@ -545,11 +539,11 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                         ...BTN_HOVER,
                       }}
                     >
-                      Browse communities
+                      Start a plan
                     </Button>
                     <Button
                       component={Link}
-                      href="/events"
+                      href="/plans"
                       variant="outlined"
                       color="primary"
                       size="large"
@@ -564,19 +558,18 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                         ...BTN_HOVER,
                       }}
                     >
-                      Browse plans
+                      Your plans
                     </Button>
                   </>
                 ) : (
                   <>
-                    {/* Primary hero CTA is signup: cold visitors need one
-                        obvious next step, and sending them into a sparse
-                        communities index first was costing the conversion.
-                        Browsing stays one click away as the secondary CTA. */}
+                    {/* Primary hero CTA is signup framed as plan creation:
+                        cold visitors are the person who makes the plan, and
+                        the one obvious next step is posting it. */}
                     <Button
                       component={Link}
                       href="/signup"
-                      onClick={() => trackEvent("hero_cta_clicked", { cta: "signup" })}
+                      onClick={() => trackEvent("hero_cta_clicked", { cta: "create_plan" })}
                       variant="contained"
                       color="primary"
                       size="large"
@@ -593,12 +586,12 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                         ...BTN_HOVER,
                       }}
                     >
-                      Create a free account
+                      Create a plan in 60 seconds
                     </Button>
                     <Button
                       component={Link}
-                      href="/communities"
-                      onClick={() => trackEvent("hero_cta_clicked", { cta: "browse_communities" })}
+                      href="/how-it-works"
+                      onClick={() => trackEvent("hero_cta_clicked", { cta: "how_it_works" })}
                       variant="outlined"
                       color="primary"
                       size="large"
@@ -613,7 +606,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                         ...BTN_HOVER,
                       }}
                     >
-                      Browse communities
+                      See how it works
                     </Button>
                   </>
                 )}

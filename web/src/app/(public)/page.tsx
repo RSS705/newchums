@@ -14,21 +14,21 @@ export const metadata: Metadata = {
   // positioning in both the title and the OG/Twitter cards.
   // Title matches the on-page H1 so search snippets, social cards, and the
   // hero all make the same promise.
-  title: { absolute: "NewChums | A place for people who actually do things" },
+  title: { absolute: "NewChums | Get your group to actually show up" },
   description:
-    "One simple place to post a plan, invite people, collect RSVPs, and let the right people find it. Free to use, around the hobbies you enjoy.",
+    "Post the plan, share one link, and see who is really coming. RSVPs and 24-hour attendance checks for game nights, hikes, study groups, and more. Free to use.",
   alternates: { canonical: "/" },
   openGraph: {
-    title: "NewChums | A place for people who actually do things",
+    title: "NewChums | Get your group to actually show up",
     description:
-      "One simple place to post a plan, invite people, collect RSVPs, and let the right people find it. Free to use, around the hobbies you enjoy.",
+      "Post the plan, share one link, and see who is really coming. RSVPs and 24-hour attendance checks for game nights, hikes, study groups, and more. Free to use.",
     url: "/",
     type: "website",
   },
   twitter: {
-    title: "NewChums | A place for people who actually do things",
+    title: "NewChums | Get your group to actually show up",
     description:
-      "One simple place to post a plan, invite people, collect RSVPs, and let the right people find it. Free to use, around the hobbies you enjoy.",
+      "Post the plan, share one link, and see who is really coming. RSVPs and 24-hour attendance checks for game nights, hikes, study groups, and more. Free to use.",
   },
 };
 
