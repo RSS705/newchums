@@ -20,14 +20,11 @@ import EditLocationRoundedIcon from "@mui/icons-material/EditLocationRounded";
 import ExploreRoundedIcon from "@mui/icons-material/ExploreRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
-import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
-import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
 import Link from "next/link";
 import EventCard, { type PlanEvent } from "@/components/events/EventCard";
 import RecentlyHappenedSection from "@/components/events/RecentlyHappenedSection";
 import EventCardSkeleton from "@/components/ui/EventCardSkeleton";
 import EmptyState from "@/components/ui/EmptyState";
-import SectionHeader from "@/components/ui/SectionHeader";
 import DistanceSelect from "@/components/common/DistanceSelect";
 import PeopleRoundedIcon from "@mui/icons-material/PeopleRounded";
 import { apiFetch } from "@/lib/apiClient";
@@ -97,10 +94,6 @@ type DashboardHomeProps = {
 
 export default function DashboardHome({ greetingName }: DashboardHomeProps) {
   const [profile, setProfile] = useState<ProfileData | null>(null);
-  // The viewer's own upcoming plans (hosting and attending). null while
-  // loading so the section can show skeletons instead of flashing the
-  // empty-state nudge before the fetch resolves.
-  const [myPlans, setMyPlans] = useState<PlanEvent[] | null>(null);
   const [allEvents, setAllEvents] = useState<PlanEvent[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -176,27 +169,6 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
 
     if (append) setLoadingMore(false);
     else setLoading(false);
-  }, []);
-
-  // Load the viewer's own upcoming plans (same endpoint /plans uses).
-  // Independent of the Explore feed's filter state; canceled plans are
-  // excluded to match the Your Plans page's active list.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await apiFetch("/events/mine?filter=upcoming", { auth: true });
-        if (!res.ok) {
-          if (!cancelled) setMyPlans([]);
-          return;
-        }
-        const d = (await res.json()) as { events: PlanEvent[] };
-        if (!cancelled) setMyPlans((d.events ?? []).filter((e) => e.status !== "canceled"));
-      } catch {
-        if (!cancelled) setMyPlans([]);
-      }
-    })();
-    return () => { cancelled = true; };
   }, []);
 
   // Load profile + interests in parallel, restore all saved state, then fetch once.
@@ -430,7 +402,7 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
                   color: "primary.dark",
                 }}
               >
-                Home
+                Discover
               </Typography>
             </Stack>
             <Typography
@@ -445,17 +417,35 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
             >
               {greetingName ? `Welcome back, ${greetingName}` : "Explore"}
             </Typography>
-            <Typography
-              variant="body1"
-              color="text.secondary"
-              sx={{
-                fontSize: { xs: "0.9375rem", sm: "1rem" },
-                lineHeight: 1.6,
-                maxWidth: 560,
-              }}
-            >
-              Post the plan, share one link, and see who is really coming.
-            </Typography>
+            {!initialReady ? (
+              // Hold the subtitle until /profile resolves so `hasLocation`
+              // and `locationLabel` have settled. After the initial load
+              // we keep showing the real subtitle through subsequent
+              // filter-triggered re-fetches, since the subtitle text only
+              // depends on profile (which doesn't change) and not on the
+              // events fetch. Gating on `!initialReady` instead of
+              // `loading` prevents a layout-shifting Skeleton swap on
+              // every filter chip click.
+              <Skeleton
+                variant="text"
+                width={300}
+                sx={{ fontSize: { xs: "0.9375rem", sm: "1rem" }, maxWidth: "100%" }}
+              />
+            ) : (
+              <Typography
+                variant="body1"
+                color="text.secondary"
+                sx={{
+                  fontSize: { xs: "0.9375rem", sm: "1rem" },
+                  lineHeight: 1.6,
+                  maxWidth: 560,
+                }}
+              >
+                {hasLocation
+                  ? `Plans and gatherings${locationLabel ? ` near ${locationLabel}` : ""}, hand-picked around the hobbies you enjoy.`
+                  : "Find plans and gatherings around the hobbies you enjoy."}
+              </Typography>
+            )}
           </Stack>
           <Button
             component={Link}
@@ -479,96 +469,6 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
           </Button>
         </Stack>
       </Paper>
-
-      {/* ── Your upcoming plans ──────────────────────────────────────
-          The logged-in home leads with the viewer's own plans (hosting
-          and attending) so the first screen is about the plans they're
-          part of, not an Explore feed that may be empty for new users.
-          Full management (past plans, canceled, hosting/attending
-          split) stays on /plans; this is the at-a-glance strip. */}
-      <Stack spacing={2}>
-        <SectionHeader title="Your upcoming plans" emphasis="primary" />
-        {myPlans === null ? (
-          <Grid container spacing={{ xs: 1.5, sm: 2 }}>
-            {[0, 1, 2].map((i) => (
-              <Grid key={i} size={{ xs: 12, sm: 6, md: 4 }} sx={{ display: "flex" }}>
-                <EventCardSkeleton />
-              </Grid>
-            ))}
-          </Grid>
-        ) : myPlans.length === 0 ? (
-          <Paper
-            variant="outlined"
-            sx={{
-              borderRadius: 3,
-              borderColor: "grey.200",
-              bgcolor: "background.paper",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
-            }}
-          >
-            <EmptyState
-              icon={
-                <Box
-                  sx={{
-                    width: 72,
-                    height: 72,
-                    borderRadius: "50%",
-                    bgcolor: "primary.light",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <CalendarMonthRoundedIcon sx={{ fontSize: 36, color: "primary.main" }} />
-                </Box>
-              }
-              title="No plans yet"
-              description="Post one and share the link with your group."
-              action={
-                <Button
-                  component={Link}
-                  href="/events/create"
-                  variant="contained"
-                  startIcon={<AddCircleRoundedIcon />}
-                  sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
-                >
-                  Start a plan
-                </Button>
-              }
-            />
-          </Paper>
-        ) : (
-          <>
-            <Grid container spacing={2}>
-              {myPlans.slice(0, 6).map((event) => (
-                <Grid key={event.id} size={{ xs: 12, sm: 6, md: 4 }} sx={{ display: "flex" }}>
-                  <EventCard event={event} viewerHobbyCategories={viewerHobbyCategories} />
-                </Grid>
-              ))}
-            </Grid>
-            <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
-              <Button
-                component={Link}
-                href="/plans"
-                endIcon={<ArrowForwardRoundedIcon />}
-                sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5 }}
-              >
-                See all your plans
-              </Button>
-            </Box>
-          </>
-        )}
-      </Stack>
-
-      {/* ── Explore section header ──────────────────────────────────── */}
-      <SectionHeader
-        title="Explore plans near you"
-        subtitle={
-          hasLocation
-            ? `Public plans${locationLabel ? ` near ${locationLabel}` : ""}, hand-picked around the hobbies you enjoy.`
-            : "Public plans and gatherings around the hobbies you enjoy."
-        }
-      />
 
       {/* ── Filter bar ──────────────────────────────────────────────── */}
       {!initialReady ? (
@@ -965,15 +865,13 @@ export default function DashboardHome({ greetingName }: DashboardHomeProps) {
                 <ExploreRoundedIcon sx={{ fontSize: 36, color: "primary.main" }} />
               </Box>
             }
-            title={isFiltered ? "Nothing matched this time" : "No public plans nearby yet"}
+            title={isFiltered ? "Nothing matched this time" : "No plans yet"}
             description={
               isFiltered
                 ? "Try widening the time window, removing a hobby filter, or clearing filters to see more plans."
-                : hasLocation
-                  ? "There aren't any public plans in your area right now. Check back soon or start one yourself."
-                  : !hasHobbies
-                    ? "Add a few hobbies to your profile so we can show you relevant plans nearby."
-                    : "Plans are just getting started in your area. Start one and invite people around a hobby you enjoy."
+                : !hasHobbies
+                  ? "Post one and share the link with your group, or add a few hobbies to your profile so we can show you relevant plans nearby."
+                  : "Post one and share the link with your group."
             }
             action={
               <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
