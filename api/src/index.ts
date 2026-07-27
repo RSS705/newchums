@@ -53,6 +53,15 @@ import { nameToSlug, slugToName, validateInterestName } from "./interests";
 import { ensureAppUserId } from "./profile";
 import { generateResetToken, hashResetToken } from "./resetTokens";
 import { isValidContactSubject } from "./lib/contact";
+import { checkDbRateLimit, isDbRateLimited, recordDbRateEvent } from "./lib/dbRateLimit";
+import {
+  generateOtpCode,
+  parseSignupIntent,
+  PLAN_SIGNUP_CODE_EXPIRY_MS,
+  PLAN_SIGNUP_GRANT_EXPIRY_MS,
+  PLAN_SIGNUP_OTP_MAX_ATTEMPTS,
+  PLAN_SIGNUP_RESEND_COOLDOWN_SECONDS,
+} from "./lib/planSignupOtp";
 import {
   recordPlanCreationFunnelEvents,
   recordPlanSignupVerified,
@@ -1485,6 +1494,8 @@ const MAGIC_LINK_EXPIRY_MS = 15 * 60 * 1000; // 15 minutes
 const PLAN_SIGNUP_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
 const PLAN_SIGNUP_RATE_LIMIT_PER_IP = 10;
 const PLAN_SIGNUP_RATE_LIMIT_PER_EMAIL = 3;
+/** Code-verify guesses allowed per IP per window, across all emails. */
+const PLAN_SIGNUP_VERIFY_RATE_LIMIT_PER_IP = 30;
 
 /** Sanitize the `next` URL to a relative same-origin path; fallback to "/". */
 function sanitizePlanSignupNext(raw: unknown): string {
@@ -1503,6 +1514,7 @@ app.post("/auth/plan-signup/request", async (c) => {
     accepted_legal?: boolean;
     turnstile_token?: string;
     next?: string;
+    intent?: string;
   };
   try {
     body = await c.req.json();
@@ -1515,6 +1527,7 @@ app.post("/auth/plan-signup/request", async (c) => {
   const acceptedLegal = body.accepted_legal === true;
   const turnstileToken = typeof body.turnstile_token === "string" ? body.turnstile_token : "";
   const next = sanitizePlanSignupNext(body.next);
+  const intent = parseSignupIntent(body.intent);
 
   if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
     return c.json({ ok: false, error: "INVALID_EMAIL" }, 400);
@@ -1552,9 +1565,14 @@ app.post("/auth/plan-signup/request", async (c) => {
     c.req.header("X-Forwarded-For")?.split(",")[0]?.trim() ??
     "unknown";
 
+  const sql = getSql(c.env);
+
   // Rate-limit both by IP and by email so bots can't sweep either axis.
-  const ipLimit = await checkRateLimit(
-    c.env.CONTACT_RATELIMIT_KV,
+  // Postgres-backed (migration 104): the KV limiter is a no-op in production
+  // because the KV binding is not provisioned. Buckets are shared with the
+  // resend endpoint so total issuance stays bounded across both.
+  const ipLimit = await checkDbRateLimit(
+    sql,
     `plan-signup:ip:${requestIp}`,
     PLAN_SIGNUP_RATE_LIMIT_PER_IP,
     PLAN_SIGNUP_RATE_LIMIT_WINDOW_MS,
@@ -1562,8 +1580,8 @@ app.post("/auth/plan-signup/request", async (c) => {
   if (!ipLimit.allowed) {
     return c.json({ ok: false, error: "RATE_LIMITED" }, 429);
   }
-  const emailLimit = await checkRateLimit(
-    c.env.CONTACT_RATELIMIT_KV,
+  const emailLimit = await checkDbRateLimit(
+    sql,
     `plan-signup:email:${email}`,
     PLAN_SIGNUP_RATE_LIMIT_PER_EMAIL,
     PLAN_SIGNUP_RATE_LIMIT_WINDOW_MS,
@@ -1571,6 +1589,17 @@ app.post("/auth/plan-signup/request", async (c) => {
   if (!emailLimit.allowed) {
     return c.json({ ok: false, error: "RATE_LIMITED" }, 429);
   }
+  // Send cooldown: only charged after an email actually goes out (see the
+  // recordDbRateEvent call below), so a validation failure here never locks
+  // the user out of retrying. Applies to the code-email branch only; the
+  // existing-account branch keeps its prior behavior.
+  const cooldownBucket = `plan-signup:cooldown:${email}`;
+  const underCooldown = await isDbRateLimited(
+    sql,
+    cooldownBucket,
+    1,
+    PLAN_SIGNUP_RESEND_COOLDOWN_SECONDS * 1000,
+  );
 
   // Turnstile: unauthenticated endpoint. Required when the secret is configured.
   if (c.env.TURNSTILE_SECRET_KEY) {
@@ -1583,22 +1612,28 @@ app.post("/auth/plan-signup/request", async (c) => {
     }
   }
 
-  const sql = getSql(c.env);
-
   // Pull plan title for email context, if `next` points at a plan URL.
   // Failure to resolve is non-fatal; email just uses "a plan" as a fallback.
+  // planId is only kept when the row exists so the token INSERT's event_id
+  // FK (migration 104) can never fail on a bogus URL, and the stored RSVP
+  // intent is only meaningful when tied to a real plan.
   let planTitle = "a plan";
+  let planId: string | null = null;
   try {
     const planIdMatch = next.match(/^\/events\/([a-zA-Z0-9-]+)(?:[/?].*)?$/);
     if (planIdMatch?.[1]) {
       const rows = (await sql`
-        SELECT title FROM newchums.events WHERE id = ${planIdMatch[1]} LIMIT 1
-      `) as { title: string | null }[];
-      if (rows[0]?.title) planTitle = rows[0].title;
+        SELECT id, title FROM newchums.events WHERE id = ${planIdMatch[1]} LIMIT 1
+      `) as { id: string; title: string | null }[];
+      if (rows[0]) {
+        planId = rows[0].id;
+        if (rows[0].title) planTitle = rows[0].title;
+      }
     }
   } catch {
     // ignore; planTitle remains "a plan"
   }
+  const storedIntent = planId ? intent : null;
 
   // Branch on account state.
   const existing = (await sql`
@@ -1684,35 +1719,387 @@ app.post("/auth/plan-signup/request", async (c) => {
     }
   }
 
-  // Invalidate any prior pending tokens for this user, then mint a fresh one.
+  // Cooldown gate for the code-email branch. Checked read-only up front and
+  // charged only after a successful send, so a Turnstile or validation
+  // failure never locks the user out of retrying.
+  if (underCooldown) {
+    return c.json(
+      { ok: false, error: "COOLDOWN", retry_after_seconds: PLAN_SIGNUP_RESEND_COOLDOWN_SECONDS },
+      429,
+    );
+  }
+
+  const issued = await issuePlanSignupCodeEmail(sql, c.env, {
+    userId,
+    email,
+    next,
+    planId,
+    planTitle,
+    intent: storedIntent,
+  });
+  if (!issued.ok) {
+    return c.json({ ok: false, error: "EMAIL_SEND_FAILED" }, 500);
+  }
+  await recordDbRateEvent(sql, cooldownBucket);
+  runAfterResponse(
+    c,
+    recordProductEvent(sql, {
+      name: "signup_email_sent",
+      userId,
+      eventId: planId,
+      params: { kind: "initial" },
+    }),
+  );
+
+  return c.json({
+    ok: true,
+    state: "pending",
+    next,
+    resend_cooldown_seconds: PLAN_SIGNUP_RESEND_COOLDOWN_SECONDS,
+  });
+});
+
+/**
+ * Mint the plan-signup credentials (6-digit code + magic-link token on ONE
+ * email_verification_tokens row) and send the email carrying both. Prior
+ * unused tokens are invalidated first (last-issued-wins). On send failure
+ * the fresh row is rolled back so no dead-end credential stays active.
+ * Shared by /auth/plan-signup/request and /auth/plan-signup/resend.
+ *
+ * The raw code exists only in this scope and the outbound email. Never log it.
+ */
+async function issuePlanSignupCodeEmail(
+  sql: ReturnType<typeof getSql>,
+  env: Bindings,
+  args: {
+    userId: string;
+    email: string;
+    next: string;
+    planId: string | null;
+    planTitle: string;
+    intent: "going" | "maybe" | null;
+  },
+): Promise<{ ok: boolean }> {
   await sql`
     UPDATE newchums.email_verification_tokens
     SET used_at = NOW()
-    WHERE user_id = ${userId} AND used_at IS NULL
+    WHERE user_id = ${args.userId} AND used_at IS NULL
   `;
   const rawToken = generateResetToken();
   const tokenHash = await hashResetToken(rawToken);
-  const expiresAt = new Date(Date.now() + MAGIC_LINK_EXPIRY_MS);
+  const otpCode = generateOtpCode();
+  const otpHash = await hashResetToken(otpCode);
+  const expiresAt = new Date(Date.now() + PLAN_SIGNUP_CODE_EXPIRY_MS);
   await sql`
-    INSERT INTO newchums.email_verification_tokens (user_id, token_hash, expires_at)
-    VALUES (${userId}, ${tokenHash}, ${expiresAt})
+    INSERT INTO newchums.email_verification_tokens (user_id, token_hash, expires_at, otp_hash, event_id, signup_intent)
+    VALUES (${args.userId}, ${tokenHash}, ${expiresAt}, ${otpHash}, ${args.planId}, ${args.intent})
   `;
 
-  const confirmUrl = `${c.env.WEB_BASE_URL}/auth/magic?token=${encodeURIComponent(rawToken)}&email=${encodeURIComponent(email)}&next=${encodeURIComponent(next)}`;
+  const confirmUrl = `${env.WEB_BASE_URL}/auth/magic?token=${encodeURIComponent(rawToken)}&email=${encodeURIComponent(args.email)}&next=${encodeURIComponent(args.next)}`;
   try {
-    await sendMagicLinkSignupEmail(c.env, { to: email, confirmUrl, planTitle });
+    await sendMagicLinkSignupEmail(env, {
+      to: args.email,
+      confirmUrl,
+      planTitle: args.planTitle,
+      otpCode,
+    });
   } catch (err) {
     console.error("[plan-signup] sendMagicLinkSignupEmail failed", err);
-    // Roll back the token so a failed send doesn't leave a dead-end row active.
     await sql`
       UPDATE newchums.email_verification_tokens
       SET used_at = NOW()
-      WHERE user_id = ${userId} AND token_hash = ${tokenHash}
+      WHERE user_id = ${args.userId} AND token_hash = ${tokenHash}
     `;
-    return c.json({ ok: false, error: "EMAIL_SEND_FAILED" }, 500);
+    return { ok: false };
+  }
+  return { ok: true };
+}
+
+/**
+ * Verify the 6-digit plan-signup code typed on the plan page (B1).
+ *
+ * Security model: codes are single use, expire with the row (10 min), are
+ * invalidated after PLAN_SIGNUP_OTP_MAX_ATTEMPTS failed guesses (counter
+ * incremented atomically BEFORE comparison so parallel guesses can't dodge
+ * the cap), and only the newest row is ever active (issuance invalidates
+ * prior rows, so two devices resolve as last-issued-wins). Per-IP request
+ * cap on top. Responses for "no such account" and "no active code" are the
+ * same CODE_EXPIRED so the endpoint is not an account-existence oracle.
+ * Raw codes are never logged.
+ *
+ * On success this endpoint verifies the email (same NULL-to-set transition
+ * guard as magic-link consume, firing the same product events exactly once)
+ * and returns a short-lived single-use session-grant token. The client
+ * exchanges that grant through the EXISTING Auth.js magic-link provider
+ * (signIn("magic-link") -> /auth/magic-link/consume), so session issuance
+ * has exactly one code path and consume's semantics stay untouched; the
+ * grant consume is a no-op for verification because the user is already
+ * verified by then.
+ */
+app.post("/auth/plan-signup/verify-code", async (c) => {
+  let body: { email?: string; code?: string };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ ok: false, error: "INVALID_JSON" }, 400);
+  }
+  const email = body.email?.trim().toLowerCase();
+  const code = typeof body.code === "string" ? body.code.trim() : "";
+  if (!email || !/^\S+@\S+\.\S+$/.test(email) || !/^\d{6}$/.test(code)) {
+    return c.json({ ok: false, error: "INVALID_INPUT" }, 400);
   }
 
-  return c.json({ ok: true, state: "pending", next });
+  const requestIp =
+    c.req.header("CF-Connecting-IP") ??
+    c.req.header("X-Forwarded-For")?.split(",")[0]?.trim() ??
+    "unknown";
+  const sql = getSql(c.env);
+  const ipLimit = await checkDbRateLimit(
+    sql,
+    `plan-signup-verify:ip:${requestIp}`,
+    PLAN_SIGNUP_VERIFY_RATE_LIMIT_PER_IP,
+    PLAN_SIGNUP_RATE_LIMIT_WINDOW_MS,
+  );
+  if (!ipLimit.allowed) {
+    return c.json({ ok: false, error: "RATE_LIMITED" }, 429);
+  }
+
+  const users = (await sql`
+    SELECT id, email, name, is_suspended, email_verified_at
+    FROM newchums.users
+    WHERE email = ${email}
+    LIMIT 1
+  `) as { id: string; email: string; name: string | null; is_suspended: boolean; email_verified_at: string | null }[];
+  if (users.length === 0) {
+    // Uniform with "no active code" below; no account-existence oracle.
+    return c.json({ ok: false, error: "CODE_EXPIRED" }, 400);
+  }
+  const user = users[0];
+
+  const tokenRows = (await sql`
+    SELECT id, otp_hash, event_id, signup_intent
+    FROM newchums.email_verification_tokens
+    WHERE user_id = ${user.id}
+      AND otp_hash IS NOT NULL
+      AND used_at IS NULL
+      AND expires_at > NOW()
+    ORDER BY created_at DESC
+    LIMIT 1
+  `) as { id: string; otp_hash: string; event_id: string | null; signup_intent: string | null }[];
+  if (tokenRows.length === 0) {
+    return c.json({ ok: false, error: "CODE_EXPIRED" }, 400);
+  }
+  const tokenRow = tokenRows[0];
+
+  const codeHash = await hashResetToken(code);
+
+  if (codeHash !== tokenRow.otp_hash) {
+    // Stale-code check: a code from a superseded or expired row (the user
+    // requested a resend, or two devices raced) reads as "we sent a newer
+    // one" and does NOT burn an attempt on the active code. Only genuine
+    // wrong guesses count toward the cap.
+    const stale = (await sql`
+      SELECT 1 AS one FROM newchums.email_verification_tokens
+      WHERE user_id = ${user.id}
+        AND otp_hash = ${codeHash}
+        AND id != ${tokenRow.id}
+        AND created_at > NOW() - INTERVAL '1 day'
+      LIMIT 1
+    `) as unknown[];
+    if (stale.length > 0) {
+      return c.json({ ok: false, error: "CODE_EXPIRED" }, 400);
+    }
+    // Wrong guess: count it atomically so concurrent guesses can't dodge
+    // the cap, then invalidate the row on the final allowed failure.
+    const bumped = (await sql`
+      UPDATE newchums.email_verification_tokens
+      SET otp_attempts = otp_attempts + 1
+      WHERE id = ${tokenRow.id} AND used_at IS NULL
+      RETURNING otp_attempts
+    `) as { otp_attempts: number }[];
+    if (bumped.length === 0) {
+      // Raced with a concurrent consume/invalidate.
+      return c.json({ ok: false, error: "CODE_EXPIRED" }, 400);
+    }
+    const attempts = bumped[0].otp_attempts;
+    if (attempts >= PLAN_SIGNUP_OTP_MAX_ATTEMPTS) {
+      await sql`UPDATE newchums.email_verification_tokens SET used_at = NOW() WHERE id = ${tokenRow.id}`;
+      return c.json({ ok: false, error: "CODE_ATTEMPTS_EXCEEDED" }, 400);
+    }
+    return c.json(
+      { ok: false, error: "CODE_INCORRECT", attempts_remaining: PLAN_SIGNUP_OTP_MAX_ATTEMPTS - attempts },
+      400,
+    );
+  }
+
+  if (user.is_suspended) {
+    // Mirror magic-link consume: suspended users don't burn the credential.
+    return c.json({ ok: false, error: "ACCOUNT_SUSPENDED" }, 403);
+  }
+
+  // Correct code: burn the row single-use (the conditional UPDATE makes
+  // concurrent correct submissions race safely; the loser sees zero rows),
+  // then invalidate any stale unused siblings.
+  const burned = (await sql`
+    UPDATE newchums.email_verification_tokens SET used_at = NOW()
+    WHERE id = ${tokenRow.id} AND used_at IS NULL
+    RETURNING id
+  `) as { id: string }[];
+  if (burned.length === 0) {
+    return c.json({ ok: false, error: "CODE_EXPIRED" }, 400);
+  }
+  await sql`
+    UPDATE newchums.email_verification_tokens SET used_at = NOW()
+    WHERE user_id = ${user.id} AND used_at IS NULL
+  `;
+  await sql`UPDATE newchums.users SET email_verified_at = COALESCE(email_verified_at, NOW()) WHERE id = ${user.id}`;
+  if (!user.email_verified_at) {
+    runAfterResponse(c, recordPlanSignupVerified(sql, user.id));
+  }
+
+  const grantRaw = generateResetToken();
+  const grantHash = await hashResetToken(grantRaw);
+  const grantExpires = new Date(Date.now() + PLAN_SIGNUP_GRANT_EXPIRY_MS);
+  await sql`
+    INSERT INTO newchums.email_verification_tokens (user_id, token_hash, expires_at)
+    VALUES (${user.id}, ${grantHash}, ${grantExpires})
+  `;
+
+  return c.json({
+    ok: true,
+    grant_token: grantRaw,
+    intent: tokenRow.signup_intent,
+    event_id: tokenRow.event_id,
+  });
+});
+
+/**
+ * Re-send the plan-signup code email (B1). No Turnstile here (the widget's
+ * token is single use and a re-solve mid-flow is hostile UX); abuse is
+ * bounded instead by the same Postgres issuance caps as the request
+ * endpoint (shared buckets) plus the per-email cooldown. Responds ok
+ * uniformly whether or not a pending signup exists, so it is not an
+ * account-existence oracle. Only acts on accounts that are unverified and
+ * not suspended; anyone else silently gets nothing.
+ */
+app.post("/auth/plan-signup/resend", async (c) => {
+  let body: { email?: string; next?: string; intent?: string };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ ok: false, error: "INVALID_JSON" }, 400);
+  }
+  const email = body.email?.trim().toLowerCase();
+  const next = sanitizePlanSignupNext(body.next);
+  const intent = parseSignupIntent(body.intent);
+  if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
+    return c.json({ ok: false, error: "INVALID_EMAIL" }, 400);
+  }
+
+  const requestIp =
+    c.req.header("CF-Connecting-IP") ??
+    c.req.header("X-Forwarded-For")?.split(",")[0]?.trim() ??
+    "unknown";
+  const sql = getSql(c.env);
+
+  const ipLimit = await checkDbRateLimit(
+    sql,
+    `plan-signup:ip:${requestIp}`,
+    PLAN_SIGNUP_RATE_LIMIT_PER_IP,
+    PLAN_SIGNUP_RATE_LIMIT_WINDOW_MS,
+  );
+  if (!ipLimit.allowed) return c.json({ ok: false, error: "RATE_LIMITED" }, 429);
+  const emailLimit = await checkDbRateLimit(
+    sql,
+    `plan-signup:email:${email}`,
+    PLAN_SIGNUP_RATE_LIMIT_PER_EMAIL,
+    PLAN_SIGNUP_RATE_LIMIT_WINDOW_MS,
+  );
+  if (!emailLimit.allowed) return c.json({ ok: false, error: "RATE_LIMITED" }, 429);
+
+  const cooldownBucket = `plan-signup:cooldown:${email}`;
+  const underCooldown = await isDbRateLimited(
+    sql,
+    cooldownBucket,
+    1,
+    PLAN_SIGNUP_RESEND_COOLDOWN_SECONDS * 1000,
+  );
+  if (underCooldown) {
+    return c.json(
+      { ok: false, error: "COOLDOWN", retry_after_seconds: PLAN_SIGNUP_RESEND_COOLDOWN_SECONDS },
+      429,
+    );
+  }
+
+  const users = (await sql`
+    SELECT id, is_suspended, email_verified_at
+    FROM newchums.users
+    WHERE email = ${email}
+    LIMIT 1
+  `) as { id: string; is_suspended: boolean; email_verified_at: string | null }[];
+  const user = users[0];
+  if (!user || user.is_suspended || user.email_verified_at) {
+    // Uniform response; nothing to resend for verified/unknown/suspended.
+    return c.json({ ok: true, resend_cooldown_seconds: PLAN_SIGNUP_RESEND_COOLDOWN_SECONDS });
+  }
+
+  // Resolve plan context: prefer the client-provided next URL, fall back to
+  // the latest stored row (covers a client that lost its URL state).
+  let planTitle = "a plan";
+  let planId: string | null = null;
+  try {
+    const planIdMatch = next.match(/^\/events\/([a-zA-Z0-9-]+)(?:[/?].*)?$/);
+    const candidateId = planIdMatch?.[1] ?? null;
+    if (candidateId) {
+      const rows = (await sql`
+        SELECT id, title FROM newchums.events WHERE id = ${candidateId} LIMIT 1
+      `) as { id: string; title: string | null }[];
+      if (rows[0]) {
+        planId = rows[0].id;
+        if (rows[0].title) planTitle = rows[0].title;
+      }
+    }
+    if (!planId) {
+      const prior = (await sql`
+        SELECT t.event_id, e.title
+        FROM newchums.email_verification_tokens t
+        LEFT JOIN newchums.events e ON e.id = t.event_id
+        WHERE t.user_id = ${user.id} AND t.event_id IS NOT NULL
+        ORDER BY t.created_at DESC
+        LIMIT 1
+      `) as { event_id: string | null; title: string | null }[];
+      if (prior[0]?.event_id) {
+        planId = prior[0].event_id;
+        if (prior[0].title) planTitle = prior[0].title;
+      }
+    }
+  } catch {
+    // non-fatal; email copy falls back to "a plan"
+  }
+  const storedIntent = planId ? intent : null;
+
+  const issued = await issuePlanSignupCodeEmail(sql, c.env, {
+    userId: user.id,
+    email,
+    next,
+    planId,
+    planTitle,
+    intent: storedIntent,
+  });
+  if (!issued.ok) {
+    return c.json({ ok: false, error: "EMAIL_SEND_FAILED" }, 500);
+  }
+  await recordDbRateEvent(sql, cooldownBucket);
+  runAfterResponse(
+    c,
+    recordProductEvent(sql, {
+      name: "signup_email_sent",
+      userId: user.id,
+      eventId: planId,
+      params: { kind: "resend" },
+    }),
+  );
+  return c.json({ ok: true, resend_cooldown_seconds: PLAN_SIGNUP_RESEND_COOLDOWN_SECONDS });
 });
 
 /**
@@ -12917,12 +13304,39 @@ app.get("/events/:id", async (c) => {
       }
     }
 
+    // B1 crash recovery: if the viewer verified via plan signup but the
+    // client died before applying their stored RSVP intent, surface it so
+    // the plan page can auto-apply through the normal RSVP endpoint. Only
+    // meaningful while no RSVP row exists; an existing RSVP wins outright.
+    let viewerPendingIntent: string | null = null;
+    if (userId) {
+      try {
+        const intentRows = (await sql`
+          SELECT t.signup_intent
+          FROM newchums.email_verification_tokens t
+          WHERE t.user_id = ${userId}
+            AND t.event_id = ${eventId}
+            AND t.signup_intent IS NOT NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM newchums.event_rsvps r
+              WHERE r.event_id = ${eventId} AND r.user_id = ${userId}
+            )
+          ORDER BY t.created_at DESC
+          LIMIT 1
+        `) as { signup_intent: string }[];
+        viewerPendingIntent = intentRows[0]?.signup_intent ?? null;
+      } catch {
+        // non-fatal; intent recovery is best-effort
+      }
+    }
+
     return c.json({
       ok: true,
       accessState,
       shareToken,
       prefNote,
       viewerUserId: userId ?? null,
+      viewerPendingIntent,
       viewerEmail: authPayload?.email ? (authPayload.email as string).toLowerCase() : null,
       // Email the invite_token was issued for, exposed only to unauthenticated
       // viewers so the lightweight signup card can prefill it. Once the user

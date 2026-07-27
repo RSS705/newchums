@@ -22,7 +22,9 @@ export const sendResendEmail = async (env: Bindings, payload: ResendEmailPayload
 
   const isDev = env.APP_ENV === "development";
   if (isDev) {
-    console.log("[resend] to:", payload.to, "subject:", payload.subject);
+    // Deliberately no subject here: one-time sign-in codes ride in email
+    // subjects (B1) and codes must never appear in logs.
+    console.log("[resend] sending to:", payload.to);
   }
 
   const body: Record<string, unknown> = {
@@ -34,7 +36,11 @@ export const sendResendEmail = async (env: Bindings, payload: ResendEmailPayload
   if (payload.text) body.text = payload.text;
   if (payload.reply_to) body.reply_to = payload.reply_to;
 
-  const response = await fetch("https://api.resend.com/emails", {
+  // RESEND_BASE_URL is a test seam: unset in production (and in wrangler.toml)
+  // so real sends always hit Resend; the isolated-DB harness points it at a
+  // local sink so end-to-end signup tests capture real rendered emails
+  // without any outbound mail.
+  const response = await fetch(`${env.RESEND_BASE_URL ?? "https://api.resend.com"}/emails`, {
     method: "POST",
     headers: {
       Accept: "application/json",

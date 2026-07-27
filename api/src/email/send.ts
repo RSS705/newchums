@@ -786,11 +786,12 @@ export const sendEventMatchDigestEmail = async (
 
 export const sendMagicLinkSignupEmail = async (
   env: Bindings,
-  { to, confirmUrl, planTitle }: { to: string; confirmUrl: string; planTitle: string },
+  { to, confirmUrl, planTitle, otpCode }: { to: string; confirmUrl: string; planTitle: string; otpCode: string },
 ) =>
   dispatch(env, to, "magicLinkSignup", {
     confirmUrl,
     planTitle,
+    otpCode,
   });
 
 // ── Plan-signin notice for existing accounts ─────────────────────────────

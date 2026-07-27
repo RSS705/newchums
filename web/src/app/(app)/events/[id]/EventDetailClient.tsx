@@ -316,6 +316,9 @@ export default function EventDetailClient({
   const [altTimes, setAltTimes] = useState<AltTimeEntry[]>([]);
   const [invites, setInvites] = useState<InviteEntry[]>([]);
   const [viewerUserId, setViewerUserId] = useState<string | null>(null);
+  // B1 crash recovery: server-persisted signup intent for this viewer+plan,
+  // present only while the viewer has no RSVP row (see GET /events/:id).
+  const [viewerPendingIntent, setViewerPendingIntent] = useState<"going" | "maybe" | null>(null);
   const [viewerEmail, setViewerEmail] = useState<string | null>(null);
   // Email the invite_token was issued for, exposed by GET /events/:id only to
   // unauthenticated viewers so the lightweight signup card can prefill the
@@ -505,6 +508,7 @@ export default function EventDetailClient({
       shareToken?: string;
       prefNote?: string[] | null;
       viewerUserId?: string | null;
+      viewerPendingIntent?: string | null;
       viewerEmail?: string | null;
       inviteeEmail?: string | null;
       shareLinkModalDismissed?: boolean;
@@ -522,6 +526,11 @@ export default function EventDetailClient({
       setAltTimes(data.altTimes);
       setInvites(data.invites ?? []);
       setJoinRequests(data.joinRequests ?? []);
+      setViewerPendingIntent(
+        data.viewerPendingIntent === "going" || data.viewerPendingIntent === "maybe"
+          ? data.viewerPendingIntent
+          : null,
+      );
       if (data.viewerUserId) setViewerUserId(data.viewerUserId);
       if (data.viewerEmail) setViewerEmail(data.viewerEmail);
       setInviteeEmail(data.inviteeEmail ?? null);
@@ -684,6 +693,11 @@ export default function EventDetailClient({
 
   // Auto-RSVP from email link (?rsvp=going&invite_token=xxx)
   const pendingRsvpRef = useRef<string | null>(null);
+  // B1 signup intent (?intent=going|maybe) carried through the verification
+  // round trip. Applied by the guarded effect below, and only when the
+  // viewer has no RSVP row yet; an existing RSVP always wins.
+  const pendingIntentRef = useRef<"going" | "maybe" | null>(null);
+  const intentApplyDoneRef = useRef(false);
   // Invitee-funnel event: fired at most once per mount, only for a logged-out
   // arrival that carried a share or invite token in the URL. The magic-link
   // return visit carries the token again but the visitor is authenticated by
@@ -691,6 +705,7 @@ export default function EventDetailClient({
   const planLinkOpenedTrackedRef = useRef(false);
   useEffect(() => {
     const rsvpParam = searchParams.get("rsvp");
+    const intentParam = searchParams.get("intent");
     const inviteTokenParam = searchParams.get("invite_token");
     const shareTokenParam = searchParams.get("share_token");
     const contextParam = searchParams.get("context");
@@ -704,6 +719,13 @@ export default function EventDetailClient({
       trackEvent("plan_link_opened", {
         token_type: inviteTokenParam ? "invite" : "share",
       });
+    }
+    // B1 signup intent, carried back through the verification round trip
+    // (code entry or magic link). Unlike the legacy `rsvp` param, intents
+    // auto-apply only when the viewer has no RSVP row yet (see the guarded
+    // effect below).
+    if (intentParam === "going" || intentParam === "maybe") {
+      pendingIntentRef.current = intentParam;
     }
     if (inviteTokenParam) {
       inviteTokenRef.current = inviteTokenParam;
@@ -731,6 +753,7 @@ export default function EventDetailClient({
     if (sectionParam) pendingSectionRef.current = sectionParam;
     if (
       rsvpParam ||
+      intentParam ||
       inviteTokenParam ||
       shareTokenParam ||
       contextParam ||
@@ -738,6 +761,7 @@ export default function EventDetailClient({
     ) {
       const url = new URL(window.location.href);
       url.searchParams.delete("rsvp");
+      url.searchParams.delete("intent");
       url.searchParams.delete("invite_token");
       url.searchParams.delete("share_token");
       url.searchParams.delete("context");
@@ -805,6 +829,35 @@ export default function EventDetailClient({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event]);
+
+  // B1 guarded intent auto-apply. Sources, in priority order: the `intent`
+  // URL param captured on arrival (normal verify round trip), then the
+  // server-persisted intent from GET /events/:id (crash recovery when the
+  // client died between verify and RSVP). Applies through the normal RSVP
+  // endpoint, exactly once per mount, and ONLY when the viewer has no RSVP
+  // row; a user who already answered keeps their answer. Distinct from the
+  // legacy `rsvp` param effect above, which deliberately overwrites (an
+  // email CTA is an explicit action by an existing user).
+  useEffect(() => {
+    if (!event || isAuthenticated !== true || !viewerUserId) return;
+    if (intentApplyDoneRef.current) return;
+    const intent = pendingIntentRef.current ?? viewerPendingIntent;
+    if (intent !== "going" && intent !== "maybe") return;
+    intentApplyDoneRef.current = true;
+    pendingIntentRef.current = null;
+    if (event.isHost || event.status === "canceled") return;
+    const hasExistingRsvp = rsvps.some((r) => r.userId === viewerUserId);
+    if (hasExistingRsvp) return;
+    handleRsvp(intent);
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        document
+          .getElementById("plan-section-confirmation")
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 150);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [event, isAuthenticated, viewerUserId, rsvps, viewerPendingIntent]);
 
   // Invite search
   useEffect(() => {
@@ -3343,22 +3396,29 @@ export default function EventDetailClient({
           ) : isAuthenticated === false ? (
             <PlanSignupCard
               planUrlWithTokens={(() => {
-                // Preserve the invitee's RSVP intent through the magic-link
-                // round-trip. If the user clicked "Going" from the invite
-                // email (?rsvp=going), we want that to auto-apply after
-                // they finish signing up, so fold it into the URL the
-                // magic-link returns to, alongside any share/invite token.
-                // Also include `section=confirmation` so the landing view
-                // scrolls to the "Are you in?" / "You're going" card
-                // instead of the top of the plan.
+                // The URL the invitee returns to after verifying (by code or
+                // magic link), carrying any share/invite token plus
+                // `section=confirmation` so the landing view scrolls to the
+                // confirmation card. The card itself appends the chosen
+                // `intent` param; the guarded intent effect applies it via
+                // the normal RSVP endpoint only when no RSVP row exists.
+                // A `cant_make_it` email CTA is not an intent; it keeps the
+                // legacy `rsvp` param and its unguarded auto-apply.
                 const params = new URLSearchParams();
                 if (inviteTokenRef.current) params.set("invite_token", inviteTokenRef.current);
                 else if (shareTokenRef.current) params.set("share_token", shareTokenRef.current);
-                if (pendingRsvpRef.current) params.set("rsvp", pendingRsvpRef.current);
+                if (pendingRsvpRef.current === "cant_make_it") params.set("rsvp", "cant_make_it");
                 params.set("section", "confirmation");
                 return `/events/${eventId}?${params.toString()}`;
               })()}
               planTitle={event.title}
+              // A "Going" / "Maybe" email CTA pre-selects the intent so the
+              // card opens on the form with the matching chip active.
+              initialIntent={
+                pendingRsvpRef.current === "going" || pendingRsvpRef.current === "maybe"
+                  ? pendingRsvpRef.current
+                  : null
+              }
               // Prefill the email the invite_token was issued for so the new
               // account is created with the address the host invited and the
               // post-signup invite adoption matches by email. Without this,

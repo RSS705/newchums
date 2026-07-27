@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
-  <title>Confirm your NewChums sign-up</title>
+  <title>Your NewChums code</title>
   <!--[if mso]>
   <noscript>
     <xml>
@@ -55,15 +55,27 @@
 
               <!-- Heading -->
               <p style="margin: 0 0 14px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 24px; font-weight: 700; color: #1F2937; line-height: 1.25;">
-                Confirm to finish signing up
+                Your code for {{planTitle}}
               </p>
 
               <!-- Body copy -->
-              <p style="margin: 0 0 22px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 15px; color: #4B5563; line-height: 1.6;">
-                Click the button below to confirm your email, create your NewChums account, and head back to <strong>{{planTitle}}</strong> to RSVP.
+              <p style="margin: 0 0 18px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 15px; color: #4B5563; line-height: 1.6;">
+                Enter this code on the plan page to confirm your email and lock in your RSVP.
               </p>
 
-              <!-- CTA -->
+              <!-- Code display -->
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 22px;">
+                <tr>
+                  <td align="center">
+                    <p style="margin: 0; padding: 16px 24px; background-color: #FFF7ED; border: 1px solid #FDBA74; border-radius: 12px; display: inline-block; font-family: 'Courier New', Courier, monospace; font-size: 34px; font-weight: 700; color: #1F2937; letter-spacing: 8px; line-height: 1.2;">{{otpCode}}</p>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Link alternative -->
+              <p style="margin: 0 0 14px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 14px; color: #4B5563; line-height: 1.6; text-align: center;">
+                Prefer one tap? This button does the same thing:
+              </p>
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 14px;">
                 <tr>
                   <td align="center">
@@ -82,16 +94,8 @@
                 </tr>
               </table>
 
-              <!-- Fallback link -->
-              <p style="margin: 0 0 18px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 13px; color: #9CA3AF; line-height: 1.55; text-align: center;">
-                If the button doesn't work, copy and paste this link into your browser:
-              </p>
-              <p style="margin: 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 12px; color: #E65B13; line-height: 1.4; text-align: center; word-break: break-all;">
-                <a href="{{confirmUrl}}" style="color: #E65B13; text-decoration: none;">{{confirmUrl}}</a>
-              </p>
-
               <p style="margin: 18px 0 0 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 13px; color: #9CA3AF; line-height: 1.55; text-align: center;">
-                This link expires in 15 minutes. If you opened the plan page on a different device, just continue there after clicking.
+                The code and button expire in 10 minutes. If they run out, request a fresh code from the plan page.
               </p>
             </td>
           </tr>

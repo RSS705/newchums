@@ -1,10 +1,12 @@
-Confirm to finish signing up
+Your code for {{planTitle}}
 
-Click the link below to confirm your email, create your NewChums account, and head back to {{planTitle}} to RSVP.
+Enter this code on the plan page to confirm your email and lock in your RSVP:
 
-Confirm and continue: {{confirmUrl}}
+{{otpCode}}
 
-This link expires in 15 minutes. If you opened the plan page on a different device, just continue there after clicking.
+Prefer one tap? This link does the same thing: {{confirmUrl}}
+
+The code and link expire in 10 minutes. If they run out, request a fresh code from the plan page.
 
 ---
 

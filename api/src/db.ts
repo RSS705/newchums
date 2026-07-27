@@ -11,6 +11,8 @@ export type Bindings = {
   TURNSTILE_SECRET_KEY?: string;
   /** Resend API key (https://resend.com). Stored as a Cloudflare Workers secret in prod. */
   RESEND_API_KEY: string;
+  /** Test seam: override the Resend API base URL. Never set in production. */
+  RESEND_BASE_URL?: string;
   /** Default From for transactional sends. Use "NewChums <no-reply@newchums.com>" in prod. */
   EMAIL_FROM: string;
   WEB_BASE_URL: string;

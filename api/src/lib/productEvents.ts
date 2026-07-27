@@ -34,6 +34,7 @@ export type ProductEventName =
   | "rsvp_verified"
   | "rsvp_recorded"
   | "signup_completed"
+  | "signup_email_sent"
   | "first_plan_created"
   | "second_plan_created"
   | "plan_reached_3_rsvps";

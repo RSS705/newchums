@@ -19,7 +19,7 @@ export const SUBJECTS = {
   emailChangeConfirm: "Confirm your new NewChums email",
   emailChangeNotifyOld: "Your NewChums email is being changed",
   emailChangeSuccess: "Your NewChums email has been updated",
-  magicLinkSignup: "Finish signing up for {{planTitle}}",
+  magicLinkSignup: "{{otpCode}} is your NewChums code",
   planSignin: "Sign in to view {{planTitle}}",
   signinLink: "Your NewChums sign-in link",
 
