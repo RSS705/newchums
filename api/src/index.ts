@@ -53,6 +53,13 @@ import { nameToSlug, slugToName, validateInterestName } from "./interests";
 import { ensureAppUserId } from "./profile";
 import { generateResetToken, hashResetToken } from "./resetTokens";
 import { isValidContactSubject } from "./lib/contact";
+import {
+  recordPlanCreationFunnelEvents,
+  recordPlanSignupVerified,
+  recordProductEvent,
+  recordRsvpFunnelEvents,
+  runAfterResponse,
+} from "./lib/productEvents";
 import { computeAge } from "./lib/publicProfile";
 import {
   AGE_PREF_YEAR_OPTIONS,
@@ -1358,8 +1365,8 @@ app.post("/auth/email-verify/confirm", async (c) => {
   const tokenHash = await hashResetToken(tokenRaw);
   const sql = getSql(c.env);
   const users = (await sql`
-    SELECT id FROM users WHERE email = ${normalizedEmail} LIMIT 1
-  `) as { id: string }[];
+    SELECT id, email_verified_at FROM users WHERE email = ${normalizedEmail} LIMIT 1
+  `) as { id: string; email_verified_at: string | null }[];
   if (users.length === 0) {
     return c.json({ ok: false, error: "INVALID_OR_EXPIRED" }, 400);
   }
@@ -1380,6 +1387,19 @@ app.post("/auth/email-verify/confirm", async (c) => {
 
   await sql`UPDATE users SET email_verified_at = NOW() WHERE id = ${users[0].id}`;
   await sql`UPDATE email_verification_tokens SET used_at = NOW() WHERE id = ${tokens[0].id}`;
+
+  // Funnel event: classic email+password signup finished verification. Only
+  // on the NULL -> set transition so a re-confirm never double-counts.
+  if (!users[0].email_verified_at) {
+    runAfterResponse(
+      c,
+      recordProductEvent(sql, {
+        name: "signup_completed",
+        userId: users[0].id,
+        params: { method: "password" },
+      }),
+    );
+  }
   return c.json({ ok: true });
 });
 
@@ -1425,11 +1445,24 @@ app.post("/auth/email-verify/mark-oauth", async (c) => {
 
   const sql = getSql(c.env);
   const normalized = payload.email.trim().toLowerCase();
-  await sql`
+  const marked = (await sql`
     UPDATE users
     SET email_verified_at = COALESCE(email_verified_at, NOW())
     WHERE email = ${normalized} AND email_verified_at IS NULL
-  `;
+    RETURNING id
+  `) as { id: string }[];
+  // Funnel event: the UPDATE only matches on the first (NULL -> set)
+  // transition, so a returned row means a Google-OAuth signup just completed.
+  if (marked.length > 0) {
+    runAfterResponse(
+      c,
+      recordProductEvent(sql, {
+        name: "signup_completed",
+        userId: marked[0].id,
+        params: { method: "google" },
+      }),
+    );
+  }
   return c.json({ ok: true });
 });
 
@@ -1878,11 +1911,11 @@ app.post("/auth/magic-link/consume", async (c) => {
 
   const sql = getSql(c.env);
   const users = (await sql`
-    SELECT id, email, name, is_suspended
+    SELECT id, email, name, is_suspended, email_verified_at
     FROM newchums.users
     WHERE email = ${email}
     LIMIT 1
-  `) as { id: string; email: string; name: string | null; is_suspended: boolean }[];
+  `) as { id: string; email: string; name: string | null; is_suspended: boolean; email_verified_at: string | null }[];
   if (users.length === 0) {
     return c.json({ ok: false, error: "INVALID_OR_EXPIRED" }, 400);
   }
@@ -1909,6 +1942,15 @@ app.post("/auth/magic-link/consume", async (c) => {
 
   await sql`UPDATE newchums.email_verification_tokens SET used_at = NOW() WHERE id = ${tokens[0].id}`;
   await sql`UPDATE newchums.users SET email_verified_at = COALESCE(email_verified_at, NOW()) WHERE id = ${user.id}`;
+
+  // Funnel events: a previously unverified account consuming a magic link is
+  // a plan-signup verification completing (magic-link tokens for unverified
+  // users are only minted by /auth/plan-signup/request). Returning
+  // password_setup_pending users (signin-link flow) are already verified and
+  // fire nothing. Off the critical path; failures never affect the response.
+  if (!user.email_verified_at) {
+    runAfterResponse(c, recordPlanSignupVerified(sql, user.id));
+  }
 
   return c.json({
     ok: true,
@@ -5766,6 +5808,68 @@ app.get("/admin/kpis", async (c) => {
     });
   } catch (err) {
     console.error("[GET /admin/kpis]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+// ─── GET /admin/kpis/funnel ──────────────────────────────────────────────────
+//
+// First-party funnel counts from newchums.product_events (migration 103).
+// Steps that only exist client-side (plan_link_opened, rsvp_form_started,
+// rsvp_form_submitted, share_link_copied, plan_created) live in GA; the
+// admin UI renders those rows as "see GA" instead of a count.
+// ?days=7|30|0 (0 = all time; default 30).
+
+app.get("/admin/kpis/funnel", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+
+  const sql = getSql(c.env);
+  const rawDays = c.req.query("days");
+  const wantAll = rawDays === "0" || rawDays === "all";
+  const rangeDays = wantAll ? 0 : Math.max(Math.floor(Number(rawDays)) || 30, 1);
+  const startDateIso = new Date(Date.now() - rangeDays * 86_400_000).toISOString();
+
+  try {
+    const rows = (wantAll
+      ? await sql`
+          SELECT event_name, COUNT(*)::int AS total, COUNT(DISTINCT user_id)::int AS users
+          FROM newchums.product_events
+          GROUP BY event_name
+        `
+      : await sql`
+          SELECT event_name, COUNT(*)::int AS total, COUNT(DISTINCT user_id)::int AS users
+          FROM newchums.product_events
+          WHERE created_at >= ${startDateIso}::timestamptz
+          GROUP BY event_name
+        `) as { event_name: string; total: number; users: number }[];
+
+    const byName = new Map(rows.map((r) => [r.event_name, r]));
+    const count = (name: string) => Number(byName.get(name)?.total ?? 0);
+    const userCount = (name: string) => Number(byName.get(name)?.users ?? 0);
+
+    return c.json({
+      ok: true,
+      data: {
+        rangeDays,
+        invitee: {
+          // rsvp_verified is once-per-user by unique index, so total == users.
+          verified: count("rsvp_verified"),
+          // A plan-signup user can RSVP to several plans; the funnel counts people.
+          rsvpRecordedUsers: userCount("rsvp_recorded"),
+        },
+        host: {
+          signups: count("signup_completed"),
+          firstPlans: count("first_plan_created"),
+          plansReached3Rsvps: count("plan_reached_3_rsvps"),
+          // Distinct hosts behind those plans, for a people-to-people conversion step.
+          hostsReached3Rsvps: userCount("plan_reached_3_rsvps"),
+          secondPlans: count("second_plan_created"),
+        },
+      },
+    });
+  } catch (err) {
+    console.error("[GET /admin/kpis/funnel]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });
@@ -11251,6 +11355,13 @@ app.post("/events", async (c) => {
 
     const eventId = rows[0].id;
 
+    // Funnel events: first_plan_created / second_plan_created (host loop).
+    // QA plans stay out of product analytics entirely. Runs off the critical
+    // path; failures never affect the response.
+    if (!isQa) {
+      runAfterResponse(c, recordPlanCreationFunnelEvents(sql, { planId: eventId, hostUserId: userId }));
+    }
+
     // Link the new plan to its communities via the junction table.
     if (communityIds.length > 0) {
       try {
@@ -13145,6 +13256,20 @@ app.post("/events/:id/rsvp", async (c) => {
       ON CONFLICT (event_id, user_id) DO UPDATE SET status = ${status}, note = ${note}, updated_at = NOW(),
         committed_at = COALESCE(newchums.event_rsvps.committed_at, EXCLUDED.committed_at)
     `;
+
+    // Funnel events: rsvp_recorded (invitee loop) + plan_reached_3_rsvps
+    // (host loop). Off the critical path; failures never affect the RSVP.
+    runAfterResponse(
+      c,
+      recordRsvpFunnelEvents(sql, {
+        planId: eventId,
+        hostUserId: event.host_user_id,
+        isQa: event.is_qa === true,
+        rsvpUserId: userId,
+        rsvpStatus: status,
+        rsvpRowCreated: previousStatus === null,
+      }),
+    );
 
     // Sync confirmation state when RSVP changes during active confirmation window
     if (event.require_reconfirmation) {
@@ -15240,8 +15365,8 @@ app.post("/events/:id/join-request/:requestId/approve", async (c) => {
 
   try {
     const ev = (await sql`
-      SELECT id, host_user_id, title, max_seats, starts_at, timezone, location_type, location_name, location_address, location_visibility, location_area, online_link FROM newchums.events WHERE id = ${eventId} AND status = 'published'
-    `) as { id: string; host_user_id: string; title: string; max_seats: number | null; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; location_visibility: string | null; location_area: string | null; online_link: string | null }[];
+      SELECT id, host_user_id, title, max_seats, starts_at, timezone, location_type, location_name, location_address, location_visibility, location_area, online_link, is_qa FROM newchums.events WHERE id = ${eventId} AND status = 'published'
+    `) as { id: string; host_user_id: string; title: string; max_seats: number | null; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; location_visibility: string | null; location_area: string | null; online_link: string | null; is_qa: boolean | null }[];
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     if (ev[0].host_user_id !== userId) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
 
@@ -15268,13 +15393,30 @@ app.post("/events/:id/join-request/:requestId/approve", async (c) => {
       WHERE id = ${requestId}
     `;
 
-    // Add as Going
+    // Add as Going. The pre-check only feeds the funnel event below (was
+    // this a fresh RSVP row or an upgrade of an existing one).
+    const priorRsvp = (await sql`
+      SELECT 1 AS one FROM newchums.event_rsvps WHERE event_id = ${eventId} AND user_id = ${req[0].user_id} LIMIT 1
+    `) as unknown[];
     await sql`
       INSERT INTO newchums.event_rsvps (event_id, user_id, status, committed_at)
       VALUES (${eventId}, ${req[0].user_id}, 'going', NOW())
       ON CONFLICT (event_id, user_id) DO UPDATE SET status = 'going', updated_at = NOW(),
         committed_at = COALESCE(newchums.event_rsvps.committed_at, NOW())
     `;
+
+    // Funnel events: approval-path RSVPs count the same as direct RSVPs.
+    runAfterResponse(
+      c,
+      recordRsvpFunnelEvents(sql, {
+        planId: eventId,
+        hostUserId: ev[0].host_user_id,
+        isQa: ev[0].is_qa === true,
+        rsvpUserId: req[0].user_id,
+        rsvpStatus: "going",
+        rsvpRowCreated: priorRsvp.length === 0,
+      }),
+    );
 
     // Notify requester (in-app)
     await sql`

@@ -15,6 +15,7 @@ import LockPersonRoundedIcon from "@mui/icons-material/LockPersonRounded";
 import { AppButton, AppCard, AppTextField } from "@/components/ui";
 import NCDatePicker from "@/components/fields/NCDatePicker";
 import TurnstileWidget from "@/components/contact/TurnstileWidget";
+import { trackEvent } from "@/lib/analytics";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -66,6 +67,15 @@ export default function PlanSignupCard({
 
   const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
   const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
+
+  // Invitee-funnel event: first interaction with the card, keyed to the
+  // first focus of the email field. Once per mount.
+  const formStartedRef = React.useRef(false);
+  const handleEmailFocus = React.useCallback(() => {
+    if (formStartedRef.current) return;
+    formStartedRef.current = true;
+    trackEvent("rsvp_form_started");
+  }, []);
 
   async function handleSubmit() {
     const nextErrors: Record<string, string> = {};
@@ -151,6 +161,11 @@ export default function PlanSignupCard({
         });
         return;
       }
+
+      // Funnel event: request accepted by the server. `result` mirrors the
+      // server's state ("pending" = magic link sent, "existing_account" =
+      // verified account already exists). No email or other PII in params.
+      trackEvent("rsvp_form_submitted", { result: data.state });
 
       if (data.state === "existing_account") {
         // Surface an inline explanation rather than hard-redirecting to /login
@@ -297,6 +312,7 @@ export default function PlanSignupCard({
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          onFocus={handleEmailFocus}
           error={Boolean(fieldErrors.email)}
           helperText={fieldErrors.email ?? null}
           fullWidth

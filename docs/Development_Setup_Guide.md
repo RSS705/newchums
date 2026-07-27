@@ -304,6 +304,20 @@ Chunk XX, YYYY-MM-DD
 
 ---
 
+Chunk 22, 2026-07-27
+- Goal: Instrument the two growth funnels (invitee loop and host loop) end to end ahead of a paid ad test: GA client events plus a first-party mirror of the server-detectable steps, surfaced in /admin/kpis.
+- Changes:
+  - **DB migration 103** (`newchums.product_events`): append-only analytics table (`event_name`, nullable `user_id` / `event_id` FKs with ON DELETE SET NULL, JSONB `params`, `created_at`), index on `(event_name, created_at)`, and partial unique indexes enforcing the once-per-subject events.
+  - **API, `src/lib/productEvents.ts` (new):** self-swallowing insert helper (`ON CONFLICT DO NOTHING`), derived-event helpers for plan creation (first/second plan) and RSVP writes (rsvp_recorded, plan_reached_3_rsvps), and `runAfterResponse` (executionCtx.waitUntil wrapper) so writes never touch the request's critical path. QA plans never produce events.
+  - **API, `src/index.ts`:** `POST /auth/magic-link/consume` fires `rsvp_verified` + `signup_completed` (method plan_signup) on the email_verified_at NULL-to-set transition only; `POST /auth/email-verify/confirm` fires `signup_completed` (password) on the same transition; `POST /auth/email-verify/mark-oauth` fires `signup_completed` (google) via RETURNING on its already-conditional UPDATE; `POST /events` fires the plan-creation funnel helper; `POST /events/:id/rsvp` and the join-request approval path both fire the RSVP funnel helper (approval SELECT now includes `is_qa`, plus a pre-upsert existence check to distinguish row creation from upgrade). New `GET /admin/kpis/funnel?days=7|30|0` (super admin) aggregates the table.
+  - **Web, client GA events (via existing `trackEvent`):** `plan_link_opened` (`token_type`) on logged-out plan-detail arrival with a share/invite token; `rsvp_form_started` on first email-field focus in `PlanSignupCard`; `rsvp_form_submitted` (`result`) on accepted plan-signup request; `share_link_copied` (`is_host`) in the plan-detail copy-link handler; `plan_created` on successful non-QA plan creation.
+  - **Web, `/admin/kpis`:** new "Funnel" section (invitee + host loop tables) with its own 7d/30d/All toggle; first-party steps show counts and step conversions, client-only steps render a "see GA" chip.
+  - **Documentation:** Technical_Specs.md section 12 gains the consolidated "Product analytics events" catalogue (GA vs first-party, params, firing points); section 11 gains the product_events schema entry; AGENTS.md gains a Product Analytics section (naming convention, no-PII rule, never-block rule, QA exclusion).
+- Verification: API vitest suite passes; wrangler dry-run bundle clean; web `tsc --noEmit`, targeted eslint (zero new findings), and `npm run build` pass. Server events verified end to end against an isolated `newchums_funneltest` database on the same Neon instance (prod schema recreated via catalog-derived legacy DDL + the full migration chain; migration 103 applied cleanly): magic-link consume produced `rsvp_verified` + `signup_completed`(plan_signup) exactly once (a second consume for the already-verified user produced nothing); two plan creates produced `first_plan_created` then `second_plan_created` and a QA plan produced nothing; three non-host going RSVPs produced `rsvp_recorded` (plan-signup entrant only) and `plan_reached_3_rsvps` exactly once (Maybe/Going re-toggle did not double-fire); email-verify confirm and mark-oauth produced `signup_completed` password/google; `GET /admin/kpis/funnel` returned the expected counts for 7d and all-time and 403 for non-admins. Test DB dropped afterwards; no synthetic rows touched production.
+- Deploy: Run migration 103 against production DB first, then deploy API worker, then web worker.
+
+---
+
 Chunk 21, 2026-07-15
 - Goal: Make the three host RSVP notification emails previous-status aware, so a first-time "Can't make it" from an invitee no longer reads as "Someone left your plan".
 - Changes:

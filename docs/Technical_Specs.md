@@ -1059,7 +1059,7 @@ Users configure matching preferences in their profile ("Your chum preferences" s
 
 *Email:* Post-plan feedback reminder email sent ~3 hours after plan start time via the hourly cron handler. Uses the `planFeedback` template. One email per plan (tracked via `events.feedback_email_sent_at`). Sent to host + going RSVPs. Gated on the `feedback_requests` notification preference (users can unsubscribe). Each email includes a one-click unsubscribe link keyed to `feedback_requests`.
 
-*UI:* Single-screen "How did it go?" section appears on the plan detail page for past, non-canceled plans where the viewer is a participant (July 2026 redesign of the old per-attendee carousel). One compact card per attendee with Yes/Somewhat/No pill rows for the consumed metrics only (`reliability`, `sociability`, `presentation`, host-only `hosting_skills`); `match_quality` is no longer asked because no matching logic consumes it, though the POST endpoint still accepts it and old rows remain in `user_metrics`. One batched POST submits every answered question at once; a zero-answer "Finish without answering" performs a local finish with no API call, so the form re-offers on the next visit. Save-to-Chums and shout-out composers moved to the post-submit "Keep the connection going" panel; that panel hides 3 days after plan start (same window as the plan chat lock) so the plan page settles as one unit. Attendance issue and conduct reporting are quiet footer links opening the same dialogs as before. GA funnel events: `feedback_viewed`, `feedback_submitted`, `feedback_skipped`, `feedback_dismissed` (helper: `web/src/lib/analytics.ts`).
+*UI:* Single-screen "How did it go?" section appears on the plan detail page for past, non-canceled plans where the viewer is a participant (July 2026 redesign of the old per-attendee carousel). One compact card per attendee with Yes/Somewhat/No pill rows for the consumed metrics only (`reliability`, `sociability`, `presentation`, host-only `hosting_skills`); `match_quality` is no longer asked because no matching logic consumes it, though the POST endpoint still accepts it and old rows remain in `user_metrics`. One batched POST submits every answered question at once; a zero-answer "Finish without answering" performs a local finish with no API call, so the form re-offers on the next visit. Save-to-Chums and shout-out composers moved to the post-submit "Keep the connection going" panel; that panel hides 3 days after plan start (same window as the plan chat lock) so the plan page settles as one unit. Attendance issue and conduct reporting are quiet footer links opening the same dialogs as before. GA funnel events: `feedback_viewed`, `feedback_submitted`, `feedback_skipped`, `feedback_dismissed` (helper: `web/src/lib/analytics.ts`; the consolidated event catalogue, including the invitee/host funnel events and the first-party `product_events` mirror, lives in §12 "Product analytics events").
 
 *Admin diagnostics (super-admin only):*
 - Per-user diagnostics view at `/admin/chums/[id]` (linked from "Inspect" icon on admin Users table).
@@ -1597,6 +1597,7 @@ Core tables include:
 - `newchums.event_confirmations` guest support (migration 077, **superseded by 084**). Originally made `user_id` nullable and added `guest_email TEXT NULL` with dual partial unique indexes (one for registered users, one for guests). Migration 084 dropped the guest column, deleted orphan rows, and restored `user_id NOT NULL`.
 - `newchums.users.subscription_plan` + `newchums.subscription_plan_history` (migration 083). See §5 "Organizer subscription plans" for the full access-resolution model.
 - **Guest participation removal (migration 084).** Destructive consolidation that drops the guest participation model entirely: deletes any orphan guest rows from `event_rsvps`, `event_confirmations`, `event_alt_times`; drops the `guest_email` / `guest_name` columns and the guest-specific partial indexes; restores `user_id NOT NULL` on all three tables. Migration includes a pre-flight count that aborts if more than ~100 guest rows exist. From this point on, every attendee/confirmation/alt-time row belongs to an authenticated user; unauthenticated visitors become real accounts via the lightweight signup flow (see §8 "Lightweight plan signup").
+- `newchums.product_events` (migration 103), append-only first-party product analytics (funnel mirror). Columns: `id` (BIGINT identity PK), `event_name` (TEXT), `user_id` (UUID NULL, FK `ON DELETE SET NULL`), `event_id` (UUID NULL, FK to `events` `ON DELETE SET NULL`), `params` (JSONB, small and flat), `created_at`. Index on `(event_name, created_at)` for windowed funnel aggregation, plus partial unique indexes enforcing the once-per-subject events (`rsvp_verified`, `signup_completed`, `first_plan_created`, `second_plan_created` per user; `plan_reached_3_rsvps` per plan). Application logic never updates or deletes rows; FKs use SET NULL (not CASCADE) so funnel counts survive account/plan deletion while `DELETE /account` still leaves no dangling references. Full event catalogue in §12 "Product analytics events".
 
 PostGIS is available for geo queries.
 
@@ -1659,6 +1660,35 @@ When sharing the same DB between local and production, set `NEXT_PUBLIC_AVATAR_B
 - Sentry: frontend + API error tracking
 - Axiom: API request logs
 - Google Analytics (gtag.js, measurement ID `G-MN49WWXHDJ`): production analytics, loaded via Next.js `<Script>` in root layout, production only
+
+### Product analytics events
+
+Two channels, one catalogue:
+
+- **GA (client)**: `trackEvent()` in `web/src/lib/analytics.ts`, a thin gtag wrapper. Production only (gtag is undefined in dev/preview, every call is a no-op), silently swallowed on failure, and partially eaten by ad blockers, so GA counts are directional. Naming convention: snake_case verbs scoped by surface; params flat (string | number | boolean). **Never put email addresses or other PII in params.**
+- **First-party (server)**: the API worker mirrors server-detectable funnel steps into the append-only `newchums.product_events` table (migration 103) via `api/src/lib/productEvents.ts`. Writes run through `executionCtx.waitUntil` and swallow their own errors; a failed insert never fails the parent request. Application logic never updates or deletes rows. QA plans (`is_qa = true`) never produce product events. Once-per-subject events are enforced by partial unique indexes plus `ON CONFLICT DO NOTHING`, so racing double-fires resolve to one row.
+
+**Funnel events (added July 2026 for the invitee/host loop instrumentation):**
+
+| Event | Fires | Params | Channel |
+|---|---|---|---|
+| `plan_link_opened` | Plan detail mount, logged-out visitor arriving with a share or invite token in the URL (`EventDetailClient`). Once per mount; the authenticated magic-link return visit does not re-fire. | `token_type` ("share" \| "invite") | GA |
+| `rsvp_form_started` | First focus of the `PlanSignupCard` email field. Once per mount. | none | GA |
+| `rsvp_form_submitted` | `POST /auth/plan-signup/request` returned ok. | `result` ("pending" \| "existing_account") | GA |
+| `rsvp_verified` | Plan-signup magic-link verification completes: `POST /auth/magic-link/consume` flips `email_verified_at` from NULL. Once per user (returning signin-link consumers are already verified and do not fire). | none | First-party |
+| `rsvp_recorded` | An `event_rsvps` row is created (not updated) by a user who has an `rsvp_verified` event, from the RSVP endpoint or join-request approval. Only post-instrumentation cohorts count. | `status` (rsvp status) | First-party |
+| `share_link_copied` | The Copy/Share plan link handler on the plan detail page, at tap time. | `is_host` (boolean) | GA |
+| `plan_created` | Successful plan creation in the Create form (non-QA). Client complement to the server-side `first_plan_created` / `second_plan_created`; the raw per-day plan count already lives in `newchums.events` itself, so there is deliberately no first-party `plan_created` row. | none | GA |
+| `signup_completed` | Server: any signup path completes verification (the `email_verified_at` NULL to set transition). Once per user. The pre-existing GA event with the same name fires earlier, at classic-signup account creation; the two measure different moments and only the first-party one is used in funnel math. | `method` ("password" \| "google" \| "plan_signup") | First-party (plus the older GA event at account creation with `has_hobbies`, `has_location`) |
+| `first_plan_created` | Plan insert where this is the host's first non-QA plan. Once per user. | none (row carries `user_id`, `event_id`) | First-party |
+| `second_plan_created` | Plan insert where this is the host's second non-QA plan; the real retention signal. Once per user. | none (row carries `user_id`, `event_id`) | First-party |
+| `plan_reached_3_rsvps` | The moment a plan gains its third non-host "going" RSVP (direct RSVP or join-request approval). Once per plan; row's `user_id` is the host. | none (row carries `user_id`, `event_id`) | First-party |
+
+**Pre-existing GA-only events:** `feedback_viewed`, `feedback_submitted`, `feedback_skipped`, `feedback_dismissed` (plan feedback flow, `attendee_count` param and friends; see §8 Plan feedback), `signup_step_completed` (`step`), `signup_google_clicked`, `hero_cta_clicked` (`cta`).
+
+**Forward compatibility:** task B1 (OTP-based plan signup) will add OTP-specific steps such as `rsvp_otp_entered` alongside `rsvp_form_submitted` and `rsvp_verified`; the names above were chosen so those slot in without renames.
+
+**Admin surface:** `GET /admin/kpis/funnel?days=7|30|0` (super admin; 0 = all time) aggregates `product_events` into invitee-loop and host-loop counts. Rendered as the "Funnel" section of `/admin/kpis` with a 7d/30d/All toggle; client-only steps render a "see GA" chip instead of a count (there is intentionally no GA API integration).
 
 ---
 

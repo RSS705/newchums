@@ -127,6 +127,21 @@ type FilterOptions = {
   communities: { id: string; name: string }[];
 };
 
+type FunnelData = {
+  rangeDays: number;
+  invitee: {
+    verified: number;
+    rsvpRecordedUsers: number;
+  };
+  host: {
+    signups: number;
+    firstPlans: number;
+    plansReached3Rsvps: number;
+    hostsReached3Rsvps: number;
+    secondPlans: number;
+  };
+};
+
 // ── Range options ────────────────────────────────────────────────────────────
 
 type RangeKey = "30" | "90" | "180" | "365" | "0";
@@ -591,6 +606,253 @@ function DefinitionsPanel() {
   );
 }
 
+// ── Funnel section (first-party product events) ─────────────────────────────
+
+type FunnelRangeKey = "7" | "30" | "0";
+
+const FUNNEL_RANGES: Array<{ key: FunnelRangeKey; label: string }> = [
+  { key: "7", label: "7d" },
+  { key: "30", label: "30d" },
+  { key: "0", label: "All" },
+];
+
+type FunnelRow = {
+  label: string;
+  tooltip: string;
+  /** null = the step only exists in GA (client-side event). */
+  count: number | null;
+  sub?: string;
+  conversion?: string;
+};
+
+function FunnelTable({ title, subtitle, rows }: { title: string; subtitle: string; rows: FunnelRow[] }) {
+  return (
+    <Paper variant="outlined" sx={{ borderRadius: 3, overflow: "hidden" }}>
+      <Box sx={{ px: 2.5, py: 1.5 }}>
+        <Typography variant="subtitle2" fontWeight={700}>
+          {title}
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          {subtitle}
+        </Typography>
+      </Box>
+      <Divider />
+      <TableContainer>
+        <Table size="small">
+          <TableHead>
+            <TableRow>
+              <TableCell sx={{ fontWeight: 700 }}>Step</TableCell>
+              <TableCell sx={{ fontWeight: 700 }} align="right">Count</TableCell>
+              <TableCell sx={{ fontWeight: 700 }} align="right">Conversion</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {rows.map((r) => (
+              <TableRow key={r.label}>
+                <TableCell>
+                  <Stack direction="row" alignItems="center" spacing={0.5}>
+                    <span>{r.label}</span>
+                    <Tooltip title={r.tooltip} arrow placement="top" enterTouchDelay={0}>
+                      <InfoOutlinedIcon sx={{ fontSize: 14, color: "text.disabled", cursor: "help" }} />
+                    </Tooltip>
+                  </Stack>
+                </TableCell>
+                <TableCell align="right">
+                  {r.count == null ? (
+                    <Tooltip title="Client-only step. GA is the source for this count; no first-party mirror exists." arrow placement="top" enterTouchDelay={0}>
+                      <Chip label="see GA" size="small" variant="outlined" sx={{ fontSize: "0.6875rem", height: 20 }} />
+                    </Tooltip>
+                  ) : (
+                    <>
+                      <Typography component="span" variant="body2" fontWeight={700}>
+                        {r.count.toLocaleString()}
+                      </Typography>
+                      {r.sub && (
+                        <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.75 }}>
+                          {r.sub}
+                        </Typography>
+                      )}
+                    </>
+                  )}
+                </TableCell>
+                <TableCell align="right">{r.conversion ?? "-"}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
+    </Paper>
+  );
+}
+
+function FunnelSection() {
+  const [funnelRange, setFunnelRange] = useState<FunnelRangeKey>("30");
+  // Single async-set result keyed by the range it answered; loading and error
+  // are derived, so the effect body never calls setState synchronously.
+  const [funnelResult, setFunnelResult] = useState<
+    { range: FunnelRangeKey; data?: FunnelData; error?: string } | null
+  >(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch(`/admin/kpis/funnel?days=${funnelRange}`, { auth: true })
+      .then((r) => r.json())
+      .then((json: { ok: boolean; data?: FunnelData }) => {
+        if (cancelled) return;
+        if (!json.ok || !json.data) throw new Error("Failed to load funnel data");
+        setFunnelResult({ range: funnelRange, data: json.data });
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setFunnelResult({
+          range: funnelRange,
+          error: err instanceof Error ? err.message : "Failed to load funnel data",
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [funnelRange]);
+
+  const funnelLoading = funnelResult === null || funnelResult.range !== funnelRange;
+  const funnelError = funnelLoading ? null : funnelResult?.error ?? null;
+  const funnel = funnelLoading ? null : funnelResult?.data ?? null;
+
+  const inviteeRows: FunnelRow[] = funnel
+    ? [
+        {
+          label: "Form started",
+          tooltip: "First focus on the plan-signup card's email field (GA event rsvp_form_started). Fires once per visit to the card.",
+          count: null,
+        },
+        {
+          label: "Form submitted",
+          tooltip: "Plan-signup request accepted by the server (GA event rsvp_form_submitted, result pending or existing_account).",
+          count: null,
+        },
+        {
+          label: "Verified account",
+          tooltip: "Plan-signup magic-link verification completed (first-party event rsvp_verified). Once per user. No conversion shown because the previous step is GA-only.",
+          count: funnel.invitee.verified,
+        },
+        {
+          label: "RSVP recorded",
+          tooltip: "People who entered via plan signup and went on to RSVP to a plan (first-party event rsvp_recorded, counted as distinct users). Conversion is against verified accounts.",
+          count: funnel.invitee.rsvpRecordedUsers,
+          conversion: pct(funnel.invitee.rsvpRecordedUsers, funnel.invitee.verified),
+        },
+      ]
+    : [];
+
+  const hostRows: FunnelRow[] = funnel
+    ? [
+        {
+          label: "Signups (verified)",
+          tooltip: "Users who completed verification on any signup path: email+password, Google, or plan signup (first-party event signup_completed). Once per user.",
+          count: funnel.host.signups,
+        },
+        {
+          label: "First plan created",
+          tooltip: "Hosts creating their first plan (first-party event first_plan_created; QA plans excluded). Conversion is against signups in the window.",
+          count: funnel.host.firstPlans,
+          conversion: pct(funnel.host.firstPlans, funnel.host.signups),
+        },
+        {
+          label: "Plan reached 3+ RSVPs",
+          tooltip: "Plans that gained a third non-host going RSVP (first-party event plan_reached_3_rsvps, once per plan). Count is plans; conversion is distinct hosts with such a plan against first-plan hosts.",
+          count: funnel.host.plansReached3Rsvps,
+          sub: `(${funnel.host.hostsReached3Rsvps.toLocaleString()} ${funnel.host.hostsReached3Rsvps === 1 ? "host" : "hosts"})`,
+          conversion: pct(funnel.host.hostsReached3Rsvps, funnel.host.firstPlans),
+        },
+        {
+          label: "Second plan created",
+          tooltip: "Hosts creating their second plan, the real retention signal (first-party event second_plan_created). Conversion is against first-plan hosts, not the 3+ RSVP step.",
+          count: funnel.host.secondPlans,
+          conversion: pct(funnel.host.secondPlans, funnel.host.firstPlans),
+        },
+      ]
+    : [];
+
+  return (
+    <>
+      <Stack
+        direction={{ xs: "column", sm: "row" }}
+        justifyContent="space-between"
+        alignItems={{ xs: "flex-start", sm: "center" }}
+        spacing={1}
+        sx={{ mb: 0.5 }}
+      >
+        <Typography variant="h6" fontWeight={700}>
+          Funnel
+        </Typography>
+        <ToggleButtonGroup
+          value={funnelRange}
+          exclusive
+          onChange={(_, v) => { if (v) setFunnelRange(v as FunnelRangeKey); }}
+          size="small"
+          sx={{
+            "& .MuiToggleButton-root": {
+              textTransform: "none",
+              fontWeight: 600,
+              fontSize: "0.8125rem",
+              px: 1.5,
+              py: 0.5,
+            },
+            "& .Mui-selected": {
+              bgcolor: "primary.main",
+              color: "primary.contrastText",
+              "&:hover": { bgcolor: "primary.dark" },
+            },
+          }}
+        >
+          {FUNNEL_RANGES.map((r) => (
+            <ToggleButton key={r.key} value={r.key} disabled={funnelLoading}>
+              {r.label}
+            </ToggleButton>
+          ))}
+        </ToggleButtonGroup>
+      </Stack>
+      <SectionSubtitle>
+        Counts at each step of the invitee and host loops, from the first-party
+        product_events mirror (server-detectable steps only). Client-only steps
+        are marked &ldquo;see GA&rdquo;: GA runs in production only and ad blockers eat a
+        share of it, so treat those numbers as directional.
+      </SectionSubtitle>
+
+      {funnelLoading && (
+        <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
+          <CircularProgress size={28} />
+        </Box>
+      )}
+
+      {!funnelLoading && funnelError && (
+        <Paper variant="outlined" sx={{ p: 2, borderRadius: 3, mb: 3 }}>
+          <Typography color="error" variant="body2">{funnelError}</Typography>
+        </Paper>
+      )}
+
+      {!funnelLoading && !funnelError && funnel && (
+        <Grid container spacing={2} sx={{ mb: 5 }}>
+          <Grid size={{ xs: 12, md: 6 }}>
+            <FunnelTable
+              title="Invitee loop"
+              subtitle="Share or invite link to a recorded RSVP."
+              rows={inviteeRows}
+            />
+          </Grid>
+          <Grid size={{ xs: 12, md: 6 }}>
+            <FunnelTable
+              title="Host loop"
+              subtitle="Signup to a repeat plan. Second plans are the retention signal."
+              rows={hostRows}
+            />
+          </Grid>
+        </Grid>
+      )}
+    </>
+  );
+}
+
 // ── Main component ───────────────────────────────────────────────────────────
 
 export default function AdminKPIsClient() {
@@ -922,6 +1184,10 @@ export default function AdminKPIsClient() {
           </>
         );
       })()}
+
+      {/* ═══════════════ Funnel (first-party product events) ═══════════════ */}
+
+      <FunnelSection />
 
       <Divider sx={{ mb: 4 }} />
 

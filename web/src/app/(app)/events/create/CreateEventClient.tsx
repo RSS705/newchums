@@ -38,6 +38,7 @@ import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
 import RichTextEditor from "@/components/ui/RichTextEditor";
 import PlacesAutocompleteInput, { formatPlaceDisplay } from "@/components/common/PlacesAutocompleteInput";
 import { apiFetch, getApiBaseUrl, getAvatarBaseUrl, getImageFallbackBaseUrl } from "@/lib/apiClient";
+import { trackEvent } from "@/lib/analytics";
 import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
 import { notifyObjectivesChanged } from "@/components/objectives/NextStepNudge";
 import { loadGooglePlacesScript } from "@/lib/loadGooglePlaces";
@@ -689,6 +690,9 @@ export default function CreateEventClient() {
             /* banner upload failure is non-fatal */
           }
         }
+        // Host-loop funnel event (client-side GA complement to the server's
+        // first/second-plan product events). QA plans stay out of analytics.
+        if (!isQa) trackEvent("plan_created");
         toast.success("Plan created!");
         notifyObjectivesChanged();
         router.push(`/events/${data.event.id}`);

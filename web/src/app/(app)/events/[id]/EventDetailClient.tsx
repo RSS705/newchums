@@ -85,6 +85,7 @@ import {
   getChatWebSocketUrl,
 } from "@/lib/apiClient";
 import { isDuplicate, nameToSlug } from "@/lib/interestUtils";
+import { trackEvent } from "@/lib/analytics";
 import { notifyObjectivesChanged } from "@/components/objectives/NextStepNudge";
 import PlanFeedback from "@/components/events/PlanFeedback";
 import PlanSignupCard from "@/components/events/PlanSignupCard";
@@ -405,6 +406,9 @@ export default function EventDetailClient({
   // Copy link, builds a share URL with the share token so recipients see
   // full plan detail + the lightweight signup card (not just the public preview).
   const handleCopyLink = useCallback(async () => {
+    // Host-loop funnel event. Fires on tap (before the clipboard write) so a
+    // clipboard failure still counts the share intent.
+    trackEvent("share_link_copied", { is_host: event?.isHost === true });
     const base = `${window.location.origin}/events/${eventId}`;
     const url = shareToken ? `${base}?share_token=${encodeURIComponent(shareToken)}` : base;
     try {
@@ -427,7 +431,7 @@ export default function EventDetailClient({
     } catch {
       toast.error("Could not copy link, please copy it from your browser's address bar");
     }
-  }, [eventId, shareToken, toast, shareLinkModalDismissed]);
+  }, [eventId, shareToken, toast, shareLinkModalDismissed, event]);
 
   const handleShareLinkModalClose = useCallback(async () => {
     setShareLinkModalOpen(false);
@@ -680,12 +684,27 @@ export default function EventDetailClient({
 
   // Auto-RSVP from email link (?rsvp=going&invite_token=xxx)
   const pendingRsvpRef = useRef<string | null>(null);
+  // Invitee-funnel event: fired at most once per mount, only for a logged-out
+  // arrival that carried a share or invite token in the URL. The magic-link
+  // return visit carries the token again but the visitor is authenticated by
+  // then, so it does not double-count.
+  const planLinkOpenedTrackedRef = useRef(false);
   useEffect(() => {
     const rsvpParam = searchParams.get("rsvp");
     const inviteTokenParam = searchParams.get("invite_token");
     const shareTokenParam = searchParams.get("share_token");
     const contextParam = searchParams.get("context");
     const sectionParam = searchParams.get("section");
+    if (
+      (inviteTokenParam || shareTokenParam) &&
+      isAuthenticatedFromServer === false &&
+      !planLinkOpenedTrackedRef.current
+    ) {
+      planLinkOpenedTrackedRef.current = true;
+      trackEvent("plan_link_opened", {
+        token_type: inviteTokenParam ? "invite" : "share",
+      });
+    }
     if (inviteTokenParam) {
       inviteTokenRef.current = inviteTokenParam;
       try {
@@ -725,7 +744,7 @@ export default function EventDetailClient({
       url.searchParams.delete("section");
       window.history.replaceState({}, "", url.pathname + url.search);
     }
-  }, [searchParams]);
+  }, [searchParams, isAuthenticatedFromServer]);
 
   // Section deep-linking: scroll or show login nudge
   const [sectionLoginNudge, setSectionLoginNudge] = useState<string | null>(null);
