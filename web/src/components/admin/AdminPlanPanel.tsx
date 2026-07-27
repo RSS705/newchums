@@ -9,6 +9,9 @@ import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
+import Collapse from "@mui/material/Collapse";
+import ExpandLessRoundedIcon from "@mui/icons-material/ExpandLessRounded";
+import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
@@ -37,12 +40,30 @@ type TranscriptMessage = {
 };
 
 /**
+ * Mirrors the server's joinNameAndAddress dedupe (locationFormat.ts): venue
+ * names produced by a raw-address Places pick ARE the formatted address, so
+ * a naive "name, address" join prints the whole address twice.
+ */
+function formatExactLocation(name: string | null, address: string | null): string {
+  const n = (name ?? "").trim();
+  const a = (address ?? "").trim();
+  if (!n && !a) return "";
+  if (!a) return n;
+  if (!n) return a;
+  if (a === n) return a;
+  if (a.startsWith(n + ", ") || a.startsWith(n + " ")) return a;
+  if (n.endsWith(", " + a) || n.endsWith(" " + a)) return n;
+  return `${n}, ${a}`;
+}
+
+/**
  * Super-admin-only moderation panel on the plan detail page. Server-gated:
- * the `adminView` payload only exists on super-admin responses. Everything
- * here is explicitly labeled "Admin view" so screenshots can never be
- * mistaken for what normal users see. The chat transcript is READ-ONLY:
- * fetched from a dedicated audited endpoint with no read-state or presence
- * side effects for anyone.
+ * the `adminView` payload only exists on super-admin responses. Rendered at
+ * the BOTTOM of the plan content as a quiet collapsed "Admin tools" row so
+ * it never competes with the plan itself; the expanded state carries the
+ * "Not visible to members" label so the admin-only nature stays clear.
+ * The chat transcript is READ-ONLY: fetched from a dedicated audited
+ * endpoint with no read-state or presence side effects for anyone.
  */
 export default function AdminPlanPanel({
   eventId,
@@ -51,6 +72,7 @@ export default function AdminPlanPanel({
   eventId: string;
   adminView: PlanAdminView;
 }) {
+  const [expanded, setExpanded] = React.useState(false);
   const [transcriptOpen, setTranscriptOpen] = React.useState(false);
   const [messages, setMessages] = React.useState<TranscriptMessage[] | null>(null);
   const [hasMore, setHasMore] = React.useState(false);
@@ -108,64 +130,83 @@ export default function AdminPlanPanel({
   return (
     <Paper
       variant="outlined"
-      sx={{ p: 2.5, borderRadius: 3, borderColor: "warning.main", bgcolor: "warning.light" }}
+      sx={{ borderRadius: 3, borderColor: "divider", bgcolor: "transparent", overflow: "hidden" }}
     >
-      <Stack spacing={1.5}>
-        <Stack direction="row" alignItems="center" spacing={1}>
-          <ShieldRoundedIcon sx={{ fontSize: 18, color: "warning.dark" }} />
-          <Typography variant="subtitle2" fontWeight={700}>
-            Admin view
-          </Typography>
+      <Button
+        fullWidth
+        onClick={() => setExpanded((v) => !v)}
+        startIcon={<ShieldRoundedIcon sx={{ fontSize: 16 }} />}
+        endIcon={expanded ? <ExpandLessRoundedIcon sx={{ fontSize: 18 }} /> : <ExpandMoreRoundedIcon sx={{ fontSize: 18 }} />}
+        aria-expanded={expanded}
+        sx={{
+          justifyContent: "flex-start",
+          px: 2,
+          py: 1,
+          textTransform: "none",
+          fontWeight: 600,
+          fontSize: "0.8125rem",
+          color: "text.secondary",
+          backgroundColor: "transparent",
+          borderRadius: 0,
+          "& .MuiButton-endIcon": { ml: "auto" },
+          "&:hover": { bgcolor: "action.hover", color: "text.primary" },
+        }}
+      >
+        Admin tools
+      </Button>
+
+      <Collapse in={expanded}>
+        <Stack spacing={1.5} sx={{ px: 2, pb: 2, pt: 0.5 }}>
           <Chip
             label="Not visible to members"
             size="small"
             variant="outlined"
-            sx={{ fontSize: "0.6875rem", height: 20 }}
+            sx={{ fontSize: "0.6875rem", height: 20, alignSelf: "flex-start" }}
           />
+
+          <Box>
+            <Typography variant="body2" fontWeight={600}>
+              Exact location{hiddenFromSomeViewers ? " (hidden or approximate for some viewers)" : ""}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6, wordBreak: "break-word" }}>
+              {loc.onlineLink ? (
+                <>Online: {loc.onlineLink}</>
+              ) : (
+                <>
+                  {formatExactLocation(loc.name, loc.address) || "No location details on record"}
+                  {loc.lat != null && loc.lng != null ? (
+                    <>
+                      {" "}
+                      (
+                      <a
+                        href={`https://www.google.com/maps?q=${loc.lat},${loc.lng}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {loc.lat.toFixed(5)}, {loc.lng.toFixed(5)}
+                      </a>
+                      )
+                    </>
+                  ) : null}
+                </>
+              )}
+            </Typography>
+          </Box>
+
+          <Box>
+            <Button
+              variant="outlined"
+              size="small"
+              color="inherit"
+              startIcon={<ForumRoundedIcon sx={{ fontSize: 16 }} />}
+              onClick={() => setTranscriptOpen(true)}
+              sx={{ textTransform: "none", fontWeight: 600, color: "text.secondary" }}
+            >
+              View chat transcript (read-only)
+            </Button>
+          </Box>
         </Stack>
-
-        <Box>
-          <Typography variant="body2" fontWeight={600}>
-            Exact location{hiddenFromSomeViewers ? " (hidden or approximate for some viewers)" : ""}
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-            {loc.onlineLink ? (
-              <>Online: {loc.onlineLink}</>
-            ) : (
-              <>
-                {[loc.name, loc.address].filter(Boolean).join(", ") || "No location details on record"}
-                {loc.lat != null && loc.lng != null ? (
-                  <>
-                    {" "}
-                    (
-                    <a
-                      href={`https://www.google.com/maps?q=${loc.lat},${loc.lng}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {loc.lat.toFixed(5)}, {loc.lng.toFixed(5)}
-                    </a>
-                    )
-                  </>
-                ) : null}
-              </>
-            )}
-          </Typography>
-        </Box>
-
-        <Box>
-          <Button
-            variant="outlined"
-            size="small"
-            color="warning"
-            startIcon={<ForumRoundedIcon sx={{ fontSize: 16 }} />}
-            onClick={() => setTranscriptOpen(true)}
-            sx={{ textTransform: "none", fontWeight: 600 }}
-          >
-            View chat transcript (read-only)
-          </Button>
-        </Box>
-      </Stack>
+      </Collapse>
 
       <Dialog open={transcriptOpen} onClose={() => setTranscriptOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ fontWeight: 700 }}>

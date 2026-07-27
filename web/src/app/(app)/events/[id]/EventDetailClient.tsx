@@ -2509,8 +2509,6 @@ export default function EventDetailClient({
           </Button>
         </Paper>
       )}
-      {/* Super-admin moderation panel (server-gated payload; labeled Admin view) */}
-      {adminView && <AdminPlanPanel eventId={eventId} adminView={adminView} />}
       {/* Banner */}
       {bannerUrl && (
         <Box
@@ -5677,6 +5675,11 @@ export default function EventDetailClient({
           </Stack>
         </AppCard>
       )}
+
+      {/* Super-admin moderation tools: quiet collapsed disclosure at the very
+          bottom of the plan content, after every member-facing section
+          (server-gated payload; expanded state is labeled admin-only). */}
+      {adminView && <AdminPlanPanel eventId={eventId} adminView={adminView} />}
 
       {/* Lock plan confirmation (locking only; unlock stays one-click) */}
       <Dialog
