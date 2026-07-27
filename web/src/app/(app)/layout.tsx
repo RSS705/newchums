@@ -217,7 +217,7 @@ export default async function AppLayout({
     return <AppShell>{children}</AppShell>;
   }
 
-  const { username, date_of_birth, name, role, is_suspended, password_setup_pending, accepted_legal_at } = await getOrCreateAppUser(
+  const { id: appUserId, username, date_of_birth, name, role, is_suspended, password_setup_pending, accepted_legal_at } = await getOrCreateAppUser(
     email,
     (session.user as { name?: string | null })?.name
   );
@@ -266,6 +266,7 @@ export default async function AppLayout({
       <AppShell
         user={{ name: greetingName, role }}
         passwordSetupPending={password_setup_pending}
+        passwordSetupUserKey={appUserId}
       >
         {children}
       </AppShell>

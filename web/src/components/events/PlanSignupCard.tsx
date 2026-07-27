@@ -5,7 +5,8 @@ import { signIn } from "next-auth/react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Checkbox from "@mui/material/Checkbox";
-import Chip from "@mui/material/Chip";
+import ToggleButton from "@mui/material/ToggleButton";
+import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import CircularProgress from "@mui/material/CircularProgress";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import FormHelperText from "@mui/material/FormHelperText";
@@ -15,6 +16,7 @@ import Typography from "@mui/material/Typography";
 import CelebrationRoundedIcon from "@mui/icons-material/CelebrationRounded";
 import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
 import HelpOutlineRoundedIcon from "@mui/icons-material/HelpOutlineRounded";
+import RadioButtonUncheckedRoundedIcon from "@mui/icons-material/RadioButtonUncheckedRounded";
 import LockPersonRoundedIcon from "@mui/icons-material/LockPersonRounded";
 import MarkEmailReadRoundedIcon from "@mui/icons-material/MarkEmailReadRounded";
 import { AppButton, AppCard, AppTextField } from "@/components/ui";
@@ -403,6 +405,8 @@ export default function PlanSignupCard({
   // read as a single component rather than four unrelated panels.
   const STAGE_SPACING = 1.75;
   const HEADER_SPACING = 0.75;
+  // Base rhythm for the code stage: every gap there is a multiple of this.
+  const CODE_UNIT = 1;
   const headingSx = { fontSize: { xs: "1.125rem", sm: "1.25rem" } } as const;
   // Theme shadow rather than a hardcoded brand-orange glow, so the badge
   // stays correct under the dark palette.
@@ -418,28 +422,78 @@ export default function PlanSignupCard({
     boxShadow: 2,
   } as const;
 
-  const intentChips = (
-    <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
-      <Typography variant="body2" color="text.secondary">
-        Your answer:
+  // Answer control on the form stage. A first-class field: same label
+  // treatment as the text fields under it, same height, two equal columns.
+  // ToggleButtonGroup gives a grouped set of pressed-state buttons, so the
+  // accessibility tree expresses "one of two" and keyboard reachability is
+  // native. Selected state differs by fill, weight, border, AND a check
+  // icon, so it never depends on hue alone.
+  const answerOption = (value: SignupIntent, label: string) => {
+    const selected = intent === value;
+    return (
+      <ToggleButton
+        value={value}
+        aria-label={label}
+        sx={{
+          flex: "1 1 0",
+          height: 56,
+          borderRadius: 2,
+          textTransform: "none",
+          fontSize: "1rem",
+          fontWeight: selected ? 700 : 500,
+          gap: 0.75,
+          color: "text.secondary",
+          borderColor: "divider",
+          // MUI's own .Mui-selected rule wins on specificity, so the selected
+          // treatment has to be declared there. Fill + weight + border + the
+          // check icon all change together, so the state never depends on
+          // hue alone. text.primary keeps contrast correct on either palette.
+          "&.Mui-selected": {
+            bgcolor: "primary.light",
+            color: "text.primary",
+            borderColor: "primary.main",
+            borderWidth: 2,
+            "&:hover": { bgcolor: "primary.light" },
+          },
+        }}
+      >
+        {selected ? (
+          <CheckCircleRoundedIcon sx={{ fontSize: 20 }} />
+        ) : (
+          <RadioButtonUncheckedRoundedIcon sx={{ fontSize: 20, opacity: 0.65 }} />
+        )}
+        {label}
+      </ToggleButton>
+    );
+  };
+
+  const answerField = (
+    <Box>
+      <Typography
+        component="span"
+        id="plan-signup-answer-label"
+        variant="subtitle1"
+        fontWeight={600}
+        sx={{ display: "block", mb: 0.625 }}
+      >
+        Your answer
       </Typography>
-      <Chip
-        icon={<CheckCircleRoundedIcon />}
-        label="Going"
-        color={intent === "going" ? "primary" : "default"}
-        variant={intent === "going" ? "filled" : "outlined"}
-        onClick={() => selectIntent("going")}
-        size="small"
-      />
-      <Chip
-        icon={<HelpOutlineRoundedIcon />}
-        label="Maybe"
-        color={intent === "maybe" ? "primary" : "default"}
-        variant={intent === "maybe" ? "filled" : "outlined"}
-        onClick={() => selectIntent("maybe")}
-        size="small"
-      />
-    </Stack>
+      <ToggleButtonGroup
+        exclusive
+        fullWidth
+        value={intent}
+        aria-labelledby="plan-signup-answer-label"
+        onChange={(_, next) => {
+          // Exclusive groups emit null when the active button is re-pressed;
+          // keep the current answer rather than clearing it.
+          if (next === "going" || next === "maybe") selectIntent(next);
+        }}
+        sx={{ display: "flex", gap: 1, "& .MuiToggleButtonGroup-grouped": { border: 1, borderRadius: 2 } }}
+      >
+        {answerOption("going", "Going")}
+        {answerOption("maybe", "Maybe")}
+      </ToggleButtonGroup>
+    </Box>
   );
 
   // ── Stage: intent picker ───────────────────────────────────────────────
@@ -519,8 +573,11 @@ export default function PlanSignupCard({
           borderColor: theme.palette.primary.light,
         })}
       >
-        <Stack spacing={STAGE_SPACING}>
-          <Stack spacing={HEADER_SPACING} alignItems="center" sx={{ textAlign: "center" }}>
+        {/* One rhythm for this whole stage: CODE_UNIT (8px). Lines that
+            belong together sit at 1 unit, groups are separated by 2 units,
+            and no gap exceeds the header-to-content gap. */}
+        <Stack spacing={CODE_UNIT * 2}>
+          <Stack spacing={CODE_UNIT} alignItems="center" sx={{ textAlign: "center" }}>
             <Box sx={heroBadgeSx}>
               {codeStatus.kind === "navigating" ? (
                 <CelebrationRoundedIcon sx={{ fontSize: 22 }} />
@@ -536,13 +593,15 @@ export default function PlanSignupCard({
                 Taking you back to the plan{intent ? " to lock in your RSVP" : ""}.
               </Typography>
             ) : (
-              <>
-                <Typography variant="body2" color="text.secondary" sx={{ wordBreak: "break-word" }}>
-                  We sent a 6-digit code to <strong>{stage.sentTo}</strong>.
-                </Typography>
-                <Button
-                  variant="text"
-                  size="small"
+              /* The edit action sits inline at the end of the sentence it
+                 refers to, so it reads as part of that line instead of
+                 floating as its own row and manufacturing a gap. Its own
+                 padding is neutralised for the same reason. */
+              <Typography variant="body2" color="text.secondary" sx={{ wordBreak: "break-word" }}>
+                We sent a 6-digit code to <strong>{stage.sentTo}</strong>.{" "}
+                <Box
+                  component="button"
+                  type="button"
                   disabled={busy}
                   onClick={() => {
                     // Turnstile tokens are single use; remount the widget for
@@ -553,22 +612,35 @@ export default function PlanSignupCard({
                     setCodeStatus({ kind: "idle" });
                     setStage({ kind: "form" });
                   }}
-                  sx={quietActionSx}
+                  sx={{
+                    p: 0,
+                    m: 0,
+                    minWidth: 0,
+                    border: 0,
+                    background: "none",
+                    font: "inherit",
+                    color: "primary.main",
+                    fontWeight: 700,
+                    textDecoration: "underline",
+                    cursor: "pointer",
+                    "&:hover": { color: "primary.dark" },
+                    "&:disabled": { color: "text.disabled", cursor: "default" },
+                    "&:focus-visible": { outline: "2px solid", outlineColor: "primary.main", outlineOffset: 2 },
+                  }}
                 >
                   Wrong email? Edit
-                </Button>
-              </>
+                </Box>
+              </Typography>
             )}
           </Stack>
 
           {codeStatus.kind !== "navigating" && (
             <>
-              {/* Compact centered group: the answer recap, the input, and its
-                  status share one axis and one tight vertical rhythm. The
-                  answer is a static recap here, not an editable control; it
-                  was chosen on the previous stage. */}
+              {/* The input is the optical centre: one unit of air above it
+                  (from the recap) and one below (to the resend group), with
+                  the status pinned tight underneath like helper text. */}
               <Box sx={{ width: "100%", display: "flex", justifyContent: "center" }}>
-                <Stack spacing={0.75} sx={{ width: "100%", maxWidth: 320 }}>
+                <Stack spacing={CODE_UNIT * 2} sx={{ width: "100%", maxWidth: 320 }}>
                   {intent && (
                     <Typography variant="body2" color="text.secondary" align="center">
                       RSVP:{" "}
@@ -577,51 +649,53 @@ export default function PlanSignupCard({
                       </Box>
                     </Typography>
                   )}
-                  <AppTextField
-                    label="6-digit code"
-                    // Label centers with the rest of this stage's column; the
-                    // label-above pattern and its htmlFor wiring are unchanged.
-                    sx={{ "& label": { textAlign: "center" } }}
-                    value={codeValue}
-                    onChange={(e) => {
-                      const digits = e.target.value.replace(/\D/g, "").slice(0, 6);
-                      setCodeValue(digits);
-                      if (codeStatus.kind === "error") setCodeStatus({ kind: "idle" });
-                    }}
-                    fullWidth
-                    disabled={busy}
-                    error={codeStatus.kind === "error"}
-                    // null (not undefined) opts out of AppTextField's default
-                    // reserved helper row, which was the empty band under the
-                    // input. Nothing else about the field changes.
-                    helperText={null}
-                    slotProps={{
-                      htmlInput: {
-                        inputMode: "numeric",
-                        pattern: "[0-9]*",
-                        autoComplete: "one-time-code",
-                        maxLength: 6,
-                        style: { letterSpacing: "0.45em", fontSize: "1.5rem", textAlign: "center" },
-                        "aria-label": "6-digit code from your email",
-                      },
-                    }}
-                  />
-                  {/* Live region stays mounted for screen readers; with no
-                      message it renders empty and collapses to zero height
-                      instead of reserving a band. */}
-                  <Typography
-                    variant="body2"
-                    role="status"
-                    aria-live="polite"
-                    color={codeStatus.kind === "error" ? "error" : "text.secondary"}
-                    sx={{ textAlign: "center", mt: statusMessage ? 0.25 : 0 }}
-                  >
-                    {statusMessage}
-                  </Typography>
+                  <Box>
+                    <AppTextField
+                      label="6-digit code"
+                      // Label centers with the rest of this stage's column; the
+                      // label-above pattern and its htmlFor wiring are unchanged.
+                      sx={{ "& label": { textAlign: "center" } }}
+                      value={codeValue}
+                      onChange={(e) => {
+                        const digits = e.target.value.replace(/\D/g, "").slice(0, 6);
+                        setCodeValue(digits);
+                        if (codeStatus.kind === "error") setCodeStatus({ kind: "idle" });
+                      }}
+                      fullWidth
+                      disabled={busy}
+                      error={codeStatus.kind === "error"}
+                      // null (not undefined) opts out of AppTextField's default
+                      // reserved helper row; this stage reserves its own single
+                      // status line below instead.
+                      helperText={null}
+                      slotProps={{
+                        htmlInput: {
+                          inputMode: "numeric",
+                          pattern: "[0-9]*",
+                          autoComplete: "one-time-code",
+                          maxLength: 6,
+                          style: { letterSpacing: "0.45em", fontSize: "1.5rem", textAlign: "center" },
+                          "aria-label": "6-digit code from your email",
+                        },
+                      }}
+                    />
+                    {/* Live region is always mounted for screen readers and
+                        always occupies exactly one line, so a message
+                        appearing or clearing never shifts the layout. */}
+                    <Typography
+                      variant="body2"
+                      role="status"
+                      aria-live="polite"
+                      color={codeStatus.kind === "error" ? "error" : "text.secondary"}
+                      sx={{ textAlign: "center", mt: 0.5, minHeight: 20, lineHeight: "20px" }}
+                    >
+                      {statusMessage}
+                    </Typography>
+                  </Box>
                 </Stack>
               </Box>
 
-              <Stack spacing={0.25} alignItems="center">
+              <Stack spacing={0.5} alignItems="center">
                 <Button
                   variant="text"
                   size="small"
@@ -723,7 +797,7 @@ export default function PlanSignupCard({
           </Typography>
         </Box>
 
-        {intentChips}
+        {answerField}
 
         <AppTextField
           label="Your email"

@@ -86,6 +86,7 @@ import {
 } from "@/lib/apiClient";
 import { isDuplicate, nameToSlug } from "@/lib/interestUtils";
 import { trackEvent } from "@/lib/analytics";
+import { SECTION_SCROLL_MARGIN, scrollSectionIntoView } from "@/lib/scrollOffsets";
 import { notifyObjectivesChanged } from "@/components/objectives/NextStepNudge";
 import PlanFeedback from "@/components/events/PlanFeedback";
 import PlanSignupCard from "@/components/events/PlanSignupCard";
@@ -786,11 +787,7 @@ export default function EventDetailClient({
       return;
     }
     const sectionId = `plan-section-${section}`;
-    requestAnimationFrame(() => {
-      setTimeout(() => {
-        document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" });
-      }, 150);
-    });
+    scrollSectionIntoView(sectionId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event, isAuthenticated]);
 
@@ -822,13 +819,7 @@ export default function EventDetailClient({
         // lands directly on their response state rather than at the top
         // of the plan. Matches the deep-link behaviour of ?section=... on
         // other transactional emails (24h check, feedback, chat).
-        requestAnimationFrame(() => {
-          setTimeout(() => {
-            document
-              .getElementById("plan-section-confirmation")
-              ?.scrollIntoView({ behavior: "smooth", block: "start" });
-          }, 150);
-        });
+        scrollSectionIntoView("plan-section-confirmation");
       }
       // else: keep pendingRsvpRef set; the signup card reads it below.
     });
@@ -853,14 +844,8 @@ export default function EventDetailClient({
     if (event.isHost || event.status === "canceled") return;
     const hasExistingRsvp = rsvps.some((r) => r.userId === viewerUserId);
     if (hasExistingRsvp) return;
-    handleRsvp(intent);
-    requestAnimationFrame(() => {
-      setTimeout(() => {
-        document
-          .getElementById("plan-section-confirmation")
-          ?.scrollIntoView({ behavior: "smooth", block: "start" });
-      }, 150);
-    });
+    handleRsvp(intent, { silent: true });
+    scrollSectionIntoView("plan-section-confirmation");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event, isAuthenticated, viewerUserId, rsvps, viewerPendingIntent]);
 
@@ -1176,7 +1161,13 @@ export default function EventDetailClient({
     setInvitingUserId(null);
   };
 
-  const handleRsvp = async (status: string) => {
+  /**
+   * `silent` suppresses only the success toast, for the post-verification
+   * auto-apply path where the confirmation card is scrolled into view saying
+   * the same thing at the same moment. Errors always toast, and an ordinary
+   * RSVP click (where the toast is the only feedback) is unaffected.
+   */
+  const handleRsvp = async (status: string, options?: { silent?: boolean }) => {
     setRsvpSubmitting(true);
     try {
       const res = await apiFetch(`/events/${eventId}/rsvp`, {
@@ -1200,13 +1191,15 @@ export default function EventDetailClient({
         status?: string;
       };
       if (data.ok) {
-        toast.success(
-          status === "going"
-            ? "You're going!"
-            : status === "maybe"
-              ? "Marked as maybe"
-              : "Response recorded"
-        );
+        if (!options?.silent) {
+          toast.success(
+            status === "going"
+              ? "You're going!"
+              : status === "maybe"
+                ? "Marked as maybe"
+                : "Response recorded"
+          );
+        }
         notifyObjectivesChanged();
         refresh();
       } else {
@@ -3434,7 +3427,7 @@ export default function EventDetailClient({
               prefillEmail={inviteeEmail ?? undefined}
             />
           ) : (
-            <div id="plan-section-confirmation">
+            <div id="plan-section-confirmation" style={{ scrollMarginTop: SECTION_SCROLL_MARGIN }}>
               {/* Confirmation UI when window is open */}
               {event.confirmationWindowOpen &&
               viewerRsvpStatus === "going" &&
@@ -3693,7 +3686,7 @@ export default function EventDetailClient({
         !isCanceled &&
         event.requireReconfirmation &&
         event.confirmationWindowOpen && (
-          <AppCard id="plan-section-confirmation">
+          <AppCard id="plan-section-confirmation" sx={{ scrollMarginTop: SECTION_SCROLL_MARGIN }}>
             {effectiveConfirmStatus === "confirmed" ? (
               <Stack spacing={1.5} sx={{ py: 1 }}>
                 <Stack direction="row" alignItems="center" spacing={1}>
@@ -4078,7 +4071,7 @@ export default function EventDetailClient({
 
       {/* Join requests (host only) */}
       {event.isHost && !isCanceled && event.requireApproval && joinRequests.length > 0 && (
-        <AppCard id="plan-section-join-requests">
+        <AppCard id="plan-section-join-requests" sx={{ scrollMarginTop: SECTION_SCROLL_MARGIN }}>
           <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 0.5 }}>
             <Typography
               variant="h5"
@@ -4490,7 +4483,7 @@ export default function EventDetailClient({
 
           return (
             <Stack spacing={{ xs: 3, sm: 4 }}>
-            <AppCard id="plan-section-availability">
+            <AppCard id="plan-section-availability" sx={{ scrollMarginTop: SECTION_SCROLL_MARGIN }}>
               <Typography
                 variant="h5"
                 fontWeight={700}
@@ -4642,7 +4635,7 @@ export default function EventDetailClient({
                       borderColor: "primary.light",
                       // Sit below any fixed app-shell header when scrolled
                       // into view via scrollIntoView({ block: "start" }).
-                      scrollMarginTop: 96,
+                      scrollMarginTop: SECTION_SCROLL_MARGIN,
                     }}
                   >
                     <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1.25 }}>
@@ -5032,7 +5025,7 @@ export default function EventDetailClient({
 
       {/* Who's in, combined RSVP + invite status */}
       {(rsvps.length > 0 || pendingInvites.length > 0) && (
-        <AppCard id="plan-section-attendees">
+        <AppCard id="plan-section-attendees" sx={{ scrollMarginTop: SECTION_SCROLL_MARGIN }}>
           <Typography
             variant="h5"
             fontWeight={700}
@@ -5403,7 +5396,7 @@ export default function EventDetailClient({
           succeeded; on its own it stays true after the user toggles their
           RSVP to maybe/can't, leaving the card visible but unresponsive. */}
       {chatEligible && chatAccessible === true && !isCanceled && (
-        <AppCard id="plan-section-chat">
+        <AppCard id="plan-section-chat" sx={{ scrollMarginTop: SECTION_SCROLL_MARGIN }}>
           <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
             <Typography
               variant="h5"

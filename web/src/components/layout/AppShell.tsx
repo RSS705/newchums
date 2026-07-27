@@ -96,11 +96,14 @@ type AppShellProps = {
    *  column so we don't need a client round-trip to decide whether to
    *  render it. */
   passwordSetupPending?: boolean;
+  /** Stable per-user key so the setup nudge's dismissal is remembered per
+   *  account rather than per browser. */
+  passwordSetupUserKey?: string | null;
 };
 
 type NavProfile = { avatar_url?: string | null; name?: string | null; username?: string | null; role?: string | null };
 
-export default function AppShell({ children, user, passwordSetupPending }: AppShellProps) {
+export default function AppShell({ children, user, passwordSetupPending, passwordSetupUserKey }: AppShellProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -672,7 +675,9 @@ export default function AppShell({ children, user, passwordSetupPending }: AppSh
           // already offsets the whole page.
         }}
       >
-        {isAuthenticated && passwordSetupPending && <PasswordSetupBanner />}
+        {isAuthenticated && passwordSetupPending && (
+          <PasswordSetupBanner userKey={passwordSetupUserKey} />
+        )}
         <Box
           sx={{
             flex: 1,

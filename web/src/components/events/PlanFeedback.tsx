@@ -29,6 +29,7 @@ import Link from "next/link";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import { scrollElementIntoView } from "@/lib/scrollUtils";
 import { trackEvent } from "@/lib/analytics";
+import { SECTION_SCROLL_MARGIN } from "@/lib/scrollOffsets";
 import PlanHobbyAddSuggestion, { type PlanHobby } from "./PlanHobbyAddSuggestion";
 import UserAvatar from "@/components/common/UserAvatar";
 
@@ -579,9 +580,9 @@ export default function PlanFeedback({ eventId, planTitle, planStartsAt, planHob
           display: "flex",
           flexDirection: "column",
           gap: { xs: 2, sm: 2.5 },
-          // Reserve breathing room above the section so a sticky app bar
+          // Reserve breathing room above the section so the fixed app bar
           // doesn't crop the heading when we scroll to the top on completion.
-          scrollMarginTop: { xs: 80, sm: 96 },
+          scrollMarginTop: SECTION_SCROLL_MARGIN,
         }}
       >
         {/* Dispute banner for attendance issues against the current user.
