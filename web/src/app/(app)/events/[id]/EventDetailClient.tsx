@@ -89,6 +89,7 @@ import { trackEvent } from "@/lib/analytics";
 import { notifyObjectivesChanged } from "@/components/objectives/NextStepNudge";
 import PlanFeedback from "@/components/events/PlanFeedback";
 import PlanSignupCard from "@/components/events/PlanSignupCard";
+import AdminPlanPanel, { type PlanAdminView } from "@/components/admin/AdminPlanPanel";
 import AvailabilityPicker, {
   type AvailabilitySelection,
 } from "@/components/events/AvailabilityPicker";
@@ -319,6 +320,8 @@ export default function EventDetailClient({
   // B1 crash recovery: server-persisted signup intent for this viewer+plan,
   // present only while the viewer has no RSVP row (see GET /events/:id).
   const [viewerPendingIntent, setViewerPendingIntent] = useState<"going" | "maybe" | null>(null);
+  // Super-admin moderation payload; present only on super-admin API responses.
+  const [adminView, setAdminView] = useState<PlanAdminView | null>(null);
   const [viewerEmail, setViewerEmail] = useState<string | null>(null);
   // Email the invite_token was issued for, exposed by GET /events/:id only to
   // unauthenticated viewers so the lightweight signup card can prefill the
@@ -509,6 +512,7 @@ export default function EventDetailClient({
       prefNote?: string[] | null;
       viewerUserId?: string | null;
       viewerPendingIntent?: string | null;
+      adminView?: PlanAdminView | null;
       viewerEmail?: string | null;
       inviteeEmail?: string | null;
       shareLinkModalDismissed?: boolean;
@@ -531,6 +535,7 @@ export default function EventDetailClient({
           ? data.viewerPendingIntent
           : null,
       );
+      setAdminView(data.adminView ?? null);
       if (data.viewerUserId) setViewerUserId(data.viewerUserId);
       if (data.viewerEmail) setViewerEmail(data.viewerEmail);
       setInviteeEmail(data.inviteeEmail ?? null);
@@ -2504,6 +2509,8 @@ export default function EventDetailClient({
           </Button>
         </Paper>
       )}
+      {/* Super-admin moderation panel (server-gated payload; labeled Admin view) */}
+      {adminView && <AdminPlanPanel eventId={eventId} adminView={adminView} />}
       {/* Banner */}
       {bannerUrl && (
         <Box

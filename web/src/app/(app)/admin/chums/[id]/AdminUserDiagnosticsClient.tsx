@@ -25,8 +25,10 @@ import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import IconButton from "@mui/material/IconButton";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/apiClient";
+import AdminHardDeleteDialog from "@/components/admin/AdminHardDeleteDialog";
+import DeleteForeverRoundedIcon from "@mui/icons-material/DeleteForeverRounded";
 
 type MetricRow = { metric: string; score: number; signalCount: number; updatedAt: string };
 type FeedbackAgg = { prompt: string; response: string; count: number };
@@ -469,7 +471,9 @@ function EditableMetricRow({
 
 export default function AdminUserDiagnosticsClient() {
   const params = useParams();
+  const router = useRouter();
   const userId = params.id as string;
+  const [hardDeleteOpen, setHardDeleteOpen] = useState(false);
   const [data, setData] = useState<DiagnosticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1006,6 +1010,35 @@ export default function AdminUserDiagnosticsClient() {
           </Typography>
         </Stack>
       </Paper>
+      {/* Danger zone: test-data hygiene */}
+      <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2, borderColor: "error.light" }}>
+        <SectionTitle>Danger zone</SectionTitle>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.5 }}>
+          Hard delete removes this account and everything attached to it (hosted plans, RSVPs,
+          chat, funnel analytics rows) in one audited transaction. No emails or notifications are
+          sent. Super admin accounts cannot be hard-deleted.
+        </Typography>
+        <Button
+          variant="outlined"
+          color="error"
+          startIcon={<DeleteForeverRoundedIcon />}
+          disabled={data?.user?.role === "super_admin"}
+          onClick={() => setHardDeleteOpen(true)}
+          sx={{ textTransform: "none", fontWeight: 600 }}
+        >
+          Hard delete this account
+        </Button>
+      </Paper>
+
+      <AdminHardDeleteDialog
+        open={hardDeleteOpen}
+        subjectType="user"
+        subjectId={userId}
+        subjectLabel={data?.user?.username ?? data?.user?.email ?? undefined}
+        onClose={() => setHardDeleteOpen(false)}
+        onDeleted={() => router.push("/admin/chums")}
+      />
+
     </Stack>
   );
 }

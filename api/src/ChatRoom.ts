@@ -21,11 +21,33 @@ export class ChatRoom extends DurableObject {
       return this.handleBroadcast(request);
     }
 
+    if (url.pathname === "/purge" && request.method === "POST") {
+      return this.handlePurge();
+    }
+
     if (request.headers.get("Upgrade") === "websocket") {
       return this.handleWebSocketUpgrade(request);
     }
 
     return new Response("Not found", { status: 404 });
+  }
+
+  /**
+   * Admin hard-delete cleanup. The room is a stateless relay (the database
+   * owns message history, which the SQL cascade removes), so purging means
+   * closing any live sockets so a deleted plan's room goes quiet, plus a
+   * defensive storage wipe in case future versions ever persist state.
+   * Only reachable through the worker's service binding; the admin endpoint
+   * gates the call server-side.
+   */
+  private async handlePurge(): Promise<Response> {
+    for (const ws of this.ctx.getWebSockets()) {
+      try {
+        ws.close(1001, "This plan has been removed.");
+      } catch { /* already closed */ }
+    }
+    await this.ctx.storage.deleteAll();
+    return new Response("OK", { status: 200 });
   }
 
   private handleWebSocketUpgrade(request: Request): Response {

@@ -28,6 +28,8 @@ import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
+import DeleteForeverRoundedIcon from "@mui/icons-material/DeleteForeverRounded";
+import AdminHardDeleteDialog from "@/components/admin/AdminHardDeleteDialog";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import SearchIcon from "@mui/icons-material/Search";
 import NextLink from "next/link";
@@ -126,6 +128,7 @@ export default function AdminPlansClient() {
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [removeTarget, setRemoveTarget] = useState<PlanRow | null>(null);
+  const [hardDeleteTarget, setHardDeleteTarget] = useState<PlanRow | null>(null);
   const [removeReason, setRemoveReason] = useState("");
   const [removeSubmitting, setRemoveSubmitting] = useState(false);
 
@@ -503,6 +506,11 @@ export default function AdminPlansClient() {
                           <DeleteOutlineRoundedIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
+                      <Tooltip title="Hard delete (test-data cleanup, no notifications)">
+                        <IconButton size="small" color="error" onClick={() => setHardDeleteTarget(plan)}>
+                          <DeleteForeverRoundedIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
                     </Stack>
                   </TableCell>
                 </TableRow>
@@ -713,6 +721,17 @@ export default function AdminPlansClient() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <AdminHardDeleteDialog
+        open={!!hardDeleteTarget}
+        subjectType="plan"
+        subjectId={hardDeleteTarget?.id ?? null}
+        subjectLabel={hardDeleteTarget?.title}
+        onClose={() => setHardDeleteTarget(null)}
+        onDeleted={() => {
+          setPlans((prev) => prev.filter((p) => p.id !== hardDeleteTarget?.id));
+        }}
+      />
     </Stack>
   );
 }

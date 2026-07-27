@@ -386,8 +386,28 @@ export default function PlanSignupCard({
     }
   }
 
-  const intentChips = (
-    <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
+  // Quiet tertiary-action treatment (matches the PlanFeedback footer links):
+  // plain text on transparent, never the theme's peach text-button fill, so
+  // these read as quiet escapes rather than competing with real buttons.
+  const quietActionSx = {
+    textTransform: "none",
+    fontWeight: 600,
+    fontSize: "0.8125rem",
+    color: "text.secondary",
+    backgroundColor: "transparent",
+    "&:hover": { bgcolor: "action.hover", color: "text.primary" },
+    "&.Mui-disabled": { backgroundColor: "transparent", color: "text.disabled" },
+  } as const;
+
+  const renderIntentChips = (centered: boolean) => (
+    <Stack
+      direction="row"
+      spacing={1}
+      alignItems="center"
+      useFlexGap
+      flexWrap="wrap"
+      justifyContent={centered ? "center" : "flex-start"}
+    >
       <Typography variant="body2" color="text.secondary">
         Your answer:
       </Typography>
@@ -427,7 +447,13 @@ export default function PlanSignupCard({
               Pick your answer. You&apos;ll confirm your email right here to lock it in.
             </Typography>
           </Box>
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+          {/* Constrained action area: equal-width pair on desktop instead of
+              two buttons stretching the full card, stacked on mobile. */}
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            spacing={1.5}
+            sx={{ width: "100%", maxWidth: 560 }}
+          >
             <AppButton
               variant="contained"
               fullWidth
@@ -436,6 +462,7 @@ export default function PlanSignupCard({
                 selectIntent("going");
                 setStage({ kind: "form" });
               }}
+              sx={{ flex: "1 1 0" }}
             >
               I&apos;m going
             </AppButton>
@@ -447,6 +474,7 @@ export default function PlanSignupCard({
                 selectIntent("maybe");
                 setStage({ kind: "form" });
               }}
+              sx={{ flex: "1 1 0" }}
             >
               Maybe
             </AppButton>
@@ -455,7 +483,7 @@ export default function PlanSignupCard({
             variant="text"
             size="small"
             onClick={() => setStage({ kind: "form" })}
-            sx={{ textTransform: "none", color: "text.secondary", alignSelf: "center" }}
+            sx={{ ...quietActionSx, alignSelf: "flex-start", ml: -0.75 }}
           >
             Not sure yet? Continue without answering
           </Button>
@@ -469,11 +497,13 @@ export default function PlanSignupCard({
     const busy = codeStatus.kind === "verifying" || codeStatus.kind === "navigating";
     return (
       <AppCard
-        sx={{
+        sx={(theme) => ({
           width: "100%",
-          background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
-          borderColor: "primary.light",
-        }}
+          // Theme tokens, not hardcoded hex: the warm wash has to invert with
+          // the palette or the text becomes unreadable in dark mode.
+          background: `linear-gradient(135deg, ${theme.palette.primary.light} 0%, ${theme.palette.background.paper} 65%)`,
+          borderColor: theme.palette.primary.light,
+        })}
       >
         <Stack spacing={2}>
           <Stack spacing={1} alignItems="center" sx={{ textAlign: "center" }}>
@@ -483,7 +513,7 @@ export default function PlanSignupCard({
                 height: 56,
                 borderRadius: "50%",
                 bgcolor: "primary.main",
-                color: "#fff",
+                color: "primary.contrastText",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -509,7 +539,7 @@ export default function PlanSignupCard({
               </Typography>
             ) : (
               <>
-                <Typography variant="body1" color="text.primary">
+                <Typography variant="body1" color="text.primary" sx={{ wordBreak: "break-word" }}>
                   We sent a 6-digit code to <strong>{stage.sentTo}</strong>.
                 </Typography>
                 <Button
@@ -525,7 +555,7 @@ export default function PlanSignupCard({
                     setCodeStatus({ kind: "idle" });
                     setStage({ kind: "form" });
                   }}
-                  sx={{ textTransform: "none", color: "text.secondary", p: 0, minWidth: 0 }}
+                  sx={quietActionSx}
                 >
                   Wrong email? Edit
                 </Button>
@@ -535,29 +565,38 @@ export default function PlanSignupCard({
 
           {codeStatus.kind !== "navigating" && (
             <>
-              {intentChips}
-              <AppTextField
-                label="6-digit code"
-                value={codeValue}
-                onChange={(e) => {
-                  const digits = e.target.value.replace(/\D/g, "").slice(0, 6);
-                  setCodeValue(digits);
-                  if (codeStatus.kind === "error") setCodeStatus({ kind: "idle" });
-                }}
-                fullWidth
-                disabled={busy}
-                error={codeStatus.kind === "error"}
-                slotProps={{
-                  htmlInput: {
-                    inputMode: "numeric",
-                    pattern: "[0-9]*",
-                    autoComplete: "one-time-code",
-                    maxLength: 6,
-                    style: { letterSpacing: "0.4em", fontSize: "1.25rem", textAlign: "center" },
-                    "aria-label": "6-digit code from your email",
-                  },
-                }}
-              />
+              {renderIntentChips(true)}
+              {/* Single centered column: chips, input, status, and actions all
+                  share one axis. The flex wrapper does the centering (auto
+                  margins do not win against the parent Stack's stretch).
+                  Input mechanics are unchanged; only the width constraint and
+                  digit sizing are presentational. */}
+              <Box sx={{ width: "100%", display: "flex", justifyContent: "center" }}>
+              <Box sx={{ width: "100%", maxWidth: 340 }}>
+                <AppTextField
+                  label="6-digit code"
+                  value={codeValue}
+                  onChange={(e) => {
+                    const digits = e.target.value.replace(/\D/g, "").slice(0, 6);
+                    setCodeValue(digits);
+                    if (codeStatus.kind === "error") setCodeStatus({ kind: "idle" });
+                  }}
+                  fullWidth
+                  disabled={busy}
+                  error={codeStatus.kind === "error"}
+                  slotProps={{
+                    htmlInput: {
+                      inputMode: "numeric",
+                      pattern: "[0-9]*",
+                      autoComplete: "one-time-code",
+                      maxLength: 6,
+                      style: { letterSpacing: "0.45em", fontSize: "1.5rem", textAlign: "center" },
+                      "aria-label": "6-digit code from your email",
+                    },
+                  }}
+                />
+              </Box>
+              </Box>
               <Typography
                 variant="body2"
                 role="status"
@@ -572,13 +611,18 @@ export default function PlanSignupCard({
                     : codeStatus.info ?? ""}
               </Typography>
 
-              <Stack spacing={0.5} alignItems="center">
+              <Stack spacing={0.75} alignItems="center">
                 <Button
                   variant="text"
                   size="small"
                   disabled={busy || resending || cooldownRemaining > 0}
                   onClick={() => void handleResend(stage.sentTo)}
-                  sx={{ textTransform: "none", fontWeight: 600 }}
+                  sx={{
+                    ...quietActionSx,
+                    // Once the countdown hits zero this reads as a real action.
+                    color: "primary.main",
+                    "&:hover": { bgcolor: "action.hover", color: "primary.dark" },
+                  }}
                 >
                   {resending
                     ? "Sending..."
@@ -586,11 +630,8 @@ export default function PlanSignupCard({
                       ? `Resend code (${cooldownRemaining}s)`
                       : "Resend code"}
                 </Button>
-                <Typography variant="caption" color="text.secondary" align="center">
-                  The email also has a one-tap button that does the same thing.
-                </Typography>
-                <Typography variant="caption" color="text.secondary" align="center">
-                  Didn&apos;t see it? Check your spam or promotions folder.
+                <Typography variant="caption" color="text.disabled" align="center">
+                  You can also use the one-tap button in the email. Not seeing it? Check spam or promotions.
                 </Typography>
               </Stack>
             </>
@@ -604,11 +645,13 @@ export default function PlanSignupCard({
   if (stage.kind === "existing_account") {
     return (
       <AppCard
-        sx={{
+        sx={(theme) => ({
           width: "100%",
-          background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
-          borderColor: "primary.light",
-        }}
+          // Theme tokens, not hardcoded hex: the warm wash has to invert with
+          // the palette or the text becomes unreadable in dark mode.
+          background: `linear-gradient(135deg, ${theme.palette.primary.light} 0%, ${theme.palette.background.paper} 65%)`,
+          borderColor: theme.palette.primary.light,
+        })}
       >
         <Stack spacing={2} alignItems="center" sx={{ py: 1, textAlign: "center" }}>
           <Box
@@ -617,7 +660,7 @@ export default function PlanSignupCard({
               height: 64,
               borderRadius: "50%",
               bgcolor: "primary.main",
-              color: "#fff",
+              color: "primary.contrastText",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -633,7 +676,7 @@ export default function PlanSignupCard({
           >
             You already have a NewChums account
           </Typography>
-          <Typography variant="body1" color="text.primary">
+          <Typography variant="body1" color="text.primary" sx={{ wordBreak: "break-word" }}>
             Sign in as <strong>{stage.email}</strong> to RSVP
             {planTitle ? <> for <strong>{planTitle}</strong></> : null}.
           </Typography>
@@ -658,7 +701,7 @@ export default function PlanSignupCard({
               setTurnstileToken(null);
               setStage({ kind: "form" });
             }}
-            sx={{ textTransform: "none", color: "text.secondary" }}
+            sx={quietActionSx}
           >
             Use a different email
           </Button>
@@ -688,7 +731,7 @@ export default function PlanSignupCard({
           </Typography>
         </Box>
 
-        {intentChips}
+        {renderIntentChips(false)}
 
         <AppTextField
           label="Your email"

@@ -31,6 +31,8 @@ import BlockIcon from "@mui/icons-material/Block";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import SearchIcon from "@mui/icons-material/Search";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
+import DeleteForeverRoundedIcon from "@mui/icons-material/DeleteForeverRounded";
+import AdminHardDeleteDialog from "@/components/admin/AdminHardDeleteDialog";
 import NextLink from "next/link";
 import { AppButton, useToast } from "@/components/ui";
 import { apiFetch } from "@/lib/apiClient";
@@ -172,6 +174,7 @@ export default function AdminChumsClient() {
 
   // Track which user is currently having their role toggled.
   const [roleUpdatingId, setRoleUpdatingId] = useState<string | null>(null);
+  const [hardDeleteTarget, setHardDeleteTarget] = useState<UserRow | null>(null);
 
   const toast = useToast();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -575,6 +578,18 @@ export default function AdminChumsClient() {
                             </IconButton>
                           </Tooltip>
                         )}
+                        <Tooltip title={row.role === "super_admin" ? "Super admins cannot be hard-deleted" : "Hard delete (test-data cleanup, no notifications)"}>
+                          <span>
+                            <IconButton
+                              size="small"
+                              color="error"
+                              disabled={row.role === "super_admin"}
+                              onClick={() => setHardDeleteTarget(row)}
+                            >
+                              <DeleteForeverRoundedIcon fontSize="small" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
                       </Stack>
                     </TableCell>
                   </TableRow>
@@ -638,6 +653,16 @@ export default function AdminChumsClient() {
           </AppButton>
         </DialogActions>
       </Dialog>
+    <AdminHardDeleteDialog
+      open={!!hardDeleteTarget}
+      subjectType="user"
+      subjectId={hardDeleteTarget?.id ?? null}
+      subjectLabel={hardDeleteTarget?.username ?? hardDeleteTarget?.email ?? undefined}
+      onClose={() => setHardDeleteTarget(null)}
+      onDeleted={() => {
+        setRows((prev) => prev.filter((u) => u.id !== hardDeleteTarget?.id));
+      }}
+    />
     </Stack>
   );
 }

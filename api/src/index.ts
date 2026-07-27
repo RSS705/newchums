@@ -53,6 +53,12 @@ import { nameToSlug, slugToName, validateInterestName } from "./interests";
 import { ensureAppUserId } from "./profile";
 import { generateResetToken, hashResetToken } from "./resetTokens";
 import { isValidContactSubject } from "./lib/contact";
+import {
+  computePlanDeleteImpact,
+  computeUserDeleteImpact,
+  hardDeletePlan,
+  hardDeleteUser,
+} from "./lib/adminHardDelete";
 import { checkDbRateLimit, isDbRateLimited, recordDbRateEvent } from "./lib/dbRateLimit";
 import {
   generateOtpCode,
@@ -6257,6 +6263,224 @@ app.get("/admin/kpis/funnel", async (c) => {
     });
   } catch (err) {
     console.error("[GET /admin/kpis/funnel]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+// ─── Admin hard delete (test-data hygiene) + moderation chat transcript ──────
+//
+// Super-admin-only cleanup for real accounts/plans created while testing in
+// production (QA-flagged plans are excluded from analytics up front; this is
+// the after-the-fact cleanup). Cascade + audit semantics live in
+// api/src/lib/adminHardDelete.ts. Hard rules: no notification emails of any
+// kind fire from these paths; a super admin can never hard-delete their own
+// account or another super admin; every action writes newchums.admin_audit
+// inside the same transaction as the cascade.
+
+app.get("/admin/users/:id/delete-impact", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  const sql = getSql(c.env);
+  const targetId = c.req.param("id");
+  try {
+    const rows = (await sql`
+      SELECT id, email, username, name, role FROM newchums.users WHERE id = ${targetId} LIMIT 1
+    `) as { id: string; email: string; username: string | null; name: string | null; role: string | null }[];
+    if (rows.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    const target = rows[0];
+    const blockedReason =
+      target.id === admin.id ? "TARGET_SELF" : target.role === "super_admin" ? "TARGET_SUPER_ADMIN" : null;
+    const { impact, hostedPlanIds } = await computeUserDeleteImpact(sql, targetId);
+    return c.json({
+      ok: true,
+      target: { id: target.id, email: target.email, username: target.username, name: target.name },
+      blockedReason,
+      impact,
+      hostedPlanCount: hostedPlanIds.length,
+      confirmWith: target.username ?? target.email,
+    });
+  } catch (err) {
+    console.error("[GET /admin/users/:id/delete-impact]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+app.post("/admin/users/:id/hard-delete", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  const sql = getSql(c.env);
+  const targetId = c.req.param("id");
+  let body: { confirm?: string };
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+
+  try {
+    const rows = (await sql`
+      SELECT id, email, username, username_norm, role FROM newchums.users WHERE id = ${targetId} LIMIT 1
+    `) as { id: string; email: string; username: string | null; username_norm: string | null; role: string | null }[];
+    if (rows.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    const target = rows[0];
+    if (target.id === admin.id) return c.json({ ok: false, error: "TARGET_SELF", message: "You cannot hard-delete your own account." }, 400);
+    if (target.role === "super_admin") return c.json({ ok: false, error: "TARGET_SUPER_ADMIN", message: "Super admin accounts cannot be hard-deleted." }, 400);
+
+    // Typed confirmation: the username (leading @ and case ignored), or the
+    // email for accounts that somehow lack one.
+    const confirmRaw = (body.confirm ?? "").trim().replace(/^@/, "").toLowerCase();
+    const expected = (target.username_norm ?? target.username ?? target.email).toLowerCase();
+    if (!confirmRaw || confirmRaw !== expected) {
+      return c.json({ ok: false, error: "CONFIRMATION_MISMATCH", message: "Type the account's username exactly to confirm." }, 400);
+    }
+
+    const { impact, hostedPlanIds } = await computeUserDeleteImpact(sql, targetId);
+    await hardDeleteUser(sql, {
+      actorUserId: admin.id,
+      targetUserId: targetId,
+      targetLabel: target.username ?? target.email,
+      impact,
+      hostedPlanIds,
+    });
+
+    // Post-commit: quiet the deleted plans' chat rooms (stateless relays;
+    // message history was removed by the SQL cascade). Best effort.
+    let chatRoomsPurged = 0;
+    for (const planId of hostedPlanIds) {
+      try {
+        const doId = c.env.CHAT_ROOM.idFromName(planId);
+        await c.env.CHAT_ROOM.get(doId).fetch("https://chat-room/purge", { method: "POST" });
+        chatRoomsPurged++;
+      } catch (err) {
+        console.error("[admin hard-delete] chat purge failed for plan", planId, err);
+      }
+    }
+
+    return c.json({ ok: true, impact, chatRoomsPurged });
+  } catch (err) {
+    console.error("[POST /admin/users/:id/hard-delete]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+app.get("/admin/plans/:id/delete-impact", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  const sql = getSql(c.env);
+  const eventId = c.req.param("id");
+  try {
+    const rows = (await sql`
+      SELECT e.id, e.title, e.is_qa, u.username AS host_username, u.email AS host_email
+      FROM newchums.events e JOIN newchums.users u ON u.id = e.host_user_id
+      WHERE e.id = ${eventId} LIMIT 1
+    `) as { id: string; title: string; is_qa: boolean | null; host_username: string | null; host_email: string }[];
+    if (rows.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    const impact = await computePlanDeleteImpact(sql, eventId);
+    return c.json({
+      ok: true,
+      target: {
+        id: rows[0].id,
+        title: rows[0].title,
+        isQa: rows[0].is_qa === true,
+        host: rows[0].host_username ?? rows[0].host_email,
+      },
+      impact,
+      confirmWith: rows[0].title,
+    });
+  } catch (err) {
+    console.error("[GET /admin/plans/:id/delete-impact]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+app.post("/admin/plans/:id/hard-delete", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  const sql = getSql(c.env);
+  const eventId = c.req.param("id");
+  let body: { confirm?: string };
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+
+  try {
+    const rows = (await sql`
+      SELECT id, title FROM newchums.events WHERE id = ${eventId} LIMIT 1
+    `) as { id: string; title: string }[];
+    if (rows.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    if ((body.confirm ?? "").trim() !== rows[0].title.trim()) {
+      return c.json({ ok: false, error: "CONFIRMATION_MISMATCH", message: "Type the plan title exactly to confirm." }, 400);
+    }
+
+    const impact = await computePlanDeleteImpact(sql, eventId);
+    await hardDeletePlan(sql, { actorUserId: admin.id, eventId, planTitle: rows[0].title, impact });
+
+    let chatRoomPurged = false;
+    try {
+      const doId = c.env.CHAT_ROOM.idFromName(eventId);
+      await c.env.CHAT_ROOM.get(doId).fetch("https://chat-room/purge", { method: "POST" });
+      chatRoomPurged = true;
+    } catch (err) {
+      console.error("[admin hard-delete] chat purge failed for plan", eventId, err);
+    }
+
+    return c.json({ ok: true, impact, chatRoomPurged });
+  } catch (err) {
+    console.error("[POST /admin/plans/:id/hard-delete]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+// Read-only plan chat transcript for moderation. Deliberately separate from
+// the participant chat endpoint: no membership requirement (super admin
+// only), no read-state reads or writes, no unread side effects for anyone,
+// no websocket/presence. Plan group chat is admin-readable for moderation;
+// DMs remain not browsable (see AGENTS.md). Each OPEN (first page, no
+// cursor) is logged to admin_audit.
+app.get("/admin/events/:id/chat-transcript", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  const sql = getSql(c.env);
+  const eventId = c.req.param("id");
+  try {
+    const ev = (await sql`
+      SELECT id, title FROM newchums.events WHERE id = ${eventId} LIMIT 1
+    `) as { id: string; title: string }[];
+    if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+
+    const before = c.req.query("before");
+    const limitParam = Math.min(Math.max(Number(c.req.query("limit") ?? 200), 1), 500);
+    const messages = (await sql`
+      SELECT m.id, m.body, m.created_at, m.user_id,
+             u.name AS sender_name, u.username AS sender_username
+      FROM newchums.event_chat_messages m
+      JOIN newchums.users u ON u.id = m.user_id
+      WHERE m.event_id = ${eventId}
+        ${before ? sql`AND m.created_at < ${before}` : sql``}
+      ORDER BY m.created_at DESC
+      LIMIT ${limitParam + 1}
+    `) as Array<{ id: string; body: string; created_at: string; user_id: string; sender_name: string | null; sender_username: string | null }>;
+    const hasMore = messages.length > limitParam;
+    if (hasMore) messages.pop();
+    messages.reverse();
+
+    if (!before) {
+      await sql`
+        INSERT INTO newchums.admin_audit (actor_user_id, action, subject_type, subject_id, subject_label, detail)
+        VALUES (${admin.id}, 'plan_chat_transcript_viewed', 'event', ${eventId}, ${ev[0].title}, ${JSON.stringify({ messageCount: messages.length, hasMore })}::jsonb)
+      `;
+    }
+
+    return c.json({
+      ok: true,
+      planTitle: ev[0].title,
+      messages: messages.map((m) => ({
+        id: m.id,
+        body: m.body,
+        createdAt: m.created_at,
+        senderId: m.user_id,
+        senderName: m.sender_name?.trim() || m.sender_username?.replace(/^@/, "") || "Someone",
+        senderHandle: m.sender_username ? `@${m.sender_username.replace(/^@/, "")}` : null,
+      })),
+      hasMore,
+      oldestCursor: messages.length > 0 ? messages[0].created_at : null,
+    });
+  } catch (err) {
+    console.error("[GET /admin/events/:id/chat-transcript]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });
@@ -12987,9 +13211,10 @@ app.get("/events/:id", async (c) => {
     // Tokenized access (share_token or invite_token) is allowed so that intentionally
     // shared QA plans can be previewed by non-admin testers, who still complete the
     // lightweight signup flow before RSVPing.
+    // Resolved once for the QA gate and the admin-view payload below.
+    const viewerIsSuperAdmin = userId ? await checkIsSuperAdmin(sql, userId) : false;
     if (event.is_qa && !tokenGrantsAccess) {
       if (!userId) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-      const viewerIsSuperAdmin = await checkIsSuperAdmin(sql, userId);
       if (!viewerIsSuperAdmin) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     }
 
@@ -13337,6 +13562,23 @@ app.get("/events/:id", async (c) => {
       prefNote,
       viewerUserId: userId ?? null,
       viewerPendingIntent,
+      // Super-admin moderation payload. Normal-user redaction above is
+      // untouched; this is an additional, clearly-labeled channel that only
+      // exists on super-admin responses (server-gated, never sent otherwise).
+      ...(viewerIsSuperAdmin
+        ? {
+            adminView: {
+              locationVisibility: locVis,
+              exactLocation: {
+                name: (event.location_name as string | null) ?? null,
+                address: (event.location_address as string | null) ?? null,
+                lat: (event.location_lat as number | null) ?? null,
+                lng: (event.location_lng as number | null) ?? null,
+                onlineLink: (event.online_link as string | null) ?? null,
+              },
+            },
+          }
+        : {}),
       viewerEmail: authPayload?.email ? (authPayload.email as string).toLowerCase() : null,
       // Email the invite_token was issued for, exposed only to unauthenticated
       // viewers so the lightweight signup card can prefill it. Once the user
