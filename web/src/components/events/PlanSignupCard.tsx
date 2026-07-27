@@ -399,15 +399,27 @@ export default function PlanSignupCard({
     "&.Mui-disabled": { backgroundColor: "transparent", color: "text.disabled" },
   } as const;
 
-  const renderIntentChips = (centered: boolean) => (
-    <Stack
-      direction="row"
-      spacing={1}
-      alignItems="center"
-      useFlexGap
-      flexWrap="wrap"
-      justifyContent={centered ? "center" : "flex-start"}
-    >
+  // One shared spacing and type rhythm across every stage so the four stages
+  // read as a single component rather than four unrelated panels.
+  const STAGE_SPACING = 1.75;
+  const HEADER_SPACING = 0.75;
+  const headingSx = { fontSize: { xs: "1.125rem", sm: "1.25rem" } } as const;
+  // Theme shadow rather than a hardcoded brand-orange glow, so the badge
+  // stays correct under the dark palette.
+  const heroBadgeSx = {
+    width: 44,
+    height: 44,
+    borderRadius: "50%",
+    bgcolor: "primary.main",
+    color: "primary.contrastText",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    boxShadow: 2,
+  } as const;
+
+  const intentChips = (
+    <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
       <Typography variant="body2" color="text.secondary">
         Your answer:
       </Typography>
@@ -434,13 +446,9 @@ export default function PlanSignupCard({
   if (stage.kind === "intent") {
     return (
       <AppCard sx={{ width: "100%" }}>
-        <Stack spacing={2}>
+        <Stack spacing={STAGE_SPACING}>
           <Box>
-            <Typography
-              variant="h5"
-              fontWeight={700}
-              sx={{ fontSize: { xs: "1.25rem", sm: "1.375rem" }, mb: 0.5 }}
-            >
+            <Typography variant="h5" fontWeight={700} sx={{ ...headingSx, mb: 0.5 }}>
               {planTitle ? `Are you in for ${planTitle}?` : "Are you in?"}
             </Typography>
             <Typography variant="body2" color="text.secondary">
@@ -495,6 +503,12 @@ export default function PlanSignupCard({
   // ── Stage: code entry ──────────────────────────────────────────────────
   if (stage.kind === "code") {
     const busy = codeStatus.kind === "verifying" || codeStatus.kind === "navigating";
+    const statusMessage =
+      codeStatus.kind === "verifying"
+        ? "Checking your code..."
+        : codeStatus.kind === "error"
+          ? codeStatus.message
+          : (codeStatus.kind === "idle" ? codeStatus.info : null) ?? "";
     return (
       <AppCard
         sx={(theme) => ({
@@ -505,41 +519,25 @@ export default function PlanSignupCard({
           borderColor: theme.palette.primary.light,
         })}
       >
-        <Stack spacing={2}>
-          <Stack spacing={1} alignItems="center" sx={{ textAlign: "center" }}>
-            <Box
-              sx={{
-                width: 56,
-                height: 56,
-                borderRadius: "50%",
-                bgcolor: "primary.main",
-                color: "primary.contrastText",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                boxShadow: "0 4px 14px rgba(230, 91, 19, 0.35)",
-              }}
-            >
+        <Stack spacing={STAGE_SPACING}>
+          <Stack spacing={HEADER_SPACING} alignItems="center" sx={{ textAlign: "center" }}>
+            <Box sx={heroBadgeSx}>
               {codeStatus.kind === "navigating" ? (
-                <CelebrationRoundedIcon sx={{ fontSize: 28 }} />
+                <CelebrationRoundedIcon sx={{ fontSize: 22 }} />
               ) : (
-                <MarkEmailReadRoundedIcon sx={{ fontSize: 28 }} />
+                <MarkEmailReadRoundedIcon sx={{ fontSize: 22 }} />
               )}
             </Box>
-            <Typography
-              variant="h5"
-              fontWeight={700}
-              sx={{ fontSize: { xs: "1.25rem", sm: "1.375rem" } }}
-            >
+            <Typography variant="h5" fontWeight={700} sx={headingSx}>
               {codeStatus.kind === "navigating" ? "You're verified" : "Enter your code"}
             </Typography>
             {codeStatus.kind === "navigating" ? (
-              <Typography variant="body1" color="text.primary">
+              <Typography variant="body2" color="text.secondary">
                 Taking you back to the plan{intent ? " to lock in your RSVP" : ""}.
               </Typography>
             ) : (
               <>
-                <Typography variant="body1" color="text.primary" sx={{ wordBreak: "break-word" }}>
+                <Typography variant="body2" color="text.secondary" sx={{ wordBreak: "break-word" }}>
                   We sent a 6-digit code to <strong>{stage.sentTo}</strong>.
                 </Typography>
                 <Button
@@ -565,53 +563,65 @@ export default function PlanSignupCard({
 
           {codeStatus.kind !== "navigating" && (
             <>
-              {renderIntentChips(true)}
-              {/* Single centered column: chips, input, status, and actions all
-                  share one axis. The flex wrapper does the centering (auto
-                  margins do not win against the parent Stack's stretch).
-                  Input mechanics are unchanged; only the width constraint and
-                  digit sizing are presentational. */}
+              {/* Compact centered group: the answer recap, the input, and its
+                  status share one axis and one tight vertical rhythm. The
+                  answer is a static recap here, not an editable control; it
+                  was chosen on the previous stage. */}
               <Box sx={{ width: "100%", display: "flex", justifyContent: "center" }}>
-              <Box sx={{ width: "100%", maxWidth: 340 }}>
-                <AppTextField
-                  label="6-digit code"
-                  value={codeValue}
-                  onChange={(e) => {
-                    const digits = e.target.value.replace(/\D/g, "").slice(0, 6);
-                    setCodeValue(digits);
-                    if (codeStatus.kind === "error") setCodeStatus({ kind: "idle" });
-                  }}
-                  fullWidth
-                  disabled={busy}
-                  error={codeStatus.kind === "error"}
-                  slotProps={{
-                    htmlInput: {
-                      inputMode: "numeric",
-                      pattern: "[0-9]*",
-                      autoComplete: "one-time-code",
-                      maxLength: 6,
-                      style: { letterSpacing: "0.45em", fontSize: "1.5rem", textAlign: "center" },
-                      "aria-label": "6-digit code from your email",
-                    },
-                  }}
-                />
+                <Stack spacing={0.75} sx={{ width: "100%", maxWidth: 320 }}>
+                  {intent && (
+                    <Typography variant="body2" color="text.secondary" align="center">
+                      RSVP:{" "}
+                      <Box component="span" sx={{ fontWeight: 700, color: "text.primary" }}>
+                        {intent === "going" ? "Going" : "Maybe"}
+                      </Box>
+                    </Typography>
+                  )}
+                  <AppTextField
+                    label="6-digit code"
+                    // Label centers with the rest of this stage's column; the
+                    // label-above pattern and its htmlFor wiring are unchanged.
+                    sx={{ "& label": { textAlign: "center" } }}
+                    value={codeValue}
+                    onChange={(e) => {
+                      const digits = e.target.value.replace(/\D/g, "").slice(0, 6);
+                      setCodeValue(digits);
+                      if (codeStatus.kind === "error") setCodeStatus({ kind: "idle" });
+                    }}
+                    fullWidth
+                    disabled={busy}
+                    error={codeStatus.kind === "error"}
+                    // null (not undefined) opts out of AppTextField's default
+                    // reserved helper row, which was the empty band under the
+                    // input. Nothing else about the field changes.
+                    helperText={null}
+                    slotProps={{
+                      htmlInput: {
+                        inputMode: "numeric",
+                        pattern: "[0-9]*",
+                        autoComplete: "one-time-code",
+                        maxLength: 6,
+                        style: { letterSpacing: "0.45em", fontSize: "1.5rem", textAlign: "center" },
+                        "aria-label": "6-digit code from your email",
+                      },
+                    }}
+                  />
+                  {/* Live region stays mounted for screen readers; with no
+                      message it renders empty and collapses to zero height
+                      instead of reserving a band. */}
+                  <Typography
+                    variant="body2"
+                    role="status"
+                    aria-live="polite"
+                    color={codeStatus.kind === "error" ? "error" : "text.secondary"}
+                    sx={{ textAlign: "center", mt: statusMessage ? 0.25 : 0 }}
+                  >
+                    {statusMessage}
+                  </Typography>
+                </Stack>
               </Box>
-              </Box>
-              <Typography
-                variant="body2"
-                role="status"
-                aria-live="polite"
-                color={codeStatus.kind === "error" ? "error" : "text.secondary"}
-                sx={{ minHeight: 20, textAlign: "center" }}
-              >
-                {codeStatus.kind === "verifying"
-                  ? "Checking your code..."
-                  : codeStatus.kind === "error"
-                    ? codeStatus.message
-                    : codeStatus.info ?? ""}
-              </Typography>
 
-              <Stack spacing={0.75} alignItems="center">
+              <Stack spacing={0.25} alignItems="center">
                 <Button
                   variant="text"
                   size="small"
@@ -631,7 +641,7 @@ export default function PlanSignupCard({
                       : "Resend code"}
                 </Button>
                 <Typography variant="caption" color="text.disabled" align="center">
-                  You can also use the one-tap button in the email. Not seeing it? Check spam or promotions.
+                  Not seeing it? Check spam, or tap the button in the email.
                 </Typography>
               </Stack>
             </>
@@ -653,37 +663,23 @@ export default function PlanSignupCard({
           borderColor: theme.palette.primary.light,
         })}
       >
-        <Stack spacing={2} alignItems="center" sx={{ py: 1, textAlign: "center" }}>
-          <Box
-            sx={{
-              width: 64,
-              height: 64,
-              borderRadius: "50%",
-              bgcolor: "primary.main",
-              color: "primary.contrastText",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              boxShadow: "0 4px 14px rgba(230, 91, 19, 0.35)",
-            }}
-          >
-            <LockPersonRoundedIcon sx={{ fontSize: 32 }} />
-          </Box>
-          <Typography
-            variant="h5"
-            fontWeight={700}
-            sx={{ fontSize: { xs: "1.25rem", sm: "1.375rem" } }}
-          >
-            You already have a NewChums account
-          </Typography>
-          <Typography variant="body1" color="text.primary" sx={{ wordBreak: "break-word" }}>
-            Sign in as <strong>{stage.email}</strong> to RSVP
-            {planTitle ? <> for <strong>{planTitle}</strong></> : null}.
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            We&apos;ve also emailed you a sign-in link in case that&apos;s
-            easier. Either way, you&apos;ll come straight back to this plan.
-          </Typography>
+        <Stack spacing={STAGE_SPACING} alignItems="center" sx={{ textAlign: "center" }}>
+          <Stack spacing={HEADER_SPACING} alignItems="center">
+            <Box sx={heroBadgeSx}>
+              <LockPersonRoundedIcon sx={{ fontSize: 22 }} />
+            </Box>
+            <Typography variant="h5" fontWeight={700} sx={headingSx}>
+              You already have a NewChums account
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ wordBreak: "break-word" }}>
+              Sign in as <strong>{stage.email}</strong> to RSVP
+              {planTitle ? <> for <strong>{planTitle}</strong></> : null}.
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              We&apos;ve also emailed you a sign-in link in case that&apos;s
+              easier. Either way, you&apos;ll come straight back to this plan.
+            </Typography>
+          </Stack>
           <AppButton
             variant="contained"
             fullWidth
@@ -713,13 +709,9 @@ export default function PlanSignupCard({
   // ── Stage: form ────────────────────────────────────────────────────────
   return (
     <AppCard sx={{ width: "100%" }}>
-      <Stack spacing={2}>
+      <Stack spacing={STAGE_SPACING}>
         <Box>
-          <Typography
-            variant="h5"
-            fontWeight={700}
-            sx={{ fontSize: { xs: "1.25rem", sm: "1.375rem" }, mb: 0.5 }}
-          >
+          <Typography variant="h5" fontWeight={700} sx={{ ...headingSx, mb: 0.5 }}>
             {intent
               ? "Lock in your RSVP"
               : planTitle
@@ -731,7 +723,7 @@ export default function PlanSignupCard({
           </Typography>
         </Box>
 
-        {renderIntentChips(false)}
+        {intentChips}
 
         <AppTextField
           label="Your email"
