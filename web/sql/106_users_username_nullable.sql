@@ -1,0 +1,34 @@
+-- Migration 106: users.username must be nullable
+--
+-- Migration 003 set `username NOT NULL`, which was correct at the time: every
+-- account was created through credentials signup, which collects a username
+-- up front.
+--
+-- Google OAuth signup later made a NULL username load-bearing. On a first
+-- OAuth sign-in, `getOrCreateAppUser` (web/src/lib/user.ts) inserts the
+-- account row with email + name only, and the `(app)` layout then uses
+-- `username == null` as the signal to route that user into
+-- /onboarding/username to pick one. Production had the NOT NULL dropped so
+-- this would work, but no migration ever recorded it. The result was a silent
+-- divergence: any database built by running web/sql/ in order still had NOT
+-- NULL, so the very first Google sign-in failed on the INSERT with
+--   null value in column "username" of relation "users" violates not-null constraint
+-- and the account was never created. Production was unaffected; only new
+-- environments (a fresh deploy, a restored staging copy, a contributor's local
+-- database) hit it.
+--
+-- This migration makes the chain match the schema the application actually
+-- requires. It is idempotent and a no-op against production, where the
+-- constraint is already absent.
+--
+-- Note on the related indexes, deliberately NOT changed here: migration 004
+-- drops `idx_users_username` and replaces it with a partial unique index on
+-- `username_norm`, which is the case-insensitive uniqueness the application
+-- enforces. Production still carries the old `idx_users_username` alongside a
+-- non-partial `idx_users_username_norm`. Both are harmless (a unique index
+-- treats NULLs as distinct, so multiple username-less accounts are fine, and
+-- the leftover case-sensitive index can only ever reject a duplicate that the
+-- norm index would reject too), so they are left in place rather than dropped
+-- from a live table for no functional gain.
+
+ALTER TABLE newchums.users ALTER COLUMN username DROP NOT NULL;

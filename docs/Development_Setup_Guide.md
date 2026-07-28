@@ -304,6 +304,16 @@ Chunk XX, YYYY-MM-DD
 
 ---
 
+Chunk 25, 2026-07-28
+- Goal: fix schema drift that broke Google signup in any newly-provisioned database.
+- Changes:
+  - **DB migration 106** (`users.username` DROP NOT NULL). Migration 003 set the column NOT NULL, correctly for the time. Google OAuth signup later depended on it being NULL (`getOrCreateAppUser` inserts email + name only; the `(app)` layout uses `username == null` to route into `/onboarding/username`). Production had the constraint dropped manually with no migration to match, so a database built by running `web/sql/` in order still had NOT NULL and the first Google sign-in failed on the INSERT. Idempotent; a no-op on production.
+- Verification: built a database from the full chain and diffed it against production across all 478 columns in the `newchums` schema. `users.username` nullability was the ONLY column-level difference. Reproduced the failure on the fresh build with the exact `getOrCreateAppUser` INSERT (not-null violation), applied 106, re-ran it successfully, confirmed the created row still has `username = NULL` so onboarding still triggers, and confirmed re-running 106 is safe. Post-fix the fresh build matches production on all 478 columns. Applied to production: no change (already nullable), 60 user rows untouched.
+- Deploy: migration only, no worker changes, so no API or web redeploy.
+- Note: two benign index differences remain and were deliberately left alone. Migration 004 intentionally drops `idx_users_username` in favour of a partial unique index on `username_norm`; production still carries the old index plus a non-partial `username_norm` index. Neither can reject anything the norm index would not, and unique indexes treat NULLs as distinct, so multiple username-less accounts are fine. Not worth altering indexes on a live table for no functional gain.
+
+---
+
 Chunk 24, 2026-07-27
 - Goal: (1) UI polish of the logged-out invitee card (presentation only, no flow/endpoint/analytics changes), and (2) admin tooling: super-admin hard delete for test-data hygiene plus super-admin plan visibility (exact location + read-only chat transcript).
 - Changes:
