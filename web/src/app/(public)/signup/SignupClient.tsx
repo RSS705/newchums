@@ -51,6 +51,42 @@ export default function SignupClient() {
   const [legalAccepted, setLegalAccepted] = React.useState(false);
   const [legalError, setLegalError] = React.useState<string | null>(null);
   const legalRef = React.useRef<HTMLDivElement>(null);
+  const legalCheckboxRef = React.useRef<HTMLInputElement>(null);
+  const [legalFlash, setLegalFlash] = React.useState(false);
+
+  /**
+   * Single gate for the legal consent checkbox, shared by BOTH signup paths.
+   *
+   * Why this is more than a validation message: "Sign up with Google" sits at
+   * the top of the form and the consent checkbox sits ~450px below it, so the
+   * old behaviour (set an error string, smooth-scroll to the checkbox) was
+   * invisible on any viewport tall enough to show the whole form already. The
+   * scroll was a no-op, nothing took focus, and the only change on screen was
+   * small helper text far from the button that was pressed. Users reported it
+   * as "Google sign up does not work".
+   *
+   * So the block now produces feedback that cannot be missed regardless of
+   * scroll position or device: the message is repeated directly under the
+   * button that was pressed, the consent row is tinted and briefly moves, the
+   * checkbox itself takes focus (which is what a keyboard or screen-reader
+   * user needs), and the message is announced via role="alert".
+   *
+   * The Google button is deliberately NOT disabled until consent: a disabled
+   * button that silently ignores taps is the same dead end being fixed here.
+   */
+  const requireLegalConsent = React.useCallback((): boolean => {
+    if (legalAccepted) return true;
+    setLegalError("Please agree to the Terms of Use and Privacy Policy to continue.");
+    setLegalFlash(true);
+    window.setTimeout(() => setLegalFlash(false), 1800);
+    requestAnimationFrame(() => {
+      legalRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      // preventScroll so the smooth scroll above owns the motion; focus is
+      // here for the visible ring and for assistive tech, not for scrolling.
+      legalCheckboxRef.current?.focus({ preventScroll: true });
+    });
+    return false;
+  }, [legalAccepted]);
 
   // Step 2: Identity
   const [username, setUsername] = React.useState("");
@@ -119,11 +155,7 @@ export default function SignupClient() {
       setConfirmPasswordError("Passwords do not match.");
       return false;
     }
-    if (!legalAccepted) {
-      setLegalError("Please agree to the Terms of Use and Privacy Policy to continue.");
-      setTimeout(() => legalRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
-      return false;
-    }
+    if (!requireLegalConsent()) return false;
     return true;
   };
 
@@ -434,11 +466,7 @@ export default function SignupClient() {
                       />
                     }
                     onClick={() => {
-                      if (!legalAccepted) {
-                        setLegalError("Please agree to the Terms of Use and Privacy Policy to continue.");
-                        setTimeout(() => legalRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
-                        return;
-                      }
+                      if (!requireLegalConsent()) return;
                       if (inviteToken) {
                         sessionStorage.setItem("nc_pending_invite", inviteToken);
                       }
@@ -461,6 +489,20 @@ export default function SignupClient() {
                   >
                     Sign up with Google
                   </AppButton>
+
+                  {/* Point-of-action copy of the consent error. The checkbox
+                      lives far below this button, so without this the only
+                      feedback for a blocked Google click was off in the
+                      user's peripheral vision or off-screen entirely. */}
+                  {legalError && (
+                    <FormHelperText
+                      error
+                      role="alert"
+                      sx={{ mt: 1, textAlign: "center", fontSize: "0.8125rem" }}
+                    >
+                      {legalError}
+                    </FormHelperText>
+                  )}
 
                   <AuthDividerForm
                     dividerText="or sign up with email"
@@ -507,16 +549,49 @@ export default function SignupClient() {
                       error={Boolean(confirmPasswordError)}
                       inputProps={{ autoComplete: "new-password" }}
                     />
-                    <Box ref={legalRef} sx={{ mt: 2 }}>
+                    <Box
+                      ref={legalRef}
+                      sx={{
+                        mt: 2,
+                        px: 1.5,
+                        py: 1,
+                        borderRadius: 2,
+                        border: 1,
+                        // Transparent border and constant padding keep the
+                        // layout identical either way, so nothing shifts when
+                        // the error appears; only the colours change.
+                        borderColor: legalError ? "error.main" : "transparent",
+                        bgcolor: legalError ? "error.light" : "transparent",
+                        transition: "background-color 160ms ease, border-color 160ms ease",
+                        ...(legalFlash && {
+                          animation: "ncLegalAttention 700ms ease-in-out 2",
+                          "@keyframes ncLegalAttention": {
+                            "0%, 100%": { transform: "translateX(0)" },
+                            "30%": { transform: "translateX(-5px)" },
+                            "70%": { transform: "translateX(5px)" },
+                          },
+                          "@media (prefers-reduced-motion: reduce)": { animation: "none" },
+                        }),
+                      }}
+                    >
                       <FormControlLabel
                         control={
                           <Checkbox
+                            inputRef={legalCheckboxRef}
                             checked={legalAccepted}
                             onChange={(e) => {
                               setLegalAccepted(e.target.checked);
-                              if (e.target.checked) setLegalError(null);
+                              if (e.target.checked) {
+                                setLegalError(null);
+                                setLegalFlash(false);
+                              }
                             }}
                             size="small"
+                            color={legalError ? "error" : "primary"}
+                            inputProps={{
+                              "aria-invalid": legalError ? true : undefined,
+                              "aria-describedby": legalError ? "signup-legal-error" : undefined,
+                            }}
                             sx={{ alignSelf: "flex-start", mt: -0.5 }}
                           />
                         }
@@ -535,7 +610,7 @@ export default function SignupClient() {
                         sx={{ alignItems: "flex-start", mx: 0 }}
                       />
                       {legalError && (
-                        <FormHelperText error sx={{ ml: 4 }}>
+                        <FormHelperText id="signup-legal-error" error sx={{ ml: 4 }}>
                           {legalError}
                         </FormHelperText>
                       )}

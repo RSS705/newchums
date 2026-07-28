@@ -97,6 +97,8 @@ export default function PlanSignupCard({
   const [email, setEmail] = React.useState(prefillEmail ?? "");
   const [dob, setDob] = React.useState("");
   const [acceptedLegal, setAcceptedLegal] = React.useState(false);
+  const legalRowRef = React.useRef<HTMLDivElement>(null);
+  const legalCheckboxRef = React.useRef<HTMLInputElement>(null);
   const [turnstileToken, setTurnstileToken] = React.useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({});
   const [submitting, setSubmitting] = React.useState(false);
@@ -164,7 +166,19 @@ export default function PlanSignupCard({
       nextErrors.turnstile = "Please complete the verification.";
     }
     setFieldErrors(nextErrors);
-    if (Object.keys(nextErrors).length > 0) return;
+    if (Object.keys(nextErrors).length > 0) {
+      // Same failure mode as the signup page's Google button: an unticked
+      // consent box can sit outside the viewport when the submit is pressed,
+      // so the form looks like it did nothing. Bring the row to the user and
+      // focus the control itself.
+      if (nextErrors.legal) {
+        requestAnimationFrame(() => {
+          legalRowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+          legalCheckboxRef.current?.focus({ preventScroll: true });
+        });
+      }
+      return;
+    }
 
     setSubmitting(true);
     setFormError(null);
@@ -825,13 +839,27 @@ export default function PlanSignupCard({
           noTopMargin
         />
 
-        <Box>
+        <Box
+          ref={legalRowRef}
+          sx={{
+            px: 1,
+            py: 0.5,
+            borderRadius: 2,
+            border: 1,
+            borderColor: fieldErrors.legal ? "error.main" : "transparent",
+            bgcolor: fieldErrors.legal ? "error.light" : "transparent",
+            transition: "background-color 160ms ease, border-color 160ms ease",
+          }}
+        >
           <FormControlLabel
             control={
               <Checkbox
+                inputRef={legalCheckboxRef}
                 checked={acceptedLegal}
                 onChange={(e) => setAcceptedLegal(e.target.checked)}
                 disabled={submitting}
+                color={fieldErrors.legal ? "error" : "primary"}
+                inputProps={{ "aria-invalid": fieldErrors.legal ? true : undefined }}
               />
             }
             label={
@@ -849,7 +877,7 @@ export default function PlanSignupCard({
             }
           />
           {fieldErrors.legal && (
-            <FormHelperText error sx={{ ml: 3.5 }}>
+            <FormHelperText error role="alert" sx={{ ml: 3.5 }}>
               {fieldErrors.legal}
             </FormHelperText>
           )}
