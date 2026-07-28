@@ -9,8 +9,17 @@
  * logged.
  */
 
-/** Row TTL for plan-signup code + link (both credentials share it). */
-export const PLAN_SIGNUP_CODE_EXPIRY_MS = 10 * 60 * 1000;
+/**
+ * Row TTL for the plan-signup code + link (both credentials share the row).
+ *
+ * 30 minutes rather than 10: people open the invite on a phone, switch to a
+ * mail app, get interrupted, and come back. Ten minutes was tight enough to
+ * push real invitees into a needless resend. The window stays bounded and is
+ * not the only control, the code is single use, capped at
+ * PLAN_SIGNUP_OTP_MAX_ATTEMPTS guesses, invalidated by any newer issuance,
+ * and rate limited per email and per IP.
+ */
+export const PLAN_SIGNUP_CODE_EXPIRY_MS = 30 * 60 * 1000;
 
 /** TTL for the one-time session-grant token minted after a correct code. */
 export const PLAN_SIGNUP_GRANT_EXPIRY_MS = 5 * 60 * 1000;

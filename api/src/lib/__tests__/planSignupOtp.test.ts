@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import Mustache from "mustache";
-import { generateOtpCode, parseSignupIntent, PLAN_SIGNUP_OTP_MAX_ATTEMPTS } from "../planSignupOtp";
+import {
+  generateOtpCode,
+  parseSignupIntent,
+  PLAN_SIGNUP_CODE_EXPIRY_MS,
+  PLAN_SIGNUP_OTP_MAX_ATTEMPTS,
+} from "../planSignupOtp";
 import { SUBJECTS } from "../../email/subjects";
 
 describe("generateOtpCode", () => {
@@ -39,6 +44,17 @@ describe("parseSignupIntent", () => {
   });
 });
 
+describe("code expiry", () => {
+  it("is 30 minutes, and the email copy says the same thing", () => {
+    expect(PLAN_SIGNUP_CODE_EXPIRY_MS).toBe(30 * 60 * 1000);
+    const minutes = PLAN_SIGNUP_CODE_EXPIRY_MS / 60000;
+    const txt = readFileSync(join(__dirname, "..", "..", "email", "templates", "magicLinkSignup.txt"), "utf8");
+    const html = readFileSync(join(__dirname, "..", "..", "email", "templates", "magicLinkSignup.html"), "utf8");
+    expect(txt).toContain(`${minutes} minutes`);
+    expect(html).toContain(`${minutes} minutes`);
+  });
+});
+
 describe("attempt cap constant", () => {
   it("matches the documented five-guess cap", () => {
     expect(PLAN_SIGNUP_OTP_MAX_ATTEMPTS).toBe(5);
@@ -63,7 +79,7 @@ describe("magicLinkSignup template (code + link email)", () => {
     for (const rendered of [renderedHtml, renderedText]) {
       expect(rendered).toContain("042137");
       expect(rendered).toContain(model.planTitle);
-      expect(rendered).toContain("10 minutes");
+      expect(rendered).toContain("30 minutes");
     }
     // Mustache HTML-escapes the URL in the HTML body (matching production
     // renderEmail); the plain-text body carries it verbatim.

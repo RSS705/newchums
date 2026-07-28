@@ -105,6 +105,7 @@ export default function PlanSignupCard({
   const [formEpoch, setFormEpoch] = React.useState(0);
 
   const [codeValue, setCodeValue] = React.useState("");
+  const [codeFocused, setCodeFocused] = React.useState(false);
   const [codeStatus, setCodeStatus] = React.useState<CodeStatus>({ kind: "idle" });
   const [resending, setResending] = React.useState(false);
   const [cooldownUntil, setCooldownUntil] = React.useState<number | null>(null);
@@ -553,6 +554,7 @@ export default function PlanSignupCard({
         : codeStatus.kind === "error"
           ? codeStatus.message
           : (codeStatus.kind === "idle" ? codeStatus.info : null) ?? "";
+    const reserveStatusLine = Boolean(statusMessage) || codeFocused || codeValue.length > 0;
     return (
       <AppCard
         sx={(theme) => ({
@@ -646,6 +648,8 @@ export default function PlanSignupCard({
                       // label-above pattern and its htmlFor wiring are unchanged.
                       sx={{ "& label": { textAlign: "center" } }}
                       value={codeValue}
+                      onFocus={() => setCodeFocused(true)}
+                      onBlur={() => setCodeFocused(false)}
                       onChange={(e) => {
                         const digits = e.target.value.replace(/\D/g, "").slice(0, 6);
                         setCodeValue(digits);
@@ -669,15 +673,23 @@ export default function PlanSignupCard({
                         },
                       }}
                     />
-                    {/* Live region is always mounted for screen readers and
-                        always occupies exactly one line, so a message
-                        appearing or clearing never shifts the layout. */}
+                    {/* Live region is always mounted for screen readers. Its
+                        line is reserved as soon as the field is focused or has
+                        digits in it, so a message appearing or clearing while
+                        the user is working never shifts the layout, but the
+                        untouched state does not carry an empty band of dead
+                        space under the input. */}
                     <Typography
                       variant="body2"
                       role="status"
                       aria-live="polite"
                       color={codeStatus.kind === "error" ? "error" : "text.secondary"}
-                      sx={{ textAlign: "center", mt: 0.5, minHeight: 20, lineHeight: "20px" }}
+                      sx={{
+                        textAlign: "center",
+                        lineHeight: "18px",
+                        mt: reserveStatusLine ? 0.5 : 0,
+                        minHeight: reserveStatusLine ? 18 : 0,
+                      }}
                     >
                       {statusMessage}
                     </Typography>

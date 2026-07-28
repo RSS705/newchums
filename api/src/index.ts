@@ -1130,7 +1130,13 @@ app.post("/auth/signup", async (c) => {
       try {
         await sql`
           UPDATE newchums.event_invites
-          SET user_id = ${newUserId}
+          -- email must be cleared in the same statement: migration 075's
+          -- event_invites_single_identity CHECK requires exactly one of
+          -- (user_id, email) to be set, so writing user_id while leaving
+          -- email in place threw and the adoption was silently swallowed by
+          -- the non-fatal catch below. Same normalization migration 075
+          -- applied to existing rows.
+          SET user_id = ${newUserId}, email = NULL
           WHERE LOWER(email) = ${normalizedEmail} AND user_id IS NULL
             AND NOT EXISTS (
               SELECT 1 FROM newchums.event_invites i2
@@ -1188,6 +1194,10 @@ app.post("/auth/signup", async (c) => {
     );
   }
 });
+
+/** How recently an account must have been created for its first
+ *  authenticated OAuth call to still count as "the signup just completed". */
+const SIGNUP_COMPLETED_GRACE_MS = 60 * 60 * 1000; // 1 hour
 
 const RESET_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
 
@@ -1464,20 +1474,43 @@ app.post("/auth/email-verify/mark-oauth", async (c) => {
 
   const sql = getSql(c.env);
   const normalized = payload.email.trim().toLowerCase();
-  const marked = (await sql`
-    UPDATE users
-    SET email_verified_at = COALESCE(email_verified_at, NOW())
-    WHERE email = ${normalized} AND email_verified_at IS NULL
-    RETURNING id
-  `) as { id: string }[];
-  // Funnel event: the UPDATE only matches on the first (NULL -> set)
-  // transition, so a returned row means a Google-OAuth signup just completed.
-  if (marked.length > 0) {
+  const rows = (await sql`
+    SELECT id, email_verified_at, created_at
+    FROM users
+    WHERE email = ${normalized}
+    LIMIT 1
+  `) as { id: string; email_verified_at: string | null; created_at: string }[];
+  if (rows.length === 0) return c.json({ ok: true });
+  const user = rows[0];
+
+  const justVerified = !user.email_verified_at;
+  if (justVerified) {
+    await sql`
+      UPDATE users
+      SET email_verified_at = NOW()
+      WHERE id = ${user.id} AND email_verified_at IS NULL
+    `;
+  }
+
+  // Funnel event. This cannot key off the email_verified_at NULL -> set
+  // transition alone: a first Google sign-in has its account row created by
+  // the web layout's getOrCreateAppUser, which already sets
+  // email_verified_at, so by the time this endpoint runs there is nothing to
+  // flip and every Google signup was missing from the funnel entirely.
+  //
+  // Record instead when the account was created moments ago (a fresh OAuth
+  // signup) or when this call is what verified it (an existing unverified
+  // account completing via Google). The partial unique index on
+  // product_events makes it at most one row per user however often this
+  // endpoint is called, and the recency window stops a long-standing account
+  // signing in today from backdating a signup to today.
+  const accountAgeMs = Date.now() - new Date(user.created_at).getTime();
+  if (justVerified || accountAgeMs < SIGNUP_COMPLETED_GRACE_MS) {
     runAfterResponse(
       c,
       recordProductEvent(sql, {
         name: "signup_completed",
-        userId: marked[0].id,
+        userId: user.id,
         params: { method: "google" },
       }),
     );
@@ -13171,7 +13204,10 @@ app.get("/events/:id", async (c) => {
       // (1) Account-email match.
       await sql`
         UPDATE newchums.event_invites
-        SET user_id = ${userId}
+        -- See the note in POST /auth/signup: clearing email is required by
+        -- the single-identity CHECK. Leaving it set threw here too, which
+        -- also skipped the token-email adoption directly below.
+        SET user_id = ${userId}, email = NULL
         WHERE event_id = ${eventId} AND LOWER(email) = ${userEmail} AND user_id IS NULL
           AND NOT EXISTS (SELECT 1 FROM newchums.event_invites i2 WHERE i2.event_id = ${eventId} AND i2.user_id = ${userId})
       `;

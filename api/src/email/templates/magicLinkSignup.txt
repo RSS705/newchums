@@ -6,7 +6,7 @@ Enter this code on the plan page to confirm your email and lock in your RSVP:
 
 Prefer one tap? This link does the same thing: {{confirmUrl}}
 
-The code and link expire in 10 minutes. If they run out, request a fresh code from the plan page.
+The code and link expire in 30 minutes. If they run out, request a fresh code from the plan page.
 
 ---
 
