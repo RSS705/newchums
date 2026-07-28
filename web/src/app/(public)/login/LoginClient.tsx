@@ -12,6 +12,7 @@ import AuthErrorBanner from "@/components/auth/AuthErrorBanner";
 import AuthField from "@/components/auth/AuthField";
 import AuthFooterLink from "@/components/auth/AuthFooterLink";
 import AuthSplitLayout from "@/components/layout/AuthSplitLayout";
+import LegalConsentNotice from "@/components/legal/LegalConsentNotice";
 import TurnstileWidget from "@/components/contact/TurnstileWidget";
 import { AppButton, AppCard } from "@/components/ui";
 import { getSafeRedirectPath } from "@/lib/authRedirect";
@@ -144,6 +145,10 @@ export default function LoginClient() {
       >
         Sign in with Google
       </AppButton>
+
+      {/* Signing in with Google creates the account when there isn't one yet,
+          so this surface carries the same consent notice as signup. */}
+      <LegalConsentNotice action="continuing" sx={{ mt: 1.25 }} />
 
       <AuthDividerForm
         dividerText="or sign in with"

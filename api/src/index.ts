@@ -1067,9 +1067,13 @@ app.post("/auth/signup", async (c) => {
     }
 
     const passwordHash = hashSync(body.password, 10);
-    const acceptedTerms = body.accepted_terms_version?.trim() || null;
-    const acceptedPrivacy = body.accepted_privacy_version?.trim() || null;
-    const acceptedLegalAt = acceptedTerms || acceptedPrivacy ? new Date().toISOString() : null;
+    // Consent is implicit in completing signup (the form states it next to
+    // the submit), so the server pins the current document versions rather
+    // than trusting anything the client sends. Recording it is what makes
+    // the agreement evidenced later; it is deliberately not optional.
+    const acceptedTerms = CURRENT_TERMS_VERSION;
+    const acceptedPrivacy = CURRENT_PRIVACY_VERSION;
+    const acceptedLegalAt = new Date().toISOString();
     const inserted = (await sql`
       INSERT INTO users (email, name, username, username_norm, password_hash, date_of_birth, email_verified_at,
                          accepted_terms_version, accepted_privacy_version, accepted_legal_at)
@@ -1517,7 +1521,6 @@ app.post("/auth/plan-signup/request", async (c) => {
   let body: {
     email?: string;
     date_of_birth?: string;
-    accepted_legal?: boolean;
     turnstile_token?: string;
     next?: string;
     intent?: string;
@@ -1530,7 +1533,7 @@ app.post("/auth/plan-signup/request", async (c) => {
 
   const email = body.email?.trim().toLowerCase();
   const dob = body.date_of_birth?.trim() ?? "";
-  const acceptedLegal = body.accepted_legal === true;
+
   const turnstileToken = typeof body.turnstile_token === "string" ? body.turnstile_token : "";
   const next = sanitizePlanSignupNext(body.next);
   const intent = parseSignupIntent(body.intent);
@@ -1541,9 +1544,11 @@ app.post("/auth/plan-signup/request", async (c) => {
   // Intentionally no password collection here. This endpoint creates a
   // real account but flags password_setup_pending = TRUE so the product
   // can prompt the user to finish setup after they land back on the plan.
-  if (!acceptedLegal) {
-    return c.json({ ok: false, error: "LEGAL_REQUIRED" }, 400);
-  }
+  //
+  // There is no accepted_legal check: consent is implicit in submitting the
+  // card, which states it next to the submit button. The server still pins
+  // and records CURRENT_TERMS_VERSION / CURRENT_PRIVACY_VERSION below, so
+  // the per-user acceptance record is unchanged.
   const parts = parseDateOnly(dob);
   if (!parts) {
     return c.json({ ok: false, error: "INVALID_DATE" }, 400);

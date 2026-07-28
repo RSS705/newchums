@@ -10,14 +10,10 @@ import AuthSplitLayout from "@/components/layout/AuthSplitLayout";
 import { AppButton, AppCard } from "@/components/ui";
 import { apiFetch } from "@/lib/apiClient";
 import { getSafeRedirectPath } from "@/lib/authRedirect";
+import { CURRENT_PRIVACY_VERSION, CURRENT_TERMS_VERSION } from "@/lib/legalVersions";
 
 // Duplicated from api/src/index.ts on purpose: single-pass pilot patch.
 // A shared constants module is the right long-term fix and is out of
-// scope here. Keep in sync with CURRENT_TERMS_VERSION /
-// CURRENT_PRIVACY_VERSION in api/src/index.ts and with the same
-// literals in SignupClient.tsx.
-const CURRENT_TERMS_VERSION = "2026-03-17";
-const CURRENT_PRIVACY_VERSION = "2026-03-17";
 
 /** Small interstitial shown to signed-in users whose legal acceptance
  *  was never recorded (typically Google OAuth users whose sessionStorage

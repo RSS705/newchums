@@ -4,11 +4,9 @@ import * as React from "react";
 import { signIn } from "next-auth/react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import Checkbox from "@mui/material/Checkbox";
 import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import CircularProgress from "@mui/material/CircularProgress";
-import FormControlLabel from "@mui/material/FormControlLabel";
 import FormHelperText from "@mui/material/FormHelperText";
 import Link from "@mui/material/Link";
 import Stack from "@mui/material/Stack";
@@ -22,6 +20,7 @@ import MarkEmailReadRoundedIcon from "@mui/icons-material/MarkEmailReadRounded";
 import { AppButton, AppCard, AppTextField } from "@/components/ui";
 import NCDatePicker from "@/components/fields/NCDatePicker";
 import TurnstileWidget from "@/components/contact/TurnstileWidget";
+import LegalConsentNotice from "@/components/legal/LegalConsentNotice";
 import { trackEvent } from "@/lib/analytics";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -96,9 +95,6 @@ export default function PlanSignupCard({
 
   const [email, setEmail] = React.useState(prefillEmail ?? "");
   const [dob, setDob] = React.useState("");
-  const [acceptedLegal, setAcceptedLegal] = React.useState(false);
-  const legalRowRef = React.useRef<HTMLDivElement>(null);
-  const legalCheckboxRef = React.useRef<HTMLInputElement>(null);
   const [turnstileToken, setTurnstileToken] = React.useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({});
   const [submitting, setSubmitting] = React.useState(false);
@@ -159,26 +155,11 @@ export default function PlanSignupCard({
     if (!dob) {
       nextErrors.dob = "Please enter your date of birth.";
     }
-    if (!acceptedLegal) {
-      nextErrors.legal = "Please agree to the Terms of Use and Privacy Policy.";
-    }
     if (turnstileSiteKey && !turnstileToken) {
       nextErrors.turnstile = "Please complete the verification.";
     }
     setFieldErrors(nextErrors);
-    if (Object.keys(nextErrors).length > 0) {
-      // Same failure mode as the signup page's Google button: an unticked
-      // consent box can sit outside the viewport when the submit is pressed,
-      // so the form looks like it did nothing. Bring the row to the user and
-      // focus the control itself.
-      if (nextErrors.legal) {
-        requestAnimationFrame(() => {
-          legalRowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-          legalCheckboxRef.current?.focus({ preventScroll: true });
-        });
-      }
-      return;
-    }
+    if (Object.keys(nextErrors).length > 0) return;
 
     setSubmitting(true);
     setFormError(null);
@@ -189,7 +170,6 @@ export default function PlanSignupCard({
         body: JSON.stringify({
           email: trimmedEmail,
           date_of_birth: dob,
-          accepted_legal: true,
           turnstile_token: turnstileToken ?? "",
           next: buildNextUrl(intent),
           intent: intent ?? undefined,
@@ -208,10 +188,6 @@ export default function PlanSignupCard({
         const error = data.error ?? "";
         if (error === "UNDERAGE") {
           setFieldErrors({ dob: "NewChums is currently available to people 18 and older." });
-          return;
-        }
-        if (error === "LEGAL_REQUIRED") {
-          setFieldErrors({ legal: "Please agree to the Terms of Use and Privacy Policy." });
           return;
         }
         if (error === "INVALID_DATE" || error === "FUTURE_DATE") {
@@ -839,50 +815,6 @@ export default function PlanSignupCard({
           noTopMargin
         />
 
-        <Box
-          ref={legalRowRef}
-          sx={{
-            px: 1,
-            py: 0.5,
-            borderRadius: 2,
-            border: 1,
-            borderColor: fieldErrors.legal ? "error.main" : "transparent",
-            bgcolor: fieldErrors.legal ? "error.light" : "transparent",
-            transition: "background-color 160ms ease, border-color 160ms ease",
-          }}
-        >
-          <FormControlLabel
-            control={
-              <Checkbox
-                inputRef={legalCheckboxRef}
-                checked={acceptedLegal}
-                onChange={(e) => setAcceptedLegal(e.target.checked)}
-                disabled={submitting}
-                color={fieldErrors.legal ? "error" : "primary"}
-                inputProps={{ "aria-invalid": fieldErrors.legal ? true : undefined }}
-              />
-            }
-            label={
-              <Typography variant="body2">
-                I agree to the{" "}
-                <Link href="/terms" target="_blank" rel="noopener noreferrer">
-                  Terms of Use
-                </Link>{" "}
-                and{" "}
-                <Link href="/privacy" target="_blank" rel="noopener noreferrer">
-                  Privacy Policy
-                </Link>
-                .
-              </Typography>
-            }
-          />
-          {fieldErrors.legal && (
-            <FormHelperText error role="alert" sx={{ ml: 3.5 }}>
-              {fieldErrors.legal}
-            </FormHelperText>
-          )}
-        </Box>
-
         {turnstileSiteKey && (
           <Box key={formEpoch}>
             <TurnstileWidget siteKey={turnstileSiteKey} onVerify={(t) => setTurnstileToken(t)} />
@@ -897,6 +829,8 @@ export default function PlanSignupCard({
             {formError}
           </Typography>
         )}
+
+        <LegalConsentNotice action="continuing" />
 
         <AppButton
           variant="contained"

@@ -1,4 +1,5 @@
 import { sql } from "@/lib/db";
+import { CURRENT_PRIVACY_VERSION, CURRENT_TERMS_VERSION } from "@/lib/legalVersions";
 
 /** Normalize date_of_birth from DB (may be Date or string) to YYYY-MM-DD string or null. */
 function normalizeDateOfBirth(val: unknown): string | null {
@@ -91,8 +92,10 @@ export async function getOrCreateAppUser(
 
   try {
     const inserted = (await sql`
-      INSERT INTO users (email, name, email_verified_at)
-      VALUES (${normalized}, ${name ?? null}, now())
+      INSERT INTO users (email, name, email_verified_at,
+                         accepted_terms_version, accepted_privacy_version, accepted_legal_at)
+      VALUES (${normalized}, ${name ?? null}, now(),
+              ${CURRENT_TERMS_VERSION}, ${CURRENT_PRIVACY_VERSION}, now())
       RETURNING id, username, date_of_birth, name, role, is_suspended,
                COALESCE(password_setup_pending, false) AS password_setup_pending,
                accepted_legal_at

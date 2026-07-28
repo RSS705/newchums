@@ -2,15 +2,10 @@
 
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import Box from "@mui/material/Box";
-import Checkbox from "@mui/material/Checkbox";
-import FormControlLabel from "@mui/material/FormControlLabel";
-import FormHelperText from "@mui/material/FormHelperText";
 import IconButton from "@mui/material/IconButton";
-import MuiLink from "@mui/material/Link";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { signIn } from "next-auth/react";
-import NextLink from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
@@ -21,6 +16,7 @@ import AuthField from "@/components/auth/AuthField";
 import NCDatePicker from "@/components/fields/NCDatePicker";
 import AuthFooterLink from "@/components/auth/AuthFooterLink";
 import AuthSplitLayout from "@/components/layout/AuthSplitLayout";
+import LegalConsentNotice from "@/components/legal/LegalConsentNotice";
 import { AppButton, AppCard } from "@/components/ui";
 import { apiFetch } from "@/lib/apiClient";
 import { trackEvent } from "@/lib/analytics";
@@ -48,45 +44,6 @@ export default function SignupClient() {
   const [emailError, setEmailError] = React.useState<string | null>(null);
   const [passwordError, setPasswordError] = React.useState<string | null>(null);
   const [confirmPasswordError, setConfirmPasswordError] = React.useState<string | null>(null);
-  const [legalAccepted, setLegalAccepted] = React.useState(false);
-  const [legalError, setLegalError] = React.useState<string | null>(null);
-  const legalRef = React.useRef<HTMLDivElement>(null);
-  const legalCheckboxRef = React.useRef<HTMLInputElement>(null);
-  const [legalFlash, setLegalFlash] = React.useState(false);
-
-  /**
-   * Single gate for the legal consent checkbox, shared by BOTH signup paths.
-   *
-   * Why this is more than a validation message: "Sign up with Google" sits at
-   * the top of the form and the consent checkbox sits ~450px below it, so the
-   * old behaviour (set an error string, smooth-scroll to the checkbox) was
-   * invisible on any viewport tall enough to show the whole form already. The
-   * scroll was a no-op, nothing took focus, and the only change on screen was
-   * small helper text far from the button that was pressed. Users reported it
-   * as "Google sign up does not work".
-   *
-   * So the block now produces feedback that cannot be missed regardless of
-   * scroll position or device: the message is repeated directly under the
-   * button that was pressed, the consent row is tinted and briefly moves, the
-   * checkbox itself takes focus (which is what a keyboard or screen-reader
-   * user needs), and the message is announced via role="alert".
-   *
-   * The Google button is deliberately NOT disabled until consent: a disabled
-   * button that silently ignores taps is the same dead end being fixed here.
-   */
-  const requireLegalConsent = React.useCallback((): boolean => {
-    if (legalAccepted) return true;
-    setLegalError("Please agree to the Terms of Use and Privacy Policy to continue.");
-    setLegalFlash(true);
-    window.setTimeout(() => setLegalFlash(false), 1800);
-    requestAnimationFrame(() => {
-      legalRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-      // preventScroll so the smooth scroll above owns the motion; focus is
-      // here for the visible ring and for assistive tech, not for scrolling.
-      legalCheckboxRef.current?.focus({ preventScroll: true });
-    });
-    return false;
-  }, [legalAccepted]);
 
   // Step 2: Identity
   const [username, setUsername] = React.useState("");
@@ -136,7 +93,6 @@ export default function SignupClient() {
     setEmailError(null);
     setPasswordError(null);
     setConfirmPasswordError(null);
-    setLegalError(null);
 
     const trimmedEmail = email.trim().toLowerCase();
     if (!trimmedEmail) {
@@ -155,7 +111,6 @@ export default function SignupClient() {
       setConfirmPasswordError("Passwords do not match.");
       return false;
     }
-    if (!requireLegalConsent()) return false;
     return true;
   };
 
@@ -269,8 +224,6 @@ export default function SignupClient() {
         email: email.trim().toLowerCase(),
         date_of_birth: dateOfBirth.trim() || undefined,
         password,
-        accepted_terms_version: "2026-03-17",
-        accepted_privacy_version: "2026-03-17",
       };
 
       if (hobbies.length > 0) {
@@ -466,14 +419,9 @@ export default function SignupClient() {
                       />
                     }
                     onClick={() => {
-                      if (!requireLegalConsent()) return;
                       if (inviteToken) {
                         sessionStorage.setItem("nc_pending_invite", inviteToken);
                       }
-                      sessionStorage.setItem("nc_legal_accepted", JSON.stringify({
-                        terms: "2026-03-17",
-                        privacy: "2026-03-17",
-                      }));
                       trackEvent("signup_google_clicked");
                       signIn("google", { redirectTo: redirectTarget });
                     }}
@@ -490,19 +438,7 @@ export default function SignupClient() {
                     Sign up with Google
                   </AppButton>
 
-                  {/* Point-of-action copy of the consent error. The checkbox
-                      lives far below this button, so without this the only
-                      feedback for a blocked Google click was off in the
-                      user's peripheral vision or off-screen entirely. */}
-                  {legalError && (
-                    <FormHelperText
-                      error
-                      role="alert"
-                      sx={{ mt: 1, textAlign: "center", fontSize: "0.8125rem" }}
-                    >
-                      {legalError}
-                    </FormHelperText>
-                  )}
+                  <LegalConsentNotice action="continuing" sx={{ mt: 1.25 }} />
 
                   <AuthDividerForm
                     dividerText="or sign up with email"
@@ -549,75 +485,10 @@ export default function SignupClient() {
                       error={Boolean(confirmPasswordError)}
                       inputProps={{ autoComplete: "new-password" }}
                     />
-                    <Box
-                      ref={legalRef}
-                      sx={{
-                        mt: 2,
-                        px: 1.5,
-                        py: 1,
-                        borderRadius: 2,
-                        border: 1,
-                        // Transparent border and constant padding keep the
-                        // layout identical either way, so nothing shifts when
-                        // the error appears; only the colours change.
-                        borderColor: legalError ? "error.main" : "transparent",
-                        bgcolor: legalError ? "error.light" : "transparent",
-                        transition: "background-color 160ms ease, border-color 160ms ease",
-                        ...(legalFlash && {
-                          animation: "ncLegalAttention 700ms ease-in-out 2",
-                          "@keyframes ncLegalAttention": {
-                            "0%, 100%": { transform: "translateX(0)" },
-                            "30%": { transform: "translateX(-5px)" },
-                            "70%": { transform: "translateX(5px)" },
-                          },
-                          "@media (prefers-reduced-motion: reduce)": { animation: "none" },
-                        }),
-                      }}
-                    >
-                      <FormControlLabel
-                        control={
-                          <Checkbox
-                            inputRef={legalCheckboxRef}
-                            checked={legalAccepted}
-                            onChange={(e) => {
-                              setLegalAccepted(e.target.checked);
-                              if (e.target.checked) {
-                                setLegalError(null);
-                                setLegalFlash(false);
-                              }
-                            }}
-                            size="small"
-                            color={legalError ? "error" : "primary"}
-                            inputProps={{
-                              "aria-invalid": legalError ? true : undefined,
-                              "aria-describedby": legalError ? "signup-legal-error" : undefined,
-                            }}
-                            sx={{ alignSelf: "flex-start", mt: -0.5 }}
-                          />
-                        }
-                        label={
-                          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.5 }}>
-                            I agree to the{" "}
-                            <MuiLink component={NextLink} href="/terms" target="_blank" color="primary" underline="hover">
-                              Terms of Use
-                            </MuiLink>{" "}
-                            and acknowledge the{" "}
-                            <MuiLink component={NextLink} href="/privacy" target="_blank" color="primary" underline="hover">
-                              Privacy Policy
-                            </MuiLink>.
-                          </Typography>
-                        }
-                        sx={{ alignItems: "flex-start", mx: 0 }}
-                      />
-                      {legalError && (
-                        <FormHelperText id="signup-legal-error" error sx={{ ml: 4 }}>
-                          {legalError}
-                        </FormHelperText>
-                      )}
-                    </Box>
                     <AppButton type="submit" fullWidth size="large" disabled={checkingEmail} sx={{ mt: 2 }}>
                       {checkingEmail ? "Checking…" : "Continue"}
                     </AppButton>
+                    <LegalConsentNotice action="continuing" sx={{ mt: 1.25 }} />
                   </AuthDividerForm>
                 </>
               )}

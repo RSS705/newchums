@@ -214,7 +214,7 @@ The following business logic lives in the API worker; the web app calls it via `
 - `DELETE /account` (auth required), hard delete account and all related data; credentials users must send `{ password }` in body
 - `GET /notification-preferences` (auth required), returns persisted notification prefs
 - `PUT /notification-preferences` (auth required), saves notification prefs (JSONB on user_profile)
-- `POST /auth/record-legal-acceptance` (auth required), records legal acceptance for OAuth users post-authentication. Accepts `accepted_terms_version`, `accepted_privacy_version`. Only sets values if not already recorded (uses `COALESCE` to avoid overwriting).
+- `POST /auth/record-legal-acceptance` (auth required), catch-up path for legacy accounts whose `accepted_legal_at` is still NULL (used by the `/onboarding/accept-legal` interstitial). New accounts record acceptance at creation, so this is no longer part of the normal signup flow. Accepts `accepted_terms_version`, `accepted_privacy_version`. Only sets values if not already recorded (uses `COALESCE` to avoid overwriting).
 - `POST /email/unsubscribe`, verifies a signed JWT (containing `userId` and `prefKey`), disables the corresponding notification preference. Used by tokenized unsubscribe links in email footers.
 
 ### Notification preferences (Settings toggles)
@@ -362,6 +362,25 @@ Hosts can remove attendees with status "going" or "maybe" from their plans via `
 
 The `host_attendee_removals` table tracks: `event_id`, `host_user_id`, `removed_user_id`, `status_at_removal`, and `created_at`. Hosts cannot remove themselves or attendees with "can't make it" status (since they're already not attending).
 
+### Legal consent (implicit, recorded per user)
+
+Consent is carried by the act of creating an account. Every surface that can
+create one renders the shared `LegalConsentNotice`
+(`web/src/components/legal/LegalConsentNotice.tsx`): the signup page (under
+the Google button and under Continue), the login page (Google there creates
+an account when none exists), and the invitee `PlanSignupCard` (above its
+submit). There is no consent checkbox in the product.
+
+Acceptance is still recorded per user. `users.accepted_terms_version`,
+`accepted_privacy_version` and `accepted_legal_at` (migration 040) are written
+when the account row is created, with the version constants pinned
+server-side: `POST /auth/signup` and `POST /auth/plan-signup/request` pin
+`CURRENT_TERMS_VERSION` / `CURRENT_PRIVACY_VERSION` from `api/src/index.ts`,
+and the OAuth first-sign-in INSERT in `getOrCreateAppUser` pins the matching
+constants from `web/src/lib/legalVersions.ts`. Because there is no longer a
+checkbox artifact, this record is the only evidence of agreement; do not
+remove it. See AGENTS.md, "Legal consent model", for the rationale.
+
 ### Lightweight plan signup (one-time code + magic link, replaces guest participation)
 
 Guest participation (unauthenticated users with nullable `user_id` + `guest_email`) has been removed (migration 084). In its place, unauthenticated visitors who land on a plan via a share or invite link get an **intent-first signup card** (B1, July 2026):
@@ -387,7 +406,7 @@ The flag is cleared any time a password is established: via Settings > Set a pas
 
 **Endpoints:**
 
-- `POST /auth/plan-signup/request` (unauthenticated). Body: `{ email, date_of_birth, accepted_legal, turnstile_token, next, intent }` (`intent` optional, `"going" | "maybe"`). Validates email format, 18+ (via `isAtLeast18`), Turnstile, and legal-acceptance boolean. Server pins the current legal versions (clients can't forge them). Rate-limited per IP and per email via `checkDbRateLimit` (Postgres, migration 104), plus a 45s per-email send cooldown (`COOLDOWN` + `retry_after_seconds` when hit; charged only after a successful send). Branches on account state:
+- `POST /auth/plan-signup/request` (unauthenticated). Body: `{ email, date_of_birth, turnstile_token, next, intent }` (`intent` optional, `"going" | "maybe"`). Validates email format, 18+ (via `isAtLeast18`) and Turnstile. **No legal-acceptance flag:** consent is implicit in submitting the card, which states it next to the submit button; the server still pins and records the current legal versions on the user row (clients can't forge them). Rate-limited per IP and per email via `checkDbRateLimit` (Postgres, migration 104), plus a 45s per-email send cooldown (`COOLDOWN` + `retry_after_seconds` when hit; charged only after a successful send). Branches on account state:
   - **No account / unverified account** → creates or refreshes the user row (auto-generated fun username via `generateFunUsername`, legal versions pinned, `email_verified_at = NULL`, `password_hash = NULL`, `password_setup_pending = TRUE` on fresh insert, DOB set), invalidates any prior unused `email_verification_tokens` rows for that user, mints one row carrying BOTH a hashed magic-link token and a hashed 6-digit code (**10-minute TTL**, `signup_intent` + `event_id` stored when `next` points at a real plan), emails the code + link, and fires the first-party `signup_email_sent` event. Returns `{ ok: true, state: "pending", resend_cooldown_seconds }`. An in-flight unverified row is refreshed but its `password_setup_pending` state is left untouched so a repeat submission doesn't clobber a completed setup.
   - **Verified account exists** → no DB writes. Sends a plan-signin notice pointing at `/login?next=<safe_next>`. Returns `{ ok: true, state: "existing_account", next }`. The client (`PlanSignupCard`) flips the card into an inline "You already have a NewChums account" panel that explains what happened, mentions the emailed sign-in link, and offers a **Sign in to continue** button that opens `/login?next=<plan>&email=<email>` (email prefilled). A secondary "Use a different email" action resets the card back to the idle state. After sign-in the normal `/login` flow returns the user to the plan URL, landing on the RSVP section.
 - `POST /auth/plan-signup/verify-code` (unauthenticated, B1). Body: `{ email, code }`. Verifies the 6-digit code against the newest active row (`otp_hash IS NOT NULL`, unused, unexpired), incrementing `otp_attempts` atomically before comparison and invalidating the row at 5 failures. Per-IP guess cap (30 per 10 minutes). Errors: `CODE_EXPIRED` (also covers unknown account and superseded codes, uniformly), `CODE_INCORRECT` (+ `attempts_remaining`), `CODE_ATTEMPTS_EXCEEDED`, `RATE_LIMITED`, `ACCOUNT_SUSPENDED` (credential not burned). On success: burns the row (and stale unused siblings), sets `email_verified_at = COALESCE(...)` firing `rsvp_verified` + `signup_completed` through the same NULL-to-set guard as the link path, and returns `{ ok, grant_token, intent, event_id }` where `grant_token` is a fresh single-use 5-minute token row the client exchanges via `signIn("magic-link")`. The grant consume is verification-neutral (user already verified), so product events fire exactly once regardless of path order.
@@ -1146,7 +1165,7 @@ Account creation is a multi-step wizard for both standard email/password and Goo
 
 **Standard signup (`/signup`):** 4-step flow: (1) email, password, confirm password, legal acceptance checkbox → (2) username, date of birth → (3) hobbies (optional, skip available) → (4) location + travel distance (optional, skip available). Legal acceptance (Terms of Use and Privacy Policy) is required before proceeding. All data is submitted in a single `POST /auth/signup` call, which accepts optional `interest_slugs`, `home_city`, `home_lat`, `home_lng`, `travel_radius_km`, `accepted_terms_version`, `accepted_privacy_version`.
 
-**Google OAuth onboarding (`/onboarding/username`):** 3-step flow: (1) username, date of birth → (2) hobbies (optional) → (3) location + travel distance (optional). Legal acceptance checkbox is required on the signup page before the OAuth redirect; acceptance data is stored in `sessionStorage` and recorded via `POST /auth/record-legal-acceptance` after authentication. Username/DOB submitted via existing `POST /user/username` + `POST /user/date-of-birth`; hobbies and location submitted via `PUT /profile`.
+**Google OAuth onboarding (`/onboarding/username`):** 3-step flow: (1) username, date of birth → (2) hobbies (optional) → (3) location + travel distance (optional). Legal acceptance is implicit (the signup and login pages both state it next to the Google button) and is recorded by `getOrCreateAppUser` on the INSERT that creates the account, so it no longer depends on `sessionStorage` surviving the OAuth redirect (which failed silently on mobile Safari and pushed users into the `/onboarding/accept-legal` interstitial). Username/DOB submitted via existing `POST /user/username` + `POST /user/date-of-birth`; hobbies and location submitted via `PUT /profile`.
 
 Shared UI components: `OnboardingProgress` (step indicator + progress bar), `StepTransition` (animated slide transitions), `HobbiesStep` (interest search + chip selection), `LocationStep` (Places autocomplete + travel distance select). All live in `web/src/components/onboarding/`.
 

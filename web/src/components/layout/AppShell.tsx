@@ -166,24 +166,6 @@ export default function AppShell({ children, user, passwordSetupPending, passwor
               body: JSON.stringify({ token: pendingInvite, email: userEmail }),
             }).catch(() => {});
           }
-
-          // Record legal acceptance stored during Google OAuth signup.
-          const legalRaw = sessionStorage.getItem("nc_legal_accepted");
-          if (legalRaw) {
-            sessionStorage.removeItem("nc_legal_accepted");
-            try {
-              const legal = JSON.parse(legalRaw) as { terms?: string; privacy?: string };
-              if (legal.terms || legal.privacy) {
-                apiFetch("/auth/record-legal-acceptance", {
-                  method: "POST",
-                  body: JSON.stringify({
-                    accepted_terms_version: legal.terms,
-                    accepted_privacy_version: legal.privacy,
-                  }),
-                }).catch(() => {});
-              }
-            } catch { /* ignore malformed data */ }
-          }
         }
       })
       .catch(() => {});
