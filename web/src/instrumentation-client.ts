@@ -24,9 +24,26 @@ Sentry.init({
   // "Java object is gone" is an Android WebView JNI signature that
   // cannot originate from our code. All patterns are kept narrow so
   // genuine app errors are still reported.
+  // Second class of the same problem: scripts the *browser itself* or a
+  // browser extension injects into our page. These run as "global code" at
+  // line 1 of the document, so their only stack frame is `app:///:1:x` after
+  // frame rewriting, which is why denyUrls cannot catch them and the message
+  // regexes have to. Neither token below exists anywhere in our source, so
+  // these patterns cannot mask a genuine NewChums error.
+  //
+  //   __firefox__     Firefox iOS / Firefox reader-mode content script.
+  //                   Seen as both "Can't find variable: __firefox__" and
+  //                   "undefined is not an object (evaluating
+  //                   'window.__firefox__.reader')" (NEWCHUMS-WEB-4A / 4B).
+  //   window.ethereum EIP-1193 provider injected by crypto wallet
+  //                   extensions (MetaMask and friends) racing their own
+  //                   setup, e.g. "window.ethereum.selectedAddress =
+  //                   undefined". NewChums has no crypto surface at all.
   ignoreErrors: [
     /enableDidUserTypeOnKeyboardLogging/,
     /Java object is gone/,
+    /__firefox__/,
+    /window\.ethereum/,
   ],
   denyUrls: [/^app:\/\/navigation_performance_logger_android/],
 });
