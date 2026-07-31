@@ -31,7 +31,11 @@ export const appNavItems: NavItem[] = [
   { label: "Communities", href: "/communities", icon: ForumRoundedIcon },
   { label: "Your Chums", href: "/chum-groups", icon: GroupsRoundedIcon },
   { label: "Profile", href: "/profile", icon: PersonRoundedIcon },
-  { label: "Give Feedback", href: "/roadmap", icon: FeedbackRoundedIcon },
+  // Points at the contact form, not the public roadmap: someone who wants
+  // to report a problem or make a suggestion gets a two-field form, not an
+  // 1,100-line voting page. The roadmap stays reachable from the footer's
+  // "Community Roadmap" link.
+  { label: "Give Feedback", href: "/contact", icon: FeedbackRoundedIcon },
 ];
 
 export const createEventHref = "/events/create";
