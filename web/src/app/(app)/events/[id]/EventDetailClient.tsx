@@ -5018,7 +5018,13 @@ export default function EventDetailClient({
                   "&:last-child": { borderBottom: pendingInvites.length > 0 ? undefined : "none" },
                 }}
               >
-                <Stack direction="row" alignItems="center" spacing={2}>
+                <Stack
+                  direction="row"
+                  alignItems="center"
+                  spacing={2}
+                  useFlexGap
+                  sx={{ flexWrap: { xs: "wrap", sm: "nowrap" }, rowGap: 0.75 }}
+                >
                   <UserAvatar
                     src={r.avatarUrl ? `${avatarBaseUrl}${r.avatarUrl}` : null}
                     name={r.name}
@@ -5081,13 +5087,25 @@ export default function EventDetailClient({
                       </Box>
                     )}
                   </Box>
+                  {/* MUI Chips never shrink below their intrinsic width, so
+                      on a narrow viewport a wide combo ("Going - Unconfirmed"
+                      plus "Awaiting response") took the whole row from the
+                      name, the only flex item allowed to shrink (minWidth: 0).
+                      At xs the chip group drops onto its own line under the
+                      name (full width, indented past the avatar) instead of
+                      competing with it; sm+ is unchanged. */}
                   <Stack
                     direction="row"
                     alignItems="center"
                     spacing={0.5}
                     useFlexGap
                     flexWrap="wrap"
-                    sx={{ flexShrink: 1, justifyContent: "flex-end" }}
+                    sx={{
+                      flexShrink: 1,
+                      justifyContent: { xs: "flex-start", sm: "flex-end" },
+                      width: { xs: "100%", sm: "auto" },
+                      pl: { xs: "60px", sm: 0 },
+                    }}
                   >
                     {r.status === "going" && event.requireReconfirmation && (event.confirmationWindowOpen || event.confirmationsIssued) && r.confirmationStatus === "confirmed" ? (
                       /* Merged badge: Going + Confirmed */
@@ -5252,7 +5270,7 @@ export default function EventDetailClient({
                     direction="row"
                     alignItems="center"
                     justifyContent="space-between"
-                    sx={{ flex: 1, minWidth: 0 }}
+                    sx={{ flex: 1, minWidth: 0, flexWrap: { xs: "wrap", sm: "nowrap" }, rowGap: 0.75 }}
                   >
                     {invProfileHref ? (
                       <Box sx={{ minWidth: 0 }}>
@@ -5303,13 +5321,20 @@ export default function EventDetailClient({
                         {inv.name || inv.email}
                       </Typography>
                     )}
+                    {/* Same narrow-viewport treatment as the RSVP rows
+                        above: the chip group yields the first line to the
+                        name at xs rather than crushing it. */}
                     <Stack
                       direction="row"
                       alignItems="center"
                       spacing={0.5}
                       useFlexGap
                       flexWrap="wrap"
-                      sx={{ flexShrink: 1, justifyContent: "flex-end" }}
+                      sx={{
+                        flexShrink: 1,
+                        justifyContent: { xs: "flex-start", sm: "flex-end" },
+                        width: { xs: "100%", sm: "auto" },
+                      }}
                     >
                       <Chip
                         icon={<MailOutlineRoundedIcon sx={{ fontSize: "0.875rem !important" }} />}
