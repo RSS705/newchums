@@ -133,7 +133,7 @@ const HOW_IT_WORKS_STEPS = [
     accentColor: "#7c3aed",
     Icon: PeopleRoundedIcon,
     title: "Meet up and keep momentum",
-    body: "Confirmation reminders, plan chat, and post-plan feedback help follow-through become the default, not the exception.",
+    body: "Confirmation reminders, plan chat, and attendance records help follow-through become the default, not the exception.",
     placeholder: "Screenshot, Plan details",
     imageSrc: "/images/home/how-step-meetup.png",
   },

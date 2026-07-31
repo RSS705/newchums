@@ -65,7 +65,7 @@ We use personal information to operate, maintain, improve, and protect NewChums,
 - detect, prevent, investigate, and address fraud, abuse, safety issues, and technical problems
 - enforce our Terms of Use and other platform rules
 - improve product design, reliability, moderation, and user experience
-- develop future trust, safety, attendance, and reputation-related systems
+- develop future trust, safety, and attendance-related systems
 - comply with legal obligations
 
 ## 4. Visibility of Information to Other Users

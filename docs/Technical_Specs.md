@@ -66,7 +66,7 @@ NewChums helps people organize gatherings more easily around hobbies and shared 
 
 - **Durable Objects:** `ChatRoom` class bound as `CHAT_ROOM` in the API worker. Per-plan WebSocket relay for real-time chat. Uses the Hibernation API so idle connections consume no CPU. Configured via `[[durable_objects.bindings]]` and `[[migrations]]` in `api/wrangler.toml`.
 
-- **Cron Triggers:** `[triggers] crons = ["0 * * * *"]` in `api/wrangler.toml`. Runs hourly. The `scheduled` handler processes attendance assurance (confirmation requests, reminders, cutoff processing), daily unread-chat digest email (gated to run once per day at ~2 PM UTC via `chat_digest_sent_at` cooldown), event match digest, and post-plan feedback reminder emails (sent ~3h after plan start, tracked via `events.feedback_email_sent_at`). Integrated into the Sentry-wrapped export alongside `fetch`.
+- **Cron Triggers:** `[triggers] crons = ["0 * * * *"]` in `api/wrangler.toml`. Runs hourly. The `scheduled` handler processes attendance assurance (confirmation requests, reminders, cutoff processing), daily unread-chat digest email (gated to run once per day at ~2 PM UTC via `chat_digest_sent_at` cooldown), event match digest, and post-plan wrap-up emails (role-varied, sent ~3h after plan start, tracked via the historical `events.feedback_email_sent_at` column). Integrated into the Sentry-wrapped export alongside `fetch`.
 
 ### Not implemented
 
@@ -233,13 +233,13 @@ Users manage notification preferences in **Settings** (`/settings`). Each notifi
 | `host_join` | Someone is going to your plan | `eventJoin` |
 | `host_maybe` | Someone might attend your plan | `eventMaybe` |
 | `host_leave` | Someone can't make it to your plan | `eventLeave` |
-| `feedback_requests` | Post-plan feedback | `planFeedback` |
+| `feedback_requests` | Post-plan follow-up | `planWrapUp` |
 | `event_changed_canceled` | Plan canceled or changed | `eventChanged`, `rsvpReconfirmRequest` (the date-change reconfirmation email replaces `eventChanged` for that edit and shares this preference + unsubscribe key) |
 | `attendee_removed` | You were removed from a plan | `attendeeRemoved` |
 | `product_announcements` | Product updates | N/A |
 | `unread_chat_digest` | Unread messages in your plans | `unreadChatDigest` |
 | `attendance_confirmation` | Attendance confirmation reminders | `confirmationRequestUser` |
-| `plan_feedback` | Post-plan feedback reminders | `planFeedback` |
+| `plan_feedback` | Post-plan follow-up reminders | `planWrapUp` |
 | `community_announcements` | Community announcements | `communityAnnouncement`. Sent only when a community owner posts an announcement with the "Email members" toggle on. Suppression order at send time: per-community mute row (`community_announcement_mutes`) **and** the global preference here, both must be permissive. Toggling the global key off does NOT delete per-community mute rows; the choices survive a global flip. |
 
 **Non-preference transactional emails (no toggle):**
@@ -254,10 +254,7 @@ Defaults are applied at account creation (credentials signup, OAuth) and backfil
 
 **Event match digest (batch):** The hourly `scheduled` handler runs `processEventMatchDigest` after the unread-chat digest block. Recipients must have `event_match` enabled, a home location, and meet the same in-person / future / not-full / travel-radius / “new since last digest” gates as for public plans. **Public** plans require at least one overlapping hobby between the user and the plan. **Chums-only** plans use the **same** hobby overlap and distance rules; additionally the recipient must appear on the **host’s** On NewChums connections (`user_contacts`: host `user_id`, recipient `linked_user_id`, `type = 'on_newchums'`). **Invite-only** plans are excluded. **Already-connected suppression:** plans are excluded from a recipient's digest if they already have any `event_rsvps` row for that plan (any status: `going` / `maybe` / `cant_make_it`) or any `event_invites` row matched by `user_id` or by `LOWER(email) = LOWER(users.email)` (so a legacy email-only invite created before the recipient signed up still counts). The intent is that the digest is "new plans you're not yet involved with", not a second outreach channel for plans the recipient was already invited to or interacted with. **Community members-only gate (additive):** when a plan has `community_id IS NOT NULL AND hide_from_explore = true` (the "only show this plan to community members" toggle), the digest additionally requires the recipient to be an active member of that community (`community_members` row with matching `community_id`, `user_id`, `status = 'active'`). This mirrors the Explore-feed visibility rule and is **layered on top of** every other digest criterion; it narrows eligibility, never broadens it. Concretely: public-visibility plans scoped to community members only reach matching-hobby, in-radius, non-RSVP'd users who are also active members; chums-only plans scoped to community members only reach users who pass both the chums-contact check and the membership check. A plan with `community_id IS NOT NULL AND hide_from_explore = false` is treated like any other public/chums-only plan; community linkage alone does not narrow digest eligibility, only the members-only toggle does. QA plans and super-admin bypass rules are unchanged: the community gate is applied uniformly, so a super admin who isn't in the community still won't receive a community-members-only plan in their digest.
 
-**Chum preference filtering (digest, implemented):** After the SQL query selects candidate (recipient, plan) pairs, a two-directional chum preference check runs before emails are sent:
-1. **Viewer→host:** Does the host's metrics meet the recipient's chum preference thresholds (including hosting quality)? If not, the plan is excluded from this recipient's digest.
-2. **Host→viewer:** Does the recipient's metrics meet the host's chum preference thresholds? If not, the plan is excluded (the host doesn't want this person matched to their plan).
-Both checks use the centralized `evaluateChumPreferences` helper with `PREF_THRESHOLDS` (open=0, preferred≥35, important≥45, required≥55) against `user_metrics` scores (baseline 50). Users with preferences disabled or at "open" for all metrics pass all checks. If all plans for a user are filtered out, no digest email is sent for that user. **Plan-level overrides** are respected: if a plan has `pref_overrides` set, `resolveEffectiveHostPrefs` merges them with the host's global preferences before the host→viewer check (e.g. fully disabled or specific metrics bypassed).
+**Digest filtering:** candidate selection is hobbies (effective-category overlap via `user_interests`/`interests`) + travel radius (`user_profile.travel_radius_km`, haversine) + visibility/QA/members-only gates + a blocked-pairs gate (`user_blocks`, both directions, in both UNION branches). The chum-preference post-filter that used to run here was removed with the matching system in July 2026. The email copy has always described hobbies and travel area only.
 
 Each RSVP status has a dedicated host notification email, each gated on its own preference toggle. Each email includes a tokenized unsubscribe link that toggles the corresponding preference. The three emails are **previous-status aware** (the RSVP endpoint captures the attendee's pre-upsert status and the send helpers pick copy + subject from it): "left your plan" (`eventLeave` base subject) is used only when a Going attendee backs out; a first response or a Maybe declining reads "can't make it" (`eventLeave_declined` subject variant, heading "Someone can't make it"); a Going attendee softening to Maybe gets "is now a maybe" copy (`eventMaybe_wasGoing`) instead of the fresh "might come" copy; and a Maybe or Can't-make-it attendee flipping to Going gets "is now going" copy (`eventJoin_nowGoing`). The three templates share a parameterized shell (`{{heading}}`, `{{{bodyHtml}}}` / `{{bodyText}}` supplied by `send.ts`). Migration 033 removes the obsolete `event_reminders` key and `frequency` fields from existing JSONB data.
 
@@ -345,7 +342,7 @@ Each template basename has a `.html` and `.txt` file in `api/src/email/templates
 - `planAtRisk`, `planAutoCancelled`, `planRemovedByAdmin`
 - `confirmationRequestUser`
 - `unreadChatDigest`, `eventMatchDigest`
-- `planFeedback`
+- `planWrapUp`
 - `roadmapUpdate`, `concernReportAlert`
 - `communityJoinRequest`, `communityJoinApproved`, `communityJoinDeclined`, `communityMemberRemoved`, `communityMemberUnblocked`, `communityJoinRequestReopened`, `communityAnnouncement`
 - `magicLinkSignup`, `planSignin`, `signinLink`
@@ -784,10 +781,10 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 
 | Route | Description |
 |-------|-------------|
-| `POST /events` | Create event. Validates title, starts_at, location_type, visibility. Accepts `invitees[]` array of `{ user_id?, email? }`, `require_reconfirmation`, `require_approval`, `allow_attendee_invites` (default true), `allow_alt_times` (default true), `alt_times_mode` (suggest/availability), `availability_deadline_at` (must be before starts_at, availability mode only), `reserve_seats`, `max_seats` (1-500), `pref_overrides` (JSONB), `community_ids[]` (UUID array, user must be active member of every selected community; capped at 10), `hide_from_explore`. Published events send invite notifications and emails. |
+| `POST /events` | Create event. Validates title, starts_at, location_type, visibility. Accepts `invitees[]` array of `{ user_id?, email? }`, `require_reconfirmation`, `require_approval`, `allow_attendee_invites` (default true), `allow_alt_times` (default true), `alt_times_mode` (suggest/availability), `availability_deadline_at` (must be before starts_at, availability mode only), `reserve_seats`, `max_seats` (1-500) (JSONB), `community_ids[]` (UUID array, user must be active member of every selected community; capped at 10), `hide_from_explore`. Published events send invite notifications and emails. |
 | `GET /events/mine?filter=upcoming\|past` | List events the user hosts, is invited to, or has RSVP'd. Includes going/maybe counts, host info, RSVP status, `has_unread_chat` flag. Host name uses `@username` priority. |
 | `GET /events/:id` | Event detail with RSVP list, alternate time suggestions, join requests, and attendance assurance state. Optional auth. Accepts query params: `invite_token`, `share_token`. Returns `accessState` (`public` \| `invite` \| `authenticated` \| `attending`) and `shareToken` (for non-public states). Public access returns limited preview (counts only, no individual RSVPs). Full response includes `requireReconfirmation`, `lockedAt`, `requireApproval`, `isInvited`, `hasRsvp`, `confirmationWindowOpen`, `confirmationCutoffAt`, `confirmedCount`, `pendingConfirmationCount`, `myConfirmationStatus`, `planViability`, and per-RSVP `confirmationStatus`. Join requests: full list for host, own request only for non-hosts. On first authenticated load, idempotently adopts any matching email-only `event_invites` row (`WHERE LOWER(email) = <user email> AND user_id IS NULL`) onto the user's account. |
-| `PATCH /events/:id` | Edit event (host only). Accepts: `title`, `description`, `starts_at`, `max_seats`, `visibility`, `require_reconfirmation`, `require_approval`, `allow_alt_times`, `alt_times_mode`, `availability_deadline_at`, `allow_attendee_invites`, `reserve_seats`, `pref_overrides`, `community_ids[]`, `hide_from_explore`, `timezone`, `interest_items`, `reconfirm_rsvps`. Returns `{ ok: true, rsvps_reset, reconfirm_requested }`. Sends plan-changed notifications to Going/Maybe attendees when meaningful fields change (title, date, description, capacity, visibility, confirmation settings, availability deadline). **Date-change reconfirmation:** when `reconfirm_rsvps = true` AND `starts_at` actually changed (server re-verifies; the flag is ignored otherwise), every non-host `going` RSVP is flipped to `maybe` with `committed_at` cleared (see Attendance Record), `confirmed` 24-hour-check rows for the flipped users roll back to `pending`, and every pre-flip Going/Maybe attendee gets an `event_reconfirm_requested` in-app notification plus the `rsvpReconfirmRequest` email (new time front and center, one-tap `?rsvp=going` / `?rsvp=cant_make_it` links, was-Going vs was-Maybe copy variants, any other same-save edits in an "Also changed" block). The generic plan-changed notification is suppressed for that edit so attendees get exactly one email. `rsvps_reset` counts flipped RSVPs; `reconfirm_requested` counts the pre-flip going/maybe attendees asked to respond (on QA plans, notifications/emails still reach super admins only, so the count can exceed actual sends). Side effect to be aware of: plan-chat read access is Going-gated, so flipped attendees lose chat access until they re-RSVP Going, and freed seats are not held for them while they decide (except invitees on `reserve_seats` plans). Automatically clears `availability_deadline_at` when mode switches away from availability. The Edit form omits `community_ids` / `hide_from_explore` from the body when neither has changed, so the server's "must be a member" check only fires when the linkage actually changes. **Banner-only partial update:** a body of exactly `{ banner_key: null }` (the Edit form's banner-removal follow-up call) clears the banner and returns early, skipping full-field validation and attendee notifications; clearing is the only banner mutation PATCH accepts, setting a key still goes exclusively through `/media/finalize`. |
+| `PATCH /events/:id` | Edit event (host only). Accepts: `title`, `description`, `starts_at`, `max_seats`, `visibility`, `require_reconfirmation`, `require_approval`, `allow_alt_times`, `alt_times_mode`, `availability_deadline_at`, `allow_attendee_invites`, `reserve_seats`, `community_ids[]`, `hide_from_explore`, `timezone`, `interest_items`, `reconfirm_rsvps`. Returns `{ ok: true, rsvps_reset, reconfirm_requested }`. Sends plan-changed notifications to Going/Maybe attendees when meaningful fields change (title, date, description, capacity, visibility, confirmation settings, availability deadline). **Date-change reconfirmation:** when `reconfirm_rsvps = true` AND `starts_at` actually changed (server re-verifies; the flag is ignored otherwise), every non-host `going` RSVP is flipped to `maybe` with `committed_at` cleared (see Attendance Record), `confirmed` 24-hour-check rows for the flipped users roll back to `pending`, and every pre-flip Going/Maybe attendee gets an `event_reconfirm_requested` in-app notification plus the `rsvpReconfirmRequest` email (new time front and center, one-tap `?rsvp=going` / `?rsvp=cant_make_it` links, was-Going vs was-Maybe copy variants, any other same-save edits in an "Also changed" block). The generic plan-changed notification is suppressed for that edit so attendees get exactly one email. `rsvps_reset` counts flipped RSVPs; `reconfirm_requested` counts the pre-flip going/maybe attendees asked to respond (on QA plans, notifications/emails still reach super admins only, so the count can exceed actual sends). Side effect to be aware of: plan-chat read access is Going-gated, so flipped attendees lose chat access until they re-RSVP Going, and freed seats are not held for them while they decide (except invitees on `reserve_seats` plans). Automatically clears `availability_deadline_at` when mode switches away from availability. The Edit form omits `community_ids` / `hide_from_explore` from the body when neither has changed, so the server's "must be a member" check only fires when the linkage actually changes. **Banner-only partial update:** a body of exactly `{ banner_key: null }` (the Edit form's banner-removal follow-up call) clears the banner and returns early, skipping full-field validation and attendee notifications; clearing is the only banner mutation PATCH accepts, setting a key still goes exclusively through `/media/finalize`. |
 | `POST /events/:id/rsvp` | RSVP to an event, `{ status: "going"\|"maybe"\|"cant_make_it", note?, share_token?, invite_token? }`. Capacity enforcement for going status. Locked plans reject new RSVPs (`EVENT_LOCKED` error) but allow existing participants to change status. Plans with `require_approval` reject users without host-extended access (`APPROVAL_REQUIRED` error). Host-extended access is satisfied by ANY of: an existing RSVP, an `event_invites` row for the user, a valid `share_token` in the body (Copy Link share path), or a valid `invite_token` in the body (email-mismatch safety net). Plans with `visibility = invite_only` apply the same bypass set under `INVITE_ONLY`. Notifies host via in-app notification and email. UI: "Can't make it" button only shown when user is invited or has an existing RSVP; heading text is context-aware ("Can you make it?" for invited users, "Are you in?" otherwise). |
 | `POST /events/:id/alt-time` | Submit one alternate time / availability entry, `{ suggested_at, ends_at?, note? }`. Only if event.allow_alt_times. `suggested_at` is the earliest possible plan-start; optional `ends_at` is the latest possible start (must be after `suggested_at`). The attendee-facing UI submits multiple selected dates by issuing one POST per date; "Anytime start" is encoded as a ~24h window (local-midnight to next-day local-midnight) so the entry naturally contributes to the existing best-overlap computation, and the display layer renders any window with duration ≥ 23h as "Anytime start" instead of a 12:00 AM time. Notifies host. Auth required. |
 | `POST /events/:id/cancel` | Cancel event (host only). Notifies all attendees via in-app notification and email. |
@@ -807,8 +804,8 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 | `POST /events/:id/join-request` | Submit a join request (requires `require_approval` to be on). Body: `{ message? }`. Validates not-host, not-invited, not-already-RSVP'd, no duplicate pending request. Notifies host via in-app notification and email (template 43906440). |
 | `POST /events/:id/join-request/:requestId/approve` | Approve a join request (host only). Body: `{ message? }`. Checks seat capacity. Marks request approved, adds user as Going RSVP. Notifies requester via in-app notification and email (template 43906609). |
 | `POST /events/:id/join-request/:requestId/decline` | Decline a join request (host only). Body: `{ message? }`. Marks request declined. Notifies requester via in-app notification and email (template 43906703). |
-| `GET /events/:id/feedback` | Existing feedback by this user for this plan + eligible attendees. Auth required; plan must be past. |
-| `POST /events/:id/feedback` | Submit/update feedback. Body: `{ entries: [{ revieweeUserId, prompt, response }] }`. Prompts: reliability, sociability, presentation, match_quality, hosting_skills (host-only). Responses: agree, maybe, disagree. Upserts on conflict. |
+| `GET /events/:id/wrap-up` | Bearer JWT | Post-plan surface payload (thank-you targets, host check-in state) |
+| `POST /events/:id/attendance-issue` + `DELETE` | Bearer JWT | Host-only binary attendance record / retract |
 | `POST /events/:id/attendance-issue` | Report attendance issue. Body: `{ reportedUserId, issueType }`. Types: no_show, late_cancel, very_late. One report per type per pair per plan. |
 | `POST /events/:id/conduct-report` | Report conduct/safety concern. Body: `{ reportedUserId, reason, details? }`. Reasons: rude_aggressive, harassment, boundary_issue, discriminatory, unsafe_intoxicated, disruptive, property_damage, other. |
 
@@ -824,7 +821,7 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 - `public`: shown in Explore feed, community feed, and digests to all eligible users, subject to `hide_from_explore` for Explore.
 - For community-linked plans, `hide_from_explore` ("Only show this plan to community members") layers on top of `visibility` to gate Explore only. It does not affect direct URL access or the community's own plan feed. See the **Plan Feeds, Community Linkage, and "Only show this plan to community members" Toggle** subsection under Communities for the full matrix.
 
-**Add Plan / Edit Plan parity:** `CreateEventClient.tsx` (`/events/create`) and `EditEventClient.tsx` (`/events/[id]/edit`) are a single plan form system; the four historically drift-prone sections (Extra options, Community, Matching preferences, QA plan) are extracted under `web/src/components/events/planForm/` and shared between both files. See `AGENTS.md` → **Add Plan / Edit Plan Parity Rule**. Changes to remaining duplicated sections should be mirrored in the other form.
+**Add Plan / Edit Plan parity:** `CreateEventClient.tsx` (`/events/create`) and `EditEventClient.tsx` (`/events/[id]/edit`) are a single plan form system; the four historically drift-prone sections (Extra options, Community, QA plan) are extracted under `web/src/components/events/planForm/` and shared between both files. See `AGENTS.md` → **Add Plan / Edit Plan Parity Rule**. Changes to remaining duplicated sections should be mirrored in the other form.
 
 **Plan Access States:**
 
@@ -987,141 +984,40 @@ Public profile section showing six reliability metrics computed from real event 
 
 Uses `committed_at` on `event_rsvps` (migration 041) for accurate commitment tracking. New/low-history users see "Building history" treatment with underlying sample counts. Endpoint: `GET /public/users/:userId/attendance-record`.
 
-**Plan Feedback / Matching Quality System (implemented, Phase 1 + Phase 2):**
+**Post-plan wrap-up (implemented, July 2026 rebuild):**
 
-Post-plan feedback allows attendees and hosts to leave lightweight, optional feedback about each other after a plan has passed. Feedback signals feed hidden per-user metric scores that power the chum preferences matching system.
+The post-plan surface serves the attendee and the host separately (it replaced a per-attendee rating form whose scores fed a matching system; both were removed in July 2026, see AGENTS.md Motions):
 
-*Hidden Metrics (per user, stored in `user_metrics`):*
+- **Attendees, "Say thanks":** per-person shout-out composer (rows created `status='pending'`, super-admin approval at `/admin/shoutouts`), Save to Chums, and Message. No submit gate, no questions. The thank-you panel stays open for 7 days after plan start (deliberately decoupled from the 3-day chat lock).
+- **Hosts, private check-in:** "How did {plan} go?" with a binary Came / No-show list of committed (`going`) attendees and a prominent "Run it again" button into the `?copy_from=` create flow. Recording a no-show writes a host-only `attendance_issues` row (`issue_type='no_show'`, `is_host_report=true`, `status='active'`); toggling back deletes it. Nothing in the check-in notifies anyone.
+- The dispute banner (attendance concerns against the viewer, dismissed ones excluded) and the conduct/safety report dialog survive from the old surface. Dismissal is stored in `plan_feedback_dismissals` (historical table name, migration 060).
+- Deep link `?section=feedback` is kept so links in already-sent emails keep working.
 
-| Metric | Definition | Weighting guidance |
-|--------|-----------|-------------------|
-| **Reliability** | Can this person be counted on to follow through? | Moves quickly; no-shows and very late cancellations matter immediately; positive follow-through recovers more slowly. |
-| **Sociability** | Does this person make social interaction comfortable and enjoyable? | Moves gradually; subjective, relies on repeated signals. |
-| **Cleanliness & Consideration** | Does this person show basic in-person cleanliness and considerate use of shared space? (Hygiene and shared-space courtesy, not appearance, style, or a safety/conduct judgment.) | Moves cautiously but firmly; sensitive area, but repeated negative signals should matter. |
-| **Hosting Skills** | Does this person run plans that respect people's time and create a good experience? | Only moves from hosted-plan feedback. |
-| **Match Quality** | Was this a good match for the reviewer personally? | Per-pair signal, not an absolute score. |
-
-All metrics use a 0–100 scale, starting at 50.00 (neutral baseline). `signal_count` tracks how many feedback signals contributed.
-
-*Scoring model (implemented):*
-
-- **Baseline:** 50.00 for every metric, 0 signals.
-- **Feedback movement:** Each feedback signal nudges the score toward a target using weighted averaging. "Yes" (agree) targets 80, "Somewhat" (maybe) targets 50, "No" (disagree) targets 20. Nudge = (target − current) / (signal_count + 5). This ensures early signals have a larger effect while later signals converge toward the running average.
-- **Attendance penalties (Reliability only):** Raw penalties: No-show = −10, Very late = −8, Late cancel = −5. Effective penalty = raw × confidence (see trust model below). These are immediate penalties, not averaged.
-- **Hosting Skills:** Only moves from the `hosting_skills` prompt on plans the user hosted.
-- **Conduct / Safety:** Tracked separately from metric scoring. Does not affect scores.
-
-*Tolerance thresholds (chum preference levels):*
-
-| Level | Threshold | Meaning |
-|-------|-----------|---------|
-| **Open to anyone** | None | No filtering on that metric. |
-| **Preferred** | Score ≥ 35 | Tolerates mild negative average. Meaningfully filters consistently poor signals. |
-| **Important** | Score ≥ 45 | Only tolerates small negative average. Filters moderate negatives. |
-| **Required** | Score ≥ 55 | Firm minimum. Requires near-baseline or positive record. |
-
-*Feedback prompts (3-point scale: Yes / Somewhat / No):*
-
-- Showed up and followed through reliably → Reliability
-- I'd spend time with this person again → Sociability
-- This person showed basic in-person cleanliness and consideration → Cleanliness & Consideration
-- This was a good match for me → Match Quality
-- Ran a well-organized plan → Hosting Skills (host-only prompt)
-
-*Separate layers (not part of normal feedback):*
-
-- **Attendance issues**, structured reports: no-show, cancelled too late, arrived very late. Stored in `attendance_issues`. Immediately penalizes Reliability score (modulated by confidence).
-- **Conduct / Safety reports**, structured reasons: rude/aggressive, harassment, boundary issue, discriminatory, unsafe/intoxicated, disruptive, property damage, other. Stored in `conduct_reports` (with `status`: new/reviewed/closed per migration 053). Treated separately from normal scoring. Each submission triggers an immediate email alert (`concernReportAlert` template) to contact@newchums.com and appears in the admin Safety tab for review.
-
-*Attendance Trust Model (migration 052):*
-
-The `attendance_issues` table has additional trust columns:
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `is_host_report` | boolean | Whether the reporter was the plan host |
-| `confidence` | numeric(3,2) | 0.00–1.00 multiplier applied to raw penalty |
-| `applied_penalty` | numeric(5,2) | Actual score deduction stored for clean reversal |
-| `status` | text | `active` / `disputed` / `dismissed` / `confirmed` |
-
-Confidence rules:
-
-| Reporter | Corroborated? | Confidence |
-|----------|---------------|------------|
-| Host | N/A | 1.0 |
-| Non-host | No | 0.75 |
-| Non-host | Yes (2+ independent reporters, same plan/person/type) | 1.0 |
-| Any | Disputed by user | 0.5 |
-| Any | Dismissed by admin | 0 (penalty fully reversed) |
-| Any | Confirmed by admin | 1.0 |
-
-Product rule: 2 no-shows (50 − 20 = 30) or 1 no-show + 1 very-late (50 − 18 = 32) drops below Preferred (≥ 35), absent offsetting positive feedback.
-
-Dispute mechanism:
-- Users can dispute active attendance issues via `POST /events/:id/attendance-dispute`. All active issues on that plan against the user are set to `disputed` (confidence 0.5) and the reliability score is adjusted.
-- Reporter identity is **never** revealed to the disputed user.
-- Super admins can dismiss (confidence 0) or confirm (confidence 1.0) issues via `PUT /admin/attendance-issues/:id/status`.
-
-Corroboration:
-- When a new attendance report arrives and prior reports exist for the same plan/person/type from different reporters, all are boosted to confidence 1.0. Prior lower-confidence reports have their penalties retroactively adjusted.
-
-*Chum Preferences (user-facing, implemented):*
-
-Users configure matching preferences in their profile ("Your chum preferences" section, below Hobbies, above Attendance record). Settings:
-- **Per-metric levels:** Reliability, Sociability, Cleanliness & consideration, Hosting quality, each set to Open to anyone / Preferred / Important / Required.
-- **Age range:** Any age / Within 5 years / Within 10 years / Within 15 years. Evaluated dynamically against DOB at match time, never stored as absolute bounds. Users without DOB on file always pass this check.
-- Defaults: Reliability = Preferred, all other metric levels = Open to anyone, Age range = Any age.
-- Saved in `chum_preferences` table (upsert on change, auto-saves). The `enabled` master toggle was removed in migration 071; permissive values ("Open to anyone" + "Any age") now represent the no-filter state.
-
-*Browsing vs. inbound matching behavior (implemented):*
-- A user's chum preferences filter who gets matched **into their plans** and who appears in their **digest / recommendations**.
-- **Digest:** Both directions are hard-filtered across all five preference dimensions (reliability, sociability, cleanliness & consideration, hosting quality, age range). Plans whose host fails the recipient's preferences (including hosting quality) are excluded. Plans where the recipient fails the host's preferences are also excluded.
-- **Explore feed:** The host's preferences are enforced as a hard filter in the SQL query, including the host's age range vs the viewer's age (computed via `EXTRACT(YEAR FROM AGE(h.date_of_birth))` against the viewer's DOB injected as a parameter). Plan-level `pref_overrides` are respected inline in the SQL: `{ "disabled": true }` bypasses all host preference checks; `disabled_metrics` bypasses specific dimensions including `"age"`. The viewer's own preferences produce a soft **compatibility note** (`prefNote` in the API response), including age mismatches against the host, plans are not hidden from the viewer, but the frontend can indicate a mismatch.
-- **Plan details:** When a logged-in user views a plan they didn't create, `GET /events/:id` evaluates the viewer's chum preferences against the host's metrics (including hosting quality) and against the host's DOB (when the viewer has an age preference set), then returns a `prefNote` array of failed dimensions. Per-attendee mismatches are computed the same way (each attendee's DOB and metrics are checked against the viewer's preferences). The frontend displays an informational banner: "Based on your chum preferences, this plan may not fully match your expectations for [dimension(s)]." Age mismatches surface as the generic phrase "age range"; exact ages, DOBs, and differences are never exposed in user-facing copy. This does **not** block access; it informs.
-- A user's chum preferences do **not** block them from browsing and opening plans themselves.
+*Attendance collection:* host-only and binary since July 2026. `POST /events/:id/attendance-issue` rejects non-hosts (`NOT_HOST`) and non-`no_show` types; `DELETE` retracts the host's own row. The reported person disputes via `POST /events/:id/attendance-dispute` (`active` -> `disputed`); a super admin resolves via `PUT /admin/attendance-issues/:id/status`, where `dismissed` is the only status that restores public "Shows up" credit. The public record endpoint and the badges cron read exactly `plan_id`, `reported_user_id`, `issue_type`, `status`.
 
 *API endpoints:*
 
 | Endpoint | Purpose |
 |----------|---------|
-| `GET /events/:id/feedback` | Existing feedback by this user + eligible attendees list |
-| `POST /events/:id/feedback` | Submit/update feedback entries (batch); updates `user_metrics` |
-| `POST /events/:id/attendance-issue` | Report attendance problem; penalizes Reliability (with confidence model) |
-| `POST /events/:id/attendance-dispute` | Dispute active attendance issues filed against the current user on this plan |
+| `GET /events/:id/wrap-up` | Post-plan payload: thank-you targets (+ per-attendee `rsvpStatus`), viewer's shout-out drafts, issues against the viewer, viewer's own reports |
+| `POST /events/:id/wrap-up/dismiss` | Permanently hide the wrap-up card for this plan |
+| `POST /events/:id/attendance-issue` | Host records a no-show (host-only, binary, no side effects) |
+| `DELETE /events/:id/attendance-issue` | Host retracts their own no-show record |
+| `POST /events/:id/attendance-dispute` | Reported person contests; flips active issues to disputed |
 | `POST /events/:id/conduct-report` | Report conduct/safety concern; triggers admin email alert |
 | `PUT /admin/attendance-issues/:id/status` | Super-admin: dismiss or confirm an attendance issue |
 | `GET /admin/concern-reports` | Super-admin: list all concern/conduct reports with user and plan details |
 | `PUT /admin/concern-reports/:id/status` | Super-admin: update concern report status (new/reviewed/closed) |
-| `GET /chum-preferences` | Current user's preference settings |
-| `PUT /chum-preferences` | Save preference settings (upsert) |
-| `GET /admin/users/:id/diagnostics` | Super-admin: per-user metric scores, preferences, feedback history, attendance/conduct summaries |
 
-*Email:* Post-plan feedback reminder email sent ~3 hours after plan start time via the hourly cron handler. Uses the `planFeedback` template. One email per plan (tracked via `events.feedback_email_sent_at`). Sent to host + going RSVPs. Gated on the `feedback_requests` notification preference (users can unsubscribe). Each email includes a one-click unsubscribe link keyed to `feedback_requests`.
+*Email:* role-varied wrap-up email through one template pair (`planWrapUp.html/.txt`): hosts get subject "How did {plan} go?" with the check-in framing, attendees get "Anyone to thank from {plan}?" with the thank-you framing (subject variants `planWrapUp_host` / `planWrapUp_attendee` via the dispatch `subjectKey` option). Sent by the hourly cron ~3 hours after plan start to `going` RSVPs + host, deduped on the historical `events.feedback_email_sent_at` column, gated on the `feedback_requests` pref key (stored-JSON name; only the display strings changed).
 
-*UI:* Single-screen "How did it go?" section appears on the plan detail page for past, non-canceled plans where the viewer is a participant (July 2026 redesign of the old per-attendee carousel). One compact card per attendee with Yes/Somewhat/No pill rows for the consumed metrics only (`reliability`, `sociability`, `presentation`, host-only `hosting_skills`); `match_quality` is no longer asked because no matching logic consumes it, though the POST endpoint still accepts it and old rows remain in `user_metrics`. One batched POST submits every answered question at once; a zero-answer "Finish without answering" performs a local finish with no API call, so the form re-offers on the next visit. Save-to-Chums and shout-out composers moved to the post-submit "Keep the connection going" panel; that panel hides 3 days after plan start (same window as the plan chat lock) so the plan page settles as one unit. Attendance issue and conduct reporting are quiet footer links opening the same dialogs as before. GA funnel events: `feedback_viewed`, `feedback_submitted`, `feedback_skipped`, `feedback_dismissed` (helper: `web/src/lib/analytics.ts`; the consolidated event catalogue, including the invitee/host funnel events and the first-party `product_events` mirror, lives in §12 "Product analytics events").
+*Analytics:* server-side `plan_copied` product event when a create was hydrated from a previous plan (`copied_from` in the POST body, validated against source ownership, QA-excluded, repeatable, `params.source_plan_id`); surfaced as `plansCopied` in `GET /admin/kpis/funnel`. The old `feedback_*` GA events were removed with the form.
 
-*Admin diagnostics (super-admin only):*
-- Per-user diagnostics view at `/admin/chums/[id]` (linked from "Inspect" icon on admin Users table).
-- Shows: hidden metric scores with progress bars, chum preference settings, attendance issue summary, conduct report summary, anonymized aggregated feedback table, recent feedback timeline (plan titles and reporter identity per row), a Recent Activity section (per-request API activity log, see "Admin, user activity log"), and score derivation reference.
-- Reporter identities are never shown in admin views to protect feedback privacy.
+**Blocking (product-wide since July 2026):**
 
-*Plan-level chum preference overrides (implemented):*
+`newchums.user_blocks` (migration 102) is checked in both directions by the `pairBlocked` helper and gates: Explore and the community feed (plans hosted by a blocked counterpart are excluded; the community-feed gate is skipped for anonymous viewers), both digest UNION branches, plan detail / RSVP / join requests (existence-hiding `NOT_FOUND`, the same shape as the QA and draft gates; super admins exempt on detail for moderation), invites (registered invitees in a blocked pair with the inviter or the host fold into `alreadyInvited` or the creation loops' silent skip; raw emails are covered after email-to-user resolution), notifications (blocked-actor rows hidden; null-actor system rows always deliver), chat and alt-time notification fan-outs, people search (name results filtered; the email path answers with the unknown-address shape), and shout-outs (pair-filtered in SQL for all viewer classes, viewer-filtered when authenticated, compose refused as `RECIPIENT_NOT_PARTICIPANT`, approval skips the notification). Blocks are never disclosed. Deliberately NOT filtered: the plan-page roster on third-party plans (headcounts stay honest), plan-chat visibility in the shared room, and the anonymous feeds (no viewer identity). Block/Unblock is available on public profiles (`viewerHasBlocked` flag on `GET /public/users/:handle`) as well as inside message threads and Settings.
 
-- Hosts can override their default chum preferences for a specific plan when creating or editing it.
-- Overrides are stored as a JSONB column `pref_overrides` on `events` (migration 051).
-- `{ "disabled": true }` disables all chum preference filtering for that plan (including age range).
-- `{ "disabled_metrics": ["sociability", "age", ...] }` disables specific dimensions only; remaining dimensions use the host's profile defaults. Valid keys: `reliability`, `sociability`, `presentation`, `hosting_skills`, `age`.
-- `NULL` means no override (use host's global preferences as-is).
-- Overrides affect **outbound** matching only (digest + explore hard filters on the host's side). Viewer-side compatibility notes are not suppressed.
-- The create and edit plan forms always expose this as a collapsible "Matching preferences for this plan" section. Since the master toggle was removed, there is no `hostHasPrefs` gate; the override card is always available.
-- `resolveEffectiveHostPrefs(globalPrefs, planOverrides)` merges overrides with global prefs before evaluation. When `disabled: true` is set, it returns a fully permissive prefs row (every level `'open'`, `age_pref_years` `null`); this replaces the previous master-toggle short-circuit. `parsePrefOverrides(raw)` validates the JSONB shape.
-- The edit plan form has moved from an embedded Dialog in EventDetailClient to a dedicated page at `/events/[id]/edit`.
-
-*Future direction (documented, not yet implemented):*
-
-- New plans may inherit the creator's chum preferences by default (the override infrastructure now supports this).
-
-*Schema:* Migration 049: `plan_feedback`, `attendance_issues`, `conduct_reports`, `user_metrics` tables + `events.feedback_email_sent_at` column. Migration 050: `chum_preferences` table. Migration 051: `events.pref_overrides` JSONB column. Migration 052: attendance trust columns on `attendance_issues`. Migration 053: `status` column on `conduct_reports`. Migration 054: `user_objective_completions` table + `users.tutorial_nudges_off` column. Migration 071: add `chum_preferences.age_pref_years` (SMALLINT NULL, CHECK IN 5/10/15), reset metric levels to `'open'` for users who had `enabled = false`, drop `chum_preferences.enabled`.
+*Schema:* Migration 049: `plan_feedback` (dropped by 107), `attendance_issues`, `conduct_reports`, `user_metrics` (dropped by 107) + `events.feedback_email_sent_at`. Migration 052: attendance trust columns (`confidence`/`applied_penalty` dropped by 107; `is_host_report` and `status` kept). Migration 053: `status` on `conduct_reports`. Migration 054: `user_objective_completions` + `users.tutorial_nudges_off`. Migration 107 (July 2026): drops `plan_feedback`, `user_metrics`, `chum_preferences`, `events.pref_overrides`, and the two scoring columns; clears orphaned `send_first_shoutout` completions.
 
 **Not yet implemented:** recurring events.
 
@@ -1136,7 +1032,7 @@ A durable objectives framework that guides users through onboarding and early re
 - **Completion records** stored durably in `user_objective_completions` for analytics and admin visibility; auto-recorded when evaluated.
 - **User opt-out** via `users.tutorial_nudges_off` boolean; controllable directly from the nudge and from Settings → Tips & guidance.
 
-**Objective sequence:** add_display_name → add_hobbies → set_location → set_travel_distance → add_bio → add_avatar → join_first_plan → attend_first_plan → send_first_message → give_first_feedback → create_first_plan → add_first_chum.
+**Objective sequence:** add_display_name → add_hobbies → set_location → set_travel_distance → add_bio → add_avatar → join_first_plan → attend_first_plan → send_first_message → send_first_shoutout → create_first_plan → add_first_chum.
 
 **API endpoints:**
 
@@ -1287,7 +1183,7 @@ This is the authoritative contract for how plans appear in the **Explore feed** 
 
 - Community `visibility` (`public` / `private`) gates the community page and its plan feed endpoint; it does not override `hide_from_explore` for Explore.
 - Plan `visibility` (`public` / `chums_only` / `invite_only`) applies in both Explore and the community feed. `visibility` controls discoverability only; direct URL access to a published plan is governed by the plan's access-state rules (see §11).
-- Chum-preference filtering and plan-level `pref_overrides` still apply in Explore.
+- Blocked pairs (July 2026): Explore, the community feed, and both digest branches exclude plans hosted by someone in a `user_blocks` pair with the viewer; plan detail, RSVP, and join requests answer with the existence-hiding `NOT_FOUND`. The anonymous feeds cannot and do not apply this (no viewer identity).
 - Super admins bypass the `is_qa = false` clause in every community- and explore-related plan query. Normal users never see QA plans in any feed, notification, or email.
 - **Community membership is a discovery gate, not a participation gate.** `hide_from_explore` and community `visibility` narrow what non-members *find*; they never block a non-member from viewing or RSVPing to a specific plan they were directly invited to or reached via a valid share/invite token. Specifically: `POST /events/:id/invite` (host or Going-attendee invite with `allow_attendee_invites`) and `POST /events/:id/rsvp` (authenticated) deliberately omit any community-membership check, since the invite or RSVP action itself is the grant. Unauthenticated share/invite link visitors reach the plan preview, complete the lightweight signup flow, and then RSVP normally as authenticated users. Once a non-member has an RSVP or invite row, `GET /events/mine` and the Explore RSVP-bypass both include the plan normally. Do not add a community-membership gate to any of these endpoints.
 
@@ -1607,10 +1503,10 @@ Core tables include:
 - `newchums.event_rsvps.committed_at` (migration 041), `TIMESTAMPTZ NULL`; records when a user first committed (RSVP'd going) for accurate follow-through tracking; backfilled from `created_at` for existing going RSVPs; indexed on `(user_id, committed_at)` where not null
 - `newchums.events.allow_attendee_invites` (migration 042), `BOOLEAN NOT NULL DEFAULT true`; when true, Going attendees can invite others to the plan; host can toggle at any time via `POST /events/:id/toggle-attendee-invites`. UI presents this inverted ("Prevent attendees from inviting others", default off); DB semantics unchanged
 - `newchums.event_alt_times` guest support (migration 043, **superseded by 084**). Originally mirrored the 035 guest pattern. Migration 084 dropped `guest_email`, deleted orphan rows, and restored `user_id NOT NULL`.
-- `newchums.plan_feedback` (migration 049), per-attendee feedback responses. Columns: `id` (UUID PK), `plan_id` (FK), `reviewer_user_id` (FK), `reviewee_user_id` (FK), `prompt` (reliability/sociability/presentation/match_quality/hosting_skills), `response` (agree/maybe/disagree), `created_at`. Unique on `(plan_id, reviewer_user_id, reviewee_user_id, prompt)`.
+- `newchums.plan_feedback`, dropped by migration 107 (July 2026) with the matching system.
 - `newchums.attendance_issues` (migration 049), structured attendance problem reports. Columns: `id` (UUID PK), `plan_id` (FK), `reporter_user_id` (FK), `reported_user_id` (FK), `issue_type` (no_show/late_cancel/very_late), `created_at`. Unique on `(plan_id, reporter_user_id, reported_user_id, issue_type)`.
 - `newchums.conduct_reports` (migration 049, extended 053), safety/behavioral concern reports. Columns: `id` (UUID PK), `plan_id` (FK), `reporter_user_id` (FK), `reported_user_id` (FK), `reason`, `details` (TEXT NULL), `status` (new/reviewed/closed, migration 053), `created_at`.
-- `newchums.user_metrics` (migration 049), aggregated hidden quality scores. Composite PK `(user_id, metric)`. Columns: `score` (NUMERIC(5,2), default 50.00), `signal_count` (INT, default 0), `updated_at`.
+- `newchums.user_metrics`, dropped by migration 107 (July 2026) with the matching system.
 - `newchums.events.feedback_email_sent_at` (migration 049), `TIMESTAMPTZ NULL`; tracks when feedback reminder email was sent for a plan.
 - `newchums.user_objective_completions` (migration 054), tracks per-user objective completion. Columns: `id` (UUID PK), `user_id` (FK), `objective_key` (TEXT), `completed_at` (TIMESTAMPTZ). Unique constraint on `(user_id, objective_key)`.
 - `newchums.users.tutorial_nudges_off` (migration 054), `BOOLEAN NOT NULL DEFAULT false`; when true, tutorial nudges are permanently suppressed for the user.
@@ -1731,7 +1627,7 @@ Two channels, one catalogue:
 | `second_plan_created` | Plan insert where this is the host's second non-QA plan; the real retention signal. Once per user. | none (row carries `user_id`, `event_id`) | First-party |
 | `plan_reached_3_rsvps` | The moment a plan gains its third non-host "going" RSVP (direct RSVP or join-request approval). Once per plan; row's `user_id` is the host. | none (row carries `user_id`, `event_id`) | First-party |
 
-**Pre-existing GA-only events:** `feedback_viewed`, `feedback_submitted`, `feedback_skipped`, `feedback_dismissed` (plan feedback flow, `attendee_count` param and friends; see §8 Plan feedback), `signup_step_completed` (`step`), `signup_google_clicked`, `hero_cta_clicked` (`cta`).
+**Pre-existing GA-only events (feedback_* removed July 2026 with the rating form):** (plan feedback flow, `attendee_count` param and friends; see §8 Plan feedback), `signup_step_completed` (`step`), `signup_google_clicked`, `hero_cta_clicked` (`cta`).
 
 **Funnel reading note (B1):** `rsvp_verified` fires identically for the code path and the magic-link path (same NULL-to-set transition, same unique index), so the invitee funnel needs no per-path split; `rsvp_otp_entered` result=ok vs the `rsvp_verified` total tells you code-vs-link share. `signup_email_sent` completes the funnel's left edge between `rsvp_form_submitted` and `rsvp_verified`.
 

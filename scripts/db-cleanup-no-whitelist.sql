@@ -15,43 +15,6 @@
 --   - The script never uses TRUNCATE
 -- ============================================================================
 
--- ============================================================================
--- TABLE CLASSIFICATION
--- ============================================================================
---
--- SYSTEM / REFERENCE (preserved):
---   newchums.interests             — seeded hobby catalog and retained interest rows
---   user_profile schema            — schema object, not data
---
--- USER-GENERATED (cleaned):
---   newchums.users
---   user_profile
---   user_interests
---   password_reset_tokens
---   email_verification_tokens
---   newchums.email_change_requests
---   newchums.user_chums
---   newchums.user_contacts
---   newchums.notifications
---   newchums.chum_invites
---   newchums.chum_preferences
---   newchums.user_metrics
---   newchums.user_objective_completions
---   newchums.admin_view_timestamps
---   newchums.communities
---   newchums.community_members
---   newchums.community_join_requests
---   newchums.events
---   newchums.event_invites
---   newchums.event_rsvps
---   newchums.event_alt_times
---   newchums.event_chat_messages
---   newchums.event_chat_reads
---   newchums.event_join_requests
---   newchums.event_confirmations
---   newchums.event_interests
---   newchums.host_attendee_removals
---   newchums.plan_feedback
 --   newchums.attendance_issues
 --   newchums.conduct_reports
 --   newchums.roadmap_items
@@ -101,53 +64,6 @@ SELECT 'event_interests', COUNT(*) FROM newchums.event_interests
 UNION ALL
 SELECT 'host_attendee_removals', COUNT(*) FROM newchums.host_attendee_removals
 UNION ALL
-SELECT 'plan_feedback', COUNT(*) FROM newchums.plan_feedback
-UNION ALL
-SELECT 'attendance_issues', COUNT(*) FROM newchums.attendance_issues
-UNION ALL
-SELECT 'conduct_reports', COUNT(*) FROM newchums.conduct_reports
-UNION ALL
-SELECT 'notifications', COUNT(*) FROM newchums.notifications
-UNION ALL
-SELECT 'user_chums', COUNT(*) FROM newchums.user_chums
-UNION ALL
-SELECT 'user_contacts', COUNT(*) FROM newchums.user_contacts
-UNION ALL
-SELECT 'chum_invites', COUNT(*) FROM newchums.chum_invites
-UNION ALL
-SELECT 'communities', COUNT(*) FROM newchums.communities
-UNION ALL
-SELECT 'community_members', COUNT(*) FROM newchums.community_members
-UNION ALL
-SELECT 'community_join_requests', COUNT(*) FROM newchums.community_join_requests
-UNION ALL
-SELECT 'roadmap_items', COUNT(*) FROM newchums.roadmap_items
-UNION ALL
-SELECT 'roadmap_votes', COUNT(*) FROM newchums.roadmap_votes
-UNION ALL
-SELECT 'roadmap_follows', COUNT(*) FROM newchums.roadmap_follows
-UNION ALL
-SELECT 'roadmap_comments', COUNT(*) FROM newchums.roadmap_comments
-UNION ALL
-SELECT 'roadmap_admin_notes', COUNT(*) FROM newchums.roadmap_admin_notes
-UNION ALL
-SELECT 'user_metrics', COUNT(*) FROM newchums.user_metrics
-UNION ALL
-SELECT 'chum_preferences', COUNT(*) FROM newchums.chum_preferences
-UNION ALL
-SELECT 'user_objective_completions', COUNT(*) FROM newchums.user_objective_completions
-UNION ALL
-SELECT 'admin_view_timestamps', COUNT(*) FROM newchums.admin_view_timestamps
-UNION ALL
-SELECT 'password_reset_tokens', COUNT(*) FROM password_reset_tokens
-UNION ALL
-SELECT 'email_verification_tokens', COUNT(*) FROM email_verification_tokens
-UNION ALL
-SELECT 'email_change_requests', COUNT(*) FROM newchums.email_change_requests
-UNION ALL
-SELECT 'user_interests', COUNT(*) FROM user_interests
-UNION ALL
-SELECT 'user_profile', COUNT(*) FROM user_profile;
 
 SELECT '── System data PRESERVED ──' AS "Section";
 SELECT 'interests (total)' AS "table", COUNT(*) AS row_count FROM newchums.interests
@@ -172,7 +88,6 @@ BEGIN;
 
 -- ── Step 1: Delete cross-reference tables that may block user deletion ───
 
-DELETE FROM newchums.plan_feedback;
 DELETE FROM newchums.attendance_issues;
 DELETE FROM newchums.conduct_reports;
 
@@ -206,8 +121,6 @@ DELETE FROM newchums.roadmap_items;
 
 DELETE FROM newchums.notifications;
 DELETE FROM newchums.chum_invites;
-DELETE FROM newchums.user_metrics;
-DELETE FROM newchums.chum_preferences;
 DELETE FROM newchums.user_objective_completions;
 DELETE FROM newchums.admin_view_timestamps;
 

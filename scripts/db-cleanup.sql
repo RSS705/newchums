@@ -38,24 +38,6 @@ DROP TABLE IF EXISTS _keep_ids;
 CREATE TEMP TABLE _keep_ids AS
   SELECT id FROM newchums.users WHERE LOWER(email) IN (SELECT LOWER(email) FROM _keep_emails);
 
--- ============================================================================
--- TABLE CLASSIFICATION
--- ============================================================================
---
--- SYSTEM / REFERENCE (never cleaned):
---   interests / newchums.interests    — seeded hobby catalog
---   user_profile                      — schema-level (no rows to clean independently)
---
--- USER-GENERATED (cleaned by deleting users — FK CASCADE handles these):
---   password_reset_tokens             — FK CASCADE from users
---   email_verification_tokens         — FK CASCADE from users
---   newchums.email_change_requests    — FK CASCADE from users
---   newchums.user_chums               — FK CASCADE from users
---   newchums.user_contacts            — FK CASCADE from users
---   newchums.notifications            — FK CASCADE from users
---   newchums.chum_invites             — FK CASCADE from users
---   newchums.chum_preferences         — FK CASCADE from users
---   newchums.user_metrics             — FK CASCADE from users
 --   newchums.user_objective_completions — FK CASCADE from users
 --   newchums.admin_view_timestamps    — FK CASCADE from users
 --   newchums.communities              — owner FK (NO CASCADE) — must delete explicitly
@@ -65,7 +47,7 @@ CREATE TEMP TABLE _keep_ids AS
 --     All event child tables cascade from events:
 --     event_invites, event_rsvps, event_alt_times, event_chat_messages,
 --     event_chat_reads, event_join_requests, event_confirmations,
---     event_interests, host_attendee_removals, plan_feedback,
+--     event_interests, host_attendee_removals, 
 --     attendance_issues, conduct_reports
 --   newchums.roadmap_items            — FK CASCADE from users
 --     roadmap_votes, roadmap_follows, roadmap_comments,
@@ -134,13 +116,6 @@ SELECT 'event_confirmations',
 FROM newchums.event_confirmations
 WHERE event_id IN (SELECT id FROM newchums.events WHERE host_user_id NOT IN (SELECT id FROM _keep_ids))
 UNION ALL
-SELECT 'plan_feedback',
-       COUNT(*)
-FROM newchums.plan_feedback
-WHERE plan_id IN (SELECT id FROM newchums.events WHERE host_user_id NOT IN (SELECT id FROM _keep_ids))
-   OR reviewer_user_id NOT IN (SELECT id FROM _keep_ids)
-   OR reviewee_user_id NOT IN (SELECT id FROM _keep_ids)
-UNION ALL
 SELECT 'attendance_issues',
        COUNT(*)
 FROM newchums.attendance_issues
@@ -191,16 +166,6 @@ SELECT 'roadmap_items',
 FROM newchums.roadmap_items
 WHERE author_user_id NOT IN (SELECT id FROM _keep_ids)
 UNION ALL
-SELECT 'user_metrics',
-       COUNT(*)
-FROM newchums.user_metrics
-WHERE user_id NOT IN (SELECT id FROM _keep_ids)
-UNION ALL
-SELECT 'chum_preferences',
-       COUNT(*)
-FROM newchums.chum_preferences
-WHERE user_id NOT IN (SELECT id FROM _keep_ids)
-UNION ALL
 SELECT 'user_objective_completions',
        COUNT(*)
 FROM newchums.user_objective_completions
@@ -244,10 +209,6 @@ BEGIN;
 -- These tables reference users but don't all CASCADE from the user delete,
 -- or they reference multiple users where only some are being deleted.
 
--- Plan feedback where any participant is deleted
-DELETE FROM newchums.plan_feedback
-WHERE reviewer_user_id NOT IN (SELECT id FROM _keep_ids)
-   OR reviewee_user_id NOT IN (SELECT id FROM _keep_ids);
 
 -- Attendance issues where any participant is deleted
 DELETE FROM newchums.attendance_issues
@@ -315,7 +276,7 @@ WHERE removed_user_id NOT IN (SELECT id FROM _keep_ids)
 -- ON DELETE CASCADE will clean up all remaining child rows:
 -- event_invites, event_rsvps, event_alt_times, event_chat_messages,
 -- event_chat_reads, event_join_requests, event_confirmations,
--- event_interests, host_attendee_removals, plan_feedback,
+-- event_interests, host_attendee_removals, 
 -- attendance_issues, conduct_reports
 DELETE FROM newchums.events
 WHERE host_user_id NOT IN (SELECT id FROM _keep_ids);
@@ -342,11 +303,7 @@ WHERE user_id NOT IN (SELECT id FROM _keep_ids);
 DELETE FROM newchums.chum_invites
 WHERE inviter_user_id NOT IN (SELECT id FROM _keep_ids);
 
-DELETE FROM newchums.user_metrics
-WHERE user_id NOT IN (SELECT id FROM _keep_ids);
 
-DELETE FROM newchums.chum_preferences
-WHERE user_id NOT IN (SELECT id FROM _keep_ids);
 
 DELETE FROM newchums.user_objective_completions
 WHERE user_id NOT IN (SELECT id FROM _keep_ids);

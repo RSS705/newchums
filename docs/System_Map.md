@@ -46,7 +46,7 @@ flowchart TB
   API -->|"Media objects"| R2["R2 (media)<br/>newchums-media<br/>(avatars, banners, attachments)"]
   API -->|"WebSocket relay"| DO["Durable Objects<br/>(ChatRoom per plan)"]
   U -->|"WebSocket"| API
-  CRON["Cron Triggers<br/>(hourly: attendance assurance,<br/>auto-cancel, chat digest,<br/>event match digest, feedback emails)"] -->|"scheduled"| API
+  CRON["Cron Triggers<br/>(hourly: attendance assurance,<br/>auto-cancel, chat digest,<br/>event match digest, wrap-up emails)"] -->|"scheduled"| API
 
   subgraph "Community Features"
     COMM_PAGES["Community Pages<br/>/communities/*"]
@@ -141,9 +141,8 @@ The following flows run in the API worker; the web app calls the API via `NEXT_P
 | Plan join requests | `POST /events/:id/join-request`, `POST /events/:id/join-request/:requestId/approve`, `POST /events/:id/join-request/:requestId/decline`, `POST /events/:id/join-request/:requestId/withdraw` | Bearer JWT |
 | Plan lock | `POST /events/:id/lock` | Bearer JWT (host only) |
 | Plan privacy | `POST /events/:id/hide-name` | Bearer JWT. Toggles the viewer's `hide_name` flag on their RSVP. When active, real name is masked in attendee list; @handle and avatar remain visible. |
-| Plan feedback | `GET /events/:id/feedback`, `POST /events/:id/feedback` (updates `user_metrics`), `POST /events/:id/feedback/dismiss`, `POST /events/:id/attendance-issue` (penalizes reliability), `POST /events/:id/attendance-dispute`, `POST /events/:id/conduct-report`, `POST /events/:id/shoutout` (optional moderated positive note) | Bearer JWT |
+| Post-plan wrap-up | `GET /events/:id/wrap-up`, `POST /events/:id/wrap-up/dismiss`, `POST`/`DELETE /events/:id/attendance-issue` (host-only), `POST /events/:id/attendance-dispute`, `POST /events/:id/conduct-report`, `POST /events/:id/shoutout` | Bearer JWT |
 | Shout-outs | `GET /public/users/:handle/shoutouts` (approved shout-outs on the recipient's public profile, gated by `is_hidden_shoutouts`; auth optional, owner sees their own items even when hidden), `POST /events/:id/shoutout` (sender) | Optional Bearer JWT (owner) / Bearer JWT (sender) |
-| Chum preferences | `GET /chum-preferences`, `PUT /chum-preferences` | Bearer JWT |
 | Attendance record | `GET /public/users/:userId/attendance-record` | none. Response includes `badges` array with local recognition badges (Top Attendee, Top Host) computed from rolling 12-month activity within 50 km. |
 | Plan chat | `GET /events/:id/chat`, `POST /events/:id/chat`, `POST /events/:id/chat/read`, `GET /events/:id/chat/ws` (WebSocket upgrade) | Bearer JWT |
 | Notifications | `GET /notifications` (includes `unreadChats`), `POST /notifications/read` | Bearer JWT |
@@ -220,7 +219,7 @@ Plans with `is_qa = true` are isolated from normal users but fully functional fo
 - QA plans appear in Explore feed, Your Plans, community plan feeds
 - `GET /communities/:id/events` exposes `isQa` on each row so QA badges render on super-admin-visible cards
 - Community-card counts that super admins see (e.g. `upcoming_plan_count` in `/communities`) bypass the QA filter so the count reflects what the viewer can actually see
-- Cron jobs (attendance assurance, event match digest, chat digest, feedback reminders) process QA plans and send emails/notifications to super admin recipients only
+- Cron jobs (attendance assurance, event match digest, chat digest, wrap-up emails) process QA plans and send emails/notifications to super admin recipients only
 - Auto-cancel and attendance cutoff processing runs normally on QA plans
 - QA plans are excluded from KPI metrics and the public (unauthenticated) explore feed
 
@@ -268,10 +267,10 @@ The hourly cron runs six tasks in sequence:
 2. **Auto-cancel plans** -- cancels published plans whose event time has passed with no attendees beyond the host (within a 2-hour window)
 3. **Unread chat digest** -- sends digest emails for unread chat messages (daily gate, 23-hour cooldown)
 4. **Event match digest** -- “new plans matching my interests.” Recipients need home location, travel radius, and the `event_match` preference. **Public** in-person plans require **effective-category overlap** with the plan within travel radius (and the other digest gates). **Chums-only** in-person plans use the **same** category and distance rules; the recipient must also be on the **host’s** On NewChums connections (`user_contacts`, `type = ‘on_newchums’`). **Invite-only** plans are excluded. **Already-connected suppression:** plans where the recipient already has any RSVP row (any status) or any invite row (matched by `user_id` or by `LOWER(email) = LOWER(users.email)`) are excluded so the digest never overlaps with direct outreach. *Effective category* of an interest is `LOWER(COALESCE(NULLIF(TRIM(category), ''), name))` -- so two interests in the same admin-assigned category match (e.g. "MTG Draft" and "MTG Commander" with category `MTG`), and an interest with no category falls back to its own name. The same effective-category rule is applied by the authenticated Explore feed (hobby filter + match-count ranking), the public Explore feed (hobby filter), and the local-signal endpoint at the bottom of the Explore feed. The shared TypeScript helper is `effectiveCategoryOf` in `web/src/lib/interestUtils.ts`.
-5. **Post-plan feedback emails** -- sends feedback request 3+ hours after a plan ends to attendees
+5. **Post-plan wrap-up emails** -- role-varied (host check-in framing, attendee thank-you framing), sent 3+ hours after plan start to going attendees + host
 6. **Activity log retention** -- deletes `user_activity_log` rows older than 90 days (per-request admin activity tracking, migration 101; also runs alongside the local recognition badges refresh)
 
-After the SQL selects candidate (recipient, plan) pairs, **chum preference filtering** applies two checks: (1) the host's metrics must meet the recipient's chum preference thresholds, and (2) the recipient's metrics must meet the host's thresholds. Both must pass for a plan to appear in a digest. **Plan-level preference overrides** (`pref_overrides` JSONB on events) are respected: `{ "disabled": true }` bypasses all host preference checks for that plan; `{ "disabled_metrics": [...] }` bypasses specific metrics only. The **Explore feed** also enforces the host's chum preferences as a hard filter (respecting plan-level overrides in SQL); the viewer's own preferences produce informational compatibility notes but do not hide plans.
+Digest candidate selection is hobbies + travel radius + visibility/QA/members-only gates + a blocked-pairs gate (`user_blocks`, both directions, both UNION branches). The chum-preference post-filter that used to run here was removed with the matching system in July 2026.
 
 ### Logged-out visitor flow
 
@@ -296,13 +295,13 @@ Sign in → Explore (event discovery feed)
 ├── Your Plans → Upcoming / Past tabs → Event detail
 │   ├── Edit plan (host) → Edit event form
 │   ├── Copy plan (host, incl. past/canceled) → pre-filled create form → Publish as new plan
-│   └── Past plan → Post-plan feedback (rate attendees, report issues/concerns)
+│   └── Past plan → Post-plan wrap-up (Say thanks: shout-outs + Save to Chums; hosts: private attendance check-in + Run it again)
 ├── Your Chums → Search / Add / Remove / Invite by email / Message
 ├── Inbox → 1:1 direct messages (async, email-like) → reply / block / report
 │   └── Entry points: profile Message button, post-plan attendee rows, Your Chums rows
 ├── Communities → Browse / Create / Join / Community plans feed
 ├── Roadmap → Browse / Vote / Follow / Comment on feature requests
-├── Profile → Edit → Chum preferences → Public profile (/u/handle)
+├── Profile → Edit → Public profile (/u/handle)
 ├── Settings → Notifications / Privacy / Email / Password / Delete account
 ├── Notifications (bell) → View / mark read
 └── Next-step nudge (above page content, all views) → contextual objective → dismiss / turn off
@@ -423,7 +422,7 @@ Wrangler config is code-managed so deploys do not wipe routes or override canoni
 | `/admin/shoutouts` | Shout-out moderation queue (super_admin) |
 | `/admin/interests` | Interests moderation (super_admin) |
 | `/admin/chums` | User management (super_admin) |
-| `/admin/chums/[id]` | User diagnostics, metric scores, preferences, feedback, issues, recent activity (super_admin) |
+| `/admin/chums/[id]` | User diagnostics: attendance records, conduct reports, objectives, recent activity (super_admin) |
 | `/admin/communities` | Community management, list, search, remove (super_admin) |
 | `/admin/kpis` | KPI dashboard, growth loop analytics (super_admin) |
 | `/admin/kpis/activity` | Per-request user activity log, drill-in from the KPI Return behavior section (super_admin) |
@@ -458,7 +457,7 @@ flowchart TB
   R2["R2 (media)<br/>(avatars, banners, attachments)"] --> API
   API -->|"WebSocket relay"| DO["Durable Objects<br/>(ChatRoom)"]
   U -->|"WebSocket"| API
-  CRON["Cron Triggers<br/>(hourly: attendance assurance,<br/>auto-cancel, chat digest,<br/>event match digest, feedback emails)"] -->|"scheduled"| API
+  CRON["Cron Triggers<br/>(hourly: attendance assurance,<br/>auto-cancel, chat digest,<br/>event match digest, wrap-up emails)"] -->|"scheduled"| API
 
   API -->|"Community CRUD<br/>+ membership"| DB
 ```

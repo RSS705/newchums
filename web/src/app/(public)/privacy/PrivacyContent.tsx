@@ -114,7 +114,7 @@ export default function PrivacyContent() {
                 <li><Typography variant="body1">detect, prevent, investigate, and address fraud, abuse, safety issues, and technical problems</Typography></li>
                 <li><Typography variant="body1">enforce our Terms of Use and other platform rules</Typography></li>
                 <li><Typography variant="body1">improve product design, reliability, moderation, and user experience</Typography></li>
-                <li><Typography variant="body1">develop future trust, safety, attendance, and reputation-related systems</Typography></li>
+                <li><Typography variant="body1">develop future trust, safety, and attendance-related systems</Typography></li>
                 <li><Typography variant="body1">comply with legal obligations</Typography></li>
               </ul>
             </>

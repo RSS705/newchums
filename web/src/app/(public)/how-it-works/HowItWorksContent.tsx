@@ -130,12 +130,12 @@ const LIFECYCLE_STEPS: LifecycleStep[] = [
   {
     Icon: StarRoundedIcon,
     label: "Follow up",
-    headline: "Build trust over time",
-    description: "After the plan, leave quick private feedback. Attendance records and reputation scores help everyone make better decisions about who to plan with next.",
+    headline: "Wrap up and go again",
+    description: "After the plan, thank the people who made it good with a shout-out for their profile, or save them to your Chums. Hosts get a private check-in and a one-tap way to run the plan again.",
     color: "#E65B13",
     imageSrc: "/images/how-it-works/step-followup.png",
-    placeholder: "Screenshot: Feedback and profile",
-    highlights: ["Post-plan feedback", "Attendance record on profiles", "Reliability and hosting scores"],
+    placeholder: "Screenshot: Post-plan wrap-up",
+    highlights: ["Shout-outs and Save to Chums", "Attendance record on profiles", "Run it again in one tap"],
   },
 ];
 
@@ -223,20 +223,18 @@ const FEATURE_SECTIONS: FeatureSection[] = [
   {
     id: "trust",
     sectionTitle: "Trust and accountability",
-    subtitle: "A lightweight reputation system that rewards people who show up and follow through.",
+    subtitle: "Simple, honest signals about showing up, with none of the surveillance.",
     accentColor: "#E65B13",
     imageOnLeft: true,
     images: [
       { src: "/images/how-it-works/trust-profile.png", placeholder: "Screenshot: Attendance record", Icon: StarRoundedIcon },
-      { src: "/images/how-it-works/trust-reporting.png", placeholder: "Screenshot: Issue reporting", Icon: ShieldRoundedIcon },
-      { src: "/images/how-it-works/trust-preferences.png", placeholder: "Screenshot: Chum preferences", Icon: TuneRoundedIcon },
+      { src: "/images/how-it-works/trust-reporting.png", placeholder: "Screenshot: Safety reporting", Icon: ShieldRoundedIcon },
     ],
     features: [
       { label: "Attendance record", detail: "Every profile shows: shows up, confirms attendance, and host follow-through." },
-      { label: "Post-plan feedback", detail: "Leave quick private feedback on reliability, sociability, and hosting quality." },
-      { label: "Issue reporting", detail: "Flag no-shows, late cancellations, and very late arrivals. Private and affects reliability scores." },
+      { label: "Shout-outs", detail: "Public thank-you notes from people you have shared plans with, right on your profile." },
+      { label: "Host check-in", detail: "Hosts privately note who made it. Nothing is shared, and it keeps the attendance record honest." },
       { label: "Conduct and safety", detail: "Report safety concerns directly from any plan. Goes to the admin team immediately." },
-      { label: "Chum preference matching", detail: "Set per-metric thresholds for reliability and more. Plans are filtered based on your preferences." },
     ],
   },
   // Deliberately last: the share link is the primary way plans reach
@@ -257,7 +255,6 @@ const FEATURE_SECTIONS: FeatureSection[] = [
       { label: "Browse without an account", detail: "Public plans are viewable by anyone. No signup required." },
       { label: "Daily match digest", detail: "A daily email surfaces new plans that match subscribers' hobbies and travel distance." },
       { label: "Communities", detail: "Create or join public and private groups. Community plans appear in a dedicated feed." },
-      { label: "Smart matching", detail: "Chum preferences quietly filter which plans and people show up in recommendations." },
     ],
   },
 ];
@@ -283,7 +280,7 @@ const COMPARISON_POINTS: { problem: string; solution: string }[] = [
   { problem: "Half the group says maybe and never confirms", solution: "Automatic 24-hour confirmation window with timed reminders." },
   { problem: "You show up and nobody else does", solution: "Minimum attendee thresholds with auto-cancel or host notification." },
   { problem: "Inviting new people means adding them to another chat", solution: "Share a link. Anyone can preview the plan and sign up to RSVP in about a minute." },
-  { problem: "No memory of who flaked last time", solution: "Attendance records and post-plan feedback visible on every profile." },
+  { problem: "No memory of who flaked last time", solution: "Attendance records and shout-outs visible on every profile." },
 ];
 
 // ── Shared components ───────────────────────────────────────────────────────
