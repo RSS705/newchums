@@ -445,7 +445,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                 <Box component="span" sx={{ fontWeight: 700 }}>
                   share one link,
                 </Box>{" "}
-                and see who is really coming. No noisy group chat, no chasing RSVPs.
+                and see who is really coming. No “who’s in??” thread, no chasing RSVPs.
               </Typography>
 
               <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ pt: 0.5 }}>
@@ -559,10 +559,11 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                   sx={{ pt: 0.5 }}
                 >
                   {/* Metrics are deliberately tight (px 1.25, 0.8rem text,
-                      14px check, 8px gaps): the three pills measure ~536px
-                      against the ~544px hero text column, so any looser and
-                      the third one wraps to a second line at desktop. */}
-                  {["Free to use", "No app to download", "Browse plans without an account"].map(
+                      14px check, 8px gaps): the three pills measure ~507px
+                      against the ~544px hero text column, so keep any new
+                      wording inside that budget or the third pill wraps to a
+                      second line at desktop. */}
+                  {["Free to use", "No app to download", "Your group RSVPs in seconds"].map(
                     (claim) => (
                       <Stack
                         key={claim}
@@ -963,6 +964,63 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
               See the full walkthrough
             </Button>
           </Box>
+        </Box>
+      </Box>
+
+      {/* ── Section: 24-hour attendance check ──
+          The most differentiating behavior the product ships gets its own
+          moment instead of living as a clause inside a feature paragraph.
+          Deliberately claim-honest: the check is host-configurable, so the
+          copy says "turn on", never "every plan". Per AGENTS.md, the
+          feature is always called exactly "24-hour attendance check" in
+          user-facing copy; do not invent a brand name for it. */}
+      <Box component="section" sx={{ py: { xs: 5, sm: 7, md: 8 } }}>
+        <Box
+          sx={{
+            maxWidth: 820,
+            mx: "auto",
+            textAlign: "center",
+            px: { xs: 2.5, sm: 4 },
+            py: { xs: 4, sm: 5 },
+            borderRadius: { xs: 4, sm: 6 },
+            border: "1px solid",
+            borderColor: (theme) =>
+              theme.palette.mode === "light" ? "rgba(5,150,105,0.18)" : "rgba(16,185,129,0.28)",
+            background: (theme) =>
+              theme.palette.mode === "light"
+                ? "linear-gradient(180deg, #ecfdf5 0%, #ffffff 85%)"
+                : "linear-gradient(180deg, rgba(16,185,129,0.10) 0%, rgba(0,0,0,0) 85%)",
+          }}
+        >
+          <Stack spacing={1.5} alignItems="center">
+            <Box
+              sx={{
+                width: 48,
+                height: 48,
+                borderRadius: "50%",
+                bgcolor: "success.main",
+                color: "#fff",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow: "0 4px 14px rgba(5,150,105,0.3)",
+              }}
+            >
+              <EventAvailableRoundedIcon sx={{ fontSize: 26 }} />
+            </Box>
+            <Typography component="h2" variant="h2" sx={{ fontSize: { xs: "1.6rem", sm: "1.875rem" } }}>
+              Everyone confirms the day before
+            </Typography>
+            <Typography
+              variant="body1"
+              sx={{ color: "text.secondary", lineHeight: 1.7, maxWidth: 560 }}
+            >
+              Turn on the 24-hour attendance check and everyone who said yes is
+              asked to confirm as the day arrives. You head out with real
+              numbers, not hopeful ones, and nobody cooks for ten when four are
+              coming.
+            </Typography>
+          </Stack>
         </Box>
       </Box>
 
