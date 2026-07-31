@@ -44,7 +44,6 @@ import { scrollToFirstError } from "@/lib/scrollToFirstError";
 import {
   CommunityLinkSection,
   ExtraOptionsSection,
-  MatchingPreferencesSection,
   QAPlanSection,
   type MyCommunity as SharedMyCommunity,
 } from "@/components/events/planForm";
@@ -54,10 +53,6 @@ import {
 // problem they need to fix rather than a later one.
 const FIELD_ORDER = ["title", "hobby", "minAttendeesRequired", "date", "time", "location"] as const;
 
-type PrefOverrides = {
-  disabled?: boolean;
-  disabled_metrics?: string[];
-} | null;
 
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_BANNER_INPUT_BYTES = 20 * 1024 * 1024;
@@ -106,11 +101,6 @@ export default function EditEventClient() {
   const [locationArea, setLocationArea] = useState<string | null>(null);
   const [locationVisibility, setLocationVisibility] = useState<"exact_everyone" | "exact_joined_only" | "approximate_only">("exact_everyone");
   const [onlineLink, setOnlineLink] = useState("");
-
-  // Chum preference overrides
-  const [prefOverridesOpen, setPrefOverridesOpen] = useState(false);
-  const [prefDisableAll, setPrefDisableAll] = useState(false);
-  const [prefDisabledMetrics, setPrefDisabledMetrics] = useState<Record<string, boolean>>({});
 
   // Community association. Mirrors the Add Plan form: `myCommunities` is
   // the selector's option list, `selectedCommunityIds` is the current set of
@@ -270,20 +260,6 @@ export default function EditEventClient() {
           setBannerPreview(`${getAvatarBaseUrl()}/events/${ev.id}/banner?v=${ts}`);
         }
 
-        // Load pref overrides
-        const po: PrefOverrides = ev.prefOverrides ?? null;
-        if (po) {
-          if (po.disabled) {
-            setPrefDisableAll(true);
-            setPrefOverridesOpen(true);
-          } else if (po.disabled_metrics?.length) {
-            const dm: Record<string, boolean> = {};
-            for (const m of po.disabled_metrics) dm[m] = true;
-            setPrefDisabledMetrics(dm);
-            setPrefOverridesOpen(true);
-          }
-        }
-
       } catch {
         if (!cancelled) setNotFound(true);
       } finally {
@@ -357,13 +333,6 @@ export default function EditEventClient() {
     })();
     return () => { cancelled = true; };
   }, [initialCommunityIds]);
-
-  const buildPrefOverrides = (): PrefOverrides => {
-    if (prefDisableAll) return { disabled: true };
-    const dm = Object.entries(prefDisabledMetrics).filter(([, v]) => v).map(([k]) => k);
-    if (dm.length > 0) return { disabled_metrics: dm };
-    return null;
-  };
 
   const handleBannerCropComplete = useCallback((_: Area, croppedAreaPx: Area) => {
     setBannerCroppedArea(croppedAreaPx);
@@ -458,7 +427,6 @@ export default function EditEventClient() {
           fallback_policy: requireReconfirmation ? fallbackPolicy : "notify_host",
           min_attendees_required: minAttendeesRequired ? Number(minAttendeesRequired) : null,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          pref_overrides: buildPrefOverrides(),
           // Only send community linkage fields when they actually changed.
           // That way an unrelated edit (title, date, etc.) by a host who has
           // since left the linked community doesn't re-trigger the server's
@@ -1243,16 +1211,6 @@ export default function EditEventClient() {
         onChangeSelectedCommunityIds={setSelectedCommunityIds}
         hideFromExplore={hideFromExplore}
         onChangeHideFromExplore={setHideFromExplore}
-      />
-
-      {/* Matching preferences override */}
-      <MatchingPreferencesSection
-        open={prefOverridesOpen}
-        onToggleOpen={() => setPrefOverridesOpen((v) => !v)}
-        disableAll={prefDisableAll}
-        onChangeDisableAll={setPrefDisableAll}
-        disabledMetrics={prefDisabledMetrics}
-        onChangeDisabledMetrics={setPrefDisabledMetrics}
       />
 
       {/* QA plan toggle (super admin only) */}

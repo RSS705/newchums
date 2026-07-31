@@ -24,10 +24,11 @@
  *   event_rsvps, event_alt_times, event_chat_messages, event_chat_reads,
  *   event_join_requests, host_attendee_removals(x2), event_confirmations,
  *   admin_view_timestamps, roadmap_items/votes/follows/comments/admin_notes,
- *   user_contacts(x2), plan_feedback(x2), attendance_issues(x2),
- *   conduct_reports(x2), user_metrics, chum_preferences,
+ *   user_contacts(x2), attendance_issues(x2),
+ *   conduct_reports(x2),
  *   user_objective_completions, community_members.user_id,
- *   community_join_requests.user_id, plan_feedback_dismissals, user_badges,
+ *   community_join_requests.user_id, plan_feedback_dismissals (wrap-up
+ *   dismissals; historical table name), user_badges,
  *   shoutouts(x2), subscription_plan_history.user_id,
  *   community_announcements.author, community_announcement_seen/mutes,
  *   event_chat_notify_sends.recipient, user_activity_log,
@@ -45,7 +46,7 @@
  *   events(id) is referenced with CASCADE by: event_invites, event_rsvps,
  *   event_alt_times, event_interests, event_chat_messages, event_chat_reads,
  *   event_join_requests, host_attendee_removals, event_confirmations,
- *   plan_feedback, attendance_issues, conduct_reports,
+ *   attendance_issues, conduct_reports,
  *   plan_feedback_dismissals, shoutouts, event_communities,
  *   event_chat_notify_sends; and with SET NULL by
  *   email_verification_tokens.event_id and product_events.event_id.
@@ -66,8 +67,6 @@ export type UserDeleteImpact = {
   ownedCommunities: number;
   dmConversations: number;
   tokens: number;
-  feedbackRows: number;
-  metricsRows: number;
   notifications: number;
 };
 
@@ -97,7 +96,7 @@ export async function computeUserDeleteImpact(
 
   const [
     rsvps, confirmations, chatMessages, peUser, pePlans, memberships,
-    owned, dms, evTokens, prTokens, feedback, metrics, notifications,
+    owned, dms, evTokens, prTokens, notifications,
   ] = await Promise.all([
     sql`SELECT COUNT(*)::int AS c FROM newchums.event_rsvps WHERE user_id = ${userId}`,
     sql`SELECT COUNT(*)::int AS c FROM newchums.event_confirmations WHERE user_id = ${userId}`,
@@ -111,8 +110,6 @@ export async function computeUserDeleteImpact(
     sql`SELECT COUNT(*)::int AS c FROM newchums.dm_conversations WHERE user_a = ${userId} OR user_b = ${userId}`,
     sql`SELECT COUNT(*)::int AS c FROM newchums.email_verification_tokens WHERE user_id = ${userId}`,
     sql`SELECT COUNT(*)::int AS c FROM newchums.password_reset_tokens WHERE user_id = ${userId}`,
-    sql`SELECT COUNT(*)::int AS c FROM newchums.plan_feedback WHERE reviewer_user_id = ${userId} OR reviewee_user_id = ${userId}`,
-    sql`SELECT COUNT(*)::int AS c FROM newchums.user_metrics WHERE user_id = ${userId}`,
     sql`SELECT COUNT(*)::int AS c FROM newchums.notifications WHERE user_id = ${userId}`,
   ]);
 
@@ -129,15 +126,13 @@ export async function computeUserDeleteImpact(
       ownedCommunities: n(owned),
       dmConversations: n(dms),
       tokens: n(evTokens) + n(prTokens),
-      feedbackRows: n(feedback),
-      metricsRows: n(metrics),
       notifications: n(notifications),
     },
   };
 }
 
 export async function computePlanDeleteImpact(sql: Sql, eventId: string): Promise<PlanDeleteImpact> {
-  const [rsvps, confirmations, chat, invites, altTimes, joinRequests, feedback, shoutouts, pe] =
+  const [rsvps, confirmations, chat, invites, altTimes, joinRequests, shoutouts, pe] =
     await Promise.all([
       sql`SELECT COUNT(*)::int AS c FROM newchums.event_rsvps WHERE event_id = ${eventId}`,
       sql`SELECT COUNT(*)::int AS c FROM newchums.event_confirmations WHERE event_id = ${eventId}`,
@@ -145,7 +140,6 @@ export async function computePlanDeleteImpact(sql: Sql, eventId: string): Promis
       sql`SELECT COUNT(*)::int AS c FROM newchums.event_invites WHERE event_id = ${eventId}`,
       sql`SELECT COUNT(*)::int AS c FROM newchums.event_alt_times WHERE event_id = ${eventId}`,
       sql`SELECT COUNT(*)::int AS c FROM newchums.event_join_requests WHERE event_id = ${eventId}`,
-      sql`SELECT COUNT(*)::int AS c FROM newchums.plan_feedback WHERE plan_id = ${eventId}`,
       sql`SELECT COUNT(*)::int AS c FROM newchums.shoutouts WHERE plan_id = ${eventId}`,
       sql`SELECT COUNT(*)::int AS c FROM newchums.product_events WHERE event_id = ${eventId}`,
     ]);
@@ -156,7 +150,6 @@ export async function computePlanDeleteImpact(sql: Sql, eventId: string): Promis
     invites: n(invites),
     altTimes: n(altTimes),
     joinRequests: n(joinRequests),
-    feedbackRows: n(feedback),
     shoutouts: n(shoutouts),
     productEvents: n(pe),
   };

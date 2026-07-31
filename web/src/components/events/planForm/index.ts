@@ -10,10 +10,4 @@ export { default as ExtraOptionsSection } from "./ExtraOptionsSection";
 export type { FallbackPolicy } from "./ExtraOptionsSection";
 export { default as CommunityLinkSection } from "./CommunityLinkSection";
 export type { MyCommunity } from "./CommunityLinkSection";
-export {
-  default as MatchingPreferencesSection,
-  PREF_METRICS,
-  PREF_METRIC_LABELS,
-} from "./MatchingPreferencesSection";
-export type { PrefMetric } from "./MatchingPreferencesSection";
 export { default as QAPlanSection } from "./QAPlanSection";

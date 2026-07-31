@@ -65,7 +65,6 @@ import BookmarkAddRoundedIcon from "@mui/icons-material/BookmarkAddRounded";
 import BookmarkRemoveRoundedIcon from "@mui/icons-material/BookmarkRemoveRounded";
 import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
 import CancelRoundedIcon from "@mui/icons-material/CancelRounded";
-import FlagRoundedIcon from "@mui/icons-material/FlagRounded";
 import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
 import HourglassEmptyRoundedIcon from "@mui/icons-material/HourglassEmptyRounded";
 import HistoryRoundedIcon from "@mui/icons-material/HistoryRounded";
@@ -174,7 +173,6 @@ type RsvpEntry = {
   note: string | null;
   avatarUrl?: string | null;
   confirmationStatus?: string | null;
-  prefNotes?: string[] | null;
   isChumSaved?: boolean;
   hideName?: boolean;
 };
@@ -285,14 +283,6 @@ const AUTH_REQUIRED_SECTIONS: readonly string[] = [
   "attendees",
 ];
 
-const PREF_NOTE_LABELS: Record<string, string> = {
-  reliability: "reliability",
-  sociability: "sociability",
-  presentation: "cleanliness & consideration",
-  hosting_skills: "hosting quality",
-  age: "age range",
-};
-
 type EventDetailClientProps = {
   /** Server-resolved auth state. When `false`, the client skips its
    *  initial `getAuthToken()` call (which would 401 for logged-out
@@ -329,7 +319,6 @@ export default function EventDetailClient({
   // email field. Keeps the new account's address aligned with the invite row
   // so post-signup adoption attaches the user to the correct invite.
   const [inviteeEmail, setInviteeEmail] = useState<string | null>(null);
-  const [prefNote, setPrefNote] = useState<string[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -510,7 +499,6 @@ export default function EventDetailClient({
       ok: boolean;
       accessState?: PlanAccessState;
       shareToken?: string;
-      prefNote?: string[] | null;
       viewerUserId?: string | null;
       viewerPendingIntent?: string | null;
       adminView?: PlanAdminView | null;
@@ -526,7 +514,6 @@ export default function EventDetailClient({
       setEvent(data.event);
       if (data.accessState) setAccessState(data.accessState);
       if (data.shareToken) setShareToken(data.shareToken);
-      setPrefNote(data.prefNote ?? null);
       setRsvps(data.rsvps);
       setAltTimes(data.altTimes);
       setInvites(data.invites ?? []);
@@ -2741,33 +2728,6 @@ export default function EventDetailClient({
               </Typography>
             )}
           </Stack>
-        </Box>
-      )}
-
-      {/* Compatibility note, shown when the host doesn't fully meet viewer's chum preferences */}
-      {prefNote && prefNote.length > 0 && !event.isHost && (
-        <Box
-          sx={{
-            p: 2,
-            borderRadius: 2.5,
-            border: "1px solid",
-            borderColor: "warning.light",
-            bgcolor: "rgba(255, 167, 38, 0.06)",
-            display: "flex",
-            alignItems: "flex-start",
-            gap: 1.5,
-          }}
-        >
-          <InfoOutlinedIcon
-            sx={{ color: "warning.main", mt: "2px", fontSize: 20, flexShrink: 0 }}
-          />
-          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-            Based on your chum preferences, this plan may not fully match your expectations
-            {prefNote.length === 1
-              ? ` for ${PREF_NOTE_LABELS[prefNote[0]] ?? prefNote[0]}`
-              : ` for ${prefNote.map((m) => PREF_NOTE_LABELS[m] ?? m).join(" and ")}`}
-            . You can still join, this is just a heads-up.
-          </Typography>
         </Box>
       )}
 
@@ -5129,18 +5089,6 @@ export default function EventDetailClient({
                     flexWrap="wrap"
                     sx={{ flexShrink: 1, justifyContent: "flex-end" }}
                   >
-                    {r.prefNotes && r.prefNotes.length > 0 && (
-                      <Tooltip
-                        title={`This attendee does not match your ${r.prefNotes.map((m) => PREF_NOTE_LABELS[m] ?? m).join(" or ")} chum preferences`}
-                        arrow
-                        placement="top"
-                        enterTouchDelay={0}
-                      >
-                        <FlagRoundedIcon
-                          sx={{ fontSize: 16, color: "warning.main", cursor: "help" }}
-                        />
-                      </Tooltip>
-                    )}
                     {r.status === "going" && event.requireReconfirmation && (event.confirmationWindowOpen || event.confirmationsIssued) && r.confirmationStatus === "confirmed" ? (
                       /* Merged badge: Going + Confirmed */
                       <Tooltip title="This person confirmed they are still coming via the 24-hour attendance check" arrow placement="top" enterTouchDelay={0}>

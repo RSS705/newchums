@@ -76,19 +76,6 @@ import {
   runAfterResponse,
 } from "./lib/productEvents";
 import { computeAge } from "./lib/publicProfile";
-import {
-  AGE_PREF_YEAR_OPTIONS,
-  type ChumPrefsRow,
-  DEFAULT_CHUM_PREFS,
-  evaluateChumPreferences,
-  METRIC_BASELINE,
-  parsePrefOverrides,
-  PREF_LEVELS,
-  type PrefLevel,
-  type PrefOverrides,
-  resolveEffectiveHostPrefs,
-  type UserMetricsMap,
-} from "./lib/chumPreferences";
 import { checkContactRateLimit, checkRateLimit } from "./lib/contactRateLimit";
 import {
   countOwnedCommunities,
@@ -5324,28 +5311,12 @@ app.get("/admin/users/:id/diagnostics", async (c) => {
     if (userRows.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     const user = userRows[0];
 
-    const metrics = (await sql`
-      SELECT metric, score, signal_count, updated_at
-      FROM newchums.user_metrics
-      WHERE user_id = ${userId}
-      ORDER BY metric
-    `) as { metric: string; score: string; signal_count: number; updated_at: string }[];
-
-    const preferences = (await sql`
-      SELECT reliability_level, sociability_level, presentation_level, hosting_level, age_pref_years, updated_at
-      FROM newchums.chum_preferences
-      WHERE user_id = ${userId}
-      LIMIT 1
-    `) as { reliability_level: string; sociability_level: string; presentation_level: string; hosting_level: string; age_pref_years: number | null; updated_at: string }[];
-
     const attendanceIssues = (await sql`
       SELECT
         ai.id,
         ai.plan_id,
         ai.issue_type,
         ai.is_host_report,
-        ai.confidence,
-        ai.applied_penalty,
         ai.status,
         ai.created_at,
         ai.reporter_user_id,
@@ -5362,8 +5333,6 @@ app.get("/admin/users/:id/diagnostics", async (c) => {
       plan_id: string;
       issue_type: string;
       is_host_report: boolean;
-      confidence: string;
-      applied_penalty: string;
       status: string;
       created_at: string;
       reporter_user_id: string;
@@ -5379,43 +5348,6 @@ app.get("/admin/users/:id/diagnostics", async (c) => {
       GROUP BY reason
       ORDER BY reason
     `) as { reason: string; count: number }[];
-
-    // Feedback received (anonymized, no reporter identity)
-    const feedbackReceived = (await sql`
-      SELECT prompt, response, COUNT(*)::int AS count
-      FROM newchums.plan_feedback
-      WHERE reviewee_user_id = ${userId}
-      GROUP BY prompt, response
-      ORDER BY prompt, response
-    `) as { prompt: string; response: string; count: number }[];
-
-    // Recent feedback timeline (includes reviewer identity for super-admin diagnostics)
-    const recentFeedback = (await sql`
-      SELECT
-        pf.prompt,
-        pf.response,
-        pf.created_at,
-        e.title AS plan_title,
-        e.starts_at AS plan_date,
-        ru.id AS reviewer_user_id,
-        ru.name AS reviewer_name,
-        ru.username AS reviewer_username
-      FROM newchums.plan_feedback pf
-      JOIN newchums.events e ON e.id = pf.plan_id
-      JOIN newchums.users ru ON ru.id = pf.reviewer_user_id
-      WHERE pf.reviewee_user_id = ${userId}
-      ORDER BY pf.created_at DESC
-      LIMIT 50
-    `) as {
-      prompt: string;
-      response: string;
-      created_at: string;
-      plan_title: string;
-      plan_date: string;
-      reviewer_user_id: string;
-      reviewer_name: string | null;
-      reviewer_username: string | null;
-    }[];
 
     // Plans attended count for context
     const planStats = (await sql`
@@ -5451,30 +5383,12 @@ app.get("/admin/users/:id/diagnostics", async (c) => {
         role: user.role,
         isSuspended: user.is_suspended,
       },
-      metrics: metrics.map((m) => ({
-        metric: m.metric,
-        score: parseFloat(m.score),
-        signalCount: m.signal_count,
-        updatedAt: m.updated_at,
-      })),
-      preferences: preferences.length > 0
-        ? {
-            reliability: preferences[0].reliability_level,
-            sociability: preferences[0].sociability_level,
-            presentation: preferences[0].presentation_level,
-            hosting: preferences[0].hosting_level,
-            ageYears: preferences[0].age_pref_years ?? null,
-            updatedAt: preferences[0].updated_at,
-          }
-        : null,
       attendanceIssues: attendanceIssues.map((ai) => ({
         id: ai.id,
         planId: ai.plan_id,
         planTitle: ai.plan_title,
         issueType: ai.issue_type,
         isHostReport: ai.is_host_report,
-        confidence: parseFloat(ai.confidence),
-        appliedPenalty: parseFloat(ai.applied_penalty),
         status: ai.status,
         createdAt: ai.created_at,
         reporterUserId: ai.reporter_user_id,
@@ -5484,81 +5398,12 @@ app.get("/admin/users/:id/diagnostics", async (c) => {
           "Unknown user",
       })),
       conductReports,
-      feedbackReceived,
-      recentFeedback: recentFeedback.map((f) => {
-        const reporterLabel =
-          (f.reviewer_name && f.reviewer_name.trim()) ||
-          (f.reviewer_username && `@${f.reviewer_username.replace(/^@/, "")}`) ||
-          "Unknown user";
-        return {
-          prompt: f.prompt,
-          response: f.response,
-          createdAt: f.created_at,
-          planTitle: f.plan_title,
-          planDate: f.plan_date,
-          reviewerUserId: f.reviewer_user_id,
-          reporterLabel,
-        };
-      }),
       planStats: planStats[0] ?? { plans_going: 0, plans_hosted: 0 },
       objectives: objectivesData,
     });
   } catch (err) {
     console.error("[GET /admin/users/:id/diagnostics]", err);
     return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
-  }
-});
-
-/** PUT /admin/users/:id/metrics, super-admin-only: manually set a user's hidden metric score */
-app.put("/admin/users/:id/metrics", async (c) => {
-  const admin = await requireSuperAdmin(c);
-  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
-
-  const userId = c.req.param("id");
-  const sql = getSql(c.env);
-
-  const body = await c.req.json<{ metric?: string; score?: number; signalCount?: number }>();
-  const { metric, score, signalCount } = body;
-
-  const validMetrics = ["reliability", "sociability", "presentation", "hosting_skills", "match_quality"];
-  if (!metric || !validMetrics.includes(metric)) {
-    return c.json({ ok: false, error: "INVALID_METRIC" }, 400);
-  }
-  if (typeof score !== "number" || score < 0 || score > 100) {
-    return c.json({ ok: false, error: "INVALID_SCORE" }, 400);
-  }
-
-  const sc = typeof signalCount === "number" && signalCount >= 0 ? Math.floor(signalCount) : undefined;
-
-  try {
-    const userCheck = (await sql`SELECT id FROM newchums.users WHERE id = ${userId}`) as { id: string }[];
-    if (userCheck.length === 0) return c.json({ ok: false, error: "USER_NOT_FOUND" }, 404);
-
-    if (sc !== undefined) {
-      await sql`
-        INSERT INTO newchums.user_metrics (user_id, metric, score, signal_count, updated_at)
-        VALUES (${userId}, ${metric}, ${score.toFixed(2)}, ${sc}, NOW())
-        ON CONFLICT (user_id, metric) DO UPDATE SET
-          score = ${score.toFixed(2)},
-          signal_count = ${sc},
-          updated_at = NOW()
-      `;
-    } else {
-      await sql`
-        INSERT INTO newchums.user_metrics (user_id, metric, score, signal_count, updated_at)
-        VALUES (${userId}, ${metric}, ${score.toFixed(2)}, 0, NOW())
-        ON CONFLICT (user_id, metric) DO UPDATE SET
-          score = ${score.toFixed(2)},
-          updated_at = NOW()
-      `;
-    }
-
-    console.log(`[PUT /admin/users/:id/metrics] admin=${admin.email} set ${metric}=${score.toFixed(2)} for user=${userId}`);
-
-    return c.json({ ok: true, metric, score: parseFloat(score.toFixed(2)) });
-  } catch (err) {
-    console.error("[PUT /admin/users/:id/metrics]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });
 
@@ -10496,43 +10341,6 @@ app.get("/communities/:id/events", async (c) => {
       LIMIT ${limit} OFFSET ${offset}
     `) as Record<string, unknown>[];
 
-    // Chum-preference mismatch indicator for feed cards
-    let viewerPrefs: ChumPrefsRow | null = null;
-    let allMetrics = new Map<string, UserMetricsMap>();
-    let dobByUserId = new Map<string, string | null>();
-    let viewerDob: string | null = null;
-    const attendeeIdsByEvent = new Map<string, string[]>();
-
-    if (userId) {
-      viewerPrefs = await loadChumPrefsForUser(sql, userId);
-
-      if (viewerPrefs) {
-        // Gather host + attendee IDs
-        const nonHostEventIds = events.filter((ev) => String(ev.host_user_id) !== userId).map((ev) => String(ev.id));
-        const hostIds = [...new Set(events.filter((ev) => String(ev.host_user_id) !== userId).map((ev) => String(ev.host_user_id)))];
-
-        const attendeeRsvpRows = nonHostEventIds.length > 0 ? (await sql`
-          SELECT er.event_id, er.user_id FROM newchums.event_rsvps er
-          WHERE er.event_id = ANY(${nonHostEventIds}::uuid[]) AND er.status IN ('going', 'maybe')
-        `) as { event_id: string; user_id: string }[] : [];
-
-        const allUserIds = new Set(hostIds);
-        for (const ar of attendeeRsvpRows) {
-          if (ar.user_id === userId) continue;
-          if (!attendeeIdsByEvent.has(ar.event_id)) attendeeIdsByEvent.set(ar.event_id, []);
-          attendeeIdsByEvent.get(ar.event_id)!.push(ar.user_id);
-          allUserIds.add(ar.user_id);
-        }
-        allMetrics = await batchLoadMetrics(sql, [...allUserIds]);
-
-        // Only fetch DOBs if the viewer actually has an age preference set.
-        if (viewerPrefs.age_pref_years != null) {
-          dobByUserId = await batchLoadDobs(sql, [userId, ...allUserIds]);
-          viewerDob = dobByUserId.get(userId) ?? null;
-        }
-      }
-    }
-
     // Logged-out viewers must not see exact addresses, venue names, online
     // meeting links, or precise coordinates on the community plan feed.
     // Mirrors the public Explore feed (`GET /events/explore/public`) and the
@@ -10544,32 +10352,6 @@ app.get("/communities/:id/events", async (c) => {
 
     const eventsWithAvatars = events.map((ev) => {
       const isHost = String(ev.host_user_id) === userId;
-      let hasPrefMismatch = false;
-
-      if (!isHost && viewerPrefs) {
-        // Check host
-        const hMetrics = allMetrics.get(String(ev.host_user_id)) ?? {};
-        const hostCompat = evaluateChumPreferences(viewerPrefs, hMetrics, true, {
-          checkerDob: viewerDob,
-          targetDob: dobByUserId.get(String(ev.host_user_id)) ?? null,
-        });
-        if (!hostCompat.passes) hasPrefMismatch = true;
-
-        // Check attendees
-        if (!hasPrefMismatch) {
-          const attendees = attendeeIdsByEvent.get(String(ev.id)) ?? [];
-          for (const uid of attendees) {
-            const m = allMetrics.get(uid) ?? {};
-            const isHostUser = uid === String(ev.host_user_id);
-            const ac = evaluateChumPreferences(viewerPrefs, m, isHostUser, {
-              checkerDob: viewerDob,
-              targetDob: dobByUserId.get(uid) ?? null,
-            });
-            if (!ac.passes) { hasPrefMismatch = true; break; }
-          }
-        }
-      }
-
       const rawLocationArea = (ev.location_area as string | null) ?? null;
       const rawLocationAddress = (ev.location_address as string | null) ?? null;
       const locationType = String(ev.location_type ?? "in_person");
@@ -11815,7 +11597,6 @@ app.post("/events", async (c) => {
   const requireApproval = body.require_approval === true;
   const status = body.status === "draft" ? "draft" : "published";
   const timezone = body.timezone && typeof body.timezone === "string" ? body.timezone.trim().slice(0, 64) : "UTC";
-  const prefOverrides = parsePrefOverrides(body.pref_overrides ?? null);
   // Community linkage is organizational context only, not an audience
   // expansion. invite_only plans do not participate in community discovery
   // (Explore already excludes them, and GET /communities/:id/events excludes
@@ -11995,13 +11776,13 @@ app.post("/events", async (c) => {
         location_type, location_name, location_address, location_place_id, location_lat, location_lng,
         location_visibility, location_area, online_link,
         max_seats, visibility, status, allow_alt_times, alt_times_mode, availability_deadline_at, allow_attendee_invites, reserve_seats, require_reconfirmation, require_approval, timezone,
-        min_confirmed_attendees, fallback_policy, min_attendees_required, pref_overrides, hide_from_explore, is_qa, mute_host_attendance_emails
+        min_confirmed_attendees, fallback_policy, min_attendees_required, hide_from_explore, is_qa, mute_host_attendance_emails
       ) VALUES (
         ${userId}, ${title}, ${description}, ${interestId}, ${startsDate.toISOString()},
         ${locationType}, ${locationName}, ${locationAddress}, ${locationPlaceId}, ${locationLat}, ${locationLng},
         ${locationVisibility}, ${locationArea}, ${onlineLink},
         ${maxSeats}, ${visibility}, ${status}, ${allowAltTimes}, ${altTimesMode}, ${availabilityDeadlineAt}, ${allowAttendeeInvites}, ${reserveSeats}, ${requireReconfirmation}, ${requireApproval}, ${timezone},
-        ${minConfirmedAttendees}, ${fallbackPolicy}, ${minAttendeesRequired}, ${prefOverrides ? JSON.stringify(prefOverrides) : null}, ${hideFromExplore}, ${isQa}, ${muteHostAttendanceEmails}
+        ${minConfirmedAttendees}, ${fallbackPolicy}, ${minAttendeesRequired}, ${hideFromExplore}, ${isQa}, ${muteHostAttendanceEmails}
       )
       RETURNING id, created_at
     `) as { id: string; created_at: string }[];
@@ -12700,29 +12481,6 @@ app.get("/events/explore", async (c) => {
     const userEffectiveCategories = userHobbyRows.map((r) => r.effective_category);
     const hasUserHobbies = userEffectiveCategories.length > 0;
 
-    // Pre-fetch viewer's metrics for host→viewer chum preference filtering
-    const viewerMetricRows = (await sql`
-      SELECT metric, score FROM newchums.user_metrics WHERE user_id = ${userId}
-    `) as { metric: string; score: string }[];
-    const viewerReliability = parseFloat(viewerMetricRows.find((r) => r.metric === "reliability")?.score ?? String(METRIC_BASELINE));
-    const viewerSociability = parseFloat(viewerMetricRows.find((r) => r.metric === "sociability")?.score ?? String(METRIC_BASELINE));
-    const viewerPresentation = parseFloat(viewerMetricRows.find((r) => r.metric === "presentation")?.score ?? String(METRIC_BASELINE));
-
-    // Pre-fetch viewer's chum preferences for viewer→host compatibility notes
-    const viewerPrefs = await loadChumPrefsForUser(sql, userId);
-
-    // Pre-fetch viewer's DOB so the host→viewer age filter (in SQL below) and the
-    // viewer→host age soft note (in JS post-pass) can both run.
-    const viewerDobRows = (await sql`
-      SELECT date_of_birth FROM newchums.users WHERE id = ${userId} LIMIT 1
-    `) as { date_of_birth: string | Date | null }[];
-    const viewerDob: string | null = viewerDobRows[0]?.date_of_birth
-      ? typeof viewerDobRows[0].date_of_birth === "string"
-        ? (viewerDobRows[0].date_of_birth as string)
-        : (viewerDobRows[0].date_of_birth as Date).toISOString().slice(0, 10)
-      : null;
-    const viewerAge = computeAge(viewerDob);
-
     // Count distinct effective categories on the event that overlap with the
     // viewer's set. Distinct so an event tagged with both "MTG Draft" and
     // "MTG Commander" still contributes 1 to the score, not 2.
@@ -12772,7 +12530,6 @@ app.get("/events/explore", async (c) => {
         ) AS hobbies,
         i.name AS interest_name, i.slug AS interest_slug,
         h.name AS host_name, h.username AS host_username,
-        h.date_of_birth AS host_date_of_birth,
         r.status AS my_rsvp_status,
         COALESCE(rsvp_counts.going_count, 0) AS going_count,
         COALESCE(rsvp_counts.maybe_count, 0) AS maybe_count,
@@ -12800,7 +12557,6 @@ app.get("/events/explore", async (c) => {
       LEFT JOIN newchums.interests i ON i.id = e.interest_id
       LEFT JOIN newchums.users h ON h.id = e.host_user_id
       LEFT JOIN newchums.event_rsvps r ON r.event_id = e.id AND r.user_id = ${userId}
-      LEFT JOIN newchums.chum_preferences hp ON hp.user_id = e.host_user_id
       LEFT JOIN (
         SELECT event_id,
           COUNT(*) FILTER (WHERE status = 'going')::int AS going_count,
@@ -12851,27 +12607,6 @@ app.get("/events/explore", async (c) => {
             WHERE er_inv2.event_id = e.id AND er_inv2.user_id = ${userId}
           ))
         )
-        AND (
-          e.host_user_id = ${userId}
-          OR EXISTS (SELECT 1 FROM newchums.event_rsvps er_pref WHERE er_pref.event_id = e.id AND er_pref.user_id = ${userId})
-          OR (e.pref_overrides IS NOT NULL AND (e.pref_overrides->>'disabled')::boolean = true)
-          OR (
-            (COALESCE(hp.reliability_level, 'preferred') = 'open'
-              OR (e.pref_overrides IS NOT NULL AND e.pref_overrides->'disabled_metrics' ? 'reliability')
-              OR ${viewerReliability} >= CASE COALESCE(hp.reliability_level, 'preferred') WHEN 'preferred' THEN 35.0 WHEN 'important' THEN 45.0 WHEN 'required' THEN 55.0 ELSE 0.0 END)
-            AND (COALESCE(hp.sociability_level, 'open') = 'open'
-              OR (e.pref_overrides IS NOT NULL AND e.pref_overrides->'disabled_metrics' ? 'sociability')
-              OR ${viewerSociability} >= CASE COALESCE(hp.sociability_level, 'open') WHEN 'preferred' THEN 35.0 WHEN 'important' THEN 45.0 WHEN 'required' THEN 55.0 ELSE 0.0 END)
-            AND (COALESCE(hp.presentation_level, 'open') = 'open'
-              OR (e.pref_overrides IS NOT NULL AND e.pref_overrides->'disabled_metrics' ? 'presentation')
-              OR ${viewerPresentation} >= CASE COALESCE(hp.presentation_level, 'open') WHEN 'preferred' THEN 35.0 WHEN 'important' THEN 45.0 WHEN 'required' THEN 55.0 ELSE 0.0 END)
-            AND (hp.age_pref_years IS NULL
-              OR (e.pref_overrides IS NOT NULL AND e.pref_overrides->'disabled_metrics' ? 'age')
-              OR h.date_of_birth IS NULL
-              OR ${viewerAge === null}
-              OR abs(EXTRACT(YEAR FROM age(h.date_of_birth))::int - ${viewerAge ?? 0}) <= hp.age_pref_years)
-          )
-        )
         ${hobbySlug ? sql`AND EXISTS (
           SELECT 1 FROM newchums.interests ii_pick
           WHERE ii_pick.slug = ${hobbySlug} AND ii_pick.is_deleted = false
@@ -12898,56 +12633,11 @@ app.get("/events/explore", async (c) => {
       hobbies: Array<{ name: string; slug: string }> | string;
       interest_name: string | null; interest_slug: string | null;
       host_name: string | null; host_username: string | null;
-      host_date_of_birth: string | Date | null;
       my_rsvp_status: string | null;
       going_count: number; maybe_count: number; is_host: boolean;
       distance_km: number | null; is_qa: boolean;
       communities: Array<{ id: string; slug: string; name: string }>;
     }>;
-
-    // Batch-load host metrics for viewer→host compatibility notes
-    const hostIds = [...new Set(rows.filter((r) => !r.is_host).map((r) => r.host_user_id))];
-    const hostMetricsMap = await batchLoadMetrics(sql, hostIds);
-
-    // Host DOBs come back inline on each row (no extra query needed). Normalize to YYYY-MM-DD.
-    const hostDobById = new Map<string, string | null>();
-    for (const r of rows) {
-      if (hostDobById.has(r.host_user_id)) continue;
-      const raw = r.host_date_of_birth;
-      const dob = raw
-        ? typeof raw === "string"
-          ? raw
-          : (raw as Date).toISOString().slice(0, 10)
-        : null;
-      hostDobById.set(r.host_user_id, dob);
-    }
-
-    // Batch-load attendee user IDs + metrics for viewer→attendee pref mismatch indicator
-    const eventIds = rows.filter((r) => !r.is_host).map((r) => r.id);
-    const attendeeRsvpRows = eventIds.length > 0 ? (await sql`
-      SELECT er.event_id, er.user_id FROM newchums.event_rsvps er
-      WHERE er.event_id = ANY(${eventIds}::uuid[]) AND er.status IN ('going', 'maybe')
-    `) as { event_id: string; user_id: string }[] : [];
-    const attendeeIdsByEvent = new Map<string, string[]>();
-    const allAttendeeIds = new Set<string>();
-    for (const ar of attendeeRsvpRows) {
-      if (ar.user_id === userId) continue; // skip viewer
-      if (!attendeeIdsByEvent.has(ar.event_id)) attendeeIdsByEvent.set(ar.event_id, []);
-      attendeeIdsByEvent.get(ar.event_id)!.push(ar.user_id);
-      allAttendeeIds.add(ar.user_id);
-    }
-    // Remove IDs already in hostMetricsMap to avoid re-fetching
-    const extraAttendeeIds = [...allAttendeeIds].filter((id) => !hostMetricsMap.has(id));
-    const attendeeMetricsMap = await batchLoadMetrics(sql, extraAttendeeIds);
-    // Merge into a single lookup
-    const allMetrics = new Map([...hostMetricsMap, ...attendeeMetricsMap]);
-
-    // Batch-load attendee DOBs (host DOBs already inline). Only needed when the
-    // viewer has an age preference set; otherwise the age check is a no-op.
-    const attendeeDobMap = viewerPrefs?.age_pref_years != null
-      ? await batchLoadDobs(sql, [...allAttendeeIds].filter((id) => !hostDobById.has(id)))
-      : new Map<string, string | null>();
-    const dobByUserId = new Map<string, string | null>([...hostDobById, ...attendeeDobMap]);
 
     const allMapped = rows.map((r) => {
       const parsedHobbies = typeof r.hobbies === "string" ? JSON.parse(r.hobbies) : (r.hobbies ?? []);
@@ -12967,32 +12657,6 @@ app.get("/events/explore", async (c) => {
           : canShowExact
             ? buildLocationDisplay(r.location_name, r.location_address)
             : (r.location_area || "General area");
-
-      // Viewer→host compatibility: does the host meet the viewer's chum preferences?
-      let prefNote: string[] | null = null;
-      let hasPrefMismatch = false;
-      if (!r.is_host && viewerPrefs) {
-        const hMetrics = allMetrics.get(r.host_user_id) ?? {};
-        const compat = evaluateChumPreferences(viewerPrefs, hMetrics, true, {
-          checkerDob: viewerDob,
-          targetDob: dobByUserId.get(r.host_user_id) ?? null,
-        });
-        if (!compat.passes) { prefNote = compat.failedMetrics; hasPrefMismatch = true; }
-
-        // Also check attendees for the card-level mismatch indicator
-        if (!hasPrefMismatch) {
-          const attendees = attendeeIdsByEvent.get(r.id) ?? [];
-          for (const uid of attendees) {
-            const m = allMetrics.get(uid) ?? {};
-            const isHostUser = uid === r.host_user_id;
-            const ac = evaluateChumPreferences(viewerPrefs, m, isHostUser, {
-              checkerDob: viewerDob,
-              targetDob: dobByUserId.get(uid) ?? null,
-            });
-            if (!ac.passes) { hasPrefMismatch = true; break; }
-          }
-        }
-      }
 
       return {
         id: r.id,
@@ -13018,8 +12682,6 @@ app.get("/events/explore", async (c) => {
         maybeCount: r.maybe_count,
         distanceKm: r.distance_km !== null ? Math.round(r.distance_km * 10) / 10 : null,
         bannerKey: r.banner_key ?? null,
-        prefNote,
-        hasPrefMismatch,
         communities: r.communities ?? [],
         isQa: r.is_qa || undefined,
       };
@@ -13569,43 +13231,6 @@ app.get("/events/:id", async (c) => {
     // Only generated for non-public access states; public visitors don't get share tokens.
     const shareToken = await createShareToken(eventId, c.env.NEXTAUTH_SECRET!);
 
-    // Chum preference compatibility notes for the viewer.
-    // Checks host and each attendee against the viewer's preferences (informational, not blocking).
-    let prefNote: string[] | null = null;
-    const attendeePrefNotes = new Map<string, string[]>();
-    if (userId && !isHost) {
-      const attendeeUserIds = rsvps
-        .filter((r) => r.user_id && r.user_id !== userId)
-        .map((r) => r.user_id as string);
-      const allUserIds = [event.host_user_id as string, ...attendeeUserIds.filter((id) => id !== event.host_user_id)];
-      // Include the viewer in the DOB lookup so the age check has both sides.
-      const allDobUserIds = Array.from(new Set([userId, ...allUserIds]));
-      const [vPrefs, metricsMap, dobMap] = await Promise.all([
-        loadChumPrefsForUser(sql, userId),
-        batchLoadMetrics(sql, allUserIds),
-        batchLoadDobs(sql, allDobUserIds),
-      ]);
-      if (vPrefs) {
-        const viewerDob = dobMap.get(userId) ?? null;
-        const hostDob = dobMap.get(event.host_user_id as string) ?? null;
-        const hMetrics = metricsMap.get(event.host_user_id as string) ?? {};
-        const hostCompat = evaluateChumPreferences(vPrefs, hMetrics, true, {
-          checkerDob: viewerDob,
-          targetDob: hostDob,
-        });
-        if (!hostCompat.passes) prefNote = hostCompat.failedMetrics;
-        for (const uid of attendeeUserIds) {
-          const m = metricsMap.get(uid) ?? {};
-          const isHostUser = uid === event.host_user_id;
-          const compat = evaluateChumPreferences(vPrefs, m, isHostUser, {
-            checkerDob: viewerDob,
-            targetDob: dobMap.get(uid) ?? null,
-          });
-          if (!compat.passes) attendeePrefNotes.set(uid, compat.failedMetrics);
-        }
-      }
-    }
-
     // B1 crash recovery: if the viewer verified via plan signup but the
     // client died before applying their stored RSVP intent, surface it so
     // the plan page can auto-apply through the normal RSVP endpoint. Only
@@ -13636,7 +13261,6 @@ app.get("/events/:id", async (c) => {
       ok: true,
       accessState,
       shareToken,
-      prefNote,
       viewerUserId: userId ?? null,
       viewerPendingIntent,
       // Super-admin moderation payload. Normal-user redaction above is
@@ -13717,7 +13341,6 @@ app.get("/events/:id", async (c) => {
         pendingConfirmationCount,
         myConfirmationStatus,
         planViability,
-        prefOverrides: isHost ? (event.pref_overrides ?? null) : undefined,
         communities: communityList,
         hideFromExplore: isHost ? (event.hide_from_explore === true) : undefined,
         isQa: event.is_qa === true ? true : undefined,
@@ -13726,7 +13349,6 @@ app.get("/events/:id", async (c) => {
       // to protect user privacy. Attending viewers (host, RSVP'd) see real names.
       rsvps: rsvps.map((r) => {
         const rHandle = r.username?.replace(/^@/, "") ?? null;
-        const rPrefNotes = attendeePrefNotes.get(r.user_id) ?? null;
         const nameHidden = r.hide_name === true;
         const displayName = nameHidden
           ? (rHandle || "Someone")
@@ -13741,7 +13363,6 @@ app.get("/events/:id", async (c) => {
           note: r.note,
           avatarUrl: buildAvatarUrl(r.user_id, r.avatar_key, r.avatar_updated_at, c.env.MEDIA_BUCKET),
           confirmationStatus: confirmationByUserId.get(r.user_id) ?? null,
-          ...(rPrefNotes ? { prefNotes: rPrefNotes } : {}),
           ...(userId && r.user_id !== userId ? { isChumSaved: chumSavedSet.has(r.user_id) } : {}),
           // Only tell the viewer about their own hide_name state
           ...(userId && r.user_id === userId ? { hideName: nameHidden } : {}),
@@ -14763,7 +14384,6 @@ app.patch("/events/:id", async (c) => {
     }
 
     const patchTimezone = body.timezone && typeof body.timezone === "string" ? body.timezone.trim().slice(0, 64) : null;
-    const patchPrefOverrides = "pref_overrides" in body ? parsePrefOverrides(body.pref_overrides ?? null) : undefined;
     // Community links are an array; the field is only present when the form
     // detected a change from the original list. Server-side invariant:
     // invite_only plans can never be linked to a community, so we force the
@@ -14909,7 +14529,6 @@ app.patch("/events/:id", async (c) => {
           min_confirmed_attendees  = ${patchMinConfirmed},
           fallback_policy          = ${patchFallbackPolicy},
           min_attendees_required   = ${patchMinAttendeesRequired},
-          pref_overrides           = CASE WHEN ${patchPrefOverrides !== undefined} THEN ${patchPrefOverrides !== undefined ? (patchPrefOverrides ? JSON.stringify(patchPrefOverrides) : null) : null}::jsonb ELSE pref_overrides END,
           hide_from_explore        = CASE WHEN ${patchHideFromExplore !== undefined} THEN ${patchHideFromExplore !== undefined ? patchHideFromExplore : false} ELSE hide_from_explore END,
           is_qa                    = CASE WHEN ${patchIsQa !== undefined} THEN ${patchIsQa !== undefined ? patchIsQa : false} ELSE is_qa END,
           banner_key               = CASE WHEN ${patchBannerKey !== undefined} THEN ${patchBannerKey !== undefined ? patchBannerKey : null} ELSE banner_key END,
@@ -16954,35 +16573,7 @@ app.post("/admin/shoutouts/:id/status", async (c) => {
   }
 });
 
-// ─── Chum Preferences ────────────────────────────────────────────────────────
-//
-// Pure evaluation helpers (evaluateChumPreferences, parsePrefOverrides,
-// resolveEffectiveHostPrefs, ChumPrefsRow, DEFAULT_CHUM_PREFS, PREF_LEVELS,
-// METRIC_BASELINE, etc) live in `./lib/chumPreferences.ts` so they can be unit
-// tested without spinning up Hono. The DB-touching loaders below stay here.
-
-async function loadChumPrefsForUser(
-  sql: ReturnType<typeof getSql>,
-  userId: string,
-): Promise<ChumPrefsRow | null> {
-  const rows = (await sql`
-    SELECT reliability_level, sociability_level, presentation_level, hosting_level, age_pref_years
-    FROM newchums.chum_preferences WHERE user_id = ${userId} LIMIT 1
-  `) as ChumPrefsRow[];
-  return rows.length > 0 ? rows[0] : null;
-}
-
-async function loadMetricsForUser(
-  sql: ReturnType<typeof getSql>,
-  userId: string,
-): Promise<UserMetricsMap> {
-  const rows = (await sql`
-    SELECT metric, score FROM newchums.user_metrics WHERE user_id = ${userId}
-  `) as { metric: string; score: string }[];
-  const m: UserMetricsMap = {};
-  for (const r of rows) m[r.metric] = parseFloat(r.score);
-  return m;
-}
+// ─── Batch loaders ───────────────────────────────────────────────────────────
 
 async function batchLoadNotificationPrefs(
   sql: ReturnType<typeof getSql>,
@@ -16997,158 +16588,6 @@ async function batchLoadNotificationPrefs(
   for (const r of rows) map.set(r.user_id, r.notification_prefs);
   return map;
 }
-
-async function batchLoadChumPrefs(
-  sql: ReturnType<typeof getSql>,
-  userIds: string[],
-): Promise<Map<string, ChumPrefsRow>> {
-  if (userIds.length === 0) return new Map();
-  const rows = (await sql`
-    SELECT user_id, reliability_level, sociability_level, presentation_level, hosting_level, age_pref_years
-    FROM newchums.chum_preferences WHERE user_id = ANY(${userIds}::uuid[])
-  `) as (ChumPrefsRow & { user_id: string })[];
-  const map = new Map<string, ChumPrefsRow>();
-  for (const r of rows) map.set(r.user_id, r);
-  return map;
-}
-
-/** Batch-load `date_of_birth` for a list of user IDs. Returns YYYY-MM-DD strings (or null). */
-async function batchLoadDobs(
-  sql: ReturnType<typeof getSql>,
-  userIds: string[],
-): Promise<Map<string, string | null>> {
-  if (userIds.length === 0) return new Map();
-  const rows = (await sql`
-    SELECT id, date_of_birth FROM newchums.users WHERE id = ANY(${userIds}::uuid[])
-  `) as { id: string; date_of_birth: string | Date | null }[];
-  const map = new Map<string, string | null>();
-  for (const r of rows) {
-    const dob = r.date_of_birth
-      ? typeof r.date_of_birth === "string"
-        ? r.date_of_birth
-        : (r.date_of_birth as Date).toISOString().slice(0, 10)
-      : null;
-    map.set(r.id, dob);
-  }
-  return map;
-}
-
-async function batchLoadMetrics(
-  sql: ReturnType<typeof getSql>,
-  userIds: string[],
-): Promise<Map<string, UserMetricsMap>> {
-  if (userIds.length === 0) return new Map();
-  const rows = (await sql`
-    SELECT user_id, metric, score FROM newchums.user_metrics WHERE user_id = ANY(${userIds}::uuid[])
-  `) as { user_id: string; metric: string; score: string }[];
-  const map = new Map<string, UserMetricsMap>();
-  for (const r of rows) {
-    if (!map.has(r.user_id)) map.set(r.user_id, {});
-    map.get(r.user_id)![r.metric] = parseFloat(r.score);
-  }
-  return map;
-}
-
-/** GET /chum-preferences, get current user's chum preference settings */
-app.get("/chum-preferences", async (c) => {
-  const payload = await requireAuth(c);
-  if (!payload?.email || typeof payload.email !== "string")
-    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
-
-  const sql = getSql(c.env);
-  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
-
-  try {
-    const rows = (await sql`
-      SELECT reliability_level, sociability_level, presentation_level, hosting_level, age_pref_years, updated_at
-      FROM newchums.chum_preferences
-      WHERE user_id = ${userId}
-      LIMIT 1
-    `) as {
-      reliability_level: string;
-      sociability_level: string;
-      presentation_level: string;
-      hosting_level: string;
-      age_pref_years: number | null;
-      updated_at: string;
-    }[];
-
-    if (rows.length === 0) {
-      return c.json({
-        ok: true,
-        preferences: {
-          reliability: "preferred",
-          sociability: "open",
-          presentation: "open",
-          hosting: "open",
-          age: null,
-        },
-      });
-    }
-
-    const r = rows[0];
-    return c.json({
-      ok: true,
-      preferences: {
-        reliability: r.reliability_level,
-        sociability: r.sociability_level,
-        presentation: r.presentation_level,
-        hosting: r.hosting_level,
-        age: r.age_pref_years ?? null,
-      },
-    });
-  } catch (err) {
-    console.error("[GET /chum-preferences]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
-  }
-});
-
-/** PUT /chum-preferences, save current user's chum preference settings */
-app.put("/chum-preferences", async (c) => {
-  const payload = await requireAuth(c);
-  if (!payload?.email || typeof payload.email !== "string")
-    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
-
-  const sql = getSql(c.env);
-  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
-
-  const body = await c.req.json<{
-    reliability?: string;
-    sociability?: string;
-    presentation?: string;
-    hosting?: string;
-    age?: number | null;
-  }>();
-
-  const reliability = (PREF_LEVELS.includes(body.reliability as PrefLevel) ? body.reliability : "preferred") as PrefLevel;
-  const sociability = (PREF_LEVELS.includes(body.sociability as PrefLevel) ? body.sociability : "open") as PrefLevel;
-  const presentation = (PREF_LEVELS.includes(body.presentation as PrefLevel) ? body.presentation : "open") as PrefLevel;
-  const hosting = (PREF_LEVELS.includes(body.hosting as PrefLevel) ? body.hosting : "open") as PrefLevel;
-  const agePrefYears: number | null =
-    body.age != null && AGE_PREF_YEAR_OPTIONS.includes(body.age) ? body.age : null;
-
-  try {
-    await sql`
-      INSERT INTO newchums.chum_preferences (user_id, reliability_level, sociability_level, presentation_level, hosting_level, age_pref_years, updated_at)
-      VALUES (${userId}, ${reliability}, ${sociability}, ${presentation}, ${hosting}, ${agePrefYears}, NOW())
-      ON CONFLICT (user_id) DO UPDATE SET
-        reliability_level = ${reliability},
-        sociability_level = ${sociability},
-        presentation_level = ${presentation},
-        hosting_level = ${hosting},
-        age_pref_years = ${agePrefYears},
-        updated_at = NOW()
-    `;
-
-    return c.json({
-      ok: true,
-      preferences: { reliability, sociability, presentation, hosting, age: agePrefYears },
-    });
-  } catch (err) {
-    console.error("[PUT /chum-preferences]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
-  }
-});
 
 // ─── Community Roadmap ────────────────────────────────────────────────────────
 
@@ -19258,7 +18697,6 @@ async function processEventMatchDigest(
         'goingCount', m.going_count,
         'pendingInviteNoRsvpCount', m.pending_invite_no_rsvp_count,
         'maybeInviteeCount', m.maybe_invitee_count,
-        'prefOverrides', e.pref_overrides,
         'isQa', COALESCE(e.is_qa, false)
       ) ORDER BY m.starts_at) AS plans
     FROM matching m
@@ -19286,7 +18724,6 @@ async function processEventMatchDigest(
       goingCount: number;
       pendingInviteNoRsvpCount: number;
       maybeInviteeCount: number;
-      prefOverrides: unknown;
       isQa: boolean;
     }[];
   }[];
@@ -19295,22 +18732,6 @@ async function processEventMatchDigest(
     console.log("[event-match-digest] eligible=0 (no matching user+plan pairs found)");
     return;
   }
-
-  // ── Chum preference filtering for digest ────────────────────────────────────
-  // Two-directional check:
-  //   1. Viewer's prefs on host: does the host's metrics meet the recipient's thresholds?
-  //   2. Host's prefs on viewer: does the recipient's metrics meet the host's thresholds?
-  // Both must pass for a plan to be included in the digest.
-
-  const allRecipientIds = rows.map((r) => r.user_id);
-  const allHostIds = [...new Set(rows.flatMap((r) => (Array.isArray(r.plans) ? r.plans : []).map((p) => p.hostUserId)))];
-  const allInvolvedIds = [...new Set([...allRecipientIds, ...allHostIds])];
-
-  const [prefsByUser, metricsByUser, dobsByUser] = await Promise.all([
-    batchLoadChumPrefs(sql, allInvolvedIds),
-    batchLoadMetrics(sql, allInvolvedIds),
-    batchLoadDobs(sql, allInvolvedIds),
-  ]);
 
   const userIds: string[] = [];
   const emailPromises: Promise<unknown>[] = [];
@@ -19322,38 +18743,10 @@ async function processEventMatchDigest(
     const prefs = normalizeNotificationPrefs(row.notification_prefs);
     if (prefs.items.event_match?.enabled === false) { matchSkippedPref++; continue; }
 
-    let candidatePlans = Array.isArray(row.plans) ? row.plans : [];
-
-    const recipientPrefs = prefsByUser.get(row.user_id) ?? null;
-    const recipientMetrics = metricsByUser.get(row.user_id) ?? {};
-    const recipientDob = dobsByUser.get(row.user_id) ?? null;
-
-    candidatePlans = candidatePlans.filter((p) => {
-      const hostMetrics = metricsByUser.get(p.hostUserId) ?? {};
-      const hostGlobalPrefs = prefsByUser.get(p.hostUserId) ?? null;
-      const hostDob = dobsByUser.get(p.hostUserId) ?? null;
-
-      // 1. Does the host pass the recipient's preferences? (includeHosting = true)
-      const viewerCheck = evaluateChumPreferences(recipientPrefs, hostMetrics, true, {
-        checkerDob: recipientDob,
-        targetDob: hostDob,
-      });
-      if (!viewerCheck.passes) return false;
-
-      // 2. Does the recipient pass the host's preferences? (includeHosting = false)
-      // Resolve plan-level overrides before evaluating
-      const planOverrides = parsePrefOverrides(p.prefOverrides);
-      const effectiveHostPrefs = resolveEffectiveHostPrefs(hostGlobalPrefs, planOverrides);
-      const hostCheck = evaluateChumPreferences(effectiveHostPrefs, recipientMetrics, false, {
-        checkerDob: hostDob,
-        targetDob: recipientDob,
-      });
-      if (!hostCheck.passes) return false;
-
-      return true;
-    });
-
-    const plans = candidatePlans.slice(0, 10);
+    // Candidate selection is purely hobbies + travel radius (the SQL above);
+    // the old chum-preference post-filter was removed with the matching
+    // system in July 2026.
+    const plans = (Array.isArray(row.plans) ? row.plans : []).slice(0, 10);
     if (plans.length === 0) { matchSkippedEmpty++; continue; }
 
     const recipientName = row.name?.trim() || "there";

@@ -16,7 +16,7 @@ import HelpOutlineRoundedIcon from "@mui/icons-material/HelpOutlineRounded";
  *      tap doesn't immediately close the tooltip it just opened.
  *
  *  Kept as a single source of truth so "?" tooltips behave the same
- *  wherever they appear (plan form, chum preferences, etc.).
+ *  wherever they appear (plan form, settings, etc.).
  */
 export default function HelpTooltip({
   title,

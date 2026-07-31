@@ -49,7 +49,6 @@ import CopyPlanDialog from "@/components/events/CopyPlanDialog";
 import {
   CommunityLinkSection,
   ExtraOptionsSection,
-  MatchingPreferencesSection,
   QAPlanSection,
   type MyCommunity as SharedMyCommunity,
 } from "@/components/events/planForm";
@@ -186,10 +185,6 @@ export default function CreateEventClient() {
     []
   );
 
-  // Chum preference overrides
-  const [prefOverridesOpen, setPrefOverridesOpen] = useState(false);
-  const [prefDisableAll, setPrefDisableAll] = useState(false);
-  const [prefDisabledMetrics, setPrefDisabledMetrics] = useState<Record<string, boolean>>({});
 
   // Community association
   type MyCommunity = {
@@ -327,16 +322,6 @@ export default function CreateEventClient() {
         ev.minConfirmedAttendees != null ? String(ev.minConfirmedAttendees) : ""
       );
       setFallbackPolicy(ev.fallbackPolicy ?? "notify_host");
-
-      const po: { disabled?: boolean; disabled_metrics?: string[] } | null =
-        ev.prefOverrides ?? null;
-      const disabledMetrics: Record<string, boolean> = {};
-      if (!po?.disabled && Array.isArray(po?.disabled_metrics)) {
-        for (const m of po.disabled_metrics) disabledMetrics[m] = true;
-      }
-      setPrefDisableAll(po?.disabled === true);
-      setPrefDisabledMetrics(disabledMetrics);
-      setPrefOverridesOpen(po?.disabled === true || Object.keys(disabledMetrics).length > 0);
 
       // Community linkage carries over only where the viewer is still a
       // member; hide_from_explore without a surviving linkage would hide the
@@ -564,15 +549,6 @@ export default function CreateEventClient() {
     return errs;
   };
 
-  const buildPrefOverrides = (): { disabled?: boolean; disabled_metrics?: string[] } | null => {
-    if (prefDisableAll) return { disabled: true };
-    const dm = Object.entries(prefDisabledMetrics)
-      .filter(([, v]) => v)
-      .map(([k]) => k);
-    if (dm.length > 0) return { disabled_metrics: dm };
-    return null;
-  };
-
   const handleSubmit = async () => {
     const errs = validate();
     if (Object.keys(errs).length > 0) {
@@ -628,7 +604,6 @@ export default function CreateEventClient() {
       min_attendees_required: minAttendeesRequired ? Number(minAttendeesRequired) : null,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       status: "published",
-      pref_overrides: buildPrefOverrides(),
       copied_from: copySourceId,
       community_ids: selectedCommunityIds,
       hide_from_explore: hideFromExplore,
@@ -1541,16 +1516,6 @@ export default function CreateEventClient() {
         onChangeSelectedCommunityIds={setSelectedCommunityIds}
         hideFromExplore={hideFromExplore}
         onChangeHideFromExplore={setHideFromExplore}
-      />
-
-      {/* Matching preferences override */}
-      <MatchingPreferencesSection
-        open={prefOverridesOpen}
-        onToggleOpen={() => setPrefOverridesOpen((v) => !v)}
-        disableAll={prefDisableAll}
-        onChangeDisableAll={setPrefDisableAll}
-        disabledMetrics={prefDisabledMetrics}
-        onChangeDisabledMetrics={setPrefDisabledMetrics}
       />
 
       {/* QA plan toggle (super admin only) */}

@@ -335,7 +335,6 @@ export default function CommunityDetailClient({
       maybeCount: Number(ev.maybeCount ?? 0),
       bannerKey: (ev.bannerKey as string) ?? null,
       communities: (ev.communities as Array<{ id: string; slug: string; name: string }>) ?? [],
-      hasPrefMismatch: ev.hasPrefMismatch === true,
       isQa: ev.isQa === true,
     };
   }, []);

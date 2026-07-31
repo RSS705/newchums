@@ -36,7 +36,6 @@ import HobbyPickerField, { type HobbyOption } from "@/components/common/HobbyPic
 import { loadGooglePlacesScript } from "@/lib/loadGooglePlaces";
 import NextStepNudge, { notifyObjectivesChanged } from "@/components/objectives/NextStepNudge";
 import AttendanceRecordSection from "@/components/publicProfile/AttendanceRecordSection";
-import ChumPreferencesSection from "@/components/profile/ChumPreferencesSection";
 
 const GENDER_OPTIONS = [
   { value: "", label: "Not specified" },
@@ -1003,7 +1002,6 @@ export default function ProfileClient() {
       </AppCard>
 
       {/* Chum preferences */}
-      <ChumPreferencesSection />
 
       {/* Attendance record */}
       {profile?.userId && (

@@ -12,7 +12,6 @@ import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
 import LinkRoundedIcon from "@mui/icons-material/LinkRounded";
 import PeopleOutlineRoundedIcon from "@mui/icons-material/PeopleOutlineRounded";
 import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
-import FlagRoundedIcon from "@mui/icons-material/FlagRounded";
 import Tooltip from "@mui/material/Tooltip";
 import Link from "next/link";
 import { getAvatarBaseUrl, getImageFallbackBaseUrl } from "@/lib/apiClient";
@@ -47,7 +46,6 @@ export type PlanEvent = {
   bannerUrl?: string | null;
   hasUnreadChat?: boolean;
   communities?: Array<{ id: string; slug: string; name: string }>;
-  hasPrefMismatch?: boolean;
   isQa?: boolean;
 };
 
@@ -348,24 +346,6 @@ const EventCard = React.memo(function EventCard({
               <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem", flex: 1 }}>
                 {attendeeSummary}
               </Typography>
-              {event.hasPrefMismatch && !isPast && !isExample && (
-                <Tooltip
-                  title="Some people in this plan may not fully match your chum preferences"
-                  arrow
-                  placement="top"
-                  enterTouchDelay={0}
-                >
-                  <FlagRoundedIcon
-                    sx={{
-                      fontSize: 15,
-                      color: "warning.main",
-                      opacity: 0.85,
-                      cursor: "help",
-                      flexShrink: 0,
-                    }}
-                  />
-                </Tooltip>
-              )}
             </Stack>
           </Stack>
 

@@ -1,12 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import Divider from "@mui/material/Divider";
-import LinearProgress from "@mui/material/LinearProgress";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import Table from "@mui/material/Table";
@@ -15,14 +14,11 @@ import TableCell from "@mui/material/TableCell";
 import TableContainer from "@mui/material/TableContainer";
 import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
-import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
 import MuiLink from "@mui/material/Link";
-import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
-import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import IconButton from "@mui/material/IconButton";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -30,32 +26,18 @@ import { apiFetch } from "@/lib/apiClient";
 import AdminHardDeleteDialog from "@/components/admin/AdminHardDeleteDialog";
 import DeleteForeverRoundedIcon from "@mui/icons-material/DeleteForeverRounded";
 
-type MetricRow = { metric: string; score: number; signalCount: number; updatedAt: string };
-type FeedbackAgg = { prompt: string; response: string; count: number };
-type RecentFeedback = {
-  prompt: string;
-  response: string;
-  createdAt: string;
-  planTitle: string;
-  planDate: string;
-  reviewerUserId?: string;
-  reporterLabel?: string;
-};
 type AttendanceIssue = {
   id: string;
   planId: string;
   planTitle: string | null;
   issueType: string;
   isHostReport: boolean;
-  confidence: number;
-  appliedPenalty: number;
   status: string;
   createdAt: string;
   reporterUserId: string;
   reporterLabel: string;
 };
 type ConductReport = { reason: string; count: number };
-type PrefData = { reliability: string; sociability: string; presentation: string; hosting: string; ageYears: number | null; updatedAt: string } | null;
 type UserInfo = { id: string; email: string; username: string | null; name: string | null; createdAt: string; lastActiveAt: string | null; role: string | null; isSuspended: boolean };
 type PlanStats = { plans_going: number; plans_hosted: number };
 
@@ -68,29 +50,10 @@ type ObjectivesData = {
 
 type DiagnosticsData = {
   user: UserInfo;
-  metrics: MetricRow[];
-  preferences: PrefData;
   attendanceIssues: AttendanceIssue[];
   conductReports: ConductReport[];
-  feedbackReceived: FeedbackAgg[];
-  recentFeedback: RecentFeedback[];
   planStats: PlanStats;
   objectives?: ObjectivesData;
-};
-
-const METRIC_LABELS: Record<string, string> = {
-  reliability: "Reliability",
-  sociability: "Sociability",
-  presentation: "Cleanliness & Consideration",
-  hosting_skills: "Hosting Skills",
-  match_quality: "Match Quality",
-};
-
-const PREF_LABELS: Record<string, string> = {
-  open: "Open to anyone",
-  preferred: "Preferred",
-  important: "Important",
-  required: "Required",
 };
 
 const ISSUE_LABELS: Record<string, string> = {
@@ -109,19 +72,6 @@ const CONDUCT_LABELS: Record<string, string> = {
   property_damage: "Property damage",
   other: "Other",
 };
-
-const RESPONSE_LABELS: Record<string, string> = {
-  agree: "Yes",
-  maybe: "Somewhat",
-  disagree: "No",
-};
-
-function scoreColor(score: number): "success" | "warning" | "error" | "info" {
-  if (score >= 60) return "success";
-  if (score >= 40) return "warning";
-  if (score >= 20) return "error";
-  return "error";
-}
 
 function formatDate(iso: string | null): string {
   if (!iso) return "-";
@@ -357,118 +307,6 @@ function RecentActivitySection({ userId }: { userId: string }) {
   );
 }
 
-function EditableMetricRow({
-  metricKey,
-  metricRow,
-  userId,
-  onSaved,
-}: {
-  metricKey: string;
-  metricRow: MetricRow | null;
-  userId: string;
-  onSaved: (updated: { score: number }) => void;
-}) {
-  const score = metricRow?.score ?? 50;
-  const signals = metricRow?.signalCount ?? 0;
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(String(score));
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const handleEdit = () => {
-    setDraft(score.toFixed(2));
-    setSaveError(null);
-    setEditing(true);
-    setTimeout(() => inputRef.current?.select(), 50);
-  };
-
-  const handleCancel = () => {
-    setEditing(false);
-    setSaveError(null);
-  };
-
-  const handleSave = async () => {
-    const val = parseFloat(draft);
-    if (isNaN(val) || val < 0 || val > 100) {
-      setSaveError("Score must be 0–100");
-      return;
-    }
-    setSaving(true);
-    setSaveError(null);
-    try {
-      const res = await apiFetch(`/admin/users/${userId}/metrics`, {
-        auth: true,
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ metric: metricKey, score: val }),
-      });
-      if (res.ok) {
-        onSaved({ score: val });
-        setEditing(false);
-      } else {
-        const json = await res.json().catch(() => ({}));
-        setSaveError((json as { error?: string }).error ?? "Failed to save");
-      }
-    } catch {
-      setSaveError("Network error");
-    }
-    setSaving(false);
-  };
-
-  return (
-    <Box>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
-        <Typography variant="body2" fontWeight={600}>
-          {METRIC_LABELS[metricKey] ?? metricKey}
-        </Typography>
-        {editing ? (
-          <Stack direction="row" alignItems="center" spacing={0.5}>
-            <TextField
-              inputRef={inputRef}
-              size="small"
-              type="number"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") { e.preventDefault(); void handleSave(); }
-                if (e.key === "Escape") handleCancel();
-              }}
-              inputProps={{ min: 0, max: 100, step: 0.01, style: { fontFamily: "monospace", fontSize: "0.8125rem", width: 72, textAlign: "right", padding: "4px 8px" } }}
-              disabled={saving}
-              error={!!saveError}
-            />
-            <IconButton size="small" onClick={() => void handleSave()} disabled={saving} color="success">
-              <CheckRoundedIcon sx={{ fontSize: 18 }} />
-            </IconButton>
-            <IconButton size="small" onClick={handleCancel} disabled={saving}>
-              <CloseRoundedIcon sx={{ fontSize: 18 }} />
-            </IconButton>
-            {saveError && (
-              <Typography variant="caption" color="error" sx={{ ml: 0.5 }}>{saveError}</Typography>
-            )}
-          </Stack>
-        ) : (
-          <Stack direction="row" alignItems="center" spacing={0.5}>
-            <Typography variant="body2" color="text.secondary" sx={{ fontFamily: "monospace", fontSize: "0.8125rem" }}>
-              {score.toFixed(2)} &middot; {signals} signal{signals !== 1 ? "s" : ""}
-            </Typography>
-            <IconButton size="small" onClick={handleEdit} sx={{ ml: 0.25, p: 0.25 }}>
-              <EditRoundedIcon sx={{ fontSize: 15, color: "text.secondary" }} />
-            </IconButton>
-          </Stack>
-        )}
-      </Stack>
-      <LinearProgress
-        variant="determinate"
-        value={Math.min(100, Math.max(0, editing ? (parseFloat(draft) || 0) : score))}
-        color={scoreColor(editing ? (parseFloat(draft) || 0) : score)}
-        sx={{ height: 8, borderRadius: 4 }}
-      />
-    </Box>
-  );
-}
-
 export default function AdminUserDiagnosticsClient() {
   const params = useParams();
   const router = useRouter();
@@ -518,10 +356,7 @@ export default function AdminUserDiagnosticsClient() {
     );
   }
 
-  const { user, metrics, preferences, attendanceIssues, conductReports, feedbackReceived, recentFeedback, planStats } = data;
-
-  const allMetrics = ["reliability", "sociability", "presentation", "hosting_skills", "match_quality"];
-  const metricMap = Object.fromEntries(metrics.map((m) => [m.metric, m]));
+  const { user, attendanceIssues, conductReports, planStats } = data;
 
   return (
     <Stack spacing={3}>
@@ -567,85 +402,11 @@ export default function AdminUserDiagnosticsClient() {
       {/* Recent activity (per-request log) */}
       <RecentActivitySection userId={userId} />
 
-      {/* Hidden Metrics */}
-      <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}>
-        <SectionTitle>Hidden Metric Scores</SectionTitle>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.5 }}>
-          Baseline is 50.00. Scores move based on feedback signals. Scores are never exposed to normal users.
-          Click the edit icon to adjust a score manually.
-        </Typography>
-        <Stack spacing={2}>
-          {allMetrics.map((key) => (
-            <EditableMetricRow
-              key={key}
-              metricKey={key}
-              metricRow={metricMap[key] ?? null}
-              userId={userId}
-              onSaved={(updated) => {
-                setData((prev) => {
-                  if (!prev) return prev;
-                  const existing = prev.metrics.find((m) => m.metric === key);
-                  if (existing) {
-                    return {
-                      ...prev,
-                      metrics: prev.metrics.map((m) =>
-                        m.metric === key ? { ...m, score: updated.score, updatedAt: new Date().toISOString() } : m,
-                      ),
-                    };
-                  }
-                  return {
-                    ...prev,
-                    metrics: [...prev.metrics, { metric: key, score: updated.score, signalCount: 0, updatedAt: new Date().toISOString() }],
-                  };
-                });
-              }}
-            />
-          ))}
-        </Stack>
-      </Paper>
-
-      {/* Chum Preferences */}
-      <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}>
-        <SectionTitle>Chum Preferences</SectionTitle>
-        {preferences ? (
-          <Stack spacing={1.5}>
-            {(["reliability", "sociability", "presentation", "hosting"] as const).map((key) => (
-              <Stack key={key} direction="row" spacing={1} alignItems="center">
-                <Typography variant="body2" fontWeight={600} sx={{ minWidth: 120 }}>
-                  {METRIC_LABELS[key === "hosting" ? "hosting_skills" : key === "presentation" ? "presentation" : key] ?? key}:
-                </Typography>
-                <Chip
-                  label={PREF_LABELS[preferences[key]] ?? preferences[key]}
-                  size="small"
-                  variant="outlined"
-                  color={preferences[key] === "required" ? "error" : preferences[key] === "important" ? "warning" : "default"}
-                />
-              </Stack>
-            ))}
-            <Stack direction="row" spacing={1} alignItems="center">
-              <Typography variant="body2" fontWeight={600} sx={{ minWidth: 120 }}>
-                Age range:
-              </Typography>
-              <Chip
-                label={preferences.ageYears == null ? "Any age" : `Within ${preferences.ageYears} years`}
-                size="small"
-                variant="outlined"
-              />
-            </Stack>
-            <Typography variant="caption" color="text.secondary">
-              Last updated: {formatDate(preferences.updatedAt)}
-            </Typography>
-          </Stack>
-        ) : (
-          <Typography variant="body2" color="text.secondary">No preferences saved (using defaults).</Typography>
-        )}
-      </Paper>
-
       {/* Attendance Issues */}
       <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}>
         <SectionTitle>Attendance Issue Reports (received)</SectionTitle>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.5 }}>
-          Detailed per-issue view with confidence, status, and admin controls. Reporter identity is shown for admin use only.
+          Host-recorded no-show records with status and admin controls. Reporter identity is shown for admin use only. Dismissing a record is the one action that restores the person&apos;s public &ldquo;Shows up&rdquo; credit.
         </Typography>
         {attendanceIssues.length > 0 ? (
           <TableContainer sx={{ maxHeight: 400 }}>
@@ -657,8 +418,6 @@ export default function AdminUserDiagnosticsClient() {
                   <TableCell sx={{ fontWeight: 600 }}>Type</TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>Reporter</TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>Host?</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 600 }}>Confidence</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 600 }}>Penalty</TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>Actions</TableCell>
                 </TableRow>
@@ -691,16 +450,6 @@ export default function AdminUserDiagnosticsClient() {
                     <TableCell>
                       {ai.isHostReport ? <Chip label="Host" size="small" color="info" variant="outlined" sx={{ fontSize: "0.7rem" }} /> : "-"}
                     </TableCell>
-                    <TableCell align="right">
-                      <Typography variant="body2" sx={{ fontFamily: "monospace", fontSize: "0.8125rem" }}>
-                        {ai.confidence.toFixed(2)}
-                      </Typography>
-                    </TableCell>
-                    <TableCell align="right">
-                      <Typography variant="body2" sx={{ fontFamily: "monospace", fontSize: "0.8125rem", color: "error.main" }}>
-                        {ai.appliedPenalty.toFixed(2)}
-                      </Typography>
-                    </TableCell>
                     <TableCell>
                       <Chip
                         label={ai.status}
@@ -732,7 +481,7 @@ export default function AdminUserDiagnosticsClient() {
                                     return {
                                       ...prev,
                                       attendanceIssues: prev.attendanceIssues.map((x) =>
-                                        x.id === ai.id ? { ...x, status: "dismissed", confidence: 0, appliedPenalty: 0 } : x,
+                                        x.id === ai.id ? { ...x, status: "dismissed" } : x,
                                       ),
                                     };
                                   });
@@ -761,7 +510,7 @@ export default function AdminUserDiagnosticsClient() {
                                     return {
                                       ...prev,
                                       attendanceIssues: prev.attendanceIssues.map((x) =>
-                                        x.id === ai.id ? { ...x, status: "confirmed", confidence: 1.0 } : x,
+                                        x.id === ai.id ? { ...x, status: "confirmed" } : x,
                                       ),
                                     };
                                   });
@@ -798,117 +547,6 @@ export default function AdminUserDiagnosticsClient() {
           </Stack>
         ) : (
           <Typography variant="body2" color="text.secondary">No conduct reports against this user.</Typography>
-        )}
-      </Paper>
-
-      {/* Feedback Summary */}
-      <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}>
-        <SectionTitle>Feedback Received (aggregated)</SectionTitle>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.5 }}>
-          Anonymized totals of how others have rated this user across all plans. Reporter identities are not shown.
-        </Typography>
-        {feedbackReceived.length > 0 ? (
-          <TableContainer>
-            <Table size="small">
-              <TableHead>
-                <TableRow sx={{ bgcolor: "grey.50" }}>
-                  <TableCell sx={{ fontWeight: 600 }}>Metric</TableCell>
-                  <TableCell align="center" sx={{ fontWeight: 600 }}>Yes</TableCell>
-                  <TableCell align="center" sx={{ fontWeight: 600 }}>Somewhat</TableCell>
-                  <TableCell align="center" sx={{ fontWeight: 600 }}>No</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {allMetrics.map((metric) => {
-                  const entries = feedbackReceived.filter((f) => f.prompt === metric);
-                  if (entries.length === 0) return null;
-                  const countByResponse = Object.fromEntries(entries.map((e) => [e.response, e.count]));
-                  return (
-                    <TableRow key={metric}>
-                      <TableCell>
-                        <Typography variant="body2" fontWeight={500}>
-                          {METRIC_LABELS[metric] ?? metric}
-                        </Typography>
-                      </TableCell>
-                      <TableCell align="center">
-                        <Typography variant="body2" sx={{ color: "success.main", fontWeight: 600 }}>
-                          {countByResponse.agree ?? 0}
-                        </Typography>
-                      </TableCell>
-                      <TableCell align="center">
-                        <Typography variant="body2" sx={{ color: "warning.main", fontWeight: 600 }}>
-                          {countByResponse.maybe ?? 0}
-                        </Typography>
-                      </TableCell>
-                      <TableCell align="center">
-                        <Typography variant="body2" sx={{ color: "error.main", fontWeight: 600 }}>
-                          {countByResponse.disagree ?? 0}
-                        </Typography>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        ) : (
-          <Typography variant="body2" color="text.secondary">No feedback received yet.</Typography>
-        )}
-      </Paper>
-
-      {/* Recent Feedback Timeline */}
-      <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}>
-        <SectionTitle>Recent Feedback Timeline</SectionTitle>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.5 }}>
-          Most recent 50 feedback signals received. Plan title and reporter identity are shown for context.
-        </Typography>
-        {recentFeedback.length > 0 ? (
-          <TableContainer sx={{ maxHeight: 400 }}>
-            <Table size="small" stickyHeader>
-              <TableHead>
-                <TableRow>
-                  <TableCell sx={{ fontWeight: 600 }}>Date</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>Plan</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>Reporter</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>Metric</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>Response</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {recentFeedback.map((f, i) => (
-                  <TableRow key={i}>
-                    <TableCell>
-                      <Typography variant="caption" color="text.secondary">{formatDate(f.createdAt)}</Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2" sx={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {f.planTitle}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2" sx={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {f.reporterLabel ?? "-"}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2">{METRIC_LABELS[f.prompt] ?? f.prompt}</Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Chip
-                        label={RESPONSE_LABELS[f.response] ?? f.response}
-                        size="small"
-                        color={f.response === "agree" ? "success" : f.response === "maybe" ? "warning" : "error"}
-                        variant="outlined"
-                        sx={{ fontSize: "0.75rem" }}
-                      />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        ) : (
-          <Typography variant="body2" color="text.secondary">No feedback received yet.</Typography>
         )}
       </Paper>
 
@@ -981,32 +619,18 @@ export default function AdminUserDiagnosticsClient() {
 
       <Divider />
 
-      {/* Score Explanation */}
+      {/* Attendance record reference */}
       <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2, bgcolor: "action.hover" }}>
-        <SectionTitle>Score Derivation Reference</SectionTitle>
+        <SectionTitle>Attendance Record Reference</SectionTitle>
         <Stack spacing={1.25}>
           <Typography variant="body2" sx={{ lineHeight: 1.6 }}>
-            <strong>Baseline:</strong> Every metric starts at <strong>50.00</strong> with 0 signals. This represents a neutral, unrated state.
+            <strong>Collection:</strong> Hosts record no-shows from their private post-plan check-in. Attendee-to-attendee reporting and the hidden metric scoring were removed in July 2026.
           </Typography>
           <Typography variant="body2" sx={{ lineHeight: 1.6 }}>
-            <strong>Feedback movement:</strong> Each feedback signal nudges the score toward a target using weighted averaging.
-            &ldquo;Yes&rdquo; targets 80, &ldquo;Somewhat&rdquo; targets 50, &ldquo;No&rdquo; targets 20.
-            The nudge size = (target &minus; current) &divide; (signal_count + 5), ensuring early signals have larger effect and later ones converge.
+            <strong>Public effect:</strong> The profile &ldquo;Shows up&rdquo; ratio counts committed plans without a non-dismissed no-show or very-late record. <strong>Dismissed</strong> is the only status that stops a record from counting; disputed and confirmed records still count.
           </Typography>
           <Typography variant="body2" sx={{ lineHeight: 1.6 }}>
-            <strong>Attendance issues (Reliability):</strong> Raw penalties: No-show = &minus;10, Very late = &minus;8, Late cancel = &minus;5.
-            Effective penalty = raw &times; confidence (host reports: 1.0, uncorroborated non-host: 0.75, disputed: 0.5, dismissed: 0, confirmed/corroborated: 1.0).
-          </Typography>
-          <Typography variant="body2" sx={{ lineHeight: 1.6 }}>
-            <strong>Hosting Skills:</strong> Only moves from feedback on plans the user hosted (the &ldquo;hosting_skills&rdquo; prompt).
-          </Typography>
-          <Divider sx={{ my: 1 }} />
-          <Typography variant="body2" fontWeight={600}>Tolerance thresholds:</Typography>
-          <Typography variant="body2" sx={{ lineHeight: 1.6 }}>
-            <strong>Open to anyone:</strong> No threshold applied, all users pass.<br />
-            <strong>Preferred:</strong> Score must be &ge; 35 (tolerates mild negative average).<br />
-            <strong>Important:</strong> Score must be &ge; 45 (tolerates only small negative average).<br />
-            <strong>Required:</strong> Score must be &ge; 55 (firm minimum, near-baseline or positive required).
+            <strong>Recourse:</strong> The reported person can dispute from the plan page, which flags the record for review here. Nobody is notified at any step.
           </Typography>
         </Stack>
       </Paper>

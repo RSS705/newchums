@@ -28,8 +28,6 @@ type UserImpact = {
   ownedCommunities: number;
   dmConversations: number;
   tokens: number;
-  feedbackRows: number;
-  metricsRows: number;
   notifications: number;
 };
 
@@ -40,7 +38,6 @@ type PlanImpact = {
   invites: number;
   altTimes: number;
   joinRequests: number;
-  feedbackRows: number;
   shoutouts: number;
   productEvents: number;
 };
@@ -75,8 +72,6 @@ const USER_IMPACT_LABELS: Array<[keyof UserImpact, string]> = [
   ["productEventsUser", "Funnel analytics rows (user)"],
   ["productEventsHostedPlans", "Funnel analytics rows (their plans)"],
   ["tokens", "Sign-in and verification tokens"],
-  ["feedbackRows", "Feedback rows (given or received)"],
-  ["metricsRows", "Metric rows"],
   ["notifications", "Notifications"],
 ];
 
@@ -87,7 +82,6 @@ const PLAN_IMPACT_LABELS: Array<[keyof PlanImpact, string]> = [
   ["invites", "Invites"],
   ["altTimes", "Alternate-time suggestions"],
   ["joinRequests", "Join requests"],
-  ["feedbackRows", "Feedback rows"],
   ["shoutouts", "Shout-outs"],
   ["productEvents", "Funnel analytics rows"],
 ];
