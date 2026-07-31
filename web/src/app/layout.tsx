@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Gabarito, Honk, Plus_Jakarta_Sans } from "next/font/google";
+import { Gabarito, Plus_Jakarta_Sans } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 import ThemeRegistry from "../theme/ThemeRegistry";
@@ -11,14 +11,10 @@ const plusJakarta = Plus_Jakarta_Sans({
   variable: "--font-plus-jakarta",
 });
 
-const honk = Honk({
-  subsets: ["latin"],
-  display: "swap",
-  variable: "--font-honk",
-});
-
 const gabarito = Gabarito({
-  weight: ["400", "600", "700"],
+  // 800 included for the h1 scale (page titles use fontWeight 800; without
+  // loading it the browser fakes the weight from 700).
+  weight: ["400", "600", "700", "800"],
   subsets: ["latin"],
   display: "swap",
   variable: "--font-gabarito",
@@ -104,7 +100,7 @@ export default function RootLayout({
           </>
         ) : null}
       </head>
-      <body className={`${plusJakarta.variable} ${honk.variable} ${gabarito.variable}`}>
+      <body className={`${plusJakarta.variable} ${gabarito.variable}`}>
         <ThemeRegistry>{children}</ThemeRegistry>
       </body>
     </html>

@@ -6,12 +6,18 @@ import type { ThemeOptions } from "@mui/material/styles";
  */
 export const typography: ThemeOptions["typography"] = {
   fontFamily: "var(--font-gabarito), system-ui, -apple-system, sans-serif",
+  // Bold sans, not the old Honk display face. Honk leaked onto every
+  // variant="h1" via this entry (landing hero, how-it-works,
+  // science-of-friendship, safety-center titles) where it read as
+  // unserious; the brand wordmark is a logo image and never used it. The
+  // sizes step down on small screens so the hero doesn't overflow.
   h1: {
-    fontFamily: "var(--font-honk), sans-serif",
-    fontWeight: 400,
-    fontSize: "4rem",
+    fontWeight: 800,
+    fontSize: "2.5rem",
     lineHeight: 1.15,
     letterSpacing: "-0.02em",
+    "@media (min-width:600px)": { fontSize: "3.25rem" },
+    "@media (min-width:900px)": { fontSize: "3.75rem" },
   },
   h2: {
     fontWeight: 600,
