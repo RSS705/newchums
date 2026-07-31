@@ -17,7 +17,7 @@ type PublicProfilePageClientProps = {
 
 type FetchState =
   | { status: "loading" }
-  | { status: "success"; user: PublicProfileUser; viewerCanMessage: boolean }
+  | { status: "success"; user: PublicProfileUser; viewerCanMessage: boolean; viewerHasBlocked: boolean }
   | { status: "not_found" }
   | { status: "error"; message?: string };
 
@@ -25,6 +25,7 @@ export default function PublicProfilePageClient({ handle, viewerHandle }: Public
   const [state, setState] = useState<FetchState>({ status: "loading" });
   const [saved, setSaved] = useState<boolean | null>(null);
   const [chumLoading, setChumLoading] = useState(false);
+  const [blockLoading, setBlockLoading] = useState(false);
 
   const fetchProfile = useCallback(async () => {
     if (!handle?.trim()) {
@@ -41,9 +42,10 @@ export default function PublicProfilePageClient({ handle, viewerHandle }: Public
         message?: string;
         user?: PublicProfileUser;
         viewerCanMessage?: boolean;
+        viewerHasBlocked?: boolean;
       };
       if (res.ok && data.ok && data.user) {
-        setState({ status: "success", user: data.user, viewerCanMessage: data.viewerCanMessage === true });
+        setState({ status: "success", user: data.user, viewerCanMessage: data.viewerCanMessage === true, viewerHasBlocked: data.viewerHasBlocked === true });
       } else if (res.status === 404 || data.error === "NOT_FOUND") {
         setState({ status: "not_found" });
       } else {
@@ -144,12 +146,37 @@ export default function PublicProfilePageClient({ handle, viewerHandle }: Public
         }
       : undefined;
 
+  // Block/Unblock from the profile itself: the reachability fix for the old
+  // gap where blocking was only possible inside an existing message thread.
+  // Refetches the profile afterwards so viewerCanMessage and the button state
+  // stay honest.
+  const blockAction =
+    viewerHandle && !isOwner && state.status === "success"
+      ? {
+          hasBlocked: state.viewerHasBlocked,
+          loading: blockLoading,
+          onToggle: async () => {
+            if (state.status !== "success") return;
+            setBlockLoading(true);
+            try {
+              await apiFetch(`/users/${state.user.userId}/block`, {
+                auth: true,
+                method: state.viewerHasBlocked ? "DELETE" : "POST",
+              });
+              await fetchProfile();
+            } catch { /* leave state as-is; the refetch is the source of truth */ }
+            setBlockLoading(false);
+          },
+        }
+      : undefined;
+
   return (
     <PublicProfileView
       user={state.user}
       avatarBaseUrl={getAvatarBaseUrl()}
       isOwner={isOwner}
       chumAction={chumAction}
+      blockAction={blockAction}
       viewerLoggedIn={!!viewerHandle}
       messageHref={!isOwner && state.viewerCanMessage ? `/inbox?to=${state.user.userId}` : null}
     />

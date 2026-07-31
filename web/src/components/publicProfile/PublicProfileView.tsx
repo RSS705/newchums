@@ -1,6 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import Box from "@mui/material/Box";
+import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogTitle from "@mui/material/DialogTitle";
+import BlockRoundedIcon from "@mui/icons-material/BlockRounded";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import Link from "next/link";
@@ -46,11 +52,21 @@ export type ChumAction = {
   onToggle: () => void;
 };
 
+/** Block/Unblock from the profile itself. This is the reachability fix for
+ *  the old gap where blocking was only possible from inside an existing
+ *  message thread; you can now block someone you have never messaged. */
+export type BlockAction = {
+  hasBlocked: boolean;
+  loading: boolean;
+  onToggle: () => void;
+};
+
 export type PublicProfileViewProps = {
   user: PublicProfileUser;
   avatarBaseUrl: string;
   isOwner?: boolean;
   chumAction?: ChumAction;
+  blockAction?: BlockAction;
   viewerLoggedIn?: boolean;
   /** When set, renders a "Message" button linking into the Inbox compose
    *  flow. Null/undefined hides the button (logged out, self, or the
@@ -62,10 +78,12 @@ export type PublicProfileViewProps = {
  * Shared public profile view. Renders modular sections; easy to add future
  * sections (XP, badges, trust metrics, unlockables) as separate components.
  */
-export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAction, viewerLoggedIn, messageHref }: PublicProfileViewProps) {
+export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAction, blockAction, viewerLoggedIn, messageHref }: PublicProfileViewProps) {
+  const [blockConfirmOpen, setBlockConfirmOpen] = useState(false);
   const cardBg = getProfileCardBg(user.profile_theme);
   const ownerHandleSlug = user.handle?.replace(/^@/, "") ?? null;
   return (
+    <>
     <Stack spacing={{ xs: 2.5, sm: 3 }} sx={{ width: "100%" }}>
       {/* Owner-only orientation banner. Non-owner viewers don't see a
           generic "Profile" page heading, the profile card itself is the
@@ -257,6 +275,29 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
                   Add to Chums
                 </Button>
               ))}
+              {blockAction && (
+                <Button
+                  variant="text"
+                  size="small"
+                  disabled={blockAction.loading}
+                  onClick={() => {
+                    if (blockAction.hasBlocked) blockAction.onToggle();
+                    else setBlockConfirmOpen(true);
+                  }}
+                  startIcon={<BlockRoundedIcon sx={{ fontSize: "1rem !important" }} />}
+                  sx={{
+                    textTransform: "none",
+                    fontWeight: 600,
+                    fontSize: "0.78rem",
+                    color: "text.disabled",
+                    backgroundColor: "transparent",
+                    alignSelf: { xs: "stretch", sm: "flex-end" },
+                    "&:hover": { bgcolor: "action.hover", color: "text.secondary" },
+                  }}
+                >
+                  {blockAction.loading ? "Working…" : blockAction.hasBlocked ? "Unblock" : "Block"}
+                </Button>
+              )}
             </Stack>
           )}
         </Box>
@@ -397,5 +438,30 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
 
       {/* TODO: Future sections, XP, badges, trust metrics, unlockables, add as separate components. */}
     </Stack>
+
+      <Dialog open={blockConfirmOpen} onClose={() => setBlockConfirmOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 700 }}>Block {user.displayName}?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            You&apos;ll stop seeing each other on NewChums: no messages, no invites, no RSVPs to
+            each other&apos;s plans. They won&apos;t be told they&apos;ve been blocked. You can
+            unblock them any time from here or from Settings.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setBlockConfirmOpen(false)} sx={{ textTransform: "none", fontWeight: 600 }} variant="text">
+            Cancel
+          </Button>
+          <Button
+            onClick={() => { setBlockConfirmOpen(false); blockAction?.onToggle(); }}
+            color="error"
+            variant="contained"
+            sx={{ textTransform: "none", fontWeight: 600 }}
+          >
+            Block
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </>
   );
 }

@@ -328,7 +328,7 @@ export default function InboxClient() {
     setBlockConfirmOpen(false);
     const res = await apiFetch(`/users/${activeOther.userId}/block`, { auth: true, method: "POST" }).catch(() => null);
     if (res?.ok) {
-      toast.success(`${displayNameOf(activeOther)} blocked. They can no longer message you.`);
+      toast.success(`${displayNameOf(activeOther)} blocked.`);
       if (activeConversationId) loadThread(activeConversationId, true);
     } else {
       toast.error("Something went wrong. Please try again.");
@@ -737,8 +737,9 @@ export default function InboxClient() {
         <DialogTitle sx={{ fontWeight: 700 }}>Block {activeOther ? displayNameOf(activeOther) : "this user"}?</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary">
-            Neither of you will be able to message the other. They won&apos;t be told they&apos;ve been blocked.
-            You can unblock them any time from this conversation or from Settings.
+            You&apos;ll stop seeing each other on NewChums: no messages, no invites, no RSVPs to
+            each other&apos;s plans. They won&apos;t be told they&apos;ve been blocked. You can
+            unblock them any time from their profile or from Settings.
           </Typography>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>

@@ -688,8 +688,9 @@ export default function SettingsClient() {
               Blocked users
             </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1.25, lineHeight: 1.45 }}>
-              Blocked people can&apos;t message you, and you can&apos;t message them. They aren&apos;t
-              told they&apos;ve been blocked.
+              You and the people you block stop seeing each other on NewChums: no messages, no
+              invites, no RSVPs to each other&apos;s plans, and each other&apos;s plans and
+              shout-outs are hidden. They aren&apos;t told they&apos;ve been blocked.
             </Typography>
             {blockedUsers.length === 0 ? (
               <Typography variant="body2" color="text.disabled">

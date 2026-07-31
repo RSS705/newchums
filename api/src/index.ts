@@ -464,10 +464,20 @@ app.get("/public/users/:handle", async (c) => {
     // targets, blocked pairs, and privacy-denied new conversations; an
     // existing conversation always allows (replies bypass dm_privacy).
     let viewerCanMessage = false;
+    // One-directional: has the VIEWER blocked this profile? Powers the
+    // profile's Block/Unblock control. Never expose the reverse direction.
+    let viewerHasBlocked = false;
     if (viewerAuthenticated && authPayload?.email && !user.is_suspended) {
       try {
         const viewerId = await ensureAppUserId(sql, authPayload.email, (authPayload as { name?: string | null }).name);
-        if (viewerId !== user.id && !(await dmPairBlocked(sql, viewerId, user.id))) {
+        if (viewerId !== user.id) {
+          const ownBlock = (await sql`
+            SELECT 1 FROM newchums.user_blocks
+            WHERE blocker_user_id = ${viewerId} AND blocked_user_id = ${user.id} LIMIT 1
+          `) as unknown[];
+          viewerHasBlocked = ownBlock.length > 0;
+        }
+        if (viewerId !== user.id && !(await pairBlocked(sql, viewerId, user.id))) {
           const [pairA, pairB] = dmPair(viewerId, user.id);
           const existing = (await sql`
             SELECT 1 FROM newchums.dm_conversations WHERE user_a = ${pairA} AND user_b = ${pairB} LIMIT 1
@@ -484,6 +494,7 @@ app.get("/public/users/:handle", async (c) => {
     return c.json({
       ok: true,
       viewerCanMessage,
+      viewerHasBlocked,
       user: {
         userId: user.id,
         displayName,
@@ -567,6 +578,15 @@ app.get("/public/users/:handle/shoutouts", async (c) => {
       JOIN newchums.events e ON e.id = s.plan_id
       JOIN newchums.users u ON u.id = s.sender_user_id
       WHERE s.recipient_user_id = ${target.id} AND s.status = 'approved'
+        -- Blocked pairs: a shout-out authored by someone the profile owner
+        -- has blocked (or who blocked them) disappears from the profile for
+        -- every viewer, including anonymous ones, since both identities are
+        -- in the row itself.
+        AND NOT EXISTS (
+          SELECT 1 FROM newchums.user_blocks b
+          WHERE (b.blocker_user_id = s.sender_user_id AND b.blocked_user_id = s.recipient_user_id)
+             OR (b.blocker_user_id = s.recipient_user_id AND b.blocked_user_id = s.sender_user_id)
+        )
       ORDER BY COALESCE(s.reviewed_at, s.created_at) DESC
       LIMIT 100
     `) as Array<{
@@ -587,7 +607,23 @@ app.get("/public/users/:handle/shoutouts", async (c) => {
     // visible. Owners see everything so they can re-show rows they previously
     // hid; the per-item flag is surfaced to the client so it can render the
     // dimmed state and the toggle label.
-    const visibleRows = isOwner ? rows : rows.filter((r) => !r.hidden_by_recipient);
+    let visibleRows = isOwner ? rows : rows.filter((r) => !r.hidden_by_recipient);
+
+    // Viewer-side block filter: an authenticated viewer never sees cards
+    // authored by someone in a blocked pair with them. Anonymous viewers
+    // cannot be filtered this way (no identity); that gap is inherent to
+    // public pages and deliberate.
+    if (viewerUserId && !isOwner && visibleRows.length > 0) {
+      const senderIds = [...new Set(visibleRows.map((r) => r.sender_user_id))];
+      const blockedSenders = (await sql`
+        SELECT CASE WHEN b.blocker_user_id = ${viewerUserId} THEN b.blocked_user_id ELSE b.blocker_user_id END AS other_id
+        FROM newchums.user_blocks b
+        WHERE (b.blocker_user_id = ${viewerUserId} AND b.blocked_user_id = ANY(${senderIds}::uuid[]))
+           OR (b.blocked_user_id = ${viewerUserId} AND b.blocker_user_id = ANY(${senderIds}::uuid[]))
+      `) as { other_id: string }[];
+      const blockedSet = new Set(blockedSenders.map((r) => r.other_id));
+      visibleRows = visibleRows.filter((r) => !blockedSet.has(r.sender_user_id));
+    }
 
     return c.json({
       ok: true,
@@ -7133,7 +7169,13 @@ app.get("/chums/search", async (c) => {
         is_saved: boolean;
       }[];
       const match = rows[0];
-      if (!match || match.is_hidden || match.is_suspended) {
+      // A blocked pair takes the same branch as unknown/hidden/suspended so
+      // the response is indistinguishable. NOTE: dropping the row from the
+      // SELECT instead would fall through to inviteEligible:true and offer to
+      // email-invite the blocked person; the invite loop would then silently
+      // skip it, but the offer itself would be wrong.
+      const emailPairBlocked = match ? await pairBlocked(sql, appUserId, match.id) : false;
+      if (!match || match.is_hidden || match.is_suspended || emailPairBlocked) {
         const inviteRows = (await sql`
           SELECT 1 FROM newchums.chum_invites
           WHERE inviter_user_id = ${appUserId}
@@ -7180,6 +7222,11 @@ app.get("/chums/search", async (c) => {
         AND u.username IS NOT NULL
         AND COALESCE(u.is_hidden_from_search, false) = false
         AND COALESCE(u.is_suspended, false) = false
+        AND NOT EXISTS (
+          SELECT 1 FROM newchums.user_blocks b
+          WHERE (b.blocker_user_id = ${appUserId} AND b.blocked_user_id = u.id)
+             OR (b.blocker_user_id = u.id AND b.blocked_user_id = ${appUserId})
+        )
         AND (
           BTRIM(COALESCE(u.name, '')) ILIKE ${likePattern}
           OR COALESCE(u.username, '') ILIKE ${likePattern}
@@ -7578,8 +7625,12 @@ function dmSnippet(text: string, max = DM_SNIPPET_LENGTH): string {
   return oneLine.length > max ? `${oneLine.slice(0, max)}...` : oneLine;
 }
 
-/** A block in either direction kills messaging entirely. */
-async function dmPairBlocked(sql: ReturnType<typeof getSql>, u1: string, u2: string): Promise<boolean> {
+/** A block in either direction. Originally DM-only; since July 2026 it gates
+ *  every direct-interaction surface: feeds and the digest, plan detail, RSVP
+ *  and join requests, invites, notifications, people search, and shout-outs.
+ *  Blocks are never disclosed: every refusal reuses the route's ordinary
+ *  refusal shape and every skipped recipient folds into an existing counter. */
+async function pairBlocked(sql: ReturnType<typeof getSql>, u1: string, u2: string): Promise<boolean> {
   const rows = (await sql`
     SELECT 1 FROM newchums.user_blocks
     WHERE (blocker_user_id = ${u1} AND blocked_user_id = ${u2})
@@ -7739,7 +7790,7 @@ app.get("/inbox", async (c) => {
         const existing = (await sql`
           SELECT id FROM newchums.dm_conversations WHERE user_a = ${pairA} AND user_b = ${pairB} LIMIT 1
         `) as { id: string }[];
-        const blocked = await dmPairBlocked(sql, appUserId, target.id);
+        const blocked = await pairBlocked(sql, appUserId, target.id);
         const canMessage =
           !target.is_suspended &&
           !blocked &&
@@ -8009,7 +8060,7 @@ app.post("/inbox/send", async (c) => {
     const notAllowed = () =>
       c.json({ ok: false, error: "NOT_ALLOWED", message: "This person isn't accepting new messages right now." }, 403);
     if (!recipient || recipient.is_suspended) return notAllowed();
-    if (await dmPairBlocked(sql, appUserId, recipient.id)) return notAllowed();
+    if (await pairBlocked(sql, appUserId, recipient.id)) return notAllowed();
 
     const [pairA, pairB] = dmPair(appUserId, recipient.id);
     const existingRows = (await sql`
@@ -8289,6 +8340,17 @@ app.get("/notifications", async (c) => {
       FROM newchums.notifications n
       LEFT JOIN newchums.users u ON u.id = n.actor_user_id
       WHERE n.user_id = ${appUserId}
+        -- Blocked pairs: hide historical and stray notifications from a
+        -- blocked actor. actor_user_id IS NULL means a system notification
+        -- (e.g. confirmation_requested) and is always delivered.
+        AND (
+          n.actor_user_id IS NULL
+          OR NOT EXISTS (
+            SELECT 1 FROM newchums.user_blocks b
+            WHERE (b.blocker_user_id = ${appUserId} AND b.blocked_user_id = n.actor_user_id)
+               OR (b.blocker_user_id = n.actor_user_id AND b.blocked_user_id = ${appUserId})
+          )
+        )
       ORDER BY n.created_at DESC
       LIMIT 50
     `) as {
@@ -10337,6 +10399,11 @@ app.get("/communities/:id/events", async (c) => {
             )
           ))
         )
+        ${userId ? sql`AND NOT EXISTS (
+          SELECT 1 FROM newchums.user_blocks b_feed
+          WHERE (b_feed.blocker_user_id = ${userId} AND b_feed.blocked_user_id = e.host_user_id)
+             OR (b_feed.blocker_user_id = e.host_user_id AND b_feed.blocked_user_id = ${userId})
+        )` : sql``}
       ORDER BY ${orderClause}
       LIMIT ${limit} OFFSET ${offset}
     `) as Record<string, unknown>[];
@@ -11919,6 +11986,11 @@ app.post("/events", async (c) => {
           }
         }
 
+        // Blocked pairs: silently skip, same idiom as the QA guard above.
+        // This response carries no counters at all, so a skipped invitee is
+        // inherently indistinguishable. The host is the inviter here.
+        if (invUserId && (await pairBlocked(sql, userId, invUserId))) continue;
+
         try {
           await sql`
             INSERT INTO newchums.event_invites (event_id, user_id, email, invited_by)
@@ -11984,6 +12056,10 @@ app.post("/events", async (c) => {
             invEmail = null;
           }
         }
+        // Blocked pairs: same silent skip as the published branch. Without
+        // this, a blocked user lands on the draft's invite list and becomes
+        // visible in GET /events/:id's invites array when the plan publishes.
+        if (invUserId && (await pairBlocked(sql, userId, invUserId))) continue;
         try {
           await sql`
             INSERT INTO newchums.event_invites (event_id, user_id, email, invited_by)
@@ -12607,6 +12683,16 @@ app.get("/events/explore", async (c) => {
             WHERE er_inv2.event_id = e.id AND er_inv2.user_id = ${userId}
           ))
         )
+        -- Blocked pairs: plans hosted by someone the viewer has blocked (or
+        -- who blocked the viewer) never surface. Undisclosed by design; the
+        -- feed just gets shorter. The anonymous feeds
+        -- (GET /events/explore/public, GET /events/recently-happened/public)
+        -- have no viewer identity, so they cannot and do not apply this.
+        AND NOT EXISTS (
+          SELECT 1 FROM newchums.user_blocks b_feed
+          WHERE (b_feed.blocker_user_id = ${userId} AND b_feed.blocked_user_id = e.host_user_id)
+             OR (b_feed.blocker_user_id = e.host_user_id AND b_feed.blocked_user_id = ${userId})
+        )
         ${hobbySlug ? sql`AND EXISTS (
           SELECT 1 FROM newchums.interests ii_pick
           WHERE ii_pick.slug = ${hobbySlug} AND ii_pick.is_deleted = false
@@ -12955,6 +13041,22 @@ app.get("/events/:id", async (c) => {
     if (event.is_qa && !tokenGrantsAccess) {
       if (!userId) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
       if (!viewerIsSuperAdmin) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    }
+
+    // Blocked pairs: a plan hosted by someone in a blocked pair with the
+    // authenticated viewer answers with the same existence-hiding 404 the QA
+    // and draft gates use, so the refusal is indistinguishable from the plan
+    // not existing. This is a deliberate July 2026 exception to the
+    // "visibility governs discoverability, not URL access" rule below: two
+    // people who blocked each other stop encountering each other, and that
+    // includes each other's plan pages. Limits, also deliberate: anonymous
+    // viewers and anonymous share-token holders carry no identity to check
+    // (same gap as the anonymous feeds), and super admins are exempt for
+    // moderation access.
+    if (userId && !viewerIsSuperAdmin && event.host_user_id !== userId) {
+      if (await pairBlocked(sql, userId, event.host_user_id as string)) {
+        return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+      }
     }
 
     const isHost = userId && event.host_user_id === userId;
@@ -13347,6 +13449,12 @@ app.get("/events/:id", async (c) => {
       },
       // Non-attending viewers (authenticated, invite) see handles instead of real names
       // to protect user privacy. Attending viewers (host, RSVP'd) see real names.
+      //
+      // Deliberately NOT block-filtered: on a plan hosted by a third party,
+      // two people who blocked each other still appear on the same roster.
+      // Both were invited by someone else and headcounts must stay honest;
+      // the block's job is to stop the two interacting directly, not to
+      // falsify a third party's attendee list.
       rsvps: rsvps.map((r) => {
         const rHandle = r.username?.replace(/^@/, "") ?? null;
         const nameHidden = r.hide_name === true;
@@ -13498,6 +13606,13 @@ app.post("/events/:id/rsvp", async (c) => {
           return c.json({ ok: false, error: "NOT_FOUND" }, 404);
         }
       }
+    }
+
+    // Blocked pairs: mirror the plan-detail gate with the same
+    // existence-hiding NOT_FOUND used for QA plans, so an RSVP attempt by a
+    // blocked counterpart is indistinguishable from the plan not existing.
+    if (event.host_user_id !== userId && (await pairBlocked(sql, userId, event.host_user_id))) {
+      return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     }
 
     if (event.host_user_id === userId) return c.json({ ok: false, error: "VALIDATION", message: "Hosts cannot RSVP to their own event" }, 400);
@@ -13886,6 +14001,8 @@ app.post("/events/:id/alt-time", async (c) => {
     if (participants.length > 0) {
       const meta = JSON.stringify({ eventTitle: ev[0].title, suggestedAt: suggestedDate.toISOString() });
       for (const p of participants) {
+        // Blocked pairs: skip the notification, matching the chat fan-out.
+        if (await pairBlocked(sql, userId, p.id)) continue;
         await sql`
           INSERT INTO newchums.notifications (user_id, type, actor_user_id, entity_id, metadata)
           VALUES (${p.id}, 'event_alt_time', ${userId}, ${eventId}, ${meta})
@@ -15069,6 +15186,31 @@ app.post("/events/:id/invite", async (c) => {
         }
       }
 
+      // Blocked pairs: a registered invitee in a blocked pair with either
+      // the inviter or the plan's host is silently skipped, folded into the
+      // existing alreadyInvited counter (constraint: never a new,
+      // distinguishable skip reason). Runs after the email->user resolution
+      // above, so raw email addresses of registered users are covered; an
+      // email-only invite to an unregistered address has no user to check.
+      if (invUserId) {
+        const blockedPair = (await sql`
+          SELECT 1 FROM newchums.user_blocks b
+          WHERE (b.blocker_user_id = ${userId} AND b.blocked_user_id = ${invUserId})
+             OR (b.blocker_user_id = ${invUserId} AND b.blocked_user_id = ${userId})
+             OR EXISTS (
+               SELECT 1 FROM newchums.events e2
+               WHERE e2.id = ${eventId}
+                 AND ((b.blocker_user_id = e2.host_user_id AND b.blocked_user_id = ${invUserId})
+                   OR (b.blocker_user_id = ${invUserId} AND b.blocked_user_id = e2.host_user_id))
+             )
+          LIMIT 1
+        `) as unknown[];
+        if (blockedPair.length > 0) {
+          alreadyInvited++;
+          continue;
+        }
+      }
+
       // Cross-key duplicate check before insert. The partial unique indexes
       // in migration 024 only catch dups within a single identity column;
       // they miss the case where the existing row uses one identity and the
@@ -15419,6 +15561,12 @@ app.post("/events/:id/chat", async (c) => {
           const notifyMetadata = JSON.stringify({ eventTitle, senderName, preview });
 
           for (const r of recipients) {
+            // Blocked pairs: no notification and no email from a blocked
+            // counterpart. The message stays visible in the shared plan chat
+            // itself, same posture as the roster: a shared third-party space
+            // is not falsified, but the product never pushes the two at each
+            // other.
+            if (await pairBlocked(sql, userId, r.id)) continue;
             // In-app notification: always created (never rate-limited).
             try {
               await sql`
@@ -15621,6 +15769,12 @@ app.post("/events/:id/join-request", async (c) => {
     if (ev.length === 0 || ev[0].status !== "published")
       return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     const event = ev[0];
+
+    // Blocked pairs: same existence-hiding 404 this route already returns
+    // for missing or unpublished plans.
+    if (event.host_user_id !== userId && (await pairBlocked(sql, userId, event.host_user_id))) {
+      return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    }
 
     if (event.host_user_id === userId)
       return c.json({ ok: false, error: "VALIDATION", message: "Hosts cannot request to join their own plan" }, 400);
@@ -16041,6 +16195,22 @@ app.get("/events/:id/wrap-up", async (c) => {
         };
       });
 
+    // Blocked pairs never appear in each other's wrap-up list (thank-you
+    // targets and the host check-in alike). This is an interaction picker,
+    // not a headcount, so it is deliberately different from the plan-page
+    // roster, which stays complete on third-party plans. A host who blocked
+    // an attendee forfeits that one attendance record rather than being
+    // handed an interaction surface for them.
+    const attendeeIds = otherAttendees.map((a) => a.userId);
+    const blockedRows = attendeeIds.length > 0 ? (await sql`
+      SELECT CASE WHEN b.blocker_user_id = ${userId} THEN b.blocked_user_id ELSE b.blocker_user_id END AS other_id
+      FROM newchums.user_blocks b
+      WHERE (b.blocker_user_id = ${userId} AND b.blocked_user_id = ANY(${attendeeIds}::uuid[]))
+         OR (b.blocked_user_id = ${userId} AND b.blocker_user_id = ANY(${attendeeIds}::uuid[]))
+    `) as { other_id: string }[] : [];
+    const blockedSet = new Set(blockedRows.map((r) => r.other_id));
+    const visibleAttendees = otherAttendees.filter((a) => !blockedSet.has(a.userId));
+
     // The viewer's own attendance reports on this plan (prefills the host
     // check-in; empty for non-hosts since collection is host-only now).
     const myReports = (await sql`
@@ -16070,7 +16240,7 @@ app.get("/events/:id/wrap-up", async (c) => {
     return c.json({
       ok: true,
       viewerIsHost: isHost,
-      attendees: otherAttendees,
+      attendees: visibleAttendees,
       issuesAgainstMe: issuesAgainstMe.map((i) => ({
         id: i.id,
         issueType: i.issue_type,
@@ -16380,6 +16550,11 @@ app.post("/events/:id/shoutout", async (c) => {
     if (!(await isParticipant(userId))) return c.json({ ok: false, error: "NOT_PARTICIPANT" }, 403);
     if (!(await isParticipant(recipientUserId))) return c.json({ ok: false, error: "RECIPIENT_NOT_PARTICIPANT" }, 400);
 
+    // Blocked pairs: reuse RECIPIENT_NOT_PARTICIPANT, the ordinary refusal
+    // for an invalid target on this route, so nothing hints at a block.
+    if (await pairBlocked(sql, userId, recipientUserId))
+      return c.json({ ok: false, error: "RECIPIENT_NOT_PARTICIPANT" }, 400);
+
     // Upsert: only allow editing while still pending. ON CONFLICT updates the
     // row in place if a previous draft exists, but the WHERE clause keeps the
     // moderated state untouchable.
@@ -16550,6 +16725,13 @@ app.post("/admin/shoutouts/:id/status", async (c) => {
 
     if (newStatus === "approved") {
       const row = updated[0];
+      // Blocked pairs: approval stands (moderation is independent), but the
+      // recipient gets no notification from a blocked counterpart; the
+      // public read filter hides the card itself for as long as the block
+      // lasts.
+      if (await pairBlocked(sql, row.sender_user_id, row.recipient_user_id)) {
+        return c.json({ ok: true, status: newStatus });
+      }
       const planRows = (await sql`
         SELECT title FROM newchums.events WHERE id = ${row.plan_id} LIMIT 1
       `) as { title: string }[];
@@ -18498,6 +18680,15 @@ async function processEventMatchDigest(
   // The Explore query additionally allows an RSVP-bypass branch; the digest
   // omits that because it separately suppresses any plan the recipient
   // already has an RSVP on.
+  // Blocked pairs never receive each other's plans in the digest. Same
+  // undisclosed posture as the feeds; a recipient whose only candidate was a
+  // blocked host folds into the existing skippedEmpty counter.
+  const blockGate = sql`NOT EXISTS (
+    SELECT 1 FROM newchums.user_blocks b_digest
+    WHERE (b_digest.blocker_user_id = eu.user_id AND b_digest.blocked_user_id = e.host_user_id)
+       OR (b_digest.blocker_user_id = e.host_user_id AND b_digest.blocked_user_id = eu.user_id)
+  )`;
+
   const membersOnlyGate = sql`(
     COALESCE(e.hide_from_explore, false) = false
     OR EXISTS (
@@ -18610,6 +18801,7 @@ async function processEventMatchDigest(
           )
           -- Community members-only gate (see membersOnlyGate above).
           AND ${membersOnlyGate}
+          AND ${blockGate}
           AND 6371 * acos(
             LEAST(1.0, GREATEST(-1.0,
               cos(radians(eu.home_lat)) * cos(radians(e.location_lat)) *
@@ -18662,6 +18854,7 @@ async function processEventMatchDigest(
           )
           -- Community members-only gate (see membersOnlyGate above).
           AND ${membersOnlyGate}
+          AND ${blockGate}
           AND 6371 * acos(
             LEAST(1.0, GREATEST(-1.0,
               cos(radians(eu.home_lat)) * cos(radians(e.location_lat)) *
