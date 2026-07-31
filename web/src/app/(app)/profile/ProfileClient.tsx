@@ -1001,7 +1001,6 @@ export default function ProfileClient() {
         </Stack>
       </AppCard>
 
-      {/* Chum preferences */}
 
       {/* Attendance record */}
       {profile?.userId && (
