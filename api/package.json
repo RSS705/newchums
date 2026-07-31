@@ -6,7 +6,8 @@
     "dev": "wrangler dev --remote",
     "deploy": "wrangler deploy --env=\"\"",
     "deploy:production": "wrangler deploy --env production",
-    "test": "vitest run"
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [],
   "author": "",
@@ -23,6 +24,7 @@
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/mustache": "^4.2.6",
+    "typescript": "^7.0.2",
     "vitest": "^2.1.9",
     "wrangler": "^4.86.0"
   }

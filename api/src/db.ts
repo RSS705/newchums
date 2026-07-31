@@ -2,7 +2,9 @@ import { neon } from "@neondatabase/serverless";
 
 export type Bindings = {
   DATABASE_URL: string;
-  NEXTAUTH_SECRET?: string; // Required for auth routes (profile, user/username, user/date-of-birth)
+  // Required in every environment (wrangler's generated worker-configuration.d.ts
+  // declares it non-optional); the worker cannot mint or verify a token without it.
+  NEXTAUTH_SECRET: string;
   MEDIA_BUCKET?: R2Bucket; // R2 bucket for media (avatars, etc.)
   CHAT_ROOM: DurableObjectNamespace;
   /** Optional KV for contact form rate limiting (5 per 10 min per IP). If unset, rate limit is skipped. */

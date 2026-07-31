@@ -59,7 +59,10 @@ export async function verifyAuthToken(
 }
 
 export function getBearerToken(
-  req: Request | { header?: (name: string) => string | undefined; headers?: Headers }
+  // Accepts both a Hono request (has .header()) and a global Request (has
+  // .headers). Spelled as one object shape rather than a union with Request,
+  // because on the union neither property is readable without narrowing.
+  req: { header?: (name: string) => string | undefined; headers?: Headers },
 ): string | null {
   const auth =
     typeof req.header === "function"

@@ -5,7 +5,10 @@
 
 import { BANNED_TERMS } from "../data/bannedTerms";
 
-export type ContentField = "display_name" | "username" | "hobby";
+/** Fields that get a tailored rejection message. "title" is included because
+ *  plan/community titles are validated too; it intentionally falls through to
+ *  the generic message below. */
+export type ContentField = "display_name" | "username" | "hobby" | "title";
 
 const BANNED_SET = new Set(BANNED_TERMS);
 

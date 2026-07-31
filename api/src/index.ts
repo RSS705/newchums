@@ -1,6 +1,7 @@
 import * as Sentry from "@sentry/cloudflare";
 import { compareSync, hashSync } from "bcryptjs";
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { inspectRoutes } from "hono/dev";
 import { isAtLeast18, parseDateOnly } from "./ageValidation";
 import { SignJWT, jwtVerify } from "jose";
@@ -958,7 +959,7 @@ app.onError((err, c) => {
 app.get("/db/ping", async (c) => {
   try {
     const sql = getSql(c.env);
-    const rows = await sql<{ now: string }[]>`select now() as now`;
+    const rows = (await sql`select now() as now`) as { now: string }[];
     const now = rows[0]?.now ?? null;
     return c.json({ ok: true, now });
   } catch (err) {
@@ -971,13 +972,13 @@ app.get("/db/ping", async (c) => {
 app.get("/db/postgis", async (c) => {
   try {
     const sql = getSql(c.env);
-    const rows = await sql<{ meters: number | string }[]>`
+    const rows = (await sql`
       select
         st_distance(
           st_makepoint(0, 0)::geography,
           st_makepoint(0, 1)::geography
         ) as meters
-    `;
+    `) as { meters: number | string }[];
     const rawMeters = rows[0]?.meters ?? 0;
     const meters =
       typeof rawMeters === "number" ? rawMeters : Number.parseFloat(rawMeters);
@@ -2709,7 +2710,8 @@ app.delete("/account", async (c) => {
     return c.json({ ok: false, error: "USER_NOT_FOUND" }, 404);
   }
 
-  const hasPassword = user.password_hash != null && user.password_hash.length > 0;
+  const passwordHash = user.password_hash;
+  const hasPassword = passwordHash != null && passwordHash.length > 0;
   if (hasPassword) {
     let body: { password?: string } = {};
     try {
@@ -2725,7 +2727,7 @@ app.delete("/account", async (c) => {
         400,
       );
     }
-    const match = compareSync(password, user.password_hash);
+    const match = compareSync(password, passwordHash);
     if (!match) {
       return c.json(
         { ok: false, error: "INVALID_PASSWORD", code: "INVALID_PASSWORD", message: "Incorrect password." },
@@ -2940,7 +2942,20 @@ app.post("/contact", async (c) => {
   }
 });
 
-async function requireAuth(c: { req: Request; env: Bindings }) {
+/**
+ * What the auth helpers actually need: something whose `req` can be read for
+ * headers, plus the env bindings. Hono's Context satisfies this (its `req` is
+ * a HonoRequest, not the global Cloudflare Request), which is why the old
+ * `{ req: Request }` annotation rejected every real call site once the
+ * package was first typechecked. Derived from getBearerToken's own parameter
+ * so the two can never drift apart.
+ */
+type AuthCapableContext = {
+  req: Parameters<typeof getBearerToken>[0];
+  env: Bindings;
+};
+
+async function requireAuth(c: AuthCapableContext) {
   const token = getBearerToken(c.req);
   if (!token || !c.env.NEXTAUTH_SECRET) {
     return null;
@@ -3690,7 +3705,7 @@ app.put("/profile", async (c) => {
             email_new_events = EXCLUDED.email_new_events,
             bio = EXCLUDED.bio
         `;
-    const txQueries: unknown[] = [upsertQuery];
+    const txQueries = [upsertQuery];
     if ("name" in body && body.name !== undefined) {
       const nameVal = body.name != null && String(body.name).trim() !== "" ? String(body.name).trim() : null;
       txQueries.push(sql`UPDATE newchums.users SET name = ${nameVal} WHERE id = ${appUserId}`);
@@ -4446,134 +4461,6 @@ app.post("/user/date-of-birth", async (c) => {
 // NOTE: Legacy POST /events (unqualified "events" table with creator_id) removed.
 // Use the auth-protected POST /events below (newchums.events with host_user_id). See migration 024.
 
-app.post("/dev/users", async (c) => {
-  try {
-    const body = await c.req.json<{
-      email?: string;
-      name?: string;
-      password_hash?: string | null;
-    }>();
-
-    if (!body.email) {
-      return c.json({ ok: false, error: "email is required" }, 400);
-    }
-
-    const sql = getSql(c.env);
-    const columns: string[] = ["email", "name"];
-    const params: Array<string | number | boolean | null> = [
-      body.email,
-      body.name ?? null,
-    ];
-
-    if (body.password_hash !== undefined) {
-      columns.push("password_hash");
-      params.push(body.password_hash ?? null);
-    }
-
-    const placeholders = columns.map((_, i) => `$${i + 1}`).join(", ");
-    const query = `
-      insert into newchums.users (${columns.join(", ")})
-      values (${placeholders})
-      returning ${DEV_USER_RETURN_COLUMNS}
-    `;
-
-    const rows = await sql.query(query, params);
-    return c.json({ ok: true, user: rows[0] ?? null }, 201);
-  } catch (err) {
-    console.error(err);
-    const message = err instanceof Error ? err.message : "Unknown error";
-    return c.json({ ok: false, error: message }, 500);
-  }
-});
-
-app.get("/dev/users/:id", async (c) => {
-  try {
-    const id = c.req.param("id");
-    const sql = getSql(c.env);
-    const rows = await sql.query(
-      `select ${DEV_USER_RETURN_COLUMNS} from newchums.users where id = $1`,
-      [id],
-    );
-
-    if (rows.length === 0) {
-      return c.json({ ok: false, error: "User not found" }, 404);
-    }
-
-    return c.json({ ok: true, user: rows[0] });
-  } catch (err) {
-    console.error(err);
-    const message = err instanceof Error ? err.message : "Unknown error";
-    return c.json({ ok: false, error: message }, 500);
-  }
-});
-
-app.patch("/dev/users/:id", async (c) => {
-  try {
-    const id = c.req.param("id");
-    const body = await c.req.json<{
-      name?: string;
-      password_hash?: string | null;
-    }>();
-
-    const updates: Array<{ column: string; value: unknown }> = [];
-    if (body.name !== undefined)
-      updates.push({ column: "name", value: body.name });
-    if (body.password_hash !== undefined) {
-      updates.push({ column: "password_hash", value: body.password_hash });
-    }
-
-    if (updates.length === 0) {
-      return c.json({ ok: false, error: "No valid fields to update" }, 400);
-    }
-
-    const setClauses = updates.map(
-      (update, i) => `${update.column} = $${i + 1}`,
-    );
-    const params = updates.map((update) => update.value);
-    params.push(id);
-
-    const sql = getSql(c.env);
-    const query = `
-      update newchums.users
-      set ${setClauses.join(", ")}
-      where id = $${updates.length + 1}
-      returning ${DEV_USER_RETURN_COLUMNS}
-    `;
-    const rows = await sql.query(query, params);
-
-    if (rows.length === 0) {
-      return c.json({ ok: false, error: "User not found" }, 404);
-    }
-
-    return c.json({ ok: true, user: rows[0] });
-  } catch (err) {
-    console.error(err);
-    const message = err instanceof Error ? err.message : "Unknown error";
-    return c.json({ ok: false, error: message }, 500);
-  }
-});
-
-app.delete("/dev/users/:id", async (c) => {
-  try {
-    const id = c.req.param("id");
-    const sql = getSql(c.env);
-    const rows = await sql.query(
-      "delete from newchums.users where id = $1 returning id",
-      [id],
-    );
-
-    if (rows.length === 0) {
-      return c.json({ ok: false, error: "User not found" }, 404);
-    }
-
-    return c.json({ ok: true });
-  } catch (err) {
-    console.error(err);
-    const message = err instanceof Error ? err.message : "Unknown error";
-    return c.json({ ok: false, error: message }, 500);
-  }
-});
-
 app.post("/email/verification", async (c) => {
   try {
     const body = await c.req.json<{
@@ -4669,7 +4556,7 @@ async function batchLoadSuperAdminIds(
 }
 
 async function requireSuperAdmin(
-  c: { req: Request; env: Bindings },
+  c: AuthCapableContext,
 ): Promise<{ id: string; email: string } | null> {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string") return null;
@@ -9316,18 +9203,18 @@ app.get("/communities/:slug", async (c) => {
         // Partial unique index on (community_id, user_id) WHERE status='pending'
         // guarantees at most one pending row. The declined query uses the most
         // recent row because a user may have multiple declines over time.
-        const [pendingRows, declinedRows, planCountRows] = await Promise.all([
+        const [pendingRows, declinedRows, planCountRows] = (await Promise.all([
           sql`
             SELECT created_at FROM newchums.community_join_requests
             WHERE community_id = ${community.id} AND user_id = ${userId} AND status = 'pending'
             LIMIT 1
-          ` as Promise<{ created_at: string | Date }[]>,
+          `,
           sql`
             SELECT reviewed_at, created_at FROM newchums.community_join_requests
             WHERE community_id = ${community.id} AND user_id = ${userId} AND status = 'declined'
             ORDER BY COALESCE(reviewed_at, created_at) DESC
             LIMIT 1
-          ` as Promise<{ reviewed_at: string | Date | null; created_at: string | Date }[]>,
+          `,
           sql`
             SELECT COUNT(*)::int AS cnt FROM newchums.events e
             JOIN newchums.event_communities ec ON ec.event_id = e.id
@@ -9335,8 +9222,12 @@ app.get("/communities/:slug", async (c) => {
               AND e.status = 'published'
               AND e.starts_at >= NOW()
               AND COALESCE(e.is_qa, false) = false
-          ` as Promise<{ cnt: number }[]>,
-        ]);
+          `,
+        ])) as [
+          { created_at: string | Date }[],
+          { reviewed_at: string | Date | null; created_at: string | Date }[],
+          { cnt: number }[],
+        ];
         const upcomingPlanCount = planCountRows[0]?.cnt ?? 0;
 
         const pendingCreatedAt = pendingRows[0]?.created_at ?? null;
@@ -10433,9 +10324,9 @@ app.get("/communities/:id/events", async (c) => {
         : approxArea || "General area";
 
       // Normalized camelCase payload. The prior spread mixed DB snake_case
-      // with ad-hoc camelCase (hasPrefMismatch, isQa) and forced the sole
-      // caller (CommunityDetailClient) to hand-pick which convention to use
-      // per field. All plan-card fields are now camelCase.
+      // with ad-hoc camelCase (isQa) and forced the sole caller
+      // (CommunityDetailClient) to hand-pick which convention to use per
+      // field. All plan-card fields are now camelCase.
       return {
         id: String(ev.id),
         title: String(ev.title ?? ""),
@@ -10473,7 +10364,6 @@ app.get("/communities/:id/events", async (c) => {
         isHost: ev.is_host === true,
         myRsvpStatus: (ev.my_rsvp_status as string | null) ?? null,
         communities: (ev.communities as Array<{ id: string; slug: string; name: string }> | null) ?? [],
-        hasPrefMismatch,
         isQa: ev.is_qa === true,
       };
     });
@@ -10512,7 +10402,7 @@ const MAX_ANNOUNCEMENT_BODY_LEN = 10000;
  */
 async function resolveAnnouncementContext(
   sql: ReturnType<typeof getSql>,
-  c: Parameters<Parameters<typeof app.get>[1]>[0],
+  c: Context<{ Bindings: Bindings }>,
   communityId: string,
 ): Promise<{
   userId: string | null;
@@ -11935,12 +11825,13 @@ app.post("/events", async (c) => {
       const inviteeUserIds = invitees.slice(0, 50)
         .map((inv) => inv.user_id ? String(inv.user_id) : null)
         .filter((id): id is string => id !== null);
-      const [invPrefsMap, invUserRowsBatch] = await Promise.all([
+      const [invPrefsMap, invUserRowsRaw] = await Promise.all([
         batchLoadNotificationPrefs(sql, inviteeUserIds),
         inviteeUserIds.length > 0
-          ? (sql`SELECT id, email, name FROM newchums.users WHERE id = ANY(${inviteeUserIds}::uuid[])` as Promise<{ id: string; email: string; name: string | null }[]>)
-          : Promise.resolve([] as { id: string; email: string; name: string | null }[]),
+          ? sql`SELECT id, email, name FROM newchums.users WHERE id = ANY(${inviteeUserIds}::uuid[])`
+          : Promise.resolve([]),
       ]);
+      const invUserRowsBatch = invUserRowsRaw as { id: string; email: string; name: string | null }[];
       const invUserMap = new Map(invUserRowsBatch.map((r) => [r.id, r]));
 
       // QA plans: only send invite emails/notifications to super admin invitees
@@ -12152,6 +12043,7 @@ app.get("/events/mine", async (c) => {
       LIMIT 50
     `) as Array<{
       id: string; title: string; description: string | null; starts_at: string;
+      timezone: string | null;
       location_type: string; location_name: string | null; location_address: string | null;
       location_visibility: string | null; location_area: string | null; online_link: string | null;
       max_seats: number | null; visibility: string;
@@ -12711,6 +12603,7 @@ app.get("/events/explore", async (c) => {
       LIMIT ${pageLimit + 1} OFFSET ${pageOffset}
     `) as Array<{
       id: string; title: string; description: string | null; starts_at: string;
+      timezone: string | null;
       location_type: string; location_name: string | null; location_address: string | null;
       location_visibility: string | null; location_area: string | null; online_link: string | null;
       location_lat: number | null; location_lng: number | null;
@@ -13295,7 +13188,7 @@ app.get("/events/:id", async (c) => {
     if (requiresConfirmation) {
       const windowHours = Number(event.confirmation_window_hours ?? 24);
       const cutoffHours = Number(event.confirmation_cutoff_hours ?? 2);
-      const startsAtMs = new Date(event.starts_at).getTime();
+      const startsAtMs = new Date(event.starts_at as string).getTime();
       const windowOpensAt = startsAtMs - windowHours * 60 * 60 * 1000;
       const cutoffAt = startsAtMs - cutoffHours * 60 * 60 * 1000;
       confirmationCutoffAt = new Date(cutoffAt).toISOString();
@@ -16460,10 +16353,11 @@ app.post("/events/:id/conduct-report", async (c) => {
 
     // Send admin alert email (fire-and-forget, do not block the response)
     try {
-      const [reporterRows, reportedRows] = await Promise.all([
-        sql`SELECT name, email, username FROM newchums.users WHERE id = ${userId} LIMIT 1` as Promise<{ name: string | null; email: string; username: string | null }[]>,
-        sql`SELECT name, email, username FROM newchums.users WHERE id = ${body.reportedUserId} LIMIT 1` as Promise<{ name: string | null; email: string; username: string | null }[]>,
-      ]);
+      type ReportUserRow = { name: string | null; email: string; username: string | null };
+      const [reporterRows, reportedRows] = (await Promise.all([
+        sql`SELECT name, email, username FROM newchums.users WHERE id = ${userId} LIMIT 1`,
+        sql`SELECT name, email, username FROM newchums.users WHERE id = ${body.reportedUserId} LIMIT 1`,
+      ])) as [ReportUserRow[], ReportUserRow[]];
       const reporter = reporterRows[0];
       const reported = reportedRows[0];
       const reportId = inserted[0]?.id ?? "";
@@ -17254,7 +17148,7 @@ app.get("/roadmap/:id/attachment", async (c) => {
       return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     }
 
-    const obj = await c.env.MEDIA_BUCKET.get(row.attachment_key);
+    const obj = await c.env.MEDIA_BUCKET?.get(row.attachment_key as string);
     if (!obj) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     const headers = new Headers();
     headers.set("Content-Type", obj.httpMetadata?.contentType ?? "image/jpeg");
@@ -19387,7 +19281,7 @@ async function handleScheduled(
 }
 
 export default Sentry.withSentry(
-  (env) => ({
+  (env: Bindings) => ({
     dsn: env.SENTRY_DSN,
   }),
   {

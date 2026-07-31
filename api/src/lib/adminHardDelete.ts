@@ -77,7 +77,6 @@ export type PlanDeleteImpact = {
   invites: number;
   altTimes: number;
   joinRequests: number;
-  feedbackRows: number;
   shoutouts: number;
   productEvents: number;
 };
