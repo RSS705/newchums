@@ -801,7 +801,11 @@ export default function EventDetailClient({
     getAuthToken().then((token) => {
       if (token) {
         pendingRsvpRef.current = null;
-        handleRsvp(rsvpStatus);
+        // silent: the confirmation card scrolled into view right below says
+        // the same thing at the same moment; without it this path double-
+        // announced (the exact bug the option was added for, but this call
+        // site was missed when the intent path below got it).
+        handleRsvp(rsvpStatus, { silent: true });
         // Focus the RSVP / "You're going" confirmation card so the user
         // lands directly on their response state rather than at the top
         // of the plan. Matches the deep-link behaviour of ?section=... on
@@ -1149,10 +1153,11 @@ export default function EventDetailClient({
   };
 
   /**
-   * `silent` suppresses only the success toast, for the post-verification
-   * auto-apply path where the confirmation card is scrolled into view saying
-   * the same thing at the same moment. Errors always toast, and an ordinary
-   * RSVP click (where the toast is the only feedback) is unaffected.
+   * `silent` suppresses only the success toast, for the two paths that
+   * scroll the confirmation card into view saying the same thing at the same
+   * moment (the ?rsvp= invite-email CTA and the post-verification intent
+   * auto-apply). Errors always toast, and an ordinary RSVP click (where the
+   * toast is the only feedback) is unaffected.
    */
   const handleRsvp = async (status: string, options?: { silent?: boolean }) => {
     setRsvpSubmitting(true);
@@ -2346,6 +2351,14 @@ export default function EventDetailClient({
   const declinedCount = rsvps.filter((r) => r.status === "cant_make_it").length;
   const isCanceled = event.status === "canceled";
   const isPast = new Date(event.startsAt) < new Date();
+  // True while the host's own confirmation card renders below. It then owns
+  // the plan-section-confirmation scroll id; the attendee-side wrapper only
+  // carries the id when this is false, so the id exists exactly once.
+  const hostConfirmationCardVisible =
+    event.isHost === true &&
+    !isCanceled &&
+    event.requireReconfirmation === true &&
+    event.confirmationWindowOpen === true;
   const isEditLocked = new Date(event.startsAt).getTime() + 60 * 60 * 1000 < Date.now();
   const chatLockDate = new Date(new Date(event.startsAt).getTime() + 3 * 24 * 60 * 60 * 1000);
   const isChatLocked = isPast && Date.now() >= chatLockDate.getTime();
@@ -3389,7 +3402,16 @@ export default function EventDetailClient({
               prefillEmail={inviteeEmail ?? undefined}
             />
           ) : (
-            <div id="plan-section-confirmation" style={{ scrollMarginTop: SECTION_SCROLL_MARGIN }}>
+            <div
+              // Only carries the confirmation scroll id when the host
+              // confirmation card below is NOT rendering; with both mounted
+              // (a host during an open window) the id was duplicated and
+              // getElementById picked this one, so a host's
+              // ?section=confirmation deep link landed on the attendee block
+              // instead of their own card.
+              id={hostConfirmationCardVisible ? undefined : "plan-section-confirmation"}
+              style={{ scrollMarginTop: SECTION_SCROLL_MARGIN }}
+            >
               {/* Confirmation UI when window is open */}
               {event.confirmationWindowOpen &&
               viewerRsvpStatus === "going" &&
@@ -3643,11 +3665,10 @@ export default function EventDetailClient({
         </AppCard>
       )}
 
-      {/* Host confirmation (when window is open) */}
-      {event.isHost &&
-        !isCanceled &&
-        event.requireReconfirmation &&
-        event.confirmationWindowOpen && (
+      {/* Host confirmation (when window is open). Sole owner of the
+          plan-section-confirmation id while visible; see the attendee-side
+          wrapper above. */}
+      {hostConfirmationCardVisible && (
           <AppCard id="plan-section-confirmation" sx={{ scrollMarginTop: SECTION_SCROLL_MARGIN }}>
             {effectiveConfirmStatus === "confirmed" ? (
               <Stack spacing={1.5} sx={{ py: 1 }}>
