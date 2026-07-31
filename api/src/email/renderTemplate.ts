@@ -59,8 +59,8 @@ import planAtRiskHtml from "./templates/planAtRisk.html";
 import planAtRiskTxt from "./templates/planAtRisk.txt";
 import planAutoCancelledHtml from "./templates/planAutoCancelled.html";
 import planAutoCancelledTxt from "./templates/planAutoCancelled.txt";
-import planFeedbackHtml from "./templates/planFeedback.html";
-import planFeedbackTxt from "./templates/planFeedback.txt";
+import planWrapUpHtml from "./templates/planWrapUp.html";
+import planWrapUpTxt from "./templates/planWrapUp.txt";
 import planRemovedByAdminHtml from "./templates/planRemovedByAdmin.html";
 import planRemovedByAdminTxt from "./templates/planRemovedByAdmin.txt";
 import planSigninHtml from "./templates/planSignin.html";
@@ -111,7 +111,7 @@ const TEMPLATES: Record<string, TemplatePair> = {
   passwordReset: { html: passwordResetHtml, text: passwordResetTxt },
   planAtRisk: { html: planAtRiskHtml, text: planAtRiskTxt },
   planAutoCancelled: { html: planAutoCancelledHtml, text: planAutoCancelledTxt },
-  planFeedback: { html: planFeedbackHtml, text: planFeedbackTxt },
+  planWrapUp: { html: planWrapUpHtml, text: planWrapUpTxt },
   planRemovedByAdmin: { html: planRemovedByAdminHtml, text: planRemovedByAdminTxt },
   planSignin: { html: planSigninHtml, text: planSigninTxt },
   roadmapUpdate: { html: roadmapUpdateHtml, text: roadmapUpdateTxt },

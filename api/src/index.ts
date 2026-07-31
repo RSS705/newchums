@@ -35,7 +35,7 @@ import {
   sendPlanAutoCancelledEmail,
   sendPlanRemovedByAdminEmail,
   sendRoadmapUpdateEmail,
-  sendPlanFeedbackEmail,
+  sendPlanWrapUpEmail,
   sendConcernReportAlert,
   sendCommunityJoinRequestEmail,
   sendCommunityJoinApprovedEmail,
@@ -5575,15 +5575,15 @@ app.put("/admin/attendance-issues/:id/status", async (c) => {
     return c.json({ ok: false, error: "INVALID_STATUS" }, 400);
 
   try {
-    const existing = (await sql`
-      SELECT id, status FROM newchums.attendance_issues WHERE id = ${issueId}
-    `) as { id: string; status: string }[];
-    if (existing.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-    if (existing[0].status === body.status)
-      return c.json({ ok: true, status: body.status });
-
-    const newConfidence = body.status === "dismissed" ? 0 : 1.0;
-    await adjustReliabilityPenalty(sql, issueId, newConfidence, body.status);
+    // 'dismissed' is the only status that restores the "shown up" credit on
+    // the public attendance record and in the badges cron, so this route is
+    // the correction mechanism for a wrong host report. No scoring side
+    // effects since July 2026.
+    const updated = (await sql`
+      UPDATE newchums.attendance_issues SET status = ${body.status}
+      WHERE id = ${issueId} RETURNING id
+    `) as { id: string }[];
+    if (updated.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
 
     console.log(`[PUT /admin/attendance-issues/:id/status] admin=${admin.email} set issue=${issueId} to ${body.status}`);
     return c.json({ ok: true, status: body.status });
@@ -6296,6 +6296,10 @@ app.get("/admin/kpis/funnel", async (c) => {
           // Distinct hosts behind those plans, for a people-to-people conversion step.
           hostsReached3Rsvps: userCount("plan_reached_3_rsvps"),
           secondPlans: count("second_plan_created"),
+          // Repeat-planning: server-recorded copies (plan_copied is repeatable,
+          // one row per copied create, so total counts copies and users counts
+          // distinct copying hosts).
+          plansCopied: count("plan_copied"),
         },
       },
     });
@@ -12009,6 +12013,38 @@ app.post("/events", async (c) => {
     // path; failures never affect the response.
     if (!isQa) {
       runAfterResponse(c, recordPlanCreationFunnelEvents(sql, { planId: eventId, hostUserId: userId }));
+
+      // Repeat-planning signal. The create form sends `copied_from` when it
+      // was hydrated from a previous plan (?copy_from= deep link or the "Copy
+      // a previous plan" picker). Recorded server-side because the copy flow
+      // used to be client-only prefill, which made the retention behavior it
+      // exists to encourage unmeasurable. Only counted when the source plan
+      // really is the host's own (the same gate the hydration path applies),
+      // so junk client values never mint events.
+      const copiedFrom =
+        typeof body.copied_from === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.copied_from)
+          ? body.copied_from
+          : null;
+      if (copiedFrom) {
+        runAfterResponse(
+          c,
+          (async () => {
+            try {
+              const src = (await sql`
+                SELECT host_user_id FROM newchums.events WHERE id = ${copiedFrom}
+              `) as { host_user_id: string }[];
+              if (src.length > 0 && src[0].host_user_id === userId) {
+                await recordProductEvent(sql, {
+                  name: "plan_copied",
+                  userId,
+                  eventId,
+                  params: { source_plan_id: copiedFrom },
+                });
+              }
+            } catch { /* analytics only, never fails the request */ }
+          })(),
+        );
+      }
     }
 
     // Link the new plan to its communities via the junction table.
@@ -16288,123 +16324,23 @@ app.post("/events/:id/join-request/:requestId/withdraw", async (c) => {
   }
 });
 
-// ─── Plan Feedback ────────────────────────────────────────────────────────────
+// ─── Post-plan wrap-up ────────────────────────────────────────────────────────
+//
+// The rating-grid feedback system (plan_feedback rows scored into
+// user_metrics) was removed in July 2026. The post-plan surface is now
+// two-sided: attendees get a thank-you flow (shout-outs, Save to Chums,
+// Message) and hosts get a private attendance check-in plus a run-it-again
+// prompt. Attendance collection is host-only and binary (no_show); the public
+// attendance record and the recognition-badges cron keep reading
+// attendance_issues by issue_type + status exactly as before.
 
-const FEEDBACK_PROMPTS = ["reliability", "sociability", "presentation", "match_quality", "hosting_skills"] as const;
-const FEEDBACK_RESPONSES = ["agree", "maybe", "disagree"] as const;
-const ATTENDANCE_ISSUE_TYPES = ["no_show", "late_cancel", "very_late"] as const;
 const CONDUCT_REASONS = ["rude_aggressive", "harassment", "boundary_issue", "discriminatory", "unsafe_intoxicated", "disruptive", "property_damage", "other"] as const;
 const SHOUTOUT_MAX_LENGTH = 280;
 
-const FEEDBACK_RESPONSE_TARGETS: Record<string, number> = { agree: 80, maybe: 50, disagree: 20 };
-const ATTENDANCE_PENALTIES: Record<string, number> = { no_show: -10, late_cancel: -5, very_late: -8 };
-
-async function nudgeUserMetric(sql: ReturnType<typeof getSql>, userId: string, metric: string, response: string) {
-  const target = FEEDBACK_RESPONSE_TARGETS[response];
-  if (target === undefined) return;
-
-  const rows = (await sql`
-    SELECT score, signal_count FROM newchums.user_metrics
-    WHERE user_id = ${userId} AND metric = ${metric}
-  `) as { score: string; signal_count: number }[];
-
-  let currentScore = METRIC_BASELINE;
-  let signalCount = 0;
-  if (rows.length > 0) {
-    currentScore = parseFloat(rows[0].score);
-    signalCount = rows[0].signal_count;
-  }
-
-  const nudge = (target - currentScore) / (signalCount + 5);
-  const newScore = Math.max(0, Math.min(100, currentScore + nudge));
-  const newSignalCount = signalCount + 1;
-
-  await sql`
-    INSERT INTO newchums.user_metrics (user_id, metric, score, signal_count, updated_at)
-    VALUES (${userId}, ${metric}, ${newScore.toFixed(2)}, ${newSignalCount}, NOW())
-    ON CONFLICT (user_id, metric) DO UPDATE SET
-      score = ${newScore.toFixed(2)},
-      signal_count = ${newSignalCount},
-      updated_at = NOW()
-  `;
-}
-
-async function penalizeReliability(
-  sql: ReturnType<typeof getSql>,
-  userId: string,
-  issueType: string,
-  confidence: number,
-): Promise<number> {
-  const rawPenalty = ATTENDANCE_PENALTIES[issueType];
-  if (rawPenalty === undefined) return 0;
-  const effectivePenalty = rawPenalty * confidence;
-
-  const rows = (await sql`
-    SELECT score, signal_count FROM newchums.user_metrics
-    WHERE user_id = ${userId} AND metric = 'reliability'
-  `) as { score: string; signal_count: number }[];
-
-  let currentScore = METRIC_BASELINE;
-  let signalCount = 0;
-  if (rows.length > 0) {
-    currentScore = parseFloat(rows[0].score);
-    signalCount = rows[0].signal_count;
-  }
-
-  const newScore = Math.max(0, Math.min(100, currentScore + effectivePenalty));
-  const newSignalCount = signalCount + 1;
-
-  await sql`
-    INSERT INTO newchums.user_metrics (user_id, metric, score, signal_count, updated_at)
-    VALUES (${userId}, 'reliability', ${newScore.toFixed(2)}, ${newSignalCount}, NOW())
-    ON CONFLICT (user_id, metric) DO UPDATE SET
-      score = ${newScore.toFixed(2)},
-      signal_count = ${newSignalCount},
-      updated_at = NOW()
-  `;
-  return effectivePenalty;
-}
-
-async function adjustReliabilityPenalty(
-  sql: ReturnType<typeof getSql>,
-  issueId: string,
-  newConfidence: number,
-  newStatus: string,
-) {
-  const issueRows = (await sql`
-    SELECT id, reported_user_id, issue_type, confidence, applied_penalty, status
-    FROM newchums.attendance_issues WHERE id = ${issueId}
-  `) as { id: string; reported_user_id: string; issue_type: string; confidence: string; applied_penalty: string; status: string }[];
-  if (issueRows.length === 0) return;
-  const issue = issueRows[0];
-
-  const rawPenalty = ATTENDANCE_PENALTIES[issue.issue_type] ?? 0;
-  const oldApplied = parseFloat(issue.applied_penalty);
-  const newApplied = rawPenalty * newConfidence;
-  const diff = newApplied - oldApplied;
-
-  if (Math.abs(diff) > 0.001) {
-    const metricRows = (await sql`
-      SELECT score FROM newchums.user_metrics
-      WHERE user_id = ${issue.reported_user_id} AND metric = 'reliability'
-    `) as { score: string }[];
-    const currentScore = metricRows.length > 0 ? parseFloat(metricRows[0].score) : METRIC_BASELINE;
-    const adjusted = Math.max(0, Math.min(100, currentScore + diff));
-    await sql`
-      UPDATE newchums.user_metrics SET score = ${adjusted.toFixed(2)}, updated_at = NOW()
-      WHERE user_id = ${issue.reported_user_id} AND metric = 'reliability'
-    `;
-  }
-
-  await sql`
-    UPDATE newchums.attendance_issues
-    SET confidence = ${newConfidence.toFixed(2)}, applied_penalty = ${newApplied.toFixed(2)}, status = ${newStatus}
-    WHERE id = ${issueId}
-  `;
-}
-
-/** GET /events/:id/feedback, existing feedback by this user for this plan + eligible attendees */
-app.get("/events/:id/feedback", async (c) => {
+/** GET /events/:id/wrap-up, the post-plan surface payload: thank-you targets
+ *  for everyone plus the host's private attendance check-in state. Replaces
+ *  the old GET /events/:id/feedback (rating grid, removed July 2026). */
+app.get("/events/:id/wrap-up", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
     return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
@@ -16413,13 +16349,15 @@ app.get("/events/:id/feedback", async (c) => {
   const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
   const eventId = c.req.param("id");
 
-  // Check dismissal early, if the table doesn't exist yet, silently skip
+  // Check dismissal early. plan_feedback_dismissals is a historical name
+  // (migration 060): it now stores wrap-up dismissals, one row per (plan, user).
   try {
     const dismissedRows = await sql`
       SELECT 1 FROM newchums.plan_feedback_dismissals
       WHERE plan_id = ${eventId} AND user_id = ${userId} LIMIT 1
     `;
-    if (dismissedRows.length > 0) return c.json({ ok: true, dismissed: true, attendees: [], feedback: [], attendanceIssues: [], issuesAgainstMe: [] });
+    if (dismissedRows.length > 0)
+      return c.json({ ok: true, dismissed: true, viewerIsHost: false, attendees: [], shoutouts: [], issuesAgainstMe: [], myReports: [] });
   } catch { /* table may not exist yet */ }
 
   try {
@@ -16431,10 +16369,9 @@ app.get("/events/:id/feedback", async (c) => {
       return c.json({ ok: false, error: "NOT_PAST" }, 400);
 
     const isHost = ev[0].host_user_id === userId;
-    // Only people who actually attended can leave feedback. A 'cant_make_it'
-    // RSVP (or no RSVP) means they didn't attend → NOT_PARTICIPANT; the client
-    // then shows the normal past-plan view. Mirrors the reviewee query below,
-    // which already scopes to going/maybe + host.
+    // Only people who were actually on the plan get the wrap-up surface. A
+    // 'cant_make_it' RSVP (or no RSVP) means they didn't attend →
+    // NOT_PARTICIPANT; the client then shows the normal past-plan view.
     const attended = (await sql`
       SELECT 1 FROM newchums.event_rsvps
       WHERE event_id = ${eventId} AND user_id = ${userId}
@@ -16455,6 +16392,14 @@ app.get("/events/:id/feedback", async (c) => {
       WHERE e.id = ${eventId}
     `) as { id: string; name: string | null; username: string | null }[];
 
+    // RSVP status per attendee: the host check-in only lists 'going' people
+    // (the committed set the public attendance record counts).
+    const statusRows = (await sql`
+      SELECT user_id, status FROM newchums.event_rsvps
+      WHERE event_id = ${eventId} AND status IN ('going', 'maybe')
+    `) as { user_id: string; status: string }[];
+    const statusByUser = new Map(statusRows.map((r) => [r.user_id, r.status]));
+
     const otherAttendees = attendees
       .filter((a) => a.id !== userId)
       .map((a) => {
@@ -16473,25 +16418,25 @@ app.get("/events/:id/feedback", async (c) => {
           handle,
           username: a.username ?? null,
           isHost: a.id === ev[0].host_user_id,
+          rsvpStatus: statusByUser.get(a.id) ?? "going",
         };
       });
 
-    const existing = (await sql`
-      SELECT reviewee_user_id, prompt, response
-      FROM newchums.plan_feedback
-      WHERE plan_id = ${eventId} AND reviewer_user_id = ${userId}
-    `) as { reviewee_user_id: string; prompt: string; response: string }[];
-
-    const existingIssues = (await sql`
+    // The viewer's own attendance reports on this plan (prefills the host
+    // check-in; empty for non-hosts since collection is host-only now).
+    const myReports = (await sql`
       SELECT reported_user_id, issue_type
       FROM newchums.attendance_issues
       WHERE plan_id = ${eventId} AND reporter_user_id = ${userId}
     `) as { reported_user_id: string; issue_type: string }[];
 
+    // Dismissed records stop counting on the public profile, so they also
+    // stop being surfaced here: a resolved concern should not haunt the page.
     const issuesAgainstMe = (await sql`
       SELECT id, issue_type, status
       FROM newchums.attendance_issues
       WHERE plan_id = ${eventId} AND reported_user_id = ${userId}
+        AND status != 'dismissed'
     `) as { id: string; issue_type: string; status: string }[];
 
     // Hydrate the per-attendee shout-out drafts the viewer has authored on
@@ -16505,13 +16450,16 @@ app.get("/events/:id/feedback", async (c) => {
 
     return c.json({
       ok: true,
+      viewerIsHost: isHost,
       attendees: otherAttendees,
-      feedback: existing,
-      attendanceIssues: existingIssues,
       issuesAgainstMe: issuesAgainstMe.map((i) => ({
         id: i.id,
         issueType: i.issue_type,
         status: i.status,
+      })),
+      myReports: myReports.map((r) => ({
+        reportedUserId: r.reported_user_id,
+        issueType: r.issue_type,
       })),
       shoutouts: existingShoutouts.map((s) => ({
         recipientUserId: s.recipient_user_id,
@@ -16520,82 +16468,15 @@ app.get("/events/:id/feedback", async (c) => {
       })),
     });
   } catch (err) {
-    console.error("[GET /events/:id/feedback]", err);
+    console.error("[GET /events/:id/wrap-up]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });
 
-/** POST /events/:id/feedback, submit feedback for attendees */
-app.post("/events/:id/feedback", async (c) => {
-  const payload = await requireAuth(c);
-  if (!payload?.email || typeof payload.email !== "string")
-    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
-
-  const sql = getSql(c.env);
-  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
-  const eventId = c.req.param("id");
-
-  const body = await c.req.json<{
-    entries: Array<{
-      revieweeUserId: string;
-      prompt: string;
-      response: string;
-    }>;
-  }>();
-
-  if (!Array.isArray(body.entries) || body.entries.length === 0)
-    return c.json({ ok: false, error: "EMPTY_ENTRIES" }, 400);
-
-  for (const entry of body.entries) {
-    if (!FEEDBACK_PROMPTS.includes(entry.prompt as typeof FEEDBACK_PROMPTS[number]))
-      return c.json({ ok: false, error: "INVALID_PROMPT", prompt: entry.prompt }, 400);
-    if (!FEEDBACK_RESPONSES.includes(entry.response as typeof FEEDBACK_RESPONSES[number]))
-      return c.json({ ok: false, error: "INVALID_RESPONSE", response: entry.response }, 400);
-    if (entry.revieweeUserId === userId)
-      return c.json({ ok: false, error: "CANNOT_RATE_SELF" }, 400);
-  }
-
-  try {
-    const ev = (await sql`
-      SELECT host_user_id, starts_at FROM newchums.events WHERE id = ${eventId}
-    `) as { host_user_id: string; starts_at: string }[];
-    if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-    if (new Date(ev[0].starts_at) > new Date())
-      return c.json({ ok: false, error: "NOT_PAST" }, 400);
-
-    // Only people who actually attended can leave feedback (see GET handler).
-    const isHost = ev[0].host_user_id === userId;
-    const attended = (await sql`
-      SELECT 1 FROM newchums.event_rsvps
-      WHERE event_id = ${eventId} AND user_id = ${userId}
-        AND status IN ('going', 'maybe') LIMIT 1
-    `).length > 0;
-    if (!isHost && !attended)
-      return c.json({ ok: false, error: "NOT_PARTICIPANT" }, 403);
-
-    for (const entry of body.entries) {
-      if (entry.prompt === "hosting_skills" && entry.revieweeUserId !== ev[0].host_user_id)
-        return c.json({ ok: false, error: "HOSTING_SKILLS_HOST_ONLY" }, 400);
-
-      await sql`
-        INSERT INTO newchums.plan_feedback (plan_id, reviewer_user_id, reviewee_user_id, prompt, response)
-        VALUES (${eventId}, ${userId}, ${entry.revieweeUserId}, ${entry.prompt}, ${entry.response})
-        ON CONFLICT (plan_id, reviewer_user_id, reviewee_user_id, prompt)
-        DO UPDATE SET response = EXCLUDED.response, created_at = NOW()
-      `;
-
-      await nudgeUserMetric(sql, entry.revieweeUserId, entry.prompt, entry.response);
-    }
-
-    return c.json({ ok: true });
-  } catch (err) {
-    console.error("[POST /events/:id/feedback]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
-  }
-});
-
-/** POST /events/:id/feedback/dismiss, permanently dismiss the feedback prompt for this plan */
-app.post("/events/:id/feedback/dismiss", async (c) => {
+/** POST /events/:id/wrap-up/dismiss, permanently hide the wrap-up card for
+ *  this plan. Writes plan_feedback_dismissals (historical table name from
+ *  migration 060, kept to avoid a pointless rename migration). */
+app.post("/events/:id/wrap-up/dismiss", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
     return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
@@ -16612,12 +16493,24 @@ app.post("/events/:id/feedback/dismiss", async (c) => {
     `;
     return c.json({ ok: true });
   } catch (err) {
-    console.error("[POST /events/:id/feedback/dismiss]", err);
+    console.error("[POST /events/:id/wrap-up/dismiss]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });
 
-/** POST /events/:id/attendance-issue, report an attendance issue */
+/** POST /events/:id/attendance-issue, the host records that someone did not
+ *  show up.
+ *
+ *  Host-only and binary since July 2026: the host's private post-plan
+ *  check-in is the only collection path (attendee-to-attendee reporting was
+ *  removed with the matching system) and it records no_show only. Rows feed
+ *  the public attendance record and the badges cron through issue_type +
+ *  status; there is no scoring side effect any more. Deliberately NO
+ *  notification and NO email anywhere in this flow: the check-in is the
+ *  host's private bookkeeping. The reported person can still see and dispute
+ *  the record on the plan page, and a super admin can dismiss it, which is
+ *  the one path that restores the "shown up" credit on the public record.
+ */
 app.post("/events/:id/attendance-issue", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -16627,14 +16520,11 @@ app.post("/events/:id/attendance-issue", async (c) => {
   const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
   const eventId = c.req.param("id");
 
-  const body = await c.req.json<{
-    reportedUserId: string;
-    issueType: string;
-  }>();
+  const body = await c.req.json<{ reportedUserId: string; issueType: string }>();
 
-  if (!ATTENDANCE_ISSUE_TYPES.includes(body.issueType as typeof ATTENDANCE_ISSUE_TYPES[number]))
+  if (body.issueType !== "no_show")
     return c.json({ ok: false, error: "INVALID_ISSUE_TYPE" }, 400);
-  if (body.reportedUserId === userId)
+  if (!body.reportedUserId || body.reportedUserId === userId)
     return c.json({ ok: false, error: "CANNOT_REPORT_SELF" }, 400);
 
   try {
@@ -16644,43 +16534,22 @@ app.post("/events/:id/attendance-issue", async (c) => {
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     if (new Date(ev[0].starts_at) > new Date())
       return c.json({ ok: false, error: "NOT_PAST" }, 400);
+    if (ev[0].host_user_id !== userId)
+      return c.json({ ok: false, error: "NOT_HOST" }, 403);
 
-    const isHostReport = ev[0].host_user_id === userId;
+    // Only people who committed to the plan can meaningfully no-show.
+    const wasComing = (await sql`
+      SELECT 1 FROM newchums.event_rsvps
+      WHERE event_id = ${eventId} AND user_id = ${body.reportedUserId}
+        AND status IN ('going', 'maybe') LIMIT 1
+    `).length > 0;
+    if (!wasComing) return c.json({ ok: false, error: "INVALID_TARGET" }, 400);
 
-    // Check for corroboration: other reporters for the same person + issue type on this plan
-    const priorReports = (await sql`
-      SELECT id, confidence FROM newchums.attendance_issues
-      WHERE plan_id = ${eventId} AND reported_user_id = ${body.reportedUserId}
-        AND issue_type = ${body.issueType} AND reporter_user_id != ${userId}
-        AND status != 'dismissed'
-    `) as { id: string; confidence: string }[];
-    const corroborated = priorReports.length > 0;
-
-    const confidence = isHostReport ? 1.0 : (corroborated ? 1.0 : 0.75);
-
-    const inserted = (await sql`
-      INSERT INTO newchums.attendance_issues (plan_id, reporter_user_id, reported_user_id, issue_type, is_host_report, confidence, status)
-      VALUES (${eventId}, ${userId}, ${body.reportedUserId}, ${body.issueType}, ${isHostReport}, ${confidence.toFixed(2)}, 'active')
+    await sql`
+      INSERT INTO newchums.attendance_issues (plan_id, reporter_user_id, reported_user_id, issue_type, is_host_report, status)
+      VALUES (${eventId}, ${userId}, ${body.reportedUserId}, 'no_show', true, 'active')
       ON CONFLICT (plan_id, reporter_user_id, reported_user_id, issue_type) DO NOTHING
-      RETURNING id
-    `) as { id: string }[];
-
-    if (inserted.length > 0) {
-      const appliedPenalty = await penalizeReliability(sql, body.reportedUserId, body.issueType, confidence);
-      await sql`
-        UPDATE newchums.attendance_issues SET applied_penalty = ${appliedPenalty.toFixed(2)}
-        WHERE id = ${inserted[0].id}
-      `;
-
-      // Corroboration: boost prior uncorroborated non-host reports to full confidence
-      if (corroborated) {
-        for (const prior of priorReports) {
-          if (parseFloat(prior.confidence) < 1.0) {
-            await adjustReliabilityPenalty(sql, prior.id, 1.0, "active");
-          }
-        }
-      }
-    }
+    `;
 
     return c.json({ ok: true });
   } catch (err) {
@@ -16689,7 +16558,46 @@ app.post("/events/:id/attendance-issue", async (c) => {
   }
 });
 
-/** POST /events/:id/attendance-dispute, user disputes attendance issues on this plan */
+/** DELETE /events/:id/attendance-issue, the host retracts their own no-show
+ *  record (a mis-tap in the check-in). Removes the row outright so the public
+ *  attendance record recomputes as if it had never existed. */
+app.delete("/events/:id/attendance-issue", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+  const eventId = c.req.param("id");
+
+  const body = await c.req.json<{ reportedUserId: string }>();
+  if (!body.reportedUserId) return c.json({ ok: false, error: "VALIDATION" }, 400);
+
+  try {
+    const ev = (await sql`
+      SELECT host_user_id FROM newchums.events WHERE id = ${eventId}
+    `) as { host_user_id: string }[];
+    if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    if (ev[0].host_user_id !== userId)
+      return c.json({ ok: false, error: "NOT_HOST" }, 403);
+
+    await sql`
+      DELETE FROM newchums.attendance_issues
+      WHERE plan_id = ${eventId} AND reporter_user_id = ${userId}
+        AND reported_user_id = ${body.reportedUserId} AND issue_type = 'no_show'
+    `;
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[DELETE /events/:id/attendance-issue]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /events/:id/attendance-dispute, the reported person contests the
+ *  record. Flips their active issues on this plan to 'disputed'; a super
+ *  admin then resolves to 'dismissed' (stops counting against the public
+ *  record) or 'confirmed'. No notifications in either direction, matching
+ *  the private posture of the whole flow. */
 app.post("/events/:id/attendance-dispute", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -16700,20 +16608,17 @@ app.post("/events/:id/attendance-dispute", async (c) => {
   const eventId = c.req.param("id");
 
   try {
-    const issues = (await sql`
-      SELECT id, status FROM newchums.attendance_issues
-      WHERE plan_id = ${eventId} AND reported_user_id = ${userId}
-        AND status IN ('active')
-    `) as { id: string; status: string }[];
+    const disputed = (await sql`
+      UPDATE newchums.attendance_issues
+      SET status = 'disputed'
+      WHERE plan_id = ${eventId} AND reported_user_id = ${userId} AND status = 'active'
+      RETURNING id
+    `) as { id: string }[];
 
-    if (issues.length === 0)
+    if (disputed.length === 0)
       return c.json({ ok: false, error: "NO_ACTIVE_ISSUES" }, 404);
 
-    for (const issue of issues) {
-      await adjustReliabilityPenalty(sql, issue.id, 0.5, "disputed");
-    }
-
-    return c.json({ ok: true, disputedCount: issues.length });
+    return c.json({ ok: true, disputedCount: disputed.length });
   } catch (err) {
     console.error("[POST /events/:id/attendance-dispute]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
@@ -19548,14 +19453,16 @@ async function processEventMatchDigest(
   console.log(`[event-match-digest] eligible=${rows.length} skippedPref=${matchSkippedPref} skippedEmpty=${matchSkippedEmpty} queued=${matchQueued}`);
 }
 
-// ─── Post-plan feedback email ─────────────────────────────────────────────────
+// ─── Post-plan wrap-up email ──────────────────────────────────────────────────
 
-async function processPlanFeedbackEmails(
+async function processPlanWrapUpEmails(
   sql: ReturnType<typeof getSql>,
   env: Bindings,
   ctx: ExecutionContext,
 ) {
-  // Find published plans that ended 3+ hours ago but haven't had feedback emails sent
+  // Published plans that started 3+ hours ago and have not had their wrap-up
+  // email yet. events.feedback_email_sent_at is a historical column name kept
+  // to avoid a rename migration; it now stamps the wrap-up send.
   const plans = (await sql`
     SELECT e.id, e.title, e.host_user_id,
            e.starts_at, e.timezone,
@@ -19599,6 +19506,9 @@ async function processPlanFeedbackEmails(
     for (const r of recipients) {
       if (qaFbAdminIds && !qaFbAdminIds.has(r.id)) continue;
       fbTotal++;
+      // Preference key 'feedback_requests' is a stored-JSON pref name; renaming
+      // it would silently reset every user's saved choice, so the key stays
+      // while the Settings display string describes the wrap-up behavior.
       const prefs = normalizeNotificationPrefs(r.notification_prefs);
       if (prefs.items.feedback_requests?.enabled === false) { fbSkippedPref++; continue; }
 
@@ -19619,10 +19529,13 @@ async function processPlanFeedbackEmails(
         r.id === plan.host_user_id ? "host" : "joined",
       );
       emailPromises.push(
-        sendPlanFeedbackEmail(env, {
+        sendPlanWrapUpEmail(env, {
           to: r.email,
+          role: r.id === plan.host_user_id ? "host" : "attendee",
           recipientName,
           planTitle: plan.title,
+          // ?section=feedback stays as the deep-link section key so links in
+          // already-sent emails keep working.
           planUrl: `${env.WEB_BASE_URL}/events/${plan.id}?section=feedback`,
           planDate,
           planLocation,
@@ -19635,7 +19548,7 @@ async function processPlanFeedbackEmails(
     ctx.waitUntil(
       Promise.allSettled(emailPromises).then(async (results) => {
         const failed = results.filter((r) => r.status === "rejected").length;
-        if (failed > 0) console.error(`[plan-feedback] ${failed}/${results.length} email sends failed for plan ${plan.id}`);
+        if (failed > 0) console.error(`[plan-wrapup] ${failed}/${results.length} email sends failed for plan ${plan.id}`);
         await sql`
           UPDATE newchums.events
           SET feedback_email_sent_at = NOW()
@@ -19645,7 +19558,7 @@ async function processPlanFeedbackEmails(
     );
   }
 
-  console.log(`[plan-feedback] plans=${plans.length} recipients=${fbTotal} skippedPref=${fbSkippedPref} queued=${fbQueued}`);
+  console.log(`[plan-wrapup] plans=${plans.length} recipients=${fbTotal} skippedPref=${fbSkippedPref} queued=${fbQueued}`);
 }
 
 // ─── Auto-cancel plans with no attendees ─────────────────────────────────────
@@ -19866,7 +19779,7 @@ async function handleScheduled(
 
   // Post-plan feedback reminder emails
   try {
-    await processPlanFeedbackEmails(sql, env, ctx);
+    await processPlanWrapUpEmails(sql, env, ctx);
   } catch (err) {
     console.error("[scheduled] plan feedback email error:", err);
   }

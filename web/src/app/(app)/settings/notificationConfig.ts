@@ -58,9 +58,12 @@ export const NOTIFICATION_TYPES: NotificationTypeConfig[] = [
     description: "When someone lets you know they can't make it to a plan you're hosting, or leaves after joining.",
   },
   {
+    // Key is stored in user_profile.notification_prefs JSON; renaming it
+    // would silently reset every user's saved choice, so only the display
+    // strings changed when the post-plan surface became the wrap-up.
     key: "feedback_requests",
-    title: "Post-gathering feedback",
-    description: "A quick follow-up the day after gatherings you attend.",
+    title: "Post-plan follow-up",
+    description: "After a plan wraps up: a nudge to thank people, and a private check-in for plans you host.",
   },
   {
     key: "event_changed_canceled",

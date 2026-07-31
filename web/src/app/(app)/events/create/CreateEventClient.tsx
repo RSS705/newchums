@@ -77,6 +77,10 @@ export default function CreateEventClient() {
   const copyFromId = searchParams.get("copy_from");
   const [copyLoading, setCopyLoading] = useState(!!copyFromId);
   const [copyApplied, setCopyApplied] = useState(false);
+  /** Source plan id once hydration succeeded; sent as `copied_from` on create
+   *  so the server can record the repeat-planning product event. Covers both
+   *  entry points (?copy_from= and the Copy a previous plan picker). */
+  const [copySourceId, setCopySourceId] = useState<string | null>(null);
   const [copyDialogOpen, setCopyDialogOpen] = useState(false);
   // Lets copy hydration started from the picker bail out if the user
   // navigates away mid-fetch.
@@ -380,6 +384,7 @@ export default function CreateEventClient() {
       }
 
       setCopyApplied(true);
+      setCopySourceId(sourceId);
       return true;
     } catch {
       if (!isCancelled()) copyLoadFailed();
@@ -624,6 +629,7 @@ export default function CreateEventClient() {
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       status: "published",
       pref_overrides: buildPrefOverrides(),
+      copied_from: copySourceId,
       community_ids: selectedCommunityIds,
       hide_from_explore: hideFromExplore,
       ...(isQa ? { is_qa: true } : {}),

@@ -19,6 +19,8 @@
  *   first_plan_created, second_plan_created, plan_reached_3_rsvps) are
  *   enforced by partial unique indexes; inserts use a bare ON CONFLICT DO
  *   NOTHING so concurrent double-fires resolve to exactly one row.
+ *   Repeatable events (signup_email_sent, rsvp_recorded, plan_copied) have
+ *   no unique index, so no schema change is needed to add one.
  * - params stay small, flat, and PII-free (internal ids are fine, email
  *   addresses and names are not).
  *
@@ -37,7 +39,8 @@ export type ProductEventName =
   | "signup_email_sent"
   | "first_plan_created"
   | "second_plan_created"
-  | "plan_reached_3_rsvps";
+  | "plan_reached_3_rsvps"
+  | "plan_copied";
 
 export type ProductEvent = {
   name: ProductEventName;

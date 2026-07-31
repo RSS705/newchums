@@ -1095,10 +1095,15 @@ export const sendContactFormEmail = async (
   });
 };
 
-export const sendPlanFeedbackEmail = async (
+/** Post-plan wrap-up email, role-varied: hosts get the private check-in
+ *  framing, attendees get the thank-you framing. One template pair; the
+ *  subject is picked per role via subjectKey (planWrapUp_host /
+ *  planWrapUp_attendee). */
+export const sendPlanWrapUpEmail = async (
   env: Bindings,
   {
     to,
+    role,
     recipientName,
     planTitle,
     planUrl,
@@ -1107,6 +1112,7 @@ export const sendPlanFeedbackEmail = async (
     unsubscribeUrl,
   }: {
     to: string;
+    role: "host" | "attendee";
     recipientName: string;
     planTitle: string;
     planUrl: string;
@@ -1114,22 +1120,41 @@ export const sendPlanFeedbackEmail = async (
     planLocation?: string;
     unsubscribeUrl: string;
   },
-) =>
-  dispatch(env, to, "planFeedback", {
-    heading: "How did your plan go?",
-    greeting: `Hi ${recipientName},`,
-    bodyText:
-      "Your plan has wrapped up. Leaving a bit of feedback helps NewChums make better matches for you and keeps future plans more reliable.",
-    recipientName,
-    planTitle,
-    planUrl,
-    planDate: hasContent(planDate) ? planDate : null,
-    planLocation: hasContent(planLocation) ? planLocation : null,
-    ctaUrl: planUrl,
-    ctaText: "Leave feedback",
-    ctaHelperText: "Quick and private. Takes about a minute.",
-    unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
-  });
+) => {
+  const copy =
+    role === "host"
+      ? {
+          heading: "How did your plan go?",
+          bodyText:
+            "Your plan has wrapped up. Take a minute to note who made it, and if it went well, set up the next one. Your check-in is private and only you can see it.",
+          ctaText: "Wrap up your plan",
+          ctaHelperText: "Private, for your records. Takes under a minute.",
+        }
+      : {
+          heading: "Anyone to thank?",
+          bodyText:
+            "Your plan has wrapped up. If someone helped make it a good time, leave them a short shout-out for their profile, or save them to your Chums for next time.",
+          ctaText: "Say thanks",
+          ctaHelperText: "Totally optional. Takes under a minute.",
+        };
+  return dispatch(
+    env,
+    to,
+    "planWrapUp",
+    {
+      ...copy,
+      greeting: `Hi ${recipientName},`,
+      recipientName,
+      planTitle,
+      planUrl,
+      planDate: hasContent(planDate) ? planDate : null,
+      planLocation: hasContent(planLocation) ? planLocation : null,
+      ctaUrl: planUrl,
+      unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
+    },
+    { subjectKey: role === "host" ? "planWrapUp_host" : "planWrapUp_attendee" },
+  );
+};
 
 /** Direct-message notification. Sent at most once per conversation until the
  *  recipient reads the thread (throttled by the caller via

@@ -55,7 +55,11 @@ export const SUBJECTS = {
   planAtRisk: "{{eventTitle}} needs more confirmations",
   planAutoCancelled: "{{eventTitle}} has been cancelled",
   planRemovedByAdmin: "Your plan {{eventTitle}} has been removed",
-  planFeedback: "How did {{planTitle}} go?",
+  // Post-plan wrap-up, role-varied via the dispatch subjectKey option (same
+  // pattern as confirmationRequestUser above): hosts get the operational
+  // check-in framing, attendees get the thank-you framing.
+  planWrapUp_host: "How did {{planTitle}} go?",
+  planWrapUp_attendee: "Anyone to thank from {{planTitle}}?",
 
   // Digests
   unreadChatDigest: "You have unread messages on NewChums",

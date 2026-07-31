@@ -379,7 +379,7 @@ export default function PlanSignupCard({
     }
   }
 
-  // Quiet tertiary-action treatment (matches the PlanFeedback footer links):
+  // Quiet tertiary-action treatment (matches the PlanWrapUp footer links):
   // plain text on transparent, never the theme's peach text-button fill, so
   // these read as quiet escapes rather than competing with real buttons.
   const quietActionSx = {

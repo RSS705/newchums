@@ -88,7 +88,7 @@ import { isDuplicate, nameToSlug } from "@/lib/interestUtils";
 import { trackEvent } from "@/lib/analytics";
 import { SECTION_SCROLL_MARGIN, scrollSectionIntoView } from "@/lib/scrollOffsets";
 import { notifyObjectivesChanged } from "@/components/objectives/NextStepNudge";
-import PlanFeedback from "@/components/events/PlanFeedback";
+import PlanWrapUp from "@/components/events/PlanWrapUp";
 import PlanSignupCard from "@/components/events/PlanSignupCard";
 import AdminPlanPanel, { type PlanAdminView } from "@/components/admin/AdminPlanPanel";
 import AvailabilityPicker, {
@@ -459,7 +459,7 @@ export default function EventDetailClient({
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
   // Prefetched feedback payload, populated in load() when the visitor arrived
-  // via ?section=feedback. Lets <PlanFeedback> mount with data already in
+  // via ?section=feedback. Lets <PlanWrapUp> mount with data already in
   // hand so the form is visible on first paint instead of popping in after a
   // second round-trip.
   const [prefetchedFeedback, setPrefetchedFeedback] = useState<unknown>(null);
@@ -589,13 +589,13 @@ export default function EventDetailClient({
       }
 
       // When the visitor was deep-linked into the feedback section we already
-      // know <PlanFeedback> will be rendered, so kick its data fetch off in
+      // know <PlanWrapUp> will be rendered, so kick its data fetch off in
       // parallel with the event request. The result is handed to the child
       // via a prop so it can paint the form on first render instead of doing
       // a second round-trip and flickering content into view.
       const feedbackPromise =
         sectionParam === "feedback" && useAuth
-          ? apiFetch(`/events/${eventId}/feedback`, { auth: true })
+          ? apiFetch(`/events/${eventId}/wrap-up`, { auth: true })
               .then(async (r) => (r.ok ? await r.json() : null))
               .catch(() => null)
           : Promise.resolve(null);
@@ -639,7 +639,7 @@ export default function EventDetailClient({
       setIsAuthenticated(useAuth);
 
       // Wait for the parallel feedback fetch (if any) before flipping
-      // loading=false. This is the small delta that lets <PlanFeedback>
+      // loading=false. This is the small delta that lets <PlanWrapUp>
       // render its content on first paint instead of after a follow-up
       // round-trip, eliminating the form pop-in flicker on email links.
       if (sectionParam === "feedback") {
@@ -2487,7 +2487,7 @@ export default function EventDetailClient({
         >
           <Typography variant="body2" sx={{ mb: 1 }}>
             {sectionLoginNudge === "feedback"
-              ? "Sign in to share how it went."
+              ? "Sign in to say thanks to the people who came."
               : sectionLoginNudge === "chat"
                 ? "Sign in to view plan chat."
                 : "Sign in to continue."}
@@ -2771,14 +2771,16 @@ export default function EventDetailClient({
         </Box>
       )}
 
-      {/* Post-plan feedback, shown prominently for past attended plans.
-          Rendered without an outer wrapper so that, when PlanFeedback
-          bails out (loading/dismissed/no attendees-or-issues to review),
-          it doesn't leave an empty Box consuming a Stack gap slot between
-          the header and the details card. */}
+      {/* Post-plan wrap-up: Say-thanks for everyone, plus the host's private
+          attendance check-in and run-it-again prompt. Rendered without an
+          outer wrapper so that, when PlanWrapUp bails out (loading, dismissed,
+          nothing to show), it doesn't leave an empty Box consuming a Stack gap
+          slot between the header and the details card. The section id and the
+          ?section=feedback deep-link key are unchanged so links in
+          already-sent emails keep working. */}
       {isPast && !isCanceled && accessState === "attending" &&
         (event.isHost || viewerRsvpStatus === "going" || viewerRsvpStatus === "maybe") && (
-        <PlanFeedback
+        <PlanWrapUp
           id="plan-section-feedback"
           eventId={event.id}
           planTitle={event.title}
