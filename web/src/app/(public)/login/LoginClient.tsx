@@ -26,7 +26,12 @@ export default function LoginClient() {
   const [error, setError] = React.useState<string | null>(null);
   const [emailUnverified, setEmailUnverified] = React.useState(false);
   const [suspended, setSuspended] = React.useState(false);
-  const [pendingSetup, setPendingSetup] = React.useState(false);
+  // Email-link sign-in is the primary method: it works for every account,
+  // including the growing share created passwordless through the plan-signup
+  // flow, who used to be led straight into a password form that could only
+  // fail. Password entry stays available behind one tap.
+  const [method, setMethod] = React.useState<"link" | "password">("link");
+  const [linkNotice, setLinkNotice] = React.useState<string | null>(null);
   const [linkStatus, setLinkStatus] = React.useState<"idle" | "sending" | "sent" | "error">("idle");
   // Latch that says "fire the sign-in link as soon as we have everything we
   // need." Set when the credentials submit returns PasswordSetupPending so
@@ -151,10 +156,16 @@ export default function LoginClient() {
       <LegalConsentNotice action="continuing" sx={{ mt: 1.25 }} />
 
       <AuthDividerForm
-        dividerText="or sign in with"
+        dividerText="or use your email"
         onSubmit={async (event) => {
           event.preventDefault();
           setError(null);
+          if (method === "link") {
+            if (linkStatus === "sending" || !email.trim()) return;
+            if (turnstileSiteKey && !turnstileToken) return;
+            void sendSigninLink();
+            return;
+          }
           const result = await signIn("credentials", {
             email,
             password,
@@ -186,14 +197,15 @@ export default function LoginClient() {
             }
             if (code === "PasswordSetupPending") {
               // Account was created via the lightweight plan-entry flow and
-              // never had a password set. Auto-send a fresh magic sign-in
-              // link so the user gets the email without an extra click;
-              // the form swaps to a "sent" / resend state once the request
-              // completes (and waits for Turnstile when configured).
-              setPendingSetup(true);
+              // never had a password set. Safety net for someone who chose
+              // "Use a password" anyway: flip back to the link method and
+              // auto-send so they get the email without another click (the
+              // send waits for Turnstile when configured).
+              setMethod("link");
               setLinkStatus("sending");
               setAutoSendPending(true);
-              setError("Your password hasn\u2019t been set yet. We\u2019re sending a one-click sign-in link to your email so you can finish setup.");
+              setError(null);
+              setLinkNotice("This account signs in by email link, no password needed. Sending yours now.");
               return;
             }
             if (code === "InvalidPassword") {
@@ -229,13 +241,20 @@ export default function LoginClient() {
             setError(null);
             setEmailUnverified(false);
             setSuspended(false);
-            setPendingSetup(false);
+            setLinkNotice(null);
             setLinkStatus("idle");
             setAutoSendPending(false);
             setTurnstileToken(null);
           }}
           required
         />
+        {linkNotice && method === "link" && (
+          <Typography variant="body2" sx={{ color: "text.secondary", mt: 1.5, textAlign: "center" }}>
+            {linkNotice}
+          </Typography>
+        )}
+
+        {method === "password" && (
         <AuthField
           id="login-password"
           label="Password"
@@ -246,7 +265,7 @@ export default function LoginClient() {
             setError(null);
             setEmailUnverified(false);
             setSuspended(false);
-            setPendingSetup(false);
+            setLinkNotice(null);
             setLinkStatus("idle");
             setAutoSendPending(false);
             setTurnstileToken(null);
@@ -276,7 +295,9 @@ export default function LoginClient() {
           }
           error={Boolean(error)}
         />
+        )}
 
+        {method === "password" && (
         <Box sx={{ my: 2, textAlign: "right" }}>
           <Typography
             component={Link}
@@ -289,18 +310,17 @@ export default function LoginClient() {
             Forgot your password?
           </Typography>
         </Box>
+        )}
 
-        {/* When the account has no password yet, the usual "Sign in" submit
-         *  would only produce the same PasswordSetupPending error, so we
-         *  swap it for the one action that actually helps them: send the
-         *  sign-in link. After the link is sent, the card flips to a
-         *  success message so the user knows the next step is their inbox.
+        {/* Action area. Link mode is primary: it works for every account,
+         *  passwordless ones included, and the sent-state card matches the
+         *  PlanSignupCard "check your email" tone. Password mode is one tap
+         *  away for people who have one; a passwordless account submitting a
+         *  password is flipped back to link mode by the
+         *  PasswordSetupPending branch above.
          */}
-        {pendingSetup ? (
+        {method === "link" ? (
           linkStatus === "sent" ? (
-            // Styled confirmation card, matches the PlanSignupCard
-            // "check your email" state so the tone is consistent across
-            // surfaces that end on "wait for the email link."
             <Box
               sx={{
                 mt: 1,
@@ -328,14 +348,12 @@ export default function LoginClient() {
                   <MarkEmailReadRoundedIcon sx={{ fontSize: 28 }} />
                 </Box>
                 <Typography variant="subtitle1" fontWeight={700}>
-                  Sign-in link sent
+                  Check your email
                 </Typography>
                 <Typography variant="body2" color="text.primary">
-                  Open the link we sent to{" "}
-                  <Box component="span" sx={{ fontWeight: 600 }}>
-                    {email}
-                  </Box>{" "}
-                  to finish signing in.
+                  If <Box component="span" sx={{ fontWeight: 600 }}>{email}</Box> has a
+                  NewChums account, a sign-in link is on its way. One click and
+                  you&apos;re in.
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
                   The link is valid for 15 minutes. Didn&apos;t see it? Check
@@ -345,10 +363,6 @@ export default function LoginClient() {
                   component="button"
                   type="button"
                   onClick={() => {
-                    // Triggers another send. The status flip to "sending"
-                    // re-renders the parent ternary back to the button
-                    // branch, so the user briefly sees the inline button
-                    // again before the success card returns.
                     void sendSigninLink();
                   }}
                   variant="caption"
@@ -368,11 +382,10 @@ export default function LoginClient() {
               </Stack>
             </Box>
           ) : (
-            <Stack spacing={1.5} alignItems="center">
-              {/* Turnstile renders here so the auto-send can grab a token
-               *  the moment Turnstile resolves. When TURNSTILE_SECRET_KEY
-               *  is unset (dev), the auto-send fires immediately. The
-               *  resend button below uses the same gating. */}
+            <Stack spacing={1.5} alignItems="center" sx={{ mt: 2 }}>
+              {/* Turnstile renders up front so the send button unlocks the
+               *  moment it resolves. When TURNSTILE_SECRET_KEY is unset
+               *  (dev), the button is enabled immediately. */}
               {turnstileSiteKey && (
                 <TurnstileWidget
                   siteKey={turnstileSiteKey}
@@ -380,7 +393,7 @@ export default function LoginClient() {
                 />
               )}
               <AppButton
-                type="button"
+                type="submit"
                 fullWidth
                 size="large"
                 disabled={
@@ -388,13 +401,12 @@ export default function LoginClient() {
                   !email.trim() ||
                   (Boolean(turnstileSiteKey) && !turnstileToken)
                 }
-                onClick={(event) => {
-                  event.preventDefault();
-                  void sendSigninLink();
-                }}
               >
-                {linkStatus === "sending" ? "Sending…" : "Resend the sign-in link"}
+                {linkStatus === "sending" ? "Sending…" : "Email me a sign-in link"}
               </AppButton>
+              <Typography variant="caption" color="text.secondary" sx={{ textAlign: "center" }}>
+                No password needed. We&apos;ll email you a one-click link.
+              </Typography>
               {linkStatus === "error" && (
                 <Typography variant="caption" color="error">
                   We couldn&apos;t send the link. Please try again in a moment.
@@ -407,6 +419,32 @@ export default function LoginClient() {
             Sign in
           </AppButton>
         )}
+
+        <Box sx={{ mt: 1.75, textAlign: "center" }}>
+          <Typography
+            component="button"
+            type="button"
+            onClick={() => {
+              setMethod(method === "link" ? "password" : "link");
+              setError(null);
+              setLinkNotice(null);
+              setLinkStatus("idle");
+              setAutoSendPending(false);
+            }}
+            variant="body2"
+            sx={{
+              background: "none",
+              border: "none",
+              p: 0,
+              cursor: "pointer",
+              color: "primary.main",
+              fontWeight: 500,
+              "&:hover": { textDecoration: "underline" },
+            }}
+          >
+            {method === "link" ? "Use a password instead" : "Email me a sign-in link instead"}
+          </Typography>
+        </Box>
       </AuthDividerForm>
 
       <AuthFooterLink prompt="New to NewChums?" linkText="Create an account" href="/signup" />

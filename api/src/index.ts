@@ -2194,14 +2194,15 @@ app.post("/auth/signin-link/request", async (c) => {
   }
   const email = body.email?.trim().toLowerCase();
   const turnstileToken = typeof body.turnstile_token === "string" ? body.turnstile_token : "";
-  // Ignore any client-supplied `next` for this flow. The recipient is a
-  // lightweight-signup user who never set a password; landing them on the
-  // Explore feed (the default) means they'd just hit the same problem
-  // again on next sign-out. Hard-coding `/settings#account` here drops
-  // them on the password-setup section so the PasswordSetupBanner's CTA
-  // and the in-page "Set a password" form are both immediately visible
-  // and they can finish setup in one step.
-  const next = "/settings#account";
+  // Sanitized client `next`: relative paths only, no protocol-relative
+  // escapes. Resolved per-account below: password-pending accounts are
+  // always landed on the password-setup section instead (landing them on
+  // the Explore feed would just reproduce the problem on their next
+  // sign-out), everyone else gets their requested destination.
+  const requestedNext =
+    typeof body.next === "string" && body.next.startsWith("/") && !body.next.startsWith("//")
+      ? body.next
+      : "/";
 
   if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
     return c.json({ ok: false, error: "INVALID_EMAIL" }, 400);
@@ -2240,13 +2241,16 @@ app.post("/auth/signin-link/request", async (c) => {
     LIMIT 1
   `) as { id: string; is_suspended: boolean; password_setup_pending: boolean }[];
 
-  // Only issue a link for real pending accounts. For any other state (no
-  // account, password set, suspended) return ok silently so an attacker
-  // can't distinguish pending from non-pending via the response.
+  // Sign-in links are a first-class sign-in method since the login-page
+  // rework (July 2026), not just recovery for password-pending accounts:
+  // any existing, non-suspended account gets one. Missing and suspended
+  // accounts return ok silently so the response never confirms whether an
+  // address has an account.
   const user = rows[0];
-  if (!user || user.is_suspended || !user.password_setup_pending) {
+  if (!user || user.is_suspended) {
     return c.json({ ok: true });
   }
+  const next = user.password_setup_pending ? "/settings#account" : requestedNext;
 
   await sql`
     UPDATE newchums.email_verification_tokens SET used_at = NOW()
