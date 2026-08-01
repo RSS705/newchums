@@ -171,7 +171,11 @@ const EventCard = React.memo(function EventCard({
   const fallbackGradient = getGradientForEventId(event.id);
 
   const cardHref =
-    hrefOverride ?? (isExample ? "/signup" : `/events/${event.id}`);
+    hrefOverride ??
+    // Sample cards open a read-only demo of a plan page rather than jumping
+    // straight to /signup, which made clicking a plan produce a signup form
+    // and no sense of what a plan actually is.
+    (isExample ? `/sample-plan/${event.id}` : `/events/${event.id}`);
 
   return (
     <Card

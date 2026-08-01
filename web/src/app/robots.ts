@@ -41,6 +41,9 @@ export default function robots(): MetadataRoute.Robots {
           // Signed-in only since Aug 2026 (see the roadmap page comment).
           "/roadmap",
           "/roadmap/",
+          // Read-only illustrative demos, never real plans.
+          "/sample-plan",
+          "/sample-plan/",
           "/admin",
           "/admin/",
           "/api",
