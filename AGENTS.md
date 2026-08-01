@@ -109,7 +109,7 @@ is still NULL.
 ### Deliberate Choices That Look Like Accidents
 
 - **18+ DOB gate.** A considered legal/safety posture for an in-person meetup product, not UX debt. Any change requires an owner decision with legal review. The recorded candidate, if ever revisited: under-18 participation via private invite links only, 18+ for discovery and hosting.
-- **No OG image on plan pages.** An explicit choice driven by OpenNext font-runtime constraints, not an oversight. A generated share card is on the roadmap; treat the empty-`images` override in the plan page metadata as temporary.
+- **Plan pages ship a static OG card** (`/og-plan-card.png`, 1200x630), not a per-plan generated one. A dynamic `opengraph-image.tsx` was built and works in `next dev`, but the OpenNext Cloudflare server function cannot load an edge-runtime route (`interopDefault` TypeError, 500) and without the edge declaration the route is not registered at all (404). The precise blocker and revisit conditions are documented in the plan page metadata comment. Gated plans (draft, canceled, QA or invite_only without a token) still ship no image at all, deliberately.
 - **No recurring events.** Intentional. The approved intermediate step is a post-plan "run it again" duplicate nudge, not a recurrence engine.
 
 ### Growth Model

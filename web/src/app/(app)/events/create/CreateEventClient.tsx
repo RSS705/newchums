@@ -674,9 +674,11 @@ export default function CreateEventClient() {
         // Host-loop funnel event (client-side GA complement to the server's
         // first/second-plan product events). QA plans stay out of analytics.
         if (!isQa) trackEvent("plan_created");
-        toast.success("Plan created!");
         notifyObjectivesChanged();
-        router.push(`/events/${data.event.id}`);
+        // ?published=1 opens the share moment on arrival. Publishing used to
+        // end in a toast and a redirect, which left the most important next
+        // step (share the link) as something the host had to go find.
+        router.push(`/events/${data.event.id}?published=1`);
       } else {
         if (data.field) {
           const fieldErrs = { [data.field]: data.message ?? "Validation error" };

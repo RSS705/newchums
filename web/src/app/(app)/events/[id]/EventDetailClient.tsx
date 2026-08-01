@@ -37,7 +37,7 @@ import MuiLink from "@mui/material/Link";
 import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
-import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
+import IosShareRoundedIcon from "@mui/icons-material/IosShareRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import EventRepeatRoundedIcon from "@mui/icons-material/EventRepeatRounded";
@@ -88,6 +88,7 @@ import { trackEvent } from "@/lib/analytics";
 import { SECTION_SCROLL_MARGIN, scrollSectionIntoView } from "@/lib/scrollOffsets";
 import { notifyObjectivesChanged } from "@/components/objectives/NextStepNudge";
 import PlanWrapUp from "@/components/events/PlanWrapUp";
+import PlanShareMoment from "@/components/events/PlanShareMoment";
 import PlanSignupCard from "@/components/events/PlanSignupCard";
 import AdminPlanPanel, { type PlanAdminView } from "@/components/admin/AdminPlanPanel";
 import AvailabilityPicker, {
@@ -385,9 +386,12 @@ export default function EventDetailClient({
 
   // Share token from API response, used by Copy Link to build share-access URLs
   const [shareToken, setShareToken] = useState<string | null>(null);
-  const [shareLinkModalDismissed, setShareLinkModalDismissed] = useState(false);
-  const [shareLinkModalOpen, setShareLinkModalOpen] = useState(false);
-  const [shareLinkDontShowAgain, setShareLinkDontShowAgain] = useState(false);
+
+  // The share moment. Opens automatically once after publishing (the
+  // ?published=1 the create form redirects with) and on demand from the
+  // host's Share button.
+  const [shareMomentOpen, setShareMomentOpen] = useState(false);
+  const [shareMomentSurface, setShareMomentSurface] = useState<"post_publish" | "plan_page">("plan_page");
 
   const [bannerFailed, setBannerFailed] = useState(false);
   const [bannerUseFallback, setBannerUseFallback] = useState(false);
@@ -399,46 +403,37 @@ export default function EventDetailClient({
     }
   }, [bannerUseFallback]);
 
-  // Copy link, builds a share URL with the share token so recipients see
-  // full plan detail + the lightweight signup card (not just the public preview).
-  const handleCopyLink = useCallback(async () => {
-    // Host-loop funnel event. Fires on tap (before the clipboard write) so a
-    // clipboard failure still counts the share intent.
-    trackEvent("share_link_copied", { is_host: event?.isHost === true });
-    const base = `${window.location.origin}/events/${eventId}`;
-    const url = shareToken ? `${base}?share_token=${encodeURIComponent(shareToken)}` : base;
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(url);
-      } else {
-        const el = document.createElement("textarea");
-        el.value = url;
-        el.style.cssText = "position:fixed;top:-9999px;left:-9999px";
-        document.body.appendChild(el);
-        el.select();
-        document.execCommand("copy");
-        document.body.removeChild(el);
-      }
-      if (shareLinkModalDismissed) {
-        toast.success("Link copied to clipboard");
-      } else {
-        setShareLinkModalOpen(true);
-      }
-    } catch {
-      toast.error("Could not copy link, please copy it from your browser's address bar");
-    }
-  }, [eventId, shareToken, toast, shareLinkModalDismissed, event]);
+  // Post-publish arrival: the create form redirects with ?published=1 so
+  // the share moment is the first thing a host sees. Waits for the share
+  // token (it arrives with the plan payload) so the copied link carries it,
+  // then removes the flag from the URL.
+  const publishedHandledRef = useRef(false);
+  useEffect(() => {
+    if (publishedHandledRef.current) return;
+    if (searchParams.get("published") !== "1") return;
+    if (!event?.isHost || !shareToken) return;
+    publishedHandledRef.current = true;
+    setShareMomentSurface("post_publish");
+    setShareMomentOpen(true);
+    const params = new URLSearchParams(Array.from(searchParams.entries()));
+    params.delete("published");
+    const qs = params.toString();
+    const path = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
+    window.history.replaceState({}, "", path);
+  }, [searchParams, event, shareToken]);
 
-  const handleShareLinkModalClose = useCallback(async () => {
-    setShareLinkModalOpen(false);
-    if (shareLinkDontShowAgain) {
-      setShareLinkModalDismissed(true);
-      try {
-        await apiFetch("/share-link-modal-dismiss", { auth: true, method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
-      } catch { /* non-critical */ }
-    }
-    setShareLinkDontShowAgain(false);
-  }, [shareLinkDontShowAgain]);
+  // Share URL: includes the share token so recipients get full plan detail
+  // and the lightweight signup card rather than the public preview.
+  const buildShareUrl = useCallback(() => {
+    if (typeof window === "undefined") return "";
+    const base = `${window.location.origin}/events/${eventId}`;
+    return shareToken ? `${base}?share_token=${encodeURIComponent(shareToken)}` : base;
+  }, [eventId, shareToken]);
+
+  const openShareMoment = useCallback((surface: "post_publish" | "plan_page") => {
+    setShareMomentSurface(surface);
+    setShareMomentOpen(true);
+  }, []);
 
   // Lock state
   const [lockToggling, setLockToggling] = useState(false);
@@ -527,7 +522,6 @@ export default function EventDetailClient({
       if (data.viewerUserId) setViewerUserId(data.viewerUserId);
       if (data.viewerEmail) setViewerEmail(data.viewerEmail);
       setInviteeEmail(data.inviteeEmail ?? null);
-      if (data.shareLinkModalDismissed != null) setShareLinkModalDismissed(data.shareLinkModalDismissed);
       // Clear local confirmation override once server state arrives
       setLocalConfirmStatus(null);
     },
@@ -3777,9 +3771,9 @@ export default function EventDetailClient({
                 <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
                   <AppButton
                     size="small"
-                    variant="outlined"
-                    startIcon={<ContentCopyRoundedIcon sx={{ fontSize: 16 }} />}
-                    onClick={handleCopyLink}
+                    variant="contained"
+                    startIcon={<IosShareRoundedIcon sx={{ fontSize: 16 }} />}
+                    onClick={() => openShareMoment("plan_page")}
                     sx={{ textTransform: "none" }}
                   >
                     Share plan link
@@ -3813,9 +3807,9 @@ export default function EventDetailClient({
                   </Typography>
                   <AppButton
                     size="small"
-                    variant="outlined"
-                    startIcon={<ContentCopyRoundedIcon sx={{ fontSize: 16 }} />}
-                    onClick={handleCopyLink}
+                    variant="contained"
+                    startIcon={<IosShareRoundedIcon sx={{ fontSize: 16 }} />}
+                    onClick={() => openShareMoment("plan_page")}
                     sx={{ textTransform: "none" }}
                   >
                     Share plan link
@@ -6029,54 +6023,15 @@ export default function EventDetailClient({
         </DialogActions>
       </Dialog>
 
-      {/* Share link first-use info modal */}
-      <Dialog open={shareLinkModalOpen} onClose={handleShareLinkModalClose} fullWidth maxWidth="xs">
-        <DialogTitle sx={{ fontWeight: 700, pb: 1 }}>
-          <Stack direction="row" alignItems="center" spacing={1}>
-            <CheckCircleRoundedIcon sx={{ color: "success.main", fontSize: 22 }} />
-            <span>Link copied!</span>
-          </Stack>
-        </DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, lineHeight: 1.65 }}>
-            Paste this link to share the plan. Anyone with it can:
-          </Typography>
-          <Stack spacing={1} sx={{ mb: 2 }}>
-            {[
-              "View the full plan details",
-              "RSVP (Going, Maybe, or Can\u2019t make it)",
-              ...(event?.allowAltTimes
-                ? [event.altTimesMode === "availability"
-                    ? "Share their availability"
-                    : "Suggest an alternative time"]
-                : []),
-            ].map((item) => (
-              <Stack key={item} direction="row" spacing={1} alignItems="center">
-                <Box sx={{ width: 5, height: 5, borderRadius: "50%", bgcolor: "primary.main", flexShrink: 0 }} />
-                <Typography variant="body2" sx={{ lineHeight: 1.5 }}>{item}</Typography>
-              </Stack>
-            ))}
-          </Stack>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, lineHeight: 1.65 }}>
-            Recipients don&rsquo;t need a NewChums account to respond.
-          </Typography>
-          <FormControlLabel
-            control={
-              <Checkbox
-                size="small"
-                checked={shareLinkDontShowAgain}
-                onChange={(e) => setShareLinkDontShowAgain(e.target.checked)}
-              />
-            }
-            label={<Typography variant="body2">Don&rsquo;t show this again</Typography>}
-          />
-        </DialogContent>
-        <DialogActions sx={{ px: { xs: 2, sm: 3 }, pb: { xs: 2, sm: 2.5 }, gap: 1 }}>
-          <Button onClick={handleShareLinkModalClose} variant="contained">
-            Got it
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <PlanShareMoment
+        open={shareMomentOpen}
+        onClose={() => setShareMomentOpen(false)}
+        url={buildShareUrl()}
+        planTitle={event.title}
+        planWhen={event.startsAt ? formatDateTime(event.startsAt) : null}
+        surface={shareMomentSurface}
+      />
+
     </Stack>
   );
 }

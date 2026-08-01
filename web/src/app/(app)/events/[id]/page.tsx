@@ -266,14 +266,38 @@ function buildPlanJsonLd(
  *  - Tokenized URLs: noindex regardless. Personal share URLs should not
  *    end up in search results even when we render a useful unfurl.
  *
- *  Image handling: ships no `og:image` for plan pages. Wide
- *  host-uploaded banners crop badly when Discord/Slack box them into a
- *  16:9 unfurl, and a 1200×630 auto-generated share card is a deferred
- *  enhancement (font/runtime risk on OpenNext-Cloudflare for
- *  ImageResponse + Satori; SVG OG images are unreliable on Twitter).
- *  Both `openGraph.images` and `twitter.images` are set to an explicit
- *  empty array so Next's deep-merge doesn't inherit the root layout's
- *  `/og-image.png` brand card and ship a generic product embed.
+ *  Image handling: viewable plans ship the static branded share card at
+ *  `/og-plan-card.png` (1200x630). Combined with the og:title and
+ *  og:description above, a pasted link now unfurls as a branded card that
+ *  names the plan and when it happens, instead of bare text.
+ *
+ *  Why static and not a per-plan generated card (attempted Aug 2026, and
+ *  the exact blocker so nobody re-derives it):
+ *    - A Next `opengraph-image.tsx` using ImageResponse renders correctly
+ *      in `next dev` (verified: real 1200x630 PNG, bundled Gabarito TTF,
+ *      ~1.2s), so the design and the privacy gating are not the problem.
+ *    - With `export const runtime = "edge"`, `npm run build:worker`
+ *      succeeds and emits the route, but the deployed OpenNext server
+ *      function cannot load it at request time:
+ *        TypeError: Cannot read properties of undefined (reading 'default')
+ *        at interopDefault -> loadComponentsImpl -> findPageComponentsImpl
+ *      i.e. the edge bundle is not wired into the single workerd server
+ *      function OpenNext produces. Route returns 500.
+ *    - Without the edge declaration the route is not registered in the
+ *      worker at all: the URL 404s and Next emits no og:image meta.
+ *    Revisit when @opennextjs/cloudflare supports edge-runtime route
+ *    handlers in the server function; the deleted route is in git history
+ *    at this commit and only needs its font re-bundled.
+ *
+ *  The host-uploaded banner is deliberately not used either way: wide
+ *  banners crop badly in a 16:9 unfurl box and are unverified user
+ *  imagery served under our brand.
+ *
+ *  The two fallback metadata objects above KEEP their empty `images`
+ *  arrays. A gated plan (draft, canceled, QA or invite_only without a
+ *  token) therefore ships no image at all, which is the most conservative
+ *  option and also stops Next's deep-merge inheriting the root layout's
+ *  `/og-image.png`.
  *
  *  Location handling: never includes the exact street address even
  *  when token-backed access exposes it. Built from `locationName` plus
@@ -385,20 +409,21 @@ export async function generateMetadata({
         url: canonicalPath,
         type: "article",
         siteName: "NewChums",
-        // Plan banners are wide and squash poorly when Discord crops to its
-        // 16:9 unfurl box, and there's no auto-generated 1200x630 share
-        // card yet (font/runtime risk on OpenNext-Cloudflare). Until that
-        // exists, ship a clean text-only embed by explicitly clearing the
-        // image. Empty array also overrides the root layout's
-        // /og-image.png brand card that would otherwise leak in via
-        // Next's deep-merge.
-        images: [],
+        images: [
+          {
+            url: "/og-plan-card.png",
+            width: 1200,
+            height: 630,
+            alt: "A plan on NewChums",
+          },
+        ],
       },
       twitter: {
-        card: "summary",
+        // summary_large_image now that a real 1200x630 card exists.
+        card: "summary_large_image",
         title: ogTitle,
         description,
-        images: [],
+        images: ["/og-plan-card.png"],
       },
     };
   } catch {
