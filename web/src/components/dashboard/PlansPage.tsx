@@ -304,21 +304,22 @@ export default function PlansPage() {
                 title={isPast ? "No past plans yet" : "No upcoming plans"}
                 description={
                   isPast
-                    ? "Once you attend or host a gathering, it'll show up here so you can look back on the good times."
+                    ? "Nothing here yet. Post a plan, share the link with your group, and it'll show up here afterwards."
                     : "Start a plan around something you enjoy, or keep an eye out for an invite from someone you know."
                 }
                 action={
-                  !isPast ? (
-                    <Button
-                      component={Link}
-                      href="/events/create"
-                      variant="contained"
-                      startIcon={<AddCircleRoundedIcon />}
-                      sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
-                    >
-                      Start a plan
-                    </Button>
-                  ) : undefined
+                  // Both tabs offer the host action: an empty past tab
+                  // used to be a dead end, and posting a plan is the
+                  // thing that fills it.
+                  <Button
+                    component={Link}
+                    href="/events/create"
+                    variant="contained"
+                    startIcon={<AddCircleRoundedIcon />}
+                    sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
+                  >
+                    Start a plan
+                  </Button>
                 }
               />
             </Paper>

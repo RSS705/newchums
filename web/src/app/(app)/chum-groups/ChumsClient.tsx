@@ -25,6 +25,7 @@ import PersonAddRoundedIcon from "@mui/icons-material/PersonAddRounded";
 import PersonOutlineRoundedIcon from "@mui/icons-material/PersonOutlineRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import Link from "next/link";
+import AddCircleRoundedIcon from "@mui/icons-material/AddCircleRounded";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import { notifyObjectivesChanged } from "@/components/objectives/NextStepNudge";
@@ -1181,7 +1182,18 @@ export default function ChumsClient() {
                 </Box>
               }
               title="No chums yet"
-              description="Use the search above to find people. Chums can be invited to private plans, and having them here makes it easy to keep track of people you know."
+              description="Search above to find people you already know. The quickest way to add chums is to post a plan and share the link, everyone who joins ends up here."
+              action={
+                <Button
+                  component={Link}
+                  href="/events/create"
+                  variant="contained"
+                  startIcon={<AddCircleRoundedIcon />}
+                  sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
+                >
+                  Start a plan
+                </Button>
+              }
             />
           ) : (
             <Stack divider={<Divider />}>

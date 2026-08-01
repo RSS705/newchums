@@ -666,8 +666,8 @@ export default function CommunitiesListClient() {
                 : isFiltered
                   ? "Try widening the distance, removing a hobby filter, or clearing filters to see more."
                   : hasLocation
-                    ? "There aren't any communities in your area yet. Start one and bring people together."
-                    : "Be the first to create a community and bring people together."
+                    ? "There aren't any communities in your area yet. You don't need one to use NewChums: post a plan and share the link with your group."
+                    : "None nearby yet. You don't need a community to use NewChums: post a plan and share the link with your group."
             }
             action={
               <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
@@ -691,8 +691,17 @@ export default function CommunitiesListClient() {
                 )}
                 <Button
                   component={Link}
-                  href="/communities/create"
+                  href="/events/create"
                   variant="contained"
+                  startIcon={<AddCircleRoundedIcon />}
+                  sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
+                >
+                  Start a plan
+                </Button>
+                <Button
+                  component={Link}
+                  href="/communities/create"
+                  variant="outlined"
                   startIcon={<AddCircleRoundedIcon />}
                   sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
                 >

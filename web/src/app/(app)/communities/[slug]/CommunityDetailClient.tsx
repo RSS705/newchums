@@ -2271,10 +2271,14 @@ export default function CommunityDetailClient({
                     <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
                       {isMember
                         ? "Be the first to start a plan. Members get notified as soon as something is on the calendar."
-                        : "Upcoming plans from this community will appear here."}
+                        : "No plans from this community yet. You can still post your own and share the link with whoever you want there."}
                     </Typography>
                   </Box>
-                  {isMember && (
+                  {/* Offered to members and non-members alike: a
+                      non-member used to get a sentence and no way forward,
+                      when posting their own plan is exactly what they can
+                      do right now. */}
+                  {(
                     <Button
                       component={Link}
                       href={createPlanHref}
@@ -2282,7 +2286,7 @@ export default function CommunityDetailClient({
                       startIcon={<AddCircleRoundedIcon />}
                       sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, mt: 1, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
                     >
-                      Start the first plan
+                      {isMember ? "Start the first plan" : "Start a plan"}
                     </Button>
                   )}
                 </Stack>
