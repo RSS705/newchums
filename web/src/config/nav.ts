@@ -36,6 +36,10 @@ export const appNavItems: NavItem[] = [
   // 1,100-line voting page. The roadmap stays reachable from the footer's
   // "Community Roadmap" link.
   { label: "Give Feedback", href: "/contact", icon: FeedbackRoundedIcon },
+  // Signed-in only since Aug 2026, so it lives here rather than in the
+  // public landing footer (where it would have been a login wall for the
+  // signed-out visitors who make up most of that footer's audience).
+  { label: "Roadmap", href: "/roadmap", icon: MapRoundedIcon },
 ];
 
 export const createEventHref = "/events/create";

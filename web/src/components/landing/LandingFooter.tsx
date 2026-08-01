@@ -47,7 +47,10 @@ export default function LandingFooter() {
           {[
             { href: "/how-it-works", label: "How it Works" },
             { href: "/safety-center", label: "Safety Center" },
-            { href: "/roadmap", label: "Community Roadmap" },
+            // Community Roadmap deliberately not listed here: it is
+            // signed-in only (Aug 2026), and this footer renders mostly to
+            // signed-out visitors, for whom the link is a login wall. It
+            // stays in the app sidebar for signed-in users.
             { href: "/contact", label: "Contact" },
           ].map((link) => (
             <Typography

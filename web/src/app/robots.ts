@@ -32,14 +32,15 @@ export default function robots(): MetadataRoute.Robots {
           "/contact",
           "/privacy",
           "/terms",
-          "/roadmap",
-          "/roadmap/",
           "/communities",
           "/communities/",
           "/events/",
           "/u/",
         ],
         disallow: [
+          // Signed-in only since Aug 2026 (see the roadmap page comment).
+          "/roadmap",
+          "/roadmap/",
           "/admin",
           "/admin/",
           "/api",
