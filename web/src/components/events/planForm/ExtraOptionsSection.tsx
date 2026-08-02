@@ -10,11 +10,17 @@ import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
-import { AppCard, HelpTooltip } from "@/components/ui";
+import { HelpTooltip } from "@/components/ui";
+import CollapsibleSection from "./CollapsibleSection";
 
 export type FallbackPolicy = "notify_host" | "proceed" | "auto_cancel";
 
 type Props = {
+  /** Collapsed by default (two-tier form); the parent owns the open state so
+   *  validation errors can force the section open. */
+  expanded: boolean;
+  onToggle: () => void;
+
   requireReconfirmation: boolean;
   onChangeRequireReconfirmation: (value: boolean) => void;
 
@@ -36,6 +42,15 @@ type Props = {
 
   muteHostAttendanceEmails: boolean;
   onChangeMuteHostAttendanceEmails: (value: boolean) => void;
+
+  /** Optional RSVP-based auto-cancel threshold. Lives here (rather than with
+   *  the seat count) because it is an optional host control with a safe
+   *  default, which is the definition of this section in the two-tier form. */
+  minAttendeesRequired: string;
+  onChangeMinAttendeesRequired: (value: string) => void;
+  minAttendeesError?: string;
+  /** Registers the threshold field for the scroll-to-first-error helper. */
+  registerMinAttendeesField?: (el: HTMLElement | null) => void;
 
   /** Edit-only toggle. Omit on the Add Plan form so the row does not render. */
   notifyAttendees?: {
@@ -70,55 +85,60 @@ function TooltipToggleRow({
   );
 }
 
-export default function ExtraOptionsSection(props: Props) {
+export default function ExtraOptionsSection({
+  expanded,
+  onToggle,
+  requireReconfirmation,
+  onChangeRequireReconfirmation,
+  minConfirmedAttendees,
+  onChangeMinConfirmedAttendees,
+  fallbackPolicy,
+  onChangeFallbackPolicy,
+  requireApproval,
+  onChangeRequireApproval,
+  preventAttendeeInvites,
+  onChangePreventAttendeeInvites,
+  muteHostAttendanceEmails,
+  onChangeMuteHostAttendanceEmails,
+  minAttendeesRequired,
+  onChangeMinAttendeesRequired,
+  minAttendeesError,
+  registerMinAttendeesField,
+  notifyAttendees,
+}: Props) {
   const showMinDetails =
-    props.minConfirmedAttendees !== "" && Number(props.minConfirmedAttendees) >= 1;
+    minConfirmedAttendees !== "" && Number(minConfirmedAttendees) >= 1;
+
+  // Collapsed-header summary of everything non-default, so a host can tell at
+  // a glance whether any extra control is active without opening the section.
+  const summaryParts: string[] = [];
+  if (requireReconfirmation) summaryParts.push("24-hour attendance check");
+  if (requireApproval) summaryParts.push("approval to join");
+  if (preventAttendeeInvites) summaryParts.push("host-only invites");
+  if (muteHostAttendanceEmails) summaryParts.push("attendance emails muted");
+  if (minAttendeesRequired.trim())
+    summaryParts.push(`auto-cancel under ${minAttendeesRequired.trim()}`);
+  const summary = summaryParts.length > 0 ? summaryParts.join(" + ") : "Nothing extra turned on";
 
   return (
-    <AppCard>
+    <CollapsibleSection
+      sectionKey="extras"
+      icon={<TuneRoundedIcon sx={{ fontSize: 22 }} />}
+      title="Extra options"
+      subtitle="Attendance checks, approvals, and other host controls."
+      summary={summary}
+      expanded={expanded}
+      onToggle={onToggle}
+    >
       <Stack spacing={2.5}>
-        <Stack direction="row" spacing={1.5} alignItems="center">
-          <Box
-            sx={{
-              width: 40,
-              height: 40,
-              borderRadius: "50%",
-              bgcolor: "primary.light",
-              color: "primary.main",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-            }}
-          >
-            <TuneRoundedIcon sx={{ fontSize: 22 }} />
-          </Box>
-          <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography
-              variant="h6"
-              fontWeight={700}
-              sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
-            >
-              Extra options
-            </Typography>
-            <Typography
-              variant="caption"
-              color="text.disabled"
-              sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
-            >
-              Attendance checks, approvals, and other host controls.
-            </Typography>
-          </Box>
-        </Stack>
-
         <TooltipToggleRow
-          checked={props.requireReconfirmation}
-          onChange={props.onChangeRequireReconfirmation}
+          checked={requireReconfirmation}
+          onChange={onChangeRequireReconfirmation}
           label="24-hour attendance check"
           tooltip="About 24 hours before the plan, people who marked Going will be asked to confirm they are still coming. This includes you as the host."
         />
 
-        {props.requireReconfirmation && (
+        {requireReconfirmation && (
           <Stack
             spacing={2}
             sx={{ mt: 1, pl: 2, borderLeft: "2px solid", borderColor: "divider" }}
@@ -132,8 +152,8 @@ export default function ExtraOptionsSection(props: Props) {
                 size="small"
                 type="number"
                 placeholder="e.g. 4 (including you)"
-                value={props.minConfirmedAttendees}
-                onChange={(e) => props.onChangeMinConfirmedAttendees(e.target.value)}
+                value={minConfirmedAttendees}
+                onChange={(e) => onChangeMinConfirmedAttendees(e.target.value)}
                 // Disable scroll-wheel value changes; see CreateEventClient seat field for context.
                 inputProps={{
                   min: 1,
@@ -158,8 +178,8 @@ export default function ExtraOptionsSection(props: Props) {
                 <Select
                   fullWidth
                   size="small"
-                  value={props.fallbackPolicy}
-                  onChange={(e) => props.onChangeFallbackPolicy(e.target.value as FallbackPolicy)}
+                  value={fallbackPolicy}
+                  onChange={(e) => onChangeFallbackPolicy(e.target.value as FallbackPolicy)}
                 >
                   <MenuItem value="notify_host">Notify me so I can decide</MenuItem>
                   <MenuItem value="proceed">Proceed unless I cancel</MenuItem>
@@ -171,32 +191,60 @@ export default function ExtraOptionsSection(props: Props) {
         )}
 
         <TooltipToggleRow
-          checked={props.requireApproval}
-          onChange={props.onChangeRequireApproval}
+          checked={requireApproval}
+          onChange={onChangeRequireApproval}
           label="Require approval before joining"
           tooltip="People who are not directly invited will need to request to join, and you'll approve or decline each request."
         />
 
         <TooltipToggleRow
-          checked={props.preventAttendeeInvites}
-          onChange={props.onChangePreventAttendeeInvites}
+          checked={preventAttendeeInvites}
+          onChange={onChangePreventAttendeeInvites}
           label="Prevent attendees from inviting others"
           tooltip="Normally, people marked Going can invite others to the plan. Turn this on to keep invites host-only."
         />
 
         <TooltipToggleRow
-          checked={props.muteHostAttendanceEmails}
-          onChange={props.onChangeMuteHostAttendanceEmails}
+          checked={muteHostAttendanceEmails}
+          onChange={onChangeMuteHostAttendanceEmails}
           label="Mute attendance emails"
           tooltip="Stop emailing you when someone joins, leaves, or changes their RSVP for this plan, including invited people updating their attendance. You'll still get these in your in-app notifications, and you can check the plan anytime. Join requests and at-risk alerts are not affected."
         />
 
-        {props.notifyAttendees && (
+        <Box
+          ref={registerMinAttendeesField}
+          sx={{ width: { xs: "100%", sm: "auto" }, scrollMarginTop: 96 }}
+        >
+          <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.625 }}>
+            Minimum attendees required (optional)
+          </Typography>
+          <TextField
+            fullWidth
+            size="small"
+            type="number"
+            placeholder="e.g. 4"
+            value={minAttendeesRequired}
+            onChange={(e) => onChangeMinAttendeesRequired(e.target.value)}
+            error={!!minAttendeesError}
+            helperText={
+              minAttendeesError ??
+              "If fewer than this many people are going 2 hours before the plan, NewChums will automatically cancel it."
+            }
+            inputProps={{
+              min: 1,
+              max: 500,
+              onWheel: (e: WheelEvent<HTMLInputElement>) => e.currentTarget.blur(),
+            }}
+            sx={{ minWidth: { xs: "100%", sm: 320 } }}
+          />
+        </Box>
+
+        {notifyAttendees && (
           <FormControlLabel
             control={
               <Switch
-                checked={props.notifyAttendees.value}
-                onChange={(e) => props.notifyAttendees!.onChange(e.target.checked)}
+                checked={notifyAttendees.value}
+                onChange={(e) => notifyAttendees!.onChange(e.target.checked)}
               />
             }
             label="Notify attendees about these changes"
@@ -204,6 +252,6 @@ export default function ExtraOptionsSection(props: Props) {
           />
         )}
       </Stack>
-    </AppCard>
+    </CollapsibleSection>
   );
 }

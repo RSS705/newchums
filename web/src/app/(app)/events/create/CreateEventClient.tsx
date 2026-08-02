@@ -20,14 +20,14 @@ import Slider from "@mui/material/Slider";
 import Stack from "@mui/material/Stack";
 import Switch from "@mui/material/Switch";
 import Typography from "@mui/material/Typography";
-import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
 import AddCircleRoundedIcon from "@mui/icons-material/AddCircleRounded";
 import AddPhotoAlternateRoundedIcon from "@mui/icons-material/AddPhotoAlternateRounded";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import EventNoteRoundedIcon from "@mui/icons-material/EventNoteRounded";
 import EventRepeatRoundedIcon from "@mui/icons-material/EventRepeatRounded";
 import ImageRoundedIcon from "@mui/icons-material/ImageRounded";
-import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
+import NotesRoundedIcon from "@mui/icons-material/NotesRounded";
+import StyleRoundedIcon from "@mui/icons-material/StyleRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { TimePicker } from "@mui/x-date-pickers/TimePicker";
@@ -47,9 +47,15 @@ import { scrollToFirstError } from "@/lib/scrollToFirstError";
 import HobbyPickerField, { type HobbyOption } from "@/components/common/HobbyPickerField";
 import CopyPlanDialog from "@/components/events/CopyPlanDialog";
 import {
+  CollapsibleSection,
   CommunityLinkSection,
   ExtraOptionsSection,
   QAPlanSection,
+  describeAltTimes,
+  describeBanner,
+  describeDescription,
+  describeHobbies,
+  describeVisibility,
   type MyCommunity as SharedMyCommunity,
 } from "@/components/events/planForm";
 import { pickerFieldTabKeyDown } from "@/components/fields/pickerTabNav";
@@ -57,7 +63,16 @@ import { pickerFieldTabKeyDown } from "@/components/fields/pickerTabNav";
 // Visual top-to-bottom order of validation-bearing fields. Drives the
 // scroll-to-first-error helper so the user always lands on the earliest
 // problem they need to fix rather than a later one.
-const FIELD_ORDER = ["title", "hobby", "maxSeats", "minAttendeesRequired", "date", "time", "location"] as const;
+const FIELD_ORDER = ["title", "date", "time", "location", "maxSeats", "minAttendeesRequired"] as const;
+
+// Which collapsed section each validation-bearing field lives in, so a failed
+// submit can force that section open before scrolling to the error. Tier-one
+// fields are always visible and need no entry. `availability_deadline_at` is
+// the server's field name for the deadline inside Alternate times.
+const SECTION_OF_FIELD: Record<string, string> = {
+  minAttendeesRequired: "extras",
+  availability_deadline_at: "altTimes",
+};
 
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_BANNER_INPUT_BYTES = 20 * 1024 * 1024; // 20MB, raw file limit before compression
@@ -185,6 +200,11 @@ export default function CreateEventClient() {
     []
   );
 
+  // Two-tier form: the optional sections start collapsed. Keyed by section so
+  // validation can force one open (see revealAndScrollToErrors).
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
+  const toggleSection = (key: string) =>
+    setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
 
   // Community association
   type MyCommunity = {
@@ -524,8 +544,6 @@ export default function CreateEventClient() {
   const validate = (): Record<string, string> => {
     const errs: Record<string, string> = {};
     if (!title.trim()) errs.title = "Give your plan a title";
-    if (selectedHobbies.length === 0)
-      errs.hobby = "Add at least one hobby so people can find this plan";
     if (!dateValue || !dateValue.isValid()) errs.date = "Pick a date";
     if (!timeValue || !timeValue.isValid()) errs.time = "Pick a time";
     if (locationType === "in_person") {
@@ -549,14 +567,34 @@ export default function CreateEventClient() {
     return errs;
   };
 
-  const handleSubmit = async () => {
-    const errs = validate();
-    if (Object.keys(errs).length > 0) {
+  // Open any collapsed section that contains an errored field, then scroll.
+  // Children stay mounted inside Collapse, so refs are always registered; the
+  // short delay lets the expansion commit so the target reads its final
+  // position (content above the target does not move during the height
+  // animation, so this does not race the animation itself).
+  const revealAndScrollToErrors = (errs: Record<string, string>) => {
+    const toOpen = Object.keys(errs)
+      .map((k) => SECTION_OF_FIELD[k])
+      .filter((k): k is string => !!k);
+    if (toOpen.length > 0) {
+      setOpenSections((prev) => ({
+        ...prev,
+        ...Object.fromEntries(toOpen.map((k) => [k, true])),
+      }));
+      window.setTimeout(() => scrollToFirstError(fieldRefs.current, errs, FIELD_ORDER), 120);
+    } else {
       // scrollToFirstError -> scrollElementIntoView already double-rAFs
       // internally to wait for layout to settle, so no outer rAF wrapper
       // needed here. The previous attempt's single-rAF wrapper was racing
       // React's commit on slow mobile devices.
       scrollToFirstError(fieldRefs.current, errs, FIELD_ORDER);
+    }
+  };
+
+  const handleSubmit = async () => {
+    const errs = validate();
+    if (Object.keys(errs).length > 0) {
+      revealAndScrollToErrors(errs);
       return;
     }
     setSubmitting(true);
@@ -683,7 +721,7 @@ export default function CreateEventClient() {
         if (data.field) {
           const fieldErrs = { [data.field]: data.message ?? "Validation error" };
           setErrors(fieldErrs);
-          scrollToFirstError(fieldRefs.current, fieldErrs, FIELD_ORDER);
+          revealAndScrollToErrors(fieldErrs);
         } else {
           toast.error(data.message ?? "Something went wrong");
         }
@@ -800,9 +838,12 @@ export default function CreateEventClient() {
         </Stack>
       </Paper>
 
-      {/* Banner image */}
+      {/* Tier one: the minimum viable plan, always visible. Title, when,
+          where, seats. Everything optional lives in the collapsed sections
+          below, so a first-time host reaches Publish without scrolling past
+          controls they don't need yet. */}
       <AppCard>
-        <Stack spacing={2}>
+        <Stack spacing={2.5}>
           <Stack direction="row" spacing={1.5} alignItems="center">
             <Box
               sx={{
@@ -817,7 +858,7 @@ export default function CreateEventClient() {
                 flexShrink: 0,
               }}
             >
-              <ImageRoundedIcon sx={{ fontSize: 22 }} />
+              <EventNoteRoundedIcon sx={{ fontSize: 22 }} />
             </Box>
             <Box sx={{ flex: 1, minWidth: 0 }}>
               <Typography
@@ -825,18 +866,205 @@ export default function CreateEventClient() {
                 fontWeight={700}
                 sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
               >
-                Banner image
+                What&apos;s the plan?
               </Typography>
               <Typography
                 variant="caption"
                 color="text.disabled"
                 sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
               >
-                Pick a colour theme or upload your own photo.
+                Title, when, where, and seats. That&apos;s all a plan needs.
               </Typography>
             </Box>
           </Stack>
 
+          <Box ref={setFieldRef("title")} sx={{ scrollMarginTop: 96 }}>
+            <AppTextField
+              label="Title"
+              placeholder="e.g. Thursday Board Game Night"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              error={!!errors.title}
+              helperText={errors.title || null}
+              inputProps={{ maxLength: 200 }}
+            />
+          </Box>
+
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+            <Box ref={setFieldRef("date")} sx={{ flex: 1, scrollMarginTop: 96 }}>
+              <Typography variant="subtitle1" fontWeight={600} sx={{ display: "block", mb: 0.625 }}>
+                Date
+              </Typography>
+              <DatePicker
+                value={dateValue}
+                onChange={setDateValue}
+                minDate={dayjs()}
+                slotProps={{
+                  textField: {
+                    fullWidth: true,
+                    size: "medium",
+                    error: !!errors.date,
+                    helperText: errors.date,
+                    placeholder: "Pick a date",
+                    onKeyDown: pickerFieldTabKeyDown,
+                  },
+                }}
+              />
+            </Box>
+            <Box ref={setFieldRef("time")} sx={{ flex: 1, scrollMarginTop: 96 }}>
+              <Typography variant="subtitle1" fontWeight={600} sx={{ display: "block", mb: 0.625 }}>
+                Time
+              </Typography>
+              <TimePicker
+                value={timeValue}
+                onChange={setTimeValue}
+                format="h:mm A"
+                slotProps={{
+                  field: { shouldRespectLeadingZeros: true } as Record<string, unknown>,
+                  textField: {
+                    fullWidth: true,
+                    size: "medium",
+                    error: !!errors.time,
+                    helperText: errors.time,
+                    placeholder: "Pick a time",
+                    onKeyDown: pickerFieldTabKeyDown,
+                  },
+                }}
+              />
+            </Box>
+          </Stack>
+
+          <Box>
+            <Typography variant="subtitle1" fontWeight={600} sx={{ display: "block", mb: 0.25 }}>
+              Where?
+            </Typography>
+            <RadioGroup
+              row
+              value={locationType}
+              onChange={(e) => setLocationType(e.target.value as "in_person" | "online")}
+            >
+              <FormControlLabel value="in_person" control={<Radio />} label="In person" />
+              <FormControlLabel value="online" control={<Radio />} label="Online" />
+            </RadioGroup>
+
+            {locationType === "in_person" ? (
+              <Box ref={setFieldRef("location")} sx={{ scrollMarginTop: 96, mt: 1 }}>
+                <PlacesAutocompleteInput
+                  value={locationName}
+                  onChange={(v) => {
+                    setLocationName(v);
+                    if (!v.trim()) {
+                      setLocationAddress("");
+                      setLocationPlaceId(null);
+                      setLocationLat(null);
+                      setLocationLng(null);
+                      setLocationArea(null);
+                    }
+                  }}
+                  onPlaceSelect={(result) => {
+                    setLocationName(formatPlaceDisplay(result));
+                    setLocationAddress(result.formattedAddress);
+                    setLocationPlaceId(result.placeId);
+                    setLocationLat(result.lat);
+                    setLocationLng(result.lng);
+                    setLocationArea(result.area ?? null);
+                  }}
+                  label="Venue or address"
+                  placeholder="Search for a place or enter an address"
+                  helperText={errors.location || undefined}
+                  error={!!errors.location}
+                  placeTypes={[]}
+                  inputId="places-autocomplete-event"
+                />
+              </Box>
+            ) : (
+              <Box sx={{ mt: 1 }}>
+                <AppTextField
+                  label="Online link or details"
+                  placeholder="e.g. Zoom link, Discord server"
+                  value={onlineLink}
+                  onChange={(e) => setOnlineLink(e.target.value)}
+                  helperText="Share a link or instructions for joining online"
+                />
+              </Box>
+            )}
+          </Box>
+
+          <Box
+            ref={setFieldRef("maxSeats")}
+            sx={{ width: { xs: "100%", sm: "auto" }, scrollMarginTop: 96 }}
+          >
+            <AppTextField
+              label="Seats"
+              placeholder="e.g. 8"
+              value={maxSeats}
+              onChange={(e) => setMaxSeats(e.target.value)}
+              error={!!errors.maxSeats}
+              helperText={errors.maxSeats ?? "Optional. Include yourself in the count"}
+              type="number"
+              // Disable scroll-wheel value changes. Browsers' default behaviour for
+              // type=number is to decrement/increment on wheel events while focused,
+              // which has silently set seats to 1 (the min) when hosts scrolled the
+              // page after typing a value. Blurring on wheel preserves what they typed.
+              inputProps={{
+                min: 1,
+                max: 500,
+                onWheel: (e: WheelEvent<HTMLInputElement>) => e.currentTarget.blur(),
+              }}
+              sx={{ minWidth: { xs: "100%", sm: 260 } }}
+            />
+          </Box>
+          {maxSeats && Number(maxSeats) >= 1 && (
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={reserveSeats}
+                  onChange={(e) => setReserveSeats(e.target.checked)}
+                />
+              }
+              label="Reserve seats for invited people"
+              sx={{ gap: 0.5 }}
+            />
+          )}
+        </Stack>
+      </AppCard>
+
+      {/* Tier two: optional sections, collapsed with a live summary of their
+          current value in the header. Every one has a safe default, so
+          skipping all of them still publishes a complete plan. */}
+      <Typography
+        variant="caption"
+        sx={{ color: "text.secondary", mt: { xs: -1.5, sm: -2 }, ml: 0.5 }}
+      >
+        Everything below is optional. Tap a section to open it.
+      </Typography>
+
+      <CollapsibleSection
+        sectionKey="description"
+        icon={<NotesRoundedIcon sx={{ fontSize: 22 }} />}
+        title="Description"
+        subtitle="What should people expect? Any details they should know?"
+        summary={describeDescription(description)}
+        expanded={!!openSections.description}
+        onToggle={() => toggleSection("description")}
+      >
+        <RichTextEditor
+          placeholder="What should people expect? Any details they should know?"
+          value={description}
+          onChange={setDescription}
+        />
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        sectionKey="banner"
+        icon={<ImageRoundedIcon sx={{ fontSize: 22 }} />}
+        title="Banner image"
+        subtitle="Pick a colour theme or upload your own photo."
+        summary={describeBanner(selectedPresetSlug, !!bannerPreview)}
+        expanded={!!openSections.banner}
+        onToggle={() => toggleSection("banner")}
+      >
+        <Stack spacing={2}>
           {/* Preset swatches */}
           <Stack direction="row" flexWrap="wrap" gap={1} useFlexGap>
             {BANNER_PRESETS.map((preset) => {
@@ -952,493 +1180,128 @@ export default function CreateEventClient() {
             Custom photos: JPEG, PNG, or WebP up to 20 MB, we&apos;ll compress it automatically.
           </Typography>
         </Stack>
-      </AppCard>
+      </CollapsibleSection>
 
-      {/* Basic details */}
-      <AppCard>
-        <Stack spacing={2.5}>
-          <Stack direction="row" spacing={1.5} alignItems="center">
-            <Box
-              sx={{
-                width: 40,
-                height: 40,
-                borderRadius: "50%",
-                bgcolor: "primary.light",
-                color: "primary.main",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-              }}
-            >
-              <EventNoteRoundedIcon sx={{ fontSize: 22 }} />
-            </Box>
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography
-                variant="h6"
-                fontWeight={700}
-                sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
-              >
-                What&apos;s the plan?
-              </Typography>
-              <Typography
-                variant="caption"
-                color="text.disabled"
-                sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
-              >
-                Title, description, and the hobbies it&apos;s about.
-              </Typography>
-            </Box>
-          </Stack>
-
-          <Box ref={setFieldRef("title")} sx={{ scrollMarginTop: 96 }}>
-            <AppTextField
-              label="Title"
-              placeholder="e.g. Thursday Board Game Night"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              error={!!errors.title}
-              helperText={errors.title || null}
-              inputProps={{ maxLength: 200 }}
-            />
-          </Box>
-
-          <RichTextEditor
-            label="Description"
-            placeholder="What should people expect? Any details they should know?"
-            value={description}
-            onChange={setDescription}
+      <CollapsibleSection
+        sectionKey="hobbies"
+        icon={<StyleRoundedIcon sx={{ fontSize: 22 }} />}
+        title="Hobbies"
+        subtitle="Optional, helps people who share them find this plan."
+        summary={describeHobbies(selectedHobbies)}
+        expanded={!!openSections.hobbies}
+        onToggle={() => toggleSection("hobbies")}
+      >
+        <Box ref={setFieldRef("hobby")} sx={{ scrollMarginTop: 96 }}>
+          <HobbyPickerField
+            value={selectedHobbies}
+            onChange={setSelectedHobbies}
+            error={errors.hobby}
+            helperText="People nearby who share these hobbies may get notified about this plan, depending on who can see it."
+            onReject={(msg) => toast.error(msg)}
           />
+        </Box>
+      </CollapsibleSection>
 
-          <Box ref={setFieldRef("hobby")} sx={{ scrollMarginTop: 96 }}>
-            <HobbyPickerField
-              value={selectedHobbies}
-              onChange={setSelectedHobbies}
-              error={errors.hobby}
-              helperText="People nearby who share these hobbies may get notified about this plan, depending on who can see it."
-              onReject={(msg) => toast.error(msg)}
-            />
-          </Box>
-
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="flex-start">
-            <Box
-              ref={setFieldRef("maxSeats")}
-              sx={{ width: { xs: "100%", sm: "auto" }, scrollMarginTop: 96 }}
-            >
-              <AppTextField
-                label="Seats"
-                placeholder="e.g. 8"
-                value={maxSeats}
-                onChange={(e) => setMaxSeats(e.target.value)}
-                error={!!errors.maxSeats}
-                helperText={errors.maxSeats ?? "Include yourself in the count"}
-                type="number"
-                // Disable scroll-wheel value changes. Browsers' default behaviour for
-                // type=number is to decrement/increment on wheel events while focused,
-                // which has silently set seats to 1 (the min) when hosts scrolled the
-                // page after typing a value. Blurring on wheel preserves what they typed.
-                inputProps={{
-                  min: 1,
-                  max: 500,
-                  onWheel: (e: WheelEvent<HTMLInputElement>) => e.currentTarget.blur(),
-                }}
-                sx={{ minWidth: { xs: "100%", sm: 260 } }}
-              />
-            </Box>
-          </Stack>
-          {maxSeats && Number(maxSeats) >= 1 && (
-            <>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={reserveSeats}
-                    onChange={(e) => setReserveSeats(e.target.checked)}
-                  />
-                }
-                label="Reserve seats for invited people"
-                sx={{ gap: 0.5 }}
-              />
-            </>
-          )}
-
-          <Box
-            ref={setFieldRef("minAttendeesRequired")}
-            sx={{ width: { xs: "100%", sm: "auto" }, scrollMarginTop: 96 }}
+      <CollapsibleSection
+        sectionKey="altTimes"
+        icon={<EventRepeatRoundedIcon sx={{ fontSize: 22 }} />}
+        title="Alternate times"
+        subtitle="How flexible do you want to be about the time?"
+        summary={describeAltTimes(schedulingMode)}
+        expanded={!!openSections.altTimes}
+        onToggle={() => toggleSection("altTimes")}
+      >
+        <RadioGroup
+          value={schedulingMode}
+          onChange={(e) => {
+            const mode = e.target.value as "off" | "suggest" | "availability";
+            setSchedulingMode(mode);
+            if (mode !== "availability") {
+              setDeadlineDate(null);
+              setDeadlineTime(null);
+            }
+          }}
+        >
+          <FormControlLabel
+            value="suggest"
+            control={<Radio />}
+            label="Allow suggestions"
+            sx={{ gap: 0.5 }}
+          />
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ ml: "32px", mt: -0.5, mb: 0.5 }}
           >
-            <AppTextField
-              label="Minimum attendees required (optional)"
-              placeholder="e.g. 4"
-              value={minAttendeesRequired}
-              onChange={(e) => setMinAttendeesRequired(e.target.value)}
-              error={!!errors.minAttendeesRequired}
-              helperText={
-                errors.minAttendeesRequired ??
-                "If fewer than this many people are going 2 hours before the plan, NewChums will automatically cancel it."
-              }
-              type="number"
-              inputProps={{
-                min: 1,
-                max: 500,
-                onWheel: (e: WheelEvent<HTMLInputElement>) => e.currentTarget.blur(),
-              }}
-              sx={{ minWidth: { xs: "100%", sm: 320 } }}
-            />
-          </Box>
-        </Stack>
-      </AppCard>
-
-      {/* Date & time */}
-      <AppCard>
-        <Stack spacing={2.5}>
-          <Stack direction="row" spacing={1.5} alignItems="center">
-            <Box
-              sx={{
-                width: 40,
-                height: 40,
-                borderRadius: "50%",
-                bgcolor: "primary.light",
-                color: "primary.main",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-              }}
-            >
-              <AccessTimeRoundedIcon sx={{ fontSize: 22 }} />
-            </Box>
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography
-                variant="h6"
-                fontWeight={700}
-                sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
-              >
-                When?
-              </Typography>
-              <Typography
-                variant="caption"
-                color="text.disabled"
-                sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
-              >
-                Date, time, and how flexible you want to be.
-              </Typography>
-            </Box>
-          </Stack>
-
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-            <Box ref={setFieldRef("date")} sx={{ flex: 1, scrollMarginTop: 96 }}>
-              <Typography variant="subtitle1" fontWeight={600} sx={{ display: "block", mb: 0.625 }}>
-                Date
-              </Typography>
-              <DatePicker
-                value={dateValue}
-                onChange={setDateValue}
-                minDate={dayjs()}
-                slotProps={{
-                  textField: {
-                    fullWidth: true,
-                    size: "medium",
-                    error: !!errors.date,
-                    helperText: errors.date,
-                    placeholder: "Pick a date",
-                    onKeyDown: pickerFieldTabKeyDown,
-                  },
-                }}
-              />
-            </Box>
-            <Box ref={setFieldRef("time")} sx={{ flex: 1, scrollMarginTop: 96 }}>
-              <Typography variant="subtitle1" fontWeight={600} sx={{ display: "block", mb: 0.625 }}>
-                Time
-              </Typography>
-              <TimePicker
-                value={timeValue}
-                onChange={setTimeValue}
-                format="h:mm A"
-                slotProps={{
-                  field: { shouldRespectLeadingZeros: true } as Record<string, unknown>,
-                  textField: {
-                    fullWidth: true,
-                    size: "medium",
-                    error: !!errors.time,
-                    helperText: errors.time,
-                    placeholder: "Pick a time",
-                    onKeyDown: pickerFieldTabKeyDown,
-                  },
-                }}
-              />
-            </Box>
-          </Stack>
-
-          <Box>
-            <Typography variant="subtitle1" fontWeight={600} sx={{ display: "block", mb: 0.625 }}>
-              Alternate times
-            </Typography>
-            <RadioGroup
-              value={schedulingMode}
-              onChange={(e) => {
-                const mode = e.target.value as "off" | "suggest" | "availability";
-                setSchedulingMode(mode);
-                if (mode !== "availability") {
-                  setDeadlineDate(null);
-                  setDeadlineTime(null);
-                }
-              }}
-            >
-              <FormControlLabel
-                value="suggest"
-                control={<Radio />}
-                label="Allow suggestions"
-                sx={{ gap: 0.5 }}
-              />
+            People can suggest other times if the listed time doesn&apos;t work.
+          </Typography>
+          <FormControlLabel
+            value="availability"
+            control={<Radio />}
+            label="Request availability"
+            sx={{ gap: 0.5 }}
+          />
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ ml: "32px", mt: -0.5, mb: 0.5 }}
+          >
+            Ask attendees to share when they&apos;re free so you can find the best time.
+          </Typography>
+          {schedulingMode === "availability" && (
+            <Box sx={{ ml: "32px", mb: 1 }}>
               <Typography
                 variant="caption"
                 color="text.secondary"
-                sx={{ ml: "32px", mt: -0.5, mb: 0.5 }}
+                sx={{ display: "block", mb: 0.75 }}
               >
-                People can suggest other times if the listed time doesn&apos;t work.
+                Availability needed by (optional)
               </Typography>
-              <FormControlLabel
-                value="availability"
-                control={<Radio />}
-                label="Request availability"
-                sx={{ gap: 0.5 }}
-              />
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ ml: "32px", mt: -0.5, mb: 0.5 }}
-              >
-                Ask attendees to share when they&apos;re free so you can find the best time.
-              </Typography>
-              {schedulingMode === "availability" && (
-                <Box sx={{ ml: "32px", mb: 1 }}>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ display: "block", mb: 0.75 }}
-                  >
-                    Availability needed by (optional)
-                  </Typography>
-                  <Stack direction="row" spacing={1.5}>
-                    <DatePicker
-                      value={deadlineDate}
-                      onChange={setDeadlineDate}
-                      minDate={dayjs()}
-                      slotProps={{
-                        textField: {
-                          size: "small",
-                          placeholder: "Date",
-                          sx: { flex: 1 },
-                          onKeyDown: pickerFieldTabKeyDown,
-                        },
-                      }}
-                    />
-                    <TimePicker
-                      value={deadlineTime}
-                      onChange={setDeadlineTime}
-                      format="h:mm A"
-                      slotProps={{
-                        field: { shouldRespectLeadingZeros: true } as Record<string, unknown>,
-                        textField: {
-                          size: "small",
-                          placeholder: "Time",
-                          sx: { flex: 1 },
-                          onKeyDown: pickerFieldTabKeyDown,
-                        },
-                      }}
-                    />
-                  </Stack>
-                </Box>
-              )}
-              <FormControlLabel value="off" control={<Radio />} label="Off" sx={{ gap: 0.5 }} />
-            </RadioGroup>
-          </Box>
-        </Stack>
-      </AppCard>
-
-      {/* Location */}
-      <AppCard>
-        <Stack spacing={2.5}>
-          <Stack direction="row" spacing={1.5} alignItems="center">
-            <Box
-              sx={{
-                width: 40,
-                height: 40,
-                borderRadius: "50%",
-                bgcolor: "primary.light",
-                color: "primary.main",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-              }}
-            >
-              <PlaceRoundedIcon sx={{ fontSize: 22 }} />
-            </Box>
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography
-                variant="h6"
-                fontWeight={700}
-                sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
-              >
-                Where?
-              </Typography>
-              <Typography
-                variant="caption"
-                color="text.disabled"
-                sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
-              >
-                In-person address or an online meeting link.
-              </Typography>
-            </Box>
-          </Stack>
-
-          <RadioGroup
-            row
-            value={locationType}
-            onChange={(e) => setLocationType(e.target.value as "in_person" | "online")}
-          >
-            <FormControlLabel value="in_person" control={<Radio />} label="In person" />
-            <FormControlLabel value="online" control={<Radio />} label="Online" />
-          </RadioGroup>
-
-          {locationType === "in_person" ? (
-            <>
-              <Box ref={setFieldRef("location")} sx={{ scrollMarginTop: 96 }}>
-                <PlacesAutocompleteInput
-                  value={locationName}
-                  onChange={(v) => {
-                    setLocationName(v);
-                    if (!v.trim()) {
-                      setLocationAddress("");
-                      setLocationPlaceId(null);
-                      setLocationLat(null);
-                      setLocationLng(null);
-                      setLocationArea(null);
-                    }
+              <Stack direction="row" spacing={1.5}>
+                <DatePicker
+                  value={deadlineDate}
+                  onChange={setDeadlineDate}
+                  minDate={dayjs()}
+                  slotProps={{
+                    textField: {
+                      size: "small",
+                      placeholder: "Date",
+                      sx: { flex: 1 },
+                      onKeyDown: pickerFieldTabKeyDown,
+                    },
                   }}
-                  onPlaceSelect={(result) => {
-                    setLocationName(formatPlaceDisplay(result));
-                    setLocationAddress(result.formattedAddress);
-                    setLocationPlaceId(result.placeId);
-                    setLocationLat(result.lat);
-                    setLocationLng(result.lng);
-                    setLocationArea(result.area ?? null);
-                  }}
-                  label="Venue or address"
-                  placeholder="Search for a place or enter an address"
-                  helperText={errors.location || undefined}
-                  error={!!errors.location}
-                  placeTypes={[]}
-                  inputId="places-autocomplete-event"
                 />
-              </Box>
-              <FormControl fullWidth size="medium" sx={{ minWidth: 200 }}>
-                <Typography
-                  component="label"
-                  htmlFor="location-visibility-select"
-                  variant="subtitle1"
-                  fontWeight={600}
-                  sx={{ display: "block", mb: 0.625 }}
-                >
-                  Who can see the exact location?
-                </Typography>
-                <Select
-                  id="location-visibility-select"
-                  value={locationVisibility}
-                  onChange={(e) =>
-                    setLocationVisibility(e.target.value as typeof locationVisibility)
-                  }
-                  variant="outlined"
-                  displayEmpty={false}
-                  renderValue={(v) => {
-                    const labels: Record<typeof locationVisibility, string> = {
-                      exact_everyone: "Everyone",
-                      exact_joined_only: "Only people who join",
-                      approximate_only: "General area only",
-                    };
-                    return labels[v];
+                <TimePicker
+                  value={deadlineTime}
+                  onChange={setDeadlineTime}
+                  format="h:mm A"
+                  slotProps={{
+                    field: { shouldRespectLeadingZeros: true } as Record<string, unknown>,
+                    textField: {
+                      size: "small",
+                      placeholder: "Time",
+                      sx: { flex: 1 },
+                      onKeyDown: pickerFieldTabKeyDown,
+                    },
                   }}
-                  MenuProps={{
-                    PaperProps: { sx: { minWidth: 320 } },
-                  }}
-                  sx={{ "& .MuiSelect-select": { py: 1.25 } }}
-                >
-                  <MenuItem value="exact_everyone">
-                    <ListItemText
-                      primary="Everyone"
-                      secondary="The full venue or address is shown wherever the plan appears"
-                      primaryTypographyProps={{ fontWeight: 500 }}
-                      secondaryTypographyProps={{ variant: "caption" }}
-                    />
-                  </MenuItem>
-                  <MenuItem value="exact_joined_only">
-                    <ListItemText
-                      primary="Only people who join"
-                      secondary="Others see only the general area until they respond (going or maybe)"
-                      primaryTypographyProps={{ fontWeight: 500 }}
-                      secondaryTypographyProps={{ variant: "caption" }}
-                    />
-                  </MenuItem>
-                  <MenuItem value="approximate_only">
-                    <ListItemText
-                      primary="General area only"
-                      secondary="The exact venue is never shown; everyone sees only the broader area"
-                      primaryTypographyProps={{ fontWeight: 500 }}
-                      secondaryTypographyProps={{ variant: "caption" }}
-                    />
-                  </MenuItem>
-                </Select>
-              </FormControl>
-            </>
-          ) : (
-            <AppTextField
-              label="Online link or details"
-              placeholder="e.g. Zoom link, Discord server"
-              value={onlineLink}
-              onChange={(e) => setOnlineLink(e.target.value)}
-              helperText="Share a link or instructions for joining online"
-            />
+                />
+              </Stack>
+            </Box>
           )}
-        </Stack>
-      </AppCard>
+          <FormControlLabel value="off" control={<Radio />} label="Off" sx={{ gap: 0.5 }} />
+        </RadioGroup>
+      </CollapsibleSection>
 
-      {/* Visibility */}
-      <AppCard>
+      <CollapsibleSection
+        sectionKey="visibility"
+        icon={<VisibilityRoundedIcon sx={{ fontSize: 22 }} />}
+        title="Who can see this?"
+        subtitle="Controls who can find this plan and who may get notified about it."
+        summary={describeVisibility(visibility, locationType, locationVisibility)}
+        expanded={!!openSections.visibility}
+        onToggle={() => toggleSection("visibility")}
+      >
         <Stack spacing={2}>
-          <Stack direction="row" spacing={1.5} alignItems="center">
-            <Box
-              sx={{
-                width: 40,
-                height: 40,
-                borderRadius: "50%",
-                bgcolor: "primary.light",
-                color: "primary.main",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-              }}
-            >
-              <VisibilityRoundedIcon sx={{ fontSize: 22 }} />
-            </Box>
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography
-                variant="h6"
-                fontWeight={700}
-                sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
-              >
-                Who can see this?
-              </Typography>
-              <Typography
-                variant="caption"
-                color="text.disabled"
-                sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
-              >
-                Controls who can find this plan and who may get notified about it.
-              </Typography>
-            </Box>
-          </Stack>
-
           <RadioGroup
             value={visibility}
             onChange={(e) => setVisibility(e.target.value as typeof visibility)}
@@ -1489,11 +1352,76 @@ export default function CreateEventClient() {
               sx={{ alignItems: "flex-start" }}
             />
           </RadioGroup>
+
+          {/* Exact-location privacy. Lives here rather than under Where?
+              because it is an audience control with a safe default, and the
+              tier-one card stays down to what a minimum plan needs. */}
+          {locationType === "in_person" && (
+            <FormControl fullWidth size="medium" sx={{ minWidth: 200 }}>
+              <Typography
+                component="label"
+                htmlFor="location-visibility-select"
+                variant="subtitle1"
+                fontWeight={600}
+                sx={{ display: "block", mb: 0.625 }}
+              >
+                Who can see the exact location?
+              </Typography>
+              <Select
+                id="location-visibility-select"
+                value={locationVisibility}
+                onChange={(e) =>
+                  setLocationVisibility(e.target.value as typeof locationVisibility)
+                }
+                variant="outlined"
+                displayEmpty={false}
+                renderValue={(v) => {
+                  const labels: Record<typeof locationVisibility, string> = {
+                    exact_everyone: "Everyone",
+                    exact_joined_only: "Only people who join",
+                    approximate_only: "General area only",
+                  };
+                  return labels[v];
+                }}
+                MenuProps={{
+                  PaperProps: { sx: { minWidth: 320 } },
+                }}
+                sx={{ "& .MuiSelect-select": { py: 1.25 } }}
+              >
+                <MenuItem value="exact_everyone">
+                  <ListItemText
+                    primary="Everyone"
+                    secondary="The full venue or address is shown wherever the plan appears"
+                    primaryTypographyProps={{ fontWeight: 500 }}
+                    secondaryTypographyProps={{ variant: "caption" }}
+                  />
+                </MenuItem>
+                <MenuItem value="exact_joined_only">
+                  <ListItemText
+                    primary="Only people who join"
+                    secondary="Others see only the general area until they respond (going or maybe)"
+                    primaryTypographyProps={{ fontWeight: 500 }}
+                    secondaryTypographyProps={{ variant: "caption" }}
+                  />
+                </MenuItem>
+                <MenuItem value="approximate_only">
+                  <ListItemText
+                    primary="General area only"
+                    secondary="The exact venue is never shown; everyone sees only the broader area"
+                    primaryTypographyProps={{ fontWeight: 500 }}
+                    secondaryTypographyProps={{ variant: "caption" }}
+                  />
+                </MenuItem>
+              </Select>
+            </FormControl>
+          )}
         </Stack>
-      </AppCard>
+      </CollapsibleSection>
 
       {/* Extra options */}
       <ExtraOptionsSection
+        expanded={!!openSections.extras}
+        onToggle={() => toggleSection("extras")}
         requireReconfirmation={requireReconfirmation}
         onChangeRequireReconfirmation={setRequireReconfirmation}
         minConfirmedAttendees={minConfirmedAttendees}
@@ -1506,12 +1434,18 @@ export default function CreateEventClient() {
         onChangePreventAttendeeInvites={setPreventAttendeeInvites}
         muteHostAttendanceEmails={muteHostAttendanceEmails}
         onChangeMuteHostAttendanceEmails={setMuteHostAttendanceEmails}
+        minAttendeesRequired={minAttendeesRequired}
+        onChangeMinAttendeesRequired={setMinAttendeesRequired}
+        minAttendeesError={errors.minAttendeesRequired}
+        registerMinAttendeesField={setFieldRef("minAttendeesRequired")}
       />
 
       {/* Community association. Hidden entirely when visibility=invite_only,
           since invite_only plans never appear in Explore or community feeds.
           See AGENTS.md -> Plan Feed and Community Visibility Contract. */}
       <CommunityLinkSection
+        expanded={!!openSections.community}
+        onToggle={() => toggleSection("community")}
         visibility={visibility}
         myCommunities={myCommunities as SharedMyCommunity[]}
         selectedCommunityIds={selectedCommunityIds}

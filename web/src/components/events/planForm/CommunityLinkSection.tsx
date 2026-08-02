@@ -1,7 +1,6 @@
 "use client";
 
 import Autocomplete from "@mui/material/Autocomplete";
-import Box from "@mui/material/Box";
 import Chip from "@mui/material/Chip";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import Stack from "@mui/material/Stack";
@@ -9,7 +8,7 @@ import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
-import { AppCard } from "@/components/ui";
+import CollapsibleSection from "./CollapsibleSection";
 
 export type MyCommunity = {
   id: string;
@@ -25,6 +24,9 @@ export type MyCommunity = {
 export type PlanVisibility = "public" | "chums_only" | "invite_only";
 
 type Props = {
+  /** Collapsed by default (two-tier form); the parent owns the open state. */
+  expanded: boolean;
+  onToggle: () => void;
   /** Plan's base visibility. Drives what this section renders:
    *  - `invite_only`: section is hidden entirely because invite_only plans
    *    cannot participate in community discovery (Explore and the community
@@ -71,45 +73,33 @@ export default function CommunityLinkSection(props: Props) {
   const MAX_COMMUNITIES = 10;
   const atCap = selectedCommunities.length >= MAX_COMMUNITIES;
 
-  return (
-    <AppCard>
-      <Stack spacing={2}>
-        <Stack direction="row" spacing={1.5} alignItems="center">
-          <Box
-            sx={{
-              width: 40,
-              height: 40,
-              borderRadius: "50%",
-              bgcolor: "primary.light",
-              color: "primary.main",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-            }}
-          >
-            <GroupsRoundedIcon sx={{ fontSize: 22 }} />
-          </Box>
-          <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography
-              variant="h6"
-              fontWeight={700}
-              sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
-            >
-              {isSingleCommunity ? "Community" : "Communities"}
-            </Typography>
-            <Typography
-              variant="caption"
-              color="text.disabled"
-              sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
-            >
-              {isSingleCommunity
-                ? "Linked plans appear in your community and in explore by default."
-                : "Linked plans appear in each community and in explore by default. You can pick more than one."}
-            </Typography>
-          </Box>
-        </Stack>
+  // Collapsed-header summary: which communities the plan is linked to, and
+  // whether it is members-only in Explore.
+  const summary =
+    selectedCommunities.length === 0
+      ? "Not linked to a community"
+      : `${selectedCommunities
+          .map((c) => c.name)
+          .slice(0, 2)
+          .join(", ")}${selectedCommunities.length > 2 ? `, +${selectedCommunities.length - 2} more` : ""}${
+          props.hideFromExplore ? " (members only)" : ""
+        }`;
 
+  return (
+    <CollapsibleSection
+      sectionKey="community"
+      icon={<GroupsRoundedIcon sx={{ fontSize: 22 }} />}
+      title={isSingleCommunity ? "Community" : "Communities"}
+      subtitle={
+        isSingleCommunity
+          ? "Linked plans appear in your community and in explore by default."
+          : "Linked plans appear in each community and in explore by default. You can pick more than one."
+      }
+      summary={summary}
+      expanded={props.expanded}
+      onToggle={props.onToggle}
+    >
+      <Stack spacing={2}>
         <Autocomplete
           multiple
           options={props.myCommunities}
@@ -177,6 +167,6 @@ export default function CommunityLinkSection(props: Props) {
           </>
         )}
       </Stack>
-    </AppCard>
+    </CollapsibleSection>
   );
 }

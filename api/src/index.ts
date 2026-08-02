@@ -11726,9 +11726,11 @@ app.post("/events", async (c) => {
       }
     }
 
-    if (resolvedInterestIds.length === 0)
-      return c.json({ ok: false, error: "VALIDATION", message: "At least one hobby is required", field: "hobby" }, 400);
-
+    // Hobbies are optional as of the two-tier create form (Aug 2026). The
+    // schema always allowed it (events.interest_id is nullable with ON DELETE
+    // SET NULL, and event_interests simply has no rows), Explore's hobby
+    // filter is an EXISTS guard that only applies when a filter is chosen,
+    // and hobby-based notifications just never fire for a plan with none.
     const interestId = resolvedInterestIds[0] ?? null;
 
     const rows = (await sql`
@@ -14482,14 +14484,14 @@ app.patch("/events/:id", async (c) => {
       patchMinAttendeesRequired = Math.min(500, floored);
     }
 
-    // Resolve and validate hobby tags (required, mirrors POST /events logic)
+    // Resolve and validate hobby tags (optional, mirrors POST /events logic)
     const patchInterestItems = Array.isArray(body.interest_items)
       ? (body.interest_items as Array<{ slug?: string; name?: string }>).slice(0, 10)
       : [];
 
-    if (patchInterestItems.length === 0)
-      return c.json({ ok: false, error: "VALIDATION", message: "At least one hobby is required", field: "hobby" }, 400);
-
+    // Hobbies are optional (mirrors POST /events; two-tier form, Aug 2026).
+    // An empty list clears the plan's hobbies: interest_id goes null and the
+    // event_interests replacement below deletes without re-inserting.
     const patchInterestIds: string[] = [];
     for (const it of patchInterestItems) {
       const slug = it?.slug ? nameToSlug(String(it.slug).trim()) : "";
@@ -14518,10 +14520,7 @@ app.patch("/events/:id", async (c) => {
       }
     }
 
-    if (patchInterestIds.length === 0)
-      return c.json({ ok: false, error: "VALIDATION", message: "At least one valid hobby is required", field: "hobby" }, 400);
-
-    const patchPrimaryInterestId = patchInterestIds[0];
+    const patchPrimaryInterestId = patchInterestIds[0] ?? null;
 
     await sql`
       UPDATE newchums.events

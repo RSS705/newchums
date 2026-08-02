@@ -19,12 +19,13 @@ import Stack from "@mui/material/Stack";
 import MuiLink from "@mui/material/Link";
 import Switch from "@mui/material/Switch";
 import Typography from "@mui/material/Typography";
-import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
 import AddPhotoAlternateRoundedIcon from "@mui/icons-material/AddPhotoAlternateRounded";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import EventNoteRoundedIcon from "@mui/icons-material/EventNoteRounded";
+import EventRepeatRoundedIcon from "@mui/icons-material/EventRepeatRounded";
 import ImageRoundedIcon from "@mui/icons-material/ImageRounded";
-import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
+import NotesRoundedIcon from "@mui/icons-material/NotesRounded";
+import StyleRoundedIcon from "@mui/icons-material/StyleRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { TimePicker } from "@mui/x-date-pickers/TimePicker";
@@ -42,16 +43,30 @@ import PlacesAutocompleteInput, { formatPlaceDisplay } from "@/components/common
 import { loadGooglePlacesScript } from "@/lib/loadGooglePlaces";
 import { scrollToFirstError } from "@/lib/scrollToFirstError";
 import {
+  CollapsibleSection,
   CommunityLinkSection,
   ExtraOptionsSection,
   QAPlanSection,
+  describeAltTimes,
+  describeBanner,
+  describeDescription,
+  describeHobbies,
+  describeVisibility,
   type MyCommunity as SharedMyCommunity,
 } from "@/components/events/planForm";
 
 // Visual top-to-bottom order of validation-bearing fields. Drives the
 // scroll-to-first-error helper so the user always lands on the earliest
 // problem they need to fix rather than a later one.
-const FIELD_ORDER = ["title", "hobby", "minAttendeesRequired", "date", "time", "location"] as const;
+const FIELD_ORDER = ["title", "date", "time", "location", "maxSeats", "minAttendeesRequired"] as const;
+
+// Which collapsed section each validation-bearing field lives in, so a failed
+// submit can force that section open before scrolling to the error. Mirrors
+// the Add Plan form; see AGENTS.md -> Add Plan / Edit Plan Parity Rule.
+const SECTION_OF_FIELD: Record<string, string> = {
+  minAttendeesRequired: "extras",
+  availability_deadline_at: "altTimes",
+};
 
 
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
@@ -157,6 +172,12 @@ export default function EditEventClient() {
     },
     [],
   );
+
+  // Two-tier form: the optional sections start collapsed, with their current
+  // values in the header summaries. Same structure as the Add Plan form.
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
+  const toggleSection = (key: string) =>
+    setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
 
   // Warm-load the Google Places script as soon as the form mounts so the
   // autocomplete on the location field is ready by the time the user reaches
@@ -368,7 +389,8 @@ export default function EditEventClient() {
   const validate = (): Record<string, string> => {
     const errs: Record<string, string> = {};
     if (!title.trim()) errs.title = "Give your plan a title";
-    if (hobbies.length === 0) errs.hobby = "Add at least one hobby so people can find this plan";
+    if (maxSeats && (isNaN(Number(maxSeats)) || Number(maxSeats) < 1))
+      errs.maxSeats = "Must be a positive number";
     if (!dateValue?.isValid()) errs.date = "Pick a date";
     if (!timeValue?.isValid()) errs.time = "Pick a time";
     if (locationType === "in_person") {
@@ -390,13 +412,31 @@ export default function EditEventClient() {
     return errs;
   };
 
-  const handleSubmit = async () => {
-    const errs = validate();
-    if (Object.keys(errs).length > 0) {
+  // Open any collapsed section that contains an errored field, then scroll.
+  // Mirrors the Add Plan form; children stay mounted inside Collapse so refs
+  // are always registered.
+  const revealAndScrollToErrors = (errs: Record<string, string>) => {
+    const toOpen = Object.keys(errs)
+      .map((k) => SECTION_OF_FIELD[k])
+      .filter((k): k is string => !!k);
+    if (toOpen.length > 0) {
+      setOpenSections((prev) => ({
+        ...prev,
+        ...Object.fromEntries(toOpen.map((k) => [k, true])),
+      }));
+      window.setTimeout(() => scrollToFirstError(fieldRefs.current, errs, FIELD_ORDER), 120);
+    } else {
       // scrollToFirstError -> scrollElementIntoView already double-rAFs
       // internally to wait for layout to settle, so no outer rAF wrapper
       // needed here.
       scrollToFirstError(fieldRefs.current, errs, FIELD_ORDER);
+    }
+  };
+
+  const handleSubmit = async () => {
+    const errs = validate();
+    if (Object.keys(errs).length > 0) {
+      revealAndScrollToErrors(errs);
       return;
     }
     const startsAt = dateValue!.hour(timeValue!.hour()).minute(timeValue!.minute()).second(0).toISOString();
@@ -636,9 +676,11 @@ export default function EditEventClient() {
         </Stack>
       </Paper>
 
-      {/* Banner image */}
+      {/* Tier one: always visible. Title, when, where, seats, mirroring the
+          Add Plan form's two-tier structure. Everything optional lives in the
+          collapsed sections below with its current value in the header. */}
       <AppCard>
-        <Stack spacing={2}>
+        <Stack spacing={2.5}>
           <Stack direction="row" spacing={1.5} alignItems="center">
             <Box
               sx={{
@@ -653,7 +695,7 @@ export default function EditEventClient() {
                 flexShrink: 0,
               }}
             >
-              <ImageRoundedIcon sx={{ fontSize: 22 }} />
+              <EventNoteRoundedIcon sx={{ fontSize: 22 }} />
             </Box>
             <Box sx={{ flex: 1, minWidth: 0 }}>
               <Typography
@@ -661,18 +703,196 @@ export default function EditEventClient() {
                 fontWeight={700}
                 sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
               >
-                Banner image
+                Plan details
               </Typography>
               <Typography
                 variant="caption"
                 color="text.disabled"
                 sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
               >
-                Upload a custom photo for this plan.
+                Title, when, where, and seats.
               </Typography>
             </Box>
           </Stack>
 
+          <Box ref={setFieldRef("title")} sx={{ scrollMarginTop: 96 }}>
+            <AppTextField
+              label="Title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              inputProps={{ maxLength: 200 }}
+              error={!!errors.title}
+              helperText={errors.title || null}
+            />
+          </Box>
+
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+            <Box ref={setFieldRef("date")} sx={{ flex: 1, scrollMarginTop: 96 }}>
+              <Typography variant="subtitle1" fontWeight={600} sx={{ display: "block", mb: 0.625 }}>
+                Date
+              </Typography>
+              <DatePicker
+                value={dateValue}
+                onChange={setDateValue}
+                slotProps={{ textField: { fullWidth: true, size: "medium", error: !!errors.date, helperText: errors.date, onKeyDown: pickerFieldTabKeyDown } }}
+              />
+            </Box>
+            <Box ref={setFieldRef("time")} sx={{ flex: 1, scrollMarginTop: 96 }}>
+              <Typography variant="subtitle1" fontWeight={600} sx={{ display: "block", mb: 0.625 }}>
+                Time
+              </Typography>
+              <TimePicker
+                value={timeValue}
+                onChange={setTimeValue}
+                format="h:mm A"
+                slotProps={{ field: { shouldRespectLeadingZeros: true } as Record<string, unknown>, textField: { fullWidth: true, size: "medium", error: !!errors.time, helperText: errors.time, onKeyDown: pickerFieldTabKeyDown } }}
+              />
+            </Box>
+          </Stack>
+          {/* Edit-only, shown once the pickers diverge from the saved start
+              time on a plan with going/maybe attendees. Deliberate parity
+              divergence from the Add form; see AGENTS.md -> Add Plan / Edit
+              Plan Parity Rule. */}
+          {offerReconfirm && (
+            <Box sx={{ borderRadius: 2, border: "1px solid", borderColor: "divider", bgcolor: "action.hover", px: 2, py: 1.5 }}>
+              <FormControlLabel
+                control={<Switch checked={reconfirmRsvps} onChange={(e) => setReconfirmRsvps(e.target.checked)} />}
+                label={<Typography variant="body2" fontWeight={600}>Ask attendees to reconfirm for the new time</Typography>}
+                sx={{ mr: 0, gap: 0.5 }}
+              />
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.25, lineHeight: 1.45 }}>
+                Everyone marked Going moves to Maybe, and attendees get an email showing the new time with one-tap RSVP links.
+              </Typography>
+            </Box>
+          )}
+
+          <Box>
+            <Typography variant="subtitle1" fontWeight={600} sx={{ display: "block", mb: 0.25 }}>
+              Where?
+            </Typography>
+            <RadioGroup
+              row
+              value={locationType}
+              onChange={(e) => setLocationType(e.target.value as "in_person" | "online")}
+            >
+              <FormControlLabel value="in_person" control={<Radio />} label="In person" />
+              <FormControlLabel value="online" control={<Radio />} label="Online" />
+            </RadioGroup>
+
+            {locationType === "in_person" ? (
+              <Box ref={setFieldRef("location")} sx={{ scrollMarginTop: 96, mt: 1 }}>
+                <PlacesAutocompleteInput
+                  value={locationName}
+                  onChange={(v) => {
+                    setLocationName(v);
+                    if (!v.trim()) {
+                      setLocationAddress("");
+                      setLocationPlaceId(null);
+                      setLocationLat(null);
+                      setLocationLng(null);
+                      setLocationArea(null);
+                    }
+                  }}
+                  onPlaceSelect={(result) => {
+                    setLocationName(formatPlaceDisplay(result));
+                    setLocationAddress(result.formattedAddress);
+                    setLocationPlaceId(result.placeId);
+                    setLocationLat(result.lat);
+                    setLocationLng(result.lng);
+                    setLocationArea(result.area ?? null);
+                  }}
+                  label="Venue or address"
+                  placeholder="Search for a place or enter an address"
+                  helperText={errors.location || undefined}
+                  error={!!errors.location}
+                  placeTypes={[]}
+                  inputId="places-autocomplete-edit-event"
+                />
+              </Box>
+            ) : (
+              <Box sx={{ mt: 1 }}>
+                <AppTextField
+                  label="Online link or details"
+                  placeholder="e.g. Zoom link, Discord server"
+                  value={onlineLink}
+                  onChange={(e) => setOnlineLink(e.target.value)}
+                  helperText="Share a link or instructions for joining online"
+                />
+              </Box>
+            )}
+          </Box>
+
+          <Box
+            ref={setFieldRef("maxSeats")}
+            sx={{ width: { xs: "100%", sm: "auto" }, scrollMarginTop: 96 }}
+          >
+            <AppTextField
+              label="Seats"
+              placeholder="e.g. 8"
+              value={maxSeats}
+              onChange={(e) => setMaxSeats(e.target.value)}
+              error={!!errors.maxSeats}
+              helperText={errors.maxSeats ?? "Optional. Include yourself in the count"}
+              type="number"
+              // Disable scroll-wheel value changes, see the Add Plan seat field for context.
+              inputProps={{
+                min: 1,
+                max: 500,
+                onWheel: (e: WheelEvent<HTMLInputElement>) => e.currentTarget.blur(),
+              }}
+              sx={{ minWidth: { xs: "100%", sm: 260 } }}
+            />
+          </Box>
+          {maxSeats && Number(maxSeats) >= 1 && (
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={reserveSeats}
+                  onChange={(e) => setReserveSeats(e.target.checked)}
+                />
+              }
+              label="Reserve seats for invited people"
+              sx={{ gap: 0.5 }}
+            />
+          )}
+        </Stack>
+      </AppCard>
+
+      {/* Tier two: optional sections, collapsed with a live summary of their
+          current value in the header. */}
+      <Typography
+        variant="caption"
+        sx={{ color: "text.secondary", mt: { xs: -1.5, sm: -2 }, ml: 0.5 }}
+      >
+        Everything below is optional. Tap a section to open it.
+      </Typography>
+
+      <CollapsibleSection
+        sectionKey="description"
+        icon={<NotesRoundedIcon sx={{ fontSize: 22 }} />}
+        title="Description"
+        subtitle="What should people expect? Any details they should know?"
+        summary={describeDescription(description)}
+        expanded={!!openSections.description}
+        onToggle={() => toggleSection("description")}
+      >
+        <RichTextEditor
+          placeholder="What should people expect? Any details they should know?"
+          value={description}
+          onChange={setDescription}
+        />
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        sectionKey="banner"
+        icon={<ImageRoundedIcon sx={{ fontSize: 22 }} />}
+        title="Banner image"
+        subtitle="Upload a custom photo for this plan."
+        summary={describeBanner(null, !!bannerPreview)}
+        expanded={!!openSections.banner}
+        onToggle={() => toggleSection("banner")}
+      >
+        <Stack spacing={2}>
           <Box
             onClick={() => bannerInputRef.current?.click()}
             sx={{
@@ -748,444 +968,230 @@ export default function EditEventClient() {
             JPEG, PNG, or WebP up to 20 MB, we&apos;ll compress it automatically.
           </Typography>
         </Stack>
-      </AppCard>
+      </CollapsibleSection>
 
-      {/* Basic details */}
-      <AppCard>
-        <Stack spacing={2.5}>
-          <Stack direction="row" spacing={1.5} alignItems="center">
-            <Box
-              sx={{
-                width: 40,
-                height: 40,
-                borderRadius: "50%",
-                bgcolor: "primary.light",
-                color: "primary.main",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-              }}
-            >
-              <EventNoteRoundedIcon sx={{ fontSize: 22 }} />
-            </Box>
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography
-                variant="h6"
-                fontWeight={700}
-                sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
-              >
-                Plan details
-              </Typography>
+      <CollapsibleSection
+        sectionKey="hobbies"
+        icon={<StyleRoundedIcon sx={{ fontSize: 22 }} />}
+        title="Hobbies"
+        subtitle="Optional, helps people who share them find this plan."
+        summary={describeHobbies(hobbies)}
+        expanded={!!openSections.hobbies}
+        onToggle={() => toggleSection("hobbies")}
+      >
+        <Box ref={setFieldRef("hobby")} sx={{ scrollMarginTop: 96 }}>
+          <HobbyPickerField
+            value={hobbies}
+            onChange={setHobbies}
+            error={errors.hobby}
+            helperText="People nearby who share these hobbies may get notified about this plan, depending on who can see it."
+            onReject={(msg) => toast.error(msg)}
+          />
+        </Box>
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        sectionKey="altTimes"
+        icon={<EventRepeatRoundedIcon sx={{ fontSize: 22 }} />}
+        title="Alternate times"
+        subtitle="How flexible do you want to be about the time?"
+        summary={describeAltTimes(schedulingMode)}
+        expanded={!!openSections.altTimes}
+        onToggle={() => toggleSection("altTimes")}
+      >
+        <RadioGroup
+          value={schedulingMode}
+          onChange={(e) => {
+            const mode = e.target.value as "off" | "suggest" | "availability";
+            setSchedulingMode(mode);
+            if (mode !== "availability") { setDeadlineDate(null); setDeadlineTime(null); }
+          }}
+        >
+          <FormControlLabel
+            value="suggest"
+            control={<Radio />}
+            label="Allow suggestions"
+            sx={{ gap: 0.5 }}
+          />
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ ml: "32px", mt: -0.5, mb: 0.5 }}
+          >
+            People can suggest other times if the listed time doesn&apos;t work.
+          </Typography>
+          <FormControlLabel
+            value="availability"
+            control={<Radio />}
+            label="Request availability"
+            sx={{ gap: 0.5 }}
+          />
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ ml: "32px", mt: -0.5, mb: 0.5 }}
+          >
+            Ask attendees to share when they&apos;re free so you can find the best time.
+          </Typography>
+          {schedulingMode === "availability" && (
+            <Box sx={{ ml: "32px", mb: 1 }}>
               <Typography
                 variant="caption"
-                color="text.disabled"
-                sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
+                color="text.secondary"
+                sx={{ display: "block", mb: 0.75 }}
               >
-                Title, description, and the hobbies it&apos;s about.
+                Availability needed by (optional)
               </Typography>
-            </Box>
-          </Stack>
-
-          <Box ref={setFieldRef("title")} sx={{ scrollMarginTop: 96 }}>
-            <AppTextField
-              label="Title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              inputProps={{ maxLength: 200 }}
-              error={!!errors.title}
-              helperText={errors.title || null}
-            />
-          </Box>
-
-          <RichTextEditor
-            label="Description"
-            value={description}
-            onChange={setDescription}
-          />
-
-          <Box ref={setFieldRef("hobby")} sx={{ scrollMarginTop: 96 }}>
-            <HobbyPickerField
-              value={hobbies}
-              onChange={setHobbies}
-              error={errors.hobby}
-              helperText="People nearby who share these hobbies may get notified about this plan, depending on who can see it."
-              onReject={(msg) => toast.error(msg)}
-            />
-          </Box>
-
-          <AppTextField
-            label="Max seats (optional)"
-            type="number"
-            value={maxSeats}
-            onChange={(e) => setMaxSeats(e.target.value)}
-            // Disable scroll-wheel value changes, see CreateEventClient seat field for context.
-            inputProps={{
-              min: 1,
-              onWheel: (e: WheelEvent<HTMLInputElement>) => e.currentTarget.blur(),
-            }}
-            helperText="Include yourself in the count"
-          />
-          {maxSeats && Number(maxSeats) >= 1 && (
-            <FormControlLabel
-              control={
-                <Switch
-                  size="small"
-                  checked={reserveSeats}
-                  onChange={(e) => setReserveSeats(e.target.checked)}
+              <Stack direction="row" spacing={1.5}>
+                <DatePicker
+                  value={deadlineDate}
+                  onChange={setDeadlineDate}
+                  slotProps={{ textField: { size: "small", placeholder: "Date", sx: { flex: 1 }, onKeyDown: pickerFieldTabKeyDown } }}
                 />
-              }
-              label={<Typography variant="body2" fontWeight={500}>Reserve seats for invited people</Typography>}
-              sx={{ alignItems: "center", mt: 0.5, gap: 0.5 }}
-            />
-          )}
-
-          <Box
-            ref={setFieldRef("minAttendeesRequired")}
-            sx={{ width: { xs: "100%", sm: "auto" }, scrollMarginTop: 96 }}
-          >
-            <AppTextField
-              label="Minimum attendees required (optional)"
-              type="number"
-              value={minAttendeesRequired}
-              onChange={(e) => setMinAttendeesRequired(e.target.value)}
-              error={!!errors.minAttendeesRequired}
-              helperText={
-                errors.minAttendeesRequired ??
-                "If fewer than this many people are going 2 hours before the plan, NewChums will automatically cancel it."
-              }
-              inputProps={{
-                min: 1,
-                max: 500,
-                onWheel: (e: WheelEvent<HTMLInputElement>) => e.currentTarget.blur(),
-              }}
-              sx={{ minWidth: { xs: "100%", sm: 320 } }}
-            />
-          </Box>
-        </Stack>
-      </AppCard>
-
-      {/* Date & time */}
-      <AppCard>
-        <Stack spacing={2.5}>
-          <Stack direction="row" spacing={1.5} alignItems="center">
-            <Box
-              sx={{
-                width: 40,
-                height: 40,
-                borderRadius: "50%",
-                bgcolor: "primary.light",
-                color: "primary.main",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-              }}
-            >
-              <AccessTimeRoundedIcon sx={{ fontSize: 22 }} />
-            </Box>
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography
-                variant="h6"
-                fontWeight={700}
-                sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
-              >
-                When?
-              </Typography>
-              <Typography
-                variant="caption"
-                color="text.disabled"
-                sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
-              >
-                Date, time, and how flexible you want to be.
-              </Typography>
-            </Box>
-          </Stack>
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-            <Box ref={setFieldRef("date")} sx={{ flex: 1, scrollMarginTop: 96 }}>
-              <Typography variant="subtitle1" fontWeight={600} sx={{ display: "block", mb: 0.625 }}>
-                Date
-              </Typography>
-              <DatePicker
-                value={dateValue}
-                onChange={setDateValue}
-                slotProps={{ textField: { fullWidth: true, size: "medium", error: !!errors.date, helperText: errors.date, onKeyDown: pickerFieldTabKeyDown } }}
-              />
-            </Box>
-            <Box ref={setFieldRef("time")} sx={{ flex: 1, scrollMarginTop: 96 }}>
-              <Typography variant="subtitle1" fontWeight={600} sx={{ display: "block", mb: 0.625 }}>
-                Time
-              </Typography>
-              <TimePicker
-                value={timeValue}
-                onChange={setTimeValue}
-                format="h:mm A"
-                slotProps={{ field: { shouldRespectLeadingZeros: true } as Record<string, unknown>, textField: { fullWidth: true, size: "medium", error: !!errors.time, helperText: errors.time, onKeyDown: pickerFieldTabKeyDown } }}
-              />
-            </Box>
-          </Stack>
-          {/* Edit-only, shown once the pickers diverge from the saved start
-              time on a plan with going/maybe attendees. Deliberate parity
-              divergence from the Add form; see AGENTS.md -> Add Plan / Edit
-              Plan Parity Rule. */}
-          {offerReconfirm && (
-            <Box sx={{ borderRadius: 2, border: "1px solid", borderColor: "divider", bgcolor: "action.hover", px: 2, py: 1.5 }}>
-              <FormControlLabel
-                control={<Switch checked={reconfirmRsvps} onChange={(e) => setReconfirmRsvps(e.target.checked)} />}
-                label={<Typography variant="body2" fontWeight={600}>Ask attendees to reconfirm for the new time</Typography>}
-                sx={{ mr: 0, gap: 0.5 }}
-              />
-              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.25, lineHeight: 1.45 }}>
-                Everyone marked Going moves to Maybe, and attendees get an email showing the new time with one-tap RSVP links.
-              </Typography>
+                <TimePicker
+                  value={deadlineTime}
+                  onChange={setDeadlineTime}
+                  format="h:mm A"
+                  slotProps={{
+                    field: { shouldRespectLeadingZeros: true } as Record<string, unknown>,
+                    textField: { size: "small", placeholder: "Time", sx: { flex: 1 }, onKeyDown: pickerFieldTabKeyDown },
+                  }}
+                />
+              </Stack>
             </Box>
           )}
-          <Box>
-            <Typography variant="body2" fontWeight={600} sx={{ display: "block", mb: 0.625 }}>
-              Alternate times
-            </Typography>
-            <RadioGroup
-              value={schedulingMode}
-              onChange={(e) => {
-                const mode = e.target.value as "off" | "suggest" | "availability";
-                setSchedulingMode(mode);
-                if (mode !== "availability") { setDeadlineDate(null); setDeadlineTime(null); }
-              }}
-            >
-              <FormControlLabel value="suggest" control={<Radio size="small" />} label={<Typography variant="body2" fontWeight={500}>Allow suggestions</Typography>} sx={{ gap: 0.5 }} />
-              <Typography variant="caption" color="text.secondary" sx={{ ml: "28px", mt: -0.5, mb: 0.5 }}>
-                People can suggest other times if the listed time doesn&apos;t work.
-              </Typography>
-              <FormControlLabel value="availability" control={<Radio size="small" />} label={<Typography variant="body2" fontWeight={500}>Request availability</Typography>} sx={{ gap: 0.5 }} />
-              <Typography variant="caption" color="text.secondary" sx={{ ml: "28px", mt: -0.5, mb: 0.5 }}>
-                Ask attendees to share when they&apos;re free so you can find the best time.
-              </Typography>
-              {schedulingMode === "availability" && (
-                <Box sx={{ ml: "28px", mb: 1 }}>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.75 }}>
-                    Availability needed by (optional)
-                  </Typography>
-                  <Stack direction="row" spacing={1.5}>
-                    <DatePicker
-                      value={deadlineDate}
-                      onChange={setDeadlineDate}
-                      slotProps={{ textField: { size: "small", placeholder: "Date", sx: { flex: 1 }, onKeyDown: pickerFieldTabKeyDown } }}
-                    />
-                    <TimePicker
-                      value={deadlineTime}
-                      onChange={setDeadlineTime}
-                      format="h:mm A"
-                      slotProps={{
-                        field: { shouldRespectLeadingZeros: true } as Record<string, unknown>,
-                        textField: { size: "small", placeholder: "Time", sx: { flex: 1 }, onKeyDown: pickerFieldTabKeyDown },
-                      }}
-                    />
-                  </Stack>
-                </Box>
-              )}
-              <FormControlLabel value="off" control={<Radio size="small" />} label={<Typography variant="body2" fontWeight={500}>Off</Typography>} sx={{ gap: 0.5 }} />
-            </RadioGroup>
-          </Box>
-        </Stack>
-      </AppCard>
+          <FormControlLabel value="off" control={<Radio />} label="Off" sx={{ gap: 0.5 }} />
+        </RadioGroup>
+      </CollapsibleSection>
 
-      {/* Location */}
-      <AppCard>
-        <Stack spacing={2.5}>
-          <Stack direction="row" spacing={1.5} alignItems="center">
-            <Box
-              sx={{
-                width: 40,
-                height: 40,
-                borderRadius: "50%",
-                bgcolor: "primary.light",
-                color: "primary.main",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-              }}
-            >
-              <PlaceRoundedIcon sx={{ fontSize: 22 }} />
-            </Box>
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography
-                variant="h6"
-                fontWeight={700}
-                sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
-              >
-                Where?
-              </Typography>
-              <Typography
-                variant="caption"
-                color="text.disabled"
-                sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
-              >
-                In-person address or an online meeting link.
-              </Typography>
-            </Box>
-          </Stack>
-
+      <CollapsibleSection
+        sectionKey="visibility"
+        icon={<VisibilityRoundedIcon sx={{ fontSize: 22 }} />}
+        title="Who can see this?"
+        subtitle="Controls who can find this plan and who may get notified about it."
+        summary={describeVisibility(visibility, locationType, locationVisibility)}
+        expanded={!!openSections.visibility}
+        onToggle={() => toggleSection("visibility")}
+      >
+        <Stack spacing={2}>
           <RadioGroup
-            row
-            value={locationType}
-            onChange={(e) => setLocationType(e.target.value as "in_person" | "online")}
+            value={visibility}
+            onChange={(e) => setVisibility(e.target.value as typeof visibility)}
           >
-            <FormControlLabel value="in_person" control={<Radio />} label="In person" />
-            <FormControlLabel value="online" control={<Radio />} label="Online" />
+            <FormControlLabel
+              value="public"
+              control={<Radio />}
+              label={
+                <Box>
+                  <Typography variant="body1" fontWeight={500}>
+                    Public
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Anyone on NewChums can discover and join this plan
+                  </Typography>
+                </Box>
+              }
+              sx={{ alignItems: "flex-start", mb: 1.5 }}
+            />
+            <FormControlLabel
+              value="chums_only"
+              control={<Radio />}
+              label={
+                <Box>
+                  <Typography variant="body1" fontWeight={500}>
+                    Chums only
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Only your Chums can see and join this plan
+                  </Typography>
+                </Box>
+              }
+              sx={{ alignItems: "flex-start", mb: 1.5 }}
+            />
+            <FormControlLabel
+              value="invite_only"
+              control={<Radio />}
+              label={
+                <Box>
+                  <Typography variant="body1" fontWeight={500}>
+                    Invite only
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Only people you invite will see this plan
+                  </Typography>
+                </Box>
+              }
+              sx={{ alignItems: "flex-start" }}
+            />
           </RadioGroup>
 
-          {locationType === "in_person" ? (
-            <>
-              <Box ref={setFieldRef("location")} sx={{ scrollMarginTop: 96 }}>
-                <PlacesAutocompleteInput
-                  value={locationName}
-                  onChange={(v) => {
-                    setLocationName(v);
-                    if (!v.trim()) {
-                      setLocationAddress("");
-                      setLocationPlaceId(null);
-                      setLocationLat(null);
-                      setLocationLng(null);
-                      setLocationArea(null);
-                    }
-                  }}
-                  onPlaceSelect={(result) => {
-                    setLocationName(formatPlaceDisplay(result));
-                    setLocationAddress(result.formattedAddress);
-                    setLocationPlaceId(result.placeId);
-                    setLocationLat(result.lat);
-                    setLocationLng(result.lng);
-                    setLocationArea(result.area ?? null);
-                  }}
-                  label="Venue or address"
-                  placeholder="Search for a place or enter an address"
-                  helperText={errors.location || undefined}
-                  error={!!errors.location}
-                  placeTypes={[]}
-                  inputId="places-autocomplete-edit-event"
-                />
-              </Box>
-              <FormControl fullWidth size="medium" sx={{ minWidth: 200 }}>
-                <Typography
-                  component="label"
-                  htmlFor="edit-location-visibility-select"
-                  variant="subtitle1"
-                  fontWeight={600}
-                  sx={{ display: "block", mb: 0.625 }}
-                >
-                  Who can see the exact location?
-                </Typography>
-                <Select
-                  id="edit-location-visibility-select"
-                  value={locationVisibility}
-                  onChange={(e) => setLocationVisibility(e.target.value as typeof locationVisibility)}
-                  variant="outlined"
-                  displayEmpty={false}
-                  renderValue={(v) => {
-                    const labels: Record<typeof locationVisibility, string> = {
-                      exact_everyone: "Everyone",
-                      exact_joined_only: "Only people who join",
-                      approximate_only: "General area only",
-                    };
-                    return labels[v];
-                  }}
-                  MenuProps={{
-                    PaperProps: { sx: { minWidth: 320 } },
-                  }}
-                  sx={{ "& .MuiSelect-select": { py: 1.25 } }}
-                >
-                  <MenuItem value="exact_everyone">
-                    <ListItemText
-                      primary="Everyone"
-                      secondary="The full venue or address is shown wherever the plan appears"
-                      primaryTypographyProps={{ fontWeight: 500 }}
-                      secondaryTypographyProps={{ variant: "caption" }}
-                    />
-                  </MenuItem>
-                  <MenuItem value="exact_joined_only">
-                    <ListItemText
-                      primary="Only people who join"
-                      secondary="Others see only the general area until they respond (going or maybe)"
-                      primaryTypographyProps={{ fontWeight: 500 }}
-                      secondaryTypographyProps={{ variant: "caption" }}
-                    />
-                  </MenuItem>
-                  <MenuItem value="approximate_only">
-                    <ListItemText
-                      primary="General area only"
-                      secondary="The exact venue is never shown; everyone sees only the broader area"
-                      primaryTypographyProps={{ fontWeight: 500 }}
-                      secondaryTypographyProps={{ variant: "caption" }}
-                    />
-                  </MenuItem>
-                </Select>
-              </FormControl>
-            </>
-          ) : (
-            <AppTextField
-              label="Online link or details"
-              placeholder="e.g. Zoom link, Discord server"
-              value={onlineLink}
-              onChange={(e) => setOnlineLink(e.target.value)}
-              helperText="Share a link or instructions for joining online"
-            />
+          {/* Exact-location privacy. Lives here rather than under Where?
+              because it is an audience control with a safe default, and the
+              tier-one card stays down to what a minimum plan needs. */}
+          {locationType === "in_person" && (
+            <FormControl fullWidth size="medium" sx={{ minWidth: 200 }}>
+              <Typography
+                component="label"
+                htmlFor="edit-location-visibility-select"
+                variant="subtitle1"
+                fontWeight={600}
+                sx={{ display: "block", mb: 0.625 }}
+              >
+                Who can see the exact location?
+              </Typography>
+              <Select
+                id="edit-location-visibility-select"
+                value={locationVisibility}
+                onChange={(e) => setLocationVisibility(e.target.value as typeof locationVisibility)}
+                variant="outlined"
+                displayEmpty={false}
+                renderValue={(v) => {
+                  const labels: Record<typeof locationVisibility, string> = {
+                    exact_everyone: "Everyone",
+                    exact_joined_only: "Only people who join",
+                    approximate_only: "General area only",
+                  };
+                  return labels[v];
+                }}
+                MenuProps={{
+                  PaperProps: { sx: { minWidth: 320 } },
+                }}
+                sx={{ "& .MuiSelect-select": { py: 1.25 } }}
+              >
+                <MenuItem value="exact_everyone">
+                  <ListItemText
+                    primary="Everyone"
+                    secondary="The full venue or address is shown wherever the plan appears"
+                    primaryTypographyProps={{ fontWeight: 500 }}
+                    secondaryTypographyProps={{ variant: "caption" }}
+                  />
+                </MenuItem>
+                <MenuItem value="exact_joined_only">
+                  <ListItemText
+                    primary="Only people who join"
+                    secondary="Others see only the general area until they respond (going or maybe)"
+                    primaryTypographyProps={{ fontWeight: 500 }}
+                    secondaryTypographyProps={{ variant: "caption" }}
+                  />
+                </MenuItem>
+                <MenuItem value="approximate_only">
+                  <ListItemText
+                    primary="General area only"
+                    secondary="The exact venue is never shown; everyone sees only the broader area"
+                    primaryTypographyProps={{ fontWeight: 500 }}
+                    secondaryTypographyProps={{ variant: "caption" }}
+                  />
+                </MenuItem>
+              </Select>
+            </FormControl>
           )}
         </Stack>
-      </AppCard>
-
-      {/* Visibility */}
-      <AppCard>
-        <Stack spacing={2}>
-          <Stack direction="row" spacing={1.5} alignItems="center">
-            <Box
-              sx={{
-                width: 40,
-                height: 40,
-                borderRadius: "50%",
-                bgcolor: "primary.light",
-                color: "primary.main",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-              }}
-            >
-              <VisibilityRoundedIcon sx={{ fontSize: 22 }} />
-            </Box>
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography
-                variant="h6"
-                fontWeight={700}
-                sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
-              >
-                Who can see this?
-              </Typography>
-              <Typography
-                variant="caption"
-                color="text.disabled"
-                sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
-              >
-                Controls who can find this plan and who may get notified about it.
-              </Typography>
-            </Box>
-          </Stack>
-
-          <FormControl component="fieldset">
-            <RadioGroup
-              value={visibility}
-              onChange={(e) => setVisibility(e.target.value as typeof visibility)}
-            >
-              <FormControlLabel value="public" control={<Radio size="small" />} label="Public" />
-              <FormControlLabel value="chums_only" control={<Radio size="small" />} label="Chums only" />
-              <FormControlLabel value="invite_only" control={<Radio size="small" />} label="Invite only" />
-            </RadioGroup>
-          </FormControl>
-        </Stack>
-      </AppCard>
+      </CollapsibleSection>
 
       {/* Extra options */}
       <ExtraOptionsSection
+        expanded={!!openSections.extras}
+        onToggle={() => toggleSection("extras")}
         requireReconfirmation={requireReconfirmation}
         onChangeRequireReconfirmation={setRequireReconfirmation}
         minConfirmedAttendees={minConfirmed}
@@ -1198,6 +1204,10 @@ export default function EditEventClient() {
         onChangePreventAttendeeInvites={setPreventAttendeeInvites}
         muteHostAttendanceEmails={muteHostAttendanceEmails}
         onChangeMuteHostAttendanceEmails={setMuteHostAttendanceEmails}
+        minAttendeesRequired={minAttendeesRequired}
+        onChangeMinAttendeesRequired={setMinAttendeesRequired}
+        minAttendeesError={errors.minAttendeesRequired}
+        registerMinAttendeesField={setFieldRef("minAttendeesRequired")}
         notifyAttendees={{ value: notifyAttendees, onChange: setNotifyAttendees }}
       />
 
@@ -1205,6 +1215,8 @@ export default function EditEventClient() {
           since invite_only plans never appear in Explore or community feeds.
           See AGENTS.md -> Plan Feed and Community Visibility Contract. */}
       <CommunityLinkSection
+        expanded={!!openSections.community}
+        onToggle={() => toggleSection("community")}
         visibility={visibility}
         myCommunities={myCommunities}
         selectedCommunityIds={selectedCommunityIds}
