@@ -6781,22 +6781,6 @@ app.put("/objectives/tutorial-off", async (c) => {
   }
 });
 
-/** PUT /share-link-modal-dismiss, permanently dismiss the share-link first-use info modal */
-app.put("/share-link-modal-dismiss", async (c) => {
-  const payload = await requireAuth(c);
-  if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
-  try {
-    const sql = getSql(c.env);
-    await sql`
-      UPDATE newchums.users SET share_link_modal_dismissed = true WHERE email = ${payload.email}
-    `;
-    return c.json({ ok: true });
-  } catch (err) {
-    console.error("[PUT /share-link-modal-dismiss]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
-  }
-});
-
 /** GET /admin/objectives/kpi, aggregate objective completion metrics (super admin) */
 app.get("/admin/objectives/kpi", async (c) => {
   const admin = await requireSuperAdmin(c);
@@ -12828,13 +12812,6 @@ app.get("/events/:id", async (c) => {
     userId = await ensureAppUserId(sql, authPayload.email, (authPayload as { name?: string | null }).name);
   }
 
-  // Fetch share-link modal dismissed flag for authenticated users
-  let shareLinkModalDismissed = false;
-  if (userId) {
-    const flagRows = (await sql`SELECT share_link_modal_dismissed FROM newchums.users WHERE id = ${userId} LIMIT 1`) as { share_link_modal_dismissed: boolean }[];
-    shareLinkModalDismissed = flagRows[0]?.share_link_modal_dismissed ?? false;
-  }
-
   // Token-based access for email invite recipients or share-link visitors.
   // Invite tokens are signed JWTs; share tokens are short deterministic HMACs.
   // Unauthenticated visitors see the plan preview + lightweight signup card;
@@ -13031,7 +13008,6 @@ app.get("/events/:id", async (c) => {
         accessState: "public" as const,
         viewerUserId: null,
         viewerEmail: null,
-        shareLinkModalDismissed: false,
         event: {
           id: event.id,
           title: event.title,
@@ -13287,7 +13263,6 @@ app.get("/events/:id", async (c) => {
       // is authenticated this field is dropped (their session already has the
       // canonical email and there's nothing to prefill).
       inviteeEmail: !userId ? tokenInviteEmail : null,
-      shareLinkModalDismissed,
       event: {
         id: event.id,
         title: event.title,

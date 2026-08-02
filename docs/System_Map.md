@@ -148,7 +148,6 @@ The following flows run in the API worker; the web app calls the API via `NEXT_P
 | Notifications | `GET /notifications` (includes `unreadChats`), `POST /notifications/read` | Bearer JWT |
 | Email unsubscribe | `POST /email/unsubscribe` | Signed JWT token |
 | Contact form | `POST /contact` | none (Turnstile for logged-out) |
-| UI state | `PUT /share-link-modal-dismiss` | Bearer JWT |
 | Roadmap | `GET /roadmap`, `GET /roadmap/:id`, `POST /roadmap`, `PUT /roadmap/:id`, `DELETE /roadmap/:id`, `POST /roadmap/:id/vote`, `POST /roadmap/:id/follow`, `POST /roadmap/:id/comment`, `GET /roadmap/:id/attachment` | Bearer JWT. List and detail endpoints filter out "received" status items unless viewer is author or super_admin. Anonymous submissions (`is_anonymous`) show `@anonymous` publicly; admin endpoints always show real author. Statuses: received, needs_clarification, in_progress, planned, completed, not_planned. |
 | Admin, interests | `GET /admin/interests`, `GET /admin/interests/categories`, `PATCH /admin/interests/:id`, `DELETE /admin/interests/:id`, `POST /admin/interests/:id/restore`, `POST /admin/interests/merge` | Bearer JWT + `super_admin` role |
 | Admin, users | `GET /admin/users`, `POST /admin/users/:id/suspend`, `POST /admin/users/:id/unsuspend`, `PATCH /admin/users/:id/subscription-plan`, `GET /admin/users/:id/diagnostics`, `PUT /admin/users/:id/metrics` | Bearer JWT + `super_admin` role |

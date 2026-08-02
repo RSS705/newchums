@@ -499,7 +499,6 @@ export default function EventDetailClient({
       adminView?: PlanAdminView | null;
       viewerEmail?: string | null;
       inviteeEmail?: string | null;
-      shareLinkModalDismissed?: boolean;
       event: EventDetail;
       rsvps: RsvpEntry[];
       altTimes: AltTimeEntry[];
