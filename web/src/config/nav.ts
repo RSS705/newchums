@@ -24,6 +24,23 @@ export type NavItem = {
   tag?: string;
 };
 
+/**
+ * The one definition of Give Feedback. Rendered in two places: the sidebar
+ * (via `appNavItems` below) and the account dropdown in AppShell. It used to
+ * be hand-written in both, and the copies drifted: when the sidebar moved
+ * from /roadmap to /contact, the dropdown kept pushing /roadmap for a full
+ * release. Anything that renders this entry must read this object.
+ *
+ * Points at the contact form, not the roadmap: someone who wants to report
+ * a problem or make a suggestion gets a two-field form, not an 1,100-line
+ * voting page. The roadmap has its own sidebar entry below.
+ */
+export const giveFeedbackNavItem: NavItem = {
+  label: "Give Feedback",
+  href: "/contact",
+  icon: FeedbackRoundedIcon,
+};
+
 export const appNavItems: NavItem[] = [
   { label: "Explore", href: "/", icon: ExploreRoundedIcon },
   { label: "Your Plans", href: "/plans", icon: EventNoteRoundedIcon },
@@ -31,11 +48,7 @@ export const appNavItems: NavItem[] = [
   { label: "Communities", href: "/communities", icon: ForumRoundedIcon },
   { label: "Your Chums", href: "/chum-groups", icon: GroupsRoundedIcon },
   { label: "Profile", href: "/profile", icon: PersonRoundedIcon },
-  // Points at the contact form, not the public roadmap: someone who wants
-  // to report a problem or make a suggestion gets a two-field form, not an
-  // 1,100-line voting page. The roadmap stays reachable from the footer's
-  // "Community Roadmap" link.
-  { label: "Give Feedback", href: "/contact", icon: FeedbackRoundedIcon },
+  giveFeedbackNavItem,
   // Signed-in only since Aug 2026, so it lives here rather than in the
   // public landing footer (where it would have been a login wall for the
   // signed-out visitors who make up most of that footer's audience).

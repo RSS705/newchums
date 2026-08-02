@@ -6,7 +6,6 @@ import PersonRoundedIcon from "@mui/icons-material/PersonRounded";
 import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
 import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
 import WavingHandRoundedIcon from "@mui/icons-material/WavingHandRounded";
-import FeedbackRoundedIcon from "@mui/icons-material/FeedbackRounded";
 import CardMembershipRoundedIcon from "@mui/icons-material/CardMembershipRounded";
 import {
   AppBar,
@@ -33,7 +32,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
 import { signOut } from "next-auth/react";
-import { appNavItems, superAdminNavItems, createEventHref, publicHeaderNavLinks } from "@/config/nav";
+import { appNavItems, superAdminNavItems, createEventHref, giveFeedbackNavItem, publicHeaderNavLinks } from "@/config/nav";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import UserAvatar from "@/components/common/UserAvatar";
 import SiteHeader, { HEADER_MIN_HEIGHT } from "@/components/layout/SiteHeader";
@@ -588,16 +587,19 @@ export default function AppShell({ children, user, passwordSetupPending, passwor
                     Your Plan
                   </MenuItem>
                 )}
+                {/* Rendered from the same object the sidebar reads, so the
+                    two entries cannot drift apart again (they did once: this
+                    copy kept pushing /roadmap after the sidebar moved on). */}
                 <MenuItem
                   onClick={() => {
                     setAccountMenuAnchor(null);
-                    router.push("/roadmap");
+                    router.push(giveFeedbackNavItem.href);
                   }}
                 >
                   <ListItemIcon>
-                    <FeedbackRoundedIcon fontSize="small" />
+                    <giveFeedbackNavItem.icon fontSize="small" />
                   </ListItemIcon>
-                  Give Feedback
+                  {giveFeedbackNavItem.label}
                 </MenuItem>
                 <MenuItem
                   onClick={async () => {
