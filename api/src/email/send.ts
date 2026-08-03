@@ -836,6 +836,7 @@ export const sendConfirmationRequestEmail = async (
     isFinal,
     deadline,
     unsubscribeUrl,
+    idempotencyKey,
   }: {
     to: string;
     recipientName: string;
@@ -849,6 +850,7 @@ export const sendConfirmationRequestEmail = async (
     isFinal: boolean;
     deadline: string;
     unsubscribeUrl?: string;
+    idempotencyKey?: string;
   },
 ) => {
   const stage: "initial" | "reminder" | "final" = isFinal
@@ -898,7 +900,7 @@ export const sendConfirmationRequestEmail = async (
       isFinal: !!isFinal,
       unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
     },
-    { subjectKey: isHost ? "confirmationRequestUser_host" : "confirmationRequestUser_attendee" },
+    { subjectKey: isHost ? "confirmationRequestUser_host" : "confirmationRequestUser_attendee", idempotencyKey },
   );
 };
 
@@ -914,6 +916,7 @@ export const sendPlanAtRiskEmail = async (
     confirmedCount,
     minRequired,
     unsubscribeUrl,
+    idempotencyKey,
   }: {
     to: string;
     hostName: string;
@@ -924,6 +927,7 @@ export const sendPlanAtRiskEmail = async (
     confirmedCount: number;
     minRequired: number;
     unsubscribeUrl?: string;
+    idempotencyKey?: string;
   },
 ) =>
   dispatch(env, to, "planAtRisk", {
@@ -939,7 +943,7 @@ export const sendPlanAtRiskEmail = async (
     ctaUrl: eventUrl,
     ctaText: "Review and decide",
     unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
-  });
+  }, { idempotencyKey });
 
 export const sendPlanAutoCancelledEmail = async (
   env: Bindings,
@@ -954,6 +958,7 @@ export const sendPlanAutoCancelledEmail = async (
     eventLocation,
     unsubscribeUrl,
     reason,
+    idempotencyKey,
   }: {
     to: string;
     recipientName: string;
@@ -972,6 +977,7 @@ export const sendPlanAutoCancelledEmail = async (
      *  confirmation check or on the simpler RSVP threshold. Default:
      *  'min_confirmed' (the original 24-hour-attendance-check use). */
     reason?: "min_confirmed" | "min_attendees_required";
+    idempotencyKey?: string;
   },
 ) => {
   const variant = reason ?? "min_confirmed";
@@ -995,7 +1001,7 @@ export const sendPlanAutoCancelledEmail = async (
     ctaUrl: eventUrl,
     ctaText: "View plan details",
     unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
-  });
+  }, { idempotencyKey });
 };
 
 export const sendPlanRemovedByAdminEmail = async (

@@ -18255,23 +18255,15 @@ async function processAttendanceAssurance(
         if (prefs.items.attendance_confirmation?.enabled === false) continue;
 
         try {
-          const ctaUrl = `${eventUrl}?section=confirmation`;
           const isHost = att.user_id === ev.host_user_id;
-          const recipientName = att.name?.trim() || att.username?.replace(/^@/, "") || "there";
 
-          // Location per plan-page rule: host always sees exact, joined
-          // attendees see exact for exact_everyone / exact_joined_only and
-          // approximate for approximate_only.
-          const eventLocation = buildEmailEventLocation(ev, isHost ? "host" : "joined");
-
-          const unsubToken = await createUnsubscribeToken(env.NEXTAUTH_SECRET, att.user_id, "attendance_confirmation");
-          const unsubscribeUrl = `${env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`;
-
-          await sendConfirmationRequestEmail(env, {
-            to: att.email, recipientName, eventTitle: ev.title, eventDate,
-            eventLocation, eventUrl, ctaUrl,
-            isHost, isReminder: false, isFinal: false, deadline, unsubscribeUrl,
-          });
+          // Enqueue the email; the outbox owns delivery, retries, and the
+          // idempotency key. Bell notification stays immediate.
+          await sql`
+            INSERT INTO newchums.email_outbox (kind, event_id, user_id, payload)
+            VALUES ('confirmation_request', ${ev.id}, ${att.user_id}, ${JSON.stringify({ isHost, deadline })}::jsonb)
+            ON CONFLICT (kind, event_id, user_id) DO NOTHING
+          `;
 
           await sql`
             INSERT INTO newchums.notifications (user_id, type, entity_id, metadata)
@@ -18367,21 +18359,16 @@ async function processAttendanceAssurance(
         if (prefs.items.attendance_confirmation?.enabled === false) continue;
 
         try {
-          const ctaUrl = `${eventUrl}?section=confirmation`;
           const isHost = att.user_id === ev.host_user_id;
-          const recipientName = att.name?.trim() || att.username?.replace(/^@/, "") || "there";
 
-          // Location per plan-page rule, same as Phase 1.
-          const eventLocation = buildEmailEventLocation(ev, isHost ? "host" : "joined");
-
-          const unsubToken = await createUnsubscribeToken(env.NEXTAUTH_SECRET, att.user_id, "attendance_confirmation");
-          const unsubscribeUrl = `${env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`;
-
-          await sendConfirmationRequestEmail(env, {
-            to: att.email, recipientName, eventTitle: ev.title, eventDate,
-            eventLocation, eventUrl, ctaUrl,
-            isHost, isReminder: true, isFinal, deadline, unsubscribeUrl,
-          });
+          // Two reminder stages, two outbox kinds: the (kind, event, user)
+          // uniqueness is per stage, so the 12h follow-up and the 3h final
+          // are each once-ever without colliding.
+          await sql`
+            INSERT INTO newchums.email_outbox (kind, event_id, user_id, payload)
+            VALUES (${isFinal ? "confirmation_final" : "confirmation_reminder"}, ${ev.id}, ${att.user_id}, ${JSON.stringify({ isHost, deadline })}::jsonb)
+            ON CONFLICT (kind, event_id, user_id) DO NOTHING
+          `;
 
           await sql`
             INSERT INTO newchums.notifications (user_id, type, entity_id, metadata)
@@ -18466,21 +18453,12 @@ async function processAttendanceAssurance(
         for (const att of attendees) {
           if (qaCancelAdminIds && !qaCancelAdminIds.has(att.user_id)) continue;
           try {
-            const recipientName = att.name?.trim() || att.username?.replace(/^@/, "") || "there";
-            // Location per plan-page rule: recipient was a going/maybe
-            // attendee at the moment of auto-cancel. Role = "joined"
-            // (or "host" if they happen to be the host, who's in the
-            // attendees set too).
             const isHost = att.user_id === ev.host_user_id;
-            const cancelEventLocation = buildEmailEventLocation(ev, isHost ? "host" : "joined");
-            const unsubToken = await createUnsubscribeToken(env.NEXTAUTH_SECRET, att.user_id, "event_changed_canceled");
-            await sendPlanAutoCancelledEmail(env, {
-              to: att.email, recipientName, eventTitle: ev.title,
-              eventUrl: `${env.WEB_BASE_URL}/events/${ev.id}`,
-              confirmedCount, minRequired,
-              eventDate: cancelEventDate, eventLocation: cancelEventLocation,
-              unsubscribeUrl: `${env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
-            });
+            await sql`
+              INSERT INTO newchums.email_outbox (kind, event_id, user_id, payload)
+              VALUES ('plan_auto_cancelled', ${ev.id}, ${att.user_id}, ${JSON.stringify({ isHost, confirmedCount, minRequired, reason: "min_confirmed" })}::jsonb)
+              ON CONFLICT (kind, event_id, user_id) DO NOTHING
+            `;
           } catch { /* noop */ }
         }
 
@@ -18488,19 +18466,11 @@ async function processAttendanceAssurance(
         const hostUser = (await sql`SELECT email, name, username FROM newchums.users WHERE id = ${ev.host_user_id}`) as { email: string; name: string | null; username: string | null }[];
         if (hostUser.length > 0) {
           try {
-            const hostName = hostUser[0].name?.trim() || hostUser[0].username?.replace(/^@/, "") || "there";
-            const tz = ev.timezone || "UTC";
-            const eventDate = formatEventDate(ev.starts_at, tz);
-            // Recipient is the host: always sees exact.
-            const eventLocation = buildEmailEventLocation(ev, "host");
-            const unsubToken = await createUnsubscribeToken(env.NEXTAUTH_SECRET, ev.host_user_id, "attendance_confirmation");
-            await sendPlanAtRiskEmail(env, {
-              to: hostUser[0].email, hostName, eventTitle: ev.title,
-              eventUrl: `${env.WEB_BASE_URL}/events/${ev.id}`,
-              eventDate, eventLocation,
-              confirmedCount, minRequired,
-              unsubscribeUrl: `${env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
-            });
+            await sql`
+              INSERT INTO newchums.email_outbox (kind, event_id, user_id, payload)
+              VALUES ('plan_at_risk', ${ev.id}, ${ev.host_user_id}, ${JSON.stringify({ confirmedCount, minRequired })}::jsonb)
+              ON CONFLICT (kind, event_id, user_id) DO NOTHING
+            `;
           } catch { /* noop */ }
         }
       }
@@ -18587,18 +18557,12 @@ async function processAttendanceAssurance(
       for (const att of attendees) {
         if (qaCancelAdminIds && !qaCancelAdminIds.has(att.user_id)) continue;
         try {
-          const recipientName = att.name?.trim() || att.username?.replace(/^@/, "") || "there";
           const isHost = att.user_id === ev.host_user_id;
-          const cancelEventLocation = buildEmailEventLocation(ev, isHost ? "host" : "joined");
-          const unsubToken = await createUnsubscribeToken(env.NEXTAUTH_SECRET, att.user_id, "event_changed_canceled");
-          await sendPlanAutoCancelledEmail(env, {
-            to: att.email, recipientName, eventTitle: ev.title,
-            eventUrl: `${env.WEB_BASE_URL}/events/${ev.id}`,
-            confirmedCount: goingCount, minRequired,
-            reason: "min_attendees_required",
-            eventDate: cancelEventDate, eventLocation: cancelEventLocation,
-            unsubscribeUrl: `${env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
-          });
+          await sql`
+            INSERT INTO newchums.email_outbox (kind, event_id, user_id, payload)
+            VALUES ('plan_auto_cancelled', ${ev.id}, ${att.user_id}, ${JSON.stringify({ isHost, confirmedCount: goingCount, minRequired, reason: "min_attendees_required" })}::jsonb)
+            ON CONFLICT (kind, event_id, user_id) DO NOTHING
+          `;
         } catch { /* noop */ }
       }
     } catch (err) {
@@ -19359,7 +19323,7 @@ async function processEmailOutbox(
     WHERE o.status = 'pending'
     ORDER BY o.created_at ASC
     LIMIT 40
-  `) as { id: number; kind: string; event_id: string; user_id: string; payload: { role?: string } | null; attempts: number; title: string; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; location_visibility: string | null; location_area: string | null; online_link: string | null; to_email: string; to_name: string | null }[];
+  `) as { id: number; kind: string; event_id: string; user_id: string; payload: { role?: string; isHost?: boolean; deadline?: string; confirmedCount?: number; minRequired?: number; reason?: string } | null; attempts: number; title: string; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; location_visibility: string | null; location_area: string | null; online_link: string | null; to_email: string; to_name: string | null }[];
 
   if (rows.length === 0) return;
 
@@ -19374,6 +19338,8 @@ async function processEmailOutbox(
     const prefKey =
       row.kind === "run_it_again" ? "run_it_again"
       : row.kind === "plan_reminder" ? "plan_reminder"
+      : row.kind === "plan_auto_cancelled" ? "event_changed_canceled"
+      : row.kind.startsWith("confirmation_") || row.kind === "plan_at_risk" ? "attendance_confirmation"
       : "feedback_requests";
     let unsubscribeUrl = "";
     try {
@@ -19388,7 +19354,53 @@ async function processEmailOutbox(
     const idempotencyKey = `${row.kind}:${row.event_id}:${row.user_id}`;
 
     try {
-      if (row.kind === "plan_reminder") {
+      if (row.kind === "confirmation_request" || row.kind === "confirmation_reminder" || row.kind === "confirmation_final") {
+        const isHost = row.payload?.isHost === true;
+        const eventUrl = `${env.WEB_BASE_URL}/events/${row.event_id}`;
+        await sendConfirmationRequestEmail(env, {
+          to: row.to_email,
+          recipientName,
+          eventTitle: row.title,
+          eventDate: formatEventDate(row.starts_at, tz),
+          eventLocation: buildEmailEventLocation(row, isHost ? "host" : "joined"),
+          eventUrl,
+          ctaUrl: `${eventUrl}?section=confirmation`,
+          isHost,
+          isReminder: row.kind !== "confirmation_request",
+          isFinal: row.kind === "confirmation_final",
+          deadline: row.payload?.deadline ?? "",
+          unsubscribeUrl,
+          idempotencyKey,
+        });
+      } else if (row.kind === "plan_auto_cancelled") {
+        const isHost = row.payload?.isHost === true;
+        await sendPlanAutoCancelledEmail(env, {
+          to: row.to_email,
+          recipientName,
+          eventTitle: row.title,
+          eventUrl: `${env.WEB_BASE_URL}/events/${row.event_id}`,
+          confirmedCount: row.payload?.confirmedCount ?? 0,
+          minRequired: row.payload?.minRequired ?? 0,
+          ...(row.payload?.reason === "min_attendees_required" ? { reason: "min_attendees_required" as const } : {}),
+          eventDate: formatEventDate(row.starts_at, tz),
+          eventLocation: buildEmailEventLocation(row, isHost ? "host" : "joined"),
+          unsubscribeUrl,
+          idempotencyKey,
+        });
+      } else if (row.kind === "plan_at_risk") {
+        await sendPlanAtRiskEmail(env, {
+          to: row.to_email,
+          hostName: recipientName,
+          eventTitle: row.title,
+          eventUrl: `${env.WEB_BASE_URL}/events/${row.event_id}`,
+          eventDate: formatEventDate(row.starts_at, tz),
+          eventLocation: buildEmailEventLocation(row, "host"),
+          confirmedCount: row.payload?.confirmedCount ?? 0,
+          minRequired: row.payload?.minRequired ?? 0,
+          unsubscribeUrl,
+          idempotencyKey,
+        });
+      } else if (row.kind === "plan_reminder") {
         const role = row.payload?.role === "host" ? "host" : "joined";
         const reminderLocation = buildEmailEventLocation(row, role);
         await sendPlanReminderEmail(env, {
