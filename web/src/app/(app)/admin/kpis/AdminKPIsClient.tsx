@@ -139,6 +139,10 @@ type FunnelData = {
     plansReached3Rsvps: number;
     hostsReached3Rsvps: number;
     secondPlans: number;
+    plansCopied: number;
+    nudgesSent: number;
+    nudgeConversions: number;
+    nudgeConvertedHosts: number;
   };
 };
 
@@ -769,6 +773,23 @@ function FunnelSection() {
           tooltip: "Hosts creating their second plan, the real retention signal (first-party event second_plan_created). Conversion is against first-plan hosts, not the 3+ RSVP step.",
           count: funnel.host.secondPlans,
           conversion: pct(funnel.host.secondPlans, funnel.host.firstPlans),
+        },
+        {
+          label: "Plan copied (run again)",
+          tooltip: "Creates hydrated from a previous plan via ?copy_from=, whichever surface started it (first-party event plan_copied, repeatable). The endpoint has always returned this; the table never showed it until the nudge made the loop worth reading.",
+          count: funnel.host.plansCopied,
+        },
+        {
+          label: "Run-again nudges sent",
+          tooltip: "One-time host nudges sent two days after a plan wrapped up (first-party event run_again_nudge_sent, once per plan, QA excluded).",
+          count: funnel.host.nudgesSent,
+        },
+        {
+          label: "Nudge led to a copy",
+          tooltip: "Copies of a nudged plan made by the nudged host after the nudge landed, both events in the window. Upper bound on nudge-caused copies: the nudge CTA and the in-app Run-it-again button share the same copy_from URL, so a post-nudge in-app copy counts too. Conversion is against nudges sent.",
+          count: funnel.host.nudgeConversions,
+          sub: `(${funnel.host.nudgeConvertedHosts.toLocaleString()} ${funnel.host.nudgeConvertedHosts === 1 ? "host" : "hosts"})`,
+          conversion: pct(funnel.host.nudgeConversions, funnel.host.nudgesSent),
         },
       ]
     : [];

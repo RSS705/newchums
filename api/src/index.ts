@@ -6052,6 +6052,41 @@ app.get("/admin/kpis/funnel", async (c) => {
     const count = (name: string) => Number(byName.get(name)?.total ?? 0);
     const userCount = (name: string) => Number(byName.get(name)?.users ?? 0);
 
+    // Nudge -> repeat-plan attribution. A conversion is a plan_copied row
+    // whose source_plan_id matches a plan that had a run_again_nudge_sent
+    // row for the same host, created after the nudge. Honest caveat: the
+    // copy_from URL is identical for the nudge CTA and the in-app "Run it
+    // again" button, so this counts every post-nudge copy of a nudged plan
+    // by its host, an upper bound on nudge-caused copies rather than a
+    // click-attributed exact number. Both events must fall in the window.
+    const nudgeConversionRows = (wantAll
+      ? await sql`
+          SELECT COUNT(*)::int AS conversions, COUNT(DISTINCT pc.user_id)::int AS hosts
+          FROM newchums.product_events pc
+          JOIN newchums.product_events n
+            ON n.event_name = 'run_again_nudge_sent'
+           AND n.event_id IS NOT NULL
+           AND pc.params->>'source_plan_id' = n.event_id::text
+           AND pc.user_id = n.user_id
+           AND pc.created_at > n.created_at
+          WHERE pc.event_name = 'plan_copied'
+        `
+      : await sql`
+          SELECT COUNT(*)::int AS conversions, COUNT(DISTINCT pc.user_id)::int AS hosts
+          FROM newchums.product_events pc
+          JOIN newchums.product_events n
+            ON n.event_name = 'run_again_nudge_sent'
+           AND n.event_id IS NOT NULL
+           AND pc.params->>'source_plan_id' = n.event_id::text
+           AND pc.user_id = n.user_id
+           AND pc.created_at > n.created_at
+          WHERE pc.event_name = 'plan_copied'
+            AND pc.created_at >= ${startDateIso}::timestamptz
+            AND n.created_at >= ${startDateIso}::timestamptz
+        `) as { conversions: number; hosts: number }[];
+    const nudgeConversions = Number(nudgeConversionRows[0]?.conversions ?? 0);
+    const nudgeConvertedHosts = Number(nudgeConversionRows[0]?.hosts ?? 0);
+
     return c.json({
       ok: true,
       data: {
@@ -6073,6 +6108,10 @@ app.get("/admin/kpis/funnel", async (c) => {
           // one row per copied create, so total counts copies and users counts
           // distinct copying hosts).
           plansCopied: count("plan_copied"),
+          // The run-it-again nudge loop (see the attribution caveat above).
+          nudgesSent: count("run_again_nudge_sent"),
+          nudgeConversions,
+          nudgeConvertedHosts,
         },
       },
     });
