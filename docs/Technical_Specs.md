@@ -769,7 +769,7 @@ Event/gathering system. Events are created by a host and can be discovered, RSVP
 - `alt_times_mode`: `'suggest'` | `'availability'` (default `'suggest'`, migration 057), host-controlled presentation mode for the scheduling feature. `'suggest'` frames it as "suggest another time if needed" (original behavior). `'availability'` frames it as "share your availability" for collaborative scheduling. Both modes use the same underlying `event_alt_times` engine; only the attendee-facing copy differs. The attendee-facing UI is a multi-date availability picker (date chip-cards with optional per-date earliest/latest start time, single submit covering all selected dates) that posts one row per selected date through `POST /events/:id/alt-time`. Dates default to "Anytime start" (encoded as a ~24h window from local-midnight to next-day local-midnight); attendees can narrow to a specific start-time window per date. No schema or contract change accompanied this UI redesign.
 - `allow_attendee_invites`: boolean (default true, migration 042), when true, Going attendees can invite others to the plan; host can toggle at any time. Surfaced in the Add/Edit plan forms as an inverted toggle, "Prevent attendees from inviting others" (off by default), so every Extra-options toggle defaults to off; the stored field and wire name remain `allow_attendee_invites` and the forms send `allow_attendee_invites: !preventAttendeeInvites`
 - `interest_id`: FK to `interests` table (hobbies)
-- `require_reconfirmation`: boolean (migration 028), when true, enables the 24-hour attendance check; people who marked Going receive a confirmation request about 24 hours before the plan
+- `require_reconfirmation`: boolean (migration 028; DEFAULT true since migration 111, and `POST /events` treats an absent field as true), enables the 24-hour attendance check; people who marked Going receive a confirmation request about 24 hours before the plan. On for new plans unless the host turns it off; pre-existing rows kept their stored value.
 - `min_confirmed_attendees`: integer (migration 039), minimum confirmed count for plan viability (host counts toward total)
 - `fallback_policy`: text (migration 039), what happens if minimum is not met at cutoff: `proceed`, `notify_host`, or `auto_cancel`
 - `confirmation_window_hours`, `confirmation_cutoff_hours`, `confirmation_sent_at`, `cutoff_processed_at`: 24-hour attendance check lifecycle timestamps (migration 039)
@@ -953,7 +953,7 @@ HTML and plain-text bodies live in `api/src/email/templates/` as `.html` + `.txt
 
 **Attendance Assurance (implemented):**
 
-The Attendance Assurance system is a two-stage commitment flow built on top of RSVP. When enabled by the host (`require_reconfirmation = true`), it opens a confirmation window 24 hours before the event and asks all "going" attendees (including the host) to confirm their attendance.
+The Attendance Assurance system is a two-stage commitment flow built on top of RSVP. On by default for new plans since Aug 2026 (`require_reconfirmation`, host can disable per plan), it opens a confirmation window 24 hours before the event and asks all "going" attendees (including the host) to confirm their attendance.
 
 - **Confirmation lifecycle:** `pending` → `confirmed` | `declined` | `expired`. Distinct from RSVP status; RSVP history is preserved.
 - **Host configuration:** min confirmed attendees (includes host), fallback policy (`proceed` / `notify_host` / `auto_cancel`).

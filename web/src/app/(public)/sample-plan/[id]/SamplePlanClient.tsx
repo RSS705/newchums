@@ -232,10 +232,11 @@ export default function SamplePlanClient({ plan }: { plan: PlanEvent }) {
               The 24-hour attendance check
             </Typography>
             <Typography variant="body2" sx={{ color: "text.secondary", lineHeight: 1.65 }}>
-              Hosts can turn this on. The day before the plan, everyone who
-              said they were going gets asked to confirm, and the badges above
-              update as they answer. That is how a host knows whether five
-              people are really coming, instead of hoping.
+              On for every plan unless the host turns it off. The day before
+              the plan, everyone who said they were going gets asked to
+              confirm, and the badges above update as they answer. That is how
+              a host knows whether five people are really coming, instead of
+              hoping.
             </Typography>
           </Box>
         </Stack>

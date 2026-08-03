@@ -174,7 +174,10 @@ export default function CreateEventClient() {
   // off); the wire field stays allow_attendee_invites. See ExtraOptionsSection.
   const [preventAttendeeInvites, setPreventAttendeeInvites] = useState(false);
   const [reserveSeats, setReserveSeats] = useState(false);
-  const [requireReconfirmation, setRequireReconfirmation] = useState(false);
+  // On by default (Aug 2026): the attendance check is what makes plans
+  // happen, so new plans get it and the host can switch it off in Extra
+  // options. Copy-a-plan hydration still applies the source plan's value.
+  const [requireReconfirmation, setRequireReconfirmation] = useState(true);
   const [muteHostAttendanceEmails, setMuteHostAttendanceEmails] = useState(false);
   const [requireApproval, setRequireApproval] = useState(false);
   const [minConfirmedAttendees, setMinConfirmedAttendees] = useState("");

@@ -11575,7 +11575,10 @@ app.post("/events", async (c) => {
   }
   const allowAttendeeInvites = body.allow_attendee_invites !== false;
   const reserveSeats = body.reserve_seats === true;
-  const requireReconfirmation = body.require_reconfirmation === true;
+  // Default ON since Aug 2026 (migration 111): the attendance check is the
+  // behaviour the product is sold on, so a host who does nothing gets it.
+  // The form still sends an explicit value; this covers direct API callers.
+  const requireReconfirmation = body.require_reconfirmation !== false;
   // Per-plan host preference: when true, suppress the Going/Maybe/Can't-make-it
   // emails to the host for this plan (including invited users' attendance
   // updates). Defaults off so existing behaviour is unchanged.

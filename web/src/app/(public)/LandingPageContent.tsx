@@ -164,7 +164,7 @@ const ORGANIZER_VALUE_CARDS: {
     Icon: HowToRegRoundedIcon,
     accentColor: "#1565c0",
     title: "Reduce RSVP friction",
-    body: "RSVPs are built in, with optional extras like request-to-join and a 24-hour attendance check so you can see who's actually coming. Less back-and-forth in the group chat, fewer no-shows on the day.",
+    body: "RSVPs are built in, every plan comes with a 24-hour attendance check, and you can add request-to-join when you want a vetting step. Less back-and-forth in the group chat, fewer no-shows on the day.",
   },
   {
     Icon: EmojiPeopleRoundedIcon,
@@ -971,8 +971,9 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
       {/* ── Section: 24-hour attendance check ──
           The most differentiating behavior the product ships gets its own
           moment instead of living as a clause inside a feature paragraph.
-          Deliberately claim-honest: the check is host-configurable, so the
-          copy says "turn on", never "every plan". Per AGENTS.md, the
+          Claim-honest, updated Aug 2026: the check is ON by default for new
+          plans (host can turn it off), so "every plan" is now the honest
+          claim where "turn on" used to be. Per AGENTS.md, the
           feature is always called exactly "24-hour attendance check" in
           user-facing copy; do not invent a brand name for it. */}
       <Box component="section" sx={{ py: { xs: 5, sm: 7, md: 8 } }}>
@@ -1016,10 +1017,10 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
               variant="body1"
               sx={{ color: "text.secondary", lineHeight: 1.7, maxWidth: 560 }}
             >
-              Turn on the 24-hour attendance check and everyone who said yes is
-              asked to confirm as the day arrives. You head out with real
-              numbers, not hopeful ones, and nobody cooks for ten when four are
-              coming.
+              Every plan comes with the 24-hour attendance check: everyone who
+              said yes is asked to confirm as the day arrives. You head out
+              with real numbers, not hopeful ones, and nobody cooks for ten
+              when four are coming.
             </Typography>
           </Stack>
         </Box>

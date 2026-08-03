@@ -109,16 +109,19 @@ export default function ExtraOptionsSection({
   const showMinDetails =
     minConfirmedAttendees !== "" && Number(minConfirmedAttendees) >= 1;
 
-  // Collapsed-header summary of everything non-default, so a host can tell at
-  // a glance whether any extra control is active without opening the section.
-  const summaryParts: string[] = [];
-  if (requireReconfirmation) summaryParts.push("24-hour attendance check");
+  // Collapsed-header summary. The attendance check is on by default, so its
+  // state always leads the line: "on" reads as already working (not an
+  // offer), and "off" is the deviation worth surfacing. Other controls
+  // append only when active.
+  const summaryParts: string[] = [
+    requireReconfirmation ? "24-hour attendance check on" : "Attendance check off",
+  ];
   if (requireApproval) summaryParts.push("approval to join");
   if (preventAttendeeInvites) summaryParts.push("host-only invites");
   if (muteHostAttendanceEmails) summaryParts.push("attendance emails muted");
   if (minAttendeesRequired.trim())
     summaryParts.push(`auto-cancel under ${minAttendeesRequired.trim()}`);
-  const summary = summaryParts.length > 0 ? summaryParts.join(" + ") : "Nothing extra turned on";
+  const summary = summaryParts.join(" + ");
 
   return (
     <CollapsibleSection
@@ -135,7 +138,7 @@ export default function ExtraOptionsSection({
           checked={requireReconfirmation}
           onChange={onChangeRequireReconfirmation}
           label="24-hour attendance check"
-          tooltip="About 24 hours before the plan, people who marked Going will be asked to confirm they are still coming. This includes you as the host."
+          tooltip="On for every new plan. About 24 hours before it starts, everyone who marked Going (you included) is asked to confirm they are still coming. Turn it off if you don't want confirmations for this plan."
         />
 
         {requireReconfirmation && (
