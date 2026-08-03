@@ -32,6 +32,7 @@ import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import { SECTION_SCROLL_MARGIN } from "@/lib/scrollOffsets";
 import PlanHobbyAddSuggestion, { type PlanHobby } from "./PlanHobbyAddSuggestion";
 import UserAvatar from "@/components/common/UserAvatar";
+import { createEventHref } from "@/config/nav";
 
 type Attendee = {
   userId: string;
@@ -572,7 +573,7 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
 
             <Button
               component={Link}
-              href={`/events/create?copy_from=${eventId}`}
+              href={`${createEventHref}?copy_from=${eventId}`}
               variant="contained"
               startIcon={<EventRepeatRoundedIcon />}
               sx={{

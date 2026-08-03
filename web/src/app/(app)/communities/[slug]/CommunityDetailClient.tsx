@@ -45,6 +45,7 @@ import {
 } from "@/components/communities";
 import CampaignRoundedIcon from "@mui/icons-material/CampaignRounded";
 import EventAvailableRoundedIcon from "@mui/icons-material/EventAvailableRounded";
+import { createEventHref } from "@/config/nav";
 
 type CommunityData = {
   id: string;
@@ -875,8 +876,8 @@ export default function CommunityDetailClient({
   };
 
   const createPlanHref = useMemo(() => {
-    if (!community) return "/events/create";
-    return `/events/create?community_id=${community.id}`;
+    if (!community) return createEventHref;
+    return `${createEventHref}?community_id=${community.id}`;
   }, [community]);
 
   if (loading) {

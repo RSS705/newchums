@@ -20,6 +20,7 @@ import Link from "next/link";
 import EventCard, { type PlanEvent } from "@/components/events/EventCard";
 import { EmptyState, SectionHeader } from "@/components/ui";
 import { apiFetch } from "@/lib/apiClient";
+import { createEventHref } from "@/config/nav";
 
 export default function PlansPage() {
   const [tab, setTab] = useState(0);
@@ -153,7 +154,7 @@ export default function PlansPage() {
           </Stack>
           <Button
             component={Link}
-            href="/events/create"
+            href={createEventHref}
             variant="contained"
             startIcon={<AddCircleRoundedIcon />}
             sx={{
@@ -313,7 +314,7 @@ export default function PlansPage() {
                   // thing that fills it.
                   <Button
                     component={Link}
-                    href="/events/create"
+                    href={createEventHref}
                     variant="contained"
                     startIcon={<AddCircleRoundedIcon />}
                     sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}

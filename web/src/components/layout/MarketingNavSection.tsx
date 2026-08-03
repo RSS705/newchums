@@ -13,8 +13,8 @@ type MarketingNavSectionProps = {
   /** Section header text; default "More Goodness" */
   sectionTitle?: string;
   /** Nav link set; defaults to the marketing-only list. Logged-out layouts
-   *  pass `publicHeaderNavLinks` so the drawer mirrors the public header's
-   *  extra "Communities" entry. */
+   *  pass `publicHeaderNavLinks` so the drawer mirrors the public header
+   *  (currently an alias of the same array; see config/nav.ts). */
   navLinks?: readonly HeaderNavLink[];
 };
 

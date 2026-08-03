@@ -80,7 +80,7 @@ function writeCachedAvatarUrl(url: string | null): void {
 
 function isNavItemActive(pathname: string, href: string) {
   if (href === "/") return pathname === "/";
-  if (href === "/events/create" || pathname.startsWith("/events")) {
+  if (href === createEventHref || pathname.startsWith("/events")) {
     return pathname === href || pathname.startsWith(href);
   }
   return pathname === href || pathname.startsWith(`${href}/`);

@@ -23,6 +23,7 @@ import Link from "next/link";
 import * as React from "react";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import UserAvatar from "@/components/common/UserAvatar";
+import { createEventHref } from "@/config/nav";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -220,7 +221,7 @@ function notificationText(n: AppNotification, viewerHandle: string | null): {
       // System nudge, two days after a hosted plan wrapped up. Both links go
       // to the prefilled create form; the copy offers rather than presumes,
       // since plenty of plans are one-offs.
-      const copyHref = eventId ? `/events/create?copy_from=${eventId}` : "/events/create";
+      const copyHref = eventId ? `${createEventHref}?copy_from=${eventId}` : createEventHref;
       const copyLink = (
         <Link href={copyHref} style={{ fontWeight: 600, color: "inherit", textDecoration: "underline" }}>
           start a new one prefilled

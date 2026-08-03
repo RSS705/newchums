@@ -5,6 +5,7 @@ import Divider from "@mui/material/Divider";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import Link from "next/link";
+import { headerNavLinks } from "@/config/nav";
 import BrandLogo from "@/components/BrandLogo";
 
 /**
@@ -45,8 +46,9 @@ export default function LandingFooter() {
           sx={{ flexShrink: 0 }}
         >
           {[
-            { href: "/how-it-works", label: "How it Works" },
-            { href: "/safety-center", label: "Safety Center" },
+            // Marketing links come from the shared nav config; this footer
+            // used to hand-copy them, which is how nav entries drift.
+            ...headerNavLinks,
             // Community Roadmap deliberately not listed here: it is
             // signed-in only (Aug 2026), and this footer renders mostly to
             // signed-out visitors, for whom the link is a login wall. It

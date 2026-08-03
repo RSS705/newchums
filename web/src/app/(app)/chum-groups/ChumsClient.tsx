@@ -31,6 +31,7 @@ import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import { notifyObjectivesChanged } from "@/components/objectives/NextStepNudge";
 import { AppCard, EmptyState, useToast } from "@/components/ui";
 import UserAvatar from "@/components/common/UserAvatar";
+import { createEventHref } from "@/config/nav";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -1186,7 +1187,7 @@ export default function ChumsClient() {
               action={
                 <Button
                   component={Link}
-                  href="/events/create"
+                  href={createEventHref}
                   variant="contained"
                   startIcon={<AddCircleRoundedIcon />}
                   sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}

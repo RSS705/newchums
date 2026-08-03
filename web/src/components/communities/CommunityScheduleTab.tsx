@@ -40,6 +40,7 @@ import { loadGooglePlacesScript } from "@/lib/loadGooglePlaces";
 import { apiFetch, getApiBaseUrl } from "@/lib/apiClient";
 import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
 import { formatHour } from "./operatingHours";
+import { createEventHref } from "@/config/nav";
 
 export type CommunityScheduleBlock = {
   id: string;
@@ -70,7 +71,7 @@ export type CommunityScheduleBlock = {
 
 type Props = {
   communityId: string;
-  /** Slug used for the `/events/create?community_id=...` deeplink CTA
+  /** Slug used for the `${createEventHref}?community_id=...` deeplink CTA
    *  in the detail dialog. Also lets the schedule banner URL skip the
    *  unauthenticated view path. */
   communitySlug?: string;
@@ -1482,7 +1483,7 @@ export default function CommunityScheduleTab({
             params.set("start_hhmm", trimToHHMM(detailTarget.startTime));
             params.set("end_hhmm", trimToHHMM(detailTarget.endTime));
             if (communitySlug) params.set("from_schedule_slug", communitySlug);
-            return `/events/create?${params.toString()}`;
+            return `${createEventHref}?${params.toString()}`;
           })();
           return (
             <>

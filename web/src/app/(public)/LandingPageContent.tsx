@@ -26,6 +26,7 @@ import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
 import PublicExploreFeed from "@/components/landing/PublicExploreFeed";
 import { trackEvent } from "@/lib/analytics";
 import RecentlyHappenedSection from "@/components/events/RecentlyHappenedSection";
+import { createEventHref } from "@/config/nav";
 
 /**
  * Full public homepage content for logged-out visitors.
@@ -453,7 +454,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                   <>
                     <Button
                       component={Link}
-                      href="/events/create"
+                      href={createEventHref}
                       variant="contained"
                       color="primary"
                       size="large"
@@ -1181,7 +1182,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
                 See how it works too. One ask per section. */}
             <Button
               component={Link}
-              href={isLoggedIn ? "/events/create" : "/signup"}
+              href={isLoggedIn ? createEventHref : "/signup"}
               variant="contained"
               color="primary"
               size="large"
@@ -1511,7 +1512,7 @@ export default function LandingPageContent({ isLoggedIn = false }: { isLoggedIn?
               here diluted the final conversion step. */}
           <Button
             component={Link}
-            href={isLoggedIn ? "/events/create" : "/signup"}
+            href={isLoggedIn ? createEventHref : "/signup"}
             variant="contained"
             color="onPrimary"
             size="large"

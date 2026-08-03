@@ -27,6 +27,7 @@ import DistanceSelect from "@/components/common/DistanceSelect";
 import { apiFetch } from "@/lib/apiClient";
 import { effectiveCategorySet } from "@/lib/interestUtils";
 import CommunityListCard, { type CommunityListItem as Community } from "./CommunityListCard";
+import { createEventHref } from "@/config/nav";
 
 type HobbyOption = { slug: string; name: string };
 
@@ -691,7 +692,7 @@ export default function CommunitiesListClient() {
                 )}
                 <Button
                   component={Link}
-                  href="/events/create"
+                  href={createEventHref}
                   variant="contained"
                   startIcon={<AddCircleRoundedIcon />}
                   sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}

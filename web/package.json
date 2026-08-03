@@ -7,7 +7,7 @@
     "build": "cross-env NODE_OPTIONS=--no-deprecation next build && node scripts/patch-functions-config.js",
     "build:worker": "WRANGLER_BUILD_CONDITIONS='' WRANGLER_BUILD_PLATFORM=node opennextjs-cloudflare build",
     "start": "next start",
-    "lint": "eslint",
+    "lint": "NODE_OPTIONS=--max-old-space-size=8192 eslint --cache",
     "test": "vitest run",
     "test:watch": "vitest",
     "clean": "rm -rf .open-next .next .wrangler",

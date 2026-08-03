@@ -94,6 +94,7 @@ import AdminPlanPanel, { type PlanAdminView } from "@/components/admin/AdminPlan
 import AvailabilityPicker, {
   type AvailabilitySelection,
 } from "@/components/events/AvailabilityPicker";
+import { createEventHref } from "@/config/nav";
 
 /** Meeting URLs pasted without a scheme should still open in the browser. */
 function normalizeMeetingLinkHref(raw: string): string {
@@ -5639,7 +5640,7 @@ export default function EventDetailClient({
             <Button
               variant="outlined"
               startIcon={<EventRepeatRoundedIcon />}
-              onClick={() => router.push(`/events/create?copy_from=${eventId}`)}
+              onClick={() => router.push(`${createEventHref}?copy_from=${eventId}`)}
               sx={{ textTransform: "none" }}
             >
               Copy plan

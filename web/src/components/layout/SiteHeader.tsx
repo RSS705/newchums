@@ -24,8 +24,9 @@ export type SiteHeaderProps = {
   /** Optional mobile menu button (hamburger) – shown only when provided */
   mobileMenuButton?: ReactNode;
   /** Desktop nav links. Defaults to the marketing-only set; the logged-out
-   *  layouts pass `publicHeaderNavLinks` to add a "Communities" entry for
-   *  non-authenticated visitors. */
+   *  layouts pass `publicHeaderNavLinks`, which is currently an alias of the
+   *  same array (the extra Communities entry it once added was deliberately
+   *  removed; see config/nav.ts). */
   navLinks?: readonly HeaderNavLink[];
 };
 

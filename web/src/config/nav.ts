@@ -73,8 +73,8 @@ export type HeaderNavLink = { label: string; href: string };
 
 /** Marketing-only nav shown in the site header for every viewer. Logged-in
  *  users don't get any product links here because the left sidebar already
- *  carries those. Kept as a plain array (not a tuple) so the logged-out
- *  variant below can be composed from it with a spread.
+ *  carries those. The footer and the logged-out header both read this
+ *  array; hand-copied duplicates of these links drifted before.
  *
  *  Science of Friendship is intentionally omitted from the primary nav. The
  *  page still exists, is reachable from the in-page CTA inside the "Why
@@ -84,13 +84,10 @@ export const headerNavLinks: HeaderNavLink[] = [
   { label: "Safety Center", href: "/safety-center" },
 ];
 
-/** Logged-out nav: marketing links only. The public site sells one job
- *  (post the plan, share one link, see who is really coming), so the
- *  header stays minimal: How it Works and Safety Center. Communities is
- *  deliberately absent here; the product feature is unchanged and stays
- *  in the logged-in sidebar (`appNavItems`), and /communities remains a
- *  public route reachable by direct URL and community share links. */
-export const publicHeaderNavLinks: HeaderNavLink[] = [
-  { label: "How it Works", href: "/how-it-works" },
-  { label: "Safety Center", href: "/safety-center" },
-];
+/** Logged-out nav. Currently identical to `headerNavLinks`: Communities was
+ *  deliberately removed from the logged-out header (the product feature is
+ *  unchanged, stays in the logged-in sidebar, and /communities remains a
+ *  public route), which left the two arrays equal. The alias is kept so
+ *  call sites keep saying which audience they mean, and so a future
+ *  logged-out-only entry is a one-line change here. */
+export const publicHeaderNavLinks: HeaderNavLink[] = headerNavLinks;
