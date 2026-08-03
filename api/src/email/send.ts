@@ -37,7 +37,7 @@ async function dispatch(
   to: string,
   basename: TemplateBasename,
   model: TemplateModel,
-  options: { subjectKey?: Parameters<typeof renderEmail>[2]; replyTo?: string; from?: string; idempotencyKey?: string } = {},
+  options: { subjectKey?: Parameters<typeof renderEmail>[2]; replyTo?: string; from?: string; idempotencyKey?: string; attachments?: Array<{ filename: string; content: string }> } = {},
 ) {
   const rendered = renderEmail(basename, model, options.subjectKey);
   return sendResendEmail(env, {
@@ -48,6 +48,7 @@ async function dispatch(
     text: rendered.text,
     reply_to: options.replyTo,
     idempotencyKey: options.idempotencyKey,
+    attachments: options.attachments,
   });
 }
 
@@ -122,6 +123,7 @@ export const sendEventInviteEmail = async (
     unsubscribeUrl,
     suggestTimeNote,
     customMessage,
+    attachments,
   }: {
     to: string;
     recipientName: string;
@@ -134,6 +136,7 @@ export const sendEventInviteEmail = async (
     unsubscribeUrl?: string;
     suggestTimeNote?: string;
     customMessage?: string;
+    attachments?: Array<{ filename: string; content: string }>;
   },
 ) => {
   const tokenParam = inviteToken
@@ -158,7 +161,7 @@ export const sendEventInviteEmail = async (
     unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
     suggestTimeNote: hasContent(suggestTimeNote) ? suggestTimeNote : null,
     customMessage: hasContent(customMessage) ? customMessage : null,
-  });
+  }, { attachments });
 };
 
 export type PlanChangeItem = { fieldName: string; oldValue: string; newValue: string };
@@ -1174,6 +1177,7 @@ export const sendPlanReminderEmail = async (
     planUrl,
     unsubscribeUrl,
     idempotencyKey,
+    attachments,
   }: {
     to: string;
     recipientName: string;
@@ -1183,6 +1187,7 @@ export const sendPlanReminderEmail = async (
     planUrl: string;
     unsubscribeUrl: string;
     idempotencyKey?: string;
+    attachments?: Array<{ filename: string; content: string }>;
   },
 ) => {
   return dispatch(
@@ -1203,7 +1208,7 @@ export const sendPlanReminderEmail = async (
       ctaUrl: planUrl,
       unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
     },
-    { subjectKey: "planReminder", idempotencyKey },
+    { subjectKey: "planReminder", idempotencyKey, attachments },
   );
 };
 

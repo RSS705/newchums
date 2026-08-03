@@ -7,6 +7,8 @@ type ResendEmailPayload = {
   html?: string;
   text?: string;
   reply_to?: string;
+  /** Base64-encoded attachments (e.g. the plan .ics). */
+  attachments?: Array<{ filename: string; content: string }>;
   /** Stable per-logical-send key. Resend deduplicates on it, which makes a
    *  retry of an ambiguous failure (5xx after possible processing) safe.
    *  Harmless if the provider ignores it. */
@@ -51,6 +53,7 @@ export const sendResendEmail = async (env: Bindings, payload: ResendEmailPayload
   if (payload.html) body.html = payload.html;
   if (payload.text) body.text = payload.text;
   if (payload.reply_to) body.reply_to = payload.reply_to;
+  if (payload.attachments?.length) body.attachments = payload.attachments;
 
   // RESEND_BASE_URL is a test seam: unset in production (and in wrangler.toml)
   // so real sends always hit Resend; the isolated-DB harness points it at a

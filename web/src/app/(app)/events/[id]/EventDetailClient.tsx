@@ -63,6 +63,7 @@ import PersonAddRoundedIcon from "@mui/icons-material/PersonAddRounded";
 import PersonRemoveRoundedIcon from "@mui/icons-material/PersonRemoveRounded";
 import BookmarkAddRoundedIcon from "@mui/icons-material/BookmarkAddRounded";
 import BookmarkRemoveRoundedIcon from "@mui/icons-material/BookmarkRemoveRounded";
+import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
 import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
 import CancelRoundedIcon from "@mui/icons-material/CancelRounded";
 import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
@@ -95,6 +96,7 @@ import AvailabilityPicker, {
   type AvailabilitySelection,
 } from "@/components/events/AvailabilityPicker";
 import { createEventHref } from "@/config/nav";
+import { downloadPlanIcs } from "@/lib/planIcs";
 
 /** Meeting URLs pasted without a scheme should still open in the browser. */
 function normalizeMeetingLinkHref(raw: string): string {
@@ -2779,7 +2781,51 @@ export default function EventDetailClient({
             >
               <AccessTimeRoundedIcon sx={{ fontSize: 18 }} />
             </Box>
-            <Typography variant="body1" fontWeight={500}>{formatDateTime(event.startsAt)}</Typography>
+            <Stack
+              direction="row"
+              alignItems="center"
+              spacing={1}
+              useFlexGap
+              flexWrap="wrap"
+              sx={{ minWidth: 0, flex: 1 }}
+            >
+              <Typography variant="body1" fontWeight={500}>{formatDateTime(event.startsAt)}</Typography>
+              {/* One-tap calendar entry. Hidden once the plan is over or
+                  cancelled: a stale entry is worse than none. The entry uses
+                  locationDisplay, the same viewer-filtered string this page
+                  renders, so an approximate-location plan never puts an
+                  exact address in someone's calendar. */}
+              {!isCanceled && !isPast && (
+                <Button
+                  size="small"
+                  variant="text"
+                  startIcon={<CalendarMonthRoundedIcon sx={{ fontSize: 16 }} />}
+                  onClick={() =>
+                    downloadPlanIcs({
+                      planId: event.id,
+                      title: event.title,
+                      startsAt: event.startsAt,
+                      location: locationDisplay || null,
+                      planUrl: `${window.location.origin}/events/${event.id}`,
+                    })
+                  }
+                  sx={{
+                    textTransform: "none",
+                    fontWeight: 600,
+                    fontSize: "0.8125rem",
+                    color: "primary.dark",
+                    px: 0.75,
+                    py: 0.25,
+                    minHeight: 0,
+                    minWidth: 0,
+                    "& .MuiButton-startIcon": { mr: 0.5 },
+                    "&:hover": { bgcolor: "rgba(230, 91, 19, 0.06)" },
+                  }}
+                >
+                  Add to calendar
+                </Button>
+              )}
+            </Stack>
           </Stack>
           <Stack direction="row" spacing={1.5} alignItems="flex-start">
             <Box

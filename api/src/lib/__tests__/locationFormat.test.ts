@@ -105,8 +105,11 @@ describe("buildEmailEventLocation", () => {
         "Main Street Cafe, 123 Main Street, Toronto, ON M5V 2T1, Canada",
       );
     });
-    it("declined sees approximate only (never leaks address)", () => {
-      expect(buildEmailEventLocation(plan, "declined")).toBe("Main Street Cafe, Toronto, ON");
+    it("declined sees approximate only (never leaks address or venue)", () => {
+      // Area only since Aug 2026: the venue name identifies the exact place
+      // and the create form stores combined "venue, address" strings in
+      // location_name, so including it leaked the street address.
+      expect(buildEmailEventLocation(plan, "declined")).toBe("Toronto, ON");
     });
   });
 
@@ -119,12 +122,12 @@ describe("buildEmailEventLocation", () => {
     it("joined sees exact (they joined)", () => {
       expect(buildEmailEventLocation(plan, "joined")).toContain("123 Main Street");
     });
-    it("not_joined sees approximate only (haven't joined yet)", () => {
-      expect(buildEmailEventLocation(plan, "not_joined")).toBe("Main Street Cafe, Toronto, ON");
-      expect(buildEmailEventLocation(plan, "not_joined")).not.toContain("123 Main Street");
+    it("not_joined sees the bare area only (haven't joined yet)", () => {
+      expect(buildEmailEventLocation(plan, "not_joined")).toBe("Toronto, ON");
+      expect(buildEmailEventLocation(plan, "not_joined")).not.toContain("Main Street");
     });
-    it("declined sees approximate only", () => {
-      expect(buildEmailEventLocation(plan, "declined")).toBe("Main Street Cafe, Toronto, ON");
+    it("declined sees the bare area only", () => {
+      expect(buildEmailEventLocation(plan, "declined")).toBe("Toronto, ON");
     });
   });
 
@@ -134,9 +137,9 @@ describe("buildEmailEventLocation", () => {
     it("host still sees exact (owns the plan)", () => {
       expect(buildEmailEventLocation(plan, "host")).toContain("123 Main Street");
     });
-    it("joined sees approximate only (plan says nobody gets exact)", () => {
-      expect(buildEmailEventLocation(plan, "joined")).toBe("Main Street Cafe, Toronto, ON");
-      expect(buildEmailEventLocation(plan, "joined")).not.toContain("123 Main Street");
+    it("joined sees the bare area only (plan says nobody gets exact)", () => {
+      expect(buildEmailEventLocation(plan, "joined")).toBe("Toronto, ON");
+      expect(buildEmailEventLocation(plan, "joined")).not.toContain("Main Street");
     });
     it("not_joined sees approximate only", () => {
       expect(buildEmailEventLocation(plan, "not_joined")).not.toContain("123 Main Street");
@@ -169,16 +172,18 @@ describe("buildEmailEventLocation", () => {
   describe("edge cases", () => {
     it("handles missing location_area by deriving from the address", () => {
       const plan = inPerson({ location_area: null, location_visibility: "approximate_only" });
-      expect(buildEmailEventLocation(plan, "joined")).toBe("Main Street Cafe, Toronto, ON");
+      expect(buildEmailEventLocation(plan, "joined")).toBe("Toronto, ON");
     });
 
-    it("returns venue alone when no area derivable and visibility is approximate", () => {
+    it("returns empty when no area derivable and visibility is approximate", () => {
       const plan = inPerson({
         location_area: null,
         location_address: null,
         location_visibility: "approximate_only",
       });
-      expect(buildEmailEventLocation(plan, "joined")).toBe("Main Street Cafe");
+      // Better an empty location (callers hide the row) than the venue name,
+      // which identifies the exact place the setting exists to protect.
+      expect(buildEmailEventLocation(plan, "joined")).toBe("");
     });
 
     it("does not duplicate the address when location_name already contains it", () => {

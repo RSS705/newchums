@@ -1640,6 +1640,12 @@ Two channels, one catalogue:
 
 ---
 
+## Add to calendar (.ics)
+
+One-tap calendar entries from the plan page ("Add to calendar" beside the date, hidden for past/cancelled plans) and as `plan.ics` attachments on invite emails and the day-before reminder. Two small deliberate twins build them: `api/src/lib/ics.ts` (email attachments, location via `buildEmailEventLocation` with the recipient's role) and `web/src/lib/planIcs.ts` (plan-page download, location = the `locationDisplay` string the page itself renders, which the API already filtered for the viewer). The page's location rules ARE the calendar's: an approximate-location plan carries only the bare area, never the venue name or address (`buildEmailEventLocation`'s approximate branch returns area only as of Aug 2026; it previously joined in `location_name`, which the create form fills with the combined venue+address string, leaking the street to approximate recipients).
+
+Update semantics are deliberately one-way: no iMIP organizer emails (METHOD:REQUEST/CANCEL with per-attendee sequencing is a large job). Instead the UID is stable (`<planId>@newchums.com`) so a re-downloaded entry REPLACES the old one in calendar apps, entries carry a 2-hour default duration (plans have no end time), and the DESCRIPTION/URL point back at the plan page as the source of truth. A changed or cancelled plan therefore updates in a calendar only when the person re-taps the button or re-opens the attachment; the plan page and cancellation emails remain the authoritative notice.
+
 ## 13) Wrangler and Deploy Configuration (Invariants)
 
 ### Web (`web/wrangler.toml`)

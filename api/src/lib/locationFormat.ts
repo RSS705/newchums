@@ -174,5 +174,12 @@ export function buildEmailEventLocation(
   }
 
   const derivedArea = (plan.location_area || "").trim() || deriveApproxArea(plan.location_address) || "";
-  return joinNameAndAddress(plan.location_name, derivedArea);
+  // Area ONLY, never the venue name. The plan page shows approximate
+  // locations as the bare area, and location_name cannot be trusted here
+  // anyway: the Add/Edit forms store the autocomplete's combined display
+  // string in it ("Venue, 123 Street, City..."), so joining it in leaked
+  // the full street address to approximate-location recipients. This
+  // matters double now that these strings ride into calendar entries,
+  // which outlive the email.
+  return derivedArea;
 }
