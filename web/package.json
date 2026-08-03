@@ -16,7 +16,8 @@
     "deploy:dev": "npm run deploy",
     "deploy:prod": "echo 'Prod deploy disabled: dev-only worker (newchums-web-dev)'",
     "deploy:dev:clean": "npm run clean && npm run deploy",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "ui-survey": "bash tools/ui-survey/run.sh"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
@@ -52,6 +53,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "eslint-config-prettier": "^10.1.8",
+    "playwright": "^1.62.1",
     "prettier": "^3.8.1",
     "typescript": "^5",
     "vitest": "^2.1.0",

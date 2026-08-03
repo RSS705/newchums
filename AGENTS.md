@@ -192,6 +192,10 @@ in the same change set.
 
 ### Governance-Doc Review Cadence (Cross-Cutting Rule)
 
+## UI verification
+
+`cd web && npm run ui-survey` runs the repo's UI survey harness: a throwaway seeded database (long names, every plan lifecycle state, hobby-less plan, open confirmation window, zero/one/many attendees), both dev servers pointed at it, and a capture-plus-detector pass over every route in `web/tools/ui-survey/routes.json` at 320/390/768/1280 (horizontal overflow + page errors, nonzero exit on any flag). Run it after any layout-touching change; extend `seed.sql`/`routes.json` when adding surfaces or states. Details: `web/tools/ui-survey/README.md`. The standing lesson encoded in its fixtures: verify with the longest realistic content at the narrowest width, not typical data at 390.
+
 Several repeated regressions (QA isolation, the "Only show this plan to community members" toggle, Add/Edit plan parity) trace back to an edit that updated **one** source of truth and left the others stale. To prevent this, treat the following as a single **governance surface**: if your change touches any one of them, review all of them in the same change set and update whichever need to change.
 
 | Governance surface | Docs / files that describe it |
