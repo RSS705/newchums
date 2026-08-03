@@ -37,7 +37,7 @@ async function dispatch(
   to: string,
   basename: TemplateBasename,
   model: TemplateModel,
-  options: { subjectKey?: Parameters<typeof renderEmail>[2]; replyTo?: string; from?: string } = {},
+  options: { subjectKey?: Parameters<typeof renderEmail>[2]; replyTo?: string; from?: string; idempotencyKey?: string } = {},
 ) {
   const rendered = renderEmail(basename, model, options.subjectKey);
   return sendResendEmail(env, {
@@ -47,6 +47,7 @@ async function dispatch(
     html: rendered.html,
     text: rendered.text,
     reply_to: options.replyTo,
+    idempotencyKey: options.idempotencyKey,
   });
 }
 
@@ -1110,6 +1111,7 @@ export const sendPlanWrapUpEmail = async (
     planDate,
     planLocation,
     unsubscribeUrl,
+    idempotencyKey,
   }: {
     to: string;
     role: "host" | "attendee";
@@ -1119,6 +1121,7 @@ export const sendPlanWrapUpEmail = async (
     planDate?: string;
     planLocation?: string;
     unsubscribeUrl: string;
+    idempotencyKey?: string;
   },
 ) => {
   const copy =
@@ -1152,7 +1155,7 @@ export const sendPlanWrapUpEmail = async (
       ctaUrl: planUrl,
       unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
     },
-    { subjectKey: role === "host" ? "planWrapUp_host" : "planWrapUp_attendee" },
+    { subjectKey: role === "host" ? "planWrapUp_host" : "planWrapUp_attendee", idempotencyKey },
   );
 };
 
@@ -1170,6 +1173,7 @@ export const sendRunItAgainEmail = async (
     planLocation,
     copyUrl,
     unsubscribeUrl,
+    idempotencyKey,
   }: {
     to: string;
     recipientName: string;
@@ -1178,6 +1182,7 @@ export const sendRunItAgainEmail = async (
     planLocation?: string;
     copyUrl: string;
     unsubscribeUrl: string;
+    idempotencyKey?: string;
   },
 ) => {
   return dispatch(
@@ -1198,7 +1203,7 @@ export const sendRunItAgainEmail = async (
       ctaUrl: copyUrl,
       unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
     },
-    { subjectKey: "runItAgain" },
+    { subjectKey: "runItAgain", idempotencyKey },
   );
 };
 

@@ -7,7 +7,23 @@ type ResendEmailPayload = {
   html?: string;
   text?: string;
   reply_to?: string;
+  /** Stable per-logical-send key. Resend deduplicates on it, which makes a
+   *  retry of an ambiguous failure (5xx after possible processing) safe.
+   *  Harmless if the provider ignores it. */
+  idempotencyKey?: string;
 };
+
+/** Error from a Resend response, carrying the HTTP status so callers can
+ *  classify retryable (429/5xx) vs permanent (other 4xx) failures. A plain
+ *  network throw (no response at all) surfaces as a non-ResendHttpError. */
+export class ResendHttpError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ResendHttpError";
+    this.status = status;
+  }
+}
 
 type ResendError = {
   name?: string;
@@ -40,13 +56,16 @@ export const sendResendEmail = async (env: Bindings, payload: ResendEmailPayload
   // so real sends always hit Resend; the isolated-DB harness points it at a
   // local sink so end-to-end signup tests capture real rendered emails
   // without any outbound mail.
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${env.RESEND_API_KEY}`,
+  };
+  if (payload.idempotencyKey) headers["Idempotency-Key"] = payload.idempotencyKey;
+
   const response = await fetch(`${env.RESEND_BASE_URL ?? "https://api.resend.com"}/emails`, {
     method: "POST",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${env.RESEND_API_KEY}`,
-    },
+    headers,
     body: JSON.stringify(body),
   });
 
@@ -58,7 +77,7 @@ export const sendResendEmail = async (env: Bindings, payload: ResendEmailPayload
       ? `Resend request failed: ${errorData.message}`
       : `Resend request failed with status ${response.status}`;
     console.error("[resend] error response:", JSON.stringify(responseBody));
-    throw new Error(message);
+    throw new ResendHttpError(message, response.status);
   }
 
   if (isDev) {

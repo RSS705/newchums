@@ -50,6 +50,7 @@ import {
   sendPlanSigninEmail,
   sendSigninLinkEmail,
 } from "./email/send";
+import { ResendHttpError } from "./email/resend";
 import { canAccessInternalTestRoute, notFound } from "./internalAccess";
 import { nameToSlug, slugToName, validateInterestName } from "./interests";
 import { ensureAppUserId } from "./profile";
@@ -18981,9 +18982,6 @@ async function processPlanWrapUpEmails(
   let fbQueued = 0;
 
   for (const plan of plans) {
-    const tz = plan.timezone || "UTC";
-    const planDate = formatEventDate(plan.starts_at, tz);
-
     const recipients = (await sql`
       SELECT u.id, u.email, u.name, up.notification_prefs
       FROM newchums.event_rsvps er
@@ -19000,7 +18998,6 @@ async function processPlanWrapUpEmails(
     // QA plans: only send feedback emails to super admin recipients
     const qaFbAdminIds = plan.is_qa ? await batchLoadSuperAdminIds(sql, recipients.map((r) => r.id)) : null;
 
-    const emailPromises: Promise<unknown>[] = [];
     for (const r of recipients) {
       if (qaFbAdminIds && !qaFbAdminIds.has(r.id)) continue;
       fbTotal++;
@@ -19010,50 +19007,25 @@ async function processPlanWrapUpEmails(
       const prefs = normalizeNotificationPrefs(r.notification_prefs);
       if (prefs.items.feedback_requests?.enabled === false) { fbSkippedPref++; continue; }
 
-      const recipientName = r.name?.trim() || "there";
-      let unsubscribeUrl = "";
-      try {
-        if (env.NEXTAUTH_SECRET) {
-          const token = await createUnsubscribeToken(env.NEXTAUTH_SECRET, r.id, "feedback_requests");
-          unsubscribeUrl = `${env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(token)}`;
-        }
-      } catch { /* skip token on failure */ }
-
-      // Location per plan-page rule. Host always sees exact. Going
-      // attendees see exact for exact_everyone / exact_joined_only,
-      // approximate for approximate_only.
-      const planLocation = buildEmailEventLocation(
-        plan,
-        r.id === plan.host_user_id ? "host" : "joined",
-      );
-      emailPromises.push(
-        sendPlanWrapUpEmail(env, {
-          to: r.email,
-          role: r.id === plan.host_user_id ? "host" : "attendee",
-          recipientName,
-          planTitle: plan.title,
-          // ?section=feedback stays as the deep-link section key so links in
-          // already-sent emails keep working.
-          planUrl: `${env.WEB_BASE_URL}/events/${plan.id}?section=feedback`,
-          planDate,
-          planLocation,
-          unsubscribeUrl,
-        }),
-      );
+      // Enqueue instead of sending inline: the outbox processor delivers
+      // with bounded retries, so a provider rejection is no longer lost
+      // silently. The role is frozen in the payload; names, dates and
+      // unsubscribe tokens are resolved at send time so retries stay fresh.
+      await sql`
+        INSERT INTO newchums.email_outbox (kind, event_id, user_id, payload)
+        VALUES ('plan_wrapup', ${plan.id}, ${r.id}, ${JSON.stringify({ role: r.id === plan.host_user_id ? "host" : "attendee" })}::jsonb)
+        ON CONFLICT (kind, event_id, user_id) DO NOTHING
+      `;
       fbQueued++;
     }
 
-    ctx.waitUntil(
-      Promise.allSettled(emailPromises).then(async (results) => {
-        const failed = results.filter((r) => r.status === "rejected").length;
-        if (failed > 0) console.error(`[plan-wrapup] ${failed}/${results.length} email sends failed for plan ${plan.id}`);
-        await sql`
-          UPDATE newchums.events
-          SET feedback_email_sent_at = NOW()
-          WHERE id = ${plan.id}
-        `;
-      }),
-    );
+    // The stamp now means "expanded into the outbox" and keeps its
+    // once-per-plan meaning; delivery bookkeeping lives on the rows.
+    await sql`
+      UPDATE newchums.events
+      SET feedback_email_sent_at = NOW()
+      WHERE id = ${plan.id}
+    `;
   }
 
   console.log(`[plan-wrapup] plans=${plans.length} recipients=${fbTotal} skippedPref=${fbSkippedPref} queued=${fbQueued}`);
@@ -19196,32 +19168,14 @@ async function processRunItAgainNudges(
       VALUES (${plan.host_user_id}, 'run_it_again', NULL, ${plan.id}, ${JSON.stringify({ eventTitle: plan.title })})
     `;
 
-    let unsubscribeUrl = "";
-    try {
-      if (env.NEXTAUTH_SECRET) {
-        const token = await createUnsubscribeToken(env.NEXTAUTH_SECRET, plan.host_user_id, "run_it_again");
-        unsubscribeUrl = `${env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(token)}`;
-      }
-    } catch { /* skip token on failure */ }
-
-    const tz = plan.timezone || "UTC";
-    const emailPromise = sendRunItAgainEmail(env, {
-      to: plan.host_email,
-      recipientName: plan.host_name?.trim() || "there",
-      planTitle: plan.title,
-      planDate: formatEventDate(plan.starts_at, tz),
-      planLocation: buildEmailEventLocation(plan, "host"),
-      copyUrl: `${env.WEB_BASE_URL}/events/create?copy_from=${plan.id}`,
-      unsubscribeUrl,
-    });
-
-    ctx.waitUntil(
-      Promise.allSettled([emailPromise]).then(async (results) => {
-        const failed = results.filter((r) => r.status === "rejected").length;
-        if (failed > 0) console.error(`[run-again-nudge] email send failed for plan ${plan.id}`);
-        await markProcessed(plan.id);
-      }),
-    );
+    // The email goes through the outbox so a provider rejection is retried
+    // instead of lost; the bell above is already delivered either way.
+    await sql`
+      INSERT INTO newchums.email_outbox (kind, event_id, user_id, payload)
+      VALUES ('run_it_again', ${plan.id}, ${plan.host_user_id}, '{}'::jsonb)
+      ON CONFLICT (kind, event_id, user_id) DO NOTHING
+    `;
+    await markProcessed(plan.id);
 
     // QA plans never produce product events (standing rule).
     if (!plan.is_qa) {
@@ -19239,6 +19193,138 @@ async function processRunItAgainNudges(
   }
 
   console.log(`[run-again-nudge] plans=${plans.length} sent=${sent} skips=${JSON.stringify(skips)}`);
+}
+
+// ─── Email outbox delivery ───────────────────────────────────────────────────
+
+const OUTBOX_MAX_ATTEMPTS = 3;
+
+/**
+ * Delivers pending rows enqueued by processPlanWrapUpEmails and
+ * processRunItAgainNudges, with bounded retries and honest bookkeeping.
+ *
+ * Failure classification, leaning conservative because a duplicate email is
+ * worse than a missing one for these messages:
+ *  - HTTP 429 / 5xx from the provider: retryable; attempts increments and
+ *    the row stays pending for the next hourly run. Every request carries a
+ *    stable Idempotency-Key per logical send, so if a 5xx actually processed
+ *    the send, the retry deduplicates provider-side instead of duplicating.
+ *  - Other HTTP 4xx: the provider rejected it and definitely did not send;
+ *    permanent, marked gave_up immediately.
+ *  - No HTTP response at all (fetch threw): the request may or may not have
+ *    been delivered. Marked ambiguous and never retried; the idempotency key
+ *    would make a retry safe on providers that honour it, but a provider
+ *    that ignores the header would duplicate, so we accept the possible miss
+ *    and record it.
+ *  - Retries exhausted: gave_up with the last error kept.
+ */
+async function processEmailOutbox(
+  sql: ReturnType<typeof getSql>,
+  env: Bindings,
+  _ctx: ExecutionContext,
+) {
+  const rows = (await sql`
+    SELECT o.id, o.kind, o.event_id, o.user_id, o.payload, o.attempts,
+           e.title, e.starts_at, e.timezone,
+           e.location_type, e.location_name, e.location_address, e.location_visibility, e.location_area, e.online_link,
+           u.email AS to_email, u.name AS to_name
+    FROM newchums.email_outbox o
+    JOIN newchums.events e ON e.id = o.event_id
+    JOIN newchums.users u ON u.id = o.user_id
+    WHERE o.status = 'pending'
+    ORDER BY o.created_at ASC
+    LIMIT 40
+  `) as { id: number; kind: string; event_id: string; user_id: string; payload: { role?: string } | null; attempts: number; title: string; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; location_visibility: string | null; location_area: string | null; online_link: string | null; to_email: string; to_name: string | null }[];
+
+  if (rows.length === 0) return;
+
+  let sent = 0;
+  let retried = 0;
+  let gaveUp = 0;
+  let ambiguous = 0;
+
+  for (const row of rows) {
+    const recipientName = row.to_name?.trim() || "there";
+    const tz = row.timezone || "UTC";
+    const prefKey = row.kind === "run_it_again" ? "run_it_again" : "feedback_requests";
+    let unsubscribeUrl = "";
+    try {
+      if (env.NEXTAUTH_SECRET) {
+        const token = await createUnsubscribeToken(env.NEXTAUTH_SECRET, row.user_id, prefKey);
+        unsubscribeUrl = `${env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(token)}`;
+      }
+    } catch { /* send without an unsubscribe link rather than not at all */ }
+
+    // Stable per-logical-send key: kind + event + user. Attempt-independent
+    // on purpose, so provider-side dedup can catch ambiguous repeats.
+    const idempotencyKey = `${row.kind}:${row.event_id}:${row.user_id}`;
+
+    try {
+      if (row.kind === "run_it_again") {
+        await sendRunItAgainEmail(env, {
+          to: row.to_email,
+          recipientName,
+          planTitle: row.title,
+          planDate: formatEventDate(row.starts_at, tz),
+          planLocation: buildEmailEventLocation(row, "host"),
+          copyUrl: `${env.WEB_BASE_URL}/events/create?copy_from=${row.event_id}`,
+          unsubscribeUrl,
+          idempotencyKey,
+        });
+      } else {
+        const role = row.payload?.role === "host" ? "host" : "attendee";
+        await sendPlanWrapUpEmail(env, {
+          to: row.to_email,
+          role,
+          recipientName,
+          planTitle: row.title,
+          planUrl: `${env.WEB_BASE_URL}/events/${row.event_id}?section=feedback`,
+          planDate: formatEventDate(row.starts_at, tz),
+          planLocation: buildEmailEventLocation(row, role === "host" ? "host" : "joined"),
+          unsubscribeUrl,
+          idempotencyKey,
+        });
+      }
+      await sql`
+        UPDATE newchums.email_outbox
+        SET status = 'sent', sent_at = NOW(), attempts = ${row.attempts + 1}, last_error = NULL
+        WHERE id = ${row.id}
+      `;
+      sent++;
+    } catch (err) {
+      const message = err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500);
+      const httpStatus = err instanceof ResendHttpError ? err.status : null;
+      const attempts = row.attempts + 1;
+      const retryable = httpStatus !== null && (httpStatus === 429 || httpStatus >= 500);
+
+      if (httpStatus === null) {
+        await sql`
+          UPDATE newchums.email_outbox
+          SET status = 'ambiguous', attempts = ${attempts}, last_error = ${message}
+          WHERE id = ${row.id}
+        `;
+        ambiguous++;
+        console.error(`[email-outbox] ambiguous (no HTTP response) for row ${row.id} (${row.kind}): ${message}`);
+      } else if (retryable && attempts < OUTBOX_MAX_ATTEMPTS) {
+        await sql`
+          UPDATE newchums.email_outbox
+          SET attempts = ${attempts}, last_error = ${message}
+          WHERE id = ${row.id}
+        `;
+        retried++;
+      } else {
+        await sql`
+          UPDATE newchums.email_outbox
+          SET status = 'gave_up', attempts = ${attempts}, last_error = ${message}
+          WHERE id = ${row.id}
+        `;
+        gaveUp++;
+        console.error(`[email-outbox] gave up on row ${row.id} (${row.kind}) after ${attempts} attempt(s): ${message}`);
+      }
+    }
+  }
+
+  console.log(`[email-outbox] rows=${rows.length} sent=${sent} willRetry=${retried} gaveUp=${gaveUp} ambiguous=${ambiguous}`);
 }
 
 // ─── Auto-cancel plans with no attendees ─────────────────────────────────────
@@ -19469,6 +19555,13 @@ async function handleScheduled(
     await processRunItAgainNudges(sql, env, ctx);
   } catch (err) {
     console.error("[scheduled] run-again nudge error:", err);
+  }
+
+  // Deliver whatever the two jobs above enqueued (plus any retries)
+  try {
+    await processEmailOutbox(sql, env, ctx);
+  } catch (err) {
+    console.error("[scheduled] email outbox error:", err);
   }
 
   // Local recognition badges (hourly refresh)
