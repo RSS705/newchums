@@ -1159,6 +1159,54 @@ export const sendPlanWrapUpEmail = async (
   );
 };
 
+/** Day-before reminder for plans WITHOUT the 24-hour attendance check (the
+ *  check's confirmation request covers the rest, so nobody hears twice).
+ *  A reminder, not a request: nothing to press, just what, when, where and
+ *  a link, in a different register from the confirmation ask. */
+export const sendPlanReminderEmail = async (
+  env: Bindings,
+  {
+    to,
+    recipientName,
+    planTitle,
+    planDate,
+    planLocation,
+    planUrl,
+    unsubscribeUrl,
+    idempotencyKey,
+  }: {
+    to: string;
+    recipientName: string;
+    planTitle: string;
+    planDate?: string;
+    planLocation?: string;
+    planUrl: string;
+    unsubscribeUrl: string;
+    idempotencyKey?: string;
+  },
+) => {
+  return dispatch(
+    env,
+    to,
+    "planReminder",
+    {
+      heading: "See you tomorrow",
+      greeting: `Hi ${recipientName},`,
+      bodyText:
+        "Just a reminder that this plan is tomorrow. Nothing to do here, this is only so it doesn't sneak up on you.",
+      ctaText: "View the plan",
+      ctaHelperText: "Times, place, and who's coming are all on the plan page.",
+      recipientName,
+      planTitle,
+      planDate: hasContent(planDate) ? planDate : null,
+      planLocation: hasContent(planLocation) ? planLocation : null,
+      ctaUrl: planUrl,
+      unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
+    },
+    { subjectKey: "planReminder", idempotencyKey },
+  );
+};
+
 /** "Run it again" nudge, host only, once per plan, two days after it
  *  wrapped up. The CTA lands on the existing ?copy_from= duplication path.
  *  The copy offers rather than presumes: plenty of plans are one-offs, so

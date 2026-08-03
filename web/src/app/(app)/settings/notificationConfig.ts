@@ -66,6 +66,12 @@ export const NOTIFICATION_TYPES: NotificationTypeConfig[] = [
     description: "After a plan wraps up: a nudge to thank people, and a private check-in for plans you host.",
   },
   {
+    key: "plan_reminder",
+    title: "Day-before plan reminder",
+    description:
+      "The day before a plan you're going to, one email with the what, when and where. Only sent when the plan doesn't use the 24-hour attendance check, so you never hear twice.",
+  },
+  {
     key: "run_it_again",
     title: "Reminder to run a plan again",
     description:

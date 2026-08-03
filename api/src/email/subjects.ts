@@ -60,6 +60,7 @@ export const SUBJECTS = {
   // check-in framing, attendees get the thank-you framing.
   planWrapUp_host: "How did {{planTitle}} go?",
   runItAgain: "Want to run {{planTitle}} again?",
+  planReminder: "Tomorrow: {{planTitle}}",
   planWrapUp_attendee: "Anyone to thank from {{planTitle}}?",
 
   // Digests

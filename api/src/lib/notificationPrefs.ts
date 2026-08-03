@@ -33,6 +33,7 @@ export const VALID_KEYS = [
   "community_announcements",
   "direct_message",
   "run_it_again",
+  "plan_reminder",
 ] as const;
 
 export type NotificationKey = (typeof VALID_KEYS)[number];
@@ -62,6 +63,7 @@ export const DEFAULT_PREFS: Record<NotificationKey, NotificationPrefItem> = {
   community_announcements: { enabled: true },
   direct_message: { enabled: true },
   run_it_again: { enabled: true },
+  plan_reminder: { enabled: true },
 };
 
 /**

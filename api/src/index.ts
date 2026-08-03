@@ -38,6 +38,7 @@ import {
   sendRoadmapUpdateEmail,
   sendPlanWrapUpEmail,
   sendRunItAgainEmail,
+  sendPlanReminderEmail,
   sendConcernReportAlert,
   sendCommunityJoinRequestEmail,
   sendCommunityJoinApprovedEmail,
@@ -19198,6 +19199,97 @@ async function processRunItAgainNudges(
   console.log(`[run-again-nudge] plans=${plans.length} sent=${sent} skips=${JSON.stringify(skips)}`);
 }
 
+// ─── Day-before reminder (plans without the attendance check) ────────────────
+
+/**
+ * Plans WITH the 24-hour attendance check ask attendees to confirm at
+ * T-24h. Plans WITHOUT it used to go silent between the RSVP and the day.
+ * This sends those plans a plain reminder instead: same moment, different
+ * register (nothing to press), so whichever the host chose, someone who
+ * said yes hears exactly once the day before.
+ *
+ * Send window is [T-24h, T-21h]. The floor matters: entering the window
+ * late (cron outage, or a plan created inside 21 hours of its start) skips
+ * the reminder entirely rather than sending it close to the start, which
+ * keeps it at least 24 hours from the wrap-up email at T+3h, the same gap
+ * the confirmation request already keeps. Skipped plans are stamped with
+ * the reason, so nothing lingers as a backlog (migration 112 backfilled
+ * everything already inside or past the window at launch).
+ *
+ * Recipients are the host plus going RSVPs, the wrap-up union: QA plans
+ * reach super admins only, and the plan_reminder preference (default on,
+ * unsubscribe-scoped) gates each recipient. Delivery goes through the
+ * outbox, so failures are retried and recorded.
+ */
+async function processPlanReminders(
+  sql: ReturnType<typeof getSql>,
+  _env: Bindings,
+  _ctx: ExecutionContext,
+) {
+  const plans = (await sql`
+    SELECT e.id, e.title, e.host_user_id, e.starts_at,
+           COALESCE(e.is_qa, false) AS is_qa
+    FROM newchums.events e
+    WHERE e.status = 'published'
+      AND e.require_reconfirmation = false
+      AND e.reminder_processed_at IS NULL
+      AND e.starts_at <= NOW() + INTERVAL '24 hours'
+    ORDER BY e.starts_at ASC
+    LIMIT 20
+  `) as { id: string; title: string; host_user_id: string; starts_at: string; is_qa: boolean }[];
+
+  if (plans.length === 0) return;
+
+  let enqueued = 0;
+  const skips: Record<string, number> = {};
+
+  for (const plan of plans) {
+    // Late entry: past the floor (under 21h to start, or already started).
+    if (new Date(plan.starts_at).getTime() - Date.now() < 21 * 60 * 60 * 1000) {
+      skips.missed_window = (skips.missed_window ?? 0) + 1;
+      await sql`UPDATE newchums.events SET reminder_processed_at = NOW() WHERE id = ${plan.id}`;
+      continue;
+    }
+
+    const recipients = (await sql`
+      SELECT u.id, up.notification_prefs
+      FROM newchums.event_rsvps er
+      JOIN newchums.users u ON u.id = er.user_id
+      LEFT JOIN newchums.user_profile up ON up.user_id = u.id
+      WHERE er.event_id = ${plan.id} AND er.status = 'going'
+      UNION
+      SELECT u.id, up.notification_prefs
+      FROM newchums.users u
+      LEFT JOIN newchums.user_profile up ON up.user_id = u.id
+      WHERE u.id = ${plan.host_user_id}
+    `) as { id: string; notification_prefs: unknown }[];
+
+    const qaAdminIds = plan.is_qa ? await batchLoadSuperAdminIds(sql, recipients.map((r) => r.id)) : null;
+
+    for (const r of recipients) {
+      if (qaAdminIds && !qaAdminIds.has(r.id)) {
+        skips.qa_non_admin = (skips.qa_non_admin ?? 0) + 1;
+        continue;
+      }
+      const prefs = normalizeNotificationPrefs(r.notification_prefs);
+      if (prefs.items.plan_reminder?.enabled === false) {
+        skips.pref_off = (skips.pref_off ?? 0) + 1;
+        continue;
+      }
+      await sql`
+        INSERT INTO newchums.email_outbox (kind, event_id, user_id, payload)
+        VALUES ('plan_reminder', ${plan.id}, ${r.id}, ${JSON.stringify({ role: r.id === plan.host_user_id ? "host" : "joined" })}::jsonb)
+        ON CONFLICT (kind, event_id, user_id) DO NOTHING
+      `;
+      enqueued++;
+    }
+
+    await sql`UPDATE newchums.events SET reminder_processed_at = NOW() WHERE id = ${plan.id}`;
+  }
+
+  console.log(`[plan-reminder] plans=${plans.length} enqueued=${enqueued} skips=${JSON.stringify(skips)}`);
+}
+
 // ─── Email outbox delivery ───────────────────────────────────────────────────
 
 const OUTBOX_MAX_ATTEMPTS = 3;
@@ -19249,7 +19341,10 @@ async function processEmailOutbox(
   for (const row of rows) {
     const recipientName = row.to_name?.trim() || "there";
     const tz = row.timezone || "UTC";
-    const prefKey = row.kind === "run_it_again" ? "run_it_again" : "feedback_requests";
+    const prefKey =
+      row.kind === "run_it_again" ? "run_it_again"
+      : row.kind === "plan_reminder" ? "plan_reminder"
+      : "feedback_requests";
     let unsubscribeUrl = "";
     try {
       if (env.NEXTAUTH_SECRET) {
@@ -19263,7 +19358,19 @@ async function processEmailOutbox(
     const idempotencyKey = `${row.kind}:${row.event_id}:${row.user_id}`;
 
     try {
-      if (row.kind === "run_it_again") {
+      if (row.kind === "plan_reminder") {
+        const role = row.payload?.role === "host" ? "host" : "joined";
+        await sendPlanReminderEmail(env, {
+          to: row.to_email,
+          recipientName,
+          planTitle: row.title,
+          planDate: formatEventDate(row.starts_at, tz),
+          planLocation: buildEmailEventLocation(row, role),
+          planUrl: `${env.WEB_BASE_URL}/events/${row.event_id}`,
+          unsubscribeUrl,
+          idempotencyKey,
+        });
+      } else if (row.kind === "run_it_again") {
         await sendRunItAgainEmail(env, {
           to: row.to_email,
           recipientName,
@@ -19560,7 +19667,14 @@ async function handleScheduled(
     console.error("[scheduled] run-again nudge error:", err);
   }
 
-  // Deliver whatever the two jobs above enqueued (plus any retries)
+  // Day-before reminders for plans without the attendance check
+  try {
+    await processPlanReminders(sql, env, ctx);
+  } catch (err) {
+    console.error("[scheduled] plan reminder error:", err);
+  }
+
+  // Deliver whatever the jobs above enqueued (plus any retries)
   try {
     await processEmailOutbox(sql, env, ctx);
   } catch (err) {
