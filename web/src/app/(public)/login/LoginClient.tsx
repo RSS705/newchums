@@ -39,6 +39,11 @@ export default function LoginClient() {
   // the actual fetch runs so we don't auto-fire on every re-render.
   const [autoSendPending, setAutoSendPending] = React.useState(false);
   const [turnstileToken, setTurnstileToken] = React.useState<string | null>(null);
+  // Bumped whenever a token is consumed (tokens are single use); keying the
+  // widget on it forces a remount so a fresh token is issued and the visible
+  // widget state always matches the token we actually hold. Mirrors the
+  // formEpoch pattern in PlanSignupCard.
+  const [turnstileEpoch, setTurnstileEpoch] = React.useState(0);
   const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
   const emailPrefill = searchParams.get("email");
@@ -88,6 +93,12 @@ export default function LoginClient() {
     } catch {
       setLinkStatus("error");
       setError("We couldn't send the sign-in link. Try resending below.");
+    } finally {
+      // The token is single use and the request consumed it, whatever the
+      // outcome. Drop it and remount the widget so a retry ("Resend the
+      // sign-in link") gets a fresh token instead of submitting a spent one.
+      setTurnstileToken(null);
+      setTurnstileEpoch((n) => n + 1);
     }
   }, [email, redirectTarget, turnstileToken]);
 
@@ -244,7 +255,12 @@ export default function LoginClient() {
             setLinkNotice(null);
             setLinkStatus("idle");
             setAutoSendPending(false);
-            setTurnstileToken(null);
+            // Deliberately NOT clearing the Turnstile token here. The token
+            // proves this browser passed the bot check and is independent of
+            // whatever email is typed. Clearing it on keystrokes deadlocked
+            // the page: the widget resolves once, keeps displaying success,
+            // and the next keystroke wiped the only token it will ever issue,
+            // leaving the send button permanently disabled.
           }}
           required
         />
@@ -268,7 +284,12 @@ export default function LoginClient() {
             setLinkNotice(null);
             setLinkStatus("idle");
             setAutoSendPending(false);
-            setTurnstileToken(null);
+            // Deliberately NOT clearing the Turnstile token here. The token
+            // proves this browser passed the bot check and is independent of
+            // whatever email is typed. Clearing it on keystrokes deadlocked
+            // the page: the widget resolves once, keeps displaying success,
+            // and the next keystroke wiped the only token it will ever issue,
+            // leaving the send button permanently disabled.
           }}
           required
           helperText={
@@ -363,6 +384,15 @@ export default function LoginClient() {
                   component="button"
                   type="button"
                   onClick={() => {
+                    // The widget is unmounted while this panel is showing, so
+                    // after the previous send consumed the token there may be
+                    // no fresh one yet. Never fire a doomed request: drop
+                    // back to the form, where the remounted widget issues a
+                    // new token and the button enables the moment it does.
+                    if (turnstileSiteKey && !turnstileToken) {
+                      setLinkStatus("idle");
+                      return;
+                    }
                     void sendSigninLink();
                   }}
                   variant="caption"
@@ -388,8 +418,10 @@ export default function LoginClient() {
                *  (dev), the button is enabled immediately. */}
               {turnstileSiteKey && (
                 <TurnstileWidget
+                  key={turnstileEpoch}
                   siteKey={turnstileSiteKey}
                   onVerify={(t) => setTurnstileToken(t)}
+                  onExpire={() => setTurnstileToken(null)}
                 />
               )}
               <AppButton
