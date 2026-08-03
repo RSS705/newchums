@@ -16,9 +16,9 @@ type CollapsibleSectionProps = {
    *  always-open section headers. */
   icon: ReactNode;
   title: string;
-  /** One-line summary of the section's current value, shown while collapsed
-   *  ("Visibility: Public" style). Keep it short; it renders on a single
-   *  ellipsized line. */
+  /** Summary of the section's current value, shown while collapsed
+   *  ("Visibility: Public" style). Keep it short; it renders clamped to at
+   *  most two lines. */
   summary: string;
   /** Descriptive helper shown in place of the summary while expanded, same
    *  role as the caption the always-open section headers carry. */
@@ -108,10 +108,16 @@ export default function CollapsibleSection({
                   fontWeight: 500,
                   fontSize: "0.75rem",
                   lineHeight: 1.35,
-                  display: "block",
+                  // Two-line clamp instead of single-line ellipsis: the
+                  // header is only ~160px wide at 320px viewports, where a
+                  // one-line summary cannot carry a whole fact (the hobbies
+                  // "you're opting out of nearby notifications" line was the
+                  // forcing case). Most summaries still fit one line; the
+                  // clamp only spends the second when squeezed.
+                  display: "-webkit-box",
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: "vertical",
                   overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
                 }}
               >
                 {summary}

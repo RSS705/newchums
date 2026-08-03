@@ -488,7 +488,9 @@ export default function SignupClient() {
                     <AppButton type="submit" fullWidth size="large" disabled={checkingEmail} sx={{ mt: 2 }}>
                       {checkingEmail ? "Checking…" : "Continue"}
                     </AppButton>
-                    <LegalConsentNotice action="continuing" sx={{ mt: 1.25 }} />
+                    {/* The consent notice renders once, under the Google
+                        button above, where it is read before either action;
+                        it used to repeat here verbatim. */}
                   </AuthDividerForm>
                 </>
               )}

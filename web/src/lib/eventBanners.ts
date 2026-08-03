@@ -73,16 +73,39 @@ export function getGradientForSlug(slug: string): string {
 }
 
 /**
+ * Fallback pool for plans with no banner at all. Deliberately separate from
+ * BANNER_PRESETS: a host picking Slate for chess night is a choice, but the
+ * hash fallback is involuntary, and drawing from the full preset range let a
+ * banner-less plan come out near-black (slate ends #1e293b) against the warm
+ * palette. More plans are banner-less now that the create form collapses the
+ * banner section, so the involuntary range is constrained to warm, on-brand
+ * colours: every stop stays in the orange/amber/coral/rose family at mid or
+ * higher luminance. Variety between neighbouring cards is preserved by
+ * having eight distinct outcomes.
+ */
+export const FALLBACK_GRADIENTS: string[] = [
+  "linear-gradient(135deg, #f97316 0%, #fb923c 100%)", // orange
+  "linear-gradient(135deg, #ea580c 0%, #f59e0b 100%)", // ember to amber
+  "linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%)", // golden
+  "linear-gradient(135deg, #fb7185 0%, #f97316 100%)", // coral to orange
+  "linear-gradient(135deg, #e11d48 0%, #fb7185 100%)", // warm red to coral
+  "linear-gradient(135deg, #d97706 0%, #b45309 100%)", // terracotta
+  "linear-gradient(135deg, #f472b6 0%, #fb923c 100%)", // pink to peach
+  "linear-gradient(135deg, #facc15 0%, #f97316 100%)", // sun to orange
+];
+
+/**
  * Deterministically pick a gradient for an event using its UUID.
  * The same event always gets the same colour so the card looks consistent
- * even before a banner is uploaded.
+ * even before a banner is uploaded. Draws from FALLBACK_GRADIENTS, not the
+ * pickable presets; see above.
  */
 export function getGradientForEventId(id: string): string {
   let hash = 0;
   for (let i = 0; i < id.length; i++) {
     hash = ((hash << 5) - hash + id.charCodeAt(i)) >>> 0;
   }
-  return BANNER_PRESETS[hash % BANNER_PRESETS.length].gradient;
+  return FALLBACK_GRADIENTS[hash % FALLBACK_GRADIENTS.length];
 }
 
 /**

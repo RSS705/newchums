@@ -30,7 +30,11 @@ export function describeBanner(presetSlug: string | null, hasImage: boolean): st
 }
 
 export function describeHobbies(hobbies: Array<{ name: string }>): string {
-  if (hobbies.length === 0) return "None yet";
+  // Skipping hobbies is a real choice since they became optional: a plan
+  // with none never enters the nearby-hobby digest, though it works exactly
+  // as well as a shared link. Calm statement of fact; the collapsed header
+  // clamps summaries at two lines, which this fits at every width.
+  if (hobbies.length === 0) return "None, people nearby aren't notified";
   const names = hobbies.map((h) => h.name);
   if (names.length <= 2) return names.join(", ");
   return `${names.slice(0, 2).join(", ")}, +${names.length - 2} more`;

@@ -2846,7 +2846,10 @@ export default function EventDetailClient({
             <Typography variant="body1" fontWeight={500}>
               {goingCount} going{maybeCount > 0 ? `, ${maybeCount} maybe` : ""}
               {reservedSeatCount > 0 ? `, ${reservedSeatCount} reserved` : ""}
-              {event.maxSeats
+              {/* Seats exist for joining; a cancelled or past plan has
+                  nothing to join, so "N seats remaining" there is wrong
+                  information, not styling. */}
+              {event.maxSeats && !isCanceled && !isPast
                 ? ` · ${Math.max(0, event.maxSeats - goingCount - reservedSeatCount)} seat${event.maxSeats - goingCount - reservedSeatCount === 1 ? "" : "s"} remaining`
                 : ""}
             </Typography>
@@ -5013,7 +5016,7 @@ export default function EventDetailClient({
             {goingCount} going{maybeCount > 0 ? `, ${maybeCount} maybe` : ""}
             {declinedCount > 0 ? `, ${declinedCount} can't make it` : ""}
             {reservedSeatCount > 0 ? `, ${reservedSeatCount} invited` : ""}
-            {event.maxSeats
+            {event.maxSeats && !isCanceled && !isPast
               ? ` · ${Math.max(0, event.maxSeats - goingCount - reservedSeatCount)} seat${event.maxSeats - goingCount - reservedSeatCount === 1 ? "" : "s"} remaining`
               : ""}
             {event.requireReconfirmation && (event.confirmationWindowOpen || event.confirmationsIssued) && event.confirmedCount > 0
@@ -5293,7 +5296,6 @@ export default function EventDetailClient({
                   <Stack
                     direction="row"
                     alignItems="center"
-                    justifyContent="space-between"
                     sx={{ flex: 1, minWidth: 0, flexWrap: { xs: "wrap", sm: "nowrap" }, rowGap: 0.75 }}
                   >
                     {invProfileHref ? (
@@ -5347,7 +5349,8 @@ export default function EventDetailClient({
                     )}
                     {/* Same narrow-viewport treatment as the RSVP rows
                         above: the chip group yields the first line to the
-                        name at xs rather than crushing it. */}
+                        name at xs (order swap) rather than crushing it, and
+                        the menu button stays on the name line. */}
                     <Stack
                       direction="row"
                       alignItems="center"
@@ -5358,6 +5361,9 @@ export default function EventDetailClient({
                         flexShrink: 1,
                         justifyContent: { xs: "flex-start", sm: "flex-end" },
                         width: { xs: "100%", sm: "auto" },
+                        pl: { xs: "60px", sm: 0 },
+                        ml: { sm: "auto" },
+                        order: { xs: 1, sm: 0 },
                       }}
                     >
                       <Chip
@@ -5368,20 +5374,22 @@ export default function EventDetailClient({
                         color="info"
                         sx={{ fontWeight: 600, fontSize: "0.75rem", "& .MuiChip-label": { pr: 1.25 }, "& .MuiChip-icon": { ml: 1 } }}
                       />
-                      {/* Overflow menu for pending invites, show when there's at least one action */}
-                      {(invProfileHref || (event.isHost && !isCanceled && !isPast && inv.userId !== null)) && (
-                        <IconButton
-                          size="small"
-                          onClick={(e) => {
-                            setInviteMenuAnchor(e.currentTarget);
-                            setInviteMenuTarget(inv);
-                          }}
-                          sx={{ color: "text.disabled", ml: 0.25, "&:hover": { color: "text.primary" } }}
-                        >
-                          <MoreVertRoundedIcon sx={{ fontSize: "1.125rem" }} />
-                        </IconButton>
-                      )}
                     </Stack>
+                    {/* Overflow menu for pending invites; a row-level sibling
+                        of the chip group so it stays attached to the name
+                        line at xs, mirroring the RSVP rows. */}
+                    {(invProfileHref || (event.isHost && !isCanceled && !isPast && inv.userId !== null)) && (
+                      <IconButton
+                        size="small"
+                        onClick={(e) => {
+                          setInviteMenuAnchor(e.currentTarget);
+                          setInviteMenuTarget(inv);
+                        }}
+                        sx={{ color: "text.disabled", ml: { xs: "auto", sm: 0.25 }, flexShrink: 0, "&:hover": { color: "text.primary" } }}
+                      >
+                        <MoreVertRoundedIcon sx={{ fontSize: "1.125rem" }} />
+                      </IconButton>
+                    )}
                   </Stack>
                 </Stack>
               );
