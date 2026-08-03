@@ -45,19 +45,25 @@ export default function AuthDividerForm({
 
   return (
     <Stack spacing={2}>
-      <Box sx={{ mt: 2.5 }}>
-        <Divider sx={{ "&::before, &::after": { borderColor: "divider" } }}>
-          <Typography
-            variant="body2"
-            fontWeight={500}
-            color="text.secondary"
-            component="span"
-            sx={{ px: 2, fontSize: "0.8125rem" }}
-          >
-            {dividerText}
-          </Typography>
-        </Divider>
-      </Box>
+      {/* An empty dividerText opts out of the rule entirely (login flows
+          the fields straight under Google with no "or" chrome). */}
+      {dividerText ? (
+        <Box sx={{ mt: 2.5 }}>
+          <Divider sx={{ "&::before, &::after": { borderColor: "divider" } }}>
+            <Typography
+              variant="body2"
+              fontWeight={500}
+              color="text.secondary"
+              component="span"
+              sx={{ px: 2, fontSize: "0.8125rem" }}
+            >
+              {dividerText}
+            </Typography>
+          </Divider>
+        </Box>
+      ) : (
+        <Box sx={{ mt: 0.5 }} />
+      )}
 
       <FormWrapper {...formProps}>
         <Stack spacing={0}>

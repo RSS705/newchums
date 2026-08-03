@@ -7,7 +7,6 @@ import { signIn, signOut } from "next-auth/react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
-import Divider from "@mui/material/Divider";
 import AuthDividerForm from "@/components/auth/AuthDividerForm";
 import AuthErrorBanner from "@/components/auth/AuthErrorBanner";
 import AuthField from "@/components/auth/AuthField";
@@ -166,12 +165,8 @@ export default function LoginClient() {
         Sign in with Google
       </AppButton>
 
-      {/* Signing in with Google creates the account when there isn't one yet,
-          so this surface carries the same consent notice as signup. */}
-      <LegalConsentNotice action="continuing" sx={{ mt: 1.25 }} />
-
       <AuthDividerForm
-        dividerText="or use your email"
+        dividerText=""
         onSubmit={async (event) => {
           event.preventDefault();
           setError(null);
@@ -255,19 +250,6 @@ export default function LoginClient() {
           label="Email"
           type="email"
           value={email}
-          onKeyDown={(event) => {
-            // The form's only submit button is the password one, and the
-            // browser skips implicit submission while it is disabled (empty
-            // password), so Enter here needs its own wiring: with a typed
-            // password let the form submit and sign in; without one, fire
-            // the primary path, the sign-in link.
-            if (event.key !== "Enter" || password.trim()) return;
-            event.preventDefault();
-            setError(null);
-            if (linkStatus === "sending" || !email.trim()) return;
-            if (turnstileSiteKey && !turnstileToken) return;
-            void sendSigninLink();
-          }}
           onChange={(event) => {
             setEmail(event.target.value);
             setError(null);
@@ -285,24 +267,62 @@ export default function LoginClient() {
           }}
           required
         />
+        <AuthField
+          id="login-password"
+          label="Password"
+          type="password"
+          value={password}
+          onChange={(event) => {
+            setPassword(event.target.value);
+            setError(null);
+            setEmailUnverified(false);
+            setSuspended(false);
+            setLinkNotice(null);
+            setLinkStatus("idle");
+            setAutoSendPending(false);
+            // Deliberately NOT clearing the Turnstile token here; it is
+            // independent of the form contents. See the email field's
+            // matching comment for the deadlock this caused.
+          }}
+          required={false}
+          helperText={
+            error ? (
+              <Stack component="span" spacing={0.75}>
+                <span>{error}</span>
+                {emailUnverified && (
+                  <Typography
+                    component={Link}
+                    href={`/auth/verify/pending?email=${encodeURIComponent(email)}`}
+                    variant="body2"
+                    sx={{
+                      color: "primary.main",
+                      fontWeight: 500,
+                      display: "block",
+                      "&:hover": { color: "primary.dark", textDecoration: "underline" },
+                    }}
+                  >
+                    Resend verification email
+                  </Typography>
+                )}
+              </Stack>
+            ) : (
+              "No password? Leave this empty and the button below emails you a one-click sign-in link."
+            )
+          }
+          error={Boolean(error)}
+        />
+
         {linkNotice && (
           <Typography variant="body2" sx={{ color: "text.secondary", mt: 1.5, textAlign: "center" }}>
             {linkNotice}
           </Typography>
         )}
 
-        {/* Action area. Link mode is primary: it works for every account,
-         *  passwordless ones included, and the sent-state card matches the
-         *  PlanSignupCard "check your email" tone. Password mode is one tap
-         *  away for people who have one; a passwordless account submitting a
-         *  password is flipped back to link mode by the
-         *  PasswordSetupPending branch above.
-         */}
-        {/* The link path is primary: it works for every account,
-            passwordless ones included. The password field renders below it,
-            always visible; a passwordless account submitting a password is
-            caught by the PasswordSetupPending branch above, which sends
-            exactly one link instead. */}
+        {/* Action area: the sent-state card, or the single intent button.
+            The link path stays reachable without a password (invitee-flow
+            accounts have none); a passwordless account that types a password
+            anyway is caught by the PasswordSetupPending branch above, which
+            sends exactly one link instead. */}
         {(
           linkStatus === "sent" ? (
             <Box
@@ -376,38 +396,40 @@ export default function LoginClient() {
             </Box>
           ) : (
             <Stack spacing={1.5} alignItems="center" sx={{ mt: 2 }}>
-              {/* Turnstile renders up front so the send button unlocks the
-               *  moment it resolves. When TURNSTILE_SECRET_KEY is unset
+              {/* Quiet Turnstile: solves invisibly and only materialises if
+               *  it genuinely needs a person. It still issues the token the
+               *  link path is gated on; when TURNSTILE_SECRET_KEY is unset
                *  (dev), the button is enabled immediately. */}
               {turnstileSiteKey && (
                 <TurnstileWidget
                   key={turnstileEpoch}
                   siteKey={turnstileSiteKey}
+                  appearance="interaction-only"
                   onVerify={(t) => setTurnstileToken(t)}
                   onExpire={() => setTurnstileToken(null)}
                 />
               )}
+              {/* One action whose label follows intent, mirroring the form's
+               *  submit branch: a typed password means password sign-in, an
+               *  empty one means the sign-in link. Nobody chooses a method,
+               *  they just type what they have. */}
               <AppButton
-                type="button"
-                onClick={() => {
-                  setError(null);
-                  if (linkStatus === "sending" || !email.trim()) return;
-                  if (turnstileSiteKey && !turnstileToken) return;
-                  void sendSigninLink();
-                }}
+                type="submit"
                 fullWidth
                 size="large"
                 disabled={
-                  linkStatus === "sending" ||
                   !email.trim() ||
-                  (Boolean(turnstileSiteKey) && !turnstileToken)
+                  (!password.trim() &&
+                    (linkStatus === "sending" ||
+                      (Boolean(turnstileSiteKey) && !turnstileToken)))
                 }
               >
-                {linkStatus === "sending" ? "Sending…" : "Email me a sign-in link"}
+                {password.trim()
+                  ? "Sign in"
+                  : linkStatus === "sending"
+                    ? "Sending…"
+                    : "Email me a sign-in link"}
               </AppButton>
-              <Typography variant="caption" color="text.secondary" sx={{ textAlign: "center" }}>
-                No password needed. We&apos;ll email you a one-click link.
-              </Typography>
               {linkStatus === "error" && (
                 <Typography variant="caption" color="error">
                   We couldn&apos;t send the link. Please try again in a moment.
@@ -417,82 +439,28 @@ export default function LoginClient() {
           )
         )}
 
-        <Divider sx={{ my: 3 }}>
-          <Typography variant="caption" color="text.secondary">
-            or with your password
-          </Typography>
-        </Divider>
 
-        <AuthField
-          id="login-password"
-          label="Password"
-          type="password"
-          value={password}
-          onChange={(event) => {
-            setPassword(event.target.value);
-            setError(null);
-            setEmailUnverified(false);
-            setSuspended(false);
-            setLinkNotice(null);
-            setLinkStatus("idle");
-            setAutoSendPending(false);
-            // Deliberately NOT clearing the Turnstile token here; it is
-            // independent of the form contents. See the email field's
-            // matching comment for the deadlock this caused.
-          }}
-          required
-          helperText={
-            error ? (
-              <Stack component="span" spacing={0.75}>
-                <span>{error}</span>
-                {emailUnverified && (
-                  <Typography
-                    component={Link}
-                    href={`/auth/verify/pending?email=${encodeURIComponent(email)}`}
-                    variant="body2"
-                    sx={{
-                      color: "primary.main",
-                      fontWeight: 500,
-                      display: "block",
-                      "&:hover": { color: "primary.dark", textDecoration: "underline" },
-                    }}
-                  >
-                    Resend verification email
-                  </Typography>
-                )}
-              </Stack>
-            ) : undefined
-          }
-          error={Boolean(error)}
-        />
-
-        <Box sx={{ mt: 1, textAlign: "right" }}>
-          <Typography
-            component={Link}
-            href="/forgot-password"
-            variant="body2"
-            fontWeight={500}
-            color="primary"
-            sx={{ textDecoration: "none", "&:hover": { textDecoration: "underline" } }}
-          >
-            Forgot your password?
-          </Typography>
-        </Box>
-
-        <AppButton
-          type="submit"
-          fullWidth
-          size="large"
-          variant="outlined"
-          disabled={!password.trim() || !email.trim()}
-          sx={{ mt: 0.5 }}
-        >
-          Sign in with password
-        </AppButton>
 
       </AuthDividerForm>
 
+      {/* The necessary-but-not-the-point row: quiet, at the bottom. */}
+      <Box sx={{ mt: 2, textAlign: "center" }}>
+        <Typography
+          component={Link}
+          href="/forgot-password"
+          variant="body2"
+          fontWeight={500}
+          color="primary"
+          sx={{ textDecoration: "none", "&:hover": { textDecoration: "underline" } }}
+        >
+          Forgot your password?
+        </Typography>
+      </Box>
       <AuthFooterLink prompt="New to NewChums?" linkText="Create an account" href="/signup" />
+      {/* Google sign-in can create an account, so the page still carries the
+          signup consent line; demoted to the footer with the other
+          secondaries. */}
+      <LegalConsentNotice action="continuing" sx={{ mt: 1.5 }} />
     </Stack>
   );
 
