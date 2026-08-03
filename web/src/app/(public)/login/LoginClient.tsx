@@ -7,6 +7,7 @@ import { signIn, signOut } from "next-auth/react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
+import Divider from "@mui/material/Divider";
 import AuthDividerForm from "@/components/auth/AuthDividerForm";
 import AuthErrorBanner from "@/components/auth/AuthErrorBanner";
 import AuthField from "@/components/auth/AuthField";
@@ -30,7 +31,10 @@ export default function LoginClient() {
   // including the growing share created passwordless through the plan-signup
   // flow, who used to be led straight into a password form that could only
   // fail. Password entry stays available behind one tap.
-  const [method, setMethod] = React.useState<"link" | "password">("link");
+  // Both sign-in paths render at once (Aug 2026): the email link as the
+  // primary action, the password field visible below it. The old
+  // link/password toggle hid the password field behind a text link, which
+  // read as a broken page to returning password users.
   const [linkNotice, setLinkNotice] = React.useState<string | null>(null);
   const [linkStatus, setLinkStatus] = React.useState<"idle" | "sending" | "sent" | "error">("idle");
   // Latch that says "fire the sign-in link as soon as we have everything we
@@ -171,7 +175,12 @@ export default function LoginClient() {
         onSubmit={async (event) => {
           event.preventDefault();
           setError(null);
-          if (method === "link") {
+          // Enter with a typed password signs in with it; Enter with an
+          // empty password takes the primary path, the sign-in link. Only
+          // the password button is type="submit" (a form needs one for
+          // implicit submission) and it is disabled until a password is
+          // typed, so clicking it always follows the password branch.
+          if (!password.trim()) {
             if (linkStatus === "sending" || !email.trim()) return;
             if (turnstileSiteKey && !turnstileToken) return;
             void sendSigninLink();
@@ -209,10 +218,9 @@ export default function LoginClient() {
             if (code === "PasswordSetupPending") {
               // Account was created via the lightweight plan-entry flow and
               // never had a password set. Safety net for someone who chose
-              // "Use a password" anyway: flip back to the link method and
+              // the password field anyway: fall back to the link path and
               // auto-send so they get the email without another click (the
               // send waits for Turnstile when configured).
-              setMethod("link");
               setLinkStatus("sending");
               setAutoSendPending(true);
               setError(null);
@@ -247,6 +255,19 @@ export default function LoginClient() {
           label="Email"
           type="email"
           value={email}
+          onKeyDown={(event) => {
+            // The form's only submit button is the password one, and the
+            // browser skips implicit submission while it is disabled (empty
+            // password), so Enter here needs its own wiring: with a typed
+            // password let the form submit and sign in; without one, fire
+            // the primary path, the sign-in link.
+            if (event.key !== "Enter" || password.trim()) return;
+            event.preventDefault();
+            setError(null);
+            if (linkStatus === "sending" || !email.trim()) return;
+            if (turnstileSiteKey && !turnstileToken) return;
+            void sendSigninLink();
+          }}
           onChange={(event) => {
             setEmail(event.target.value);
             setError(null);
@@ -264,73 +285,10 @@ export default function LoginClient() {
           }}
           required
         />
-        {linkNotice && method === "link" && (
+        {linkNotice && (
           <Typography variant="body2" sx={{ color: "text.secondary", mt: 1.5, textAlign: "center" }}>
             {linkNotice}
           </Typography>
-        )}
-
-        {method === "password" && (
-        <AuthField
-          id="login-password"
-          label="Password"
-          type="password"
-          value={password}
-          onChange={(event) => {
-            setPassword(event.target.value);
-            setError(null);
-            setEmailUnverified(false);
-            setSuspended(false);
-            setLinkNotice(null);
-            setLinkStatus("idle");
-            setAutoSendPending(false);
-            // Deliberately NOT clearing the Turnstile token here. The token
-            // proves this browser passed the bot check and is independent of
-            // whatever email is typed. Clearing it on keystrokes deadlocked
-            // the page: the widget resolves once, keeps displaying success,
-            // and the next keystroke wiped the only token it will ever issue,
-            // leaving the send button permanently disabled.
-          }}
-          required
-          helperText={
-            error ? (
-              <Stack component="span" spacing={0.75}>
-                <span>{error}</span>
-                {emailUnverified && (
-                  <Typography
-                    component={Link}
-                    href={`/auth/verify/pending?email=${encodeURIComponent(email)}`}
-                    variant="body2"
-                    sx={{
-                      color: "primary.main",
-                      fontWeight: 500,
-                      display: "block",
-                      "&:hover": { color: "primary.dark", textDecoration: "underline" },
-                    }}
-                  >
-                    Resend verification email
-                  </Typography>
-                )}
-              </Stack>
-            ) : undefined
-          }
-          error={Boolean(error)}
-        />
-        )}
-
-        {method === "password" && (
-        <Box sx={{ my: 2, textAlign: "right" }}>
-          <Typography
-            component={Link}
-            href="/forgot-password"
-            variant="body2"
-            fontWeight={500}
-            color="primary"
-            sx={{ textDecoration: "none", "&:hover": { textDecoration: "underline" } }}
-          >
-            Forgot your password?
-          </Typography>
-        </Box>
         )}
 
         {/* Action area. Link mode is primary: it works for every account,
@@ -340,7 +298,12 @@ export default function LoginClient() {
          *  password is flipped back to link mode by the
          *  PasswordSetupPending branch above.
          */}
-        {method === "link" ? (
+        {/* The link path is primary: it works for every account,
+            passwordless ones included. The password field renders below it,
+            always visible; a passwordless account submitting a password is
+            caught by the PasswordSetupPending branch above, which sends
+            exactly one link instead. */}
+        {(
           linkStatus === "sent" ? (
             <Box
               sx={{
@@ -425,7 +388,13 @@ export default function LoginClient() {
                 />
               )}
               <AppButton
-                type="submit"
+                type="button"
+                onClick={() => {
+                  setError(null);
+                  if (linkStatus === "sending" || !email.trim()) return;
+                  if (turnstileSiteKey && !turnstileToken) return;
+                  void sendSigninLink();
+                }}
                 fullWidth
                 size="large"
                 disabled={
@@ -446,37 +415,81 @@ export default function LoginClient() {
               )}
             </Stack>
           )
-        ) : (
-          <AppButton type="submit" fullWidth size="large">
-            Sign in
-          </AppButton>
         )}
 
-        <Box sx={{ mt: 1.75, textAlign: "center" }}>
+        <Divider sx={{ my: 3 }}>
+          <Typography variant="caption" color="text.secondary">
+            or with your password
+          </Typography>
+        </Divider>
+
+        <AuthField
+          id="login-password"
+          label="Password"
+          type="password"
+          value={password}
+          onChange={(event) => {
+            setPassword(event.target.value);
+            setError(null);
+            setEmailUnverified(false);
+            setSuspended(false);
+            setLinkNotice(null);
+            setLinkStatus("idle");
+            setAutoSendPending(false);
+            // Deliberately NOT clearing the Turnstile token here; it is
+            // independent of the form contents. See the email field's
+            // matching comment for the deadlock this caused.
+          }}
+          required
+          helperText={
+            error ? (
+              <Stack component="span" spacing={0.75}>
+                <span>{error}</span>
+                {emailUnverified && (
+                  <Typography
+                    component={Link}
+                    href={`/auth/verify/pending?email=${encodeURIComponent(email)}`}
+                    variant="body2"
+                    sx={{
+                      color: "primary.main",
+                      fontWeight: 500,
+                      display: "block",
+                      "&:hover": { color: "primary.dark", textDecoration: "underline" },
+                    }}
+                  >
+                    Resend verification email
+                  </Typography>
+                )}
+              </Stack>
+            ) : undefined
+          }
+          error={Boolean(error)}
+        />
+
+        <Box sx={{ mt: 1, textAlign: "right" }}>
           <Typography
-            component="button"
-            type="button"
-            onClick={() => {
-              setMethod(method === "link" ? "password" : "link");
-              setError(null);
-              setLinkNotice(null);
-              setLinkStatus("idle");
-              setAutoSendPending(false);
-            }}
+            component={Link}
+            href="/forgot-password"
             variant="body2"
-            sx={{
-              background: "none",
-              border: "none",
-              p: 0,
-              cursor: "pointer",
-              color: "primary.main",
-              fontWeight: 500,
-              "&:hover": { textDecoration: "underline" },
-            }}
+            fontWeight={500}
+            color="primary"
+            sx={{ textDecoration: "none", "&:hover": { textDecoration: "underline" } }}
           >
-            {method === "link" ? "Use a password instead" : "Email me a sign-in link instead"}
+            Forgot your password?
           </Typography>
         </Box>
+
+        <AppButton
+          type="submit"
+          fullWidth
+          size="large"
+          variant="outlined"
+          disabled={!password.trim() || !email.trim()}
+          sx={{ mt: 0.5 }}
+        >
+          Sign in with password
+        </AppButton>
+
       </AuthDividerForm>
 
       <AuthFooterLink prompt="New to NewChums?" linkText="Create an account" href="/signup" />
