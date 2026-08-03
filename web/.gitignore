@@ -52,3 +52,7 @@ next-env.d.ts
 
 # Sentry Config File
 .env.sentry-build-plugin
+
+# Local session-cookie helpers for UI verification (must live in web/ for
+# @auth/core import resolution; never part of the app)
+mintcookie*.mjs
