@@ -5119,6 +5119,11 @@ export default function EventDetailClient({
                       justifyContent: { xs: "flex-start", sm: "flex-end" },
                       width: { xs: "100%", sm: "auto" },
                       pl: { xs: "60px", sm: 0 },
+                      // At xs the overflow-menu button (a later sibling with
+                      // order 0) renders before this wrapping chip line, so it
+                      // stays on the name row instead of being orphaned onto a
+                      // third line when a wide chip combo fills this one.
+                      order: { xs: 1, sm: 0 },
                     }}
                   >
                     {r.status === "going" && event.requireReconfirmation && (event.confirmationWindowOpen || event.confirmationsIssued) && r.confirmationStatus === "confirmed" ? (
@@ -5223,25 +5228,30 @@ export default function EventDetailClient({
                         sx={{ fontWeight: 500, fontSize: "0.6875rem" }}
                       />
                     )}
-                    {/* Overflow menu trigger, only when at least one menu item would render for this row */}
-                    {(
-                      (viewerUserId && r.userId === viewerUserId) ||
-                      (r.handle && r.userId !== viewerUserId) ||
-                      (viewerUserId && r.userId !== viewerUserId) ||
-                      (event.isHost && !isCanceled && !isPast && r.userId !== event.hostUserId && (r.status === "going" || r.status === "maybe"))
-                    ) && (
-                      <IconButton
-                        size="small"
-                        onClick={(e) => {
-                          setAttendeeMenuAnchor(e.currentTarget);
-                          setAttendeeMenuTarget(r);
-                        }}
-                        sx={{ color: "text.disabled", ml: 0.25, "&:hover": { color: "text.primary" } }}
-                      >
-                        <MoreVertRoundedIcon sx={{ fontSize: "1.125rem" }} />
-                      </IconButton>
-                    )}
                   </Stack>
+                  {/* Overflow menu trigger, only when at least one menu item
+                      would render for this row. A row-level sibling of the
+                      chip group (not a child) so it stays attached to the
+                      name line at xs while the chips wrap below; at sm+ the
+                      order values tie and DOM order keeps it after the chips
+                      at the row's right edge, exactly as before. */}
+                  {(
+                    (viewerUserId && r.userId === viewerUserId) ||
+                    (r.handle && r.userId !== viewerUserId) ||
+                    (viewerUserId && r.userId !== viewerUserId) ||
+                    (event.isHost && !isCanceled && !isPast && r.userId !== event.hostUserId && (r.status === "going" || r.status === "maybe"))
+                  ) && (
+                    <IconButton
+                      size="small"
+                      onClick={(e) => {
+                        setAttendeeMenuAnchor(e.currentTarget);
+                        setAttendeeMenuTarget(r);
+                      }}
+                      sx={{ color: "text.disabled", ml: { xs: -1, sm: 0.25 }, flexShrink: 0, "&:hover": { color: "text.primary" } }}
+                    >
+                      <MoreVertRoundedIcon sx={{ fontSize: "1.125rem" }} />
+                    </IconButton>
+                  )}
                 </Stack>
                 {r.note && (
                   <Typography

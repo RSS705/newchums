@@ -766,7 +766,11 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
                           onChange={(e) => setShoutoutMessage(a.userId, e.target.value)}
                           placeholder={`Give ${primaryLabel} a shout-out for their profile (optional)`}
                           multiline
-                          maxRows={3}
+                          // No row cap: autosize measures the placeholder too,
+                          // and any fixed cap clips its last line mid-glyph at
+                          // phone widths once a long display name pushes it
+                          // past the cap. Content is bounded anyway by
+                          // SHOUTOUT_MAX_LENGTH, so the field cannot run away.
                           fullWidth
                           size="small"
                           inputProps={{ maxLength: SHOUTOUT_MAX_LENGTH }}
