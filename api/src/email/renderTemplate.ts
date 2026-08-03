@@ -61,6 +61,8 @@ import planAutoCancelledHtml from "./templates/planAutoCancelled.html";
 import planAutoCancelledTxt from "./templates/planAutoCancelled.txt";
 import planWrapUpHtml from "./templates/planWrapUp.html";
 import planWrapUpTxt from "./templates/planWrapUp.txt";
+import runItAgainHtml from "./templates/runItAgain.html";
+import runItAgainTxt from "./templates/runItAgain.txt";
 import planRemovedByAdminHtml from "./templates/planRemovedByAdmin.html";
 import planRemovedByAdminTxt from "./templates/planRemovedByAdmin.txt";
 import planSigninHtml from "./templates/planSignin.html";
@@ -112,6 +114,7 @@ const TEMPLATES: Record<string, TemplatePair> = {
   planAtRisk: { html: planAtRiskHtml, text: planAtRiskTxt },
   planAutoCancelled: { html: planAutoCancelledHtml, text: planAutoCancelledTxt },
   planWrapUp: { html: planWrapUpHtml, text: planWrapUpTxt },
+  runItAgain: { html: runItAgainHtml, text: runItAgainTxt },
   planRemovedByAdmin: { html: planRemovedByAdminHtml, text: planRemovedByAdminTxt },
   planSignin: { html: planSigninHtml, text: planSigninTxt },
   roadmapUpdate: { html: roadmapUpdateHtml, text: roadmapUpdateTxt },

@@ -3,6 +3,7 @@
 import ChatBubbleOutlineRoundedIcon from "@mui/icons-material/ChatBubbleOutlineRounded";
 import MailRoundedIcon from "@mui/icons-material/MailRounded";
 import EventNoteRoundedIcon from "@mui/icons-material/EventNoteRounded";
+import EventRepeatRoundedIcon from "@mui/icons-material/EventRepeatRounded";
 import NotificationsOutlinedIcon from "@mui/icons-material/NotificationsOutlined";
 import NotificationsRoundedIcon from "@mui/icons-material/NotificationsRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
@@ -215,6 +216,24 @@ function notificationText(n: AppNotification, viewerHandle: string | null): {
           : formattedTime ? <>{" suggested "}<strong>{formattedTime}</strong>{" as an alternate time."}</> : " suggested an alternate time.",
       };
     }
+    case "run_it_again": {
+      // System nudge, two days after a hosted plan wrapped up. Both links go
+      // to the prefilled create form; the copy offers rather than presumes,
+      // since plenty of plans are one-offs.
+      const copyHref = eventId ? `/events/create?copy_from=${eventId}` : "/events/create";
+      const copyLink = (
+        <Link href={copyHref} style={{ fontWeight: 600, color: "inherit", textDecoration: "underline" }}>
+          start a new one prefilled
+        </Link>
+      );
+      return {
+        actorLabel: "Run it again?",
+        actorHref: copyHref,
+        body: titleLink
+          ? <>{" If you fancy another round of "}{titleLink}{", you can "}{copyLink}{" from last time."}</>
+          : <>{" If you fancy running your plan again, you can "}{copyLink}{" from last time."}</>,
+      };
+    }
     case "confirmation_requested":
       return {
         actorLabel: "Attendance check",
@@ -401,7 +420,25 @@ function NotificationRow({
           community_member_removed + community_member_reinstated intentionally
           hide the actor so the owner can't be identified / harassed. */}
       <Box sx={{ flexShrink: 0 }}>
-        {notification.type === "confirmation_requested" ? (
+        {notification.type === "run_it_again" ? (
+          <Box
+            component={actorHref ? Link : "div"}
+            {...(actorHref ? { href: actorHref } : {})}
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 36,
+              height: 36,
+              borderRadius: "50%",
+              bgcolor: "primary.main",
+              color: "#fff",
+              textDecoration: "none",
+            }}
+          >
+            <EventRepeatRoundedIcon sx={{ fontSize: 20 }} />
+          </Box>
+        ) : notification.type === "confirmation_requested" ? (
           actorHref ? (
             <Box
               component={Link}

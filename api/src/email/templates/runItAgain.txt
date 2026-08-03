@@ -1,0 +1,24 @@
+{{heading}}
+
+{{greeting}}
+
+{{bodyText}}
+
+---
+
+{{planTitle}}
+{{#planDate}}{{.}}{{#planLocation}} · {{.}}{{/planLocation}}
+{{/planDate}}{{^planDate}}{{#planLocation}}{{.}}
+{{/planLocation}}{{/planDate}}
+---
+
+{{ctaText}}: {{ctaUrl}}
+
+{{ctaHelperText}}
+
+---
+
+You're receiving this one-time nudge because you hosted a plan on NewChums.
+{{#unsubscribeUrl}}Unsubscribe: {{.}}{{/unsubscribeUrl}}
+
+© {{year}} {{productName}}

@@ -37,6 +37,7 @@ import {
   sendPlanRemovedByAdminEmail,
   sendRoadmapUpdateEmail,
   sendPlanWrapUpEmail,
+  sendRunItAgainEmail,
   sendConcernReportAlert,
   sendCommunityJoinRequestEmail,
   sendCommunityJoinApprovedEmail,
@@ -19019,6 +19020,188 @@ async function processPlanWrapUpEmails(
   console.log(`[plan-wrapup] plans=${plans.length} recipients=${fbTotal} skippedPref=${fbSkippedPref} queued=${fbQueued}`);
 }
 
+// ─── "Run it again" nudge ────────────────────────────────────────────────────
+
+/**
+ * Two days after a plan wraps up, nudge its host (bell + email) to run it
+ * again via the existing ?copy_from= duplication path. The cheap intermediate
+ * for cadence hosts; true recurring events stay unbuilt (see AGENTS.md).
+ *
+ * A plan is scanned at most once, ever: `run_again_nudge_processed_at` is
+ * stamped whether the nudge sent or an exclusion applied (migration 108,
+ * which also backfilled history so launch did not blast old hosts). The
+ * `feedback_email_sent_at <= NOW() - 24h` predicate guarantees the wrap-up
+ * email and this one can never land on the same host on the same day for the
+ * same plan, even after cron downtime, because the nudge only becomes
+ * eligible a full day after the wrap-up actually went out.
+ *
+ * Exclusions, each stamped with a distinct skip reason in the log line:
+ *  - cancelled plans (status filter; the no-attendee auto-cancel also routes
+ *    collapsed plans here)
+ *  - nobody attended: no non-host "going" RSVP, or every non-host "going"
+ *    attendee has an active host-filed no_show report
+ *  - the host has since created another plan, or already has one scheduled
+ *    for later (batch-created next week's session in advance)
+ *  - QA plans, unless the host is a super admin (mirrors the wrap-up email)
+ *  - the host turned the `run_it_again` preference off (suppresses the bell
+ *    too: the preference governs the nudge, not just its email)
+ *  - one nudge per host per run, so a host who wrapped several plans in the
+ *    same hour hears from us once
+ */
+async function processRunItAgainNudges(
+  sql: ReturnType<typeof getSql>,
+  env: Bindings,
+  ctx: ExecutionContext,
+) {
+  const plans = (await sql`
+    SELECT e.id, e.title, e.host_user_id, e.starts_at, e.timezone,
+           e.location_type, e.location_name, e.location_address, e.location_visibility, e.location_area, e.online_link,
+           COALESCE(e.is_qa, false) AS is_qa,
+           u.email AS host_email, u.name AS host_name,
+           up.notification_prefs
+    FROM newchums.events e
+    JOIN newchums.users u ON u.id = e.host_user_id
+    LEFT JOIN newchums.user_profile up ON up.user_id = e.host_user_id
+    WHERE e.status = 'published'
+      AND e.starts_at <= NOW() - INTERVAL '48 hours'
+      AND e.run_again_nudge_processed_at IS NULL
+      AND e.feedback_email_sent_at IS NOT NULL
+      AND e.feedback_email_sent_at <= NOW() - INTERVAL '24 hours'
+    ORDER BY e.starts_at ASC
+    LIMIT 20
+  `) as { id: string; title: string; host_user_id: string; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; location_visibility: string | null; location_area: string | null; online_link: string | null; is_qa: boolean; host_email: string; host_name: string | null; notification_prefs: unknown }[];
+
+  if (plans.length === 0) return;
+
+  const qaAdminIds = await batchLoadSuperAdminIds(
+    sql,
+    plans.filter((p) => p.is_qa).map((p) => p.host_user_id),
+  );
+
+  const markProcessed = (planId: string) => sql`
+    UPDATE newchums.events SET run_again_nudge_processed_at = NOW() WHERE id = ${planId}
+  `;
+
+  let sent = 0;
+  const skips: Record<string, number> = {};
+  const skip = async (planId: string, reason: string) => {
+    skips[reason] = (skips[reason] ?? 0) + 1;
+    await markProcessed(planId);
+  };
+
+  const nudgedHostIds = new Set<string>();
+
+  for (const plan of plans) {
+    if (plan.is_qa && !qaAdminIds.has(plan.host_user_id)) {
+      await skip(plan.id, "qa_non_admin");
+      continue;
+    }
+
+    const prefs = normalizeNotificationPrefs(plan.notification_prefs);
+    if (prefs.items.run_it_again?.enabled === false) {
+      await skip(plan.id, "pref_off");
+      continue;
+    }
+
+    if (nudgedHostIds.has(plan.host_user_id)) {
+      await skip(plan.id, "host_already_nudged_this_run");
+      continue;
+    }
+
+    // Attendance: at least one non-host "going" RSVP, and not a plan where
+    // the host marked every one of them as a no-show.
+    const attendance = (await sql`
+      SELECT
+        COUNT(*)::int AS going,
+        COUNT(*) FILTER (
+          WHERE EXISTS (
+            SELECT 1 FROM newchums.attendance_issues ai
+            WHERE ai.plan_id = ${plan.id}
+              AND ai.reported_user_id = er.user_id
+              AND ai.issue_type = 'no_show'
+              AND COALESCE(ai.status, 'active') != 'dismissed'
+          )
+        )::int AS no_shows
+      FROM newchums.event_rsvps er
+      WHERE er.event_id = ${plan.id}
+        AND er.status = 'going'
+        AND er.user_id IS DISTINCT FROM ${plan.host_user_id}
+    `) as { going: number; no_shows: number }[];
+    const going = attendance[0]?.going ?? 0;
+    const noShows = attendance[0]?.no_shows ?? 0;
+    if (going === 0 || noShows >= going) {
+      await skip(plan.id, going === 0 ? "no_attendees" : "all_no_shows");
+      continue;
+    }
+
+    // The host clearly did not need reminding: they made another plan after
+    // this one, or already have a later one on the calendar (created any
+    // time). Drafts count as "made another"; cancelled plans do not block.
+    const hostActive = (await sql`
+      SELECT 1 FROM newchums.events e2
+      WHERE e2.host_user_id = ${plan.host_user_id}
+        AND e2.id != ${plan.id}
+        AND e2.status != 'canceled'
+        AND (e2.created_at > ${plan.starts_at} OR e2.starts_at > ${plan.starts_at})
+      LIMIT 1
+    `) as { "?column?": number }[];
+    if (hostActive.length > 0) {
+      await skip(plan.id, "host_made_another_plan");
+      continue;
+    }
+
+    // Send: bell first (cheap, same transaction cadence as other system
+    // notifications), then the email batched like the wrap-up sender.
+    await sql`
+      INSERT INTO newchums.notifications (user_id, type, actor_user_id, entity_id, metadata)
+      VALUES (${plan.host_user_id}, 'run_it_again', NULL, ${plan.id}, ${JSON.stringify({ eventTitle: plan.title })})
+    `;
+
+    let unsubscribeUrl = "";
+    try {
+      if (env.NEXTAUTH_SECRET) {
+        const token = await createUnsubscribeToken(env.NEXTAUTH_SECRET, plan.host_user_id, "run_it_again");
+        unsubscribeUrl = `${env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(token)}`;
+      }
+    } catch { /* skip token on failure */ }
+
+    const tz = plan.timezone || "UTC";
+    const emailPromise = sendRunItAgainEmail(env, {
+      to: plan.host_email,
+      recipientName: plan.host_name?.trim() || "there",
+      planTitle: plan.title,
+      planDate: formatEventDate(plan.starts_at, tz),
+      planLocation: buildEmailEventLocation(plan, "host"),
+      copyUrl: `${env.WEB_BASE_URL}/events/create?copy_from=${plan.id}`,
+      unsubscribeUrl,
+    });
+
+    ctx.waitUntil(
+      Promise.allSettled([emailPromise]).then(async (results) => {
+        const failed = results.filter((r) => r.status === "rejected").length;
+        if (failed > 0) console.error(`[run-again-nudge] email send failed for plan ${plan.id}`);
+        await markProcessed(plan.id);
+      }),
+    );
+
+    // QA plans never produce product events (standing rule).
+    if (!plan.is_qa) {
+      ctx.waitUntil(
+        recordProductEvent(sql, {
+          name: "run_again_nudge_sent",
+          userId: plan.host_user_id,
+          eventId: plan.id,
+        }),
+      );
+    }
+
+    nudgedHostIds.add(plan.host_user_id);
+    sent++;
+  }
+
+  console.log(`[run-again-nudge] plans=${plans.length} sent=${sent} skips=${JSON.stringify(skips)}`);
+}
+
 // ─── Auto-cancel plans with no attendees ─────────────────────────────────────
 
 async function cancelNoAttendeePlans(sql: ReturnType<typeof getSql>) {
@@ -19240,6 +19423,13 @@ async function handleScheduled(
     await processPlanWrapUpEmails(sql, env, ctx);
   } catch (err) {
     console.error("[scheduled] plan feedback email error:", err);
+  }
+
+  // "Run it again" host nudges, two days after a plan wraps up
+  try {
+    await processRunItAgainNudges(sql, env, ctx);
+  } catch (err) {
+    console.error("[scheduled] run-again nudge error:", err);
   }
 
   // Local recognition badges (hourly refresh)

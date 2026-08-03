@@ -1156,6 +1156,52 @@ export const sendPlanWrapUpEmail = async (
   );
 };
 
+/** "Run it again" nudge, host only, once per plan, two days after it
+ *  wrapped up. The CTA lands on the existing ?copy_from= duplication path.
+ *  The copy offers rather than presumes: plenty of plans are one-offs, so
+ *  it must read as easy to ignore. */
+export const sendRunItAgainEmail = async (
+  env: Bindings,
+  {
+    to,
+    recipientName,
+    planTitle,
+    planDate,
+    planLocation,
+    copyUrl,
+    unsubscribeUrl,
+  }: {
+    to: string;
+    recipientName: string;
+    planTitle: string;
+    planDate?: string;
+    planLocation?: string;
+    copyUrl: string;
+    unsubscribeUrl: string;
+  },
+) => {
+  return dispatch(
+    env,
+    to,
+    "runItAgain",
+    {
+      heading: "Run it again?",
+      greeting: `Hi ${recipientName},`,
+      bodyText:
+        "Your plan wrapped up a couple of days ago. If you'd like to run another one, we can prefill a new plan from everything you set up last time, and you just pick the date. If it was a one-off, ignore this. We won't ask about this plan again.",
+      ctaText: "Run it again",
+      ctaHelperText: "Opens a new plan with last time's details filled in. Nothing is published until you hit publish.",
+      recipientName,
+      planTitle,
+      planDate: hasContent(planDate) ? planDate : null,
+      planLocation: hasContent(planLocation) ? planLocation : null,
+      ctaUrl: copyUrl,
+      unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
+    },
+    { subjectKey: "runItAgain" },
+  );
+};
+
 /** Direct-message notification. Sent at most once per conversation until the
  *  recipient reads the thread (throttled by the caller via
  *  dm_participant_state.notified_at); gated on the 'direct_message' pref. */

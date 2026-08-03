@@ -66,6 +66,12 @@ export const NOTIFICATION_TYPES: NotificationTypeConfig[] = [
     description: "After a plan wraps up: a nudge to thank people, and a private check-in for plans you host.",
   },
   {
+    key: "run_it_again",
+    title: "Reminder to run a plan again",
+    description:
+      "A couple of days after a plan you hosted wraps up, one reminder (bell and email) offering to prefill a new plan from it. Never more than one per plan.",
+  },
+  {
     key: "event_changed_canceled",
     title: "Plan canceled or changed",
     description: "When a plan you're attending is canceled or details change.",

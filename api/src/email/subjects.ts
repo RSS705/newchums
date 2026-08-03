@@ -59,6 +59,7 @@ export const SUBJECTS = {
   // pattern as confirmationRequestUser above): hosts get the operational
   // check-in framing, attendees get the thank-you framing.
   planWrapUp_host: "How did {{planTitle}} go?",
+  runItAgain: "Want to run {{planTitle}} again?",
   planWrapUp_attendee: "Anyone to thank from {{planTitle}}?",
 
   // Digests

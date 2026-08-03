@@ -110,7 +110,7 @@ is still NULL.
 
 - **18+ DOB gate.** A considered legal/safety posture for an in-person meetup product, not UX debt. Any change requires an owner decision with legal review. The recorded candidate, if ever revisited: under-18 participation via private invite links only, 18+ for discovery and hosting.
 - **Plan pages ship a static OG card** (`/og-plan-card.png`, 1200x630), not a per-plan generated one. A dynamic `opengraph-image.tsx` was built and works in `next dev`, but the OpenNext Cloudflare server function cannot load an edge-runtime route (`interopDefault` TypeError, 500) and without the edge declaration the route is not registered at all (404). The precise blocker and revisit conditions are documented in the plan page metadata comment. Gated plans (draft, canceled, QA or invite_only without a token) still ship no image at all, deliberately.
-- **No recurring events.** Intentional. The approved intermediate step is a post-plan "run it again" duplicate nudge, not a recurrence engine.
+- **No recurring events.** Intentional. The approved intermediate step is the "run it again" duplication path, not a recurrence engine: the post-plan button and the one-time host nudge (bell + email, hourly cron, Aug 2026) both land on `?copy_from=`. Do not extend this into scheduling or auto-creation.
 
 ### Growth Model
 

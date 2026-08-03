@@ -40,7 +40,8 @@ export type ProductEventName =
   | "first_plan_created"
   | "second_plan_created"
   | "plan_reached_3_rsvps"
-  | "plan_copied";
+  | "plan_copied"
+  | "run_again_nudge_sent";
 
 export type ProductEvent = {
   name: ProductEventName;
