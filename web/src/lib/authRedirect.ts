@@ -1,8 +1,5 @@
-/** Single source of truth for post-auth default landing.
- *  Your Plans, not Explore: a signed-in person's own plans are what they
- *  came back for, and Explore is discovery they opt into. Anything that
- *  passes an explicit `next` still wins, so deep links are unaffected. */
-export const DEFAULT_POST_AUTH_REDIRECT = "/plans";
+/** Single source of truth for post-auth default landing. */
+export const DEFAULT_POST_AUTH_REDIRECT = "/";
 
 const DEFAULT_REDIRECT_PATH = DEFAULT_POST_AUTH_REDIRECT;
 

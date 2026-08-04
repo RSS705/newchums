@@ -42,10 +42,8 @@ export const giveFeedbackNavItem: NavItem = {
 };
 
 export const appNavItems: NavItem[] = [
-  // Your Plans leads: it is home for a signed-in user (and the post-auth
-  // landing page), with Explore as the discovery tab below it.
-  { label: "Your Plans", href: "/plans", icon: EventNoteRoundedIcon },
   { label: "Explore", href: "/", icon: ExploreRoundedIcon },
+  { label: "Your Plans", href: "/plans", icon: EventNoteRoundedIcon },
   { label: "Inbox", href: "/inbox", icon: MailRoundedIcon },
   { label: "Communities", href: "/communities", icon: ForumRoundedIcon },
   { label: "Your Chums", href: "/chum-groups", icon: GroupsRoundedIcon },

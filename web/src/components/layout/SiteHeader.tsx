@@ -28,16 +28,12 @@ export type SiteHeaderProps = {
    *  same array (the extra Communities entry it once added was deliberately
    *  removed; see config/nav.ts). */
   navLinks?: readonly HeaderNavLink[];
-  /** Where the logo points. Defaults to the marketing home; the signed-in
-   *  shell passes the app home (Your Plans) so "home" means one place. */
-  logoHref?: string;
 };
 
 export default function SiteHeader({
   rightSide,
   mobileMenuButton,
   navLinks = headerNavLinks,
-  logoHref = "/",
 }: SiteHeaderProps) {
   const pathname = usePathname();
 
@@ -69,7 +65,7 @@ export default function SiteHeader({
           }}
         >
           {mobileMenuButton}
-          <Link href={logoHref} style={{ display: "inline-flex", minWidth: 0 }}>
+          <Link href="/" style={{ display: "inline-flex", minWidth: 0 }}>
           <BrandLogo
             src="/logo-horizontal-black.png"
             alt="NewChums"

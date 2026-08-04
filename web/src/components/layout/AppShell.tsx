@@ -522,9 +522,6 @@ export default function AppShell({ children, user, passwordSetupPending, passwor
         }}
       >
         <SiteHeader
-          // Home for a signed-in user is Your Plans (see config/nav.ts and
-          // DEFAULT_POST_AUTH_REDIRECT); the logo should agree.
-          logoHref="/plans"
           mobileMenuButton={
             <IconButton
               aria-label="open navigation"
