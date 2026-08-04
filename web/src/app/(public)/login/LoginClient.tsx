@@ -16,6 +16,7 @@ import LegalConsentNotice from "@/components/legal/LegalConsentNotice";
 import TurnstileWidget from "@/components/contact/TurnstileWidget";
 import { AppButton, AppCard } from "@/components/ui";
 import { getSafeRedirectPath } from "@/lib/authRedirect";
+import GlobalStyles from "@mui/material/GlobalStyles";
 import MarkEmailReadRoundedIcon from "@mui/icons-material/MarkEmailReadRounded";
 
 export default function LoginClient() {
@@ -73,7 +74,70 @@ export default function LoginClient() {
     }
   }, [emailChanged]);
 
-  const sendSigninLink = React.useCallback(async () => {
+  // Autofill lands without the events React listens to. Chrome fills saved
+  // credentials before hydration, and password managers write values
+  // directly, so React can hold "" while a real password sits in the field:
+  // the page then offers a sign-in link to someone who has a password right
+  // in front of them, and pressing it emails them instead of signing them
+  // in. (It appeared to "fix itself on click" because the click was the
+  // first event that made the browser commit the fill.) These read the DOM
+  // back into state; every write happens inside an async callback, never
+  // synchronously in the effect body.
+  const syncAutofilledFields = React.useCallback(() => {
+    const emailEl = document.getElementById("login-email") as HTMLInputElement | null;
+    const passwordEl = document.getElementById("login-password") as HTMLInputElement | null;
+    // Only ever adopt a non-empty DOM value: clearing a field is a real
+    // onChange, so this must not fight someone deleting what they typed.
+    if (emailEl?.value) setEmail((prev) => (prev === emailEl.value ? prev : emailEl.value));
+    if (passwordEl?.value) setPassword((prev) => (prev === passwordEl.value ? prev : passwordEl.value));
+  }, []);
+
+  React.useEffect(() => {
+    // A short ladder rather than a single check: the fill can land before
+    // hydration or a beat after it, depending on browser and manager.
+    const timers = [0, 150, 400, 900, 1800].map((delay) =>
+      window.setTimeout(syncAutofilledFields, delay),
+    );
+    // Backstop for fills that arrive later than the ladder (an extension
+    // finishing an unlock, say): the first interaction re-reads the fields.
+    const onInteract = () => syncAutofilledFields();
+    const events = ["pointerdown", "keydown", "focusin"] as const;
+    for (const type of events) window.addEventListener(type, onInteract, { passive: true });
+    // Real browser autofill fires no input event, but it does apply
+    // :-webkit-autofill, which the no-op animation below turns into an
+    // animationstart. Matching on the target id rather than the animation
+    // name keeps this working whether or not the style engine hashes the
+    // name. Capture phase because animations on inputs do not bubble
+    // reliably in every engine.
+    const onAnimationStart = (event: Event) => {
+      const target = event.target as HTMLElement | null;
+      if (target && (target.id === "login-email" || target.id === "login-password")) {
+        syncAutofilledFields();
+      }
+    };
+    document.addEventListener("animationstart", onAnimationStart, true);
+    return () => {
+      for (const t of timers) window.clearTimeout(t);
+      for (const type of events) window.removeEventListener(type, onInteract);
+      document.removeEventListener("animationstart", onAnimationStart, true);
+    };
+  }, [syncAutofilledFields]);
+
+  /** Live field values. State can lag the DOM by a frame after an autofill,
+   *  so anything that ACTS on these (which path to take, what to submit)
+   *  reads here rather than trusting state. */
+  const readFields = React.useCallback(() => {
+    const emailEl = document.getElementById("login-email") as HTMLInputElement | null;
+    const passwordEl = document.getElementById("login-password") as HTMLInputElement | null;
+    return {
+      email: emailEl ? emailEl.value : email,
+      password: passwordEl ? passwordEl.value : password,
+    };
+  }, [email, password]);
+
+  const sendSigninLink = React.useCallback(async (emailOverride?: string) => {
+    const targetEmail = (emailOverride ?? email).trim().toLowerCase();
+    if (!targetEmail) return;
     setLinkStatus("sending");
     try {
       const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
@@ -81,7 +145,7 @@ export default function LoginClient() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email: email.trim().toLowerCase(),
+          email: targetEmail,
           next: redirectTarget,
           turnstile_token: turnstileToken ?? "",
         }),
@@ -118,6 +182,15 @@ export default function LoginClient() {
 
   const formContent = (
     <Stack spacing={2.5}>
+      <GlobalStyles
+        styles={{
+          "@keyframes nc-autofill-seen": { from: {}, to: {} },
+          "input:-webkit-autofill": {
+            animationName: "nc-autofill-seen",
+            animationDuration: "1ms",
+          },
+        }}
+      />
       <AuthErrorBanner code={isSuspendedParam ? "AccountSuspended" : suspended ? "AccountSuspended" : null} />
       {emailChanged && !isSuspendedParam && !suspended && (
         <Typography variant="body2" color="success.main" sx={{ textAlign: "center", fontWeight: 500 }}>
@@ -170,20 +243,21 @@ export default function LoginClient() {
         onSubmit={async (event) => {
           event.preventDefault();
           setError(null);
-          // Enter with a typed password signs in with it; Enter with an
-          // empty password takes the primary path, the sign-in link. Only
-          // the password button is type="submit" (a form needs one for
-          // implicit submission) and it is disabled until a password is
-          // typed, so clicking it always follows the password branch.
-          if (!password.trim()) {
-            if (linkStatus === "sending" || !email.trim()) return;
+          // Read the fields live: a password that was autofilled a frame ago
+          // is in the DOM but may not be in state yet, and branching on
+          // state there would email a link to someone who has a password
+          // sitting in the form. A typed password signs in with it; an empty
+          // one takes the sign-in-link path.
+          const fields = readFields();
+          if (!fields.password.trim()) {
+            if (linkStatus === "sending" || !fields.email.trim()) return;
             if (turnstileSiteKey && !turnstileToken) return;
-            void sendSigninLink();
+            void sendSigninLink(fields.email);
             return;
           }
           const result = await signIn("credentials", {
-            email,
-            password,
+            email: fields.email,
+            password: fields.password,
             redirect: false,
             redirectTo: redirectTarget,
           });
