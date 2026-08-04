@@ -8,6 +8,7 @@ import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
 import MenuItem from "@mui/material/MenuItem";
+import TextField from "@mui/material/TextField";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
@@ -26,6 +27,14 @@ import { AppButton, AppCard, AppTextField, useToast } from "@/components/ui";
 import { NOTIFICATION_TYPES } from "./notificationConfig";
 import NotificationRow from "./NotificationRow";
 import PrivacyToggleRow from "./PrivacyToggleRow";
+
+/** Lifts a field's inline action level with the input box. AppTextField
+ *  renders its label above the input (23px + 5px margin), and the 50px
+ *  input's centre therefore sits 53px down, so a 44px button starts at 31.
+ *  Applied as padding on a wrapper: Stack manages its children's margins
+ *  for spacing and swallows a margin set on the button itself. One
+ *  constant so the Account rows cannot drift apart. */
+const SETTINGS_FIELD_ACTION_OFFSET = "31px";
 
 export default function SettingsClient() {
   const [loading, setLoading] = useState(true);
@@ -446,15 +455,34 @@ export default function SettingsClient() {
               </Typography>
             </Box>
           </Stack>
-          <AppTextField
-            label="Email"
-            value={email}
-            disabled
-            helperText="Your sign-in email address"
-          />
-          <Button variant="outlined" size="small" onClick={() => setChangeEmailOpen(true)} sx={{ textTransform: "none", borderRadius: 2.5, alignSelf: "flex-start" }}>
-            Change email
-          </Button>
+          {/* Field and its action on one line: the button belongs to the
+              value beside it, not to the section. The top offset lifts the
+              button level with the input rather than the label above it;
+              at xs it stacks and goes full width. */}
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            spacing={{ xs: 1, sm: 1.5 }}
+            alignItems={{ xs: "stretch", sm: "flex-start" }}
+          >
+            <AppTextField
+              label="Email"
+              value={email}
+              disabled
+              helperText="Your sign-in email address"
+              sx={{ flex: 1, minWidth: 0 }}
+            />
+            <Box sx={{ pt: { sm: SETTINGS_FIELD_ACTION_OFFSET }, flexShrink: 0 }}>
+              <Button
+                variant="outlined"
+                size="small"
+                fullWidth
+                onClick={() => setChangeEmailOpen(true)}
+                sx={{ textTransform: "none", borderRadius: 2.5, whiteSpace: "nowrap" }}
+              >
+                Change email
+              </Button>
+            </Box>
+          </Stack>
           {passwordSetupPending ? (
             <Box
               sx={{
@@ -484,19 +512,34 @@ export default function SettingsClient() {
             </Box>
           ) : (
             <>
-              <AppTextField
-                label="Password"
-                value="••••••••"
-                disabled
-                type="password"
-                InputProps={{
-                  readOnly: true,
-                }}
-                helperText="Your password is hidden for security"
-              />
-              <Button variant="outlined" size="small" onClick={() => setChangePasswordOpen(true)} sx={{ textTransform: "none", borderRadius: 2.5, alignSelf: "flex-start" }}>
-                Change password
-              </Button>
+              <Stack
+                direction={{ xs: "column", sm: "row" }}
+                spacing={{ xs: 1, sm: 1.5 }}
+                alignItems={{ xs: "stretch", sm: "flex-start" }}
+              >
+                <AppTextField
+                  label="Password"
+                  value="••••••••"
+                  disabled
+                  type="password"
+                  InputProps={{
+                    readOnly: true,
+                  }}
+                  helperText="Your password is hidden for security"
+                  sx={{ flex: 1, minWidth: 0 }}
+                />
+                <Box sx={{ pt: { sm: SETTINGS_FIELD_ACTION_OFFSET }, flexShrink: 0 }}>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    fullWidth
+                    onClick={() => setChangePasswordOpen(true)}
+                    sx={{ textTransform: "none", borderRadius: 2.5, whiteSpace: "nowrap" }}
+                  >
+                    Change password
+                  </Button>
+                </Box>
+              </Stack>
               <Box sx={{ mt: 1 }}>
                 <Link
                   href={email ? `/forgot-password?email=${encodeURIComponent(email)}` : "/forgot-password"}
@@ -603,27 +646,45 @@ export default function SettingsClient() {
               </Typography>
             </Box>
           </Stack>
-          {/* Who can message you (Inbox reachability) */}
-          <Box>
-            <Typography variant="body2" fontWeight={600} sx={{ mb: 0.25 }}>
-              Who can send you messages
-            </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1.25, lineHeight: 1.45 }}>
-              Controls who can start a new Inbox conversation with you. People you&apos;re already
-              in a conversation with can always reply. Blocking someone overrides this setting.
-            </Typography>
-            <AppTextField
-              select
-              value={dmPrivacy}
-              onChange={(e) => void setDmPrivacyValue(e.target.value)}
-              disabled={dmPrivacySaving}
-              helperText={null}
-              sx={{ maxWidth: 420 }}
-            >
-              <MenuItem value="everyone">Everyone on NewChums</MenuItem>
-              <MenuItem value="chums_and_plans">Chums and people from your plans</MenuItem>
-              <MenuItem value="no_one">No one</MenuItem>
-            </AppTextField>
+          {/* Who can message you (Inbox reachability). The only Privacy
+              control that isn't a toggle, so it borrows the toggle rows'
+              skeleton exactly: same py rhythm, same title/description
+              typography, and the text indented to the same column by a
+              spacer the width of a switch. Only the control differs, which
+              is the one thing that genuinely has to. */}
+          <Box
+            sx={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "flex-start",
+              gap: 1.5,
+              py: 1,
+            }}
+          >
+            {/* Width of a small Switch, so this row's text starts in the
+                same column as every toggle row's, at every width. */}
+            <Box sx={{ width: 40, flexShrink: 0 }} />
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography variant="subtitle2" fontWeight={600}>
+                Who can send you messages
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+                Controls who can start a new Inbox conversation with you. People you&apos;re already
+                in a conversation with can always reply. Blocking someone overrides this setting.
+              </Typography>
+              <TextField
+                select
+                size="small"
+                value={dmPrivacy}
+                onChange={(e) => void setDmPrivacyValue(e.target.value)}
+                disabled={dmPrivacySaving}
+                sx={{ mt: 1.25, width: "100%", maxWidth: 340 }}
+              >
+                <MenuItem value="everyone">Everyone on NewChums</MenuItem>
+                <MenuItem value="chums_and_plans">Chums and people from your plans</MenuItem>
+                <MenuItem value="no_one">No one</MenuItem>
+              </TextField>
+            </Box>
           </Box>
           <PrivacyToggleRow
             title="Hide me from NewChums search and discovery"
