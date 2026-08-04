@@ -17,6 +17,7 @@ import Typography from "@mui/material/Typography";
 import AddCircleRoundedIcon from "@mui/icons-material/AddCircleRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import EditLocationRoundedIcon from "@mui/icons-material/EditLocationRounded";
+import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
@@ -313,6 +314,54 @@ export default function CommunitiesListClient() {
         </Stack>
       </Paper>
 
+      {/* Location nudge. Same treatment as Explore's: one short row above
+          the filters, since it shapes what the list shows. The whole row is
+          the link, which also keeps the label at text.primary contrast
+          rather than brand-on-tint. */}
+      {profile !== null && !hasLocation && view === "all" && (
+        <Paper
+          component={Link}
+          href="/profile?focus=location"
+          variant="outlined"
+          sx={{
+            px: { xs: 1.75, sm: 2.25 },
+            py: { xs: 1.25, sm: 1.5 },
+            borderRadius: 3,
+            borderColor: "primary.light",
+            bgcolor: "#fff7ed",
+            display: "flex",
+            flexDirection: "row",
+            alignItems: "center",
+            gap: { xs: 1.25, sm: 1.75 },
+            textDecoration: "none",
+            transition: "background-color 0.15s ease",
+            "&:hover": { bgcolor: "#ffeedd" },
+          }}
+        >
+          <Box
+            sx={{
+              width: 36,
+              height: 36,
+              borderRadius: "50%",
+              bgcolor: "primary.main",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            <EditLocationRoundedIcon sx={{ color: "primary.contrastText", fontSize: 20 }} />
+          </Box>
+          <Typography
+            variant="body2"
+            sx={{ flex: 1, minWidth: 0, fontWeight: 600, lineHeight: 1.45, color: "text.primary" }}
+          >
+            Add your location to see communities near you
+          </Typography>
+          <ChevronRightRoundedIcon sx={{ color: "primary.dark", fontSize: 22, flexShrink: 0 }} />
+        </Paper>
+      )}
+
       {/* Filter bar. Bigger search, labeled Filters button with active
           count pill, and a single Personalized chip row that works at
           every breakpoint (the previous mobile/desktop dual-render path
@@ -530,65 +579,6 @@ export default function CommunitiesListClient() {
           )}
         </Stack>
       </Paper>
-
-      {/* Location nudge. Warm-wash treatment matching Explore so the
-          two surfaces feel like the same product. */}
-      {profile !== null && !hasLocation && view === "all" && (
-        <Paper
-          variant="outlined"
-          sx={{
-            p: { xs: 2.5, sm: 3 },
-            borderRadius: 3,
-            borderColor: "primary.light",
-            background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 65%)",
-            display: "flex",
-            flexDirection: { xs: "column", sm: "row" },
-            alignItems: { xs: "flex-start", sm: "center" },
-            gap: { xs: 1.5, sm: 2.5 },
-          }}
-        >
-          <Box
-            sx={{
-              width: 44,
-              height: 44,
-              borderRadius: "50%",
-              bgcolor: "primary.main",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-              boxShadow: "0 2px 8px rgba(230, 91, 19, 0.18)",
-            }}
-          >
-            <EditLocationRoundedIcon sx={{ color: "primary.contrastText", fontSize: 22 }} />
-          </Box>
-          <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 0.25, fontSize: "1rem" }}>
-              Set your location for better results
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-              We&apos;ll prioritize communities near you and hide those that are too far away.
-            </Typography>
-          </Box>
-          <Button
-            component={Link}
-            href="/profile?focus=location"
-            variant="contained"
-            sx={{
-              flexShrink: 0,
-              textTransform: "none",
-              fontWeight: 600,
-              whiteSpace: "nowrap",
-              borderRadius: 2.5,
-              boxShadow: "none",
-              alignSelf: { xs: "stretch", sm: "auto" },
-              "&:hover": { boxShadow: "none", opacity: 0.92 },
-            }}
-          >
-            Update profile
-          </Button>
-        </Paper>
-      )}
 
       {/* Community feed */}
       {loading && communities.length === 0 ? (
