@@ -18,7 +18,7 @@ import PersonOutlineRoundedIcon from "@mui/icons-material/PersonOutlineRounded";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import SparklesRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import { AppCard } from "@/components/ui";
-import { getProfileCardBg } from "@/lib/profileTheme";
+import { getProfileCardBg, isThemedProfile, PROFILE_THEMED_MUTED_TEXT } from "@/lib/profileTheme";
 import AttendanceRecordSection from "./AttendanceRecordSection";
 import ProfileHeaderSection from "./ProfileHeaderSection";
 import ProfileBioSection from "./ProfileBioSection";
@@ -81,6 +81,11 @@ export type PublicProfileViewProps = {
 export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAction, blockAction, viewerLoggedIn, messageHref }: PublicProfileViewProps) {
   const [blockConfirmOpen, setBlockConfirmOpen] = useState(false);
   const cardBg = getProfileCardBg(user.profile_theme);
+  // Themed cards carry real colour since Aug 2026, and the app-wide muted
+  // grey does not clear AA on it. Darkening text.secondary for this card's
+  // subtree (and nothing else) is what lets the palette be saturated at
+  // all; see the contrast contract in lib/profileTheme.ts.
+  const themed = isThemedProfile(user.profile_theme);
   const ownerHandleSlug = user.handle?.replace(/^@/, "") ?? null;
   return (
     <>
@@ -165,6 +170,12 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
           borderRadius: { xs: 2.5, sm: 3 },
           overflow: "hidden",
           backgroundColor: cardBg,
+          ...(themed && {
+            "& .MuiTypography-root": { color: PROFILE_THEMED_MUTED_TEXT },
+            "& .MuiTypography-h4, & .MuiTypography-h5, & .MuiTypography-h6, & .MuiTypography-subtitle1, & .MuiTypography-subtitle2": {
+              color: "text.primary",
+            },
+          }),
           border: "1px solid",
           borderColor: "grey.200",
           boxShadow: "0 2px 10px rgba(0,0,0,0.04)",
