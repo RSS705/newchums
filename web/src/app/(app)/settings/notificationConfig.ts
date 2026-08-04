@@ -66,6 +66,12 @@ export const NOTIFICATION_TYPES: NotificationTypeConfig[] = [
     description: "After a plan wraps up: a nudge to thank people, and a private check-in for plans you host.",
   },
   {
+    key: "shoutout_received",
+    title: "Someone leaves you a shout-out",
+    description:
+      "When a shout-out written about you is added to your profile. Sent once a day, covering anything new since yesterday.",
+  },
+  {
     key: "plan_reminder",
     title: "Day-before plan reminder",
     description:

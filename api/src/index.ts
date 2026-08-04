@@ -39,6 +39,7 @@ import {
   sendPlanWrapUpEmail,
   sendRunItAgainEmail,
   sendPlanReminderEmail,
+  sendShoutoutReceivedEmail,
   sendConcernReportAlert,
   sendCommunityJoinRequestEmail,
   sendCommunityJoinApprovedEmail,
@@ -19284,6 +19285,129 @@ async function processPlanReminders(
   console.log(`[plan-reminder] plans=${plans.length} enqueued=${enqueued} skips=${JSON.stringify(skips)}`);
 }
 
+// ─── Shout-out notices ───────────────────────────────────────────────────────
+
+/** Hour (UTC) the daily shout-out notice goes out. 16:00 UTC is midday
+ *  Eastern, where most of the current user base is; the cron runs hourly, so
+ *  this gate is what makes the job daily rather than hourly. */
+const SHOUTOUT_NOTICE_HOUR_UTC = 16;
+
+/**
+ * Approving a shout-out creates a bell notification and nothing else, so a
+ * recipient who does not come back never learns about it (at launch, 6 of 8
+ * approved shout-outs had never been read). This emails them once a day for
+ * whatever cleared moderation since the last run.
+ *
+ * Batched per recipient, so approving several in one sitting sends one
+ * email rather than three. Every shout-out is stamped (`notified_at`,
+ * migration 113) whether it was emailed or skipped, so nobody is told
+ * twice; that migration also backfilled everything approved more than four
+ * days before launch, so the first run could not mail people about
+ * compliments from weeks earlier.
+ *
+ * Exclusions: the `shoutout_received` preference (default on,
+ * unsubscribe-scoped), and blocked pairs re-checked here, since a block can
+ * be created after approval and the approval path only checked once.
+ */
+async function processShoutoutNotices(
+  sql: ReturnType<typeof getSql>,
+  _env: Bindings,
+  _ctx: ExecutionContext,
+) {
+  if (new Date().getUTCHours() !== SHOUTOUT_NOTICE_HOUR_UTC) return;
+
+  const pending = (await sql`
+    SELECT s.id, s.recipient_user_id, s.sender_user_id, s.plan_id, s.message,
+           e.title AS plan_title,
+           su.name AS sender_name, su.username AS sender_username,
+           ru.username AS recipient_username,
+           up.notification_prefs
+    FROM newchums.shoutouts s
+    JOIN newchums.users su ON su.id = s.sender_user_id
+    JOIN newchums.users ru ON ru.id = s.recipient_user_id
+    LEFT JOIN newchums.events e ON e.id = s.plan_id
+    LEFT JOIN newchums.user_profile up ON up.user_id = s.recipient_user_id
+    WHERE s.status = 'approved'
+      AND s.notified_at IS NULL
+    ORDER BY s.reviewed_at ASC
+    LIMIT 100
+  `) as {
+    id: string; recipient_user_id: string; sender_user_id: string; plan_id: string | null;
+    message: string; plan_title: string | null; sender_name: string | null;
+    sender_username: string | null; recipient_username: string | null; notification_prefs: unknown;
+  }[];
+
+  if (pending.length === 0) return;
+
+  // Group per recipient so one person hears once, however many arrived.
+  const byRecipient = new Map<string, typeof pending>();
+  for (const row of pending) {
+    const list = byRecipient.get(row.recipient_user_id) ?? [];
+    list.push(row);
+    byRecipient.set(row.recipient_user_id, list);
+  }
+
+  const stamp = (ids: string[]) => sql`
+    UPDATE newchums.shoutouts SET notified_at = NOW() WHERE id = ANY(${ids}::uuid[])
+  `;
+  const groupKey = new Date().toISOString().slice(0, 10);
+  let enqueued = 0;
+  const skips: Record<string, number> = {};
+
+  for (const [recipientId, rows] of byRecipient) {
+    const prefs = normalizeNotificationPrefs(rows[0].notification_prefs);
+    if (prefs.items.shoutout_received?.enabled === false) {
+      skips.pref_off = (skips.pref_off ?? 0) + 1;
+      await stamp(rows.map((r) => r.id));
+      continue;
+    }
+
+    // Drop any whose sender has since been blocked, either direction.
+    const visible: typeof rows = [];
+    for (const row of rows) {
+      if (await pairBlocked(sql, row.sender_user_id, recipientId)) {
+        skips.blocked = (skips.blocked ?? 0) + 1;
+        continue;
+      }
+      visible.push(row);
+    }
+    if (visible.length === 0) {
+      await stamp(rows.map((r) => r.id));
+      continue;
+    }
+
+    const newest = visible[visible.length - 1];
+    // event_id is NOT NULL on the outbox; every shout-out carries its plan.
+    if (!newest.plan_id) {
+      skips.no_plan = (skips.no_plan ?? 0) + 1;
+      await stamp(rows.map((r) => r.id));
+      continue;
+    }
+
+    await sql`
+      INSERT INTO newchums.email_outbox (kind, event_id, user_id, payload, group_key)
+      VALUES (
+        'shoutout_received',
+        ${newest.plan_id},
+        ${recipientId},
+        ${JSON.stringify({
+          count: visible.length,
+          senderName: newest.sender_name?.trim() || newest.sender_username?.replace(/^@/, "") || "Someone",
+          message: visible.length === 1 ? newest.message : null,
+          planTitle: newest.plan_title,
+          recipientHandle: newest.recipient_username?.replace(/^@/, "") ?? null,
+        })}::jsonb,
+        ${groupKey}
+      )
+      ON CONFLICT DO NOTHING
+    `;
+    await stamp(rows.map((r) => r.id));
+    enqueued++;
+  }
+
+  console.log(`[shoutout-notice] shoutouts=${pending.length} recipients=${byRecipient.size} enqueued=${enqueued} skips=${JSON.stringify(skips)}`);
+}
+
 // ─── Email outbox delivery ───────────────────────────────────────────────────
 
 const OUTBOX_MAX_ATTEMPTS = 3;
@@ -19323,7 +19447,7 @@ async function processEmailOutbox(
     WHERE o.status = 'pending'
     ORDER BY o.created_at ASC
     LIMIT 40
-  `) as { id: number; kind: string; event_id: string; user_id: string; payload: { role?: string; isHost?: boolean; deadline?: string; confirmedCount?: number; minRequired?: number; reason?: string } | null; attempts: number; title: string; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; location_visibility: string | null; location_area: string | null; online_link: string | null; to_email: string; to_name: string | null }[];
+  `) as { id: number; kind: string; event_id: string; user_id: string; payload: { role?: string; isHost?: boolean; deadline?: string; confirmedCount?: number; minRequired?: number; reason?: string; count?: number; senderName?: string; message?: string | null; planTitle?: string | null; recipientHandle?: string | null } | null; attempts: number; title: string; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; location_visibility: string | null; location_area: string | null; online_link: string | null; to_email: string; to_name: string | null }[];
 
   if (rows.length === 0) return;
 
@@ -19336,7 +19460,8 @@ async function processEmailOutbox(
     const recipientName = row.to_name?.trim() || "there";
     const tz = row.timezone || "UTC";
     const prefKey =
-      row.kind === "run_it_again" ? "run_it_again"
+      row.kind === "shoutout_received" ? "shoutout_received"
+      : row.kind === "run_it_again" ? "run_it_again"
       : row.kind === "plan_reminder" ? "plan_reminder"
       : row.kind === "plan_auto_cancelled" ? "event_changed_canceled"
       : row.kind.startsWith("confirmation_") || row.kind === "plan_at_risk" ? "attendance_confirmation"
@@ -19354,7 +19479,24 @@ async function processEmailOutbox(
     const idempotencyKey = `${row.kind}:${row.event_id}:${row.user_id}`;
 
     try {
-      if (row.kind === "confirmation_request" || row.kind === "confirmation_reminder" || row.kind === "confirmation_final") {
+      if (row.kind === "shoutout_received") {
+        const handle = row.payload?.recipientHandle;
+        await sendShoutoutReceivedEmail(env, {
+          to: row.to_email,
+          recipientName,
+          senderName: row.payload?.senderName ?? "Someone",
+          count: row.payload?.count ?? 1,
+          message: row.payload?.message ?? null,
+          planTitle: row.payload?.planTitle ?? null,
+          // Shout-outs live on their public profile; fall back to /profile
+          // for anyone who has not set a handle yet.
+          shoutoutsUrl: handle
+            ? `${env.WEB_BASE_URL}/u/${handle}#shoutouts`
+            : `${env.WEB_BASE_URL}/profile`,
+          unsubscribeUrl,
+          idempotencyKey,
+        });
+      } else if (row.kind === "confirmation_request" || row.kind === "confirmation_reminder" || row.kind === "confirmation_final") {
         const isHost = row.payload?.isHost === true;
         const eventUrl = `${env.WEB_BASE_URL}/events/${row.event_id}`;
         await sendConfirmationRequestEmail(env, {
@@ -19727,6 +19869,13 @@ async function handleScheduled(
     await processPlanReminders(sql, env, ctx);
   } catch (err) {
     console.error("[scheduled] plan reminder error:", err);
+  }
+
+  // Daily "you got a shout-out" notices (gated to one hour of the day)
+  try {
+    await processShoutoutNotices(sql, env, ctx);
+  } catch (err) {
+    console.error("[scheduled] shoutout notice error:", err);
   }
 
   // Deliver whatever the jobs above enqueued (plus any retries)

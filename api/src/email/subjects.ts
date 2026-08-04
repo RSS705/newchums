@@ -61,6 +61,8 @@ export const SUBJECTS = {
   planWrapUp_host: "How did {{planTitle}} go?",
   runItAgain: "Want to run {{planTitle}} again?",
   planReminder: "Tomorrow: {{planTitle}}",
+  shoutoutReceived_one: "{{senderName}} left you a shout-out",
+  shoutoutReceived_many: "You have {{count}} new shout-outs",
   planWrapUp_attendee: "Anyone to thank from {{planTitle}}?",
 
   // Digests

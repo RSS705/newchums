@@ -1168,6 +1168,69 @@ export const sendPlanWrapUpEmail = async (
   );
 };
 
+/** "You got a shout-out" notice, sent once daily to the recipient after a
+ *  shout-out clears moderation. Batched per recipient: approving three in
+ *  one sitting sends one email, not three. The message text is included for
+ *  a single shout-out (it is written about them and already moderated); a
+ *  batch links to the profile rather than quoting several. */
+export const sendShoutoutReceivedEmail = async (
+  env: Bindings,
+  {
+    to,
+    recipientName,
+    senderName,
+    count,
+    message,
+    planTitle,
+    shoutoutsUrl,
+    unsubscribeUrl,
+    idempotencyKey,
+  }: {
+    to: string;
+    recipientName: string;
+    senderName: string;
+    count: number;
+    message?: string | null;
+    planTitle?: string | null;
+    shoutoutsUrl: string;
+    unsubscribeUrl: string;
+    idempotencyKey?: string;
+  },
+) => {
+  const single = count <= 1;
+  return dispatch(
+    env,
+    to,
+    "shoutoutReceived",
+    {
+      heading: single ? "Someone said something nice" : `${count} people said something nice`,
+      greeting: `Hi ${recipientName},`,
+      bodyText: single
+        ? `${senderName} left you a shout-out${planTitle ? ` from ${planTitle}` : ""}${
+            hasContent(message) ? `: "${message}"` : "."
+          }`
+        : `${count} shout-outs have been added to your profile. Here's what people said about you.`,
+      ctaText: single ? "See it on your profile" : "See them on your profile",
+      ctaHelperText: "Shout-outs live on your public profile. You can hide the section any time in Settings.",
+      recipientName,
+      // Also feed the subject line, which interpolates from this same
+      // model: without these the subjects rendered as " left you a
+      // shout-out" and "You have  new shout-outs".
+      senderName,
+      count,
+      planTitle: hasContent(planTitle) ? planTitle : null,
+      planDate: null,
+      planLocation: null,
+      ctaUrl: shoutoutsUrl,
+      unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
+    },
+    {
+      subjectKey: single ? "shoutoutReceived_one" : "shoutoutReceived_many",
+      idempotencyKey,
+    },
+  );
+};
+
 /** Day-before reminder for plans WITHOUT the 24-hour attendance check (the
  *  check's confirmation request covers the rest, so nobody hears twice).
  *  A reminder, not a request: nothing to press, just what, when, where and

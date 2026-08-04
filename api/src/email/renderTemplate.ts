@@ -65,6 +65,8 @@ import runItAgainHtml from "./templates/runItAgain.html";
 import runItAgainTxt from "./templates/runItAgain.txt";
 import planReminderHtml from "./templates/planReminder.html";
 import planReminderTxt from "./templates/planReminder.txt";
+import shoutoutReceivedHtml from "./templates/shoutoutReceived.html";
+import shoutoutReceivedTxt from "./templates/shoutoutReceived.txt";
 import planRemovedByAdminHtml from "./templates/planRemovedByAdmin.html";
 import planRemovedByAdminTxt from "./templates/planRemovedByAdmin.txt";
 import planSigninHtml from "./templates/planSignin.html";
@@ -118,6 +120,7 @@ const TEMPLATES: Record<string, TemplatePair> = {
   planWrapUp: { html: planWrapUpHtml, text: planWrapUpTxt },
   runItAgain: { html: runItAgainHtml, text: runItAgainTxt },
   planReminder: { html: planReminderHtml, text: planReminderTxt },
+  shoutoutReceived: { html: shoutoutReceivedHtml, text: shoutoutReceivedTxt },
   planRemovedByAdmin: { html: planRemovedByAdminHtml, text: planRemovedByAdminTxt },
   planSignin: { html: planSigninHtml, text: planSigninTxt },
   roadmapUpdate: { html: roadmapUpdateHtml, text: roadmapUpdateTxt },
