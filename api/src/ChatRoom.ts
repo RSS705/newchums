@@ -71,7 +71,13 @@ export class ChatRoom extends DurableObject {
       return new Response("Bad JSON", { status: 400 });
     }
 
-    const payload = JSON.stringify({ type: "chat_message", message });
+    // Edit/delete broadcasts arrive pre-wrapped ({type, ...}); plain new
+    // messages arrive bare and keep their legacy chat_message envelope.
+    const pre = message as { type?: unknown };
+    const payload =
+      pre && typeof pre.type === "string" && pre.type.startsWith("chat_message")
+        ? JSON.stringify(message)
+        : JSON.stringify({ type: "chat_message", message });
     const sockets = this.ctx.getWebSockets();
     for (const ws of sockets) {
       try {

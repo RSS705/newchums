@@ -6302,7 +6302,7 @@ app.get("/admin/events/:id/chat-transcript", async (c) => {
     const before = c.req.query("before");
     const limitParam = Math.min(Math.max(Number(c.req.query("limit") ?? 200), 1), 500);
     const messages = (await sql`
-      SELECT m.id, m.body, m.created_at, m.user_id,
+      SELECT m.id, m.body, m.created_at, m.edited_at, m.deleted_at, m.user_id,
              u.name AS sender_name, u.username AS sender_username
       FROM newchums.event_chat_messages m
       JOIN newchums.users u ON u.id = m.user_id
@@ -6310,7 +6310,7 @@ app.get("/admin/events/:id/chat-transcript", async (c) => {
         ${before ? sql`AND m.created_at < ${before}` : sql``}
       ORDER BY m.created_at DESC
       LIMIT ${limitParam + 1}
-    `) as Array<{ id: string; body: string; created_at: string; user_id: string; sender_name: string | null; sender_username: string | null }>;
+    `) as Array<{ id: string; body: string; created_at: string; edited_at: string | null; deleted_at: string | null; user_id: string; sender_name: string | null; sender_username: string | null }>;
     const hasMore = messages.length > limitParam;
     if (hasMore) messages.pop();
     messages.reverse();
@@ -6329,6 +6329,8 @@ app.get("/admin/events/:id/chat-transcript", async (c) => {
         id: m.id,
         body: m.body,
         createdAt: m.created_at,
+        editedAt: m.edited_at,
+        deletedAt: m.deleted_at,
         senderId: m.user_id,
         senderName: m.sender_name?.trim() || m.sender_username?.replace(/^@/, "") || "Someone",
         senderHandle: m.sender_username ? `@${m.sender_username.replace(/^@/, "")}` : null,
@@ -15331,17 +15333,18 @@ app.get("/events/:id/chat", async (c) => {
     const limitParam = Math.min(Math.max(Number(c.req.query("limit") ?? 50), 1), 100);
 
     const messages = (await sql`
-      SELECT m.id, m.body, m.created_at, m.user_id,
+      SELECT m.id, m.body, m.created_at, m.edited_at, m.user_id,
              u.name AS sender_name, u.username AS sender_username,
              u.avatar_key, u.avatar_updated_at
       FROM newchums.event_chat_messages m
       JOIN newchums.users u ON u.id = m.user_id
       WHERE m.event_id = ${eventId}
+        AND m.deleted_at IS NULL
         ${before ? sql`AND m.created_at < ${before}` : sql``}
       ORDER BY m.created_at DESC
       LIMIT ${limitParam + 1}
     `) as Array<{
-      id: string; body: string; created_at: string; user_id: string;
+      id: string; body: string; created_at: string; edited_at: string | null; user_id: string;
       sender_name: string | null; sender_username: string | null;
       avatar_key: string | null; avatar_updated_at: string | Date | null;
     }>;
@@ -15363,6 +15366,7 @@ app.get("/events/:id/chat", async (c) => {
           id: m.id,
           body: m.body,
           createdAt: m.created_at,
+          editedAt: m.edited_at,
           senderId: m.user_id,
           senderName: m.sender_name?.trim() || (handle || "Someone"),
           senderHandle: handle ? `@${handle}` : null,
@@ -15432,6 +15436,7 @@ app.post("/events/:id/chat", async (c) => {
       id: inserted[0].id,
       body: messageBody,
       createdAt: inserted[0].created_at,
+      editedAt: null as string | null,
       senderId: userId,
       senderName: user[0]?.name?.trim() || (handle || "Someone"),
       senderHandle: handle ? `@${handle}` : null,
@@ -15542,6 +15547,148 @@ app.post("/events/:id/chat", async (c) => {
 });
 
 /** POST /events/:id/chat/read, mark chat as read */
+/** PATCH /events/:id/chat/:messageId, edit your own chat message.
+ *  Discord-style: author-only (the host deliberately has no special powers
+ *  over other people's messages), the "(edited)" marker comes from
+ *  edited_at, and nobody is emailed or notified about an edit. Blocked once
+ *  the chat lock window closes, same as sending. */
+app.patch("/events/:id/chat/:messageId", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+  const eventId = c.req.param("id");
+  const messageId = c.req.param("messageId");
+
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+  const messageBody = typeof body.body === "string" ? body.body.trim() : "";
+  if (messageBody.length === 0) return c.json({ ok: false, error: "VALIDATION", message: "Message cannot be empty" }, 400);
+  if (messageBody.length > 2000) return c.json({ ok: false, error: "VALIDATION", message: "Message is too long (max 2000 characters)" }, 400);
+
+  try {
+    const access = await checkChatAccess(sql, eventId, userId);
+    if (!access.allowed) {
+      const status = access.reason === "NOT_FOUND" ? 404 : 403;
+      return c.json({ ok: false, error: access.reason }, status);
+    }
+    if (access.event) {
+      const startsAt = access.event.starts_at as string | null;
+      if (startsAt && Date.now() >= new Date(startsAt).getTime() + 3 * 24 * 60 * 60 * 1000) {
+        return c.json({ ok: false, error: "CHAT_LOCKED", message: "Chat is locked for this plan" }, 403);
+      }
+    }
+
+    // Author-only, atomically: the WHERE clause is the permission check, so
+    // there is no window between reading the row and writing it.
+    const updated = (await sql`
+      UPDATE newchums.event_chat_messages
+      SET body = ${messageBody}, edited_at = NOW()
+      WHERE id = ${messageId} AND event_id = ${eventId}
+        AND user_id = ${userId} AND deleted_at IS NULL
+      RETURNING id, created_at, edited_at
+    `) as { id: string; created_at: string; edited_at: string }[];
+    if (updated.length === 0) {
+      // Distinguish "not yours" from "gone" for a truthful status code.
+      const exists = (await sql`
+        SELECT user_id FROM newchums.event_chat_messages
+        WHERE id = ${messageId} AND event_id = ${eventId} AND deleted_at IS NULL
+      `) as { user_id: string }[];
+      return exists.length === 0
+        ? c.json({ ok: false, error: "NOT_FOUND" }, 404)
+        : c.json({ ok: false, error: "FORBIDDEN", message: "You can only edit your own messages" }, 403);
+    }
+
+    const user = (await sql`SELECT name, username, avatar_key, avatar_updated_at FROM newchums.users WHERE id = ${userId}`) as { name: string | null; username: string | null; avatar_key: string | null; avatar_updated_at: string | Date | null }[];
+    const handle = user[0]?.username?.replace(/^@/, "") ?? null;
+    const chatMessage = {
+      id: updated[0].id,
+      body: messageBody,
+      createdAt: updated[0].created_at,
+      editedAt: updated[0].edited_at,
+      senderId: userId,
+      senderName: user[0]?.name?.trim() || (handle || "Someone"),
+      senderHandle: handle ? `@${handle}` : null,
+      avatarUrl: buildAvatarUrl(userId, user[0]?.avatar_key ?? null, user[0]?.avatar_updated_at ?? null, c.env.MEDIA_BUCKET),
+    };
+
+    try {
+      const doId = c.env.CHAT_ROOM.idFromName(eventId);
+      const doStub = c.env.CHAT_ROOM.get(doId);
+      c.executionCtx.waitUntil(
+        doStub.fetch(new Request("https://do/broadcast", {
+          method: "POST",
+          body: JSON.stringify({ type: "chat_message_updated", message: chatMessage }),
+        }))
+      );
+    } catch { /* DO broadcast failure should not fail the API response */ }
+
+    return c.json({ ok: true, message: chatMessage });
+  } catch (err) {
+    console.error("[PATCH /events/:id/chat/:messageId]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** DELETE /events/:id/chat/:messageId, delete your own chat message.
+ *  Soft delete: the row keeps its body for the admin safety transcript, but
+ *  member-facing reads drop it entirely, so to users it is simply gone.
+ *  Allowed even after the chat lock (removing your own words is a privacy
+ *  action, not chat activity), and never notifies anyone. */
+app.delete("/events/:id/chat/:messageId", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+  const eventId = c.req.param("id");
+  const messageId = c.req.param("messageId");
+
+  try {
+    const access = await checkChatAccess(sql, eventId, userId);
+    if (!access.allowed) {
+      const status = access.reason === "NOT_FOUND" ? 404 : 403;
+      return c.json({ ok: false, error: access.reason }, status);
+    }
+
+    const deleted = (await sql`
+      UPDATE newchums.event_chat_messages
+      SET deleted_at = NOW()
+      WHERE id = ${messageId} AND event_id = ${eventId}
+        AND user_id = ${userId} AND deleted_at IS NULL
+      RETURNING id
+    `) as { id: string }[];
+    if (deleted.length === 0) {
+      const exists = (await sql`
+        SELECT user_id FROM newchums.event_chat_messages
+        WHERE id = ${messageId} AND event_id = ${eventId} AND deleted_at IS NULL
+      `) as { user_id: string }[];
+      return exists.length === 0
+        ? c.json({ ok: false, error: "NOT_FOUND" }, 404)
+        : c.json({ ok: false, error: "FORBIDDEN", message: "You can only delete your own messages" }, 403);
+    }
+
+    try {
+      const doId = c.env.CHAT_ROOM.idFromName(eventId);
+      const doStub = c.env.CHAT_ROOM.get(doId);
+      c.executionCtx.waitUntil(
+        doStub.fetch(new Request("https://do/broadcast", {
+          method: "POST",
+          body: JSON.stringify({ type: "chat_message_deleted", messageId }),
+        }))
+      );
+    } catch { /* DO broadcast failure should not fail the API response */ }
+
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[DELETE /events/:id/chat/:messageId]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
 app.post("/events/:id/chat/read", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")

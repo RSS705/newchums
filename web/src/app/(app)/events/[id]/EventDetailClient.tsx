@@ -205,6 +205,7 @@ type ChatMessage = {
   id: string;
   body: string;
   createdAt: string;
+  editedAt?: string | null;
   senderId: string;
   senderName: string;
   senderHandle: string | null;
@@ -878,6 +879,64 @@ export default function EventDetailClient({
     }
   }, [eventId]);
 
+  // Own-message edit/delete (Discord-style: author-only, "(edited)" marker,
+  // no notifications; the host has no special powers here).
+  const [chatMenuAnchor, setChatMenuAnchor] = useState<null | HTMLElement>(null);
+  const [chatMenuMessageId, setChatMenuMessageId] = useState<string | null>(null);
+  const [chatEditingId, setChatEditingId] = useState<string | null>(null);
+  const [chatEditDraft, setChatEditDraft] = useState("");
+  const [chatEditSaving, setChatEditSaving] = useState(false);
+  const [chatDeleteId, setChatDeleteId] = useState<string | null>(null);
+  const [chatDeleting, setChatDeleting] = useState(false);
+
+  const saveChatEdit = useCallback(async () => {
+    if (!chatEditingId) return;
+    const draft = chatEditDraft.trim();
+    if (!draft) return;
+    setChatEditSaving(true);
+    try {
+      const res = await apiFetch(`/events/${eventId}/chat/${chatEditingId}`, {
+        method: "PATCH",
+        auth: true,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: draft }),
+      });
+      const data = (await res.json()) as { ok: boolean; message?: ChatMessage; message_text?: string };
+      if (data.ok && data.message) {
+        const updated = data.message;
+        setChatMessages((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
+        setChatEditingId(null);
+        setChatEditDraft("");
+      } else {
+        toast.error("Couldn't save the edit. Please try again.");
+      }
+    } catch {
+      toast.error("Couldn't save the edit. Please try again.");
+    }
+    setChatEditSaving(false);
+  }, [chatEditingId, chatEditDraft, eventId, toast]);
+
+  const confirmChatDelete = useCallback(async () => {
+    if (!chatDeleteId) return;
+    setChatDeleting(true);
+    try {
+      const res = await apiFetch(`/events/${eventId}/chat/${chatDeleteId}`, {
+        method: "DELETE",
+        auth: true,
+      });
+      const data = (await res.json()) as { ok: boolean };
+      if (data.ok) {
+        setChatMessages((prev) => prev.filter((m) => m.id !== chatDeleteId));
+        setChatDeleteId(null);
+      } else {
+        toast.error("Couldn't delete the message. Please try again.");
+      }
+    } catch {
+      toast.error("Couldn't delete the message. Please try again.");
+    }
+    setChatDeleting(false);
+  }, [chatDeleteId, eventId, toast]);
+
   const loadChat = useCallback(async () => {
     try {
       const res = await apiFetch(`/events/${eventId}/chat`, { auth: true });
@@ -953,13 +1012,20 @@ export default function EventDetailClient({
 
         ws.onmessage = (evt) => {
           try {
-            const data = JSON.parse(evt.data) as { type: string; message: ChatMessage };
+            const data = JSON.parse(evt.data) as { type: string; message?: ChatMessage; messageId?: string };
             if (data.type === "chat_message" && data.message) {
+              const incoming = data.message;
               setChatMessages((prev) => {
-                if (prev.some((m) => m.id === data.message.id)) return prev;
-                return [...prev, data.message];
+                if (prev.some((m) => m.id === incoming.id)) return prev;
+                return [...prev, incoming];
               });
               markChatRead();
+            } else if (data.type === "chat_message_updated" && data.message) {
+              const incoming = data.message;
+              setChatMessages((prev) => prev.map((m) => (m.id === incoming.id ? incoming : m)));
+            } else if (data.type === "chat_message_deleted" && data.messageId) {
+              const gone = data.messageId;
+              setChatMessages((prev) => prev.filter((m) => m.id !== gone));
             }
           } catch {
             /* ignore malformed messages */
@@ -2026,7 +2092,15 @@ export default function EventDetailClient({
             {event.description && (
               <>
                 <Divider sx={{ borderColor: "divider", opacity: 0.6 }} />
-                <RichTextContent html={event.description} size="body2" />
+                <Box>
+                  <Typography
+                    variant="overline"
+                    sx={{ color: "text.secondary", fontWeight: 700, letterSpacing: 1, lineHeight: 1, display: "block", mb: 0.75 }}
+                  >
+                    About this plan
+                  </Typography>
+                  <RichTextContent html={event.description} size="body2" />
+                </Box>
               </>
             )}
           </Stack>
@@ -2959,7 +3033,15 @@ export default function EventDetailClient({
           {event.description && (
             <>
               <Divider sx={{ borderColor: "divider", opacity: 0.6 }} />
-              <RichTextContent html={event.description} />
+              <Box>
+                <Typography
+                  variant="overline"
+                  sx={{ color: "text.secondary", fontWeight: 700, letterSpacing: 1, lineHeight: 1, display: "block", mb: 0.75 }}
+                >
+                  About this plan
+                </Typography>
+                <RichTextContent html={event.description} />
+              </Box>
             </>
           )}
         </Stack>
@@ -5533,19 +5615,91 @@ export default function EventDetailClient({
                             >
                               {formatChatTime(msg.createdAt)}
                             </Typography>
+                            {msg.editedAt && (
+                              <Typography
+                                variant="caption"
+                                color="text.disabled"
+                                sx={{ fontSize: "0.6875rem", flexShrink: 0, fontStyle: "italic" }}
+                              >
+                                (edited)
+                              </Typography>
+                            )}
                           </Stack>
-                          <Typography
-                            variant="body2"
-                            sx={{
-                              fontSize: "0.875rem",
-                              lineHeight: 1.5,
-                              whiteSpace: "pre-wrap",
-                              wordBreak: "break-word",
-                            }}
-                          >
-                            {msg.body}
-                          </Typography>
+                          {chatEditingId === msg.id ? (
+                            <Stack spacing={0.75}>
+                              <TextField
+                                fullWidth
+                                size="small"
+                                multiline
+                                maxRows={6}
+                                autoFocus
+                                value={chatEditDraft}
+                                onChange={(e) => setChatEditDraft(e.target.value.slice(0, 2000))}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Escape") {
+                                    setChatEditingId(null);
+                                    setChatEditDraft("");
+                                  } else if (e.key === "Enter" && !e.shiftKey) {
+                                    e.preventDefault();
+                                    void saveChatEdit();
+                                  }
+                                }}
+                              />
+                              <Stack direction="row" spacing={1}>
+                                <Button
+                                  size="small"
+                                  variant="contained"
+                                  onClick={() => void saveChatEdit()}
+                                  disabled={chatEditSaving || !chatEditDraft.trim()}
+                                  sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, boxShadow: "none", "&:hover": { boxShadow: "none" } }}
+                                >
+                                  {chatEditSaving ? "Saving…" : "Save"}
+                                </Button>
+                                <Button
+                                  size="small"
+                                  variant="text"
+                                  color="inherit"
+                                  onClick={() => {
+                                    setChatEditingId(null);
+                                    setChatEditDraft("");
+                                  }}
+                                  sx={{ textTransform: "none", fontWeight: 600, color: "text.secondary" }}
+                                >
+                                  Cancel
+                                </Button>
+                              </Stack>
+                            </Stack>
+                          ) : (
+                            <Typography
+                              variant="body2"
+                              sx={{
+                                fontSize: "0.875rem",
+                                lineHeight: 1.5,
+                                whiteSpace: "pre-wrap",
+                                wordBreak: "break-word",
+                              }}
+                            >
+                              {msg.body}
+                            </Typography>
+                          )}
                         </Box>
+                        {/* Own messages only; the host gets no controls over
+                            other people's messages, by design. Always
+                            visible rather than hover-revealed, because
+                            hover doesn't exist on touch screens. */}
+                        {viewerUserId === msg.senderId && chatEditingId !== msg.id && (
+                          <IconButton
+                            size="small"
+                            aria-label="Message options"
+                            onClick={(e) => {
+                              setChatMenuAnchor(e.currentTarget);
+                              setChatMenuMessageId(msg.id);
+                            }}
+                            sx={{ alignSelf: "flex-start", mt: 0.5, color: "text.disabled", flexShrink: 0 }}
+                          >
+                            <MoreVertRoundedIcon sx={{ fontSize: 16 }} />
+                          </IconButton>
+                        )}
                       </Stack>
                     </Box>
                   );
@@ -6051,6 +6205,72 @@ export default function EventDetailClient({
               : rsvpDialogStatus === "maybe"
                 ? "Maybe"
                 : "Can't make it"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Own-chat-message actions */}
+      <Menu
+        anchorEl={chatMenuAnchor}
+        open={Boolean(chatMenuAnchor)}
+        onClose={() => {
+          setChatMenuAnchor(null);
+          setChatMenuMessageId(null);
+        }}
+      >
+        {!isChatLocked && (
+          <MenuItem
+            onClick={() => {
+              const msg = chatMessages.find((m) => m.id === chatMenuMessageId);
+              if (msg) {
+                setChatEditingId(msg.id);
+                setChatEditDraft(msg.body);
+              }
+              setChatMenuAnchor(null);
+              setChatMenuMessageId(null);
+            }}
+          >
+            <EditRoundedIcon sx={{ fontSize: 18, mr: 1.25, color: "text.secondary" }} />
+            Edit message
+          </MenuItem>
+        )}
+        <MenuItem
+          onClick={() => {
+            setChatDeleteId(chatMenuMessageId);
+            setChatMenuAnchor(null);
+            setChatMenuMessageId(null);
+          }}
+          sx={{ color: "error.main" }}
+        >
+          <DeleteOutlineRoundedIcon sx={{ fontSize: 18, mr: 1.25 }} />
+          Delete message
+        </MenuItem>
+      </Menu>
+
+      <Dialog open={Boolean(chatDeleteId)} onClose={() => !chatDeleting && setChatDeleteId(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Delete this message?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            It will be removed from the chat for everyone. This can&apos;t be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            color="inherit"
+            onClick={() => setChatDeleteId(null)}
+            disabled={chatDeleting}
+            sx={{ textTransform: "none", fontWeight: 600 }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={() => void confirmChatDelete()}
+            disabled={chatDeleting}
+            sx={{ textTransform: "none", fontWeight: 600, boxShadow: "none", "&:hover": { boxShadow: "none" } }}
+          >
+            {chatDeleting ? "Deleting…" : "Delete"}
           </Button>
         </DialogActions>
       </Dialog>
