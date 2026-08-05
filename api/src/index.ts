@@ -53,7 +53,6 @@ import {
   sendSigninLinkEmail,
 } from "./email/send";
 import { ResendHttpError } from "./email/resend";
-import { buildPlanIcs, icsToBase64 } from "./lib/ics";
 import { canAccessInternalTestRoute, notFound } from "./internalAccess";
 import { nameToSlug, slugToName, validateInterestName } from "./interests";
 import { ensureAppUserId } from "./profile";
@@ -11887,19 +11886,6 @@ app.post("/events", async (c) => {
         online_link: onlineLink,
       };
       const inviteEmailLocation = buildEmailEventLocation(invitePlanForLoc, "not_joined");
-      // Calendar entry for the invite email, carrying the same not_joined
-      // location string: what the page would show an invitee is what their
-      // calendar gets, nothing more.
-      const inviteIcsAttachment = {
-        filename: "plan.ics",
-        content: icsToBase64(buildPlanIcs({
-          planId: eventId,
-          title,
-          startsAt: startsDate,
-          location: inviteEmailLocation || null,
-          planUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
-        })),
-      };
 
       for (const inv of invitees.slice(0, 50)) {
         let invUserId = inv.user_id ? String(inv.user_id) : null;
@@ -11961,7 +11947,6 @@ app.post("/events", async (c) => {
                     eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
                     inviteToken: iToken,
                     unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
-                    attachments: [inviteIcsAttachment],
                   });
                 } catch { /* noop if template missing */ }
               }
@@ -11978,7 +11963,6 @@ app.post("/events", async (c) => {
                 eventLocation: inviteEmailLocation,
                 eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
                 inviteToken: iToken,
-                attachments: [inviteIcsAttachment],
               });
             } catch { /* noop if template missing */ }
           }
@@ -15069,18 +15053,6 @@ app.post("/events/:id/invite", async (c) => {
     // the inviter is the host or a Going attendee; the recipient's role
     // is what matters.
     const inviteLocationDisplay = buildEmailEventLocation(ev[0], "not_joined");
-    // Same rule as creation-time invites: the calendar entry carries only the
-    // not_joined location string.
-    const postInviteIcs = {
-      filename: "plan.ics",
-      content: icsToBase64(buildPlanIcs({
-        planId: eventId,
-        title: ev[0].title,
-        startsAt: ev[0].starts_at,
-        location: inviteLocationDisplay || null,
-        planUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
-      })),
-    };
 
     const invitees = Array.isArray(body.invitees) ? (body.invitees as Array<{ user_id?: string; email?: string }>) : [];
     const customMessage = typeof body.message === "string" ? body.message.slice(0, 500).trim() : "";
@@ -15238,7 +15210,6 @@ app.post("/events/:id/invite", async (c) => {
                   unsubscribeUrl: `${c.env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
                   suggestTimeNote,
                   customMessage,
-                  attachments: [postInviteIcs],
                 });
               } catch { /* noop */ }
             }
@@ -15257,7 +15228,6 @@ app.post("/events/:id/invite", async (c) => {
               inviteToken: iToken,
               suggestTimeNote,
               customMessage,
-              attachments: [postInviteIcs],
               });
           } catch { /* noop */ }
         }
@@ -19554,18 +19524,6 @@ async function processEmailOutbox(
           planUrl: `${env.WEB_BASE_URL}/events/${row.event_id}`,
           unsubscribeUrl,
           idempotencyKey,
-          // The reminder is the day-before touch, so it carries the calendar
-          // entry too, with the recipient's own permission-filtered location.
-          attachments: [{
-            filename: "plan.ics",
-            content: icsToBase64(buildPlanIcs({
-              planId: row.event_id,
-              title: row.title,
-              startsAt: row.starts_at,
-              location: reminderLocation || null,
-              planUrl: `${env.WEB_BASE_URL}/events/${row.event_id}`,
-            })),
-          }],
         });
       } else if (row.kind === "run_it_again") {
         await sendRunItAgainEmail(env, {

@@ -63,7 +63,6 @@ import PersonAddRoundedIcon from "@mui/icons-material/PersonAddRounded";
 import PersonRemoveRoundedIcon from "@mui/icons-material/PersonRemoveRounded";
 import BookmarkAddRoundedIcon from "@mui/icons-material/BookmarkAddRounded";
 import BookmarkRemoveRoundedIcon from "@mui/icons-material/BookmarkRemoveRounded";
-import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
 import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
 import CancelRoundedIcon from "@mui/icons-material/CancelRounded";
 import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
@@ -96,7 +95,6 @@ import AvailabilityPicker, {
   type AvailabilitySelection,
 } from "@/components/events/AvailabilityPicker";
 import { createEventHref } from "@/config/nav";
-import { downloadPlanIcs } from "@/lib/planIcs";
 
 /** Meeting URLs pasted without a scheme should still open in the browser. */
 function normalizeMeetingLinkHref(raw: string): string {
@@ -2790,41 +2788,6 @@ export default function EventDetailClient({
               sx={{ minWidth: 0, flex: 1 }}
             >
               <Typography variant="body1" fontWeight={500}>{formatDateTime(event.startsAt)}</Typography>
-              {/* One-tap calendar entry. Hidden once the plan is over or
-                  cancelled: a stale entry is worse than none. The entry uses
-                  locationDisplay, the same viewer-filtered string this page
-                  renders, so an approximate-location plan never puts an
-                  exact address in someone's calendar. */}
-              {!isCanceled && !isPast && (
-                <Button
-                  size="small"
-                  variant="text"
-                  startIcon={<CalendarMonthRoundedIcon sx={{ fontSize: 16 }} />}
-                  onClick={() =>
-                    downloadPlanIcs({
-                      planId: event.id,
-                      title: event.title,
-                      startsAt: event.startsAt,
-                      location: locationDisplay || null,
-                      planUrl: `${window.location.origin}/events/${event.id}`,
-                    })
-                  }
-                  sx={{
-                    textTransform: "none",
-                    fontWeight: 600,
-                    fontSize: "0.8125rem",
-                    color: "primary.dark",
-                    px: 0.75,
-                    py: 0.25,
-                    minHeight: 0,
-                    minWidth: 0,
-                    "& .MuiButton-startIcon": { mr: 0.5 },
-                    "&:hover": { bgcolor: "rgba(230, 91, 19, 0.06)" },
-                  }}
-                >
-                  Add to calendar
-                </Button>
-              )}
             </Stack>
           </Stack>
           <Stack direction="row" spacing={1.5} alignItems="flex-start">
@@ -2905,9 +2868,12 @@ export default function EventDetailClient({
             <Stack direction="row" spacing={1.5} alignItems="flex-start">
               <NotificationsRoundedIcon sx={{ color: "text.secondary", fontSize: 22, mt: "1px" }} />
               <Stack spacing={0.25}>
-                <Typography variant="body2" color="text.secondary">
-                  24-hour attendance check is enabled for this plan
-                </Typography>
+                <Stack direction="row" alignItems="center" spacing={0.25}>
+                  <Typography variant="body2" color="text.secondary">
+                    24-hour attendance check is enabled for this plan
+                  </Typography>
+                  <HelpTooltip title="About 24 hours before the start time, everyone who marked Going gets an email asking to confirm they're still coming. Confirmations show on this page, so the whole group can see the plan is solid." />
+                </Stack>
                 {event.fallbackPolicy === "auto_cancel" && event.minConfirmedAttendees && (
                   <Typography variant="caption" color="text.secondary">
                     This plan will be auto-canceled 2 hours before it starts if fewer than{" "}
@@ -3797,6 +3763,745 @@ export default function EventDetailClient({
           </AppCard>
         )}
 
+      {/* Scheduling section, collaborative alternate scheduling (hidden for past plans) */}
+      {event.allowAltTimes &&
+        !isCanceled &&
+        !isPast &&
+        (() => {
+          // Anyone who's part of this plan can both share availability and
+          // see what others have shared: the host, anyone with any RSVP state
+          // (going / maybe / cant_make_it), and anyone who's been invited.
+          // Keeping these aligned avoids edge cases where a viewer can submit
+          // an entry but then lose the ability to edit or delete it just by
+          // changing their RSVP.
+          const canSuggest =
+            event.isHost || !!viewerRsvpStatus || event.isInvited;
+          const isAvailMode = event.altTimesMode === "availability";
+          // Token-backed visitors (share / invite link) get visibility too:
+          // a share link implies a trusted recipient, even when there's no
+          // RSVP or invite row yet.
+          const arrivedViaToken =
+            !!inviteTokenRef.current || !!shareTokenRef.current;
+          const canSeeSharedEntries = canSuggest || arrivedViaToken;
+          type OverlapWindow = { startMs: number; endMs: number; entries: AltTimeEntry[] };
+
+          const fmtTime = (d: Date) =>
+            d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", hour12: true });
+
+          // "Start anytime" entries are submitted as a ~24h window (local
+          // midnight to next-day local midnight in the submitter's timezone).
+          // Detect by duration alone so viewers in a different timezone still
+          // see "Anytime", not "4:00 AM - 4:00 AM".
+          const isAnytimeWindow = (startMs: number, endMs: number | null): boolean => {
+            if (endMs == null) return false;
+            return endMs - startMs >= 23 * 3600 * 1000;
+          };
+          const formatEntryWindow = (
+            suggestedAt: string,
+            endsAt: string | null
+          ): string => {
+            const startMs = new Date(suggestedAt).getTime();
+            const endMs = endsAt ? new Date(endsAt).getTime() : null;
+            if (isAnytimeWindow(startMs, endMs)) return "Start anytime";
+            const startLabel = fmtTime(new Date(startMs));
+            return endMs != null ? `${startLabel} - ${fmtTime(new Date(endMs))}` : startLabel;
+          };
+
+          const viewerHasSuggested = viewerUserId
+            ? altTimes.some((e) => e.userId === viewerUserId)
+            : false;
+
+          const byDay = altTimes.reduce<Record<string, AltTimeEntry[]>>((acc, entry) => {
+            const dayKey = new Date(entry.suggestedAt).toDateString();
+            if (!acc[dayKey]) acc[dayKey] = [];
+            acc[dayKey].push(entry);
+            return acc;
+          }, {});
+
+          function computeOverlaps(entries: AltTimeEntry[]): OverlapWindow[] {
+            if (entries.length < 2) return [];
+
+            const ranged = entries.filter((e) => e.endsAt);
+            const pointEntries = entries.filter((e) => !e.endsAt);
+
+            const entryById = new Map(entries.map((e) => [e.id, e]));
+            const intervals = ranged.map((e) => ({
+              id: e.id,
+              s: new Date(e.suggestedAt).getTime(),
+              e: new Date(e.endsAt!).getTime(),
+            }));
+
+            // Include point times as boundaries so a point falling inside a ranged
+            // window creates its own segment start, enabling overlap detection.
+            const boundaries = new Set<number>();
+            for (const iv of intervals) {
+              boundaries.add(iv.s);
+              boundaries.add(iv.e);
+            }
+            for (const pt of pointEntries) {
+              boundaries.add(new Date(pt.suggestedAt).getTime());
+            }
+            const sorted = [...boundaries].sort((a, b) => a - b);
+
+            const raw: OverlapWindow[] = [];
+
+            for (let i = 0; i < sorted.length - 1; i++) {
+              const segStart = sorted[i];
+              const segEnd = sorted[i + 1];
+              const active = intervals.filter((iv) => iv.s <= segStart && iv.e >= segEnd);
+              const entrySet = new Set(active.map((iv) => iv.id));
+              for (const pt of pointEntries) {
+                const ptMs = new Date(pt.suggestedAt).getTime();
+                if (ptMs >= segStart && ptMs < segEnd) entrySet.add(pt.id);
+              }
+              // Need at least 2 distinct people for a meaningful overlap
+              if (entrySet.size < 2) continue;
+              raw.push({
+                startMs: segStart,
+                endMs: segEnd,
+                entries: [...entrySet].map((id) => entryById.get(id)!).filter(Boolean),
+              });
+            }
+
+            // Catch groups of point entries that share an exact timestamp.
+            // The segment loop above only runs when there are 2+ distinct
+            // boundaries, so a day whose only entries are points all at the
+            // same minute would otherwise produce no overlap. Emit a
+            // zero-width window for each such group, unless the group is
+            // already represented by a segment-based overlap (e.g. when a
+            // ranged interval covers the same timestamp).
+            const pointBuckets = new Map<number, AltTimeEntry[]>();
+            for (const pt of pointEntries) {
+              const ts = new Date(pt.suggestedAt).getTime();
+              const bucket = pointBuckets.get(ts);
+              if (bucket) bucket.push(pt);
+              else pointBuckets.set(ts, [pt]);
+            }
+            for (const [ts, bucket] of pointBuckets) {
+              if (bucket.length < 2) continue;
+              const alreadyCovered = raw.some(
+                (w) =>
+                  ts >= w.startMs &&
+                  ts < w.endMs &&
+                  bucket.every((pt) => w.entries.some((e) => e.id === pt.id))
+              );
+              if (alreadyCovered) continue;
+              raw.push({ startMs: ts, endMs: ts, entries: [...bucket] });
+            }
+            raw.sort((a, b) => a.startMs - b.startMs);
+
+            const merged: OverlapWindow[] = [];
+            for (const w of raw) {
+              const prev = merged[merged.length - 1];
+              if (
+                prev &&
+                prev.endMs === w.startMs &&
+                prev.entries.length === w.entries.length &&
+                prev.entries.every((e) => w.entries.some((we) => we.id === e.id))
+              ) {
+                prev.endMs = w.endMs;
+              } else {
+                merged.push({ ...w });
+              }
+            }
+
+            merged.sort((a, b) => b.entries.length - a.entries.length || a.startMs - b.startMs);
+            return merged;
+          }
+
+          const dayGroups = Object.entries(byDay)
+            .map(([dayKey, entries]) => {
+              const overlaps = computeOverlaps(entries);
+              entries.sort(
+                (a, b) => new Date(a.suggestedAt).getTime() - new Date(b.suggestedAt).getTime()
+              );
+              return { dayKey, date: new Date(entries[0].suggestedAt), entries, overlaps };
+            })
+            .sort((a, b) => a.date.getTime() - b.date.getTime());
+
+          const allOverlaps = dayGroups
+            .flatMap((dg) => dg.overlaps.map((ov) => ({ ...ov, date: dg.date })))
+            .sort((a, b) => b.entries.length - a.entries.length || a.startMs - b.startMs);
+          const globalBestOverlapCount = allOverlaps.length > 0 ? allOverlaps[0].entries.length : 0;
+          const fmtDay = (d: Date) =>
+            d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+
+          // --- Group response summary ---
+          // Derive who has responded: collect unique user IDs from altTimes.
+          const respondedUserIds = new Set(altTimes.filter((e) => e.userId).map((e) => e.userId));
+          // Participants = going + maybe RSVPs (the people who should respond)
+          const participants = rsvps.filter((r) => r.status === "going" || r.status === "maybe");
+          const respondedParticipants = participants.filter((p) => respondedUserIds.has(p.userId));
+          const pendingParticipants = participants.filter((p) => !respondedUserIds.has(p.userId));
+
+          // Suppress the response summary when the viewer is the only person
+          // it would describe. Otherwise we'd render "Responses (0/1)" with
+          // their own dashed chip, which reads as self-talk.
+          const onlyViewerInParticipants =
+            participants.length === 1 &&
+            !!viewerUserId &&
+            participants[0].userId === viewerUserId;
+          const showResponseSummary =
+            isAvailMode &&
+            canSeeSharedEntries &&
+            participants.length > 0 &&
+            !onlyViewerInParticipants;
+          // The shared list is strictly a "what's been shared" view; the
+          // response summary lives with the action content above so non-empty
+          // status doesn't masquerade as shared content. It renders inside
+          // the same card as the action, under a divider: when someone
+          // submits a suggestion, it should land visibly below the form they
+          // just used, not in a separate container that reads as unrelated.
+          const sharedCardHasContent =
+            canSeeSharedEntries && (allOverlaps.length > 0 || dayGroups.length > 0);
+          const sharedCardTitle = isAvailMode ? "Shared availability" : "Suggested alternative times";
+          const declined = viewerRsvpStatus === "cant_make_it";
+          // Helper-text bottom margin: zero when nothing will render below
+          // it, lighter in availability mode (status info comes next), heavier
+          // in suggest mode (picker comes next).
+          const helperMb = !canSuggest ? 0 : isAvailMode ? 1.5 : 2;
+
+          return (
+            <AppCard id="plan-section-availability" sx={{ scrollMarginTop: SECTION_SCROLL_MARGIN }}>
+              <Typography
+                variant="h5"
+                fontWeight={700}
+                sx={{ mb: 0.5, fontSize: { xs: "1.25rem", sm: "1.375rem" } }}
+              >
+                {isAvailMode ? "Share your availability" : "Suggest a different time"}
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: helperMb }}>
+                {isAvailMode
+                  ? canSuggest
+                    ? viewerHasSuggested
+                      ? event.availabilityDeadlineAt
+                        ? `You've shared your availability. You can still add or edit times until ${new Date(
+                            event.availabilityDeadlineAt
+                          ).toLocaleString(undefined, {
+                            weekday: "short",
+                            month: "short",
+                            day: "numeric",
+                            hour: "numeric",
+                            minute: "2-digit",
+                          })}.`
+                        : "You've shared your availability. You can still add or edit times whenever you like."
+                      : declined
+                        ? "The host wants to find a time that works for everyone. Pick one or more days below that could work for you instead."
+                        : "The host wants to find a time that works for everyone. Confirm the proposed time, or pick one or more days below that could work for you."
+                    : "The host wants to find a start time that works for everyone. Join to share which days work for you."
+                  : canSuggest
+                    ? "The host is open to other start times for this plan. Pick one or more days below."
+                    : "The host is open to other start times for this plan. Join to suggest days that could work for you."}
+              </Typography>
+
+              {/* --- Group response summary (availability mode, Going+token viewers only) --- */}
+              {showResponseSummary && (
+                <Box sx={{ mb: 2 }}>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{
+                      mb: 0.5,
+                      display: "block",
+                      fontSize: "0.75rem",
+                      fontWeight: viewerHasSuggested ? 500 : 600,
+                      opacity: viewerHasSuggested ? 0.75 : 1,
+                    }}
+                  >
+                    Responses ({respondedParticipants.length}/{participants.length})
+                  </Typography>
+                  <Stack direction="row" sx={{ flexWrap: "wrap", gap: 0.5 }}>
+                    {respondedParticipants.map((p) => (
+                      <Chip
+                        key={p.userId}
+                        label={p.name.split(" ")[0]}
+                        size="small"
+                        icon={<CheckCircleRoundedIcon sx={{ fontSize: "0.875rem !important" }} />}
+                        color="success"
+                        variant="outlined"
+                        sx={{ height: 24, fontSize: "0.75rem" }}
+                      />
+                    ))}
+                    {pendingParticipants.map((p) => (
+                      <Chip
+                        key={p.userId}
+                        label={p.name.split(" ")[0]}
+                        size="small"
+                        variant="outlined"
+                        sx={{ height: 24, fontSize: "0.75rem", opacity: 0.5, borderStyle: "dashed" }}
+                      />
+                    ))}
+                  </Stack>
+                </Box>
+              )}
+
+              {isAvailMode && canSuggest && !viewerHasSuggested && event.availabilityDeadlineAt && (
+                <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mb: 1.5 }}>
+                  <AccessTimeRoundedIcon sx={{ fontSize: 16, color: "warning.main" }} />
+                  <Typography
+                    variant="body2"
+                    sx={{ color: "warning.dark", fontSize: "0.8125rem" }}
+                  >
+                    Please share your availability by{" "}
+                    <strong>
+                      {new Date(event.availabilityDeadlineAt).toLocaleString(undefined, {
+                        weekday: "short",
+                        month: "short",
+                        day: "numeric",
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })}
+                    </strong>
+                  </Typography>
+                </Stack>
+              )}
+
+              {/* --- Quick confirm: only when the listed time is still a real
+                   option for the viewer. Hidden for declined viewers, who
+                   shouldn't be nudged to confirm a time they already turned
+                   down. --- */}
+              {isAvailMode && canSuggest && !viewerHasSuggested && !declined && (
+                <Box
+                  sx={{
+                    mb: 2,
+                    pl: 2,
+                    borderLeft: "3px solid",
+                    borderColor: "warning.main",
+                  }}
+                >
+                  <Stack spacing={1}>
+                    <Stack direction="row" alignItems="center" spacing={1}>
+                      <Box
+                        sx={{
+                          width: 18,
+                          height: 18,
+                          borderRadius: "50%",
+                          border: "2px solid",
+                          borderColor: "warning.main",
+                          flexShrink: 0,
+                        }}
+                      />
+                      <Typography variant="body2" fontWeight={600}>
+                        {"You haven't responded yet"}
+                      </Typography>
+                    </Stack>
+                    <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap" }}>
+                      <Button
+                        variant="contained"
+                        size="small"
+                        color="success"
+                        disabled={quickConfirming}
+                        onClick={handleQuickConfirm}
+                        startIcon={<CheckCircleRoundedIcon sx={{ fontSize: 16 }} />}
+                        sx={{ textTransform: "none", fontWeight: 600 }}
+                      >
+                        {quickConfirming ? "Saving..." : "This time works for me"}
+                      </Button>
+                    </Stack>
+                  </Stack>
+                </Box>
+              )}
+
+              {/* --- Inline edit form for an existing entry --- */}
+              {altEditingId && (
+                  <Paper
+                    ref={altEditFormRef}
+                    variant="outlined"
+                    sx={{
+                      p: 2,
+                      mb: 1.5,
+                      borderRadius: 2,
+                      borderColor: "primary.light",
+                      // Sit below any fixed app-shell header when scrolled
+                      // into view via scrollIntoView({ block: "start" }).
+                      scrollMarginTop: SECTION_SCROLL_MARGIN,
+                    }}
+                  >
+                    <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1.25 }}>
+                      {isAvailMode ? "Edit your availability" : "Edit your suggested time"}
+                    </Typography>
+                    <Stack spacing={1.5}>
+                      <Box>
+                        <Typography
+                          variant="subtitle1"
+                          fontWeight={600}
+                          sx={{ display: "block", mb: 0.625 }}
+                        >
+                          Date
+                        </Typography>
+                        <DatePicker
+                          value={altEditDate}
+                          onChange={setAltEditDate}
+                          minDate={dayjs().startOf("day")}
+                          slotProps={{
+                            textField: {
+                              fullWidth: true,
+                              size: "small",
+                              placeholder: "Pick a date",
+                              onKeyDown: pickerFieldTabKeyDown,
+                            },
+                          }}
+                        />
+                      </Box>
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={altEditAnytime}
+                            onChange={(e) => {
+                              const v = e.target.checked;
+                              setAltEditAnytime(v);
+                              if (v) {
+                                setAltEditStartTime(null);
+                                setAltEditEndTime(null);
+                              }
+                            }}
+                          />
+                        }
+                        label="Start anytime"
+                      />
+                      {!altEditAnytime && (
+                        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                          <Box sx={{ flex: 1 }}>
+                            <Typography
+                              variant="subtitle1"
+                              fontWeight={600}
+                              sx={{ display: "block", mb: 0.625 }}
+                            >
+                              Earliest start
+                            </Typography>
+                            <TimePicker
+                              value={altEditStartTime}
+                              onChange={setAltEditStartTime}
+                              format="h:mm A"
+                              enableAccessibleFieldDOMStructure={false}
+                              slotProps={{
+                                field: {
+                                  shouldRespectLeadingZeros: true,
+                                } as Record<string, unknown>,
+                                textField: {
+                                  fullWidth: true,
+                                  size: "small",
+                                  placeholder: "Earliest start",
+                                },
+                              }}
+                            />
+                          </Box>
+                          <Box sx={{ flex: 1 }}>
+                            <Typography
+                              variant="subtitle1"
+                              fontWeight={600}
+                              sx={{ display: "block", mb: 0.625 }}
+                            >
+                              Latest start
+                            </Typography>
+                            <TimePicker
+                              value={altEditEndTime}
+                              onChange={setAltEditEndTime}
+                              format="h:mm A"
+                              enableAccessibleFieldDOMStructure={false}
+                              slotProps={{
+                                field: {
+                                  shouldRespectLeadingZeros: true,
+                                } as Record<string, unknown>,
+                                textField: {
+                                  fullWidth: true,
+                                  size: "small",
+                                  placeholder: "Latest start",
+                                },
+                              }}
+                            />
+                          </Box>
+                        </Stack>
+                      )}
+                      <Stack direction="row" spacing={1}>
+                        <AppButton
+                          size="small"
+                          onClick={handleAltEditSave}
+                          disabled={altSubmitting}
+                        >
+                          {altSubmitting ? "Saving..." : "Save"}
+                        </AppButton>
+                        <Button
+                          size="small"
+                          onClick={resetAltEditForm}
+                          sx={{ textTransform: "none" }}
+                        >
+                          Cancel
+                        </Button>
+                      </Stack>
+                    </Stack>
+                  </Paper>
+                )}
+
+                {/* --- Multi-date availability picker (always visible to permitted viewers) --- */}
+                {!altEditingId && canSuggest && (
+                  <AvailabilityPicker
+                      mode={isAvailMode ? "availability" : "suggest"}
+                      planStartsAt={event.startsAt}
+                      existingDayKeys={
+                        new Set(
+                          altTimes
+                            .filter((e) => e.userId === viewerUserId)
+                            .map((e) => {
+                              const d = new Date(e.suggestedAt);
+                              return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
+                                2,
+                                "0"
+                              )}-${String(d.getDate()).padStart(2, "0")}`;
+                            })
+                        )
+                      }
+                      submitting={altSubmitting}
+                      onSubmit={handleAvailabilityShare}
+                    />
+                )}
+
+
+            {/* What's been shared so far. Hidden entirely when there is
+                nothing to display, so non-Going viewers (and viewers in a
+                fresh plan with no submissions) don't see an empty tail. */}
+            {sharedCardHasContent && (
+              <>
+                <Divider sx={{ mt: 3, mb: 2.5 }} />
+                <Typography
+                  variant="h6"
+                  fontWeight={700}
+                  sx={{ mb: 1.5, fontSize: { xs: "1.0625rem", sm: "1.125rem" } }}
+                >
+                  {sharedCardTitle}
+                </Typography>
+
+                {/* Best overlap */}
+                {allOverlaps.length > 0 && (
+                  <Paper
+                    variant="outlined"
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      mb: 1.5,
+                      borderColor: "primary.main",
+                      backgroundColor: "action.hover",
+                    }}
+                  >
+                    <Typography
+                      variant="subtitle2"
+                      fontWeight={700}
+                      sx={{ mb: 1, color: "primary.main" }}
+                    >
+                      {isAvailMode ? "Best overlap" : "Best start times"}
+                    </Typography>
+                    <Stack spacing={0} divider={<Divider />}>
+                      {allOverlaps.map((ov, oi) => {
+                        const allRanged = ov.entries.every((e) => !!e.endsAt);
+                        const overlapIsAnytime = isAnytimeWindow(
+                          ov.startMs,
+                          allRanged ? ov.endMs : null
+                        );
+                        const ovStart = fmtTime(new Date(ov.startMs));
+                        const ovEnd = allRanged ? fmtTime(new Date(ov.endMs)) : null;
+                        const isBest =
+                          ov.entries.length === globalBestOverlapCount &&
+                          globalBestOverlapCount > 1;
+                        return (
+                          <Stack
+                            key={`ov-${oi}`}
+                            direction="row"
+                            alignItems="center"
+                            justifyContent="space-between"
+                            sx={{ py: 1 }}
+                          >
+                            <Box sx={{ minWidth: 0 }}>
+                              <Stack
+                                direction="row"
+                                alignItems="center"
+                                spacing={0.75}
+                                sx={{ flexWrap: "wrap" }}
+                              >
+                                <Typography variant="body2" fontWeight={600} color="primary.main">
+                                  {fmtDay(ov.date)},{" "}
+                                  {overlapIsAnytime
+                                    ? "anytime"
+                                    : ovEnd
+                                      ? `${ovStart} - ${ovEnd}`
+                                      : ovStart}
+                                </Typography>
+                                <Chip
+                                  label={`${ov.entries.length} overlap${isBest ? " -- best fit" : ""}`}
+                                  size="small"
+                                  color={isBest ? "primary" : "default"}
+                                  variant={isBest ? "filled" : "outlined"}
+                                  sx={{ height: 22, fontSize: "0.75rem", fontWeight: 600 }}
+                                />
+                              </Stack>
+                              <Typography variant="caption" color="text.secondary">
+                                {ov.entries.map((e) => e.name).join(", ")}
+                              </Typography>
+                            </Box>
+                            {event.isHost && (
+                              <Tooltip title="Make official time" arrow>
+                                <IconButton
+                                  size="small"
+                                  onClick={() =>
+                                    setPromoteConfirmTime(new Date(ov.startMs).toISOString())
+                                  }
+                                  aria-label="Make official time"
+                                >
+                                  <AccessTimeRoundedIcon sx={{ fontSize: 16 }} />
+                                </IconButton>
+                              </Tooltip>
+                            )}
+                          </Stack>
+                        );
+                      })}
+                    </Stack>
+                  </Paper>
+                )}
+
+                {/* Day-grouped entries */}
+                {dayGroups.length > 0 && (
+                  <Stack spacing={1.5}>
+                    {dayGroups.map((dg) => {
+                      const dayLabel = dg.date.toLocaleDateString(undefined, {
+                        weekday: "long",
+                        month: "short",
+                        day: "numeric",
+                      });
+
+                      return (
+                        <Paper key={dg.dayKey} variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+                          <Typography
+                            variant="subtitle2"
+                            fontWeight={700}
+                            sx={{ mb: 1, color: "text.primary" }}
+                          >
+                            {dayLabel}
+                          </Typography>
+
+                          <Stack spacing={0} divider={<Divider />}>
+                            {dg.entries.map((entry) => {
+                              const isOwn = entry.userId === viewerUserId;
+                              const entryWindow = formatEntryWindow(
+                                entry.suggestedAt,
+                                entry.endsAt
+                              );
+                              return (
+                                <Stack
+                                  key={entry.id}
+                                  direction="row"
+                                  alignItems="center"
+                                  justifyContent="space-between"
+                                  sx={{ py: 0.75 }}
+                                >
+                                  <Box sx={{ minWidth: 0 }}>
+                                    <Stack
+                                      direction="row"
+                                      alignItems="center"
+                                      spacing={0.5}
+                                      sx={{ flexWrap: "wrap" }}
+                                    >
+                                      <Typography variant="body2" color="text.primary">
+                                        {entryWindow}
+                                      </Typography>
+                                      <Typography variant="body2" color="text.disabled">
+                                        &middot;
+                                      </Typography>
+                                      <Typography variant="body2" color="text.secondary" noWrap>
+                                        {entry.handle ? (
+                                          <Link
+                                            href={`/u/${entry.handle.replace(/^@/, "")}`}
+                                            style={{ color: "inherit", textDecoration: "none" }}
+                                          >
+                                            {entry.name}
+                                          </Link>
+                                        ) : (
+                                          entry.name
+                                        )}
+                                      </Typography>
+                                    </Stack>
+                                  </Box>
+                                  <Stack direction="row" spacing={0} sx={{ flexShrink: 0 }}>
+                                    {event.isHost && (
+                                      <Tooltip title="Make official time" arrow>
+                                        <IconButton
+                                          size="small"
+                                          onClick={() => setPromoteConfirmTime(entry.suggestedAt)}
+                                          aria-label="Make official time"
+                                        >
+                                          <AccessTimeRoundedIcon
+                                            sx={{ fontSize: 16, color: "text.disabled" }}
+                                          />
+                                        </IconButton>
+                                      </Tooltip>
+                                    )}
+                                    {isOwn && (
+                                      <IconButton
+                                        size="small"
+                                        onClick={() => handleAltTimeEdit(entry)}
+                                        aria-label="Edit"
+                                      >
+                                        <EditRoundedIcon
+                                          sx={{ fontSize: 16, color: "text.disabled" }}
+                                        />
+                                      </IconButton>
+                                    )}
+                                    {(isOwn || event.isHost) && (
+                                      <IconButton
+                                        size="small"
+                                        onClick={() => handleAltTimeDelete(entry.id)}
+                                        disabled={altDeleting === entry.id}
+                                        aria-label="Remove"
+                                      >
+                                        <DeleteOutlineRoundedIcon
+                                          sx={{ fontSize: 16, color: "text.disabled" }}
+                                        />
+                                      </IconButton>
+                                    )}
+                                  </Stack>
+                                </Stack>
+                              );
+                            })}
+                          </Stack>
+                        </Paper>
+                      );
+                    })}
+                  </Stack>
+                )}
+              </>
+            )}
+            </AppCard>
+          );
+        })()}
+
+      {/* Promote confirmation dialog */}
+      <Dialog
+        open={!!promoteConfirmTime}
+        onClose={() => setPromoteConfirmTime(null)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 700 }}>Update official plan time?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            This will change the official plan time to{" "}
+            <strong>{promoteConfirmTime ? formatDateTime(promoteConfirmTime) : ""}</strong>. Going
+            and Maybe attendees will be notified.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: { xs: 2, sm: 3 }, pb: { xs: 2, sm: 2.5 }, gap: 1 }}>
+          <Button
+            variant="text"
+            color="inherit"
+            onClick={() => setPromoteConfirmTime(null)}
+            disabled={promoting}
+          >
+            Cancel
+          </Button>
+          <Button variant="contained" onClick={handlePromoteAltTime} disabled={promoting}>
+            {promoting ? "Updating…" : "Update plan time"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* Invite people (host or Going attendees when allowed, not canceled, not past) */}
       {(event.isHost || (viewerRsvpStatus === "going" && event.allowAttendeeInvites)) &&
         !isCanceled &&
@@ -4311,743 +5016,6 @@ export default function EventDetailClient({
           </Stack>
         </AppCard>
       )}
-
-      {/* Scheduling section, collaborative alternate scheduling (hidden for past plans) */}
-      {event.allowAltTimes &&
-        !isCanceled &&
-        !isPast &&
-        (() => {
-          // Anyone who's part of this plan can both share availability and
-          // see what others have shared: the host, anyone with any RSVP state
-          // (going / maybe / cant_make_it), and anyone who's been invited.
-          // Keeping these aligned avoids edge cases where a viewer can submit
-          // an entry but then lose the ability to edit or delete it just by
-          // changing their RSVP.
-          const canSuggest =
-            event.isHost || !!viewerRsvpStatus || event.isInvited;
-          const isAvailMode = event.altTimesMode === "availability";
-          // Token-backed visitors (share / invite link) get visibility too:
-          // a share link implies a trusted recipient, even when there's no
-          // RSVP or invite row yet.
-          const arrivedViaToken =
-            !!inviteTokenRef.current || !!shareTokenRef.current;
-          const canSeeSharedEntries = canSuggest || arrivedViaToken;
-          type OverlapWindow = { startMs: number; endMs: number; entries: AltTimeEntry[] };
-
-          const fmtTime = (d: Date) =>
-            d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", hour12: true });
-
-          // "Start anytime" entries are submitted as a ~24h window (local
-          // midnight to next-day local midnight in the submitter's timezone).
-          // Detect by duration alone so viewers in a different timezone still
-          // see "Anytime", not "4:00 AM - 4:00 AM".
-          const isAnytimeWindow = (startMs: number, endMs: number | null): boolean => {
-            if (endMs == null) return false;
-            return endMs - startMs >= 23 * 3600 * 1000;
-          };
-          const formatEntryWindow = (
-            suggestedAt: string,
-            endsAt: string | null
-          ): string => {
-            const startMs = new Date(suggestedAt).getTime();
-            const endMs = endsAt ? new Date(endsAt).getTime() : null;
-            if (isAnytimeWindow(startMs, endMs)) return "Start anytime";
-            const startLabel = fmtTime(new Date(startMs));
-            return endMs != null ? `${startLabel} - ${fmtTime(new Date(endMs))}` : startLabel;
-          };
-
-          const viewerHasSuggested = viewerUserId
-            ? altTimes.some((e) => e.userId === viewerUserId)
-            : false;
-
-          const byDay = altTimes.reduce<Record<string, AltTimeEntry[]>>((acc, entry) => {
-            const dayKey = new Date(entry.suggestedAt).toDateString();
-            if (!acc[dayKey]) acc[dayKey] = [];
-            acc[dayKey].push(entry);
-            return acc;
-          }, {});
-
-          function computeOverlaps(entries: AltTimeEntry[]): OverlapWindow[] {
-            if (entries.length < 2) return [];
-
-            const ranged = entries.filter((e) => e.endsAt);
-            const pointEntries = entries.filter((e) => !e.endsAt);
-
-            const entryById = new Map(entries.map((e) => [e.id, e]));
-            const intervals = ranged.map((e) => ({
-              id: e.id,
-              s: new Date(e.suggestedAt).getTime(),
-              e: new Date(e.endsAt!).getTime(),
-            }));
-
-            // Include point times as boundaries so a point falling inside a ranged
-            // window creates its own segment start, enabling overlap detection.
-            const boundaries = new Set<number>();
-            for (const iv of intervals) {
-              boundaries.add(iv.s);
-              boundaries.add(iv.e);
-            }
-            for (const pt of pointEntries) {
-              boundaries.add(new Date(pt.suggestedAt).getTime());
-            }
-            const sorted = [...boundaries].sort((a, b) => a - b);
-
-            const raw: OverlapWindow[] = [];
-
-            for (let i = 0; i < sorted.length - 1; i++) {
-              const segStart = sorted[i];
-              const segEnd = sorted[i + 1];
-              const active = intervals.filter((iv) => iv.s <= segStart && iv.e >= segEnd);
-              const entrySet = new Set(active.map((iv) => iv.id));
-              for (const pt of pointEntries) {
-                const ptMs = new Date(pt.suggestedAt).getTime();
-                if (ptMs >= segStart && ptMs < segEnd) entrySet.add(pt.id);
-              }
-              // Need at least 2 distinct people for a meaningful overlap
-              if (entrySet.size < 2) continue;
-              raw.push({
-                startMs: segStart,
-                endMs: segEnd,
-                entries: [...entrySet].map((id) => entryById.get(id)!).filter(Boolean),
-              });
-            }
-
-            // Catch groups of point entries that share an exact timestamp.
-            // The segment loop above only runs when there are 2+ distinct
-            // boundaries, so a day whose only entries are points all at the
-            // same minute would otherwise produce no overlap. Emit a
-            // zero-width window for each such group, unless the group is
-            // already represented by a segment-based overlap (e.g. when a
-            // ranged interval covers the same timestamp).
-            const pointBuckets = new Map<number, AltTimeEntry[]>();
-            for (const pt of pointEntries) {
-              const ts = new Date(pt.suggestedAt).getTime();
-              const bucket = pointBuckets.get(ts);
-              if (bucket) bucket.push(pt);
-              else pointBuckets.set(ts, [pt]);
-            }
-            for (const [ts, bucket] of pointBuckets) {
-              if (bucket.length < 2) continue;
-              const alreadyCovered = raw.some(
-                (w) =>
-                  ts >= w.startMs &&
-                  ts < w.endMs &&
-                  bucket.every((pt) => w.entries.some((e) => e.id === pt.id))
-              );
-              if (alreadyCovered) continue;
-              raw.push({ startMs: ts, endMs: ts, entries: [...bucket] });
-            }
-            raw.sort((a, b) => a.startMs - b.startMs);
-
-            const merged: OverlapWindow[] = [];
-            for (const w of raw) {
-              const prev = merged[merged.length - 1];
-              if (
-                prev &&
-                prev.endMs === w.startMs &&
-                prev.entries.length === w.entries.length &&
-                prev.entries.every((e) => w.entries.some((we) => we.id === e.id))
-              ) {
-                prev.endMs = w.endMs;
-              } else {
-                merged.push({ ...w });
-              }
-            }
-
-            merged.sort((a, b) => b.entries.length - a.entries.length || a.startMs - b.startMs);
-            return merged;
-          }
-
-          const dayGroups = Object.entries(byDay)
-            .map(([dayKey, entries]) => {
-              const overlaps = computeOverlaps(entries);
-              entries.sort(
-                (a, b) => new Date(a.suggestedAt).getTime() - new Date(b.suggestedAt).getTime()
-              );
-              return { dayKey, date: new Date(entries[0].suggestedAt), entries, overlaps };
-            })
-            .sort((a, b) => a.date.getTime() - b.date.getTime());
-
-          const allOverlaps = dayGroups
-            .flatMap((dg) => dg.overlaps.map((ov) => ({ ...ov, date: dg.date })))
-            .sort((a, b) => b.entries.length - a.entries.length || a.startMs - b.startMs);
-          const globalBestOverlapCount = allOverlaps.length > 0 ? allOverlaps[0].entries.length : 0;
-          const fmtDay = (d: Date) =>
-            d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-
-          // --- Group response summary ---
-          // Derive who has responded: collect unique user IDs from altTimes.
-          const respondedUserIds = new Set(altTimes.filter((e) => e.userId).map((e) => e.userId));
-          // Participants = going + maybe RSVPs (the people who should respond)
-          const participants = rsvps.filter((r) => r.status === "going" || r.status === "maybe");
-          const respondedParticipants = participants.filter((p) => respondedUserIds.has(p.userId));
-          const pendingParticipants = participants.filter((p) => !respondedUserIds.has(p.userId));
-
-          // Suppress the response summary when the viewer is the only person
-          // it would describe. Otherwise we'd render "Responses (0/1)" with
-          // their own dashed chip, which reads as self-talk.
-          const onlyViewerInParticipants =
-            participants.length === 1 &&
-            !!viewerUserId &&
-            participants[0].userId === viewerUserId;
-          const showResponseSummary =
-            isAvailMode &&
-            canSeeSharedEntries &&
-            participants.length > 0 &&
-            !onlyViewerInParticipants;
-          // Card 2 is now strictly a "what's been shared" view; the response
-          // summary lives on Card 1 (the action card) so non-empty status
-          // doesn't masquerade as shared content.
-          const sharedCardHasContent =
-            canSeeSharedEntries && (allOverlaps.length > 0 || dayGroups.length > 0);
-          const sharedCardTitle = isAvailMode ? "Shared availability" : "Suggested times";
-          const declined = viewerRsvpStatus === "cant_make_it";
-          // Helper-text bottom margin: zero when nothing will render below
-          // it, lighter in availability mode (status info comes next), heavier
-          // in suggest mode (picker comes next).
-          const helperMb = !canSuggest ? 0 : isAvailMode ? 1.5 : 2;
-
-          return (
-            <Stack spacing={{ xs: 3, sm: 4 }}>
-            <AppCard id="plan-section-availability" sx={{ scrollMarginTop: SECTION_SCROLL_MARGIN }}>
-              <Typography
-                variant="h5"
-                fontWeight={700}
-                sx={{ mb: 0.5, fontSize: { xs: "1.25rem", sm: "1.375rem" } }}
-              >
-                {isAvailMode ? "Share your availability" : "Suggest a different time"}
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: helperMb }}>
-                {isAvailMode
-                  ? canSuggest
-                    ? viewerHasSuggested
-                      ? event.availabilityDeadlineAt
-                        ? `You've shared your availability. You can still add or edit times until ${new Date(
-                            event.availabilityDeadlineAt
-                          ).toLocaleString(undefined, {
-                            weekday: "short",
-                            month: "short",
-                            day: "numeric",
-                            hour: "numeric",
-                            minute: "2-digit",
-                          })}.`
-                        : "You've shared your availability. You can still add or edit times whenever you like."
-                      : declined
-                        ? "The host wants to find a time that works for everyone. Pick one or more days below that could work for you instead."
-                        : "The host wants to find a time that works for everyone. Confirm the proposed time, or pick one or more days below that could work for you."
-                    : "The host wants to find a start time that works for everyone. Join to share which days work for you."
-                  : canSuggest
-                    ? "The host is open to other start times for this plan. Pick one or more days below."
-                    : "The host is open to other start times for this plan. Join to suggest days that could work for you."}
-              </Typography>
-
-              {/* --- Group response summary (availability mode, Going+token viewers only) --- */}
-              {showResponseSummary && (
-                <Box sx={{ mb: 2 }}>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{
-                      mb: 0.5,
-                      display: "block",
-                      fontSize: "0.75rem",
-                      fontWeight: viewerHasSuggested ? 500 : 600,
-                      opacity: viewerHasSuggested ? 0.75 : 1,
-                    }}
-                  >
-                    Responses ({respondedParticipants.length}/{participants.length})
-                  </Typography>
-                  <Stack direction="row" sx={{ flexWrap: "wrap", gap: 0.5 }}>
-                    {respondedParticipants.map((p) => (
-                      <Chip
-                        key={p.userId}
-                        label={p.name.split(" ")[0]}
-                        size="small"
-                        icon={<CheckCircleRoundedIcon sx={{ fontSize: "0.875rem !important" }} />}
-                        color="success"
-                        variant="outlined"
-                        sx={{ height: 24, fontSize: "0.75rem" }}
-                      />
-                    ))}
-                    {pendingParticipants.map((p) => (
-                      <Chip
-                        key={p.userId}
-                        label={p.name.split(" ")[0]}
-                        size="small"
-                        variant="outlined"
-                        sx={{ height: 24, fontSize: "0.75rem", opacity: 0.5, borderStyle: "dashed" }}
-                      />
-                    ))}
-                  </Stack>
-                </Box>
-              )}
-
-              {isAvailMode && canSuggest && !viewerHasSuggested && event.availabilityDeadlineAt && (
-                <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mb: 1.5 }}>
-                  <AccessTimeRoundedIcon sx={{ fontSize: 16, color: "warning.main" }} />
-                  <Typography
-                    variant="body2"
-                    sx={{ color: "warning.dark", fontSize: "0.8125rem" }}
-                  >
-                    Please share your availability by{" "}
-                    <strong>
-                      {new Date(event.availabilityDeadlineAt).toLocaleString(undefined, {
-                        weekday: "short",
-                        month: "short",
-                        day: "numeric",
-                        hour: "numeric",
-                        minute: "2-digit",
-                      })}
-                    </strong>
-                  </Typography>
-                </Stack>
-              )}
-
-              {/* --- Quick confirm: only when the listed time is still a real
-                   option for the viewer. Hidden for declined viewers, who
-                   shouldn't be nudged to confirm a time they already turned
-                   down. --- */}
-              {isAvailMode && canSuggest && !viewerHasSuggested && !declined && (
-                <Box
-                  sx={{
-                    mb: 2,
-                    pl: 2,
-                    borderLeft: "3px solid",
-                    borderColor: "warning.main",
-                  }}
-                >
-                  <Stack spacing={1}>
-                    <Stack direction="row" alignItems="center" spacing={1}>
-                      <Box
-                        sx={{
-                          width: 18,
-                          height: 18,
-                          borderRadius: "50%",
-                          border: "2px solid",
-                          borderColor: "warning.main",
-                          flexShrink: 0,
-                        }}
-                      />
-                      <Typography variant="body2" fontWeight={600}>
-                        {"You haven't responded yet"}
-                      </Typography>
-                    </Stack>
-                    <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap" }}>
-                      <Button
-                        variant="contained"
-                        size="small"
-                        color="success"
-                        disabled={quickConfirming}
-                        onClick={handleQuickConfirm}
-                        startIcon={<CheckCircleRoundedIcon sx={{ fontSize: 16 }} />}
-                        sx={{ textTransform: "none", fontWeight: 600 }}
-                      >
-                        {quickConfirming ? "Saving..." : "This time works for me"}
-                      </Button>
-                    </Stack>
-                  </Stack>
-                </Box>
-              )}
-
-              {/* --- Inline edit form for an existing entry --- */}
-              {altEditingId && (
-                  <Paper
-                    ref={altEditFormRef}
-                    variant="outlined"
-                    sx={{
-                      p: 2,
-                      mb: 1.5,
-                      borderRadius: 2,
-                      borderColor: "primary.light",
-                      // Sit below any fixed app-shell header when scrolled
-                      // into view via scrollIntoView({ block: "start" }).
-                      scrollMarginTop: SECTION_SCROLL_MARGIN,
-                    }}
-                  >
-                    <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1.25 }}>
-                      {isAvailMode ? "Edit your availability" : "Edit your suggested time"}
-                    </Typography>
-                    <Stack spacing={1.5}>
-                      <Box>
-                        <Typography
-                          variant="subtitle1"
-                          fontWeight={600}
-                          sx={{ display: "block", mb: 0.625 }}
-                        >
-                          Date
-                        </Typography>
-                        <DatePicker
-                          value={altEditDate}
-                          onChange={setAltEditDate}
-                          minDate={dayjs().startOf("day")}
-                          slotProps={{
-                            textField: {
-                              fullWidth: true,
-                              size: "small",
-                              placeholder: "Pick a date",
-                              onKeyDown: pickerFieldTabKeyDown,
-                            },
-                          }}
-                        />
-                      </Box>
-                      <FormControlLabel
-                        control={
-                          <Checkbox
-                            checked={altEditAnytime}
-                            onChange={(e) => {
-                              const v = e.target.checked;
-                              setAltEditAnytime(v);
-                              if (v) {
-                                setAltEditStartTime(null);
-                                setAltEditEndTime(null);
-                              }
-                            }}
-                          />
-                        }
-                        label="Start anytime"
-                      />
-                      {!altEditAnytime && (
-                        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
-                          <Box sx={{ flex: 1 }}>
-                            <Typography
-                              variant="subtitle1"
-                              fontWeight={600}
-                              sx={{ display: "block", mb: 0.625 }}
-                            >
-                              Earliest start
-                            </Typography>
-                            <TimePicker
-                              value={altEditStartTime}
-                              onChange={setAltEditStartTime}
-                              format="h:mm A"
-                              enableAccessibleFieldDOMStructure={false}
-                              slotProps={{
-                                field: {
-                                  shouldRespectLeadingZeros: true,
-                                } as Record<string, unknown>,
-                                textField: {
-                                  fullWidth: true,
-                                  size: "small",
-                                  placeholder: "Earliest start",
-                                },
-                              }}
-                            />
-                          </Box>
-                          <Box sx={{ flex: 1 }}>
-                            <Typography
-                              variant="subtitle1"
-                              fontWeight={600}
-                              sx={{ display: "block", mb: 0.625 }}
-                            >
-                              Latest start
-                            </Typography>
-                            <TimePicker
-                              value={altEditEndTime}
-                              onChange={setAltEditEndTime}
-                              format="h:mm A"
-                              enableAccessibleFieldDOMStructure={false}
-                              slotProps={{
-                                field: {
-                                  shouldRespectLeadingZeros: true,
-                                } as Record<string, unknown>,
-                                textField: {
-                                  fullWidth: true,
-                                  size: "small",
-                                  placeholder: "Latest start",
-                                },
-                              }}
-                            />
-                          </Box>
-                        </Stack>
-                      )}
-                      <Stack direction="row" spacing={1}>
-                        <AppButton
-                          size="small"
-                          onClick={handleAltEditSave}
-                          disabled={altSubmitting}
-                        >
-                          {altSubmitting ? "Saving..." : "Save"}
-                        </AppButton>
-                        <Button
-                          size="small"
-                          onClick={resetAltEditForm}
-                          sx={{ textTransform: "none" }}
-                        >
-                          Cancel
-                        </Button>
-                      </Stack>
-                    </Stack>
-                  </Paper>
-                )}
-
-                {/* --- Multi-date availability picker (always visible to permitted viewers) --- */}
-                {!altEditingId && canSuggest && (
-                  <AvailabilityPicker
-                      mode={isAvailMode ? "availability" : "suggest"}
-                      planStartsAt={event.startsAt}
-                      existingDayKeys={
-                        new Set(
-                          altTimes
-                            .filter((e) => e.userId === viewerUserId)
-                            .map((e) => {
-                              const d = new Date(e.suggestedAt);
-                              return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
-                                2,
-                                "0"
-                              )}-${String(d.getDate()).padStart(2, "0")}`;
-                            })
-                        )
-                      }
-                      submitting={altSubmitting}
-                      onSubmit={handleAvailabilityShare}
-                    />
-                )}
-
-            </AppCard>
-
-            {/* Card 2: review of what's been shared. Hidden entirely when there
-                is nothing to display, so non-Going viewers (and viewers in a
-                fresh plan with no submissions) don't see an empty container. */}
-            {sharedCardHasContent && (
-              <AppCard>
-                <Typography
-                  variant="h5"
-                  fontWeight={700}
-                  sx={{ mb: 1.5, fontSize: { xs: "1.25rem", sm: "1.375rem" } }}
-                >
-                  {sharedCardTitle}
-                </Typography>
-
-                {/* Best overlap */}
-                {allOverlaps.length > 0 && (
-                  <Paper
-                    variant="outlined"
-                    sx={{
-                      p: 2,
-                      borderRadius: 2,
-                      mb: 1.5,
-                      borderColor: "primary.main",
-                      backgroundColor: "action.hover",
-                    }}
-                  >
-                    <Typography
-                      variant="subtitle2"
-                      fontWeight={700}
-                      sx={{ mb: 1, color: "primary.main" }}
-                    >
-                      {isAvailMode ? "Best overlap" : "Best start times"}
-                    </Typography>
-                    <Stack spacing={0} divider={<Divider />}>
-                      {allOverlaps.map((ov, oi) => {
-                        const allRanged = ov.entries.every((e) => !!e.endsAt);
-                        const overlapIsAnytime = isAnytimeWindow(
-                          ov.startMs,
-                          allRanged ? ov.endMs : null
-                        );
-                        const ovStart = fmtTime(new Date(ov.startMs));
-                        const ovEnd = allRanged ? fmtTime(new Date(ov.endMs)) : null;
-                        const isBest =
-                          ov.entries.length === globalBestOverlapCount &&
-                          globalBestOverlapCount > 1;
-                        return (
-                          <Stack
-                            key={`ov-${oi}`}
-                            direction="row"
-                            alignItems="center"
-                            justifyContent="space-between"
-                            sx={{ py: 1 }}
-                          >
-                            <Box sx={{ minWidth: 0 }}>
-                              <Stack
-                                direction="row"
-                                alignItems="center"
-                                spacing={0.75}
-                                sx={{ flexWrap: "wrap" }}
-                              >
-                                <Typography variant="body2" fontWeight={600} color="primary.main">
-                                  {fmtDay(ov.date)},{" "}
-                                  {overlapIsAnytime
-                                    ? "anytime"
-                                    : ovEnd
-                                      ? `${ovStart} - ${ovEnd}`
-                                      : ovStart}
-                                </Typography>
-                                <Chip
-                                  label={`${ov.entries.length} overlap${isBest ? " -- best fit" : ""}`}
-                                  size="small"
-                                  color={isBest ? "primary" : "default"}
-                                  variant={isBest ? "filled" : "outlined"}
-                                  sx={{ height: 22, fontSize: "0.75rem", fontWeight: 600 }}
-                                />
-                              </Stack>
-                              <Typography variant="caption" color="text.secondary">
-                                {ov.entries.map((e) => e.name).join(", ")}
-                              </Typography>
-                            </Box>
-                            {event.isHost && (
-                              <Tooltip title="Make official time" arrow>
-                                <IconButton
-                                  size="small"
-                                  onClick={() =>
-                                    setPromoteConfirmTime(new Date(ov.startMs).toISOString())
-                                  }
-                                  aria-label="Make official time"
-                                >
-                                  <AccessTimeRoundedIcon sx={{ fontSize: 16 }} />
-                                </IconButton>
-                              </Tooltip>
-                            )}
-                          </Stack>
-                        );
-                      })}
-                    </Stack>
-                  </Paper>
-                )}
-
-                {/* Day-grouped entries */}
-                {dayGroups.length > 0 && (
-                  <Stack spacing={1.5}>
-                    {dayGroups.map((dg) => {
-                      const dayLabel = dg.date.toLocaleDateString(undefined, {
-                        weekday: "long",
-                        month: "short",
-                        day: "numeric",
-                      });
-
-                      return (
-                        <Paper key={dg.dayKey} variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-                          <Typography
-                            variant="subtitle2"
-                            fontWeight={700}
-                            sx={{ mb: 1, color: "text.primary" }}
-                          >
-                            {dayLabel}
-                          </Typography>
-
-                          <Stack spacing={0} divider={<Divider />}>
-                            {dg.entries.map((entry) => {
-                              const isOwn = entry.userId === viewerUserId;
-                              const entryWindow = formatEntryWindow(
-                                entry.suggestedAt,
-                                entry.endsAt
-                              );
-                              return (
-                                <Stack
-                                  key={entry.id}
-                                  direction="row"
-                                  alignItems="center"
-                                  justifyContent="space-between"
-                                  sx={{ py: 0.75 }}
-                                >
-                                  <Box sx={{ minWidth: 0 }}>
-                                    <Stack
-                                      direction="row"
-                                      alignItems="center"
-                                      spacing={0.5}
-                                      sx={{ flexWrap: "wrap" }}
-                                    >
-                                      <Typography variant="body2" color="text.primary">
-                                        {entryWindow}
-                                      </Typography>
-                                      <Typography variant="body2" color="text.disabled">
-                                        &middot;
-                                      </Typography>
-                                      <Typography variant="body2" color="text.secondary" noWrap>
-                                        {entry.handle ? (
-                                          <Link
-                                            href={`/u/${entry.handle.replace(/^@/, "")}`}
-                                            style={{ color: "inherit", textDecoration: "none" }}
-                                          >
-                                            {entry.name}
-                                          </Link>
-                                        ) : (
-                                          entry.name
-                                        )}
-                                      </Typography>
-                                    </Stack>
-                                  </Box>
-                                  <Stack direction="row" spacing={0} sx={{ flexShrink: 0 }}>
-                                    {event.isHost && (
-                                      <Tooltip title="Make official time" arrow>
-                                        <IconButton
-                                          size="small"
-                                          onClick={() => setPromoteConfirmTime(entry.suggestedAt)}
-                                          aria-label="Make official time"
-                                        >
-                                          <AccessTimeRoundedIcon
-                                            sx={{ fontSize: 16, color: "text.disabled" }}
-                                          />
-                                        </IconButton>
-                                      </Tooltip>
-                                    )}
-                                    {isOwn && (
-                                      <IconButton
-                                        size="small"
-                                        onClick={() => handleAltTimeEdit(entry)}
-                                        aria-label="Edit"
-                                      >
-                                        <EditRoundedIcon
-                                          sx={{ fontSize: 16, color: "text.disabled" }}
-                                        />
-                                      </IconButton>
-                                    )}
-                                    {(isOwn || event.isHost) && (
-                                      <IconButton
-                                        size="small"
-                                        onClick={() => handleAltTimeDelete(entry.id)}
-                                        disabled={altDeleting === entry.id}
-                                        aria-label="Remove"
-                                      >
-                                        <DeleteOutlineRoundedIcon
-                                          sx={{ fontSize: 16, color: "text.disabled" }}
-                                        />
-                                      </IconButton>
-                                    )}
-                                  </Stack>
-                                </Stack>
-                              );
-                            })}
-                          </Stack>
-                        </Paper>
-                      );
-                    })}
-                  </Stack>
-                )}
-              </AppCard>
-            )}
-            </Stack>
-          );
-        })()}
-
-      {/* Promote confirmation dialog */}
-      <Dialog
-        open={!!promoteConfirmTime}
-        onClose={() => setPromoteConfirmTime(null)}
-        maxWidth="xs"
-        fullWidth
-      >
-        <DialogTitle sx={{ fontWeight: 700 }}>Update official plan time?</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" color="text.secondary">
-            This will change the official plan time to{" "}
-            <strong>{promoteConfirmTime ? formatDateTime(promoteConfirmTime) : ""}</strong>. Going
-            and Maybe attendees will be notified.
-          </Typography>
-        </DialogContent>
-        <DialogActions sx={{ px: { xs: 2, sm: 3 }, pb: { xs: 2, sm: 2.5 }, gap: 1 }}>
-          <Button
-            variant="text"
-            color="inherit"
-            onClick={() => setPromoteConfirmTime(null)}
-            disabled={promoting}
-          >
-            Cancel
-          </Button>
-          <Button variant="contained" onClick={handlePromoteAltTime} disabled={promoting}>
-            {promoting ? "Updating…" : "Update plan time"}
-          </Button>
-        </DialogActions>
-      </Dialog>
 
       {/* Who's in, combined RSVP + invite status */}
       {(rsvps.length > 0 || pendingInvites.length > 0) && (
