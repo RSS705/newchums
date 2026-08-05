@@ -285,11 +285,11 @@ export const SAMPLE_PLAN_DETAILS: Record<string, SamplePlanDetails> = {
       { name: "Kofi", avatar: AV("guitar"), status: "maybe", confirmed: false },
     ],
     chat: [
-      { who: "Priya", avatar: AV("owl"), text: "Lasagna's claimed! And I'm bringing Ticket to Ride and Codenames." },
-      { who: "Marcus", avatar: AV("coffee"), text: "Bean salad and my giant Jenga set. This is going to be so much fun!" },
+      { who: "Priya", avatar: AV("owl"), text: "Lasagna's claimed. I'll bring Ticket to Ride and Codenames too." },
+      { who: "Marcus", avatar: AV("coffee"), text: "Bean salad from me, and I'll pack the giant Jenga set." },
       { who: "Elena", avatar: AV("plant"), text: "I can drive two people from the north end, just say the word." },
       { who: "Dev", avatar: AV("d20"), text: "Ten of us already? Best turnout yet!" },
-      { who: "Marta", avatar: AV("fox"), text: "Pavilion's ours from 6. Bring a sweater for later, and your appetite. Can't wait to see everyone!" },
+      { who: "Marta", avatar: AV("fox"), text: "Pavilion's ours from 6. Bring a sweater for later. Looking forward to seeing everyone!" },
     ],
   },
   [IDS[1]]: {
@@ -308,8 +308,8 @@ export const SAMPLE_PLAN_DETAILS: Record<string, SamplePlanDetails> = {
     chat: [
       { who: "Ravi", avatar: AV("penguin"), text: "Seven in the pod already! One seat left, tell your friends." },
       { who: "Jess", avatar: AV("cat"), text: "I've heard so much about this cube. Any preview of the archetypes?" },
-      { who: "Theo", avatar: AV("d20"), text: "Freshly updated with the new set, and there's a spicy artifacts deck hiding in there. You'll see!" },
-      { who: "Mei", avatar: AV("owl"), text: "Bringing sleeves and snacks. Let's go!" },
+      { who: "Theo", avatar: AV("d20"), text: "Freshly updated with the new set. There's a spicy artifacts archetype hiding in there." },
+      { who: "Mei", avatar: AV("owl"), text: "Bringing spare sleeves and snacks for the table." },
     ],
   },
   [IDS[2]]: {
@@ -325,10 +325,10 @@ export const SAMPLE_PLAN_DETAILS: Record<string, SamplePlanDetails> = {
       { name: "Rosa", avatar: AV("frog"), status: "maybe", confirmed: false },
     ],
     chat: [
-      { who: "Alice", avatar: AV("plant"), text: "Finished it in three sittings. That ending! No spoilers, but wow." },
-      { who: "Tom", avatar: AV("coffee"), text: "Our corner table is booked and I'm ordering the big pot of tea. So looking forward to this one." },
-      { who: "Grace", avatar: AV("rabbit"), text: "Bringing my sister, she loved it too. Two more chapters for me tonight!" },
-      { who: "Margaret", avatar: AV("book"), text: "Wonderful! Next month's shortlist is up, add your suggestions below." },
+      { who: "Alice", avatar: AV("plant"), text: "Finished it in three sittings. No spoilers, but that ending got me." },
+      { who: "Tom", avatar: AV("coffee"), text: "Our corner table is booked and I'll order the big pot of tea." },
+      { who: "Grace", avatar: AV("rabbit"), text: "Bringing my sister, she just finished it as well. Two chapters left for me." },
+      { who: "Margaret", avatar: AV("book"), text: "Lovely. Next month's shortlist is pinned on the plan page, add your suggestions." },
     ],
     altTimes: {
       intro: "A couple of members suggested times for next month's meetup. The host can make one official with a tap.",
@@ -352,9 +352,9 @@ export const SAMPLE_PLAN_DETAILS: Record<string, SamplePlanDetails> = {
     ],
     chat: [
       { who: "Hana", avatar: AV("plant"), text: "The bog is gorgeous right now, you picked the perfect week for this!" },
-      { who: "Tom", avatar: AV("dog"), text: "Nine sharp at the trailhead lot! Easy pace, about an hour, then Locomotive for coffee. Biscuit is coming too." },
-      { who: "Pete", avatar: AV("camera"), text: "Bringing the camera, the light through there in the morning is unreal." },
-      { who: "Bea", avatar: AV("rabbit"), text: "First time out with this group, really excited to meet everyone!" },
+      { who: "Tom", avatar: AV("dog"), text: "Nine at the trailhead lot. Easy pace, about an hour, then Locomotive for coffee. Biscuit is coming too." },
+      { who: "Pete", avatar: AV("camera"), text: "Bringing the camera, the morning light through there is worth it." },
+      { who: "Bea", avatar: AV("rabbit"), text: "First time out with this group, looking forward to meeting everyone." },
     ],
   },
   [IDS[4]]: {
@@ -378,9 +378,9 @@ export const SAMPLE_PLAN_DETAILS: Record<string, SamplePlanDetails> = {
     ],
     chat: [
       { who: "Mike", avatar: AV("coffee"), text: "Sixty years young! I've got the burgers and the big cooler covered." },
-      { who: "Sarah", avatar: AV("cat"), text: "Cake is ordered, chocolate with the raspberry filling he loves. Shhh!" },
+      { who: "Sarah", avatar: AV("cat"), text: "Cake is ordered, chocolate with the raspberry filling he loves. Not a word to Dad." },
       { who: "Nana June", avatar: AV("rabbit"), text: "I'll bring my potato salad, wouldn't be a party without it." },
-      { who: "Denise", avatar: AV("plant"), text: "You're all the best. Lawn games start at 2, speeches at 4, and whoever spoils the cake surprise does the dishes!" },
+      { who: "Denise", avatar: AV("plant"), text: "Lawn games start at 2, speeches at 4. And whoever spoils the cake surprise does the dishes." },
     ],
     locationPrivacyNote:
       "The exact address is shared with invited guests only. Everyone on this plan sees it; this preview shows the neighbourhood.",
@@ -398,7 +398,7 @@ export const SAMPLE_PLAN_DETAILS: Record<string, SamplePlanDetails> = {
     chat: [
       { who: "Wren", avatar: AV("plant"), text: "First time doing pottery and honestly counting down the days!" },
       { who: "Ines", avatar: AV("bear"), text: "You'll love it. Handbuilding this time, no wheel experience needed, and the studio fee covers clay and one firing." },
-      { who: "Paulo", avatar: AV("guitar"), text: "My mug from last time survived the kiln. Going for a whole set now!" },
+      { who: "Paulo", avatar: AV("guitar"), text: "My mug from last time survived the kiln, so I'm attempting a matching set." },
       { who: "Ines", avatar: AV("bear"), text: "Pieces are ready about a week after, I'll post a pickup note here." },
     ],
   },
