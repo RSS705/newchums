@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80">
+  <defs><clipPath id="c"><circle cx="40" cy="40" r="40"/></clipPath></defs>
+  <g clip-path="url(#c)">
+    <rect width="80" height="80" fill="#EDE8FA"/>
+    
+    <polygon points="40,14 62,27 62,53 40,66 18,53 18,27" fill="#7B5CC9"/>
+    <polygon points="40,24 54,46 26,46" fill="#9D82E0"/>
+    <path d="M40 14 v10 M18 27 l8 19 M62 27 l-8 19 M40 66 l0 -20 M18 53 l22 -7 M62 53 l-22 -7" stroke="#5E42A6" stroke-width="1.4"/>
+    <text x="40" y="42" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="#FFFFFF" text-anchor="middle">20</text>
+
+  </g>
+</svg>

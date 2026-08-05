@@ -132,7 +132,7 @@ export default function HeroPlanCard() {
                 <PeopleRoundedIcon sx={{ fontSize: 16 }} />
               </Box>
               <Typography variant="body2" fontWeight={500} sx={{ color: "text.primary" }}>
-                8 going &middot; 4 seats remaining
+                10 going &middot; 4 seats remaining
               </Typography>
             </Stack>
             <Stack direction="row" spacing={0.75} alignItems="center" sx={{ pl: 0.25 }}>

@@ -11,11 +11,15 @@ import Stack from "@mui/material/Stack";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
+import EventRepeatRoundedIcon from "@mui/icons-material/EventRepeatRounded";
+import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
+import SendRoundedIcon from "@mui/icons-material/SendRounded";
 import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
 import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
 import ForumRoundedIcon from "@mui/icons-material/ForumRounded";
 import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
+import TextField from "@mui/material/TextField";
 import type { PlanEvent } from "@/components/events/EventCard";
 import { getGradientForEventId } from "@/lib/eventBanners";
 import type { SamplePlanDetails } from "@/lib/publicExploreSamplePlans";
@@ -94,6 +98,21 @@ export default function SamplePlanClient({
   details: SamplePlanDetails;
 }) {
   const when = plan.startsAt ? formatWhen(plan.startsAt) : "";
+  // Banner images land one at a time as assets arrive; the deterministic
+  // gradient stands in exactly like a real photo-less plan. A missing file
+  // 404s fast enough that the error event can fire BEFORE hydration
+  // attaches onError, so a mount-time check on the ref covers that window.
+  const [bannerFailed, setBannerFailed] = React.useState(false);
+  const bannerImgRef = React.useRef<HTMLImageElement | null>(null);
+  React.useEffect(() => {
+    const el = bannerImgRef.current;
+    if (el && el.complete && el.naturalWidth === 0) setBannerFailed(true);
+  }, []);
+  const isInviteOnly = plan.visibility === "invite_only";
+  const mapQuery = plan.locationAddress
+    ? `${plan.locationName ? plan.locationName + ", " : ""}${plan.locationAddress}`
+    : plan.locationDisplay;
+  const mapsKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   const goingCount = details.people.filter((a) => a.status === "going").length;
   const maybeCount = details.people.filter((a) => a.status === "maybe").length;
 
@@ -127,11 +146,13 @@ export default function SamplePlanClient({
 
       {/* Plan header */}
       <Paper variant="outlined" sx={{ borderRadius: 3, overflow: "hidden" }}>
-        {plan.bannerUrl ? (
+        {plan.bannerUrl && !bannerFailed ? (
           <Box
             component="img"
+            ref={bannerImgRef}
             src={plan.bannerUrl}
             alt=""
+            onError={() => setBannerFailed(true)}
             sx={{ display: "block", width: "100%", height: { xs: 140, sm: 200 }, objectFit: "cover" }}
           />
         ) : (
@@ -145,7 +166,7 @@ export default function SamplePlanClient({
         )}
         <Box sx={{ p: { xs: 2, sm: 2.75 } }}>
           <Stack direction="row" spacing={1} sx={{ mb: 1 }} useFlexGap flexWrap="wrap">
-            <Chip label="Public" size="small" variant="outlined" />
+            <Chip label={isInviteOnly ? "Invite only" : "Public"} size="small" variant="outlined" />
             {plan.hobby && <Chip label={plan.hobby} size="small" color="primary" variant="outlined" />}
           </Stack>
           <Typography component="h1" sx={{ fontWeight: 800, fontSize: { xs: "1.5rem", sm: "1.875rem" }, lineHeight: 1.2, mb: 1.5 }}>
@@ -160,6 +181,14 @@ export default function SamplePlanClient({
               <Stack direction="row" spacing={1.25} alignItems="center">
                 <PlaceRoundedIcon sx={{ fontSize: 20, color: "primary.main" }} />
                 <Typography variant="body2">{plan.locationDisplay}</Typography>
+              </Stack>
+            )}
+            {details.locationPrivacyNote && (
+              <Stack direction="row" spacing={1.25} alignItems="flex-start">
+                <LockOutlinedIcon sx={{ fontSize: 18, color: "text.secondary", mt: "1px" }} />
+                <Typography variant="caption" sx={{ color: "text.secondary", lineHeight: 1.5 }}>
+                  {details.locationPrivacyNote}
+                </Typography>
               </Stack>
             )}
             <Stack direction="row" spacing={1} alignItems="center">
@@ -192,6 +221,21 @@ export default function SamplePlanClient({
           </Tooltip>
         </Box>
       </Paper>
+
+      {/* Location map, the same embed a real plan page shows. Skipped where
+          the sample's point is that the address is held back. */}
+      {!details.hideMap && mapsKey && mapQuery && (
+        <Paper variant="outlined" sx={{ borderRadius: 3, overflow: "hidden" }}>
+          <Box
+            component="iframe"
+            title="Map of the plan location"
+            src={`https://www.google.com/maps/embed/v1/place?key=${mapsKey}&q=${encodeURIComponent(mapQuery)}&zoom=14`}
+            sx={{ display: "block", width: "100%", height: { xs: 180, sm: 230 }, border: 0 }}
+            loading="lazy"
+            referrerPolicy="no-referrer-when-downgrade"
+          />
+        </Paper>
+      )}
 
       {/* Who's coming */}
       <Paper variant="outlined" sx={{ borderRadius: 3, p: { xs: 2, sm: 2.75 } }}>
@@ -290,10 +334,70 @@ export default function SamplePlanClient({
             </Stack>
           ))}
         </Stack>
+        {/* Read-only composer: shows the chat is a place you could type,
+            without pretending to work on a sample. */}
+        <Tooltip title="Chat is disabled on sample plans" arrow>
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 2 }}>
+            <TextField
+              fullWidth
+              size="small"
+              placeholder="Write a message&hellip;"
+              disabled
+            />
+            <Button
+              disabled
+              variant="contained"
+              sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 2, minWidth: 0 }}
+              startIcon={<SendRoundedIcon sx={{ fontSize: 18 }} />}
+            >
+              Send
+            </Button>
+          </Stack>
+        </Tooltip>
         <Typography variant="caption" sx={{ color: "text.disabled", display: "block", mt: 1.5 }}>
           Every plan has its own chat. Only people on the plan can see it.
         </Typography>
       </Paper>
+
+      {/* Alternative-times feature, on plans where it makes sense */}
+      {details.altTimes && (
+        <Paper variant="outlined" sx={{ borderRadius: 3, p: { xs: 2, sm: 2.75 } }}>
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+            <EventRepeatRoundedIcon sx={{ fontSize: 20, color: "primary.main" }} />
+            <Typography sx={{ fontWeight: 700, fontSize: "1.0625rem" }}>
+              Suggested alternative times
+            </Typography>
+          </Stack>
+          <Typography variant="body2" sx={{ color: "text.secondary", mb: 1.75, lineHeight: 1.6 }}>
+            {details.altTimes.intro}
+          </Typography>
+          <Stack spacing={1}>
+            {details.altTimes.entries.map((e) => (
+              <Stack
+                key={e.when}
+                direction="row"
+                spacing={1.5}
+                alignItems="center"
+                sx={{
+                  px: 1.75,
+                  py: 1.25,
+                  borderRadius: 2.5,
+                  border: "1px solid",
+                  borderColor: "divider",
+                  bgcolor: "background.default",
+                }}
+              >
+                <Typography variant="body2" fontWeight={600} sx={{ flex: 1, minWidth: 0 }}>
+                  {e.when}
+                </Typography>
+                <Typography variant="caption" sx={{ color: "text.secondary", flexShrink: 0 }}>
+                  {e.names}
+                </Typography>
+              </Stack>
+            ))}
+          </Stack>
+        </Paper>
+      )}
 
       {/* The one call to action */}
       <Paper

@@ -3,22 +3,22 @@
  * GET /events/explore/public returns no rows, and for the read-only
  * /sample-plan/[id] demo pages those cards (and the homepage hero card) open.
  *
- * Rebalanced Aug 2026 with the host-first repositioning: the old lineup was
- * four game-store activities out of six. Games stay (real users run MTG
- * nights), but the spread now reads "anyone who organizes": game night and
- * potluck, a trail walk, a book club, Commander, bowling, pottery.
+ * Lineup (Aug 2026, host-first repositioning, tuned to where the tool
+ * shines: larger gatherings): a 14-seat game night and potluck, an 8-player
+ * MTG cube draft, a monthly book club, a Saturday trail walk, an invite-only
+ * backyard birthday BBQ, and a pottery hangout.
  *
- * Banners are the product's own deterministic gradients (bannerUrl null →
- * EventCard and the sample page fall back to getGradientForEventId), exactly
- * what a real plan without a photo looks like. The stock activity photos are
- * gone with the repositioning.
+ * Banners: each plan names a banner image under /images/sample-plans/.
+ * Until the file exists, EventCard and the sample page fall back to the
+ * product's deterministic gradient for the plan id, so images can land one
+ * at a time with no code change (same pattern as the homepage photo band).
  *
  * Sample id 0001 is special: the homepage hero card renders a miniature of
  * it and links to it, promising "Game Night & Potluck, Saturday, 6:30 PM,
- * Riverside Park Pavilion, 8 going, 4 seats remaining". Its entry below must
- * keep those facts (the date is computed as the next Saturday so the promise
- * stays true on any day), and `web/src/components/landing/HeroPlanCard.tsx`
- * must change in step with it.
+ * Riverside Park Pavilion, 10 going, 4 seats remaining". Its entry below
+ * must keep those facts (the date is computed as the next Saturday so the
+ * promise stays true on any day), and
+ * `web/src/components/landing/HeroPlanCard.tsx` must change in step.
  *
  * Edit this file to revise copy; dates are generated relative to "now" so
  * cards always read as upcoming.
@@ -37,8 +37,10 @@ const IDS = [
   "00000000-0000-4000-8000-000000000006",
 ] as const;
 
-/** One made-up person on a sample plan. Avatar files live in
- *  /public/images/sample-avatars (a generated flat, faceless set). */
+/** One made-up person on a sample plan. Avatars are the generated
+ *  animal-and-object set in /public/images/sample-avatars: the earlier
+ *  uniform-human set read as "this is all the system allows", and real
+ *  people upload their dog, their dice, their coffee. */
 export type SamplePerson = {
   name: string;
   avatar: string;
@@ -51,12 +53,22 @@ export type SamplePlanDetails = {
   hostAvatar: string;
   people: SamplePerson[];
   chat: { who: string; avatar: string; text: string }[];
+  /** Shown on the location row when the exact address is held back. */
+  locationPrivacyNote?: string;
+  /** Optional read-only "Suggested alternative times" block, to show the
+   *  scheduling feature off on plans where it makes sense. */
+  altTimes?: {
+    intro: string;
+    entries: { when: string; names: string }[];
+  };
+  /** Skip the map embed (e.g. address withheld until joining). */
+  hideMap?: boolean;
 };
 
-const AV = (n: number) => `/images/sample-avatars/av-${String(n).padStart(2, "0")}.svg`;
+const AV = (name: string) => `/images/sample-avatars/${name}.svg`;
 
 /**
- * Returns six sample public plans with realistic host-first copy.
+ * Returns six sample plans with realistic host-first copy.
  * @param now - optional anchor for tests
  */
 export function getSamplePublicExplorePlans(now = new Date()): PlanEvent[] {
@@ -67,7 +79,8 @@ export function getSamplePublicExplorePlans(now = new Date()): PlanEvent[] {
     x.setHours(h, m, 0, 0);
     return x.toISOString();
   };
-  // The hero card says "Saturday · 6:30 PM"; keep that literally true.
+  // Titles that promise a day are generated on that day (the hero card
+  // says "Saturday · 6:30 PM"; keep that literally true).
   const nextSaturday = (h: number, m: number) => {
     const x = new Date(now);
     const ahead = (6 - x.getDay() + 7) % 7 || 7;
@@ -75,9 +88,17 @@ export function getSamplePublicExplorePlans(now = new Date()): PlanEvent[] {
     x.setHours(h, m, 0, 0);
     return x.toISOString();
   };
+  const nextSunday = (h: number, m: number) => {
+    const x = new Date(now);
+    const ahead = (7 - x.getDay()) % 7 || 7;
+    x.setDate(x.getDate() + ahead);
+    x.setHours(h, m, 0, 0);
+    return x.toISOString();
+  };
 
   const plans: PlanEvent[] = [
-    // 1 – The homepage hero's plan (see the header comment before editing)
+    // 1 – The homepage hero's plan (see the header comment before editing).
+    //     Party-scale board games: the tool shines with bigger groups.
     {
       id: IDS[0],
       title: "Game Night & Potluck",
@@ -88,7 +109,7 @@ export function getSamplePublicExplorePlans(now = new Date()): PlanEvent[] {
       locationName: "Riverside Park Pavilion",
       locationAddress: "Riverside Park, London, ON",
       onlineLink: null,
-      maxSeats: 12,
+      maxSeats: 14,
       visibility: "public",
       status: "published",
       hobby: "Board games",
@@ -97,16 +118,17 @@ export function getSamplePublicExplorePlans(now = new Date()): PlanEvent[] {
       hostName: "@martamakesplans",
       isHost: false,
       myRsvpStatus: null,
-      goingCount: 8,
+      goingCount: 10,
       maybeCount: 1,
       distanceKm: null,
       bannerKey: null,
-      bannerUrl: null,
+      bannerUrl: "/images/sample-plans/game-night-potluck.jpg",
     },
-    // 2 – Card games (kept: real NewChums groups run Commander and cube nights)
+    // 2 – MTG cube draft: a full 8-player pod, the format real NewChums
+    //     groups actually run.
     {
       id: IDS[1],
-      title: "Casual Commander night (MTG)",
+      title: "MTG Cube draft night (8 players)",
       description: null,
       startsAt: d0(9, 18),
       locationType: "in_person",
@@ -114,7 +136,7 @@ export function getSamplePublicExplorePlans(now = new Date()): PlanEvent[] {
       locationName: "The Game Chamber",
       locationAddress: "525 First St, London, ON N5V 1Z5",
       onlineLink: null,
-      maxSeats: 4,
+      maxSeats: 8,
       visibility: "public",
       status: "published",
       hobby: "Card games",
@@ -123,16 +145,16 @@ export function getSamplePublicExplorePlans(now = new Date()): PlanEvent[] {
       hostName: "@deckbuilder",
       isHost: false,
       myRsvpStatus: null,
-      goingCount: 3,
-      maybeCount: 0,
+      goingCount: 7,
+      maybeCount: 1,
       distanceKm: null,
       bannerKey: null,
-      bannerUrl: null,
+      bannerUrl: "/images/sample-plans/mtg-cube-draft.jpg",
     },
     // 3 – Book club
     {
       id: IDS[2],
-      title: "Neighbourhood book club night",
+      title: "Monthly book club night",
       description: null,
       startsAt: d0(12, 19),
       locationType: "in_person",
@@ -153,7 +175,7 @@ export function getSamplePublicExplorePlans(now = new Date()): PlanEvent[] {
       maybeCount: 1,
       distanceKm: null,
       bannerKey: null,
-      bannerUrl: null,
+      bannerUrl: "/images/sample-plans/book-club.jpg",
     },
     // 4 – Trail walk ("Saturday" in the title, so generated on one)
     {
@@ -179,35 +201,35 @@ export function getSamplePublicExplorePlans(now = new Date()): PlanEvent[] {
       maybeCount: 2,
       distanceKm: null,
       bannerKey: null,
-      bannerUrl: null,
+      bannerUrl: "/images/sample-plans/trail-walk.jpg",
     },
-    // 5 – Bowling
+    // 5 – Invite-only family birthday: the family-host archetype. Sunday
+    //     afternoon, exact address held back, which also shows the
+    //     location-privacy feature off.
     {
       id: IDS[4],
-      title: "Weekend bowling hangout",
+      title: "Backyard BBQ for Dad's 60th",
       description: null,
-      // "Weekend" in the title, so it lands on Saturday too (morning lanes,
-      // while the potluck up top has the evening).
-      startsAt: nextSaturday(10, 0),
+      startsAt: nextSunday(14, 0),
       locationType: "in_person",
-      locationDisplay: "Palasad South, 141 Pine Valley Blvd, London, ON N6K 3T6",
-      locationName: "Palasad South",
-      locationAddress: "141 Pine Valley Blvd, London, ON N6K 3T6",
+      locationDisplay: "Old South, London, ON",
+      locationName: null,
+      locationAddress: null,
       onlineLink: null,
-      maxSeats: 10,
-      visibility: "public",
+      maxSeats: null,
+      visibility: "invite_only",
       status: "published",
-      hobby: "Bowling",
-      hobbySlug: "bowling",
-      hobbies: [{ name: "Bowling", slug: "bowling" }],
-      hostName: "@linework",
+      hobby: "Family",
+      hobbySlug: "family",
+      hobbies: [{ name: "Family", slug: "family" }],
+      hostName: "@denisehosts",
       isHost: false,
       myRsvpStatus: null,
-      goingCount: 6,
-      maybeCount: 1,
+      goingCount: 12,
+      maybeCount: 2,
       distanceKm: null,
       bannerKey: null,
-      bannerUrl: null,
+      bannerUrl: "/images/sample-plans/birthday-bbq.jpg",
     },
     // 6 – Pottery
     {
@@ -220,7 +242,7 @@ export function getSamplePublicExplorePlans(now = new Date()): PlanEvent[] {
       locationName: "4Cats Arts Studio",
       locationAddress: "1255 Commissioners Rd W, London, ON N6K 3N5",
       onlineLink: null,
-      maxSeats: 5,
+      maxSeats: 6,
       visibility: "public",
       status: "published",
       hobby: "Pottery",
@@ -229,11 +251,11 @@ export function getSamplePublicExplorePlans(now = new Date()): PlanEvent[] {
       hostName: "@kilnstories",
       isHost: false,
       myRsvpStatus: null,
-      goingCount: 3,
+      goingCount: 4,
       maybeCount: 0,
       distanceKm: null,
       bannerKey: null,
-      bannerUrl: null,
+      bannerUrl: "/images/sample-plans/pottery.jpg",
     },
   ];
 
@@ -241,117 +263,143 @@ export function getSamplePublicExplorePlans(now = new Date()): PlanEvent[] {
 }
 
 /**
- * Per-plan people and chat for the sample plan pages. Every plan used to
- * share one hard-coded cast and transcript, which fell apart the moment
- * someone opened two samples. Counts here are the source of truth the page
- * derives its "N going, M maybe" line from; keep each plan's list consistent
- * with the card's goingCount/maybeCount above.
+ * Per-plan people and chat for the sample plan pages. Counts here are the
+ * source of truth the page derives its "N going, M maybe" line from; keep
+ * each plan's list consistent with the card's goingCount/maybeCount above.
  */
 export const SAMPLE_PLAN_DETAILS: Record<string, SamplePlanDetails> = {
   [IDS[0]]: {
     hostName: "Marta",
-    hostAvatar: AV(2),
+    hostAvatar: AV("fox"),
     people: [
-      { name: "Priya", avatar: AV(3), status: "going", confirmed: true },
-      { name: "Marcus", avatar: AV(5), status: "going", confirmed: true },
-      { name: "Elena", avatar: AV(6), status: "going", confirmed: true },
-      { name: "Sam", avatar: AV(7), status: "going", confirmed: true },
-      { name: "Naomi", avatar: AV(4), status: "going", confirmed: true },
-      { name: "Dev", avatar: AV(9), status: "going", confirmed: true },
-      { name: "Victor", avatar: AV(12), status: "going", confirmed: false },
-      { name: "June", avatar: AV(8), status: "going", confirmed: false },
-      { name: "Kofi", avatar: AV(10), status: "maybe", confirmed: false },
+      { name: "Priya", avatar: AV("owl"), status: "going", confirmed: true },
+      { name: "Marcus", avatar: AV("coffee"), status: "going", confirmed: true },
+      { name: "Elena", avatar: AV("plant"), status: "going", confirmed: true },
+      { name: "Sam", avatar: AV("frog"), status: "going", confirmed: true },
+      { name: "Naomi", avatar: AV("cat"), status: "going", confirmed: true },
+      { name: "Dev", avatar: AV("d20"), status: "going", confirmed: true },
+      { name: "June", avatar: AV("rabbit"), status: "going", confirmed: true },
+      { name: "Victor", avatar: AV("camera"), status: "going", confirmed: false },
+      { name: "Rosa", avatar: AV("bear"), status: "going", confirmed: false },
+      { name: "Ken", avatar: AV("penguin"), status: "going", confirmed: false },
+      { name: "Kofi", avatar: AV("guitar"), status: "maybe", confirmed: false },
     ],
     chat: [
-      { who: "Priya", avatar: AV(3), text: "I've got lasagna covered, and I'm bringing Ticket to Ride." },
-      { who: "Marcus", avatar: AV(5), text: "Bean salad from me. Anyone need a ride from the north end?" },
-      { who: "Elena", avatar: AV(6), text: "I can take two people, leaving around 6." },
-      { who: "Marta", avatar: AV(2), text: "Pavilion is ours from 6. Bring a sweater, it cools off by the water." },
+      { who: "Priya", avatar: AV("owl"), text: "Lasagna's claimed! And I'm bringing Ticket to Ride and Codenames." },
+      { who: "Marcus", avatar: AV("coffee"), text: "Bean salad and my giant Jenga set. This is going to be so much fun!" },
+      { who: "Elena", avatar: AV("plant"), text: "I can drive two people from the north end, just say the word." },
+      { who: "Dev", avatar: AV("d20"), text: "Ten of us already? Best turnout yet!" },
+      { who: "Marta", avatar: AV("fox"), text: "Pavilion's ours from 6. Bring a sweater for later, and your appetite. Can't wait to see everyone!" },
     ],
   },
   [IDS[1]]: {
     hostName: "Theo",
-    hostAvatar: AV(11),
+    hostAvatar: AV("d20"),
     people: [
-      { name: "Ravi", avatar: AV(9), status: "going", confirmed: true },
-      { name: "Jess", avatar: AV(1), status: "going", confirmed: true },
-      { name: "Colin", avatar: AV(12), status: "going", confirmed: false },
+      { name: "Ravi", avatar: AV("penguin"), status: "going", confirmed: true },
+      { name: "Jess", avatar: AV("cat"), status: "going", confirmed: true },
+      { name: "Colin", avatar: AV("camera"), status: "going", confirmed: true },
+      { name: "Mei", avatar: AV("owl"), status: "going", confirmed: true },
+      { name: "Aaron", avatar: AV("coffee"), status: "going", confirmed: true },
+      { name: "Dana", avatar: AV("fox"), status: "going", confirmed: false },
+      { name: "Luis", avatar: AV("bear"), status: "going", confirmed: false },
+      { name: "Pav", avatar: AV("frog"), status: "maybe", confirmed: false },
     ],
     chat: [
-      { who: "Ravi", avatar: AV(9), text: "Bringing three decks, power level around six." },
-      { who: "Jess", avatar: AV(1), text: "My partner wants to try Commander. Beginner friendly?" },
-      { who: "Theo", avatar: AV(11), text: "Absolutely. I'll bring a loaner deck, we'll teach as we go." },
+      { who: "Ravi", avatar: AV("penguin"), text: "Seven in the pod already! One seat left, tell your friends." },
+      { who: "Jess", avatar: AV("cat"), text: "I've heard so much about this cube. Any preview of the archetypes?" },
+      { who: "Theo", avatar: AV("d20"), text: "Freshly updated with the new set, and there's a spicy artifacts deck hiding in there. You'll see!" },
+      { who: "Mei", avatar: AV("owl"), text: "Bringing sleeves and snacks. Let's go!" },
     ],
   },
   [IDS[2]]: {
     hostName: "Margaret",
-    hostAvatar: AV(13),
+    hostAvatar: AV("book"),
     people: [
-      { name: "Alice", avatar: AV(1), status: "going", confirmed: true },
-      { name: "Tom", avatar: AV(5), status: "going", confirmed: true },
-      { name: "Grace", avatar: AV(4), status: "going", confirmed: true },
-      { name: "Omar", avatar: AV(10), status: "going", confirmed: true },
-      { name: "Fern", avatar: AV(6), status: "going", confirmed: false },
-      { name: "Lucas", avatar: AV(14), status: "going", confirmed: false },
-      { name: "Rosa", avatar: AV(8), status: "maybe", confirmed: false },
+      { name: "Alice", avatar: AV("plant"), status: "going", confirmed: true },
+      { name: "Tom", avatar: AV("coffee"), status: "going", confirmed: true },
+      { name: "Grace", avatar: AV("rabbit"), status: "going", confirmed: true },
+      { name: "Omar", avatar: AV("owl"), status: "going", confirmed: true },
+      { name: "Fern", avatar: AV("cat"), status: "going", confirmed: false },
+      { name: "Lucas", avatar: AV("guitar"), status: "going", confirmed: false },
+      { name: "Rosa", avatar: AV("frog"), status: "maybe", confirmed: false },
     ],
     chat: [
-      { who: "Alice", avatar: AV(1), text: "Halfway through. No spoilers past chapter twelve, please." },
-      { who: "Tom", avatar: AV(5), text: "I'll grab our usual corner table and order a pot of tea." },
-      { who: "Grace", avatar: AV(4), text: "Bringing my sister along, she just finished it in two days." },
-      { who: "Margaret", avatar: AV(13), text: "Wonderful. Next month's shortlist is pinned on the plan page." },
+      { who: "Alice", avatar: AV("plant"), text: "Finished it in three sittings. That ending! No spoilers, but wow." },
+      { who: "Tom", avatar: AV("coffee"), text: "Our corner table is booked and I'm ordering the big pot of tea. So looking forward to this one." },
+      { who: "Grace", avatar: AV("rabbit"), text: "Bringing my sister, she loved it too. Two more chapters for me tonight!" },
+      { who: "Margaret", avatar: AV("book"), text: "Wonderful! Next month's shortlist is up, add your suggestions below." },
     ],
+    altTimes: {
+      intro: "A couple of members suggested times for next month's meetup. The host can make one official with a tap.",
+      entries: [
+        { when: "First Thursday, 7:00 PM", names: "Alice, Omar and 2 others" },
+        { when: "First Sunday, 2:00 PM", names: "Grace, Fern" },
+      ],
+    },
   },
   [IDS[3]]: {
     hostName: "Tom",
-    hostAvatar: AV(14),
+    hostAvatar: AV("dog"),
     people: [
-      { name: "Hana", avatar: AV(2), status: "going", confirmed: true },
-      { name: "Pete", avatar: AV(12), status: "going", confirmed: true },
-      { name: "Sylvie", avatar: AV(6), status: "going", confirmed: true },
-      { name: "Andre", avatar: AV(9), status: "going", confirmed: false },
-      { name: "Bea", avatar: AV(3), status: "going", confirmed: false },
-      { name: "Noor", avatar: AV(4), status: "maybe", confirmed: false },
-      { name: "Stan", avatar: AV(5), status: "maybe", confirmed: false },
+      { name: "Hana", avatar: AV("plant"), status: "going", confirmed: true },
+      { name: "Pete", avatar: AV("camera"), status: "going", confirmed: true },
+      { name: "Sylvie", avatar: AV("owl"), status: "going", confirmed: true },
+      { name: "Andre", avatar: AV("frog"), status: "going", confirmed: false },
+      { name: "Bea", avatar: AV("rabbit"), status: "going", confirmed: false },
+      { name: "Noor", avatar: AV("cat"), status: "maybe", confirmed: false },
+      { name: "Stan", avatar: AV("coffee"), status: "maybe", confirmed: false },
     ],
     chat: [
-      { who: "Hana", avatar: AV(2), text: "Meeting at the trailhead lot at nine sharp?" },
-      { who: "Tom", avatar: AV(14), text: "Nine sharp. Easy pace, about an hour, coffee at Locomotive after." },
-      { who: "Pete", avatar: AV(12), text: "Are leashed dogs alright? Biscuit needs the exercise." },
-      { who: "Tom", avatar: AV(14), text: "Leashed dogs very welcome." },
+      { who: "Hana", avatar: AV("plant"), text: "The bog is gorgeous right now, you picked the perfect week for this!" },
+      { who: "Tom", avatar: AV("dog"), text: "Nine sharp at the trailhead lot! Easy pace, about an hour, then Locomotive for coffee. Biscuit is coming too." },
+      { who: "Pete", avatar: AV("camera"), text: "Bringing the camera, the light through there in the morning is unreal." },
+      { who: "Bea", avatar: AV("rabbit"), text: "First time out with this group, really excited to meet everyone!" },
     ],
   },
   [IDS[4]]: {
-    hostName: "Dana",
-    hostAvatar: AV(8),
+    hostName: "Denise",
+    hostAvatar: AV("plant"),
     people: [
-      { name: "Mike", avatar: AV(5), status: "going", confirmed: true },
-      { name: "Steph", avatar: AV(1), status: "going", confirmed: true },
-      { name: "Jordan", avatar: AV(10), status: "going", confirmed: true },
-      { name: "Kelly", avatar: AV(2), status: "going", confirmed: true },
-      { name: "Ben", avatar: AV(12), status: "going", confirmed: false },
-      { name: "Ada", avatar: AV(6), status: "going", confirmed: false },
-      { name: "Ray", avatar: AV(14), status: "maybe", confirmed: false },
+      { name: "Dad", avatar: AV("guitar"), status: "going", confirmed: true },
+      { name: "Mike", avatar: AV("coffee"), status: "going", confirmed: true },
+      { name: "Sarah", avatar: AV("cat"), status: "going", confirmed: true },
+      { name: "Nana June", avatar: AV("rabbit"), status: "going", confirmed: true },
+      { name: "Uncle Ray", avatar: AV("fox"), status: "going", confirmed: true },
+      { name: "Kim", avatar: AV("owl"), status: "going", confirmed: true },
+      { name: "Josh", avatar: AV("frog"), status: "going", confirmed: true },
+      { name: "Amy", avatar: AV("penguin"), status: "going", confirmed: true },
+      { name: "Cousin Lee", avatar: AV("camera"), status: "going", confirmed: false },
+      { name: "Priya", avatar: AV("book"), status: "going", confirmed: false },
+      { name: "Max", avatar: AV("d20"), status: "going", confirmed: false },
+      { name: "Dana", avatar: AV("bear"), status: "going", confirmed: false },
+      { name: "Aunt Carol", avatar: AV("plant"), status: "maybe", confirmed: false },
+      { name: "Steve", avatar: AV("dog"), status: "maybe", confirmed: false },
     ],
     chat: [
-      { who: "Dana", avatar: AV(8), text: "Two lanes booked under Dana for ten o'clock." },
-      { who: "Steph", avatar: AV(1), text: "Fair warning, I haven't bowled since high school." },
-      { who: "Mike", avatar: AV(5), text: "Shoe rental is four dollars, bring a loonie for the lockers." },
+      { who: "Mike", avatar: AV("coffee"), text: "Sixty years young! I've got the burgers and the big cooler covered." },
+      { who: "Sarah", avatar: AV("cat"), text: "Cake is ordered, chocolate with the raspberry filling he loves. Shhh!" },
+      { who: "Nana June", avatar: AV("rabbit"), text: "I'll bring my potato salad, wouldn't be a party without it." },
+      { who: "Denise", avatar: AV("plant"), text: "You're all the best. Lawn games start at 2, speeches at 4, and whoever spoils the cake surprise does the dishes!" },
     ],
+    locationPrivacyNote:
+      "The exact address is shared with invited guests only. Everyone on this plan sees it; this preview shows the neighbourhood.",
+    hideMap: true,
   },
   [IDS[5]]: {
     hostName: "Ines",
-    hostAvatar: AV(4),
+    hostAvatar: AV("bear"),
     people: [
-      { name: "Wren", avatar: AV(6), status: "going", confirmed: true },
-      { name: "Paulo", avatar: AV(9), status: "going", confirmed: true },
-      { name: "Maya", avatar: AV(3), status: "going", confirmed: false },
+      { name: "Wren", avatar: AV("plant"), status: "going", confirmed: true },
+      { name: "Paulo", avatar: AV("guitar"), status: "going", confirmed: true },
+      { name: "Maya", avatar: AV("cat"), status: "going", confirmed: false },
+      { name: "Theo", avatar: AV("owl"), status: "going", confirmed: false },
     ],
     chat: [
-      { who: "Wren", avatar: AV(6), text: "First time doing pottery, genuinely excited." },
-      { who: "Ines", avatar: AV(4), text: "We'll do handbuilding, no wheel experience needed. Studio fee covers clay and one firing." },
-      { who: "Paulo", avatar: AV(9), text: "Do we pick pieces up the same day or after the kiln?" },
-      { who: "Ines", avatar: AV(4), text: "About a week after, I'll post a pickup note here when they're ready." },
+      { who: "Wren", avatar: AV("plant"), text: "First time doing pottery and honestly counting down the days!" },
+      { who: "Ines", avatar: AV("bear"), text: "You'll love it. Handbuilding this time, no wheel experience needed, and the studio fee covers clay and one firing." },
+      { who: "Paulo", avatar: AV("guitar"), text: "My mug from last time survived the kiln. Going for a whole set now!" },
+      { who: "Ines", avatar: AV("bear"), text: "Pieces are ready about a week after, I'll post a pickup note here." },
     ],
   },
 };

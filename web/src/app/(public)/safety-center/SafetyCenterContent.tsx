@@ -246,33 +246,6 @@ export default function SafetyCenterContent({ isLoggedIn = false }: { isLoggedIn
         </Stack>
 
         {/* Hero image */}
-        <Box
-          sx={{
-            mt: { xs: 5, sm: 7 },
-            mx: "auto",
-            maxWidth: CONTENT_MAX_WIDTH,
-            borderRadius: 2,
-            overflow: "hidden",
-            width: "100%",
-          }}
-        >
-          {/* Warm brand panel. This slot held a stock Jenga photo, retired
-              with the Aug 2026 host-first repositioning (game-store imagery
-              out, product-true surfaces in). */}
-          <Box
-            sx={{
-              width: "100%",
-              aspectRatio: "3 / 1",
-              background:
-                "radial-gradient(ellipse 80% 90% at 25% 15%, rgba(252,236,195,0.9) 0%, transparent 70%), linear-gradient(135deg, #fff7ed 0%, #ffe8d1 100%)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <ShieldOutlinedIcon sx={{ fontSize: 64, color: "primary.main", opacity: 0.4 }} />
-          </Box>
-        </Box>
       </Box>
 
       {/* ── Section 2: Quick confidence checklist ── */}
