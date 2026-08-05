@@ -9,7 +9,6 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
-import IosShareRoundedIcon from "@mui/icons-material/IosShareRounded";
 import { trackEvent } from "@/lib/analytics";
 
 /**
@@ -27,10 +26,11 @@ import { trackEvent } from "@/lib/analytics";
  *   - any time afterwards from the plan page's Share button
  *     (`surface="plan_page"`).
  *
- * It shows the link itself, a one-tap copy, the native share sheet where the
- * device has one (feature-detected, hidden elsewhere), and a preview of how
- * the link unfurls when pasted into a group chat, so the host knows what
- * their friends will actually see.
+ * It shows the link itself, one full-width copy action, and a preview of
+ * how the link unfurls when pasted into a group chat, so the host knows what
+ * their friends will actually see. There is deliberately no second button:
+ * the native share sheet used to sit beside Copy, and two ways to do the
+ * same thing made the single most important tap on the page a choice.
  */
 
 type PlanShareMomentProps = {
@@ -54,13 +54,6 @@ export default function PlanShareMoment({
   surface,
 }: PlanShareMomentProps) {
   const [copied, setCopied] = React.useState(false);
-  // navigator.share is absent on most desktop browsers and on http origins.
-  // Resolved after mount so the server and first client render agree.
-  const [canNativeShare, setCanNativeShare] = React.useState(false);
-
-  React.useEffect(() => {
-    setCanNativeShare(typeof navigator !== "undefined" && typeof navigator.share === "function");
-  }, []);
 
   // One event per opening, per surface.
   const shownRef = React.useRef(false);
@@ -98,19 +91,21 @@ export default function PlanShareMoment({
     }
   };
 
-  const nativeShare = async () => {
-    trackEvent("share_sheet_opened", { surface });
-    try {
-      await navigator.share({ title: planTitle, text: `Join me: ${planTitle}`, url });
-    } catch {
-      /* User dismissed the sheet, or the browser refused. Nothing to do. */
-    }
-  };
-
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="xs" PaperProps={{ sx: { borderRadius: 4 } }}>
-      <DialogContent sx={{ p: { xs: 2.5, sm: 3 } }}>
-        <Stack spacing={2.5}>
+    <Dialog
+      open={open}
+      onClose={onClose}
+      fullWidth
+      maxWidth="xs"
+      PaperProps={{ sx: { borderRadius: 4 } }}
+    >
+      {/* The theme turns every dialog into a full-screen sheet below sm.
+          This one auto-opens after publishing, so the sheet has to look
+          deliberate: the content centres itself in the spare height (auto
+          margins, not justify-content, so an overflowing short-landscape
+          screen still scrolls from the top instead of clipping). */}
+      <DialogContent sx={{ p: { xs: 2.5, sm: 3 }, display: "flex", flexDirection: "column" }}>
+        <Stack spacing={2} sx={{ my: "auto" }}>
           <Box>
             <Typography sx={{ fontWeight: 700, fontSize: "1.125rem", lineHeight: 1.3 }}>
               {surface === "post_publish" ? "Your plan is live. Share it." : "Share this plan"}
@@ -142,29 +137,15 @@ export default function PlanShareMoment({
             {url}
           </Box>
 
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-            <Button
-              onClick={copy}
-              variant="contained"
-              fullWidth
-              startIcon={copied ? <CheckRoundedIcon /> : <ContentCopyRoundedIcon />}
-              sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2.5, boxShadow: "none", "&:hover": { boxShadow: "none" } }}
-            >
-              {copied ? "Copied" : "Copy link"}
-            </Button>
-            {canNativeShare && (
-              <Button
-                onClick={nativeShare}
-                variant="outlined"
-                fullWidth
-                color="inherit"
-                startIcon={<IosShareRoundedIcon />}
-                sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2.5, borderColor: "divider" }}
-              >
-                Share
-              </Button>
-            )}
-          </Stack>
+          <Button
+            onClick={copy}
+            variant="contained"
+            fullWidth
+            startIcon={copied ? <CheckRoundedIcon /> : <ContentCopyRoundedIcon />}
+            sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2.5, boxShadow: "none", "&:hover": { boxShadow: "none" } }}
+          >
+            {copied ? "Copied" : "Copy link"}
+          </Button>
 
           {/* Unfurl preview: mirrors the real share card (static
               /og-plan-card.png plus the og:title and og:description that
@@ -202,7 +183,7 @@ export default function PlanShareMoment({
             variant="text"
             sx={{ textTransform: "none", fontWeight: 600, color: "text.secondary", alignSelf: "center" }}
           >
-            {surface === "post_publish" ? "Go to the plan" : "Done"}
+            {surface === "post_publish" ? "Awesome!" : "Done"}
           </Button>
         </Stack>
       </DialogContent>
