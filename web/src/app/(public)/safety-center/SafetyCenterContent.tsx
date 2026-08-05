@@ -256,16 +256,22 @@ export default function SafetyCenterContent({ isLoggedIn = false }: { isLoggedIn
             width: "100%",
           }}
         >
+          {/* Warm brand panel. This slot held a stock Jenga photo, retired
+              with the Aug 2026 host-first repositioning (game-store imagery
+              out, product-true surfaces in). */}
           <Box
-            component="img"
-            src="/images/safety-center/Jenga.jpg"
-            alt="Friends gathered around a table playing Jenga"
             sx={{
-              display: "block",
               width: "100%",
-              height: "auto",
+              aspectRatio: "3 / 1",
+              background:
+                "radial-gradient(ellipse 80% 90% at 25% 15%, rgba(252,236,195,0.9) 0%, transparent 70%), linear-gradient(135deg, #fff7ed 0%, #ffe8d1 100%)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
             }}
-          />
+          >
+            <ShieldOutlinedIcon sx={{ fontSize: 64, color: "primary.main", opacity: 0.4 }} />
+          </Box>
         </Box>
       </Box>
 

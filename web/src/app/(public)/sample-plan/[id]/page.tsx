@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Box from "@mui/material/Box";
 import LandingLayout from "@/components/landing/LandingLayout";
-import { getSamplePublicExplorePlans } from "@/lib/publicExploreSamplePlans";
+import { getSamplePublicExplorePlans, SAMPLE_PLAN_DETAILS } from "@/lib/publicExploreSamplePlans";
 import SamplePlanClient from "./SamplePlanClient";
 
 type PageProps = { params: Promise<{ id: string }> };
@@ -24,12 +24,13 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 export default async function SamplePlanPage({ params }: PageProps) {
   const { id } = await params;
   const plan = getSamplePublicExplorePlans().find((p) => p.id === id);
-  if (!plan) notFound();
+  const details = SAMPLE_PLAN_DETAILS[id];
+  if (!plan || !details) notFound();
 
   return (
     <LandingLayout isLoggedIn={false}>
       <Box sx={{ py: { xs: 2, sm: 3 } }}>
-        <SamplePlanClient plan={plan} />
+        <SamplePlanClient plan={plan} details={details} />
       </Box>
     </LandingLayout>
   );

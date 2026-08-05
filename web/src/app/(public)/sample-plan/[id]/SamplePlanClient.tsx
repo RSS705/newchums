@@ -17,6 +17,8 @@ import ForumRoundedIcon from "@mui/icons-material/ForumRounded";
 import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 import type { PlanEvent } from "@/components/events/EventCard";
+import { getGradientForEventId } from "@/lib/eventBanners";
+import type { SamplePlanDetails } from "@/lib/publicExploreSamplePlans";
 
 /**
  * Read-only demo of a plan page, reached by clicking a sample card in the
@@ -29,22 +31,11 @@ import type { PlanEvent } from "@/components/events/EventCard";
  *
  * Deliberately NOT interactive. Every control is disabled and explained;
  * a working RSVP demo was explicitly out of scope, and a demo that half
- * works is worse than one that is honestly inert. All content is generated
- * from the curated sample data, so nothing here is a real person or plan.
+ * works is worse than one that is honestly inert. All content comes from
+ * the curated sample data: each plan has its own cast, chat and host (they
+ * used to share one hard-coded set, which fell apart the moment someone
+ * opened two samples), and nothing here is a real person or plan.
  */
-
-const DEMO_ATTENDEES = [
-  { name: "Priya", initial: "P", status: "going" as const, confirmed: true },
-  { name: "Marcus", initial: "M", status: "going" as const, confirmed: true },
-  { name: "Dani", initial: "D", status: "going" as const, confirmed: false },
-  { name: "Sam", initial: "S", status: "maybe" as const, confirmed: false },
-];
-
-const DEMO_CHAT = [
-  { who: "Priya", text: "Bringing snacks, anyone need a lift?" },
-  { who: "Marcus", text: "I can pick two people up from downtown." },
-  { who: "Dani", text: "Perfect, see you all there." },
-];
 
 function formatWhen(iso: string): string {
   try {
@@ -61,13 +52,15 @@ function formatWhen(iso: string): string {
   }
 }
 
-function Avatar({ initial }: { initial: string }) {
+function Avatar({ src, name, size = 36 }: { src: string; name: string; size?: number }) {
+  const [failed, setFailed] = React.useState(false);
   return (
     <Box
       sx={{
-        width: 36,
-        height: 36,
+        width: size,
+        height: size,
         borderRadius: "50%",
+        overflow: "hidden",
         bgcolor: "primary.light",
         color: "primary.dark",
         display: "flex",
@@ -78,15 +71,31 @@ function Avatar({ initial }: { initial: string }) {
         flexShrink: 0,
       }}
     >
-      {initial}
+      {failed ? (
+        name[0]
+      ) : (
+        <Box
+          component="img"
+          src={src}
+          alt=""
+          onError={() => setFailed(true)}
+          sx={{ width: "100%", height: "100%", display: "block" }}
+        />
+      )}
     </Box>
   );
 }
 
-export default function SamplePlanClient({ plan }: { plan: PlanEvent }) {
+export default function SamplePlanClient({
+  plan,
+  details,
+}: {
+  plan: PlanEvent;
+  details: SamplePlanDetails;
+}) {
   const when = plan.startsAt ? formatWhen(plan.startsAt) : "";
-  const goingCount = DEMO_ATTENDEES.filter((a) => a.status === "going").length;
-  const maybeCount = DEMO_ATTENDEES.filter((a) => a.status === "maybe").length;
+  const goingCount = details.people.filter((a) => a.status === "going").length;
+  const maybeCount = details.people.filter((a) => a.status === "maybe").length;
 
   return (
     <Stack spacing={2.5} sx={{ maxWidth: 760, mx: "auto", py: { xs: 2, sm: 3 } }}>
@@ -118,12 +127,20 @@ export default function SamplePlanClient({ plan }: { plan: PlanEvent }) {
 
       {/* Plan header */}
       <Paper variant="outlined" sx={{ borderRadius: 3, overflow: "hidden" }}>
-        {plan.bannerUrl && (
+        {plan.bannerUrl ? (
           <Box
             component="img"
             src={plan.bannerUrl}
             alt=""
             sx={{ display: "block", width: "100%", height: { xs: 140, sm: 200 }, objectFit: "cover" }}
+          />
+        ) : (
+          <Box
+            sx={{
+              width: "100%",
+              height: { xs: 120, sm: 160 },
+              background: getGradientForEventId(plan.id),
+            }}
           />
         )}
         <Box sx={{ p: { xs: 2, sm: 2.75 } }}>
@@ -145,9 +162,12 @@ export default function SamplePlanClient({ plan }: { plan: PlanEvent }) {
                 <Typography variant="body2">{plan.locationDisplay}</Typography>
               </Stack>
             )}
-            <Typography variant="body2" sx={{ color: "text.secondary" }}>
-              Hosted by {plan.hostName ?? "a NewChums host"}
-            </Typography>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Avatar src={details.hostAvatar} name={details.hostName} size={26} />
+              <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                Hosted by {details.hostName} ({plan.hostName ?? "@host"})
+              </Typography>
+            </Stack>
           </Stack>
 
           {/* Disabled RSVP row: shows what an attendee would see, without
@@ -182,9 +202,9 @@ export default function SamplePlanClient({ plan }: { plan: PlanEvent }) {
           {goingCount} going, {maybeCount} maybe
         </Typography>
         <Stack spacing={1.25}>
-          {DEMO_ATTENDEES.map((a) => (
+          {details.people.map((a) => (
             <Stack key={a.name} direction="row" spacing={1.5} alignItems="center">
-              <Avatar initial={a.initial} />
+              <Avatar src={a.avatar} name={a.name} />
               <Typography sx={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: "0.9375rem" }}>
                 {a.name}
               </Typography>
@@ -249,9 +269,9 @@ export default function SamplePlanClient({ plan }: { plan: PlanEvent }) {
           <Typography sx={{ fontWeight: 700, fontSize: "1.0625rem" }}>Plan chat</Typography>
         </Stack>
         <Stack spacing={1.25}>
-          {DEMO_CHAT.map((m, i) => (
+          {details.chat.map((m, i) => (
             <Stack key={i} direction="row" spacing={1.5} alignItems="flex-start">
-              <Avatar initial={m.who[0]} />
+              <Avatar src={m.avatar} name={m.who} />
               <Box
                 sx={{
                   bgcolor: "background.default",
