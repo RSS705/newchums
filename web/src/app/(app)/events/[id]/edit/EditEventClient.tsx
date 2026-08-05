@@ -751,6 +751,43 @@ export default function EditEventClient() {
               helperText={errors.title || null}
             />
           </Box>
+          {/* Description and banner live with the essentials; see the Add
+              form for the rationale. The swatches are new here: Edit was
+              upload-only for a while, an accidental regression from Add. */}
+          <Box>
+            <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 0.625 }}>
+              Description
+            </Typography>
+            <RichTextEditor
+              placeholder="What should people expect? Any details they should know?"
+              value={description}
+              onChange={setDescription}
+            />
+          </Box>
+          <BannerField
+            bannerPreview={bannerPreview}
+            selectedPresetSlug={selectedPresetSlug}
+            presetRendering={presetRendering}
+            onPresetSelect={(slug) => void handlePresetSelect(slug)}
+            onUploadClick={() => bannerInputRef.current?.click()}
+            onRemove={() => {
+              setBannerFile(null);
+              if (bannerPreview && !bannerPreview.startsWith("http")) URL.revokeObjectURL(bannerPreview);
+              setBannerPreview(null);
+              setSelectedPresetSlug(null);
+              setBannerRemoved(true);
+            }}
+            onPreviewError={() => {
+              if (bannerPreview && bannerPreview.startsWith(getAvatarBaseUrl())) {
+                const fb = getImageFallbackBaseUrl();
+                if (fb) {
+                  setBannerPreview(bannerPreview.replace(getAvatarBaseUrl(), fb));
+                  return;
+                }
+              }
+              setBannerPreview(null);
+            }}
+          />
 
           <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
             <Box ref={setFieldRef("date")} sx={{ flex: 1, scrollMarginTop: 96 }}>
@@ -881,43 +918,6 @@ export default function EditEventClient() {
               sx={{ gap: 0.5 }}
             />
           )}
-          {/* Description and banner live with the essentials; see the Add
-              form for the rationale. The swatches are new here: Edit was
-              upload-only for a while, an accidental regression from Add. */}
-          <Box>
-            <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 0.625 }}>
-              Description
-            </Typography>
-            <RichTextEditor
-              placeholder="What should people expect? Any details they should know?"
-              value={description}
-              onChange={setDescription}
-            />
-          </Box>
-          <BannerField
-            bannerPreview={bannerPreview}
-            selectedPresetSlug={selectedPresetSlug}
-            presetRendering={presetRendering}
-            onPresetSelect={(slug) => void handlePresetSelect(slug)}
-            onUploadClick={() => bannerInputRef.current?.click()}
-            onRemove={() => {
-              setBannerFile(null);
-              if (bannerPreview && !bannerPreview.startsWith("http")) URL.revokeObjectURL(bannerPreview);
-              setBannerPreview(null);
-              setSelectedPresetSlug(null);
-              setBannerRemoved(true);
-            }}
-            onPreviewError={() => {
-              if (bannerPreview && bannerPreview.startsWith(getAvatarBaseUrl())) {
-                const fb = getImageFallbackBaseUrl();
-                if (fb) {
-                  setBannerPreview(bannerPreview.replace(getAvatarBaseUrl(), fb));
-                  return;
-                }
-              }
-              setBannerPreview(null);
-            }}
-          />
         </Stack>
       </AppCard>
 

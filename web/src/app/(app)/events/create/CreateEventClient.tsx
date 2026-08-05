@@ -887,6 +887,33 @@ export default function CreateEventClient() {
               inputProps={{ maxLength: 200 }}
             />
           </Box>
+          {/* Description and banner were collapsed sections until Aug 2026.
+              They're basic details people expect to fill in (and the banner
+              is the fun part), so they live with the essentials now; the
+              collapsed tier below is for controls, not content. */}
+          <Box>
+            <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 0.625 }}>
+              Description
+            </Typography>
+            <RichTextEditor
+              placeholder="What should people expect? Any details they should know?"
+              value={description}
+              onChange={setDescription}
+            />
+          </Box>
+          <BannerField
+            bannerPreview={bannerPreview}
+            selectedPresetSlug={selectedPresetSlug}
+            presetRendering={presetRendering}
+            onPresetSelect={(slug) => void handlePresetSelect(slug)}
+            onUploadClick={() => bannerInputRef.current?.click()}
+            onRemove={() => {
+              setBannerFile(null);
+              if (bannerPreview) URL.revokeObjectURL(bannerPreview);
+              setBannerPreview(null);
+              setSelectedPresetSlug(null);
+            }}
+          />
 
           <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
             <Box ref={setFieldRef("date")} sx={{ flex: 1, scrollMarginTop: 96 }}>
@@ -1024,33 +1051,6 @@ export default function CreateEventClient() {
               sx={{ gap: 0.5 }}
             />
           )}
-          {/* Description and banner were collapsed sections until Aug 2026.
-              They're basic details people expect to fill in (and the banner
-              is the fun part), so they live with the essentials now; the
-              collapsed tier below is for controls, not content. */}
-          <Box>
-            <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 0.625 }}>
-              Description
-            </Typography>
-            <RichTextEditor
-              placeholder="What should people expect? Any details they should know?"
-              value={description}
-              onChange={setDescription}
-            />
-          </Box>
-          <BannerField
-            bannerPreview={bannerPreview}
-            selectedPresetSlug={selectedPresetSlug}
-            presetRendering={presetRendering}
-            onPresetSelect={(slug) => void handlePresetSelect(slug)}
-            onUploadClick={() => bannerInputRef.current?.click()}
-            onRemove={() => {
-              setBannerFile(null);
-              if (bannerPreview) URL.revokeObjectURL(bannerPreview);
-              setBannerPreview(null);
-              setSelectedPresetSlug(null);
-            }}
-          />
         </Stack>
       </AppCard>
 

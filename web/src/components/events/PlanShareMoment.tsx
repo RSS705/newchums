@@ -183,7 +183,7 @@ export default function PlanShareMoment({
             variant="text"
             sx={{ textTransform: "none", fontWeight: 600, color: "text.secondary", alignSelf: "center" }}
           >
-            {surface === "post_publish" ? "Awesome!" : "Done"}
+            {surface === "post_publish" ? "Awesome!" : "Perfect!"}
           </Button>
         </Stack>
       </DialogContent>

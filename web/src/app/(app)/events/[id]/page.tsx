@@ -1,4 +1,12 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+
+// Discord colours the left strip of a link embed with the page's
+// theme-color; brand orange makes plan embeds unmistakably NewChums.
+// Scoped to this route rather than the root layout so the mobile-browser
+// chrome tint doesn't go orange product-wide.
+export const viewport: Viewport = {
+  themeColor: "#E65B13",
+};
 import { Suspense, cache } from "react";
 import CircularProgress from "@mui/material/CircularProgress";
 import Box from "@mui/material/Box";
@@ -411,7 +419,7 @@ export async function generateMetadata({
         siteName: "NewChums",
         images: [
           {
-            url: "/og-plan-card.png",
+            url: "/og-plan-card.png?v=2",
             width: 1200,
             height: 630,
             alt: "A plan on NewChums",
@@ -423,7 +431,7 @@ export async function generateMetadata({
         card: "summary_large_image",
         title: ogTitle,
         description,
-        images: ["/og-plan-card.png"],
+        images: ["/og-plan-card.png?v=2"],
       },
     };
   } catch {
