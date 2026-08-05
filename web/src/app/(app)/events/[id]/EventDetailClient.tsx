@@ -2946,7 +2946,16 @@ export default function EventDetailClient({
                   <Typography variant="body2" color="text.secondary">
                     24-hour attendance check is enabled for this plan
                   </Typography>
-                  <HelpTooltip title="About 24 hours before the start time, everyone who marked Going gets an email asking to confirm they're still coming. Confirmations show on this page, so the whole group can see the plan is solid." />
+                  {/* The theme gives every IconButton a 44px minimum tap
+                      target, which would inflate this text row and push the
+                      sentence below the bell icon's centre. A margin on the
+                      button can't fix it (Stack spacing overrides child
+                      margins), so the button sits in a line-height-sized box
+                      and overflows it invisibly; the tap target survives,
+                      the row lays out at text height. */}
+                  <Box sx={{ height: 20, display: "flex", alignItems: "center", flexShrink: 0 }}>
+                    <HelpTooltip title="About 24 hours before the start time, everyone who marked Going gets an email asking to confirm they're still coming. Confirmations show on this page, so the whole group can see the plan is solid." />
+                  </Box>
                 </Stack>
                 {event.fallbackPolicy === "auto_cancel" && event.minConfirmedAttendees && (
                   <Typography variant="caption" color="text.secondary">
