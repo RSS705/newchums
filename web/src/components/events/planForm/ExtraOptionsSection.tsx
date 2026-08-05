@@ -59,6 +59,26 @@ type Props = {
   };
 };
 
+/** Tiny cluster caption. The section used to be one flat run of controls in
+ *  no particular order, and its two numeric fields ("Minimum confirmed
+ *  attendees" and "Minimum attendees required") were near-identical in name
+ *  while belonging to different mechanisms. Two labelled clusters fix both:
+ *  everything about showing up under ATTENDANCE, everything about getting
+ *  in under JOINING, and each minimum sits visibly inside the mechanism it
+ *  belongs to. */
+function ClusterLabel({ children, first = false }: { children: string; first?: boolean }) {
+  return (
+    <Box sx={{ pt: first ? 0 : 1 }}>
+      <Typography
+        variant="overline"
+        sx={{ color: "text.secondary", fontWeight: 700, letterSpacing: 1, lineHeight: 1, display: "block" }}
+      >
+        {children}
+      </Typography>
+    </Box>
+  );
+}
+
 /** Help-icon-next-to-a-toggle row. Kept as an internal helper rather than a
  *  public component so the Add and Edit forms cannot introduce per-row sx
  *  drift by tweaking alignment or spacing. */
@@ -134,6 +154,7 @@ export default function ExtraOptionsSection({
       onToggle={onToggle}
     >
       <Stack spacing={2.5}>
+        <ClusterLabel first>Attendance</ClusterLabel>
         <TooltipToggleRow
           checked={requireReconfirmation}
           onChange={onChangeRequireReconfirmation}
@@ -193,6 +214,42 @@ export default function ExtraOptionsSection({
           </Stack>
         )}
 
+        <Box
+          ref={registerMinAttendeesField}
+          sx={{ width: { xs: "100%", sm: "auto" }, scrollMarginTop: 96 }}
+        >
+          <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.625 }}>
+            Auto-cancel if not enough people are going (optional)
+          </Typography>
+          <TextField
+            fullWidth
+            size="small"
+            type="number"
+            placeholder="e.g. 4"
+            value={minAttendeesRequired}
+            onChange={(e) => onChangeMinAttendeesRequired(e.target.value)}
+            error={!!minAttendeesError}
+            helperText={
+              minAttendeesError ??
+              "If fewer than this many people are marked Going 2 hours before the start, NewChums cancels the plan and lets everyone know."
+            }
+            inputProps={{
+              min: 1,
+              max: 500,
+              onWheel: (e: WheelEvent<HTMLInputElement>) => e.currentTarget.blur(),
+            }}
+            sx={{ minWidth: { xs: "100%", sm: 320 } }}
+          />
+        </Box>
+
+        <TooltipToggleRow
+          checked={muteHostAttendanceEmails}
+          onChange={onChangeMuteHostAttendanceEmails}
+          label="Mute attendance emails"
+          tooltip="Stop emailing you when someone joins, leaves, or changes their RSVP for this plan, including invited people updating their attendance. You'll still get these in your in-app notifications, and you can check the plan anytime. Join requests and at-risk alerts are not affected."
+        />
+
+        <ClusterLabel>Joining</ClusterLabel>
         <TooltipToggleRow
           checked={requireApproval}
           onChange={onChangeRequireApproval}
@@ -206,41 +263,6 @@ export default function ExtraOptionsSection({
           label="Prevent attendees from inviting others"
           tooltip="Normally, people marked Going can invite others to the plan. Turn this on to keep invites host-only."
         />
-
-        <TooltipToggleRow
-          checked={muteHostAttendanceEmails}
-          onChange={onChangeMuteHostAttendanceEmails}
-          label="Mute attendance emails"
-          tooltip="Stop emailing you when someone joins, leaves, or changes their RSVP for this plan, including invited people updating their attendance. You'll still get these in your in-app notifications, and you can check the plan anytime. Join requests and at-risk alerts are not affected."
-        />
-
-        <Box
-          ref={registerMinAttendeesField}
-          sx={{ width: { xs: "100%", sm: "auto" }, scrollMarginTop: 96 }}
-        >
-          <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.625 }}>
-            Minimum attendees required (optional)
-          </Typography>
-          <TextField
-            fullWidth
-            size="small"
-            type="number"
-            placeholder="e.g. 4"
-            value={minAttendeesRequired}
-            onChange={(e) => onChangeMinAttendeesRequired(e.target.value)}
-            error={!!minAttendeesError}
-            helperText={
-              minAttendeesError ??
-              "If fewer than this many people are going 2 hours before the plan, NewChums will automatically cancel it."
-            }
-            inputProps={{
-              min: 1,
-              max: 500,
-              onWheel: (e: WheelEvent<HTMLInputElement>) => e.currentTarget.blur(),
-            }}
-            sx={{ minWidth: { xs: "100%", sm: 320 } }}
-          />
-        </Box>
 
         {notifyAttendees && (
           <FormControlLabel

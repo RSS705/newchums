@@ -21,12 +21,8 @@ import Stack from "@mui/material/Stack";
 import Switch from "@mui/material/Switch";
 import Typography from "@mui/material/Typography";
 import AddCircleRoundedIcon from "@mui/icons-material/AddCircleRounded";
-import AddPhotoAlternateRoundedIcon from "@mui/icons-material/AddPhotoAlternateRounded";
-import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import EventNoteRoundedIcon from "@mui/icons-material/EventNoteRounded";
 import EventRepeatRoundedIcon from "@mui/icons-material/EventRepeatRounded";
-import ImageRoundedIcon from "@mui/icons-material/ImageRounded";
-import NotesRoundedIcon from "@mui/icons-material/NotesRounded";
 import StyleRoundedIcon from "@mui/icons-material/StyleRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
@@ -42,18 +38,17 @@ import { trackEvent } from "@/lib/analytics";
 import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
 import { notifyObjectivesChanged } from "@/components/objectives/NextStepNudge";
 import { loadGooglePlacesScript } from "@/lib/loadGooglePlaces";
-import { BANNER_PRESETS, renderBannerPreset, suggestPreset } from "@/lib/eventBanners";
+import { renderBannerPreset, suggestPreset } from "@/lib/eventBanners";
 import { scrollToFirstError } from "@/lib/scrollToFirstError";
 import HobbyPickerField, { type HobbyOption } from "@/components/common/HobbyPickerField";
 import CopyPlanDialog from "@/components/events/CopyPlanDialog";
 import {
+  BannerField,
   CollapsibleSection,
   CommunityLinkSection,
   ExtraOptionsSection,
   QAPlanSection,
   describeAltTimes,
-  describeBanner,
-  describeDescription,
   describeHobbies,
   describeVisibility,
   type MyCommunity as SharedMyCommunity,
@@ -876,7 +871,7 @@ export default function CreateEventClient() {
                 color="text.disabled"
                 sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
               >
-                Title, when, where, and seats. That&apos;s all a plan needs.
+                Title, when, and where are all it takes. A description and banner help it stand out.
               </Typography>
             </Box>
           </Stack>
@@ -1029,167 +1024,57 @@ export default function CreateEventClient() {
               sx={{ gap: 0.5 }}
             />
           )}
+          {/* Description and banner were collapsed sections until Aug 2026.
+              They're basic details people expect to fill in (and the banner
+              is the fun part), so they live with the essentials now; the
+              collapsed tier below is for controls, not content. */}
+          <Box>
+            <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 0.625 }}>
+              Description
+            </Typography>
+            <RichTextEditor
+              placeholder="What should people expect? Any details they should know?"
+              value={description}
+              onChange={setDescription}
+            />
+          </Box>
+          <BannerField
+            bannerPreview={bannerPreview}
+            selectedPresetSlug={selectedPresetSlug}
+            presetRendering={presetRendering}
+            onPresetSelect={(slug) => void handlePresetSelect(slug)}
+            onUploadClick={() => bannerInputRef.current?.click()}
+            onRemove={() => {
+              setBannerFile(null);
+              if (bannerPreview) URL.revokeObjectURL(bannerPreview);
+              setBannerPreview(null);
+              setSelectedPresetSlug(null);
+            }}
+          />
         </Stack>
       </AppCard>
 
       {/* Tier two: optional sections, collapsed with a live summary of their
           current value in the header. Every one has a safe default, so
           skipping all of them still publishes a complete plan. */}
-      <Typography
-        variant="caption"
-        sx={{ color: "text.secondary", mt: { xs: -1.5, sm: -2 }, ml: 0.5 }}
-      >
-        Everything below is optional. Tap a section to open it.
-      </Typography>
-
-      <CollapsibleSection
-        sectionKey="description"
-        icon={<NotesRoundedIcon sx={{ fontSize: 22 }} />}
-        title="Description"
-        subtitle="What should people expect? Any details they should know?"
-        summary={describeDescription(description)}
-        expanded={!!openSections.description}
-        onToggle={() => toggleSection("description")}
-      >
-        <RichTextEditor
-          placeholder="What should people expect? Any details they should know?"
-          value={description}
-          onChange={setDescription}
-        />
-      </CollapsibleSection>
-
-      <CollapsibleSection
-        sectionKey="banner"
-        icon={<ImageRoundedIcon sx={{ fontSize: 22 }} />}
-        title="Banner image"
-        subtitle="Pick a colour theme or upload your own photo."
-        summary={describeBanner(selectedPresetSlug, !!bannerPreview)}
-        expanded={!!openSections.banner}
-        onToggle={() => toggleSection("banner")}
-      >
-        <Stack spacing={2}>
-          {/* Preset swatches */}
-          <Stack direction="row" flexWrap="wrap" gap={1} useFlexGap>
-            {BANNER_PRESETS.map((preset) => {
-              const isSelected = selectedPresetSlug === preset.slug;
-              return (
-                <Box
-                  key={preset.slug}
-                  onClick={() => !presetRendering && handlePresetSelect(preset.slug)}
-                  title={preset.label}
-                  sx={{
-                    width: 52,
-                    height: 36,
-                    borderRadius: 1.5,
-                    background: preset.gradient,
-                    cursor: presetRendering ? "wait" : "pointer",
-                    border: "2px solid",
-                    borderColor: isSelected ? "primary.main" : "transparent",
-                    boxShadow: isSelected
-                      ? "0 0 0 2px rgba(99,102,241,0.35)"
-                      : "0 1px 3px rgba(0,0,0,0.15)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    transition: "transform 0.1s ease, box-shadow 0.1s ease",
-                    "&:hover": { transform: presetRendering ? "none" : "scale(1.06)" },
-                  }}
-                >
-                  {isSelected && (
-                    <CheckRoundedIcon
-                      sx={{
-                        fontSize: 16,
-                        color: "white",
-                        filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.4))",
-                      }}
-                    />
-                  )}
-                </Box>
-              );
-            })}
-          </Stack>
-
-          {/* Preview / upload area */}
-          <Box
-            onClick={() => !selectedPresetSlug && bannerInputRef.current?.click()}
-            sx={{
-              width: "100%",
-              height: { xs: 140, sm: 180 },
-              borderRadius: 2.5,
-              border: "2px dashed",
-              borderColor: bannerPreview ? "transparent" : "grey.300",
-              bgcolor: bannerPreview ? "transparent" : "grey.50",
-              cursor: selectedPresetSlug ? "default" : "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              overflow: "hidden",
-              position: "relative",
-              transition: "border-color 0.2s",
-              "&:hover": { borderColor: bannerPreview ? "transparent" : "primary.main" },
-            }}
-          >
-            {bannerPreview ? (
-              <Box
-                component="img"
-                src={bannerPreview}
-                alt="Banner preview"
-                sx={{ width: "100%", height: "100%", objectFit: "cover" }}
-              />
-            ) : (
-              <Stack alignItems="center" spacing={0.75}>
-                <AddPhotoAlternateRoundedIcon sx={{ fontSize: 36, color: "text.disabled" }} />
-                <Typography variant="body2" color="text.secondary">
-                  Upload a custom photo
-                </Typography>
-              </Stack>
-            )}
-          </Box>
-          <Stack direction="row" spacing={1} flexWrap="wrap">
-            {selectedPresetSlug ? (
-              <AppButton
-                variant="outlined"
-                size="small"
-                onClick={() => bannerInputRef.current?.click()}
-              >
-                Upload custom photo instead
-              </AppButton>
-            ) : bannerPreview ? (
-              <AppButton
-                variant="outlined"
-                size="small"
-                onClick={() => bannerInputRef.current?.click()}
-              >
-                Change photo
-              </AppButton>
-            ) : null}
-            {bannerPreview && (
-              <AppButton
-                variant="text"
-                size="small"
-                color="error"
-                onClick={() => {
-                  setBannerFile(null);
-                  if (bannerPreview) URL.revokeObjectURL(bannerPreview);
-                  setBannerPreview(null);
-                  setSelectedPresetSlug(null);
-                }}
-              >
-                Remove
-              </AppButton>
-            )}
-          </Stack>
-          <Typography variant="caption" color="text.secondary">
-            Custom photos: JPEG, PNG, or WebP up to 20 MB, we&apos;ll compress it automatically.
-          </Typography>
-        </Stack>
-      </CollapsibleSection>
+      <Box sx={{ ml: 0.5 }}>
+        <Typography
+          variant="h6"
+          fontWeight={700}
+          sx={{ fontSize: { xs: "1.0625rem", sm: "1.125rem" }, lineHeight: 1.3 }}
+        >
+          Optional settings to enhance your plan
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+          Everything has a safe default. Tap a section to adjust it.
+        </Typography>
+      </Box>
 
       <CollapsibleSection
         sectionKey="hobbies"
         icon={<StyleRoundedIcon sx={{ fontSize: 22 }} />}
         title="Hobbies"
-        subtitle="Optional, helps people who share them find this plan."
+        subtitle="Optional, helps people who share these hobbies find this plan."
         summary={describeHobbies(selectedHobbies)}
         expanded={!!openSections.hobbies}
         onToggle={() => toggleSection("hobbies")}
@@ -1199,7 +1084,7 @@ export default function CreateEventClient() {
             value={selectedHobbies}
             onChange={setSelectedHobbies}
             error={errors.hobby}
-            helperText="People nearby who share these hobbies may get notified about this plan, depending on who can see it."
+            helperText="People nearby who share these hobbies may get notified about this plan, depending on this plan's visibility setting below."
             onReject={(msg) => toast.error(msg)}
           />
         </Box>
@@ -1394,7 +1279,7 @@ export default function CreateEventClient() {
                 <MenuItem value="exact_everyone">
                   <ListItemText
                     primary="Everyone"
-                    secondary="The full venue or address is shown wherever the plan appears"
+                    secondary="Shown to anyone signed in and anyone who opens your shared link. Signed-out visitors without the link see only the general area"
                     primaryTypographyProps={{ fontWeight: 500 }}
                     secondaryTypographyProps={{ variant: "caption" }}
                   />

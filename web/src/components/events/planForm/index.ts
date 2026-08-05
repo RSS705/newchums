@@ -3,11 +3,12 @@
  * (`CreateEventClient`) and Edit Plan (`EditEventClient`). See `AGENTS.md` →
  * "Add Plan / Edit Plan Parity Rule". The historically drift-prone sections
  * are extracted here along with the collapse chrome and the collapsed-header
- * summary copy; the tier-one fields and the remaining optional sections
- * (Banner, Description, Hobbies, Alternate times, Visibility, Submit) are
- * still duplicated between the two files.
+ * summary copy plus the banner picker; the tier-one fields and the
+ * remaining optional sections (Hobbies, Alternate times, Visibility,
+ * Submit) are still duplicated between the two files.
  */
 
+export { default as BannerField } from "./BannerField";
 export { default as CollapsibleSection } from "./CollapsibleSection";
 export { default as ExtraOptionsSection } from "./ExtraOptionsSection";
 export type { FallbackPolicy } from "./ExtraOptionsSection";

@@ -19,12 +19,9 @@ import Stack from "@mui/material/Stack";
 import MuiLink from "@mui/material/Link";
 import Switch from "@mui/material/Switch";
 import Typography from "@mui/material/Typography";
-import AddPhotoAlternateRoundedIcon from "@mui/icons-material/AddPhotoAlternateRounded";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import EventNoteRoundedIcon from "@mui/icons-material/EventNoteRounded";
 import EventRepeatRoundedIcon from "@mui/icons-material/EventRepeatRounded";
-import ImageRoundedIcon from "@mui/icons-material/ImageRounded";
-import NotesRoundedIcon from "@mui/icons-material/NotesRounded";
 import StyleRoundedIcon from "@mui/icons-material/StyleRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
@@ -41,15 +38,15 @@ import HobbyPickerField, { type HobbyOption } from "@/components/common/HobbyPic
 import { pickerFieldTabKeyDown } from "@/components/fields/pickerTabNav";
 import PlacesAutocompleteInput, { formatPlaceDisplay } from "@/components/common/PlacesAutocompleteInput";
 import { loadGooglePlacesScript } from "@/lib/loadGooglePlaces";
+import { renderBannerPreset } from "@/lib/eventBanners";
 import { scrollToFirstError } from "@/lib/scrollToFirstError";
 import {
+  BannerField,
   CollapsibleSection,
   CommunityLinkSection,
   ExtraOptionsSection,
   QAPlanSection,
   describeAltTimes,
-  describeBanner,
-  describeDescription,
   describeHobbies,
   describeVisibility,
   type MyCommunity as SharedMyCommunity,
@@ -152,12 +149,41 @@ export default function EditEventClient() {
   const [bannerPreview, setBannerPreview] = useState<string | null>(null);
   const [existingBannerKey, setExistingBannerKey] = useState<string | null>(null);
   const [bannerRemoved, setBannerRemoved] = useState(false);
+  // Preset the current preview came from. Always null on load: a stored
+  // banner is just an image by the time it reaches this form, whichever way
+  // it was made, so the swatches light up only for picks made here.
+  const [selectedPresetSlug, setSelectedPresetSlug] = useState<string | null>(null);
+  const [presetRendering, setPresetRendering] = useState(false);
   const [bannerCropSrc, setBannerCropSrc] = useState<string | null>(null);
   const [bannerCropZoom, setBannerCropZoom] = useState(1);
   const [bannerCropPosition, setBannerCropPosition] = useState({ x: 0, y: 0 });
   const [bannerCroppedArea, setBannerCroppedArea] = useState<Area | null>(null);
   const [bannerDialogOpen, setBannerDialogOpen] = useState(false);
   const bannerInputRef = useRef<HTMLInputElement>(null);
+
+  // Same mechanism as the Add form: render the gradient to a webp and treat
+  // it as an ordinary uploaded banner from there.
+  const handlePresetSelect = useCallback(
+    async (slug: string) => {
+      if (presetRendering) return;
+      setPresetRendering(true);
+      try {
+        const blob = await renderBannerPreset(slug);
+        if (bannerPreview && !bannerPreview.startsWith("http")) URL.revokeObjectURL(bannerPreview);
+        const file = new File([blob], `banner-${slug}.webp`, { type: "image/webp" });
+        setBannerFile(file);
+      setSelectedPresetSlug(null);
+        setBannerPreview(URL.createObjectURL(file));
+        setSelectedPresetSlug(slug);
+        setBannerRemoved(false);
+      } catch {
+        toast.error("Failed to generate banner");
+      } finally {
+        setPresetRendering(false);
+      }
+    },
+    [presetRendering, bannerPreview, toast]
+  );
 
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -855,126 +881,66 @@ export default function EditEventClient() {
               sx={{ gap: 0.5 }}
             />
           )}
+          {/* Description and banner live with the essentials; see the Add
+              form for the rationale. The swatches are new here: Edit was
+              upload-only for a while, an accidental regression from Add. */}
+          <Box>
+            <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 0.625 }}>
+              Description
+            </Typography>
+            <RichTextEditor
+              placeholder="What should people expect? Any details they should know?"
+              value={description}
+              onChange={setDescription}
+            />
+          </Box>
+          <BannerField
+            bannerPreview={bannerPreview}
+            selectedPresetSlug={selectedPresetSlug}
+            presetRendering={presetRendering}
+            onPresetSelect={(slug) => void handlePresetSelect(slug)}
+            onUploadClick={() => bannerInputRef.current?.click()}
+            onRemove={() => {
+              setBannerFile(null);
+              if (bannerPreview && !bannerPreview.startsWith("http")) URL.revokeObjectURL(bannerPreview);
+              setBannerPreview(null);
+              setSelectedPresetSlug(null);
+              setBannerRemoved(true);
+            }}
+            onPreviewError={() => {
+              if (bannerPreview && bannerPreview.startsWith(getAvatarBaseUrl())) {
+                const fb = getImageFallbackBaseUrl();
+                if (fb) {
+                  setBannerPreview(bannerPreview.replace(getAvatarBaseUrl(), fb));
+                  return;
+                }
+              }
+              setBannerPreview(null);
+            }}
+          />
         </Stack>
       </AppCard>
 
       {/* Tier two: optional sections, collapsed with a live summary of their
           current value in the header. */}
-      <Typography
-        variant="caption"
-        sx={{ color: "text.secondary", mt: { xs: -1.5, sm: -2 }, ml: 0.5 }}
-      >
-        Everything below is optional. Tap a section to open it.
-      </Typography>
-
-      <CollapsibleSection
-        sectionKey="description"
-        icon={<NotesRoundedIcon sx={{ fontSize: 22 }} />}
-        title="Description"
-        subtitle="What should people expect? Any details they should know?"
-        summary={describeDescription(description)}
-        expanded={!!openSections.description}
-        onToggle={() => toggleSection("description")}
-      >
-        <RichTextEditor
-          placeholder="What should people expect? Any details they should know?"
-          value={description}
-          onChange={setDescription}
-        />
-      </CollapsibleSection>
-
-      <CollapsibleSection
-        sectionKey="banner"
-        icon={<ImageRoundedIcon sx={{ fontSize: 22 }} />}
-        title="Banner image"
-        subtitle="Upload a custom photo for this plan."
-        summary={describeBanner(null, !!bannerPreview)}
-        expanded={!!openSections.banner}
-        onToggle={() => toggleSection("banner")}
-      >
-        <Stack spacing={2}>
-          <Box
-            onClick={() => bannerInputRef.current?.click()}
-            sx={{
-              width: "100%",
-              height: { xs: 140, sm: 180 },
-              borderRadius: 2.5,
-              border: "2px dashed",
-              borderColor: bannerPreview ? "transparent" : "grey.300",
-              bgcolor: bannerPreview ? "transparent" : "grey.50",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              overflow: "hidden",
-              position: "relative",
-              transition: "border-color 0.2s",
-              "&:hover": { borderColor: bannerPreview ? "transparent" : "primary.main" },
-            }}
-          >
-            {bannerPreview ? (
-              <Box
-                component="img"
-                src={bannerPreview}
-                alt="Banner preview"
-                onError={() => {
-                  if (bannerPreview.startsWith(getAvatarBaseUrl())) {
-                    const fb = getImageFallbackBaseUrl();
-                    if (fb) {
-                      setBannerPreview(bannerPreview.replace(getAvatarBaseUrl(), fb));
-                      return;
-                    }
-                  }
-                  setBannerPreview(null);
-                }}
-                sx={{ width: "100%", height: "100%", objectFit: "cover" }}
-              />
-            ) : (
-              <Stack alignItems="center" spacing={0.75}>
-                <AddPhotoAlternateRoundedIcon sx={{ fontSize: 36, color: "text.disabled" }} />
-                <Typography variant="body2" color="text.secondary">
-                  Upload a photo
-                </Typography>
-              </Stack>
-            )}
-          </Box>
-          <Stack direction="row" spacing={1} flexWrap="wrap">
-            {bannerPreview && (
-              <AppButton
-                variant="outlined"
-                size="small"
-                onClick={() => bannerInputRef.current?.click()}
-              >
-                Change photo
-              </AppButton>
-            )}
-            {bannerPreview && (
-              <AppButton
-                variant="text"
-                size="small"
-                color="error"
-                onClick={() => {
-                  setBannerFile(null);
-                  if (bannerPreview && !bannerPreview.startsWith("http")) URL.revokeObjectURL(bannerPreview);
-                  setBannerPreview(null);
-                  setBannerRemoved(true);
-                }}
-              >
-                Remove
-              </AppButton>
-            )}
-          </Stack>
-          <Typography variant="caption" color="text.secondary">
-            JPEG, PNG, or WebP up to 20 MB, we&apos;ll compress it automatically.
-          </Typography>
-        </Stack>
-      </CollapsibleSection>
+      <Box sx={{ ml: 0.5 }}>
+        <Typography
+          variant="h6"
+          fontWeight={700}
+          sx={{ fontSize: { xs: "1.0625rem", sm: "1.125rem" }, lineHeight: 1.3 }}
+        >
+          Optional settings to enhance your plan
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+          Everything has a safe default. Tap a section to adjust it.
+        </Typography>
+      </Box>
 
       <CollapsibleSection
         sectionKey="hobbies"
         icon={<StyleRoundedIcon sx={{ fontSize: 22 }} />}
         title="Hobbies"
-        subtitle="Optional, helps people who share them find this plan."
+        subtitle="Optional, helps people who share these hobbies find this plan."
         summary={describeHobbies(hobbies)}
         expanded={!!openSections.hobbies}
         onToggle={() => toggleSection("hobbies")}
@@ -984,7 +950,7 @@ export default function EditEventClient() {
             value={hobbies}
             onChange={setHobbies}
             error={errors.hobby}
-            helperText="People nearby who share these hobbies may get notified about this plan, depending on who can see it."
+            helperText="People nearby who share these hobbies may get notified about this plan, depending on this plan's visibility setting below."
             onReject={(msg) => toast.error(msg)}
           />
         </Box>
@@ -1161,7 +1127,7 @@ export default function EditEventClient() {
                 <MenuItem value="exact_everyone">
                   <ListItemText
                     primary="Everyone"
-                    secondary="The full venue or address is shown wherever the plan appears"
+                    secondary="Shown to anyone signed in and anyone who opens your shared link. Signed-out visitors without the link see only the general area"
                     primaryTypographyProps={{ fontWeight: 500 }}
                     secondaryTypographyProps={{ variant: "caption" }}
                   />
