@@ -6320,6 +6320,110 @@ app.get("/admin/research/growth", async (c) => {
       LIMIT 50
     `) as { username: string | null; created_at: string; attribution_method: string; origin_plan: string | null; origin_host: string | null; activated: boolean }[];
 
+    // ── Row-level evidence for each figure (drill-downs). Same WHERE
+    //    clauses as the aggregates above; caps generous for this scale. ──
+
+    const accountsList = (await sql`
+      SELECT u.username, u.email, u.created_at,
+        CASE
+          WHEN u.attribution_method = 'utm' THEN COALESCE(u.signup_source, 'utm/unknown')
+          WHEN u.attribution_method IN ('invite', 'share', 'backfill_invite') THEN 'invited'
+          WHEN u.attribution_method = 'organic' THEN 'organic'
+          WHEN u.attribution_method = 'manual' THEN COALESCE(u.signup_source, 'manual')
+          ELSE 'unattributed'
+        END AS cohort,
+        (SELECT e.title FROM newchums.events e
+         WHERE e.host_user_id = u.id AND e.status = 'published'
+           AND COALESCE(e.is_qa, FALSE) = FALSE
+           AND e.created_at <= u.created_at + INTERVAL '7 days'
+         ORDER BY e.created_at ASC LIMIT 1) AS activated_plan
+      FROM newchums.users u
+      WHERE u.research_excluded = FALSE
+        AND u.created_at > NOW() - make_interval(days => ${windowDays})
+      ORDER BY u.created_at DESC
+      LIMIT 300
+    `) as { username: string | null; email: string; created_at: string; cohort: string; activated_plan: string | null }[];
+
+    const invitesList = (await sql`
+      SELECT e.title AS plan_title, h.username AS host_username,
+        i.created_at AS invited_at,
+        COALESCE(iu.username, iu2.username, i.email, 'unknown') AS invitee,
+        (SELECT r.status FROM newchums.event_rsvps r
+         JOIN newchums.users ru ON ru.id = r.user_id
+         WHERE r.event_id = i.event_id
+           AND (r.user_id = i.user_id OR (i.email IS NOT NULL AND LOWER(ru.email) = LOWER(i.email)))
+         ORDER BY r.created_at ASC LIMIT 1) AS response
+      FROM newchums.event_invites i
+      JOIN newchums.events e ON e.id = i.event_id
+      JOIN newchums.users h ON h.id = e.host_user_id
+      LEFT JOIN newchums.users iu ON iu.id = i.user_id
+      LEFT JOIN newchums.users iu2 ON i.email IS NOT NULL AND LOWER(iu2.email) = LOWER(i.email)
+      WHERE e.status = 'published' AND COALESCE(e.is_qa, FALSE) = FALSE
+        AND h.research_excluded = FALSE
+        AND i.created_at > NOW() - make_interval(days => ${windowDays})
+      ORDER BY i.created_at DESC
+      LIMIT 300
+    `) as { plan_title: string; host_username: string | null; invited_at: string; invitee: string; response: string | null }[];
+
+    const plansList = (await sql`
+      SELECT e.title, h.username AS host_username, e.starts_at,
+        (SELECT COUNT(*)::int FROM newchums.event_invites i WHERE i.event_id = e.id) AS invitees,
+        (SELECT COUNT(*)::int FROM newchums.event_confirmations cf
+         WHERE cf.event_id = e.id AND cf.status = 'confirmed') AS confirmed,
+        (e.starts_at < NOW()) AS is_past
+      FROM newchums.events e
+      JOIN newchums.users h ON h.id = e.host_user_id
+      WHERE e.status = 'published' AND COALESCE(e.is_qa, FALSE) = FALSE
+        AND h.research_excluded = FALSE
+        AND e.created_at > NOW() - make_interval(days => ${windowDays})
+      ORDER BY e.starts_at DESC
+      LIMIT 200
+    `) as { title: string; host_username: string | null; starts_at: string; invitees: number; confirmed: number; is_past: boolean }[];
+
+    const guestsList = (await sql`
+      SELECT u.username, u.created_at,
+        e.title AS origin_plan,
+        (SELECT MIN(pe.created_at) FROM newchums.product_events pe
+         WHERE pe.user_id = u.id AND pe.event_name = 'create_page_visited'
+           AND pe.created_at <= u.created_at + INTERVAL '30 days') AS create_visit_at,
+        (SELECT MIN(e2.created_at) FROM newchums.events e2
+         WHERE e2.host_user_id = u.id AND COALESCE(e2.is_qa, FALSE) = FALSE
+           AND e2.created_at <= u.created_at + INTERVAL '30 days') AS first_plan_at
+      FROM newchums.users u
+      LEFT JOIN newchums.events e ON e.id = u.origin_event_id
+      WHERE u.research_excluded = FALSE
+        AND u.attribution_method IN ('invite', 'share', 'backfill_invite')
+        AND u.created_at > NOW() - make_interval(days => ${windowDays})
+      ORDER BY u.created_at DESC
+      LIMIT 200
+    `) as { username: string | null; created_at: string; origin_plan: string | null; create_visit_at: string | null; first_plan_at: string | null }[];
+
+    const hostsList = (await sql`
+      WITH firsts AS (
+        SELECT e.host_user_id, MIN(e.created_at) AS first_at
+        FROM newchums.events e
+        JOIN newchums.users h ON h.id = e.host_user_id
+        WHERE e.status = 'published' AND COALESCE(e.is_qa, FALSE) = FALSE
+          AND h.research_excluded = FALSE
+        GROUP BY e.host_user_id
+      )
+      SELECT hu.username, f.first_at,
+        (SELECT e1.title FROM newchums.events e1
+         WHERE e1.host_user_id = f.host_user_id AND e1.status = 'published'
+           AND COALESCE(e1.is_qa, FALSE) = FALSE AND e1.created_at = f.first_at
+         LIMIT 1) AS first_plan,
+        (SELECT e2.title FROM newchums.events e2
+         WHERE e2.host_user_id = f.host_user_id AND e2.status = 'published'
+           AND COALESCE(e2.is_qa, FALSE) = FALSE
+           AND e2.created_at > f.first_at AND e2.created_at <= f.first_at + INTERVAL '60 days'
+         ORDER BY e2.created_at ASC LIMIT 1) AS second_plan
+      FROM firsts f
+      JOIN newchums.users hu ON hu.id = f.host_user_id
+      WHERE f.first_at > NOW() - make_interval(days => ${windowDays})
+      ORDER BY f.first_at DESC
+      LIMIT 200
+    `) as { username: string | null; first_at: string; first_plan: string | null; second_plan: string | null }[];
+
     return c.json({
       ok: true,
       windowDays,
@@ -6370,6 +6474,13 @@ app.get("/admin/research/growth", async (c) => {
         originHost: r.origin_host,
         activated: r.activated,
       })),
+      details: {
+        accounts: accountsList,
+        invites: invitesList,
+        plans: plansList,
+        guests: guestsList,
+        hosts: hostsList,
+      },
     });
   } catch (err) {
     console.error("[GET /admin/research/growth]", err);

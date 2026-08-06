@@ -40,7 +40,23 @@ type Growth = {
   stage7: { hosts: number; repeatHosts: number; repeatRate: number | null };
   generations: { gen: number; accounts: number; activated_hosts: number }[];
   lineage: { username: string | null; createdAt: string; method: string; originPlan: string | null; originHost: string | null; activated: boolean }[];
+  details: {
+    accounts: { username: string | null; email: string; created_at: string; cohort: string; activated_plan: string | null }[];
+    invites: { plan_title: string; host_username: string | null; invited_at: string; invitee: string; response: string | null }[];
+    plans: { title: string; host_username: string | null; starts_at: string; invitees: number; confirmed: number; is_past: boolean }[];
+    guests: { username: string | null; created_at: string; origin_plan: string | null; create_visit_at: string | null; first_plan_at: string | null }[];
+    hosts: { username: string | null; first_at: string; first_plan: string | null; second_plan: string | null }[];
+  };
 };
+
+function shortDate(iso: string | null): string {
+  if (!iso) return "–";
+  try {
+    return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  } catch {
+    return "–";
+  }
+}
 
 function pct(v: number | null): string {
   return v === null ? "no data yet" : `${Math.round(v * 100)}%`;
@@ -55,6 +71,36 @@ function VerdictChip({ rate, threshold, n }: { rate: number | null; threshold: n
     <Chip size="small" color="success" label="Healthy" sx={{ fontWeight: 600 }} />
   ) : (
     <Chip size="small" color="warning" label="Below healthy" sx={{ fontWeight: 600 }} />
+  );
+}
+
+/** "Show the data" reveal: every figure on this page can be opened to the
+ *  row-level records it was computed from, so the numbers are verifiable
+ *  rather than trusted. Same window and exclusion rules as the aggregate;
+ *  the API builds both from the same predicates. */
+function DrillDown({ label, children }: { label: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Box sx={{ mt: 1.5 }}>
+      <Typography
+        component="button"
+        onClick={() => setOpen((v) => !v)}
+        sx={{
+          background: "none",
+          border: "none",
+          p: 0,
+          cursor: "pointer",
+          color: "primary.dark",
+          fontWeight: 600,
+          fontSize: "0.8125rem",
+          fontFamily: "inherit",
+          "&:hover": { textDecoration: "underline" },
+        }}
+      >
+        {open ? "Hide the data" : label}
+      </Typography>
+      {open && <Box sx={{ mt: 1.25, overflowX: "auto" }}>{children}</Box>}
+    </Box>
   );
 }
 
@@ -324,6 +370,30 @@ export default function AdminGrowthClient() {
           source/medium/creative. QA plans and the research-excluded accounts are out of every
           number on this page.
         </Typography>
+        <DrillDown label={`Show the ${data.details.accounts.length} accounts behind these numbers`}>
+          <Table size="small" sx={{ minWidth: 640 }}>
+            <TableHead>
+              <TableRow>
+                <TableCell>Account</TableCell>
+                <TableCell>Email</TableCell>
+                <TableCell>Signed up</TableCell>
+                <TableCell>Source</TableCell>
+                <TableCell>Plan within 7 days</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {data.details.accounts.map((a, i) => (
+                <TableRow key={i}>
+                  <TableCell sx={{ fontWeight: 600 }}>{a.username ?? "(no handle)"}</TableCell>
+                  <TableCell>{a.email}</TableCell>
+                  <TableCell>{shortDate(a.created_at)}</TableCell>
+                  <TableCell>{a.cohort}</TableCell>
+                  <TableCell>{a.activated_plan ?? "–"}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </DrillDown>
       </Stage>
 
       <Stage
@@ -339,6 +409,36 @@ export default function AdminGrowthClient() {
           threshold={t.stage4_response_rate}
           healthyText={`Healthy: ${Math.round(t.stage4_response_rate * 100)}%+ respond. ${data.stage4.opensNote}`}
         />
+        <DrillDown label={`Show all ${data.details.invites.length} invites and who responded`}>
+          <Table size="small" sx={{ minWidth: 640 }}>
+            <TableHead>
+              <TableRow>
+                <TableCell>Invited</TableCell>
+                <TableCell>To plan</TableCell>
+                <TableCell>By host</TableCell>
+                <TableCell>Sent</TableCell>
+                <TableCell align="right">Response</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {data.details.invites.map((r, i) => (
+                <TableRow key={i}>
+                  <TableCell sx={{ fontWeight: 600 }}>{r.invitee}</TableCell>
+                  <TableCell>{r.plan_title}</TableCell>
+                  <TableCell>{r.host_username ?? "–"}</TableCell>
+                  <TableCell>{shortDate(r.invited_at)}</TableCell>
+                  <TableCell align="right">
+                    {r.response ? (
+                      <Chip size="small" color="success" label={r.response} sx={{ fontWeight: 600 }} />
+                    ) : (
+                      <Chip size="small" variant="outlined" label="no response" />
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </DrillDown>
       </Stage>
 
       <Stage
@@ -354,6 +454,44 @@ export default function AdminGrowthClient() {
           threshold={t.stage5_happened_rate}
           healthyText={`Healthy: ${Math.round(t.stage5_happened_rate * 100)}%+ of past plans.`}
         />
+        <DrillDown label={`Show the ${data.details.plans.length} plans in the window`}>
+          <Table size="small" sx={{ minWidth: 640 }}>
+            <TableHead>
+              <TableRow>
+                <TableCell>Plan</TableCell>
+                <TableCell>Host</TableCell>
+                <TableCell>Date</TableCell>
+                <TableCell align="right">Invitees</TableCell>
+                <TableCell align="right">Confirmed attending</TableCell>
+                <TableCell align="right">Happened?</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {data.details.plans.map((r, i) => (
+                <TableRow key={i} sx={{ opacity: r.is_past ? 1 : 0.55 }}>
+                  <TableCell sx={{ fontWeight: 600 }}>{r.title}</TableCell>
+                  <TableCell>{r.host_username ?? "–"}</TableCell>
+                  <TableCell>{shortDate(r.starts_at)}</TableCell>
+                  <TableCell align="right">{r.invitees}</TableCell>
+                  <TableCell align="right">{r.confirmed}</TableCell>
+                  <TableCell align="right">
+                    {!r.is_past ? (
+                      <Chip size="small" variant="outlined" label="upcoming" />
+                    ) : r.confirmed > 0 ? (
+                      <Chip size="small" color="success" label="Yes" sx={{ fontWeight: 600 }} />
+                    ) : (
+                      <Chip size="small" color="warning" label="No signal" sx={{ fontWeight: 600 }} />
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.75 }}>
+            Upcoming plans are greyed; they are not in the stage-5 denominator yet. The same rows
+            back the invitees-per-plan chart below.
+          </Typography>
+        </DrillDown>
       </Stage>
 
       <Stage
@@ -369,6 +507,36 @@ export default function AdminGrowthClient() {
           threshold={t.stage6_signal_rate}
           healthyText={`Healthy: ${Math.round(t.stage6_signal_rate * 100)}%+ show any signal.`}
         />
+        <DrillDown label={`Show the ${data.details.guests.length} guest-origin accounts`}>
+          <Table size="small" sx={{ minWidth: 600 }}>
+            <TableHead>
+              <TableRow>
+                <TableCell>Account</TableCell>
+                <TableCell>Arrived via plan</TableCell>
+                <TableCell>Signed up</TableCell>
+                <TableCell align="right">Host signal in 30 days</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {data.details.guests.map((g, i) => (
+                <TableRow key={i}>
+                  <TableCell sx={{ fontWeight: 600 }}>{g.username ?? "(no handle)"}</TableCell>
+                  <TableCell>{g.origin_plan ?? "–"}</TableCell>
+                  <TableCell>{shortDate(g.created_at)}</TableCell>
+                  <TableCell align="right">
+                    {g.first_plan_at ? (
+                      <Chip size="small" color="success" label={`published ${shortDate(g.first_plan_at)}`} sx={{ fontWeight: 600 }} />
+                    ) : g.create_visit_at ? (
+                      <Chip size="small" color="success" variant="outlined" label={`visited create ${shortDate(g.create_visit_at)}`} sx={{ fontWeight: 600 }} />
+                    ) : (
+                      <Chip size="small" variant="outlined" label="none yet" />
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </DrillDown>
       </Stage>
 
       <Stage
@@ -384,6 +552,34 @@ export default function AdminGrowthClient() {
           threshold={t.stage7_repeat_rate}
           healthyText={`Healthy: ${Math.round(t.stage7_repeat_rate * 100)}%+ host again.`}
         />
+        <DrillDown label={`Show the ${data.details.hosts.length} first-time hosts in the window`}>
+          <Table size="small" sx={{ minWidth: 600 }}>
+            <TableHead>
+              <TableRow>
+                <TableCell>Host</TableCell>
+                <TableCell>First plan</TableCell>
+                <TableCell>When</TableCell>
+                <TableCell align="right">Second plan within 60 days</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {data.details.hosts.map((h, i) => (
+                <TableRow key={i}>
+                  <TableCell sx={{ fontWeight: 600 }}>{h.username ?? "(no handle)"}</TableCell>
+                  <TableCell>{h.first_plan ?? "–"}</TableCell>
+                  <TableCell>{shortDate(h.first_at)}</TableCell>
+                  <TableCell align="right">
+                    {h.second_plan ? (
+                      <Chip size="small" color="success" label={h.second_plan} sx={{ fontWeight: 600 }} />
+                    ) : (
+                      <Chip size="small" variant="outlined" label="not yet" />
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </DrillDown>
       </Stage>
 
       <Divider />
