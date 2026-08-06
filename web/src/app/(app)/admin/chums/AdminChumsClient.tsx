@@ -1,5 +1,7 @@
 "use client";
 
+import ScienceRoundedIcon from "@mui/icons-material/ScienceRounded";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -55,6 +57,7 @@ type UserRow = {
   role: string | null;
   subscription_plan: SubscriptionPlan;
   is_suspended: boolean;
+  research_excluded?: boolean;
   suspended_at: string | null;
   email_verified_at: string | null;
   password_setup_pending: boolean;
@@ -233,6 +236,28 @@ export default function AdminChumsClient() {
     } else {
       setSortBy(field);
       setSortDir(field === "created_at" ? "desc" : "asc");
+    }
+  }
+
+  // Growth-experiment founder rule: flips users.research_excluded (the
+  // account leaves research numerators; its plans stay exposure sources).
+  // Reversible, so no confirm dialog; optimistic with rollback on failure.
+  async function toggleResearchExclusion(row: UserRow) {
+    const next = !row.research_excluded;
+    setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, research_excluded: next } : r)));
+    try {
+      const res = await apiFetch(`/admin/users/${row.id}/research-exclusion`, {
+        method: "POST",
+        auth: true,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ excluded: next }),
+      });
+      const data = (await res.json()) as { ok: boolean };
+      if (!data.ok) throw new Error("failed");
+      toast.success(next ? "Excluded from research metrics" : "Included in research metrics");
+    } catch {
+      setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, research_excluded: !next } : r)));
+      toast.error("Could not update the research flag");
     }
   }
 
@@ -578,6 +603,21 @@ export default function AdminChumsClient() {
                             </IconButton>
                           </Tooltip>
                         )}
+                        <Tooltip
+                          title={
+                            row.research_excluded
+                              ? "Research-excluded (founder rule): not counted in growth metrics. Click to include"
+                              : "Exclude from growth-research metrics (plans stay as exposure data)"
+                          }
+                        >
+                          <IconButton
+                            size="small"
+                            color={row.research_excluded ? "warning" : "default"}
+                            onClick={() => void toggleResearchExclusion(row)}
+                          >
+                            <ScienceRoundedIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
                         <Tooltip title={row.role === "super_admin" ? "Super admins cannot be hard-deleted" : "Hard delete (test-data cleanup, no notifications)"}>
                           <span>
                             <IconButton
