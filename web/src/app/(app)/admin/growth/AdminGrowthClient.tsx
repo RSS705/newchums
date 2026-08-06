@@ -168,7 +168,9 @@ export default function AdminGrowthClient() {
   }, []);
 
   useEffect(() => {
-    void load();
+    // Deferred one microtask so no state write can land synchronously
+    // inside the mount effect (the cascading-renders lint rule).
+    void Promise.resolve().then(load);
   }, [load]);
 
   if (loading && !data) {
