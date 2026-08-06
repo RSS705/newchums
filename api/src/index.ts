@@ -4975,6 +4975,7 @@ type AdminUserRow = {
   has_password: boolean;
   rsvp_count: number;
   hosted_count: number;
+  research_excluded: boolean;
 };
 
 app.get("/admin/users", async (c) => {
@@ -4991,6 +4992,7 @@ app.get("/admin/users", async (c) => {
           SELECT
             u.id, u.created_at, u.last_active_at, u.email, u.username, u.name, u.role, u.subscription_plan,
             u.is_suspended, u.suspended_at, u.email_verified_at,
+            u.research_excluded,
             COALESCE(u.password_setup_pending, false) AS password_setup_pending,
             (u.password_hash IS NOT NULL) AS has_password,
             COALESCE((SELECT COUNT(*)::int FROM newchums.event_rsvps r WHERE r.user_id = u.id), 0) AS rsvp_count,
@@ -5007,6 +5009,7 @@ app.get("/admin/users", async (c) => {
           SELECT
             u.id, u.created_at, u.last_active_at, u.email, u.username, u.name, u.role, u.subscription_plan,
             u.is_suspended, u.suspended_at, u.email_verified_at,
+            u.research_excluded,
             COALESCE(u.password_setup_pending, false) AS password_setup_pending,
             (u.password_hash IS NOT NULL) AS has_password,
             COALESCE((SELECT COUNT(*)::int FROM newchums.event_rsvps r WHERE r.user_id = u.id), 0) AS rsvp_count,
@@ -5019,6 +5022,38 @@ app.get("/admin/users", async (c) => {
   } catch (err) {
     console.error("[GET /admin/users]", err);
     return c.json({ ok: false, error: { code: "SERVER_ERROR" } }, 500);
+  }
+});
+
+// ─── POST /admin/users/:id/research-exclusion ────────────────────────────────
+
+/** Growth-experiment founder rule (docs/Growth_Experiment_Plan.md §3): the
+ *  flagged account leaves every research numerator while its hosted plans
+ *  remain exposure sources with intact lineage. Super-admin only; audited. */
+app.post("/admin/users/:id/research-exclusion", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  const id = c.req.param("id");
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+  if (typeof body.excluded !== "boolean")
+    return c.json({ ok: false, error: "VALIDATION", message: "excluded must be boolean" }, 400);
+  const sql = getSql(c.env);
+  try {
+    const rows = (await sql`
+      UPDATE newchums.users SET research_excluded = ${body.excluded}
+      WHERE id = ${id}
+      RETURNING id, email
+    `) as { id: string; email: string }[];
+    if (rows.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    await sql`
+      INSERT INTO newchums.admin_audit (actor_user_id, action, subject_type, subject_id, subject_label, detail)
+      VALUES (${admin.id}, 'research_exclusion_set', 'user', ${id}, ${rows[0].email}, ${JSON.stringify({ excluded: body.excluded })}::jsonb)
+    `;
+    return c.json({ ok: true, excluded: body.excluded });
+  } catch (err) {
+    console.error("[POST /admin/users/:id/research-exclusion]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });
 
@@ -6021,6 +6056,249 @@ app.get("/admin/kpis", async (c) => {
 
 // ─── GET /admin/kpis/funnel ──────────────────────────────────────────────────
 //
+// ─── GET /admin/research/growth ──────────────────────────────────────────────
+//
+// The growth-experiment research view (docs/Growth_Experiment_Plan.md §6.3):
+// the §4 funnel by source cohort, invitees-per-plan distribution, generation
+// table with lineage, repeat-host and host-signal counts. Ground rules
+// applied everywhere: QA plans excluded, research_excluded users out of
+// every numerator while their plans stay as exposure sources.
+//
+// Definitions (mirroring the doc):
+//   activated host  = published a non-QA plan within 7 days of signup
+//   host-signal     = create_page_visited event, a draft, or a publish
+//                     within 30 days of signup (guest-origin accounts)
+//   repeat host     = second distinct published non-QA plan within 60 days
+//                     of the first
+//   plan happened   = date passed AND at least one confirmed attendance
+//                     (event_confirmations.status = 'confirmed')
+app.get("/admin/research/growth", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  const sql = getSql(c.env);
+  const windowDays = Math.min(Math.max(Number(c.req.query("days") ?? 56), 7), 365);
+
+  try {
+    // Cohort funnel: accounts and activated hosts per source, window-scoped.
+    const cohorts = (await sql`
+      WITH subjects AS (
+        SELECT u.id, u.created_at,
+          CASE
+            WHEN u.attribution_method = 'utm' THEN COALESCE(u.signup_source, 'utm/unknown')
+            WHEN u.attribution_method IN ('invite', 'share', 'backfill_invite') THEN 'invited'
+            WHEN u.attribution_method = 'organic' THEN 'organic'
+            WHEN u.attribution_method = 'manual' THEN COALESCE(u.signup_source, 'manual')
+            ELSE 'unattributed'
+          END AS cohort
+        FROM newchums.users u
+        WHERE u.research_excluded = FALSE
+          AND u.created_at > NOW() - make_interval(days => ${windowDays})
+      )
+      SELECT s.cohort,
+        COUNT(*)::int AS accounts,
+        COUNT(*) FILTER (WHERE EXISTS (
+          SELECT 1 FROM newchums.events e
+          WHERE e.host_user_id = s.id AND e.status = 'published'
+            AND COALESCE(e.is_qa, FALSE) = FALSE
+            AND e.created_at <= s.created_at + INTERVAL '7 days'
+        ))::int AS activated_hosts
+      FROM subjects s
+      GROUP BY s.cohort
+      ORDER BY accounts DESC
+    `) as { cohort: string; accounts: number; activated_hosts: number }[];
+
+    // Invitees-per-plan distribution over recent real plans by subjects.
+    const invDist = (await sql`
+      SELECT
+        COUNT(*) FILTER (WHERE ic = 0)::int  AS b0,
+        COUNT(*) FILTER (WHERE ic BETWEEN 1 AND 2)::int  AS b1_2,
+        COUNT(*) FILTER (WHERE ic BETWEEN 3 AND 5)::int  AS b3_5,
+        COUNT(*) FILTER (WHERE ic BETWEEN 6 AND 9)::int  AS b6_9,
+        COUNT(*) FILTER (WHERE ic >= 10)::int AS b10p,
+        COUNT(*)::int AS plans,
+        COALESCE(ROUND(AVG(ic), 1), 0)::float AS mean
+      FROM (
+        SELECT e.id, (SELECT COUNT(*) FROM newchums.event_invites i WHERE i.event_id = e.id)::int AS ic
+        FROM newchums.events e
+        JOIN newchums.users h ON h.id = e.host_user_id
+        WHERE e.status = 'published' AND COALESCE(e.is_qa, FALSE) = FALSE
+          AND h.research_excluded = FALSE
+          AND e.created_at > NOW() - make_interval(days => ${windowDays})
+      ) t
+    `) as { b0: number; b1_2: number; b3_5: number; b6_9: number; b10p: number; plans: number; mean: number }[];
+
+    // Stage 4: invite response rate on those plans (any RSVP by the invited
+    // person counts as a response).
+    const stage4 = (await sql`
+      SELECT COUNT(*)::int AS invites,
+        COUNT(*) FILTER (WHERE EXISTS (
+          SELECT 1 FROM newchums.event_rsvps r
+          JOIN newchums.users iu ON iu.id = r.user_id
+          WHERE r.event_id = i.event_id
+            AND (r.user_id = i.user_id OR (i.email IS NOT NULL AND LOWER(iu.email) = LOWER(i.email)))
+        ))::int AS responded
+      FROM newchums.event_invites i
+      JOIN newchums.events e ON e.id = i.event_id
+      JOIN newchums.users h ON h.id = e.host_user_id
+      WHERE e.status = 'published' AND COALESCE(e.is_qa, FALSE) = FALSE
+        AND h.research_excluded = FALSE
+        AND i.created_at > NOW() - make_interval(days => ${windowDays})
+    `) as { invites: number; responded: number }[];
+
+    // Stage 5: past plans that demonstrably happened.
+    const stage5 = (await sql`
+      SELECT COUNT(*)::int AS past_plans,
+        COUNT(*) FILTER (WHERE EXISTS (
+          SELECT 1 FROM newchums.event_confirmations cf
+          WHERE cf.event_id = e.id AND cf.status = 'confirmed'
+        ))::int AS happened
+      FROM newchums.events e
+      JOIN newchums.users h ON h.id = e.host_user_id
+      WHERE e.status = 'published' AND COALESCE(e.is_qa, FALSE) = FALSE
+        AND h.research_excluded = FALSE
+        AND e.starts_at < NOW()
+        AND e.starts_at > NOW() - make_interval(days => ${windowDays})
+    `) as { past_plans: number; happened: number }[];
+
+    // Stage 6: guest-origin accounts showing host-curiosity within 30 days.
+    const stage6 = (await sql`
+      SELECT COUNT(*)::int AS guests,
+        COUNT(*) FILTER (WHERE
+          EXISTS (SELECT 1 FROM newchums.product_events pe
+            WHERE pe.user_id = u.id AND pe.event_name = 'create_page_visited'
+              AND pe.created_at <= u.created_at + INTERVAL '30 days')
+          OR EXISTS (SELECT 1 FROM newchums.events e
+            WHERE e.host_user_id = u.id AND COALESCE(e.is_qa, FALSE) = FALSE
+              AND e.created_at <= u.created_at + INTERVAL '30 days')
+        )::int AS with_signal
+      FROM newchums.users u
+      WHERE u.research_excluded = FALSE
+        AND u.attribution_method IN ('invite', 'share', 'backfill_invite')
+        AND u.created_at > NOW() - make_interval(days => ${windowDays})
+    `) as { guests: number; with_signal: number }[];
+
+    // Stage 7: repeat hosting among subjects whose first plan is in-window.
+    const stage7 = (await sql`
+      WITH firsts AS (
+        SELECT e.host_user_id, MIN(e.created_at) AS first_at
+        FROM newchums.events e
+        JOIN newchums.users h ON h.id = e.host_user_id
+        WHERE e.status = 'published' AND COALESCE(e.is_qa, FALSE) = FALSE
+          AND h.research_excluded = FALSE
+        GROUP BY e.host_user_id
+      )
+      SELECT COUNT(*)::int AS hosts,
+        COUNT(*) FILTER (WHERE EXISTS (
+          SELECT 1 FROM newchums.events e2
+          WHERE e2.host_user_id = f.host_user_id AND e2.status = 'published'
+            AND COALESCE(e2.is_qa, FALSE) = FALSE
+            AND e2.created_at > f.first_at
+            AND e2.created_at <= f.first_at + INTERVAL '60 days'
+        ))::int AS repeat_hosts
+      FROM firsts f
+      WHERE f.first_at > NOW() - make_interval(days => ${windowDays})
+    `) as { hosts: number; repeat_hosts: number }[];
+
+    // Generations: walk origin_host_user_id. Excluded users vanish from the
+    // counts but still conduct lineage (their descendants keep their depth).
+    const generations = (await sql`
+      WITH RECURSIVE lineage AS (
+        SELECT u.id, u.research_excluded, 0 AS gen
+        FROM newchums.users u
+        WHERE u.origin_host_user_id IS NULL
+        UNION ALL
+        SELECT u.id, u.research_excluded, l.gen + 1
+        FROM newchums.users u
+        JOIN lineage l ON u.origin_host_user_id = l.id
+        WHERE l.gen < 10
+      )
+      SELECT l.gen,
+        COUNT(*) FILTER (WHERE NOT l.research_excluded)::int AS accounts,
+        COUNT(*) FILTER (WHERE NOT l.research_excluded AND EXISTS (
+          SELECT 1 FROM newchums.events e
+          WHERE e.host_user_id = l.id AND e.status = 'published'
+            AND COALESCE(e.is_qa, FALSE) = FALSE
+        ))::int AS activated_hosts
+      FROM lineage l
+      GROUP BY l.gen
+      HAVING l.gen > 0 OR COUNT(*) FILTER (WHERE NOT l.research_excluded) > 0
+      ORDER BY l.gen
+    `) as { gen: number; accounts: number; activated_hosts: number }[];
+
+    // Lineage drill-down: the youngest 50 attributed accounts with origins.
+    const lineageRows = (await sql`
+      SELECT u.username, u.created_at, u.attribution_method,
+        e.title AS origin_plan, hu.username AS origin_host,
+        EXISTS (
+          SELECT 1 FROM newchums.events pe
+          WHERE pe.host_user_id = u.id AND pe.status = 'published'
+            AND COALESCE(pe.is_qa, FALSE) = FALSE
+        ) AS activated
+      FROM newchums.users u
+      LEFT JOIN newchums.events e ON e.id = u.origin_event_id
+      LEFT JOIN newchums.users hu ON hu.id = u.origin_host_user_id
+      WHERE u.research_excluded = FALSE AND u.origin_host_user_id IS NOT NULL
+      ORDER BY u.created_at DESC
+      LIMIT 50
+    `) as { username: string | null; created_at: string; attribution_method: string; origin_plan: string | null; origin_host: string | null; activated: boolean }[];
+
+    return c.json({
+      ok: true,
+      windowDays,
+      // §4 healthy thresholds, frozen in the doc before spend.
+      thresholds: {
+        stage2_account_rate: 0.04,
+        stage3_activation_rate: 0.15,
+        stage4_response_rate: 0.4,
+        stage5_happened_rate: 0.7,
+        stage6_signal_rate: 0.1,
+        stage7_repeat_rate: 0.3,
+      },
+      cohorts: cohorts.map((r) => ({
+        cohort: r.cohort,
+        accounts: r.accounts,
+        activatedHosts: r.activated_hosts,
+        activationRate: r.accounts > 0 ? r.activated_hosts / r.accounts : null,
+      })),
+      inviteesPerPlan: invDist[0],
+      stage4: {
+        invites: stage4[0].invites,
+        responded: stage4[0].responded,
+        responseRate: stage4[0].invites > 0 ? stage4[0].responded / stage4[0].invites : null,
+        opensNote: "Email opens are not measured this round (no open tracking); Stage 4 reads on response rate.",
+      },
+      stage5: {
+        pastPlans: stage5[0].past_plans,
+        happened: stage5[0].happened,
+        happenedRate: stage5[0].past_plans > 0 ? stage5[0].happened / stage5[0].past_plans : null,
+        definition: "past plan with at least one confirmed attendance",
+      },
+      stage6: {
+        guests: stage6[0].guests,
+        withSignal: stage6[0].with_signal,
+        signalRate: stage6[0].guests > 0 ? stage6[0].with_signal / stage6[0].guests : null,
+      },
+      stage7: {
+        hosts: stage7[0].hosts,
+        repeatHosts: stage7[0].repeat_hosts,
+        repeatRate: stage7[0].hosts > 0 ? stage7[0].repeat_hosts / stage7[0].hosts : null,
+      },
+      generations,
+      lineage: lineageRows.map((r) => ({
+        username: r.username,
+        createdAt: r.created_at,
+        method: r.attribution_method,
+        originPlan: r.origin_plan,
+        originHost: r.origin_host,
+        activated: r.activated,
+      })),
+    });
+  } catch (err) {
+    console.error("[GET /admin/research/growth]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
 // First-party funnel counts from newchums.product_events (migration 103).
 // Steps that only exist client-side (plan_link_opened, rsvp_form_started,
 // rsvp_form_submitted, share_link_copied, plan_created) live in GA; the
@@ -8162,6 +8440,100 @@ app.post("/inbox/:conversationId/report", async (c) => {
 });
 
 /** GET /me/blocks, the viewer's blocked-users list (for Settings). */
+/** POST /me/attribution, one-shot first-touch attribution from the landing
+ *  cookie (growth experiment, migration 115). Self-reported, so guarded:
+ *  only a young account with no attribution can be stamped, and the
+ *  server-side invite/share stamp in GET /events/:id always wins by
+ *  arriving first. */
+app.post("/me/attribution", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+
+  const clean = (v: unknown, max = 120) =>
+    typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null;
+  const utm = (body.utm ?? {}) as Record<string, unknown>;
+  const utmSource = clean(utm.source);
+  const utmMedium = clean(utm.medium);
+  const utmCampaign = clean(utm.campaign);
+  const utmContent = clean(utm.content);
+  const landing = clean(body.landing, 200);
+  const originEventId = clean(body.origin_event_id, 40);
+
+  try {
+    if (utmSource) {
+      const source = `${utmSource}/${utmMedium ?? "none"}/${utmContent ?? utmCampaign ?? "none"}`;
+      const updated = (await sql`
+        UPDATE newchums.users
+        SET signup_source = ${source},
+            signup_utm = ${JSON.stringify({ source: utmSource, medium: utmMedium, campaign: utmCampaign, content: utmContent, landing })}::jsonb,
+            attribution_method = 'utm',
+            attributed_at = NOW()
+        WHERE id = ${userId} AND attribution_method IS NULL
+          AND created_at > NOW() - INTERVAL '48 hours'
+        RETURNING id
+      `) as { id: string }[];
+      return c.json({ ok: true, stamped: updated.length > 0 });
+    }
+    if (originEventId) {
+      // Cookie-remembered share landing (e.g. the token was consumed on a
+      // different page-load than the one after signup). Weaker than the
+      // token-verified stamp, same shape.
+      const ev = (await sql`
+        SELECT host_user_id, COALESCE(is_qa, FALSE) AS is_qa
+        FROM newchums.events WHERE id = ${originEventId} LIMIT 1
+      `) as { host_user_id: string; is_qa: boolean }[];
+      if (ev.length === 0 || ev[0].is_qa || ev[0].host_user_id === userId)
+        return c.json({ ok: true, stamped: false });
+      const updated = (await sql`
+        UPDATE newchums.users
+        SET origin_event_id = ${originEventId},
+            origin_host_user_id = ${ev[0].host_user_id},
+            attribution_method = 'share',
+            attributed_at = NOW()
+        WHERE id = ${userId} AND attribution_method IS NULL
+          AND created_at > NOW() - INTERVAL '48 hours'
+        RETURNING id
+      `) as { id: string }[];
+      return c.json({ ok: true, stamped: updated.length > 0 });
+    }
+    const updated = (await sql`
+      UPDATE newchums.users
+      SET signup_utm = ${JSON.stringify({ landing })}::jsonb,
+          attribution_method = 'organic',
+          attributed_at = NOW()
+      WHERE id = ${userId} AND attribution_method IS NULL
+        AND created_at > NOW() - INTERVAL '48 hours'
+      RETURNING id
+    `) as { id: string }[];
+    return c.json({ ok: true, stamped: updated.length > 0 });
+  } catch (err) {
+    console.error("[POST /me/attribution]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /product-signals, client-reported product events from a small
+ *  whitelist. Currently just the growth experiment's stage-6 host-signal. */
+app.post("/product-signals", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+  if (body.name !== "create_page_visited")
+    return c.json({ ok: false, error: "VALIDATION", message: "Unknown signal" }, 400);
+  c.executionCtx.waitUntil(recordProductEvent(sql, { name: "create_page_visited", userId }));
+  return c.json({ ok: true });
+});
+
 app.get("/me/blocks", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string") {
@@ -12939,6 +13311,37 @@ app.get("/events/:id", async (c) => {
       }
     } catch (adoptErr) {
       console.error("[GET /events/:id] invite adoption error (non-fatal):", adoptErr);
+    }
+
+    // Attribution (growth experiment, migration 115): an authed viewer who
+    // arrived through an invite or share link, on a young unattributed
+    // account, is stamped here, server-side and token-verified, which
+    // outranks the landing-cookie path. Lightweight plan-signups are
+    // covered too: their magic link returns them to this page. QA plans
+    // never become lineage roots.
+    if (inviteTokenParam || shareTokenParam) {
+      try {
+        // Single UPDATE carries its own guards: the join brings the plan's
+        // host and QA flag (the full event row loads later in this
+        // handler), and the WHERE keeps this a one-shot for young,
+        // unattributed, non-host accounts on non-QA plans.
+        await sql`
+          UPDATE newchums.users u
+          SET origin_event_id = e.id,
+              origin_host_user_id = e.host_user_id,
+              attribution_method = ${inviteTokenParam ? "invite" : "share"},
+              attributed_at = NOW()
+          FROM newchums.events e
+          WHERE u.id = ${userId}
+            AND e.id = ${eventId}
+            AND COALESCE(e.is_qa, FALSE) = FALSE
+            AND e.host_user_id <> u.id
+            AND u.attribution_method IS NULL
+            AND u.created_at > NOW() - INTERVAL '48 hours'
+        `;
+      } catch (attribErr) {
+        console.error("[GET /events/:id] attribution stamp error (non-fatal):", attribErr);
+      }
     }
   }
 

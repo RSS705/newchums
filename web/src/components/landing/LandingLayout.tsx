@@ -18,6 +18,8 @@ import SiteHeader, { HEADER_MIN_HEIGHT } from "@/components/layout/SiteHeader";
 import MarketingNavSection from "@/components/layout/MarketingNavSection";
 import { publicHeaderNavLinks } from "@/config/nav";
 import LandingFooter from "./LandingFooter";
+import { useEffect } from "react";
+import { captureAttributionLanding } from "@/lib/attribution";
 
 const LOGGED_OUT_DRAWER_WIDTH = 260;
 const APP_BAR_HEIGHT_MOBILE = 64;
@@ -46,6 +48,12 @@ export default function LandingLayout({
   children: ReactNode;
   isLoggedIn?: boolean;
 }) {
+  // Growth experiment: remember the first interesting arrival (UTM or
+  // share-linked plan) so it can be stamped after signup.
+  useEffect(() => {
+    captureAttributionLanding();
+  }, []);
+
   const [mobileOpen, setMobileOpen] = React.useState(false);
 
   return (

@@ -41,7 +41,12 @@ export type ProductEventName =
   | "second_plan_created"
   | "plan_reached_3_rsvps"
   | "plan_copied"
-  | "run_again_nudge_sent";
+  | "run_again_nudge_sent"
+  // Growth experiment stage-6 host-signal: a guest-origin account touching
+  // the create page. Client-reported via POST /product-signals, repeatable
+  // (the client de-dupes per session; the research view counts DISTINCT
+  // users anyway).
+  | "create_page_visited";
 
 export type ProductEvent = {
   name: ProductEventName;

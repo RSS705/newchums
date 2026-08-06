@@ -240,6 +240,22 @@ export default function CreateEventClient() {
   // Which system preset is active (null = none / custom upload)
   const [selectedPresetSlug, setSelectedPresetSlug] = useState<string | null>(null);
   const [presetRendering, setPresetRendering] = useState(false);
+
+  // Growth experiment stage-6 host-signal: any visit to the create page by
+  // a signed-in account, reported once per browser session. Fire-and-forget.
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem("nc_cpv")) return;
+      sessionStorage.setItem("nc_cpv", "1");
+    } catch { /* private mode: report every time, the view counts DISTINCT */ }
+    void apiFetch("/product-signals", {
+      method: "POST",
+      auth: true,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "create_page_visited" }),
+    }).catch(() => undefined);
+  }, []);
+
   const autoSuggestedRef = useRef(false);
 
   useEffect(() => {

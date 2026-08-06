@@ -1,5 +1,6 @@
 "use client";
 
+import { captureAttributionLanding, reportAttribution } from "@/lib/attribution";
 import AddCircleRoundedIcon from "@mui/icons-material/AddCircleRounded";
 import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
 import PersonRoundedIcon from "@mui/icons-material/PersonRounded";
@@ -103,6 +104,14 @@ type AppShellProps = {
 type NavProfile = { avatar_url?: string | null; name?: string | null; username?: string | null; role?: string | null };
 
 export default function AppShell({ children, user, passwordSetupPending, passwordSetupUserKey }: AppShellProps) {
+  // Growth experiment: a signed-in session reports the stored first-touch
+  // attribution once; the server only stamps young unattributed accounts,
+  // so established accounts no-op forever after the first call.
+  React.useEffect(() => {
+    captureAttributionLanding();
+    void reportAttribution();
+  }, []);
+
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
