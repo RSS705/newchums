@@ -1,5 +1,7 @@
 "use client";
 
+import ScienceRoundedIcon from "@mui/icons-material/ScienceRounded";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -51,6 +53,7 @@ type PlanRow = {
   location_address: string | null;
   communities: Array<{ id: string; slug: string; name: string }>;
   hide_from_explore: boolean;
+  is_qa: boolean;
   host_name: string | null;
   host_username: string | null;
   host_email: string | null;
@@ -124,9 +127,31 @@ export default function AdminPlansClient() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [qaFilter, setQaFilter] = useState("all");
   const [sortField, setSortField] = useState<SortField>("created_at");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // QA flag: reversible and audited server-side, so no confirm dialog.
+  // Optimistic with rollback; growth research recomputes on its next load.
+  async function toggleQa(plan: PlanRow) {
+    const next = !plan.is_qa;
+    setPlans((prev) => prev.map((r) => (r.id === plan.id ? { ...r, is_qa: next } : r)));
+    try {
+      const res = await apiFetch(`/admin/plans/${plan.id}/qa`, {
+        method: "POST",
+        auth: true,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ qa: next }),
+      });
+      const data = (await res.json()) as { ok: boolean };
+      if (!data.ok) throw new Error("failed");
+      toast.success(next ? "Marked as QA test plan" : "Marked as a real plan");
+    } catch {
+      setPlans((prev) => prev.map((r) => (r.id === plan.id ? { ...r, is_qa: plan.is_qa } : r)));
+      toast.error("Could not update the QA flag");
+    }
+  }
+
   const [removeTarget, setRemoveTarget] = useState<PlanRow | null>(null);
   const [hardDeleteTarget, setHardDeleteTarget] = useState<PlanRow | null>(null);
   const [removeReason, setRemoveReason] = useState("");
@@ -144,12 +169,13 @@ export default function AdminPlansClient() {
   const [editCommunitySearching, setEditCommunitySearching] = useState(false);
   const editCommunityDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fetchPlans = useCallback(async (q?: string, status?: string) => {
+  const fetchPlans = useCallback(async (q?: string, status?: string, qa?: string) => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
       if (q) params.set("q", q);
       if (status && status !== "all") params.set("status", status);
+      if (qa && qa !== "all") params.set("qa", qa);
       const qs = params.toString();
       const res = await apiFetch(`/admin/plans${qs ? `?${qs}` : ""}`, { auth: true });
       if (res.ok) {
@@ -160,16 +186,12 @@ export default function AdminPlansClient() {
     setLoading(false);
   }, []);
 
-  // fetchPlans flips loading=true synchronously, which the rule flags. The
-  // pattern is the standard "fetch list on mount / on filter change" effect
-  // used elsewhere in the admin panels.
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { fetchPlans("", statusFilter); }, [fetchPlans, statusFilter]);
+  useEffect(() => { fetchPlans("", statusFilter, qaFilter); }, [fetchPlans, statusFilter, qaFilter]);
 
   const handleSearchChange = (val: string) => {
     setSearch(val);
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => fetchPlans(val, statusFilter), 300);
+    debounceRef.current = setTimeout(() => fetchPlans(val, statusFilter, qaFilter), 300);
   };
 
   const handleSort = (field: SortField) => {
@@ -362,6 +384,16 @@ export default function AdminPlansClient() {
           <MenuItem value="past">Past</MenuItem>
           <MenuItem value="canceled">Canceled</MenuItem>
         </Select>
+        <Select
+          size="small"
+          value={qaFilter}
+          onChange={(e) => setQaFilter(e.target.value)}
+          sx={{ minWidth: 130 }}
+        >
+          <MenuItem value="all">Real + QA</MenuItem>
+          <MenuItem value="real">Real only</MenuItem>
+          <MenuItem value="qa">QA only</MenuItem>
+        </Select>
         <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: "nowrap" }}>
           {plans.length} plan{plans.length !== 1 ? "s" : ""}
         </Typography>
@@ -441,13 +473,23 @@ export default function AdminPlansClient() {
                     {formatDateTime(plan.starts_at)}
                   </TableCell>
                   <TableCell>
-                    <Chip
-                      label={statusLabel(plan.status, plan.canceled_at, plan.starts_at)}
-                      size="small"
-                      color={statusColor(plan.status, plan.canceled_at)}
-                      variant={plan.canceled_at || plan.status === "canceled" ? "filled" : "outlined"}
-                      sx={{ fontWeight: 600, fontSize: "0.6875rem" }}
-                    />
+                    <Stack direction="row" spacing={0.5} alignItems="center">
+                      <Chip
+                        label={statusLabel(plan.status, plan.canceled_at, plan.starts_at)}
+                        size="small"
+                        color={statusColor(plan.status, plan.canceled_at)}
+                        variant={plan.canceled_at || plan.status === "canceled" ? "filled" : "outlined"}
+                        sx={{ fontWeight: 600, fontSize: "0.6875rem" }}
+                      />
+                      {plan.is_qa && (
+                        <Chip
+                          label="QA"
+                          size="small"
+                          color="warning"
+                          sx={{ fontWeight: 700, fontSize: "0.6875rem" }}
+                        />
+                      )}
+                    </Stack>
                   </TableCell>
                   <TableCell sx={{ display: { xs: "none", md: "table-cell" } }}>
                     <Chip
@@ -496,6 +538,21 @@ export default function AdminPlansClient() {
                   </TableCell>
                   <TableCell align="center" sx={{ whiteSpace: "nowrap" }}>
                     <Stack direction="row" spacing={0.5} justifyContent="center">
+                      <Tooltip
+                        title={
+                          plan.is_qa
+                            ? "QA plan: hidden from KPIs and growth research. Click to mark as real"
+                            : "Mark as QA (test plan): removes it from KPIs and growth research"
+                        }
+                      >
+                        <IconButton
+                          size="small"
+                          color={plan.is_qa ? "warning" : "default"}
+                          onClick={() => void toggleQa(plan)}
+                        >
+                          <ScienceRoundedIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
                       <Tooltip title="Edit community link">
                         <IconButton size="small" onClick={() => openEdit(plan)}>
                           <EditRoundedIcon fontSize="small" />

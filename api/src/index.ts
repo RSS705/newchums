@@ -5611,6 +5611,7 @@ app.get("/admin/plans", async (c) => {
   const sql = getSql(c.env);
   const q = c.req.query("q")?.trim();
   const statusFilter = c.req.query("status") ?? "all";
+  const qaFilter = c.req.query("qa") ?? "all";
   const likePattern = q ? `%${q.toLowerCase()}%` : null;
 
   try {
@@ -5620,6 +5621,7 @@ app.get("/admin/plans", async (c) => {
         e.host_user_id, e.created_at, e.canceled_at, e.max_seats,
         e.location_type, e.location_name, e.location_address,
         e.hide_from_explore,
+        COALESCE(e.is_qa, FALSE) AS is_qa,
         h.name AS host_name, h.username AS host_username, h.email AS host_email,
         (SELECT COUNT(*)::int FROM newchums.event_rsvps er WHERE er.event_id = e.id AND er.status = 'going') AS going_count,
         (SELECT COUNT(*)::int FROM newchums.event_rsvps er WHERE er.event_id = e.id AND er.status = 'maybe') AS maybe_count,
@@ -5634,6 +5636,8 @@ app.get("/admin/plans", async (c) => {
       FROM newchums.events e
       LEFT JOIN newchums.users h ON h.id = e.host_user_id
       WHERE e.status != 'draft'
+        ${qaFilter === "qa" ? sql`AND COALESCE(e.is_qa, FALSE) = TRUE` : sql``}
+        ${qaFilter === "real" ? sql`AND COALESCE(e.is_qa, FALSE) = FALSE` : sql``}
         ${likePattern ? sql`AND (LOWER(e.title) LIKE ${likePattern} OR LOWER(COALESCE(h.name, '')) LIKE ${likePattern} OR LOWER(COALESCE(h.email, '')) LIKE ${likePattern})` : sql``}
         ${statusFilter === "published" ? sql`AND e.status = 'published' AND e.canceled_at IS NULL` : sql``}
         ${statusFilter === "canceled" ? sql`AND e.status = 'canceled'` : sql``}
@@ -5643,6 +5647,7 @@ app.get("/admin/plans", async (c) => {
       LIMIT 200
     `) as Array<{
       id: string; title: string; starts_at: string; status: string; visibility: string;
+      is_qa: boolean;
       host_user_id: string; created_at: string; canceled_at: string | null; max_seats: number | null;
       location_type: string; location_name: string | null; location_address: string | null;
       hide_from_explore: boolean;
@@ -5659,6 +5664,79 @@ app.get("/admin/plans", async (c) => {
 });
 
 /** POST /admin/plans/:id/remove, admin hard-deletes an event and notifies the host */
+/** POST /admin/plans/:id/qa, flip a plan's QA flag. QA plans are
+ *  feature-testing artifacts: hidden from KPIs and every growth-research
+ *  metric, and they can never be attribution lineage roots. Flagging is
+ *  reversible and audited. */
+app.post("/admin/plans/:id/qa", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  const id = c.req.param("id");
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+  if (typeof body.qa !== "boolean")
+    return c.json({ ok: false, error: "VALIDATION", message: "qa must be boolean" }, 400);
+  const sql = getSql(c.env);
+  try {
+    const rows = (await sql`
+      UPDATE newchums.events SET is_qa = ${body.qa}
+      WHERE id = ${id}
+      RETURNING id, title
+    `) as { id: string; title: string }[];
+    if (rows.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    await sql`
+      INSERT INTO newchums.admin_audit (actor_user_id, action, subject_type, subject_id, subject_label, detail)
+      VALUES (${admin.id}, 'plan_qa_flag_set', 'event', ${id}, ${rows[0].title}, ${JSON.stringify({ qa: body.qa })}::jsonb)
+    `;
+
+    // Ground rule: QA plans can never be attribution lineage roots. Flagging
+    // a plan QA clears any attributions that were derived from it and lets
+    // the idempotent backfill re-derive from the remaining real invites, so
+    // marking an old test plan self-heals the research data (this exact
+    // sequence was first run by hand for the Spring Floral Bouquets plan).
+    let relinked = 0;
+    if (body.qa === true) {
+      const cleared = (await sql`
+        UPDATE newchums.users
+        SET origin_event_id = NULL, origin_host_user_id = NULL,
+            attribution_method = NULL, attributed_at = NULL
+        WHERE origin_event_id = ${id}
+          AND attribution_method IN ('invite', 'share', 'backfill_invite')
+        RETURNING id
+      `) as { id: string }[];
+      if (cleared.length > 0) {
+        await sql`
+          WITH earliest_invite AS (
+            SELECT DISTINCT ON (u.id)
+              u.id AS user_id, i.event_id, e.host_user_id
+            FROM newchums.users u
+            JOIN newchums.event_invites i
+              ON (i.user_id = u.id OR (i.email IS NOT NULL AND LOWER(i.email) = LOWER(u.email)))
+            JOIN newchums.events e ON e.id = i.event_id
+            WHERE u.attribution_method IS NULL
+              AND u.id = ANY(${cleared.map((r) => r.id)}::uuid[])
+              AND e.host_user_id <> u.id
+              AND COALESCE(e.is_qa, FALSE) = FALSE
+            ORDER BY u.id, i.created_at ASC
+          )
+          UPDATE newchums.users u
+          SET origin_event_id = ei.event_id,
+              origin_host_user_id = ei.host_user_id,
+              attribution_method = 'backfill_invite',
+              attributed_at = NOW()
+          FROM earliest_invite ei
+          WHERE u.id = ei.user_id
+        `;
+        relinked = cleared.length;
+      }
+    }
+    return c.json({ ok: true, qa: body.qa, attributionsRecomputed: relinked });
+  } catch (err) {
+    console.error("[POST /admin/plans/:id/qa]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
 app.post("/admin/plans/:id/remove", async (c) => {
   const admin = await requireSuperAdmin(c);
   if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
