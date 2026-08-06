@@ -224,6 +224,37 @@ accounts never enter the lineage tree.
    domain. The entire loop rides on invitation emails reaching inboxes, and a silent deliverability
    problem doesn't present as failure; it presents as *uninterpretable* failure.
 
+### Build status (added 7 August 2026; thresholds above unchanged)
+
+Recorded here per this document's own rule: changes get noted, never silently made.
+
+1. **Cleanup and internal flag — done.** Rob removed all test accounts by hand (6 Aug); the
+   candidate scan found zero remaining pattern matches. `users.research_excluded` exists with a
+   super-admin toggle on /admin/chums (audited), and both founder accounts are flagged in
+   production. The read-only audit tool is `scripts/research_account_audit.sh`.
+2. **Attribution — live (migration 115, 6 Aug).** Invite/share arrivals stamp server-side in
+   GET /events/:id; ad/organic arrivals stamp via first-touch capture + POST /me/attribution.
+   Generation is computed by walking `origin_host_user_id`, never stored. **Backfill ran against
+   production 7 Aug** (migration 116, after the cleanup confirmation, per the ordering rule):
+   9 existing accounts gained invite lineage, seeding Experiment B before any spend.
+3. **Research view — live** at /admin/growth: all seven stages framed as the §4 questions with
+   the frozen thresholds beside actuals, invitees-per-plan distribution, generation table with
+   lineage, QA and founder exclusions applied everywhere.
+4. **Host-signal — live.** `create_page_visited` records once per session; drafts and publishes
+   were already derivable.
+5. **Deliverability — verified in order (6 Aug):** DKIM present for the Resend selector, SPF
+   correct on the send subdomain with bounce MX, DMARC published (p=none, monitoring mode).
+
+**Measurement note (stage 4):** email open tracking is not enabled this round (free Resend plan;
+pixel opens are inflated by mail prefetching anyway). Stage 4 is judged on the 40% response-rate
+threshold alone; the 50% open threshold is recorded as unmeasured, not failed. Revisit if a
+future round adds Resend webhooks.
+
+**Still human work before spend:** ad creatives (3-4 variants) with UTM-tagged links
+(`?utm_source=facebook&utm_medium=paid&utm_campaign=aug-test&utm_content=<variant>`; each
+`utm_content` becomes its own funnel row), Meta campaign setup per §7, and the §8 interview
+emails during the run.
+
 ## 7. The campaign
 
 - **One platform: Meta (Facebook feed + Instagram).** No split across platforms — at this budget

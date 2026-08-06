@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import Box from "@mui/material/Box";
 import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
-import Grid from "@mui/material/Grid";
+import Divider from "@mui/material/Divider";
+import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import Table from "@mui/material/Table";
 import TableBody from "@mui/material/TableBody";
@@ -16,12 +17,15 @@ import { AppCard } from "@/components/ui";
 import { apiFetch } from "@/lib/apiClient";
 
 /**
- * The growth-experiment research view (docs/Growth_Experiment_Plan.md §6.3):
- * the §4 funnel with its pre-registered thresholds beside the actuals, the
- * invitees-per-plan distribution, the generation table with lineage, and the
- * repeat-host / host-signal counts. Stages 1-2 live in Meta and GA, marked
- * as such rather than pretended at; email opens are explicitly unmeasured
- * this round.
+ * The growth-experiment research view (docs/Growth_Experiment_Plan.md §6.3).
+ *
+ * Rewritten for legibility after Rob's review of the first version: it was
+ * too compressed to read cold. This version mirrors the experiment doc's
+ * own structure, all seven stages in order, each framed as the question it
+ * answers, with a "what this tests" line, the plain numbers, and the
+ * pre-registered healthy bar spelled out in words. Stages 1-2 appear as
+ * explicit cards pointing at Meta/GA rather than being a footnote, so the
+ * funnel reads whole.
  */
 
 type Growth = {
@@ -39,45 +43,111 @@ type Growth = {
 };
 
 function pct(v: number | null): string {
-  return v === null ? "–" : `${Math.round(v * 100)}%`;
+  return v === null ? "no data yet" : `${Math.round(v * 100)}%`;
 }
 
-/** Actual-vs-threshold chip: green at or above, amber below, grey when no
- *  data yet. Small n is the norm for this experiment, so the chip carries
- *  the n rather than hiding it. */
-function ThresholdChip({ rate, threshold, n }: { rate: number | null; threshold: number; n: number }) {
-  const color = rate === null || n === 0 ? "default" : rate >= threshold ? "success" : "warning";
-  return (
-    <Chip
-      size="small"
-      color={color}
-      variant={color === "default" ? "outlined" : "filled"}
-      label={`${pct(rate)} vs ${Math.round(threshold * 100)}% healthy · n=${n}`}
-      sx={{ fontWeight: 600 }}
-    />
+/** Verdict chip in words, not code: Healthy / Below healthy / No data yet. */
+function VerdictChip({ rate, threshold, n }: { rate: number | null; threshold: number; n: number }) {
+  if (rate === null || n === 0) {
+    return <Chip size="small" variant="outlined" label="No data yet" />;
+  }
+  return rate >= threshold ? (
+    <Chip size="small" color="success" label="Healthy" sx={{ fontWeight: 600 }} />
+  ) : (
+    <Chip size="small" color="warning" label="Below healthy" sx={{ fontWeight: 600 }} />
   );
 }
 
-function StageCard({
-  stage,
-  title,
+/** One stage of the funnel, framed exactly as the experiment doc frames it:
+ *  the question, what a miss would mean, then the numbers. */
+function Stage({
+  n,
+  question,
+  tests,
   children,
 }: {
-  stage: string;
-  title: string;
+  n: number;
+  question: string;
+  tests: string;
   children: React.ReactNode;
 }) {
   return (
-    <AppCard sx={{ height: "100%" }}>
-      <Typography variant="overline" sx={{ color: "primary.dark", fontWeight: 700, letterSpacing: 1 }}>
-        {stage}
-      </Typography>
-      <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem", mb: 1 }}>
-        {title}
-      </Typography>
-      {children}
+    <AppCard>
+      <Stack direction="row" spacing={1.75} alignItems="flex-start">
+        <Box
+          sx={{
+            width: 34,
+            height: 34,
+            borderRadius: "50%",
+            bgcolor: "primary.main",
+            color: "primary.contrastText",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontWeight: 800,
+            fontSize: "1rem",
+            flexShrink: 0,
+            mt: 0.25,
+          }}
+        >
+          {n}
+        </Box>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem", lineHeight: 1.35 }}>
+            {question}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 1.5, lineHeight: 1.6 }}>
+            {tests}
+          </Typography>
+          {children}
+        </Box>
+      </Stack>
     </AppCard>
   );
+}
+
+/** The big readable number line: "3 of 20 responded (15%)" + verdict. */
+function NumberLine({
+  numerator,
+  denominator,
+  noun,
+  rate,
+  threshold,
+  healthyText,
+}: {
+  numerator: number;
+  denominator: number;
+  noun: string;
+  rate: number | null;
+  threshold: number;
+  healthyText: string;
+}) {
+  return (
+    <Stack spacing={0.75}>
+      <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap>
+        <Typography sx={{ fontWeight: 800, fontSize: "1.5rem", lineHeight: 1 }}>
+          {denominator === 0 ? "–" : `${numerator} of ${denominator}`}
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          {noun}
+          {denominator > 0 && rate !== null ? ` (${pct(rate)})` : ""}
+        </Typography>
+        <VerdictChip rate={rate} threshold={threshold} n={denominator} />
+      </Stack>
+      <Typography variant="caption" color="text.secondary">
+        {healthyText}
+      </Typography>
+    </Stack>
+  );
+}
+
+/** Plain-words name for a cohort key. */
+function cohortLabel(key: string): { label: string; hint: string } {
+  if (key === "organic") return { label: "Found us on their own", hint: "no ad, no invite; typed the address or searched" };
+  if (key === "invited") return { label: "Invited to someone's plan", hint: "arrived through an invite or share link (gen-1+)" };
+  if (key === "unattributed") return { label: "Before tracking existed", hint: "accounts that predate attribution (5 Aug 2026)" };
+  if (key.startsWith("manual")) return { label: key, hint: "manually classified" };
+  return { label: key, hint: "an ad: source/medium/creative from its link" };
 }
 
 export default function AdminGrowthClient() {
@@ -119,127 +189,217 @@ export default function AdminGrowthClient() {
   const t = data.thresholds;
   const inv = data.inviteesPerPlan;
   const invBuckets = [
-    { label: "0", value: inv.b0 },
+    { label: "0 invitees", value: inv.b0 },
     { label: "1–2", value: inv.b1_2 },
     { label: "3–5", value: inv.b3_5 },
     { label: "6–9", value: inv.b6_9 },
-    { label: "10+", value: inv.b10p },
+    { label: "10 or more", value: inv.b10p },
   ];
   const invMax = Math.max(1, ...invBuckets.map((b) => b.value));
+  const totalAccounts = data.cohorts.reduce((a, c) => a + c.accounts, 0);
 
   return (
-    <Stack spacing={3} sx={{ pb: 4 }}>
+    <Stack spacing={3} sx={{ pb: 4, maxWidth: 900 }}>
       <Box>
         <Typography variant="h4" fontWeight={800} sx={{ fontSize: { xs: "1.5rem", sm: "1.75rem" } }}>
           Growth experiment
         </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, maxWidth: 640 }}>
-          The pre-registered funnel from docs/Growth_Experiment_Plan.md, last {data.windowDays} days.
-          QA plans and research-excluded accounts are out of every number below. Stages 1–2 (ad
-          views, clicks, visit-to-account rate) read from Meta Ads Manager and GA, not here.
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+          Live numbers for the pre-registered ad test, covering the last {data.windowDays} days.
         </Typography>
       </Box>
 
-      {/* Cohort funnel */}
-      <AppCard>
-        <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem", mb: 0.5 }}>
-          Accounts and activated hosts by source
+      {/* How to read this page */}
+      <Paper
+        variant="outlined"
+        sx={{
+          p: { xs: 2, sm: 2.5 },
+          borderRadius: 3,
+          borderColor: "primary.light",
+          bgcolor: "#fff7ed",
+        }}
+      >
+        <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 0.75 }}>
+          How to read this page
         </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-          Stage 3: activated = published a real plan within 7 days of signup. Healthy:{" "}
-          {Math.round(t.stage3_activation_rate * 100)}%+.
+        <Typography variant="body2" sx={{ color: "text.secondary", lineHeight: 1.7 }}>
+          The experiment watches a chain: someone sees an ad, clicks it, makes an account,
+          publishes a plan, their guests respond, the gathering happens, a guest gets curious about
+          hosting, and hosts host again. Each numbered card below asks one link of that chain as a
+          question and compares the real number against the &ldquo;healthy&rdquo; bar that was
+          written down in the plan before any money was spent.{" "}
+          <Box component="span" sx={{ fontWeight: 600 }}>
+            Most cards will say &ldquo;no data yet&rdquo; until the ads run, and the later stages
+            need weeks before they mean anything.
+          </Box>{" "}
+          That is the experiment working, not something broken: plans are scheduled 1&ndash;3 weeks
+          out, and guest behaviour lags the gathering. Verdict is rendered at the end of week 8,
+          not before.
         </Typography>
+        <Stack direction="row" spacing={1} sx={{ mt: 1.5 }} flexWrap="wrap" useFlexGap>
+          <Chip size="small" color="success" label="Healthy" sx={{ fontWeight: 600 }} />
+          <Typography variant="caption" sx={{ alignSelf: "center", color: "text.secondary" }}>
+            at or above the bar
+          </Typography>
+          <Chip size="small" color="warning" label="Below healthy" sx={{ fontWeight: 600 }} />
+          <Typography variant="caption" sx={{ alignSelf: "center", color: "text.secondary" }}>
+            under it
+          </Typography>
+          <Chip size="small" variant="outlined" label="No data yet" />
+          <Typography variant="caption" sx={{ alignSelf: "center", color: "text.secondary" }}>
+            nothing to count so far
+          </Typography>
+        </Stack>
+      </Paper>
+
+      {/* Stages 1-2 live off-site; say so as real cards so the funnel reads whole. */}
+      <Stage
+        n={1}
+        question="Of everyone who sees the ad, how many click it?"
+        tests="Purely the pitch and the audience; nothing about the product. Healthy is 0.8% or better, and below 0.4% after about $50 the plan says pause and rewrite the ad."
+      >
+        <Chip size="small" variant="outlined" label="Read this in Meta Ads Manager" />
+      </Stage>
+
+      <Stage
+        n={2}
+        question="Of everyone who lands on the site, how many create an account?"
+        tests="The landing experience: does the page deliver what the ad promised? Healthy is 4% or better. Visits come from Meta and GA; the accounts they produced appear in stage 3 below."
+      >
+        <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap>
+          <Chip size="small" variant="outlined" label="Visits: Meta / GA" />
+          <Typography variant="body2" color="text.secondary">
+            Accounts created here in the window: <b>{totalAccounts}</b>
+          </Typography>
+        </Stack>
+      </Stage>
+
+      {/* Stage 3: the test */}
+      <Stage
+        n={3}
+        question="Of everyone who creates an account, how many publish a plan within 7 days?"
+        tests={`This is the test. It asks whether the ads reached people who actually have a gathering to organize, and whether the product let them organize it. Healthy is ${Math.round(t.stage3_activation_rate * 100)}% or better. A miss can mean the wrong people clicked, or the right people got stuck; only the interviews can tell those apart.`}
+      >
         <Box sx={{ overflowX: "auto" }}>
-          <Table size="small" sx={{ minWidth: 420 }}>
+          <Table size="small" sx={{ minWidth: 520 }}>
             <TableHead>
               <TableRow>
-                <TableCell>Source</TableCell>
+                <TableCell>Where they came from</TableCell>
                 <TableCell align="right">Accounts</TableCell>
-                <TableCell align="right">Activated hosts</TableCell>
-                <TableCell align="right">Rate</TableCell>
+                <TableCell align="right">Published a plan in 7 days</TableCell>
+                <TableCell align="right">Verdict</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {data.cohorts.map((c) => (
-                <TableRow key={c.cohort}>
-                  <TableCell sx={{ fontWeight: 600 }}>{c.cohort}</TableCell>
-                  <TableCell align="right">{c.accounts}</TableCell>
-                  <TableCell align="right">{c.activatedHosts}</TableCell>
-                  <TableCell align="right">
-                    <Chip
-                      size="small"
-                      variant="outlined"
-                      color={
-                        c.activationRate === null
-                          ? "default"
-                          : c.activationRate >= t.stage3_activation_rate
-                            ? "success"
-                            : "warning"
-                      }
-                      label={pct(c.activationRate)}
-                    />
-                  </TableCell>
-                </TableRow>
-              ))}
+              {data.cohorts.map((c) => {
+                const meta = cohortLabel(c.cohort);
+                return (
+                  <TableRow key={c.cohort}>
+                    <TableCell>
+                      <Typography variant="body2" fontWeight={600}>
+                        {meta.label}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {meta.hint}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="right">{c.accounts}</TableCell>
+                    <TableCell align="right">
+                      {c.activatedHosts}
+                      {c.activationRate !== null && c.accounts > 0 ? ` (${pct(c.activationRate)})` : ""}
+                    </TableCell>
+                    <TableCell align="right">
+                      <VerdictChip rate={c.activationRate} threshold={t.stage3_activation_rate} n={c.accounts} />
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </Box>
-      </AppCard>
+        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
+          Each ad creative shows up as its own row once its link is clicked, named
+          source/medium/creative. QA plans and the research-excluded accounts are out of every
+          number on this page.
+        </Typography>
+      </Stage>
 
-      {/* Stage tiles */}
-      <Grid container spacing={2}>
-        <Grid size={{ xs: 12, md: 6 }}>
-          <StageCard stage="Stage 4" title="Invited people who respond">
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-              {data.stage4.responded} of {data.stage4.invites} invited people RSVP&rsquo;d.
-            </Typography>
-            <ThresholdChip rate={data.stage4.responseRate} threshold={t.stage4_response_rate} n={data.stage4.invites} />
-            <Typography variant="caption" color="text.disabled" sx={{ display: "block", mt: 1 }}>
-              {data.stage4.opensNote}
-            </Typography>
-          </StageCard>
-        </Grid>
-        <Grid size={{ xs: 12, md: 6 }}>
-          <StageCard stage="Stage 5" title="Plans that actually happened">
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-              {data.stage5.happened} of {data.stage5.pastPlans} past plans ({data.stage5.definition}).
-            </Typography>
-            <ThresholdChip rate={data.stage5.happenedRate} threshold={t.stage5_happened_rate} n={data.stage5.pastPlans} />
-          </StageCard>
-        </Grid>
-        <Grid size={{ xs: 12, md: 6 }}>
-          <StageCard stage="Stage 6" title="Guests showing host-curiosity">
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-              {data.stage6.withSignal} of {data.stage6.guests} guest-origin accounts visited the
-              create page, drafted, or published within 30 days.
-            </Typography>
-            <ThresholdChip rate={data.stage6.signalRate} threshold={t.stage6_signal_rate} n={data.stage6.guests} />
-          </StageCard>
-        </Grid>
-        <Grid size={{ xs: 12, md: 6 }}>
-          <StageCard stage="Stage 7" title="Hosts who host again">
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-              {data.stage7.repeatHosts} of {data.stage7.hosts} hosts published a second plan within
-              60 days of their first.
-            </Typography>
-            <ThresholdChip rate={data.stage7.repeatRate} threshold={t.stage7_repeat_rate} n={data.stage7.hosts} />
-          </StageCard>
-        </Grid>
-      </Grid>
+      <Stage
+        n={4}
+        question="Of the people a host invites, how many respond?"
+        tests={`The guest side: invitation emails landing, the invite link making sense to someone who has never heard of NewChums, and saying yes being easy. These are friends invited by friends, so this should be high; a low number means something mechanical broke. Healthy is ${Math.round(t.stage4_response_rate * 100)}% or better responding with any RSVP.`}
+      >
+        <NumberLine
+          numerator={data.stage4.responded}
+          denominator={data.stage4.invites}
+          noun="invited people responded"
+          rate={data.stage4.responseRate}
+          threshold={t.stage4_response_rate}
+          healthyText={`Healthy: ${Math.round(t.stage4_response_rate * 100)}%+ respond. ${data.stage4.opensNote}`}
+        />
+      </Stage>
+
+      <Stage
+        n={5}
+        question="Of published plans, how many gatherings actually happen?"
+        tests={`The product's core promise. Counted as: the plan's date passed and at least one person confirmed attendance through the 24-hour check. Healthy is ${Math.round(t.stage5_happened_rate * 100)}% or better; a gathering that never happens shows no guest anything worth copying.`}
+      >
+        <NumberLine
+          numerator={data.stage5.happened}
+          denominator={data.stage5.pastPlans}
+          noun="past plans demonstrably happened"
+          rate={data.stage5.happenedRate}
+          threshold={t.stage5_happened_rate}
+          healthyText={`Healthy: ${Math.round(t.stage5_happened_rate * 100)}%+ of past plans.`}
+        />
+      </Stage>
+
+      <Stage
+        n={6}
+        question="Of guests who made accounts, how many show host-curiosity within 30 days?"
+        tests={`The loop's engine in miniature: does being a guest plant the seed? Counted as any host-shaped act, visiting the create page, starting a draft, or publishing, within 30 days of signing up, for accounts that arrived through an invite or share link. Healthy is ${Math.round(t.stage6_signal_rate * 100)}% or better. This is the closest thing to the loop this window can see; full guest-to-host conversion takes months.`}
+      >
+        <NumberLine
+          numerator={data.stage6.withSignal}
+          denominator={data.stage6.guests}
+          noun="guest-origin accounts showed a host signal"
+          rate={data.stage6.signalRate}
+          threshold={t.stage6_signal_rate}
+          healthyText={`Healthy: ${Math.round(t.stage6_signal_rate * 100)}%+ show any signal.`}
+        />
+      </Stage>
+
+      <Stage
+        n={7}
+        question="Of activated hosts, how many publish a second plan within 60 days?"
+        tests={`Retention. A host who plans once exposes their group once; a host who plans monthly is a standing advertisement to the same people until one of them converts. Healthy is ${Math.round(t.stage7_repeat_rate * 100)}% or better.`}
+      >
+        <NumberLine
+          numerator={data.stage7.repeatHosts}
+          denominator={data.stage7.hosts}
+          noun="hosts published a second plan within 60 days"
+          rate={data.stage7.repeatRate}
+          threshold={t.stage7_repeat_rate}
+          healthyText={`Healthy: ${Math.round(t.stage7_repeat_rate * 100)}%+ host again.`}
+        />
+      </Stage>
+
+      <Divider />
 
       {/* Invitees per plan */}
       <AppCard>
         <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem", mb: 0.5 }}>
-          Invitees per plan
+          How many people does each plan invite?
         </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          {inv.plans} real plans in the window, mean {inv.mean} invitees. A plan with zero invitees
-          adds no fuel to the loop, however satisfying to its creator.
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.6 }}>
+          Any published plan counts as a good outcome for its host, but only plans with invitees
+          add fuel to the loop, because guests are how the product spreads. {inv.plans} real plans
+          in the window, averaging {inv.mean} invitees each.
         </Typography>
-        <Stack spacing={0.75} sx={{ maxWidth: 420 }}>
+        <Stack spacing={0.75} sx={{ maxWidth: 460 }}>
           {invBuckets.map((b) => (
             <Stack key={b.label} direction="row" spacing={1.5} alignItems="center">
-              <Typography variant="caption" sx={{ width: 32, textAlign: "right", fontWeight: 600 }}>
+              <Typography variant="caption" sx={{ width: 84, textAlign: "right", fontWeight: 600 }}>
                 {b.label}
               </Typography>
               <Box sx={{ flex: 1, height: 18, bgcolor: "action.hover", borderRadius: 1, overflow: "hidden" }}>
@@ -253,8 +413,8 @@ export default function AdminGrowthClient() {
                   }}
                 />
               </Box>
-              <Typography variant="caption" sx={{ width: 24, fontWeight: 600 }}>
-                {b.value}
+              <Typography variant="caption" sx={{ width: 56, fontWeight: 600 }}>
+                {b.value} {b.value === 1 ? "plan" : "plans"}
               </Typography>
             </Stack>
           ))}
@@ -264,25 +424,30 @@ export default function AdminGrowthClient() {
       {/* Generations */}
       <AppCard>
         <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem", mb: 0.5 }}>
-          Generations
+          The loop itself: generations
         </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-          Gen-0 arrived by ad, post, or on their own; gen-1 through a gen-0 host&rsquo;s plan, and so
-          on. Zero gen-2 in this window is the expected result even if the theory is true.
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, lineHeight: 1.7 }}>
+          Generation 0 found NewChums through an ad, a post, or on their own. Generation 1 arrived
+          through a gen-0 host&rsquo;s plan. Generation 2 through a gen-1 host&rsquo;s, and so on.
+          The theory the whole experiment tests is that this table eventually grows on its own.
+          Seeing zero in gen 2 during this window is the <b>expected</b> result even if the theory
+          is true; it takes months, not weeks.
         </Typography>
         <Box sx={{ overflowX: "auto" }}>
-          <Table size="small" sx={{ minWidth: 360 }}>
+          <Table size="small" sx={{ minWidth: 400 }}>
             <TableHead>
               <TableRow>
                 <TableCell>Generation</TableCell>
                 <TableCell align="right">Accounts</TableCell>
-                <TableCell align="right">Activated hosts</TableCell>
+                <TableCell align="right">Became hosts themselves</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {data.generations.map((g) => (
                 <TableRow key={g.gen}>
-                  <TableCell sx={{ fontWeight: 600 }}>Gen {g.gen}</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>
+                    {g.gen === 0 ? "Gen 0 (arrived directly)" : `Gen ${g.gen} (through a gen-${g.gen - 1} host)`}
+                  </TableCell>
                   <TableCell align="right">{g.accounts}</TableCell>
                   <TableCell align="right">{g.activated_hosts}</TableCell>
                 </TableRow>
@@ -293,25 +458,33 @@ export default function AdminGrowthClient() {
 
         {data.lineage.length > 0 && (
           <>
-            <Typography variant="subtitle2" fontWeight={700} sx={{ mt: 2.5, mb: 1 }}>
-              Newest invite-originated accounts
+            <Typography variant="subtitle2" fontWeight={700} sx={{ mt: 2.5, mb: 0.5 }}>
+              Who arrived through whose plan
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+              The newest accounts that arrived through an invitation or share link, and whether
+              they have gone on to host anything yet.
             </Typography>
             <Box sx={{ overflowX: "auto" }}>
               <Table size="small" sx={{ minWidth: 560 }}>
                 <TableHead>
                   <TableRow>
                     <TableCell>Account</TableCell>
-                    <TableCell>Arrived via</TableCell>
-                    <TableCell>Origin plan</TableCell>
-                    <TableCell>Origin host</TableCell>
-                    <TableCell align="right">Hosted?</TableCell>
+                    <TableCell>Came in via</TableCell>
+                    <TableCell>The plan that brought them</TableCell>
+                    <TableCell>That plan&rsquo;s host</TableCell>
+                    <TableCell align="right">Hosted since?</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {data.lineage.map((r, i) => (
                     <TableRow key={i}>
                       <TableCell sx={{ fontWeight: 600 }}>{r.username ?? "(no handle)"}</TableCell>
-                      <TableCell>{r.method}</TableCell>
+                      <TableCell>
+                        {r.method === "backfill_invite"
+                          ? "invite (historical)"
+                          : r.method}
+                      </TableCell>
                       <TableCell>{r.originPlan ?? "–"}</TableCell>
                       <TableCell>{r.originHost ?? "–"}</TableCell>
                       <TableCell align="right">
