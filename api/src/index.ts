@@ -18972,7 +18972,7 @@ async function processAttendanceAssurance(
           await sql`
             INSERT INTO newchums.email_outbox (kind, event_id, user_id, payload)
             VALUES ('confirmation_request', ${ev.id}, ${att.user_id}, ${JSON.stringify({ isHost, deadline })}::jsonb)
-            ON CONFLICT (kind, event_id, user_id) DO NOTHING
+            ON CONFLICT DO NOTHING
           `;
 
           await sql`
@@ -19077,7 +19077,7 @@ async function processAttendanceAssurance(
           await sql`
             INSERT INTO newchums.email_outbox (kind, event_id, user_id, payload)
             VALUES (${isFinal ? "confirmation_final" : "confirmation_reminder"}, ${ev.id}, ${att.user_id}, ${JSON.stringify({ isHost, deadline })}::jsonb)
-            ON CONFLICT (kind, event_id, user_id) DO NOTHING
+            ON CONFLICT DO NOTHING
           `;
 
           await sql`
@@ -19167,7 +19167,7 @@ async function processAttendanceAssurance(
             await sql`
               INSERT INTO newchums.email_outbox (kind, event_id, user_id, payload)
               VALUES ('plan_auto_cancelled', ${ev.id}, ${att.user_id}, ${JSON.stringify({ isHost, confirmedCount, minRequired, reason: "min_confirmed" })}::jsonb)
-              ON CONFLICT (kind, event_id, user_id) DO NOTHING
+              ON CONFLICT DO NOTHING
             `;
           } catch { /* noop */ }
         }
@@ -19179,7 +19179,7 @@ async function processAttendanceAssurance(
             await sql`
               INSERT INTO newchums.email_outbox (kind, event_id, user_id, payload)
               VALUES ('plan_at_risk', ${ev.id}, ${ev.host_user_id}, ${JSON.stringify({ confirmedCount, minRequired })}::jsonb)
-              ON CONFLICT (kind, event_id, user_id) DO NOTHING
+              ON CONFLICT DO NOTHING
             `;
           } catch { /* noop */ }
         }
@@ -19271,7 +19271,7 @@ async function processAttendanceAssurance(
           await sql`
             INSERT INTO newchums.email_outbox (kind, event_id, user_id, payload)
             VALUES ('plan_auto_cancelled', ${ev.id}, ${att.user_id}, ${JSON.stringify({ isHost, confirmedCount: goingCount, minRequired, reason: "min_attendees_required" })}::jsonb)
-            ON CONFLICT (kind, event_id, user_id) DO NOTHING
+            ON CONFLICT DO NOTHING
           `;
         } catch { /* noop */ }
       }
@@ -19722,7 +19722,7 @@ async function processPlanWrapUpEmails(
       await sql`
         INSERT INTO newchums.email_outbox (kind, event_id, user_id, payload)
         VALUES ('plan_wrapup', ${plan.id}, ${r.id}, ${JSON.stringify({ role: r.id === plan.host_user_id ? "host" : "attendee" })}::jsonb)
-        ON CONFLICT (kind, event_id, user_id) DO NOTHING
+        ON CONFLICT DO NOTHING
       `;
       fbQueued++;
     }
@@ -19881,7 +19881,7 @@ async function processRunItAgainNudges(
     await sql`
       INSERT INTO newchums.email_outbox (kind, event_id, user_id, payload)
       VALUES ('run_it_again', ${plan.id}, ${plan.host_user_id}, '{}'::jsonb)
-      ON CONFLICT (kind, event_id, user_id) DO NOTHING
+      ON CONFLICT DO NOTHING
     `;
     await markProcessed(plan.id);
 
@@ -19983,7 +19983,7 @@ async function processPlanReminders(
       await sql`
         INSERT INTO newchums.email_outbox (kind, event_id, user_id, payload)
         VALUES ('plan_reminder', ${plan.id}, ${r.id}, ${JSON.stringify({ role: r.id === plan.host_user_id ? "host" : "joined" })}::jsonb)
-        ON CONFLICT (kind, event_id, user_id) DO NOTHING
+        ON CONFLICT DO NOTHING
       `;
       enqueued++;
     }
