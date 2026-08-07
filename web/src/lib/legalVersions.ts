@@ -8,4 +8,4 @@
  * an OAuth provider) and for the legacy catch-up interstitial.
  */
 export const CURRENT_TERMS_VERSION = "2026-03-17";
-export const CURRENT_PRIVACY_VERSION = "2026-03-17";
+export const CURRENT_PRIVACY_VERSION = "2026-08-07";

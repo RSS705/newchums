@@ -250,14 +250,14 @@ pixel opens are inflated by mail prefetching anyway). Stage 4 is judged on the 4
 threshold alone; the 50% open threshold is recorded as unmeasured, not failed. Revisit if a
 future round adds Resend webhooks.
 
-6. **Meta Pixel — plumbing live 7 Aug, awaiting the Dataset ID.** The "NewChums Pixel" dataset
+6. **Meta Pixel — LIVE 7 Aug (dataset 978778555213584).** The "NewChums Pixel" dataset
    existed in Meta but the pixel was never installed on the site; nothing had ever fired into it
    (hence Ads Manager's "no conversion events" warning). The site now ships the pixel loader
    (inert until the id is pasted into `web/src/app/layout.tsx`) and fires **CompleteRegistration**
    exactly once per new account, at the attribution-stamp moment, covering all three signup flows;
    verified with a stubbed fbq (fires once for a new account, never for an existing one). Do not
    use Meta's point-and-click "Set up conversion event" tool; the code-fired event supersedes it.
-   Privacy policy should gain a Meta Pixel mention before spend.
+   Privacy policy updated 7 Aug with the Meta Pixel disclosure (version 2026-08-07).
 
 **Still human work before spend:** ad creatives with UTM-tagged links — convention settled 6 Aug:
 `?utm_source=meta&utm_medium=paid&utm_campaign=adtest-2026-08&utm_content=<variant>`, one

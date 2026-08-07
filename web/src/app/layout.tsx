@@ -80,7 +80,7 @@ const GA_MEASUREMENT_ID = "G-MN49WWXHDJ";
 // src/lib/attribution.ts the first time a young account checks in), per
 // docs/Growth_Experiment_Plan.md §7: optimize delivery for account
 // creation, judge the campaign on activated hosts.
-const META_PIXEL_ID = "";
+const META_PIXEL_ID = "978778555213584";
 
 export default function RootLayout({
   children,

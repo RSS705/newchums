@@ -1,7 +1,7 @@
 # Privacy Policy
 
 **Effective Date:** April 1, 2026  
-**Last Updated:** April 1, 2026
+**Last Updated:** August 7, 2026
 
 NewChums is operated by **OurModule** (“NewChums,” “we,” “us,” or “our”).
 
@@ -93,6 +93,8 @@ Some emails may be optional and controllable through your notification settings 
 
 We use cookies, session technologies, and similar tools to operate the Service, keep users signed in, remember preferences, analyze traffic, improve reliability, and support security and fraud prevention.
 
+We also use analytics and advertising measurement tools, currently Google Analytics and the Meta (Facebook) Pixel. These tools use cookies or similar identifiers to help us understand how the Service is used and to measure whether our advertising results in sign-ups. Meta may receive limited information about your visit (such as pages viewed and whether an account was created) and processes it under its own privacy policy.
+
 You may be able to control some cookie behavior through your browser settings. However, disabling certain cookies or similar technologies may affect how the Service functions.
 
 ## 7. When We Share Information
@@ -141,7 +143,7 @@ NewChums may use third-party providers such as:
 - Axiom
 - Google sign-in or similar authentication tools
 - map or places services
-- analytics services, including Google Analytics if implemented
+- analytics and advertising measurement services, including Google Analytics and the Meta (Facebook) Pixel
 
 These providers may process information on our behalf and may store or process data in Canada, the United States, or other jurisdictions.
 

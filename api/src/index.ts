@@ -1560,7 +1560,7 @@ app.post("/auth/email-verify/mark-oauth", async (c) => {
 
 /** Server-pinned current legal versions. Clients must not set these. */
 const CURRENT_TERMS_VERSION = "2026-03-17";
-const CURRENT_PRIVACY_VERSION = "2026-03-17";
+const CURRENT_PRIVACY_VERSION = "2026-08-07";
 const MAGIC_LINK_EXPIRY_MS = 15 * 60 * 1000; // 15 minutes
 const PLAN_SIGNUP_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
 const PLAN_SIGNUP_RATE_LIMIT_PER_IP = 10;
