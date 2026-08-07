@@ -14062,7 +14062,7 @@ app.post("/events/:id/rsvp", async (c) => {
     // a targeted error when RSVP is blocked because of plan state (draft or
     // canceled) rather than masking it behind a generic NOT_FOUND, which
     // made it look like the plan itself had disappeared.
-    const ev = (await sql`SELECT id, host_user_id, visibility, status, max_seats, title, locked_at, canceled_at, require_approval, reserve_seats, require_reconfirmation, mute_host_attendance_emails, confirmation_sent_at, starts_at, timezone, location_type, location_name, location_address, location_visibility, location_area, online_link, is_qa FROM newchums.events WHERE id = ${eventId}`) as { id: string; host_user_id: string; visibility: string; status: string; max_seats: number | null; title: string; locked_at: string | null; canceled_at: string | null; require_approval: boolean; reserve_seats: boolean; require_reconfirmation: boolean; mute_host_attendance_emails: boolean; confirmation_sent_at: string | null; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; location_visibility: string | null; location_area: string | null; online_link: string | null; is_qa: boolean }[];
+    const ev = (await sql`SELECT id, host_user_id, visibility, status, max_seats, title, locked_at, canceled_at, require_approval, reserve_seats, require_reconfirmation, mute_host_attendance_emails, confirmation_sent_at, confirmation_cutoff_hours, starts_at, timezone, location_type, location_name, location_address, location_visibility, location_area, online_link, is_qa FROM newchums.events WHERE id = ${eventId}`) as { id: string; host_user_id: string; visibility: string; status: string; max_seats: number | null; title: string; locked_at: string | null; canceled_at: string | null; require_approval: boolean; reserve_seats: boolean; require_reconfirmation: boolean; mute_host_attendance_emails: boolean; confirmation_sent_at: string | null; confirmation_cutoff_hours: number | null; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; location_visibility: string | null; location_area: string | null; online_link: string | null; is_qa: boolean }[];
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     const event = ev[0];
     if (event.status === "canceled" || event.canceled_at) {
@@ -14274,10 +14274,26 @@ app.post("/events/:id/rsvp", async (c) => {
           WHERE event_id = ${eventId} AND user_id = ${userId} AND status = 'confirmed'
         `;
       } else if (status === "going") {
-        const hasConfirmation = (await sql`
-          SELECT id FROM newchums.event_confirmations WHERE event_id = ${eventId} AND user_id = ${userId}
-        `) as { id: string }[];
-        if (hasConfirmation.length === 0 && event.confirmation_sent_at) {
+        // Setting Going while the confirmation window is live IS answering
+        // "are you still coming": count it as confirmed rather than filing
+        // a pending row that immediately nags the person who just answered
+        // (the reconfirm email's "I can make it" button lands exactly
+        // here). Applies to fresh rows and upgrades pending/expired/
+        // declined alike; an explicit Going outranks any earlier state.
+        // Outside the window, keep the old behavior: a pending row so the
+        // late joiner is included when reminders run.
+        const cutoffMs =
+          new Date(event.starts_at).getTime() -
+          Number(event.confirmation_cutoff_hours ?? 2) * 3600000;
+        const windowLive = !!event.confirmation_sent_at && Date.now() < cutoffMs;
+        if (windowLive) {
+          await sql`
+            INSERT INTO newchums.event_confirmations (event_id, user_id, status, responded_at)
+            VALUES (${eventId}, ${userId}, 'confirmed', NOW())
+            ON CONFLICT (event_id, user_id) WHERE user_id IS NOT NULL
+            DO UPDATE SET status = 'confirmed', responded_at = NOW(), updated_at = NOW()
+          `;
+        } else if (event.confirmation_sent_at) {
           await sql`
             INSERT INTO newchums.event_confirmations (event_id, user_id, status)
             VALUES (${eventId}, ${userId}, 'pending')
@@ -15352,18 +15368,22 @@ app.patch("/events/:id", async (c) => {
       `) as { user_id: string }[];
       rsvpsReset = flipped.length;
 
-      if (flipped.length > 0) {
-        // Mirror the user-initiated Going -> Maybe sync from
-        // POST /events/:id/rsvp: a prior 'confirmed' 24-hour attendance
-        // check response was for the old time, so roll it back to
-        // 'pending'. 'declined' and 'expired' rows stay final.
-        await sql`
-          UPDATE newchums.event_confirmations
-          SET status = 'pending', responded_at = NULL, updated_at = NOW()
-          WHERE event_id = ${eventId} AND status = 'confirmed'
-            AND user_id = ANY(${flipped.map((f) => f.user_id)}::uuid[])
-        `;
-      }
+      // The 24-hour attendance cycle belongs to the date that no longer
+      // exists: every response in it answered "are you coming on the OLD
+      // date". Reset the cycle wholesale (timestamps and rows), and the
+      // check re-runs cleanly at the NEW date's T-24h; if the new start is
+      // already inside the window, the next hourly cron reopens it within
+      // the hour. Without this, the Who's-in badges read a dead cycle
+      // against the new date and showed "Didn't confirm" to people who
+      // were never asked about this date at all.
+      await sql`
+        UPDATE newchums.events
+        SET confirmation_sent_at = NULL, cutoff_processed_at = NULL
+        WHERE id = ${eventId}
+      `;
+      await sql`
+        DELETE FROM newchums.event_confirmations WHERE event_id = ${eventId}
+      `;
 
       reconfirmRecipientCount = reconfirmRecipients.length;
       if (reconfirmRecipients.length > 0) {
@@ -18924,13 +18944,14 @@ async function processAttendanceAssurance(
     try {
       const goingRsvps = (await sql`
         SELECT er.user_id, u.email, u.name, u.username,
-               COALESCE(ec.reminder_count, 0) AS reminder_count
+               COALESCE(ec.reminder_count, 0) AS reminder_count,
+               ec.status AS confirmation_status
         FROM newchums.event_rsvps er
         JOIN newchums.users u ON u.id = er.user_id
         LEFT JOIN newchums.event_confirmations ec
           ON ec.event_id = er.event_id AND ec.user_id = er.user_id
         WHERE er.event_id = ${ev.id} AND er.status = 'going'
-      `) as Array<{ user_id: string; email: string; name: string | null; username: string | null; reminder_count: number }>;
+      `) as Array<{ user_id: string; email: string; name: string | null; username: string | null; reminder_count: number; confirmation_status: string | null }>;
 
       for (const att of goingRsvps) {
         await sql`
@@ -18958,6 +18979,9 @@ async function processAttendanceAssurance(
         // successful send, so this correctly retries failed recipients without
         // double-sending successful ones.
         if (att.reminder_count >= 1) continue;
+        // Already answered (e.g. confirmed by setting Going inside the
+        // window, or declined): don't ask the question they just answered.
+        if (att.confirmation_status === "confirmed" || att.confirmation_status === "declined") continue;
         // QA plan isolation: skip non-super-admin recipients
         if (qaAdminIds && !qaAdminIds.has(att.user_id)) continue;
 
