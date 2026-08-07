@@ -104,6 +104,20 @@ export async function reportAttribution(): Promise<void> {
     if (res.ok) {
       window.localStorage.setItem(SENT_KEY, "1");
       window.localStorage.removeItem(KEY);
+      // The server stamps a young, previously-unattributed account exactly
+      // once, which makes { stamped: true } the cleanest "this browser just
+      // signed up" moment across all three signup flows (credentials,
+      // Google, magic link). The Meta ad campaign optimizes on this event;
+      // fbq is only present in production when the pixel id is configured,
+      // so this is a no-op everywhere else.
+      try {
+        const data = (await res.json()) as { ok?: boolean; stamped?: boolean };
+        if (data.stamped === true) {
+          (window as { fbq?: (a: string, b: string) => void }).fbq?.("track", "CompleteRegistration");
+        }
+      } catch {
+        /* body parse is best-effort; attribution already succeeded */
+      }
     }
   } catch {
     /* retried on a later page load */
