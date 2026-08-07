@@ -312,8 +312,10 @@ per §7 and the §8 interview emails during the run.
 - **As configured in Ads Manager (6 Aug):** campaign "NewChums Ad Test - Aug 2026", Leads
   objective, conversion event CompleteRegistration on the NewChums Pixel dataset, campaign budget
   $10/day in **CAD** (the ad account's currency — read this doc's dollar figures as CAD from here
-  on), campaign spending limit $100, phase-1 window Aug 10-15 (the end date caps the creative test
-  at ~$50 by construction), audience per the bullet above, manual placements: Facebook Feed and
+  on), campaign spending limit $100, phase-1 window rescheduled 7 Aug to
+  **Wed Aug 12 8am through Mon Aug 17 8am** (exactly 5 days x $10 = $50 by construction; the
+  original Aug 10-15 window was moved so the flight leads into and covers a weekend, when
+  plan-making intent peaks and clicks are likelier to carry intention), audience per the bullet above, manual placements: Facebook Feed and
   Instagram Feed only (Audience Network and WhatsApp Status excluded deliberately).
 
 ## 8. The interview layer
