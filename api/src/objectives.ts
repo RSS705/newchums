@@ -149,8 +149,8 @@ export const OBJECTIVES: ObjectiveDefinition[] = [
     // the closing engagement objective is now the thank-you action. Old
     // give_first_feedback completion rows were cleared by migration 107.
     key: "send_first_shoutout",
-    title: "Say thanks after a plan",
-    description: "A short shout-out after a plan makes someone's day.",
+    title: "Leave your first shout-out",
+    description: "A fun shout-out after a plan makes someone's day.",
     category: "engagement",
     sequence: 120,
     actionUrl: "/your-plans",

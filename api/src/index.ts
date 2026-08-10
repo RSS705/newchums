@@ -16786,7 +16786,7 @@ app.post("/events/:id/join-request/:requestId/withdraw", async (c) => {
 const CONDUCT_REASONS = ["rude_aggressive", "harassment", "boundary_issue", "discriminatory", "unsafe_intoxicated", "disruptive", "property_damage", "other"] as const;
 const SHOUTOUT_MAX_LENGTH = 280;
 
-/** GET /events/:id/wrap-up, the post-plan surface payload: thank-you targets
+/** GET /events/:id/wrap-up, the post-plan surface payload: shout-out targets
  *  for everyone plus the host's private attendance check-in state. Replaces
  *  the old GET /events/:id/feedback (rating grid, removed July 2026). */
 app.get("/events/:id/wrap-up", async (c) => {

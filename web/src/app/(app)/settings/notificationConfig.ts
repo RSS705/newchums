@@ -63,7 +63,7 @@ export const NOTIFICATION_TYPES: NotificationTypeConfig[] = [
     // strings changed when the post-plan surface became the wrap-up.
     key: "feedback_requests",
     title: "Post-plan follow-up",
-    description: "After a plan wraps up: a nudge to thank people, and a private check-in for plans you host.",
+    description: "After a plan wraps up: a nudge to leave shout-outs, and a private check-in for plans you host.",
   },
   {
     key: "shoutout_received",

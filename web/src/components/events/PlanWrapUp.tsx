@@ -85,7 +85,7 @@ type PlanWrapUpProps = {
   eventId: string;
   /** Plan title shown in the section headers as a contextual reminder. */
   planTitle?: string;
-  /** Plan start time (ISO), drives the thank-you window and the context line. */
+  /** Plan start time (ISO), drives the shout-out window and the context line. */
   planStartsAt?: string;
   /** Hobbies attached to the plan; powers the one-tap add-to-profile nudge. */
   planHobbies?: PlanHobby[];
@@ -103,15 +103,15 @@ function isWrapUpPayload(value: unknown): value is PlanWrapUpInitialData {
 
 const SHOUTOUT_MAX_LENGTH = 280;
 
-/** The thank-you panel stays open for 7 days after the plan starts. The old
+/** The shout-out panel stays open for 7 days after the plan starts. The old
  *  form used the 3-day chat-lock window, but shout-outs are now the primary
  *  post-plan action rather than a post-submit reward, and a weekend plan
- *  thanked on the following weekend is normal human latency. Deliberately
+ *  shouted-out on the following weekend is normal human latency. Deliberately
  *  decoupled from the chat lock. The host's attendance check-in and the
  *  run-it-again prompt never expire: bookkeeping has no freshness window. */
 const THANKS_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
-function isThanksWindowClosed(planStartsAt: string | undefined): boolean {
+function isShoutoutWindowClosed(planStartsAt: string | undefined): boolean {
   if (!planStartsAt) return false;
   const startMs = new Date(planStartsAt).getTime();
   return !isNaN(startMs) && Date.now() >= startMs + THANKS_WINDOW_MS;
@@ -121,7 +121,7 @@ function isThanksWindowClosed(planStartsAt: string | undefined): boolean {
  * The post-plan surface, two-sided (replaced the PlanFeedback rating grid in
  * July 2026):
  *
- * - Everyone gets "Say thanks": per-person shout-out composer, Save to Chums,
+ * - Everyone gets the shout-out panel: per-person composer, Save to Chums,
  *   Message. No submit gate, no questions; it is the first thing they see.
  * - The host additionally gets a private check-in: a binary attendance list
  *   (writes host-only no_show rows, retractable) and a prominent
@@ -258,16 +258,16 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
     }
   }, [chumStatus]);
 
-  const thanksWindowClosed = isThanksWindowClosed(planStartsAt);
+  const shoutoutWindowClosed = isShoutoutWindowClosed(planStartsAt);
 
-  // The thank-you panel is the first thing everyone sees, so chum status is
+  // The shout-out panel is the first thing everyone sees, so chum status is
   // fetched as soon as the surface loads (not gated behind a submit any more).
   useEffect(() => {
-    if (loading || dismissed || thanksWindowClosed) return;
+    if (loading || dismissed || shoutoutWindowClosed) return;
     for (const a of attendees) {
       if (!(a.userId in chumStatus)) void ensureChumStatus(a.userId);
     }
-  }, [loading, dismissed, thanksWindowClosed, attendees, chumStatus, ensureChumStatus]);
+  }, [loading, dismissed, shoutoutWindowClosed, attendees, chumStatus, ensureChumStatus]);
 
   const setShoutoutMessage = (userId: string, value: string) => {
     setShoutouts((prev) => {
@@ -396,7 +396,7 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
 
   if (loading) return null;
   if (dismissed) return null;
-  // Non-hosts with nobody to thank and nothing against them have no surface.
+  // Non-hosts with nobody to shout out and nothing against them have no surface.
   // The host card always renders (run-it-again is useful even for a plan
   // nobody else joined).
   if (!viewerIsHost && attendees.length === 0 && issuesAgainstMe.length === 0) return null;
@@ -592,20 +592,20 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
           </Paper>
         )}
 
-        {/* ── Say thanks: shout-outs, Save to Chums, Message ────────────── */}
-        {attendees.length > 0 && !thanksWindowClosed && (
+        {/* ── Shout-outs, Save to Chums, Message ─────────────────────────── */}
+        {attendees.length > 0 && !shoutoutWindowClosed && (
           <Paper
             variant="outlined"
             sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 3, borderColor: "grey.200", bgcolor: "background.paper" }}
           >
             <Typography component="h2" sx={{ fontWeight: 700, fontSize: { xs: "1.125rem", sm: "1.25rem" }, lineHeight: 1.25, mb: 0.25 }}>
-              Say thanks
+              Anyone deserve a shout-out?
             </Typography>
             <Typography
               variant="body2"
               sx={{ color: "text.secondary", fontSize: "0.8125rem", lineHeight: 1.55, mb: 1.75 }}
             >
-              {planContextLine ? `${planContextLine}. ` : ""}Leave someone a note for their profile, or save them to your Chums for next time. All of it is optional.
+              {planContextLine ? `${planContextLine}. ` : ""}Shout-outs are short public notes on someone&apos;s profile, the funnier the better. You can also save people to your Chums for next time. All of it is optional.
             </Typography>
             {planHobbies && planHobbies.length > 0 && (
               <Box sx={{ mb: 1.5 }}>
@@ -1094,7 +1094,7 @@ function DialogSuccessState({
   );
 }
 
-/** Short contextual reminder for the Say-thanks header ("You met at <title>
+/** Short contextual reminder for the shout-out header ("You met at <title>
  *  on <date>"). Returns null when neither field is available. */
 function formatPlanContext(title: string | undefined, startsAtIso: string | undefined): string | null {
   const cleanTitle = title?.trim();

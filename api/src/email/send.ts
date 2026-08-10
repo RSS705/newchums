@@ -1143,7 +1143,7 @@ export const sendPlanWrapUpEmail = async (
           // Shout-outs are public, lighthearted profile flair, not private
           // thank-you notes; the copy sets that register ("can be trusted
           // with the aux cord" energy, per Rob's favourite real example).
-          heading: "Anyone earn a shout-out?",
+          heading: "Anyone deserve a shout-out?",
           bodyText:
             "Your plan has wrapped up. Shout-outs are lighthearted fun: short public notes that live on someone's profile for everyone to see. Crown the reigning trivia champ, certify that someone can be trusted with the aux cord, or just make the group laugh. You can also save people to your Chums for next time.",
           ctaText: "Leave a shout-out",
