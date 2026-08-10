@@ -261,9 +261,26 @@ const CORS_ALLOWED_ORIGINS = new Set([
   "http://127.0.0.1:3000",
 ]);
 
+// Next auto-increments its dev port when 3000 is already taken (other
+// projects on the same machine), so a locally-running API accepts any
+// localhost port. Gated on the API's own hostname: the deployed worker
+// never reflects localhost origins.
+const LOCAL_ORIGIN_RE = /^http:\/\/(localhost|127\.0\.0\.1):\d+$/;
+
 app.use("*", async (c, next) => {
   const origin = c.req.header("Origin");
-  const allowedOrigin = origin && CORS_ALLOWED_ORIGINS.has(origin) ? origin : null;
+  let apiIsLocal = false;
+  try {
+    const apiHost = new URL(c.req.url).hostname;
+    apiIsLocal = apiHost === "localhost" || apiHost === "127.0.0.1";
+  } catch {
+    /* leave apiIsLocal false */
+  }
+  const allowedOrigin =
+    origin &&
+    (CORS_ALLOWED_ORIGINS.has(origin) || (apiIsLocal && LOCAL_ORIGIN_RE.test(origin)))
+      ? origin
+      : null;
 
   if (allowedOrigin) {
     c.header("Access-Control-Allow-Origin", allowedOrigin);

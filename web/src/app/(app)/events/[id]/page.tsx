@@ -274,12 +274,14 @@ function buildPlanJsonLd(
  *  - Tokenized URLs: noindex regardless. Personal share URLs should not
  *    end up in search results even when we render a useful unfurl.
  *
- *  Image handling: viewable plans ship the static branded share card at
- *  `/og-plan-card.png` (1200x630). Combined with the og:title and
- *  og:description above, a pasted link now unfurls as a branded card that
- *  names the plan and when it happens, instead of bare text.
+ *  Image handling: plan unfurls are deliberately TEXT-ONLY (Aug 2026). A
+ *  static branded card (`/og-plan-card.png`) shipped briefly and real
+ *  hosts hid it in Discord: a generic brand image under every plan link
+ *  read as clutter, and the title/description already carry everything a
+ *  recipient needs. All four metadata paths (viewable, generic fallback,
+ *  private fallback, errors) therefore ship empty `images` arrays.
  *
- *  Why static and not a per-plan generated card (attempted Aug 2026, and
+ *  Why there is no per-plan generated card (attempted Aug 2026, and
  *  the exact blocker so nobody re-derives it):
  *    - A Next `opengraph-image.tsx` using ImageResponse renders correctly
  *      in `next dev` (verified: real 1200x630 PNG, bundled Gabarito TTF,
@@ -301,11 +303,6 @@ function buildPlanJsonLd(
  *  banners crop badly in a 16:9 unfurl box and are unverified user
  *  imagery served under our brand.
  *
- *  The two fallback metadata objects above KEEP their empty `images`
- *  arrays. A gated plan (draft, canceled, QA or invite_only without a
- *  token) therefore ships no image at all, which is the most conservative
- *  option and also stops Next's deep-merge inheriting the root layout's
- *  `/og-image.png`.
  *
  *  Location handling: never includes the exact street address even
  *  when token-backed access exposes it. Built from `locationName` plus
@@ -417,21 +414,16 @@ export async function generateMetadata({
         url: canonicalPath,
         type: "article",
         siteName: "NewChums",
-        images: [
-          {
-            url: "/og-plan-card.png?v=2",
-            width: 1200,
-            height: 630,
-            alt: "A plan on NewChums",
-          },
-        ],
+        // Explicit empty override, same as the fallbacks above: without it
+        // Next deep-merges the root layout's /og-image.png into this page
+        // and chat unfurls grow a generic brand image again.
+        images: [],
       },
       twitter: {
-        // summary_large_image now that a real 1200x630 card exists.
-        card: "summary_large_image",
+        card: "summary",
         title: ogTitle,
         description,
-        images: ["/og-plan-card.png?v=2"],
+        images: [],
       },
     };
   } catch {

@@ -17,7 +17,6 @@
  {"name":"plan-online-host","url":"/events/00000000-0000-4000-a100-000000000009","role":"host"},
  {"name":"create","url":"/events/create","role":"host"},
  {"name":"edit-confirm","url":"/events/00000000-0000-4000-a100-000000000001/edit","role":"host"},
- {"name":"sharemoment","url":"/events/00000000-0000-4000-a100-000000000002?published=1","role":"host","fullPage":false,"settle":5000},
  {"name":"onboard-username","url":"/onboarding/username","role":"onboard"},
  {"name":"onboard-dob","url":"/onboarding/date-of-birth","role":"onboard"},
  {"name":"onboard-legal","url":"/onboarding/accept-legal","role":"onboard"},
