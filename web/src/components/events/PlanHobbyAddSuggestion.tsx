@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
+import Stack from "@mui/material/Stack";
+import Tooltip from "@mui/material/Tooltip";
+import Typography from "@mui/material/Typography";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import { apiFetch } from "@/lib/apiClient";
@@ -17,20 +20,22 @@ type Props = {
   planHobbies: PlanHobby[];
 };
 
-/** Single text-style button rendered inside the post-feedback "Thanks for
- *  sharing your feedback" Paper. Replaces the previous Report + Hide row.
+/** Compact footer row for the post-plan card: one caption plus a small
+ *  add-chip per plan hobby the viewer doesn't already follow. Clicking a
+ *  chip adds that single hobby to the viewer's profile (which is what
+ *  drives "plans near you" notifications for that tag); the chip flips to
+ *  a check in place so the row never reflows. One chip per hobby rather
+ *  than one button for all of them, so a three-tag plan reads as three
+ *  small choices instead of one vague bulk action.
  *
- *  Self-contained: fetches the viewer's interests on mount, gates render
- *  on whether the plan has at least one hobby they don't already follow,
- *  and on click PUTs the merged interest list back to /profile. Renders
- *  nothing while loading or when the viewer already has every plan hobby,
- *  so the success Paper collapses cleanly to its heading + body in those
- *  cases.
+ *  Self-contained: fetches the viewer's interests on mount and renders
+ *  nothing while loading or when the viewer already follows every plan
+ *  hobby, so the parent card collapses cleanly in those cases.
  */
 export default function PlanHobbyAddSuggestion({ planHobbies }: Props) {
   const [viewerInterests, setViewerInterests] = useState<ViewerInterest[] | null>(null);
-  const [adding, setAdding] = useState(false);
-  const [added, setAdded] = useState(false);
+  const [addingSlug, setAddingSlug] = useState<string | null>(null);
+  const [addedSlugs, setAddedSlugs] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
 
   // Normalised list of plan hobbies the viewer might want to adopt: drop
@@ -83,117 +88,124 @@ export default function PlanHobbyAddSuggestion({ planHobbies }: Props) {
     [viewerInterests],
   );
 
-  const missingHobbies = useMemo(
-    () => candidateHobbies.filter((h) => !viewerSlugSet.has(h.slug)),
-    [candidateHobbies, viewerSlugSet],
+  // Chips added this session stay visible (flipped to a check) so the row
+  // never reflows under the user; only hobbies the viewer already followed
+  // before opening the page are hidden.
+  const visibleHobbies = useMemo(
+    () => candidateHobbies.filter((h) => !viewerSlugSet.has(h.slug) || addedSlugs.has(h.slug)),
+    [candidateHobbies, viewerSlugSet, addedSlugs],
   );
 
   // Wait for the viewer-interests fetch before deciding anything. Without
-  // this gate the button would briefly render and then vanish for users who
-  // already follow the hobby.
+  // this gate the chips would briefly render and then vanish for users who
+  // already follow every hobby.
   if (viewerInterests === null) return null;
-  if (missingHobbies.length === 0 && !added) return null;
+  if (visibleHobbies.length === 0) return null;
 
-  const isPlural = missingHobbies.length > 1;
-  // Use the actual hobby name in the singular case so the suggestion reads
-  // as a concrete recommendation tied to *this* plan rather than a generic
-  // settings nudge.
-  const singularHobbyName = !isPlural && missingHobbies[0] ? missingHobbies[0].name : null;
+  const allAdded = visibleHobbies.every((h) => addedSlugs.has(h.slug));
 
-  const label = added
-    ? isPlural
-      ? "Hobbies added to your profile"
-      : `${singularHobbyName ?? "Hobby"} added to your profile`
-    : adding
-      ? "Adding…"
-      : isPlural
-        ? "Add this plan's hobbies to your profile to be notified next time"
-        : `Add ${singularHobbyName} to your profile to be notified next time`;
-
-  const ariaLabel = added
-    ? isPlural
-      ? "Hobbies added to your profile"
-      : `${singularHobbyName ?? "Hobby"} added to your profile`
-    : isPlural
-      ? "Add this plan's hobbies to your profile"
-      : `Add ${singularHobbyName} to your profile`;
-
-  const handleAdd = async () => {
-    if (adding || added || missingHobbies.length === 0 || viewerInterests === null) return;
-    setAdding(true);
+  const handleAdd = async (hobby: PlanHobby) => {
+    if (addingSlug !== null || addedSlugs.has(hobby.slug) || viewerInterests === null) return;
+    setAddingSlug(hobby.slug);
     setError(null);
-    // Merge the missing hobbies into the viewer's existing list. The
-    // PUT /profile endpoint replaces user_interests with whatever we send,
-    // so we need to include both the existing slugs and the new ones.
+    // Merge the one hobby into the viewer's existing list. The PUT /profile
+    // endpoint replaces user_interests with whatever we send, so we need to
+    // include both the existing slugs and the new one.
     const mergedItems = [
       ...viewerInterests.map((i) => ({ slug: i.slug, name: i.name })),
-      ...missingHobbies.map((h) => ({ slug: h.slug, name: h.name })),
+      { slug: hobby.slug, name: hobby.name },
     ];
-    const mergedSlugs = mergedItems.map((i) => i.slug);
     try {
       const res = await apiFetch("/profile", {
         method: "PUT",
         auth: true,
         body: JSON.stringify({
-          interest_slugs: mergedSlugs,
+          interest_slugs: mergedItems.map((i) => i.slug),
           interest_items: mergedItems,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as { ok?: boolean };
       if (!res.ok || !data.ok) {
         setError("Couldn't add right now. Please try again.");
-        setAdding(false);
         return;
       }
       setViewerInterests(mergedItems);
-      setAdded(true);
+      setAddedSlugs((prev) => new Set(prev).add(hobby.slug));
       if (typeof window !== "undefined") {
         window.dispatchEvent(new Event("nc:profile-changed"));
       }
     } catch {
       setError("Couldn't add right now. Please try again.");
     } finally {
-      setAdding(false);
+      setAddingSlug(null);
     }
   };
 
   return (
-    <Button
-      size="small"
-      variant="text"
-      onClick={handleAdd}
-      disabled={adding || added}
-      aria-label={ariaLabel}
-      startIcon={
-        added ? (
-          <CheckRoundedIcon sx={{ fontSize: "1rem !important" }} />
-        ) : adding ? (
-          <CircularProgress size={14} thickness={6} sx={{ color: "inherit" }} />
-        ) : (
-          <AddRoundedIcon sx={{ fontSize: "1rem !important" }} />
-        )
-      }
-      sx={{
-        mt: 2.5,
-        textTransform: "none",
-        fontWeight: 600,
-        fontSize: "0.8125rem",
-        borderRadius: 2,
-        px: 1.5,
-        color: added ? "success.dark" : "text.secondary",
-        "&:hover": {
-          color: "primary.main",
-          bgcolor: "primary.light",
-        },
-        "&.Mui-disabled": {
-          // Keep the success state legible — MUI fades disabled buttons,
-          // but we want the green check state to stay readable.
-          color: added ? "success.dark" : undefined,
-          opacity: added ? 1 : undefined,
-        },
-      }}
-    >
-      {error ?? label}
-    </Button>
+    <Stack direction="row" alignItems="center" flexWrap="wrap" useFlexGap spacing={0.75}>
+      <Typography variant="caption" sx={{ color: "text.secondary", fontSize: "0.75rem" }}>
+        {allAdded
+          ? "Added to your profile:"
+          : "Add to your profile to hear about nearby plans:"}
+      </Typography>
+      {visibleHobbies.map((h) => {
+        const isAdded = addedSlugs.has(h.slug);
+        const isAdding = addingSlug === h.slug;
+        return (
+          <Tooltip
+            key={h.slug}
+            arrow
+            title={isAdded
+              ? `You'll hear about public plans near you tagged ${h.name}.`
+              : `Adds ${h.name} to your profile hobbies. You'll hear about public plans near you with this tag.`}
+          >
+            <Chip
+              size="small"
+              label={h.name}
+              onClick={isAdded || isAdding ? undefined : () => { void handleAdd(h); }}
+              aria-label={isAdded ? `${h.name} added to your profile` : `Add ${h.name} to your profile`}
+              icon={isAdded ? (
+                <CheckRoundedIcon sx={{ fontSize: "0.9rem !important" }} />
+              ) : isAdding ? (
+                <CircularProgress size={12} thickness={6} sx={{ mx: 0.25, color: "inherit" }} />
+              ) : (
+                <AddRoundedIcon sx={{ fontSize: "0.9rem !important" }} />
+              )}
+              sx={{
+                height: 24,
+                fontSize: "0.75rem",
+                fontWeight: 600,
+                borderRadius: 2,
+                border: "1px solid",
+                ...(isAdded
+                  ? {
+                      bgcolor: "#f0fdf4",
+                      color: "success.dark",
+                      borderColor: "success.light",
+                      "& .MuiChip-icon": { color: "success.dark" },
+                    }
+                  : {
+                      bgcolor: "background.default",
+                      color: "text.secondary",
+                      borderColor: "divider",
+                      cursor: "pointer",
+                      "& .MuiChip-icon": { color: "inherit" },
+                      "&:hover": {
+                        bgcolor: "primary.light",
+                        color: "primary.dark",
+                        borderColor: "primary.light",
+                      },
+                    }),
+              }}
+            />
+          </Tooltip>
+        );
+      })}
+      {error && (
+        <Typography variant="caption" sx={{ color: "error.main", fontSize: "0.75rem" }}>
+          {error}
+        </Typography>
+      )}
+    </Stack>
   );
 }

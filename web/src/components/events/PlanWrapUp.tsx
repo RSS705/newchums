@@ -8,6 +8,7 @@ import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
+import Divider from "@mui/material/Divider";
 import FormControl from "@mui/material/FormControl";
 import MenuItem from "@mui/material/MenuItem";
 import Paper from "@mui/material/Paper";
@@ -21,7 +22,6 @@ import Typography from "@mui/material/Typography";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import EventRepeatRoundedIcon from "@mui/icons-material/EventRepeatRounded";
 import HowToRegRoundedIcon from "@mui/icons-material/HowToRegRounded";
-import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import MailRoundedIcon from "@mui/icons-material/MailRounded";
 import PersonAddRoundedIcon from "@mui/icons-material/PersonAddRounded";
 import CampaignRoundedIcon from "@mui/icons-material/CampaignRounded";
@@ -118,17 +118,19 @@ function isShoutoutWindowClosed(planStartsAt: string | undefined): boolean {
 }
 
 /**
- * The post-plan surface, two-sided (replaced the PlanFeedback rating grid in
- * July 2026):
+ * The post-plan surface (replaced the PlanFeedback rating grid in July 2026):
  *
- * - Everyone gets the shout-out panel: per-person composer, Save to Chums,
- *   Message. No submit gate, no questions; it is the first thing they see.
- * - The host additionally gets a private check-in: a binary attendance list
- *   (writes host-only no_show rows, retractable) and a prominent
- *   run-it-again prompt into the existing ?copy_from= create flow.
+ * - Attendees get the shout-out card: per-person composer, Save to Chums,
+ *   Message. No submit gate, no questions.
+ * - The host gets ONE card holding everything: the same per-person rows with
+ *   a private Came / No-show toggle added to each, plus the run-it-again
+ *   prompt into the existing ?copy_from= create flow. Merged Aug 2026; the
+ *   old separate check-in card read as a near-duplicate of the shout-out
+ *   card, with the same people listed twice.
  *
- * Nothing in the host check-in notifies anyone. The dispute banner and the
- * safety/conduct report survive from the old surface unchanged.
+ * The attendance toggle writes host-only no_show rows (retractable) and
+ * notifies nobody. The dispute banner and the safety/conduct report survive
+ * from the old surface unchanged.
  */
 export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbies, initialData, id }: PlanWrapUpProps) {
   const initial = isWrapUpPayload(initialData) ? initialData : null;
@@ -403,6 +405,9 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
 
   const planContextLine = formatPlanContext(planTitle, planStartsAt);
   const checkableAttendees = attendees.filter((a) => !a.isHost && a.rsvpStatus === "going");
+  // After the shout-out window the host card shrinks to pure bookkeeping, so
+  // only the people the attendance record covers keep a row.
+  const hostRows = shoutoutWindowClosed ? checkableAttendees : attendees;
 
   const openConductDialog = (target: Attendee | null) => {
     setConductTarget(target);
@@ -410,6 +415,267 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
     setConductReason("");
     setConductDetails("");
     setConductDialogOpen(true);
+  };
+
+  /** One person row, shared by the host card and the attendee card. The host
+   *  card adds the private Came / No-show toggle (withAttendance) and, once
+   *  the 7-day shout-out window has passed, drops the public actions and
+   *  keeps only the bookkeeping (withShoutouts=false). */
+  const renderPersonRow = (a: Attendee, withAttendance: boolean, withShoutouts: boolean) => {
+    const profileHref = a.username ? `/u/${a.username.replace(/^@/, "")}` : null;
+    const realName = a.name?.trim() || null;
+    const handle = a.handle
+      ?? (a.username ? `@${a.username.replace(/^@/, "")}` : null);
+    const primaryLabel = realName || handle || a.displayName;
+    const saved = chumStatus[a.userId];
+    const showChum = withShoutouts && saved !== null;
+    const draft = shoutouts[a.userId];
+    const status = draft?.serverStatus ?? "none";
+    const message = draft?.message ?? "";
+    const locked = status === "approved" || status === "rejected";
+    const sending = !!shoutoutSending[a.userId];
+    const sendable =
+      message.trim().length > 0 &&
+      message.trim() !== (draft?.serverMessage?.trim() ?? "") &&
+      !locked;
+    const checkable = withAttendance && !a.isHost && a.rsvpStatus === "going";
+    const isNoShow = checkable && noShows.has(a.userId);
+    return (
+      <Paper
+        key={a.userId}
+        variant="outlined"
+        sx={{
+          p: { xs: 1.5, sm: 1.75 },
+          borderRadius: 2.5,
+          borderColor: isNoShow ? "#fde68a" : "grey.200",
+          bgcolor: isNoShow ? "#fffbeb" : undefined,
+        }}
+      >
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          spacing={{ xs: 1.25, sm: 1.5 }}
+          alignItems={{ xs: "stretch", sm: "center" }}
+        >
+          <Stack direction="row" alignItems="center" spacing={1.25} sx={{ flex: 1, minWidth: 0 }}>
+            <UserAvatar
+              src={`${avatarBase}/users/${a.userId}/avatar`}
+              name={a.displayName}
+              username={a.username}
+              size={40}
+              sx={{ flexShrink: 0 }}
+            />
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Stack direction="row" alignItems="center" spacing={0.75} sx={{ minWidth: 0 }}>
+                <Typography
+                  component={profileHref ? Link : "span"}
+                  {...(profileHref ? { href: profileHref } : {})}
+                  sx={{
+                    fontWeight: 700,
+                    fontSize: "0.9375rem",
+                    color: profileHref ? "primary.dark" : "text.primary",
+                    textDecoration: "none",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    minWidth: 0,
+                    "&:hover": profileHref ? { textDecoration: "underline" } : {},
+                  }}
+                >
+                  {primaryLabel}
+                </Typography>
+                {a.isHost && (
+                  <Chip
+                    label="Host"
+                    size="small"
+                    sx={{
+                      height: 18,
+                      fontSize: "0.625rem",
+                      fontWeight: 700,
+                      bgcolor: "primary.main",
+                      color: "#fff",
+                      flexShrink: 0,
+                      "& .MuiChip-label": { px: 0.75 },
+                    }}
+                  />
+                )}
+              </Stack>
+              {/* Honest moderation caption: shout-outs sit in a review queue
+                  until a moderator approves them, so never promise a
+                  timeline. */}
+              {withShoutouts && status === "pending" && (
+                <Typography variant="caption" sx={{ color: "text.disabled", fontSize: "0.6875rem" }}>
+                  Sent for review. It appears on their profile once approved.
+                </Typography>
+              )}
+              {withShoutouts && status === "approved" && (
+                <Typography variant="caption" sx={{ color: "success.dark", fontSize: "0.6875rem", fontWeight: 600 }}>
+                  Shout-out live on their profile
+                </Typography>
+              )}
+            </Box>
+            {checkable && (
+              <Tooltip title="Private, for your records only. Nobody is notified." arrow>
+                <ToggleButtonGroup
+                  exclusive
+                  size="small"
+                  value={isNoShow ? "no_show" : "came"}
+                  onChange={(_, value) => {
+                    if (value === null) return;
+                    void toggleNoShow(a.userId, value === "came");
+                  }}
+                  disabled={!!noShowPending[a.userId]}
+                  sx={{ flexShrink: 0 }}
+                >
+                  <ToggleButton
+                    value="came"
+                    sx={{
+                      textTransform: "none",
+                      fontWeight: 600,
+                      fontSize: "0.75rem",
+                      px: 1.25,
+                      py: 0.375,
+                      "&.Mui-selected": {
+                        bgcolor: "#dcfce7",
+                        color: "#166534",
+                        "&:hover": { bgcolor: "#bbf7d0" },
+                      },
+                    }}
+                  >
+                    Came
+                  </ToggleButton>
+                  <ToggleButton
+                    value="no_show"
+                    sx={{
+                      textTransform: "none",
+                      fontWeight: 600,
+                      fontSize: "0.75rem",
+                      px: 1.25,
+                      py: 0.375,
+                      "&.Mui-selected": {
+                        bgcolor: "#fef3c7",
+                        color: "#92400e",
+                        "&:hover": { bgcolor: "#fde68a" },
+                      },
+                    }}
+                  >
+                    No-show
+                  </ToggleButton>
+                </ToggleButtonGroup>
+              </Tooltip>
+            )}
+          </Stack>
+          {showChum && (
+            <Tooltip title={saved ? "Remove from your Chums" : "Add to your Chums"} arrow>
+              <Button
+                onClick={() => toggleChum(a.userId)}
+                disabled={!!chumLoading[a.userId] || saved === undefined}
+                size="small"
+                variant={saved ? "outlined" : "contained"}
+                color={saved ? "inherit" : "primary"}
+                startIcon={saved
+                  ? <HowToRegRoundedIcon sx={{ fontSize: 17 }} />
+                  : <PersonAddRoundedIcon sx={{ fontSize: 17 }} />}
+                sx={{
+                  textTransform: "none",
+                  fontWeight: 700,
+                  borderRadius: 2,
+                  fontSize: "0.78rem",
+                  px: 1.5,
+                  py: 0.5,
+                  flexShrink: 0,
+                  alignSelf: { xs: "stretch", sm: "center" },
+                  ...(saved ? {
+                    borderColor: "success.light",
+                    color: "success.dark",
+                    bgcolor: "#f0fdf4",
+                    "&:hover": { borderColor: "success.main", bgcolor: "#dcfce7" },
+                  } : {
+                    boxShadow: "none",
+                    "&:hover": { boxShadow: "none", opacity: 0.92 },
+                  }),
+                }}
+              >
+                {saved ? "Saved as Chum" : "Save to Chums"}
+              </Button>
+            </Tooltip>
+          )}
+          {withShoutouts && (
+            <Tooltip title={`Send ${primaryLabel} a private message`} arrow>
+              <Button
+                component={Link}
+                href={`/inbox?to=${a.userId}`}
+                size="small"
+                variant="outlined"
+                color="inherit"
+                startIcon={<MailRoundedIcon sx={{ fontSize: 17 }} />}
+                sx={{
+                  textTransform: "none",
+                  fontWeight: 700,
+                  borderRadius: 2,
+                  fontSize: "0.78rem",
+                  px: 1.5,
+                  py: 0.5,
+                  flexShrink: 0,
+                  alignSelf: { xs: "stretch", sm: "center" },
+                  color: "text.secondary",
+                  borderColor: "divider",
+                  "&:hover": { borderColor: "text.secondary", bgcolor: "action.hover" },
+                }}
+              >
+                Message
+              </Button>
+            </Tooltip>
+          )}
+        </Stack>
+        {withShoutouts && !locked && (
+          <Stack direction="row" spacing={1} alignItems="stretch" sx={{ mt: 1.25 }}>
+            <TextField
+              value={message}
+              onChange={(e) => setShoutoutMessage(a.userId, e.target.value)}
+              placeholder={`Give ${primaryLabel} a shout-out for their profile (optional)`}
+              multiline
+              // No row cap: autosize measures the placeholder too,
+              // and any fixed cap clips its last line mid-glyph at
+              // phone widths once a long display name pushes it
+              // past the cap. Content is bounded anyway by
+              // SHOUTOUT_MAX_LENGTH, so the field cannot run away.
+              fullWidth
+              size="small"
+              inputProps={{ maxLength: SHOUTOUT_MAX_LENGTH }}
+              sx={{
+                "& .MuiOutlinedInput-root": {
+                  borderRadius: 2,
+                  bgcolor: "background.default",
+                  fontSize: "0.8125rem",
+                },
+              }}
+            />
+            <Button
+              onClick={() => handleSendShoutout(a.userId)}
+              disabled={!sendable || sending}
+              size="small"
+              variant="outlined"
+              startIcon={<CampaignRoundedIcon sx={{ fontSize: 16 }} />}
+              sx={{
+                textTransform: "none",
+                fontWeight: 700,
+                borderRadius: 2,
+                fontSize: "0.78rem",
+                px: 1.5,
+                flexShrink: 0,
+                // The row Stack is alignItems: "stretch", so the
+                // button always matches the TextField's rendered
+                // height. minHeight unsets the 44px button floor.
+                minHeight: 0,
+                alignSelf: "stretch",
+              }}
+            >
+              {sending ? "Sending…" : status === "pending" ? "Update" : "Send"}
+            </Button>
+          </Stack>
+        )}
+      </Paper>
+    );
   };
 
   return (
@@ -460,117 +726,44 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
           </Paper>
         )}
 
-        {/* ── Host check-in: private attendance + run it again ─────────── */}
+        {/* ── Host: check-in, shout-outs, and run-it-again in one card ── */}
         {viewerIsHost && (
           <Paper
             variant="outlined"
             sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 3, borderColor: "grey.200", bgcolor: "background.paper" }}
           >
-            <Typography component="h2" sx={{ fontWeight: 700, fontSize: { xs: "1.125rem", sm: "1.25rem" }, lineHeight: 1.25, mb: 0.25 }}>
+            <Typography
+              component="h2"
+              sx={{
+                fontWeight: 700,
+                fontSize: { xs: "1.125rem", sm: "1.25rem" },
+                lineHeight: 1.25,
+                mb: hostRows.length > 0 ? 0.25 : 1.75,
+              }}
+            >
               How did {planTitle?.trim() ? `"${planTitle.trim()}"` : "your plan"} go?
             </Typography>
-            <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mb: 1.75 }}>
-              <LockOutlinedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
-              <Typography variant="caption" sx={{ color: "text.secondary", fontSize: "0.75rem" }}>
-                Private, for your records only. Nothing here is shared and nobody is notified.
+            {hostRows.length > 0 && (
+              <Typography
+                variant="body2"
+                sx={{ color: "text.secondary", fontSize: "0.8125rem", lineHeight: 1.55, mb: 1.75 }}
+              >
+                {shoutoutWindowClosed
+                  ? "Mark who made it. This is private, for your records only, and nobody is notified."
+                  : "The Came and No-show marks are private, for your records only, and nobody is notified. Shout-outs are the opposite: short public notes on someone's profile, the funnier the better. You can also save people to your Chums for next time. All of it is optional."}
               </Typography>
-            </Stack>
-
-            {checkableAttendees.length > 0 && (
-              <>
-                <Typography variant="body2" sx={{ fontWeight: 600, fontSize: "0.875rem", mb: 1 }}>
-                  Who made it?
-                </Typography>
-                <Stack spacing={1} sx={{ mb: 2 }}>
-                  {checkableAttendees.map((a) => {
-                    const isNoShow = noShows.has(a.userId);
-                    return (
-                      <Stack
-                        key={a.userId}
-                        direction="row"
-                        alignItems="center"
-                        spacing={1.25}
-                        sx={{
-                          p: 1,
-                          borderRadius: 2,
-                          border: "1px solid",
-                          borderColor: isNoShow ? "#fde68a" : "grey.200",
-                          bgcolor: isNoShow ? "#fffbeb" : "transparent",
-                        }}
-                      >
-                        <UserAvatar
-                          src={`${avatarBase}/users/${a.userId}/avatar`}
-                          name={a.displayName}
-                          username={a.username}
-                          size={32}
-                          sx={{ flexShrink: 0 }}
-                        />
-                        <Typography
-                          sx={{
-                            flex: 1,
-                            minWidth: 0,
-                            fontWeight: 600,
-                            fontSize: "0.875rem",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {a.name?.trim() || a.handle || a.displayName}
-                        </Typography>
-                        <ToggleButtonGroup
-                          exclusive
-                          size="small"
-                          value={isNoShow ? "no_show" : "came"}
-                          onChange={(_, value) => {
-                            if (value === null) return;
-                            void toggleNoShow(a.userId, value === "came");
-                          }}
-                          disabled={!!noShowPending[a.userId]}
-                          sx={{ flexShrink: 0 }}
-                        >
-                          <ToggleButton
-                            value="came"
-                            sx={{
-                              textTransform: "none",
-                              fontWeight: 600,
-                              fontSize: "0.75rem",
-                              px: 1.25,
-                              py: 0.375,
-                              "&.Mui-selected": {
-                                bgcolor: "#dcfce7",
-                                color: "#166534",
-                                "&:hover": { bgcolor: "#bbf7d0" },
-                              },
-                            }}
-                          >
-                            Came
-                          </ToggleButton>
-                          <ToggleButton
-                            value="no_show"
-                            sx={{
-                              textTransform: "none",
-                              fontWeight: 600,
-                              fontSize: "0.75rem",
-                              px: 1.25,
-                              py: 0.375,
-                              "&.Mui-selected": {
-                                bgcolor: "#fef3c7",
-                                color: "#92400e",
-                                "&:hover": { bgcolor: "#fde68a" },
-                              },
-                            }}
-                          >
-                            No-show
-                          </ToggleButton>
-                        </ToggleButtonGroup>
-                      </Stack>
-                    );
-                  })}
-                </Stack>
-              </>
             )}
-
+            {hostRows.length > 0 && (
+              <Stack spacing={1.5}>
+                {hostRows.map((a) => renderPersonRow(a, true, !shoutoutWindowClosed))}
+              </Stack>
+            )}
+            {!shoutoutWindowClosed && planHobbies && planHobbies.length > 0 && (
+              <Box sx={{ mt: 1.75 }}>
+                <PlanHobbyAddSuggestion planHobbies={planHobbies} />
+              </Box>
+            )}
+            {hostRows.length > 0 && <Divider sx={{ my: 2 }} />}
             <Button
               component={Link}
               href={`${createEventHref}?copy_from=${eventId}`}
@@ -592,8 +785,8 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
           </Paper>
         )}
 
-        {/* ── Shout-outs, Save to Chums, Message ─────────────────────────── */}
-        {attendees.length > 0 && !shoutoutWindowClosed && (
+        {/* ── Attendee: shout-outs, Save to Chums, Message ──────────────── */}
+        {!viewerIsHost && attendees.length > 0 && !shoutoutWindowClosed && (
           <Paper
             variant="outlined"
             sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 3, borderColor: "grey.200", bgcolor: "background.paper" }}
@@ -607,210 +800,14 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
             >
               {planContextLine ? `${planContextLine}. ` : ""}Shout-outs are short public notes on someone&apos;s profile, the funnier the better. You can also save people to your Chums for next time. All of it is optional.
             </Typography>
+            <Stack spacing={1.5}>
+              {attendees.map((a) => renderPersonRow(a, false, true))}
+            </Stack>
             {planHobbies && planHobbies.length > 0 && (
-              <Box sx={{ mb: 1.5 }}>
+              <Box sx={{ mt: 1.75 }}>
                 <PlanHobbyAddSuggestion planHobbies={planHobbies} />
               </Box>
             )}
-            <Stack spacing={1.5}>
-              {attendees.map((a) => {
-                const profileHref = a.username ? `/u/${a.username.replace(/^@/, "")}` : null;
-                const realName = a.name?.trim() || null;
-                const handle = a.handle
-                  ?? (a.username ? `@${a.username.replace(/^@/, "")}` : null);
-                const primaryLabel = realName || handle || a.displayName;
-                const saved = chumStatus[a.userId];
-                const showChum = saved !== null;
-                const draft = shoutouts[a.userId];
-                const status = draft?.serverStatus ?? "none";
-                const message = draft?.message ?? "";
-                const locked = status === "approved" || status === "rejected";
-                const sending = !!shoutoutSending[a.userId];
-                const sendable =
-                  message.trim().length > 0 &&
-                  message.trim() !== (draft?.serverMessage?.trim() ?? "") &&
-                  !locked;
-                return (
-                  <Paper
-                    key={a.userId}
-                    variant="outlined"
-                    sx={{ p: { xs: 1.5, sm: 1.75 }, borderRadius: 2.5, borderColor: "grey.200" }}
-                  >
-                    <Stack
-                      direction={{ xs: "column", sm: "row" }}
-                      spacing={{ xs: 1.25, sm: 1.5 }}
-                      alignItems={{ xs: "stretch", sm: "center" }}
-                    >
-                      <Stack direction="row" alignItems="center" spacing={1.25} sx={{ flex: 1, minWidth: 0 }}>
-                        <UserAvatar
-                          src={`${avatarBase}/users/${a.userId}/avatar`}
-                          name={a.displayName}
-                          username={a.username}
-                          size={40}
-                          sx={{ flexShrink: 0 }}
-                        />
-                        <Box sx={{ minWidth: 0 }}>
-                          <Stack direction="row" alignItems="center" spacing={0.75} sx={{ minWidth: 0 }}>
-                            <Typography
-                              component={profileHref ? Link : "span"}
-                              {...(profileHref ? { href: profileHref } : {})}
-                              sx={{
-                                fontWeight: 700,
-                                fontSize: "0.9375rem",
-                                color: profileHref ? "primary.dark" : "text.primary",
-                                textDecoration: "none",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                whiteSpace: "nowrap",
-                                minWidth: 0,
-                                "&:hover": profileHref ? { textDecoration: "underline" } : {},
-                              }}
-                            >
-                              {primaryLabel}
-                            </Typography>
-                            {a.isHost && (
-                              <Chip
-                                label="Host"
-                                size="small"
-                                sx={{
-                                  height: 18,
-                                  fontSize: "0.625rem",
-                                  fontWeight: 700,
-                                  bgcolor: "primary.main",
-                                  color: "#fff",
-                                  flexShrink: 0,
-                                  "& .MuiChip-label": { px: 0.75 },
-                                }}
-                              />
-                            )}
-                          </Stack>
-                          {/* Honest moderation caption: shout-outs sit in a
-                              review queue until a moderator approves them, so
-                              never promise a timeline. */}
-                          {status === "pending" && (
-                            <Typography variant="caption" sx={{ color: "text.disabled", fontSize: "0.6875rem" }}>
-                              Sent for review. It appears on their profile once approved.
-                            </Typography>
-                          )}
-                          {status === "approved" && (
-                            <Typography variant="caption" sx={{ color: "success.dark", fontSize: "0.6875rem", fontWeight: 600 }}>
-                              Shout-out live on their profile
-                            </Typography>
-                          )}
-                        </Box>
-                      </Stack>
-                      {showChum && (
-                        <Tooltip title={saved ? "Remove from your Chums" : "Add to your Chums"} arrow>
-                          <Button
-                            onClick={() => toggleChum(a.userId)}
-                            disabled={!!chumLoading[a.userId] || saved === undefined}
-                            size="small"
-                            variant={saved ? "outlined" : "contained"}
-                            color={saved ? "inherit" : "primary"}
-                            startIcon={saved
-                              ? <HowToRegRoundedIcon sx={{ fontSize: 17 }} />
-                              : <PersonAddRoundedIcon sx={{ fontSize: 17 }} />}
-                            sx={{
-                              textTransform: "none",
-                              fontWeight: 700,
-                              borderRadius: 2,
-                              fontSize: "0.78rem",
-                              px: 1.5,
-                              py: 0.5,
-                              flexShrink: 0,
-                              alignSelf: { xs: "stretch", sm: "center" },
-                              ...(saved ? {
-                                borderColor: "success.light",
-                                color: "success.dark",
-                                bgcolor: "#f0fdf4",
-                                "&:hover": { borderColor: "success.main", bgcolor: "#dcfce7" },
-                              } : {
-                                boxShadow: "none",
-                                "&:hover": { boxShadow: "none", opacity: 0.92 },
-                              }),
-                            }}
-                          >
-                            {saved ? "Saved as Chum" : "Save to Chums"}
-                          </Button>
-                        </Tooltip>
-                      )}
-                      <Tooltip title={`Send ${primaryLabel} a private message`} arrow>
-                        <Button
-                          component={Link}
-                          href={`/inbox?to=${a.userId}`}
-                          size="small"
-                          variant="outlined"
-                          color="inherit"
-                          startIcon={<MailRoundedIcon sx={{ fontSize: 17 }} />}
-                          sx={{
-                            textTransform: "none",
-                            fontWeight: 700,
-                            borderRadius: 2,
-                            fontSize: "0.78rem",
-                            px: 1.5,
-                            py: 0.5,
-                            flexShrink: 0,
-                            alignSelf: { xs: "stretch", sm: "center" },
-                            color: "text.secondary",
-                            borderColor: "divider",
-                            "&:hover": { borderColor: "text.secondary", bgcolor: "action.hover" },
-                          }}
-                        >
-                          Message
-                        </Button>
-                      </Tooltip>
-                    </Stack>
-                    {!locked && (
-                      <Stack direction="row" spacing={1} alignItems="stretch" sx={{ mt: 1.25 }}>
-                        <TextField
-                          value={message}
-                          onChange={(e) => setShoutoutMessage(a.userId, e.target.value)}
-                          placeholder={`Give ${primaryLabel} a shout-out for their profile (optional)`}
-                          multiline
-                          // No row cap: autosize measures the placeholder too,
-                          // and any fixed cap clips its last line mid-glyph at
-                          // phone widths once a long display name pushes it
-                          // past the cap. Content is bounded anyway by
-                          // SHOUTOUT_MAX_LENGTH, so the field cannot run away.
-                          fullWidth
-                          size="small"
-                          inputProps={{ maxLength: SHOUTOUT_MAX_LENGTH }}
-                          sx={{
-                            "& .MuiOutlinedInput-root": {
-                              borderRadius: 2,
-                              bgcolor: "background.default",
-                              fontSize: "0.8125rem",
-                            },
-                          }}
-                        />
-                        <Button
-                          onClick={() => handleSendShoutout(a.userId)}
-                          disabled={!sendable || sending}
-                          size="small"
-                          variant="outlined"
-                          startIcon={<CampaignRoundedIcon sx={{ fontSize: 16 }} />}
-                          sx={{
-                            textTransform: "none",
-                            fontWeight: 700,
-                            borderRadius: 2,
-                            fontSize: "0.78rem",
-                            px: 1.5,
-                            flexShrink: 0,
-                            // The row Stack is alignItems: "stretch", so the
-                            // button always matches the TextField's rendered
-                            // height. minHeight unsets the 44px button floor.
-                            minHeight: 0,
-                            alignSelf: "stretch",
-                          }}
-                        >
-                          {sending ? "Sending…" : status === "pending" ? "Update" : "Send"}
-                        </Button>
-                      </Stack>
-                    )}
-                  </Paper>
-                );
-              })}
-            </Stack>
           </Paper>
         )}
 
