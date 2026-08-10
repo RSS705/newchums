@@ -450,12 +450,15 @@ export default function EventDetailClient({
       setShareLinkCopied(true);
       if (shareCopiedTimerRef.current) window.clearTimeout(shareCopiedTimerRef.current);
       shareCopiedTimerRef.current = window.setTimeout(() => setShareLinkCopied(false), 2200);
+      // The button-label flip alone is easy to miss; the toast is the
+      // feedback people actually see.
+      toast.success("Link copied. Paste it anywhere your group talks.");
     } catch {
       // Clipboard refused and no dialog to fall back to: prompt() keeps the
       // link reachable, ugly but honest.
       window.prompt("Copy this link:", url);
     }
-  }, [buildShareUrl, event?.isHost]);
+  }, [buildShareUrl, event?.isHost, toast]);
 
   // Lock state
   const [lockToggling, setLockToggling] = useState(false);
