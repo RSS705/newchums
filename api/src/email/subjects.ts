@@ -63,7 +63,7 @@ export const SUBJECTS = {
   planReminder: "Tomorrow: {{planTitle}}",
   shoutoutReceived_one: "{{senderName}} left you a shout-out",
   shoutoutReceived_many: "You have {{count}} new shout-outs",
-  planWrapUp_attendee: "Anyone to thank from {{planTitle}}?",
+  planWrapUp_attendee: "Anyone earn a shout-out at {{planTitle}}?",
 
   // Digests
   unreadChatDigest: "You have unread messages on NewChums",
