@@ -1,15 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
+import FormControlLabel from "@mui/material/FormControlLabel";
 import IconButton from "@mui/material/IconButton";
 import MenuItem from "@mui/material/MenuItem";
 import MuiLink from "@mui/material/Link";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
+import Switch from "@mui/material/Switch";
 import Table from "@mui/material/Table";
 import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
@@ -48,6 +50,13 @@ type ActivityResponse = {
 };
 
 const PAGE_SIZE = 50;
+
+const EXCLUDE_RESEARCH_KEY = "nc_admin_activity_exclude_research";
+
+function subscribeToStorage(callback: () => void) {
+  window.addEventListener("storage", callback);
+  return () => window.removeEventListener("storage", callback);
+}
 
 const WINDOW_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "1", label: "Last 24 hours" },
@@ -106,6 +115,30 @@ export default function AdminActivityLogClient() {
   const [days, setDays] = useState("7");
   const [userQuery, setUserQuery] = useState("");
   const [pathQuery, setPathQuery] = useState("");
+  // Hide research-excluded accounts (the flag from the growth tooling; in
+  // practice the admin's own test accounts). Persisted per browser so the
+  // log stays decluttered across visits. localStorage is the store itself,
+  // read via useSyncExternalStore: the server snapshot is false, so SSR
+  // hydration matches and the saved value applies right after mount.
+  const excludeResearch = useSyncExternalStore(
+    subscribeToStorage,
+    () => {
+      try {
+        return window.localStorage.getItem(EXCLUDE_RESEARCH_KEY) === "1";
+      } catch {
+        return false;
+      }
+    },
+    () => false,
+  );
+  const handleExcludeResearchChange = (checked: boolean) => {
+    try {
+      window.localStorage.setItem(EXCLUDE_RESEARCH_KEY, checked ? "1" : "0");
+      // Same-tab writes don't fire "storage" natively; dispatch one so the
+      // store re-reads.
+      window.dispatchEvent(new StorageEvent("storage", { key: EXCLUDE_RESEARCH_KEY }));
+    } catch { /* storage unavailable; the toggle just stays off */ }
+  };
   // Debounced copies of the two text filters so we don't refetch per keystroke
   const [appliedUserQuery, setAppliedUserQuery] = useState("");
   const [appliedPathQuery, setAppliedPathQuery] = useState("");
@@ -140,9 +173,10 @@ export default function AdminActivityLogClient() {
       if (userId) params.set("user_id", userId);
       if (appliedUserQuery) params.set("q", appliedUserQuery);
       if (appliedPathQuery) params.set("path", appliedPathQuery);
+      if (excludeResearch) params.set("exclude_research", "1");
       return params.toString();
     },
-    [days, userId, appliedUserQuery, appliedPathQuery],
+    [days, userId, appliedUserQuery, appliedPathQuery, excludeResearch],
   );
 
   const fetchPage = useCallback(
@@ -276,6 +310,23 @@ export default function AdminActivityLogClient() {
               sx={{ maxWidth: 260 }}
             />
           )}
+          <Tooltip
+            title="Hides requests from accounts flagged research-excluded in the growth tooling (your test accounts)."
+            arrow
+          >
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small"
+                  checked={excludeResearch}
+                  onChange={(e) => handleExcludeResearchChange(e.target.checked)}
+                />
+              }
+              label="Hide research accounts"
+              slotProps={{ typography: { sx: { fontSize: "0.8125rem", fontWeight: 600, color: "text.secondary" } } }}
+              sx={{ mr: 0, flexShrink: 0 }}
+            />
+          </Tooltip>
         </Stack>
       </Paper>
 

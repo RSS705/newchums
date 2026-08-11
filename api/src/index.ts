@@ -6834,15 +6834,17 @@ const ACTIVITY_LOG_PAGE_SIZE = 50;
 const ACTIVITY_LOG_MAX_PAGE_SIZE = 200;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** GET /admin/activity?days=&user_id=&q=&path=&offset=&limit=
+/** GET /admin/activity?days=&user_id=&q=&path=&exclude_research=&offset=&limit=
  *
  *  Paginated view over user_activity_log (one row per authenticated API
  *  request, written by the suspension-guard middleware, 90-day retention).
  *  Filters combine: `days` bounds the window (default 30, max 365), `user_id`
  *  narrows to one account, `q` matches email / handle / name, `path` is a
- *  substring match on the request path. `active_days` counts distinct UTC
- *  days with at least one matching request; it is primarily meaningful when
- *  filtered to a single user ("how often do they come back"). */
+ *  substring match on the request path, `exclude_research=1` drops rows from
+ *  accounts flagged research_excluded (the admin's own test accounts).
+ *  `active_days` counts distinct UTC days with at least one matching
+ *  request; it is primarily meaningful when filtered to a single user ("how
+ *  often do they come back"). */
 app.get("/admin/activity", async (c) => {
   const admin = await requireSuperAdmin(c);
   if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
@@ -6857,6 +6859,8 @@ app.get("/admin/activity", async (c) => {
   const userId = userIdRaw || null;
   const q = (c.req.query("q") ?? "").trim();
   const pathQ = (c.req.query("path") ?? "").trim();
+  const excludeResearchRaw = (c.req.query("exclude_research") ?? "").trim();
+  const excludeResearch = excludeResearchRaw === "1" || excludeResearchRaw === "true";
   const limitRaw = Number(c.req.query("limit"));
   const offsetRaw = Number(c.req.query("offset"));
   const limit = Number.isFinite(limitRaw) && limitRaw > 0
@@ -6875,6 +6879,7 @@ app.get("/admin/activity", async (c) => {
         AND (${userId}::uuid IS NULL OR al.user_id = ${userId}::uuid)
         AND (${pathQ} = '' OR al.path ILIKE '%' || ${pathQ} || '%')
         AND (${q} = '' OR u.email ILIKE '%' || ${q} || '%' OR u.username ILIKE '%' || ${q} || '%' OR u.name ILIKE '%' || ${q} || '%')
+        AND (${excludeResearch} = false OR u.research_excluded IS NOT TRUE)
     `) as { total: number; unique_users: number; active_days: number }[];
     const total = countRow?.total ?? 0;
 
@@ -6887,6 +6892,7 @@ app.get("/admin/activity", async (c) => {
         AND (${userId}::uuid IS NULL OR al.user_id = ${userId}::uuid)
         AND (${pathQ} = '' OR al.path ILIKE '%' || ${pathQ} || '%')
         AND (${q} = '' OR u.email ILIKE '%' || ${q} || '%' OR u.username ILIKE '%' || ${q} || '%' OR u.name ILIKE '%' || ${q} || '%')
+        AND (${excludeResearch} = false OR u.research_excluded IS NOT TRUE)
       ORDER BY al.occurred_at DESC, al.id DESC
       LIMIT ${limit} OFFSET ${offset}
     `) as {
