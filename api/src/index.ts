@@ -9322,6 +9322,7 @@ app.post("/communities", async (c) => {
   const isOnline = body.is_online === true;
   const website = body.website ? String(body.website).trim().slice(0, 500) : null;
   const discordUrl = body.discord_url ? String(body.discord_url).trim().slice(0, 500) : null;
+  const whatsappUrl = body.whatsapp_url ? String(body.whatsapp_url).trim().slice(0, 500) : null;
 
   const locationName = body.location_name ? String(body.location_name).trim().slice(0, 200) : null;
   const locationAddress = body.location_address ? String(body.location_address).trim().slice(0, 500) : null;
@@ -9357,8 +9358,8 @@ app.post("/communities", async (c) => {
     if (existing.length > 0) return c.json({ ok: false, error: "SLUG_TAKEN", message: "That handle is already taken" }, 409);
 
     const rows = (await sql`
-      INSERT INTO newchums.communities (name, slug, description, visibility, join_mode, chat_enabled, is_online, website, discord_url, location_name, location_address, location_lat, location_lng, owner_user_id, operating_hours)
-      VALUES (${name}, ${slug}, ${description}, ${visibility}, ${joinMode}, ${chatEnabled}, ${isOnline}, ${website}, ${discordUrl}, ${locationName}, ${locationAddress}, ${locationLat}, ${locationLng}, ${userId}, ${operatingHours ? JSON.stringify(operatingHours) : null}::jsonb)
+      INSERT INTO newchums.communities (name, slug, description, visibility, join_mode, chat_enabled, is_online, website, discord_url, whatsapp_url, location_name, location_address, location_lat, location_lng, owner_user_id, operating_hours)
+      VALUES (${name}, ${slug}, ${description}, ${visibility}, ${joinMode}, ${chatEnabled}, ${isOnline}, ${website}, ${discordUrl}, ${whatsappUrl}, ${locationName}, ${locationAddress}, ${locationLat}, ${locationLng}, ${userId}, ${operatingHours ? JSON.stringify(operatingHours) : null}::jsonb)
       RETURNING id, slug, created_at
     `) as { id: string; slug: string; created_at: string }[];
     const community = rows[0];
@@ -10103,6 +10104,7 @@ app.patch("/communities/:slug", async (c) => {
     if (body.is_online !== undefined) { updates.push("is_online"); vals.push(body.is_online === true); }
     if (body.website !== undefined) { updates.push("website"); vals.push(body.website ? String(body.website).trim().slice(0, 500) : null); }
     if (body.discord_url !== undefined) { updates.push("discord_url"); vals.push(body.discord_url ? String(body.discord_url).trim().slice(0, 500) : null); }
+    if (body.whatsapp_url !== undefined) { updates.push("whatsapp_url"); vals.push(body.whatsapp_url ? String(body.whatsapp_url).trim().slice(0, 500) : null); }
     if (body.location_name !== undefined) { updates.push("location_name"); vals.push(body.location_name ? String(body.location_name).trim().slice(0, 200) : null); }
     if (body.location_address !== undefined) { updates.push("location_address"); vals.push(body.location_address ? String(body.location_address).trim().slice(0, 500) : null); }
     if (body.location_lat !== undefined) { updates.push("location_lat"); vals.push(body.location_lat != null && Number.isFinite(Number(body.location_lat)) ? Number(body.location_lat) : null); }
@@ -10194,6 +10196,7 @@ app.patch("/communities/:slug", async (c) => {
     if (fieldMap.is_online !== undefined) await sql`UPDATE newchums.communities SET is_online = ${fieldMap.is_online as boolean}, updated_at = now() WHERE id = ${cid}`;
     if (fieldMap.website !== undefined) await sql`UPDATE newchums.communities SET website = ${fieldMap.website as string | null}, updated_at = now() WHERE id = ${cid}`;
     if (fieldMap.discord_url !== undefined) await sql`UPDATE newchums.communities SET discord_url = ${fieldMap.discord_url as string | null}, updated_at = now() WHERE id = ${cid}`;
+    if (fieldMap.whatsapp_url !== undefined) await sql`UPDATE newchums.communities SET whatsapp_url = ${fieldMap.whatsapp_url as string | null}, updated_at = now() WHERE id = ${cid}`;
     if (fieldMap.location_name !== undefined) await sql`UPDATE newchums.communities SET location_name = ${fieldMap.location_name as string | null}, updated_at = now() WHERE id = ${cid}`;
     if (fieldMap.location_address !== undefined) await sql`UPDATE newchums.communities SET location_address = ${fieldMap.location_address as string | null}, updated_at = now() WHERE id = ${cid}`;
     if (fieldMap.location_lat !== undefined) await sql`UPDATE newchums.communities SET location_lat = ${fieldMap.location_lat as number | null}, updated_at = now() WHERE id = ${cid}`;

@@ -60,6 +60,8 @@ type CommunityData = {
   website?: string | null;
   /** Omitted from the response for non-members of private communities. */
   discord_url?: string | null;
+  /** Omitted from the response for non-members of private communities. */
+  whatsapp_url?: string | null;
   location_name: string | null;
   location_address: string | null;
   location_lat: number | null;
@@ -1173,9 +1175,9 @@ export default function CommunityDetailClient({
 
               {/* Meta stack: members (always visible, hint of life on a
                   locked card), location/online on its own line, external
-                  links below. website and discord_url are omitted by the
-                  API for non-members of private communities, so those
-                  conditional checks act as the privacy gate. */}
+                  links below. website, discord_url, and whatsapp_url are
+                  omitted by the API for non-members of private communities,
+                  so those conditional checks act as the privacy gate. */}
               <Stack spacing={0.5}>
                 <Stack direction="row" spacing={0.5} alignItems="center">
                   <PeopleRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
@@ -1202,10 +1204,10 @@ export default function CommunityDetailClient({
                     </Typography>
                   </Stack>
                 ) : null}
-                  {(community.website || community.discord_url) && (
-                    // Website + Discord share a row so two short labels don't
-                    // consume two whole meta lines. Matches the pattern used
-                    // in the full detail header.
+                  {(community.website || community.discord_url || community.whatsapp_url) && (
+                    // Website + Discord + WhatsApp share a row so short labels
+                    // don't consume whole meta lines each. Matches the pattern
+                    // used in the full detail header.
                     <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
                       {community.website && (
                         <Stack
@@ -1248,6 +1250,28 @@ export default function CommunityDetailClient({
                           <LinkRoundedIcon sx={{ fontSize: 14 }} />
                           <Typography className="discord-label" component="span" variant="body2" sx={{ fontSize: "0.8125rem", fontWeight: 600 }}>
                             Discord Server
+                          </Typography>
+                        </Stack>
+                      )}
+                      {community.whatsapp_url && (
+                        <Stack
+                          component="a"
+                          href={community.whatsapp_url.startsWith("http") ? community.whatsapp_url : `https://${community.whatsapp_url}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          direction="row"
+                          spacing={0.5}
+                          alignItems="center"
+                          onClick={(e) => e.stopPropagation()}
+                          sx={{
+                            color: "primary.main",
+                            textDecoration: "none",
+                            "&:hover .whatsapp-label": { textDecoration: "underline" },
+                          }}
+                        >
+                          <LinkRoundedIcon sx={{ fontSize: 14 }} />
+                          <Typography className="whatsapp-label" component="span" variant="body2" sx={{ fontSize: "0.8125rem", fontWeight: 600 }}>
+                            WhatsApp Group
                           </Typography>
                         </Stack>
                       )}
@@ -1664,11 +1688,11 @@ export default function CommunityDetailClient({
                   hours are set, and is unreachable on restricted private-
                   community responses (API omits `operating_hours`). */}
               <OperatingHoursInline hours={community.operating_hours} />
-              {(community.website || community.discord_url) && (
-                // Website + Discord on a shared row so two short link labels
-                // don't waste a whole meta line each. flexWrap + useFlexGap
-                // keeps them gracefully stacking when the labels or viewport
-                // don't allow both inline.
+              {(community.website || community.discord_url || community.whatsapp_url) && (
+                // Website + Discord + WhatsApp on a shared row so short link
+                // labels don't waste a whole meta line each. flexWrap +
+                // useFlexGap keeps them gracefully stacking when the labels
+                // or viewport don't allow them inline.
                 <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
                   {community.website && (
                     <Stack
@@ -1711,6 +1735,28 @@ export default function CommunityDetailClient({
                       <LinkRoundedIcon sx={{ fontSize: 14 }} />
                       <Typography className="discord-label" component="span" variant="body2" sx={{ fontSize: "0.8125rem", fontWeight: 600 }}>
                         Discord Server
+                      </Typography>
+                    </Stack>
+                  )}
+                  {community.whatsapp_url && (
+                    <Stack
+                      component="a"
+                      href={community.whatsapp_url.startsWith("http") ? community.whatsapp_url : `https://${community.whatsapp_url}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      direction="row"
+                      spacing={0.5}
+                      alignItems="center"
+                      onClick={(e) => e.stopPropagation()}
+                      sx={{
+                        color: "primary.main",
+                        textDecoration: "none",
+                        "&:hover .whatsapp-label": { textDecoration: "underline" },
+                      }}
+                    >
+                      <LinkRoundedIcon sx={{ fontSize: 14 }} />
+                      <Typography className="whatsapp-label" component="span" variant="body2" sx={{ fontSize: "0.8125rem", fontWeight: 600 }}>
+                        WhatsApp Group
                       </Typography>
                     </Stack>
                   )}

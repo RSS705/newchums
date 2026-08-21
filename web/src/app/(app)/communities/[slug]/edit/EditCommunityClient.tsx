@@ -65,6 +65,7 @@ export default function EditCommunityClient() {
   const [locationLng, setLocationLng] = useState<number | null>(null);
   const [website, setWebsite] = useState("");
   const [discordUrl, setDiscordUrl] = useState("");
+  const [whatsappUrl, setWhatsappUrl] = useState("");
   const [access, setAccess] = useState<"open" | "private">("open");
   // Per-community feature flag: when true, the public community page
   // shows the Schedule tab. Defaults to true via migration 097 for both
@@ -138,6 +139,7 @@ export default function EditCommunityClient() {
         setIsOnline(c.is_online === true);
         setWebsite(c.website || "");
         setDiscordUrl(c.discord_url || "");
+        setWhatsappUrl(c.whatsapp_url || "");
         setLocationName(c.location_name || "");
         setLocationAddress(c.location_address || "");
         setLocationLat(c.location_lat ?? null);
@@ -318,6 +320,7 @@ export default function EditCommunityClient() {
           is_online: isOnline,
           website: website.trim() || null,
           discord_url: discordUrl.trim() || null,
+          whatsapp_url: whatsappUrl.trim() || null,
           access,
           location_name: isOnline ? null : (locationName.trim() || null),
           location_address: isOnline ? null : (locationAddress.trim() || null),
@@ -667,6 +670,15 @@ export default function EditCommunityClient() {
             placeholder="e.g. https://discord.gg/yourserver"
             value={discordUrl}
             onChange={(e) => setDiscordUrl(e.target.value)}
+            helperText={null}
+            inputProps={{ maxLength: 500 }}
+          />
+
+          <AppTextField
+            label="WhatsApp Group"
+            placeholder="e.g. https://chat.whatsapp.com/yourgroup"
+            value={whatsappUrl}
+            onChange={(e) => setWhatsappUrl(e.target.value)}
             helperText={null}
             inputProps={{ maxLength: 500 }}
           />

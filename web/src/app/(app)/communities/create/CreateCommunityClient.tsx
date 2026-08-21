@@ -61,6 +61,7 @@ export default function CreateCommunityClient() {
   const [locationLng, setLocationLng] = useState<number | null>(null);
   const [website, setWebsite] = useState("");
   const [discordUrl, setDiscordUrl] = useState("");
+  const [whatsappUrl, setWhatsappUrl] = useState("");
   const [access, setAccess] = useState<"open" | "private">("open");
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -232,6 +233,7 @@ export default function CreateCommunityClient() {
           is_online: isOnline,
           website: website.trim() || null,
           discord_url: discordUrl.trim() || null,
+          whatsapp_url: whatsappUrl.trim() || null,
           access,
           location_name: isOnline ? null : (locationName.trim() || null),
           location_address: isOnline ? null : (locationAddress.trim() || null),
@@ -583,6 +585,15 @@ export default function CreateCommunityClient() {
             placeholder="e.g. https://discord.gg/yourserver"
             value={discordUrl}
             onChange={(e) => setDiscordUrl(e.target.value)}
+            helperText={null}
+            inputProps={{ maxLength: 500 }}
+          />
+
+          <AppTextField
+            label="WhatsApp Group"
+            placeholder="e.g. https://chat.whatsapp.com/yourgroup"
+            value={whatsappUrl}
+            onChange={(e) => setWhatsappUrl(e.target.value)}
             helperText={null}
             inputProps={{ maxLength: 500 }}
           />
