@@ -49,6 +49,11 @@ export default function RichTextEditor({ label, value, onChange, placeholder, ma
         code: false,
         strike: false,
         horizontalRule: false,
+        // StarterKit bundles its own Link since tiptap v3; disabled here so
+        // the separately-configured Link below is the only instance (the
+        // duplicate triggered a "[tiptap warn]: Duplicate extension names"
+        // and risked the default config winning over ours).
+        link: false,
       }),
       Link.configure({
         openOnClick: false,

@@ -515,6 +515,11 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
             </Box>
             {checkable && (
               <Tooltip title="Private, for your records only. Nobody is notified." arrow>
+                {/* span keeps the tooltip alive while the group is disabled
+                    (a disabled element fires no events for MUI to hook); it
+                    inherits the group's slot in the row, so it must not
+                    shrink at phone widths. */}
+                <span style={{ display: "inline-flex", flexShrink: 0 }}>
                 <ToggleButtonGroup
                   exclusive
                   size="small"
@@ -561,11 +566,19 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
                     No-show
                   </ToggleButton>
                 </ToggleButtonGroup>
+                </span>
               </Tooltip>
             )}
           </Stack>
           {showChum && (
             <Tooltip title={saved ? "Remove from your Chums" : "Add to your Chums"} arrow>
+              {/* Box wrapper keeps the tooltip alive while the button is
+                  disabled (in-flight chum check or toggle); it takes over
+                  the button's slot in the row so xs stretch still works. */}
+              <Box
+                component="span"
+                sx={{ display: "inline-flex", flexShrink: 0, alignSelf: { xs: "stretch", sm: "center" }, "& > button": { width: "100%" } }}
+              >
               <Button
                 onClick={() => toggleChum(a.userId)}
                 disabled={!!chumLoading[a.userId] || saved === undefined}
@@ -597,6 +610,7 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
               >
                 {saved ? "Saved as Chum" : "Save to Chums"}
               </Button>
+              </Box>
             </Tooltip>
           )}
           {withShoutouts && (

@@ -33,9 +33,11 @@ side effect.
 | 11 | Resend free-plan ceiling (~100 emails/day) covers all transactional mail; overflow fails silently. Upgrade pre-emptively or alert on rejected sends. | S | Open |
 | 12 | Web push / PWA install. Email is the only off-site channel; day-of logistics want push. Park until after the growth experiment reads out. | L | Open |
 | 13 | Growth experiment debrief: read the Growth tab cohorts against the pre-registered questions (creative winner, cost per attributed signup, share-loop depth) and decide round 2. | S | Open |
+| 14 | Google Places JS: google.maps.places.Autocomplete is deprecated for NEW customers (console notice on create forms and profile). Existing keys keep working and no shutdown is scheduled; migrate to PlaceAutocompleteElement when convenient. Found in the 2026-08-28 system sweep. | M | Open |
+| 15 | Recharts logs a transient width(-1)/height(-1) warning on /admin/kpis at mobile width during mount; charts render correctly, dev-console noise only. Found in the 2026-08-28 system sweep. | S | Open |
 
 ## Documentation
 
 | # | Item | Effort | Status |
 |---|------|--------|--------|
-| 14 | Docs accuracy audit. Known drift: an API comment references a "Community field visibility rules" section of AGENTS.md that does not exist; Technical_Specs.md (1,600+ lines) is updated piecemeal and sections untouched since the matching / .ics / share-dialog removals likely describe the old world; System_Map's cron inventory predates recent cron changes. Sweep read-only, fix, delete dead sections. | M | Open |
+| 16 | Docs accuracy audit. Known drift: an API comment references a "Community field visibility rules" section of AGENTS.md that does not exist; Technical_Specs.md (1,600+ lines) is updated piecemeal and sections untouched since the matching / .ics / share-dialog removals likely describe the old world; System_Map's cron inventory predates recent cron changes. Sweep read-only, fix, delete dead sections. | M | Open |
