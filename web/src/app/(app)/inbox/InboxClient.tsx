@@ -31,6 +31,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import { useToast } from "@/components/ui";
+import ChatEmojiPicker from "@/components/events/ChatEmojiPicker";
 import UserAvatar from "@/components/common/UserAvatar";
 import NewMessageDialog from "./NewMessageDialog";
 
@@ -149,6 +150,7 @@ export default function InboxClient() {
   const [threadLoading, setThreadLoading] = useState(false);
 
   const [draft, setDraft] = useState("");
+  const draftInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [sending, setSending] = useState(false);
 
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
@@ -650,6 +652,25 @@ export default function InboxClient() {
                     // Stays enabled while sending so typing is never interrupted;
                     // handleSend and the button guard against double-sends.
                     disabled={composing && composeTarget !== null && !composeTarget.canMessage}
+                    inputRef={draftInputRef}
+                  />
+                  <ChatEmojiPicker
+                    disabled={composing && composeTarget !== null && !composeTarget.canMessage}
+                    onPick={(emoji) => {
+                      // Same caret-insert behavior as the plan-chat composer.
+                      const el = draftInputRef.current;
+                      const start = el && typeof el.selectionStart === "number" ? el.selectionStart : draft.length;
+                      const end = el && typeof el.selectionEnd === "number" ? el.selectionEnd : start;
+                      const next = (draft.slice(0, start) + emoji + draft.slice(end)).slice(0, MAX_MESSAGE_LENGTH);
+                      setDraft(next);
+                      requestAnimationFrame(() => {
+                        const node = draftInputRef.current;
+                        if (!node) return;
+                        node.focus();
+                        const pos = Math.min(start + emoji.length, next.length);
+                        node.setSelectionRange(pos, pos);
+                      });
+                    }}
                   />
                   <IconButton
                     color="primary"
