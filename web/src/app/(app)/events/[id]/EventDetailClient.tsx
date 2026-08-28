@@ -90,6 +90,7 @@ import { SECTION_SCROLL_MARGIN, scrollSectionIntoView } from "@/lib/scrollOffset
 import { notifyObjectivesChanged } from "@/components/objectives/NextStepNudge";
 import PlanWrapUp from "@/components/events/PlanWrapUp";
 import PlanSignupCard from "@/components/events/PlanSignupCard";
+import ChatEmojiPicker from "@/components/events/ChatEmojiPicker";
 import AdminPlanPanel, { type PlanAdminView } from "@/components/admin/AdminPlanPanel";
 import AvailabilityPicker, {
   type AvailabilitySelection,
@@ -380,6 +381,7 @@ export default function EventDetailClient({
   const [chatLoading, setChatLoading] = useState(true);
   const [chatInput, setChatInput] = useState("");
   const [chatSending, setChatSending] = useState(false);
+  const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
   // Per-message opt-in to email + in-app notify attendees. Off by default and
   // reset after each send so notifying is always a deliberate choice.
   const [chatNotify, setChatNotify] = useState(false);
@@ -3037,7 +3039,13 @@ export default function EventDetailClient({
                   )}
                 </Stack>
               </Stack>
-              {event.planViability && event.minConfirmedAttendees && (
+              {/* Viability chip. The warning states (At risk / Below minimum)
+                  only render when the plan actually auto-cancels on a missed
+                  minimum; plans with proceed / notify_host policies happen
+                  regardless, so a warning would wrongly read as "this might
+                  not happen". The positive state stays for everyone. */}
+              {event.planViability && event.minConfirmedAttendees &&
+                (event.planViability === "viable" || event.fallbackPolicy === "auto_cancel") && (
                 <Stack spacing={0.5} sx={{ alignItems: "flex-start" }}>
                   <Chip
                     size="small"
@@ -5760,7 +5768,7 @@ export default function EventDetailClient({
             </Stack>
           ) : (
             <Stack spacing={0.5}>
-              <Stack direction="row" spacing={1} alignItems="center">
+              <Stack direction="row" spacing={0.5} alignItems="center">
                 <TextField
                   fullWidth
                   size="small"
@@ -5776,8 +5784,29 @@ export default function EventDetailClient({
                   multiline
                   maxRows={4}
                   disabled={chatSending}
+                  inputRef={chatInputRef}
                   slotProps={{ htmlInput: { enterKeyHint: "send" } }}
                   sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
+                />
+                <ChatEmojiPicker
+                  disabled={chatSending}
+                  onPick={(emoji) => {
+                    // Insert at the caret (falling back to append), then put
+                    // the caret right after the inserted glyph so several
+                    // picks in a row land in order.
+                    const el = chatInputRef.current;
+                    const start = el && typeof el.selectionStart === "number" ? el.selectionStart : chatInput.length;
+                    const end = el && typeof el.selectionEnd === "number" ? el.selectionEnd : start;
+                    const next = (chatInput.slice(0, start) + emoji + chatInput.slice(end)).slice(0, 2000);
+                    setChatInput(next);
+                    requestAnimationFrame(() => {
+                      const node = chatInputRef.current;
+                      if (!node) return;
+                      node.focus();
+                      const pos = Math.min(start + emoji.length, next.length);
+                      node.setSelectionRange(pos, pos);
+                    });
+                  }}
                 />
                 <IconButton
                   color="primary"
