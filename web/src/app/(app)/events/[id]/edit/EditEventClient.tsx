@@ -225,12 +225,19 @@ export default function EditEventClient() {
         const res = await apiFetch(`/events/${eventId}`, { auth: true });
         const data = await res.json();
         if (cancelled) return;
-        if (!data.ok || !data.event?.isHost) {
+        // Hosts edit their own plans; super admins (identified by the
+        // server-gated adminView payload) may edit any plan.
+        if (!data.ok || !data.event || !(data.event.isHost || data.adminView)) {
           setNotFound(true);
           setLoading(false);
           return;
         }
         const ev = data.event;
+        // Non-host super admins get redacted location fields in the main
+        // payload; adminView.exactLocation carries the real values.
+        const adminExact = (data.adminView as {
+          exactLocation?: { name?: string | null; address?: string | null; lat?: number | null; lng?: number | null };
+        } | null | undefined)?.exactLocation;
         setTitle(ev.title ?? "");
         setDescription(ev.description ?? "");
         const d = dayjs(ev.startsAt);
@@ -267,10 +274,10 @@ export default function EditEventClient() {
 
         // Location
         setLocationType(ev.locationType === "online" ? "online" : "in_person");
-        setLocationName(ev.locationName ?? "");
-        setLocationAddress(ev.locationAddress ?? "");
-        setLocationLat(ev.locationLat ?? null);
-        setLocationLng(ev.locationLng ?? null);
+        setLocationName(ev.locationName ?? adminExact?.name ?? "");
+        setLocationAddress(ev.locationAddress ?? adminExact?.address ?? "");
+        setLocationLat(ev.locationLat ?? adminExact?.lat ?? null);
+        setLocationLng(ev.locationLng ?? adminExact?.lng ?? null);
         setLocationArea(ev.locationArea ?? null);
         setLocationVisibility(ev.locationVisibility ?? "exact_everyone");
         setOnlineLink(ev.onlineLink ?? "");

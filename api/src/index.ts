@@ -14925,7 +14925,13 @@ app.patch("/events/:id", async (c) => {
       FROM newchums.events WHERE id = ${eventId}
     `) as { id: string; host_user_id: string; status: string; title: string; description: string | null; starts_at: string; timezone: string | null; max_seats: number | null; visibility: string; require_reconfirmation: boolean; min_confirmed_attendees: number | null; fallback_policy: string; min_attendees_required: number | null; alt_times_mode: string | null; availability_deadline_at: string | null; location_type: string; location_name: string | null; location_address: string | null; location_place_id: string | null; location_lat: number | null; location_lng: number | null; location_visibility: string; location_area: string | null; online_link: string | null }[];
     if (rows.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-    if (rows[0].host_user_id !== userId) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+    if (rows[0].host_user_id !== userId) {
+      // Super admins may edit any plan (moderation and hands-on support).
+      // The plan's host identity is untouched: notifications and "hosted
+      // by" attribution keep pointing at the real host.
+      const roleRows = (await sql`SELECT role FROM newchums.users WHERE id = ${userId} LIMIT 1`) as { role: string | null }[];
+      if (roleRows[0]?.role !== "super_admin") return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+    }
     if (rows[0].status === "canceled") return c.json({ ok: false, error: "VALIDATION", message: "Cannot edit a canceled plan" }, 400);
 
     // Banner-only partial update. The Edit form removes a banner with a

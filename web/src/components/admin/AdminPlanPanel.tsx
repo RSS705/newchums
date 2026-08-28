@@ -17,6 +17,8 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import ShieldRoundedIcon from "@mui/icons-material/ShieldRounded";
 import ForumRoundedIcon from "@mui/icons-material/ForumRounded";
+import EditRoundedIcon from "@mui/icons-material/EditRounded";
+import Link from "next/link";
 import { apiFetch } from "@/lib/apiClient";
 
 export type PlanAdminView = {
@@ -193,7 +195,7 @@ export default function AdminPlanPanel({
             </Typography>
           </Box>
 
-          <Box>
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
             <Button
               variant="outlined"
               size="small"
@@ -204,7 +206,18 @@ export default function AdminPlanPanel({
             >
               View chat transcript (read-only)
             </Button>
-          </Box>
+            <Button
+              component={Link}
+              href={`/events/${eventId}/edit`}
+              variant="outlined"
+              size="small"
+              color="inherit"
+              startIcon={<EditRoundedIcon sx={{ fontSize: 16 }} />}
+              sx={{ textTransform: "none", fontWeight: 600, color: "text.secondary" }}
+            >
+              Edit this plan
+            </Button>
+          </Stack>
         </Stack>
       </Collapse>
 
