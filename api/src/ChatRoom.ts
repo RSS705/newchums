@@ -71,11 +71,14 @@ export class ChatRoom extends DurableObject {
       return new Response("Bad JSON", { status: 400 });
     }
 
-    // Edit/delete broadcasts arrive pre-wrapped ({type, ...}); plain new
-    // messages arrive bare and keep their legacy chat_message envelope.
+    // Edit/delete/reaction broadcasts arrive pre-wrapped ({type: "chat_*"});
+    // plain new messages arrive bare and keep their legacy chat_message
+    // envelope. Match the "chat_" prefix, not "chat_message", so new event
+    // types (chat_reaction, and whatever comes next) are never mistaken for
+    // a bare message and double-wrapped.
     const pre = message as { type?: unknown };
     const payload =
-      pre && typeof pre.type === "string" && pre.type.startsWith("chat_message")
+      pre && typeof pre.type === "string" && pre.type.startsWith("chat_")
         ? JSON.stringify(message)
         : JSON.stringify({ type: "chat_message", message });
     const sockets = this.ctx.getWebSockets();

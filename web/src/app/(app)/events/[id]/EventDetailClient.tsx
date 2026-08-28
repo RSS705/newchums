@@ -59,6 +59,8 @@ import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
 import PersonRoundedIcon from "@mui/icons-material/PersonRounded";
 import ScheduleRoundedIcon from "@mui/icons-material/ScheduleRounded";
 import MoreVertRoundedIcon from "@mui/icons-material/MoreVertRounded";
+import AddReactionOutlinedIcon from "@mui/icons-material/AddReactionOutlined";
+import ButtonBase from "@mui/material/ButtonBase";
 import OpenInNewRoundedIcon from "@mui/icons-material/OpenInNewRounded";
 import PersonAddRoundedIcon from "@mui/icons-material/PersonAddRounded";
 import PersonRemoveRoundedIcon from "@mui/icons-material/PersonRemoveRounded";
@@ -90,7 +92,7 @@ import { SECTION_SCROLL_MARGIN, scrollSectionIntoView } from "@/lib/scrollOffset
 import { notifyObjectivesChanged } from "@/components/objectives/NextStepNudge";
 import PlanWrapUp from "@/components/events/PlanWrapUp";
 import PlanSignupCard from "@/components/events/PlanSignupCard";
-import ChatEmojiPicker from "@/components/events/ChatEmojiPicker";
+import ChatEmojiPicker, { EmojiPickerPopover } from "@/components/events/ChatEmojiPicker";
 import AdminPlanPanel, { type PlanAdminView } from "@/components/admin/AdminPlanPanel";
 import AvailabilityPicker, {
   type AvailabilitySelection,
@@ -202,6 +204,8 @@ type SearchResult = {
   handle: string | null;
   avatarUrl?: string | null;
 };
+type ChatReaction = { emoji: string; count: number; reacted: boolean };
+
 type ChatMessage = {
   id: string;
   body: string;
@@ -211,6 +215,9 @@ type ChatMessage = {
   senderName: string;
   senderHandle: string | null;
   avatarUrl: string | null;
+  /** Emoji reaction aggregates; `reacted` marks the viewer's own. Absent on
+   *  WebSocket-delivered new messages (a fresh message has none). */
+  reactions?: ChatReaction[];
 };
 
 type JoinRequest = {
@@ -312,6 +319,10 @@ export default function EventDetailClient({
   const [altTimes, setAltTimes] = useState<AltTimeEntry[]>([]);
   const [invites, setInvites] = useState<InviteEntry[]>([]);
   const [viewerUserId, setViewerUserId] = useState<string | null>(null);
+  // Ref mirror for long-lived closures (the chat WebSocket handler) that
+  // must not be in their effect's dependency list.
+  const viewerUserIdRef = useRef<string | null>(null);
+  useEffect(() => { viewerUserIdRef.current = viewerUserId; }, [viewerUserId]);
   // B1 crash recovery: server-persisted signup intent for this viewer+plan,
   // present only while the viewer has no RSVP row (see GET /events/:id).
   const [viewerPendingIntent, setViewerPendingIntent] = useState<"going" | "maybe" | null>(null);
@@ -986,6 +997,46 @@ export default function EventDetailClient({
     setChatLoading(false);
   }, [eventId]);
 
+  // Reaction picker: one shared popover, anchored to whichever message's
+  // add-reaction button opened it.
+  const [reactionPicker, setReactionPicker] = useState<{ anchorEl: HTMLElement; messageId: string } | null>(null);
+
+  const toggleReaction = useCallback(async (messageId: string, emoji: string) => {
+    // Optimistic flip; the POST response (viewer-specific `reacted` flags
+    // included) reconciles, and a failed call falls back to a full reload.
+    setChatMessages((prev) => prev.map((m) => {
+      if (m.id !== messageId) return m;
+      const existing = m.reactions ?? [];
+      const hit = existing.find((r) => r.emoji === emoji);
+      let next: ChatReaction[];
+      if (!hit) next = [...existing, { emoji, count: 1, reacted: true }];
+      else if (hit.reacted) {
+        next = existing
+          .map((r) => (r.emoji === emoji ? { ...r, count: r.count - 1, reacted: false } : r))
+          .filter((r) => r.count > 0);
+      } else {
+        next = existing.map((r) => (r.emoji === emoji ? { ...r, count: r.count + 1, reacted: true } : r));
+      }
+      return { ...m, reactions: next };
+    }));
+    try {
+      const res = await apiFetch(`/events/${eventId}/chat/${messageId}/react`, {
+        auth: true,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emoji }),
+      });
+      const data = (await res.json()) as { ok?: boolean; reactions?: ChatReaction[] };
+      if (res.ok && data.ok && Array.isArray(data.reactions)) {
+        setChatMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, reactions: data.reactions } : m)));
+      } else {
+        void loadChat();
+      }
+    } catch {
+      void loadChat();
+    }
+  }, [eventId, loadChat]);
+
   // WebSocket connection with reconnection + polling fallback
   useEffect(() => {
     if (!chatEligible) return;
@@ -1037,8 +1088,31 @@ export default function EventDetailClient({
 
         ws.onmessage = (evt) => {
           try {
-            const data = JSON.parse(evt.data) as { type: string; message?: ChatMessage; messageId?: string };
-            if (data.type === "chat_message" && data.message) {
+            const data = JSON.parse(evt.data) as {
+              type: string;
+              message?: ChatMessage;
+              messageId?: string;
+              reactions?: { emoji: string; count: number }[];
+              userId?: string;
+              emoji?: string;
+              reacted?: boolean;
+            };
+            if (data.type === "chat_reaction" && data.messageId && Array.isArray(data.reactions)) {
+              // Counts come from the broadcast; each client keeps its own
+              // highlight flags, applying the actor's flag only when the
+              // actor is this viewer (covers multi-tab sessions).
+              const { messageId: rid, reactions: counts, userId: actorId, emoji: actedEmoji, reacted: actedOn } = data;
+              setChatMessages((prev) => prev.map((m) => {
+                if (m.id !== rid) return m;
+                const mine = new Set((m.reactions ?? []).filter((r) => r.reacted).map((r) => r.emoji));
+                if (actorId && actorId === viewerUserIdRef.current && actedEmoji) {
+                  if (actedOn) mine.add(actedEmoji); else mine.delete(actedEmoji);
+                }
+                return { ...m, reactions: counts.map((r) => ({ ...r, reacted: mine.has(r.emoji) })) };
+              }));
+            } else if (data.type === "chat_message" && data.message && data.message.id) {
+              // The id guard drops malformed envelopes (a non-message payload
+              // wrapped as chat_message) instead of appending garbage rows.
               const incoming = data.message;
               setChatMessages((prev) => {
                 if (prev.some((m) => m.id === incoming.id)) return prev;
@@ -5726,6 +5800,50 @@ export default function EventDetailClient({
                               {msg.body}
                             </Typography>
                           )}
+                          {/* Reactions: aggregate chips (viewer's own
+                              highlighted) plus an always-visible add button,
+                              same touch-screen reasoning as the message
+                              options button below. Locked chats keep the
+                              chips visible but read-only. */}
+                          {((msg.reactions?.length ?? 0) > 0 || !isChatLocked) && chatEditingId !== msg.id && (
+                            <Stack direction="row" alignItems="center" flexWrap="wrap" useFlexGap spacing={0.5} sx={{ mt: 0.5 }}>
+                              {(msg.reactions ?? []).map((r) => (
+                                <ButtonBase
+                                  key={r.emoji}
+                                  onClick={() => { if (!isChatLocked) void toggleReaction(msg.id, r.emoji); }}
+                                  disabled={isChatLocked}
+                                  aria-label={`${r.emoji} ${r.count}, ${r.reacted ? "remove your reaction" : "react"}`}
+                                  sx={{
+                                    px: 0.75,
+                                    py: 0.25,
+                                    borderRadius: 2,
+                                    fontSize: "0.8125rem",
+                                    lineHeight: 1,
+                                    gap: 0.5,
+                                    border: "1px solid",
+                                    borderColor: r.reacted ? "primary.main" : "divider",
+                                    bgcolor: r.reacted ? "primary.light" : "background.default",
+                                    "&:hover": { borderColor: "primary.main" },
+                                  }}
+                                >
+                                  <span>{r.emoji}</span>
+                                  <Typography component="span" sx={{ fontSize: "0.75rem", fontWeight: 700, color: r.reacted ? "primary.dark" : "text.secondary" }}>
+                                    {r.count}
+                                  </Typography>
+                                </ButtonBase>
+                              ))}
+                              {!isChatLocked && (
+                                <IconButton
+                                  size="small"
+                                  aria-label="Add a reaction"
+                                  onClick={(e) => setReactionPicker({ anchorEl: e.currentTarget, messageId: msg.id })}
+                                  sx={{ p: 0.375, color: "text.disabled", "&:hover": { color: "primary.main" } }}
+                                >
+                                  <AddReactionOutlinedIcon sx={{ fontSize: 16 }} />
+                                </IconButton>
+                              )}
+                            </Stack>
+                          )}
                         </Box>
                         {/* Own messages only; the host gets no controls over
                             other people's messages, by design. Always
@@ -5839,6 +5957,15 @@ export default function EventDetailClient({
               </Stack>
             </Stack>
           )}
+          {/* Shared reaction picker, anchored to whichever message's add
+              button opened it. */}
+          <EmojiPickerPopover
+            anchorEl={reactionPicker?.anchorEl ?? null}
+            onClose={() => setReactionPicker(null)}
+            onPick={(emoji) => {
+              if (reactionPicker) void toggleReaction(reactionPicker.messageId, emoji);
+            }}
+          />
         </AppCard>
       )}
 

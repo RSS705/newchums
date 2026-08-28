@@ -15997,6 +15997,27 @@ app.get("/events/:id/chat", async (c) => {
     if (hasMore) messages.pop();
     messages.reverse(); // Return in chronological order
 
+    // Reaction aggregates for the returned page, ordered by when each emoji
+    // first appeared on its message (Discord's ordering). `reacted` marks
+    // the viewer's own reactions so the UI can highlight them.
+    const messageIds = messages.map((m) => m.id);
+    const reactionRows = messageIds.length > 0
+      ? (await sql`
+          SELECT message_id, emoji, COUNT(*)::int AS count,
+                 BOOL_OR(user_id = ${userId}) AS reacted
+          FROM newchums.event_chat_reactions
+          WHERE message_id = ANY(${messageIds}::uuid[])
+          GROUP BY message_id, emoji
+          ORDER BY MIN(created_at) ASC
+        `) as { message_id: string; emoji: string; count: number; reacted: boolean }[]
+      : [];
+    const reactionsByMessage = new Map<string, { emoji: string; count: number; reacted: boolean }[]>();
+    for (const r of reactionRows) {
+      const list = reactionsByMessage.get(r.message_id) ?? [];
+      list.push({ emoji: r.emoji, count: r.count, reacted: r.reacted });
+      reactionsByMessage.set(r.message_id, list);
+    }
+
     const readRow = (await sql`
       SELECT last_read_at FROM newchums.event_chat_reads
       WHERE event_id = ${eventId} AND user_id = ${userId}
@@ -16015,6 +16036,7 @@ app.get("/events/:id/chat", async (c) => {
           senderName: m.sender_name?.trim() || (handle || "Someone"),
           senderHandle: handle ? `@${handle}` : null,
           avatarUrl: buildAvatarUrl(m.user_id, m.avatar_key, m.avatar_updated_at, c.env.MEDIA_BUCKET),
+          reactions: reactionsByMessage.get(m.id) ?? [],
         };
       }),
       hasMore,
@@ -16329,6 +16351,121 @@ app.delete("/events/:id/chat/:messageId", async (c) => {
     return c.json({ ok: true });
   } catch (err) {
     console.error("[DELETE /events/:id/chat/:messageId]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /events/:id/chat/:messageId/react, toggle an emoji reaction on a
+ *  chat message (Discord style: picking the same emoji again removes it).
+ *  Reactions are silent: no emails and no bell entries. Open clients learn
+ *  about changes via the ChatRoom broadcast; everyone else on their next
+ *  chat load. Locked chats (3 days after the plan starts) are read-only
+ *  for reactions too, matching the message composer. */
+app.post("/events/:id/chat/:messageId/react", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+  const eventId = c.req.param("id");
+  const messageId = c.req.param("messageId");
+  if (!UUID_RE.test(messageId)) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+
+  // Accept a single emoji grapheme (base pictograph or flag, optionally with
+  // modifiers / ZWJ sequence parts / keycap components). Length is capped
+  // well above any real emoji sequence but far below free text.
+  const emoji = typeof body.emoji === "string" ? body.emoji.trim() : "";
+  const looksLikeEmoji =
+    emoji.length > 0 &&
+    emoji.length <= 16 &&
+    /^[\p{Extended_Pictographic}\p{Emoji_Modifier}\p{Regional_Indicator}\u200D\uFE0F\u20E3#*0-9]+$/u.test(emoji) &&
+    /[\p{Extended_Pictographic}\p{Regional_Indicator}]/u.test(emoji);
+  if (!looksLikeEmoji) {
+    return c.json({ ok: false, error: "VALIDATION", message: "Reactions must be a single emoji" }, 400);
+  }
+
+  try {
+    const access = await checkChatAccess(sql, eventId, userId);
+    if (!access.allowed) {
+      const status = access.reason === "NOT_FOUND" ? 404 : 403;
+      return c.json({ ok: false, error: access.reason }, status);
+    }
+    if (access.event) {
+      const startsAt = access.event.starts_at as string | null;
+      if (startsAt && Date.now() >= new Date(startsAt).getTime() + 3 * 24 * 60 * 60 * 1000) {
+        return c.json({ ok: false, error: "CHAT_LOCKED", message: "Chat is locked for this plan" }, 403);
+      }
+    }
+
+    const msgRows = (await sql`
+      SELECT id FROM newchums.event_chat_messages
+      WHERE id = ${messageId} AND event_id = ${eventId} AND deleted_at IS NULL
+      LIMIT 1
+    `) as { id: string }[];
+    if (msgRows.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+
+    const removed = (await sql`
+      DELETE FROM newchums.event_chat_reactions
+      WHERE message_id = ${messageId} AND user_id = ${userId} AND emoji = ${emoji}
+      RETURNING id
+    `) as { id: string }[];
+    let reacted = false;
+    if (removed.length === 0) {
+      // Discord-parity cap: at most 20 distinct emojis per message. Adding
+      // to an emoji already on the message is always allowed.
+      const capRows = (await sql`
+        SELECT COUNT(DISTINCT emoji)::int AS n,
+               BOOL_OR(emoji = ${emoji}) AS emoji_present
+        FROM newchums.event_chat_reactions
+        WHERE message_id = ${messageId}
+      `) as { n: number; emoji_present: boolean | null }[];
+      if ((capRows[0]?.n ?? 0) >= 20 && capRows[0]?.emoji_present !== true) {
+        return c.json({ ok: false, error: "REACTION_LIMIT", message: "This message has too many different reactions" }, 400);
+      }
+      await sql`
+        INSERT INTO newchums.event_chat_reactions (message_id, user_id, emoji)
+        VALUES (${messageId}, ${userId}, ${emoji})
+        ON CONFLICT DO NOTHING
+      `;
+      reacted = true;
+    }
+
+    const agg = (await sql`
+      SELECT emoji, COUNT(*)::int AS count, BOOL_OR(user_id = ${userId}) AS reacted
+      FROM newchums.event_chat_reactions
+      WHERE message_id = ${messageId}
+      GROUP BY emoji
+      ORDER BY MIN(created_at) ASC
+    `) as { emoji: string; count: number; reacted: boolean }[];
+
+    try {
+      const doId = c.env.CHAT_ROOM.idFromName(eventId);
+      const doStub = c.env.CHAT_ROOM.get(doId);
+      // Counts only; `reacted` is viewer-specific, so each client keeps its
+      // own highlight state and applies this actor's flag only when the
+      // actor is itself (userId + emoji + reacted describe the change).
+      c.executionCtx.waitUntil(
+        doStub.fetch(new Request("https://do/broadcast", {
+          method: "POST",
+          body: JSON.stringify({
+            type: "chat_reaction",
+            messageId,
+            reactions: agg.map((r) => ({ emoji: r.emoji, count: r.count })),
+            userId,
+            emoji,
+            reacted,
+          }),
+        }))
+      );
+    } catch { /* DO broadcast failure should not fail the API response */ }
+
+    return c.json({ ok: true, reacted, reactions: agg });
+  } catch (err) {
+    console.error("[POST /events/:id/chat/:messageId/react]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });
