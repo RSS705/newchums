@@ -34,17 +34,26 @@ export default function PlanWelcomeDialog({
   onClose,
   intent,
   planTitle,
+  prefetch,
 }: {
   open: boolean;
   onClose: () => void;
   intent: "going" | "maybe";
   planTitle?: string;
+  /** Start loading the profile before `open` flips true. The caller delays
+   *  opening until its scroll settles; prefetching during that window means
+   *  the identity panel is already there when the dialog fades in, instead
+   *  of popping in a beat later and shifting the layout. */
+  prefetch?: boolean;
 }) {
   const [handle, setHandle] = React.useState<string | null>(null);
   const [hasPassword, setHasPassword] = React.useState<boolean | null>(null);
+  const fetchedRef = React.useRef(false);
 
   React.useEffect(() => {
-    if (!open) return;
+    if (!open && !prefetch) return;
+    if (fetchedRef.current) return;
+    fetchedRef.current = true;
     let cancelled = false;
     (async () => {
       try {
@@ -65,7 +74,7 @@ export default function PlanWelcomeDialog({
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [open, prefetch]);
 
   const cleanTitle = planTitle?.trim();
   // Below sm the theme renders dialogs as full-screen sheets, so "the list

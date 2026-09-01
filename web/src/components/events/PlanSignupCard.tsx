@@ -36,11 +36,14 @@ function CodeDigitsInput({
   onChange,
   disabled,
   error,
+  autoFocus,
 }: {
   value: string;
   onChange: (next: string) => void;
   disabled?: boolean;
   error?: boolean;
+  /** Focus the first box on mount so typing can start immediately. */
+  autoFocus?: boolean;
 }) {
   const refs = React.useRef<Array<HTMLInputElement | null>>([]);
   const activeIndex = Math.min(value.length, 5);
@@ -69,6 +72,7 @@ function CodeDigitsInput({
           ref={(el: HTMLInputElement | null) => { refs.current[i] = el; }}
           value={value[i] ?? ""}
           disabled={disabled}
+          autoFocus={autoFocus && i === 0}
           inputMode="numeric"
           autoComplete={i === 0 ? "one-time-code" : "off"}
           aria-label={`Digit ${i + 1} of 6`}
@@ -204,7 +208,10 @@ export default function PlanSignupCard({
   const [formEpoch, setFormEpoch] = React.useState(0);
 
   const [codeValue, setCodeValue] = React.useState("");
-  const [codeFocused, setCodeFocused] = React.useState(false);
+  // Scroll anchor for the stages that replace the form after a submit. The
+  // page is usually scrolled to wherever the form's button was, which left
+  // the new stage's heading cut off above the viewport.
+  const stageCardRef = React.useRef<HTMLDivElement | null>(null);
   const [codeStatus, setCodeStatus] = React.useState<CodeStatus>({ kind: "idle" });
   const [resending, setResending] = React.useState(false);
   const [cooldownUntil, setCooldownUntil] = React.useState<number | null>(null);
@@ -437,6 +444,15 @@ export default function PlanSignupCard({
     [apiBase, buildNextUrl, intent],
   );
 
+  // When the form gives way to the code (or existing-account) stage, bring
+  // the new card fully into view: the submit button the user just clicked
+  // sat lower than the replacement card's heading. scroll-margin on the
+  // wrapper keeps the heading clear of the fixed header.
+  React.useEffect(() => {
+    if (stage.kind !== "code" && stage.kind !== "existing_account") return;
+    stageCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [stage.kind]);
+
   // Auto-submit once 6 digits are present. Errors clear the input, so this
   // cannot loop on the same wrong code.
   React.useEffect(() => {
@@ -653,8 +669,8 @@ export default function PlanSignupCard({
         : codeStatus.kind === "error"
           ? codeStatus.message
           : (codeStatus.kind === "idle" ? codeStatus.info : null) ?? "";
-    const reserveStatusLine = Boolean(statusMessage) || codeFocused || codeValue.length > 0;
     return (
+      <Box ref={stageCardRef} sx={{ width: "100%", scrollMarginTop: 96 }}>
       <AppCard
         sx={(theme) => ({
           width: "100%",
@@ -749,11 +765,9 @@ export default function PlanSignupCard({
                       RSVP: {intent === "going" ? "Going" : "Maybe"}
                     </Box>
                   )}
-                  <Box
-                    onFocus={() => setCodeFocused(true)}
-                    onBlur={() => setCodeFocused(false)}
-                  >
+                  <Box>
                     <CodeDigitsInput
+                      autoFocus
                       value={codeValue}
                       onChange={(digits) => {
                         setCodeValue(digits);
@@ -773,11 +787,14 @@ export default function PlanSignupCard({
                       role="status"
                       aria-live="polite"
                       color={codeStatus.kind === "error" ? "error" : "text.secondary"}
+                      // Always reserved: with the segmented boxes, focus hops
+                      // between inputs while typing, and a conditionally
+                      // reserved line jittered the layout on each hop.
                       sx={{
                         textAlign: "center",
                         lineHeight: "18px",
-                        mt: reserveStatusLine ? 0.5 : 0,
-                        minHeight: reserveStatusLine ? 18 : 0,
+                        mt: 0.5,
+                        minHeight: 18,
                       }}
                     >
                       {statusMessage}
@@ -813,12 +830,14 @@ export default function PlanSignupCard({
           )}
         </Stack>
       </AppCard>
+      </Box>
     );
   }
 
   // ── Stage: existing account ────────────────────────────────────────────
   if (stage.kind === "existing_account") {
     return (
+      <Box ref={stageCardRef} sx={{ width: "100%", scrollMarginTop: 96 }}>
       <AppCard
         sx={(theme) => ({
           width: "100%",
@@ -868,6 +887,7 @@ export default function PlanSignupCard({
           </Button>
         </Stack>
       </AppCard>
+      </Box>
     );
   }
 

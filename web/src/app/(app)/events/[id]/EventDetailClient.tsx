@@ -723,7 +723,10 @@ export default function EventDetailClient({
   // viewer has no RSVP row yet; an existing RSVP always wins.
   const pendingIntentRef = useRef<"going" | "maybe" | null>(null);
   // Post-signup welcome moment; set exactly when the intent auto-applies.
+  // `welcomePrefetch` flips at schedule time so the dialog loads the
+  // viewer's profile during the scroll delay instead of after opening.
   const [welcomeDialog, setWelcomeDialog] = useState<{ intent: "going" | "maybe" } | null>(null);
+  const [welcomePrefetch, setWelcomePrefetch] = useState(false);
   const intentApplyDoneRef = useRef(false);
   // Invitee-funnel event: fired at most once per mount, only for a logged-out
   // arrival that carried a share or invite token in the URL. The magic-link
@@ -876,7 +879,9 @@ export default function EventDetailClient({
     // username. The welcome dialog closes that gap (RSVP confirmation +
     // identity + next steps) with a bit of confetti. Delayed until the
     // smooth scroll above has settled so the confetti isn't half over
-    // while the page is still moving.
+    // while the page is still moving; the profile prefetch starts now so
+    // the identity panel is ready the moment the dialog opens.
+    setWelcomePrefetch(true);
     window.setTimeout(() => setWelcomeDialog({ intent }), 1300);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event, isAuthenticated, viewerUserId, rsvps, viewerPendingIntent]);
@@ -6521,6 +6526,7 @@ export default function EventDetailClient({
         onClose={() => setWelcomeDialog(null)}
         intent={welcomeDialog?.intent ?? "going"}
         planTitle={event.title}
+        prefetch={welcomePrefetch}
       />
 
     </Stack>
