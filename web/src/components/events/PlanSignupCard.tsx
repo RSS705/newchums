@@ -26,6 +26,105 @@ import { trackEvent } from "@/lib/analytics";
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DEFAULT_RESEND_COOLDOWN_SECONDS = 45;
 
+/** Segmented 6-box code input. The value is a plain digit string that fills
+ *  left to right (no holes): typing appends and advances, Backspace removes
+ *  the last digit and steps back, pasting distributes, and focusing any box
+ *  snaps to the first empty one. The parent still owns the value, so the
+ *  existing auto-verify-at-6-digits effect is untouched. */
+function CodeDigitsInput({
+  value,
+  onChange,
+  disabled,
+  error,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  disabled?: boolean;
+  error?: boolean;
+}) {
+  const refs = React.useRef<Array<HTMLInputElement | null>>([]);
+  const activeIndex = Math.min(value.length, 5);
+
+  const appendDigits = (raw: string) => {
+    const digits = raw.replace(/\D/g, "");
+    if (!digits) return;
+    const next = (value + digits).slice(0, 6);
+    onChange(next);
+    refs.current[Math.min(next.length, 5)]?.focus();
+  };
+
+  return (
+    <Stack
+      direction="row"
+      spacing={{ xs: 0.75, sm: 1 }}
+      justifyContent="center"
+      // One group semantically; each box labels itself for screen readers.
+      role="group"
+      aria-label="6-digit code from your email"
+    >
+      {Array.from({ length: 6 }, (_, i) => (
+        <Box
+          key={i}
+          component="input"
+          ref={(el: HTMLInputElement | null) => { refs.current[i] = el; }}
+          value={value[i] ?? ""}
+          disabled={disabled}
+          inputMode="numeric"
+          autoComplete={i === 0 ? "one-time-code" : "off"}
+          aria-label={`Digit ${i + 1} of 6`}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+            // Under fast typing a keystroke can land in a box that already
+            // shows its digit (focus advances asynchronously), so the raw
+            // target value may include the stored digit. Strip that prefix
+            // and append only what is genuinely new (covers single keys,
+            // autofill, and paste runs alike).
+            const raw = e.target.value.replace(/\D/g, "");
+            const current = value[i] ?? "";
+            const fresh = current && raw.startsWith(current) ? raw.slice(current.length) : raw;
+            appendDigits(fresh);
+          }}
+          onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
+            if (e.key === "Backspace") {
+              e.preventDefault();
+              if (value.length === 0) return;
+              const next = value.slice(0, -1);
+              onChange(next);
+              refs.current[Math.min(next.length, 5)]?.focus();
+            }
+          }}
+          onPaste={(e: React.ClipboardEvent<HTMLInputElement>) => {
+            e.preventDefault();
+            appendDigits(e.clipboardData.getData("text"));
+          }}
+          onFocus={() => {
+            // No holes: focus always lands on the first empty box.
+            if (i !== activeIndex) refs.current[activeIndex]?.focus();
+          }}
+          sx={{
+            width: { xs: 38, sm: 46 },
+            height: { xs: 48, sm: 56 },
+            p: 0,
+            textAlign: "center",
+            fontSize: { xs: "1.25rem", sm: "1.5rem" },
+            fontWeight: 700,
+            fontFamily: "inherit",
+            color: "text.primary",
+            bgcolor: "background.paper",
+            border: "2px solid",
+            borderColor: error ? "error.main" : i === activeIndex && !disabled ? "primary.main" : "divider",
+            borderRadius: 2,
+            outline: "none",
+            caretColor: "transparent",
+            transition: "border-color 120ms ease",
+            "&:focus": { borderColor: error ? "error.main" : "primary.main" },
+            "&:disabled": { opacity: 0.6 },
+          }}
+        />
+      ))}
+    </Stack>
+  );
+}
+
 export type SignupIntent = "going" | "maybe";
 
 type Props = {
@@ -634,44 +733,34 @@ export default function PlanSignupCard({
               <Box sx={{ width: "100%", display: "flex", justifyContent: "center" }}>
                 <Stack spacing={CODE_UNIT * 2} sx={{ width: "100%", maxWidth: 320 }}>
                   {intent && (
-                    <Typography variant="body2" color="text.secondary" align="center">
-                      RSVP:{" "}
-                      <Box component="span" sx={{ fontWeight: 700, color: "text.primary" }}>
-                        {intent === "going" ? "Going" : "Maybe"}
-                      </Box>
-                    </Typography>
+                    <Box
+                      sx={{
+                        alignSelf: "center",
+                        px: 1.25,
+                        py: 0.375,
+                        borderRadius: 5,
+                        bgcolor: "primary.light",
+                        color: "primary.dark",
+                        fontSize: "0.8125rem",
+                        fontWeight: 700,
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      RSVP: {intent === "going" ? "Going" : "Maybe"}
+                    </Box>
                   )}
-                  <Box>
-                    <AppTextField
-                      label="6-digit code"
-                      // Label centers with the rest of this stage's column; the
-                      // label-above pattern and its htmlFor wiring are unchanged.
-                      sx={{ "& label": { textAlign: "center" } }}
+                  <Box
+                    onFocus={() => setCodeFocused(true)}
+                    onBlur={() => setCodeFocused(false)}
+                  >
+                    <CodeDigitsInput
                       value={codeValue}
-                      onFocus={() => setCodeFocused(true)}
-                      onBlur={() => setCodeFocused(false)}
-                      onChange={(e) => {
-                        const digits = e.target.value.replace(/\D/g, "").slice(0, 6);
+                      onChange={(digits) => {
                         setCodeValue(digits);
                         if (codeStatus.kind === "error") setCodeStatus({ kind: "idle" });
                       }}
-                      fullWidth
                       disabled={busy}
                       error={codeStatus.kind === "error"}
-                      // null (not undefined) opts out of AppTextField's default
-                      // reserved helper row; this stage reserves its own single
-                      // status line below instead.
-                      helperText={null}
-                      slotProps={{
-                        htmlInput: {
-                          inputMode: "numeric",
-                          pattern: "[0-9]*",
-                          autoComplete: "one-time-code",
-                          maxLength: 6,
-                          style: { letterSpacing: "0.45em", fontSize: "1.5rem", textAlign: "center" },
-                          "aria-label": "6-digit code from your email",
-                        },
-                      }}
                     />
                     {/* Live region is always mounted for screen readers. Its
                         line is reserved as soon as the field is focused or has

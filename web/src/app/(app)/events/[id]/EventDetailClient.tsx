@@ -874,8 +874,10 @@ export default function EventDetailClient({
     // The silent apply used to be the whole story, which left brand-new
     // signups unsure whether joining worked and unaware of their assigned
     // username. The welcome dialog closes that gap (RSVP confirmation +
-    // identity + next steps) with a bit of confetti.
-    setWelcomeDialog({ intent });
+    // identity + next steps) with a bit of confetti. Delayed until the
+    // smooth scroll above has settled so the confetti isn't half over
+    // while the page is still moving.
+    window.setTimeout(() => setWelcomeDialog({ intent }), 1300);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event, isAuthenticated, viewerUserId, rsvps, viewerPendingIntent]);
 

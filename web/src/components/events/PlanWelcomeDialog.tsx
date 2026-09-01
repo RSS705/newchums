@@ -8,6 +8,8 @@ import DialogContent from "@mui/material/DialogContent";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import MuiLink from "@mui/material/Link";
+import useMediaQuery from "@mui/material/useMediaQuery";
+import type { Theme } from "@mui/material/styles";
 import Link from "next/link";
 import { apiFetch } from "@/lib/apiClient";
 import ConfettiBurst from "@/components/ui/ConfettiBurst";
@@ -66,6 +68,9 @@ export default function PlanWelcomeDialog({
   }, [open]);
 
   const cleanTitle = planTitle?.trim();
+  // Below sm the theme renders dialogs as full-screen sheets, so "the list
+  // below" points at nothing the user can see; name the destination instead.
+  const isFullScreenSheet = useMediaQuery((theme: Theme) => theme.breakpoints.down("sm"));
 
   return (
     <>
@@ -104,7 +109,7 @@ export default function PlanWelcomeDialog({
               <Typography variant="body2" sx={{ color: "text.secondary", mt: 0.5, lineHeight: 1.55 }}>
                 You&apos;re marked as {intent === "going" ? "Going" : "Maybe"}
                 {cleanTitle ? ` for "${cleanTitle}"` : " for this plan"}. The host can see you in
-                the Who&apos;s in list below.
+                the plan&apos;s Who&apos;s in list{isFullScreenSheet ? "" : " below"}.
               </Typography>
             </Box>
 
