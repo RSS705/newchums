@@ -43,6 +43,7 @@ import {
   Tooltip as RechartsTooltip,
 } from "recharts";
 import { apiFetch } from "@/lib/apiClient";
+import TapTooltip from "@/components/ui/TapTooltip";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -447,9 +448,9 @@ function LoopMetricCard({
         <Typography variant="body2" fontWeight={700} sx={{ flex: 1 }}>
           {title}
         </Typography>
-        <Tooltip title={definition} arrow placement="top" enterTouchDelay={0}>
+        <TapTooltip title={definition} placement="top">
           <InfoOutlinedIcon sx={{ fontSize: 15, color: "text.disabled", cursor: "help" }} />
-        </Tooltip>
+        </TapTooltip>
       </Stack>
 
       <Stack direction="row" alignItems="baseline" spacing={1} sx={{ mb: 0.5 }}>
@@ -656,16 +657,16 @@ function FunnelTable({ title, subtitle, rows }: { title: string; subtitle: strin
                 <TableCell>
                   <Stack direction="row" alignItems="center" spacing={0.5}>
                     <span>{r.label}</span>
-                    <Tooltip title={r.tooltip} arrow placement="top" enterTouchDelay={0}>
+                    <TapTooltip title={r.tooltip} placement="top">
                       <InfoOutlinedIcon sx={{ fontSize: 14, color: "text.disabled", cursor: "help" }} />
-                    </Tooltip>
+                    </TapTooltip>
                   </Stack>
                 </TableCell>
                 <TableCell align="right">
                   {r.count == null ? (
-                    <Tooltip title="Client-only step. GA is the source for this count; no first-party mirror exists." arrow placement="top" enterTouchDelay={0}>
+                    <TapTooltip title="Client-only step. GA is the source for this count; no first-party mirror exists." placement="top">
                       <Chip label="see GA" size="small" variant="outlined" sx={{ fontSize: "0.6875rem", height: 20 }} />
-                    </Tooltip>
+                    </TapTooltip>
                   ) : (
                     <>
                       <Typography component="span" variant="body2" fontWeight={700}>

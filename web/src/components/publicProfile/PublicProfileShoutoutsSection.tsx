@@ -5,13 +5,12 @@ import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
 import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
-import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import FormatQuoteRoundedIcon from "@mui/icons-material/FormatQuoteRounded";
 import Link from "next/link";
-import { AppCard, useToast } from "@/components/ui";
+import { AppCard, useToast, TapTooltip } from "@/components/ui";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import ProfileSectionHeader from "./ProfileSectionHeader";
 
@@ -345,12 +344,7 @@ export default function PublicProfileShoutoutsSection({
                 </Stack>
 
                 {isOwner && (
-                  <Tooltip
-                    title={cardHidden ? "Show this shout-out" : "Hide this shout-out"}
-                    arrow
-                    placement="top"
-                    enterTouchDelay={0}
-                  >
+                  <TapTooltip title={cardHidden ? "Show this shout-out" : "Hide this shout-out"} placement="top">
                     {/* The absolute positioning lives on the span wrapper
                         (not the IconButton) so the Tooltip's anchor and the
                         visible button are the same box; positioning the
@@ -385,7 +379,7 @@ export default function PublicProfileShoutoutsSection({
                         )}
                       </IconButton>
                     </Box>
-                  </Tooltip>
+                  </TapTooltip>
                 )}
               </Box>
             );

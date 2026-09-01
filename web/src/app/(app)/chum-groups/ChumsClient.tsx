@@ -29,7 +29,7 @@ import AddCircleRoundedIcon from "@mui/icons-material/AddCircleRounded";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import { notifyObjectivesChanged } from "@/components/objectives/NextStepNudge";
-import { AppCard, EmptyState, useToast } from "@/components/ui";
+import { AppCard, EmptyState, useToast, TapTooltip } from "@/components/ui";
 import UserAvatar from "@/components/common/UserAvatar";
 import { createEventHref } from "@/config/nav";
 
@@ -364,9 +364,9 @@ function PrivateContactRow({
                 {contact.email}
               </Typography>
             )}
-            <Tooltip title="Only visible to you. Not on NewChums yet." placement="top" arrow enterTouchDelay={0}>
+            <TapTooltip title="Only visible to you. Not on NewChums yet." placement="top">
               <Chip label="Private" size="small" variant="outlined" sx={{ fontSize: "0.6875rem", height: 20, fontWeight: 500, color: "text.secondary", borderColor: "divider", cursor: "help" }} />
-            </Tooltip>
+            </TapTooltip>
           </Stack>
         </Box>
 

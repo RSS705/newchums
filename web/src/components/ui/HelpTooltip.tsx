@@ -1,8 +1,10 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
+import ClickAwayListener from "@mui/material/ClickAwayListener";
 import IconButton from "@mui/material/IconButton";
 import Tooltip from "@mui/material/Tooltip";
+import useMediaQuery from "@mui/material/useMediaQuery";
 import type { SxProps, Theme } from "@mui/material/styles";
 import HelpOutlineRoundedIcon from "@mui/icons-material/HelpOutlineRounded";
 
@@ -10,10 +12,15 @@ import HelpOutlineRoundedIcon from "@mui/icons-material/HelpOutlineRounded";
  *
  *  Behaviour:
  *    - Desktop hover opens / leaving closes (MUI default).
- *    - Clicking the icon **toggles** the tooltip, so a re-click on an
- *      already-open tip closes it instead of leaving it stuck on. Clicks
- *      originating from touch (tap-to-open on mobile) are ignored so the
- *      tap doesn't immediately close the tooltip it just opened.
+ *    - Clicking or tapping the icon **toggles** the tooltip. On touch this
+ *      is the ONLY way it opens: the theme disables MUI's touch listener
+ *      globally because a touch-opened tooltip also fires on the touch
+ *      that starts a scroll, which sprayed tooltips while scrolling on
+ *      phones. A tap lands here as a synthetic click, so deliberate
+ *      presses still work.
+ *    - Tapping anywhere else closes an open tooltip (ClickAwayListener),
+ *      since touch never delivers the mouse-leave that closes it on
+ *      desktop.
  *
  *  Kept as a single source of truth so "?" tooltips behave the same
  *  wherever they appear (plan form, settings, etc.).
@@ -30,40 +37,39 @@ export default function HelpTooltip({
   ariaLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
-  // Records the pointer type of the most recent press so the click handler
-  // can distinguish a real mouse click from the synthetic click that fires
-  // after a touch tap. Without this, the tap that opens the tooltip would
-  // immediately close it again on mobile.
-  const lastPointerType = useRef<"mouse" | "pen" | "touch" | null>(null);
+  // Touch-primary devices: the tap that opens the tooltip is followed by a
+  // synthetic mouseleave that would immediately fire onClose. Hover
+  // listeners are disabled there; tap toggles and tap-away closes.
+  const touchPrimary = useMediaQuery("(hover: none)");
 
   return (
-    <Tooltip
-      title={title}
-      arrow
-      placement="top"
-      enterTouchDelay={0}
-      open={open}
-      onOpen={() => setOpen(true)}
-      onClose={() => setOpen(false)}
-    >
-      <IconButton
-        size="small"
-        aria-label={ariaLabel}
-        onPointerDown={(e) => {
-          lastPointerType.current = (e.pointerType as typeof lastPointerType.current) ?? "mouse";
-        }}
-        onClick={(e) => {
-          if (lastPointerType.current === "touch") {
-            lastPointerType.current = null;
-            return;
-          }
-          e.stopPropagation();
-          setOpen((prev) => !prev);
-        }}
-        sx={{ p: 0.25, color: "text.disabled", ...sx }}
-      >
-        <HelpOutlineRoundedIcon sx={{ fontSize: iconSize }} />
-      </IconButton>
-    </Tooltip>
+    <ClickAwayListener onClickAway={() => setOpen(false)}>
+      {/* inline-flex span hugs the IconButton exactly, so layouts that
+          size around HelpTooltip (e.g. the bell row) keep their metrics;
+          it exists to give ClickAwayListener a stable DOM node. */}
+      <span style={{ display: "inline-flex" }}>
+        <Tooltip
+          title={title}
+          arrow
+          placement="top"
+          open={open}
+          onOpen={() => setOpen(true)}
+          onClose={() => setOpen(false)}
+          disableHoverListener={touchPrimary}
+        >
+          <IconButton
+            size="small"
+            aria-label={ariaLabel}
+            onClick={(e) => {
+              e.stopPropagation();
+              setOpen((prev) => !prev);
+            }}
+            sx={{ p: 0.25, color: "text.disabled", ...sx }}
+          >
+            <HelpOutlineRoundedIcon sx={{ fontSize: iconSize }} />
+          </IconButton>
+        </Tooltip>
+      </span>
+    </ClickAwayListener>
   );
 }

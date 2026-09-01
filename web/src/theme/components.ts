@@ -456,12 +456,13 @@ export function getComponents(theme: Theme): Theme["components"] {
     },
     MuiTooltip: {
       defaultProps: {
-        // Touch users tap a help icon expecting to read the tooltip — MUI's
-        // 1500ms default closes it almost immediately on mobile. Hold it
-        // visible for 8s after the tap so the copy is actually readable.
-        // (Per-instance enterTouchDelay/leaveTouchDelay still override this.)
-        leaveTouchDelay: 8000,
-        enterTouchDelay: 0,
+        // Touch never opens tooltips implicitly: the previous
+        // enterTouchDelay: 0 meant the touchstart that BEGINS a scroll
+        // opened whatever tooltip it landed on (and leaveTouchDelay: 8000
+        // pinned it there for 8 seconds), so scrolling on a phone popped
+        // tooltips all over the page. Desktop hover is unaffected, and
+        // HelpTooltip provides the deliberate tap-to-open path on touch.
+        disableTouchListener: true,
       },
       styleOverrides: {
         tooltip: {

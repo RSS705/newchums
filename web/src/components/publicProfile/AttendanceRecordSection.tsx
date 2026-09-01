@@ -3,7 +3,6 @@
 import Box from "@mui/material/Box";
 import Skeleton from "@mui/material/Skeleton";
 import Stack from "@mui/material/Stack";
-import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import Chip from "@mui/material/Chip";
 import EventAvailableRoundedIcon from "@mui/icons-material/EventAvailableRounded";
@@ -15,7 +14,7 @@ import ThumbUpAltRoundedIcon from "@mui/icons-material/ThumbUpAltRounded";
 import StarRoundedIcon from "@mui/icons-material/StarRounded";
 import EmojiEventsRoundedIcon from "@mui/icons-material/EmojiEventsRounded";
 import { useEffect, useState } from "react";
-import { AppCard } from "@/components/ui";
+import { AppCard, TapTooltip } from "@/components/ui";
 import { apiFetch } from "@/lib/apiClient";
 
 type RatioMetric = { numerator: number; denominator: number };
@@ -147,9 +146,9 @@ function MetricCard({ icon, label, value, ratio, tooltipTitle }: MetricCardProps
 
   if (tooltipTitle) {
     return (
-      <Tooltip title={tooltipTitle} arrow placement="top" enterTouchDelay={0}>
+      <TapTooltip title={tooltipTitle} placement="top">
         {card}
-      </Tooltip>
+      </TapTooltip>
     );
   }
   return card;
@@ -175,7 +174,7 @@ function BadgePill({ badge }: { badge: BadgeEntry }) {
   const tooltip = `${pctLabel} for ${activityLabel} plans in your area, based on the last 12 months of activity.`;
 
   return (
-    <Tooltip title={tooltip} arrow placement="top" enterTouchDelay={0}>
+    <TapTooltip title={tooltip} placement="top">
       <Chip
         icon={<EmojiEventsRoundedIcon sx={{ fontSize: 16, color: `${tier.icon} !important` }} />}
         label={`${tierLabel} ${typeLabel}`}
@@ -192,7 +191,7 @@ function BadgePill({ badge }: { badge: BadgeEntry }) {
           "& .MuiChip-label": { px: 1 },
         }}
       />
-    </Tooltip>
+    </TapTooltip>
   );
 }
 

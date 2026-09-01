@@ -76,7 +76,7 @@ import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import UserAvatar from "@/components/common/UserAvatar";
-import { AppButton, AppCard, HelpTooltip, useToast } from "@/components/ui";
+import { AppButton, AppCard, HelpTooltip, useToast, TapTooltip } from "@/components/ui";
 import RichTextContent from "@/components/ui/RichTextContent";
 import {
   apiFetch,
@@ -5346,7 +5346,7 @@ export default function EventDetailClient({
                   >
                     {r.status === "going" && event.requireReconfirmation && (event.confirmationWindowOpen || event.confirmationsIssued) && r.confirmationStatus === "confirmed" ? (
                       /* Merged badge: Going + Confirmed */
-                      <Tooltip title="This person confirmed they are still coming via the 24-hour attendance check" arrow placement="top" enterTouchDelay={0}>
+                      <TapTooltip title="This person confirmed they are still coming via the 24-hour attendance check" placement="top">
                         <Chip
                           icon={<CheckCircleRoundedIcon sx={{ fontSize: "1rem !important" }} />}
                           label="Going & Confirmed"
@@ -5360,10 +5360,10 @@ export default function EventDetailClient({
                             background: (theme) => `linear-gradient(135deg, ${theme.palette.success.main} 0%, ${theme.palette.success.dark} 100%)`,
                           }}
                         />
-                      </Tooltip>
+                      </TapTooltip>
                     ) : r.status === "going" && event.requireReconfirmation && event.confirmationsIssued && !event.confirmationWindowOpen && (r.confirmationStatus === "expired" || r.confirmationStatus === "pending" || r.confirmationStatus == null) ? (
                       /* After the confirmation cycle finished (window closed or plan canceled): show explicit "didn't confirm" for Going attendees who never responded, so the reason for a min_attendees_not_met cancellation is visible. */
-                      <Tooltip title="This person said they were going but didn't respond to the 24-hour attendance check in time" arrow placement="top" enterTouchDelay={0}>
+                      <TapTooltip title="This person said they were going but didn't respond to the 24-hour attendance check in time" placement="top">
                         <Chip
                           icon={<InfoOutlinedIcon sx={{ fontSize: "1rem !important" }} />}
                           label="Going - Didn't confirm"
@@ -5376,10 +5376,10 @@ export default function EventDetailClient({
                             "& .MuiChip-icon": { color: "inherit", opacity: 0.85 },
                           }}
                         />
-                      </Tooltip>
+                      </TapTooltip>
                     ) : r.status === "going" && event.confirmationWindowOpen && r.confirmationStatus !== "confirmed" && r.confirmationStatus !== "declined" ? (
                       /* Merged badge: Going + Pending/no confirmation during the open window */
-                      <Tooltip title="This person said they're going but hasn't responded to the 24-hour attendance check yet" arrow placement="top" enterTouchDelay={0}>
+                      <TapTooltip title="This person said they're going but hasn't responded to the 24-hour attendance check yet" placement="top">
                         <Chip
                           icon={<AccessTimeRoundedIcon sx={{ fontSize: "1rem !important" }} />}
                           label="Going - Unconfirmed"
@@ -5392,7 +5392,7 @@ export default function EventDetailClient({
                             "& .MuiChip-icon": { color: "inherit", opacity: 0.85 },
                           }}
                         />
-                      </Tooltip>
+                      </TapTooltip>
                     ) : r.status === "going" ? (
                       <Chip
                         icon={<CheckCircleRoundedIcon sx={{ fontSize: "1rem !important" }} />}
