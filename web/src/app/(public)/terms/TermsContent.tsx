@@ -9,7 +9,7 @@ export default function TermsContent() {
     <LegalPageContent
       title="Terms of Use"
       effectiveDateLine="Effective Date: April 1, 2026"
-      lastUpdatedLine="Last Updated: April 1, 2026"
+      lastUpdatedLine="Last Updated: September 1, 2026"
       intro={
         <>
           These Terms of Use (&ldquo;Terms&rdquo;) govern your use of the NewChums website, apps,
@@ -419,9 +419,9 @@ export default function TermsContent() {
                 <br />
                 OurModule
                 <br />
-                PO BOX 1875
+                107-1025 King St E, #3175
                 <br />
-                LONDON ON N6H 1V0
+                Cambridge, ON N3H 3P5
               </Typography>
             </>
           ),

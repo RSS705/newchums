@@ -1,7 +1,7 @@
 # Privacy Policy
 
 **Effective Date:** April 1, 2026  
-**Last Updated:** August 7, 2026
+**Last Updated:** September 1, 2026
 
 NewChums is operated by **OurModule** (“NewChums,” “we,” “us,” or “our”).
 
@@ -13,8 +13,8 @@ If you have questions about this Privacy Policy or our privacy practices, you ca
 
 **Mailing Address:**  
 OurModule  
-PO BOX 1875  
-LONDON ON N6H 1V0
+107-1025 King St E, #3175  
+Cambridge, ON N3H 3P5
 
 ## 1. Who Can Use NewChums
 
@@ -199,5 +199,5 @@ If you have questions, requests, or concerns about this Privacy Policy or our pr
 
 **Mailing Address:**  
 OurModule  
-PO BOX 1875  
-LONDON ON N6H 1V0
+107-1025 King St E, #3175  
+Cambridge, ON N3H 3P5

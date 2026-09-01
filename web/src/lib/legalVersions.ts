@@ -7,5 +7,5 @@
  * exist for the paths the web worker records directly (first sign-in through
  * an OAuth provider) and for the legacy catch-up interstitial.
  */
-export const CURRENT_TERMS_VERSION = "2026-03-17";
-export const CURRENT_PRIVACY_VERSION = "2026-08-07";
+export const CURRENT_TERMS_VERSION = "2026-09-01";
+export const CURRENT_PRIVACY_VERSION = "2026-09-01";

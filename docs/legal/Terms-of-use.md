@@ -1,7 +1,7 @@
 # Terms of Use
 
 **Effective Date:** April 1, 2026  
-**Last Updated:** April 1, 2026
+**Last Updated:** September 1, 2026
 
 These Terms of Use (“Terms”) govern your use of the NewChums website, apps, features, and related services (collectively, the “Service”).
 
@@ -205,5 +205,5 @@ Questions about these Terms may be sent to:
 
 **Mailing Address:**  
 OurModule  
-PO BOX 1875  
-LONDON ON N6H 1V0
+107-1025 King St E, #3175  
+Cambridge, ON N3H 3P5
