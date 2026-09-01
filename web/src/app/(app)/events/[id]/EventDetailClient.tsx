@@ -93,6 +93,7 @@ import { notifyObjectivesChanged } from "@/components/objectives/NextStepNudge";
 import PlanWrapUp from "@/components/events/PlanWrapUp";
 import PlanSignupCard from "@/components/events/PlanSignupCard";
 import ChatEmojiPicker, { EmojiPickerPopover } from "@/components/events/ChatEmojiPicker";
+import PlanWelcomeDialog from "@/components/events/PlanWelcomeDialog";
 import AdminPlanPanel, { type PlanAdminView } from "@/components/admin/AdminPlanPanel";
 import AvailabilityPicker, {
   type AvailabilitySelection,
@@ -721,6 +722,8 @@ export default function EventDetailClient({
   // round trip. Applied by the guarded effect below, and only when the
   // viewer has no RSVP row yet; an existing RSVP always wins.
   const pendingIntentRef = useRef<"going" | "maybe" | null>(null);
+  // Post-signup welcome moment; set exactly when the intent auto-applies.
+  const [welcomeDialog, setWelcomeDialog] = useState<{ intent: "going" | "maybe" } | null>(null);
   const intentApplyDoneRef = useRef(false);
   // Invitee-funnel event: fired at most once per mount, only for a logged-out
   // arrival that carried a share or invite token in the URL. The magic-link
@@ -868,6 +871,11 @@ export default function EventDetailClient({
     if (hasExistingRsvp) return;
     handleRsvp(intent, { silent: true });
     scrollSectionIntoView("plan-section-confirmation");
+    // The silent apply used to be the whole story, which left brand-new
+    // signups unsure whether joining worked and unaware of their assigned
+    // username. The welcome dialog closes that gap (RSVP confirmation +
+    // identity + next steps) with a bit of confetti.
+    setWelcomeDialog({ intent });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event, isAuthenticated, viewerUserId, rsvps, viewerPendingIntent]);
 
@@ -5266,24 +5274,45 @@ export default function EventDetailClient({
                   <Box sx={{ flex: 1, minWidth: 0 }}>
                     {r.handle ? (
                       <Box sx={{ minWidth: 0 }}>
-                        <Typography
-                          component={Link}
-                          href={`/u/${r.handle.replace(/^@/, "")}`}
-                          variant="body1"
-                          fontWeight={600}
-                          sx={{
-                            fontSize: "1rem",
-                            color: "text.primary",
-                            textDecoration: "none",
-                            display: "block",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                            "&:hover": { textDecoration: "underline" },
-                          }}
-                        >
-                          {r.handle}
-                        </Typography>
+                        <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
+                          <Typography
+                            component={Link}
+                            href={`/u/${r.handle.replace(/^@/, "")}`}
+                            variant="body1"
+                            fontWeight={600}
+                            sx={{
+                              fontSize: "1rem",
+                              color: "text.primary",
+                              textDecoration: "none",
+                              display: "block",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                              minWidth: 0,
+                              "&:hover": { textDecoration: "underline" },
+                            }}
+                          >
+                            {r.handle}
+                          </Typography>
+                          {/* Self marker: brand-new signups get an assigned
+                              username they may not recognize, so their own
+                              row says so explicitly. */}
+                          {viewerUserId === r.userId && (
+                            <Chip
+                              label="You"
+                              size="small"
+                              sx={{
+                                height: 18,
+                                fontSize: "0.625rem",
+                                fontWeight: 700,
+                                bgcolor: "primary.light",
+                                color: "primary.dark",
+                                flexShrink: 0,
+                                "& .MuiChip-label": { px: 0.75 },
+                              }}
+                            />
+                          )}
+                        </Stack>
                         {r.name && r.name !== r.handle.replace(/^@/, "") && (
                           <Typography
                             variant="caption"
@@ -5315,6 +5344,21 @@ export default function EventDetailClient({
                           >
                             {r.name}
                           </Typography>
+                          {viewerUserId === r.userId && (
+                            <Chip
+                              label="You"
+                              size="small"
+                              sx={{
+                                height: 18,
+                                fontSize: "0.625rem",
+                                fontWeight: 700,
+                                bgcolor: "primary.light",
+                                color: "primary.dark",
+                                flexShrink: 0,
+                                "& .MuiChip-label": { px: 0.75 },
+                              }}
+                            />
+                          )}
                         </Stack>
                       </Box>
                     )}
@@ -6466,6 +6510,16 @@ export default function EventDetailClient({
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Post-signup welcome: confirms the auto-applied RSVP, names the
+          assigned username, offers profile / password next steps. Lives at
+          the root so it renders regardless of which plan sections do. */}
+      <PlanWelcomeDialog
+        open={!!welcomeDialog}
+        onClose={() => setWelcomeDialog(null)}
+        intent={welcomeDialog?.intent ?? "going"}
+        planTitle={event.title}
+      />
 
     </Stack>
   );
