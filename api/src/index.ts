@@ -12210,9 +12210,13 @@ app.post("/events", async (c) => {
     ? Math.max(1, Math.min(500, Math.floor(Number(body.min_confirmed_attendees))))
     : null;
   const VALID_FALLBACK_POLICIES = ["proceed", "notify_host", "auto_cancel"] as const;
+  // Default matches the form's default ("proceed": no email, no action) so a
+  // plan created with the attendance check off never carries a stale
+  // "notify_host" that later shows up as a phantom change when the check is
+  // switched on.
   const fallbackPolicy = requireReconfirmation && typeof body.fallback_policy === "string" && VALID_FALLBACK_POLICIES.includes(body.fallback_policy as typeof VALID_FALLBACK_POLICIES[number])
     ? body.fallback_policy as string
-    : "notify_host";
+    : "proceed";
 
   // Optional RSVP-based minimum, independent of the 24-hour attendance check.
   // If fewer than this many people are "going" 2 hours before start, the
@@ -15131,7 +15135,7 @@ app.patch("/events/:id", async (c) => {
     const PATCH_VALID_FALLBACKS = ["proceed", "notify_host", "auto_cancel"] as const;
     const patchFallbackPolicy = patchRequireReconfirmation && typeof body.fallback_policy === "string" && PATCH_VALID_FALLBACKS.includes(body.fallback_policy as typeof PATCH_VALID_FALLBACKS[number])
       ? body.fallback_policy as string
-      : "notify_host";
+      : "proceed";
 
     // Optional RSVP-based minimum attendees, independent of the 24-hour
     // attendance check. Validated against the effective max_seats so the
@@ -15302,7 +15306,12 @@ app.patch("/events/:id", async (c) => {
         newValue: patchMinConfirmed != null ? `${patchMinConfirmed} attendees` : "No minimum",
       });
 
-    if (patchRequireReconfirmation && (before.fallback_policy ?? "notify_host") !== patchFallbackPolicy)
+    // Only a change to a policy that was already in effect is worth telling
+    // attendees about. When this edit is what turns the attendance check on,
+    // the stored policy was dormant (possibly a legacy "notify_host" written
+    // while the check was off), so reporting old -> new would be a phantom
+    // change in the update email; "Final confirmation: Enabled" covers it.
+    if (before.require_reconfirmation && patchRequireReconfirmation && (before.fallback_policy ?? "proceed") !== patchFallbackPolicy)
       changes.push({
         fieldName: "If minimum not met",
         oldValue: FALLBACK_LABEL[before.fallback_policy ?? "proceed"] ?? before.fallback_policy ?? "Do the plan anyway",
