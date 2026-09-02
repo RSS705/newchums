@@ -58,14 +58,13 @@ import { pickerFieldTabKeyDown } from "@/components/fields/pickerTabNav";
 // Visual top-to-bottom order of validation-bearing fields. Drives the
 // scroll-to-first-error helper so the user always lands on the earliest
 // problem they need to fix rather than a later one.
-const FIELD_ORDER = ["title", "date", "time", "location", "maxSeats", "minAttendeesRequired"] as const;
+const FIELD_ORDER = ["title", "date", "time", "location", "maxSeats"] as const;
 
 // Which collapsed section each validation-bearing field lives in, so a failed
 // submit can force that section open before scrolling to the error. Tier-one
 // fields are always visible and need no entry. `availability_deadline_at` is
 // the server's field name for the deadline inside Alternate times.
 const SECTION_OF_FIELD: Record<string, string> = {
-  minAttendeesRequired: "extras",
   availability_deadline_at: "altTimes",
 };
 
@@ -176,13 +175,11 @@ export default function CreateEventClient() {
   const [muteHostAttendanceEmails, setMuteHostAttendanceEmails] = useState(false);
   const [requireApproval, setRequireApproval] = useState(false);
   const [minConfirmedAttendees, setMinConfirmedAttendees] = useState("");
+  // "proceed" is the default: a missed minimum does nothing unless the host
+  // explicitly asks to be notified or for the plan to cancel itself.
   const [fallbackPolicy, setFallbackPolicy] = useState<"notify_host" | "proceed" | "auto_cancel">(
-    "notify_host"
+    "proceed"
   );
-  // Optional RSVP-based threshold. If set, the cron auto-cancels the plan 2
-  // hours before start when fewer than this many people are "going" (host
-  // counts toward the total, matching the rest of the product).
-  const [minAttendeesRequired, setMinAttendeesRequired] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -312,9 +309,6 @@ export default function CreateEventClient() {
       setSelectedHobbies(hobbyList);
       setMaxSeats(ev.maxSeats != null ? String(ev.maxSeats) : "");
       setReserveSeats(ev.reserveSeats === true);
-      setMinAttendeesRequired(
-        ev.minAttendeesRequired != null ? String(ev.minAttendeesRequired) : ""
-      );
 
       // Same time of day, next future occurrence of the source plan's
       // weekday, so a weekly re-run lands on the natural next slot.
@@ -355,7 +349,7 @@ export default function CreateEventClient() {
       setMinConfirmedAttendees(
         ev.minConfirmedAttendees != null ? String(ev.minConfirmedAttendees) : ""
       );
-      setFallbackPolicy(ev.fallbackPolicy ?? "notify_host");
+      setFallbackPolicy(ev.fallbackPolicy ?? "proceed");
 
       // Community linkage carries over only where the viewer is still a
       // member; hide_from_explore without a surviving linkage would hide the
@@ -569,14 +563,6 @@ export default function CreateEventClient() {
     }
     if (maxSeats && (isNaN(Number(maxSeats)) || Number(maxSeats) < 1))
       errs.maxSeats = "Must be a positive number";
-    if (minAttendeesRequired) {
-      const n = Number(minAttendeesRequired);
-      if (isNaN(n) || n < 1) {
-        errs.minAttendeesRequired = "Must be at least 1";
-      } else if (maxSeats && n > Number(maxSeats)) {
-        errs.minAttendeesRequired = "Can't be more than the seat count";
-      }
-    }
     setErrors(errs);
     return errs;
   };
@@ -652,8 +638,10 @@ export default function CreateEventClient() {
       require_approval: requireApproval,
       min_confirmed_attendees:
         requireReconfirmation && minConfirmedAttendees ? Number(minConfirmedAttendees) : null,
-      fallback_policy: requireReconfirmation ? fallbackPolicy : "notify_host",
-      min_attendees_required: minAttendeesRequired ? Number(minAttendeesRequired) : null,
+      fallback_policy: requireReconfirmation ? fallbackPolicy : "proceed",
+      // The RSVP-count auto-cancel threshold is no longer offered in the form
+      // (2026-09-02): the confirmation-based fallback covers auto-cancel.
+      min_attendees_required: null,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       status: "published",
       copied_from: copySourceId,
@@ -1338,10 +1326,6 @@ export default function CreateEventClient() {
         onChangePreventAttendeeInvites={setPreventAttendeeInvites}
         muteHostAttendanceEmails={muteHostAttendanceEmails}
         onChangeMuteHostAttendanceEmails={setMuteHostAttendanceEmails}
-        minAttendeesRequired={minAttendeesRequired}
-        onChangeMinAttendeesRequired={setMinAttendeesRequired}
-        minAttendeesError={errors.minAttendeesRequired}
-        registerMinAttendeesField={setFieldRef("minAttendeesRequired")}
       />
 
       {/* Community association. Hidden entirely when visibility=invite_only,

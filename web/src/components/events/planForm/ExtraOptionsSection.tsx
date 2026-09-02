@@ -43,15 +43,6 @@ type Props = {
   muteHostAttendanceEmails: boolean;
   onChangeMuteHostAttendanceEmails: (value: boolean) => void;
 
-  /** Optional RSVP-based auto-cancel threshold. Lives here (rather than with
-   *  the seat count) because it is an optional host control with a safe
-   *  default, which is the definition of this section in the two-tier form. */
-  minAttendeesRequired: string;
-  onChangeMinAttendeesRequired: (value: string) => void;
-  minAttendeesError?: string;
-  /** Registers the threshold field for the scroll-to-first-error helper. */
-  registerMinAttendeesField?: (el: HTMLElement | null) => void;
-
   /** Edit-only toggle. Omit on the Add Plan form so the row does not render. */
   notifyAttendees?: {
     value: boolean;
@@ -120,10 +111,6 @@ export default function ExtraOptionsSection({
   onChangePreventAttendeeInvites,
   muteHostAttendanceEmails,
   onChangeMuteHostAttendanceEmails,
-  minAttendeesRequired,
-  onChangeMinAttendeesRequired,
-  minAttendeesError,
-  registerMinAttendeesField,
   notifyAttendees,
 }: Props) {
   const showMinDetails =
@@ -139,8 +126,6 @@ export default function ExtraOptionsSection({
   if (requireApproval) summaryParts.push("approval to join");
   if (preventAttendeeInvites) summaryParts.push("host-only invites");
   if (muteHostAttendanceEmails) summaryParts.push("attendance emails muted");
-  if (minAttendeesRequired.trim())
-    summaryParts.push(`auto-cancel under ${minAttendeesRequired.trim()}`);
   const summary = summaryParts.join(" + ");
 
   return (
@@ -205,42 +190,24 @@ export default function ExtraOptionsSection({
                   value={fallbackPolicy}
                   onChange={(e) => onChangeFallbackPolicy(e.target.value as FallbackPolicy)}
                 >
+                  {/* "proceed" is the default and does exactly nothing: no
+                      email, no cancellation. Hosts kept reading the old
+                      "Proceed unless I cancel" as a nag they had to answer. */}
+                  <MenuItem value="proceed">We&apos;ll do the plan anyway</MenuItem>
                   <MenuItem value="notify_host">Notify me so I can decide</MenuItem>
-                  <MenuItem value="proceed">Proceed unless I cancel</MenuItem>
-                  <MenuItem value="auto_cancel">Auto-cancel the plan</MenuItem>
+                  <MenuItem value="auto_cancel">Cancel the plan</MenuItem>
                 </Select>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ mt: 0.5, display: "block" }}
+                >
+                  Checked 2 hours before the start, based on who has confirmed.
+                </Typography>
               </Box>
             )}
           </Stack>
         )}
-
-        <Box
-          ref={registerMinAttendeesField}
-          sx={{ width: { xs: "100%", sm: "auto" }, scrollMarginTop: 96 }}
-        >
-          <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.625 }}>
-            Auto-cancel if not enough people are going (optional)
-          </Typography>
-          <TextField
-            fullWidth
-            size="small"
-            type="number"
-            placeholder="e.g. 4"
-            value={minAttendeesRequired}
-            onChange={(e) => onChangeMinAttendeesRequired(e.target.value)}
-            error={!!minAttendeesError}
-            helperText={
-              minAttendeesError ??
-              "If fewer than this many people are marked Going 2 hours before the start, NewChums cancels the plan and lets everyone know."
-            }
-            inputProps={{
-              min: 1,
-              max: 500,
-              onWheel: (e: WheelEvent<HTMLInputElement>) => e.currentTarget.blur(),
-            }}
-            sx={{ minWidth: { xs: "100%", sm: 320 } }}
-          />
-        </Box>
 
         <TooltipToggleRow
           checked={muteHostAttendanceEmails}

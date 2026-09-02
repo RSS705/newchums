@@ -55,13 +55,12 @@ import {
 // Visual top-to-bottom order of validation-bearing fields. Drives the
 // scroll-to-first-error helper so the user always lands on the earliest
 // problem they need to fix rather than a later one.
-const FIELD_ORDER = ["title", "date", "time", "location", "maxSeats", "minAttendeesRequired"] as const;
+const FIELD_ORDER = ["title", "date", "time", "location", "maxSeats"] as const;
 
 // Which collapsed section each validation-bearing field lives in, so a failed
 // submit can force that section open before scrolling to the error. Mirrors
 // the Add Plan form; see AGENTS.md -> Add Plan / Edit Plan Parity Rule.
 const SECTION_OF_FIELD: Record<string, string> = {
-  minAttendeesRequired: "extras",
   availability_deadline_at: "altTimes",
 };
 
@@ -96,10 +95,12 @@ export default function EditEventClient() {
   const [muteHostAttendanceEmails, setMuteHostAttendanceEmails] = useState(false);
   const [requireApproval, setRequireApproval] = useState(false);
   const [minConfirmed, setMinConfirmed] = useState("");
-  const [fallbackPolicy, setFallbackPolicy] = useState<"notify_host" | "proceed" | "auto_cancel">("notify_host");
-  // Optional RSVP-based threshold; mirrors the Add Plan form. See AGENTS.md
-  // -> Add Plan / Edit Plan Parity Rule.
-  const [minAttendeesRequired, setMinAttendeesRequired] = useState("");
+  const [fallbackPolicy, setFallbackPolicy] = useState<"notify_host" | "proceed" | "auto_cancel">("proceed");
+  // Legacy RSVP-count auto-cancel threshold. No longer offered in either form
+  // (2026-09-02), but plans that set it before then keep it: the loaded value
+  // is passed straight back on save, so an unrelated edit never clears it or
+  // surfaces as a change in the attendee update email.
+  const [legacyMinAttendeesRequired, setLegacyMinAttendeesRequired] = useState<number | null>(null);
 
   const [hobbies, setHobbies] = useState<HobbyOption[]>([]);
 
@@ -269,8 +270,8 @@ export default function EditEventClient() {
         }
         setReserveSeats(ev.reserveSeats === true);
         setMinConfirmed(ev.minConfirmedAttendees != null ? String(ev.minConfirmedAttendees) : "");
-        setFallbackPolicy(ev.fallbackPolicy ?? "notify_host");
-        setMinAttendeesRequired(ev.minAttendeesRequired != null ? String(ev.minAttendeesRequired) : "");
+        setFallbackPolicy(ev.fallbackPolicy ?? "proceed");
+        setLegacyMinAttendeesRequired(ev.minAttendeesRequired != null ? Number(ev.minAttendeesRequired) : null);
 
         // Location
         setLocationType(ev.locationType === "online" ? "online" : "in_person");
@@ -433,14 +434,6 @@ export default function EditEventClient() {
         errs.location = "Please pick a location from the suggestions";
       }
     }
-    if (minAttendeesRequired) {
-      const n = Number(minAttendeesRequired);
-      if (isNaN(n) || n < 1) {
-        errs.minAttendeesRequired = "Must be at least 1";
-      } else if (maxSeats && n > Number(maxSeats)) {
-        errs.minAttendeesRequired = "Can't be more than the seat count";
-      }
-    }
     setErrors(errs);
     return errs;
   };
@@ -497,8 +490,13 @@ export default function EditEventClient() {
             ? deadlineDate.hour(deadlineTime.hour()).minute(deadlineTime.minute()).second(0).toISOString()
             : null,
           min_confirmed_attendees: requireReconfirmation && minConfirmed ? Number(minConfirmed) : null,
-          fallback_policy: requireReconfirmation ? fallbackPolicy : "notify_host",
-          min_attendees_required: minAttendeesRequired ? Number(minAttendeesRequired) : null,
+          fallback_policy: requireReconfirmation ? fallbackPolicy : "proceed",
+          // Legacy passthrough; dropped only if it would now exceed the seat
+          // count, which the API rejects.
+          min_attendees_required:
+            legacyMinAttendeesRequired != null && (!maxSeats || legacyMinAttendeesRequired <= Number(maxSeats))
+              ? legacyMinAttendeesRequired
+              : null,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           // Only send community linkage fields when they actually changed.
           // That way an unrelated edit (title, date, etc.) by a host who has
@@ -1177,10 +1175,6 @@ export default function EditEventClient() {
         onChangePreventAttendeeInvites={setPreventAttendeeInvites}
         muteHostAttendanceEmails={muteHostAttendanceEmails}
         onChangeMuteHostAttendanceEmails={setMuteHostAttendanceEmails}
-        minAttendeesRequired={minAttendeesRequired}
-        onChangeMinAttendeesRequired={setMinAttendeesRequired}
-        minAttendeesError={errors.minAttendeesRequired}
-        registerMinAttendeesField={setFieldRef("minAttendeesRequired")}
         notifyAttendees={{ value: notifyAttendees, onChange: setNotifyAttendees }}
       />
 

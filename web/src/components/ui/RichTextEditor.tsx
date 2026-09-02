@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, type MouseEvent as ReactMouseEvent } from "react";
 import Box from "@mui/material/Box";
 import { useTheme } from "@mui/material/styles";
 import IconButton from "@mui/material/IconButton";
@@ -16,14 +16,18 @@ import Typography from "@mui/material/Typography";
 import Divider from "@mui/material/Divider";
 import FormatBoldRoundedIcon from "@mui/icons-material/FormatBoldRounded";
 import FormatItalicRoundedIcon from "@mui/icons-material/FormatItalicRounded";
+import FormatUnderlinedRoundedIcon from "@mui/icons-material/FormatUnderlinedRounded";
+import StrikethroughSRoundedIcon from "@mui/icons-material/StrikethroughSRounded";
 import FormatListBulletedRoundedIcon from "@mui/icons-material/FormatListBulletedRounded";
 import FormatListNumberedRoundedIcon from "@mui/icons-material/FormatListNumberedRounded";
 import LinkRoundedIcon from "@mui/icons-material/LinkRounded";
 import LinkOffRoundedIcon from "@mui/icons-material/LinkOffRounded";
+import EmojiEmotionsOutlinedIcon from "@mui/icons-material/EmojiEmotionsOutlined";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
+import { EmojiPickerPopover } from "@/components/events/ChatEmojiPicker";
 
 type RichTextEditorProps = {
   label?: string;
@@ -38,6 +42,9 @@ export default function RichTextEditor({ label, value, onChange, placeholder, ma
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState("");
   const [focused, setFocused] = useState(false);
+  // Anchor for the emoji dropdown; shares the chat composer's picker so the
+  // grid, look, and behavior are identical everywhere emojis can be typed.
+  const [emojiAnchor, setEmojiAnchor] = useState<HTMLElement | null>(null);
 
   const editor = useEditor({
     immediatelyRender: false,
@@ -47,7 +54,10 @@ export default function RichTextEditor({ label, value, onChange, placeholder, ma
         blockquote: false,
         codeBlock: false,
         code: false,
-        strike: false,
+        // Underline and strike stay on (StarterKit bundles both): inline
+        // marks that cannot disturb layout and survive the sanitizer,
+        // emails, and unfurl excerpts. Block-level styling (headings, sizes,
+        // colors) is deliberately not offered.
         horizontalRule: false,
         // StarterKit bundles its own Link since tiptap v3; disabled here so
         // the separately-configured Link below is the only instance (the
@@ -110,6 +120,19 @@ export default function RichTextEditor({ label, value, onChange, placeholder, ma
 
   const charCount = editor.getText().length;
   const isActive = (name: string, attrs?: Record<string, unknown>) => editor.isActive(name, attrs);
+  // Toolbar buttons must not take focus on mousedown: a focus change clears
+  // ProseMirror's stored marks, so toggling a mark OFF at the end of a run
+  // (bold, underline, ...) would silently re-inherit it on the next
+  // keystroke. Same fix every tiptap toolbar applies.
+  const keepEditorFocus = (e: ReactMouseEvent) => e.preventDefault();
+  // One style for every toolbar button so additions can't drift from the
+  // originals.
+  const toolSx = (active: boolean) => ({
+    borderRadius: 1,
+    color: active ? "primary.main" : "text.secondary",
+    bgcolor: active ? "primary.50" : "transparent",
+    "&:hover": { bgcolor: active ? "primary.100" : "action.hover" },
+  });
 
   return (
     <Box>
@@ -140,9 +163,13 @@ export default function RichTextEditor({ label, value, onChange, placeholder, ma
           direction="row"
           alignItems="center"
           spacing={0.25}
+          // Eight tools now; wrap rather than overflow at phone widths.
+          flexWrap="wrap"
+          useFlexGap
           sx={{
             px: 0.75,
             py: 0.5,
+            rowGap: 0.25,
             borderBottom: "1px solid",
             borderColor: "divider",
             bgcolor: (theme) => theme.palette.mode === "light" ? "grey.50" : "rgba(255,255,255,0.03)",
@@ -151,6 +178,7 @@ export default function RichTextEditor({ label, value, onChange, placeholder, ma
           <Tooltip title="Bold" arrow enterDelay={400}>
             <IconButton
               size="small"
+              onMouseDown={keepEditorFocus}
               onClick={() => editor.chain().focus().toggleBold().run()}
               sx={{
                 borderRadius: 1,
@@ -165,6 +193,7 @@ export default function RichTextEditor({ label, value, onChange, placeholder, ma
           <Tooltip title="Italic" arrow enterDelay={400}>
             <IconButton
               size="small"
+              onMouseDown={keepEditorFocus}
               onClick={() => editor.chain().focus().toggleItalic().run()}
               sx={{
                 borderRadius: 1,
@@ -176,12 +205,33 @@ export default function RichTextEditor({ label, value, onChange, placeholder, ma
               <FormatItalicRoundedIcon sx={{ fontSize: 18 }} />
             </IconButton>
           </Tooltip>
+          <Tooltip title="Underline" arrow enterDelay={400}>
+            <IconButton
+              size="small"
+              onMouseDown={keepEditorFocus}
+              onClick={() => editor.chain().focus().toggleUnderline().run()}
+              sx={toolSx(isActive("underline"))}
+            >
+              <FormatUnderlinedRoundedIcon sx={{ fontSize: 18 }} />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Strikethrough" arrow enterDelay={400}>
+            <IconButton
+              size="small"
+              onMouseDown={keepEditorFocus}
+              onClick={() => editor.chain().focus().toggleStrike().run()}
+              sx={toolSx(isActive("strike"))}
+            >
+              <StrikethroughSRoundedIcon sx={{ fontSize: 18 }} />
+            </IconButton>
+          </Tooltip>
 
           <Divider orientation="vertical" flexItem sx={{ mx: 0.25, my: 0.5 }} />
 
           <Tooltip title="Bullet list" arrow enterDelay={400}>
             <IconButton
               size="small"
+              onMouseDown={keepEditorFocus}
               onClick={() => editor.chain().focus().toggleBulletList().run()}
               sx={{
                 borderRadius: 1,
@@ -196,6 +246,7 @@ export default function RichTextEditor({ label, value, onChange, placeholder, ma
           <Tooltip title="Numbered list" arrow enterDelay={400}>
             <IconButton
               size="small"
+              onMouseDown={keepEditorFocus}
               onClick={() => editor.chain().focus().toggleOrderedList().run()}
               sx={{
                 borderRadius: 1,
@@ -213,6 +264,7 @@ export default function RichTextEditor({ label, value, onChange, placeholder, ma
           <Tooltip title={isActive("link") ? "Edit link" : "Add link"} arrow enterDelay={400}>
             <IconButton
               size="small"
+              onMouseDown={keepEditorFocus}
               onClick={openLinkDialog}
               sx={{
                 borderRadius: 1,
@@ -224,6 +276,21 @@ export default function RichTextEditor({ label, value, onChange, placeholder, ma
               <LinkRoundedIcon sx={{ fontSize: 18 }} />
             </IconButton>
           </Tooltip>
+          <Tooltip title="Emoji" arrow enterDelay={400}>
+            <IconButton
+              size="small"
+              onMouseDown={keepEditorFocus}
+              onClick={(e) => setEmojiAnchor(e.currentTarget)}
+              sx={toolSx(!!emojiAnchor)}
+            >
+              <EmojiEmotionsOutlinedIcon sx={{ fontSize: 18 }} />
+            </IconButton>
+          </Tooltip>
+          <EmojiPickerPopover
+            anchorEl={emojiAnchor}
+            onClose={() => setEmojiAnchor(null)}
+            onPick={(emoji) => editor.chain().focus().insertContent(emoji).run()}
+          />
 
           <Box sx={{ flex: 1 }} />
 

@@ -15286,7 +15286,7 @@ app.patch("/events/:id", async (c) => {
         newValue: VIS_LABEL[visibility] ?? visibility,
       });
 
-    const FALLBACK_LABEL: Record<string, string> = { proceed: "Proceed", notify_host: "Notify host", auto_cancel: "Auto-cancel" };
+    const FALLBACK_LABEL: Record<string, string> = { proceed: "Do the plan anyway", notify_host: "Notify host", auto_cancel: "Cancel the plan" };
 
     if (before.require_reconfirmation !== patchRequireReconfirmation)
       changes.push({
@@ -15305,7 +15305,7 @@ app.patch("/events/:id", async (c) => {
     if (patchRequireReconfirmation && (before.fallback_policy ?? "notify_host") !== patchFallbackPolicy)
       changes.push({
         fieldName: "If minimum not met",
-        oldValue: FALLBACK_LABEL[before.fallback_policy ?? "notify_host"] ?? before.fallback_policy ?? "Notify host",
+        oldValue: FALLBACK_LABEL[before.fallback_policy ?? "proceed"] ?? before.fallback_policy ?? "Do the plan anyway",
         newValue: FALLBACK_LABEL[patchFallbackPolicy] ?? patchFallbackPolicy,
       });
 
