@@ -122,12 +122,15 @@ export const sendEventInviteEmail = async (
     unsubscribeUrl,
     suggestTimeNote,
     customMessage,
+    rsvpBy,
   }: {
     to: string;
     recipientName: string;
     hostName: string;
     eventTitle: string;
     eventDate: string;
+    /** Pre-formatted "RSVP by" deadline in the plan's timezone, if set. */
+    rsvpBy?: string;
     eventLocation?: string;
     eventUrl: string;
     inviteToken?: string;
@@ -158,6 +161,7 @@ export const sendEventInviteEmail = async (
     unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
     suggestTimeNote: hasContent(suggestTimeNote) ? suggestTimeNote : null,
     customMessage: hasContent(customMessage) ? customMessage : null,
+    rsvpBy: hasContent(rsvpBy) ? rsvpBy : null,
   });
 };
 

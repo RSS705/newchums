@@ -12,6 +12,7 @@ export function htmlToPlainText(raw: string | null | undefined): string {
   return raw
     .replace(/<\/(p|li|ul|ol|div|h[1-6])>/gi, " ")
     .replace(/<br\s*\/?>/gi, " ")
+    .replace(/<hr\s*\/?>/gi, " ")
     .replace(/<[^>]*>/g, "")
     .replace(/&nbsp;/gi, " ")
     .replace(/&amp;/gi, "&")

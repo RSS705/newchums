@@ -130,7 +130,7 @@ export default function BannerField({
             </AppButton>
           )}
           <Typography variant="caption" color="text.secondary">
-            JPEG, PNG, or WebP up to 20 MB.
+            JPEG, PNG, or WebP up to 20 MB. A wide 3:1 image (around 1200 &times; 400 px) fills the plan banner best.
           </Typography>
         </Stack>
       </Stack>

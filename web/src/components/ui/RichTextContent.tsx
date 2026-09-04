@@ -26,7 +26,7 @@ function autoLinkUrls(text: string): string {
  * Renders sanitized HTML content from the rich text editor.
  *
  * Content is sanitized server-side before storage (see sanitizeDescriptionHtml in the API).
- * Only whitelisted tags are stored: p, strong, em, u, s, ul, ol, li, a, br.
+ * Only whitelisted tags are stored: p, strong, em, u, s, ul, ol, li, a, br, hr.
  *
  * Plain-text descriptions (pre-rich-text) are detected and rendered with preserved line breaks.
  * Bare URLs are auto-linked in both plain text and HTML content.
@@ -96,6 +96,7 @@ export default function RichTextContent({ html, size = "body1" }: RichTextConten
           "& li p": { mb: 0 },
           "& strong": { fontWeight: 600 },
           "& u": { textUnderlineOffset: "2px" },
+          "& hr": { border: 0, borderTop: "1px solid", borderColor: "divider", my: 1.5 },
         }}
       />
     </>

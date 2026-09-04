@@ -12164,6 +12164,18 @@ app.post("/events", async (c) => {
       availabilityDeadlineAt = dl.toISOString();
     }
   }
+  // Optional "RSVP by" deadline (migration 119). Informational: it tells
+  // invitees when the host needs answers and nothing is scheduled off it, so
+  // RSVPs stay open after it. Validation only pins it before the start.
+  let rsvpByAt: string | null = null;
+  if (body.rsvp_by_at) {
+    const rb = new Date(String(body.rsvp_by_at));
+    if (isNaN(rb.getTime()))
+      return c.json({ ok: false, error: "VALIDATION", message: "RSVP-by date is invalid", field: "rsvp_by_at" }, 400);
+    if (rb.getTime() >= startsDate.getTime())
+      return c.json({ ok: false, error: "VALIDATION", message: "RSVP-by date must be before the plan start time", field: "rsvp_by_at" }, 400);
+    rsvpByAt = rb.toISOString();
+  }
   const allowAttendeeInvites = body.allow_attendee_invites !== false;
   const reserveSeats = body.reserve_seats === true;
   // Default ON since Aug 2026 (migration 111): the attendance check is the
@@ -12362,13 +12374,13 @@ app.post("/events", async (c) => {
         location_type, location_name, location_address, location_place_id, location_lat, location_lng,
         location_visibility, location_area, online_link,
         max_seats, visibility, status, allow_alt_times, alt_times_mode, availability_deadline_at, allow_attendee_invites, reserve_seats, require_reconfirmation, require_approval, timezone,
-        min_confirmed_attendees, fallback_policy, min_attendees_required, hide_from_explore, is_qa, mute_host_attendance_emails
+        min_confirmed_attendees, fallback_policy, min_attendees_required, hide_from_explore, is_qa, mute_host_attendance_emails, rsvp_by_at
       ) VALUES (
         ${userId}, ${title}, ${description}, ${interestId}, ${startsDate.toISOString()},
         ${locationType}, ${locationName}, ${locationAddress}, ${locationPlaceId}, ${locationLat}, ${locationLng},
         ${locationVisibility}, ${locationArea}, ${onlineLink},
         ${maxSeats}, ${visibility}, ${status}, ${allowAltTimes}, ${altTimesMode}, ${availabilityDeadlineAt}, ${allowAttendeeInvites}, ${reserveSeats}, ${requireReconfirmation}, ${requireApproval}, ${timezone},
-        ${minConfirmedAttendees}, ${fallbackPolicy}, ${minAttendeesRequired}, ${hideFromExplore}, ${isQa}, ${muteHostAttendanceEmails}
+        ${minConfirmedAttendees}, ${fallbackPolicy}, ${minAttendeesRequired}, ${hideFromExplore}, ${isQa}, ${muteHostAttendanceEmails}, ${rsvpByAt}
       )
       RETURNING id, created_at
     `) as { id: string; created_at: string }[];
@@ -12536,6 +12548,7 @@ app.post("/events", async (c) => {
                     hostName,
                     eventTitle: title,
                     eventDate: formatEventDate(startsDate.toISOString(), timezone),
+                    rsvpBy: rsvpByAt ? formatEventDate(rsvpByAt, timezone) : undefined,
                     eventLocation: inviteEmailLocation,
                     eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
                     inviteToken: iToken,
@@ -12553,6 +12566,7 @@ app.post("/events", async (c) => {
                 hostName,
                 eventTitle: title,
                 eventDate: formatEventDate(startsDate.toISOString(), timezone),
+                rsvpBy: rsvpByAt ? formatEventDate(rsvpByAt, timezone) : undefined,
                 eventLocation: inviteEmailLocation,
                 eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
                 inviteToken: iToken,
@@ -13703,6 +13717,7 @@ app.get("/events/:id", async (c) => {
           allowAltTimes: event.allow_alt_times,
           altTimesMode: event.alt_times_mode ?? "suggest",
           availabilityDeadlineAt: (event.alt_times_mode === "availability" ? event.availability_deadline_at : null) ?? null,
+          rsvpByAt: (event as Record<string, unknown>).rsvp_by_at ?? null,
           allowAttendeeInvites: false,
           requireReconfirmation: false,
           canceledAt: event.canceled_at,
@@ -13955,6 +13970,7 @@ app.get("/events/:id", async (c) => {
         allowAltTimes: event.allow_alt_times,
         altTimesMode: event.alt_times_mode ?? "suggest",
         availabilityDeadlineAt: (event.alt_times_mode === "availability" ? event.availability_deadline_at : null) ?? null,
+        rsvpByAt: (event as Record<string, unknown>).rsvp_by_at ?? null,
         allowAttendeeInvites: event.allow_attendee_invites !== false,
         requireReconfirmation: event.require_reconfirmation === true,
         canceledAt: event.canceled_at,
@@ -14923,11 +14939,11 @@ app.patch("/events/:id", async (c) => {
     const rows = (await sql`
       SELECT id, host_user_id, status, title, description, starts_at, timezone, max_seats, visibility,
              require_reconfirmation, min_confirmed_attendees, fallback_policy, min_attendees_required,
-             alt_times_mode, availability_deadline_at,
+             alt_times_mode, availability_deadline_at, rsvp_by_at,
              location_type, location_name, location_address, location_place_id, location_lat, location_lng,
              location_visibility, location_area, online_link
       FROM newchums.events WHERE id = ${eventId}
-    `) as { id: string; host_user_id: string; status: string; title: string; description: string | null; starts_at: string; timezone: string | null; max_seats: number | null; visibility: string; require_reconfirmation: boolean; min_confirmed_attendees: number | null; fallback_policy: string; min_attendees_required: number | null; alt_times_mode: string | null; availability_deadline_at: string | null; location_type: string; location_name: string | null; location_address: string | null; location_place_id: string | null; location_lat: number | null; location_lng: number | null; location_visibility: string; location_area: string | null; online_link: string | null }[];
+    `) as { id: string; host_user_id: string; status: string; title: string; description: string | null; starts_at: string; timezone: string | null; max_seats: number | null; visibility: string; require_reconfirmation: boolean; min_confirmed_attendees: number | null; fallback_policy: string; min_attendees_required: number | null; alt_times_mode: string | null; availability_deadline_at: string | null; rsvp_by_at: string | null; location_type: string; location_name: string | null; location_address: string | null; location_place_id: string | null; location_lat: number | null; location_lng: number | null; location_visibility: string; location_area: string | null; online_link: string | null }[];
     if (rows.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     if (rows[0].host_user_id !== userId) {
       // Super admins may edit any plan (moderation and hands-on support).
@@ -15021,6 +15037,20 @@ app.patch("/events/:id", async (c) => {
     } else if (effectiveAltTimesMode !== "availability") {
       // Clear deadline when mode is not availability
       patchAvailabilityDeadlineAt = null;
+    }
+    // "RSVP by" deadline: present-but-empty clears it, absent leaves it alone.
+    let patchRsvpByAt: string | null | undefined = undefined;
+    if ("rsvp_by_at" in body) {
+      if (body.rsvp_by_at) {
+        const rb = new Date(String(body.rsvp_by_at));
+        if (isNaN(rb.getTime()))
+          return c.json({ ok: false, error: "VALIDATION", message: "RSVP-by date is invalid", field: "rsvp_by_at" }, 400);
+        if (rb.getTime() >= startsAt.getTime())
+          return c.json({ ok: false, error: "VALIDATION", message: "RSVP-by date must be before the plan start time", field: "rsvp_by_at" }, 400);
+        patchRsvpByAt = rb.toISOString();
+      } else {
+        patchRsvpByAt = null;
+      }
     }
     const patchReserveSeats = body.reserve_seats != null ? body.reserve_seats === true : undefined;
     const patchMuteHostAttendanceEmails = body.mute_host_attendance_emails != null ? body.mute_host_attendance_emails === true : undefined;
@@ -15203,6 +15233,7 @@ app.patch("/events/:id", async (c) => {
           allow_alt_times          = COALESCE(${patchAllowAltTimes ?? null}, allow_alt_times),
           alt_times_mode           = COALESCE(${patchAltTimesMode ?? null}, alt_times_mode),
           availability_deadline_at = CASE WHEN ${patchAvailabilityDeadlineAt !== undefined} THEN ${patchAvailabilityDeadlineAt !== undefined ? patchAvailabilityDeadlineAt : null}::timestamptz ELSE availability_deadline_at END,
+          rsvp_by_at               = CASE WHEN ${patchRsvpByAt !== undefined} THEN ${patchRsvpByAt !== undefined ? patchRsvpByAt : null}::timestamptz ELSE rsvp_by_at END,
           reserve_seats            = COALESCE(${patchReserveSeats ?? null}, reserve_seats),
           mute_host_attendance_emails = COALESCE(${patchMuteHostAttendanceEmails ?? null}, mute_host_attendance_emails),
           timezone                 = COALESCE(${patchTimezone}, timezone),
@@ -15336,6 +15367,19 @@ app.patch("/events/:id", async (c) => {
           fieldName: "Availability deadline",
           oldValue: oldDl ? formatEventDate(oldDl, effectiveTz) : "None",
           newValue: newDl ? formatEventDate(newDl, effectiveTz) : "None",
+        });
+      }
+    }
+
+    if (patchRsvpByAt !== undefined) {
+      const oldRb = before.rsvp_by_at;
+      const oldRbTime = oldRb ? new Date(oldRb).getTime() : null;
+      const newRbTime = patchRsvpByAt ? new Date(patchRsvpByAt).getTime() : null;
+      if (oldRbTime !== newRbTime) {
+        changes.push({
+          fieldName: "RSVP by",
+          oldValue: oldRb ? formatEventDate(oldRb, effectiveTz) : "No deadline",
+          newValue: patchRsvpByAt ? formatEventDate(patchRsvpByAt, effectiveTz) : "No deadline",
         });
       }
     }
@@ -15691,7 +15735,7 @@ app.post("/events/:id/invite", async (c) => {
   try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
 
   try {
-    const ev = (await sql`SELECT id, host_user_id, title, starts_at, status, timezone, location_type, location_name, location_address, location_visibility, location_area, online_link, allow_attendee_invites, allow_alt_times, alt_times_mode, availability_deadline_at FROM newchums.events WHERE id = ${eventId}`) as { id: string; host_user_id: string; title: string; starts_at: string; status: string; timezone: string; location_type: string; location_name: string | null; location_address: string | null; location_visibility: string | null; location_area: string | null; online_link: string | null; allow_attendee_invites: boolean; allow_alt_times: boolean; alt_times_mode: string | null; availability_deadline_at: string | null }[];
+    const ev = (await sql`SELECT id, host_user_id, title, starts_at, status, timezone, location_type, location_name, location_address, location_visibility, location_area, online_link, allow_attendee_invites, allow_alt_times, alt_times_mode, availability_deadline_at, rsvp_by_at FROM newchums.events WHERE id = ${eventId}`) as { id: string; host_user_id: string; title: string; starts_at: string; status: string; timezone: string; location_type: string; location_name: string | null; location_address: string | null; location_visibility: string | null; location_area: string | null; online_link: string | null; allow_attendee_invites: boolean; allow_alt_times: boolean; alt_times_mode: string | null; availability_deadline_at: string | null; rsvp_by_at: string | null }[];
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
 
     const isHost = ev[0].host_user_id === userId;
@@ -15859,6 +15903,7 @@ app.post("/events/:id/invite", async (c) => {
                   hostName: inviterName,
                   eventTitle: ev[0].title,
                   eventDate: formatEventDate(ev[0].starts_at, ev[0].timezone),
+                  rsvpBy: ev[0].rsvp_by_at ? formatEventDate(ev[0].rsvp_by_at, ev[0].timezone) : undefined,
                   eventLocation: inviteLocationDisplay,
                   eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
                   inviteToken: iToken,
@@ -15878,6 +15923,7 @@ app.post("/events/:id/invite", async (c) => {
               hostName: inviterName,
               eventTitle: ev[0].title,
               eventDate: formatEventDate(ev[0].starts_at, ev[0].timezone),
+              rsvpBy: ev[0].rsvp_by_at ? formatEventDate(ev[0].rsvp_by_at, ev[0].timezone) : undefined,
               eventLocation: inviteLocationDisplay,
               eventUrl: `${c.env.WEB_BASE_URL}/events/${eventId}`,
               inviteToken: iToken,

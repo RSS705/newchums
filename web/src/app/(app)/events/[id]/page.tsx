@@ -142,6 +142,7 @@ type PlanDetailResponse = {
     description?: string | null;
     startsAt?: string | null;
     timezone?: string | null;
+    rsvpByAt?: string | null;
     locationType?: string | null;
     locationDisplay?: string | null;
     locationArea?: string | null;
@@ -382,7 +383,10 @@ export async function generateMetadata({
       else if (city) locationBit = city;
     }
 
-    const factParts = [dateStr, hobby, locationBit].filter(Boolean) as string[];
+    // "RSVP by" rides along in the unfurl so a pasted link says when
+    // sign-ups close without anyone opening it.
+    const rsvpByStr = ev.rsvpByAt ? formatPlanStart(ev.rsvpByAt, ev.timezone) : null;
+    const factParts = [dateStr, hobby, locationBit, rsvpByStr ? `RSVP by ${rsvpByStr}` : null].filter(Boolean) as string[];
     // Cap factual portion so Discord doesn't truncate the action cue.
     const factualLine = factParts.join(" • ").slice(0, 150);
     const description = factualLine

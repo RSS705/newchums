@@ -58,13 +58,14 @@ import { pickerFieldTabKeyDown } from "@/components/fields/pickerTabNav";
 // Visual top-to-bottom order of validation-bearing fields. Drives the
 // scroll-to-first-error helper so the user always lands on the earliest
 // problem they need to fix rather than a later one.
-const FIELD_ORDER = ["title", "date", "time", "location", "maxSeats"] as const;
+const FIELD_ORDER = ["title", "date", "time", "location", "maxSeats", "rsvpBy"] as const;
 
 // Which collapsed section each validation-bearing field lives in, so a failed
 // submit can force that section open before scrolling to the error. Tier-one
 // fields are always visible and need no entry. `availability_deadline_at` is
 // the server's field name for the deadline inside Alternate times.
 const SECTION_OF_FIELD: Record<string, string> = {
+  rsvpBy: "extras",
   availability_deadline_at: "altTimes",
 };
 
@@ -164,6 +165,9 @@ export default function CreateEventClient() {
   );
   const [deadlineDate, setDeadlineDate] = useState<Dayjs | null>(null);
   const [deadlineTime, setDeadlineTime] = useState<Dayjs | null>(null);
+  // Optional "RSVP by" deadline, date + time in the plan's local time.
+  const [rsvpByDate, setRsvpByDate] = useState<Dayjs | null>(null);
+  const [rsvpByTime, setRsvpByTime] = useState<Dayjs | null>(null);
   // Presented inverted ("Prevent attendees from inviting others", default
   // off); the wire field stays allow_attendee_invites. See ExtraOptionsSection.
   const [preventAttendeeInvites, setPreventAttendeeInvites] = useState(false);
@@ -563,6 +567,15 @@ export default function CreateEventClient() {
     }
     if (maxSeats && (isNaN(Number(maxSeats)) || Number(maxSeats) < 1))
       errs.maxSeats = "Must be a positive number";
+    if (rsvpByDate || rsvpByTime) {
+      if (!rsvpByDate?.isValid() || !rsvpByTime?.isValid()) {
+        errs.rsvpBy = "Pick both a date and a time for the RSVP deadline, or clear both";
+      } else if (dateValue?.isValid() && timeValue?.isValid()) {
+        const deadline = rsvpByDate.hour(rsvpByTime.hour()).minute(rsvpByTime.minute()).second(0);
+        const start = dateValue.hour(timeValue.hour()).minute(timeValue.minute()).second(0);
+        if (!deadline.isBefore(start)) errs.rsvpBy = "The RSVP deadline has to be before the plan starts";
+      }
+    }
     setErrors(errs);
     return errs;
   };
@@ -631,6 +644,10 @@ export default function CreateEventClient() {
               .minute(deadlineTime.minute())
               .second(0)
               .toISOString()
+          : null,
+      rsvp_by_at:
+        rsvpByDate?.isValid() && rsvpByTime?.isValid()
+          ? rsvpByDate.hour(rsvpByTime.hour()).minute(rsvpByTime.minute()).second(0).toISOString()
           : null,
       allow_attendee_invites: !preventAttendeeInvites,
       require_reconfirmation: requireReconfirmation,
@@ -1326,6 +1343,12 @@ export default function CreateEventClient() {
         onChangePreventAttendeeInvites={setPreventAttendeeInvites}
         muteHostAttendanceEmails={muteHostAttendanceEmails}
         onChangeMuteHostAttendanceEmails={setMuteHostAttendanceEmails}
+        rsvpByDate={rsvpByDate}
+        onChangeRsvpByDate={setRsvpByDate}
+        rsvpByTime={rsvpByTime}
+        onChangeRsvpByTime={setRsvpByTime}
+        rsvpByError={errors.rsvpBy}
+        registerRsvpByField={setFieldRef("rsvpBy")}
       />
 
       {/* Community association. Hidden entirely when visibility=invite_only,

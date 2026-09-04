@@ -11,7 +11,8 @@ Hi {{recipientName}},
 {{eventTitle}}
 {{eventDate}}{{#eventLocation}} · {{.}}{{/eventLocation}}
 Hosted by {{hostName}}
-
+{{#rsvpBy}}Please RSVP by {{.}}.
+{{/rsvpBy}}
 {{#suggestTimeNote}}Note: {{.}}
 
 {{/suggestTimeNote}}---

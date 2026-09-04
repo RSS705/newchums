@@ -60,6 +60,7 @@ import PersonRoundedIcon from "@mui/icons-material/PersonRounded";
 import ScheduleRoundedIcon from "@mui/icons-material/ScheduleRounded";
 import MoreVertRoundedIcon from "@mui/icons-material/MoreVertRounded";
 import AddReactionOutlinedIcon from "@mui/icons-material/AddReactionOutlined";
+import EventAvailableRoundedIcon from "@mui/icons-material/EventAvailableRounded";
 import ButtonBase from "@mui/material/ButtonBase";
 import OpenInNewRoundedIcon from "@mui/icons-material/OpenInNewRounded";
 import PersonAddRoundedIcon from "@mui/icons-material/PersonAddRounded";
@@ -131,6 +132,8 @@ type EventDetail = {
   allowAltTimes: boolean;
   altTimesMode?: string;
   availabilityDeadlineAt?: string | null;
+  /** Optional "RSVP by" deadline; informational, RSVPs stay open after it. */
+  rsvpByAt?: string | null;
   allowAttendeeInvites: boolean;
   requireReconfirmation: boolean;
   canceledAt: string | null;
@@ -263,6 +266,35 @@ function formatDateTime(iso: string): string {
     minute: "2-digit",
     hour12: true,
   });
+}
+
+/** "RSVP by" line for the RSVP card (and the logged-out signup card). The
+ *  deadline is informational, so after it passes the copy says late RSVPs
+ *  are still welcome rather than closing anything. */
+function RsvpByNote({ iso, nowMs }: { iso: string; nowMs: number }) {
+  const deadline = new Date(iso);
+  if (isNaN(deadline.getTime())) return null;
+  // `nowMs` comes from the parent so this component stays pure for the
+  // React Compiler (no Date.now() during render here).
+  const msLeft = deadline.getTime() - nowMs;
+  const daysLeft = Math.ceil(msLeft / (24 * 60 * 60 * 1000));
+  const when = formatDateTime(iso);
+  let text: string;
+  if (msLeft <= 0) {
+    text = `The RSVP deadline was ${when}. Late RSVPs are still welcome.`;
+  } else if (daysLeft <= 1) {
+    text = `RSVP by ${when}. That is today or tomorrow, so answer soon.`;
+  } else {
+    text = `RSVP by ${when}. ${daysLeft} days left.`;
+  }
+  return (
+    <Stack direction="row" alignItems="flex-start" spacing={0.75} sx={{ mb: 2 }}>
+      <EventAvailableRoundedIcon sx={{ fontSize: 18, color: msLeft <= 0 ? "text.disabled" : "primary.main", mt: "1px", flexShrink: 0 }} />
+      <Typography variant="body2" sx={{ color: msLeft <= 0 ? "text.secondary" : "text.primary", fontWeight: msLeft <= 0 ? 400 : 600, lineHeight: 1.5 }}>
+        {text}
+      </Typography>
+    </Stack>
+  );
 }
 
 function visibilityLabel(v: string): string {
@@ -2203,6 +2235,7 @@ export default function EventDetailClient({
                 {event.maxSeats != null ? ` · ${event.maxSeats} max` : ""}
               </Typography>
             </Stack>
+            {event.rsvpByAt && <RsvpByNote iso={event.rsvpByAt} nowMs={Date.now()} />}
             {event.description && (
               <>
                 <Divider sx={{ borderColor: "divider", opacity: 0.6 }} />
@@ -2300,6 +2333,7 @@ export default function EventDetailClient({
                     {pubGoingCount} going{pubMaybeCount > 0 ? ` · ${pubMaybeCount} maybe` : ""}
                   </Typography>
                 </Stack>
+                {event.rsvpByAt && <RsvpByNote iso={event.rsvpByAt} nowMs={Date.now()} />}
 
                 <Stack spacing={1.75}>
                   <Stack direction="row" spacing={1.5} alignItems="center">
@@ -3234,6 +3268,10 @@ export default function EventDetailClient({
           past-plan view. */}
       {!event.isHost && !isCanceled && !isPast && (
         <AppCard>
+          {/* "RSVP by" sits at the top of the card so every viewer state
+              (signed in, tokenized signup, bare public link, invite-only
+              wall, request-to-join) sees the same deadline line. */}
+          {event.rsvpByAt && <RsvpByNote iso={event.rsvpByAt} nowMs={Date.now()} />}
           {isAuthenticated === false && emailContext === "host_review" ? (
             <Stack spacing={2} sx={{ py: 1 }}>
               <Typography variant="h6" fontWeight={600}>
@@ -3587,6 +3625,7 @@ export default function EventDetailClient({
               </Stack>
             </Stack>
           ) : isAuthenticated === false ? (
+            <>
             <PlanSignupCard
               planUrlWithTokens={(() => {
                 // The URL the invitee returns to after verifying (by code or
@@ -3621,6 +3660,7 @@ export default function EventDetailClient({
               // link.
               prefillEmail={inviteeEmail ?? undefined}
             />
+            </>
           ) : (
             <div
               // Only carries the confirmation scroll id when the host

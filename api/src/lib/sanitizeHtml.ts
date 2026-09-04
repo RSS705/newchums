@@ -2,14 +2,14 @@
  * Lightweight HTML sanitizer for rich text descriptions.
  *
  * Whitelists only the tags produced by the Tiptap editor:
- *   p, strong, em, u, s, ul, ol, li, a, br
+ *   p, strong, em, u, s, ul, ol, li, a, br, hr
  *
  * Strips all other tags. Only allows `href` on <a> tags, and only
  * http/https/mailto URLs. Adds rel="noopener noreferrer" target="_blank"
  * to all links. Designed for the Cloudflare Workers runtime (no DOM required).
  */
 
-const ALLOWED_TAGS = new Set(["p", "strong", "em", "u", "s", "ul", "ol", "li", "a", "br"]);
+const ALLOWED_TAGS = new Set(["p", "strong", "em", "u", "s", "ul", "ol", "li", "a", "br", "hr"]);
 
 function escapeHtmlAttr(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -26,8 +26,9 @@ export function sanitizeDescriptionHtml(raw: string): string {
     const isClosing = match.startsWith("</");
     if (isClosing) return `</${tag}>`;
 
-    // Self-closing br
+    // Self-closing br / hr
     if (tag === "br") return "<br>";
+    if (tag === "hr") return "<hr>";
 
     // For <a>, extract and sanitize href
     if (tag === "a") {

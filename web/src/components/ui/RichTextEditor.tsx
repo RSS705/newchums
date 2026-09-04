@@ -23,6 +23,7 @@ import FormatListNumberedRoundedIcon from "@mui/icons-material/FormatListNumbere
 import LinkRoundedIcon from "@mui/icons-material/LinkRounded";
 import LinkOffRoundedIcon from "@mui/icons-material/LinkOffRounded";
 import EmojiEmotionsOutlinedIcon from "@mui/icons-material/EmojiEmotionsOutlined";
+import HorizontalRuleRoundedIcon from "@mui/icons-material/HorizontalRuleRounded";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
@@ -58,7 +59,6 @@ export default function RichTextEditor({ label, value, onChange, placeholder, ma
         // marks that cannot disturb layout and survive the sanitizer,
         // emails, and unfurl excerpts. Block-level styling (headings, sizes,
         // colors) is deliberately not offered.
-        horizontalRule: false,
         // StarterKit bundles its own Link since tiptap v3; disabled here so
         // the separately-configured Link below is the only instance (the
         // duplicate triggered a "[tiptap warn]: Duplicate extension names"
@@ -259,6 +259,17 @@ export default function RichTextEditor({ label, value, onChange, placeholder, ma
             </IconButton>
           </Tooltip>
 
+          <Tooltip title="Section divider" arrow enterDelay={400}>
+            <IconButton
+              size="small"
+              onMouseDown={keepEditorFocus}
+              onClick={() => editor.chain().focus().setHorizontalRule().run()}
+              sx={toolSx(false)}
+            >
+              <HorizontalRuleRoundedIcon sx={{ fontSize: 18 }} />
+            </IconButton>
+          </Tooltip>
+
           <Divider orientation="vertical" flexItem sx={{ mx: 0.25, my: 0.5 }} />
 
           <Tooltip title={isActive("link") ? "Edit link" : "Add link"} arrow enterDelay={400}>
@@ -314,6 +325,7 @@ export default function RichTextEditor({ label, value, onChange, placeholder, ma
           .nc-rich-editor li { margin-bottom: 2px; }
           .nc-rich-editor li p { margin-bottom: 0; }
           .nc-rich-editor a { color: ${theme.palette.primary.main}; text-decoration: underline; cursor: text; }
+          .nc-rich-editor hr { border: 0; border-top: 1px solid ${theme.palette.divider}; margin: 12px 0; }
           .nc-rich-editor p.is-editor-empty:first-of-type::before { content: attr(data-placeholder); color: ${theme.palette.text.disabled}; pointer-events: none; float: left; height: 0; }
         `}</style>
         <Box>

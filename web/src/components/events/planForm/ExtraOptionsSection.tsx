@@ -1,6 +1,11 @@
 "use client";
 
 import { type WheelEvent } from "react";
+import type { Dayjs } from "dayjs";
+import dayjs from "dayjs";
+import { DatePicker } from "@mui/x-date-pickers/DatePicker";
+import { TimePicker } from "@mui/x-date-pickers/TimePicker";
+import { pickerFieldTabKeyDown } from "@/components/fields/pickerTabNav";
 import Box from "@mui/material/Box";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import MenuItem from "@mui/material/MenuItem";
@@ -42,6 +47,16 @@ type Props = {
 
   muteHostAttendanceEmails: boolean;
   onChangeMuteHostAttendanceEmails: (value: boolean) => void;
+
+  /** Optional "RSVP by" deadline (migration 119). Informational: RSVPs
+   *  stay open after it; it tells people when the host needs answers. */
+  rsvpByDate: Dayjs | null;
+  onChangeRsvpByDate: (value: Dayjs | null) => void;
+  rsvpByTime: Dayjs | null;
+  onChangeRsvpByTime: (value: Dayjs | null) => void;
+  rsvpByError?: string;
+  /** Registers the field for the scroll-to-first-error helper. */
+  registerRsvpByField?: (el: HTMLElement | null) => void;
 
   /** Edit-only toggle. Omit on the Add Plan form so the row does not render. */
   notifyAttendees?: {
@@ -111,6 +126,12 @@ export default function ExtraOptionsSection({
   onChangePreventAttendeeInvites,
   muteHostAttendanceEmails,
   onChangeMuteHostAttendanceEmails,
+  rsvpByDate,
+  onChangeRsvpByDate,
+  rsvpByTime,
+  onChangeRsvpByTime,
+  rsvpByError,
+  registerRsvpByField,
   notifyAttendees,
 }: Props) {
   const showMinDetails =
@@ -126,6 +147,7 @@ export default function ExtraOptionsSection({
   if (requireApproval) summaryParts.push("approval to join");
   if (preventAttendeeInvites) summaryParts.push("host-only invites");
   if (muteHostAttendanceEmails) summaryParts.push("attendance emails muted");
+  if (rsvpByDate?.isValid()) summaryParts.push(`RSVP by ${rsvpByDate.format("MMM D")}`);
   const summary = summaryParts.join(" + ");
 
   return (
@@ -217,6 +239,51 @@ export default function ExtraOptionsSection({
         />
 
         <ClusterLabel>Joining</ClusterLabel>
+        <Box ref={registerRsvpByField} sx={{ scrollMarginTop: 96 }}>
+          <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.625 }}>
+            RSVP by (optional)
+          </Typography>
+          <Stack direction="row" spacing={1.5}>
+            <DatePicker
+              value={rsvpByDate}
+              onChange={onChangeRsvpByDate}
+              minDate={dayjs()}
+              slotProps={{
+                textField: {
+                  size: "small",
+                  placeholder: "Date",
+                  error: !!rsvpByError,
+                  sx: { flex: 1 },
+                  onKeyDown: pickerFieldTabKeyDown,
+                },
+              }}
+            />
+            <TimePicker
+              value={rsvpByTime}
+              onChange={onChangeRsvpByTime}
+              format="h:mm A"
+              slotProps={{
+                field: { shouldRespectLeadingZeros: true } as Record<string, unknown>,
+                textField: {
+                  size: "small",
+                  placeholder: "Time",
+                  error: !!rsvpByError,
+                  sx: { flex: 1 },
+                  onKeyDown: pickerFieldTabKeyDown,
+                },
+              }}
+            />
+          </Stack>
+          <Typography
+            variant="caption"
+            color={rsvpByError ? "error" : "text.secondary"}
+            sx={{ mt: 0.5, display: "block" }}
+          >
+            {rsvpByError ??
+              "Tell people when you need answers by. It shows on the plan, in invites, and on shared links. RSVPs stay open after it."}
+          </Typography>
+        </Box>
+
         <TooltipToggleRow
           checked={requireApproval}
           onChange={onChangeRequireApproval}
