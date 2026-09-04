@@ -13,6 +13,7 @@ Hi {{recipientName}},
 Hosted by {{hostName}}
 {{#rsvpBy}}Please RSVP by {{.}}.
 {{/rsvpBy}}
+
 {{#suggestTimeNote}}Note: {{.}}
 
 {{/suggestTimeNote}}---

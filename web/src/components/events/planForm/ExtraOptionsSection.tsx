@@ -2,7 +2,6 @@
 
 import { type WheelEvent } from "react";
 import type { Dayjs } from "dayjs";
-import dayjs from "dayjs";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { TimePicker } from "@mui/x-date-pickers/TimePicker";
 import { pickerFieldTabKeyDown } from "@/components/fields/pickerTabNav";
@@ -247,7 +246,6 @@ export default function ExtraOptionsSection({
             <DatePicker
               value={rsvpByDate}
               onChange={onChangeRsvpByDate}
-              minDate={dayjs()}
               slotProps={{
                 textField: {
                   size: "small",

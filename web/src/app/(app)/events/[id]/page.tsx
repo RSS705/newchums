@@ -383,15 +383,21 @@ export async function generateMetadata({
       else if (city) locationBit = city;
     }
 
-    // "RSVP by" rides along in the unfurl so a pasted link says when
-    // sign-ups close without anyone opening it.
-    const rsvpByStr = ev.rsvpByAt ? formatPlanStart(ev.rsvpByAt, ev.timezone) : null;
-    const factParts = [dateStr, hobby, locationBit, rsvpByStr ? `RSVP by ${rsvpByStr}` : null].filter(Boolean) as string[];
+    const factParts = [dateStr, hobby, locationBit].filter(Boolean) as string[];
     // Cap factual portion so Discord doesn't truncate the action cue.
     const factualLine = factParts.join(" • ").slice(0, 150);
-    const description = factualLine
+    const firstLine = factualLine
       ? `${factualLine}. View details and RSVP on NewChums.`
       : "View details and RSVP on NewChums.";
+    // "RSVP by" rides along as its own second line, so a pasted link says
+    // when the host needs answers without changing the shape of the first
+    // line (the Discord embed look is tuned around it). Discord keeps the
+    // line break in embed descriptions; the plain SEO description carries
+    // the same text on one line since search snippets collapse whitespace.
+    const rsvpByStr = ev.rsvpByAt ? formatPlanStart(ev.rsvpByAt, ev.timezone) : null;
+    const rsvpByLine = rsvpByStr ? `RSVP by ${rsvpByStr}.` : null;
+    const description = rsvpByLine ? `${firstLine}\n${rsvpByLine}` : firstLine;
+    const seoDescription = rsvpByLine ? `${firstLine} ${rsvpByLine}` : firstLine;
 
     // Action-oriented OG title. Plan title is truncated so Discord doesn't
     // wrap awkwardly when the action prefix is added. Browser tab title
@@ -407,7 +413,7 @@ export async function generateMetadata({
 
     return {
       title,
-      description,
+      description: seoDescription,
       robots: noindex
         ? { index: false, follow: false }
         : { index: true, follow: true },

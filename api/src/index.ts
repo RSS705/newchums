@@ -15052,6 +15052,14 @@ app.patch("/events/:id", async (c) => {
         patchRsvpByAt = null;
       }
     }
+    // A stored deadline the caller did not touch can still end up after a
+    // start time that moved earlier in this same PATCH. It is cleared rather
+    // than left pointing past the plan, and the clear shows up in the update
+    // email like any other change.
+    if (patchRsvpByAt === undefined && rows[0].rsvp_by_at) {
+      const storedRb = new Date(rows[0].rsvp_by_at).getTime();
+      if (!isNaN(storedRb) && storedRb >= startsAt.getTime()) patchRsvpByAt = null;
+    }
     const patchReserveSeats = body.reserve_seats != null ? body.reserve_seats === true : undefined;
     const patchMuteHostAttendanceEmails = body.mute_host_attendance_emails != null ? body.mute_host_attendance_emails === true : undefined;
 

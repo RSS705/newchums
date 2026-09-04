@@ -574,6 +574,7 @@ export default function CreateEventClient() {
         const deadline = rsvpByDate.hour(rsvpByTime.hour()).minute(rsvpByTime.minute()).second(0);
         const start = dateValue.hour(timeValue.hour()).minute(timeValue.minute()).second(0);
         if (!deadline.isBefore(start)) errs.rsvpBy = "The RSVP deadline has to be before the plan starts";
+        else if (deadline.isBefore(dayjs())) errs.rsvpBy = "That RSVP deadline has already passed. Pick a later time or clear it";
       }
     }
     setErrors(errs);

@@ -268,31 +268,48 @@ function formatDateTime(iso: string): string {
   });
 }
 
-/** "RSVP by" line for the RSVP card (and the logged-out signup card). The
- *  deadline is informational, so after it passes the copy says late RSVPs
- *  are still welcome rather than closing anything. */
+/** "RSVP by" row for the plan facts card. Both the public preview and the
+ *  signed-in details card use the same icon-orb row treatment, so the
+ *  deadline reads like the date and location rows around it. The deadline
+ *  is informational: once it passes the row says late RSVPs are still
+ *  welcome rather than closing anything. `nowMs` comes from the parent so
+ *  this component stays pure for the React Compiler. */
 function RsvpByNote({ iso, nowMs }: { iso: string; nowMs: number }) {
   const deadline = new Date(iso);
   if (isNaN(deadline.getTime())) return null;
-  // `nowMs` comes from the parent so this component stays pure for the
-  // React Compiler (no Date.now() during render here).
   const msLeft = deadline.getTime() - nowMs;
+  const passed = msLeft <= 0;
   const daysLeft = Math.ceil(msLeft / (24 * 60 * 60 * 1000));
-  const when = formatDateTime(iso);
-  let text: string;
-  if (msLeft <= 0) {
-    text = `The RSVP deadline was ${when}. Late RSVPs are still welcome.`;
-  } else if (daysLeft <= 1) {
-    text = `RSVP by ${when}. That is today or tomorrow, so answer soon.`;
-  } else {
-    text = `RSVP by ${when}. ${daysLeft} days left.`;
-  }
+  const detail = passed
+    ? "This deadline has passed. Late RSVPs are still welcome."
+    : daysLeft <= 1
+      ? "Less than a day left."
+      : `${daysLeft} days left.`;
   return (
-    <Stack direction="row" alignItems="flex-start" spacing={0.75} sx={{ mb: 2 }}>
-      <EventAvailableRoundedIcon sx={{ fontSize: 18, color: msLeft <= 0 ? "text.disabled" : "primary.main", mt: "1px", flexShrink: 0 }} />
-      <Typography variant="body2" sx={{ color: msLeft <= 0 ? "text.secondary" : "text.primary", fontWeight: msLeft <= 0 ? 400 : 600, lineHeight: 1.5 }}>
-        {text}
-      </Typography>
+    <Stack direction="row" spacing={1.5} alignItems="flex-start">
+      <Box
+        sx={{
+          width: 32,
+          height: 32,
+          borderRadius: "50%",
+          bgcolor: passed ? "action.hover" : "primary.light",
+          color: passed ? "text.secondary" : "primary.dark",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+        }}
+      >
+        <EventAvailableRoundedIcon sx={{ fontSize: 18 }} />
+      </Box>
+      <Stack spacing={0.25} sx={{ minWidth: 0, flex: 1 }}>
+        <Typography variant="body1" fontWeight={500} sx={{ color: passed ? "text.secondary" : "text.primary" }}>
+          RSVP by {formatDateTime(iso)}
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          {detail}
+        </Typography>
+      </Stack>
     </Stack>
   );
 }
@@ -2235,7 +2252,9 @@ export default function EventDetailClient({
                 {event.maxSeats != null ? ` · ${event.maxSeats} max` : ""}
               </Typography>
             </Stack>
-            {event.rsvpByAt && <RsvpByNote iso={event.rsvpByAt} nowMs={Date.now()} />}
+            {event.rsvpByAt && !pubIsCanceled && new Date(event.startsAt) > new Date() && (
+              <RsvpByNote iso={event.rsvpByAt} nowMs={Date.now()} />
+            )}
             {event.description && (
               <>
                 <Divider sx={{ borderColor: "divider", opacity: 0.6 }} />
@@ -2333,7 +2352,6 @@ export default function EventDetailClient({
                     {pubGoingCount} going{pubMaybeCount > 0 ? ` · ${pubMaybeCount} maybe` : ""}
                   </Typography>
                 </Stack>
-                {event.rsvpByAt && <RsvpByNote iso={event.rsvpByAt} nowMs={Date.now()} />}
 
                 <Stack spacing={1.75}>
                   <Stack direction="row" spacing={1.5} alignItems="center">
@@ -3086,6 +3104,9 @@ export default function EventDetailClient({
                 : ""}
             </Typography>
           </Stack>
+          {event.rsvpByAt && !isCanceled && !isPast && (
+            <RsvpByNote iso={event.rsvpByAt} nowMs={Date.now()} />
+          )}
           {event.requireReconfirmation && !event.confirmationWindowOpen && (
             <Stack direction="row" spacing={1.5} alignItems="flex-start">
               <NotificationsRoundedIcon sx={{ color: "text.secondary", fontSize: 22, mt: "1px" }} />
@@ -3268,10 +3289,6 @@ export default function EventDetailClient({
           past-plan view. */}
       {!event.isHost && !isCanceled && !isPast && (
         <AppCard>
-          {/* "RSVP by" sits at the top of the card so every viewer state
-              (signed in, tokenized signup, bare public link, invite-only
-              wall, request-to-join) sees the same deadline line. */}
-          {event.rsvpByAt && <RsvpByNote iso={event.rsvpByAt} nowMs={Date.now()} />}
           {isAuthenticated === false && emailContext === "host_review" ? (
             <Stack spacing={2} sx={{ py: 1 }}>
               <Typography variant="h6" fontWeight={600}>
@@ -3625,7 +3642,6 @@ export default function EventDetailClient({
               </Stack>
             </Stack>
           ) : isAuthenticated === false ? (
-            <>
             <PlanSignupCard
               planUrlWithTokens={(() => {
                 // The URL the invitee returns to after verifying (by code or
@@ -3660,7 +3676,6 @@ export default function EventDetailClient({
               // link.
               prefillEmail={inviteeEmail ?? undefined}
             />
-            </>
           ) : (
             <div
               // Only carries the confirmation scroll id when the host
