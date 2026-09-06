@@ -1179,7 +1179,7 @@ export const sendKudosReceivedEmail = async (
       greeting: `Hi ${recipientName},`,
       bodyText: `${single ? "Someone from your plan tagged you" : `People from your plan${planTitles.length > 1 ? "s" : ""} tagged you`}${whereLine}: ${tagLine}. Tags are anonymous and collect on your profile.`,
       ctaText: single ? "See it on your profile" : "See them on your profile",
-      ctaHelperText: "A tag shows to visitors once two different people have given it. You always see all of yours.",
+      ctaHelperText: "Tags are anonymous and collect on your profile for anyone who visits it.",
       recipientName,
       count,
       planTitle,

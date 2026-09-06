@@ -402,7 +402,9 @@ export default function ProfileClient() {
   const handleCropSave = useCallback(async () => {
     if (!cropImageSrc || !croppedAreaPixels) return;
     try {
-      const blob = await getCroppedImg(cropImageSrc, croppedAreaPixels as PixelCrop);
+      // 1024px so the full-size photo viewer on public profiles stays sharp;
+      // the 256px default is fine for the small avatars elsewhere.
+      const blob = await getCroppedImg(cropImageSrc, croppedAreaPixels as PixelCrop, 1024);
       URL.revokeObjectURL(cropImageSrc);
       setCropImageSrc(null);
       setCroppedAreaPixels(null);

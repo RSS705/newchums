@@ -136,11 +136,13 @@ export default function ProfileHeaderSection({
               src={`${avatarBaseUrl}${avatarUrl}`}
               alt={`${displayName}'s profile photo`}
               sx={{
+                // An explicit size rather than the image's own: avatars are
+                // stored small (256px before Sept 2026, 1024px since), so
+                // without it the viewer showed them at thumbnail size.
                 display: "block",
-                maxWidth: "min(92vw, 720px)",
-                maxHeight: "85vh",
-                width: "auto",
+                width: "min(92vw, 85vh, 720px)",
                 height: "auto",
+                maxHeight: "85vh",
                 objectFit: "contain",
                 borderRadius: 3,
                 boxShadow: "0 16px 48px rgba(0,0,0,0.5)",

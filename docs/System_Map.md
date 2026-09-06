@@ -142,7 +142,7 @@ The following flows run in the API worker; the web app calls the API via `NEXT_P
 | Plan lock | `POST /events/:id/lock` | Bearer JWT (host only) |
 | Plan privacy | `POST /events/:id/hide-name` | Bearer JWT. Toggles the viewer's `hide_name` flag on their RSVP. When active, real name is masked in attendee list; @handle and avatar remain visible. |
 | Post-plan wrap-up | `GET /events/:id/wrap-up`, `POST /events/:id/wrap-up/dismiss`, `POST`/`DELETE /events/:id/attendance-issue` (host-only), `POST /events/:id/attendance-dispute`, `POST /events/:id/conduct-report`, `POST /events/:id/kudos`, `DELETE /events/:id/kudos/:recipientUserId` | Bearer JWT |
-| Kudos | `GET /public/users/:handle/kudos` (counts per tag for the profile shelf; visitors see a tag once two different people gave it, the owner sees all), `GET /me/attendance-record/details` (owner-only plans behind the reliability tiles) | Optional Bearer JWT (owner detection) / Bearer JWT |
+| Tags (kudos internally) | `GET /public/users/:handle/kudos` (counts per tag for the profile section, the same for every viewer), `GET /me/attendance-record/details` (owner plans behind the reliability tiles), `GET /admin/users/:id/attendance-record/details` (super admins) | Optional Bearer JWT (owner detection) / Bearer JWT |
 | Attendance record | `GET /public/users/:userId/attendance-record` | none. Response includes `badges` array with local recognition badges (Top Attendee, Top Host) computed from rolling 12-month activity within 50 km. |
 | Plan chat | `GET /events/:id/chat`, `POST /events/:id/chat`, `POST /events/:id/chat/read`, `GET /events/:id/chat/ws` (WebSocket upgrade) | Bearer JWT |
 | Notifications | `GET /notifications` (includes `unreadChats`), `POST /notifications/read` | Bearer JWT |

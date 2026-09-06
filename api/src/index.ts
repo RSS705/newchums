@@ -63,7 +63,7 @@ import {
   hardDeletePlan,
   hardDeleteUser,
 } from "./lib/adminHardDelete";
-import { KUDOS_TAGS, KUDOS_MAX_PER_PLAN, KUDOS_PUBLIC_MIN_GIVERS, KUDOS_WINDOW_MS, isKudosTag, kudosTagInfo } from "./lib/kudos";
+import { KUDOS_TAGS, KUDOS_MAX_PER_PLAN, KUDOS_WINDOW_MS, isKudosTag, kudosTagInfo } from "./lib/kudos";
 import { checkDbRateLimit, isDbRateLimited, recordDbRateEvent } from "./lib/dbRateLimit";
 import {
   generateOtpCode,
@@ -553,11 +553,10 @@ app.get("/public/users/:handle", async (c) => {
 
 /** GET /public/users/:handle/kudos
  *  Aggregated tags for the profile section: counts per tag, never who gave
- *  what. Visitors see a tag once KUDOS_PUBLIC_MIN_GIVERS different people
- *  have given it, so a lone giver stays anonymous; the owner, and super
- *  admins (so a test tag can be checked), see every tag with the
- *  still-private ones flagged. Tags inside a blocked pair are left out for
- *  everyone, since both identities are in the row. */
+ *  what. Every tag shows to anyone who can see the profile, even one given
+ *  a single time (Rob's call, 2026-09-06; the earlier two-giver threshold
+ *  hid too much). Tags inside a blocked pair are left out for everyone,
+ *  since both identities are in the row. */
 app.get("/public/users/:handle/kudos", async (c) => {
   const handleParam = c.req.param("handle")?.trim();
   if (!handleParam) {
@@ -590,11 +589,9 @@ app.get("/public/users/:handle/kudos", async (c) => {
       }
     }
     const isOwner = viewerUserId !== null && viewerUserId === target.id;
-    const viewerIsSuperAdmin = viewerUserId !== null && !isOwner ? await checkIsSuperAdmin(sql, viewerUserId) : false;
-    const seesAll = isOwner || viewerIsSuperAdmin;
 
     const rows = (await sql`
-      SELECT k.tag, COUNT(*)::int AS count, COUNT(DISTINCT k.giver_user_id)::int AS givers,
+      SELECT k.tag, COUNT(*)::int AS count,
              MAX(k.created_at) AS latest_at
       FROM newchums.kudos k
       JOIN newchums.events e ON e.id = k.plan_id
@@ -607,25 +604,19 @@ app.get("/public/users/:handle/kudos", async (c) => {
         )
       GROUP BY k.tag
       ORDER BY count DESC, latest_at DESC
-    `) as Array<{ tag: string; count: number; givers: number; latest_at: string }>;
+    `) as Array<{ tag: string; count: number; latest_at: string }>;
 
-    const items: Array<{ tag: string; label: string; emoji: string; count: number; publicYet: boolean }> = [];
+    const items: Array<{ tag: string; label: string; emoji: string; count: number }> = [];
     for (const r of rows) {
       const info = kudosTagInfo(r.tag);
       if (!info) continue;
-      const publicYet = r.givers >= KUDOS_PUBLIC_MIN_GIVERS;
-      // Visitors never learn about tags still below the threshold, not even
-      // as a count; the owner and super admins see them flagged.
-      if (!publicYet && !seesAll) continue;
-      items.push({ tag: r.tag, label: info.label, emoji: info.emoji, count: r.count, publicYet });
+      items.push({ tag: r.tag, label: info.label, emoji: info.emoji, count: r.count });
     }
     return c.json({
       ok: true,
       isOwner,
-      viewerIsSuperAdmin,
       items,
       total: items.reduce((sum, it) => sum + it.count, 0),
-      minGivers: KUDOS_PUBLIC_MIN_GIVERS,
     });
   } catch (err) {
     console.error("[GET /public/users/:handle/kudos]", err);

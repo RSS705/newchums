@@ -5,7 +5,7 @@
  *
  * The tags are deliberately universal across hobbies and read as props
  * rather than ratings: nothing here can be read as a mark against someone.
- * Wording chosen by Rob, 2026-09-06, extended the same evening to 64 tags
+ * Wording chosen by Rob, 2026-09-06, extended the same evening to 64 tags and then 79 with a Magic-flavoured batch
  * ("Sweaty", "Salt Miner" and friends are in-jokes his crowd uses). Users
  * see these as "tags"; kudos stays the internal name (table, routes,
  * preference key). The picker sorts alphabetically and has a search box,
@@ -77,6 +77,21 @@ export const KUDOS_TAGS = [
   { tag: "brain_cell", label: "Brain Cell", emoji: "💡" },
   { tag: "good_egg", label: "Good Egg", emoji: "🥚" },
   { tag: "absolute_unit", label: "Absolute Unit", emoji: "🐂" },
+  { tag: "topdeck_hero", label: "Topdeck Hero", emoji: "🎴" },
+  { tag: "reads_the_card_eventually", label: "Reads the Card Eventually", emoji: "🔍" },
+  { tag: "brewer", label: "Brewer", emoji: "🧪" },
+  { tag: "had_the_answer", label: "Had the Answer", emoji: "🛡️" },
+  { tag: "keeps_sketchy_hands", label: "Keeps Sketchy Hands", emoji: "🤞" },
+  { tag: "misplays_with_confidence", label: "Misplays With Confidence", emoji: "😎" },
+  { tag: "combo_player", label: "Combo Player", emoji: "🔗" },
+  { tag: "board_wipe_enthusiast", label: "Board Wipe Enthusiast", emoji: "💥" },
+  { tag: "says_in_response", label: "Says \"In Response\"", emoji: "✋" },
+  { tag: "haste_enjoyer", label: "Haste Enjoyer", emoji: "💨" },
+  { tag: "timmy_energy", label: "Timmy Energy", emoji: "🦖" },
+  { tag: "control_player", label: "Control Player", emoji: "❄️" },
+  { tag: "storm_brain", label: "Storm Brain", emoji: "⛈️" },
+  { tag: "midrange_enjoyer", label: "Midrange Enjoyer", emoji: "🎚️" },
+  { tag: "aggro_brain", label: "Aggro Brain", emoji: "🔥" },
 ] as const;
 
 export type KudosTag = (typeof KUDOS_TAGS)[number]["tag"];
@@ -100,6 +115,3 @@ export const KUDOS_MAX_PER_PLAN = 3;
  *  wrap-up card already uses. */
 export const KUDOS_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
-/** A tag shows on the public profile only once this many different people
- *  have given it, so a lone giver stays anonymous. The owner sees everything. */
-export const KUDOS_PUBLIC_MIN_GIVERS = 2;

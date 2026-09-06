@@ -344,15 +344,14 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
         viewerIsSuperAdmin={viewerIsSuperAdmin}
       />
 
-      {/* Kudos from people they've been on plans with: counts per tag, never
-          who gave what. Self-contained card with its own fetch. Empty (no
-          tag public yet, or none at all for the owner) renders nothing. */}
+      {/* Tags from people they've been on plans with: counts per tag, never
+          who gave what, visible to every viewer. Self-contained card with
+          its own fetch. Empty renders nothing. */}
       {ownerHandleSlug && (
         <PublicProfileKudosSection
           handle={ownerHandleSlug}
           isOwner={!!isOwner}
           viewerLoggedIn={!!viewerLoggedIn}
-          viewerIsSuperAdmin={viewerIsSuperAdmin}
         />
       )}
 
