@@ -67,6 +67,9 @@ export type PublicProfileViewProps = {
   chumAction?: ChumAction;
   blockAction?: BlockAction;
   viewerLoggedIn?: boolean;
+  /** Super admins see the owner-only reliability breakdown on other
+   *  people's profiles. Server-decided (public-user response). */
+  viewerIsSuperAdmin?: boolean;
   /** When set, renders a "Message" button linking into the Inbox compose
    *  flow. Null/undefined hides the button (logged out, self, or the
    *  profile owner isn't accepting messages from this viewer). */
@@ -77,7 +80,7 @@ export type PublicProfileViewProps = {
  * Shared public profile view. Renders modular sections; easy to add future
  * sections (XP, badges, trust metrics, unlockables) as separate components.
  */
-export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAction, blockAction, viewerLoggedIn, messageHref }: PublicProfileViewProps) {
+export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAction, blockAction, viewerLoggedIn, viewerIsSuperAdmin, messageHref }: PublicProfileViewProps) {
   const [blockConfirmOpen, setBlockConfirmOpen] = useState(false);
   const cardBg = getProfileCardBg(user.profile_theme);
   // Themed cards carry real colour since Aug 2026, and the app-wide muted
@@ -338,6 +341,7 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
         displayName={user.displayName}
         variant="public"
         viewerLoggedIn={viewerLoggedIn}
+        viewerIsSuperAdmin={viewerIsSuperAdmin}
       />
 
       {/* Kudos from people they've been on plans with: counts per tag, never

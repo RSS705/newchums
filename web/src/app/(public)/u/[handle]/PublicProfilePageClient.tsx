@@ -17,7 +17,7 @@ type PublicProfilePageClientProps = {
 
 type FetchState =
   | { status: "loading" }
-  | { status: "success"; user: PublicProfileUser; viewerCanMessage: boolean; viewerHasBlocked: boolean }
+  | { status: "success"; user: PublicProfileUser; viewerCanMessage: boolean; viewerHasBlocked: boolean; viewerIsSuperAdmin: boolean }
   | { status: "not_found" }
   | { status: "error"; message?: string };
 
@@ -43,9 +43,10 @@ export default function PublicProfilePageClient({ handle, viewerHandle }: Public
         user?: PublicProfileUser;
         viewerCanMessage?: boolean;
         viewerHasBlocked?: boolean;
+        viewerIsSuperAdmin?: boolean;
       };
       if (res.ok && data.ok && data.user) {
-        setState({ status: "success", user: data.user, viewerCanMessage: data.viewerCanMessage === true, viewerHasBlocked: data.viewerHasBlocked === true });
+        setState({ status: "success", user: data.user, viewerCanMessage: data.viewerCanMessage === true, viewerHasBlocked: data.viewerHasBlocked === true, viewerIsSuperAdmin: data.viewerIsSuperAdmin === true });
       } else if (res.status === 404 || data.error === "NOT_FOUND") {
         setState({ status: "not_found" });
       } else {
@@ -178,6 +179,7 @@ export default function PublicProfilePageClient({ handle, viewerHandle }: Public
       chumAction={chumAction}
       blockAction={blockAction}
       viewerLoggedIn={!!viewerHandle}
+      viewerIsSuperAdmin={state.viewerIsSuperAdmin}
       messageHref={!isOwner && state.viewerCanMessage ? `/inbox?to=${state.user.userId}` : null}
     />
   );

@@ -510,10 +510,22 @@ app.get("/public/users/:handle", async (c) => {
       }
     }
 
+    // Super admins get the owner-only affordances on other people's
+    // profiles (the reliability breakdown). Server-decided so the client
+    // never has to trust a role it read elsewhere.
+    let viewerIsSuperAdmin = false;
+    if (viewerAuthenticated && typeof authPayload?.email === "string") {
+      try {
+        const viewerAppId = await ensureAppUserId(sql, authPayload.email, (authPayload as { name?: string | null }).name);
+        viewerIsSuperAdmin = await checkIsSuperAdmin(sql, viewerAppId);
+      } catch { /* non-essential */ }
+    }
+
     return c.json({
       ok: true,
       viewerCanMessage,
       viewerHasBlocked,
+      viewerIsSuperAdmin,
       user: {
         userId: user.id,
         displayName,
@@ -792,85 +804,105 @@ app.get("/public/users/:userId/attendance-record", async (c) => {
   }
 });
 
-/** GET /me/attendance-record/details
- *  The plans behind the viewer's own reliability stats, one list per tile,
- *  mirroring the public attendance-record filters exactly so the rows add up
- *  to the ratios shown. Owner-only by construction (it reads the caller's
- *  id); nothing here is exposed on public profiles. */
+/** The plans behind one person's reliability tiles, one list per tile,
+ *  mirroring the public attendance-record filters exactly so the rows add
+ *  up to the ratios shown. Served to the owner (GET /me/...) and to super
+ *  admins looking at someone else's profile (GET /admin/users/:id/...);
+ *  never to anyone else. */
+async function loadAttendanceRecordDetails(sql: ReturnType<typeof getSql>, userId: string) {
+  const now = new Date().toISOString();
+  const committed = (await sql`
+    SELECT e.id, e.title, e.starts_at, r.status,
+           EXISTS (
+             SELECT 1 FROM newchums.attendance_issues ai
+             WHERE ai.plan_id = e.id AND ai.reported_user_id = r.user_id
+               AND ai.issue_type IN ('no_show', 'very_late')
+               AND COALESCE(ai.status, 'active') != 'dismissed'
+           ) AS has_issue,
+           (SELECT ai2.issue_type FROM newchums.attendance_issues ai2
+             WHERE ai2.plan_id = e.id AND ai2.reported_user_id = r.user_id
+               AND ai2.issue_type IN ('no_show', 'very_late')
+               AND COALESCE(ai2.status, 'active') != 'dismissed'
+             ORDER BY ai2.created_at DESC LIMIT 1) AS issue_type
+    FROM newchums.event_rsvps r
+    JOIN newchums.events e ON e.id = r.event_id
+    WHERE r.user_id = ${userId}
+      AND r.committed_at IS NOT NULL
+      AND e.status != 'canceled'
+      AND COALESCE(e.is_qa, false) = false
+      AND e.starts_at < ${now}
+    ORDER BY e.starts_at DESC
+    LIMIT 200
+  `) as { id: string; title: string; starts_at: string; status: string; has_issue: boolean; issue_type: string | null }[];
+
+  const checks = (await sql`
+    SELECT e.id, e.title, e.starts_at, ec.status, COALESCE(ec.email_opted_out, false) AS email_opted_out
+    FROM newchums.event_confirmations ec
+    JOIN newchums.events e ON e.id = ec.event_id
+    WHERE ec.user_id = ${userId}
+      AND COALESCE(e.is_qa, false) = false
+      AND e.starts_at < ${now}
+    ORDER BY e.starts_at DESC
+    LIMIT 200
+  `) as { id: string; title: string; starts_at: string; status: string; email_opted_out: boolean }[];
+
+  const hosted = (await sql`
+    SELECT e.id, e.title, e.starts_at, e.status, e.cancellation_reason
+    FROM newchums.events e
+    WHERE e.host_user_id = ${userId}
+      AND e.status IN ('published', 'canceled')
+      AND COALESCE(e.is_qa, false) = false
+      AND e.starts_at < ${now}
+      AND EXISTS (
+        SELECT 1 FROM newchums.event_rsvps er
+        WHERE er.event_id = e.id
+          AND er.user_id IS DISTINCT FROM e.host_user_id
+          AND er.committed_at IS NOT NULL
+      )
+      AND COALESCE(e.cancellation_reason, '') NOT IN ('no_attendees', 'min_attendees_required_not_met')
+    ORDER BY e.starts_at DESC
+    LIMIT 200
+  `) as { id: string; title: string; starts_at: string; status: string; cancellation_reason: string | null }[];
+
+  const plan = (r: { id: string; title: string; starts_at: string }) => ({ planId: r.id, title: r.title, startsAt: r.starts_at });
+  return {
+    goingFollowThrough: committed.map((r) => ({ ...plan(r), kept: r.status === "going", rsvpStatus: r.status })),
+    // "Shows up" only covers plans still held as Going, the same set as the tile's denominator.
+    followThrough: committed.filter((r) => r.status === "going").map((r) => ({ ...plan(r), shownUp: !r.has_issue, issueType: r.issue_type })),
+    confirmationRate: checks
+      .filter((r) => r.status === "confirmed" || r.status === "declined" || !r.email_opted_out)
+      .map((r) => ({ ...plan(r), responded: r.status === "confirmed" || r.status === "declined", status: r.status })),
+    hostCompletion: hosted.map((r) => ({ ...plan(r), completed: r.status !== "canceled", cancellationReason: r.cancellation_reason })),
+  };
+}
+
+/** GET /me/attendance-record/details, the viewer's own breakdown. */
 app.get("/me/attendance-record/details", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
     return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
   const sql = getSql(c.env);
   const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
-  const now = new Date().toISOString();
   try {
-    const committed = (await sql`
-      SELECT e.id, e.title, e.starts_at, r.status,
-             EXISTS (
-               SELECT 1 FROM newchums.attendance_issues ai
-               WHERE ai.plan_id = e.id AND ai.reported_user_id = r.user_id
-                 AND ai.issue_type IN ('no_show', 'very_late')
-                 AND COALESCE(ai.status, 'active') != 'dismissed'
-             ) AS has_issue,
-             (SELECT ai2.issue_type FROM newchums.attendance_issues ai2
-               WHERE ai2.plan_id = e.id AND ai2.reported_user_id = r.user_id
-                 AND ai2.issue_type IN ('no_show', 'very_late')
-                 AND COALESCE(ai2.status, 'active') != 'dismissed'
-               ORDER BY ai2.created_at DESC LIMIT 1) AS issue_type
-      FROM newchums.event_rsvps r
-      JOIN newchums.events e ON e.id = r.event_id
-      WHERE r.user_id = ${userId}
-        AND r.committed_at IS NOT NULL
-        AND e.status != 'canceled'
-        AND COALESCE(e.is_qa, false) = false
-        AND e.starts_at < ${now}
-      ORDER BY e.starts_at DESC
-      LIMIT 200
-    `) as { id: string; title: string; starts_at: string; status: string; has_issue: boolean; issue_type: string | null }[];
-
-    const checks = (await sql`
-      SELECT e.id, e.title, e.starts_at, ec.status, COALESCE(ec.email_opted_out, false) AS email_opted_out
-      FROM newchums.event_confirmations ec
-      JOIN newchums.events e ON e.id = ec.event_id
-      WHERE ec.user_id = ${userId}
-        AND COALESCE(e.is_qa, false) = false
-        AND e.starts_at < ${now}
-      ORDER BY e.starts_at DESC
-      LIMIT 200
-    `) as { id: string; title: string; starts_at: string; status: string; email_opted_out: boolean }[];
-
-    const hosted = (await sql`
-      SELECT e.id, e.title, e.starts_at, e.status, e.cancellation_reason
-      FROM newchums.events e
-      WHERE e.host_user_id = ${userId}
-        AND e.status IN ('published', 'canceled')
-        AND COALESCE(e.is_qa, false) = false
-        AND e.starts_at < ${now}
-        AND EXISTS (
-          SELECT 1 FROM newchums.event_rsvps er
-          WHERE er.event_id = e.id
-            AND er.user_id IS DISTINCT FROM e.host_user_id
-            AND er.committed_at IS NOT NULL
-        )
-        AND COALESCE(e.cancellation_reason, '') NOT IN ('no_attendees', 'min_attendees_required_not_met')
-      ORDER BY e.starts_at DESC
-      LIMIT 200
-    `) as { id: string; title: string; starts_at: string; status: string; cancellation_reason: string | null }[];
-
-    const plan = (r: { id: string; title: string; starts_at: string }) => ({ planId: r.id, title: r.title, startsAt: r.starts_at });
-    return c.json({
-      ok: true,
-      goingFollowThrough: committed.map((r) => ({ ...plan(r), kept: r.status === "going", rsvpStatus: r.status })),
-      // "Shows up" only covers plans still held as Going, the same set as the tile's denominator.
-      followThrough: committed.filter((r) => r.status === "going").map((r) => ({ ...plan(r), shownUp: !r.has_issue, issueType: r.issue_type })),
-      confirmationRate: checks
-        .filter((r) => r.status === "confirmed" || r.status === "declined" || !r.email_opted_out)
-        .map((r) => ({ ...plan(r), responded: r.status === "confirmed" || r.status === "declined", status: r.status })),
-      hostCompletion: hosted.map((r) => ({ ...plan(r), completed: r.status !== "canceled", cancellationReason: r.cancellation_reason })),
-    });
+    return c.json({ ok: true, ...(await loadAttendanceRecordDetails(sql, userId)) });
   } catch (err) {
     console.error("[GET /me/attendance-record/details]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** GET /admin/users/:id/attendance-record/details, the same breakdown for
+ *  another person, super admins only (support and moderation). */
+app.get("/admin/users/:id/attendance-record/details", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  const userId = c.req.param("id")?.trim();
+  if (!userId) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+  const sql = getSql(c.env);
+  try {
+    return c.json({ ok: true, ...(await loadAttendanceRecordDetails(sql, userId)) });
+  } catch (err) {
+    console.error("[GET /admin/users/:id/attendance-record/details]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });

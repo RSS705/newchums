@@ -3,7 +3,9 @@
 import { useState } from "react";
 import Box from "@mui/material/Box";
 import ButtonBase from "@mui/material/ButtonBase";
-import Dialog from "@mui/material/Dialog";
+import IconButton from "@mui/material/IconButton";
+import Modal from "@mui/material/Modal";
+import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
@@ -105,29 +107,47 @@ export default function ProfileHeaderSection({
         </ButtonBase>
       </Box>
       {avatarUrl && (
-        <Dialog
-          open={photoOpen}
-          onClose={() => setPhotoOpen(false)}
-          maxWidth={false}
-          slotProps={{ paper: { sx: { bgcolor: "transparent", boxShadow: "none", m: 2, overflow: "visible" } } }}
-        >
+        /* A plain modal: the photo sits centred on a dark backdrop, scaled
+           to the viewport, and any click or Escape closes it. */
+        <Modal open={photoOpen} onClose={() => setPhotoOpen(false)} aria-label="Profile photo">
           <Box
-            component="img"
-            src={`${avatarBaseUrl}${avatarUrl}`}
-            alt={`${displayName}'s profile photo`}
             onClick={() => setPhotoOpen(false)}
             sx={{
-              display: "block",
-              maxWidth: "min(92vw, 640px)",
-              maxHeight: "80vh",
-              width: "auto",
-              height: "auto",
-              borderRadius: 4,
-              boxShadow: "0 12px 40px rgba(0,0,0,0.35)",
-              cursor: "pointer",
+              position: "fixed",
+              inset: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              bgcolor: "rgba(0,0,0,0.85)",
+              p: 2,
+              outline: "none",
+              cursor: "zoom-out",
             }}
-          />
-        </Dialog>
+          >
+            <IconButton
+              aria-label="Close photo"
+              onClick={() => setPhotoOpen(false)}
+              sx={{ position: "absolute", top: 12, right: 12, color: "#fff", bgcolor: "rgba(255,255,255,0.12)", "&:hover": { bgcolor: "rgba(255,255,255,0.22)" } }}
+            >
+              <CloseRoundedIcon />
+            </IconButton>
+            <Box
+              component="img"
+              src={`${avatarBaseUrl}${avatarUrl}`}
+              alt={`${displayName}'s profile photo`}
+              sx={{
+                display: "block",
+                maxWidth: "min(92vw, 720px)",
+                maxHeight: "85vh",
+                width: "auto",
+                height: "auto",
+                objectFit: "contain",
+                borderRadius: 3,
+                boxShadow: "0 16px 48px rgba(0,0,0,0.5)",
+              }}
+            />
+          </Box>
+        </Modal>
       )}
       <Box sx={{ textAlign: { xs: "center", sm: "left" }, minWidth: 0, pt: { xs: 0, sm: 0.5 } }}>
         <Typography

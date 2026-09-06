@@ -114,7 +114,7 @@ export const OBJECTIVES: ObjectiveDefinition[] = [
     description: "Show up to a plan you joined. That's what NewChums is all about.",
     category: "plans",
     sequence: 80,
-    actionUrl: "/your-plans",
+    actionUrl: "/plans",
     actionLabel: "Your plans",
   },
   {
@@ -123,7 +123,7 @@ export const OBJECTIVES: ObjectiveDefinition[] = [
     description: "Introduce yourself in a plan's group chat before meeting up.",
     category: "engagement",
     sequence: 90,
-    actionUrl: "/your-plans",
+    actionUrl: "/plans",
     actionLabel: "Your plans",
   },
   {
@@ -154,7 +154,7 @@ export const OBJECTIVES: ObjectiveDefinition[] = [
     description: "Quick props after a plan make someone's day.",
     category: "engagement",
     sequence: 120,
-    actionUrl: "/your-plans",
+    actionUrl: "/plans",
     actionLabel: "Your plans",
   },
 ];

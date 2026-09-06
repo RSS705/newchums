@@ -5,20 +5,26 @@
  *
  * The tags are deliberately universal across hobbies and read as props
  * rather than ratings: nothing here can be read as a mark against someone.
- * Wording chosen by Rob, 2026-09-06.
+ * Wording chosen by Rob, 2026-09-06 (second pass the same day: the more
+ * heartfelt ones went, "Sweaty" is an in-joke his crowd uses). No kudos rows
+ * existed on prod at the swap, so no tag remapping was needed.
  */
 export const KUDOS_TAGS = [
   { tag: "good_energy", label: "Good Energy", emoji: "⚡" },
-  { tag: "funny_as_hell", label: "Funny as Hell", emoji: "😂" },
-  { tag: "great_banter", label: "Great Banter", emoji: "🗣️" },
-  { tag: "makes_people_feel_included", label: "Makes People Feel Included", emoji: "🫶" },
+  { tag: "quick_wit", label: "Quick Wit", emoji: "😏" },
+  { tag: "banter_merchant", label: "Banter Merchant", emoji: "🗣️" },
   { tag: "social_glue", label: "Social Glue", emoji: "🧲" },
-  { tag: "down_for_anything", label: "Down for Anything", emoji: "🎲" },
-  { tag: "responsible_chaos", label: "Responsible Chaos", emoji: "🌪️" },
-  { tag: "came_through", label: "Came Through", emoji: "🤝" },
+  { tag: "side_quest_energy", label: "Side-Quest Energy", emoji: "🗺️" },
+  { tag: "good_sport", label: "Good Sport", emoji: "🤝" },
   { tag: "knows_cool_stuff", label: "Knows Cool Stuff", emoji: "🧠" },
+  { tag: "great_taste", label: "Great Taste", emoji: "👌" },
+  { tag: "refreshingly_normal", label: "Refreshingly Normal", emoji: "😌" },
+  { tag: "delightfully_unhinged", label: "Delightfully Unhinged", emoji: "🤪" },
   { tag: "weird_in_a_good_way", label: "Weird in a Good Way", emoji: "🦄" },
+  { tag: "sweaty", label: "Sweaty", emoji: "🥵" },
+  { tag: "glad_you_came", label: "Glad You Came", emoji: "🎉" },
   { tag: "would_hang_again", label: "Would Hang Again", emoji: "🔁" },
+  { tag: "would_recommend", label: "Would Recommend", emoji: "⭐" },
   { tag: "group_mvp", label: "Group MVP", emoji: "🏆" },
 ] as const;
 

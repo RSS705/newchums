@@ -47,6 +47,8 @@ type AttendanceRecord = {
 type AttendanceRecordSectionProps = {
   userId: string;
   isOwner?: boolean;
+  /** Super admins get the owner-only breakdown on other people's profiles. */
+  viewerIsSuperAdmin?: boolean;
   /** Display name (used for non-public profile title when not owner). */
   displayName?: string;
   /** `profile` = edit profile page (can show "Your stats" when owner). `public` = public profile URL. */
@@ -267,11 +269,12 @@ function formatPlanDate(iso: string): string {
   }
 }
 
-export default function AttendanceRecordSection({ userId, isOwner, displayName, variant = "profile", viewerLoggedIn }: AttendanceRecordSectionProps) {
+export default function AttendanceRecordSection({ userId, isOwner, viewerIsSuperAdmin, displayName, variant = "profile", viewerLoggedIn }: AttendanceRecordSectionProps) {
   const [record, setRecord] = useState<AttendanceRecord | null>(null);
-  // Owner-only breakdown: which plans counted toward each tile. Fetched on
-  // first open and kept for the session; never rendered on other people's
-  // profiles (the endpoint only ever returns the caller's own rows).
+  // Breakdown of which plans counted toward each tile. Owners read their
+  // own rows; super admins read anyone's through the admin endpoint (the
+  // API decides who is a super admin). Nobody else gets the affordance.
+  const canSeeDetails = !!isOwner || !!viewerIsSuperAdmin;
   const [detailKey, setDetailKey] = useState<DetailKey | null>(null);
   const [details, setDetails] = useState<RecordDetails | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
@@ -279,7 +282,7 @@ export default function AttendanceRecordSection({ userId, isOwner, displayName, 
     setDetailKey(key);
     if (details || detailsLoading) return;
     setDetailsLoading(true);
-    apiFetch("/me/attendance-record/details", { auth: true })
+    apiFetch(isOwner ? "/me/attendance-record/details" : `/admin/users/${encodeURIComponent(userId)}/attendance-record/details`, { auth: true })
       .then((res) => res.json())
       .then((data: { ok?: boolean } & Partial<RecordDetails>) => {
         if (data.ok) {
@@ -417,7 +420,7 @@ export default function AttendanceRecordSection({ userId, isOwner, displayName, 
                 <MetricCard
                   icon={gft!.pct !== null && gft!.pct >= 80 ? <HandshakeRoundedIcon sx={{ fontSize: { xs: 22, sm: 26 } }} /> : null}
                   label="Going follow-through"
-                  onDetails={isOwner ? () => openDetails("goingFollowThrough") : undefined}
+                  onDetails={canSeeDetails ? () => openDetails("goingFollowThrough") : undefined}
                   value={gft!.display}
                   ratio={gft!.ratio || undefined}
                   tooltipTitle={
@@ -429,7 +432,7 @@ export default function AttendanceRecordSection({ userId, isOwner, displayName, 
                 <MetricCard
                   icon={ft!.pct !== null && ft!.pct >= 80 ? <CheckCircleOutlineRoundedIcon sx={{ fontSize: { xs: 22, sm: 26 } }} /> : null}
                   label="Shows up"
-                  onDetails={isOwner ? () => openDetails("followThrough") : undefined}
+                  onDetails={canSeeDetails ? () => openDetails("followThrough") : undefined}
                   value={ft!.display}
                   ratio={ft!.ratio || undefined}
                   tooltipTitle={
@@ -441,7 +444,7 @@ export default function AttendanceRecordSection({ userId, isOwner, displayName, 
                 <MetricCard
                   icon={cr!.pct !== null && cr!.pct >= 80 ? <ThumbUpAltRoundedIcon sx={{ fontSize: { xs: 22, sm: 26 } }} /> : null}
                   label="Attendance checks answered"
-                  onDetails={isOwner ? () => openDetails("confirmationRate") : undefined}
+                  onDetails={canSeeDetails ? () => openDetails("confirmationRate") : undefined}
                   value={cr!.display}
                   ratio={cr!.ratio || undefined}
                   tooltipTitle={
@@ -454,7 +457,7 @@ export default function AttendanceRecordSection({ userId, isOwner, displayName, 
                   <MetricCard
                     icon={hc!.pct !== null && hc!.pct >= 50 ? <StarRoundedIcon sx={{ fontSize: { xs: 22, sm: 26 } }} /> : null}
                     label="Host follow-through"
-                    onDetails={isOwner ? () => openDetails("hostCompletion") : undefined}
+                    onDetails={canSeeDetails ? () => openDetails("hostCompletion") : undefined}
                     value={hc!.display}
                     ratio={hc!.ratio || undefined}
                     tooltipTitle={`Of ${record!.hostCompletion.denominator} hosted plan${record!.hostCompletion.denominator === 1 ? "" : "s"} where others committed to join, ${record!.hostCompletion.numerator} still went ahead`}
@@ -517,7 +520,7 @@ export default function AttendanceRecordSection({ userId, isOwner, displayName, 
         </DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, lineHeight: 1.55 }}>
-            Only you can see this list. Newest first.
+            {isOwner ? "Only you can see this list." : "Super-admin view; the profile owner is the only other person who can see this list."} Newest first.
           </Typography>
           {detailsLoading && !details && (
             <Typography variant="body2" color="text.secondary">Loading…</Typography>
