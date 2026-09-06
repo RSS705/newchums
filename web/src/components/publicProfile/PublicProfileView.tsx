@@ -26,7 +26,7 @@ import ProfileChumsSection from "./ProfileChumsSection";
 import ProfileCommunitiesSection from "./ProfileCommunitiesSection";
 import ProfileHobbiesSection from "./ProfileHobbiesSection";
 import ProfileSectionHeader from "./ProfileSectionHeader";
-import PublicProfileShoutoutsSection from "./PublicProfileShoutoutsSection";
+import PublicProfileKudosSection from "./PublicProfileKudosSection";
 
 export type PublicProfileUser = {
   userId: string;
@@ -42,7 +42,6 @@ export type PublicProfileUser = {
    *  trust line in the hero. Null only on legacy rows without a created_at. */
   memberSince: string | null;
   is_hidden_chum_list: boolean;
-  is_hidden_shoutouts: boolean;
   is_hidden_communities: boolean;
 };
 
@@ -341,16 +340,14 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
         viewerLoggedIn={viewerLoggedIn}
       />
 
-      {/* Approved shout-outs from people they've joined plans with. Self-
-          contained card with its own fetch. The owner sees a subtle inline
-          hide/show toggle and can preview the dimmed-hidden state without
-          leaving the page. Empty (no approved shout-outs) renders nothing. */}
+      {/* Kudos from people they've been on plans with: counts per tag, never
+          who gave what. Self-contained card with its own fetch. Empty (no
+          tag public yet, or none at all for the owner) renders nothing. */}
       {ownerHandleSlug && (
-        <PublicProfileShoutoutsSection
+        <PublicProfileKudosSection
           handle={ownerHandleSlug}
           isOwner={!!isOwner}
           viewerLoggedIn={!!viewerLoggedIn}
-          initiallyHidden={user.is_hidden_shoutouts}
         />
       )}
 

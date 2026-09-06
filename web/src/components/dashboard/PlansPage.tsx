@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Collapse from "@mui/material/Collapse";
@@ -9,7 +9,11 @@ import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import Tab from "@mui/material/Tab";
 import Tabs from "@mui/material/Tabs";
+import TextField from "@mui/material/TextField";
+import InputAdornment from "@mui/material/InputAdornment";
+import CircularProgress from "@mui/material/CircularProgress";
 import Typography from "@mui/material/Typography";
+import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import AddCircleRoundedIcon from "@mui/icons-material/AddCircleRounded";
 import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
 import Divider from "@mui/material/Divider";
@@ -22,6 +26,8 @@ import { EmptyState, SectionHeader } from "@/components/ui";
 import { apiFetch } from "@/lib/apiClient";
 import { createEventHref } from "@/config/nav";
 
+const PAST_PAGE_SIZE = 50;
+
 export default function PlansPage() {
   const [tab, setTab] = useState(0);
   const [upcoming, setUpcoming] = useState<PlanEvent[]>([]);
@@ -29,39 +35,103 @@ export default function PlansPage() {
   const [loading, setLoading] = useState(true);
   const [canceledOpen, setCanceledOpen] = useState(false);
 
+  // Past tab: one merged list (hosted and attended together, newest first,
+  // the API's order), searchable and paged. `pastQuery` is the live input,
+  // `pastSearch` the debounced value the fetch uses. The tab count comes
+  // from the first, unfiltered load so searching does not make it jump.
+  const [pastQuery, setPastQuery] = useState("");
+  const [pastSearch, setPastSearch] = useState("");
+  const [pastHasMore, setPastHasMore] = useState(false);
+  const [pastSearching, setPastSearching] = useState(false);
+  const [pastLoadingMore, setPastLoadingMore] = useState(false);
+  const [pastCountLabel, setPastCountLabel] = useState<string | null>(null);
+  const pastSeqRef = useRef(0);
+
+  const fetchPast = useCallback(async (q: string, offset: number) => {
+    const params = new URLSearchParams({ filter: "past", limit: String(PAST_PAGE_SIZE), offset: String(offset) });
+    if (q) params.set("q", q);
+    const res = await apiFetch(`/events/mine?${params.toString()}`, { auth: true });
+    if (!res.ok) return null;
+    const d = (await res.json()) as { events?: PlanEvent[]; hasMore?: boolean };
+    return { events: d.events ?? [], hasMore: d.hasMore === true };
+  }, []);
+
   useEffect(() => {
     const load = async () => {
       setLoading(true);
       try {
-        const [upRes, pastRes] = await Promise.all([
+        const [upRes, pastPage] = await Promise.all([
           apiFetch("/events/mine?filter=upcoming", { auth: true }),
-          apiFetch("/events/mine?filter=past", { auth: true }),
+          fetchPast("", 0),
         ]);
         if (upRes.ok) {
           const d = (await upRes.json()) as { events: PlanEvent[] };
           setUpcoming(d.events ?? []);
         }
-        if (pastRes.ok) {
-          const d = (await pastRes.json()) as { events: PlanEvent[] };
-          setPast(d.events ?? []);
+        if (pastPage) {
+          setPast(pastPage.events);
+          setPastHasMore(pastPage.hasMore);
+          const active = pastPage.events.filter((e) => e.status !== "canceled").length;
+          setPastCountLabel(active > 0 ? `${active}${pastPage.hasMore ? "+" : ""}` : null);
         }
       } catch { /* ignore */ }
       setLoading(false);
     };
     load();
-  }, []);
+  }, [fetchPast]);
+
+  // Debounce the search box, then refetch page one for that query. Out-of-
+  // order responses are dropped so a slow earlier search cannot overwrite
+  // the latest one.
+  useEffect(() => {
+    const t = setTimeout(() => setPastSearch(pastQuery.trim()), 300);
+    return () => clearTimeout(t);
+  }, [pastQuery]);
+  useEffect(() => {
+    if (loading) return;
+    const seq = ++pastSeqRef.current;
+    setPastSearching(true);
+    fetchPast(pastSearch, 0)
+      .then((page) => {
+        if (seq !== pastSeqRef.current || !page) return;
+        setPast(page.events);
+        setPastHasMore(page.hasMore);
+      })
+      .catch(() => {})
+      .finally(() => { if (seq === pastSeqRef.current) setPastSearching(false); });
+    // `loading` is deliberately not a trigger: the first page arrives with
+    // the initial load, and this effect only re-runs for a search change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pastSearch, fetchPast]);
+
+  const loadMorePast = async () => {
+    if (pastLoadingMore || !pastHasMore) return;
+    setPastLoadingMore(true);
+    const seq = pastSeqRef.current;
+    try {
+      const page = await fetchPast(pastSearch, past.length);
+      if (page && seq === pastSeqRef.current) {
+        setPast((prev) => {
+          const seen = new Set(prev.map((e) => e.id));
+          return [...prev, ...page.events.filter((e) => !seen.has(e.id))];
+        });
+        setPastHasMore(page.hasMore);
+      }
+    } catch { /* ignore */ }
+    setPastLoadingMore(false);
+  };
 
   const isPast = tab === 1;
   // Active (non-canceled) events for the current tab
   const activeList = (isPast ? past : upcoming).filter((e) => e.status !== "canceled");
   // Canceled events live in their own collapsed section on each tab
   const canceledList = (isPast ? past : upcoming).filter((e) => e.status === "canceled");
-  const hosted = activeList.filter((e) => e.isHost);
-  const joined = activeList.filter((e) => !e.isHost);
+  // Upcoming keeps the hosting / attending split; Past is one merged list.
+  const hosted = isPast ? [] : activeList.filter((e) => e.isHost);
+  const joined = isPast ? [] : activeList.filter((e) => !e.isHost);
   // Tab counters reflect only active plans; canceled plans have their own
   // collapsed section and shouldn't inflate the Upcoming / Past tab counts.
   const upcomingActiveCount = upcoming.filter((e) => e.status !== "canceled").length;
-  const pastActiveCount = past.filter((e) => e.status !== "canceled").length;
 
   return (
     <Stack spacing={{ xs: 3, sm: 4 }}>
@@ -209,7 +279,7 @@ export default function PlansPage() {
           }}
         />
         <Tab
-          label={`Past${pastActiveCount > 0 ? ` (${pastActiveCount})` : ""}`}
+          label={`Past${pastCountLabel ? ` (${pastCountLabel})` : ""}`}
           sx={{
             textTransform: "none",
             minHeight: 52,
@@ -239,7 +309,63 @@ export default function PlansPage() {
       {/* Content */}
       {!loading && (
         <Stack spacing={{ xs: 4, sm: 5 }}>
-          {/* Hosted section */}
+          {/* Past: search box + one merged list, newest first. The card
+              itself says "Hosted by you" / "You're hosting", so no
+              separate hosted section is needed here. */}
+          {isPast && (
+            <Box>
+              <TextField
+                value={pastQuery}
+                onChange={(e) => setPastQuery(e.target.value)}
+                placeholder="Search past plans by title, hobby, place or host"
+                fullWidth
+                size="small"
+                slotProps={{
+                  input: {
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchRoundedIcon sx={{ fontSize: 20, color: "text.disabled" }} />
+                      </InputAdornment>
+                    ),
+                    endAdornment: pastSearching ? (
+                      <InputAdornment position="end">
+                        <CircularProgress size={16} />
+                      </InputAdornment>
+                    ) : undefined,
+                  },
+                }}
+                sx={{ mb: 2.5, "& .MuiOutlinedInput-root": { borderRadius: 2.5, bgcolor: "background.paper" } }}
+              />
+              {activeList.length > 0 && (
+                <Grid container spacing={2}>
+                  {activeList.map((event) => (
+                    <Grid key={event.id} size={{ xs: 12, sm: 6, md: 4 }} sx={{ display: "flex" }}>
+                      <EventCard event={event} isPast />
+                    </Grid>
+                  ))}
+                </Grid>
+              )}
+              {activeList.length === 0 && pastSearch && (
+                <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
+                  No past plans match &ldquo;{pastSearch}&rdquo;.
+                </Typography>
+              )}
+              {pastHasMore && (
+                <Box sx={{ display: "flex", justifyContent: "center", mt: 2.5 }}>
+                  <Button
+                    onClick={loadMorePast}
+                    disabled={pastLoadingMore}
+                    variant="outlined"
+                    sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3 }}
+                  >
+                    {pastLoadingMore ? "Loading…" : "Load more"}
+                  </Button>
+                </Box>
+              )}
+            </Box>
+          )}
+
+          {/* Hosted section (Upcoming) */}
           {hosted.length > 0 && (
             <Box>
               <SectionHeader
@@ -275,8 +401,9 @@ export default function PlansPage() {
 
           {/* Empty state. Wrapped in an outlined Paper with a soft warm
               icon orb so the empty surface still feels like part of the
-              page rather than orphaned helper text. */}
-          {hosted.length === 0 && joined.length === 0 && (
+              page rather than orphaned helper text. A past search with no
+              hits has its own one-liner above instead. */}
+          {activeList.length === 0 && !(isPast && pastSearch) && (
             <Paper
               variant="outlined"
               sx={{

@@ -14,6 +14,12 @@ import ThumbUpAltRoundedIcon from "@mui/icons-material/ThumbUpAltRounded";
 import StarRoundedIcon from "@mui/icons-material/StarRounded";
 import EmojiEventsRoundedIcon from "@mui/icons-material/EmojiEventsRounded";
 import { useEffect, useState } from "react";
+import Button from "@mui/material/Button";
+import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogTitle from "@mui/material/DialogTitle";
+import Link from "next/link";
 import { AppCard, TapTooltip } from "@/components/ui";
 import { apiFetch } from "@/lib/apiClient";
 
@@ -69,9 +75,11 @@ type MetricCardProps = {
   value: string;
   ratio?: string;
   tooltipTitle?: string;
+  /** Owner-only: opens the list of plans behind this number. */
+  onDetails?: () => void;
 };
 
-function MetricCard({ icon, label, value, ratio, tooltipTitle }: MetricCardProps) {
+function MetricCard({ icon, label, value, ratio, tooltipTitle, onDetails }: MetricCardProps) {
   const isEmpty = value === "-";
 
   const card = (
@@ -141,12 +149,35 @@ function MetricCard({ icon, label, value, ratio, tooltipTitle }: MetricCardProps
       >
         {label}
       </Typography>
+      {onDetails && !isEmpty && (
+        <Typography
+          component="button"
+          type="button"
+          variant="caption"
+          onClick={(e: React.MouseEvent) => { e.stopPropagation(); onDetails(); }}
+          sx={{
+            mt: 0.5,
+            background: "none",
+            border: "none",
+            p: 0,
+            cursor: "pointer",
+            fontFamily: "inherit",
+            fontSize: "0.6875rem",
+            fontWeight: 600,
+            color: "primary.main",
+            textDecoration: "underline",
+            textUnderlineOffset: "2px",
+          }}
+        >
+          See the plans
+        </Typography>
+      )}
     </Box>
   );
 
   if (tooltipTitle) {
     return (
-      <TapTooltip title={tooltipTitle} placement="top">
+      <TapTooltip title={tooltipTitle} placement="top" block>
         {card}
       </TapTooltip>
     );
@@ -212,8 +243,57 @@ function statsSectionTitle({
   return name ? `${name} stats` : "Stats";
 }
 
+type DetailPlan = { planId: string; title: string; startsAt: string };
+type RecordDetails = {
+  goingFollowThrough: Array<DetailPlan & { kept: boolean; rsvpStatus: string }>;
+  followThrough: Array<DetailPlan & { shownUp: boolean; issueType: string | null }>;
+  confirmationRate: Array<DetailPlan & { responded: boolean; status: string }>;
+  hostCompletion: Array<DetailPlan & { completed: boolean; cancellationReason: string | null }>;
+};
+type DetailKey = keyof RecordDetails;
+
+const DETAIL_TITLES: Record<DetailKey, string> = {
+  goingFollowThrough: "Going follow-through",
+  followThrough: "Shows up",
+  confirmationRate: "Attendance checks answered",
+  hostCompletion: "Host follow-through",
+};
+
+function formatPlanDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  } catch {
+    return "";
+  }
+}
+
 export default function AttendanceRecordSection({ userId, isOwner, displayName, variant = "profile", viewerLoggedIn }: AttendanceRecordSectionProps) {
   const [record, setRecord] = useState<AttendanceRecord | null>(null);
+  // Owner-only breakdown: which plans counted toward each tile. Fetched on
+  // first open and kept for the session; never rendered on other people's
+  // profiles (the endpoint only ever returns the caller's own rows).
+  const [detailKey, setDetailKey] = useState<DetailKey | null>(null);
+  const [details, setDetails] = useState<RecordDetails | null>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const openDetails = (key: DetailKey) => {
+    setDetailKey(key);
+    if (details || detailsLoading) return;
+    setDetailsLoading(true);
+    apiFetch("/me/attendance-record/details", { auth: true })
+      .then((res) => res.json())
+      .then((data: { ok?: boolean } & Partial<RecordDetails>) => {
+        if (data.ok) {
+          setDetails({
+            goingFollowThrough: data.goingFollowThrough ?? [],
+            followThrough: data.followThrough ?? [],
+            confirmationRate: data.confirmationRate ?? [],
+            hostCompletion: data.hostCompletion ?? [],
+          });
+        }
+      })
+      .catch(() => {})
+      .finally(() => setDetailsLoading(false));
+  };
   const [reliabilityHidden, setReliabilityHidden] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -255,6 +335,7 @@ export default function AttendanceRecordSection({ userId, isOwner, displayName, 
   const totalActivity = record ? record.plansAttended + record.plansHosted : 0;
 
   return (
+    <>
     <AppCard sx={{ overflow: "hidden" }}>
       <Stack spacing={1.75}>
         {/* Header */}
@@ -336,6 +417,7 @@ export default function AttendanceRecordSection({ userId, isOwner, displayName, 
                 <MetricCard
                   icon={gft!.pct !== null && gft!.pct >= 80 ? <HandshakeRoundedIcon sx={{ fontSize: { xs: 22, sm: 26 } }} /> : null}
                   label="Going follow-through"
+                  onDetails={isOwner ? () => openDetails("goingFollowThrough") : undefined}
                   value={gft!.display}
                   ratio={gft!.ratio || undefined}
                   tooltipTitle={
@@ -347,6 +429,7 @@ export default function AttendanceRecordSection({ userId, isOwner, displayName, 
                 <MetricCard
                   icon={ft!.pct !== null && ft!.pct >= 80 ? <CheckCircleOutlineRoundedIcon sx={{ fontSize: { xs: 22, sm: 26 } }} /> : null}
                   label="Shows up"
+                  onDetails={isOwner ? () => openDetails("followThrough") : undefined}
                   value={ft!.display}
                   ratio={ft!.ratio || undefined}
                   tooltipTitle={
@@ -358,6 +441,7 @@ export default function AttendanceRecordSection({ userId, isOwner, displayName, 
                 <MetricCard
                   icon={cr!.pct !== null && cr!.pct >= 80 ? <ThumbUpAltRoundedIcon sx={{ fontSize: { xs: 22, sm: 26 } }} /> : null}
                   label="Attendance checks answered"
+                  onDetails={isOwner ? () => openDetails("confirmationRate") : undefined}
                   value={cr!.display}
                   ratio={cr!.ratio || undefined}
                   tooltipTitle={
@@ -370,6 +454,7 @@ export default function AttendanceRecordSection({ userId, isOwner, displayName, 
                   <MetricCard
                     icon={hc!.pct !== null && hc!.pct >= 50 ? <StarRoundedIcon sx={{ fontSize: { xs: 22, sm: 26 } }} /> : null}
                     label="Host follow-through"
+                    onDetails={isOwner ? () => openDetails("hostCompletion") : undefined}
                     value={hc!.display}
                     ratio={hc!.ratio || undefined}
                     tooltipTitle={`Of ${record!.hostCompletion.denominator} hosted plan${record!.hostCompletion.denominator === 1 ? "" : "s"} where others committed to join, ${record!.hostCompletion.numerator} still went ahead`}
@@ -424,5 +509,69 @@ export default function AttendanceRecordSection({ userId, isOwner, displayName, 
         )}
       </Stack>
     </AppCard>
+      {/* Owner-only breakdown dialog. Rows link to the plan so a surprising
+          entry can be checked in context. */}
+      <Dialog open={detailKey !== null} onClose={() => setDetailKey(null)} fullWidth maxWidth="sm">
+        <DialogTitle sx={{ fontWeight: 700, fontSize: "1.0625rem", pb: 0.5 }}>
+          {detailKey ? DETAIL_TITLES[detailKey] : ""}
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, lineHeight: 1.55 }}>
+            Only you can see this list. Newest first.
+          </Typography>
+          {detailsLoading && !details && (
+            <Typography variant="body2" color="text.secondary">Loading…</Typography>
+          )}
+          {details && detailKey && (() => {
+            const rows: Array<{ planId: string; title: string; startsAt: string; ok: boolean; note: string }> =
+              detailKey === "goingFollowThrough"
+                ? details.goingFollowThrough.map((r) => ({ ...r, ok: r.kept, note: r.kept ? "Kept the Going RSVP" : r.rsvpStatus === "maybe" ? "Changed to Maybe" : "Backed out" }))
+                : detailKey === "followThrough"
+                  ? details.followThrough.map((r) => ({ ...r, ok: r.shownUp, note: r.shownUp ? "Came" : r.issueType === "very_late" ? "Reported very late" : "Reported as a no-show" }))
+                  : detailKey === "confirmationRate"
+                    ? details.confirmationRate.map((r) => ({ ...r, ok: r.responded, note: r.responded ? (r.status === "declined" ? "Answered: couldn't make it" : "Answered: confirmed") : "No answer to the check" }))
+                    : details.hostCompletion.map((r) => ({ ...r, ok: r.completed, note: r.completed ? "Went ahead" : "Canceled" }));
+            if (rows.length === 0) {
+              return <Typography variant="body2" color="text.secondary">Nothing counts toward this yet.</Typography>;
+            }
+            return (
+              <Stack spacing={0.75}>
+                {rows.map((r) => (
+                  <Stack
+                    key={r.planId}
+                    direction="row"
+                    alignItems="center"
+                    spacing={1}
+                    sx={{ p: 1.25, borderRadius: 2, border: "1px solid", borderColor: "divider", minWidth: 0 }}
+                  >
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography
+                        component={Link}
+                        href={`/events/${r.planId}`}
+                        variant="body2"
+                        sx={{ fontWeight: 600, color: "text.primary", textDecoration: "none", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", "&:hover": { textDecoration: "underline" } }}
+                      >
+                        {r.title}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">{formatPlanDate(r.startsAt)}</Typography>
+                    </Box>
+                    <Chip
+                      label={r.note}
+                      size="small"
+                      variant="outlined"
+                      color={r.ok ? "success" : "warning"}
+                      sx={{ fontWeight: 600, fontSize: "0.6875rem", height: 24, flexShrink: 0 }}
+                    />
+                  </Stack>
+                ))}
+              </Stack>
+            );
+          })()}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setDetailKey(null)} sx={{ textTransform: "none", fontWeight: 600 }}>Close</Button>
+        </DialogActions>
+      </Dialog>
+    </>
   );
 }

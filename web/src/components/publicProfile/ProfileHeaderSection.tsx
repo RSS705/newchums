@@ -1,6 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import Box from "@mui/material/Box";
+import ButtonBase from "@mui/material/ButtonBase";
+import Dialog from "@mui/material/Dialog";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
@@ -56,6 +59,7 @@ export default function ProfileHeaderSection({
   memberSince,
   viewerLoggedIn,
 }: ProfileHeaderSectionProps) {
+  const [photoOpen, setPhotoOpen] = useState(false);
   const handleDisplay = handle ? (handle.startsWith("@") ? handle : `@${handle}`) : null;
   const loggedOut = viewerLoggedIn === false;
 
@@ -84,13 +88,47 @@ export default function ProfileHeaderSection({
           display: "inline-flex",
         }}
       >
-        <UserAvatar
-          src={avatarUrl ? `${avatarBaseUrl}${avatarUrl}` : null}
-          name={displayName}
-          username={handleDisplay}
-          size={112}
-        />
+        {/* Tapping the photo opens it large. Only when there is a photo:
+            the initials fallback has nothing bigger to show. */}
+        <ButtonBase
+          onClick={() => { if (avatarUrl) setPhotoOpen(true); }}
+          disabled={!avatarUrl}
+          aria-label={avatarUrl ? "View profile photo" : undefined}
+          sx={{ borderRadius: "50%", display: "inline-flex" }}
+        >
+          <UserAvatar
+            src={avatarUrl ? `${avatarBaseUrl}${avatarUrl}` : null}
+            name={displayName}
+            username={handleDisplay}
+            size={112}
+          />
+        </ButtonBase>
       </Box>
+      {avatarUrl && (
+        <Dialog
+          open={photoOpen}
+          onClose={() => setPhotoOpen(false)}
+          maxWidth={false}
+          slotProps={{ paper: { sx: { bgcolor: "transparent", boxShadow: "none", m: 2, overflow: "visible" } } }}
+        >
+          <Box
+            component="img"
+            src={`${avatarBaseUrl}${avatarUrl}`}
+            alt={`${displayName}'s profile photo`}
+            onClick={() => setPhotoOpen(false)}
+            sx={{
+              display: "block",
+              maxWidth: "min(92vw, 640px)",
+              maxHeight: "80vh",
+              width: "auto",
+              height: "auto",
+              borderRadius: 4,
+              boxShadow: "0 12px 40px rgba(0,0,0,0.35)",
+              cursor: "pointer",
+            }}
+          />
+        </Dialog>
+      )}
       <Box sx={{ textAlign: { xs: "center", sm: "left" }, minWidth: 0, pt: { xs: 0, sm: 0.5 } }}>
         <Typography
           component="h1"

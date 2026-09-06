@@ -182,6 +182,8 @@ type RsvpEntry = {
   note: string | null;
   avatarUrl?: string | null;
   confirmationStatus?: string | null;
+  /** The person turned off attendance-check emails, so they were never asked. */
+  confirmationEmailOptedOut?: boolean;
   isChumSaved?: boolean;
   hideName?: boolean;
 };
@@ -2721,7 +2723,7 @@ export default function EventDetailClient({
         >
           <Typography variant="body2" sx={{ mb: 1 }}>
             {sectionLoginNudge === "feedback"
-              ? "Sign in to leave a shout-out for the people who came."
+              ? "Sign in to give kudos to the people who came."
               : sectionLoginNudge === "chat"
                 ? "Sign in to view plan chat."
                 : "Sign in to continue."}
@@ -5464,6 +5466,23 @@ export default function EventDetailClient({
                             fontSize: "0.8125rem",
                             "& .MuiChip-icon": { color: "inherit", opacity: 0.9 },
                             background: (theme) => `linear-gradient(135deg, ${theme.palette.success.main} 0%, ${theme.palette.success.dark} 100%)`,
+                          }}
+                        />
+                      </TapTooltip>
+                    ) : r.status === "going" && event.requireReconfirmation && event.confirmationsIssued && r.confirmationEmailOptedOut && r.confirmationStatus !== "confirmed" && r.confirmationStatus !== "declined" ? (
+                      /* Never asked: they turned off the attendance-check emails. Neutral, not a failure, so hosts stop reading it as a no-show in waiting. */
+                      <TapTooltip title="This person turned off attendance-check emails, so they were not asked to confirm. They can still confirm from the plan page." placement="top">
+                        <Chip
+                          icon={<InfoOutlinedIcon sx={{ fontSize: "1rem !important" }} />}
+                          label="Going - Not asked"
+                          size="small"
+                          variant="outlined"
+                          sx={{
+                            fontWeight: 600,
+                            fontSize: "0.8125rem",
+                            color: "text.secondary",
+                            borderColor: "divider",
+                            "& .MuiChip-icon": { color: "inherit", opacity: 0.85 },
                           }}
                         />
                       </TapTooltip>

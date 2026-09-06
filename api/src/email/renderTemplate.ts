@@ -65,14 +65,12 @@ import runItAgainHtml from "./templates/runItAgain.html";
 import runItAgainTxt from "./templates/runItAgain.txt";
 import planReminderHtml from "./templates/planReminder.html";
 import planReminderTxt from "./templates/planReminder.txt";
-import shoutoutReceivedHtml from "./templates/shoutoutReceived.html";
-import shoutoutReceivedTxt from "./templates/shoutoutReceived.txt";
+import kudosReceivedHtml from "./templates/kudosReceived.html";
+import kudosReceivedTxt from "./templates/kudosReceived.txt";
 import planRemovedByAdminHtml from "./templates/planRemovedByAdmin.html";
 import planRemovedByAdminTxt from "./templates/planRemovedByAdmin.txt";
 import planSigninHtml from "./templates/planSignin.html";
 import planSigninTxt from "./templates/planSignin.txt";
-import roadmapUpdateHtml from "./templates/roadmapUpdate.html";
-import roadmapUpdateTxt from "./templates/roadmapUpdate.txt";
 import rsvpReconfirmRequestHtml from "./templates/rsvpReconfirmRequest.html";
 import rsvpReconfirmRequestTxt from "./templates/rsvpReconfirmRequest.txt";
 import signinLinkHtml from "./templates/signinLink.html";
@@ -120,10 +118,9 @@ const TEMPLATES: Record<string, TemplatePair> = {
   planWrapUp: { html: planWrapUpHtml, text: planWrapUpTxt },
   runItAgain: { html: runItAgainHtml, text: runItAgainTxt },
   planReminder: { html: planReminderHtml, text: planReminderTxt },
-  shoutoutReceived: { html: shoutoutReceivedHtml, text: shoutoutReceivedTxt },
+  kudosReceived: { html: kudosReceivedHtml, text: kudosReceivedTxt },
   planRemovedByAdmin: { html: planRemovedByAdminHtml, text: planRemovedByAdminTxt },
   planSignin: { html: planSigninHtml, text: planSigninTxt },
-  roadmapUpdate: { html: roadmapUpdateHtml, text: roadmapUpdateTxt },
   rsvpReconfirmRequest: { html: rsvpReconfirmRequestHtml, text: rsvpReconfirmRequestTxt },
   signinLink: { html: signinLinkHtml, text: signinLinkTxt },
   unreadChatDigest: { html: unreadChatDigestHtml, text: unreadChatDigestTxt },

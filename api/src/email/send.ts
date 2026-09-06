@@ -1025,43 +1025,7 @@ export const sendPlanRemovedByAdminEmail = async (
     reason: hasContent(reason) ? reason : null,
   });
 
-export const sendRoadmapUpdateEmail = async (
-  env: Bindings,
-  {
-    to,
-    recipientName,
-    itemTitle,
-    itemUrl,
-    updateType,
-    statusLabel,
-    adminNote,
-    mergedIntoTitle,
-    mergedIntoUrl,
-    unsubscribeUrl,
-  }: {
-    to: string;
-    recipientName: string;
-    itemTitle: string;
-    itemUrl: string;
-    updateType: "status_change" | "merged";
-    statusLabel?: string;
-    adminNote?: string | null;
-    mergedIntoTitle?: string;
-    mergedIntoUrl?: string;
-    unsubscribeUrl: string;
-  },
-) =>
-  dispatch(env, to, "roadmapUpdate", {
-    recipientName,
-    itemTitle,
-    itemUrl,
-    updateType,
-    statusLabel: hasContent(statusLabel) ? statusLabel : null,
-    adminNote: hasContent(adminNote) ? adminNote : null,
-    mergedIntoTitle: hasContent(mergedIntoTitle) ? mergedIntoTitle : null,
-    mergedIntoUrl: hasContent(mergedIntoUrl) ? mergedIntoUrl : null,
-    unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
-  });
+
 
 export const sendContactFormEmail = async (
   env: Bindings,
@@ -1144,14 +1108,13 @@ export const sendPlanWrapUpEmail = async (
           ctaHelperText: "Private, for your records. Takes under a minute.",
         }
       : {
-          // Shout-outs are public, lighthearted profile flair, not private
-          // thank-you notes; the copy sets that register ("can be trusted
-          // with the aux cord" energy, per Rob's favourite real example).
-          heading: "Anyone deserve a shout-out?",
+          // Kudos are quick, anonymous props that collect on someone's
+          // profile as counts; two taps, no writing.
+          heading: "Anyone deserve kudos?",
           bodyText:
-            "Your plan has wrapped up. Shout-outs are lighthearted fun: short public notes that live on someone's profile for everyone to see. Crown the reigning trivia champ, certify that someone can be trusted with the aux cord, or just make the group laugh. You can also save people to your Chums for next time.",
-          ctaText: "Leave a shout-out",
-          ctaHelperText: "Totally optional. The best ones get a laugh.",
+            "Your plan has wrapped up. Give kudos to the people who made it good: pick a person, pick a tag like Good Energy or Funny as Hell, done. Nobody sees who gave what, and the tags collect on their profile. You can also save people to your Chums for next time.",
+          ctaText: "Give kudos",
+          ctaHelperText: "Totally optional. Two taps per person.",
         };
   return dispatch(
     env,
@@ -1172,66 +1135,60 @@ export const sendPlanWrapUpEmail = async (
   );
 };
 
-/** "You got a shout-out" notice, sent once daily to the recipient after a
- *  shout-out clears moderation. Batched per recipient: approving three in
- *  one sitting sends one email, not three. The message text is included for
- *  a single shout-out (it is written about them and already moderated); a
- *  batch links to the profile rather than quoting several. */
-export const sendShoutoutReceivedEmail = async (
+/** "You got kudos" notice, sent once daily to a recipient for whatever
+ *  arrived since the last run. Batched per recipient: three kudos in one
+ *  sitting send one email, not three. Givers are never named, matching the
+ *  anonymous shelf on the profile. */
+export const sendKudosReceivedEmail = async (
   env: Bindings,
   {
     to,
     recipientName,
-    senderName,
     count,
-    message,
-    planTitle,
-    shoutoutsUrl,
+    tags,
+    planTitles,
+    kudosUrl,
     unsubscribeUrl,
     idempotencyKey,
   }: {
     to: string;
     recipientName: string;
-    senderName: string;
     count: number;
-    message?: string | null;
-    planTitle?: string | null;
-    shoutoutsUrl: string;
+    tags: Array<{ emoji: string; label: string; count: number }>;
+    planTitles: string[];
+    kudosUrl: string;
     unsubscribeUrl: string;
     idempotencyKey?: string;
   },
 ) => {
   const single = count <= 1;
+  const tagLine = tags
+    .map((t) => `${t.emoji} ${t.label}${t.count > 1 ? ` ×${t.count}` : ""}`)
+    .join(", ");
+  const planTitle = planTitles[0] ?? null;
+  const whereLine =
+    planTitles.length === 0 ? "" :
+    planTitles.length === 1 ? ` at ${planTitles[0]}` :
+    ` at ${planTitles.slice(0, -1).join(", ")} and ${planTitles[planTitles.length - 1]}`;
   return dispatch(
     env,
     to,
-    "shoutoutReceived",
+    "kudosReceived",
     {
-      heading: single ? "Someone said something nice" : `${count} people said something nice`,
+      heading: single ? "Someone gave you kudos" : `${count} kudos came your way`,
       greeting: `Hi ${recipientName},`,
-      bodyText: single
-        ? `${senderName} left you a shout-out${planTitle ? ` from ${planTitle}` : ""}${
-            hasContent(message) ? `: "${message}"` : "."
-          }`
-        : `${count} shout-outs have been added to your profile. Here's what people said about you.`,
+      bodyText: `${single ? "Someone from your plan gave you kudos" : `People from your plan${planTitles.length > 1 ? "s" : ""} gave you kudos`}${whereLine}: ${tagLine}. Kudos are anonymous and collect on your profile.`,
       ctaText: single ? "See it on your profile" : "See them on your profile",
-      ctaHelperText: "Shout-outs live on your public profile. You can hide the section any time in Settings.",
+      ctaHelperText: "A tag shows to visitors once two different people have given it. You always see all of yours.",
       recipientName,
-      // Also feed the subject line, which interpolates from this same
-      // model: without these the subjects rendered as " left you a
-      // shout-out" and "You have  new shout-outs".
-      senderName,
       count,
-      planTitle: hasContent(planTitle) ? planTitle : null,
+      planTitle,
       planDate: null,
       planLocation: null,
-      ctaUrl: shoutoutsUrl,
+      ctaUrl: kudosUrl,
       unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
     },
-    {
-      subjectKey: single ? "shoutoutReceived_one" : "shoutoutReceived_many",
-      idempotencyKey,
-    },
+    { subjectKey: single ? "kudosReceived_one" : "kudosReceived_many", idempotencyKey },
   );
 };
 

@@ -23,18 +23,18 @@
  *   chum_invites.inviter_user_id, events.host_user_id, event_invites(x2),
  *   event_rsvps, event_alt_times, event_chat_messages, event_chat_reads,
  *   event_join_requests, host_attendee_removals(x2), event_confirmations,
- *   admin_view_timestamps, roadmap_items/votes/follows/comments/admin_notes,
+ *   admin_view_timestamps,
  *   user_contacts(x2), attendance_issues(x2),
  *   conduct_reports(x2),
  *   user_objective_completions, community_members.user_id,
  *   community_join_requests.user_id, plan_feedback_dismissals (wrap-up
  *   dismissals; historical table name), user_badges,
- *   shoutouts(x2), subscription_plan_history.user_id,
+ *   kudos(x2), subscription_plan_history.user_id,
  *   community_announcements.author, community_announcement_seen/mutes,
  *   event_chat_notify_sends.recipient, user_activity_log,
  *   dm_conversations(x3), dm_messages.sender, dm_participant_state,
  *   user_blocks(x2). ON DELETE SET NULL: notifications.actor_user_id,
- *   chum_invites.accepted_user_id, shoutouts.reviewed_by_user_id,
+ *   chum_invites.accepted_user_id,
  *   community_schedule_blocks.created_by_user_id, product_events.user_id.
  *   ON DELETE NO ACTION (handled explicitly below): communities.owner_user_id
  *   (owned communities are deleted as part of the cascade),
@@ -47,7 +47,7 @@
  *   event_alt_times, event_interests, event_chat_messages, event_chat_reads,
  *   event_join_requests, host_attendee_removals, event_confirmations,
  *   attendance_issues, conduct_reports,
- *   plan_feedback_dismissals, shoutouts, event_communities,
+ *   plan_feedback_dismissals, kudos, event_communities,
  *   event_chat_notify_sends; and with SET NULL by
  *   email_verification_tokens.event_id and product_events.event_id.
  */
@@ -77,7 +77,7 @@ export type PlanDeleteImpact = {
   invites: number;
   altTimes: number;
   joinRequests: number;
-  shoutouts: number;
+  kudos: number;
   productEvents: number;
 };
 
@@ -131,7 +131,7 @@ export async function computeUserDeleteImpact(
 }
 
 export async function computePlanDeleteImpact(sql: Sql, eventId: string): Promise<PlanDeleteImpact> {
-  const [rsvps, confirmations, chat, invites, altTimes, joinRequests, shoutouts, pe] =
+  const [rsvps, confirmations, chat, invites, altTimes, joinRequests, kudos, pe] =
     await Promise.all([
       sql`SELECT COUNT(*)::int AS c FROM newchums.event_rsvps WHERE event_id = ${eventId}`,
       sql`SELECT COUNT(*)::int AS c FROM newchums.event_confirmations WHERE event_id = ${eventId}`,
@@ -139,7 +139,7 @@ export async function computePlanDeleteImpact(sql: Sql, eventId: string): Promis
       sql`SELECT COUNT(*)::int AS c FROM newchums.event_invites WHERE event_id = ${eventId}`,
       sql`SELECT COUNT(*)::int AS c FROM newchums.event_alt_times WHERE event_id = ${eventId}`,
       sql`SELECT COUNT(*)::int AS c FROM newchums.event_join_requests WHERE event_id = ${eventId}`,
-      sql`SELECT COUNT(*)::int AS c FROM newchums.shoutouts WHERE plan_id = ${eventId}`,
+      sql`SELECT COUNT(*)::int AS c FROM newchums.kudos WHERE plan_id = ${eventId}`,
       sql`SELECT COUNT(*)::int AS c FROM newchums.product_events WHERE event_id = ${eventId}`,
     ]);
   return {
@@ -149,7 +149,7 @@ export async function computePlanDeleteImpact(sql: Sql, eventId: string): Promis
     invites: n(invites),
     altTimes: n(altTimes),
     joinRequests: n(joinRequests),
-    shoutouts: n(shoutouts),
+    kudos: n(kudos),
     productEvents: n(pe),
   };
 }

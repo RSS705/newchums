@@ -27,14 +27,13 @@ export const VALID_KEYS = [
   "product_announcements",
   "unread_chat_digest",
   "attendance_confirmation",
-  "roadmap_updates",
   "community_join_request_received",
   "community_join_request_result",
   "community_announcements",
   "direct_message",
   "run_it_again",
   "plan_reminder",
-  "shoutout_received",
+  "kudos_received",
 ] as const;
 
 export type NotificationKey = (typeof VALID_KEYS)[number];
@@ -58,14 +57,13 @@ export const DEFAULT_PREFS: Record<NotificationKey, NotificationPrefItem> = {
   product_announcements: { enabled: true },
   unread_chat_digest: { enabled: true },
   attendance_confirmation: { enabled: true },
-  roadmap_updates: { enabled: true },
   community_join_request_received: { enabled: true },
   community_join_request_result: { enabled: true },
   community_announcements: { enabled: true },
   direct_message: { enabled: true },
   run_it_again: { enabled: true },
   plan_reminder: { enabled: true },
-  shoutout_received: { enabled: true },
+  kudos_received: { enabled: true },
 };
 
 /**

@@ -145,12 +145,13 @@ export const OBJECTIVES: ObjectiveDefinition[] = [
     actionLabel: "Find people",
   },
   {
-    // Replaced give_first_feedback (July 2026): the rating form is gone, so
-    // the closing engagement objective is now the thank-you action. Old
-    // give_first_feedback completion rows were cleared by migration 107.
-    key: "send_first_shoutout",
-    title: "Leave your first shout-out",
-    description: "A fun shout-out after a plan makes someone's day.",
+    // The closing engagement objective follows whatever the post-plan
+    // thank-you action is: the rating form (give_first_feedback, cleared by
+    // migration 107), then text shout-outs (cleared by migration 121), and
+    // since Sept 2026 kudos.
+    key: "give_first_kudos",
+    title: "Give your first kudos",
+    description: "Quick props after a plan make someone's day.",
     category: "engagement",
     sequence: 120,
     actionUrl: "/your-plans",
@@ -214,8 +215,8 @@ export async function evaluateObjectives(
         SELECT 1 FROM newchums.event_chat_messages m WHERE m.user_id = u.id
       )                                                                    AS has_sent_message,
       EXISTS (
-        SELECT 1 FROM newchums.shoutouts so WHERE so.sender_user_id = u.id
-      )                                                                    AS has_sent_shoutout,
+        SELECT 1 FROM newchums.kudos k WHERE k.giver_user_id = u.id
+      )                                                                    AS has_given_kudos,
       EXISTS (
         SELECT 1 FROM newchums.events e
         WHERE e.host_user_id = u.id AND e.status IN ('published', 'canceled')
@@ -235,7 +236,7 @@ export async function evaluateObjectives(
     has_joined_plan: boolean;
     has_attended: boolean;
     has_sent_message: boolean;
-    has_sent_shoutout: boolean;
+    has_given_kudos: boolean;
     has_created_plan: boolean;
     tutorial_off: boolean;
   }>;
@@ -256,7 +257,7 @@ export async function evaluateObjectives(
     add_first_chum: signals.has_chum,
     attend_first_plan: signals.has_attended,
     send_first_message: signals.has_sent_message,
-    send_first_shoutout: signals.has_sent_shoutout,
+    give_first_kudos: signals.has_given_kudos,
     create_first_plan: signals.has_created_plan,
   };
 

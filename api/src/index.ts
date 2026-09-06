@@ -35,11 +35,10 @@ import {
   sendPlanAtRiskEmail,
   sendPlanAutoCancelledEmail,
   sendPlanRemovedByAdminEmail,
-  sendRoadmapUpdateEmail,
   sendPlanWrapUpEmail,
   sendRunItAgainEmail,
   sendPlanReminderEmail,
-  sendShoutoutReceivedEmail,
+  sendKudosReceivedEmail,
   sendConcernReportAlert,
   sendCommunityJoinRequestEmail,
   sendCommunityJoinApprovedEmail,
@@ -64,6 +63,7 @@ import {
   hardDeletePlan,
   hardDeleteUser,
 } from "./lib/adminHardDelete";
+import { KUDOS_TAGS, KUDOS_MAX_PER_PLAN, KUDOS_PUBLIC_MIN_GIVERS, KUDOS_WINDOW_MS, isKudosTag, kudosTagInfo } from "./lib/kudos";
 import { checkDbRateLimit, isDbRateLimited, recordDbRateEvent } from "./lib/dbRateLimit";
 import {
   generateOtpCode,
@@ -110,7 +110,6 @@ import {
   MAX_AVATAR_BYTES,
   MAX_COMMUNITY_BANNER_BYTES,
   MAX_EVENT_BANNER_BYTES,
-  MAX_ROADMAP_ATTACHMENT_BYTES,
   MAX_SCHEDULE_BLOCK_BANNER_BYTES,
   buildObjectKey,
   createUploadToken,
@@ -407,7 +406,6 @@ app.get("/public/users/:handle", async (c) => {
         COALESCE(u.is_hidden_age, false) AS is_hidden_age,
         COALESCE(u.is_hidden_from_external_indexing, false) AS is_hidden_from_external_indexing,
         COALESCE(u.is_hidden_chum_list, false) AS is_hidden_chum_list,
-        COALESCE(u.is_hidden_shoutouts, false) AS is_hidden_shoutouts,
         COALESCE(u.is_hidden_communities, false) AS is_hidden_communities,
         COALESCE(u.is_suspended, false) AS is_suspended,
         COALESCE(u.dm_privacy, 'everyone') AS dm_privacy
@@ -428,7 +426,6 @@ app.get("/public/users/:handle", async (c) => {
       is_hidden_age: boolean;
       is_hidden_from_external_indexing: boolean;
       is_hidden_chum_list: boolean;
-      is_hidden_shoutouts: boolean;
       is_hidden_communities: boolean;
       is_suspended: boolean;
       dm_privacy: string;
@@ -530,7 +527,6 @@ app.get("/public/users/:handle", async (c) => {
         memberSince,
         is_hidden_from_external_indexing: user.is_hidden_from_external_indexing ?? false,
         is_hidden_chum_list: user.is_hidden_chum_list ?? false,
-        is_hidden_shoutouts: user.is_hidden_shoutouts ?? false,
         is_hidden_communities: user.is_hidden_communities ?? false,
       },
     });
@@ -543,34 +539,30 @@ app.get("/public/users/:handle", async (c) => {
   }
 });
 
-/** GET /public/users/:handle/shoutouts
- *  Approved shout-outs for the recipient's public profile section.
- *  Auth is optional. If the recipient has hidden the section
- *  (`users.is_hidden_shoutouts = true`) and the viewer is not the recipient
- *  themselves, returns `{ ok: true, items: [], hidden: true }`. The owner
- *  always gets their items so the inline owner-only toggle on the public
- *  profile can render the dimmed "hidden from visitors" preview state. */
-app.get("/public/users/:handle/shoutouts", async (c) => {
+/** GET /public/users/:handle/kudos
+ *  Aggregated kudos for the profile shelf: counts per tag, never who gave
+ *  what. Visitors see a tag once KUDOS_PUBLIC_MIN_GIVERS different people
+ *  have given it, so a lone giver stays anonymous; the owner sees every
+ *  tag, with the still-private ones flagged. Kudos inside a blocked pair
+ *  are left out for everyone, since both identities are in the row. */
+app.get("/public/users/:handle/kudos", async (c) => {
   const handleParam = c.req.param("handle")?.trim();
   if (!handleParam) {
     return c.json({ ok: false, error: "NOT_FOUND", message: "Profile not found" }, 404);
   }
   const handleNorm = handleParam.toLowerCase().trim();
 
-  // Auth is optional but we use it to detect the profile owner so they can
-  // see their own hidden section.
+  // Auth is optional; it only serves to detect the owner.
   const authPayload = await requireAuth(c);
   const viewerEmail = authPayload?.email && typeof authPayload.email === "string" ? authPayload.email : null;
 
   try {
     const sql = getSql(c.env);
     const userRows = (await sql`
-      SELECT id, COALESCE(is_hidden_shoutouts, false) AS is_hidden_shoutouts
-      FROM newchums.users
-      WHERE username_norm = ${handleNorm}
-        AND username IS NOT NULL
+      SELECT id FROM newchums.users
+      WHERE username_norm = ${handleNorm} AND username IS NOT NULL
       LIMIT 1
-    `) as Array<{ id: string; is_hidden_shoutouts: boolean }>;
+    `) as Array<{ id: string }>;
     const target = userRows[0];
     if (!target) {
       return c.json({ ok: false, error: "NOT_FOUND", message: "Profile not found" }, 404);
@@ -586,136 +578,43 @@ app.get("/public/users/:handle/shoutouts", async (c) => {
     }
     const isOwner = viewerUserId !== null && viewerUserId === target.id;
 
-    if (target.is_hidden_shoutouts && !isOwner) {
-      return c.json({ ok: true, items: [], hidden: true });
-    }
-
     const rows = (await sql`
-      SELECT
-        s.id, s.message, s.created_at, s.reviewed_at,
-        COALESCE(s.hidden_by_recipient, false) AS hidden_by_recipient,
-        s.plan_id, e.title AS plan_title, e.starts_at AS plan_starts_at,
-        s.sender_user_id, u.name AS sender_name, u.username AS sender_username
-      FROM newchums.shoutouts s
-      JOIN newchums.events e ON e.id = s.plan_id
-      JOIN newchums.users u ON u.id = s.sender_user_id
-      WHERE s.recipient_user_id = ${target.id} AND s.status = 'approved'
-        -- Blocked pairs: a shout-out authored by someone the profile owner
-        -- has blocked (or who blocked them) disappears from the profile for
-        -- every viewer, including anonymous ones, since both identities are
-        -- in the row itself.
+      SELECT k.tag, COUNT(*)::int AS count, COUNT(DISTINCT k.giver_user_id)::int AS givers,
+             MAX(k.created_at) AS latest_at
+      FROM newchums.kudos k
+      JOIN newchums.events e ON e.id = k.plan_id
+      WHERE k.recipient_user_id = ${target.id}
+        AND COALESCE(e.is_qa, false) = false
         AND NOT EXISTS (
           SELECT 1 FROM newchums.user_blocks b
-          WHERE (b.blocker_user_id = s.sender_user_id AND b.blocked_user_id = s.recipient_user_id)
-             OR (b.blocker_user_id = s.recipient_user_id AND b.blocked_user_id = s.sender_user_id)
+          WHERE (b.blocker_user_id = k.giver_user_id AND b.blocked_user_id = k.recipient_user_id)
+             OR (b.blocker_user_id = k.recipient_user_id AND b.blocked_user_id = k.giver_user_id)
         )
-      ORDER BY COALESCE(s.reviewed_at, s.created_at) DESC
-      LIMIT 100
-    `) as Array<{
-      id: string;
-      message: string;
-      created_at: string;
-      reviewed_at: string | null;
-      hidden_by_recipient: boolean;
-      plan_id: string;
-      plan_title: string;
-      plan_starts_at: string;
-      sender_user_id: string;
-      sender_name: string | null;
-      sender_username: string | null;
-    }>;
+      GROUP BY k.tag
+      ORDER BY count DESC, latest_at DESC
+    `) as Array<{ tag: string; count: number; givers: number; latest_at: string }>;
 
-    // Per-card visibility: non-owners only see rows the recipient has left
-    // visible. Owners see everything so they can re-show rows they previously
-    // hid; the per-item flag is surfaced to the client so it can render the
-    // dimmed state and the toggle label.
-    let visibleRows = isOwner ? rows : rows.filter((r) => !r.hidden_by_recipient);
-
-    // Viewer-side block filter: an authenticated viewer never sees cards
-    // authored by someone in a blocked pair with them. Anonymous viewers
-    // cannot be filtered this way (no identity); that gap is inherent to
-    // public pages and deliberate.
-    if (viewerUserId && !isOwner && visibleRows.length > 0) {
-      const senderIds = [...new Set(visibleRows.map((r) => r.sender_user_id))];
-      const blockedSenders = (await sql`
-        SELECT CASE WHEN b.blocker_user_id = ${viewerUserId} THEN b.blocked_user_id ELSE b.blocker_user_id END AS other_id
-        FROM newchums.user_blocks b
-        WHERE (b.blocker_user_id = ${viewerUserId} AND b.blocked_user_id = ANY(${senderIds}::uuid[]))
-           OR (b.blocked_user_id = ${viewerUserId} AND b.blocker_user_id = ANY(${senderIds}::uuid[]))
-      `) as { other_id: string }[];
-      const blockedSet = new Set(blockedSenders.map((r) => r.other_id));
-      visibleRows = visibleRows.filter((r) => !blockedSet.has(r.sender_user_id));
+    const items: Array<{ tag: string; label: string; emoji: string; count: number; publicYet: boolean }> = [];
+    let hiddenCount = 0;
+    for (const r of rows) {
+      const info = kudosTagInfo(r.tag);
+      if (!info) continue;
+      const publicYet = r.givers >= KUDOS_PUBLIC_MIN_GIVERS;
+      if (!publicYet && !isOwner) { hiddenCount += r.count; continue; }
+      items.push({ tag: r.tag, label: info.label, emoji: info.emoji, count: r.count, publicYet });
     }
-
     return c.json({
       ok: true,
-      hidden: target.is_hidden_shoutouts,
-      items: visibleRows.map((r) => ({
-        id: r.id,
-        message: r.message,
-        receivedAt: r.reviewed_at ?? r.created_at,
-        planId: r.plan_id,
-        planTitle: r.plan_title,
-        planStartsAt: r.plan_starts_at,
-        hiddenByRecipient: r.hidden_by_recipient,
-        sender: {
-          userId: r.sender_user_id,
-          displayName: r.sender_name?.trim() || (r.sender_username ? `@${r.sender_username.replace(/^@/, "")}` : "Someone"),
-          username: r.sender_username,
-        },
-      })),
+      isOwner,
+      items,
+      total: items.reduce((sum, it) => sum + it.count, 0),
+      minGivers: KUDOS_PUBLIC_MIN_GIVERS,
+      // Owner-only hint material stays out of visitor payloads.
+      ...(isOwner ? {} : { hiddenCount: undefined }),
     });
   } catch (err) {
-    console.error("[GET /public/users/:handle/shoutouts]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR", message: "Failed to fetch shout-outs" }, 500);
-  }
-});
-
-/** PATCH /shoutouts/:id
- *  Per-shout-out visibility toggle. Only the recipient may flip their own
- *  `hidden_by_recipient` flag. Returns the new flag so the client can
- *  reconcile with the server after an optimistic UI update. */
-app.patch("/shoutouts/:id", async (c) => {
-  const payload = await requireAuth(c);
-  if (!payload?.email || typeof payload.email !== "string")
-    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
-
-  const shoutoutId = c.req.param("id")?.trim();
-  if (!shoutoutId) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-
-  let body: Record<string, unknown>;
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json({ ok: false, error: "INVALID_JSON" }, 400);
-  }
-  // `hidden` is the only field this endpoint accepts. Anything else is
-  // ignored so the surface stays tight.
-  if (typeof body.hidden !== "boolean")
-    return c.json({ ok: false, error: "VALIDATION", message: "`hidden` must be a boolean" }, 400);
-  const hidden = body.hidden;
-
-  try {
-    const sql = getSql(c.env);
-    const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
-
-    const rows = (await sql`
-      SELECT recipient_user_id FROM newchums.shoutouts WHERE id = ${shoutoutId} LIMIT 1
-    `) as { recipient_user_id: string }[];
-    if (rows.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-    if (rows[0].recipient_user_id !== userId)
-      return c.json({ ok: false, error: "FORBIDDEN" }, 403);
-
-    await sql`
-      UPDATE newchums.shoutouts
-      SET hidden_by_recipient = ${hidden},
-          updated_at = NOW()
-      WHERE id = ${shoutoutId}
-    `;
-    return c.json({ ok: true, hidden });
-  } catch (err) {
-    console.error("[PATCH /shoutouts/:id]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+    console.error("[GET /public/users/:handle/kudos]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR", message: "Failed to fetch kudos" }, 500);
   }
 });
 
@@ -828,7 +727,11 @@ app.get("/public/users/:userId/attendance-record", async (c) => {
     const confirmation = (await sql`
       SELECT
         COUNT(*) FILTER (WHERE ec.status IN ('confirmed', 'declined'))::int AS responded,
-        COUNT(*)::int AS total_requested
+        -- People who turned off the check emails were never asked; their
+        -- rows only count once they answer anyway (from the plan page).
+        COUNT(*) FILTER (
+          WHERE ec.status IN ('confirmed', 'declined') OR COALESCE(ec.email_opted_out, false) = false
+        )::int AS total_requested
       FROM newchums.event_confirmations ec
       JOIN newchums.events e ON e.id = ec.event_id
       WHERE ec.user_id = ${targetUserId}
@@ -885,6 +788,89 @@ app.get("/public/users/:userId/attendance-record", async (c) => {
     });
   } catch (err) {
     console.error("[GET /public/users/:userId/attendance-record]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** GET /me/attendance-record/details
+ *  The plans behind the viewer's own reliability stats, one list per tile,
+ *  mirroring the public attendance-record filters exactly so the rows add up
+ *  to the ratios shown. Owner-only by construction (it reads the caller's
+ *  id); nothing here is exposed on public profiles. */
+app.get("/me/attendance-record/details", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+  const now = new Date().toISOString();
+  try {
+    const committed = (await sql`
+      SELECT e.id, e.title, e.starts_at, r.status,
+             EXISTS (
+               SELECT 1 FROM newchums.attendance_issues ai
+               WHERE ai.plan_id = e.id AND ai.reported_user_id = r.user_id
+                 AND ai.issue_type IN ('no_show', 'very_late')
+                 AND COALESCE(ai.status, 'active') != 'dismissed'
+             ) AS has_issue,
+             (SELECT ai2.issue_type FROM newchums.attendance_issues ai2
+               WHERE ai2.plan_id = e.id AND ai2.reported_user_id = r.user_id
+                 AND ai2.issue_type IN ('no_show', 'very_late')
+                 AND COALESCE(ai2.status, 'active') != 'dismissed'
+               ORDER BY ai2.created_at DESC LIMIT 1) AS issue_type
+      FROM newchums.event_rsvps r
+      JOIN newchums.events e ON e.id = r.event_id
+      WHERE r.user_id = ${userId}
+        AND r.committed_at IS NOT NULL
+        AND e.status != 'canceled'
+        AND COALESCE(e.is_qa, false) = false
+        AND e.starts_at < ${now}
+      ORDER BY e.starts_at DESC
+      LIMIT 200
+    `) as { id: string; title: string; starts_at: string; status: string; has_issue: boolean; issue_type: string | null }[];
+
+    const checks = (await sql`
+      SELECT e.id, e.title, e.starts_at, ec.status, COALESCE(ec.email_opted_out, false) AS email_opted_out
+      FROM newchums.event_confirmations ec
+      JOIN newchums.events e ON e.id = ec.event_id
+      WHERE ec.user_id = ${userId}
+        AND COALESCE(e.is_qa, false) = false
+        AND e.starts_at < ${now}
+      ORDER BY e.starts_at DESC
+      LIMIT 200
+    `) as { id: string; title: string; starts_at: string; status: string; email_opted_out: boolean }[];
+
+    const hosted = (await sql`
+      SELECT e.id, e.title, e.starts_at, e.status, e.cancellation_reason
+      FROM newchums.events e
+      WHERE e.host_user_id = ${userId}
+        AND e.status IN ('published', 'canceled')
+        AND COALESCE(e.is_qa, false) = false
+        AND e.starts_at < ${now}
+        AND EXISTS (
+          SELECT 1 FROM newchums.event_rsvps er
+          WHERE er.event_id = e.id
+            AND er.user_id IS DISTINCT FROM e.host_user_id
+            AND er.committed_at IS NOT NULL
+        )
+        AND COALESCE(e.cancellation_reason, '') NOT IN ('no_attendees', 'min_attendees_required_not_met')
+      ORDER BY e.starts_at DESC
+      LIMIT 200
+    `) as { id: string; title: string; starts_at: string; status: string; cancellation_reason: string | null }[];
+
+    const plan = (r: { id: string; title: string; starts_at: string }) => ({ planId: r.id, title: r.title, startsAt: r.starts_at });
+    return c.json({
+      ok: true,
+      goingFollowThrough: committed.map((r) => ({ ...plan(r), kept: r.status === "going", rsvpStatus: r.status })),
+      // "Shows up" only covers plans still held as Going, the same set as the tile's denominator.
+      followThrough: committed.filter((r) => r.status === "going").map((r) => ({ ...plan(r), shownUp: !r.has_issue, issueType: r.issue_type })),
+      confirmationRate: checks
+        .filter((r) => r.status === "confirmed" || r.status === "declined" || !r.email_opted_out)
+        .map((r) => ({ ...plan(r), responded: r.status === "confirmed" || r.status === "declined", status: r.status })),
+      hostCompletion: hosted.map((r) => ({ ...plan(r), completed: r.status !== "canceled", cancellationReason: r.cancellation_reason })),
+    });
+  } catch (err) {
+    console.error("[GET /me/attendance-record/details]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });
@@ -3276,7 +3262,6 @@ app.get("/profile", async (c) => {
         COALESCE(is_hidden_age, false) AS is_hidden_age,
         COALESCE(is_hidden_chum_list, false) AS is_hidden_chum_list,
         COALESCE(is_hidden_from_chum_lists, false) AS is_hidden_from_chum_lists,
-        COALESCE(is_hidden_shoutouts, false) AS is_hidden_shoutouts,
         COALESCE(is_hidden_communities, false) AS is_hidden_communities,
         COALESCE(tutorial_nudges_off, false) AS tutorial_nudges_off,
         COALESCE(dm_privacy, 'everyone') AS dm_privacy
@@ -3299,7 +3284,6 @@ app.get("/profile", async (c) => {
       is_hidden_age: boolean;
       is_hidden_chum_list: boolean;
       is_hidden_from_chum_lists: boolean;
-      is_hidden_shoutouts: boolean;
       is_hidden_communities: boolean;
       tutorial_nudges_off: boolean;
       dm_privacy: string;
@@ -3352,7 +3336,6 @@ app.get("/profile", async (c) => {
     const isHiddenAge = userInfo?.is_hidden_age ?? false;
     const isHiddenChumList = userInfo?.is_hidden_chum_list ?? false;
     const isHiddenFromChumLists = userInfo?.is_hidden_from_chum_lists ?? false;
-    const isHiddenShoutouts = userInfo?.is_hidden_shoutouts ?? false;
     const isHiddenCommunities = userInfo?.is_hidden_communities ?? false;
     const tutorialNudgesOff = userInfo?.tutorial_nudges_off ?? false;
     const dmPrivacy = userInfo?.dm_privacy ?? "everyone";
@@ -3389,7 +3372,6 @@ app.get("/profile", async (c) => {
           is_hidden_age: isHiddenAge,
           is_hidden_chum_list: isHiddenChumList,
           is_hidden_from_chum_lists: isHiddenFromChumLists,
-          is_hidden_shoutouts: isHiddenShoutouts,
           is_hidden_communities: isHiddenCommunities,
           tutorial_nudges_off: tutorialNudgesOff,
           dm_privacy: dmPrivacy,
@@ -3425,7 +3407,6 @@ app.get("/profile", async (c) => {
         is_hidden_age: isHiddenAge,
         is_hidden_chum_list: isHiddenChumList,
         is_hidden_from_chum_lists: isHiddenFromChumLists,
-        is_hidden_shoutouts: isHiddenShoutouts,
         is_hidden_communities: isHiddenCommunities,
         tutorial_nudges_off: tutorialNudgesOff,
         dm_privacy: dmPrivacy,
@@ -3481,7 +3462,6 @@ app.put("/profile", async (c) => {
       is_hidden_age?: boolean;
       is_hidden_chum_list?: boolean;
       is_hidden_from_chum_lists?: boolean;
-      is_hidden_shoutouts?: boolean;
       is_hidden_communities?: boolean;
       dm_privacy?: string;
     };
@@ -3765,10 +3745,6 @@ app.put("/profile", async (c) => {
       const val = body.is_hidden_from_chum_lists === true;
       txQueries.push(sql`UPDATE newchums.users SET is_hidden_from_chum_lists = ${val} WHERE id = ${appUserId}`);
     }
-    if ("is_hidden_shoutouts" in body && body.is_hidden_shoutouts !== undefined) {
-      const val = body.is_hidden_shoutouts === true;
-      txQueries.push(sql`UPDATE newchums.users SET is_hidden_shoutouts = ${val} WHERE id = ${appUserId}`);
-    }
     if ("is_hidden_communities" in body && body.is_hidden_communities !== undefined) {
       const val = body.is_hidden_communities === true;
       txQueries.push(sql`UPDATE newchums.users SET is_hidden_communities = ${val} WHERE id = ${appUserId}`);
@@ -3808,8 +3784,7 @@ app.put("/profile", async (c) => {
         COALESCE(is_hidden_from_external_indexing, false) AS is_hidden_from_external_indexing,
         COALESCE(is_hidden_age, false) AS is_hidden_age,
         COALESCE(is_hidden_chum_list, false) AS is_hidden_chum_list,
-        COALESCE(is_hidden_from_chum_lists, false) AS is_hidden_from_chum_lists,
-        COALESCE(is_hidden_shoutouts, false) AS is_hidden_shoutouts
+        COALESCE(is_hidden_from_chum_lists, false) AS is_hidden_from_chum_lists
       FROM newchums.users WHERE id = ${appUserId} LIMIT 1
     `) as Array<{
       name: string | null;
@@ -3826,7 +3801,6 @@ app.put("/profile", async (c) => {
       is_hidden_age: boolean;
       is_hidden_chum_list: boolean;
       is_hidden_from_chum_lists: boolean;
-      is_hidden_shoutouts: boolean;
     }>;
     const userAfter = userRowsAfter[0];
     const profileRows = (await sql`
@@ -3884,7 +3858,6 @@ app.put("/profile", async (c) => {
         is_hidden_age: userAfter?.is_hidden_age ?? false,
         is_hidden_chum_list: userAfter?.is_hidden_chum_list ?? false,
         is_hidden_from_chum_lists: userAfter?.is_hidden_from_chum_lists ?? false,
-        is_hidden_shoutouts: userAfter?.is_hidden_shoutouts ?? false,
       },
     });
   } catch (err) {
@@ -3918,7 +3891,6 @@ app.post("/media/init", async (c) => {
     const purpose = (body.purpose ?? "avatar") as
       | "avatar"
       | "event_banner"
-      | "roadmap_attachment"
       | "community_avatar"
       | "community_banner"
       | "community_schedule_block_banner";
@@ -3953,7 +3925,6 @@ app.post("/media/init", async (c) => {
     );
 
     const maxBytes =
-      purpose === "roadmap_attachment" ? MAX_ROADMAP_ATTACHMENT_BYTES :
       purpose === "community_banner" ? MAX_COMMUNITY_BANNER_BYTES :
       purpose === "community_schedule_block_banner" ? MAX_SCHEDULE_BLOCK_BANNER_BYTES :
       purpose === "event_banner" ? MAX_EVENT_BANNER_BYTES :
@@ -4023,7 +3994,6 @@ app.post("/media/finalize", async (c) => {
     const purpose = (body.purpose ?? "avatar") as
       | "avatar"
       | "event_banner"
-      | "roadmap_attachment"
       | "community_avatar"
       | "community_banner"
       | "community_schedule_block_banner";
@@ -4034,18 +4004,6 @@ app.post("/media/finalize", async (c) => {
       payload.email,
       (payload as { name?: string | null }).name,
     );
-
-    if (purpose === "roadmap_attachment") {
-      const expectedPrefix = `roadmap_attachments/${appUserId}/`;
-      if (!objectKey.startsWith(expectedPrefix)) {
-        return c.json({ ok: false, error: "FORBIDDEN" }, 403);
-      }
-      const obj = await c.env.MEDIA_BUCKET.head(objectKey);
-      if (!obj) {
-        return c.json({ ok: false, error: "OBJECT_NOT_FOUND" }, 404);
-      }
-      return c.json({ ok: true, objectKey });
-    }
 
     if (purpose === "event_banner") {
       const expectedPrefix = `event_banners/${appUserId}/`;
@@ -5554,28 +5512,22 @@ app.get("/admin/badge-counts", async (c) => {
     const usersTs = tsMap["users"] ?? "1970-01-01T00:00:00Z";
     const interestsTs = tsMap["interests"] ?? "1970-01-01T00:00:00Z";
     const plansTs = tsMap["plans"] ?? "1970-01-01T00:00:00Z";
-    const roadmapTs = tsMap["roadmap"] ?? "1970-01-01T00:00:00Z";
     const safetyTs = tsMap["safety"] ?? "1970-01-01T00:00:00Z";
     const communitiesTs = tsMap["communities"] ?? "1970-01-01T00:00:00Z";
-    const shoutoutsTs = tsMap["shoutouts"] ?? "1970-01-01T00:00:00Z";
 
     const counts = (await sql`
       SELECT
         (SELECT COUNT(*)::int FROM newchums.users WHERE created_at > ${usersTs}) AS new_users,
         (SELECT COUNT(*)::int FROM newchums.interests WHERE created_at > ${interestsTs} AND is_deleted = false) AS new_interests,
         (SELECT COUNT(*)::int FROM newchums.events WHERE created_at > ${plansTs} AND status != 'draft' AND COALESCE(is_qa, false) = false) AS new_plans,
-        (SELECT COUNT(*)::int FROM newchums.roadmap_items WHERE created_at > ${roadmapTs} AND is_removed = false) AS new_roadmap,
         (SELECT COUNT(*)::int FROM newchums.conduct_reports WHERE created_at > ${safetyTs}) AS new_safety,
-        (SELECT COUNT(*)::int FROM newchums.communities WHERE created_at > ${communitiesTs}) AS new_communities,
-        (SELECT COUNT(*)::int FROM newchums.shoutouts WHERE created_at > ${shoutoutsTs} AND status = 'pending') AS new_shoutouts
+        (SELECT COUNT(*)::int FROM newchums.communities WHERE created_at > ${communitiesTs}) AS new_communities
     `) as {
       new_users: number;
       new_interests: number;
       new_plans: number;
-      new_roadmap: number;
       new_safety: number;
       new_communities: number;
-      new_shoutouts: number;
     }[];
 
     return c.json({
@@ -5583,10 +5535,8 @@ app.get("/admin/badge-counts", async (c) => {
       users: counts[0].new_users,
       interests: counts[0].new_interests,
       plans: counts[0].new_plans,
-      roadmap: counts[0].new_roadmap,
       safety: counts[0].new_safety,
       communities: counts[0].new_communities,
-      shoutouts: counts[0].new_shoutouts,
     });
   } catch (err) {
     console.error("[GET /admin/badge-counts]", err);
@@ -5603,7 +5553,7 @@ app.post("/admin/mark-viewed", async (c) => {
   try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
 
   const section = String(body.section ?? "");
-  if (!["users", "interests", "plans", "roadmap", "safety", "communities", "shoutouts"].includes(section))
+  if (!["users", "interests", "plans", "safety", "communities"].includes(section))
     return c.json({ ok: false, error: "VALIDATION", message: "Invalid section" }, 400);
 
   const sql = getSql(c.env);
@@ -8037,7 +7987,7 @@ function dmSnippet(text: string, max = DM_SNIPPET_LENGTH): string {
 
 /** A block in either direction. Originally DM-only; since July 2026 it gates
  *  every direct-interaction surface: feeds and the digest, plan detail, RSVP
- *  and join requests, invites, notifications, people search, and shout-outs.
+ *  and join requests, invites, notifications, people search, and kudos.
  *  Blocks are never disclosed: every refusal reuses the route's ordinary
  *  refusal shape and every skipped recipient folds into an existing counter. */
 async function pairBlocked(sql: ReturnType<typeof getSql>, u1: string, u2: string): Promise<boolean> {
@@ -12629,6 +12579,13 @@ app.get("/events/mine", async (c) => {
 
   const filter = c.req.query("filter") ?? "upcoming";
   const now = new Date().toISOString();
+  // Search and paging (Past tab). `q` matches title, venue, area, host and
+  // hobby names; the page size stays at 50 and `hasMore` tells the client
+  // whether another page exists.
+  const q = (c.req.query("q") ?? "").trim().slice(0, 80);
+  const qPattern = q ? `%${q.replace(/[%_\\]/g, (m) => `\\${m}`)}%` : null;
+  const limit = Math.min(50, Math.max(1, Number(c.req.query("limit") ?? 50) || 50));
+  const offset = Math.max(0, Number(c.req.query("offset") ?? 0) || 0);
 
   try {
     const rows = (await sql`
@@ -12682,8 +12639,21 @@ app.get("/events/mine", async (c) => {
           OR EXISTS (SELECT 1 FROM newchums.event_rsvps er WHERE er.event_id = e.id AND er.user_id = ${userId})
         )
         AND ${filter === "past" ? sql`e.starts_at < ${now}` : sql`e.starts_at >= ${now}`}
+        AND (
+          ${qPattern === null}
+          OR e.title ILIKE ${qPattern}
+          OR COALESCE(e.location_name, '') ILIKE ${qPattern}
+          OR COALESCE(e.location_area, '') ILIKE ${qPattern}
+          OR COALESCE(h.name, '') ILIKE ${qPattern}
+          OR COALESCE(h.username, '') ILIKE ${qPattern}
+          OR EXISTS (
+            SELECT 1 FROM newchums.event_interests eiq
+            JOIN newchums.interests iq ON iq.id = eiq.interest_id
+            WHERE eiq.event_id = e.id AND iq.name ILIKE ${qPattern}
+          )
+        )
       ORDER BY ${filter === "past" ? sql`e.starts_at DESC` : sql`e.starts_at ASC`}
-      LIMIT 50
+      LIMIT ${limit + 1} OFFSET ${offset}
     `) as Array<{
       id: string; title: string; description: string | null; starts_at: string;
       timezone: string | null;
@@ -12752,7 +12722,8 @@ app.get("/events/mine", async (c) => {
       };
     });
 
-    return c.json({ ok: true, events });
+    const hasMore = events.length > limit;
+    return c.json({ ok: true, events: hasMore ? events.slice(0, limit) : events, hasMore });
   } catch (err) {
     console.error("[GET /events/mine]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
@@ -13839,7 +13810,7 @@ app.get("/events/:id", async (c) => {
 
     // Attendance assurance, confirmation state
     const requiresConfirmation = event.require_reconfirmation === true;
-    let confirmations: Array<{ user_id: string; status: string; responded_at: string | null }> = [];
+    let confirmations: Array<{ user_id: string; status: string; responded_at: string | null; email_opted_out: boolean }> = [];
     let confirmationWindowOpen = false;
     // confirmationsIssued stays true once Phase 1 has fired, independent of the
     // event's current status. The plan-detail UI reads it to decide whether
@@ -13863,7 +13834,7 @@ app.get("/events/:id", async (c) => {
       confirmationsIssued = event.confirmation_sent_at != null;
 
       confirmations = (await sql`
-        SELECT user_id, status, responded_at
+        SELECT user_id, status, responded_at, COALESCE(email_opted_out, false) AS email_opted_out
         FROM newchums.event_confirmations
         WHERE event_id = ${eventId}
       `) as typeof confirmations;
@@ -13888,6 +13859,9 @@ app.get("/events/:id", async (c) => {
 
     // Build confirmation lookup for enriching rsvps
     const confirmationByUserId = new Map(confirmations.map((c) => [c.user_id, c.status]));
+    // Turned off the check emails, so never asked: the roster labels these
+    // "not asked" instead of "didn't confirm".
+    const confirmationOptedOut = new Set(confirmations.filter((c) => c.email_opted_out).map((c) => c.user_id));
 
     // Generate a share token so the "Copy link" button produces URLs with access context.
     // Only generated for non-public access states; public visitors don't get share tokens.
@@ -14031,6 +14005,7 @@ app.get("/events/:id", async (c) => {
           note: r.note,
           avatarUrl: buildAvatarUrl(r.user_id, r.avatar_key, r.avatar_updated_at, c.env.MEDIA_BUCKET),
           confirmationStatus: confirmationByUserId.get(r.user_id) ?? null,
+          confirmationEmailOptedOut: confirmationOptedOut.has(r.user_id),
           ...(userId && r.user_id !== userId ? { isChumSaved: chumSavedSet.has(r.user_id) } : {}),
           // Only tell the viewer about their own hide_name state
           ...(userId && r.user_id === userId ? { hideName: nameHidden } : {}),
@@ -17009,18 +16984,18 @@ app.post("/events/:id/join-request/:requestId/withdraw", async (c) => {
 //
 // The rating-grid feedback system (plan_feedback rows scored into
 // user_metrics) was removed in July 2026. The post-plan surface is now
-// two-sided: attendees get a thank-you flow (shout-outs, Save to Chums,
+// two-sided: attendees get a thank-you flow (kudos, Save to Chums,
 // Message) and hosts get a private attendance check-in plus a run-it-again
 // prompt. Attendance collection is host-only and binary (no_show); the public
 // attendance record and the recognition-badges cron keep reading
 // attendance_issues by issue_type + status exactly as before.
 
 const CONDUCT_REASONS = ["rude_aggressive", "harassment", "boundary_issue", "discriminatory", "unsafe_intoxicated", "disruptive", "property_damage", "other"] as const;
-const SHOUTOUT_MAX_LENGTH = 280;
 
-/** GET /events/:id/wrap-up, the post-plan surface payload: shout-out targets
- *  for everyone plus the host's private attendance check-in state. Replaces
- *  the old GET /events/:id/feedback (rating grid, removed July 2026). */
+/** GET /events/:id/wrap-up, the post-plan surface payload: kudos targets
+ *  for everyone (with the tag catalogue, limits and what the viewer already
+ *  gave) plus the host's private attendance check-in state. Replaces the
+ *  old GET /events/:id/feedback (rating grid, removed July 2026). */
 app.get("/events/:id/wrap-up", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
@@ -17038,7 +17013,7 @@ app.get("/events/:id/wrap-up", async (c) => {
       WHERE plan_id = ${eventId} AND user_id = ${userId} LIMIT 1
     `;
     if (dismissedRows.length > 0)
-      return c.json({ ok: true, dismissed: true, viewerIsHost: false, attendees: [], shoutouts: [], issuesAgainstMe: [], myReports: [] });
+      return c.json({ ok: true, dismissed: true, viewerIsHost: false, attendees: [], kudos: { given: [], tags: KUDOS_TAGS, maxPerPlan: KUDOS_MAX_PER_PLAN, windowClosesAt: null }, issuesAgainstMe: [], myReports: [] });
   } catch { /* table may not exist yet */ }
 
   try {
@@ -17136,14 +17111,14 @@ app.get("/events/:id/wrap-up", async (c) => {
         AND status != 'dismissed'
     `) as { id: string; issue_type: string; status: string }[];
 
-    // Hydrate the per-attendee shout-out drafts the viewer has authored on
-    // this plan so the form can show "Awaiting review" / "Sent" / "Not approved"
-    // pills and pre-fill any pending message text.
-    const existingShoutouts = (await sql`
-      SELECT recipient_user_id, message, status
-      FROM newchums.shoutouts
-      WHERE plan_id = ${eventId} AND sender_user_id = ${userId}
-    `) as { recipient_user_id: string; message: string; status: string }[];
+    // Kudos the viewer has already given on this plan, plus the catalogue
+    // and limits, so the picker never needs a client-side copy of either.
+    const givenKudos = (await sql`
+      SELECT recipient_user_id, tag
+      FROM newchums.kudos
+      WHERE plan_id = ${eventId} AND giver_user_id = ${userId}
+    `) as { recipient_user_id: string; tag: string }[];
+    const kudosWindowClosesAt = new Date(new Date(ev[0].starts_at).getTime() + KUDOS_WINDOW_MS).toISOString();
 
     return c.json({
       ok: true,
@@ -17158,11 +17133,12 @@ app.get("/events/:id/wrap-up", async (c) => {
         reportedUserId: r.reported_user_id,
         issueType: r.issue_type,
       })),
-      shoutouts: existingShoutouts.map((s) => ({
-        recipientUserId: s.recipient_user_id,
-        message: s.message,
-        status: s.status,
-      })),
+      kudos: {
+        given: givenKudos.map((k) => ({ recipientUserId: k.recipient_user_id, tag: k.tag })),
+        tags: KUDOS_TAGS,
+        maxPerPlan: KUDOS_MAX_PER_PLAN,
+        windowClosesAt: kudosWindowClosesAt,
+      },
     });
   } catch (err) {
     console.error("[GET /events/:id/wrap-up]", err);
@@ -17403,11 +17379,14 @@ app.post("/events/:id/conduct-report", async (c) => {
   }
 });
 
-/** POST /events/:id/shoutout, submit (or update) a pending shout-out for one
- *  attendee on a past plan. One shout-out per (plan, sender, recipient).
- *  Pending shout-outs can be edited freely; once moderated (approved or
- *  rejected) the slot is locked. */
-app.post("/events/:id/shoutout", async (c) => {
+/** POST /events/:id/kudos, give (or change) one kudos tag to one person
+ *  from a past plan. One row per (plan, giver, recipient); a giver hands out
+ *  at most KUDOS_MAX_PER_PLAN per plan and only inside the 7-day window.
+ *  Both people must have been on the plan as host or Going. Nothing is
+ *  moderated: the tags are a fixed positive catalogue, and profiles show
+ *  counts only. The recipient gets a bell notification the first time a
+ *  slot is filled (a tag change is silent), never naming the giver. */
+app.post("/events/:id/kudos", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email || typeof payload.email !== "string")
     return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
@@ -17416,42 +17395,36 @@ app.post("/events/:id/shoutout", async (c) => {
   const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
   const eventId = c.req.param("id");
 
-  const body = await c.req.json<{
-    recipientUserId: string;
-    message: string;
-  }>();
-
-  const recipientUserId = String(body.recipientUserId ?? "");
-  const message = String(body.message ?? "").trim();
+  let body: { recipientUserId?: unknown; tag?: unknown };
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+  const recipientUserId = String(body.recipientUserId ?? "").trim();
+  const tag = body.tag;
 
   if (!recipientUserId)
     return c.json({ ok: false, error: "VALIDATION", message: "Recipient is required" }, 400);
   if (recipientUserId === userId)
-    return c.json({ ok: false, error: "CANNOT_SHOUT_SELF" }, 400);
-  if (message.length === 0)
-    return c.json({ ok: false, error: "VALIDATION", message: "Shout-out cannot be empty" }, 400);
-  if (message.length > SHOUTOUT_MAX_LENGTH)
-    return c.json({ ok: false, error: "VALIDATION", message: `Shout-out must be ${SHOUTOUT_MAX_LENGTH} characters or less` }, 400);
-
-  const safety = validateCleanText(message, "hobby");
-  if (!safety.ok)
-    return c.json({ ok: false, error: "INAPPROPRIATE_TEXT", message: safety.reason ?? "Please rephrase your shout-out." }, 400);
+    return c.json({ ok: false, error: "CANNOT_KUDOS_SELF" }, 400);
+  if (!isKudosTag(tag))
+    return c.json({ ok: false, error: "VALIDATION", message: "Pick one of the kudos tags" }, 400);
 
   try {
-    // Plan must exist, must be in the past, and both parties must have been
-    // participants (host or going/maybe RSVP).
     const ev = (await sql`
-      SELECT host_user_id, starts_at FROM newchums.events WHERE id = ${eventId}
-    `) as { host_user_id: string; starts_at: string }[];
+      SELECT host_user_id, starts_at, title FROM newchums.events WHERE id = ${eventId}
+    `) as { host_user_id: string; starts_at: string; title: string }[];
     if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-    if (new Date(ev[0].starts_at) > new Date())
+    const startMs = new Date(ev[0].starts_at).getTime();
+    if (startMs > Date.now())
       return c.json({ ok: false, error: "NOT_PAST" }, 400);
+    if (Date.now() >= startMs + KUDOS_WINDOW_MS)
+      return c.json({ ok: false, error: "KUDOS_WINDOW_CLOSED", message: "Kudos for this plan closed a week after it happened" }, 400);
 
+    // Host or a Going RSVP. Maybes did not commit, so they neither give nor
+    // receive; that keeps kudos tied to people who were actually there.
     const isParticipant = async (uid: string): Promise<boolean> => {
       if (uid === ev[0].host_user_id) return true;
       const rows = (await sql`
         SELECT 1 FROM newchums.event_rsvps
-        WHERE event_id = ${eventId} AND user_id = ${uid} AND status IN ('going', 'maybe')
+        WHERE event_id = ${eventId} AND user_id = ${uid} AND status = 'going'
         LIMIT 1
       `) as unknown[];
       return rows.length > 0;
@@ -17459,207 +17432,71 @@ app.post("/events/:id/shoutout", async (c) => {
     if (!(await isParticipant(userId))) return c.json({ ok: false, error: "NOT_PARTICIPANT" }, 403);
     if (!(await isParticipant(recipientUserId))) return c.json({ ok: false, error: "RECIPIENT_NOT_PARTICIPANT" }, 400);
 
-    // Blocked pairs: reuse RECIPIENT_NOT_PARTICIPANT, the ordinary refusal
-    // for an invalid target on this route, so nothing hints at a block.
+    // Blocked pairs reuse the ordinary refusal so nothing hints at a block.
     if (await pairBlocked(sql, userId, recipientUserId))
       return c.json({ ok: false, error: "RECIPIENT_NOT_PARTICIPANT" }, 400);
 
-    // Upsert: only allow editing while still pending. ON CONFLICT updates the
-    // row in place if a previous draft exists, but the WHERE clause keeps the
-    // moderated state untouchable.
+    const others = (await sql`
+      SELECT COUNT(*)::int AS c FROM newchums.kudos
+      WHERE plan_id = ${eventId} AND giver_user_id = ${userId} AND recipient_user_id <> ${recipientUserId}
+    `) as { c: number }[];
+    if ((others[0]?.c ?? 0) >= KUDOS_MAX_PER_PLAN)
+      return c.json({ ok: false, error: "KUDOS_LIMIT", message: `You can give up to ${KUDOS_MAX_PER_PLAN} kudos per plan` }, 409);
+
     const upserted = (await sql`
-      INSERT INTO newchums.shoutouts
-        (plan_id, sender_user_id, recipient_user_id, message, status)
-      VALUES
-        (${eventId}, ${userId}, ${recipientUserId}, ${message}, 'pending')
-      ON CONFLICT (plan_id, sender_user_id, recipient_user_id)
-        DO UPDATE SET message = EXCLUDED.message, updated_at = NOW()
-        WHERE shoutouts.status = 'pending'
-      RETURNING id, status
-    `) as { id: string; status: string }[];
+      INSERT INTO newchums.kudos (plan_id, giver_user_id, recipient_user_id, tag)
+      VALUES (${eventId}, ${userId}, ${recipientUserId}, ${tag})
+      ON CONFLICT (plan_id, giver_user_id, recipient_user_id)
+        DO UPDATE SET tag = EXCLUDED.tag, updated_at = NOW()
+      RETURNING id, (xmax = 0) AS inserted
+    `) as { id: string; inserted: boolean }[];
 
-    if (upserted.length === 0) {
-      // The row already exists in a moderated state; the upsert was a no-op.
-      return c.json({ ok: false, error: "ALREADY_MODERATED" }, 409);
-    }
-
-    return c.json({ ok: true, status: upserted[0].status });
-  } catch (err) {
-    console.error("[POST /events/:id/shoutout]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
-  }
-});
-
-/** GET /admin/shoutouts, list shout-outs for moderation. */
-app.get("/admin/shoutouts", async (c) => {
-  const admin = await requireSuperAdmin(c);
-  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
-
-  const sql = getSql(c.env);
-  const url = new URL(c.req.url);
-  const statusParam = (url.searchParams.get("status") || "pending").toLowerCase();
-  const search = url.searchParams.get("q")?.trim() || "";
-  const limit = Math.min(Number(url.searchParams.get("limit")) || 30, 100);
-  const offset = Math.max(Number(url.searchParams.get("offset")) || 0, 0);
-
-  const allowed = ["pending", "approved", "rejected", "all"];
-  if (!allowed.includes(statusParam))
-    return c.json({ ok: false, error: "VALIDATION", message: "Invalid status" }, 400);
-
-  const statusClause = statusParam === "all"
-    ? sql``
-    : sql`AND s.status = ${statusParam}`;
-  const searchClause = search
-    ? sql`AND (
-        s.message ILIKE ${"%" + search + "%"}
-        OR sender.name ILIKE ${"%" + search + "%"}
-        OR sender.username ILIKE ${"%" + search + "%"}
-        OR recipient.name ILIKE ${"%" + search + "%"}
-        OR recipient.username ILIKE ${"%" + search + "%"}
-        OR e.title ILIKE ${"%" + search + "%"}
-      )`
-    : sql``;
-
-  try {
-    const items = (await sql`
-      SELECT
-        s.id, s.message, s.status, s.created_at, s.reviewed_at,
-        s.plan_id, e.title AS plan_title, e.starts_at AS plan_starts_at,
-        s.sender_user_id, sender.name AS sender_name, sender.username AS sender_username,
-        s.recipient_user_id, recipient.name AS recipient_name, recipient.username AS recipient_username,
-        s.reviewed_by_user_id, reviewer.name AS reviewer_name, reviewer.username AS reviewer_username
-      FROM newchums.shoutouts s
-      JOIN newchums.events e ON e.id = s.plan_id
-      JOIN newchums.users sender ON sender.id = s.sender_user_id
-      JOIN newchums.users recipient ON recipient.id = s.recipient_user_id
-      LEFT JOIN newchums.users reviewer ON reviewer.id = s.reviewed_by_user_id
-      WHERE 1=1
-        ${statusClause}
-        ${searchClause}
-      ORDER BY s.created_at DESC
-      LIMIT ${limit} OFFSET ${offset}
-    `) as Array<{
-      id: string;
-      message: string;
-      status: string;
-      created_at: string;
-      reviewed_at: string | null;
-      plan_id: string;
-      plan_title: string;
-      plan_starts_at: string;
-      sender_user_id: string;
-      sender_name: string | null;
-      sender_username: string | null;
-      recipient_user_id: string;
-      recipient_name: string | null;
-      recipient_username: string | null;
-      reviewed_by_user_id: string | null;
-      reviewer_name: string | null;
-      reviewer_username: string | null;
-    }>;
-
-    const totalRows = (await sql`
-      SELECT COUNT(*)::int AS count
-      FROM newchums.shoutouts s
-      JOIN newchums.events e ON e.id = s.plan_id
-      JOIN newchums.users sender ON sender.id = s.sender_user_id
-      JOIN newchums.users recipient ON recipient.id = s.recipient_user_id
-      WHERE 1=1
-        ${statusClause}
-        ${searchClause}
-    `) as { count: number }[];
-
-    return c.json({
-      ok: true,
-      items: items.map((r) => ({
-        id: r.id,
-        message: r.message,
-        status: r.status,
-        createdAt: r.created_at,
-        reviewedAt: r.reviewed_at,
-        plan: { id: r.plan_id, title: r.plan_title, startsAt: r.plan_starts_at },
-        sender: {
-          userId: r.sender_user_id,
-          displayName: r.sender_name?.trim() || (r.sender_username ? `@${r.sender_username.replace(/^@/, "")}` : "Someone"),
-          username: r.sender_username,
-        },
-        recipient: {
-          userId: r.recipient_user_id,
-          displayName: r.recipient_name?.trim() || (r.recipient_username ? `@${r.recipient_username.replace(/^@/, "")}` : "Someone"),
-          username: r.recipient_username,
-        },
-        reviewer: r.reviewed_by_user_id
-          ? {
-              userId: r.reviewed_by_user_id,
-              displayName: r.reviewer_name?.trim() || (r.reviewer_username ? `@${r.reviewer_username.replace(/^@/, "")}` : "Admin"),
-            }
-          : null,
-      })),
-      total: totalRows[0].count,
-    });
-  } catch (err) {
-    console.error("[GET /admin/shoutouts]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
-  }
-});
-
-/** POST /admin/shoutouts/:id/status, approve or reject a shout-out.
- *  On approval, fires a bell notification to the recipient (no email). */
-app.post("/admin/shoutouts/:id/status", async (c) => {
-  const admin = await requireSuperAdmin(c);
-  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
-
-  const sql = getSql(c.env);
-  const shoutoutId = c.req.param("id");
-
-  let body: Record<string, unknown>;
-  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
-
-  const newStatus = String(body.status ?? "");
-  if (newStatus !== "approved" && newStatus !== "rejected")
-    return c.json({ ok: false, error: "VALIDATION", message: "Status must be 'approved' or 'rejected'" }, 400);
-
-  try {
-    const updated = (await sql`
-      UPDATE newchums.shoutouts
-      SET status = ${newStatus},
-          reviewed_at = NOW(),
-          reviewed_by_user_id = ${admin.id},
-          updated_at = NOW()
-      WHERE id = ${shoutoutId}
-      RETURNING id, sender_user_id, recipient_user_id, plan_id
-    `) as { id: string; sender_user_id: string; recipient_user_id: string; plan_id: string }[];
-
-    if (updated.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-
-    if (newStatus === "approved") {
-      const row = updated[0];
-      // Blocked pairs: approval stands (moderation is independent), but the
-      // recipient gets no notification from a blocked counterpart; the
-      // public read filter hides the card itself for as long as the block
-      // lasts.
-      if (await pairBlocked(sql, row.sender_user_id, row.recipient_user_id)) {
-        return c.json({ ok: true, status: newStatus });
-      }
-      const planRows = (await sql`
-        SELECT title FROM newchums.events WHERE id = ${row.plan_id} LIMIT 1
-      `) as { title: string }[];
-      const planTitle = planRows[0]?.title ?? "your plan";
+    if (upserted[0]?.inserted) {
+      const info = kudosTagInfo(tag)!;
+      // No actor: kudos are anonymous on every surface. entity_id carries the
+      // plan so the bell can name it; the link goes to the recipient's shelf.
       await sql`
-        INSERT INTO newchums.notifications (user_id, type, actor_user_id, entity_id, metadata)
+        INSERT INTO newchums.notifications (user_id, type, entity_id, metadata)
         VALUES (
-          ${row.recipient_user_id},
-          'shoutout_received',
-          ${row.sender_user_id},
-          ${row.id},
-          ${JSON.stringify({ planTitle, planId: row.plan_id })}::jsonb
+          ${recipientUserId},
+          'kudos_received',
+          ${eventId},
+          ${JSON.stringify({ planTitle: ev[0].title, planId: eventId, tag, label: info.label, emoji: info.emoji })}::jsonb
         )
       `;
     }
 
-    return c.json({ ok: true, status: newStatus });
+    return c.json({ ok: true, tag, givenOnPlan: (others[0]?.c ?? 0) + 1 });
   } catch (err) {
-    console.error("[POST /admin/shoutouts/:id/status]", err);
+    console.error("[POST /events/:id/kudos]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** DELETE /events/:id/kudos/:recipientUserId, take a kudos back while the
+ *  window is still open. The bell row the recipient already got is left
+ *  alone; it names no giver, so there is nothing to unsay. */
+app.delete("/events/:id/kudos/:recipientUserId", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email || typeof payload.email !== "string")
+    return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const sql = getSql(c.env);
+  const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+  const eventId = c.req.param("id");
+  const recipientUserId = c.req.param("recipientUserId")?.trim();
+  if (!recipientUserId) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+  try {
+    const ev = (await sql`SELECT starts_at FROM newchums.events WHERE id = ${eventId}`) as { starts_at: string }[];
+    if (ev.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    if (Date.now() >= new Date(ev[0].starts_at).getTime() + KUDOS_WINDOW_MS)
+      return c.json({ ok: false, error: "KUDOS_WINDOW_CLOSED" }, 400);
+    await sql`
+      DELETE FROM newchums.kudos
+      WHERE plan_id = ${eventId} AND giver_user_id = ${userId} AND recipient_user_id = ${recipientUserId}
+    `;
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[DELETE /events/:id/kudos/:recipientUserId]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });
@@ -17679,840 +17516,6 @@ async function batchLoadNotificationPrefs(
   for (const r of rows) map.set(r.user_id, r.notification_prefs);
   return map;
 }
-
-// ─── Community Roadmap ────────────────────────────────────────────────────────
-
-const ROADMAP_STATUSES = ["received", "needs_clarification", "in_progress", "planned", "completed", "not_planned"] as const;
-const ROADMAP_CATEGORIES = ["feature_request", "bug", "general_feedback"] as const;
-const STATUS_LABELS: Record<string, string> = {
-  received: "Received",
-  needs_clarification: "Needs clarification",
-  in_progress: "In progress",
-  planned: "Planned",
-  completed: "Completed",
-  not_planned: "Not planned",
-};
-
-/** GET /roadmap, public list, optionally includes viewer vote/follow state */
-app.get("/roadmap", async (c) => {
-  const sql = getSql(c.env);
-  const url = new URL(c.req.url);
-  const statusFilter = url.searchParams.get("status") || "active";
-  const category = url.searchParams.get("category") || "";
-  const sort = url.searchParams.get("sort") || "votes";
-  const search = url.searchParams.get("search") || "";
-  const limit = Math.min(Number(url.searchParams.get("limit")) || 20, 50);
-  const offset = Number(url.searchParams.get("offset")) || 0;
-
-  let viewerUserId: string | null = null;
-  let viewerIsSuperAdmin = false;
-  try {
-    const payload = await requireAuth(c);
-    if (payload?.email) {
-      const u = (await sql`SELECT id, role FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string; role: string | null }[];
-      if (u.length > 0) {
-        viewerUserId = u[0].id;
-        viewerIsSuperAdmin = u[0].role === "super_admin";
-      }
-    }
-  } catch { /* unauthenticated is fine */ }
-
-  try {
-    let statusClause: string;
-    if (statusFilter === "completed") {
-      statusClause = `AND ri.status IN ('completed', 'not_planned')`;
-    } else if (statusFilter === "all") {
-      statusClause = "";
-    } else {
-      statusClause = `AND ri.status NOT IN ('completed', 'not_planned')`;
-    }
-
-    const categoryClause = category && ROADMAP_CATEGORIES.includes(category as typeof ROADMAP_CATEGORIES[number])
-      ? `AND ri.category = '${category}'`
-      : "";
-
-    const orderClause = sort === "newest" ? "ri.created_at DESC" : "ri.vote_count DESC, ri.created_at DESC";
-
-    // Visibility rule: items with status='received' or is_private=true are
-    // hidden from non-author / non-admin viewers. Author and super admins
-    // always see their own / all items respectively.
-    const items = await sql`
-      SELECT ri.id, ri.title, ri.body, ri.category, ri.status, ri.vote_count,
-             ri.comment_count, ri.follower_count, ri.completed_at, ri.created_at,
-             ri.merged_into_item_id, ri.is_anonymous, ri.is_private, ri.author_user_id,
-             u.username AS author_username
-      FROM newchums.roadmap_items ri
-      JOIN newchums.users u ON u.id = ri.author_user_id
-      WHERE ri.is_removed = false
-        AND ri.merged_into_item_id IS NULL
-        ${statusFilter === "completed" ? sql`AND ri.status IN ('completed', 'not_planned')` : statusFilter === "all" ? sql`` : sql`AND ri.status NOT IN ('completed', 'not_planned')`}
-        ${category && ROADMAP_CATEGORIES.includes(category as typeof ROADMAP_CATEGORIES[number]) ? sql`AND ri.category = ${category}` : sql``}
-        ${search ? sql`AND ri.title ILIKE ${"%" + search + "%"}` : sql``}
-        ${viewerUserId ? sql`AND ((ri.status != 'received' AND ri.is_private = false) OR ri.author_user_id = ${viewerUserId})` : sql`AND ri.status != 'received' AND ri.is_private = false`}
-      ORDER BY ${sort === "newest" ? sql`ri.created_at DESC` : sql`ri.vote_count DESC, ri.created_at DESC`}
-      LIMIT ${limit} OFFSET ${offset}
-    `;
-
-    let viewerVotes: Set<string> = new Set();
-    let viewerFollows: Set<string> = new Set();
-    if (viewerUserId && items.length > 0) {
-      const itemIds = (items as { id: string }[]).map((i) => i.id);
-      const votes = (await sql`SELECT item_id FROM newchums.roadmap_votes WHERE user_id = ${viewerUserId} AND item_id = ANY(${itemIds})`) as { item_id: string }[];
-      votes.forEach((v) => viewerVotes.add(v.item_id));
-      const follows = (await sql`SELECT item_id FROM newchums.roadmap_follows WHERE user_id = ${viewerUserId} AND item_id = ANY(${itemIds})`) as { item_id: string }[];
-      follows.forEach((f) => viewerFollows.add(f.item_id));
-    }
-
-    const total = (await sql`
-      SELECT COUNT(*)::int AS count FROM newchums.roadmap_items ri
-      WHERE ri.is_removed = false AND ri.merged_into_item_id IS NULL
-        ${statusFilter === "completed" ? sql`AND ri.status IN ('completed', 'not_planned')` : statusFilter === "all" ? sql`` : sql`AND ri.status NOT IN ('completed', 'not_planned')`}
-        ${category && ROADMAP_CATEGORIES.includes(category as typeof ROADMAP_CATEGORIES[number]) ? sql`AND ri.category = ${category}` : sql``}
-        ${search ? sql`AND ri.title ILIKE ${"%" + search + "%"}` : sql``}
-        ${viewerUserId ? sql`AND ((ri.status != 'received' AND ri.is_private = false) OR ri.author_user_id = ${viewerUserId})` : sql`AND ri.status != 'received' AND ri.is_private = false`}
-    `) as { count: number }[];
-
-    return c.json({
-      ok: true,
-      items: items.map((i: Record<string, unknown>) => {
-        const isAnon = i.is_anonymous === true;
-        return {
-          ...i,
-          body: i.body ? String(i.body).slice(0, 200) : null,
-          author_username: isAnon ? "anonymous" : i.author_username,
-          is_anonymous: isAnon,
-          author_user_id: undefined,
-          viewer_voted: viewerVotes.has(i.id as string),
-          viewer_following: viewerFollows.has(i.id as string),
-        };
-      }),
-      total: total[0].count,
-    });
-  } catch (err) {
-    console.error("[GET /roadmap]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
-  }
-});
-
-/** GET /roadmap/:id, single item detail with comments, admin notes, merge info */
-app.get("/roadmap/:id", async (c) => {
-  const sql = getSql(c.env);
-  const itemId = c.req.param("id");
-
-  let viewerUserId: string | null = null;
-  let viewerIsSuperAdmin = false;
-  try {
-    const payload = await requireAuth(c);
-    if (payload?.email) {
-      const u = (await sql`SELECT id, role FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string; role: string | null }[];
-      if (u.length > 0) {
-        viewerUserId = u[0].id;
-        viewerIsSuperAdmin = u[0].role === "super_admin";
-      }
-    }
-  } catch { /* unauthenticated is fine */ }
-
-  try {
-    const items = (await sql`
-      SELECT ri.*, u.username AS author_username
-      FROM newchums.roadmap_items ri
-      JOIN newchums.users u ON u.id = ri.author_user_id
-      WHERE ri.id = ${itemId} AND ri.is_removed = false
-    `) as Record<string, unknown>[];
-
-    if (items.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-
-    // Items with "received" status OR is_private = true are only visible to
-    // the author and super admins. Both gates are OR'd together.
-    const item0 = items[0];
-    const isHidden = item0.status === "received" || item0.is_private === true;
-    if (isHidden && !viewerIsSuperAdmin && item0.author_user_id !== viewerUserId) {
-      return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-    }
-    const item = items[0];
-
-    const comments = await sql`
-      SELECT rc.id, rc.body, rc.created_at, rc.is_removed,
-             u.username AS author_username
-      FROM newchums.roadmap_comments rc
-      JOIN newchums.users u ON u.id = rc.user_id
-      WHERE rc.item_id = ${itemId}
-      ORDER BY rc.created_at ASC
-    `;
-
-    const adminNotes = await sql`
-      SELECT ran.id, ran.body, ran.status_before, ran.status_after, ran.created_at,
-             u.username AS admin_username
-      FROM newchums.roadmap_admin_notes ran
-      JOIN newchums.users u ON u.id = ran.admin_user_id
-      WHERE ran.item_id = ${itemId}
-      ORDER BY ran.created_at ASC
-    `;
-
-    let mergedInto: { id: string; title: string } | null = null;
-    if (item.merged_into_item_id) {
-      const target = (await sql`SELECT id, title FROM newchums.roadmap_items WHERE id = ${item.merged_into_item_id}`) as { id: string; title: string }[];
-      if (target.length > 0) mergedInto = target[0];
-    }
-
-    let viewerVoted = false;
-    let viewerFollowing = false;
-    if (viewerUserId) {
-      const v = (await sql`SELECT 1 FROM newchums.roadmap_votes WHERE user_id = ${viewerUserId} AND item_id = ${itemId}`) as unknown[];
-      viewerVoted = v.length > 0;
-      const f = (await sql`SELECT 1 FROM newchums.roadmap_follows WHERE user_id = ${viewerUserId} AND item_id = ${itemId}`) as unknown[];
-      viewerFollowing = f.length > 0;
-    }
-
-    const viewerIsAuthor = viewerUserId !== null && item.author_user_id === viewerUserId;
-    const isAnon = item.is_anonymous === true;
-
-    return c.json({
-      ok: true,
-      item: {
-        ...item,
-        author_username: isAnon ? "anonymous" : item.author_username,
-        author_user_id: undefined,
-        viewer_voted: viewerVoted,
-        viewer_following: viewerFollowing,
-        viewer_is_author: viewerIsAuthor,
-      },
-      comments: comments.filter((cm: Record<string, unknown>) => !cm.is_removed).map((cm: Record<string, unknown>) => ({
-        id: cm.id, body: cm.body, created_at: cm.created_at, author_username: cm.author_username,
-      })),
-      admin_notes: adminNotes,
-      merged_into: mergedInto,
-    });
-  } catch (err) {
-    console.error("[GET /roadmap/:id]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
-  }
-});
-
-/** POST /roadmap, submit a new roadmap item (authenticated) */
-app.post("/roadmap", async (c) => {
-  const payload = await requireAuth(c);
-  if (!payload?.email) return c.json({ ok: false, error: "AUTH_REQUIRED" }, 401);
-
-  const sql = getSql(c.env);
-  const users = (await sql`SELECT id, username FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string; username: string }[];
-  if (users.length === 0) return c.json({ ok: false, error: "AUTH_REQUIRED" }, 401);
-  const userId = users[0].id;
-
-  let body: Record<string, unknown>;
-  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
-
-  const title = String(body.title ?? "").trim();
-  const description = String(body.body ?? "").trim();
-  const category = String(body.category ?? "feature_request");
-  const attachmentKey = typeof body.attachment_key === "string" && body.attachment_key.startsWith("roadmap_attachments/")
-    ? body.attachment_key.trim()
-    : null;
-  const isAnonymous = body.is_anonymous === true;
-
-  if (!title || title.length > 200) return c.json({ ok: false, error: "VALIDATION", message: "Title is required (max 200 chars)" }, 400);
-  if (description.length > 5000) return c.json({ ok: false, error: "VALIDATION", message: "Description too long (max 5000 chars)" }, 400);
-  if (!ROADMAP_CATEGORIES.includes(category as typeof ROADMAP_CATEGORIES[number]))
-    return c.json({ ok: false, error: "VALIDATION", message: "Invalid category" }, 400);
-
-  const titleCheck = validateCleanText(title);
-  if (!titleCheck.ok) return c.json({ ok: false, error: "CONTENT_POLICY", message: titleCheck.reason }, 400);
-  if (description) {
-    const bodyCheck = validateCleanText(description);
-    if (!bodyCheck.ok) return c.json({ ok: false, error: "CONTENT_POLICY", message: bodyCheck.reason }, 400);
-  }
-
-  try {
-    const rows = (await sql`
-      INSERT INTO newchums.roadmap_items (author_user_id, category, title, body, attachment_key, is_anonymous, vote_count, follower_count)
-      VALUES (${userId}, ${category}, ${title}, ${description || null}, ${attachmentKey}, ${isAnonymous}, 1, 1)
-      RETURNING id
-    `) as { id: string }[];
-
-    const itemId = rows[0].id;
-
-    // Auto-vote and auto-follow the submitter
-    await sql`INSERT INTO newchums.roadmap_votes (user_id, item_id) VALUES (${userId}, ${itemId})`;
-    await sql`INSERT INTO newchums.roadmap_follows (user_id, item_id) VALUES (${userId}, ${itemId})`;
-
-    return c.json({ ok: true, id: itemId });
-  } catch (err) {
-    console.error("[POST /roadmap]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
-  }
-});
-
-/** POST /roadmap/:id/vote, toggle upvote */
-app.post("/roadmap/:id/vote", async (c) => {
-  const payload = await requireAuth(c);
-  if (!payload?.email) return c.json({ ok: false, error: "AUTH_REQUIRED" }, 401);
-
-  const sql = getSql(c.env);
-  const users = (await sql`SELECT id FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string }[];
-  if (users.length === 0) return c.json({ ok: false, error: "AUTH_REQUIRED" }, 401);
-  const userId = users[0].id;
-  const itemId = c.req.param("id");
-
-  try {
-    const existing = (await sql`SELECT 1 FROM newchums.roadmap_votes WHERE user_id = ${userId} AND item_id = ${itemId}`) as unknown[];
-    if (existing.length > 0) {
-      await sql`DELETE FROM newchums.roadmap_votes WHERE user_id = ${userId} AND item_id = ${itemId}`;
-      await sql`UPDATE newchums.roadmap_items SET vote_count = GREATEST(0, vote_count - 1), updated_at = NOW() WHERE id = ${itemId}`;
-      const updated = (await sql`SELECT vote_count FROM newchums.roadmap_items WHERE id = ${itemId}`) as { vote_count: number }[];
-      return c.json({ ok: true, voted: false, vote_count: updated[0]?.vote_count ?? 0 });
-    } else {
-      await sql`INSERT INTO newchums.roadmap_votes (user_id, item_id) VALUES (${userId}, ${itemId})`;
-      await sql`UPDATE newchums.roadmap_items SET vote_count = vote_count + 1, updated_at = NOW() WHERE id = ${itemId}`;
-      const updated = (await sql`SELECT vote_count FROM newchums.roadmap_items WHERE id = ${itemId}`) as { vote_count: number }[];
-      return c.json({ ok: true, voted: true, vote_count: updated[0]?.vote_count ?? 0 });
-    }
-  } catch (err) {
-    console.error("[POST /roadmap/:id/vote]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
-  }
-});
-
-/** POST /roadmap/:id/follow, toggle follow */
-app.post("/roadmap/:id/follow", async (c) => {
-  const payload = await requireAuth(c);
-  if (!payload?.email) return c.json({ ok: false, error: "AUTH_REQUIRED" }, 401);
-
-  const sql = getSql(c.env);
-  const users = (await sql`SELECT id FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string }[];
-  if (users.length === 0) return c.json({ ok: false, error: "AUTH_REQUIRED" }, 401);
-  const userId = users[0].id;
-  const itemId = c.req.param("id");
-
-  try {
-    const existing = (await sql`SELECT 1 FROM newchums.roadmap_follows WHERE user_id = ${userId} AND item_id = ${itemId}`) as unknown[];
-    if (existing.length > 0) {
-      await sql`DELETE FROM newchums.roadmap_follows WHERE user_id = ${userId} AND item_id = ${itemId}`;
-      await sql`UPDATE newchums.roadmap_items SET follower_count = GREATEST(0, follower_count - 1), updated_at = NOW() WHERE id = ${itemId}`;
-      const updated = (await sql`SELECT follower_count FROM newchums.roadmap_items WHERE id = ${itemId}`) as { follower_count: number }[];
-      return c.json({ ok: true, following: false, follower_count: updated[0]?.follower_count ?? 0 });
-    } else {
-      await sql`INSERT INTO newchums.roadmap_follows (user_id, item_id) VALUES (${userId}, ${itemId})`;
-      await sql`UPDATE newchums.roadmap_items SET follower_count = follower_count + 1, updated_at = NOW() WHERE id = ${itemId}`;
-      const updated = (await sql`SELECT follower_count FROM newchums.roadmap_items WHERE id = ${itemId}`) as { follower_count: number }[];
-      return c.json({ ok: true, following: true, follower_count: updated[0]?.follower_count ?? 0 });
-    }
-  } catch (err) {
-    console.error("[POST /roadmap/:id/follow]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
-  }
-});
-
-/** PUT /roadmap/:id, edit a roadmap item (author only) */
-app.put("/roadmap/:id", async (c) => {
-  const payload = await requireAuth(c);
-  if (!payload?.email) return c.json({ ok: false, error: "AUTH_REQUIRED" }, 401);
-
-  const sql = getSql(c.env);
-  const itemId = c.req.param("id");
-  const users = (await sql`SELECT id FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string }[];
-  if (users.length === 0) return c.json({ ok: false, error: "AUTH_REQUIRED" }, 401);
-  const userId = users[0].id;
-
-  const existing = (await sql`SELECT author_user_id, status FROM newchums.roadmap_items WHERE id = ${itemId} AND is_removed = false`) as { author_user_id: string; status: string }[];
-  if (existing.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-  if (existing[0].author_user_id !== userId) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
-
-  let body: Record<string, unknown>;
-  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
-
-  const title = typeof body.title === "string" ? body.title.trim() : undefined;
-  const description = typeof body.body === "string" ? body.body.trim() : undefined;
-  const category = typeof body.category === "string" ? body.category : undefined;
-
-  if (title !== undefined && (!title || title.length > 200)) return c.json({ ok: false, error: "VALIDATION", message: "Title is required (max 200 chars)" }, 400);
-  if (description !== undefined && description.length > 5000) return c.json({ ok: false, error: "VALIDATION", message: "Description too long (max 5000 chars)" }, 400);
-  if (category !== undefined && !ROADMAP_CATEGORIES.includes(category as typeof ROADMAP_CATEGORIES[number]))
-    return c.json({ ok: false, error: "VALIDATION", message: "Invalid category" }, 400);
-
-  if (title !== undefined) {
-    const titleCheck = validateCleanText(title);
-    if (!titleCheck.ok) return c.json({ ok: false, error: "CONTENT_POLICY", message: titleCheck.reason }, 400);
-  }
-  if (description) {
-    const bodyCheck = validateCleanText(description);
-    if (!bodyCheck.ok) return c.json({ ok: false, error: "CONTENT_POLICY", message: bodyCheck.reason }, 400);
-  }
-
-  try {
-    const sets: string[] = [];
-    if (title !== undefined) sets.push("title");
-    if (description !== undefined) sets.push("body");
-    if (category !== undefined) sets.push("category");
-    if (sets.length === 0) return c.json({ ok: false, error: "VALIDATION", message: "Nothing to update" }, 400);
-
-    await sql`
-      UPDATE newchums.roadmap_items SET
-        ${title !== undefined ? sql`title = ${title},` : sql``}
-        ${description !== undefined ? sql`body = ${description || null},` : sql``}
-        ${category !== undefined ? sql`category = ${category},` : sql``}
-        updated_at = NOW()
-      WHERE id = ${itemId}
-    `;
-
-    return c.json({ ok: true });
-  } catch (err) {
-    console.error("[PUT /roadmap/:id]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
-  }
-});
-
-/** DELETE /roadmap/:id, soft-delete a roadmap item (author only) */
-app.delete("/roadmap/:id", async (c) => {
-  const payload = await requireAuth(c);
-  if (!payload?.email) return c.json({ ok: false, error: "AUTH_REQUIRED" }, 401);
-
-  const sql = getSql(c.env);
-  const itemId = c.req.param("id");
-  const users = (await sql`SELECT id FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string }[];
-  if (users.length === 0) return c.json({ ok: false, error: "AUTH_REQUIRED" }, 401);
-  const userId = users[0].id;
-
-  const existing = (await sql`SELECT author_user_id FROM newchums.roadmap_items WHERE id = ${itemId} AND is_removed = false`) as { author_user_id: string }[];
-  if (existing.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-  if (existing[0].author_user_id !== userId) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
-
-  try {
-    await sql`UPDATE newchums.roadmap_items SET is_removed = true, updated_at = NOW() WHERE id = ${itemId}`;
-    return c.json({ ok: true });
-  } catch (err) {
-    console.error("[DELETE /roadmap/:id]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
-  }
-});
-
-/** POST /roadmap/:id/comment, add a comment */
-app.post("/roadmap/:id/comment", async (c) => {
-  const authPayload = await requireAuth(c);
-  if (!authPayload?.email) return c.json({ ok: false, error: "AUTH_REQUIRED" }, 401);
-
-  const sql = getSql(c.env);
-  const users = (await sql`SELECT id, username FROM newchums.users WHERE email = ${authPayload.email} LIMIT 1`) as { id: string; username: string }[];
-  if (users.length === 0) return c.json({ ok: false, error: "AUTH_REQUIRED" }, 401);
-  const userId = users[0].id;
-
-  let body: Record<string, unknown>;
-  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
-
-  const commentBody = String(body.body ?? "").trim();
-  if (!commentBody || commentBody.length > 2000) return c.json({ ok: false, error: "VALIDATION", message: "Comment is required (max 2000 chars)" }, 400);
-
-  const check = validateCleanText(commentBody);
-  if (!check.ok) return c.json({ ok: false, error: "CONTENT_POLICY", message: check.reason }, 400);
-
-  const itemId = c.req.param("id");
-
-  try {
-    const item = (await sql`SELECT id FROM newchums.roadmap_items WHERE id = ${itemId} AND is_removed = false`) as { id: string }[];
-    if (item.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-
-    const rows = (await sql`
-      INSERT INTO newchums.roadmap_comments (item_id, user_id, body)
-      VALUES (${itemId}, ${userId}, ${commentBody})
-      RETURNING id, created_at
-    `) as { id: string; created_at: string }[];
-
-    await sql`UPDATE newchums.roadmap_items SET comment_count = comment_count + 1, updated_at = NOW() WHERE id = ${itemId}`;
-
-    return c.json({
-      ok: true,
-      comment: { id: rows[0].id, body: commentBody, created_at: rows[0].created_at, author_username: users[0].username },
-    });
-  } catch (err) {
-    console.error("[POST /roadmap/:id/comment]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
-  }
-});
-
-/** GET /roadmap/:id/attachment, serve the attachment image from R2 */
-app.get("/roadmap/:id/attachment", async (c) => {
-  if (!c.env.MEDIA_BUCKET) return c.json({ ok: false, error: "MEDIA_NOT_CONFIGURED" }, 503);
-  const itemId = c.req.param("id");
-  const sql = getSql(c.env);
-
-  // Honor the same visibility gates as the item itself: hidden items
-  // (status='received' or is_private=true) are only accessible to the author
-  // and super admins.
-  let viewerUserId: string | null = null;
-  let viewerIsSuperAdmin = false;
-  try {
-    const payload = await requireAuth(c);
-    if (payload?.email) {
-      const u = (await sql`SELECT id, role FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string; role: string | null }[];
-      if (u.length > 0) {
-        viewerUserId = u[0].id;
-        viewerIsSuperAdmin = u[0].role === "super_admin";
-      }
-    }
-  } catch { /* unauthenticated is fine */ }
-
-  try {
-    const rows = (await sql`
-      SELECT attachment_key, status, is_private, author_user_id
-      FROM newchums.roadmap_items WHERE id = ${itemId} AND is_removed = false
-    `) as { attachment_key: string | null; status: string; is_private: boolean; author_user_id: string }[];
-    if (rows.length === 0 || !rows[0].attachment_key) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-
-    const row = rows[0];
-    const isHidden = row.status === "received" || row.is_private === true;
-    if (isHidden && !viewerIsSuperAdmin && row.author_user_id !== viewerUserId) {
-      return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-    }
-
-    const obj = await c.env.MEDIA_BUCKET?.get(row.attachment_key as string);
-    if (!obj) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-    const headers = new Headers();
-    headers.set("Content-Type", obj.httpMetadata?.contentType ?? "image/jpeg");
-    headers.set("Cache-Control", "public, max-age=31536000, immutable");
-    return new Response(obj.body, { headers });
-  } catch (err) {
-    console.error("[GET /roadmap/:id/attachment]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
-  }
-});
-
-// ─── Roadmap Admin endpoints ──────────────────────────────────────────────────
-
-/** Helper: send roadmap update emails to followers (non-blocking) */
-async function sendRoadmapNotifications(
-  sql: ReturnType<typeof getSql>,
-  env: Bindings,
-  itemId: string,
-  updateType: "status_change" | "merged",
-  opts: { statusLabel?: string; adminNote?: string | null; mergedIntoTitle?: string; mergedIntoId?: string },
-) {
-  try {
-    const item = (await sql`SELECT title FROM newchums.roadmap_items WHERE id = ${itemId}`) as { title: string }[];
-    if (item.length === 0) return;
-
-    const followers = (await sql`
-      SELECT rf.user_id, u.email, u.name, u.username, up.notification_prefs
-      FROM newchums.roadmap_follows rf
-      JOIN newchums.users u ON u.id = rf.user_id
-      LEFT JOIN newchums.user_profile up ON up.user_id = rf.user_id
-      WHERE rf.item_id = ${itemId}
-    `) as { user_id: string; email: string; name: string | null; username: string | null; notification_prefs: unknown }[];
-
-    for (const follower of followers) {
-      const prefs = normalizeNotificationPrefs(follower.notification_prefs);
-      if (!prefs.items.roadmap_updates?.enabled) continue;
-
-      const recipientName = follower.name?.trim() || follower.username?.replace(/^@/, "") || "there";
-      const unsubToken = await createUnsubscribeToken(env.NEXTAUTH_SECRET!, follower.user_id, "roadmap_updates");
-
-      await sendRoadmapUpdateEmail(env, {
-        to: follower.email,
-        recipientName,
-        itemTitle: item[0].title,
-        itemUrl: `${env.WEB_BASE_URL}/roadmap/${itemId}`,
-        updateType,
-        statusLabel: opts.statusLabel,
-        adminNote: opts.adminNote,
-        mergedIntoTitle: opts.mergedIntoTitle,
-        mergedIntoUrl: opts.mergedIntoId ? `${env.WEB_BASE_URL}/roadmap/${opts.mergedIntoId}` : undefined,
-        unsubscribeUrl: `${env.WEB_BASE_URL}/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
-      });
-    }
-  } catch (err) {
-    console.error("[sendRoadmapNotifications]", err);
-  }
-}
-
-/** GET /admin/roadmap, list all items for moderation */
-app.get("/admin/roadmap", async (c) => {
-  const admin = await requireSuperAdmin(c);
-  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
-
-  const sql = getSql(c.env);
-  const url = new URL(c.req.url);
-  const statusFilter = url.searchParams.get("status") || "";
-  const category = url.searchParams.get("category") || "";
-  const search = url.searchParams.get("search") || "";
-  const limit = Math.min(Number(url.searchParams.get("limit")) || 30, 100);
-  const offset = Number(url.searchParams.get("offset")) || 0;
-
-  // "removed" is a synthetic status that maps to the existing `is_removed`
-  // soft-delete flag, not a real status enum value. By default the admin view
-  // hides removed items so they only appear when the admin explicitly filters
-  // by "Removed", matching the behavior the community-facing roadmap has
-  // always had (`WHERE is_removed = false`).
-  const removedFilter =
-    statusFilter === "removed"
-      ? sql`AND ri.is_removed = true`
-      : sql`AND ri.is_removed = false`;
-  const realStatusFilter =
-    statusFilter && statusFilter !== "removed" && ROADMAP_STATUSES.includes(statusFilter as typeof ROADMAP_STATUSES[number])
-      ? sql`AND ri.status = ${statusFilter}`
-      : sql``;
-
-  try {
-    const items = await sql`
-      SELECT ri.*, u.username AS author_username, u.email AS author_email
-      FROM newchums.roadmap_items ri
-      JOIN newchums.users u ON u.id = ri.author_user_id
-      WHERE 1=1
-        ${removedFilter}
-        ${realStatusFilter}
-        ${category && ROADMAP_CATEGORIES.includes(category as typeof ROADMAP_CATEGORIES[number]) ? sql`AND ri.category = ${category}` : sql``}
-        ${search ? sql`AND ri.title ILIKE ${"%" + search + "%"}` : sql``}
-      ORDER BY ri.created_at DESC
-      LIMIT ${limit} OFFSET ${offset}
-    `;
-
-    const total = (await sql`
-      SELECT COUNT(*)::int AS count FROM newchums.roadmap_items ri
-      WHERE 1=1
-        ${removedFilter}
-        ${realStatusFilter}
-        ${category && ROADMAP_CATEGORIES.includes(category as typeof ROADMAP_CATEGORIES[number]) ? sql`AND ri.category = ${category}` : sql``}
-        ${search ? sql`AND ri.title ILIKE ${"%" + search + "%"}` : sql``}
-    `) as { count: number }[];
-
-    return c.json({ ok: true, items, total: total[0].count });
-  } catch (err) {
-    console.error("[GET /admin/roadmap]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
-  }
-});
-
-/** POST /admin/roadmap/:id/status, update status with optional note */
-app.post("/admin/roadmap/:id/status", async (c) => {
-  const admin = await requireSuperAdmin(c);
-  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
-
-  const sql = getSql(c.env);
-  const itemId = c.req.param("id");
-
-  let body: Record<string, unknown>;
-  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
-
-  const newStatus = String(body.status ?? "");
-  const note = String(body.note ?? "").trim();
-
-  if (!ROADMAP_STATUSES.includes(newStatus as typeof ROADMAP_STATUSES[number]))
-    return c.json({ ok: false, error: "VALIDATION", message: "Invalid status" }, 400);
-
-  try {
-    const current = (await sql`SELECT status FROM newchums.roadmap_items WHERE id = ${itemId}`) as { status: string }[];
-    if (current.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-
-    const oldStatus = current[0].status;
-    const completedAt = newStatus === "completed" ? sql`NOW()` : newStatus !== "completed" && oldStatus === "completed" ? sql`NULL` : sql`completed_at`;
-
-    await sql`
-      UPDATE newchums.roadmap_items
-      SET status = ${newStatus}, completed_at = ${newStatus === "completed" ? new Date().toISOString() : null}, updated_at = NOW()
-      WHERE id = ${itemId}
-    `;
-
-    if (note) {
-      await sql`
-        INSERT INTO newchums.roadmap_admin_notes (item_id, admin_user_id, body, status_before, status_after)
-        VALUES (${itemId}, ${admin.id}, ${note}, ${oldStatus}, ${newStatus})
-      `;
-    } else if (oldStatus !== newStatus) {
-      await sql`
-        INSERT INTO newchums.roadmap_admin_notes (item_id, admin_user_id, body, status_before, status_after)
-        VALUES (${itemId}, ${admin.id}, ${`Status changed to ${STATUS_LABELS[newStatus] ?? newStatus}`}, ${oldStatus}, ${newStatus})
-      `;
-    }
-
-    c.executionCtx.waitUntil(
-      sendRoadmapNotifications(sql, c.env, itemId, "status_change", {
-        statusLabel: STATUS_LABELS[newStatus] ?? newStatus,
-        adminNote: note || null,
-      })
-    );
-
-    return c.json({ ok: true });
-  } catch (err) {
-    console.error("[POST /admin/roadmap/:id/status]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
-  }
-});
-
-/** POST /admin/roadmap/:id/merge, merge item into target */
-app.post("/admin/roadmap/:id/merge", async (c) => {
-  const admin = await requireSuperAdmin(c);
-  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
-
-  const sql = getSql(c.env);
-  const sourceId = c.req.param("id");
-
-  let body: Record<string, unknown>;
-  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
-
-  const targetId = String(body.target_item_id ?? "");
-  if (!targetId) return c.json({ ok: false, error: "VALIDATION", message: "target_item_id required" }, 400);
-  if (sourceId === targetId) return c.json({ ok: false, error: "VALIDATION", message: "Cannot merge into itself" }, 400);
-
-  try {
-    const source = (await sql`SELECT id, title FROM newchums.roadmap_items WHERE id = ${sourceId} AND merged_into_item_id IS NULL`) as { id: string; title: string }[];
-    const target = (await sql`SELECT id, title FROM newchums.roadmap_items WHERE id = ${targetId} AND is_removed = false AND merged_into_item_id IS NULL`) as { id: string; title: string }[];
-
-    if (source.length === 0) return c.json({ ok: false, error: "NOT_FOUND", message: "Source item not found or already merged" }, 404);
-    if (target.length === 0) return c.json({ ok: false, error: "NOT_FOUND", message: "Target item not found" }, 404);
-
-    // Mark source as merged
-    await sql`UPDATE newchums.roadmap_items SET merged_into_item_id = ${targetId}, updated_at = NOW() WHERE id = ${sourceId}`;
-
-    // Transfer votes (skip duplicates)
-    await sql`
-      INSERT INTO newchums.roadmap_votes (user_id, item_id, created_at)
-      SELECT user_id, ${targetId}, NOW()
-      FROM newchums.roadmap_votes WHERE item_id = ${sourceId}
-      ON CONFLICT (user_id, item_id) DO NOTHING
-    `;
-
-    // Transfer follows (skip duplicates)
-    await sql`
-      INSERT INTO newchums.roadmap_follows (user_id, item_id, created_at)
-      SELECT user_id, ${targetId}, NOW()
-      FROM newchums.roadmap_follows WHERE item_id = ${sourceId}
-      ON CONFLICT (user_id, item_id) DO NOTHING
-    `;
-
-    // Recompute counts on target
-    await sql`
-      UPDATE newchums.roadmap_items SET
-        vote_count = (SELECT COUNT(*)::int FROM newchums.roadmap_votes WHERE item_id = ${targetId}),
-        follower_count = (SELECT COUNT(*)::int FROM newchums.roadmap_follows WHERE item_id = ${targetId}),
-        updated_at = NOW()
-      WHERE id = ${targetId}
-    `;
-
-    // Admin note on target
-    await sql`
-      INSERT INTO newchums.roadmap_admin_notes (item_id, admin_user_id, body, status_before, status_after)
-      VALUES (${targetId}, ${admin.id}, ${`A similar idea, "${source[0].title}", was combined with this one. Votes and followers have been transferred here.`}, NULL, NULL)
-    `;
-
-    c.executionCtx.waitUntil(
-      sendRoadmapNotifications(sql, c.env, sourceId, "merged", {
-        mergedIntoTitle: target[0].title,
-        mergedIntoId: targetId,
-      })
-    );
-
-    return c.json({ ok: true });
-  } catch (err) {
-    console.error("[POST /admin/roadmap/:id/merge]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
-  }
-});
-
-/** POST /admin/roadmap/:id/edit, edit item title, body, category, privacy */
-app.post("/admin/roadmap/:id/edit", async (c) => {
-  const admin = await requireSuperAdmin(c);
-  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
-
-  const sql = getSql(c.env);
-  const itemId = c.req.param("id");
-
-  let body: Record<string, unknown>;
-  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
-
-  const title = String(body.title ?? "").trim();
-  const description = body.body != null ? String(body.body).trim() : undefined;
-  const category = body.category ? String(body.category) : undefined;
-  const isPrivate = typeof body.is_private === "boolean" ? body.is_private : undefined;
-
-  if (!title || title.length > 200) return c.json({ ok: false, error: "VALIDATION", message: "Title is required (max 200 chars)" }, 400);
-  if (description !== undefined && description.length > 5000) return c.json({ ok: false, error: "VALIDATION", message: "Description too long (max 5000 chars)" }, 400);
-  if (category && !ROADMAP_CATEGORIES.includes(category as typeof ROADMAP_CATEGORIES[number]))
-    return c.json({ ok: false, error: "VALIDATION", message: "Invalid category" }, 400);
-
-  try {
-    const existing = (await sql`SELECT id FROM newchums.roadmap_items WHERE id = ${itemId}`) as { id: string }[];
-    if (existing.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-
-    await sql`
-      UPDATE newchums.roadmap_items
-      SET title = ${title},
-          body = ${description !== undefined ? (description || null) : sql`body`},
-          category = ${category ?? sql`category`},
-          is_private = ${isPrivate !== undefined ? isPrivate : sql`is_private`},
-          updated_at = NOW()
-      WHERE id = ${itemId}
-    `;
-
-    return c.json({ ok: true });
-  } catch (err) {
-    console.error("[POST /admin/roadmap/:id/edit]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
-  }
-});
-
-/** POST /admin/roadmap/:id/remove, soft-remove item */
-app.post("/admin/roadmap/:id/remove", async (c) => {
-  const admin = await requireSuperAdmin(c);
-  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
-
-  const sql = getSql(c.env);
-  const itemId = c.req.param("id");
-
-  let body: Record<string, unknown> = {};
-  try { body = await c.req.json(); } catch { /* no body is fine */ }
-
-  const reason = String(body.reason ?? "").trim();
-
-  try {
-    await sql`
-      UPDATE newchums.roadmap_items SET is_removed = true, removal_reason = ${reason || null}, updated_at = NOW()
-      WHERE id = ${itemId}
-    `;
-    return c.json({ ok: true });
-  } catch (err) {
-    console.error("[POST /admin/roadmap/:id/remove]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
-  }
-});
-
-/** POST /admin/roadmap/:id/restore, restore removed item */
-app.post("/admin/roadmap/:id/restore", async (c) => {
-  const admin = await requireSuperAdmin(c);
-  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
-
-  const sql = getSql(c.env);
-  const itemId = c.req.param("id");
-
-  try {
-    await sql`
-      UPDATE newchums.roadmap_items SET is_removed = false, removal_reason = NULL, updated_at = NOW()
-      WHERE id = ${itemId}
-    `;
-    return c.json({ ok: true });
-  } catch (err) {
-    console.error("[POST /admin/roadmap/:id/restore]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
-  }
-});
-
-/** DELETE /admin/roadmap/comments/:id, remove a comment */
-app.delete("/admin/roadmap/comments/:id", async (c) => {
-  const admin = await requireSuperAdmin(c);
-  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
-
-  const sql = getSql(c.env);
-  const commentId = c.req.param("id");
-
-  try {
-    const comment = (await sql`SELECT item_id FROM newchums.roadmap_comments WHERE id = ${commentId}`) as { item_id: string }[];
-    if (comment.length === 0) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
-
-    await sql`UPDATE newchums.roadmap_comments SET is_removed = true WHERE id = ${commentId}`;
-    await sql`UPDATE newchums.roadmap_items SET comment_count = GREATEST(0, comment_count - 1), updated_at = NOW() WHERE id = ${comment[0].item_id}`;
-
-    return c.json({ ok: true });
-  } catch (err) {
-    console.error("[DELETE /admin/roadmap/comments/:id]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
-  }
-});
 
 // ─── QR redirect management (super admin + public resolve) ───────────────────
 //
@@ -19218,7 +18221,17 @@ async function processAttendanceAssurance(
         if (qaAdminIds && !qaAdminIds.has(att.user_id)) continue;
 
         const prefs = normalizeNotificationPrefs(prefsMap.get(att.user_id));
-        if (prefs.items.attendance_confirmation?.enabled === false) continue;
+        if (prefs.items.attendance_confirmation?.enabled === false) {
+          // Not asked. The row stays pending so the plan page can still take
+          // an answer, but it is marked so the host sees "not asked" rather
+          // than "didn't confirm" and the profile stat leaves it out.
+          await sql`
+            UPDATE newchums.event_confirmations
+            SET email_opted_out = true, updated_at = NOW()
+            WHERE event_id = ${ev.id} AND user_id = ${att.user_id}
+          `;
+          continue;
+        }
 
         try {
           const isHost = att.user_id === ev.host_user_id;
@@ -20250,61 +19263,53 @@ async function processPlanReminders(
   console.log(`[plan-reminder] plans=${plans.length} enqueued=${enqueued} skips=${JSON.stringify(skips)}`);
 }
 
-// ─── Shout-out notices ───────────────────────────────────────────────────────
+// ─── Kudos notices ───────────────────────────────────────────────────────────
 
-/** Hour (UTC) the daily shout-out notice goes out. 16:00 UTC is midday
- *  Eastern, where most of the current user base is; the cron runs hourly, so
- *  this gate is what makes the job daily rather than hourly. */
-const SHOUTOUT_NOTICE_HOUR_UTC = 16;
+/** Hour (UTC) the daily kudos notice goes out. 16:00 UTC is midday Eastern,
+ *  where most of the current user base is; the cron runs hourly, so this
+ *  gate is what makes the job daily rather than hourly. */
+const KUDOS_NOTICE_HOUR_UTC = 16;
 
 /**
- * Approving a shout-out creates a bell notification and nothing else, so a
- * recipient who does not come back never learns about it (at launch, 6 of 8
- * approved shout-outs had never been read). This emails them once a day for
- * whatever cleared moderation since the last run.
+ * Kudos land as a bell notification the moment they are given, but a
+ * recipient who does not come back would never learn about them, so this
+ * emails once a day for whatever arrived since the last run.
  *
- * Batched per recipient, so approving several in one sitting sends one
- * email rather than three. Every shout-out is stamped (`notified_at`,
- * migration 113) whether it was emailed or skipped, so nobody is told
- * twice; that migration also backfilled everything approved more than four
- * days before launch, so the first run could not mail people about
- * compliments from weeks earlier.
+ * Batched per recipient, so three kudos in one sitting send one email rather
+ * than three. Every row is stamped (`notified_at`) whether it was emailed or
+ * skipped, so nobody is told twice. Givers are never named: the email lists
+ * the tags and the plan, matching the anonymous shelf on the profile.
  *
- * Exclusions: the `shoutout_received` preference (default on,
- * unsubscribe-scoped), and blocked pairs re-checked here, since a block can
- * be created after approval and the approval path only checked once.
+ * Exclusions: the `kudos_received` preference (default on, unsubscribe-
+ * scoped) and blocked pairs, re-checked here because a block can be created
+ * after the kudos was given.
  */
-async function processShoutoutNotices(
+async function processKudosNotices(
   sql: ReturnType<typeof getSql>,
   _env: Bindings,
   _ctx: ExecutionContext,
 ) {
-  if (new Date().getUTCHours() !== SHOUTOUT_NOTICE_HOUR_UTC) return;
+  if (new Date().getUTCHours() !== KUDOS_NOTICE_HOUR_UTC) return;
 
   const pending = (await sql`
-    SELECT s.id, s.recipient_user_id, s.sender_user_id, s.plan_id, s.message,
+    SELECT k.id, k.recipient_user_id, k.giver_user_id, k.plan_id, k.tag,
            e.title AS plan_title,
-           su.name AS sender_name, su.username AS sender_username,
            ru.username AS recipient_username,
            up.notification_prefs
-    FROM newchums.shoutouts s
-    JOIN newchums.users su ON su.id = s.sender_user_id
-    JOIN newchums.users ru ON ru.id = s.recipient_user_id
-    LEFT JOIN newchums.events e ON e.id = s.plan_id
-    LEFT JOIN newchums.user_profile up ON up.user_id = s.recipient_user_id
-    WHERE s.status = 'approved'
-      AND s.notified_at IS NULL
-    ORDER BY s.reviewed_at ASC
-    LIMIT 100
+    FROM newchums.kudos k
+    JOIN newchums.users ru ON ru.id = k.recipient_user_id
+    LEFT JOIN newchums.events e ON e.id = k.plan_id
+    LEFT JOIN newchums.user_profile up ON up.user_id = k.recipient_user_id
+    WHERE k.notified_at IS NULL
+    ORDER BY k.created_at ASC
+    LIMIT 200
   `) as {
-    id: string; recipient_user_id: string; sender_user_id: string; plan_id: string | null;
-    message: string; plan_title: string | null; sender_name: string | null;
-    sender_username: string | null; recipient_username: string | null; notification_prefs: unknown;
+    id: string; recipient_user_id: string; giver_user_id: string; plan_id: string;
+    tag: string; plan_title: string | null; recipient_username: string | null; notification_prefs: unknown;
   }[];
 
   if (pending.length === 0) return;
 
-  // Group per recipient so one person hears once, however many arrived.
   const byRecipient = new Map<string, typeof pending>();
   for (const row of pending) {
     const list = byRecipient.get(row.recipient_user_id) ?? [];
@@ -20313,7 +19318,7 @@ async function processShoutoutNotices(
   }
 
   const stamp = (ids: string[]) => sql`
-    UPDATE newchums.shoutouts SET notified_at = NOW() WHERE id = ANY(${ids}::uuid[])
+    UPDATE newchums.kudos SET notified_at = NOW() WHERE id = ANY(${ids}::uuid[])
   `;
   const groupKey = new Date().toISOString().slice(0, 10);
   let enqueued = 0;
@@ -20321,16 +19326,15 @@ async function processShoutoutNotices(
 
   for (const [recipientId, rows] of byRecipient) {
     const prefs = normalizeNotificationPrefs(rows[0].notification_prefs);
-    if (prefs.items.shoutout_received?.enabled === false) {
+    if (prefs.items.kudos_received?.enabled === false) {
       skips.pref_off = (skips.pref_off ?? 0) + 1;
       await stamp(rows.map((r) => r.id));
       continue;
     }
 
-    // Drop any whose sender has since been blocked, either direction.
     const visible: typeof rows = [];
     for (const row of rows) {
-      if (await pairBlocked(sql, row.sender_user_id, recipientId)) {
+      if (await pairBlocked(sql, row.giver_user_id, recipientId)) {
         skips.blocked = (skips.blocked ?? 0) + 1;
         continue;
       }
@@ -20341,25 +19345,25 @@ async function processShoutoutNotices(
       continue;
     }
 
+    // Tag totals for the email body, catalogue order so it reads like the shelf.
+    const perTag = new Map<string, number>();
+    for (const row of visible) perTag.set(row.tag, (perTag.get(row.tag) ?? 0) + 1);
+    const tags = KUDOS_TAGS
+      .filter((t) => perTag.has(t.tag))
+      .map((t) => ({ emoji: t.emoji, label: t.label, count: perTag.get(t.tag) ?? 0 }));
+    const planTitles = [...new Set(visible.map((r) => r.plan_title?.trim()).filter((t): t is string => !!t))].slice(0, 3);
     const newest = visible[visible.length - 1];
-    // event_id is NOT NULL on the outbox; every shout-out carries its plan.
-    if (!newest.plan_id) {
-      skips.no_plan = (skips.no_plan ?? 0) + 1;
-      await stamp(rows.map((r) => r.id));
-      continue;
-    }
 
     await sql`
       INSERT INTO newchums.email_outbox (kind, event_id, user_id, payload, group_key)
       VALUES (
-        'shoutout_received',
+        'kudos_received',
         ${newest.plan_id},
         ${recipientId},
         ${JSON.stringify({
           count: visible.length,
-          senderName: newest.sender_name?.trim() || newest.sender_username?.replace(/^@/, "") || "Someone",
-          message: visible.length === 1 ? newest.message : null,
-          planTitle: newest.plan_title,
+          tags,
+          planTitles,
           recipientHandle: newest.recipient_username?.replace(/^@/, "") ?? null,
         })}::jsonb,
         ${groupKey}
@@ -20370,7 +19374,7 @@ async function processShoutoutNotices(
     enqueued++;
   }
 
-  console.log(`[shoutout-notice] shoutouts=${pending.length} recipients=${byRecipient.size} enqueued=${enqueued} skips=${JSON.stringify(skips)}`);
+  console.log(`[kudos-notice] kudos=${pending.length} recipients=${byRecipient.size} enqueued=${enqueued} skips=${JSON.stringify(skips)}`);
 }
 
 // ─── Email outbox delivery ───────────────────────────────────────────────────
@@ -20412,7 +19416,7 @@ async function processEmailOutbox(
     WHERE o.status = 'pending'
     ORDER BY o.created_at ASC
     LIMIT 40
-  `) as { id: number; kind: string; event_id: string; user_id: string; payload: { role?: string; isHost?: boolean; deadline?: string; confirmedCount?: number; minRequired?: number; reason?: string; count?: number; senderName?: string; message?: string | null; planTitle?: string | null; recipientHandle?: string | null } | null; attempts: number; title: string; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; location_visibility: string | null; location_area: string | null; online_link: string | null; to_email: string; to_name: string | null }[];
+  `) as { id: number; kind: string; event_id: string; user_id: string; payload: { role?: string; isHost?: boolean; deadline?: string; confirmedCount?: number; minRequired?: number; reason?: string; count?: number; senderName?: string; message?: string | null; planTitle?: string | null; recipientHandle?: string | null; tags?: Array<{ emoji: string; label: string; count: number }>; planTitles?: string[] } | null; attempts: number; title: string; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; location_visibility: string | null; location_area: string | null; online_link: string | null; to_email: string; to_name: string | null }[];
 
   if (rows.length === 0) return;
 
@@ -20425,7 +19429,7 @@ async function processEmailOutbox(
     const recipientName = row.to_name?.trim() || "there";
     const tz = row.timezone || "UTC";
     const prefKey =
-      row.kind === "shoutout_received" ? "shoutout_received"
+      row.kind === "kudos_received" ? "kudos_received"
       : row.kind === "run_it_again" ? "run_it_again"
       : row.kind === "plan_reminder" ? "plan_reminder"
       : row.kind === "plan_auto_cancelled" ? "event_changed_canceled"
@@ -20444,19 +19448,18 @@ async function processEmailOutbox(
     const idempotencyKey = `${row.kind}:${row.event_id}:${row.user_id}`;
 
     try {
-      if (row.kind === "shoutout_received") {
+      if (row.kind === "kudos_received") {
         const handle = row.payload?.recipientHandle;
-        await sendShoutoutReceivedEmail(env, {
+        await sendKudosReceivedEmail(env, {
           to: row.to_email,
           recipientName,
-          senderName: row.payload?.senderName ?? "Someone",
           count: row.payload?.count ?? 1,
-          message: row.payload?.message ?? null,
-          planTitle: row.payload?.planTitle ?? null,
-          // Shout-outs live on their public profile; fall back to /profile
-          // for anyone who has not set a handle yet.
-          shoutoutsUrl: handle
-            ? `${env.WEB_BASE_URL}/u/${handle}#shoutouts`
+          tags: Array.isArray(row.payload?.tags) ? row.payload.tags : [],
+          planTitles: Array.isArray(row.payload?.planTitles) ? row.payload.planTitles : [],
+          // Kudos live on their public profile; fall back to /profile for
+          // anyone who has not set a handle yet.
+          kudosUrl: handle
+            ? `${env.WEB_BASE_URL}/u/${handle}#kudos`
             : `${env.WEB_BASE_URL}/profile`,
           unsubscribeUrl,
           idempotencyKey,
@@ -20824,11 +19827,11 @@ async function handleScheduled(
     console.error("[scheduled] plan reminder error:", err);
   }
 
-  // Daily "you got a shout-out" notices (gated to one hour of the day)
+  // Daily "you got kudos" notices (gated to one hour of the day)
   try {
-    await processShoutoutNotices(sql, env, ctx);
+    await processKudosNotices(sql, env, ctx);
   } catch (err) {
-    console.error("[scheduled] shoutout notice error:", err);
+    console.error("[scheduled] kudos notice error:", err);
   }
 
   // Deliver whatever the jobs above enqueued (plus any retries)

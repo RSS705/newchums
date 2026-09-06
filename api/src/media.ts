@@ -13,19 +13,16 @@ export const MAX_COMMUNITY_BANNER_BYTES = 600 * 1024; // 600KB
  *  schedule cards are smaller-format and a community can have many blocks;
  *  600KB × N would balloon the page. 400KB matches event banners. */
 export const MAX_SCHEDULE_BLOCK_BANNER_BYTES = 400 * 1024; // 400KB
-export const MAX_ROADMAP_ATTACHMENT_BYTES = 5 * 1024 * 1024; // 5MB
 
 export type MediaPurpose =
   | "avatar"
   | "event_banner"
-  | "roadmap_attachment"
   | "community_avatar"
   | "community_banner"
   | "community_schedule_block_banner";
 const ALLOWED_PURPOSES: MediaPurpose[] = [
   "avatar",
   "event_banner",
-  "roadmap_attachment",
   "community_avatar",
   "community_banner",
   "community_schedule_block_banner",
@@ -59,14 +56,12 @@ export function validateMediaInit(
     return { ok: false, error: "Allowed types: JPEG, PNG, WebP" };
   }
   const maxBytes =
-    purpose === "roadmap_attachment" ? MAX_ROADMAP_ATTACHMENT_BYTES :
     purpose === "community_banner" ? MAX_COMMUNITY_BANNER_BYTES :
     purpose === "community_schedule_block_banner" ? MAX_SCHEDULE_BLOCK_BANNER_BYTES :
     purpose === "event_banner" ? MAX_EVENT_BANNER_BYTES :
     MAX_AVATAR_BYTES;
   if (contentLength > maxBytes) {
     const msg =
-      purpose === "roadmap_attachment" ? "Attachment must be 5MB or less" :
       purpose === "community_banner" ? "Banner must be 600KB or less" :
       purpose === "community_schedule_block_banner" ? "Image must be 400KB or less" :
       purpose === "event_banner" ? "Banner must be 400KB or less" :
@@ -87,9 +82,6 @@ export function buildObjectKey(userId: string, purpose: MediaPurpose, contentTyp
   }
   if (purpose === "event_banner") {
     return `event_banners/${userId}/${ts}.${ext}`;
-  }
-  if (purpose === "roadmap_attachment") {
-    return `roadmap_attachments/${userId}/${ts}.${ext}`;
   }
   if (purpose === "community_avatar") {
     return `community_avatars/${userId}/${ts}.${ext}`;

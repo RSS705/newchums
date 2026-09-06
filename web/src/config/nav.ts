@@ -9,11 +9,9 @@ import PeopleRoundedIcon from "@mui/icons-material/PeopleRounded";
 import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
 import FeedbackRoundedIcon from "@mui/icons-material/FeedbackRounded";
 import ForumRoundedIcon from "@mui/icons-material/ForumRounded";
-import MapRoundedIcon from "@mui/icons-material/MapRounded";
 import BarChartRoundedIcon from "@mui/icons-material/BarChartRounded";
 import QueryStatsRoundedIcon from "@mui/icons-material/QueryStatsRounded";
 import ShieldRoundedIcon from "@mui/icons-material/ShieldRounded";
-import CampaignRoundedIcon from "@mui/icons-material/CampaignRounded";
 import QrCode2RoundedIcon from "@mui/icons-material/QrCode2Rounded";
 import type { SvgIconComponent } from "@mui/icons-material";
 
@@ -29,12 +27,12 @@ export type NavItem = {
  * The one definition of Give Feedback. Rendered in two places: the sidebar
  * (via `appNavItems` below) and the account dropdown in AppShell. It used to
  * be hand-written in both, and the copies drifted: when the sidebar moved
- * from /roadmap to /contact, the dropdown kept pushing /roadmap for a full
+ * to /contact, the dropdown kept pushing the old destination for a full
  * release. Anything that renders this entry must read this object.
  *
- * Points at the contact form, not the roadmap: someone who wants to report
- * a problem or make a suggestion gets a two-field form, not an 1,100-line
- * voting page. The roadmap has its own sidebar entry below.
+ * Points at the contact form: someone who wants to report a problem or
+ * make a suggestion gets a two-field form. The community roadmap that used
+ * to sit beside it was retired in Sept 2026; its URLs redirect here.
  */
 export const giveFeedbackNavItem: NavItem = {
   label: "Give Feedback",
@@ -50,10 +48,6 @@ export const appNavItems: NavItem[] = [
   { label: "Your Chums", href: "/chum-groups", icon: GroupsRoundedIcon },
   { label: "Profile", href: "/profile", icon: PersonRoundedIcon },
   giveFeedbackNavItem,
-  // Signed-in only since Aug 2026, so it lives here rather than in the
-  // public landing footer (where it would have been a login wall for the
-  // signed-out visitors who make up most of that footer's audience).
-  { label: "Roadmap", href: "/roadmap", icon: MapRoundedIcon },
 ];
 
 export const createEventHref = "/events/create";
@@ -63,12 +57,10 @@ export const superAdminNavItems: NavItem[] = [
   { label: "Growth", href: "/admin/growth", icon: QueryStatsRoundedIcon },
   { label: "Users", href: "/admin/chums", icon: PeopleRoundedIcon },
   { label: "Safety", href: "/admin/safety", icon: ShieldRoundedIcon },
-  { label: "Shout-outs", href: "/admin/shoutouts", icon: CampaignRoundedIcon },
   { label: "Interests", href: "/admin/interests", icon: StyleRoundedIcon },
   { label: "Plans", href: "/admin/plans", icon: CalendarMonthRoundedIcon },
   { label: "Communities", href: "/admin/communities", icon: ForumRoundedIcon },
   { label: "QR Codes", href: "/admin/qr-redirects", icon: QrCode2RoundedIcon },
-  { label: "Roadmap", href: "/admin/roadmap", icon: MapRoundedIcon },
 ];
 
 export type HeaderNavLink = { label: string; href: string };

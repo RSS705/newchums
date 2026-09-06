@@ -25,7 +25,7 @@ export type ProfileSectionHeaderProps = {
  * profile reads as part of the same product surface, instead of every
  * section reinventing its own heading shape.
  *
- * Used by About, Hobbies, Chums, Communities, and Shout-outs.
+ * Used by About, Hobbies, Chums, Communities, and Kudos.
  */
 export default function ProfileSectionHeader({
   icon,

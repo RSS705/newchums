@@ -141,21 +141,18 @@ The following flows run in the API worker; the web app calls the API via `NEXT_P
 | Plan join requests | `POST /events/:id/join-request`, `POST /events/:id/join-request/:requestId/approve`, `POST /events/:id/join-request/:requestId/decline`, `POST /events/:id/join-request/:requestId/withdraw` | Bearer JWT |
 | Plan lock | `POST /events/:id/lock` | Bearer JWT (host only) |
 | Plan privacy | `POST /events/:id/hide-name` | Bearer JWT. Toggles the viewer's `hide_name` flag on their RSVP. When active, real name is masked in attendee list; @handle and avatar remain visible. |
-| Post-plan wrap-up | `GET /events/:id/wrap-up`, `POST /events/:id/wrap-up/dismiss`, `POST`/`DELETE /events/:id/attendance-issue` (host-only), `POST /events/:id/attendance-dispute`, `POST /events/:id/conduct-report`, `POST /events/:id/shoutout` | Bearer JWT |
-| Shout-outs | `GET /public/users/:handle/shoutouts` (approved shout-outs on the recipient's public profile, gated by `is_hidden_shoutouts`; auth optional, owner sees their own items even when hidden), `POST /events/:id/shoutout` (sender) | Optional Bearer JWT (owner) / Bearer JWT (sender) |
+| Post-plan wrap-up | `GET /events/:id/wrap-up`, `POST /events/:id/wrap-up/dismiss`, `POST`/`DELETE /events/:id/attendance-issue` (host-only), `POST /events/:id/attendance-dispute`, `POST /events/:id/conduct-report`, `POST /events/:id/kudos`, `DELETE /events/:id/kudos/:recipientUserId` | Bearer JWT |
+| Kudos | `GET /public/users/:handle/kudos` (counts per tag for the profile shelf; visitors see a tag once two different people gave it, the owner sees all), `GET /me/attendance-record/details` (owner-only plans behind the reliability tiles) | Optional Bearer JWT (owner detection) / Bearer JWT |
 | Attendance record | `GET /public/users/:userId/attendance-record` | none. Response includes `badges` array with local recognition badges (Top Attendee, Top Host) computed from rolling 12-month activity within 50 km. |
 | Plan chat | `GET /events/:id/chat`, `POST /events/:id/chat`, `POST /events/:id/chat/read`, `GET /events/:id/chat/ws` (WebSocket upgrade) | Bearer JWT |
 | Notifications | `GET /notifications` (includes `unreadChats`), `POST /notifications/read` | Bearer JWT |
 | Email unsubscribe | `POST /email/unsubscribe` | Signed JWT token |
 | Contact form | `POST /contact` | none (Turnstile for logged-out) |
-| Roadmap | `GET /roadmap`, `GET /roadmap/:id`, `POST /roadmap`, `PUT /roadmap/:id`, `DELETE /roadmap/:id`, `POST /roadmap/:id/vote`, `POST /roadmap/:id/follow`, `POST /roadmap/:id/comment`, `GET /roadmap/:id/attachment` | Bearer JWT. List and detail endpoints filter out "received" status items unless viewer is author or super_admin. Anonymous submissions (`is_anonymous`) show `@anonymous` publicly; admin endpoints always show real author. Statuses: received, needs_clarification, in_progress, planned, completed, not_planned. |
 | Admin, interests | `GET /admin/interests`, `GET /admin/interests/categories`, `PATCH /admin/interests/:id`, `DELETE /admin/interests/:id`, `POST /admin/interests/:id/restore`, `POST /admin/interests/merge` | Bearer JWT + `super_admin` role |
 | Admin, users | `GET /admin/users`, `POST /admin/users/:id/suspend`, `POST /admin/users/:id/unsuspend`, `PATCH /admin/users/:id/subscription-plan`, `GET /admin/users/:id/diagnostics`, `PUT /admin/users/:id/metrics` | Bearer JWT + `super_admin` role |
 | Admin, safety | `PUT /admin/attendance-issues/:id/status`, `GET /admin/concern-reports`, `PUT /admin/concern-reports/:id/status` | Bearer JWT + `super_admin` role |
-| Admin, shout-outs | `GET /admin/shoutouts`, `POST /admin/shoutouts/:id/status` (approve/reject; approval inserts a `shoutout_received` notification for the recipient, no email; the bell deep-links to `/u/<handle>#shoutouts`) | Bearer JWT + `super_admin` role |
 | Admin, dashboard | `GET /admin/badge-counts`, `POST /admin/mark-viewed`, `GET /admin/kpis`, `GET /admin/kpis/growth-loop/filters`, `GET /admin/kpis/growth-loop`, `GET /admin/objectives/kpi` | Bearer JWT + `super_admin` role |
 | Admin, plans | `GET /admin/plans`, `POST /admin/plans/:id/remove` | Bearer JWT + `super_admin` role |
-| Admin, roadmap | `GET /admin/roadmap`, `POST /admin/roadmap/:id/status`, `POST /admin/roadmap/:id/merge`, `POST /admin/roadmap/:id/edit`, `POST /admin/roadmap/:id/remove`, `POST /admin/roadmap/:id/restore`, `DELETE /admin/roadmap/comments/:id` | Bearer JWT + `super_admin` role |
 | Communities | `POST /communities`, `GET /communities`, `GET /communities/slug-available`, `GET /communities/:slug`, `PATCH /communities/:slug`, `POST /communities/:slug/close`, `DELETE /communities/:slug`, `POST /communities/:id/join`, `POST /communities/:id/leave`, `GET /communities/:id/members`, `POST /communities/:id/members/:userId/remove`, `PUT /communities/:id/join-requests/:requestId`, `GET /communities/:id/join-requests`, `GET /communities/:id/events`, `GET/POST/PATCH/DELETE /communities/:id/announcements`, `POST /communities/:id/announcements/seen`, `PUT /communities/:id/announcement-mute`, `GET/POST/PATCH/DELETE /communities/:id/schedule-blocks` | Bearer JWT |
 | Public communities (logged-out discovery) | `GET /public/communities` | none. Public-only (`visibility = 'public'`) discovery feed, the community equivalent of `GET /events/explore/public`. Powers the logged-out render of `/communities`. Private communities are filtered out entirely. |
 | Organizer plans / premium access | `PATCH /admin/users/:id/subscription-plan` assigns `free`, `super_host`, or `community_pro` at the user level; community-level premium access is derived from the owner's plan via `communityInheritsProAccess()`. | Bearer JWT + `super_admin` role |
@@ -269,7 +266,7 @@ The hourly cron runs ten tasks in sequence:
 5. **Post-plan wrap-up emails** -- role-varied (host check-in framing, attendee thank-you framing), sent 3+ hours after plan start to going attendees + host
 6. **"Run it again" nudge** -- 48+ hours after a plan started (and 24+ hours after its wrap-up email actually went out, so the two never share a day), the host gets a one-time bell notification + email offering to prefill a new plan via `?copy_from=`. Skips cancelled plans, plans with no (or all-no-show) non-host attendance, hosts who already made or scheduled another plan, QA plans for non-super-admins, hosts with the `run_it_again` pref off, and second plans by the same host in one run. Dedupe column `events.run_again_nudge_processed_at` (migration 108), stamped whether sent or skipped.
 7. **Day-before plan reminder** -- plans WITHOUT the 24-hour attendance check email host + going attendees a plain reminder in the [T-24h, T-21h] window (`events.reminder_processed_at`, migration 112, backfilled at launch). The floor keeps it 24h+ from the wrap-up email; late entry skips with a stamped reason. Gated per recipient on the `plan_reminder` pref (default on, unsubscribe-scoped); QA plans reach super admins only. Check-ON plans are excluded entirely: their confirmation request is the day-before touch, so nobody hears twice.
-8. **Shout-out notices** -- once a day (gated to 16:00 UTC), emails recipients about shout-outs that cleared moderation since the last run, batched one email per recipient. Approval itself only ever created a bell notification, which most recipients never saw. Stamped per shout-out (`shoutouts.notified_at`, migration 113, backfilled to four days before launch); skips the `shoutout_received` pref when off and re-checks blocked pairs at send time.
+8. **Kudos notices** -- once a day (gated to 16:00 UTC), emails recipients about kudos that arrived since the last run, batched one email per recipient and never naming the giver. Stamped per kudos (`kudos.notified_at`, migration 120); skips the `kudos_received` pref when off and re-checks blocked pairs at send time.
 9. **Email outbox delivery** -- delivers the per-recipient rows the wrap-up and nudge jobs enqueue (`newchums.email_outbox`, migration 110), with bounded retries: 429/5xx retry up to 3 attempts with a stable Idempotency-Key, other 4xx give up as permanent, and network-level failures with no HTTP response are marked `ambiguous` and never retried (a duplicate email is worse than a missed one). Failed sends are recorded (`status`, `attempts`, `last_error`) instead of vanishing.
 10. **Activity log retention** -- deletes `user_activity_log` rows older than 90 days (per-request admin activity tracking, migration 101; also runs alongside the local recognition badges refresh)
 
@@ -298,12 +295,11 @@ Sign in → Explore (event discovery feed)
 ├── Your Plans → Upcoming / Past tabs → Event detail
 │   ├── Edit plan (host) → Edit event form
 │   ├── Copy plan (host, incl. past/canceled) → pre-filled create form → Publish as new plan
-│   └── Past plan → Post-plan wrap-up (Say thanks: shout-outs + Save to Chums; hosts: private attendance check-in + Run it again)
+│   └── Past plan → Post-plan wrap-up (Anyone deserve kudos?: tag picker + Save to Chums; hosts: private attendance check-in + Run it again)
 ├── Your Chums → Search / Add / Remove / Invite by email / Message
 ├── Inbox → 1:1 direct messages (async, email-like) → reply / block / report
 │   └── Entry points: profile Message button, post-plan attendee rows, Your Chums rows
 ├── Communities → Browse / Create / Join / Community plans feed
-├── Roadmap → Browse / Vote / Follow / Comment on feature requests
 ├── Profile → Edit → Public profile (/u/handle)
 ├── Settings → Notifications / Privacy / Email / Password / Delete account
 ├── Notifications (bell) → View / mark read
@@ -395,8 +391,6 @@ Wrangler config is code-managed so deploys do not wipe routes or override canoni
 | `/communities` (logged out) | Public Communities discovery feed (public-only `visibility` via `/public/communities`). Lives physically in `(app)/communities/page.tsx` and is allowlisted in the `(app)` layout so logged-out visitors render without an auth redirect; the page renders `PublicCommunitiesExplore` when there is no session and `CommunitiesListClient` when there is. |
 | `/communities/[slug]` | Public community detail page (works logged-in or out; privacy contract enforced by `GET /communities/:slug`) |
 | `/events/[id]` (logged out) | Plan detail, public preview with limited info and sign-in CTA |
-| `/roadmap` | Public product roadmap, vote and follow items. Items with "Received" status are only visible to the author and super admins; once reviewed and moved to another status they appear publicly. |
-| `/roadmap/[id]` | Roadmap item detail, comments, voting. Returns 404 for "Received" items unless viewer is the author or a super admin. |
 | `/terms` | Terms of Use |
 | `/privacy` | Privacy Policy |
 | `/unsubscribe` | Email notification unsubscribe (public, token-based) |
@@ -422,7 +416,6 @@ Wrangler config is code-managed so deploys do not wipe routes or override canoni
 | `/inbox` | Direct messages: two-pane inbox (conversation list + thread), compose via `?to=`, thread via `?c=` |
 | `/admin/qr-redirects` | QR redirects inventory (super_admin) |
 | `/admin/qr-redirects/[id]` | QR redirect detail + recent scans (super_admin) |
-| `/admin/shoutouts` | Shout-out moderation queue (super_admin) |
 | `/admin/interests` | Interests moderation (super_admin) |
 | `/admin/chums` | User management (super_admin) |
 | `/admin/chums/[id]` | User diagnostics: attendance records, conduct reports, objectives, recent activity (super_admin) |
@@ -431,7 +424,6 @@ Wrangler config is code-managed so deploys do not wipe routes or override canoni
 | `/admin/kpis/activity` | Per-request user activity log, drill-in from the KPI Return behavior section (super_admin) |
 | `/admin/plans` | Plan management, list, search, remove (super_admin) |
 | `/admin/safety` | Concern reports, attendance issues management (super_admin) |
-| `/admin/roadmap` | Roadmap item moderation, status, merge, remove (super_admin) |
 
 ---
 

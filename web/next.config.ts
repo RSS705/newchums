@@ -3,6 +3,14 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   devIndicators: false,
+  // The community roadmap was retired in Sept 2026; old links in emails and
+  // chats land on the contact form with "Feature request" preselected.
+  async redirects() {
+    return [
+      { source: "/roadmap", destination: "/contact?subject=Feature%20request", permanent: true },
+      { source: "/roadmap/:id", destination: "/contact?subject=Feature%20request", permanent: true },
+    ];
+  },
 };
 
 // Runtime error capture (sentry.server.config.ts, sentry.edge.config.ts,

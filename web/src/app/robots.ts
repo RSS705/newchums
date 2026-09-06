@@ -6,7 +6,7 @@ import type { MetadataRoute } from "next";
  *
  *  Allowed paths are the public marketing surfaces, public community
  *  discovery, public plan and community detail URLs, public profiles,
- *  and the public roadmap. Everything else is disallowed:
+ *  and public profiles. Everything else is disallowed:
  *  authenticated app surfaces, admin, edit forms, auth flows,
  *  onboarding, utility endpoints (unsubscribe, Sentry test), the
  *  internal design-system preview, the API proxy, and the
@@ -38,9 +38,6 @@ export default function robots(): MetadataRoute.Robots {
           "/u/",
         ],
         disallow: [
-          // Signed-in only since Aug 2026 (see the roadmap page comment).
-          "/roadmap",
-          "/roadmap/",
           // Read-only illustrative demos, never real plans.
           "/sample-plan",
           "/sample-plan/",

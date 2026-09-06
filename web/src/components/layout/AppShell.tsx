@@ -217,16 +217,14 @@ export default function AppShell({ children, user, passwordSetupPending, passwor
     let cancelled = false;
     apiFetch("/admin/badge-counts", { auth: true })
       .then((res) => res.json())
-      .then((data: { ok?: boolean; users?: number; interests?: number; plans?: number; roadmap?: number; safety?: number; communities?: number; shoutouts?: number }) => {
+      .then((data: { ok?: boolean; users?: number; interests?: number; plans?: number; safety?: number; communities?: number }) => {
         if (!cancelled && data.ok) {
           setAdminBadges({
             "/admin/chums": data.users ?? 0,
             "/admin/interests": data.interests ?? 0,
             "/admin/plans": data.plans ?? 0,
-            "/admin/roadmap": data.roadmap ?? 0,
             "/admin/safety": data.safety ?? 0,
             "/admin/communities": data.communities ?? 0,
-            "/admin/shoutouts": data.shoutouts ?? 0,
           });
         }
       })
@@ -488,7 +486,7 @@ export default function AppShell({ children, user, passwordSetupPending, passwor
                   onClick={() => {
                     setMobileOpen(false);
                     if (badgeCount > 0) {
-                      const sectionMap: Record<string, string> = { "/admin/chums": "users", "/admin/interests": "interests", "/admin/plans": "plans", "/admin/roadmap": "roadmap", "/admin/safety": "safety", "/admin/communities": "communities", "/admin/shoutouts": "shoutouts" };
+                      const sectionMap: Record<string, string> = { "/admin/chums": "users", "/admin/interests": "interests", "/admin/plans": "plans", "/admin/safety": "safety", "/admin/communities": "communities" };
                       const section = sectionMap[item.href];
                       if (section) {
                         apiFetch("/admin/mark-viewed", { auth: true, method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ section }) }).catch(() => {});
@@ -598,7 +596,7 @@ export default function AppShell({ children, user, passwordSetupPending, passwor
                 )}
                 {/* Rendered from the same object the sidebar reads, so the
                     two entries cannot drift apart again (they did once: this
-                    copy kept pushing /roadmap after the sidebar moved on). */}
+                    copy kept pushing a retired route after the sidebar moved on). */}
                 <MenuItem
                   onClick={() => {
                     setAccountMenuAnchor(null);

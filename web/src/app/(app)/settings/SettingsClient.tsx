@@ -62,7 +62,6 @@ export default function SettingsClient() {
   const [isHiddenAge, setIsHiddenAge] = useState(false);
   const [isHiddenChumList, setIsHiddenChumList] = useState(false);
   const [isHiddenFromChumLists, setIsHiddenFromChumLists] = useState(false);
-  const [isHiddenShoutouts, setIsHiddenShoutouts] = useState(false);
   const [isHiddenCommunities, setIsHiddenCommunities] = useState(false);
   const [tutorialNudgesOff, setTutorialNudgesOff] = useState(false);
   const [privacyLoading, setPrivacyLoading] = useState(false);
@@ -90,7 +89,6 @@ export default function SettingsClient() {
         setIsHiddenAge(data.profile.is_hidden_age ?? false);
         setIsHiddenChumList(data.profile.is_hidden_chum_list ?? false);
         setIsHiddenFromChumLists(data.profile.is_hidden_from_chum_lists ?? false);
-        setIsHiddenShoutouts(data.profile.is_hidden_shoutouts ?? false);
         setIsHiddenCommunities(data.profile.is_hidden_communities ?? false);
         setTutorialNudgesOff(data.profile.tutorial_nudges_off ?? false);
         setDmPrivacy(data.profile.dm_privacy ?? "everyone");
@@ -247,7 +245,6 @@ export default function SettingsClient() {
       hiddenAge: boolean,
       hiddenChumList: boolean,
       hiddenFromChumLists: boolean,
-      hiddenShoutouts: boolean,
       hiddenCommunities: boolean,
     ) => {
       setPrivacyLoading(true);
@@ -261,7 +258,6 @@ export default function SettingsClient() {
             is_hidden_age: hiddenAge,
             is_hidden_chum_list: hiddenChumList,
             is_hidden_from_chum_lists: hiddenFromChumLists,
-            is_hidden_shoutouts: hiddenShoutouts,
             is_hidden_communities: hiddenCommunities,
           }),
         });
@@ -287,13 +283,12 @@ export default function SettingsClient() {
       hiddenAge: boolean,
       hiddenChumList: boolean,
       hiddenFromChumLists: boolean,
-      hiddenShoutouts: boolean,
       hiddenCommunities: boolean,
     ) => {
       if (privacySaveTimeoutRef.current) clearTimeout(privacySaveTimeoutRef.current);
       privacySaveTimeoutRef.current = setTimeout(() => {
         privacySaveTimeoutRef.current = null;
-        persistPrivacy(hiddenFromSearch, hiddenFromExternalIndexing, hiddenAge, hiddenChumList, hiddenFromChumLists, hiddenShoutouts, hiddenCommunities);
+        persistPrivacy(hiddenFromSearch, hiddenFromExternalIndexing, hiddenAge, hiddenChumList, hiddenFromChumLists, hiddenCommunities);
       }, 500);
     },
     [persistPrivacy]
@@ -301,37 +296,32 @@ export default function SettingsClient() {
 
   const setPrivacyHiddenFromSearch = (enabled: boolean) => {
     setIsHiddenFromSearch(enabled);
-    schedulePrivacySave(enabled, isHiddenFromExternalIndexing, isHiddenAge, isHiddenChumList, isHiddenFromChumLists, isHiddenShoutouts, isHiddenCommunities);
+    schedulePrivacySave(enabled, isHiddenFromExternalIndexing, isHiddenAge, isHiddenChumList, isHiddenFromChumLists, isHiddenCommunities);
   };
 
   const setPrivacyHiddenFromExternalIndexing = (enabled: boolean) => {
     setIsHiddenFromExternalIndexing(enabled);
-    schedulePrivacySave(isHiddenFromSearch, enabled, isHiddenAge, isHiddenChumList, isHiddenFromChumLists, isHiddenShoutouts, isHiddenCommunities);
+    schedulePrivacySave(isHiddenFromSearch, enabled, isHiddenAge, isHiddenChumList, isHiddenFromChumLists, isHiddenCommunities);
   };
 
   const setPrivacyHiddenAge = (enabled: boolean) => {
     setIsHiddenAge(enabled);
-    schedulePrivacySave(isHiddenFromSearch, isHiddenFromExternalIndexing, enabled, isHiddenChumList, isHiddenFromChumLists, isHiddenShoutouts, isHiddenCommunities);
+    schedulePrivacySave(isHiddenFromSearch, isHiddenFromExternalIndexing, enabled, isHiddenChumList, isHiddenFromChumLists, isHiddenCommunities);
   };
 
   const setPrivacyHiddenChumList = (enabled: boolean) => {
     setIsHiddenChumList(enabled);
-    schedulePrivacySave(isHiddenFromSearch, isHiddenFromExternalIndexing, isHiddenAge, enabled, isHiddenFromChumLists, isHiddenShoutouts, isHiddenCommunities);
+    schedulePrivacySave(isHiddenFromSearch, isHiddenFromExternalIndexing, isHiddenAge, enabled, isHiddenFromChumLists, isHiddenCommunities);
   };
 
   const setPrivacyHiddenFromChumLists = (enabled: boolean) => {
     setIsHiddenFromChumLists(enabled);
-    schedulePrivacySave(isHiddenFromSearch, isHiddenFromExternalIndexing, isHiddenAge, isHiddenChumList, enabled, isHiddenShoutouts, isHiddenCommunities);
-  };
-
-  const setPrivacyHiddenShoutouts = (enabled: boolean) => {
-    setIsHiddenShoutouts(enabled);
-    schedulePrivacySave(isHiddenFromSearch, isHiddenFromExternalIndexing, isHiddenAge, isHiddenChumList, isHiddenFromChumLists, enabled, isHiddenCommunities);
+    schedulePrivacySave(isHiddenFromSearch, isHiddenFromExternalIndexing, isHiddenAge, isHiddenChumList, enabled, isHiddenCommunities);
   };
 
   const setPrivacyHiddenCommunities = (enabled: boolean) => {
     setIsHiddenCommunities(enabled);
-    schedulePrivacySave(isHiddenFromSearch, isHiddenFromExternalIndexing, isHiddenAge, isHiddenChumList, isHiddenFromChumLists, isHiddenShoutouts, enabled);
+    schedulePrivacySave(isHiddenFromSearch, isHiddenFromExternalIndexing, isHiddenAge, isHiddenChumList, isHiddenFromChumLists, enabled);
   };
 
   useEffect(() => {
@@ -719,14 +709,6 @@ export default function SettingsClient() {
             disabled={privacyLoading}
           />
           <PrivacyToggleRow
-            title="Hide shout-outs from my public profile"
-            description="The Shout-outs section won't appear on your public profile. Notes you've already received are still kept on your account."
-            enabled={isHiddenShoutouts}
-            onToggle={setPrivacyHiddenShoutouts}
-            showDivider={true}
-            disabled={privacyLoading}
-          />
-          <PrivacyToggleRow
             title="Hide my communities from my public profile"
             description="The Communities section won't appear on your public profile."
             enabled={isHiddenCommunities}
@@ -751,7 +733,7 @@ export default function SettingsClient() {
             <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1.25, lineHeight: 1.45 }}>
               You and the people you block stop seeing each other on NewChums: no messages, no
               invites, no RSVPs to each other&apos;s plans, and each other&apos;s plans and
-              shout-outs are hidden. They aren&apos;t told they&apos;ve been blocked.
+              kudos are hidden. They aren&apos;t told they&apos;ve been blocked.
             </Typography>
             {blockedUsers.length === 0 ? (
               <Typography variant="body2" color="text.disabled">

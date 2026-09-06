@@ -5,7 +5,7 @@ import Grid from "@mui/material/Grid";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import CheckCircleOutlineRoundedIcon from "@mui/icons-material/CheckCircleOutlineRounded";
 import EditNoteRoundedIcon from "@mui/icons-material/EditNoteRounded";
@@ -52,6 +52,17 @@ export default function ContactView({
   const [emailError, setEmailError] = useState<string | null>(null);
   const [messageError, setMessageError] = useState<string | null>(null);
   const toast = useToast();
+
+  // Deep links may preselect a subject (the retired roadmap URLs redirect
+  // here with ?subject=Feature%20request). Read once on mount from the
+  // location rather than useSearchParams, which would force a Suspense
+  // boundary on an otherwise static page.
+  useEffect(() => {
+    try {
+      const wanted = new URLSearchParams(window.location.search).get("subject");
+      if (wanted && CONTACT_SUBJECT_OPTIONS.some((o) => o.value === wanted)) setSubject(wanted);
+    } catch { /* ignore */ }
+  }, []);
 
   const needsTurnstile = !isLoggedIn && turnstileSiteKey;
   const turnstileValid = !needsTurnstile || turnstileToken !== "";

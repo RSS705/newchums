@@ -61,9 +61,9 @@ export const SUBJECTS = {
   planWrapUp_host: "How did {{planTitle}} go?",
   runItAgain: "Want to run {{planTitle}} again?",
   planReminder: "Tomorrow: {{planTitle}}",
-  shoutoutReceived_one: "{{senderName}} left you a shout-out",
-  shoutoutReceived_many: "You have {{count}} new shout-outs",
-  planWrapUp_attendee: "Anyone deserve a shout-out at {{planTitle}}?",
+  kudosReceived_one: "You got kudos at {{planTitle}}",
+  kudosReceived_many: "You got {{count}} kudos",
+  planWrapUp_attendee: "Anyone deserve kudos at {{planTitle}}?",
 
   // Digests
   unreadChatDigest: "You have unread messages on NewChums",
@@ -79,7 +79,6 @@ export const SUBJECTS = {
   communityAnnouncement: "{{communityName}}: {{announcementTitle}}",
 
   // Admin & internal
-  roadmapUpdate: "Update on your NewChums feedback",
   concernReportAlert: "New concern report submitted",
 } as const;
 

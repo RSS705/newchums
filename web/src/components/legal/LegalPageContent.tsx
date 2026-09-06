@@ -36,7 +36,7 @@ export default function LegalPageContent({
       <Box maxWidth={CONTENT_MAX_WIDTH} mx="auto" px={{ xs: 1, sm: 0 }}>
         {/* Header. Warm-wash hero matching the rest of the polished
             surfaces (Explore, Your Plans, Communities, Your Chums,
-            Profile, Settings, Roadmap, Contact, Safety Center,
+            Profile, Settings, Contact, Safety Center,
             How It Works, Homepage). Eyebrow + large H1 mirror the
             discovery-header pattern in docs/UI_Patterns.md. The two
             date lines (Effective / Last Updated) sit beneath the H1

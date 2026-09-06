@@ -18,7 +18,7 @@
 
 ---
 
-You're receiving this because someone left you a shout-out on NewChums.
+You're receiving this because someone gave you kudos on NewChums.
 {{#unsubscribeUrl}}Unsubscribe: {{.}}{{/unsubscribeUrl}}
 
 © {{year}} {{productName}}

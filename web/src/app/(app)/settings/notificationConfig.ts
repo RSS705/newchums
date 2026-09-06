@@ -63,13 +63,13 @@ export const NOTIFICATION_TYPES: NotificationTypeConfig[] = [
     // strings changed when the post-plan surface became the wrap-up.
     key: "feedback_requests",
     title: "Post-plan follow-up",
-    description: "After a plan wraps up: a nudge to leave shout-outs, and a private check-in for plans you host.",
+    description: "After a plan wraps up: a nudge to give kudos, and a private check-in for plans you host.",
   },
   {
-    key: "shoutout_received",
-    title: "Someone leaves you a shout-out",
+    key: "kudos_received",
+    title: "Someone gives you kudos",
     description:
-      "When a shout-out written about you is added to your profile. Sent once a day, covering anything new since yesterday.",
+      "When kudos you received are added to your profile. Sent once a day, covering anything new since yesterday. Nobody is told who gave what.",
   },
   {
     key: "plan_reminder",
@@ -106,12 +106,7 @@ export const NOTIFICATION_TYPES: NotificationTypeConfig[] = [
   {
     key: "attendance_confirmation",
     title: "Attendance confirmation reminders",
-    description: "Reminders to confirm your attendance before plans that require it.",
-  },
-  {
-    key: "roadmap_updates",
-    title: "Roadmap updates",
-    description: "Updates on roadmap items you've submitted or followed.",
+    description: "Reminders to confirm your attendance before plans that require it. If this is off you are not asked at all: hosts see you as not asked rather than unconfirmed, and plans that need a minimum will not count you. You can still confirm from the plan page.",
   },
   {
     key: "community_join_request_received",

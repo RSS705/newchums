@@ -38,7 +38,7 @@ type PlanImpact = {
   invites: number;
   altTimes: number;
   joinRequests: number;
-  shoutouts: number;
+  kudos: number;
   productEvents: number;
 };
 
@@ -82,7 +82,7 @@ const PLAN_IMPACT_LABELS: Array<[keyof PlanImpact, string]> = [
   ["invites", "Invites"],
   ["altTimes", "Alternate-time suggestions"],
   ["joinRequests", "Join requests"],
-  ["shoutouts", "Shout-outs"],
+  ["kudos", "Kudos"],
   ["productEvents", "Funnel analytics rows"],
 ];
 

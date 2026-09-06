@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import ButtonBase from "@mui/material/ButtonBase";
 import Chip from "@mui/material/Chip";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
@@ -24,7 +25,7 @@ import EventRepeatRoundedIcon from "@mui/icons-material/EventRepeatRounded";
 import HowToRegRoundedIcon from "@mui/icons-material/HowToRegRounded";
 import MailRoundedIcon from "@mui/icons-material/MailRounded";
 import PersonAddRoundedIcon from "@mui/icons-material/PersonAddRounded";
-import CampaignRoundedIcon from "@mui/icons-material/CampaignRounded";
+import WorkspacePremiumRoundedIcon from "@mui/icons-material/WorkspacePremiumRounded";
 import ShieldOutlinedIcon from "@mui/icons-material/ShieldOutlined";
 import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
 import Link from "next/link";
@@ -60,13 +61,16 @@ const CONDUCT_REASONS = [
   { value: "other", label: "Other" },
 ] as const;
 
-/** Per-recipient shout-out draft. `serverMessage` is the value last seen from
- *  the API (for change detection on send). `serverStatus` is the moderation
- *  state; 'approved' and 'rejected' lock the slot. */
-type ShoutoutDraft = {
-  message: string;
-  serverMessage: string;
-  serverStatus: "none" | "pending" | "approved" | "rejected";
+type KudosTagInfo = { tag: string; label: string; emoji: string };
+
+/** Kudos state for the viewer on this plan: what they already gave, the tag
+ *  catalogue (served by the API so the client never carries its own copy),
+ *  and the per-plan cap. */
+type KudosPayload = {
+  given: { recipientUserId: string; tag: string }[];
+  tags: KudosTagInfo[];
+  maxPerPlan: number;
+  windowClosesAt: string | null;
 };
 
 /** Wire-format payload for GET /events/{id}/wrap-up. Exported so callers that
@@ -76,7 +80,7 @@ export type PlanWrapUpInitialData = {
   dismissed?: boolean;
   viewerIsHost?: boolean;
   attendees: Attendee[];
-  shoutouts?: { recipientUserId: string; message: string; status: string }[];
+  kudos?: KudosPayload;
   issuesAgainstMe?: { id: string; issueType: string; status: string }[];
   myReports?: { reportedUserId: string; issueType: string }[];
 };
@@ -85,7 +89,7 @@ type PlanWrapUpProps = {
   eventId: string;
   /** Plan title shown in the section headers as a contextual reminder. */
   planTitle?: string;
-  /** Plan start time (ISO), drives the shout-out window and the context line. */
+  /** Plan start time (ISO), drives the kudos window and the context line. */
   planStartsAt?: string;
   /** Hobbies attached to the plan; powers the one-tap add-to-profile nudge. */
   planHobbies?: PlanHobby[];
@@ -101,17 +105,14 @@ function isWrapUpPayload(value: unknown): value is PlanWrapUpInitialData {
   return Array.isArray(v.attendees);
 }
 
-const SHOUTOUT_MAX_LENGTH = 280;
-
-/** The shout-out panel stays open for 7 days after the plan starts. The old
- *  form used the 3-day chat-lock window, but shout-outs are now the primary
- *  post-plan action rather than a post-submit reward, and a weekend plan
- *  shouted-out on the following weekend is normal human latency. Deliberately
- *  decoupled from the chat lock. The host's attendance check-in and the
- *  run-it-again prompt never expire: bookkeeping has no freshness window. */
+/** The kudos panel stays open for 7 days after the plan starts (the API
+ *  enforces the same window). A weekend plan given kudos on the following
+ *  weekend is normal human latency. Deliberately decoupled from the chat
+ *  lock. The host's attendance check-in and the run-it-again prompt never
+ *  expire: bookkeeping has no freshness window. */
 const THANKS_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
-function isShoutoutWindowClosed(planStartsAt: string | undefined): boolean {
+function isKudosWindowClosed(planStartsAt: string | undefined): boolean {
   if (!planStartsAt) return false;
   const startMs = new Date(planStartsAt).getTime();
   return !isNaN(startMs) && Date.now() >= startMs + THANKS_WINDOW_MS;
@@ -120,13 +121,14 @@ function isShoutoutWindowClosed(planStartsAt: string | undefined): boolean {
 /**
  * The post-plan surface (replaced the PlanFeedback rating grid in July 2026):
  *
- * - Attendees get the shout-out card: per-person composer, Save to Chums,
- *   Message. No submit gate, no questions.
+ * - Attendees get the kudos card: per-person "Give kudos" (a fixed tag
+ *   catalogue, one tap, anonymous), Save to Chums, Message. No submit gate,
+ *   no questions, no free text and nothing to moderate.
  * - The host gets ONE card holding everything: the same per-person rows with
  *   a private Came / No-show toggle added to each, plus the run-it-again
  *   prompt into the existing ?copy_from= create flow. Merged Aug 2026; the
- *   old separate check-in card read as a near-duplicate of the shout-out
- *   card, with the same people listed twice.
+ *   old separate check-in card read as a near-duplicate of the kudos card,
+ *   with the same people listed twice.
  *
  * The attendance toggle writes host-only no_show rows (retractable) and
  * notifies nobody. The dispute banner and the safety/conduct report survive
@@ -135,15 +137,8 @@ function isShoutoutWindowClosed(planStartsAt: string | undefined): boolean {
 export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbies, initialData, id }: PlanWrapUpProps) {
   const initial = isWrapUpPayload(initialData) ? initialData : null;
 
-  const initialShoutouts: Record<string, ShoutoutDraft> = {};
-  if (initial?.shoutouts) {
-    for (const s of initial.shoutouts) {
-      const status = s.status === "pending" || s.status === "approved" || s.status === "rejected"
-        ? s.status
-        : "none";
-      initialShoutouts[s.recipientUserId] = { message: s.message, serverMessage: s.message, serverStatus: status };
-    }
-  }
+  const initialKudos: Record<string, string> = {};
+  for (const k of initial?.kudos?.given ?? []) initialKudos[k.recipientUserId] = k.tag;
   const initialNoShows = new Set<string>(
     (initial?.myReports ?? []).filter((r) => r.issueType === "no_show").map((r) => r.reportedUserId),
   );
@@ -176,8 +171,13 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
   const [chumStatus, setChumStatus] = useState<Record<string, boolean | null | undefined>>({});
   const [chumLoading, setChumLoading] = useState<Record<string, boolean>>({});
 
-  const [shoutouts, setShoutouts] = useState<Record<string, ShoutoutDraft>>(initialShoutouts);
-  const [shoutoutSending, setShoutoutSending] = useState<Record<string, boolean>>({});
+  /** recipientUserId -> tag the viewer gave on this plan. */
+  const [kudosGiven, setKudosGiven] = useState<Record<string, string>>(initialKudos);
+  const [kudosTags, setKudosTags] = useState<KudosTagInfo[]>(initial?.kudos?.tags ?? []);
+  const [kudosMax, setKudosMax] = useState<number>(initial?.kudos?.maxPerPlan ?? 3);
+  const [kudosBusy, setKudosBusy] = useState<Record<string, boolean>>({});
+  const [kudosPickerFor, setKudosPickerFor] = useState<Attendee | null>(null);
+  const [kudosError, setKudosError] = useState<string | null>(null);
 
   const avatarBase = getAvatarBaseUrl();
 
@@ -201,15 +201,12 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
       if (data.dismissed) { setDismissed(true); setLoading(false); return; }
       setAttendees(data.attendees);
       setViewerIsHost(!!data.viewerIsHost);
-      if (data.shoutouts && data.shoutouts.length > 0) {
-        const next: Record<string, ShoutoutDraft> = {};
-        for (const s of data.shoutouts) {
-          const status = s.status === "pending" || s.status === "approved" || s.status === "rejected"
-            ? s.status
-            : "none";
-          next[s.recipientUserId] = { message: s.message, serverMessage: s.message, serverStatus: status };
-        }
-        setShoutouts(next);
+      if (data.kudos) {
+        const next: Record<string, string> = {};
+        for (const k of data.kudos.given ?? []) next[k.recipientUserId] = k.tag;
+        setKudosGiven(next);
+        setKudosTags(data.kudos.tags ?? []);
+        setKudosMax(data.kudos.maxPerPlan ?? 3);
       }
       if (data.myReports && data.myReports.length > 0 && !noShowsDirtyRef.current) {
         setNoShows(new Set(data.myReports.filter((r) => r.issueType === "no_show").map((r) => r.reportedUserId)));
@@ -260,56 +257,73 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
     }
   }, [chumStatus]);
 
-  const shoutoutWindowClosed = isShoutoutWindowClosed(planStartsAt);
+  const kudosWindowClosed = isKudosWindowClosed(planStartsAt);
 
-  // The shout-out panel is the first thing everyone sees, so chum status is
-  // fetched as soon as the surface loads (not gated behind a submit any more).
+  // The kudos panel is the first thing everyone sees, so chum status is
+  // fetched as soon as the surface loads (not gated behind a submit).
   useEffect(() => {
-    if (loading || dismissed || shoutoutWindowClosed) return;
+    if (loading || dismissed || kudosWindowClosed) return;
     for (const a of attendees) {
       if (!(a.userId in chumStatus)) void ensureChumStatus(a.userId);
     }
-  }, [loading, dismissed, shoutoutWindowClosed, attendees, chumStatus, ensureChumStatus]);
+  }, [loading, dismissed, kudosWindowClosed, attendees, chumStatus, ensureChumStatus]);
 
-  const setShoutoutMessage = (userId: string, value: string) => {
-    setShoutouts((prev) => {
-      const existing = prev[userId];
-      const trimmed = value.slice(0, SHOUTOUT_MAX_LENGTH);
-      return {
-        ...prev,
-        [userId]: {
-          message: trimmed,
-          serverMessage: existing?.serverMessage ?? "",
-          serverStatus: existing?.serverStatus ?? "none",
-        },
-      };
+  const givenCount = Object.keys(kudosGiven).length;
+
+  /** Give (or change) a kudos tag: optimistic, reverted on failure. One tap
+   *  in the picker is the whole interaction, so the dialog closes on success. */
+  const giveKudos = async (userId: string, tag: string) => {
+    if (kudosBusy[userId]) return;
+    const previous = kudosGiven[userId];
+    setKudosBusy((prev) => ({ ...prev, [userId]: true }));
+    setKudosError(null);
+    setKudosGiven((prev) => ({ ...prev, [userId]: tag }));
+    const revert = () => setKudosGiven((prev) => {
+      const next = { ...prev };
+      if (previous) next[userId] = previous; else delete next[userId];
+      return next;
     });
-  };
-
-  const handleSendShoutout = async (userId: string) => {
-    const draft = shoutouts[userId];
-    const message = draft?.message?.trim() ?? "";
-    if (!message) return;
-    const slotEditable = !draft || draft.serverStatus === "none" || draft.serverStatus === "pending";
-    const messageChanged = message !== (draft?.serverMessage?.trim() ?? "");
-    if (!slotEditable || !messageChanged) return;
-    setShoutoutSending((prev) => ({ ...prev, [userId]: true }));
     try {
-      const res = await apiFetch(`/events/${eventId}/shoutout`, {
+      const res = await apiFetch(`/events/${eventId}/kudos`, {
         auth: true,
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ recipientUserId: userId, message }),
+        body: JSON.stringify({ recipientUserId: userId, tag }),
       });
-      const data = (await res.json()) as { ok?: boolean };
-      if (res.ok && data.ok) {
-        setShoutouts((prev) => ({
-          ...prev,
-          [userId]: { message, serverMessage: message, serverStatus: "pending" },
-        }));
+      const data = (await res.json()) as { ok?: boolean; error?: string; message?: string };
+      if (!res.ok || !data.ok) {
+        revert();
+        setKudosError(
+          data.error === "KUDOS_WINDOW_CLOSED" ? "Kudos for this plan have closed."
+          : data.error === "KUDOS_LIMIT" ? `You can give up to ${kudosMax} kudos per plan.`
+          : data.message ?? "Couldn't save that. Try again.",
+        );
+        return;
       }
-    } catch { /* silent, the user can retry */ }
-    setShoutoutSending((prev) => ({ ...prev, [userId]: false }));
+      setKudosPickerFor(null);
+    } catch {
+      revert();
+      setKudosError("Couldn't save that. Try again.");
+    } finally {
+      setKudosBusy((prev) => ({ ...prev, [userId]: false }));
+    }
+  };
+
+  /** Take a kudos back. Optimistic; reverted on failure. */
+  const removeKudos = async (userId: string) => {
+    if (kudosBusy[userId]) return;
+    const previous = kudosGiven[userId];
+    if (!previous) return;
+    setKudosBusy((prev) => ({ ...prev, [userId]: true }));
+    setKudosGiven((prev) => { const next = { ...prev }; delete next[userId]; return next; });
+    try {
+      const res = await apiFetch(`/events/${eventId}/kudos/${userId}`, { auth: true, method: "DELETE" });
+      if (!res.ok) throw new Error("delete failed");
+    } catch {
+      setKudosGiven((prev) => ({ ...prev, [userId]: previous }));
+    } finally {
+      setKudosBusy((prev) => ({ ...prev, [userId]: false }));
+    }
   };
 
   /** Host check-in write: optimistic flip, POST to record a no-show, DELETE to
@@ -405,9 +419,9 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
 
   const planContextLine = formatPlanContext(planTitle, planStartsAt);
   const checkableAttendees = attendees.filter((a) => !a.isHost && a.rsvpStatus === "going");
-  // After the shout-out window the host card shrinks to pure bookkeeping, so
+  // After the kudos window the host card shrinks to pure bookkeeping, so
   // only the people the attendance record covers keep a row.
-  const hostRows = shoutoutWindowClosed ? checkableAttendees : attendees;
+  const hostRows = kudosWindowClosed ? checkableAttendees : attendees;
 
   const openConductDialog = (target: Attendee | null) => {
     setConductTarget(target);
@@ -419,25 +433,19 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
 
   /** One person row, shared by the host card and the attendee card. The host
    *  card adds the private Came / No-show toggle (withAttendance) and, once
-   *  the 7-day shout-out window has passed, drops the public actions and
-   *  keeps only the bookkeeping (withShoutouts=false). */
-  const renderPersonRow = (a: Attendee, withAttendance: boolean, withShoutouts: boolean) => {
+   *  the 7-day kudos window has passed, drops the public actions and keeps
+   *  only the bookkeeping (withKudos=false). */
+  const renderPersonRow = (a: Attendee, withAttendance: boolean, withKudos: boolean) => {
     const profileHref = a.username ? `/u/${a.username.replace(/^@/, "")}` : null;
     const realName = a.name?.trim() || null;
     const handle = a.handle
       ?? (a.username ? `@${a.username.replace(/^@/, "")}` : null);
     const primaryLabel = realName || handle || a.displayName;
     const saved = chumStatus[a.userId];
-    const showChum = withShoutouts && saved !== null;
-    const draft = shoutouts[a.userId];
-    const status = draft?.serverStatus ?? "none";
-    const message = draft?.message ?? "";
-    const locked = status === "approved" || status === "rejected";
-    const sending = !!shoutoutSending[a.userId];
-    const sendable =
-      message.trim().length > 0 &&
-      message.trim() !== (draft?.serverMessage?.trim() ?? "") &&
-      !locked;
+    const showChum = withKudos && saved !== null;
+    const givenTag = kudosGiven[a.userId];
+    const givenInfo = givenTag ? kudosTags.find((t) => t.tag === givenTag) : undefined;
+    const atLimit = !givenTag && givenCount >= kudosMax;
     const checkable = withAttendance && !a.isHost && a.rsvpStatus === "going";
     const isNoShow = checkable && noShows.has(a.userId);
     return (
@@ -499,19 +507,6 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
                   />
                 )}
               </Stack>
-              {/* Honest moderation caption: shout-outs sit in a review queue
-                  until a moderator approves them, so never promise a
-                  timeline. */}
-              {withShoutouts && status === "pending" && (
-                <Typography variant="caption" sx={{ color: "text.disabled", fontSize: "0.6875rem" }}>
-                  Sent for review. It appears on their profile once approved.
-                </Typography>
-              )}
-              {withShoutouts && status === "approved" && (
-                <Typography variant="caption" sx={{ color: "success.dark", fontSize: "0.6875rem", fontWeight: 600 }}>
-                  Shout-out live on their profile
-                </Typography>
-              )}
             </Box>
             {checkable && (
               <Tooltip title="Private, for your records only. Nobody is notified." arrow>
@@ -613,7 +608,7 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
               </Box>
             </Tooltip>
           )}
-          {withShoutouts && (
+          {withKudos && (
             <Tooltip title={`Send ${primaryLabel} a private message`} arrow>
               <Button
                 component={Link}
@@ -641,51 +636,45 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
             </Tooltip>
           )}
         </Stack>
-        {withShoutouts && !locked && (
-          <Stack direction="row" spacing={1} alignItems="stretch" sx={{ mt: 1.25 }}>
-            <TextField
-              value={message}
-              onChange={(e) => setShoutoutMessage(a.userId, e.target.value)}
-              placeholder={`Give ${primaryLabel} a shout-out for their profile (optional)`}
-              multiline
-              // No row cap: autosize measures the placeholder too,
-              // and any fixed cap clips its last line mid-glyph at
-              // phone widths once a long display name pushes it
-              // past the cap. Content is bounded anyway by
-              // SHOUTOUT_MAX_LENGTH, so the field cannot run away.
-              fullWidth
-              size="small"
-              inputProps={{ maxLength: SHOUTOUT_MAX_LENGTH }}
-              sx={{
-                "& .MuiOutlinedInput-root": {
-                  borderRadius: 2,
-                  bgcolor: "background.default",
+        {withKudos && (
+          <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap" sx={{ mt: 1.25 }}>
+            {givenInfo ? (
+              <Chip
+                label={`${givenInfo.emoji} ${givenInfo.label}`}
+                onClick={() => { setKudosError(null); setKudosPickerFor(a); }}
+                onDelete={() => void removeKudos(a.userId)}
+                disabled={!!kudosBusy[a.userId]}
+                sx={{
+                  fontWeight: 700,
                   fontSize: "0.8125rem",
-                },
-              }}
-            />
-            <Button
-              onClick={() => handleSendShoutout(a.userId)}
-              disabled={!sendable || sending}
-              size="small"
-              variant="outlined"
-              startIcon={<CampaignRoundedIcon sx={{ fontSize: 16 }} />}
-              sx={{
-                textTransform: "none",
-                fontWeight: 700,
-                borderRadius: 2,
-                fontSize: "0.78rem",
-                px: 1.5,
-                flexShrink: 0,
-                // The row Stack is alignItems: "stretch", so the
-                // button always matches the TextField's rendered
-                // height. minHeight unsets the 44px button floor.
-                minHeight: 0,
-                alignSelf: "stretch",
-              }}
-            >
-              {sending ? "Sending…" : status === "pending" ? "Update" : "Send"}
-            </Button>
+                  height: 30,
+                  bgcolor: "primary.light",
+                  color: "primary.dark",
+                  "& .MuiChip-deleteIcon": { color: "primary.dark", opacity: 0.7, "&:hover": { opacity: 1 } },
+                }}
+              />
+            ) : (
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<WorkspacePremiumRoundedIcon sx={{ fontSize: 17 }} />}
+                onClick={() => { setKudosError(null); setKudosPickerFor(a); }}
+                disabled={atLimit || !!kudosBusy[a.userId]}
+                sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2, fontSize: "0.78rem", px: 1.5, py: 0.5 }}
+              >
+                Give kudos
+              </Button>
+            )}
+            {givenInfo && (
+              <Typography variant="caption" sx={{ color: "text.disabled", fontSize: "0.6875rem" }}>
+                Tap to change, × to take it back. They won&apos;t see who it was from.
+              </Typography>
+            )}
+            {!givenInfo && atLimit && (
+              <Typography variant="caption" sx={{ color: "text.disabled", fontSize: "0.6875rem" }}>
+                You&apos;ve given your {kudosMax} kudos for this plan.
+              </Typography>
+            )}
           </Stack>
         )}
       </Paper>
@@ -740,7 +729,7 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
           </Paper>
         )}
 
-        {/* ── Host: check-in, shout-outs, and run-it-again in one card ── */}
+        {/* ── Host: check-in, kudos, and run-it-again in one card ── */}
         {viewerIsHost && (
           <Paper
             variant="outlined"
@@ -762,17 +751,17 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
                 variant="body2"
                 sx={{ color: "text.secondary", fontSize: "0.8125rem", lineHeight: 1.55, mb: 1.75 }}
               >
-                {shoutoutWindowClosed
+                {kudosWindowClosed
                   ? "Mark who made it. This is private, for your records only, and nobody is notified."
-                  : "The Came and No-show marks are private, for your records only, and nobody is notified. Shout-outs are the opposite: short public notes on someone's profile, the funnier the better. You can also save people to your Chums for next time. All of it is optional."}
+                  : "The Came and No-show marks are private, for your records only, and nobody is notified. Kudos are quick props that collect on someone's profile as counts; nobody sees who gave what. You can also save people to your Chums for next time. All of it is optional."}
               </Typography>
             )}
             {hostRows.length > 0 && (
               <Stack spacing={1.5}>
-                {hostRows.map((a) => renderPersonRow(a, true, !shoutoutWindowClosed))}
+                {hostRows.map((a) => renderPersonRow(a, true, !kudosWindowClosed))}
               </Stack>
             )}
-            {!shoutoutWindowClosed && planHobbies && planHobbies.length > 0 && (
+            {!kudosWindowClosed && planHobbies && planHobbies.length > 0 && (
               <Box sx={{ mt: 1.75 }}>
                 <PlanHobbyAddSuggestion planHobbies={planHobbies} />
               </Box>
@@ -799,20 +788,20 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
           </Paper>
         )}
 
-        {/* ── Attendee: shout-outs, Save to Chums, Message ──────────────── */}
-        {!viewerIsHost && attendees.length > 0 && !shoutoutWindowClosed && (
+        {/* ── Attendee: kudos, Save to Chums, Message ───────────────────── */}
+        {!viewerIsHost && attendees.length > 0 && !kudosWindowClosed && (
           <Paper
             variant="outlined"
             sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 3, borderColor: "grey.200", bgcolor: "background.paper" }}
           >
             <Typography component="h2" sx={{ fontWeight: 700, fontSize: { xs: "1.125rem", sm: "1.25rem" }, lineHeight: 1.25, mb: 0.25 }}>
-              Anyone deserve a shout-out?
+              Anyone deserve kudos?
             </Typography>
             <Typography
               variant="body2"
               sx={{ color: "text.secondary", fontSize: "0.8125rem", lineHeight: 1.55, mb: 1.75 }}
             >
-              {planContextLine ? `${planContextLine}. ` : ""}Shout-outs are short public notes on someone&apos;s profile, the funnier the better. You can also save people to your Chums for next time. All of it is optional.
+              {planContextLine ? `${planContextLine}. ` : ""}Pick a person, pick a tag. Kudos are anonymous and collect on their profile. You can also save people to your Chums for next time. All of it is optional.
             </Typography>
             <Stack spacing={1.5}>
               {attendees.map((a) => renderPersonRow(a, false, true))}
@@ -868,6 +857,74 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
           </Stack>
         )}
       </Box>
+
+      {/* Kudos picker: one tap gives the tag and closes. Tapping the
+          current tag again just closes; a different one swaps it. */}
+      <Dialog
+        open={kudosPickerFor !== null}
+        onClose={() => setKudosPickerFor(null)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle sx={{ fontWeight: 700, fontSize: "1.0625rem", pb: 0.5 }}>
+          Kudos for {kudosPickerFor?.name?.trim() || kudosPickerFor?.handle || kudosPickerFor?.displayName || "them"}
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, lineHeight: 1.55 }}>
+            Pick one. It&apos;s anonymous, and it collects on their profile.
+          </Typography>
+          <Box sx={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 1 }}>
+            {kudosTags.map((t) => {
+              const target = kudosPickerFor;
+              const selected = target ? kudosGiven[target.userId] === t.tag : false;
+              return (
+                <ButtonBase
+                  key={t.tag}
+                  onClick={() => {
+                    if (!target) return;
+                    if (selected) { setKudosPickerFor(null); return; }
+                    void giveKudos(target.userId, t.tag);
+                  }}
+                  disabled={target ? !!kudosBusy[target.userId] : true}
+                  sx={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: 0.5,
+                    p: 1.25,
+                    borderRadius: 2.5,
+                    border: "2px solid",
+                    borderColor: selected ? "primary.main" : "divider",
+                    bgcolor: selected ? "primary.light" : "background.default",
+                    textAlign: "center",
+                    transition: "border-color 0.15s ease, background-color 0.15s ease",
+                    "&:hover": { borderColor: "primary.main" },
+                  }}
+                >
+                  <Typography component="span" sx={{ fontSize: "1.75rem", lineHeight: 1 }} aria-hidden>{t.emoji}</Typography>
+                  <Typography variant="caption" sx={{ fontWeight: 700, lineHeight: 1.25, color: selected ? "primary.dark" : "text.primary" }}>
+                    {t.label}
+                  </Typography>
+                </ButtonBase>
+              );
+            })}
+          </Box>
+          {kudosError && (
+            <Typography variant="caption" color="error" sx={{ display: "block", mt: 1.25, fontWeight: 600 }}>
+              {kudosError}
+            </Typography>
+          )}
+          <Typography variant="caption" sx={{ display: "block", mt: 1.25, color: "text.disabled" }}>
+            {givenCount} of {kudosMax} kudos used on this plan.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setKudosPickerFor(null)} sx={{ textTransform: "none", fontWeight: 600 }}>
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Conduct report dialog, unchanged from the old surface: safety
           reporting survives the rating grid it used to live behind. */}
@@ -1004,7 +1061,7 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
               Hide this for good?
             </Typography>
             <Typography variant="body2" sx={{ color: "text.secondary", fontSize: "0.875rem", lineHeight: 1.55, maxWidth: 320, mb: 2.5 }}>
-              This card will not be shown again for this plan. Shout-outs you already sent are unaffected.
+              This card will not be shown again for this plan. Kudos you already gave are unaffected.
             </Typography>
             <Stack direction="row" spacing={1.25}>
               <Button
@@ -1105,7 +1162,7 @@ function DialogSuccessState({
   );
 }
 
-/** Short contextual reminder for the shout-out header ("You met at <title>
+/** Short contextual reminder for the kudos header ("You met at <title>
  *  on <date>"). Returns null when neither field is available. */
 function formatPlanContext(title: string | undefined, startsAtIso: string | undefined): string | null {
   const cleanTitle = title?.trim();

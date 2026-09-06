@@ -241,21 +241,27 @@ function notificationText(n: AppNotification, viewerHandle: string | null): {
         actorHref: eventHref,
         body: titleLink ? <>{" for "}{titleLink}{". Confirm you're still coming."}</> : " for an upcoming plan. Confirm you're still coming.",
       };
-    case "shoutout_received": {
-      // entityId is the shoutout id, NOT an event id, so the existing
-      // titleLink (which assumes /events/<entityId>) doesn't apply. The body
-      // text deep-links to the recipient's Shout-outs section on their own
-      // public profile (/u/<handle>#shoutouts). Falls back to /profile while
-      // navProfile is still loading; that path no longer renders shout-outs
-      // but will not 404 either.
+    case "kudos_received": {
+      // Kudos are anonymous, so no actor is named. The body names the tag
+      // and the plan and deep-links to the recipient's own kudos shelf on
+      // their public profile (/u/<handle>#kudos). Falls back to /profile
+      // while navProfile is still loading.
       const planTitle = n.metadata?.planTitle as string | undefined;
-      const shoutoutsHref = viewerHandle
-        ? `/u/${viewerHandle.replace(/^@/, "")}#shoutouts`
-        : "/profile#shoutouts";
-      const trailing = planTitle
-        ? <> left you a shout-out from <Box component={Link} href={shoutoutsHref} sx={{ fontWeight: 600, color: "inherit", textDecoration: "none", "&:hover": { textDecoration: "underline" } }}>&ldquo;{planTitle}&rdquo;</Box>.</>
-        : <> left you a <Box component={Link} href={shoutoutsHref} sx={{ fontWeight: 600, color: "inherit", textDecoration: "none", "&:hover": { textDecoration: "underline" } }}>shout-out</Box>.</>;
-      return { actorLabel, actorHref, body: trailing };
+      const emoji = (n.metadata?.emoji as string | undefined) ?? "";
+      const label = (n.metadata?.label as string | undefined) ?? "kudos";
+      const kudosHref = viewerHandle ? `/u/${viewerHandle.replace(/^@/, "")}#kudos` : "/profile";
+      const tagLink = (
+        <Box component={Link} href={kudosHref} sx={{ fontWeight: 600, color: "inherit", textDecoration: "none", "&:hover": { textDecoration: "underline" } }}>
+          {emoji ? `${emoji} ${label}` : label}
+        </Box>
+      );
+      return {
+        actorLabel: "Kudos",
+        actorHref: kudosHref,
+        body: planTitle
+          ? <>{" for "}{tagLink}{" from someone at "}&ldquo;{planTitle}&rdquo;.</>
+          : <>{" for "}{tagLink}{" from someone on a plan."}</>,
+      };
     }
     case "community_join_request": {
       const communityName = n.metadata?.communityName as string | undefined;
@@ -713,8 +719,8 @@ function UnreadChatRow({ entry }: { entry: UnreadChatEntry }) {
 
 type NotificationBellProps = {
   /** Logged-in viewer's @handle (no leading "@"). Used to deep-link the
-   *  shoutout_received notification straight to the recipient's own public
-   *  profile shout-outs section (`/u/<handle>#shoutouts`). May be null while
+   *  kudos_received notification straight to the recipient's own public
+   *  profile kudos shelf (`/u/<handle>#kudos`). May be null while
    *  the parent's profile fetch is still in flight; the bell falls back to a
    *  safe legacy URL in that window. */
   viewerHandle?: string | null;
