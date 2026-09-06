@@ -552,11 +552,12 @@ app.get("/public/users/:handle", async (c) => {
 });
 
 /** GET /public/users/:handle/kudos
- *  Aggregated kudos for the profile shelf: counts per tag, never who gave
+ *  Aggregated tags for the profile section: counts per tag, never who gave
  *  what. Visitors see a tag once KUDOS_PUBLIC_MIN_GIVERS different people
- *  have given it, so a lone giver stays anonymous; the owner sees every
- *  tag, with the still-private ones flagged. Kudos inside a blocked pair
- *  are left out for everyone, since both identities are in the row. */
+ *  have given it, so a lone giver stays anonymous; the owner, and super
+ *  admins (so a test tag can be checked), see every tag with the
+ *  still-private ones flagged. Tags inside a blocked pair are left out for
+ *  everyone, since both identities are in the row. */
 app.get("/public/users/:handle/kudos", async (c) => {
   const handleParam = c.req.param("handle")?.trim();
   if (!handleParam) {
@@ -589,6 +590,8 @@ app.get("/public/users/:handle/kudos", async (c) => {
       }
     }
     const isOwner = viewerUserId !== null && viewerUserId === target.id;
+    const viewerIsSuperAdmin = viewerUserId !== null && !isOwner ? await checkIsSuperAdmin(sql, viewerUserId) : false;
+    const seesAll = isOwner || viewerIsSuperAdmin;
 
     const rows = (await sql`
       SELECT k.tag, COUNT(*)::int AS count, COUNT(DISTINCT k.giver_user_id)::int AS givers,
@@ -607,22 +610,22 @@ app.get("/public/users/:handle/kudos", async (c) => {
     `) as Array<{ tag: string; count: number; givers: number; latest_at: string }>;
 
     const items: Array<{ tag: string; label: string; emoji: string; count: number; publicYet: boolean }> = [];
-    let hiddenCount = 0;
     for (const r of rows) {
       const info = kudosTagInfo(r.tag);
       if (!info) continue;
       const publicYet = r.givers >= KUDOS_PUBLIC_MIN_GIVERS;
-      if (!publicYet && !isOwner) { hiddenCount += r.count; continue; }
+      // Visitors never learn about tags still below the threshold, not even
+      // as a count; the owner and super admins see them flagged.
+      if (!publicYet && !seesAll) continue;
       items.push({ tag: r.tag, label: info.label, emoji: info.emoji, count: r.count, publicYet });
     }
     return c.json({
       ok: true,
       isOwner,
+      viewerIsSuperAdmin,
       items,
       total: items.reduce((sum, it) => sum + it.count, 0),
       minGivers: KUDOS_PUBLIC_MIN_GIVERS,
-      // Owner-only hint material stays out of visitor payloads.
-      ...(isOwner ? {} : { hiddenCount: undefined }),
     });
   } catch (err) {
     console.error("[GET /public/users/:handle/kudos]", err);
@@ -17045,7 +17048,7 @@ app.get("/events/:id/wrap-up", async (c) => {
       WHERE plan_id = ${eventId} AND user_id = ${userId} LIMIT 1
     `;
     if (dismissedRows.length > 0)
-      return c.json({ ok: true, dismissed: true, viewerIsHost: false, attendees: [], kudos: { given: [], tags: KUDOS_TAGS, maxPerPlan: KUDOS_MAX_PER_PLAN, windowClosesAt: null }, issuesAgainstMe: [], myReports: [] });
+      return c.json({ ok: true, dismissed: true, viewerIsHost: false, attendees: [], kudos: { given: [], tags: KUDOS_TAGS, maxPerPlan: KUDOS_MAX_PER_PLAN, windowClosesAt: null, viewerCanTag: false }, issuesAgainstMe: [], myReports: [] });
   } catch { /* table may not exist yet */ }
 
   try {
@@ -17060,13 +17063,17 @@ app.get("/events/:id/wrap-up", async (c) => {
     // Only people who were actually on the plan get the wrap-up surface. A
     // 'cant_make_it' RSVP (or no RSVP) means they didn't attend →
     // NOT_PARTICIPANT; the client then shows the normal past-plan view.
-    const attended = (await sql`
-      SELECT 1 FROM newchums.event_rsvps
+    const viewerRsvp = (await sql`
+      SELECT status FROM newchums.event_rsvps
       WHERE event_id = ${eventId} AND user_id = ${userId}
         AND status IN ('going', 'maybe') LIMIT 1
-    `).length > 0;
+    `) as { status: string }[];
+    const attended = viewerRsvp.length > 0;
     if (!isHost && !attended)
       return c.json({ ok: false, error: "NOT_PARTICIPANT" }, 403);
+    // Tags are for people who were Going (the same rule POST /kudos
+    // enforces); a Maybe still gets Save to Chums and Message.
+    const viewerCanTag = isHost || viewerRsvp[0]?.status === "going";
 
     const attendees = (await sql`
       SELECT u.id, u.name, u.username
@@ -17170,6 +17177,7 @@ app.get("/events/:id/wrap-up", async (c) => {
         tags: KUDOS_TAGS,
         maxPerPlan: KUDOS_MAX_PER_PLAN,
         windowClosesAt: kudosWindowClosesAt,
+        viewerCanTag,
       },
     });
   } catch (err) {

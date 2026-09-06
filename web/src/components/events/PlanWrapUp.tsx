@@ -73,6 +73,8 @@ type KudosPayload = {
   tags: KudosTagInfo[];
   maxPerPlan: number;
   windowClosesAt: string | null;
+  /** Host or Going; a Maybe cannot tag (the API refuses), so the control is hidden for them. */
+  viewerCanTag?: boolean;
 };
 
 /** Wire-format payload for GET /events/{id}/wrap-up. Exported so callers that
@@ -177,6 +179,7 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
   const [kudosGiven, setKudosGiven] = useState<Record<string, string>>(initialKudos);
   const [kudosTags, setKudosTags] = useState<KudosTagInfo[]>(initial?.kudos?.tags ?? []);
   const [kudosMax, setKudosMax] = useState<number>(initial?.kudos?.maxPerPlan ?? 3);
+  const [viewerCanTag, setViewerCanTag] = useState<boolean>(initial?.kudos?.viewerCanTag !== false);
   const [kudosBusy, setKudosBusy] = useState<Record<string, boolean>>({});
   const [kudosPickerFor, setKudosPickerFor] = useState<Attendee | null>(null);
   const [kudosError, setKudosError] = useState<string | null>(null);
@@ -219,6 +222,7 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
         setKudosGiven(next);
         setKudosTags(data.kudos.tags ?? []);
         setKudosMax(data.kudos.maxPerPlan ?? 3);
+        setViewerCanTag(data.kudos.viewerCanTag !== false);
       }
       if (data.myReports && data.myReports.length > 0 && !noShowsDirtyRef.current) {
         setNoShows(new Set(data.myReports.filter((r) => r.issueType === "no_show").map((r) => r.reportedUserId)));
@@ -458,6 +462,9 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
     const givenTag = kudosGiven[a.userId];
     const givenInfo = givenTag ? kudosTags.find((t) => t.tag === givenTag) : undefined;
     const atLimit = !givenTag && givenCount >= kudosMax;
+    // Same rule the API enforces: tags flow between the host and Going
+    // attendees. A Maybe row keeps Save to Chums and Message only.
+    const taggable = withKudos && viewerCanTag && (a.isHost || a.rsvpStatus === "going");
     const checkable = withAttendance && !a.isHost && a.rsvpStatus === "going";
     const isNoShow = checkable && noShows.has(a.userId);
     return (
@@ -577,9 +584,12 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
               </Tooltip>
             )}
           </Stack>
-          {withKudos && (
+          {taggable && (
             givenInfo ? (
               <Tooltip title="Tap to change, × to remove. They won't see who it was from." arrow>
+                {/* On phones the chip takes the full row like the buttons
+                    around it, so the stacked actions line up; on wider
+                    screens it hugs its label. */}
                 <Chip
                   label={`${givenInfo.emoji} ${givenInfo.label}`}
                   onClick={() => openPicker(a)}
@@ -587,10 +597,12 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
                   disabled={!!kudosBusy[a.userId]}
                   sx={{
                     fontWeight: 700,
-                    fontSize: "0.8125rem",
-                    height: 32,
+                    // 44px on phones matches the theme's touch-target buttons beside it.
+                    height: { xs: 44, sm: 32 },
+                    fontSize: { xs: "0.875rem", sm: "0.8125rem" },
+                    width: { xs: "100%", sm: "auto" },
                     flexShrink: 0,
-                    alignSelf: { xs: "flex-start", sm: "center" },
+                    alignSelf: { xs: "stretch", sm: "center" },
                     bgcolor: "primary.light",
                     color: "primary.dark",
                     "& .MuiChip-deleteIcon": { color: "primary.dark", opacity: 0.7, "&:hover": { opacity: 1 } },
@@ -808,13 +820,15 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
             sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 3, borderColor: "grey.200", bgcolor: "background.paper" }}
           >
             <Typography component="h2" sx={{ fontWeight: 700, fontSize: { xs: "1.125rem", sm: "1.25rem" }, lineHeight: 1.25, mb: 0.25 }}>
-              Anyone earn a tag?
+              {viewerCanTag ? "Anyone earn a tag?" : "Who did you meet?"}
             </Typography>
             <Typography
               variant="body2"
               sx={{ color: "text.secondary", fontSize: "0.8125rem", lineHeight: 1.55, mb: 1.75 }}
             >
-              {planContextLine ? `${planContextLine}. ` : ""}Pick a person, pick a tag. Tags are anonymous and collect on their profile. You can also save people to your Chums for next time. All of it is optional.
+              {planContextLine ? `${planContextLine}. ` : ""}{viewerCanTag
+                ? "Pick a person, pick a tag. Tags are anonymous and collect on their profile. You can also save people to your Chums for next time. All of it is optional."
+                : "Tags are for people who were Going. You can still save people to your Chums for next time, or send them a message."}
             </Typography>
             <Stack spacing={1.5}>
               {attendees.map((a) => renderPersonRow(a, false, true))}
@@ -884,7 +898,9 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
         <DialogTitle sx={{ fontWeight: 700, fontSize: "1.0625rem", pb: 0.5 }}>
           Tag {kudosPickerFor?.name?.trim() || kudosPickerFor?.handle || kudosPickerFor?.displayName || "them"}
         </DialogTitle>
-        <Box sx={{ px: 3, pb: 1.5 }}>
+        {/* Padding tracks the theme's DialogTitle (16px on phones, 24px from sm)
+            so the search box lines up with the title. */}
+        <Box sx={{ px: { xs: 2, sm: 3 }, pb: 1.5 }}>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1.25, lineHeight: 1.55 }}>
             Pick one. It&apos;s anonymous, and it collects on their profile.
           </Typography>

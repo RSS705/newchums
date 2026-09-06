@@ -29,13 +29,16 @@ type PublicProfileKudosSectionProps = {
   isOwner: boolean;
   /** Forwards auth on the fetch so the API can detect the owner. */
   viewerLoggedIn: boolean;
+  /** Super admins see still-private tags flagged, like the owner does, so a
+   *  test tag can be checked. Server-decided; this only shapes the copy. */
+  viewerIsSuperAdmin?: boolean;
 };
 
 /** Public Tags shelf on /u/<handle> (kudos internally). Aggregated counts per tag, never who
  *  gave what. The top three read as tiles, the rest as chips. Renders
  *  nothing when there is nothing to show for this viewer, so a profile
  *  without kudos carries no empty stub. */
-export default function PublicProfileKudosSection({ handle, isOwner, viewerLoggedIn }: PublicProfileKudosSectionProps) {
+export default function PublicProfileKudosSection({ handle, isOwner, viewerLoggedIn, viewerIsSuperAdmin }: PublicProfileKudosSectionProps) {
   // No handle means nothing to fetch; start resolved so the effect never
   // has to set state synchronously.
   const [items, setItems] = useState<KudosItem[] | null>(handle ? null : []);
@@ -64,7 +67,8 @@ export default function PublicProfileKudosSection({ handle, isOwner, viewerLogge
   const total = items.reduce((sum, it) => sum + it.count, 0);
   const featured = items.slice(0, 3);
   const rest = items.slice(3);
-  const privateCount = isOwner ? items.filter((it) => !it.publicYet).length : 0;
+  const seesAll = isOwner || !!viewerIsSuperAdmin;
+  const privateCount = seesAll ? items.filter((it) => !it.publicYet).length : 0;
 
   const privateNote = (it: KudosItem) =>
     it.publicYet ? null : `Visitors see this once ${minGivers} different people have given it.`;
@@ -79,7 +83,9 @@ export default function PublicProfileKudosSection({ handle, isOwner, viewerLogge
           subtitle={
             isOwner
               ? "What people from your plans gave you. Nobody sees who gave what."
-              : "Given by people they've been on plans with."
+              : viewerIsSuperAdmin
+                ? "Super-admin view: dimmed tags are not public yet. Given by people they've been on plans with."
+                : "Given by people they've been on plans with."
           }
         />
 

@@ -42,7 +42,6 @@ export default function PlansPage() {
   const [pastQuery, setPastQuery] = useState("");
   const [pastSearch, setPastSearch] = useState("");
   const [pastHasMore, setPastHasMore] = useState(false);
-  const [pastSearching, setPastSearching] = useState(false);
   const [pastLoadingMore, setPastLoadingMore] = useState(false);
   const [pastCountLabel, setPastCountLabel] = useState<string | null>(null);
   const pastSeqRef = useRef(0);
@@ -87,22 +86,28 @@ export default function PlansPage() {
     const t = setTimeout(() => setPastSearch(pastQuery.trim()), 300);
     return () => clearTimeout(t);
   }, [pastQuery]);
+  // Which query the current `past` list answers. The initial load answers
+  // "", so a search typed while that load is still in flight is picked up
+  // the moment loading ends rather than waiting for the next keystroke.
+  // "Searching" is derived from the gap between the two rather than set
+  // inside the effect, which keeps the effect free of synchronous state
+  // writes.
+  const [pastFetchedFor, setPastFetchedFor] = useState("");
+  const pastSearching = !loading && pastSearch !== pastFetchedFor;
   useEffect(() => {
-    if (loading) return;
+    if (loading || pastSearch === pastFetchedFor) return;
     const seq = ++pastSeqRef.current;
-    setPastSearching(true);
     fetchPast(pastSearch, 0)
       .then((page) => {
-        if (seq !== pastSeqRef.current || !page) return;
-        setPast(page.events);
-        setPastHasMore(page.hasMore);
+        if (seq !== pastSeqRef.current) return;
+        if (page) {
+          setPast(page.events);
+          setPastHasMore(page.hasMore);
+        }
+        setPastFetchedFor(pastSearch);
       })
-      .catch(() => {})
-      .finally(() => { if (seq === pastSeqRef.current) setPastSearching(false); });
-    // `loading` is deliberately not a trigger: the first page arrives with
-    // the initial load, and this effect only re-runs for a search change.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pastSearch, fetchPast]);
+      .catch(() => { if (seq === pastSeqRef.current) setPastFetchedFor(pastSearch); });
+  }, [pastSearch, pastFetchedFor, loading, fetchPast]);
 
   const loadMorePast = async () => {
     if (pastLoadingMore || !pastHasMore) return;

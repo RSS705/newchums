@@ -352,6 +352,7 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
           handle={ownerHandleSlug}
           isOwner={!!isOwner}
           viewerLoggedIn={!!viewerLoggedIn}
+          viewerIsSuperAdmin={viewerIsSuperAdmin}
         />
       )}
 
