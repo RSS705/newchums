@@ -63,13 +63,13 @@ export const NOTIFICATION_TYPES: NotificationTypeConfig[] = [
     // strings changed when the post-plan surface became the wrap-up.
     key: "feedback_requests",
     title: "Post-plan follow-up",
-    description: "After a plan wraps up: a nudge to give kudos, and a private check-in for plans you host.",
+    description: "After a plan wraps up: a nudge to tag the people who came, and a private check-in for plans you host.",
   },
   {
     key: "kudos_received",
-    title: "Someone gives you kudos",
+    title: "Someone tags you",
     description:
-      "When kudos you received are added to your profile. Sent once a day, covering anything new since yesterday. Nobody is told who gave what.",
+      "When tags you received are added to your profile. Sent once a day, covering anything new since yesterday. Nobody is told who gave what.",
   },
   {
     key: "plan_reminder",

@@ -1108,12 +1108,12 @@ export const sendPlanWrapUpEmail = async (
           ctaHelperText: "Private, for your records. Takes under a minute.",
         }
       : {
-          // Kudos are quick, anonymous props that collect on someone's
-          // profile as counts; two taps, no writing.
-          heading: "Anyone deserve kudos?",
+          // Tags are quick, anonymous props that collect on someone's
+          // profile as counts; two taps, no writing. ("Kudos" internally.)
+          heading: "Anyone earn a tag?",
           bodyText:
-            "Your plan has wrapped up. Give kudos to the people who made it good: pick a person, pick a tag like Good Energy or Funny as Hell, done. Nobody sees who gave what, and the tags collect on their profile. You can also save people to your Chums for next time.",
-          ctaText: "Give kudos",
+            "Your plan has wrapped up. Tag the people who made it good: pick a person, pick a tag like Good Energy or Quick Wit, done. Nobody sees who gave what, and tags collect on their profile. You can also save people to your Chums for next time.",
+          ctaText: "Tag someone",
           ctaHelperText: "Totally optional. Two taps per person.",
         };
   return dispatch(
@@ -1135,7 +1135,7 @@ export const sendPlanWrapUpEmail = async (
   );
 };
 
-/** "You got kudos" notice, sent once daily to a recipient for whatever
+/** "You got a tag" notice (kudos internally), sent once daily to a recipient for whatever
  *  arrived since the last run. Batched per recipient: three kudos in one
  *  sitting send one email, not three. Givers are never named, matching the
  *  anonymous shelf on the profile. */
@@ -1175,9 +1175,9 @@ export const sendKudosReceivedEmail = async (
     to,
     "kudosReceived",
     {
-      heading: single ? "Someone gave you kudos" : `${count} kudos came your way`,
+      heading: single ? "Someone tagged you" : `${count} tags came your way`,
       greeting: `Hi ${recipientName},`,
-      bodyText: `${single ? "Someone from your plan gave you kudos" : `People from your plan${planTitles.length > 1 ? "s" : ""} gave you kudos`}${whereLine}: ${tagLine}. Kudos are anonymous and collect on your profile.`,
+      bodyText: `${single ? "Someone from your plan tagged you" : `People from your plan${planTitles.length > 1 ? "s" : ""} tagged you`}${whereLine}: ${tagLine}. Tags are anonymous and collect on your profile.`,
       ctaText: single ? "See it on your profile" : "See them on your profile",
       ctaHelperText: "A tag shows to visitors once two different people have given it. You always see all of yours.",
       recipientName,

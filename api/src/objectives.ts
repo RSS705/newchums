@@ -150,8 +150,8 @@ export const OBJECTIVES: ObjectiveDefinition[] = [
     // migration 107), then text shout-outs (cleared by migration 121), and
     // since Sept 2026 kudos.
     key: "give_first_kudos",
-    title: "Give your first kudos",
-    description: "Quick props after a plan make someone's day.",
+    title: "Give your first tag",
+    description: "A tag after a plan makes someone's day.",
     category: "engagement",
     sequence: 120,
     actionUrl: "/plans",

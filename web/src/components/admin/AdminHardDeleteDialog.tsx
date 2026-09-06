@@ -82,7 +82,7 @@ const PLAN_IMPACT_LABELS: Array<[keyof PlanImpact, string]> = [
   ["invites", "Invites"],
   ["altTimes", "Alternate-time suggestions"],
   ["joinRequests", "Join requests"],
-  ["kudos", "Kudos"],
+  ["kudos", "Tags"],
   ["productEvents", "Funnel analytics rows"],
 ];
 

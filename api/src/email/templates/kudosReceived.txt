@@ -18,7 +18,7 @@
 
 ---
 
-You're receiving this because someone gave you kudos on NewChums.
+You're receiving this because someone tagged you on NewChums.
 {{#unsubscribeUrl}}Unsubscribe: {{.}}{{/unsubscribeUrl}}
 
 © {{year}} {{productName}}

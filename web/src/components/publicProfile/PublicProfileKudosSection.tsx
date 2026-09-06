@@ -31,7 +31,7 @@ type PublicProfileKudosSectionProps = {
   viewerLoggedIn: boolean;
 };
 
-/** Public Kudos shelf on /u/<handle>. Aggregated counts per tag, never who
+/** Public Tags shelf on /u/<handle> (kudos internally). Aggregated counts per tag, never who
  *  gave what. The top three read as tiles, the rest as chips. Renders
  *  nothing when there is nothing to show for this viewer, so a profile
  *  without kudos carries no empty stub. */
@@ -74,7 +74,7 @@ export default function PublicProfileKudosSection({ handle, isOwner, viewerLogge
       <AppCard>
         <ProfileSectionHeader
           icon={<WorkspacePremiumRoundedIcon sx={{ fontSize: 20 }} />}
-          title="Kudos"
+          title="Tags"
           meta={<Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>{total}</Typography>}
           subtitle={
             isOwner

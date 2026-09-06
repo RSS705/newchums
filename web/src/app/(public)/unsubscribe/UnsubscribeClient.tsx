@@ -23,7 +23,7 @@ const LABEL: Record<string, string> = {
   host_leave: "emails when someone can no longer make it to your plan",
   attendee_removed: "emails when you are removed from a plan",
   unread_chat_digest: "plan chat notification emails",
-  kudos_received: "emails about kudos you received",
+  kudos_received: "emails about tags you received",
 };
 
 type Status = "loading" | "success" | "invalid" | "error";

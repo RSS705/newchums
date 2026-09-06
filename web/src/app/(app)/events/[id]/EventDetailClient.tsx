@@ -2723,7 +2723,7 @@ export default function EventDetailClient({
         >
           <Typography variant="body2" sx={{ mb: 1 }}>
             {sectionLoginNudge === "feedback"
-              ? "Sign in to give kudos to the people who came."
+              ? "Sign in to tag the people who came."
               : sectionLoginNudge === "chat"
                 ? "Sign in to view plan chat."
                 : "Sign in to continue."}

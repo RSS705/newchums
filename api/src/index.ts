@@ -626,7 +626,7 @@ app.get("/public/users/:handle/kudos", async (c) => {
     });
   } catch (err) {
     console.error("[GET /public/users/:handle/kudos]", err);
-    return c.json({ ok: false, error: "SERVER_ERROR", message: "Failed to fetch kudos" }, 500);
+    return c.json({ ok: false, error: "SERVER_ERROR", message: "Failed to fetch tags" }, 500);
   }
 });
 
@@ -17437,7 +17437,7 @@ app.post("/events/:id/kudos", async (c) => {
   if (recipientUserId === userId)
     return c.json({ ok: false, error: "CANNOT_KUDOS_SELF" }, 400);
   if (!isKudosTag(tag))
-    return c.json({ ok: false, error: "VALIDATION", message: "Pick one of the kudos tags" }, 400);
+    return c.json({ ok: false, error: "VALIDATION", message: "Pick one of the tags" }, 400);
 
   try {
     const ev = (await sql`
@@ -17448,7 +17448,7 @@ app.post("/events/:id/kudos", async (c) => {
     if (startMs > Date.now())
       return c.json({ ok: false, error: "NOT_PAST" }, 400);
     if (Date.now() >= startMs + KUDOS_WINDOW_MS)
-      return c.json({ ok: false, error: "KUDOS_WINDOW_CLOSED", message: "Kudos for this plan closed a week after it happened" }, 400);
+      return c.json({ ok: false, error: "KUDOS_WINDOW_CLOSED", message: "Tags for this plan closed a week after it happened" }, 400);
 
     // Host or a Going RSVP. Maybes did not commit, so they neither give nor
     // receive; that keeps kudos tied to people who were actually there.
@@ -17473,7 +17473,7 @@ app.post("/events/:id/kudos", async (c) => {
       WHERE plan_id = ${eventId} AND giver_user_id = ${userId} AND recipient_user_id <> ${recipientUserId}
     `) as { c: number }[];
     if ((others[0]?.c ?? 0) >= KUDOS_MAX_PER_PLAN)
-      return c.json({ ok: false, error: "KUDOS_LIMIT", message: `You can give up to ${KUDOS_MAX_PER_PLAN} kudos per plan` }, 409);
+      return c.json({ ok: false, error: "KUDOS_LIMIT", message: `You can give up to ${KUDOS_MAX_PER_PLAN} tags per plan` }, 409);
 
     const upserted = (await sql`
       INSERT INTO newchums.kudos (plan_id, giver_user_id, recipient_user_id, tag)

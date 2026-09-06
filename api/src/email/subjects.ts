@@ -61,9 +61,9 @@ export const SUBJECTS = {
   planWrapUp_host: "How did {{planTitle}} go?",
   runItAgain: "Want to run {{planTitle}} again?",
   planReminder: "Tomorrow: {{planTitle}}",
-  kudosReceived_one: "You got kudos at {{planTitle}}",
-  kudosReceived_many: "You got {{count}} kudos",
-  planWrapUp_attendee: "Anyone deserve kudos at {{planTitle}}?",
+  kudosReceived_one: "You got a tag at {{planTitle}}",
+  kudosReceived_many: "You got {{count}} tags",
+  planWrapUp_attendee: "Anyone earn a tag at {{planTitle}}?",
 
   // Digests
   unreadChatDigest: "You have unread messages on NewChums",

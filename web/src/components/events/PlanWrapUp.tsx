@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import ButtonBase from "@mui/material/ButtonBase";
@@ -11,6 +11,7 @@ import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
 import Divider from "@mui/material/Divider";
 import FormControl from "@mui/material/FormControl";
+import InputAdornment from "@mui/material/InputAdornment";
 import MenuItem from "@mui/material/MenuItem";
 import Paper from "@mui/material/Paper";
 import Select from "@mui/material/Select";
@@ -26,6 +27,7 @@ import HowToRegRoundedIcon from "@mui/icons-material/HowToRegRounded";
 import MailRoundedIcon from "@mui/icons-material/MailRounded";
 import PersonAddRoundedIcon from "@mui/icons-material/PersonAddRounded";
 import WorkspacePremiumRoundedIcon from "@mui/icons-material/WorkspacePremiumRounded";
+import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import ShieldOutlinedIcon from "@mui/icons-material/ShieldOutlined";
 import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
 import Link from "next/link";
@@ -121,7 +123,7 @@ function isKudosWindowClosed(planStartsAt: string | undefined): boolean {
 /**
  * The post-plan surface (replaced the PlanFeedback rating grid in July 2026):
  *
- * - Attendees get the kudos card: per-person "Give kudos" (a fixed tag
+ * - Attendees get the tag card: per-person "Tag them" (a fixed tag
  *   catalogue, one tap, anonymous), Save to Chums, Message. No submit gate,
  *   no questions, no free text and nothing to moderate.
  * - The host gets ONE card holding everything: the same per-person rows with
@@ -178,6 +180,16 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
   const [kudosBusy, setKudosBusy] = useState<Record<string, boolean>>({});
   const [kudosPickerFor, setKudosPickerFor] = useState<Attendee | null>(null);
   const [kudosError, setKudosError] = useState<string | null>(null);
+  const [kudosQuery, setKudosQuery] = useState("");
+  const openPicker = (a: Attendee) => { setKudosError(null); setKudosQuery(""); setKudosPickerFor(a); };
+  // The catalogue is long (64 tags), so the picker sorts alphabetically and
+  // filters on the search box; the API's definition order is irrelevant here.
+  const pickerTags = useMemo(() => {
+    const q = kudosQuery.trim().toLowerCase();
+    return [...kudosTags]
+      .filter((t) => !q || t.label.toLowerCase().includes(q))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [kudosTags, kudosQuery]);
 
   const avatarBase = getAvatarBaseUrl();
 
@@ -294,8 +306,8 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
       if (!res.ok || !data.ok) {
         revert();
         setKudosError(
-          data.error === "KUDOS_WINDOW_CLOSED" ? "Kudos for this plan have closed."
-          : data.error === "KUDOS_LIMIT" ? `You can give up to ${kudosMax} kudos per plan.`
+          data.error === "KUDOS_WINDOW_CLOSED" ? "Tags for this plan have closed."
+          : data.error === "KUDOS_LIMIT" ? `You can give up to ${kudosMax} tags per plan.`
           : data.message ?? "Couldn't save that. Try again.",
         );
         return;
@@ -565,6 +577,48 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
               </Tooltip>
             )}
           </Stack>
+          {withKudos && (
+            givenInfo ? (
+              <Tooltip title="Tap to change, × to remove. They won't see who it was from." arrow>
+                <Chip
+                  label={`${givenInfo.emoji} ${givenInfo.label}`}
+                  onClick={() => openPicker(a)}
+                  onDelete={() => void removeKudos(a.userId)}
+                  disabled={!!kudosBusy[a.userId]}
+                  sx={{
+                    fontWeight: 700,
+                    fontSize: "0.8125rem",
+                    height: 32,
+                    flexShrink: 0,
+                    alignSelf: { xs: "flex-start", sm: "center" },
+                    bgcolor: "primary.light",
+                    color: "primary.dark",
+                    "& .MuiChip-deleteIcon": { color: "primary.dark", opacity: 0.7, "&:hover": { opacity: 1 } },
+                  }}
+                />
+              </Tooltip>
+            ) : (
+              <Tooltip title={atLimit ? `You've used your ${kudosMax} tags for this plan.` : "Anonymous. It collects on their profile."} arrow>
+                {/* span keeps the tooltip alive while the button is disabled
+                    (at the per-plan limit) and takes its slot in the row. */}
+                <Box
+                  component="span"
+                  sx={{ display: "inline-flex", flexShrink: 0, alignSelf: { xs: "stretch", sm: "center" }, "& > button": { width: "100%" } }}
+                >
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<WorkspacePremiumRoundedIcon sx={{ fontSize: 17 }} />}
+                    onClick={() => openPicker(a)}
+                    disabled={atLimit || !!kudosBusy[a.userId]}
+                    sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2, fontSize: "0.78rem", px: 1.5, py: 0.5, flexShrink: 0 }}
+                  >
+                    Tag them
+                  </Button>
+                </Box>
+              </Tooltip>
+            )
+          )}
           {showChum && (
             <Tooltip title={saved ? "Remove from your Chums" : "Add to your Chums"} arrow>
               {/* Box wrapper keeps the tooltip alive while the button is
@@ -636,47 +690,6 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
             </Tooltip>
           )}
         </Stack>
-        {withKudos && (
-          <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap" sx={{ mt: 1.25 }}>
-            {givenInfo ? (
-              <Chip
-                label={`${givenInfo.emoji} ${givenInfo.label}`}
-                onClick={() => { setKudosError(null); setKudosPickerFor(a); }}
-                onDelete={() => void removeKudos(a.userId)}
-                disabled={!!kudosBusy[a.userId]}
-                sx={{
-                  fontWeight: 700,
-                  fontSize: "0.8125rem",
-                  height: 30,
-                  bgcolor: "primary.light",
-                  color: "primary.dark",
-                  "& .MuiChip-deleteIcon": { color: "primary.dark", opacity: 0.7, "&:hover": { opacity: 1 } },
-                }}
-              />
-            ) : (
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={<WorkspacePremiumRoundedIcon sx={{ fontSize: 17 }} />}
-                onClick={() => { setKudosError(null); setKudosPickerFor(a); }}
-                disabled={atLimit || !!kudosBusy[a.userId]}
-                sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2, fontSize: "0.78rem", px: 1.5, py: 0.5 }}
-              >
-                Give kudos
-              </Button>
-            )}
-            {givenInfo && (
-              <Typography variant="caption" sx={{ color: "text.disabled", fontSize: "0.6875rem" }}>
-                Tap to change, × to take it back. They won&apos;t see who it was from.
-              </Typography>
-            )}
-            {!givenInfo && atLimit && (
-              <Typography variant="caption" sx={{ color: "text.disabled", fontSize: "0.6875rem" }}>
-                You&apos;ve given your {kudosMax} kudos for this plan.
-              </Typography>
-            )}
-          </Stack>
-        )}
       </Paper>
     );
   };
@@ -729,7 +742,7 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
           </Paper>
         )}
 
-        {/* ── Host: check-in, kudos, and run-it-again in one card ── */}
+        {/* ── Host: check-in, tags, and run-it-again in one card ── */}
         {viewerIsHost && (
           <Paper
             variant="outlined"
@@ -753,7 +766,7 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
               >
                 {kudosWindowClosed
                   ? "Mark who made it. This is private, for your records only, and nobody is notified."
-                  : "The Came and No-show marks are private, for your records only, and nobody is notified. Kudos are quick props that collect on someone's profile as counts; nobody sees who gave what. You can also save people to your Chums for next time. All of it is optional."}
+                  : "The Came and No-show marks are private, for your records only, and nobody is notified. Tags are quick props that collect on someone's profile as counts; nobody sees who gave what. You can also save people to your Chums for next time. All of it is optional."}
               </Typography>
             )}
             {hostRows.length > 0 && (
@@ -788,20 +801,20 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
           </Paper>
         )}
 
-        {/* ── Attendee: kudos, Save to Chums, Message ───────────────────── */}
+        {/* ── Attendee: tags, Save to Chums, Message ────────────────────── */}
         {!viewerIsHost && attendees.length > 0 && !kudosWindowClosed && (
           <Paper
             variant="outlined"
             sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 3, borderColor: "grey.200", bgcolor: "background.paper" }}
           >
             <Typography component="h2" sx={{ fontWeight: 700, fontSize: { xs: "1.125rem", sm: "1.25rem" }, lineHeight: 1.25, mb: 0.25 }}>
-              Anyone deserve kudos?
+              Anyone earn a tag?
             </Typography>
             <Typography
               variant="body2"
               sx={{ color: "text.secondary", fontSize: "0.8125rem", lineHeight: 1.55, mb: 1.75 }}
             >
-              {planContextLine ? `${planContextLine}. ` : ""}Pick a person, pick a tag. Kudos are anonymous and collect on their profile. You can also save people to your Chums for next time. All of it is optional.
+              {planContextLine ? `${planContextLine}. ` : ""}Pick a person, pick a tag. Tags are anonymous and collect on their profile. You can also save people to your Chums for next time. All of it is optional.
             </Typography>
             <Stack spacing={1.5}>
               {attendees.map((a) => renderPersonRow(a, false, true))}
@@ -858,24 +871,49 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
         )}
       </Box>
 
-      {/* Kudos picker: one tap gives the tag and closes. Tapping the
-          current tag again just closes; a different one swaps it. */}
+      {/* Tag picker: one tap gives the tag and closes. Tapping the current
+          tag again just closes; a different one swaps it. The search box
+          sits above the scrolling grid so it stays put on a long list. */}
       <Dialog
         open={kudosPickerFor !== null}
         onClose={() => setKudosPickerFor(null)}
-        maxWidth="xs"
+        maxWidth="sm"
         fullWidth
-        PaperProps={{ sx: { borderRadius: 3 } }}
+        PaperProps={{ sx: { borderRadius: 3, maxHeight: "88vh" } }}
       >
         <DialogTitle sx={{ fontWeight: 700, fontSize: "1.0625rem", pb: 0.5 }}>
-          Kudos for {kudosPickerFor?.name?.trim() || kudosPickerFor?.handle || kudosPickerFor?.displayName || "them"}
+          Tag {kudosPickerFor?.name?.trim() || kudosPickerFor?.handle || kudosPickerFor?.displayName || "them"}
         </DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, lineHeight: 1.55 }}>
+        <Box sx={{ px: 3, pb: 1.5 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.25, lineHeight: 1.55 }}>
             Pick one. It&apos;s anonymous, and it collects on their profile.
           </Typography>
-          <Box sx={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 1 }}>
-            {kudosTags.map((t) => {
+          <TextField
+            value={kudosQuery}
+            onChange={(e) => setKudosQuery(e.target.value)}
+            placeholder="Search tags"
+            fullWidth
+            size="small"
+            slotProps={{
+              input: {
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchRoundedIcon sx={{ fontSize: 20, color: "text.disabled" }} />
+                  </InputAdornment>
+                ),
+              },
+            }}
+            sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2.5, bgcolor: "background.default" } }}
+          />
+        </Box>
+        <DialogContent sx={{ pt: 0 }}>
+          {pickerTags.length === 0 && (
+            <Typography variant="body2" color="text.secondary" sx={{ py: 2, textAlign: "center" }}>
+              No tags match &ldquo;{kudosQuery.trim()}&rdquo;.
+            </Typography>
+          )}
+          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, 1fr)", sm: "repeat(3, 1fr)" }, gap: 1 }}>
+            {pickerTags.map((t) => {
               const target = kudosPickerFor;
               const selected = target ? kudosGiven[target.userId] === t.tag : false;
               return (
@@ -892,7 +930,8 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
                     flexDirection: "column",
                     alignItems: "center",
                     gap: 0.5,
-                    p: 1.25,
+                    p: 1,
+                    minHeight: 76,
                     borderRadius: 2.5,
                     border: "2px solid",
                     borderColor: selected ? "primary.main" : "divider",
@@ -902,7 +941,7 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
                     "&:hover": { borderColor: "primary.main" },
                   }}
                 >
-                  <Typography component="span" sx={{ fontSize: "1.75rem", lineHeight: 1 }} aria-hidden>{t.emoji}</Typography>
+                  <Typography component="span" sx={{ fontSize: "1.5rem", lineHeight: 1 }} aria-hidden>{t.emoji}</Typography>
                   <Typography variant="caption" sx={{ fontWeight: 700, lineHeight: 1.25, color: selected ? "primary.dark" : "text.primary" }}>
                     {t.label}
                   </Typography>
@@ -916,7 +955,7 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
             </Typography>
           )}
           <Typography variant="caption" sx={{ display: "block", mt: 1.25, color: "text.disabled" }}>
-            {givenCount} of {kudosMax} kudos used on this plan.
+            {givenCount} of {kudosMax} tags used on this plan.
           </Typography>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
@@ -1061,7 +1100,7 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
               Hide this for good?
             </Typography>
             <Typography variant="body2" sx={{ color: "text.secondary", fontSize: "0.875rem", lineHeight: 1.55, maxWidth: 320, mb: 2.5 }}>
-              This card will not be shown again for this plan. Kudos you already gave are unaffected.
+              This card will not be shown again for this plan. Tags you already gave are unaffected.
             </Typography>
             <Stack direction="row" spacing={1.25}>
               <Button

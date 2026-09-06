@@ -248,7 +248,7 @@ function notificationText(n: AppNotification, viewerHandle: string | null): {
       // while navProfile is still loading.
       const planTitle = n.metadata?.planTitle as string | undefined;
       const emoji = (n.metadata?.emoji as string | undefined) ?? "";
-      const label = (n.metadata?.label as string | undefined) ?? "kudos";
+      const label = (n.metadata?.label as string | undefined) ?? "a tag";
       const kudosHref = viewerHandle ? `/u/${viewerHandle.replace(/^@/, "")}#kudos` : "/profile";
       const tagLink = (
         <Box component={Link} href={kudosHref} sx={{ fontWeight: 600, color: "inherit", textDecoration: "none", "&:hover": { textDecoration: "underline" } }}>
@@ -256,11 +256,11 @@ function notificationText(n: AppNotification, viewerHandle: string | null): {
         </Box>
       );
       return {
-        actorLabel: "Kudos",
+        actorLabel: "New tag",
         actorHref: kudosHref,
         body: planTitle
-          ? <>{" for "}{tagLink}{" from someone at "}&ldquo;{planTitle}&rdquo;.</>
-          : <>{" for "}{tagLink}{" from someone on a plan."}</>,
+          ? <>{" for you: "}{tagLink}{" from someone at "}&ldquo;{planTitle}&rdquo;.</>
+          : <>{" for you: "}{tagLink}{" from someone on a plan."}</>,
       };
     }
     case "community_join_request": {
