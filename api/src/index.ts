@@ -3550,8 +3550,12 @@ app.put("/profile", async (c) => {
       }
     }
 
+    // Bios are rich text (same editor and allow-list as plan descriptions).
+    // The 500-character limit is on the words; the markup gets a generous
+    // separate cap so a formatted bio near the limit is not rejected.
     const BIO_MAX_LENGTH = 500;
-    if ("bio" in body && body.bio != null && String(body.bio).length > BIO_MAX_LENGTH) {
+    const BIO_MAX_HTML_LENGTH = 4000;
+    if ("bio" in body && body.bio != null && htmlToPlainText(String(body.bio)).length > BIO_MAX_LENGTH) {
       return c.json(
         { ok: false, error: { code: "INVALID_INPUT", message: `Bio must be ${BIO_MAX_LENGTH} characters or less` } },
         400,
@@ -3692,7 +3696,7 @@ app.put("/profile", async (c) => {
     const bio =
       "bio" in body && body.bio !== undefined
         ? (body.bio != null && String(body.bio).trim() !== ""
-            ? String(body.bio).trim().slice(0, BIO_MAX_LENGTH)
+            ? sanitizeDescriptionHtml(String(body.bio).trim().slice(0, BIO_MAX_HTML_LENGTH)) || null
             : null)
         : (existing?.bio ?? null);
     const email_chat_digest =

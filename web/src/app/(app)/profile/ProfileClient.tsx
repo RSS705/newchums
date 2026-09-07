@@ -12,6 +12,8 @@ import Paper from "@mui/material/Paper";
 import Slider from "@mui/material/Slider";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
+import RichTextEditor from "@/components/ui/RichTextEditor";
+import { htmlToPlainText, plainTextToEditorHtml } from "@/lib/htmlToPlainText";
 import Typography from "@mui/material/Typography";
 import InterestsRoundedIcon from "@mui/icons-material/InterestsRounded";
 import PersonOutlineRoundedIcon from "@mui/icons-material/PersonOutlineRounded";
@@ -168,7 +170,9 @@ export default function ProfileClient() {
         setGender(p.gender ?? "");
         setProfileTheme(p.profile_theme ?? "default");
         setDateOfBirth(p.date_of_birth ?? "");
-        setBio(p.bio ?? "");
+        // Bios written before the rich-text editor are plain text; they load
+        // as paragraphs so their line breaks survive.
+        setBio(plainTextToEditorHtml(p.bio ?? ""));
         setHomeAddress(p.home_city ?? "");
         setHomeLat(p.home_lat ?? null);
         setHomeLng(p.home_lng ?? null);
@@ -251,7 +255,7 @@ export default function ProfileClient() {
     if (gender !== (profile.gender ?? "")) return true;
     if (profileTheme !== (profile.profile_theme ?? "default")) return true;
     if (dateOfBirth !== (profile.date_of_birth ?? "")) return true;
-    if (bio !== (profile.bio ?? "")) return true;
+    if (bio !== plainTextToEditorHtml(profile.bio ?? "")) return true;
     if (homeAddress !== (profile.home_city ?? "")) return true;
     if (homeLat !== profile.home_lat || homeLng !== profile.home_lng) return true;
     if (travelRadiusKm !== profile.travel_radius_km) return true;
@@ -465,7 +469,8 @@ export default function ProfileClient() {
         return;
       }
     }
-    if (bio.length > MAX_BIO_LENGTH) {
+    // The limit is on what people read, not on the markup around it.
+    if (htmlToPlainText(bio).length > MAX_BIO_LENGTH) {
       toast.error(`Bio must be ${MAX_BIO_LENGTH} characters or less`);
       return;
     }
@@ -809,15 +814,15 @@ export default function ProfileClient() {
                 maxDate={dayjs()}
                 noTopMargin
               />
-              <AppTextField
+              {/* Same editor as plan descriptions: bold, italic, underline,
+                  strike, lists, a divider, links and emoji. Stored as
+                  sanitised HTML; the 500-character limit counts the text. */}
+              <RichTextEditor
                 label="Bio"
                 value={bio}
-                onChange={(e) => setBio(e.target.value)}
-                multiline
-                rows={3}
+                onChange={setBio}
                 placeholder="Tell people a bit about what you enjoy, what you're looking for, or the kind of gatherings you like."
-                inputProps={{ maxLength: MAX_BIO_LENGTH }}
-                helperText={`${bio.length}/${MAX_BIO_LENGTH}`}
+                maxLength={MAX_BIO_LENGTH}
               />
 
               {/* Profile accent dropdown */}

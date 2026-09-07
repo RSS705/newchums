@@ -5,7 +5,7 @@
  *
  * The tags are deliberately universal across hobbies and read as props
  * rather than ratings: nothing here can be read as a mark against someone.
- * Wording chosen by Rob, 2026-09-06, extended the same evening to 64 tags and then 79 with a Magic-flavoured batch
+ * Wording chosen by Rob, 2026-09-06, extended the same evening to 64 tags then 79 with a Magic-flavoured batch, then 106 on 2026-09-07
  * ("Sweaty", "Salt Miner" and friends are in-jokes his crowd uses). Users
  * see these as "tags"; kudos stays the internal name (table, routes,
  * preference key). The picker sorts alphabetically and has a search box,
@@ -92,6 +92,33 @@ export const KUDOS_TAGS = [
   { tag: "storm_brain", label: "Storm Brain", emoji: "⛈️" },
   { tag: "midrange_enjoyer", label: "Midrange Enjoyer", emoji: "🎚️" },
   { tag: "aggro_brain", label: "Aggro Brain", emoji: "🔥" },
+  { tag: "mulligan_magnet", label: "Mulligan Magnet", emoji: "🔄" },
+  { tag: "card_shark", label: "Card Shark", emoji: "🦈" },
+  { tag: "sleeper_threat", label: "Sleeper Threat", emoji: "😴" },
+  { tag: "public_enemy", label: "Public Enemy", emoji: "🚨" },
+  { tag: "no_fear", label: "No Fear", emoji: "🦁" },
+  { tag: "group_historian", label: "Group Historian", emoji: "📜" },
+  { tag: "human_gps", label: "Human GPS", emoji: "🛰️" },
+  { tag: "always_prepared", label: "Always Prepared", emoji: "🎒" },
+  { tag: "herds_cats", label: "Herds Cats", emoji: "🐈" },
+  { tag: "keeps_the_peace", label: "Keeps the Peace", emoji: "🕊️" },
+  { tag: "perfect_curve", label: "Perfect Curve", emoji: "📈" },
+  { tag: "bad_beats", label: "Bad Beats", emoji: "🎰" },
+  { tag: "emergency_contact", label: "Emergency Contact", emoji: "🆘" },
+  { tag: "the_regular", label: "The Regular", emoji: "🪑" },
+  { tag: "local_expert", label: "Local Expert", emoji: "🏙️" },
+  { tag: "group_treasurer", label: "Group Treasurer", emoji: "💰" },
+  { tag: "makes_the_playlist", label: "Makes the Playlist", emoji: "🎧" },
+  { tag: "makes_the_decision", label: "Makes the Decision", emoji: "✅" },
+  { tag: "never_forgets_a_face", label: "Never Forgets a Face", emoji: "👀" },
+  { tag: "always_on_time", label: "Always on Time", emoji: "⏰" },
+  { tag: "stays_till_the_end", label: "Stays Till the End", emoji: "🌙" },
+  { tag: "first_to_volunteer", label: "First to Volunteer", emoji: "🙋" },
+  { tag: "takes_one_for_the_team", label: "Takes One for the Team", emoji: "🫡" },
+  { tag: "asks_the_good_question", label: "Asks the Good Question", emoji: "❓" },
+  { tag: "remembers_what_you_said", label: "Remembers What You Said", emoji: "📝" },
+  { tag: "carries_the_conversation", label: "Carries the Conversation", emoji: "🎤" },
+  { tag: "keeps_everyone_posted", label: "Keeps Everyone Posted", emoji: "📬" },
 ] as const;
 
 export type KudosTag = (typeof KUDOS_TAGS)[number]["tag"];

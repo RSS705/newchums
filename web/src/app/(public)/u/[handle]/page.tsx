@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { htmlToPlainText } from "@/lib/htmlToPlainText";
 import Box from "@mui/material/Box";
 import { auth } from "@/auth";
 import { getGreetingName } from "@/lib/greeting";
@@ -51,7 +52,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     const hobbyBit = hobbyNames.length > 0
       ? `Interests: ${hobbyNames.slice(0, 5).join(", ")}.`
       : "";
-    const bioBit = (u.bio || "").trim().slice(0, 160);
+    // Bios are rich text; metadata wants the words only.
+    const bioBit = htmlToPlainText(u.bio || "").slice(0, 160);
     const description = [bioBit, hobbyBit].filter(Boolean).join(" ").slice(0, 240)
       || `${displayHandle} on NewChums.`;
 
