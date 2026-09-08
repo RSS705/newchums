@@ -270,12 +270,14 @@ function formatDateTime(iso: string): string {
   });
 }
 
-/** "RSVP by" row for the plan facts card. Both the public preview and the
- *  signed-in details card use the same icon-orb row treatment, so the
- *  deadline reads like the date and location rows around it. The deadline
- *  is informational: once it passes the row says late RSVPs are still
- *  welcome rather than closing anything. `nowMs` comes from the parent so
- *  this component stays pure for the React Compiler. */
+/** "RSVP by" row for the RSVP section. It deliberately does not sit in the
+ *  facts card next to the plan date: a second date up top was easy to
+ *  mistake for the plan date (Rob, 2026-09-08). It lives at the top of the
+ *  RSVP card for people who can RSVP, and under the "Who's in" header for
+ *  the host and the logged-out preview, which have no RSVP card. The
+ *  deadline is informational: once it passes the row says late RSVPs are
+ *  still welcome rather than closing anything. `nowMs` comes from the
+ *  parent so this component stays pure for the React Compiler. */
 function RsvpByNote({ iso, nowMs }: { iso: string; nowMs: number }) {
   const deadline = new Date(iso);
   if (isNaN(deadline.getTime())) return null;
@@ -285,8 +287,8 @@ function RsvpByNote({ iso, nowMs }: { iso: string; nowMs: number }) {
   const detail = passed
     ? "This deadline has passed. Late RSVPs are still welcome."
     : daysLeft <= 1
-      ? "Less than a day left."
-      : `${daysLeft} days left.`;
+      ? "Less than a day left to RSVP."
+      : `${daysLeft} days left to RSVP.`;
   return (
     <Stack direction="row" spacing={1.5} alignItems="flex-start">
       <Box
@@ -2254,9 +2256,6 @@ export default function EventDetailClient({
                 {event.maxSeats != null ? ` · ${event.maxSeats} max` : ""}
               </Typography>
             </Stack>
-            {event.rsvpByAt && !pubIsCanceled && new Date(event.startsAt) > new Date() && (
-              <RsvpByNote iso={event.rsvpByAt} nowMs={Date.now()} />
-            )}
             {event.description && (
               <>
                 <Divider sx={{ borderColor: "divider", opacity: 0.6 }} />
@@ -2354,6 +2353,11 @@ export default function EventDetailClient({
                     {pubGoingCount} going{pubMaybeCount > 0 ? ` · ${pubMaybeCount} maybe` : ""}
                   </Typography>
                 </Stack>
+                {/* Logged-out visitors have no RSVP card; the deadline sits
+                    with the roster here rather than beside the plan date. */}
+                {event.rsvpByAt && !pubIsCanceled && new Date(event.startsAt) > new Date() && (
+                  <RsvpByNote iso={event.rsvpByAt} nowMs={Date.now()} />
+                )}
 
                 <Stack spacing={1.75}>
                   <Stack direction="row" spacing={1.5} alignItems="center">
@@ -3106,9 +3110,6 @@ export default function EventDetailClient({
                 : ""}
             </Typography>
           </Stack>
-          {event.rsvpByAt && !isCanceled && !isPast && (
-            <RsvpByNote iso={event.rsvpByAt} nowMs={Date.now()} />
-          )}
           {event.requireReconfirmation && !event.confirmationWindowOpen && (
             <Stack direction="row" spacing={1.5} alignItems="flex-start">
               <NotificationsRoundedIcon sx={{ color: "text.secondary", fontSize: 22, mt: "1px" }} />
@@ -3291,6 +3292,13 @@ export default function EventDetailClient({
           past-plan view. */}
       {!event.isHost && !isCanceled && !isPast && (
         <AppCard>
+          {/* The RSVP deadline sits with the RSVP controls, not with the
+              plan date, so nobody reads it as the plan date. */}
+          {event.rsvpByAt && (
+            <Box sx={{ mb: 2 }}>
+              <RsvpByNote iso={event.rsvpByAt} nowMs={Date.now()} />
+            </Box>
+          )}
           {isAuthenticated === false && emailContext === "host_review" ? (
             <Stack spacing={2} sx={{ py: 1 }}>
               <Typography variant="h6" fontWeight={600}>
@@ -5310,6 +5318,13 @@ export default function EventDetailClient({
               ? ` · ${event.confirmedCount} confirmed`
               : ""}
           </Typography>
+          {/* The host has no RSVP card, so their view of the deadline they
+              set lives with the roster. */}
+          {event.isHost && event.rsvpByAt && !isCanceled && !isPast && (
+            <Box sx={{ mb: 2.5 }}>
+              <RsvpByNote iso={event.rsvpByAt} nowMs={Date.now()} />
+            </Box>
+          )}
           <Stack spacing={0}>
             {/* RSVP'd participants */}
             {rsvps.map((r) => (
