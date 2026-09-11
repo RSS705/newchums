@@ -376,7 +376,7 @@ export default function AdminCommunitiesClient() {
                   </TableCell>
                   <TableCell sx={{ display: { xs: "none", md: "table-cell" } }}>
                     <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
-                      {c.join_mode === "approval_required" ? "Approval" : "Open"}
+                      {c.join_mode === "approval_required" ? "Approval" : c.join_mode === "invite_only" ? "Invite only" : "Open"}
                     </Typography>
                   </TableCell>
                   <TableCell align="right">

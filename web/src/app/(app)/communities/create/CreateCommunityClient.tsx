@@ -66,7 +66,7 @@ export default function CreateCommunityClient() {
   const [website, setWebsite] = useState("");
   const [discordUrl, setDiscordUrl] = useState("");
   const [whatsappUrl, setWhatsappUrl] = useState("");
-  const [access, setAccess] = useState<"open" | "private">("open");
+  const [access, setAccess] = useState<"open" | "approval_required" | "invite_only">("open");
   // Specialized community: the community's home becomes a game (MTG
   // Prediction Challenge). Set once here; it cannot change afterwards.
   const [specialized, setSpecialized] = useState(false);
@@ -644,14 +644,14 @@ export default function CreateCommunityClient() {
                 color="text.disabled"
                 sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
               >
-                Private communities require your approval before someone can join.
+                Choose who can find this community and how people join.
               </Typography>
             </Box>
           </Stack>
 
           <RadioGroup
             value={access}
-            onChange={(e) => setAccess(e.target.value as "open" | "private")}
+            onChange={(e) => setAccess(e.target.value as "open" | "approval_required" | "invite_only")}
           >
             <FormControlLabel
               value="open"
@@ -667,19 +667,37 @@ export default function CreateCommunityClient() {
               sx={{ alignItems: "flex-start", mb: 1.5 }}
             />
             <FormControlLabel
-              value="private"
+              value="approval_required"
               control={<Radio />}
               label={
                 <Box>
-                  <Typography variant="body1" fontWeight={500}>Private</Typography>
+                  <Typography variant="body1" fontWeight={500}>Approval required</Typography>
                   <Typography variant="caption" color="text.secondary">
-                    Discoverable, but plans and members are only visible to approved members
+                    Discoverable, but you approve each request to join. Plans and members are only visible to members.
+                  </Typography>
+                </Box>
+              }
+              sx={{ alignItems: "flex-start", mb: 1.5 }}
+            />
+            <FormControlLabel
+              value="invite_only"
+              control={<Radio />}
+              label={
+                <Box>
+                  <Typography variant="body1" fontWeight={500}>Invite only</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Hidden from the directory and search. Anyone with the invite link joins instantly, no approval needed.
                   </Typography>
                 </Box>
               }
               sx={{ alignItems: "flex-start" }}
             />
           </RadioGroup>
+          {access === "invite_only" && (
+            <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.5 }}>
+              The invite link is created with the community. Copy it from the community page with the Invite link button, or reset it any time from Edit.
+            </Typography>
+          )}
         </Stack>
       </AppCard>
 

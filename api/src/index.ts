@@ -9361,6 +9361,7 @@ app.get("/public/users/:handle/communities", async (c) => {
       WHERE cm.user_id = ${owner.id}
         AND cm.status = 'active'
         AND COALESCE(c.status, 'active') = 'active'
+        AND c.join_mode <> 'invite_only'
       ORDER BY c.name ASC
     `) as Array<{
       id: string;
@@ -9398,7 +9399,25 @@ app.get("/public/users/:handle/communities", async (c) => {
 // ─── Communities ─────────────────────────────────────────────────────────────
 
 const VALID_COMMUNITY_VISIBILITY = ["public", "private"] as const;
-const VALID_COMMUNITY_JOIN_MODE = ["open", "approval_required"] as const;
+const VALID_COMMUNITY_JOIN_MODE = ["open", "approval_required", "invite_only"] as const;
+
+/** The single "Access" setting the forms send, mapped onto the two columns.
+ *  "private" is the old name for approval_required and is still accepted. */
+function resolveCommunityAccess(access: string): { visibility: string; joinMode: string } | null {
+  if (access === "open") return { visibility: "public", joinMode: "open" };
+  if (access === "approval_required" || access === "private") return { visibility: "private", joinMode: "approval_required" };
+  if (access === "invite_only") return { visibility: "private", joinMode: "invite_only" };
+  return null;
+}
+
+/** Secret for an invite-only community's join link: 14 characters from an
+ *  alphabet without look-alikes (no i, l, o, 0, 1), about 69 bits. */
+const INVITE_CODE_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
+function generateInviteCode(): string {
+  const bytes = new Uint8Array(14);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => INVITE_CODE_ALPHABET[b % INVITE_CODE_ALPHABET.length]).join("");
+}
 const COMMUNITY_SLUG_RE = /^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$/;
 
 /** Minimum age of an unresolved community join request before the requester
@@ -9524,15 +9543,15 @@ app.post("/communities", async (c) => {
   const description = body.description ? String(body.description).trim().slice(0, 2000) : null;
   if (!description) return c.json({ ok: false, error: "VALIDATION", message: "Description is required", field: "description" }, 400);
 
-  // Unified access model: "open" or "private". Maps to visibility + join_mode.
-  // Also accepts legacy visibility/join_mode fields for backward compatibility.
+  // Unified access model: "open", "approval_required" (formerly "private")
+  // or "invite_only". Maps to visibility + join_mode. Also accepts the legacy
+  // visibility/join_mode fields for backward compatibility.
   let visibility: string;
   let joinMode: string;
   if (body.access !== undefined) {
-    const access = String(body.access);
-    if (access === "open") { visibility = "public"; joinMode = "open"; }
-    else if (access === "private") { visibility = "private"; joinMode = "approval_required"; }
-    else return c.json({ ok: false, error: "VALIDATION", message: "Access must be 'open' or 'private'", field: "access" }, 400);
+    const resolved = resolveCommunityAccess(String(body.access));
+    if (!resolved) return c.json({ ok: false, error: "VALIDATION", message: "Access must be 'open', 'approval_required' or 'invite_only'", field: "access" }, 400);
+    visibility = resolved.visibility; joinMode = resolved.joinMode;
   } else {
     visibility = String(body.visibility ?? "public");
     if (!VALID_COMMUNITY_VISIBILITY.includes(visibility as typeof VALID_COMMUNITY_VISIBILITY[number]))
@@ -9588,8 +9607,8 @@ app.post("/communities", async (c) => {
     if (existing.length > 0) return c.json({ ok: false, error: "SLUG_TAKEN", message: "That handle is already taken" }, 409);
 
     const rows = (await sql`
-      INSERT INTO newchums.communities (name, slug, description, visibility, join_mode, chat_enabled, is_online, website, discord_url, whatsapp_url, location_name, location_address, location_lat, location_lng, owner_user_id, operating_hours, specialization)
-      VALUES (${name}, ${slug}, ${description}, ${visibility}, ${joinMode}, ${chatEnabled}, ${isOnline}, ${website}, ${discordUrl}, ${whatsappUrl}, ${locationName}, ${locationAddress}, ${locationLat}, ${locationLng}, ${userId}, ${operatingHours ? JSON.stringify(operatingHours) : null}::jsonb, ${specialization})
+      INSERT INTO newchums.communities (name, slug, description, visibility, join_mode, chat_enabled, is_online, website, discord_url, whatsapp_url, location_name, location_address, location_lat, location_lng, owner_user_id, operating_hours, specialization, invite_code)
+      VALUES (${name}, ${slug}, ${description}, ${visibility}, ${joinMode}, ${chatEnabled}, ${isOnline}, ${website}, ${discordUrl}, ${whatsappUrl}, ${locationName}, ${locationAddress}, ${locationLat}, ${locationLng}, ${userId}, ${operatingHours ? JSON.stringify(operatingHours) : null}::jsonb, ${specialization}, ${joinMode === "invite_only" ? generateInviteCode() : null})
       RETURNING id, slug, created_at
     `) as { id: string; slug: string; created_at: string }[];
     const community = rows[0];
@@ -9751,6 +9770,11 @@ app.get("/communities", async (c) => {
     const viewerRoleExpr = userId
       ? sql`(SELECT vcm.role FROM newchums.community_members vcm WHERE vcm.community_id = c.id AND vcm.user_id = ${userId} AND vcm.status = 'active' LIMIT 1)`
       : sql`NULL`;
+    // Invite-only communities are not discoverable: the directory and search
+    // only list them to their own members.
+    const inviteOnlyMemberExpr = userId
+      ? sql`EXISTS (SELECT 1 FROM newchums.community_members vcm2 WHERE vcm2.community_id = c.id AND vcm2.user_id = ${userId} AND vcm2.status = 'active')`
+      : sql`false`;
 
     const communities = (await sql`
       SELECT c.id, c.slug, c.name, c.description, c.visibility, c.join_mode, c.avatar_key, c.banner_key, c.specialization,
@@ -9766,6 +9790,7 @@ app.get("/communities", async (c) => {
          WHERE ci3.community_id = c.id) AS hobbies
       FROM newchums.communities c
       WHERE COALESCE(c.status, 'active') = 'active'
+        AND (c.join_mode <> 'invite_only' OR ${inviteOnlyMemberExpr})
         ${q ? sql`AND (c.name ILIKE ${q} OR c.slug ILIKE ${q})` : sql``}
         ${distanceFilter}
         ${hobbyFilter}
@@ -9934,6 +9959,8 @@ app.get("/communities/slug-available", async (c) => {
 /** GET /communities/:slug, community detail */
 app.get("/communities/:slug", async (c) => {
   const slug = c.req.param("slug");
+  // ?invite=<code> is the credential for invite-only communities.
+  const inviteParam = (c.req.query("invite") ?? "").trim() || null;
   const payload = await requireAuth(c);
   const sql = getSql(c.env);
 
@@ -9954,6 +9981,7 @@ app.get("/communities/:slug", async (c) => {
     `) as Record<string, unknown>[];
     if (!rows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     const community = rows[0];
+    const viewerInvited = community.join_mode === "invite_only" && inviteParam !== null && inviteParam === community.invite_code;
 
     if (community.status === "closed" && !isSuperAdmin) {
       return c.json({
@@ -10010,6 +10038,7 @@ app.get("/communities/:slug", async (c) => {
           viewerMembership: null,
           viewerPendingRequest: false,
           viewerDeclinedRequest: false,
+          viewerInvited,
           restricted: true,
         });
       }
@@ -10126,6 +10155,7 @@ app.get("/communities/:slug", async (c) => {
           viewerPendingRequestCooldownDays: COMMUNITY_JOIN_REQUEST_COOLDOWN_DAYS,
           viewerDeclinedRequest: declinedRows.length > 0,
           viewerDeclinedDaysUntilRetriable: declinedCooldown.daysRemaining,
+          viewerInvited,
           restricted: true,
         });
       }
@@ -10254,10 +10284,15 @@ app.get("/communities/:slug", async (c) => {
       viewerAnnouncementMuted = muteRows.length > 0;
     }
 
+    // The invite link secret is for members only. Public communities serve
+    // this full shape to everyone, so strip it unless the viewer belongs.
+    const communityOut: Record<string, unknown> = { ...(community as Record<string, unknown>) };
+    if (!(isSuperAdmin || viewerMembership?.status === "active")) delete communityOut.invite_code;
+
     return c.json({
       ok: true,
       community: {
-        ...(community as Record<string, unknown>),
+        ...communityOut,
         owner_avatar_url: ownerAvatarUrl,
         hobbies: communityHobbies,
       },
@@ -10290,7 +10325,7 @@ app.patch("/communities/:slug", async (c) => {
   const userId = userRows[0].id;
   const isSuperAdmin = userRows[0].role === "super_admin";
 
-  const communityRows = (await sql`SELECT id, owner_user_id FROM newchums.communities WHERE slug = ${slug} LIMIT 1`) as { id: string; owner_user_id: string }[];
+  const communityRows = (await sql`SELECT id, owner_user_id, join_mode, invite_code FROM newchums.communities WHERE slug = ${slug} LIMIT 1`) as { id: string; owner_user_id: string; join_mode: string; invite_code: string | null }[];
   if (!communityRows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
   const community = communityRows[0];
   if (community.owner_user_id !== userId && !isSuperAdmin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
@@ -10316,10 +10351,15 @@ app.patch("/communities/:slug", async (c) => {
     }
     // Unified access model: prefer "access" field, fall back to legacy visibility/join_mode
     if (body.access !== undefined) {
-      const access = String(body.access);
-      if (access === "open") { updates.push("visibility"); vals.push("public"); updates.push("join_mode"); vals.push("open"); }
-      else if (access === "private") { updates.push("visibility"); vals.push("private"); updates.push("join_mode"); vals.push("approval_required"); }
-      else return c.json({ ok: false, error: "VALIDATION", message: "Access must be 'open' or 'private'" }, 400);
+      const resolved = resolveCommunityAccess(String(body.access));
+      if (!resolved) return c.json({ ok: false, error: "VALIDATION", message: "Access must be 'open', 'approval_required' or 'invite_only'" }, 400);
+      updates.push("visibility"); vals.push(resolved.visibility);
+      updates.push("join_mode"); vals.push(resolved.joinMode);
+      // Entering invite-only mode mints the link secret. Saving the form
+      // while already invite-only keeps the existing link working.
+      if (resolved.joinMode === "invite_only" && (community.join_mode !== "invite_only" || !community.invite_code)) {
+        updates.push("invite_code"); vals.push(generateInviteCode());
+      }
     } else {
       if (body.visibility !== undefined) {
         if (!VALID_COMMUNITY_VISIBILITY.includes(String(body.visibility) as typeof VALID_COMMUNITY_VISIBILITY[number]))
@@ -10424,6 +10464,7 @@ app.patch("/communities/:slug", async (c) => {
     if (fieldMap.description !== undefined) await sql`UPDATE newchums.communities SET description = ${fieldMap.description as string | null}, updated_at = now() WHERE id = ${cid}`;
     if (fieldMap.visibility !== undefined) await sql`UPDATE newchums.communities SET visibility = ${fieldMap.visibility as string}, updated_at = now() WHERE id = ${cid}`;
     if (fieldMap.join_mode !== undefined) await sql`UPDATE newchums.communities SET join_mode = ${fieldMap.join_mode as string}, updated_at = now() WHERE id = ${cid}`;
+    if (fieldMap.invite_code !== undefined) await sql`UPDATE newchums.communities SET invite_code = ${fieldMap.invite_code as string}, updated_at = now() WHERE id = ${cid}`;
     if (fieldMap.chat_enabled !== undefined) await sql`UPDATE newchums.communities SET chat_enabled = ${fieldMap.chat_enabled as boolean}, updated_at = now() WHERE id = ${cid}`;
     if (fieldMap.schedule_enabled !== undefined) await sql`UPDATE newchums.communities SET schedule_enabled = ${fieldMap.schedule_enabled as boolean}, updated_at = now() WHERE id = ${cid}`;
     if (fieldMap.is_online !== undefined) await sql`UPDATE newchums.communities SET is_online = ${fieldMap.is_online as boolean}, updated_at = now() WHERE id = ${cid}`;
@@ -10499,6 +10540,29 @@ app.delete("/communities/:slug", async (c) => {
 
 // ─── Community membership ───────────────────────────────────────────────────
 
+/** POST /communities/:slug/invite-code/reset, mint a new invite link for an
+ *  invite-only community (owner or super admin). The old link stops working
+ *  the moment this returns. */
+app.post("/communities/:slug/invite-code/reset", async (c) => {
+  const slug = c.req.param("slug");
+  const payload = await requireAuth(c);
+  if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const sql = getSql(c.env);
+  const userRows = (await sql`SELECT id, role FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string; role: string | null }[];
+  if (!userRows[0]) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  try {
+    const rows = (await sql`SELECT id, owner_user_id FROM newchums.communities WHERE slug = ${slug} LIMIT 1`) as { id: string; owner_user_id: string }[];
+    if (!rows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    if (rows[0].owner_user_id !== userRows[0].id && userRows[0].role !== "super_admin") return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+    const code = generateInviteCode();
+    await sql`UPDATE newchums.communities SET invite_code = ${code}, updated_at = now() WHERE id = ${rows[0].id}`;
+    return c.json({ ok: true, invite_code: code });
+  } catch (err) {
+    console.error("[POST /communities/:slug/invite-code/reset]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
 /** POST /communities/:id/join, join or request to join */
 app.post("/communities/:id/join", async (c) => {
   const communityId = c.req.param("id");
@@ -10509,15 +10573,17 @@ app.post("/communities/:id/join", async (c) => {
 
   // Parse optional message from body
   let joinMessage: string | null = null;
+  let inviteCode: string | null = null;
   try {
     const body = await c.req.json();
     if (body.message && typeof body.message === "string") {
       joinMessage = body.message.trim().slice(0, 500) || null;
     }
+    if (typeof body.invite_code === "string") inviteCode = body.invite_code.trim() || null;
   } catch { /* body may be empty for open joins */ }
 
   try {
-    const communityRows = (await sql`SELECT id, slug, join_mode, visibility, owner_user_id, name FROM newchums.communities WHERE id = ${communityId} LIMIT 1`) as { id: string; slug: string; join_mode: string; visibility: string; owner_user_id: string; name: string }[];
+    const communityRows = (await sql`SELECT id, slug, join_mode, visibility, owner_user_id, name, invite_code FROM newchums.communities WHERE id = ${communityId} LIMIT 1`) as { id: string; slug: string; join_mode: string; visibility: string; owner_user_id: string; name: string; invite_code: string | null }[];
     if (!communityRows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     const community = communityRows[0];
 
@@ -10529,6 +10595,13 @@ app.post("/communities/:id/join", async (c) => {
     // join_mode. Returning ok:true with a distinct status lets the client
     // surface a banner instead of treating it like an error.
     if (existingMemberRows[0]?.status === "removed") return c.json({ ok: true, status: "removed" });
+
+    // Invite only: the link's code is the whole credential. With it, the join
+    // is instant (falls through to the open path); without it there is
+    // nothing to request.
+    if (community.join_mode === "invite_only" && (!inviteCode || inviteCode !== community.invite_code)) {
+      return c.json({ ok: false, error: "INVITE_REQUIRED", message: "This community is invite only. Ask a member for the invite link." }, 403);
+    }
 
     if (community.join_mode === "approval_required") {
       // Partial unique index on (community_id, user_id) WHERE status='pending'

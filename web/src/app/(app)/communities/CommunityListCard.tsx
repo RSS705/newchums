@@ -274,6 +274,9 @@ export default function CommunityListCard({
       {c.join_mode === "approval_required" && (
         <Chip label="Approval required" size="small" color="warning" variant="outlined" sx={{ height: 20, fontSize: "0.6875rem", flexShrink: 0 }} />
       )}
+      {c.join_mode === "invite_only" && (
+        <Chip label="Invite only" size="small" variant="outlined" sx={{ height: 20, fontSize: "0.6875rem", flexShrink: 0, borderColor: "divider", color: "text.secondary" }} />
+      )}
     </Stack>
   );
 

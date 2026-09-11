@@ -55,6 +55,8 @@ type CommunityData = {
   description: string | null;
   visibility: string;
   join_mode: string;
+  /** Secret behind the invite link; only present for members of invite-only communities. */
+  invite_code?: string | null;
   chat_enabled: boolean;
   /** 'mtg_prediction_challenge' turns the body into the game view (header kept). */
   specialization?: string | null;
@@ -214,6 +216,10 @@ export default function CommunityDetailClient({
   // lands on the right tab, then ignored so manual tab clicks aren't
   // fought by the URL state.
   const initialTabParam = searchParams.get("tab");
+  // ?invite=<code> is the credential for invite-only communities. It rides
+  // along on the detail fetch (so the API can say the viewer is invited) and
+  // on the join call.
+  const inviteParam = searchParams.get("invite");
   const hasAppliedInitialTab = useRef(false);
   const toast = useToast();
   const slug = params.slug as string;
@@ -233,6 +239,7 @@ export default function CommunityDetailClient({
   const [viewerDeclinedDaysUntilRetriable, setViewerDeclinedDaysUntilRetriable] = useState<number | null>(null);
   const viewerDeclinedRetriable = viewerDeclinedRequest && viewerDeclinedDaysUntilRetriable === null;
   const [restricted, setRestricted] = useState(false);
+  const [viewerInvited, setViewerInvited] = useState(false);
   const [pendingRequests, setPendingRequests] = useState<JoinRequest[]>([]);
   const [declinedRequests, setDeclinedRequests] = useState<JoinRequest[]>([]);
   const [undoDeclineTarget, setUndoDeclineTarget] = useState<JoinRequest | null>(null);
@@ -362,7 +369,7 @@ export default function CommunityDetailClient({
         useAuth = !!token;
       }
       setIsAuthenticated(useAuth);
-      const res = await apiFetch(`/communities/${slug}`, { auth: useAuth });
+      const res = await apiFetch(`/communities/${slug}${inviteParam ? `?invite=${encodeURIComponent(inviteParam)}` : ""}`, { auth: useAuth });
       const data = await res.json();
       if (data.ok) {
         if (data.community?.status === "closed") {
@@ -388,6 +395,7 @@ export default function CommunityDetailClient({
               : null
           );
           setRestricted(data.restricted ?? false);
+          setViewerInvited(data.viewerInvited === true);
           setPendingRequests(data.pendingRequests ?? []);
           setDeclinedRequests(Array.isArray(data.declinedRequests) ? data.declinedRequests : []);
           setHasUnseenAnnouncements(data.hasUnseenAnnouncements === true);
@@ -396,7 +404,7 @@ export default function CommunityDetailClient({
       }
     } catch { /* noop */ }
     setLoading(false);
-  }, [slug, isAuthenticatedFromServer]);
+  }, [slug, isAuthenticatedFromServer, inviteParam]);
 
   // Clear the announcements badge in-memory after the tab successfully
   // stamps the viewer's `last_seen_at`. Local-only, no API round trip,
@@ -670,7 +678,7 @@ export default function CommunityDetailClient({
       return;
     }
     const viewerIsOwner = viewerMembership?.role === "owner";
-    if (initialTabParam === "requests" && viewerIsOwner && community.visibility === "private") {
+    if (initialTabParam === "requests" && viewerIsOwner && community.join_mode === "approval_required") {
       setTabIndex(tabIndexMap.requests);
     } else if (initialTabParam === "members") {
       setTabIndex(tabIndexMap.members);
@@ -688,7 +696,8 @@ export default function CommunityDetailClient({
     if (!community) return;
     setJoining(true);
     try {
-      const msgBody = joinRequestMessage.trim() ? { message: joinRequestMessage.trim() } : {};
+      const msgBody: Record<string, string> = joinRequestMessage.trim() ? { message: joinRequestMessage.trim() } : {};
+      if (inviteParam) msgBody.invite_code = inviteParam;
       const res = await apiFetch(`/communities/${community.id}/join`, {
         auth: true, method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -731,6 +740,8 @@ export default function CommunityDetailClient({
         } else if (data.status === "already_member") {
           toast.info("You're already a member");
         }
+      } else if (data.error === "INVITE_REQUIRED") {
+        toast.error(data.message || "This community is invite only.");
       }
     } catch { toast.error("Something went wrong"); }
     setJoining(false);
@@ -808,11 +819,15 @@ export default function CommunityDetailClient({
     // The slug URL is the canonical public / shareable destination for a
     // community. Any viewer (logged in or not) can open it and see either
     // the full detail page (public) or a restricted preview (private), so
-    // the raw URL is all we need, no share_token appended.
-    const url = `${window.location.origin}/communities/${slug}`;
+    // the raw URL is all we need. Invite-only communities are the exception:
+    // members copy the invite link, whose code lets the recipient join.
+    const inviteOnlyLink = community?.join_mode === "invite_only" && community.invite_code;
+    const url = inviteOnlyLink
+      ? `${window.location.origin}/communities/${slug}?invite=${community.invite_code}`
+      : `${window.location.origin}/communities/${slug}`;
     try {
       await navigator.clipboard.writeText(url);
-      toast.success("Link copied to clipboard");
+      toast.success(inviteOnlyLink ? "Invite link copied. Anyone with it can join." : "Link copied to clipboard");
     } catch {
       toast.error("Could not copy link");
     }
@@ -1103,7 +1118,7 @@ export default function CommunityDetailClient({
                 </Typography>
                 <Chip
                   icon={<LockRoundedIcon sx={{ fontSize: "13px !important" }} />}
-                  label="Private"
+                  label={community.join_mode === "invite_only" ? "Invite only" : "Approval required"}
                   size="small"
                   variant="outlined"
                   sx={{ flexShrink: 0, height: 22, fontSize: "0.6875rem", fontWeight: 500, borderRadius: 1.5, borderColor: "divider", color: "text.secondary" }}
@@ -1313,7 +1328,7 @@ export default function CommunityDetailClient({
                     Inside this community
                   </Typography>
                   <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
-                    Approved members unlock everything below.
+                    {community.join_mode === "invite_only" ? "Members unlock everything below." : "Approved members unlock everything below."}
                   </Typography>
                 </Box>
               </Stack>
@@ -1343,7 +1358,15 @@ export default function CommunityDetailClient({
         )}
 
         {isAuthenticated === false ? (
-          <SignInToJoinCard slug={slug} variant="request" />
+          community.join_mode === "invite_only" && !viewerInvited ? (
+            <InviteOnlyNotice />
+          ) : (
+            <SignInToJoinCard
+              slug={slug}
+              variant={community.join_mode === "invite_only" ? "join" : "request"}
+              inviteCode={community.join_mode === "invite_only" ? inviteParam : null}
+            />
+          )
         ) : viewerRemoved ? (
           <Box
             sx={{
@@ -1382,6 +1405,12 @@ export default function CommunityDetailClient({
               </Box>
             </Stack>
           </Box>
+        ) : community.join_mode === "invite_only" ? (
+          viewerInvited ? (
+            <InvitedJoinCard onJoin={handleJoin} joining={joining} />
+          ) : (
+            <InviteOnlyNotice />
+          )
         ) : viewerPendingRequest ? (
           <PendingRequestStatusBlock
             sentLabel={viewerPendingRequestSentLabel}
@@ -1562,7 +1591,7 @@ export default function CommunityDetailClient({
               {community.visibility === "private" && (
                 <Chip
                   icon={<LockRoundedIcon sx={{ fontSize: "13px !important" }} />}
-                  label="Private"
+                  label={community.join_mode === "invite_only" ? "Invite only" : "Approval required"}
                   size="small"
                   variant="outlined"
                   sx={{ flexShrink: 0, height: 22, fontSize: "0.6875rem", fontWeight: 500, borderRadius: 1.5, borderColor: "divider", color: "text.secondary" }}
@@ -1893,7 +1922,7 @@ export default function CommunityDetailClient({
               justifyContent: { xs: "flex-start", sm: "flex-end" },
             }}
           >
-            <Tooltip title="Copy a link to this community">
+            <Tooltip title={community.join_mode === "invite_only" && community.invite_code ? "Copy the invite link. Anyone with it can join." : "Copy a link to this community"}>
               <Button
                 variant="text"
                 size="small"
@@ -1907,7 +1936,7 @@ export default function CommunityDetailClient({
                   "&:hover": { bgcolor: "action.hover", color: "text.primary" },
                 }}
               >
-                Share
+                {community.join_mode === "invite_only" && community.invite_code ? "Invite link" : "Share"}
               </Button>
             </Tooltip>
             {isOwner && (
@@ -2027,9 +2056,14 @@ export default function CommunityDetailClient({
               Any plans you&apos;ve RSVP&apos;d to will stay on your
               schedule.
             </Typography>
-            {community?.visibility === "private" ? (
+            {community?.join_mode === "invite_only" ? (
               <Typography variant="body2" color="text.secondary">
-                Because this is a private community, rejoining later means
+                Because this community is invite only, rejoining later needs
+                the invite link again.
+              </Typography>
+            ) : community?.visibility === "private" ? (
+              <Typography variant="body2" color="text.secondary">
+                Because this community requires approval, rejoining later means
                 sending a new request to the owner.
               </Typography>
             ) : (
@@ -2235,7 +2269,7 @@ export default function CommunityDetailClient({
               transition: "color 0.15s ease, background-color 0.15s ease",
             }}
           />
-          {isOwner && community.visibility === "private" && (
+          {isOwner && community.join_mode === "approval_required" && (
             <Tab
               label={`Requests${pendingRequests.length > 0 ? ` (${pendingRequests.length})` : ""}`}
               icon={<AssignmentIndRoundedIcon sx={{ fontSize: 18 }} />}
@@ -2688,7 +2722,7 @@ export default function CommunityDetailClient({
         )}
 
         {/* Requests tab (owner of private community) */}
-        {tabIndex === tabIndexMap.requests && isOwner && community.visibility === "private" && (
+        {tabIndex === tabIndexMap.requests && isOwner && community.join_mode === "approval_required" && (
           <>
             {pendingRequests.length === 0 ? (
               <AppCard>
@@ -3206,11 +3240,15 @@ function PendingRequestStatusBlock({
 function SignInToJoinCard({
   slug,
   variant,
+  inviteCode = null,
 }: {
   slug: string;
   variant: "request" | "join";
+  /** Invite-only communities: keep the code on the return path so the
+   *  viewer can join as soon as they are signed in. */
+  inviteCode?: string | null;
 }) {
-  const next = `/communities/${slug}`;
+  const next = inviteCode ? `/communities/${slug}?invite=${encodeURIComponent(inviteCode)}` : `/communities/${slug}`;
   const href = `/login?next=${encodeURIComponent(next)}`;
   // Calm, account-agnostic copy. Cold / QR traffic may not have a NewChums
   // account yet, the subtitle frames sign-up as the natural next step without
@@ -3249,6 +3287,72 @@ function SignInToJoinCard({
             sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
           >
             {buttonLabel}
+          </Button>
+        </Box>
+      </Stack>
+    </AppCard>
+  );
+}
+
+/** Restricted view of an invite-only community when the viewer arrived
+ *  without the invite link. There is nothing to request, so no button. */
+function InviteOnlyNotice() {
+  return (
+    <Box
+      sx={{
+        p: 2.5, borderRadius: 2,
+        border: "1px solid", borderColor: "divider",
+        bgcolor: "action.hover",
+      }}
+    >
+      <Stack direction="row" spacing={1.5} alignItems="flex-start">
+        <LockRoundedIcon sx={{ color: "text.secondary", mt: "2px" }} />
+        <Box>
+          <Typography variant="body2" fontWeight={600} sx={{ mb: 0.25 }}>
+            This community is invite only
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+            Ask a member for the invite link. Opening it lets you join straight away.
+          </Typography>
+        </Box>
+      </Stack>
+    </Box>
+  );
+}
+
+/** The invite link checked out: one tap joins, no approval step. */
+function InvitedJoinCard({ onJoin, joining }: { onJoin: () => void; joining: boolean }) {
+  return (
+    <AppCard>
+      <Stack spacing={2}>
+        <Stack direction="row" spacing={2} alignItems="center">
+          <Box
+            sx={{
+              width: 40, height: 40, borderRadius: 2,
+              bgcolor: "primary.light",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            <AssignmentIndRoundedIcon sx={{ fontSize: 20, color: "primary.main" }} />
+          </Box>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="body1" fontWeight={700} sx={{ lineHeight: 1.3 }}>
+              You&rsquo;re invited
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Your invite link checks out. Join to see the plans and members.
+            </Typography>
+          </Box>
+        </Stack>
+        <Box>
+          <Button
+            variant="contained"
+            onClick={onJoin}
+            disabled={joining}
+            sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
+          >
+            {joining ? <CircularProgress size={18} color="inherit" /> : "Join this community"}
           </Button>
         </Box>
       </Stack>

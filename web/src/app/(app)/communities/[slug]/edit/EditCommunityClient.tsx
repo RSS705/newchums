@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
@@ -42,6 +42,12 @@ import {
 
 const FIELD_ORDER = ["name", "description", "hobby", "location", "website"] as const;
 
+/** `useSyncExternalStore` plumbing for the page origin: nothing to subscribe
+ *  to (the origin never changes), a client snapshot and an empty server one. */
+const subscribeToNothing = () => () => {};
+const getPageOrigin = () => window.location.origin;
+const getServerPageOrigin = () => "";
+
 export default function EditCommunityClient() {
   const params = useParams();
   const router = useRouter();
@@ -66,7 +72,14 @@ export default function EditCommunityClient() {
   const [website, setWebsite] = useState("");
   const [discordUrl, setDiscordUrl] = useState("");
   const [whatsappUrl, setWhatsappUrl] = useState("");
-  const [access, setAccess] = useState<"open" | "private">("open");
+  const [access, setAccess] = useState<"open" | "approval_required" | "invite_only">("open");
+  // Invite-only communities: the link secret, present in the owner's
+  // detail payload. Null until the mode has been saved once.
+  const [inviteCode, setInviteCode] = useState<string | null>(null);
+  const [resettingInvite, setResettingInvite] = useState(false);
+  // Page origin for displaying the invite link; "" during server render so
+  // hydration matches, then the real origin on the client.
+  const pageOrigin = useSyncExternalStore(subscribeToNothing, getPageOrigin, getServerPageOrigin);
   // Per-community feature flag: when true, the public community page
   // shows the Schedule tab. Defaults to true via migration 097 for both
   // new and existing communities. Owners can flip it off here to hide
@@ -135,7 +148,8 @@ export default function EditCommunityClient() {
         setCommunityId(c.id);
         setName(c.name || "");
         setDescription(c.description || "");
-        setAccess(c.visibility === "private" ? "private" : "open");
+        setAccess(c.join_mode === "invite_only" ? "invite_only" : c.visibility === "private" ? "approval_required" : "open");
+        setInviteCode(typeof c.invite_code === "string" && c.invite_code ? c.invite_code : null);
         setIsOnline(c.is_online === true);
         setWebsite(c.website || "");
         setDiscordUrl(c.discord_url || "");
@@ -295,6 +309,32 @@ export default function EditCommunityClient() {
       }
     } catch { toast.error("Something went wrong"); }
     setBannerRemoving(false);
+  };
+
+  const inviteLink = inviteCode ? `${pageOrigin}/communities/${slug}?invite=${inviteCode}` : "";
+
+  const copyInviteLink = async () => {
+    if (!inviteCode) return;
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/communities/${slug}?invite=${inviteCode}`);
+      toast.success("Invite link copied");
+    } catch { toast.error("Could not copy the link"); }
+  };
+
+  /** Mint a new invite link. The old one stops working straight away. */
+  const resetInviteLink = async () => {
+    setResettingInvite(true);
+    try {
+      const res = await apiFetch(`/communities/${slug}/invite-code/reset`, { auth: true, method: "POST" });
+      const data = await res.json();
+      if (data.ok && typeof data.invite_code === "string") {
+        setInviteCode(data.invite_code);
+        toast.success("Invite link reset. The old link no longer works.");
+      } else {
+        toast.error(data.message || "Could not reset the link");
+      }
+    } catch { toast.error("Something went wrong"); }
+    setResettingInvite(false);
   };
 
   const handleSave = async () => {
@@ -793,14 +833,14 @@ export default function EditCommunityClient() {
                 color="text.disabled"
                 sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
               >
-                Private communities require your approval before someone can join.
+                Choose who can find this community and how people join.
               </Typography>
             </Box>
           </Stack>
 
           <RadioGroup
             value={access}
-            onChange={(e) => setAccess(e.target.value as "open" | "private")}
+            onChange={(e) => setAccess(e.target.value as "open" | "approval_required" | "invite_only")}
           >
             <FormControlLabel
               value="open"
@@ -816,19 +856,69 @@ export default function EditCommunityClient() {
               sx={{ alignItems: "flex-start", mb: 1.5 }}
             />
             <FormControlLabel
-              value="private"
+              value="approval_required"
               control={<Radio />}
               label={
                 <Box>
-                  <Typography variant="body1" fontWeight={500}>Private</Typography>
+                  <Typography variant="body1" fontWeight={500}>Approval required</Typography>
                   <Typography variant="caption" color="text.secondary">
-                    Discoverable, but plans and members are only visible to approved members
+                    Discoverable, but you approve each request to join. Plans and members are only visible to members.
+                  </Typography>
+                </Box>
+              }
+              sx={{ alignItems: "flex-start", mb: 1.5 }}
+            />
+            <FormControlLabel
+              value="invite_only"
+              control={<Radio />}
+              label={
+                <Box>
+                  <Typography variant="body1" fontWeight={500}>Invite only</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Hidden from the directory and search. Anyone with the invite link joins instantly, no approval needed.
                   </Typography>
                 </Box>
               }
               sx={{ alignItems: "flex-start" }}
             />
           </RadioGroup>
+          {access === "invite_only" && (
+            <Box sx={{ p: 2, borderRadius: 2, border: "1px solid", borderColor: "divider", bgcolor: "action.hover" }}>
+              <Typography variant="body2" fontWeight={700} sx={{ mb: 0.5 }}>Invite link</Typography>
+              {inviteCode ? (
+                <>
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ wordBreak: "break-all", mb: 1.5, fontFamily: "monospace", fontSize: "0.8125rem", lineHeight: 1.5 }}
+                  >
+                    {inviteLink}
+                  </Typography>
+                  <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                    <Button size="small" variant="outlined" onClick={copyInviteLink} sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}>
+                      Copy link
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="text"
+                      onClick={resetInviteLink}
+                      disabled={resettingInvite}
+                      sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, color: "text.secondary" }}
+                    >
+                      {resettingInvite ? "Resetting…" : "Reset link"}
+                    </Button>
+                  </Stack>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1, lineHeight: 1.5 }}>
+                    Resetting makes the old link stop working. Members can also copy the link from the community page.
+                  </Typography>
+                </>
+              ) : (
+                <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.5 }}>
+                  Save your changes to create the invite link.
+                </Typography>
+              )}
+            </Box>
+          )}
         </Stack>
       </AppCard>
 
