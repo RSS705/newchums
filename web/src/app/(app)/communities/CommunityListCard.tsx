@@ -39,6 +39,8 @@ export type CommunityListItem = {
   hobby_match_count: number;
   distance_km: number | null;
   hobbies: { name: string; slug: string }[] | null;
+  /** null for a normal community; 'mtg_prediction_challenge' for a game community. */
+  specialization?: string | null;
 };
 
 type CommunityListCardProps = {
@@ -144,6 +146,9 @@ export default function CommunityListCard({
       </Typography>
       {c.visibility === "private" && (
         <LockRoundedIcon sx={{ fontSize: 15, color: "text.disabled" }} />
+      )}
+      {c.specialization === "mtg_prediction_challenge" && (
+        <Chip label="MTG Prediction Challenge" size="small" sx={{ height: 20, fontSize: "0.6875rem", fontWeight: 700, borderRadius: 1, bgcolor: "primary.light", color: "primary.dark", "& .MuiChip-label": { px: 0.75 } }} />
       )}
       {c.viewer_role === "owner" && (
         <Chip label="Owner" size="small" sx={{ height: 20, fontSize: "0.6875rem", fontWeight: 600, borderRadius: 1, bgcolor: "primary.light", color: "primary.dark" }} />

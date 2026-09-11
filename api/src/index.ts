@@ -64,6 +64,7 @@ import {
   hardDeleteUser,
 } from "./lib/adminHardDelete";
 import { KUDOS_TAGS, KUDOS_MAX_PER_PLAN, KUDOS_WINDOW_MS, isKudosTag, kudosTagInfo } from "./lib/kudos";
+import { MTG_SPECIALIZATION, MTG_RARITIES, type MtgSetRow, easternHour, mtgPhase, mtgTimeline, syncScryfallSet } from "./lib/mtg";
 import { checkDbRateLimit, isDbRateLimited, recordDbRateEvent } from "./lib/dbRateLimit";
 import {
   generateOtpCode,
@@ -900,6 +901,249 @@ app.get("/admin/users/:id/attendance-record/details", async (c) => {
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });
+
+// ─── MTG Prediction Challenge (docs/MTG-Bets-Spec.md) ────────────────────────
+//
+// Batch 1: set + timeline + card pool + admin set settings + card sync.
+
+async function loadMtgSet(sql: ReturnType<typeof getSql>, code: string | null): Promise<MtgSetRow | null> {
+  const rows = (code
+    ? await sql`SELECT * FROM newchums.mtg_sets WHERE code = ${code.toLowerCase()} LIMIT 1`
+    : await sql`
+        SELECT * FROM newchums.mtg_sets
+        ORDER BY (status = 'active') DESC, (final_at > now()) DESC, lock_at ASC
+        LIMIT 1
+      `) as MtgSetRow[];
+  return rows[0] ?? null;
+}
+
+async function mtgSetPayload(sql: ReturnType<typeof getSql>, set: MtgSetRow) {
+  const counts = (await sql`
+    SELECT rarity, COUNT(*)::int AS n
+    FROM newchums.mtg_cards
+    WHERE set_id = ${set.id} AND in_pool = true AND voided = false
+    GROUP BY rarity
+  `) as { rarity: string; n: number }[];
+  const pool: Record<string, number> = { common: 0, uncommon: 0, rare: 0, mythic: 0 };
+  for (const r of counts) pool[r.rarity] = r.n;
+  const lastSync = (await sql`
+    SELECT ran_at, outcome FROM newchums.mtg_card_syncs WHERE set_id = ${set.id} ORDER BY ran_at DESC LIMIT 1
+  `) as { ran_at: string; outcome: string }[];
+  const now = new Date();
+  return {
+    code: set.code,
+    name: set.name,
+    phase: mtgPhase(set, now),
+    dates: {
+      previewsStartAt: set.previews_start_at, galleryCompleteAt: set.gallery_complete_at,
+      prereleaseStartAt: set.prerelease_start_at, prereleaseEndAt: set.prerelease_end_at,
+      picksOpenAt: set.picks_open_at, lockAt: set.lock_at, arenaReleaseAt: set.arena_release_at,
+      tabletopReleaseAt: set.tabletop_release_at, finalAt: set.final_at,
+    },
+    timeline: mtgTimeline(set, now),
+    pool,
+    poolTotal: Object.values(pool).reduce((a, b) => a + b, 0),
+    galleryComplete: !!set.gallery_complete_at && now.getTime() >= new Date(set.gallery_complete_at).getTime(),
+    lastCardSyncAt: lastSync[0]?.ran_at ?? null,
+    scoringVersion: set.scoring_version,
+  };
+}
+
+/** GET /mtg/sets/current, the season every challenge community is playing. */
+app.get("/mtg/sets/current", async (c) => {
+  const sql = getSql(c.env);
+  try {
+    const set = await loadMtgSet(sql, null);
+    if (!set) return c.json({ ok: false, error: "NOT_FOUND", message: "No season is set up yet" }, 404);
+    return c.json({ ok: true, set: await mtgSetPayload(sql, set) });
+  } catch (err) {
+    console.error("[GET /mtg/sets/current]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** GET /mtg/sets/:code, one season by Scryfall code. */
+app.get("/mtg/sets/:code", async (c) => {
+  const sql = getSql(c.env);
+  try {
+    const set = await loadMtgSet(sql, c.req.param("code"));
+    if (!set) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    return c.json({ ok: true, set: await mtgSetPayload(sql, set) });
+  } catch (err) {
+    console.error("[GET /mtg/sets/:code]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** GET /mtg/sets/:code/cards?rarity=common, the pool at one rarity (or all),
+ *  in collector order. Public: card data is Scryfall's, not ours. */
+app.get("/mtg/sets/:code/cards", async (c) => {
+  const sql = getSql(c.env);
+  const rarity = (c.req.query("rarity") ?? "").toLowerCase();
+  if (rarity && !MTG_RARITIES.includes(rarity as (typeof MTG_RARITIES)[number]))
+    return c.json({ ok: false, error: "VALIDATION", message: "Unknown rarity" }, 400);
+  try {
+    const set = await loadMtgSet(sql, c.req.param("code"));
+    if (!set) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    const rows = (await sql`
+      SELECT id, scryfall_id, arena_id, name, rarity, collector_number, collector_sort, layout, colors, mana_cost, mana_value,
+             type_line, oracle_text, image_normal, image_large, image_back_normal, image_back_large, image_status,
+             previewed_at, preview_source, preview_source_uri, first_seen_at
+      FROM newchums.mtg_cards
+      WHERE set_id = ${set.id} AND in_pool = true AND voided = false
+        AND (${rarity === ""} OR rarity = ${rarity})
+      ORDER BY collector_sort ASC, collector_number ASC
+    `) as Record<string, unknown>[];
+    return c.json({
+      ok: true,
+      cards: rows.map((r) => ({
+        id: r.id, scryfallId: r.scryfall_id, arenaId: r.arena_id, name: r.name, rarity: r.rarity,
+        collectorNumber: r.collector_number, layout: r.layout, colors: r.colors, manaCost: r.mana_cost,
+        manaValue: r.mana_value == null ? null : Number(r.mana_value), typeLine: r.type_line, oracleText: r.oracle_text,
+        imageNormal: r.image_normal, imageLarge: r.image_large, imageBackNormal: r.image_back_normal, imageBackLarge: r.image_back_large,
+        imageStatus: r.image_status, previewedAt: r.previewed_at, previewSource: r.preview_source, previewSourceUri: r.preview_source_uri,
+        firstSeenAt: r.first_seen_at,
+      })),
+    });
+  } catch (err) {
+    console.error("[GET /mtg/sets/:code/cards]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** GET /admin/mtg/sets, every season with its sync history (super admins). */
+app.get("/admin/mtg/sets", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  const sql = getSql(c.env);
+  try {
+    const sets = (await sql`SELECT * FROM newchums.mtg_sets ORDER BY lock_at DESC`) as MtgSetRow[];
+    const out = [];
+    for (const set of sets) {
+      const syncs = (await sql`
+        SELECT ran_at, outcome, cards_seen, cards_new, notes FROM newchums.mtg_card_syncs
+        WHERE set_id = ${set.id} ORDER BY ran_at DESC LIMIT 10
+      `) as { ran_at: string; outcome: string; cards_seen: number; cards_new: number; notes: string | null }[];
+      out.push({ ...set, phase: mtgPhase(set), payload: await mtgSetPayload(sql, set), syncs });
+    }
+    return c.json({ ok: true, sets: out });
+  } catch (err) {
+    console.error("[GET /admin/mtg/sets]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+const MTG_SET_DATE_FIELDS = [
+  "previews_start_at", "gallery_complete_at", "prerelease_start_at", "prerelease_end_at", "picks_open_at",
+  "lock_at", "arena_release_at", "tabletop_release_at", "final_at",
+] as const;
+
+/** PUT /admin/mtg/sets/:code, create or update a season's settings. Dates
+ *  arrive as ISO strings (or null for the optional ones). */
+app.put("/admin/mtg/sets/:code", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  const code = c.req.param("code").toLowerCase().trim();
+  if (!/^[a-z0-9]{2,6}$/.test(code)) return c.json({ ok: false, error: "VALIDATION", message: "Set code should be the Scryfall code, like fra" }, 400);
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+  const name = String(body.name ?? "").trim();
+  const feedUrl = String(body.feed_url ?? "").trim();
+  if (!name) return c.json({ ok: false, error: "VALIDATION", message: "Name is required", field: "name" }, 400);
+  if (!/^https:\/\//.test(feedUrl)) return c.json({ ok: false, error: "VALIDATION", message: "Feed address must start with https://", field: "feed_url" }, 400);
+  const dates: Record<string, string | null> = {};
+  for (const f of MTG_SET_DATE_FIELDS) {
+    const v = body[f];
+    if (v == null || v === "") { dates[f] = null; continue; }
+    const d = new Date(String(v));
+    if (isNaN(d.getTime())) return c.json({ ok: false, error: "VALIDATION", message: `${f} is not a valid date`, field: f }, 400);
+    dates[f] = d.toISOString();
+  }
+  if (!dates.lock_at || !dates.final_at) return c.json({ ok: false, error: "VALIDATION", message: "Lock and final dates are required" }, 400);
+  if (new Date(dates.lock_at).getTime() >= new Date(dates.final_at).getTime())
+    return c.json({ ok: false, error: "VALIDATION", message: "The final day must be after the lock" }, 400);
+  const status = ["active", "final", "archived"].includes(String(body.status)) ? String(body.status) : "active";
+  const sql = getSql(c.env);
+  try {
+    await sql`
+      INSERT INTO newchums.mtg_sets (code, name, previews_start_at, gallery_complete_at, prerelease_start_at, prerelease_end_at,
+        picks_open_at, lock_at, arena_release_at, tabletop_release_at, final_at, feed_url, status)
+      VALUES (${code}, ${name}, ${dates.previews_start_at}, ${dates.gallery_complete_at}, ${dates.prerelease_start_at}, ${dates.prerelease_end_at},
+        ${dates.picks_open_at}, ${dates.lock_at}, ${dates.arena_release_at}, ${dates.tabletop_release_at}, ${dates.final_at}, ${feedUrl}, ${status})
+      ON CONFLICT (code) DO UPDATE SET
+        name = EXCLUDED.name, previews_start_at = EXCLUDED.previews_start_at, gallery_complete_at = EXCLUDED.gallery_complete_at,
+        prerelease_start_at = EXCLUDED.prerelease_start_at, prerelease_end_at = EXCLUDED.prerelease_end_at,
+        picks_open_at = EXCLUDED.picks_open_at, lock_at = EXCLUDED.lock_at, arena_release_at = EXCLUDED.arena_release_at,
+        tabletop_release_at = EXCLUDED.tabletop_release_at, final_at = EXCLUDED.final_at, feed_url = EXCLUDED.feed_url,
+        status = EXCLUDED.status, updated_at = now()
+    `;
+    const set = await loadMtgSet(sql, code);
+    return c.json({ ok: true, set: set ? await mtgSetPayload(sql, set) : null });
+  } catch (err) {
+    console.error("[PUT /admin/mtg/sets/:code]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /admin/mtg/sets/:code/sync, run the Scryfall card sync now. */
+app.post("/admin/mtg/sets/:code/sync", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  const sql = getSql(c.env);
+  try {
+    const set = await loadMtgSet(sql, c.req.param("code"));
+    if (!set) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    const summary = await runMtgCardSync(sql, c.env, set);
+    return c.json({ ok: true, summary });
+  } catch (err) {
+    console.error("[POST /admin/mtg/sets/:code/sync]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR", message: err instanceof Error ? err.message : "sync failed" }, 500);
+  }
+});
+
+/** One sync, recorded whether it worked or not. */
+async function runMtgCardSync(sql: ReturnType<typeof getSql>, env: Bindings, set: MtgSetRow) {
+  try {
+    const summary = await syncScryfallSet(sql, env.MEDIA_BUCKET, set);
+    await sql`
+      INSERT INTO newchums.mtg_card_syncs (set_id, outcome, cards_seen, cards_new, notes, raw_keys)
+      VALUES (${set.id}, 'ok', ${summary.kept}, ${summary.inserted}, ${summary.notes.join("; ") || null}, ${summary.rawKeys})
+    `;
+    console.log(`[mtg-sync] ${set.code}: pages=${summary.pages} seen=${summary.seen} kept=${summary.kept} new=${summary.inserted}`);
+    return summary;
+  } catch (err) {
+    await sql`
+      INSERT INTO newchums.mtg_card_syncs (set_id, outcome, notes)
+      VALUES (${set.id}, 'failed', ${err instanceof Error ? err.message : String(err)})
+    `;
+    throw err;
+  }
+}
+
+/**
+ * Hourly cron hook. Every two hours (even Eastern hours) from the first
+ * preview day until the lock, then once a day at 6 AM ET until the final
+ * day. A sync that ran in the last 100 minutes is not repeated.
+ */
+async function processMtgCardSync(sql: ReturnType<typeof getSql>, env: Bindings) {
+  const now = new Date();
+  const hour = easternHour(now);
+  const sets = (await sql`
+    SELECT * FROM newchums.mtg_sets
+    WHERE status = 'active' AND previews_start_at IS NOT NULL AND previews_start_at <= now() AND final_at > now()
+  `) as MtgSetRow[];
+  for (const set of sets) {
+    const beforeLock = now.getTime() < new Date(set.lock_at).getTime();
+    const due = beforeLock ? hour % 2 === 0 : hour === 6;
+    if (!due) continue;
+    const recent = (await sql`
+      SELECT 1 FROM newchums.mtg_card_syncs
+      WHERE set_id = ${set.id} AND outcome = 'ok' AND ran_at > now() - interval '100 minutes' LIMIT 1
+    `) as unknown[];
+    if (recent.length > 0) continue;
+    try { await runMtgCardSync(sql, env, set); } catch (err) { console.error(`[mtg-sync] ${set.code} failed:`, err); }
+  }
+}
 
 app.get("/health", (c) =>
   c.json({ ok: true, service: "api", ts: new Date().toISOString() }),
@@ -9303,6 +9547,12 @@ app.post("/communities", async (c) => {
   const website = body.website ? String(body.website).trim().slice(0, 500) : null;
   const discordUrl = body.discord_url ? String(body.discord_url).trim().slice(0, 500) : null;
   const whatsappUrl = body.whatsapp_url ? String(body.whatsapp_url).trim().slice(0, 500) : null;
+  // Specialized community (MTG Prediction Challenge). Set once at creation;
+  // PATCH never touches it, so a normal community can never turn into a game.
+  const specializationRaw = body.specialization == null || body.specialization === "" ? null : String(body.specialization);
+  if (specializationRaw !== null && specializationRaw !== MTG_SPECIALIZATION)
+    return c.json({ ok: false, error: "VALIDATION", message: "Unknown specialization", field: "specialization" }, 400);
+  const specialization = specializationRaw;
 
   const locationName = body.location_name ? String(body.location_name).trim().slice(0, 200) : null;
   const locationAddress = body.location_address ? String(body.location_address).trim().slice(0, 500) : null;
@@ -9338,8 +9588,8 @@ app.post("/communities", async (c) => {
     if (existing.length > 0) return c.json({ ok: false, error: "SLUG_TAKEN", message: "That handle is already taken" }, 409);
 
     const rows = (await sql`
-      INSERT INTO newchums.communities (name, slug, description, visibility, join_mode, chat_enabled, is_online, website, discord_url, whatsapp_url, location_name, location_address, location_lat, location_lng, owner_user_id, operating_hours)
-      VALUES (${name}, ${slug}, ${description}, ${visibility}, ${joinMode}, ${chatEnabled}, ${isOnline}, ${website}, ${discordUrl}, ${whatsappUrl}, ${locationName}, ${locationAddress}, ${locationLat}, ${locationLng}, ${userId}, ${operatingHours ? JSON.stringify(operatingHours) : null}::jsonb)
+      INSERT INTO newchums.communities (name, slug, description, visibility, join_mode, chat_enabled, is_online, website, discord_url, whatsapp_url, location_name, location_address, location_lat, location_lng, owner_user_id, operating_hours, specialization)
+      VALUES (${name}, ${slug}, ${description}, ${visibility}, ${joinMode}, ${chatEnabled}, ${isOnline}, ${website}, ${discordUrl}, ${whatsappUrl}, ${locationName}, ${locationAddress}, ${locationLat}, ${locationLng}, ${userId}, ${operatingHours ? JSON.stringify(operatingHours) : null}::jsonb, ${specialization})
       RETURNING id, slug, created_at
     `) as { id: string; slug: string; created_at: string }[];
     const community = rows[0];
@@ -9443,7 +9693,7 @@ app.get("/communities", async (c) => {
 
     if (mine && userId) {
       const communities = (await sql`
-        SELECT c.id, c.slug, c.name, c.description, c.visibility, c.join_mode, c.avatar_key, c.banner_key,
+        SELECT c.id, c.slug, c.name, c.description, c.visibility, c.join_mode, c.avatar_key, c.banner_key, c.specialization,
           c.location_name, c.location_address, c.location_lat, c.location_lng,
           c.owner_user_id, c.created_at, c.is_online,
           (SELECT COUNT(*)::int FROM newchums.community_members cm WHERE cm.community_id = c.id AND cm.status = 'active') AS member_count,
@@ -9503,7 +9753,7 @@ app.get("/communities", async (c) => {
       : sql`NULL`;
 
     const communities = (await sql`
-      SELECT c.id, c.slug, c.name, c.description, c.visibility, c.join_mode, c.avatar_key, c.banner_key,
+      SELECT c.id, c.slug, c.name, c.description, c.visibility, c.join_mode, c.avatar_key, c.banner_key, c.specialization,
         c.location_name, c.owner_user_id, c.created_at, c.is_online,
         (SELECT COUNT(*)::int FROM newchums.community_members cm WHERE cm.community_id = c.id AND cm.status = 'active') AS member_count,
         ${viewerRoleExpr} AS viewer_role,
@@ -9637,7 +9887,7 @@ app.get("/public/communities", async (c) => {
       : sql`LOWER(c.name) ASC, c.created_at DESC`;
 
     const communities = (await sql`
-      SELECT c.id, c.slug, c.name, c.description, c.visibility, c.join_mode, c.avatar_key, c.banner_key,
+      SELECT c.id, c.slug, c.name, c.description, c.visibility, c.join_mode, c.avatar_key, c.banner_key, c.specialization,
         c.location_name, c.owner_user_id, c.created_at, c.is_online,
         (SELECT COUNT(*)::int FROM newchums.community_members cm WHERE cm.community_id = c.id AND cm.status = 'active') AS member_count,
         NULL::text AS viewer_role,
@@ -9751,6 +10001,7 @@ app.get("/communities/:slug", async (c) => {
             visibility: community.visibility, join_mode: community.join_mode,
             is_online: community.is_online, location_name: community.location_name,
             member_count: community.member_count,
+            specialization: community.specialization ?? null,
             hobbies: communityHobbies,
             upcoming_plan_count: upcomingPlanCount,
             // Operating hours are intentionally omitted here; see restricted-
@@ -9787,6 +10038,7 @@ app.get("/communities/:slug", async (c) => {
               visibility: community.visibility, join_mode: community.join_mode,
               is_online: community.is_online, location_name: community.location_name,
               member_count: community.member_count,
+              specialization: community.specialization ?? null,
               hobbies: communityHobbies,
               // operating_hours intentionally omitted on restricted responses.
             },
@@ -9861,6 +10113,7 @@ app.get("/communities/:slug", async (c) => {
             visibility: community.visibility, join_mode: community.join_mode,
             is_online: community.is_online, location_name: community.location_name,
             member_count: community.member_count,
+            specialization: community.specialization ?? null,
             hobbies: communityHobbies,
             upcoming_plan_count: upcomingPlanCount,
           },
@@ -19874,6 +20127,13 @@ async function handleScheduled(
     await processEmailOutbox(sql, env, ctx);
   } catch (err) {
     console.error("[scheduled] email outbox error:", err);
+  }
+
+  // MTG Prediction Challenge: Scryfall card sync (two-hourly during previews)
+  try {
+    await processMtgCardSync(sql, env);
+  } catch (err) {
+    console.error("[scheduled] mtg card sync error:", err);
   }
 
   // Local recognition badges (hourly refresh)

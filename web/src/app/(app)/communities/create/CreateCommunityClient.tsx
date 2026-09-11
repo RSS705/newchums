@@ -9,6 +9,9 @@ import CircularProgress from "@mui/material/CircularProgress";
 import Avatar from "@mui/material/Avatar";
 import RadioGroup from "@mui/material/RadioGroup";
 import Radio from "@mui/material/Radio";
+import Switch from "@mui/material/Switch";
+import Select from "@mui/material/Select";
+import MenuItem from "@mui/material/MenuItem";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import Dialog from "@mui/material/Dialog";
 import DialogTitle from "@mui/material/DialogTitle";
@@ -22,6 +25,7 @@ import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import PersonOutlineRoundedIcon from "@mui/icons-material/PersonOutlineRounded";
 import PhotoCameraRoundedIcon from "@mui/icons-material/PhotoCameraRounded";
 import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
+import StyleRoundedIcon from "@mui/icons-material/StyleRounded";
 import Cropper, { type Area } from "react-easy-crop";
 import { AppCard, AppButton, AppTextField, useToast } from "@/components/ui";
 import RichTextEditor from "@/components/ui/RichTextEditor";
@@ -63,6 +67,10 @@ export default function CreateCommunityClient() {
   const [discordUrl, setDiscordUrl] = useState("");
   const [whatsappUrl, setWhatsappUrl] = useState("");
   const [access, setAccess] = useState<"open" | "private">("open");
+  // Specialized community: the community's home becomes a game (MTG
+  // Prediction Challenge). Set once here; it cannot change afterwards.
+  const [specialized, setSpecialized] = useState(false);
+  const [specialization, setSpecialization] = useState("mtg_prediction_challenge");
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [capDialogOpen, setCapDialogOpen] = useState(false);
@@ -235,6 +243,7 @@ export default function CreateCommunityClient() {
           discord_url: discordUrl.trim() || null,
           whatsapp_url: whatsappUrl.trim() || null,
           access,
+          specialization: specialized ? specialization : null,
           location_name: isOnline ? null : (locationName.trim() || null),
           location_address: isOnline ? null : (locationAddress.trim() || null),
           location_lat: isOnline ? null : locationLat,
@@ -671,6 +680,68 @@ export default function CreateCommunityClient() {
               sx={{ alignItems: "flex-start" }}
             />
           </RadioGroup>
+        </Stack>
+      </AppCard>
+
+      {/* Specialized community. The dropdown has one entry for now; the shape
+          leaves room for more game types without a redesign. */}
+      <AppCard>
+        <Stack spacing={2}>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: "50%",
+                bgcolor: "primary.light",
+                color: "primary.main",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <StyleRoundedIcon sx={{ fontSize: 22 }} />
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography
+                variant="h6"
+                fontWeight={700}
+                sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
+              >
+                Specialized community
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.disabled"
+                sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
+              >
+                Make the community&apos;s home a game instead of the usual plans view. It can&apos;t be changed later.
+              </Typography>
+            </Box>
+            <Switch
+              checked={specialized}
+              onChange={(e) => setSpecialized(e.target.checked)}
+              slotProps={{ input: { "aria-label": "Specialized community" } }}
+            />
+          </Stack>
+          {specialized && (
+            <Select
+              value={specialization}
+              onChange={(e) => setSpecialization(String(e.target.value))}
+              size="small"
+              fullWidth
+              slotProps={{ input: { "aria-label": "Specialized community type" } }}
+              sx={{ borderRadius: 2 }}
+            >
+              <MenuItem value="mtg_prediction_challenge">MTG Prediction Challenge</MenuItem>
+            </Select>
+          )}
+          {specialized && (
+            <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.5, display: "block" }}>
+              Members predict which cards in the next Magic set will perform best, then 17Lands data keeps score after the Arena launch. Members, visibility and Plans work like any other community.
+            </Typography>
+          )}
         </Stack>
       </AppCard>
 

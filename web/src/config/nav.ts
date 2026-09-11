@@ -61,6 +61,7 @@ export const superAdminNavItems: NavItem[] = [
   { label: "Plans", href: "/admin/plans", icon: CalendarMonthRoundedIcon },
   { label: "Communities", href: "/admin/communities", icon: ForumRoundedIcon },
   { label: "QR Codes", href: "/admin/qr-redirects", icon: QrCode2RoundedIcon },
+  { label: "MTG Seasons", href: "/admin/mtg", icon: StyleRoundedIcon },
 ];
 
 export type HeaderNavLink = { label: string; href: string };

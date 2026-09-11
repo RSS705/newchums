@@ -46,6 +46,7 @@ import {
 import CampaignRoundedIcon from "@mui/icons-material/CampaignRounded";
 import EventAvailableRoundedIcon from "@mui/icons-material/EventAvailableRounded";
 import { createEventHref } from "@/config/nav";
+import MtgChallengeHome from "@/components/mtg/MtgChallengeHome";
 
 type CommunityData = {
   id: string;
@@ -55,6 +56,8 @@ type CommunityData = {
   visibility: string;
   join_mode: string;
   chat_enabled: boolean;
+  /** 'mtg_prediction_challenge' turns the body into the game view (header kept). */
+  specialization?: string | null;
   is_online: boolean;
   /** Omitted from the response for non-members of private communities. */
   website?: string | null;
@@ -2083,10 +2086,18 @@ export default function CommunityDetailClient({
         </DialogActions>
       </Dialog>
 
-      {/* Tabs. Custom indicator (3px primary bar) and elevated active
-          state so the section navigation reads as a real navigation
-          surface rather than a thin underline. The bottom hairline gives
-          the tab strip a clear baseline against the tab content below. */}
+      {/* Specialized community: the game replaces the tabs and everything
+          under them. The header above stays, so members, join and owner
+          settings work as for any community. */}
+      {community.specialization === "mtg_prediction_challenge" ? (
+        <MtgChallengeHome
+          communityId={community.id}
+          slug={slug}
+          isMember={isMember}
+          isOwner={isOwner}
+          isAuthenticated={isAuthenticated}
+        />
+      ) : (
       <Box>
         <Tabs
           value={tabIndex}
@@ -2834,6 +2845,7 @@ export default function CommunityDetailClient({
           </>
         )}
       </Box>
+      )}
 
       {/* Local interest signal. Same copy/layout as the explore feed's
           footer: surfaces one hobby the viewer shares with active people

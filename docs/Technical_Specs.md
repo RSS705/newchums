@@ -1305,6 +1305,27 @@ A share token (JWT, purpose `community_share`) is still computed server-side and
 | `/communities/[slug]/edit` | `EditCommunityClient` | Edit community settings (owner). Same form structure as create, pre-populated. Includes close community action. |
 | `/admin/communities` | `AdminCommunitiesClient` | Super admin community management, list, search, remove |
 
+### MTG Prediction Challenge (specialized communities)
+
+Product spec: `docs/MTG-Bets-Spec.md` (its Change Log records every design decision). A community created with `specialization = 'mtg_prediction_challenge'` keeps the normal community header and replaces the tab body with the challenge view. The value is set once by `POST /communities` (validated against `MTG_SPECIALIZATION`) and never changed by PATCH.
+
+**Schema (migration 123, `newchums` schema, uuid keys):**
+
+- `communities.specialization` TEXT NULL, checked against the one known value.
+- `mtg_sets`: one row per season (`code` is the lower-case Scryfall code, e.g. `fra`), the season dates (`previews_start_at`, `gallery_complete_at`, `prerelease_start_at/end_at`, `picks_open_at`, `lock_at`, `arena_release_at`, `tabletop_release_at`, `final_at`), the 17Lands `feed_url`, `scoring_version` and `status` (`active`, `final`, `archived`). Reality Fracture is seeded.
+- `mtg_cards`: one row per oracle card per set (UNIQUE `(set_id, oracle_id)`), with Scryfall fields, images, preview credit, `first_seen_at` (drives NEW ribbons), `in_pool` and `voided`.
+- `mtg_card_syncs`: one row per sync run (`outcome`, counts, notes, R2 `raw_keys`).
+
+**Helpers (`api/src/lib/mtg.ts`):** `mtgPhase` (upcoming → previews → open → locked → live → final, derived from the dates; a `final`/`archived` status wins), `mtgTimeline` (player-facing entries with done/now/upcoming, weekly standings on Tuesdays 10 AM ET, calendar flags on lock and final), `easternHour`, `collectorSort`, and `syncScryfallSet` (pages `cards/search?q=e:<code> -t:basic&unique=prints&order=set` with the required `User-Agent`/`Accept` headers and a 120 ms pause, archives every page to R2 `mtg/scryfall/<code>/<stamp>-p<n>.json`, groups printings by `oracle_id` keeping the lowest collector number, skips digital cards and non-standard rarities, and upserts while preserving `first_seen_at` and `voided`). During previews Scryfall's `booster` flag is unreliable, so `in_pool` is true for every card until `gallery_complete_at`; after that only `booster = true` cards stay in. Unit tests: `api/src/lib/__tests__/mtg.test.ts`.
+
+**API routes:** `GET /mtg/sets/current`, `GET /mtg/sets/:code` (phase, dates, timeline, pool counts by rarity, last sync time), `GET /mtg/sets/:code/cards?rarity=` (public; Scryfall data). Super admin: `GET /admin/mtg/sets` (with the last 10 syncs), `PUT /admin/mtg/sets/:code` (upsert; validates the code, https feed URL, ISO dates, lock before final), `POST /admin/mtg/sets/:code/sync`.
+
+**Cron:** `processMtgCardSync` runs from the hourly `handleScheduled` for active sets between `previews_start_at` and `final_at`: due at even Eastern hours before the lock, at 6 AM ET after it, and skipped when an `ok` sync ran within 100 minutes. Failures are recorded as `failed` rows and never abort the other jobs.
+
+**Web:** `web/src/components/mtg/MtgChallengeHome.tsx` (phase card with a live lock countdown, pool counts, rarity tabs over a lazy-loading card grid at 3/5/6/7 columns, `SeasonTimeline`, attribution footer) is rendered by `CommunityDetailClient` in place of the tabs when `community.specialization` matches; `CommunityListCard` shows an "MTG Prediction Challenge" chip; `CreateCommunityClient` has the *Specialized community* switch and dropdown and sends `specialization`; `/admin/mtg` (`AdminMtgClient`, nav entry *MTG Seasons*) edits season dates and the feed address and runs *Sync cards now*. Card images are always shown whole (`object-fit: contain`), per Scryfall's rules. The attribution string lives in `web/src/components/mtg/mtgTypes.ts`.
+
+**Data-source terms:** the 17Lands feed's `notes` field restricts use to 17Lands.com; Rob accepted the risk on 2026-09-10 for a friends-only game. Scryfall requires the `User-Agent` and `Accept` headers and 50–100 ms between calls.
+
 ### QR Redirects
 
 Internal redirect layer so printed QR codes (posters, cards) stay useful when their destination changes. Super admins manage records in `/admin/qr-redirects`; the public surface is `https://newchums.com/qr/{code}`. The admin surface is positioned as a **lightweight QR inventory tool**: which codes exist, which store each one was given to, what kind of printed asset it is (card vs. poster), whether it has ever been scanned, and how the scan-count rules keep counts trustworthy.
