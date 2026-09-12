@@ -1101,11 +1101,14 @@ export const sendPlanWrapUpEmail = async (
   const copy =
     role === "host"
       ? {
-          heading: "How did your plan go?",
+          // Hosts get the same tags-and-chums framing as attendees: the
+          // private Came / No-show check-in is still there, but it is no
+          // longer what the email is about (Rob, 2026-09-12).
+          heading: "Give tags and save chums for next time",
           bodyText:
-            "Your plan has wrapped up. Take a minute to note who made it, and if it went well, set up the next one. Your check-in is private and only you can see it.",
-          ctaText: "Wrap up your plan",
-          ctaHelperText: "Private, for your records. Takes under a minute.",
+            "Your plan has wrapped up. Tag the people who made it good: pick a person, pick a tag like Good Energy or Quick Wit, done. Nobody sees who gave what. You can also save people to your Chums for next time, and mark who made it for your own private records.",
+          ctaText: "Give tags",
+          ctaHelperText: "Totally optional. Two taps per person.",
         }
       : {
           // Tags are quick, anonymous props that collect on someone's

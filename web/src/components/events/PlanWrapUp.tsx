@@ -769,7 +769,7 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
                 mb: hostRows.length > 0 ? 0.25 : 1.75,
               }}
             >
-              How did {planTitle?.trim() ? `"${planTitle.trim()}"` : "your plan"} go?
+              {kudosWindowClosed ? "Who made it?" : "Give tags and save chums for next time!"}
             </Typography>
             {hostRows.length > 0 && (
               <Typography
@@ -778,7 +778,7 @@ export default function PlanWrapUp({ eventId, planTitle, planStartsAt, planHobbi
               >
                 {kudosWindowClosed
                   ? "Mark who made it. This is private, for your records only, and nobody is notified."
-                  : "The Came and No-show marks are private, for your records only, and nobody is notified. Tags are quick props that collect on someone's profile as counts; nobody sees who gave what. You can also save people to your Chums for next time. All of it is optional."}
+                  : "The Came and No-show toggle is private, for your records only, and nobody is notified."}
               </Typography>
             )}
             {hostRows.length > 0 && (

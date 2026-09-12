@@ -13,6 +13,9 @@ import CampaignRoundedIcon from "@mui/icons-material/CampaignRounded";
 import ThumbUpAltRoundedIcon from "@mui/icons-material/ThumbUpAltRounded";
 import StarRoundedIcon from "@mui/icons-material/StarRounded";
 import EmojiEventsRoundedIcon from "@mui/icons-material/EmojiEventsRounded";
+import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
+import IconButton from "@mui/material/IconButton";
+import Tooltip from "@mui/material/Tooltip";
 import { useEffect, useState } from "react";
 import Button from "@mui/material/Button";
 import Dialog from "@mui/material/Dialog";
@@ -87,6 +90,7 @@ function MetricCard({ icon, label, value, ratio, tooltipTitle, onDetails }: Metr
   const card = (
     <Box
       sx={{
+        position: "relative",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
@@ -152,27 +156,24 @@ function MetricCard({ icon, label, value, ratio, tooltipTitle, onDetails }: Metr
         {label}
       </Typography>
       {onDetails && !isEmpty && (
-        <Typography
-          component="button"
-          type="button"
-          variant="caption"
-          onClick={(e: React.MouseEvent) => { e.stopPropagation(); onDetails(); }}
-          sx={{
-            mt: 0.5,
-            background: "none",
-            border: "none",
-            p: 0,
-            cursor: "pointer",
-            fontFamily: "inherit",
-            fontSize: "0.6875rem",
-            fontWeight: 600,
-            color: "primary.main",
-            textDecoration: "underline",
-            textUnderlineOffset: "2px",
-          }}
-        >
-          See the plans
-        </Typography>
+        <Tooltip title="See the plans behind this number" placement="top">
+          <IconButton
+            size="small"
+            aria-label={`See the plans behind ${label}`}
+            onClick={(e: React.MouseEvent) => { e.stopPropagation(); onDetails(); }}
+            sx={{
+              position: "absolute",
+              top: 2,
+              right: 2,
+              p: 0.25,
+              color: "text.disabled",
+              opacity: 0.5,
+              "&:hover": { opacity: 1, color: "primary.main", bgcolor: "transparent" },
+            }}
+          >
+            <VisibilityOutlinedIcon sx={{ fontSize: 15 }} />
+          </IconButton>
+        </Tooltip>
       )}
     </Box>
   );

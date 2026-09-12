@@ -552,12 +552,99 @@ app.get("/public/users/:handle", async (c) => {
   }
 });
 
+/** PATCH /me/kudos/:tag, hide or show one of my own tag types on my public
+ *  profile. Only the recipient can do this, and it affects presentation
+ *  only: the underlying kudos rows are untouched. */
+app.patch("/me/kudos/:tag", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const tag = c.req.param("tag");
+  if (!isKudosTag(tag)) return c.json({ ok: false, error: "VALIDATION", message: "Unknown tag" }, 400);
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+  const hidden = body.hidden === true;
+  const sql = getSql(c.env);
+  try {
+    const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+    if (hidden) {
+      await sql`
+        INSERT INTO newchums.kudos_hidden_tags (user_id, tag) VALUES (${userId}, ${tag})
+        ON CONFLICT (user_id, tag) DO NOTHING
+      `;
+    } else {
+      await sql`DELETE FROM newchums.kudos_hidden_tags WHERE user_id = ${userId} AND tag = ${tag}`;
+    }
+    return c.json({ ok: true, tag, hidden });
+  } catch (err) {
+    console.error("[PATCH /me/kudos/:tag]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** GET /admin/kudos, every tag ever given with both names and the plan,
+ *  newest first (super admins). Tags are anonymous to users; this view
+ *  exists for moderation, so it deliberately names the giver. */
+app.get("/admin/kudos", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  const sql = getSql(c.env);
+  const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 100), 1), 200);
+  const offset = Math.max(Number(c.req.query("offset") ?? 0), 0);
+  const search = c.req.query("q")?.trim() || null;
+  try {
+    const q = search ? `%${search}%` : null;
+    const rows = (await sql`
+      SELECT k.id, k.tag, k.created_at, k.plan_id,
+             e.title AS plan_title, e.starts_at AS plan_starts_at,
+             g.id AS giver_id, g.name AS giver_name, g.username AS giver_username, g.email AS giver_email,
+             r.id AS recipient_id, r.name AS recipient_name, r.username AS recipient_username, r.email AS recipient_email,
+             EXISTS (SELECT 1 FROM newchums.kudos_hidden_tags h WHERE h.user_id = k.recipient_user_id AND h.tag = k.tag) AS hidden_by_recipient
+      FROM newchums.kudos k
+      JOIN newchums.users g ON g.id = k.giver_user_id
+      JOIN newchums.users r ON r.id = k.recipient_user_id
+      LEFT JOIN newchums.events e ON e.id = k.plan_id
+      WHERE (${q}::text IS NULL OR g.name ILIKE ${q} OR g.username ILIKE ${q} OR g.email ILIKE ${q}
+             OR r.name ILIKE ${q} OR r.username ILIKE ${q} OR r.email ILIKE ${q} OR e.title ILIKE ${q} OR k.tag ILIKE ${q})
+      ORDER BY k.created_at DESC
+      LIMIT ${limit} OFFSET ${offset}
+    `) as Array<Record<string, unknown>>;
+    const totalRows = (await sql`SELECT COUNT(*)::int AS c FROM newchums.kudos`) as { c: number }[];
+    return c.json({
+      ok: true,
+      total: totalRows[0]?.c ?? 0,
+      hasMore: rows.length === limit,
+      items: rows.map((r) => {
+        const info = kudosTagInfo(String(r.tag));
+        return {
+          id: r.id,
+          tag: r.tag,
+          label: info?.label ?? String(r.tag),
+          emoji: info?.emoji ?? "",
+          retired: !info,
+          createdAt: r.created_at,
+          hiddenByRecipient: r.hidden_by_recipient === true,
+          plan: { id: r.plan_id, title: r.plan_title ?? null, startsAt: r.plan_starts_at ?? null },
+          giver: { id: r.giver_id, name: r.giver_name, username: r.giver_username, email: r.giver_email },
+          recipient: { id: r.recipient_id, name: r.recipient_name, username: r.recipient_username, email: r.recipient_email },
+        };
+      }),
+    });
+  } catch (err) {
+    console.error("[GET /admin/kudos]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
 /** GET /public/users/:handle/kudos
  *  Aggregated tags for the profile section: counts per tag, never who gave
  *  what. Every tag shows to anyone who can see the profile, even one given
  *  a single time (Rob's call, 2026-09-06; the earlier two-giver threshold
  *  hid too much). Tags inside a blocked pair are left out for everyone,
- *  since both identities are in the row. */
+ *  since both identities are in the row.
+ *
+ *  A recipient can hide a tag type from their profile (kudos_hidden_tags).
+ *  The owner still gets every tag with a `hidden` flag so they can put one
+ *  back; everyone else sees neither the tag nor its count in the total. */
 app.get("/public/users/:handle/kudos", async (c) => {
   const handleParam = c.req.param("handle")?.trim();
   if (!handleParam) {
@@ -607,17 +694,26 @@ app.get("/public/users/:handle/kudos", async (c) => {
       ORDER BY count DESC, latest_at DESC
     `) as Array<{ tag: string; count: number; latest_at: string }>;
 
-    const items: Array<{ tag: string; label: string; emoji: string; count: number }> = [];
+    const hiddenRows = (await sql`
+      SELECT tag FROM newchums.kudos_hidden_tags WHERE user_id = ${target.id}
+    `) as Array<{ tag: string }>;
+    const hiddenTags = new Set(hiddenRows.map((r) => r.tag));
+
+    const items: Array<{ tag: string; label: string; emoji: string; count: number; hidden?: boolean }> = [];
     for (const r of rows) {
       const info = kudosTagInfo(r.tag);
       if (!info) continue;
-      items.push({ tag: r.tag, label: info.label, emoji: info.emoji, count: r.count });
+      const hidden = hiddenTags.has(r.tag);
+      if (hidden && !isOwner) continue;
+      items.push({ tag: r.tag, label: info.label, emoji: info.emoji, count: r.count, ...(isOwner ? { hidden } : {}) });
     }
     return c.json({
       ok: true,
       isOwner,
       items,
-      total: items.reduce((sum, it) => sum + it.count, 0),
+      // The owner's total counts what the public sees, so hiding a tag makes
+      // the number drop the way a visitor would see it.
+      total: items.reduce((sum, it) => (it.hidden ? sum : sum + it.count), 0),
     });
   } catch (err) {
     console.error("[GET /public/users/:handle/kudos]", err);

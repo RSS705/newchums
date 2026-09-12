@@ -58,7 +58,7 @@ export const SUBJECTS = {
   // Post-plan wrap-up, role-varied via the dispatch subjectKey option (same
   // pattern as confirmationRequestUser above): hosts get the operational
   // check-in framing, attendees get the thank-you framing.
-  planWrapUp_host: "How did {{planTitle}} go?",
+  planWrapUp_host: "Give tags and save chums from {{planTitle}}",
   runItAgain: "Want to run {{planTitle}} again?",
   planReminder: "Tomorrow: {{planTitle}}",
   kudosReceived_one: "You got a tag at {{planTitle}}",

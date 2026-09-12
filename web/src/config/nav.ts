@@ -13,6 +13,7 @@ import BarChartRoundedIcon from "@mui/icons-material/BarChartRounded";
 import QueryStatsRoundedIcon from "@mui/icons-material/QueryStatsRounded";
 import ShieldRoundedIcon from "@mui/icons-material/ShieldRounded";
 import QrCode2RoundedIcon from "@mui/icons-material/QrCode2Rounded";
+import WorkspacePremiumRoundedIcon from "@mui/icons-material/WorkspacePremiumRounded";
 import type { SvgIconComponent } from "@mui/icons-material";
 
 export type NavItem = {
@@ -62,6 +63,7 @@ export const superAdminNavItems: NavItem[] = [
   { label: "Communities", href: "/admin/communities", icon: ForumRoundedIcon },
   { label: "QR Codes", href: "/admin/qr-redirects", icon: QrCode2RoundedIcon },
   { label: "MTG Seasons", href: "/admin/mtg", icon: StyleRoundedIcon },
+  { label: "Tags", href: "/admin/kudos", icon: WorkspacePremiumRoundedIcon },
 ];
 
 export type HeaderNavLink = { label: string; href: string };
