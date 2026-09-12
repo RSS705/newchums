@@ -43,14 +43,14 @@ function personCell(p: Person) {
           component={Link}
           href={`/u/${p.username.replace(/^@/, "")}`}
           variant="body2"
-          sx={{ fontWeight: 600, color: "primary.dark", textDecoration: "none", "&:hover": { textDecoration: "underline" } }}
+          sx={{ fontWeight: 600, color: "primary.dark", textDecoration: "none", wordBreak: "break-word", "&:hover": { textDecoration: "underline" } }}
         >
           {label}
         </Typography>
       ) : (
-        <Typography variant="body2" sx={{ fontWeight: 600 }}>{label}</Typography>
+        <Typography variant="body2" sx={{ fontWeight: 600, wordBreak: "break-word" }}>{label}</Typography>
       )}
-      <Typography variant="caption" color="text.disabled" sx={{ fontSize: "0.6875rem" }}>
+      <Typography variant="caption" color="text.disabled" sx={{ fontSize: "0.6875rem", wordBreak: "break-all" }}>
         {p.username ? `@${p.username.replace(/^@/, "")}` : p.email}
       </Typography>
     </Stack>
@@ -122,7 +122,7 @@ export default function AdminKudosClient() {
           Tags Given
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, lineHeight: 1.6, maxWidth: 680 }}>
-          Every tag anyone has given, newest first. Tags are anonymous to members, so this is the only place the giver is named. {total} in total.
+          Every tag anyone has given, newest first. Tags are anonymous to members, so this is the only place the giver is named. {total} {query ? "matching" : "in total"}.
         </Typography>
       </Box>
 
@@ -150,26 +150,26 @@ export default function AdminKudosClient() {
 
       <AppCard sx={{ p: 0, overflow: "hidden" }}>
         <TableContainer sx={{ overflowX: "auto" }}>
-          <Table size="small" sx={{ minWidth: 760 }}>
+          <Table size="small" sx={{ minWidth: { xs: 0, md: 760 } }}>
             <TableHead>
               <TableRow>
-                <TableCell sx={{ fontWeight: 700 }}>Given</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>Tag</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>From</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>To</TableCell>
+                <TableCell sx={{ fontWeight: 700, px: { xs: 1, sm: 2 } }}>Given</TableCell>
+                <TableCell sx={{ fontWeight: 700, px: { xs: 1, sm: 2 } }}>Tag</TableCell>
+                <TableCell sx={{ fontWeight: 700, px: { xs: 1, sm: 2 } }}>From</TableCell>
+                <TableCell sx={{ fontWeight: 700, px: { xs: 1, sm: 2 } }}>To</TableCell>
                 <TableCell sx={{ fontWeight: 700, display: { xs: "none", md: "table-cell" } }}>Plan</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {rows.map((r) => (
                 <TableRow key={r.id} hover>
-                  <TableCell sx={{ whiteSpace: "nowrap" }}>
+                  <TableCell sx={{ whiteSpace: "nowrap", px: { xs: 1, sm: 2 } }}>
                     <Typography variant="body2">{new Date(r.createdAt).toLocaleDateString()}</Typography>
                     <Typography variant="caption" color="text.disabled" sx={{ fontSize: "0.6875rem" }}>
                       {new Date(r.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
                     </Typography>
                   </TableCell>
-                  <TableCell>
+                  <TableCell sx={{ px: { xs: 1, sm: 2 } }}>
                     <Stack direction="row" spacing={0.75} alignItems="center" useFlexGap flexWrap="wrap">
                       <Typography variant="body2" sx={{ fontWeight: 600 }}>
                         {r.emoji} {r.label}
@@ -180,8 +180,8 @@ export default function AdminKudosClient() {
                       )}
                     </Stack>
                   </TableCell>
-                  <TableCell>{personCell(r.giver)}</TableCell>
-                  <TableCell>{personCell(r.recipient)}</TableCell>
+                  <TableCell sx={{ px: { xs: 1, sm: 2 } }}>{personCell(r.giver)}</TableCell>
+                  <TableCell sx={{ px: { xs: 1, sm: 2 } }}>{personCell(r.recipient)}</TableCell>
                   <TableCell sx={{ display: { xs: "none", md: "table-cell" } }}>
                     {r.plan.id ? (
                       <Typography

@@ -608,7 +608,15 @@ app.get("/admin/kudos", async (c) => {
       ORDER BY k.created_at DESC
       LIMIT ${limit} OFFSET ${offset}
     `) as Array<Record<string, unknown>>;
-    const totalRows = (await sql`SELECT COUNT(*)::int AS c FROM newchums.kudos`) as { c: number }[];
+    const totalRows = (await sql`
+      SELECT COUNT(*)::int AS c
+      FROM newchums.kudos k
+      JOIN newchums.users g ON g.id = k.giver_user_id
+      JOIN newchums.users r ON r.id = k.recipient_user_id
+      LEFT JOIN newchums.events e ON e.id = k.plan_id
+      WHERE (${q}::text IS NULL OR g.name ILIKE ${q} OR g.username ILIKE ${q} OR g.email ILIKE ${q}
+             OR r.name ILIKE ${q} OR r.username ILIKE ${q} OR r.email ILIKE ${q} OR e.title ILIKE ${q} OR k.tag ILIKE ${q})
+    `) as { c: number }[];
     return c.json({
       ok: true,
       total: totalRows[0]?.c ?? 0,
@@ -680,7 +688,11 @@ app.get("/public/users/:handle/kudos", async (c) => {
 
     const rows = (await sql`
       SELECT k.tag, COUNT(*)::int AS count,
-             MAX(k.created_at) AS latest_at
+             MAX(k.created_at) AS latest_at,
+             EXISTS (
+               SELECT 1 FROM newchums.kudos_hidden_tags h
+               WHERE h.user_id = k.recipient_user_id AND h.tag = k.tag
+             ) AS hidden
       FROM newchums.kudos k
       JOIN newchums.events e ON e.id = k.plan_id
       WHERE k.recipient_user_id = ${target.id}
@@ -690,20 +702,15 @@ app.get("/public/users/:handle/kudos", async (c) => {
           WHERE (b.blocker_user_id = k.giver_user_id AND b.blocked_user_id = k.recipient_user_id)
              OR (b.blocker_user_id = k.recipient_user_id AND b.blocked_user_id = k.giver_user_id)
         )
-      GROUP BY k.tag
+      GROUP BY k.tag, hidden
       ORDER BY count DESC, latest_at DESC
-    `) as Array<{ tag: string; count: number; latest_at: string }>;
-
-    const hiddenRows = (await sql`
-      SELECT tag FROM newchums.kudos_hidden_tags WHERE user_id = ${target.id}
-    `) as Array<{ tag: string }>;
-    const hiddenTags = new Set(hiddenRows.map((r) => r.tag));
+    `) as Array<{ tag: string; count: number; latest_at: string; hidden: boolean }>;
 
     const items: Array<{ tag: string; label: string; emoji: string; count: number; hidden?: boolean }> = [];
     for (const r of rows) {
       const info = kudosTagInfo(r.tag);
       if (!info) continue;
-      const hidden = hiddenTags.has(r.tag);
+      const hidden = r.hidden === true;
       if (hidden && !isOwner) continue;
       items.push({ tag: r.tag, label: info.label, emoji: info.emoji, count: r.count, ...(isOwner ? { hidden } : {}) });
     }

@@ -48,7 +48,6 @@ export default function PublicProfileKudosSection({ handle, isOwner, viewerLogge
   // No handle means nothing to fetch; start resolved so the effect never
   // has to set state synchronously.
   const [items, setItems] = useState<KudosItem[] | null>(handle ? null : []);
-  const [pendingTag, setPendingTag] = useState<string | null>(null);
   const toast = useToast();
 
   useEffect(() => {
@@ -70,7 +69,6 @@ export default function PublicProfileKudosSection({ handle, isOwner, viewerLogge
 
   /** Flip one tag's visibility. Optimistic, reverted if the call fails. */
   const toggleHidden = useCallback(async (tag: string, nextHidden: boolean) => {
-    setPendingTag(tag);
     setItems((prev) => (prev ? prev.map((it) => (it.tag === tag ? { ...it, hidden: nextHidden } : it)) : prev));
     try {
       const res = await apiFetch(`/me/kudos/${encodeURIComponent(tag)}`, {
@@ -85,8 +83,6 @@ export default function PublicProfileKudosSection({ handle, isOwner, viewerLogge
     } catch {
       setItems((prev) => (prev ? prev.map((it) => (it.tag === tag ? { ...it, hidden: !nextHidden } : it)) : prev));
       toast.error("Couldn't change that tag");
-    } finally {
-      setPendingTag(null);
     }
   }, [toast]);
 
@@ -111,16 +107,17 @@ export default function PublicProfileKudosSection({ handle, isOwner, viewerLogge
         <IconButton
           size="small"
           aria-label={hidden ? `Show ${it.label} on your profile` : `Hide ${it.label} from your profile`}
-          disabled={pendingTag === it.tag}
           onClick={(e) => { e.stopPropagation(); toggleHidden(it.tag, !hidden); }}
           sx={{
             position: "absolute",
-            top: 2,
-            right: 2,
-            p: 0.25,
+            top: 0,
+            right: 0,
+            width: 30,
+            height: 30,
             color: hidden ? "primary.main" : "text.disabled",
-            opacity: hidden ? 1 : 0.5,
+            opacity: hidden ? 1 : 0.45,
             "&:hover": { opacity: 1, color: "text.secondary", bgcolor: "transparent" },
+            "&:active": { opacity: 1 },
           }}
         >
           {hidden
@@ -140,7 +137,7 @@ export default function PublicProfileKudosSection({ handle, isOwner, viewerLogge
           meta={<Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>{total}</Typography>}
           subtitle={
             isOwner
-              ? "What people from your plans gave you. Nobody sees who gave what, and you can hide any tag with the eye."
+              ? "Tags received from others. You can hide any tag using the eye icon."
               : "Given by people they've been on plans with."
           }
         />
@@ -171,6 +168,10 @@ export default function PublicProfileKudosSection({ handle, isOwner, viewerLogge
                 borderStyle: it.hidden ? "dashed" : "solid",
                 bgcolor: (theme) => (theme.palette.mode === "light" ? "grey.50" : "rgba(255,255,255,0.04)"),
                 minWidth: 0,
+                // Room for the "Hidden" line, so flipping one tile does not
+                // resize the whole row.
+                minHeight: { xs: 124, sm: 140 },
+                justifyContent: "center",
               }}
             >
               {tileHideButton(it)}
@@ -198,7 +199,7 @@ export default function PublicProfileKudosSection({ handle, isOwner, viewerLogge
               const hidden = it.hidden === true;
               const chip = (
                 <Chip
-                  label={`${it.emoji} ${it.label} ×${it.count}`}
+                  label={`${it.emoji} ${it.label} ×${it.count}${hidden ? " · hidden" : ""}`}
                   size="small"
                   variant="outlined"
                   onDelete={isOwner ? () => toggleHidden(it.tag, !hidden) : undefined}
@@ -210,17 +211,18 @@ export default function PublicProfileKudosSection({ handle, isOwner, viewerLogge
                   sx={{
                     fontWeight: 600,
                     fontSize: "0.75rem",
-                    height: 28,
+                    height: 30,
                     opacity: hidden ? 0.55 : 1,
                     borderStyle: hidden ? "dashed" : "solid",
                     "& .MuiChip-label": { px: 1 },
                     "& .MuiChip-deleteIcon": {
-                      fontSize: 15,
+                      fontSize: 16,
                       ml: -0.25,
-                      mr: 0.5,
+                      mr: 0.625,
                       color: hidden ? "primary.main" : "text.disabled",
-                      opacity: hidden ? 1 : 0.5,
+                      opacity: hidden ? 1 : 0.45,
                       "&:hover": { opacity: 1, color: "text.secondary" },
+                      "&:active": { opacity: 1 },
                     },
                   }}
                 />

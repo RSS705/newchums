@@ -13,7 +13,7 @@ import CampaignRoundedIcon from "@mui/icons-material/CampaignRounded";
 import ThumbUpAltRoundedIcon from "@mui/icons-material/ThumbUpAltRounded";
 import StarRoundedIcon from "@mui/icons-material/StarRounded";
 import EmojiEventsRoundedIcon from "@mui/icons-material/EmojiEventsRounded";
-import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
+import FormatListBulletedRoundedIcon from "@mui/icons-material/FormatListBulletedRounded";
 import IconButton from "@mui/material/IconButton";
 import Tooltip from "@mui/material/Tooltip";
 import { useEffect, useState } from "react";
@@ -163,15 +163,19 @@ function MetricCard({ icon, label, value, ratio, tooltipTitle, onDetails }: Metr
             onClick={(e: React.MouseEvent) => { e.stopPropagation(); onDetails(); }}
             sx={{
               position: "absolute",
-              top: 2,
-              right: 2,
-              p: 0.25,
+              top: 0,
+              right: 0,
+              // 32px target: comfortable on a phone without crowding the
+              // number, which stays centred in the card.
+              width: 32,
+              height: 32,
               color: "text.disabled",
-              opacity: 0.5,
+              opacity: 0.45,
               "&:hover": { opacity: 1, color: "primary.main", bgcolor: "transparent" },
+              "&:active": { opacity: 1, color: "primary.main" },
             }}
           >
-            <VisibilityOutlinedIcon sx={{ fontSize: 15 }} />
+            <FormatListBulletedRoundedIcon sx={{ fontSize: 14 }} />
           </IconButton>
         </Tooltip>
       )}

@@ -5,7 +5,7 @@
  *
  * The tags are deliberately universal across hobbies and read as props
  * rather than ratings: nothing here can be read as a mark against someone.
- * Wording chosen by Rob, 2026-09-06, extended the same evening to 64 tags then 79 with a Magic-flavoured batch, then 106 on 2026-09-07 and 184 on 2026-09-12
+ * Wording chosen by Rob, 2026-09-06, extended the same evening to 64 tags then 79 with a Magic-flavoured batch, then 106 on 2026-09-07 and 201 on 2026-09-12
  * ("Sweaty", "Salt Miner" and friends are in-jokes his crowd uses). Users
  * see these as "tags"; kudos stays the internal name (table, routes,
  * preference key). The picker sorts alphabetically and has a search box,
@@ -24,12 +24,10 @@ export const KUDOS_TAGS = [
   { tag: "refreshingly_normal", label: "Refreshingly Normal", emoji: "😌" },
   { tag: "delightfully_unhinged", label: "Delightfully Unhinged", emoji: "🤪" },
   { tag: "weird_in_a_good_way", label: "Weird in a Good Way", emoji: "🦄" },
-  { tag: "sweaty", label: "Sweaty", emoji: "🥵" },
   { tag: "glad_you_came", label: "Glad You Came", emoji: "🎉" },
   { tag: "would_hang_again", label: "Would Hang Again", emoji: "🔁" },
   { tag: "would_recommend", label: "Would Recommend", emoji: "⭐" },
   { tag: "group_mvp", label: "Group MVP", emoji: "🏆" },
-  { tag: "human_wd_40", label: "Human WD-40", emoji: "🛢️" },
   { tag: "hype_person", label: "Hype Person", emoji: "📣" },
   { tag: "comedy_relief", label: "Comedy Relief", emoji: "🎭" },
   { tag: "laughs_at_their_own_jokes", label: "Laughs at Their Own Jokes", emoji: "🤭" },
@@ -151,7 +149,6 @@ export const KUDOS_TAGS = [
   { tag: "fact_checker", label: "Fact Checker", emoji: "🔎" },
   { tag: "conspiracy_corner", label: "Conspiracy Corner", emoji: "🛸" },
   { tag: "has_one_topic", label: "Has One Topic", emoji: "📻" },
-  { tag: "confidently_wrong", label: "Confidently Wrong", emoji: "❌" },
   { tag: "devils_advocate", label: "Devil's Advocate", emoji: "🗯️" },
   { tag: "no_poker_face", label: "No Poker Face", emoji: "🫣" },
   { tag: "loud_whisperer", label: "Loud Whisperer", emoji: "🔊" },
@@ -201,6 +198,30 @@ export const KUDOS_TAGS = [
   { tag: "big_softie", label: "Big Softie", emoji: "🧸" },
   { tag: "takes_a_joke", label: "Takes a Joke", emoji: "😄" },
   { tag: "dishes_it_out", label: "Dishes It Out", emoji: "🍽️" },
+
+  // ── Added 2026-09-12: plain adjectives. The catalogue was long on
+  //    characters and jokes and short on the simple neutral-to-positive
+  //    words people reach for first (Rob).
+  { tag: "super_friendly", label: "Super Friendly", emoji: "😃" },
+  { tag: "reliable", label: "Reliable", emoji: "🧱" },
+  { tag: "well_mannered", label: "Well Mannered", emoji: "🎩" },
+  { tag: "extra_polite", label: "Extra Polite", emoji: "🙏" },
+  { tag: "always_positive", label: "Always Positive", emoji: "🌞" },
+  { tag: "chill", label: "Chill", emoji: "🌴" },
+  { tag: "genuine", label: "Genuine", emoji: "🤍" },
+  { tag: "easygoing", label: "Easygoing", emoji: "🍃" },
+  { tag: "thoughtful", label: "Thoughtful", emoji: "🕊" },
+  { tag: "generous", label: "Generous", emoji: "🎁" },
+  { tag: "welcoming", label: "Welcoming", emoji: "🤗" },
+  { tag: "warm", label: "Warm", emoji: "☀️" },
+  { tag: "funny", label: "Funny", emoji: "😆" },
+  { tag: "kind", label: "Kind", emoji: "💛" },
+  { tag: "honest", label: "Honest", emoji: "📐" },
+  { tag: "humble", label: "Humble", emoji: "🙇" },
+  { tag: "curious", label: "Curious", emoji: "🔭" },
+  { tag: "creative", label: "Creative", emoji: "🎨" },
+  { tag: "encouraging", label: "Encouraging", emoji: "👏" },
+  { tag: "down_to_earth", label: "Down to Earth", emoji: "🌍" },
 ] as const;
 
 export type KudosTag = (typeof KUDOS_TAGS)[number]["tag"];
